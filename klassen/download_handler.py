@@ -28,6 +28,7 @@ CHANGELOG v3.0:
   ✅ Konsistentes Emoji-Schema für schnelle Log-Orientierung
 """
 
+import asyncio
 import re
 import os
 from collections import Counter
@@ -52,6 +53,56 @@ from services.downloader.utils.enhanced_metadata_processor import (
 from services.downloader.utils.file_utils import FileUtils
 from services.downloader.utils.progress_tracker import ProgressTracker
 from utils.filenamefixer import FilenameFixerTool
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# URL-VALIDIERUNG (SEC: Domain-Allowlist vor yt-dlp)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# handle_url() leitete frueher JEDE nicht-Spotify http(s)://-URL ungeprueft
+# an yt-dlp weiter. yt-dlp unterstuetzt hunderte Extractors und macht
+# serverseitige HTTP-Requests - ohne Domain-Allowlist kann jeder Telegram-
+# Nutzer, der den Bot anschreiben kann, den Server beliebige URLs abrufen
+# lassen (SSRF-artiges Risiko). Nur tatsaechlich unterstuetzte YouTube-
+# Domains werden akzeptiert; alles andere bekommt eine normale
+# Fehlermeldung statt stillschweigend verarbeitet zu werden.
+_SUPPORTED_YOUTUBE_DOMAINS = re.compile(
+    r"(?:^|\.)(?:youtube\.com|youtu\.be|music\.youtube\.com)(?:/|$)",
+    re.IGNORECASE,
+)
+
+
+def _is_supported_download_url(url: str) -> bool:
+    """Prüft, ob eine URL von einer unterstützten YouTube-Domain stammt."""
+    try:
+        from urllib.parse import urlparse
+
+        netloc = urlparse(url.strip()).netloc.lower()
+    except Exception:
+        return False
+    return bool(_SUPPORTED_YOUTUBE_DOMAINS.search(netloc))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONCURRENCY-LIMIT (Ressourcen-Schutz)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# DownloadHandler wird pro Telegram-Update NEU instanziiert (siehe
+# RichMenuHandler._create_download_handler: "Erstellt eine neue
+# DownloadHandler-Instanz"). Ein Semaphore als Instanzattribut wuerde also
+# NICHT prozessweit begrenzen - jede neue Instanz haette ihr eigenes,
+# volles Kontingent. Config.MAX_CONCURRENT_DOWNLOADS war zwar definiert,
+# wurde aber nirgends gelesen/durchgesetzt. Der Semaphore lebt daher auf
+# Modul-Ebene, geteilt über alle DownloadHandler-Instanzen hinweg.
+_download_semaphore: Optional[asyncio.Semaphore] = None
+
+
+def _get_download_semaphore(config) -> asyncio.Semaphore:
+    global _download_semaphore
+    if _download_semaphore is None:
+        max_concurrent = getattr(config, "MAX_CONCURRENT_DOWNLOADS", 3) or 3
+        _download_semaphore = asyncio.Semaphore(max_concurrent)
+    return _download_semaphore
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -862,12 +913,27 @@ class DownloadHandler:
             f"📤 [DISPATCH] Neue URL empfangen: {url[:100]}"
         )
 
-        if _is_spotify_url(url):
-            self.logger.info("📤 [DISPATCH] → Spotify-URL erkannt → spotify-Pipeline")
-            await self.handle_spotify_url(update, context, url)
-        else:
-            self.logger.info("📤 [DISPATCH] → YouTube/Generic-URL → YT-Pipeline")
-            await self.handle_youtube_links(update, context)
+        is_spotify = _is_spotify_url(url)
+        if not is_spotify and not _is_supported_download_url(url):
+            self.logger.warning(
+                f"🚫 [DISPATCH] Nicht unterstützte URL abgelehnt: {url[:100]}"
+            )
+            await update.message.reply_text(
+                "⚠️ Diese URL wird nicht unterstützt. Bitte einen YouTube- "
+                "oder Spotify-Link senden."
+            )
+            return
+
+        semaphore = _get_download_semaphore(self.config)
+        async with semaphore:
+            if is_spotify:
+                self.logger.info(
+                    "📤 [DISPATCH] → Spotify-URL erkannt → spotify-Pipeline"
+                )
+                await self.handle_spotify_url(update, context, url)
+            else:
+                self.logger.info("📤 [DISPATCH] → YouTube-URL erkannt → YT-Pipeline")
+                await self.handle_youtube_links(update, context)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # YOUTUBE-PIPELINE

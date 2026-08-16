@@ -286,7 +286,7 @@ async def enhanced_download_with_retry(
 
         try:
             logger.info("🔍 [DL] yt-dlp: Extrahiere Metadaten (download=False)...")
-            info = enhanced_processor.download_executor.extract_info(
+            info = await enhanced_processor.download_executor.extract_info_async(
                 url, ydl_opts, download=False
             )
 
@@ -418,6 +418,18 @@ async def _process_playlist_download(
     entries = playlist_info.get("entries", [])
     if not entries:
         raise DownloadError("Playlist ist leer oder konnte nicht geladen werden")
+
+    # Ressourcen-Limit durchsetzen: MAX_PLAYLIST_ITEMS war in config.py
+    # definiert, wurde aber nirgends in der Pipeline gelesen - eine Playlist
+    # mit tausenden Eintraegen wurde bisher komplett unbegrenzt verarbeitet
+    # (unbegrenzter Speicher-/Bandbreiten-/Zeitverbrauch pro Anfrage).
+    max_playlist_items = getattr(enhanced_processor.config, "MAX_PLAYLIST_ITEMS", None)
+    if max_playlist_items and len(entries) > max_playlist_items:
+        logger.warning(
+            f"⚠️ [PL] Playlist hat {len(entries)} Einträge, "
+            f"kürze auf MAX_PLAYLIST_ITEMS={max_playlist_items}"
+        )
+        entries = entries[:max_playlist_items]
 
     logger.info(
         f"\n{'═'*60}\n"
@@ -840,7 +852,7 @@ async def _process_single_download(
     logger.info(f"⬇️  [DL] Starte Single-Download: {url[:80]}")
 
     try:
-        download_info = enhanced_processor.download_executor.extract_info(
+        download_info = await enhanced_processor.download_executor.extract_info_async(
             url, ydl_opts, download=True
         )
 

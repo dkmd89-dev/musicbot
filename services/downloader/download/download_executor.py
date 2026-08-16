@@ -71,6 +71,16 @@ class DownloadExecutor:
             "postprocessor_args": ["-threads", "4"],
         }
 
+        max_duration = getattr(config, "MAX_DURATION", None)
+        if max_duration:
+            opts["match_filter"] = self._build_duration_match_filter(
+                config, max_duration
+            )
+            self.logger.debug(
+                f"⏱️ [YDL-OPTS] Dauer-Filter aktiv: max. {max_duration}s "
+                f"(Podcast-Kanäle ausgenommen)"
+            )
+
         cookie_file = Path("cookies.txt")
         if cookie_file.exists():
             opts["cookiefile"] = str(cookie_file)
@@ -88,6 +98,49 @@ class DownloadExecutor:
         )
         return opts
 
+    def _build_duration_match_filter(self, config, max_duration: int):
+        """
+        Baut einen yt-dlp `match_filter`-Callback, der Videos über
+        `max_duration` Sekunden ablehnt - AUSSER der Kanal ist als Podcast
+        im Spezialkanal-Mapping hinterlegt (Podcasts sind typischerweise
+        deutlich länger als Musik-Tracks und sollen nicht limitiert werden).
+
+        Vorher wurde `Config.MAX_DURATION` nur in der ungenutzten
+        `Config.YTDL_BASE_OPTIONS`-Property unter dem Key "max_duration"
+        gesetzt - das ist kein echter yt-dlp-Options-Key UND
+        `YTDL_BASE_OPTIONS` selbst hat keinerlei Aufrufer im Repo. Die
+        tatsächlich verwendeten Optionen kommen ausschließlich aus dieser
+        Methode (`build_ydl_opts`), die `max_duration` bisher gar nicht
+        kannte - das Limit war also komplett wirkungslos.
+
+        Podcast-Erkennung nutzt dieselbe Quelle wie FilenameFixerTool
+        (`load_special_channels_merged`/`get_special_channel_info`), damit
+        das Verhalten konsistent mit der restlichen Pipeline bleibt.
+        """
+        from utils.filenamefixer import (
+            get_special_channel_info,
+            load_special_channels_merged,
+        )
+
+        special_channels = load_special_channels_merged(config)
+
+        def _duration_filter(info_dict, *, incomplete=False):
+            duration = info_dict.get("duration")
+            if not duration or duration <= max_duration:
+                return None
+
+            channel_name = info_dict.get("uploader") or info_dict.get("channel") or ""
+            channel_info = get_special_channel_info(channel_name, special_channels)
+            if channel_info and channel_info[0].lower() == "podcast":
+                return None
+
+            return (
+                f"Video zu lang ({duration}s > {max_duration}s MAX_DURATION) "
+                f"und kein erkannter Podcast-Kanal"
+            )
+
+        return _duration_filter
+
     # ─────────────────────────────────────────────────────────────────────────
     # INFO-EXTRAKTION (für Haupt-Retry-Loop & Single-Download)
     # ─────────────────────────────────────────────────────────────────────────
@@ -101,9 +154,34 @@ class DownloadExecutor:
         Wirft Exceptions unverändert weiter – die Haupt-Retry-Logik
         (inkl. Backoff & Fehlerklassifikation) bleibt in
         `enhanced_download_with_retry()`.
+
+        ACHTUNG: Diese Methode ist synchron/blockierend (yt-dlp macht
+        eigene, blockierende Netzwerk-Calls). Aus async-Kontext IMMER
+        `extract_info_async()` verwenden, niemals diese Methode direkt
+        aufrufen - siehe dort.
         """
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=download)
+
+    async def extract_info_async(
+        self, url: str, ydl_opts: Dict[str, Any], download: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Async-Wrapper um extract_info(): fuehrt den blockierenden yt-dlp-
+        Aufruf in einem Executor-Thread aus (asyncio.run_in_executor),
+        damit der asyncio-Event-Loop waehrend Metadaten-Extraktion/Download
+        NICHT blockiert wird.
+
+        Vorher wurde extract_info() direkt aus async-Funktionen aufgerufen -
+        das blockierte den kompletten Event-Loop fuer die gesamte Dauer
+        jedes Downloads, wodurch der Bot fuer ALLE Nutzer (nicht nur den
+        gerade downloadenden) unresponsive wurde, bis der Aufruf fertig war.
+        Mirrort das bereits korrekte Muster aus spotify_downloader.py.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: self.extract_info(url, ydl_opts, download)
+        )
 
     # ─────────────────────────────────────────────────────────────────────────
     # EINZEL-TRACK-DOWNLOAD (Playlist-Kontext, mit einfacher Retry-Logik)
@@ -157,8 +235,16 @@ class DownloadExecutor:
             )
 
             try:
-                with yt_dlp.YoutubeDL(track_ydl_opts) as ydl:
-                    download_info = ydl.extract_info(track_url, download=True)
+                def _do_download() -> Optional[Dict[str, Any]]:
+                    with yt_dlp.YoutubeDL(track_ydl_opts) as ydl:
+                        return ydl.extract_info(track_url, download=True)
+
+                # run_in_executor statt direktem Aufruf - blockiert sonst
+                # den Event-Loop fuer die gesamte Download-Dauer (siehe
+                # extract_info_async()-Docstring).
+                download_info = await asyncio.get_running_loop().run_in_executor(
+                    None, _do_download
+                )
 
                 downloaded_file = self.find_downloaded_file(download_info, track_ydl_opts)
 
