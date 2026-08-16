@@ -1194,6 +1194,27 @@ class RichMenuSystem:
                 await self._handle_back(update, context)
                 return
 
+            # ── Zentrale Admin-Prüfung für sicherheitsrelevante Präfixe ──
+            # handle_callback dispatchte diese Callbacks bisher ohne jede
+            # Berechtigungsprüfung. callback_data ist ein von jedem Telegram-
+            # Client frei sendbarer String, nicht an tatsächlich gerenderte
+            # Buttons gebunden - jeder Nutzer konnte z.B. per
+            # "usermgmt_set_role_<eigene_id>_owner" sich selbst zum Owner
+            # machen. is_accessible() in render_menu() blendet Buttons nur
+            # aus, prüft aber nichts beim tatsächlichen Callback-Empfang.
+            # (erradmin: und restart: haben bereits eigene Admin-Checks in
+            # ihren jeweiligen Dispatchern.)
+            _ADMIN_ONLY_PREFIXES = ("logger_", "usermgmt_", "dup:", "backup_")
+            if callback_data.startswith(_ADMIN_ONLY_PREFIXES) and not self._is_admin_check(
+                user_id
+            ):
+                self.logger.warning(
+                    f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte Admin-Callback: "
+                    f"{callback_data}"
+                )
+                await query.answer("⛔ Keine Berechtigung", show_alert=True)
+                return
+
             # ── Logger (hohe Priorität wegen Paginierung) ─────────────
             if callback_data.startswith("logger_modules_page_"):
                 page = int(callback_data.replace("logger_modules_page_", ""))

@@ -871,8 +871,22 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
     ):
         """Zeigt Details zu einer spezifischen Log-Datei"""
         try:
-            log_dir = Path(getattr(self.config, "LOG_DIR", "logs"))
-            file_path = log_dir / filename
+            log_dir = Path(getattr(self.config, "LOG_DIR", "logs")).resolve()
+            # Sicherheit: filename kommt unvalidiert aus callback_data
+            # (logger_file_detail_<filename>). Ohne diese Pruefung wuerde
+            # ".."-Traversal oder ein absoluter Pfad (Path.__truediv__
+            # verwirft bei absoluten rechten Operanden den linken Teil
+            # komplett) beliebige lesbare Dateien auf dem Host preisgeben.
+            candidate_path = (log_dir / filename).resolve()
+            if not candidate_path.is_relative_to(log_dir):
+                self.logger.warning(
+                    f"🚨 [SECURITY] Log-Datei-Anfrage außerhalb von {log_dir}: {filename}"
+                )
+                await update.callback_query.edit_message_text(
+                    "❌ Ungültiger Dateiname"
+                )
+                return
+            file_path = candidate_path
 
             if not file_path.exists():
                 await update.callback_query.edit_message_text(
