@@ -163,7 +163,14 @@ class DuplicateCache:
             self.logger.error(f"❌ Fehler beim Speichern der Caches: {e}")
 
     def get_url_hash(self, url: str) -> str:
-        normalized_url = url.split("&")[0].split("?")[0]
+        # Nutzt dieselbe YouTube-bewusste Normalisierung wie check_url_duplicate()
+        # (CACHE-001-Fix): vorher normalisierte get_url_hash() nur grob (Query-
+        # String abschneiden), waehrend check_url_duplicate() ueber
+        # _normalize_url_for_cache() z.B. youtu.be/<id> und watch?v=<id> als
+        # gleiche URL erkennt. add_entry()/invalidate_entry() nutzten den
+        # groben Hash als Dict-Key - eine Invalidierung mit einer anders
+        # formatierten, aber aequivalenten URL schlug dadurch still fehl.
+        normalized_url = self._normalize_url_for_cache(url)
         return hashlib.md5(normalized_url.encode("utf-8")).hexdigest()
 
     def get_content_hash(self, artist: str, title: str) -> str:

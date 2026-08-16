@@ -257,7 +257,12 @@ class GenreMapper(SingletonMixin):
 
         # 3. Genre-Hierarchie
         hierarchy_data = load_yaml_data(mapping_path / "genre_hierarchy.yaml")
-        self.hierarchy = hierarchy_data.get("GENRE_HIERARCHY", hierarchy_data) or {}
+        raw_hierarchy = hierarchy_data.get("GENRE_HIERARCHY", hierarchy_data) or {}
+        # Keys lowercased wie artist_map/channel_map (siehe _parse_genre_mappings) -
+        # get_main_genre() sucht mit einem lowercased Key, die YAML-Keys sind aber
+        # Title-Case ("Ruhrpott Rap"). Ohne diese Normalisierung trifft der
+        # Hierarchie-Lookup praktisch nie (GENRE-003).
+        self.hierarchy = {str(k).lower(): v for k, v in raw_hierarchy.items()}
         logger.info(f"   📊 {len(self.hierarchy)} Hierarchie-Einträge geladen")
 
         # 4. Genre-Overrides
@@ -374,7 +379,12 @@ class GenreMapper(SingletonMixin):
             return ""
 
         key = sub_genre.lower().strip()
-        return self.hierarchy.get(key, sub_genre)
+        # "or sub_genre" statt .get(key, sub_genre): Top-Level-Genres sind in
+        # genre_hierarchy.yaml als Key mit Parent "null" (Python None) hinterlegt
+        # (z.B. "Deutschrap: null"). Der Key EXISTIERT dann im Dict mit Wert
+        # None, weshalb .get(key, sub_genre) den Default NICHT greifen wuerde
+        # und faelschlich None statt sub_genre zurueckgeben wuerde.
+        return self.hierarchy.get(key) or sub_genre
 
     @lru_cache(maxsize=2048)
     def normalize_genre_name(self, genre_name: str) -> str:

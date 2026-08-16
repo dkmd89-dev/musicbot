@@ -96,6 +96,48 @@ class TestUrlDuplicate:
         assert reason == "none"
 
 
+class TestUrlHashConsistencyCache001Fix:
+    """
+    CACHE-001 (gefixt): get_url_hash() (genutzt von add_entry()/
+    invalidate_entry() als Dict-Key) normalisierte URLs frueher nur grob
+    (Query-String abschneiden), waehrend check_url_duplicate() ueber
+    _normalize_url_for_cache() youtu.be/<id> und watch?v=<id> als
+    dieselbe URL erkennt. get_url_hash() nutzt jetzt dieselbe Normalisierung -
+    dieser Test verifiziert, dass beide Formen jetzt denselben Hash liefern
+    und dass invalidate_entry() eine per anderer URL-Form registrierte
+    URL findet.
+    """
+
+    def test_equivalent_youtube_urls_produce_the_same_hash(self, handler):
+        cache = handler.duplicate_cache
+        h1 = cache.get_url_hash("https://youtu.be/ABC123")
+        h2 = cache.get_url_hash("https://www.youtube.com/watch?v=ABC123")
+        h3 = cache.get_url_hash("https://www.youtube.com/watch?v=ABC123&list=PL999")
+        assert h1 == h2 == h3
+
+    def test_invalidate_entry_finds_entry_registered_under_different_url_form(
+        self, handler
+    ):
+        handler.register_download(
+            "https://youtu.be/ABC123", "Some Artist", "Some Song"
+        )
+        assert (
+            handler.duplicate_cache.check_url_duplicate(
+                "https://www.youtube.com/watch?v=ABC123"
+            )
+            is not None
+        )
+
+        handler.invalidate_entry(url="https://www.youtube.com/watch?v=ABC123")
+
+        assert (
+            handler.duplicate_cache.check_url_duplicate(
+                "https://youtu.be/ABC123"
+            )
+            is None
+        )
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Layer 2: Content-Duplikat (Artist + Titel)
 # ─────────────────────────────────────────────────────────────────────────
