@@ -3,13 +3,20 @@ Characterization-Tests fuer ArtistNormalizer.normalize() (utils/artist_map.py),
 Phase 2 - bislang nur indirekt ueber ArtistProcessor.determine_best_artist
 mit unauffaelligen Strings getestet (tests/test_metadata_modules.py).
 
-Enthaelt auch die zurueckgestellte Charakterisierung der bekannten
-ARTIST-001-Architektur-Inkonsistenz (siehe docs/MusicBot_ENGINEERING_BASELINE.md):
-normalize() wird auf unaufgeteilte Collaboration-Strings angewendet, bevor
-Haupt-/Feature-Artist getrennt werden, was bei gemischten Trennzeichen
-(z.B. "&" + "feat.") den Haupt-Artist-Anteil zu einem Feature degradiert
-und stilisierte Schreibweisen (z.B. "GReeeN") einebnet. Dieser Test friert
-das aktuelle Verhalten ein, ohne es zu fixen.
+Enthaelt auch die Charakterisierung von ArtistNormalizer.normalize()s
+Collaboration-Verhalten direkt (unveraendert): normalize() selbst kennt
+weiterhin kein Konzept von Haupt- vs. Feature-Artist und flacht jeden
+Collaboration-String (z.B. "&" + "feat.") zu einer gleichrangigen
+Komma-Liste ab, inkl. Verlust stilisierter Schreibweisen (z.B. "GReeeN"
+-> "Green"). ARTIST-001 selbst (die daraus resultierende Fehlklassifizierung
+von Feature-Artists) ist inzwischen behoben - aber NICHT durch eine
+Aenderung an normalize() (das wird von 13+ unabhaengigen Stellen im Repo
+genutzt), sondern indem ArtistProcessor.determine_best_artist() Haupt-/
+Feature-Artist bereits VOR dem Aufruf von normalize() trennt und nur den
+Hauptteil normalisiert (siehe tests/test_metadata_modules.py,
+test_determine_best_artist_keeps_compound_main_artist_with_mixed_separators).
+Die hier charakterisierten Tests bleiben als Beleg fuer normalize()s
+eigenes, weiterhin unveraendertes Verhalten bestehen.
 
 WICHTIG: ArtistConfig.mapping_dir wird IMMER explizit auf tmp_path gesetzt.
 Ohne das faellt ArtistNormalizer._load_case_preserve()/_load_auto_learned()
@@ -123,9 +130,9 @@ class TestStandardNormalizationRules:
 
 class TestCollaborationArchitectureCharacterization:
     """
-    ARTIST-001 (zurueckgestellt, nur charakterisiert): normalize() laeuft
-    auf dem unaufgeteilten Collaboration-String, bevor irgendeine
-    Haupt-/Feature-Trennung stattfindet.
+    normalize() selbst laeuft weiterhin auf dem unaufgeteilten Collaboration-
+    String (bewusst unveraendert, siehe Modul-Docstring). ARTIST-001 ist auf
+    determine_best_artist()-Ebene behoben, nicht hier.
     """
 
     def test_single_feat_keyword_preserves_order_but_loses_styled_casing(

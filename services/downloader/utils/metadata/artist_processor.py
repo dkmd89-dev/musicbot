@@ -30,12 +30,22 @@ class ArtistProcessor:
         parsed_artist: str,
         dominant_artist: str,
         channel_name: str,
-    ) -> Tuple[str, str]:
+    ) -> Tuple[str, str, List[str]]:
         """
         Bestimmt den besten Künstlernamen aus den verfügbaren Quellen.
-        Gibt (artist_name, source) zurück.
+        Gibt (artist_name, source, feat_artists) zurück.
 
         Priorität: dominant_artist > parsed_artist > raw_artist > channel_name
+
+        ARTIST-001-Fix: Haupt-/Feature-Artist werden VOR der Normalisierung
+        getrennt (split_main_and_featuring), nicht danach. Vorher lief der
+        komplette, unaufgeteilte Collaboration-String (z.B. "GReeeN & 1986zig
+        feat. Bausa") durch ArtistNormalizer.normalize(), das jede
+        Collaboration zu einer gleichrangigen Komma-Liste abflacht - ein
+        nachgelagerter Re-Split in enhanced_metadata_processor.py konnte
+        einen urspruenglich zusammengesetzten Hauptartist (hier "GReeeN &
+        1986zig") dann nicht mehr von echten Features unterscheiden und
+        degradierte z.B. "1986zig" faelschlich zum Feature.
         """
         self.logger.debug("🎤 Artist-Bestimmung:")
         self.logger.debug(f"   Raw Artist: '{raw_artist}'")
@@ -43,50 +53,56 @@ class ArtistProcessor:
         self.logger.debug(f"   Dominant Artist: '{dominant_artist}'")
         self.logger.debug(f"   Channel Name: '{channel_name}'")
 
-        def _clean_and_normalize(artist_str: str) -> Tuple[Optional[str], str]:
+        def _clean_and_normalize(
+            artist_str: str,
+        ) -> Tuple[Optional[str], str, List[str]]:
             if not artist_str:
-                return None, "none"
+                return None, "none", []
             cleaned = self.clean_artist_before_normalization(artist_str)
             if not cleaned or len(cleaned) < 2:
-                return None, "cleaned_invalid"
-            normalized = self.artist_normalizer.normalize(cleaned)
+                return None, "cleaned_invalid", []
+            main_part, feat_parts = split_main_and_featuring(cleaned)
+            main_part = main_part or cleaned
+            normalized = self.artist_normalizer.normalize(main_part)
             if normalized and normalized.lower() != "unknown":
-                return normalized, "normalized"
-            return cleaned, "cleaned_raw_fallback"
+                return normalized, "normalized", feat_parts
+            return main_part, "cleaned_raw_fallback", feat_parts
 
         if dominant_artist:
-            norm_dom, src_dom = _clean_and_normalize(dominant_artist)
+            norm_dom, src_dom, feat_dom = _clean_and_normalize(dominant_artist)
             if src_dom in ["normalized", "cleaned_raw_fallback"]:
                 self.logger.debug(f"🎤 Artist aus Dominant/Playlist: '{norm_dom}'")
-                return norm_dom, "playlist_dominant"
+                return norm_dom, "playlist_dominant", feat_dom
 
-        norm_parsed, src_parsed = _clean_and_normalize(parsed_artist)
+        norm_parsed, src_parsed, feat_parsed = _clean_and_normalize(parsed_artist)
         if src_parsed in ["normalized", "cleaned_raw_fallback"]:
             self.logger.debug(f"🎤 Artist aus YouTube-Parser: '{norm_parsed}'")
-            return norm_parsed, "youtube_parsed"
+            return norm_parsed, "youtube_parsed", feat_parsed
 
-        norm_raw, src_raw = _clean_and_normalize(raw_artist)
+        norm_raw, src_raw, feat_raw = _clean_and_normalize(raw_artist)
         if (
             src_raw in ["normalized", "cleaned_raw_fallback"]
             and norm_raw != norm_parsed
         ):
             self.logger.debug(f"🎤 Artist aus Raw-Metadaten: '{norm_raw}'")
-            return norm_raw, "raw_metadata"
+            return norm_raw, "raw_metadata", feat_raw
 
         channel_primary = self.clean_artist_before_normalization(channel_name)
-        norm_channel, src_channel = _clean_and_normalize(channel_primary)
+        norm_channel, src_channel, feat_channel = _clean_and_normalize(
+            channel_primary
+        )
 
         if src_channel in ["normalized", "cleaned_raw_fallback"]:
             if norm_channel != norm_parsed and norm_channel != norm_raw:
                 self.logger.warning(
                     f"🎤 Artist-Fallback auf Channel-Name: '{norm_channel}'"
                 )
-                return norm_channel, "channel_fallback"
+                return norm_channel, "channel_fallback", feat_channel
 
         self.logger.warning(
             "🎤❌ Keine gültigen Artist-Kandidaten gefunden, verwende Fallback"
         )
-        return "Unbekannter Künstler", "fallback"
+        return "Unbekannter Künstler", "fallback", []
 
     def find_known_artist_from_list(self, all_artists: List[str]) -> Optional[str]:
         """

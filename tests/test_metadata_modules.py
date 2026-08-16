@@ -108,7 +108,7 @@ class TestArtistProcessor(unittest.TestCase):
     
     def test_determine_best_artist_with_dominant(self):
         """Dominant Artist hat Vorrang"""
-        result, source = self.artist_processor.determine_best_artist(
+        result, source, feat_artists = self.artist_processor.determine_best_artist(
             raw_artist="Raw Artist",
             parsed_artist="Parsed Artist",
             dominant_artist="Dominant Artist",
@@ -116,10 +116,11 @@ class TestArtistProcessor(unittest.TestCase):
         )
         self.assertEqual(result, "Dominant Artist")
         self.assertEqual(source, "playlist_dominant")
-    
+        self.assertEqual(feat_artists, [])
+
     def test_determine_best_artist_with_parsed(self):
         """Parsed Artist wenn kein Dominant"""
-        result, source = self.artist_processor.determine_best_artist(
+        result, source, feat_artists = self.artist_processor.determine_best_artist(
             raw_artist=None,
             parsed_artist="Parsed Artist",
             dominant_artist=None,
@@ -127,10 +128,11 @@ class TestArtistProcessor(unittest.TestCase):
         )
         self.assertEqual(result, "Parsed Artist")
         self.assertEqual(source, "youtube_parsed")
-    
+        self.assertEqual(feat_artists, [])
+
     def test_determine_best_artist_with_raw(self):
         """Raw Artist als Fallback"""
-        result, source = self.artist_processor.determine_best_artist(
+        result, source, feat_artists = self.artist_processor.determine_best_artist(
             raw_artist="Raw Artist",
             parsed_artist=None,
             dominant_artist=None,
@@ -138,10 +140,11 @@ class TestArtistProcessor(unittest.TestCase):
         )
         self.assertEqual(result, "Raw Artist")
         self.assertEqual(source, "raw_metadata")
-    
+        self.assertEqual(feat_artists, [])
+
     def test_determine_best_artist_with_channel_fallback(self):
         """Channel Name als letzter Fallback"""
-        result, source = self.artist_processor.determine_best_artist(
+        result, source, feat_artists = self.artist_processor.determine_best_artist(
             raw_artist=None,
             parsed_artist=None,
             dominant_artist=None,
@@ -149,6 +152,43 @@ class TestArtistProcessor(unittest.TestCase):
         )
         self.assertEqual(result, "Channel Only")
         self.assertEqual(source, "channel_fallback")
+        self.assertEqual(feat_artists, [])
+
+    def test_determine_best_artist_splits_main_from_feature_single_separator(self):
+        """
+        ARTIST-001-Fix: Haupt-/Feature-Trennung passiert VOR der
+        Normalisierung, nicht danach - der Hauptartist bleibt korrekt,
+        das Feature landet separat in feat_artists statt im Hauptartist-
+        String verschmolzen zu werden.
+        """
+        result, source, feat_artists = self.artist_processor.determine_best_artist(
+            raw_artist="1986zig feat. GReeeN",
+            parsed_artist=None,
+            dominant_artist=None,
+            channel_name="Channel"
+        )
+        self.assertEqual(result, "1986zig")
+        self.assertEqual(feat_artists, ["GReeeN"])
+
+    def test_determine_best_artist_keeps_compound_main_artist_with_mixed_separators(self):
+        """
+        Der eigentliche Bug-Fall: "GReeeN & 1986zig feat. Bausa" - vorher
+        wurde "1986zig" faelschlich zum Feature degradiert, weil
+        ArtistNormalizer.normalize() den kompletten String zu einer
+        gleichrangigen Komma-Liste abflachte, BEVOR eine Haupt-/Feature-
+        Trennung stattfand. Jetzt wird zuerst getrennt (main="GReeeN &
+        1986zig", feat=["Bausa"]) und nur der Hauptteil normalisiert -
+        "1986zig" bleibt Teil des Hauptartists, nicht Feature.
+        """
+        result, source, feat_artists = self.artist_processor.determine_best_artist(
+            raw_artist="GReeeN & 1986zig feat. Bausa",
+            parsed_artist=None,
+            dominant_artist=None,
+            channel_name="Channel"
+        )
+        self.assertIn("1986zig", result)
+        self.assertNotIn("1986zig", [f.lower() for f in feat_artists])
+        self.assertEqual([f.lower() for f in feat_artists], ["bausa"])
     
     def test_clean_artist_before_normalization(self):
         """Bereinigung von Artist-Namen"""
@@ -187,7 +227,7 @@ class TestIntegration(unittest.TestCase):
         original_title = "Shape of You - Ed Sheeran (Official Music Video)"
         
         # Bestimme Artist
-        final_artist, source = artist_processor.determine_best_artist(
+        final_artist, source, _feat_artists = artist_processor.determine_best_artist(
             raw_artist="Ed Sheeran",
             parsed_artist=None,
             dominant_artist="Ed Sheeran",

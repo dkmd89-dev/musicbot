@@ -379,11 +379,13 @@ class EnhancedMetadataProcessor(SingletonMixin):
             if not _is_podcast_channel and _all_parsed_artists:
                 _first_artist = _all_parsed_artists[0].strip()
 
-            final_artist, artist_source = self.artist_processor.determine_best_artist(
-                raw_artist=_effective_raw_artist,
-                parsed_artist=_first_artist or youtube_parsed.get("artist"),
-                dominant_artist=_effective_dominant,
-                channel_name=channel_name,
+            final_artist, artist_source, feat_artists_from_determination = (
+                self.artist_processor.determine_best_artist(
+                    raw_artist=_effective_raw_artist,
+                    parsed_artist=_first_artist or youtube_parsed.get("artist"),
+                    dominant_artist=_effective_dominant,
+                    channel_name=channel_name,
+                )
             )
             if _first_artist:
                 artist_source = "first_artist_from_title"
@@ -396,9 +398,13 @@ class EnhancedMetadataProcessor(SingletonMixin):
             if artist_source == "playlist_dominant":
                 self.processing_stats.dominant_artist_used += 1
 
-            # Feature-Split
+            # Feature-Split (ARTIST-001-Fix: Haupt-/Feature-Trennung kommt
+            # jetzt bereits korrekt aus determine_best_artist() - VOR der
+            # Normalisierung ermittelt, statt hier ein zweites Mal auf dem
+            # bereits normalisierten (und dadurch ggf. abgeflachten)
+            # final_artist-String zu raten.)
             if not _is_podcast_channel:
-                main_artist, feat_artists_raw = split_main_and_featuring(final_artist)
+                feat_artists_raw = feat_artists_from_determination
                 if feat_artists_raw:
                     feat_artists = list(
                         dict.fromkeys(
@@ -406,10 +412,9 @@ class EnhancedMetadataProcessor(SingletonMixin):
                             for fa in feat_artists_raw
                             for fa_clean, _ in [split_main_and_featuring(fa)]
                             if fa_clean
-                            and fa_clean.strip().lower() != main_artist.strip().lower()
+                            and fa_clean.strip().lower() != final_artist.strip().lower()
                         )
                     )
-                    final_artist = main_artist
                 else:
                     feat_artists = []
             else:
@@ -1073,7 +1078,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
         parsed_artist: str,
         dominant_artist: str,
         channel_name: str,
-    ) -> Tuple[str, str]:
+    ) -> Tuple[str, str, List[str]]:
         return self.artist_processor.determine_best_artist(
             raw_artist=raw_artist,
             parsed_artist=parsed_artist,
