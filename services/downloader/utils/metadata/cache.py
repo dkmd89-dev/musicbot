@@ -1,6 +1,7 @@
 # services/downloader/utils/metadata/cache.py
 # -*- coding: utf-8 -*-
 
+import json
 import re
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -14,8 +15,29 @@ class MetadataCacheHandler:
     def __init__(self, metadata_cache: BaseMetadataCache, logger=None):
         self.metadata_cache = metadata_cache
         self.logger = logger or get_module_logger("MetadataCacheHandler")
+        self._video_id_index_path = self.metadata_cache.cache_path / "video_id_index.json"
+        self._video_id_index = self._load_video_id_index()
 
     def _normalize_cache_title(self, title: str) -> str: ...
+
+    def _load_video_id_index(self) -> Dict[str, Dict[str, str]]:
+        """Laedt video_id -> {"artist", "title"} Index (siehe TEST-003-Fix)."""
+        if not self._video_id_index_path.exists():
+            return {}
+        try:
+            with open(self._video_id_index_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            self.logger.warning(f"⚠️ Konnte video_id_index nicht laden: {e}")
+            return {}
+
+    def _save_video_id_index(self) -> None:
+        try:
+            with open(self._video_id_index_path, "w", encoding="utf-8") as f:
+                json.dump(self._video_id_index, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Konnte video_id_index nicht speichern: {e}")
 
     def check(
         self,
@@ -23,7 +45,69 @@ class MetadataCacheHandler:
         dominant_artist: Optional[str],
         final_artist: Optional[str] = None,
         clean_title: Optional[str] = None,
-    ) -> Optional[MetadataResult]: ...
+    ) -> Optional[MetadataResult]:
+        """
+        Cache-Hit-Pruefung (TEST-003-Fix).
+
+        check() wird VOR der Artist-/Titel-Bereinigung aufgerufen (nur rohe
+        track_metadata), waehrend store() NACH der Bereinigung unter
+        result.artist/result.title speichert - ein direkter Artist::Titel-
+        Lookup aus rohen Daten wuerde praktisch nie treffen. Stattdessen wird
+        die YouTube-Video-ID (track_metadata["id"]) als stabiler Zwischen-
+        Schluessel genutzt: sie ist bei YouTube- wie Spotify-Downloads
+        (gematchtes YouTube-Video) bereits zum Check-Zeitpunkt vorhanden und
+        aendert sich durch die Bereinigung nicht.
+        """
+        try:
+            video_id = track_metadata.get("id") if track_metadata else None
+            if not video_id:
+                return None
+
+            lookup = self._video_id_index.get(video_id)
+            if not lookup:
+                return None
+
+            cached = self.metadata_cache.get(lookup["artist"], lookup["title"])
+            if not cached:
+                return None
+
+            library_path_str = cached.get("library_path")
+            if library_path_str and not Path(library_path_str).exists():
+                self.logger.debug(
+                    f"💾 Cache-Eintrag fuer video_id={video_id} verweist auf "
+                    f"nicht mehr existierende Datei ({library_path_str}) → Miss"
+                )
+                return None
+
+            self.logger.debug(f"💾 Cache-Treffer fuer video_id={video_id}")
+            return MetadataResult(
+                success=cached.get("success", True),
+                title=cached.get("title"),
+                artist=cached.get("artist"),
+                album=cached.get("album"),
+                album_artist=cached.get("album_artist"),
+                year=cached.get("year"),
+                track_number=cached.get("track_number"),
+                genres=cached.get("genres"),
+                lyrics=cached.get("lyrics"),
+                lyrics_source=cached.get("lyrics_source"),
+                cover_embedded=cached.get("cover_embedded", False),
+                library_path=Path(library_path_str) if library_path_str else None,
+                original_metadata=track_metadata,
+                artist_source=cached.get("artist_source"),
+                genre_source=cached.get("genre_source"),
+                title_cleaned=cached.get("title_cleaned", False),
+                is_duplicate=cached.get("is_duplicate", False),
+                from_cache=True,
+                mb_recording_id=cached.get("musicbrainz_recording_id"),
+                mb_artist_id=cached.get("musicbrainz_artist_id"),
+                mb_release_id=cached.get("musicbrainz_release_id"),
+                mb_release_group_id=cached.get("musicbrainz_release_group_id"),
+                mb_isrc=cached.get("isrc"),
+            )
+        except Exception as e:
+            self.logger.warning(f"💾❌ Fehler bei Cache-Pruefung: {e}")
+            return None
 
     def store(self, result, dominant_artist, cover_source: str = None) -> None:
         """Speichert ein MetadataResult im Cache."""
@@ -77,6 +161,16 @@ class MetadataCacheHandler:
             self.logger.debug(
                 f"💾 Metadaten im Cache gespeichert: {cache_key_artist} - {normalized_title}"
             )
+
+            # TEST-003-Fix: video_id-Index aktuell halten, damit check() diesen
+            # Eintrag beim naechsten Mal ueber die stabile Video-ID findet.
+            video_id = orig.get("id")
+            if video_id:
+                self._video_id_index[video_id] = {
+                    "artist": cache_key_artist,
+                    "title": normalized_title,
+                }
+                self._save_video_id_index()
         except Exception as e:
             self.logger.warning(f"💾❌ Fehler beim Speichern im Cache: {e}")
 

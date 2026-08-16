@@ -1,20 +1,21 @@
 """
-Characterization-Tests fuer MetadataCacheHandler
-(services/downloader/utils/metadata/cache.py), Phase 1 Engineering Baseline.
+Tests fuer MetadataCacheHandler (services/downloader/utils/metadata/cache.py).
 
-WICHTIGER FUND waehrend der Exploration (siehe docs/MusicBot_ENGINEERING_BASELINE.md,
-Risiko CACHE-001): check() und _normalize_cache_title() sind seit dem allerersten
-Commit reine Stubs (Methodenrumpf nur "..."), geben also immer None zurueck.
-enhanced_metadata_processor.py ruft cache_handler.check() als Cache-Hit-Pruefung
-auf (Zeile 223 und 1058) - der Cache-Hit-Pfad der Metadata-Pipeline ist damit
-in Produktion vollstaendig wirkungslos, jeder Track durchlaeuft immer die volle
-Pipeline inkl. externer API-Calls.
+TEST-003 (siehe docs/MusicBot_ENGINEERING_BASELINE.md): check() und
+_normalize_cache_title() waren seit dem allerersten Commit reine Stubs
+(Methodenrumpf nur "..."), gaben also immer None zurueck. Der Cache-Hit-Pfad
+der Metadata-Pipeline war dadurch in Produktion vollstaendig wirkungslos -
+jeder Track durchlief immer die volle Pipeline inkl. externer API-Calls.
+In Phase 1 wurde das bewusst nur charakterisiert; check() ist jetzt (Phase 2,
+Fortsetzung) implementiert.
 
-Der Nutzer hat entschieden, dieses Verhalten in Phase 1 nur zu charakterisieren
-(einzufrieren), NICHT zu fixen - eine echte Implementierung aendert das
-Laufzeitverhalten des Bots spuerbar (weniger externe API-Calls) und braucht
-mehr Testabdeckung als hier vorgesehen. Der Fix ist ein offener Punkt fuer eine
-spaetere, bewusste Entscheidung.
+Design: check() wird VOR der Artist-/Titel-Bereinigung aufgerufen (nur rohe
+track_metadata), store() speichert NACH der Bereinigung unter dem finalen
+Artist/Titel - ein direkter Artist::Titel-Lookup aus rohen Daten wuerde
+praktisch nie treffen. check()/store() nutzen daher zusaetzlich einen
+video_id-Index (track_metadata["id"], stabil ueber Roh- und Bereinigungs-
+Phase hinweg) als Zwischenschluessel. _normalize_cache_title() bleibt
+bewusst ein Stub (store()s bestehender .lower().strip()-Fallback reicht).
 
 store() und invalidate() sind NICHT gestubbt und werden hier gegen die echte
 zugrunde liegende utils.metadata_cache.MetadataCache getestet.
@@ -39,40 +40,116 @@ def cache_handler(base_cache):
     return MetadataCacheHandler(base_cache)
 
 
-class TestCheckIsCurrentlyAStub:
-    """
-    Dokumentiert das aktuelle (kaputte) Verhalten: check() gibt IMMER None
-    zurueck, unabhaengig davon, ob vorher ein passender Eintrag gespeichert
-    wurde. Das ist bewusst KEIN Test fuer "korrektes" Cache-Hit-Verhalten -
-    er faengt eine Regression ab, falls sich check() unbemerkt aendert,
-    bevor eine bewusste Fix-Entscheidung getroffen wird.
-    """
-
+class TestCheckCacheHitBehavior:
     def test_check_returns_none_on_empty_cache(self, cache_handler):
         result = cache_handler.check(
-            track_metadata={"title": "Some Song"}, dominant_artist="Some Artist"
+            track_metadata={"title": "Some Song", "id": "VID123"},
+            dominant_artist="Some Artist",
         )
         assert result is None
 
-    def test_check_returns_none_even_after_matching_store(
-        self, cache_handler, base_cache
-    ):
+    def test_check_returns_none_without_video_id(self, cache_handler, base_cache):
         stored = MetadataResult(
-            success=True, title="Some Song", artist="Some Artist"
+            success=True,
+            title="Some Song",
+            artist="Some Artist",
+            original_metadata={"id": "VID123"},
         )
         cache_handler.store(stored, dominant_artist="Some Artist")
 
-        # Der zugrunde liegende Cache hat den Eintrag tatsaechlich gespeichert...
-        assert base_cache.get("some artist", "some song") is not None
-
-        # ...aber check() ist ein Stub und liefert trotzdem immer None.
+        # track_metadata ohne "id" -> kein verlaesslicher Zwischenschluessel
+        # moeglich, auch wenn inhaltlich derselbe Track gemeint ist.
         result = cache_handler.check(
             track_metadata={"title": "Some Song", "artist": "Some Artist"},
             dominant_artist="Some Artist",
         )
         assert result is None
 
-    def test_normalize_cache_title_always_returns_none(self, cache_handler):
+    def test_check_returns_none_for_unknown_video_id(self, cache_handler, base_cache):
+        stored = MetadataResult(
+            success=True,
+            title="Some Song",
+            artist="Some Artist",
+            original_metadata={"id": "VID123"},
+        )
+        cache_handler.store(stored, dominant_artist="Some Artist")
+
+        result = cache_handler.check(
+            track_metadata={"id": "SOME_OTHER_VIDEO_ID"},
+            dominant_artist="Some Artist",
+        )
+        assert result is None
+
+    def test_check_finds_entry_via_video_id_after_store(
+        self, cache_handler, base_cache
+    ):
+        stored = MetadataResult(
+            success=True,
+            title="Clean Song Title",
+            artist="Clean Artist",
+            album="Some Album",
+            year=2021,
+            original_metadata={"id": "VID123"},
+        )
+        cache_handler.store(stored, dominant_artist="Clean Artist")
+
+        # check() bekommt nur die ROHEN track_metadata, wie sie vor der
+        # Artist-/Titel-Bereinigung vorliegen wuerden - Titel/Artist weichen
+        # bewusst von den gespeicherten (bereinigten) Werten ab.
+        result = cache_handler.check(
+            track_metadata={
+                "id": "VID123",
+                "title": "Clean Artist - Clean Song Title (Official Video)",
+                "artist": "Clean Artist - Topic",
+            },
+            dominant_artist=None,
+        )
+
+        assert result is not None
+        assert result.from_cache is True
+        assert result.title == "Clean Song Title"
+        assert result.artist == "Clean Artist"
+        assert result.album == "Some Album"
+        assert result.year == 2021
+
+    def test_check_returns_none_when_library_file_no_longer_exists(
+        self, cache_handler, tmp_path
+    ):
+        missing_file = tmp_path / "library" / "Clean Artist" / "Song.m4a"
+        stored = MetadataResult(
+            success=True,
+            title="Some Song",
+            artist="Some Artist",
+            library_path=missing_file,
+            original_metadata={"id": "VID123"},
+        )
+        cache_handler.store(stored, dominant_artist="Some Artist")
+
+        result = cache_handler.check(
+            track_metadata={"id": "VID123"}, dominant_artist=None
+        )
+        assert result is None
+
+    def test_check_hit_when_library_file_exists(self, cache_handler, tmp_path):
+        real_file = tmp_path / "Song.m4a"
+        real_file.write_bytes(b"fake audio")
+        stored = MetadataResult(
+            success=True,
+            title="Some Song",
+            artist="Some Artist",
+            library_path=real_file,
+            original_metadata={"id": "VID123"},
+        )
+        cache_handler.store(stored, dominant_artist="Some Artist")
+
+        result = cache_handler.check(
+            track_metadata={"id": "VID123"}, dominant_artist=None
+        )
+        assert result is not None
+        assert result.library_path == real_file
+
+    def test_normalize_cache_title_is_still_a_stub(self, cache_handler):
+        # Bewusst unangetastet - siehe Modul-Docstring.
         assert cache_handler._normalize_cache_title("Some Song") is None
 
 

@@ -64,6 +64,18 @@ class FakeExternalClient:
         return {}
 
 
+class CountingFakeExternalClient(FakeExternalClient):
+    """Wie FakeExternalClient, zaehlt aber Aufrufe - fuer den TEST-003-Beweis,
+    dass ein Cache-Hit externe Service-Aufrufe tatsaechlich ueberspringt."""
+
+    def __init__(self):
+        self.call_count = 0
+
+    async def fetch_metadata(self, *args, **kwargs):
+        self.call_count += 1
+        return await super().fetch_metadata(*args, **kwargs)
+
+
 @pytest.fixture
 def happy_path_config(tmp_path, mapping_dir_copy):
     return HappyPathConfig(tmp_path, mapping_dir_copy)
@@ -163,6 +175,70 @@ def test_happy_path_end_to_end(
     assert is_dup_again is True
     assert reason_again == "url"
     assert entry.artist == result.artist
+
+
+def test_second_call_with_same_video_id_is_a_cache_hit(
+    processor, filename_fixer, tmp_path
+):
+    """
+    TEST-003-Beweis: process_single_track() zweimal mit identischer
+    track_metadata["id"] aufrufen. Der zweite Aufruf muss ein echter
+    Cache-Hit sein (from_cache=True) UND die externen Service-Clients duerfen
+    NICHT erneut aufgerufen werden - das ist der eigentliche Zweck des Fixes
+    (vorher lief bei jedem Aufruf immer die volle Pipeline).
+
+    Die urspruengliche Quelldatei existiert beim zweiten Aufruf bereits
+    nicht mehr (move_to_library() hat sie beim ersten Durchlauf real in die
+    Library verschoben) - ein Cache-Hit kehrt in process_single_track()
+    aber schon in Schritt 2 (von 20) zurueck, lange vor dem erneuten
+    Dateisystem-Zugriff in Schritt 14. Dass der zweite Aufruf trotzdem
+    erfolgreich ist, beweist, dass die volle Pipeline tatsaechlich
+    uebersprungen wurde.
+    """
+    source = tmp_path / "cache_test.mp3"
+    source.write_bytes(b"fake-audio-bytes-not-real-mp3-data")
+
+    track_metadata = {
+        "title": "Cache Artist - Cache Song (Official Video)",
+        "artist": "Cache Artist",
+        "uploader": "Cache Artist",
+        "channel": "Cache Artist",
+        "id": "CACHEHIT123",
+        "filepath": str(source),
+        "cover_art": b"fake-cover-bytes",
+        "genre": "Hip Hop",
+    }
+
+    mb_client = CountingFakeExternalClient()
+    processor._mb_client = mb_client
+
+    first_result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=track_metadata,
+            file_utils=None,
+            filename_fixer=filename_fixer,
+        )
+    )
+    assert first_result.success is True
+    assert first_result.from_cache is False
+    assert mb_client.call_count >= 1
+    calls_after_first_run = mb_client.call_count
+
+    assert not source.exists()  # von move_to_library() bereits verschoben
+
+    second_result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=track_metadata,
+            file_utils=None,
+            filename_fixer=filename_fixer,
+        )
+    )
+
+    assert second_result.success is True
+    assert second_result.from_cache is True
+    assert second_result.title == first_result.title
+    assert second_result.artist == first_result.artist
+    assert mb_client.call_count == calls_after_first_run
 
 
 def test_missing_filepath_returns_graceful_failure(processor, filename_fixer):
