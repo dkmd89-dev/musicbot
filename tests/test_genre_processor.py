@@ -147,3 +147,99 @@ class TestDetermineGenreWithFallbacksManualMapping:
         assert result is not None
         assert result.primary == expected
         assert result.source == "artist_exact_manual"
+
+
+class FakeMusicBrainzClient:
+    def __init__(self, response):
+        self._response = response
+
+    async def fetch_metadata(self, title, artist):
+        return self._response
+
+
+class FakeLastFmClient:
+    def __init__(self, response):
+        self._response = response
+
+    async def fetch_metadata(self, title, artist, include_genre=True, mbid=None):
+        return self._response
+
+
+class TestDetermineGenreWithFallbacksExternalSteps:
+    """
+    Charakterisiert die Schritte 3-5 der Pipeline (MusicBrainz, Last.fm,
+    Feature-Artist-Inferenz), die in Phase 1 noch nicht getestet waren.
+    Alle Beispiele nutzen einen Artist/Titel ohne Eintrag in artist_genre.yaml/
+    channel_genre.yaml, damit die manuellen/lokalen Schritte 1-2 durchfallen
+    und der jeweils getestete Fallback-Schritt tatsaechlich greift.
+    """
+
+    async def _run(self, genre_processor, **kwargs):
+        return await genre_processor.determine_genre_with_fallbacks(
+            track_metadata={"title": kwargs.pop("title", "Some Song")},
+            artist_name=kwargs.pop("artist_name", "Totally Unknown Artist XYZ"),
+            channel_name=kwargs.pop("channel_name", "SomeUnknownChannel"),
+            **kwargs,
+        )
+
+    def test_musicbrainz_genre_hit_populates_mb_ids(self, genre_processor):
+        mb_client = FakeMusicBrainzClient(
+            {
+                "genre": "deutschrap",
+                "tags": ["hip hop", "rap"],
+                "recording_id": "abc-123",
+            }
+        )
+        result = asyncio.run(
+            self._run(genre_processor, mb_client=mb_client)
+        )
+
+        assert result is not None
+        assert result.primary == "Deutschrap"
+        assert result.source == "normalized"
+        assert result.mb_ids["recording_id"] == "abc-123"
+
+    def test_musicbrainz_ids_only_sentinel_when_no_genre(self, genre_processor):
+        mb_client = FakeMusicBrainzClient({"recording_id": "abc-123"})
+        result = asyncio.run(
+            self._run(genre_processor, mb_client=mb_client)
+        )
+
+        assert result is not None
+        assert result.source == "musicbrainz_ids_only"
+        assert result.mb_ids["recording_id"] == "abc-123"
+
+    def test_lastfm_fallback_used_when_musicbrainz_has_no_client(
+        self, genre_processor
+    ):
+        lfm_client = FakeLastFmClient({"tags": ["hip hop", "deutschrap"]})
+        result = asyncio.run(
+            self._run(genre_processor, mb_client=None, lfm_client=lfm_client)
+        )
+
+        assert result is not None
+        assert result.primary == "Deutschrap"
+        assert result.source == "lastfm_prioritized"
+
+    def test_feature_artist_inference_when_no_external_clients(
+        self, genre_processor
+    ):
+        result = asyncio.run(
+            self._run(
+                genre_processor,
+                mb_client=None,
+                lfm_client=None,
+                feat_artists=["Bausa"],
+            )
+        )
+
+        assert result is not None
+        assert result.primary == "Hip Hop"
+        assert result.source == "feature_inference"
+        assert result.confidence == 0.7
+
+    def test_no_match_anywhere_returns_none(self, genre_processor):
+        result = asyncio.run(
+            self._run(genre_processor, mb_client=None, lfm_client=None)
+        )
+        assert result is None

@@ -175,8 +175,13 @@ Response
 | ARCH-001 | Große Orchestrator-Klassen | P1 | offen — `process_single_track` bei der Phase-1-Exploration als noch größer bestätigt als angenommen (~750 Zeilen) |
 | CACHE-001 | Mehrere Cache-/Normalisierungswege (`get_url_hash` vs. `_normalize_url_for_cache` in `DuplicateCache`) | P1 | offen, bewusst nicht angefasst — nur in `tests/test_duplicate_handler.py` als beobachtetes Verhalten dokumentiert |
 | SEC-002 | Path Traversal über `sanitize_filename()` (`utils/helpers.py`): `ILLEGAL_CHARS_PATTERN` entfernte Schrägstriche u.a., aber keine literalen Punkte. Ein Artist-/Album-/Titel-Tag mit Wert `".."` (z.B. aus YouTube-Metadaten) überstand die Bereinigung unverändert und ließ `FilenameFixerTool.build_final_path()` das Zielverzeichnis verlassen — empirisch reproduziert (Datei landete eine Ebene über `library_dir`). Traf den Live-Pfad `move_to_library`, der bei jedem Download durchlaufen wird | P0 | **behoben** (Phase 2) — zwei Ebenen: (1) `sanitize_filename()` neutralisiert Ergebnisse, die nur aus Punkten bestehen; (2) `FilenameFixerTool._ensure_within_roots()` prüft den finalen Zielpfad defensiv gegen `library_dir`/`_podcast_dir`, bevor er zurückgegeben wird. 7 Tests in `tests/test_helpers_sanitize_filename.py` + 4 in `tests/test_filenamefixer.py::TestBuildFinalPathTraversalSecurity`, alle am unfixierten Code als tatsächlich fehlschlagend verifiziert |
+| TEST-004 | `LyricsCache.cleanup()` (`utils/lyrics_cache.py`) war seit jeher ein No-Op-Stub (loggte nur Erfolg, löschte nichts) und wurde zudem nirgends aufgerufen — abgelaufene/korrupte/leere Lyrics-Cache-Dateien wuchsen unbegrenzt auf Disk | P1 | **behoben** (Phase 2) — echte Implementierung analog zu `MetadataCache.cleanup()` (löscht leere/korrupte/TTL-abgelaufene Dateien, gibt Stats-Dict zurück), angebunden über `GeniusClient.close()`. 6 Tests in `tests/test_lyrics_cache.py`, am unfixierten Stub als fehlschlagend verifiziert |
+| ARTIST-001 | `ArtistNormalizer.normalize()` (`utils/artist_map.py`) wird in `ArtistProcessor.determine_best_artist` auf unaufgeteilte Collaboration-Strings angewendet (statt vorher `split_main_and_featuring` anzuwenden). Bei gemischten Trennzeichen (z.B. `"GReeeN & 1986zig feat. Bausa"`) werden alle Teile zu gleichrangigen Peers reduziert — der eigentliche Haupt-Artist-Anteil (`"1986zig"`) wird fälschlich zum Feature degradiert. Zusätzlich gehen stilisierte Schreibweisen verloren (`"GReeeN"` → `"Green"`) | P1 | **offen, bewusst nur charakterisiert** — ändert reale Artist-Zuordnungen (Regel 3), braucht repo-weite Prüfung aller `.normalize()`-Aufrufer vor einem Fix. 2 Tests in `tests/test_artist_normalizer.py::TestCollaborationArchitectureCharacterization` frieren das aktuelle Verhalten ein |
+| GENRE-002 | `GenreMapper._compile_rules`/`_apply_rules` (`utils/genre_map.py`) erwartet einen Top-Level-Key `GENRE_RULES` in `mapping/genre_rules.yaml`, die echte Datei hat aber `keyword_rules`/`artist_rules`/`title_rules` — Schema-Mismatch. `self.rules` ist mit der echten Datei immer leer, die komplette Regex-Regel-Funktion für Genre-Erkennung ist seit jeher wirkungslos | P1 | **offen, bewusst nur charakterisiert** — Aktivierung würde reale Genre-Zuordnungen ändern (Regel 3), unklar ob Loader oder YAML die "richtige" Seite ist. 3 Tests in `tests/test_genre_mapper_advanced.py::TestRegexRulesSchemaMismatch` frieren das aktuelle Verhalten ein |
+| GENRE-003 | `GenreMapper.get_main_genre()` (`utils/genre_map.py`) lowercased den Such-Key, aber `self.hierarchy`-Keys werden aus `genre_hierarchy.yaml` unverändert (Title-Case) geladen → der Hierarchie-Fallback (`source="hierarchy"`) greift mit den echten Mapping-Daten praktisch nie, alles landet bei `source="normalized"` | P1 | **offen, bewusst nur charakterisiert** — Fix würde reale Genre-Zuordnungen ändern (Regel 3). 2 Tests in `tests/test_genre_mapper_advanced.py::TestHierarchyCaseMismatch` frieren das aktuelle Verhalten ein |
 | DOC-001 | README dokumentiert System kaum | P1 | offen |
 | LEGACY-001 | Legacy-/Kompatibilitätsschichten | P2 | offen |
+| LEGACY-002 | `FilenameFixerTool.organize_file`/`process_directory`/`fix_and_move_file` (`utils/filenamefixer.py`) haben bestätigt null Aufrufer in Produktionscode (nur `build_final_path`/`move_to_library` werden von `enhanced_metadata_processor.py` genutzt) — vermutlich Rest einer älteren, abgelösten Pipeline | P2 | dokumentiert, nicht entfernt (Regel: Legacy-Code nicht ohne Beweis löschen) — keine Tests, da toter Code |
 
 ---
 
@@ -586,9 +591,18 @@ ohne befürchten zu müssen, unbemerkt an einer anderen Stelle Funktionalität z
 - [x] File/Library Characterization Tests — `FilenameFixerTool` (12 Tests: Single/Album/Podcast/Compilation-Pfade, fehlende Quelle, Kollisions-Umbenennung)
 - [x] erster reproduzierbarer End-to-End-Happy-Path — siehe E2E-001
 
+### Phase 2 — Kernsystem (Metadata/Duplicate/Filename/Cache/Genre/Artist)
+- [x] SEC-002 gefunden und behoben (Path Traversal in `sanitize_filename()` + `FilenameFixerTool._ensure_within_roots()`, 11 Tests)
+- [x] TEST-004 behoben (`LyricsCache.cleanup()`-Stub, 6 Tests)
+- [x] Genre-Charakterisierung erweitert — Fuzzy-Matching, Regex-Regeln (GENRE-002), Hierarchie-Fallback (GENRE-003), MusicBrainz/Last.fm/Feature-Inferenz-Fallbacks (13 Tests in `test_genre_mapper_advanced.py` + `test_genre_processor.py`)
+- [x] `ArtistNormalizer.normalize()` direkt charakterisiert, inkl. ARTIST-001 (11 Tests)
+- [x] `StatistikService` (History/Stats-Cache) erstmals charakterisiert (15 Tests, vorher 0)
+- [x] Legacy-Pfade in `FilenameFixerTool` dokumentiert statt getestet (LEGACY-002)
+- [ ] ARTIST-001/GENRE-002/GENRE-003 tatsächlich fixen — bewusst zurückgestellt, brauchen eigene Entscheidung mit konkreten Beispielen
+
 ### P1
 - [ ] Config Side Effects untersuchen
-- [ ] Cache-Verträge dokumentieren
+- [x] Cache-Verträge dokumentieren — Metadata-/Duplicate-/Lyrics-/History-Cache jetzt alle charakterisiert (siehe TEST-003/TEST-004/`test_statistik_service.py`)
 - [ ] externe Adapter inventarisieren
 - [ ] Download-Pipelines testen
 - [ ] Navidrome Integration testen

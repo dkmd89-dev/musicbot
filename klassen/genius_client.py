@@ -102,9 +102,10 @@ class GeniusClient:
         """
         Synchrone Aufräum-Methode (Legacy-Kompatibilität).
 
-        Kein Inhalt notwendig, da keine persistente Session gehalten wird.
+        Keine persistente Session zu schließen, aber räumt den
+        Lyrics-Cache auf (leere/korrupte/TTL-abgelaufene Einträge).
         """
-        pass
+        self.lyrics_cache.cleanup()
 
     # ──────────────────────────────────────────────────────────────────────────
     # Interne Logik

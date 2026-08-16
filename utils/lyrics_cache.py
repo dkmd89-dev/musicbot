@@ -79,5 +79,72 @@ class LyricsCache:
             path.unlink()
             self.logger.info(f"🗑️ Cache invalidated: {artist} - {title}")
 
-    def cleanup(self):
-        self.logger.info("✅ LyricsCache cleanup abgeschlossen")
+    def _delete_file(self, path: Path, reason: str) -> None:
+        try:
+            path.unlink(missing_ok=True)
+            self.logger.info(f"🗑️ Cache-Datei gelöscht ({reason}): {path.name}")
+        except OSError as e:
+            self.logger.error(f"❌ Konnte Cache-Datei nicht löschen ({path.name}): {e}")
+
+    def cleanup(self) -> Dict[str, int]:
+        """
+        Bereinigt den Lyrics-Cache aktiv.
+
+        Entfernt:
+          1. Leere Dateien (0 Bytes)
+          2. Korrupte JSON-Dateien (nicht parsbar)
+          3. Per TTL (mtime) abgelaufene Einträge
+
+        Anders als MetadataCache.cleanup() gibt es hier kein library_path-Feld,
+        also kein Orphan-Konzept - stattdessen wird die vorhandene
+        TTL/mtime-Logik aus get() auch fürs tatsächliche Löschen genutzt.
+        """
+        self.logger.info(f"🧹 LyricsCache cleanup gestartet: {self.cache_path}")
+
+        stats = {
+            "deleted_empty": 0,
+            "deleted_corrupt": 0,
+            "deleted_expired": 0,
+            "kept": 0,
+        }
+
+        json_files = list(self.cache_path.glob("*.json"))
+        self.logger.info(f"   📂 {len(json_files)} Cache-Dateien gefunden")
+
+        for cache_file in json_files:
+            if cache_file.stat().st_size == 0:
+                self._delete_file(cache_file, "cleanup: leer")
+                stats["deleted_empty"] += 1
+                continue
+
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    json.load(f)
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+                self.logger.warning(
+                    f"⚠️ Korrupte Cache-Datei gefunden: {cache_file.name} – {e}"
+                )
+                self._delete_file(cache_file, "cleanup: korruptes JSON")
+                stats["deleted_corrupt"] += 1
+                continue
+
+            file_age = time.time() - cache_file.stat().st_mtime
+            if file_age > self.cache_ttl:
+                self._delete_file(cache_file, "cleanup: TTL abgelaufen")
+                stats["deleted_expired"] += 1
+                continue
+
+            stats["kept"] += 1
+
+        total_deleted = (
+            stats["deleted_empty"] + stats["deleted_corrupt"] + stats["deleted_expired"]
+        )
+        self.logger.info(
+            f"✅ LyricsCache cleanup abgeschlossen:\n"
+            f"   🗑️ Gelöscht gesamt : {total_deleted}\n"
+            f"      • Leer          : {stats['deleted_empty']}\n"
+            f"      • Korrupt       : {stats['deleted_corrupt']}\n"
+            f"      • Abgelaufen    : {stats['deleted_expired']}\n"
+            f"   ✅ Behalten        : {stats['kept']}"
+        )
+        return stats
