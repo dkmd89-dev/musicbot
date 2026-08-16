@@ -114,6 +114,59 @@ class TestBuildFinalPathStandard:
         assert ":" not in str(path.relative_to(tool.library_dir))
 
 
+class TestBuildFinalPathTraversalSecurity:
+    """
+    Regressionstest für einen in Phase 2 gefundenen Path-Traversal-Bug:
+    sanitize_filename() ließ literale ".."-Pfadsegmente unangetastet durch,
+    sodass ein Artist-/Album-/Titel-Tag mit dem Wert ".." (z.B. aus
+    manipulierten YouTube-Metadaten) den Zielpfad aus library_dir
+    herausführen konnte. Vor dem Fix landete die Datei nachweislich eine
+    Ebene über library_dir statt darunter.
+    """
+
+    def test_double_dot_artist_does_not_escape_library_dir(self, tool):
+        path = tool.build_final_path(
+            artist="..",
+            title="Song",
+            album="Album",
+            year="2020",
+            extension="m4a",
+        )
+        assert path.resolve().is_relative_to(tool.library_dir.resolve())
+
+    def test_double_dot_album_does_not_escape_library_dir(self, tool):
+        path = tool.build_final_path(
+            artist="Some Artist",
+            title="Song",
+            album="..",
+            year="2020",
+            extension="m4a",
+        )
+        assert path.resolve().is_relative_to(tool.library_dir.resolve())
+
+    def test_double_dot_title_does_not_escape_library_dir(self, tool):
+        path = tool.build_final_path(
+            artist="Some Artist",
+            title="..",
+            album="Album",
+            year="2020",
+            extension="m4a",
+        )
+        assert path.resolve().is_relative_to(tool.library_dir.resolve())
+
+    def test_combined_double_dot_artist_and_album_does_not_escape(self, tool):
+        # Verkettete ".."-Segmente ueber mehrere Felder waeren ohne den Fix
+        # noch weiter nach oben eskaliert als ein einzelnes Feld.
+        path = tool.build_final_path(
+            artist="..",
+            title="Song",
+            album="..",
+            year="2020",
+            extension="m4a",
+        )
+        assert path.resolve().is_relative_to(tool.library_dir.resolve())
+
+
 class TestBuildFinalPathSpecialChannels(object):
     @pytest.fixture
     def podcast_mapping_dir(self, tmp_path):

@@ -346,6 +346,27 @@ class FilenameFixerTool(SingletonMixin):
             )
             raise
 
+    def _ensure_within_roots(self, path: Path) -> Path:
+        """
+        Sicherheitsnetz gegen Directory Traversal (Defense in Depth zusaetzlich
+        zu sanitize_filename): stellt sicher, dass ein per build_final_path()
+        berechneter Zielpfad tatsaechlich unterhalb von library_dir oder
+        _podcast_dir liegt, bevor er zurueckgegeben wird.
+        """
+        resolved = path.resolve()
+        for root in (self.library_dir, self._podcast_dir):
+            try:
+                if resolved.is_relative_to(root.resolve()):
+                    return path
+            except OSError:
+                continue
+        self.logger.error(
+            f"🚨 [SECURITY] Zielpfad verlaesst library_dir/_podcast_dir: {resolved}"
+        )
+        raise ValueError(
+            f"Berechneter Zielpfad liegt außerhalb der Library-Verzeichnisse: {resolved}"
+        )
+
     def build_final_path(
         self,
         artist: str,
@@ -457,7 +478,7 @@ class FilenameFixerTool(SingletonMixin):
                         f"{canonical_channel}/{filename}"
                     )
 
-                return special_path
+                return self._ensure_within_roots(special_path)
 
             # ─────────────────────────────────────────────────────────────────
             # COMPILATIONS / PLAYLIST  (unverändert)
@@ -474,7 +495,7 @@ class FilenameFixerTool(SingletonMixin):
                 f"⭐ Spezialkanal-Regel: {category} / {canonical_channel} "
                 f"(raw: '{uploader}') → {special_path}"
             )
-            return special_path
+            return self._ensure_within_roots(special_path)
 
         # ─────────────────────────────────────────────────────────────────────
         # STANDARD MUSIK-PFAD  (unverändert)
@@ -516,7 +537,7 @@ class FilenameFixerTool(SingletonMixin):
             final_path = album_folder / sanitize_filename(filename)
             self.logger.debug(f"💿 Zielpfad für Album: {final_path}")
 
-        return final_path
+        return self._ensure_within_roots(final_path)
 
     async def organize_file(self, source_path: Path, video_info: dict) -> Path:
         """Organisiert eine heruntergeladene Datei in den Zielordner basierend auf video_info."""

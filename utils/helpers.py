@@ -93,6 +93,14 @@ def sanitize_filename(filename: Optional[Any]) -> str:
         filename = FEAT_NOTATION_PATTERN.sub(" feat. \\1", filename)
         filename = EXTRA_SPACES_PATTERN.sub(" ", filename).strip()
 
+        # Sicherheit: ILLEGAL_CHARS_PATTERN entfernt Schrägstriche, aber keine
+        # Punkte. Ein Ergebnis, das nur aus Punkten besteht (".", "..", "...")
+        # ist als Pfadsegment ein Directory-Traversal-Token und wuerde
+        # FilenameFixerTool.build_final_path() aus library_dir/_podcast_dir
+        # herausfuehren, wenn es z.B. aus einem Artist-Tag ".." stammt.
+        if filename and re.fullmatch(r"\.+", filename):
+            filename = "unknown"
+
         return filename
 
     except Exception as e:
