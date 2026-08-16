@@ -8,9 +8,10 @@ Lädt sensible Daten aus .env oder Umgebungsvariablen
 import logging
 import os
 import sys
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 from dotenv import load_dotenv
 
 # =============================================================================
@@ -21,7 +22,7 @@ from dotenv import load_dotenv
 env_paths = [
     Path(__file__).parent / ".env",
     Path.cwd() / ".env",
-    Path("/home/robin/bot/.env"),
+    Path("/mnt/128ssd/musicbot/.env"),
 ]
 
 env_loaded = False
@@ -73,7 +74,7 @@ class Config:
     # BASIS-KONFIGURATION (Pfade)
     # =========================================================================
 
-    BASE_DIR = Path("/home/robin/bot")
+    BASE_DIR = Path("/mnt/128ssd/musicbot")
 
     # === DIRECTORY STRUCTURE ===
     LIBRARY_DIR = Path("/mnt/4tb/library")
@@ -110,7 +111,7 @@ class Config:
     # === BACKUP ===
     BACKUP_BOT_SOURCE_DIR = BASE_DIR
     BACKUP_LIBRARY_SOURCE_DIR = Path("/mnt/4tb/library")
-    BACKUP_DEST_DIR = Path("/mnt/backup/Musikserver")
+    BACKUP_DEST_DIR = Path("/mnt/4tb/backup/musik")
     BACKUP_MAX_KEEP = 5
     BACKUP_EXCLUDE_PATTERNS = [
         "library",
