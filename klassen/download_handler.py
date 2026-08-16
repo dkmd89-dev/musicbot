@@ -1,0 +1,1185 @@
+# services/downloader/download_handler.py
+# -*- coding: utf-8 -*-
+"""
+DownloadHandler v3.0 – Vollständig transparenter Download-Pipeline-Orchestrator
+
+Architektur:
+  handle_url()           → Unified Dispatcher (YT vs. Spotify)
+  handle_youtube_links() → YouTube-Pipeline
+  handle_spotify_url()   → Spotify-Pipeline
+  _process_single_download_result() → Metadaten-Anreicherung via EnhancedMetadataProcessor
+
+Pipeline-Schritte (vollständig nachvollziehbar):
+  YOUTUBE  : 1 URL-Prüfung → 2 Duplikat-Check → 3 YT-Download →
+             4 Metadaten → 5 Bibliothek → 6 Zusammenfassung
+  SPOTIFY  : 1 URL-Prüfung → 2 Duplikat-Check → 3 Metadata-Fetch →
+             4 YT-Search → 5 Metadaten → 6 Bibliothek → 7 Zusammenfassung
+
+CHANGELOG v3.0:
+  ✅ Vollständige Transparenz – jeder Mikro-Schritt geloggt
+  ✅ Granulare Telegram-Status-Updates mit Fortschrittsbalken
+  ✅ Strukturierte Step-Marker in Logs: [STEP X/N] für jede Phase
+  ✅ Entscheidungs-Logging: Artist-Quelle, Genre-Quelle, Cache-Entscheidung
+  ✅ Fehlerkontext mit vollständigem Stack bei kritischen Fehlern
+  ✅ Stats-Aggregation aus 3 unabhängigen Quellen (robust)
+  ✅ Duplikat-Handling mit detaillierter Begründung
+  ✅ Podcast-Pipeline korrekt mit playlist_metadata
+  ✅ Cover-Art-Transparenz (Spotify → YouTube-Thumbnail → kein Cover)
+  ✅ Konsistentes Emoji-Schema für schnelle Log-Orientierung
+"""
+
+import re
+import os
+from collections import Counter
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from mutagen.mp4 import MP4
+from telegram import Message, Update
+from telegram.error import TelegramError
+from telegram.ext import ContextTypes
+
+from config import Config
+from cookie_handler import CookieHandler
+from handlers.duplicate_handler import DuplicateEntry, EnhancedDuplicateHandler
+from logger import get_module_logger
+from services.downloader.downloader import YoutubeDownloader
+from services.downloader.spotify_downloader import SpotifyDownloader, _is_spotify_url
+from services.downloader.utils.enhanced_metadata_processor import (
+    EnhancedMetadataProcessor,
+)
+from services.downloader.utils.file_utils import FileUtils
+from services.downloader.utils.progress_tracker import ProgressTracker
+from utils.filenamefixer import FilenameFixerTool
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PIPELINE-KONSTANTEN
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class _YT:
+    """YouTube-Pipeline Schritt-Definitionen"""
+    TOTAL = 6
+    URL_CHECK    = (1, "URL & Format prüfen")
+    DUPE_CHECK   = (2, "Duplikat-Check")
+    DOWNLOAD     = (3, "Audio-Download")
+    METADATA     = (4, "Metadaten anreichern")
+    LIBRARY      = (5, "Bibliothek organisieren")
+    SUMMARY      = (6, "Zusammenfassung")
+
+
+class _SP:
+    """Spotify-Pipeline Schritt-Definitionen"""
+    TOTAL = 7
+    URL_CHECK    = (1, "Spotify-URL analysieren")
+    DUPE_CHECK   = (2, "Duplikat-Check")
+    META_FETCH   = (3, "Spotify-Metadaten laden")
+    YT_SEARCH    = (4, "YouTube-Audio suchen & laden")
+    METADATA     = (5, "Metadaten anreichern")
+    LIBRARY      = (6, "Bibliothek organisieren")
+    SUMMARY      = (7, "Zusammenfassung")
+
+
+# Emojis pro Modul für schnelle visuelle Orientierung in Logs
+_MOD_EMOJI = {
+    "DownloadHandler":          "📤",
+    "YoutubeDownloader":        "⬇️",
+    "SpotifyDownloader":        "🎵",
+    "EnhancedMetadataProcessor":"🚀",
+    "DuplicateHandler":         "🔍",
+    "FilenameFixerTool":        "🛠️",
+    "FileUtils":                "📂",
+    "ArtistNormalizer":         "👤",
+    "GenreMapper":              "🏷️",
+    "GeniusClient":             "📜",
+}
+
+# Schritt-Emojis 1–10
+_STEP_EMOJI = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HILFS-FUNKTION: LOG-FORMATIERUNG
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _fmt_result(result: Dict[str, Any]) -> str:
+    """Formatiert Download-Ergebnis kompakt für den Log."""
+    lines = [
+        "┌─ Download-Ergebnis ──────────────────────",
+        f"│  Erfolg      : {result.get('success')}",
+        f"│  Titel       : {result.get('title', '?')}",
+        f"│  Künstler    : {result.get('artist', '?')}",
+        f"│  Album       : {result.get('album', '?')}",
+        f"│  Jahr        : {result.get('year', '?')}",
+        f"│  Library-Pfad: {result.get('library_path', result.get('final_path', '?'))}",
+        f"│  Cover       : {'✅' if result.get('cover_embedded') else '❌'}",
+        f"│  Lyrics      : {'✅' if result.get('lyrics_available') else '❌'}",
+        f"│  Duplikat    : {'⚠️ JA' if result.get('is_duplicate') else '✅ nein'}",
+        f"│  Artist-Src  : {result.get('artist_source', '?')}",
+        f"│  Genre-Src   : {result.get('genre_source', '?')}",
+        "└──────────────────────────────────────────",
+    ]
+    return "\n".join(lines)
+
+
+def _progress_bar(current: int, total: int, width: int = 10) -> str:
+    """Erzeugt einen ASCII-Fortschrittsbalken: ████░░░░░░ 3/6"""
+    filled = round(width * current / max(total, 1))
+    bar = "█" * filled + "░" * (width - filled)
+    return f"{bar} {current}/{total}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HAUPT-KLASSE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class DownloadHandler:
+    """
+    Orchestriert den vollständigen Download-Prozess für YouTube und Spotify.
+
+    Jeder Schritt wird sowohl im Python-Log (detailliert) als auch als
+    Telegram-Statusnachricht (kompakt) sichtbar gemacht.
+    """
+
+    def __init__(
+        self,
+        update: Update,
+        config: Config,
+        duplicate_handler: EnhancedDuplicateHandler,
+        metadata_processor: EnhancedMetadataProcessor,
+        logger_factory: Optional[Callable] = None,
+        spotify_downloader: Optional[SpotifyDownloader] = None,
+    ):
+        self.update = update
+        self.config = config
+        self.logger_factory = logger_factory or get_module_logger
+        self.logger = self.logger_factory("DownloadHandler")
+
+        # ── Abhängigkeiten ────────────────────────────────────────────────────
+        self.logger.info("🔌 [INIT] Lade Abhängigkeiten...")
+
+        self.cookie_handler = CookieHandler()
+        self.file_utils = FileUtils(logger_factory=self.logger_factory)
+        self.filename_fixer = FilenameFixerTool(
+            self.config, logger_factory=self.logger_factory
+        )
+        self.enhanced_metadata_processor = metadata_processor
+        self.duplicate_handler = duplicate_handler
+
+        self.logger.info("✅ [INIT] Duplikat-Handler (geteilt) verbunden")
+
+        # ── Artist-Map für SpotifyDownloader ──────────────────────────────────
+        self.artist_map = None
+        try:
+            from utils.artist_map import ArtistConfig, ArtistNormalizer
+            artist_cfg = ArtistConfig(
+                library_dir=getattr(config, "LIBRARY_DIR", "library"),
+                override_file=getattr(config, "ARTIST_OVERRIDE_FILE", "./artist_overrides.json"),
+            )
+            self.artist_map = ArtistNormalizer(artist_cfg)
+            self.logger.info("✅ [INIT] ArtistNormalizer geladen")
+        except Exception as e:
+            self.logger.warning(f"⚠️ [INIT] ArtistNormalizer nicht verfügbar: {e}")
+
+        # ── SpotifyDownloader ─────────────────────────────────────────────────
+        if spotify_downloader is not None:
+            self.spotify_downloader: Optional[SpotifyDownloader] = spotify_downloader
+            self.logger.info("✅ [INIT] SpotifyDownloader (injiziert) verbunden")
+        elif getattr(config, "SPOTIFY_CLIENT_ID", "") or getattr(config, "SPOTIFY_CLIENT_SECRET", ""):
+            try:
+                self.spotify_downloader = SpotifyDownloader(
+                    config,
+                    logger_factory=self.logger_factory,
+                    artist_map=self.artist_map,
+                )
+                self.logger.info("✅ [INIT] SpotifyDownloader auto-initialisiert (Credentials gefunden)")
+            except Exception as e:
+                self.logger.warning(f"⚠️ [INIT] SpotifyDownloader Init fehlgeschlagen: {e}")
+                self.spotify_downloader = None
+        else:
+            self.spotify_downloader = None
+            self.logger.info("ℹ️ [INIT] SpotifyDownloader nicht konfiguriert (keine Credentials)")
+
+        # ── Status / Progress ─────────────────────────────────────────────────
+        self.status_msg: Optional[Message] = None
+        self.progress_tracker = ProgressTracker(
+            update, status_message=self.status_msg, logger_factory=self.logger_factory
+        )
+        self.downloader = YoutubeDownloader(
+            update=update,
+            config=self.config,
+            cookie_handler=self.cookie_handler,
+        )
+
+        self.logger.info(
+            f"🚀 [INIT] DownloadHandler bereit — update_id={update.update_id}"
+        )
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # STATUS-UPDATE
+    # ──────────────────────────────────────────────────────────────────────────
+
+    async def _update_status(
+        self,
+        step: int,
+        total: int,
+        text: str,
+        module: str = "DownloadHandler",
+        detail: str = "",
+    ) -> None:
+        """
+        Aktualisiert Telegram-Statusnachricht und schreibt Python-Log.
+
+        Format Telegram:
+            1️⃣  ████░░░░░░ 1/6  │ URL & Format prüfen
+            ⚙️  [DownloadHandler]
+            detail (optional)
+        """
+        step_emoji = _STEP_EMOJI[step - 1] if 0 < step <= len(_STEP_EMOJI) else "➡️"
+        mod_emoji  = _MOD_EMOJI.get(module, "⚙️")
+        bar        = _progress_bar(step, total)
+
+        # Python-Log
+        log_line = f"[STEP {step}/{total}] {text}"
+        if detail:
+            log_line += f" — {detail}"
+        self.logger.info(f"{mod_emoji} {log_line}")
+
+        if not self.status_msg:
+            return
+
+        # Telegram-Nachricht
+        lines = [
+            f"{step_emoji}  {bar}  │ {text}",
+            f"{mod_emoji}  [{module}]",
+        ]
+        if detail:
+            lines.append(f"ℹ️  {detail}")
+
+        try:
+            await self.status_msg.edit_text("\n".join(lines))
+            self.progress_tracker.status_message = self.status_msg
+        except TelegramError as e:
+            if "Message is not modified" not in str(e):
+                self.logger.warning(f"⚠️ Telegram-Status konnte nicht aktualisiert werden: {e}")
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # DUPLIKAT-HANDLING
+    # ──────────────────────────────────────────────────────────────────────────
+
+    async def _check_duplicates_before_download(
+        self, url: str
+    ) -> Tuple[bool, Optional[DuplicateEntry], str]:
+        """
+        Prüft URL-basiert auf Duplikate im Cache.
+        Gibt (is_duplicate, entry, type) zurück.
+        """
+        self.logger.info(f"🔍 [DUPE] Starte Duplikat-Prüfung für URL: {url[:80]}...")
+
+        is_dup, entry, dup_type = self.duplicate_handler.check_for_duplicates(url=url)
+
+        if is_dup and entry:
+            self.logger.warning(
+                f"🔍 [DUPE] ⚠️ DUPLIKAT GEFUNDEN:\n"
+                f"   Typ       : {dup_type}\n"
+                f"   Titel     : {entry.title}\n"
+                f"   Künstler  : {entry.artist}\n"
+                f"   Datum     : {entry.download_date.strftime('%d.%m.%Y %H:%M')}\n"
+                f"   Pfad      : {entry.file_path}"
+            )
+        else:
+            self.logger.info("🔍 [DUPE] ✅ Kein Duplikat — Download wird fortgesetzt")
+
+        return is_dup, entry, dup_type
+
+    async def _handle_duplicate_found(self, entry: DuplicateEntry, dup_type: str) -> None:
+        """Baut Duplikat-Nachricht und sendet sie an den Benutzer."""
+        self.logger.info(f"🔍 [DUPE] Sende Duplikat-Meldung (Typ: {dup_type})")
+        msg = self._build_duplicate_message(entry, dup_type)
+        try:
+            if self.status_msg:
+                await self.status_msg.edit_text(msg)
+            else:
+                await self.update.message.reply_text(msg)
+        except TelegramError as e:
+            self.logger.error(f"❌ [DUPE] Fehler beim Senden der Duplikat-Meldung: {e}")
+
+    def _build_duplicate_message(self, entry: DuplicateEntry, dup_type: str) -> str:
+        type_map = {
+            "url":            ("🔗 URL-Treffer",       "📅 Erstmals heruntergeladen:"),
+            "content":        ("🎵 Inhalts-Treffer",    "📅 Erstmals heruntergeladen:"),
+            "parsed_content": ("🔍 Parser-Treffer",     "📅 Erstmals heruntergeladen:"),
+            "file_conflict":  ("📄 Datei-Konflikt",     "🕒 Konflikt erkannt:"),
+        }
+        label, date_lbl = type_map.get(dup_type, ("🔍 Unbekannt", "📅 Datum:"))
+        return (
+            "📄 DUPLIKAT ERKANNT – DOWNLOAD ABGEBROCHEN\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Erkennungstyp : {label}\n\n"
+            f"🎵 Titel      : {entry.title}\n"
+            f"🎤 Künstler   : {entry.artist}\n"
+            f"{date_lbl} {entry.download_date.strftime('%d.%m.%Y %H:%M')}\n"
+            f"📂 Pfad       : {str(entry.file_path).replace(' (1)', '')}"
+        )
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # KERNMETHODE: METADATEN-ANREICHERUNG
+    # ──────────────────────────────────────────────────────────────────────────
+
+    async def _process_single_download_result(
+        self, result: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Vollständig transparente Metadaten-Anreicherung über EnhancedMetadataProcessor.
+
+        Durchläuft folgende Prüfungen mit explizitem Logging:
+          A) Playlist-Wrapper-Schutz
+          B) Doppelverarbeitungs-Schutz (already processed)
+          C) filepath-Fallback-Suche
+          D) Podcast-Episodennummer-Korrektur
+          E) playlist_metadata-Aufbau für Podcasts (Spezialkanal-Logik)
+          F) Cover-Art-Transparenz
+          G) EnhancedMetadataProcessor Aufruf + Ergebnis-Mapping
+        """
+        title = result.get("title", "Unbekannt")
+        self.logger.info(
+            f"🚀 [PROCESS] ═══ Starte Metadaten-Anreicherung für '{title}' ═══"
+        )
+
+        try:
+            # ── A: Playlist-Wrapper-Schutz ────────────────────────────────────
+            if result.get("type") == "playlist":
+                self.logger.info(
+                    f"📋 [PROCESS-A] Playlist-Wrapper erkannt → "
+                    "MetadataProcessor wird übersprungen, Rohdaten direkt weitergegeben"
+                )
+                return result
+
+            # ── B: Doppelverarbeitungs-Schutz ─────────────────────────────────
+            already_processed = result.get("library_path") and not result.get("filepath")
+            if already_processed:
+                self.logger.debug(
+                    f"✅ [PROCESS-B] '{title}' bereits fertig verarbeitet "
+                    f"(library_path='{result.get('library_path')}') — überspringe"
+                )
+                return result
+
+            # ── C: filepath-Fallback ──────────────────────────────────────────
+            if not result.get("filepath"):
+                self.logger.debug(f"📂 [PROCESS-C] 'filepath' fehlt — suche Fallback...")
+                fallback = (
+                    result.get("filename")
+                    or result.get("file_path")
+                    or result.get("_filename")
+                )
+                if not fallback and isinstance(result.get("requested_downloads"), list):
+                    entries = result["requested_downloads"]
+                    if entries:
+                        fallback = entries[0].get("filepath")
+                        if fallback:
+                            self.logger.debug(
+                                f"📂 [PROCESS-C] filepath via requested_downloads gefunden: {fallback}"
+                            )
+                if not fallback and result.get("library_path"):
+                    fallback = str(result["library_path"])
+                    self.logger.debug(
+                        f"📂 [PROCESS-C] filepath via library_path gesetzt: {fallback}"
+                    )
+                if fallback:
+                    result["filepath"] = str(fallback)
+                else:
+                    self.logger.warning(
+                        f"⚠️ [PROCESS-C] Kein filepath gefunden für '{title}' — "
+                        "Verarbeitung wird trotzdem versucht"
+                    )
+
+            # ── Titel-Fallback (verhindert 'Playlist' als Titel) ──────────────
+            if result.get("title") in ("Playlist", None, ""):
+                echter = result.get("fulltitle") or result.get("track")
+                if echter:
+                    self.logger.debug(
+                        f"🎵 [PROCESS-C] Titel '{result.get('title')}' → '{echter}' (fulltitle)"
+                    )
+                    result["title"] = echter
+                    title = echter
+
+            # ── D: Podcast-Episodennummer-Korrektur ───────────────────────────
+            _EP_PATTERN = re.compile(r"^\d{1,4}/\d{4}$")
+            raw_artist = result.get("artist", "")
+            is_unknown = raw_artist in ("Unbekannt", "Unknown Artist", "Unknown", "")
+            is_ep_num  = bool(_EP_PATTERN.match(raw_artist.strip()))
+
+            if is_unknown or is_ep_num:
+                echter_kuenstler = result.get("uploader") or result.get("channel")
+                if echter_kuenstler:
+                    self.logger.info(
+                        f"🎙️ [PROCESS-D] Artist '{raw_artist}' ist "
+                        f"{'Episodennummer' if is_ep_num else 'unbekannt'} → "
+                        f"ersetze durch Channel-Name: '{echter_kuenstler}'"
+                    )
+                    result["artist"] = echter_kuenstler
+
+            # ── E: playlist_metadata für Podcasts ─────────────────────────────
+            playlist_metadata_for_processor = None
+            if result.get("is_podcast") and result.get("podcast_name"):
+                podcast_name = result["podcast_name"]
+                playlist_name = result.get("playlist_name") or podcast_name
+                self.logger.info(
+                    f"🎙️ [PROCESS-E] Podcast-Track erkannt:\n"
+                    f"   Podcast-Name  : {podcast_name}\n"
+                    f"   Playlist-Name : {playlist_name}\n"
+                    f"   → Baue playlist_metadata für Spezialkanal-Logik auf"
+                )
+                playlist_metadata_for_processor = {
+                    "album":            playlist_name,
+                    "album_artist":     podcast_name,
+                    "track_number":     None,
+                    "year":             result.get("year"),
+                    "is_playlist":      True,
+                    "playlist_channel": podcast_name,
+                }
+            else:
+                self.logger.debug(
+                    f"🎵 [PROCESS-E] Kein Podcast → playlist_metadata=None "
+                    f"(is_podcast={result.get('is_podcast')}, podcast_name={result.get('podcast_name')})"
+                )
+
+            # ── F: Cover-Art-Transparenz ───────────────────────────────────────
+            cover_bytes = result.get("cover_art")
+            if cover_bytes:
+                self.logger.info(
+                    f"🖼️ [PROCESS-F] Cover-Art aus Spotify-Download verfügbar "
+                    f"({len(cover_bytes):,} Bytes) → wird an Processor übergeben"
+                )
+            else:
+                self.logger.debug(
+                    "🖼️ [PROCESS-F] Kein Spotify-Cover → Processor lädt YouTube-Thumbnail"
+                )
+
+            # ── G: EnhancedMetadataProcessor ─────────────────────────────────
+            self.logger.info(
+                f"🚀 [PROCESS-G] Starte EnhancedMetadataProcessor für '{title}'..."
+            )
+            metadata_result = await self.enhanced_metadata_processor.process_single_track(
+                track_metadata=result,
+                file_utils=self.file_utils,
+                filename_fixer=self.filename_fixer,
+                playlist_metadata=playlist_metadata_for_processor,
+                dominant_artist=None,
+            )
+
+            if metadata_result and metadata_result.success:
+                self.logger.info(
+                    f"✅ [PROCESS-G] Metadaten-Anreicherung erfolgreich:\n"
+                    f"   Titel       : {metadata_result.title}\n"
+                    f"   Künstler    : {metadata_result.artist}  (Quelle: {metadata_result.artist_source})\n"
+                    f"   Album       : {metadata_result.album}\n"
+                    f"   Jahr        : {metadata_result.year}\n"
+                    f"   Genre-Src   : {metadata_result.genre_source}\n"
+                    f"   Lyrics      : {'✅ gefunden' if metadata_result.lyrics else '❌ nicht gefunden'}\n"
+                    f"   Cover       : {'✅ eingebettet' if metadata_result.cover_embedded else '❌ fehlt'}\n"
+                    f"   Library-Pfad: {metadata_result.library_path}"
+                )
+                return {
+                    **result,
+                    "title":         metadata_result.title,
+                    "artist":        metadata_result.artist,
+                    "album":         metadata_result.album or result.get("album"),
+                    "album_artist":  metadata_result.album_artist,
+                    "year":          metadata_result.year or result.get("year"),
+                    "track_number":  metadata_result.track_number,
+                    "genres":        metadata_result.genres or result.get("genres"),
+                    "lyrics":        metadata_result.lyrics,
+                    "lyrics_available": bool(metadata_result.lyrics),
+                    "lyrics_source": metadata_result.lyrics_source,
+                    "cover_embedded":metadata_result.cover_embedded,
+                    "filepath":      str(metadata_result.filepath) if metadata_result.filepath else result.get("filepath"),
+                    "library_path":  str(metadata_result.library_path) if metadata_result.library_path else result.get("library_path"),
+                    "artist_source": metadata_result.artist_source,
+                    "genre_source":  metadata_result.genre_source,
+                    "title_cleaned": metadata_result.title_cleaned,
+                    "from_cache":    metadata_result.from_cache,
+                }
+            else:
+                err = metadata_result.error if metadata_result else "Kein Ergebnis"
+                self.logger.warning(
+                    f"⚠️ [PROCESS-G] MetadataProcessor lieferte kein Ergebnis für '{title}':\n"
+                    f"   Fehler: {err}\n"
+                    f"   → Fahre mit Original-Metadaten fort"
+                )
+                return result
+
+        except Exception as e:
+            self.logger.error(
+                f"❌ [PROCESS] Unerwarteter Fehler bei '{title}': {e}",
+                exc_info=True,
+            )
+            return result
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # GENRE / STATS HILFSFUNKTIONEN
+    # ──────────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _extract_genres_from_data(genres_data) -> List[str]:
+        """Normalisiert Genre-Daten aus allen vorkommenden Formaten."""
+        result: List[str] = []
+        if isinstance(genres_data, dict):
+            p = genres_data.get("primary")
+            if isinstance(p, str) and p:
+                result.append(p)
+            sec = genres_data.get("secondary")
+            if isinstance(sec, list):
+                result.extend(g for g in sec if isinstance(g, str))
+        elif isinstance(genres_data, list):
+            for item in genres_data:
+                if isinstance(item, str):
+                    result.append(item)
+                elif isinstance(item, dict):
+                    p = item.get("primary")
+                    if isinstance(p, str) and p:
+                        result.append(p)
+        elif isinstance(genres_data, str) and genres_data:
+            result.append(genres_data)
+        seen: set = set()
+        return [g for g in result if g not in seen and not seen.add(g)]  # type: ignore
+
+    @staticmethod
+    def _collect_playlist_genres(tracks: List[dict]) -> List[str]:
+        """Sammelt Genres aus allen Tracks, sortiert nach Häufigkeit (max. 4)."""
+        counter: Counter = Counter()
+        for track in tracks:
+            for g in DownloadHandler._extract_genres_from_data(track.get("genres")):
+                counter[g] += 1
+        return [g for g, _ in counter.most_common(4)]
+
+    @staticmethod
+    def _extract_stats_from_result(result: dict, tracks: List[dict]) -> dict:
+        """
+        Stats aus 3 unabhängigen Quellen (Robustheit):
+          1. result['processing_stats']
+          2. processor_instance.get_processing_statistics()
+          3. Aggregation aus Track-Flags
+        """
+        stats = result.get("processing_stats")
+        if stats and isinstance(stats, dict) and any(stats.values()):
+            return stats
+
+        proc = result.get("processor_instance") or result.get("_enhanced_processor_ref")
+        if proc:
+            try:
+                mp = getattr(proc, "enhanced_metadata_processor", None) or proc
+                raw = mp.get_processing_statistics() if callable(getattr(mp, "get_processing_statistics", None)) else {}
+                session = getattr(proc, "session_stats", {})
+                merged = {**raw, **{k: v for k, v in session.items() if k not in raw}}
+                if any(merged.values()):
+                    return merged
+            except Exception:
+                pass
+
+        if tracks:
+            ch = sum(1 for t in tracks if t.get("from_cache"))
+            return {
+                "successful_normalizations": sum(1 for t in tracks if t.get("artist_source") not in (None, "unknown")),
+                "successful_genre_mappings": sum(1 for t in tracks if DownloadHandler._extract_genres_from_data(t.get("genres"))),
+                "lyrics_found":              sum(1 for t in tracks if t.get("lyrics_available")),
+                "youtube_parser_used":       sum(1 for t in tracks if t.get("artist_source") == "youtube_parsed"),
+                "artist_map_parsing_fallback":sum(1 for t in tracks if t.get("artist_source") == "artist_map_fallback"),
+                "cache_hits":   ch,
+                "cache_misses": len(tracks) - ch,
+                "total_processed": len(tracks),
+            }
+        return {}
+
+    def _has_lyrics(self, file_path: Path) -> bool:
+        """Prüft ob eine M4A-Datei einen Lyrics-Tag enthält."""
+        try:
+            if not file_path or not file_path.exists():
+                return False
+            return "©lyr" in MP4(file_path)
+        except Exception as e:
+            self.logger.debug(f"⚠️ Lyrics-Prüfung fehlgeschlagen: {e}")
+            return False
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # DUPLIKAT-REGISTRIERUNG & SUCCESS-HANDLING
+    # ──────────────────────────────────────────────────────────────────────────
+
+    async def handle_single_track_success(self, result: Dict[str, Any]) -> None:
+        """Registriert Download im Duplikat-Cache und sendet Abschluss-Zusammenfassung."""
+        title  = result.get("title", "?")
+        artist = result.get("artist", "?")
+        self.logger.info(
+            f"🏁 [SUCCESS] ── Single-Track abgeschlossen: '{artist} - {title}' ──"
+        )
+
+        # Duplikat-Registrierung
+        try:
+            url   = result.get("original_url") or result.get("url") or ""
+            path  = result.get("library_path") or result.get("filepath") or ""
+            if artist and title and artist not in ("?", "Unbekannt", "Unknown Artist"):
+                self.duplicate_handler.register_download(
+                    url=url,
+                    artist=artist,
+                    title=title,
+                    file_path=Path(path) if path else None,
+                    metadata={"artist": artist, "title": title, "album": result.get("album"), "year": result.get("year")},
+                )
+                self.logger.info(
+                    f"📝 [SUCCESS] Im Duplikat-Cache registriert: '{artist} - {title}'"
+                )
+            else:
+                self.logger.warning(
+                    f"⚠️ [SUCCESS] Duplikat-Registrierung übersprungen "
+                    f"(artist='{artist}', title='{title}')"
+                )
+        except Exception as e:
+            self.logger.error(f"❌ [SUCCESS] Duplikat-Registrierung fehlgeschlagen: {e}", exc_info=True)
+
+        stats     = self._extract_stats_from_result(result, [])
+        dup_stats = getattr(self.duplicate_handler, "get_statistics", lambda: {})()
+        await self._send_final_summary(result, stats, dup_stats)
+
+    async def handle_playlist_success(self, results: List[dict]) -> None:
+        """Abschluss-Meldung für Playlists oder Playlist-Wrapper."""
+        if results and results[0].get("type") == "playlist":
+            await self.handle_single_track_success(results[0])
+            return
+
+        successful = [r for r in results if r.get("success")]
+        if not successful:
+            self.logger.warning("🤷 [SUCCESS] Keine erfolgreichen Tracks — keine Zusammenfassung")
+            return
+
+        self.logger.info(
+            f"🏁 [SUCCESS] ── Playlist abgeschlossen: "
+            f"{len(successful)}/{len(results)} Tracks ──"
+        )
+
+        first  = successful[0]
+        artist = first.get("artist", "Unbekannt")
+        album  = first.get("album", "Unbekannt")
+        year   = str(first.get("year", "")) or "N/A"
+        genres = self._collect_playlist_genres(successful)
+        stats  = self._extract_stats_from_result({"tracks": successful}, successful)
+        lib    = successful[-1].get("library_path", "")
+
+        n  = max(len(successful), 1)
+        an = stats.get("successful_normalizations", 0)
+        gm = stats.get("successful_genre_mappings", 0)
+        lf = stats.get("lyrics_found", 0)
+        ch = stats.get("cache_hits", 0)
+        ct = ch + stats.get("cache_misses", 0)
+
+        def pct(p, w): return f"{int(p / max(w,1) * 100)}%"
+
+        genre_str = "\n".join(f"   • {g}" for g in genres) if genres else "   • Keine"
+        folder    = str(Path(lib).parent) if lib else "N/A"
+
+        msg = (
+            "✅ Playlist erfolgreich heruntergeladen!\n\n"
+            f"🎤 Künstler : {artist}\n"
+            f"💿 Album    : {album}\n"
+            f"📅 Jahr     : {year}\n"
+            f"🎵 Tracks   : {len(successful)}/{len(results)}\n\n"
+            f"🏷️ Genres:\n{genre_str}\n\n"
+            "🚀 Processing-Statistiken:\n"
+            f"   ✨ Normalisierungen : {an}/{n} ({pct(an,n)})\n"
+            f"   🏷️ Genre-Mappings   : {gm}/{n} ({pct(gm,n)})\n"
+            f"   📜 Lyrics gefunden  : {lf}/{n} ({pct(lf,n)})\n"
+            f"   💾 Cache-Treffer    : {ch}/{ct} ({pct(ch,ct)})\n\n"
+            f"📂 Bibliothek: {folder}"
+        )
+        try:
+            if self.status_msg:
+                await self.status_msg.edit_text(msg)
+            else:
+                await self.update.message.reply_text(msg)
+        except TelegramError as e:
+            self.logger.error(f"❌ Playlist-Zusammenfassung nicht gesendet: {e}")
+
+    async def _send_final_summary(
+        self,
+        result: Dict[str, Any],
+        processing_stats: Dict[str, Any],
+        duplicate_stats: Dict[str, Any],
+    ) -> None:
+        """Sendet die vollständige Abschluss-Zusammenfassung."""
+        self.logger.info("📝 [SUMMARY] Erstelle Abschluss-Zusammenfassung...")
+
+        PLACEHOLDER = {None, "", "Unbekannt", "Unknown", "Unknown Artist", "Playlist"}
+
+        def pct(p, w): return f"{int(p / max(int(w), 1) * 100)}%"
+
+        tracks = result.get("tracks", [])
+        is_pl  = result.get("type") == "playlist"
+
+        # Metadaten
+        title  = result.get("playlist_title") or result.get("title", "Unbekannter Titel")
+        artist = result.get("playlist_artist") or result.get("artist", "Unbekannt")
+        album  = result.get("playlist_album") or result.get("album", title)
+        year_v = result.get("playlist_year") or result.get("year")
+
+        if is_pl and tracks:
+            ft = tracks[0]
+            if artist in PLACEHOLDER: artist = ft.get("artist", "Unbekannt")
+            if not album or album in PLACEHOLDER: album = ft.get("album", "Unbekannt")
+            if not year_v: year_v = ft.get("year")
+            if not title or title in PLACEHOLDER: title = album
+
+        year = str(year_v) if year_v else "N/A"
+
+        # Quelle
+        source     = result.get("source", "")
+        is_spotify = "spotify" in source.lower() if source else False
+        is_podcast = result.get("is_podcast", False)
+
+        # Genres filtern
+        raw_genres = self._collect_playlist_genres(tracks) if is_pl and tracks else self._extract_genres_from_data(result.get("genres"))
+        if is_spotify and is_podcast:
+            raw_genres = [g for g in raw_genres if g.lower() not in {"german", "hip-hop", "hip hop", "deutsch"}]
+
+        # Stats
+        eff = dict(processing_stats) if processing_stats else {}
+        if not any(eff.values()):
+            eff = self._extract_stats_from_result(result, tracks)
+
+        n   = len(tracks) if (is_pl and tracks) else max(eff.get("total_processed", 1), 1)
+        an  = eff.get("successful_normalizations", 0)
+        gm  = eff.get("successful_genre_mappings", 0)
+        lf  = eff.get("lyrics_found", 0)
+        yp  = eff.get("youtube_parser_used", 0)
+        amf = eff.get("artist_map_parsing_fallback", 0)
+        ch  = eff.get("cache_hits", 0)
+        ct  = ch + eff.get("cache_misses", 0)
+
+        # Sinnvolle Minimal-Stats wenn alles 0
+        if an == 0 and gm == 0 and n == 1:
+            if artist and artist not in PLACEHOLDER: an = 1
+            if raw_genres: gm = 1
+
+        # Pfad
+        lib_path = result.get("library_path") if not is_pl else (tracks[-1].get("library_path") if tracks else None)
+        if lib_path:
+            lp = Path(lib_path)
+            fname = lp.name
+            fdir  = str(lp.parent)
+        else:
+            self.logger.warning("⚠️ [SUMMARY] library_path fehlt im Ergebnis")
+            fname = "N/A"
+            fdir  = "N/A"
+
+        # Lyrics / Cover
+        if is_pl and tracks:
+            lyrics_ok = any(t.get("lyrics_available") for t in tracks)
+            cover_ok  = any(t.get("cover_embedded") for t in tracks)
+        else:
+            lyrics_ok = result.get("lyrics_available", False) or lf > 0
+            cover_ok  = bool(result.get("cover_embedded"))
+
+        # Quelle-Label
+        if is_spotify:
+            src_label = "🎙️ Spotify Podcast" if is_podcast else "🎵 Spotify"
+        else:
+            src_label = "📺 YouTube"
+
+        genre_lines = [f"   • {g}" for g in raw_genres] if raw_genres else ["   • Keine"]
+
+        # Nachricht
+        if is_pl:
+            ok = sum(1 for t in tracks if t.get("success"))
+            header = "✅ Playlist erfolgreich heruntergeladen!"
+            meta   = [
+                f"🎤 Künstler : {artist}",
+                f"💿 Album    : {album}",
+                f"📅 Jahr     : {year}",
+                f"🎵 Tracks   : {ok}/{len(tracks)}",
+                f"📡 Quelle   : {src_label}",
+            ]
+        else:
+            header = "✅ Download erfolgreich!"
+            meta   = [
+                f"🎵 Titel    : {title}",
+                f"🎤 Künstler : {artist}",
+                f"💿 Album    : {album}",
+                f"📅 Jahr     : {year}",
+                f"📡 Quelle   : {src_label}",
+            ]
+
+        stats_lines = [
+            "",
+            "🚀 Processing-Statistiken:",
+            f"   ✨ Normalisierungen  : {an}/{n} ({pct(an,n)})",
+            f"   🏷️ Genre-Mappings    : {gm}/{n} ({pct(gm,n)})",
+            f"   📜 Lyrics gefunden   : {lf}/{n} ({pct(lf,n)})",
+        ]
+        if not is_spotify:
+            stats_lines += [
+                f"   📺 YouTube-Parser    : {yp}/{n} ({pct(yp,n)})",
+                f"   🎯 Artist-Map-Fbk    : {amf}/{n} ({pct(amf,n)})",
+            ]
+        stats_lines.append(f"   💾 Cache-Trefferquote: {ch}/{ct} ({pct(ch,ct)})")
+
+        lines = (
+            [header, ""]
+            + meta
+            + ["", "🏷️ Genres:"]
+            + genre_lines
+            + stats_lines
+            + [
+                "",
+                f"🖼️ Cover eingebettet : {'✅ Ja' if cover_ok else '❌ Nein'}",
+                f"📜 Lyrics verfügbar  : {'✅ Ja' if lyrics_ok else '❌ Nein'}",
+                f"📄 Datei : {fname}",
+                f"📍 Pfad  : {fdir}",
+            ]
+        )
+
+        final_msg = "\n".join(lines)
+        self.logger.info(f"📝 [SUMMARY] Zusammenfassung:\n{final_msg}")
+
+        try:
+            if self.status_msg:
+                await self.status_msg.edit_text(final_msg)
+            else:
+                await self.update.message.reply_text(final_msg)
+            self.logger.info("✅ [SUMMARY] Abschluss-Zusammenfassung gesendet")
+        except TelegramError as e:
+            self.logger.error(f"❌ [SUMMARY] Fehler beim Senden: {e}")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # UNIFIED URL-DISPATCHER
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def handle_url(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Unified Einstiegspunkt.
+        Erkennt URL-Typ und delegiert an YT- oder Spotify-Pipeline.
+        """
+        url = update.message.text.strip()
+        self.logger.info(
+            f"📤 [DISPATCH] Neue URL empfangen: {url[:100]}"
+        )
+
+        if _is_spotify_url(url):
+            self.logger.info("📤 [DISPATCH] → Spotify-URL erkannt → spotify-Pipeline")
+            await self.handle_spotify_url(update, context, url)
+        else:
+            self.logger.info("📤 [DISPATCH] → YouTube/Generic-URL → YT-Pipeline")
+            await self.handle_youtube_links(update, context)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # YOUTUBE-PIPELINE
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def handle_youtube_links(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        YouTube Download-Pipeline mit vollständigen Step-Logs.
+
+        Schritte: URL-Prüfung → Duplikat → Download → Metadaten → Bibliothek → Zusammenfassung
+        """
+        self.update = update
+        url = update.message.text.strip()
+
+        self.logger.info(
+            f"\n{'═'*60}\n"
+            f"📤 YOUTUBE-PIPELINE GESTARTET\n"
+            f"   URL      : {url}\n"
+            f"   Chat-ID  : {update.effective_chat.id}\n"
+            f"   Update-ID: {update.update_id}\n"
+            f"{'═'*60}"
+        )
+
+        self.status_msg = await update.message.reply_text("▶️ Anfrage wird gestartet...")
+        self.progress_tracker.status_message = self.status_msg
+        TOTAL = _YT.TOTAL
+
+        try:
+            # ── SCHRITT 1: URL-Prüfung ─────────────────────────────────────
+            step, label = _YT.URL_CHECK
+            await self._update_status(step, TOTAL, label, "DownloadHandler", url[:60])
+
+            # ── SCHRITT 2: Duplikat-Check ──────────────────────────────────
+            step, label = _YT.DUPE_CHECK
+            await self._update_status(step, TOTAL, label, "DuplicateHandler")
+            is_dup, entry, dup_type = await self._check_duplicates_before_download(url)
+            if is_dup and entry:
+                await self._handle_duplicate_found(entry, dup_type)
+                return
+
+            # ── SCHRITT 3: YT-Download ─────────────────────────────────────
+            step, label = _YT.DOWNLOAD
+            await self._update_status(step, TOTAL, label, "YoutubeDownloader")
+            download_result = await self.downloader.download_audio(url)
+
+            if not download_result:
+                self.logger.error("❌ [YT-PIPELINE] download_audio() lieferte leeres Ergebnis")
+                raise ValueError("Download-Ergebnis war leer oder ungültig")
+
+            # ── SCHRITT 4: Metadaten anreichern ────────────────────────────
+            step, label = _YT.METADATA
+            await self._update_status(step, TOTAL, label, "EnhancedMetadataProcessor")
+
+            results_list = download_result if isinstance(download_result, list) else [download_result]
+            self.logger.info(
+                f"🔢 [YT-PIPELINE] {len(results_list)} Ergebnis(se) zur Verarbeitung"
+            )
+
+            processed_results = []
+            for idx, res in enumerate(results_list, 1):
+                self.logger.info(
+                    f"🔄 [YT-PIPELINE] Verarbeite Ergebnis {idx}/{len(results_list)}: "
+                    f"'{res.get('title', '?')}'"
+                )
+                if not (isinstance(res, dict) and res.get("success")):
+                    self.logger.warning(
+                        f"⚠️ [YT-PIPELINE] Ergebnis {idx} ist fehlerhaft — übersprungen"
+                    )
+                    continue
+
+                # Dateikonflikt → Duplikat
+                if res.get("renamed_due_to_conflict"):
+                    final_path = res.get("library_path")
+                    self.logger.warning(
+                        f"📄 [YT-PIPELINE] Dateikonflikt erkannt — lösche: {final_path}"
+                    )
+                    try:
+                        if final_path and Path(final_path).exists():
+                            os.remove(final_path)
+                            self.logger.info(f"✅ [YT-PIPELINE] Duplikat-Datei gelöscht: {final_path}")
+                    except OSError as oe:
+                        self.logger.error(f"❌ [YT-PIPELINE] Löschen fehlgeschlagen: {oe}")
+
+                    conflict_entry = DuplicateEntry(
+                        title=res.get("title", "Unbekannt"),
+                        artist=res.get("artist", "Unbekannt"),
+                        file_path=Path(str(final_path).replace(" (1)", "")),
+                        download_date=datetime.now(),
+                        url=url,
+                    )
+                    await self._handle_duplicate_found(conflict_entry, "file_conflict")
+                    return
+
+                res["original_url"] = url
+                processed = await self._process_single_download_result(res)
+                processed_results.append(processed)
+
+            # ── SCHRITT 5 & 6: Bibliothek + Zusammenfassung ────────────────
+            step, label = _YT.LIBRARY
+            await self._update_status(step, TOTAL, label, "FilenameFixerTool")
+
+            step, label = _YT.SUMMARY
+            await self._update_status(step, TOTAL, label, "DownloadHandler")
+
+            if not processed_results:
+                self.logger.warning("🤷 [YT-PIPELINE] Keine erfolgreichen Ergebnisse")
+                return
+
+            if len(processed_results) == 1 and processed_results[0].get("type") == "playlist":
+                await self.handle_playlist_success(processed_results)
+            elif len(processed_results) == 1:
+                await self.handle_single_track_success(processed_results[0])
+            else:
+                await self.handle_playlist_success(processed_results)
+
+            self.logger.info(
+                f"{'═'*60}\n"
+                f"✅ YOUTUBE-PIPELINE ABGESCHLOSSEN — {len(processed_results)} Track(s)\n"
+                f"{'═'*60}"
+            )
+
+        except Exception as e:
+            self.logger.error(
+                f"💥 [YT-PIPELINE] Unerwarteter Fehler: {e}", exc_info=True
+            )
+            await self.handle_download_failure(str(e))
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SPOTIFY-PIPELINE
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def handle_spotify_url(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        url: str,
+    ) -> None:
+        """
+        Spotify Download-Pipeline mit vollständigen Step-Logs.
+
+        Schritte: URL-Analyse → Duplikat → Spotify-Metadaten → YT-Download →
+                  Metadaten-Anreicherung → Bibliothek → Zusammenfassung
+        """
+        self.update = update
+        TOTAL = _SP.TOTAL
+
+        self.logger.info(
+            f"\n{'═'*60}\n"
+            f"🎵 SPOTIFY-PIPELINE GESTARTET\n"
+            f"   URL      : {url}\n"
+            f"   Chat-ID  : {update.effective_chat.id}\n"
+            f"   Update-ID: {update.update_id}\n"
+            f"{'═'*60}"
+        )
+
+        self.status_msg = await update.message.reply_text("🎵 Spotify-Anfrage wird gestartet...")
+        self.progress_tracker.status_message = self.status_msg
+
+        try:
+            # ── SCHRITT 1: SpotifyDownloader verfügbar? ──────────────────
+            step, label = _SP.URL_CHECK
+            await self._update_status(step, TOTAL, label, "SpotifyDownloader", url[:60])
+
+            if not self.spotify_downloader:
+                self.logger.error("❌ [SPOTIFY] SpotifyDownloader nicht konfiguriert")
+                await self.status_msg.edit_text(
+                    "❌ Spotify-Download nicht verfügbar.\n\n"
+                    "SpotifyDownloader ist nicht konfiguriert.\n"
+                    "Lösung: SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET in .env eintragen."
+                )
+                return
+
+            # ── SCHRITT 2: Duplikat-Check ────────────────────────────────
+            step, label = _SP.DUPE_CHECK
+            await self._update_status(step, TOTAL, label, "DuplicateHandler")
+            is_dup, entry, dup_type = await self._check_duplicates_before_download(url)
+            if is_dup and entry:
+                await self._handle_duplicate_found(entry, dup_type)
+                return
+
+            # ── SCHRITT 3: Spotify-Download (Metadaten + Audio) ──────────
+            step, label = _SP.META_FETCH
+            await self._update_status(step, TOTAL, label, "SpotifyDownloader")
+            self.logger.info(f"🎵 [SPOTIFY] Starte spotify_downloader.download({url[:60]})")
+
+            download_result = await self.spotify_downloader.download(url)
+
+            if not download_result or not download_result.get("success"):
+                err = download_result.get("error", "Unbekannter Spotify-Fehler") if download_result else "Kein Ergebnis"
+                self.logger.error(f"❌ [SPOTIFY] Download fehlgeschlagen: {err}")
+                await self.handle_download_failure(err)
+                return
+
+            self.logger.info(
+                f"✅ [SPOTIFY] Download-Ergebnis erhalten:\n"
+                f"   type     : {download_result.get('type')}\n"
+                f"   is_podcast: {download_result.get('track_info', {}).get('is_podcast', False)}"
+            )
+
+            # ── SCHRITT 4: YouTube-Audio geladen ─────────────────────────
+            step, label = _SP.YT_SEARCH
+            await self._update_status(step, TOTAL, label, "SpotifyDownloader")
+
+            # Ergebnis-Liste normalisieren
+            if download_result.get("type") == "playlist":
+                raw_tracks = download_result.get("tracks", [])
+                results_list = raw_tracks if raw_tracks else [download_result]
+                self.logger.info(
+                    f"📋 [SPOTIFY] Playlist mit {len(results_list)} Tracks"
+                )
+            else:
+                track_info = download_result.get("track_info", {})
+                if track_info:
+                    track_info["original_url"] = url
+                    results_list = [track_info]
+                else:
+                    results_list = [download_result]
+                self.logger.info(
+                    f"🎵 [SPOTIFY] Einzelner Track: '{results_list[0].get('title', '?')}'"
+                )
+
+            # ── SCHRITT 5: Metadaten-Anreicherung ────────────────────────
+            step, label = _SP.METADATA
+            await self._update_status(step, TOTAL, label, "EnhancedMetadataProcessor")
+
+            processed_results = []
+            for idx, res in enumerate(results_list, 1):
+                self.logger.info(
+                    f"🔄 [SPOTIFY] Verarbeite Track {idx}/{len(results_list)}: "
+                    f"'{res.get('title', '?')}'"
+                )
+
+                if not (isinstance(res, dict) and res.get("success", True)):
+                    self.logger.warning(
+                        f"⚠️ [SPOTIFY] Track {idx} fehlerhaft — übersprungen"
+                    )
+                    continue
+
+                res.setdefault("original_url", url)
+                res.setdefault("source", "spotify_no_api_embed")
+
+                # playlist_channel für Podcast-Spezialkanal-Erkennung
+                if res.get("is_podcast") and res.get("podcast_name"):
+                    pn = res["podcast_name"]
+                    res.setdefault("playlist_channel", pn)
+                    self.logger.info(
+                        f"🎙️ [SPOTIFY] Podcast-Track: playlist_channel='{pn}' gesetzt "
+                        f"für Spezialkanal-Routing"
+                    )
+
+                processed = await self._process_single_download_result(res)
+                processed_results.append(processed)
+                self.logger.debug(
+                    f"✅ [SPOTIFY] Track {idx} verarbeitet:\n"
+                    f"{_fmt_result(processed)}"
+                )
+
+            if not processed_results:
+                self.logger.warning("🤷 [SPOTIFY] Keine erfolgreichen Ergebnisse")
+                await self.status_msg.edit_text(
+                    "⚠️ Spotify-Download abgeschlossen, aber keine Ergebnisse verarbeitet."
+                )
+                return
+
+            # ── SCHRITT 6 & 7: Bibliothek + Zusammenfassung ──────────────
+            step, label = _SP.LIBRARY
+            await self._update_status(step, TOTAL, label, "FilenameFixerTool")
+
+            step, label = _SP.SUMMARY
+            await self._update_status(step, TOTAL, label, "DownloadHandler")
+
+            if len(processed_results) == 1:
+                await self.handle_single_track_success(processed_results[0])
+            else:
+                await self.handle_playlist_success(processed_results)
+
+            self.logger.info(
+                f"{'═'*60}\n"
+                f"✅ SPOTIFY-PIPELINE ABGESCHLOSSEN — {len(processed_results)} Track(s)\n"
+                f"{'═'*60}"
+            )
+
+        except Exception as e:
+            self.logger.error(
+                f"💥 [SPOTIFY-PIPELINE] Unerwarteter Fehler: {e}", exc_info=True
+            )
+            await self.handle_download_failure(str(e))
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # FEHLER-HANDLING
+    # ──────────────────────────────────────────────────────────────────────────
+
+    async def handle_download_failure(self, error_message: str) -> None:
+        """Loggt den Fehler und sendet eine verständliche Fehlermeldung an den User."""
+        self.logger.error(
+            f"❌ [FAILURE] Download fehlgeschlagen:\n"
+            f"   Fehler: {error_message}"
+        )
+        text = (
+            "❌ Download fehlgeschlagen\n\n"
+            f"Fehler: {error_message}\n\n"
+            "Mögliche Ursachen:\n"
+            "• URL nicht erreichbar oder privat\n"
+            "• Netzwerkproblem\n"
+            "• Dateiformat nicht unterstützt"
+        )
+        try:
+            if self.status_msg:
+                await self.status_msg.edit_text(text)
+            else:
+                await self.update.message.reply_text(text)
+        except TelegramError as te:
+            self.logger.error(f"❌ Fehler beim Senden der Fehlermeldung: {te}")

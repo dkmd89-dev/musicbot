@@ -1,0 +1,917 @@
+---
+ARTIST_GENRE_MAP:
+  # Hip Hop / Deutschrap
+  01099:
+    primary: Hip Hop
+    secondary: [Deutschrap, Pop Rap, Alternative Hip Hop, Trap]
+    description: Jugendlicher Deutschrap mit Pop- und Trap-Einflüssen aus der Dresdner Hip-Hop-Szene
+    
+  apache 207:
+    primary: Hip Hop
+    secondary: [Deutschrap, Trap, Melodic Rap, Pop Rap, Gangsta Rap]
+    description: Deutscher Rapper, bekannt für melodischen Trap-Sound und Hits wie "Roller" oder "200 km/h", oft mit Features aus der Deutschrap-Szene  
+
+  1986zig:
+    primary: Hip Hop
+    secondary: [Deutschrap, Contemporary Hip Hop, Mainstream Pop, Emo Rap]
+    description: Melancholischer Deutschrap mit Trap-Elementen und emotionalen Texten
+
+  2pac:
+    primary: Hip Hop
+    secondary: [Gangsta Rap, West Coast Hip Hop, G-Funk, Conscious Rap]
+    description: Legendärer Rapper, bekannt für seine sozialkritischen Texte und als Ikone des West Coast Hip Hop
+
+  aymen:
+    primary: Hip Hop
+    secondary: [Deutschrap, Trap, Street Rap, Gangsta Rap]
+    description: Deutschrap-Künstler mit Fokus auf Trap und Street-Rap, authentische Texte aus dem Berliner Umfeld
+
+  badchieff:
+    primary: Hip Hop
+    secondary: [Deutschrap, Alternative Hip Hop, Cloud Rap, Trap]
+    description: Deutscher Rapper mit experimentellem Sound zwischen Alternative Hip Hop und Cloud Rap
+
+  bausa:
+    primary: Hip Hop
+    secondary: [Deutschrap, Trap, Cloud Rap, Pop Rap]
+    description: Deutscher Rapper, bekannt für melodischen Trap und Hits wie "Was du Liebe nennst"
+
+  bloodhound lil jeff:
+    primary: Hip Hop
+    secondary: [Drill, Chicago Drill, Gangsta Rap, Street Rap]
+    description: US-amerikanischer Drill-Rapper aus Chicago, Mitglied der Bloodhound/DrillCity-Crew, bekannt für aggressive, authentische Straßentexte und posthume Alben "Stepping In Blood" (2024) und "Bloody Bruddas" (2025)
+
+  capo plaza:
+    primary: Hip Hop
+    secondary: [Italo-Rap, Trap, Drill, Pop Rap]
+    description: Italienischer Rapper, bekannt für melodischen Trap und als einer der erfolgreichsten Vertreter des italienischen Hip Hop
+
+  civo:
+    primary: Hip Hop
+    secondary: [Deutschrap, Street Rap, Gangsta Rap, Berliner Rap]
+    description: Deutscher Rapper mit hartem Sound, authentischer Straßenrap und Berlin-Flair
+
+  dante yn:
+    primary: Hip Hop
+    secondary: [Deutschrap, Trap, R&B, Emo Rap, Melodic Rap]
+    description: Moderner Deutschrap mit melodischen Trap-Beats und Einflüssen aus R&B und Emo Rap
+
+  dd osama:
+    primary: Hip Hop
+    secondary: [Drill, New York Drill, Melodic Drill, Gangsta Rap]
+    description: Amerikanischer Drill-Rapper aus Harlem, New York, bekannt für melodischere Drill-Beats
+
+  dominic fike:
+    primary: Alternative Pop
+    secondary: [R&B, Indie Pop, Rap, Alternative Hip Hop, Rock]
+    description: Genreübergreifender Künstler aus Florida mit Sound zwischen Alternative Pop, R&B und Hip-Hop
+
+  drake:
+    primary: Hip Hop
+    secondary: [R&B, Pop Rap, Trap, Canadian Hip Hop, Dancehall]
+    description: Kanadischer Rapper und einer der erfolgreichsten Künstler weltweit, bekannt für seine Vielseitigkeit
+
+  edot baby:
+    primary: Hip Hop
+    secondary: [Drill, New York Drill, Gangsta Rap, Melodic Drill]
+    description: Amerikanischer Drill-Rapper aus Harlem, bekannt für aggressiven Style und Beiträge zur NY Drill-Szene
+
+  eminem:
+    primary: Hip Hop
+    secondary: [Rap, Hardcore Hip Hop, Horrorcore, Pop Rap, Conscious Rap]
+    description: Legendärer amerikanischer Rapper, eine der einflussreichsten Figuren der Hip-Hop-Geschichte
+
+  jazeek:
+    primary: Hip Hop
+    secondary: [Deutschrap, Trap, Melodic Rap, R&B]
+    description: Aufstrebender Deutschrap-Künstler mit melodischen Trap-Elementen und R&B-Einflüssen
+
+  k-fly:
+    primary: Hip Hop
+    secondary: [Deutschrap, Trap, Street Rap, Gangsta Rap]
+    description: Deutscher Rapper mit harten Trap-Beats und streetnahen Texten, authentischer Sound
+
+  l'a capone:
+    primary: Hip Hop
+    secondary: [Drill, Gangsta Rap, Chicago Rap, Street Rap]
+    description: US-amerikanischer Rapper aus Chicago, Wegbereiter des Drill-Genres
+
+  makko:
+    primary: Hip Hop
+    secondary: [Deutschrap, Emo Rap, Cloud Rap, Alternative Hip Hop, Lo-Fi]
+    description: Deutscher Rapper mit atmosphärischem, melodischem Sound zwischen Emo- und Cloud Rap
+
+  miksu/macloud:
+    primary: Hip Hop
+    secondary: [Deutschrap, Trap, EDM, Pop Rap, Electronic]
+    description: Deutsches Produzenten-Duo, das Beats für zahlreiche deutsche Rapper produziert
+
+  montez:
+    primary: Hip Hop
+    secondary: [Deutschrap, Pop Rap, Melodic Rap, R&B]
+    description: Deutscher Rapper mit eingängigen Melodien und Pop-Rap-Elementen
+    
+  stickle:
+    primary: Hip Hop
+    secondary: [Deutschrap, Melodic Rap, R&B]
+    description: Deutscher Rapper und DJ
+
+  nina chuba:
+    primary: Hip Hop
+    secondary: [Deutschrap, Pop Rap, R&B, Alternative Pop]
+    description: Deutsche Künstlerin zwischen Pop und Hip Hop, bekannt für ihre vielseitige Stimme
+
+  notti osama:
+    primary: Hip Hop
+    secondary: [Drill, New York Drill, Gangsta Rap, Melodic Drill]
+    description: Amerikanischer Drill-Rapper aus Harlem, Teil der aufstrebenden NY Drill-Szene
+
+  okfella:
+    primary: Hip Hop
+    secondary: [Deutschrap, Trap, Cloud Rap, Melodic Rap]
+    description: Moderner Deutschrap mit melancholischen Trap-Beats und atmosphärischen Produktionen
+
+  outkast:
+    primary: Hip Hop
+    secondary: [Southern Hip Hop, Funk Rap, Alternative Hip Hop, G-Funk]
+    description: Legendäres amerikanisches Hip-Hop-Duo aus Atlanta, bekannt für innovativen Southern Hip Hop
+
+  pashanim:
+    primary: Hip Hop
+    secondary: [Deutschrap, Alternative Hip Hop, Trap, Cloud Rap, Berliner Rap]
+    description: Berliner Rapper der Playboysmafia, bekannt für melodische, atmosphärische Beats
+
+  reezy:
+    primary: Hip Hop
+    secondary: [Deutschrap, Trap, Pop Rap, R&B, Melodic Rap]
+    description: Deutscher Rapper und Produzent aus Mannheim, bekannt für melodischen Trap-Sound
+
+  samra:
+    primary: Hip Hop
+    secondary: [Deutschrap, Trap, Gangsta Rap, Pop Rap]
+    description: Deutscher Rapper mit libanesischen Wurzeln, bekannt für melodischen Trap und Kollaborationen
+
+  sido:
+    primary: Hip Hop
+    secondary: [Deutschrap, Gangsta Rap, Pop Rap, Battle Rap]
+    description: Deutscher Rap-Pionier und ehemaliges Aggro-Berlin-Mitglied, prägend für die Deutschrap-Szene
+
+  sierra kidd:
+    primary: Hip Hop
+    secondary: [Deutschrap, Cloud Rap, Emo Rap, Alternative Hip Hop]
+    description: Deutscher Rapper mit Einflüssen aus Cloud- und Emo-Rap
+
+  ski aggu:
+    primary: Hip Hop
+    secondary: [Deutschrap, Cloud Rap, Trap, Pop Rap, Hyperpop]
+    description: Berliner Rapper bekannt für eingängigen Cloud-Rap mit melodischen Hooks
+
+  t-low:
+    primary: Hip Hop
+    secondary: [Deutschrap, Trap, Emo Rap, Melodic Rap]
+    description: Deutscher Rapper mit melodischem Trap-Sound und emotionalen Texten
+
+  travis scott:
+    primary: Hip Hop
+    secondary: [Trap, Psychedelic Rap, Cloud Rap, Southern Hip Hop]
+    description: Amerikanischer Rapper und Produzent, bekannt für seinen psychedelischen Trap-Sound
+
+  wiz khalifa:
+    primary: Hip Hop
+    secondary: [Trap, Pop Rap, Southern Hip Hop, Cloud Rap]
+    description: Amerikanischer Rapper aus Pittsburgh, bekannt für entspannten Flow und Weed-Rap
+
+  zartmann:
+    primary: Hip Hop
+    secondary: [Deutschrap, Alternative Hip Hop, Pop Rap, Indie Pop]
+    description: Deutscher Künstler zwischen Pop und Hip Hop
+
+  herzchen:
+    primary: Hip Hop
+    secondary: [Deutschrap, Pop Rap, Emo Rap, Melodic Rap]
+    description: Deutscher Rapper und Sänger mit emotionalem Deutschrap und persönlichen Texten
+
+  majan:
+    primary: Hip Hop
+    secondary: [Deutschrap, Gangsta Rap, Straßenrap, Ruhrpott-Rap]
+    description: Deutscher Rapper aus Gelsenkirchen mit hartem, authentischen Straßenrap
+
+  # Pop / Mainstream
+  anton:
+    primary: Pop
+    secondary: [Indie Pop, Cover, Singer-Songwriter, Akustik Pop]
+    description: Moderne Pop-Interpretationen und Coverversionen mit eigenem akustischem Stil
+
+  benson boone:
+    primary: Pop
+    secondary: [Pop Rock, Singer-Songwriter, Alternative Pop]
+    description: Amerikanischer Pop-Sänger mit kraftvoller Stimme und emotionalen Balladen
+
+  bruno mars:
+    primary: Pop
+    secondary: [Funk, R&B, Soul, Pop Rock, Disco]
+    description: Vielseitiger amerikanischer Künstler, bekannt für seine Mischung aus Pop, Funk und R&B
+
+  clueso:
+    primary: Pop
+    secondary: [Deutschpop, Hip Hop, Rock, Reggae, Singer-Songwriter]
+    description: Deutscher Singer-Songwriter mit einzigartiger Mischung aus Pop, Hip Hop und Reggae
+
+  dasha:
+    primary: Pop
+    secondary: [Country Pop, Singer-Songwriter, Americana, Folk Pop]
+    description: Amerikanische Singer-Songwriterin, die Country-Pop mit modernen Pop-Elementen verbindet
+
+  fleur east:
+    primary: Pop
+    secondary: [Dance Pop, R&B, Soul, UK Pop]
+    description: Britische Sängerin mit kraftvoller Stimme, bekannt durch X-Factor
+
+  graham:
+    primary: Pop
+    secondary: [Deutschpop, Indie Pop, Singer-Songwriter]
+    description: Deutscher Pop-Künstler mit eingängigen Melodien
+
+  gustav:
+    primary: Pop
+    secondary: [Indie Pop, Singer-Songwriter, Deutschpop, Akustik Pop]
+    description: Deutschsprachiger Indie-Pop mit sanften Melodien und introspektiven Texten
+
+  johannes oerding:
+    primary: Pop
+    secondary: [Deutschpop, Pop-Rock, Singer-Songwriter, Akustik]
+    description: Deutscher Singer-Songwriter mit eingängigen, emotionalen Pop-Rock-Songs
+
+  lea:
+    primary: Pop
+    secondary: [Deutschpop, Indie-Pop, Singer-Songwriter, Elektropop, Piano Pop]
+    description: Deutsche Singer-Songwriterin mit emotionalen Texten über Liebe und Selbstfindung
+
+  levin liam:
+    primary: Pop
+    secondary: [Deutschpop, Indie Pop, Singer-Songwriter]
+    description: Deutscher Pop-Künstler mit Indie-Einflüssen
+
+  lisa:
+    primary: Pop
+    secondary: [Deutschpop, Dance Pop]
+    description: Deutsche Pop-Sängerin
+
+  max giesinger:
+    primary: Pop
+    secondary: [Deutschpop, Pop-Rock, Singer-Songwriter, Akustik Pop]
+    description: Deutscher Singer-Songwriter mit eingängigen Gitarren-basierten Songs
+
+  nico santos:
+    primary: Pop
+    secondary: [Dance-Pop, R&B, Electropop, Latin Pop]
+    description: Deutscher Sänger mit spanischen Wurzeln, bekannt für melodischen Mainstream-Pop
+
+  philipp poisel:
+    primary: Pop
+    secondary: [Deutschpop, Liedermacher, Singer-Songwriter, Akustik]
+    description: Deutscher Singer-Songwriter mit poetischen, introspektiven Texten
+
+  sarah connor:
+    primary: Pop
+    secondary: [Soul, R&B, Pop Soul, Deutschpop, Ballad]
+    description: Deutsche Pop- und Soul-Sängerin, internationale Erfolge mit englischen und deutschen Songs
+
+  sarah engels:
+    primary: Pop
+    secondary: [Deutschpop, Schlager, Dance Pop, Ballad]
+    description: Deutsche Sängerin, bekannt durch DSDS und erfolgreiche Deutschpop- und Schlager-Songs
+
+  taylor swift:
+    primary: Pop
+    secondary: [Country Pop, Singer-Songwriter, Folk Pop, Indie Folk, Synthpop]
+    description: Weltberühmte amerikanische Singer-Songwriterin mit Entwicklung vom Country zur Pop-Superstar
+
+  tim bendzko:
+    primary: Pop
+    secondary: [Deutschpop, Singer-Songwriter, Pop-Rock, Akustik]
+    description: Deutscher Pop-Sänger mit emotionalen Songs und eingängigen Melodien
+
+  tom odell:
+    primary: Pop
+    secondary: [Indie Pop, Singer-Songwriter, Piano Pop, Folk Pop]
+    description: Britischer Singer-Songwriter mit Klavier-basierten emotionalen Balladen
+
+  # Electronic / Dance
+  alle farben:
+    primary: Electronic
+    secondary: [Deep House, Tech House, Melodic House, Progressive House]
+    description: Deutscher DJ und Produzent, bekannt für eingängige Electronic-Beats mit melodiösen Elementen
+
+  calvin harris:
+    primary: Electronic
+    secondary: [EDM, Dance-Pop, House, Disco, Electro House, Progressive House]
+    description: Schottischer Superstar-DJ und Produzent, einer der erfolgreichsten EDM-Künstler weltweit
+
+  chris luno:
+    primary: Electronic
+    secondary: [Deep House, House, Melodic House, Tech House]
+    description: Deutscher DJ und Produzent mit Fokus auf Deep House
+
+  costa mee:
+    primary: Electronic
+    secondary: [Deep House, Chill House, Melodic House, Lounge]
+    description: Entspannter Deep-House-Sound mit melodischen Elementen
+
+  deep territory:
+    primary: Electronic
+    secondary: [Deep House, Chill House, Ambient House]
+    description: Deep-House-Projekt mit atmosphärischen Klängen
+
+  disco lines:
+    primary: Electronic
+    secondary: [House, Bass House, Dance, G-House]
+    description: US-amerikanischer DJ und Produzent mit basslastigen House-Tracks
+
+  felix jaehn:
+    primary: Electronic
+    secondary: [Tropical House, Dance-Pop, Deep House, EDM]
+    description: Deutscher DJ, international bekannt für Tropical House-Sound
+
+  highontracks:
+    primary: Electronic
+    secondary: [Deep House, Chill House, Melodic House]
+    description: Deep-House-Projekt mit chilligen Vibes
+
+  imanbek:
+    primary: Electronic
+    secondary: [Deep House, EDM, Tech House, Dance-Pop]
+    description: Kasachischer DJ, bekannt durch seinen Roses Remix
+
+  klangkarussell:
+    primary: Electronic
+    secondary: [Deep House, House, EDM, Melodic House, Downtempo]
+    description: Österreichisches Duo mit atmosphärischem, melodischem Deep House
+
+  kygo:
+    primary: Electronic
+    secondary: [Tropical House, Deep House, Progressive House, Downtempo, Melodic House]
+    description: Norwegischer DJ und Produzent, Pionier des Tropical House
+
+  lucky luke:
+    primary: Electronic
+    secondary: [EDM, Big Room, Hardstyle, Dance, Electro House]
+    description: Deutscher DJ mit energiereichen EDM- und Hardstyle-Tracks
+
+  möwe:
+    primary: Electronic
+    secondary: [Deep House, Indie Dance, Nu Disco, Pop]
+    description: Österreichisches DJ-Duo mit Deep-House-Basis und Indie-Dance-Einflüssen
+
+  niklas dee:
+    primary: Electronic
+    secondary: [Dance, EDM, Pop, House, Future House]
+    description: Deutscher DJ bekannt für eingängige Dance-Tracks und Remixe
+
+  riton:
+    primary: Electronic
+    secondary: [House, Dance, EDM, Indie Dance, UK Garage]
+    description: Britischer DJ und Produzent mit eingängigen House-Tracks
+
+  shane codd:
+    primary: Electronic
+    secondary: [House, Piano House, Dance, EDM, Irish Dance]
+    description: Irischer House-Produzent mit charakteristischen Piano-Melodien
+
+  swedish house mafia:
+    primary: Electronic
+    secondary: [Progressive House, EDM, Big Room, Dance, Electro House]
+    description: Legendäre schwedische EDM-Supergroup, prägend für Progressive House
+
+  tkandz:
+    primary: Electronic
+    secondary: [Deep House, Tech House, Melodic House, Progressive House]
+    description: Deutscher DJ mit Fokus auf melodischem Deep und Tech House
+
+  zerb:
+    primary: Electronic
+    secondary: [EDM, Big Room, Progressive House, Dance, Electro House]
+    description: Schweizer DJ spezialisiert auf energiereiche EDM- und Big-Room-Tracks
+
+  clockclock:
+    primary: Electronic
+    secondary: [Progressive House, Melodic House, Trance, EDM]
+    description: Schwedisches DJ-Duo mit melodischem Progressive House
+
+  one-t:
+    primary: Electronic
+    secondary: [Big Beat, Breakbeat, Trip Hop, Electronica, French Touch]
+    description: Französisches Projekt mit experimentellem Big Beat und French-Touch-Einflüssen
+
+  # Rock / Alternative
+  bloodhound gang:
+    primary: Rock
+    secondary: [Alternative Hip Hop, Rapcore, Comedy Rock, Punk Rock, Alternative Rock]
+    description: Amerikanische Band bekannt für humorvollen, genreübergreifenden Sound
+
+  bosse:
+    primary: Rock
+    secondary: [Indie Rock, Pop Rock, Singer-Songwriter, Deutschrock]
+    description: Deutscher Singer-Songwriter mit markanter, rauchiger Stimme
+
+  böhse onkelz:
+    primary: Rock
+    secondary: [Deutschrock, Punk, Hard Rock, Heavy Metal]
+    description: Legendäre deutsche Rockband mit kontroverser Geschichte
+
+  kraftklub:
+    primary: Rock
+    secondary: [Indie Rock, Deutschrock, Alternative Rock, Punk Rock, Rap Rock]
+    description: Deutsche Indie-Rock-Band mit gesellschaftskritischen Texten
+
+  # Indie / Alternative
+  dominic fike:
+    primary: Alternative Pop
+    secondary: [R&B, Indie Pop, Rap, Alternative Hip Hop, Rock]
+    description: Genreübergreifender Künstler aus Florida
+
+  esther graf:
+    primary: Alternative
+    secondary: [Pop Rock, Pop Punk, Alternative Rock, Indie Rock]
+    description: Mischung aus Alternative-Pop, Rock und Pop-Punk-Einflüssen
+
+  lorde:
+    primary: Alternative Pop
+    secondary: [Indie Pop, Art Pop, Electropop, Dream Pop]
+    description: Neuseeländische Singer-Songwriterin mit kunstvollen Pop-Kompositionen
+
+  lola young:
+    primary: Alternative
+    secondary: [Soul, R&B, Indie Pop, Blues, Alternative Rock]
+    description: Britische Sängerin mit rauchiger Stimme und genreübergreifendem Sound
+
+  madeline juno:
+    primary: Pop
+    secondary: [Deutschpop, Indie Pop, Singer-Songwriter, Alternative Pop]
+    description: Deutsche Singer-Songwriterin mit emotionalen Texten
+
+  # Reggae / Dancehall
+  seeed:
+    primary: Reggae
+    secondary: [Dancehall, Hip Hop, Ragga, Dub, Deutsche Reggae]
+    description: Berliner Band, bekannt für mitreißende Mischung aus Reggae, Dancehall und Hip Hop
+
+  # Schlager / Volksmusik
+  fayan:
+    primary: Schlager
+    secondary: [Deutschpop, Party-Schlager, Dance-Schlager]
+    description: Deutscher Sänger bekannt für Partyschlager und eingängige Songs
+
+  helene fischer:
+    primary: Schlager
+    secondary: [Pop, Dance Pop, Deutschpop, Ballad]
+    description: Deutschlands erfolgreichste Schlagersängerin mit modernen Pop-Einflüssen
+
+  # Country / Americana
+  shaboozey:
+    primary: Country
+    secondary: [Country Rap, Hip Hop, Alternative Country, Americana, Trap]
+    description: US-amerikanischer Künstler, verbindet Country mit Rap und modernen Hip-Hop-Elementen
+
+  dasha:
+    primary: Pop
+    secondary: [Country Pop, Singer-Songwriter, Americana, Folk Pop]
+    description: Amerikanische Singer-Songwriterin mit Country-Pop-Sound
+
+  # Latin
+  miguel atienza:
+    primary: Latin Pop
+    secondary: [Latin Urban, Reggaeton, Latin Trap, Pop]
+    description: Latin-Künstler mit modernen Reggaeton- und Urban-Einflüssen
+
+  # Afrobeats
+  moliy:
+    primary: Afrobeats
+    secondary: [Afropop, Dancehall, R&B, Amapiano]
+    description: Ghanaische Sängerin mit modernem Afrobeats-Sound
+
+  # Folk / Singer-Songwriter
+  adele:
+    primary: Pop
+    secondary: [Soul, Ballad, Blue-Eyed Soul, Brit Pop]
+    description: Britische Soul-Pop-Diva mit kraftvoller Stimme
+
+  aurora:
+    primary: Alternative Pop
+    secondary: [Art Pop, Indie Pop, Electropop, Nordic Folk]
+    description: Norwegische Sängerin mit ätherischem, kunstvollem Pop
+
+  ben howard:
+    primary: Indie Folk
+    secondary: [Singer-Songwriter, Folk Rock, Acoustic]
+    description: Britischer Indie-Folk-Musiker mit tiefgründigen Texten
+
+  birdy:
+    primary: Indie Pop
+    secondary: [Piano Pop, Folk Pop, Singer-Songwriter]
+    description: Englische Singer-Songwriterin mit sanften Klavierballaden
+
+  bon iver:
+    primary: Indie Folk
+    secondary: [Ambient, Experimental Folk, Chamber Pop]
+    description: Amerikanisches Indie-Folk-Projekt mit experimentellem Sound
+
+  coldplay:
+    primary: Alternative Rock
+    secondary: [Soft Rock, Piano Pop, Britpop, Pop Rock]
+    description: Britische Rockband bekannt für melodische, emotionale Songs
+
+  damien rice:
+    primary: Indie Folk
+    secondary: [Acoustic, Singer-Songwriter, Chamber Pop]
+    description: Irischer Singer-Songwriter mit introspektiven Akustiksongs
+
+  daughter:
+    primary: Indie Folk
+    secondary: [Melancholic Pop, Dream Pop, Ambient Folk]
+    description: Britisches Indie-Folk-Trio mit düsterem, ätherischem Sound
+
+  dermot kennedy:
+    primary: Indie Pop
+    secondary: [Singer-Songwriter, Folk Pop, Alternative Rock]
+    description: Irischer Künstler mit emotionalen Vocals
+
+  ed sheeran:
+    primary: Pop
+    secondary: [Folk Pop, Singer-Songwriter, Acoustic Pop, Blue-Eyed Soul]
+    description: Britischer Pop-Superstar mit akustischen Wurzeln
+
+  florence + the machine:
+    primary: Indie Rock
+    secondary: [Baroque Pop, Art Rock, Chamber Pop]
+    description: Britische Band mit theatralischem, barockem Pop-Rock
+
+  freya ridings:
+    primary: Indie Pop
+    secondary: [Melancholic Pop, Piano Pop, Singer-Songwriter]
+    description: Britische Singer-Songwriterin mit emotionalen Klavierballaden
+
+  george ezra:
+    primary: Folk Pop
+    secondary: [Pop, Blue-Eyed Soul, Roots Rock]
+    description: Britischer Sänger mit tiefer Stimme und folkigem Pop
+
+  hozier:
+    primary: Alternative Rock
+    secondary: [Singer-Songwriter, Blues Rock, Soul, Indie Folk]
+    description: Irischer Sänger mit Mischung aus Soul, Blues und Indie Rock
+
+  james bay:
+    primary: Indie Pop
+    secondary: [Singer-Songwriter, Blue-Eyed Soul, Folk Pop]
+    description: Britischer Gitarrist und Singer-Songwriter
+
+  james morrison:
+    primary: Pop Rock
+    secondary: [Singer-Songwriter, Blue-Eyed Soul, Acoustic]
+    description: Britischer Pop-Rock-Sänger mit souliger Stimme
+
+  keane:
+    primary: Alternative Rock
+    secondary: [Piano Rock, Britpop, Synthpop]
+    description: Britische Band mit Klavier-basiertem Alternative Rock
+
+  labrinth:
+    primary: Pop
+    secondary: [R&B, Electronic, Soul, Hip Hop]
+    description: Britischer Künstler mit genreübergreifendem Sound
+
+  lewis capaldi:
+    primary: Indie Pop
+    secondary: [Singer-Songwriter, Pop Rock, Blue-Eyed Soul]
+    description: Schottischer Sänger mit emotionalen Balladen
+
+  mumford & sons:
+    primary: Indie Folk
+    secondary: [Folk Rock, Alternative Country, Roots Rock]
+    description: Britische Folk-Rock-Band mit Banjo und intensiven Live-Shows
+
+  norah jones:
+    primary: Jazz Pop
+    secondary: [Soul, Singer-Songwriter, Vocal Jazz, Americana]
+    description: Amerikanische Sängerin mit Mischung aus Jazz, Pop und Soul
+
+  regina spektor:
+    primary: Indie Pop
+    secondary: [Baroque Pop, Anti-Folk, Piano Rock]
+    description: Russisch-amerikanische Singer-Songwriterin mit Klavier
+
+  sufjan stevens:
+    primary: Indie Folk
+    secondary: [Baroque Pop, Chamber Pop, Experimental Folk]
+    description: Amerikanischer Multi-Instrumentalist mit komplexen Kompositionen
+
+  the lumineers:
+    primary: Indie Folk
+    secondary: [Americana, Folk Rock, Alternative Country]
+    description: Amerikanische Folk-Rock-Band
+
+  vance joy:
+    primary: Indie Folk
+    secondary: [Folk Pop, Singer-Songwriter, Acoustic]
+    description: Australischer Singer-Songwriter mit Ukulele-basiertem Folk-Pop
+
+  # Kompilation / Various
+  compilations:
+    primary: Kompilation
+    secondary: [Various, Sampler]
+    description: Verschiedene Künstler auf einer Sammlung
+
+  coole songs ki:
+    primary: Kindermusik
+    secondary: [Kinderlieder, Kinderpop]
+    description: Kindermusik-Sammlung
+
+  dorfcombo:
+    primary: Volksmusik
+    secondary: [Blasmusik, Traditional]
+    description: Traditionelle Volksmusik
+
+  moonboys entertainment:
+    primary: Various
+    secondary: [Compilation, Label Sampler]
+    description: Label-Kompilation mit verschiedenen Künstlern
+
+  mrrevillz:
+    primary: Chill House
+    secondary: [Pop, Electronic, Dance, Compilation]
+    description: Chillige House- & Pop-Compilations
+
+  vibe music:
+    primary: Various
+    secondary: [Compilation, Chill, Lo-Fi]
+    description: Musik-Compilation-Kanal
+
+  west coast 4 life:
+    primary: Hip Hop
+    secondary: [West Coast Hip Hop, Compilation, G-Funk]
+    description: West-Coast-Hip-Hop-Compilation
+
+  cypress hill & west coast 4 life:
+    primary: Hip Hop
+    secondary: [West Coast Hip Hop, G-Funk, Compilation]
+    description: West-Coast-Hip-Hop mit Cypress-Hill-Fokus
+
+  # Fehlende Künstler ergänzt
+  shelly coral:
+    primary: Pop
+    secondary: [Deutschpop, Soul, Singer-Songwriter, Ballad]
+    description: Deutsche Sängerin und Songwriterin mit kraftvoller Stimme und gefühlvollen Balladen
+
+  durdenhauer:
+    primary: Electronic
+    secondary: [Hardstyle, Rawstyle, Hardcore, Frenchcore]
+    description: Deutsches Hardstyle-Duo mit harten Kicks und energiereichen Produktionen
+
+  jonny mahoro:
+    primary: Electronic
+    secondary: [Deep House, House, Afro House, Melodic House]
+    description: Aufstrebender House-Produzent mit Soul-Einflüssen
+
+  fayan:
+    primary: Schlager
+    secondary: [Deutschpop, Party-Schlager, Dance-Schlager]
+    description: Deutscher Sänger bekannt für Partyschlager und eingängige Songs
+
+  herzchen:
+    primary: Hip Hop
+    secondary: [Deutschrap, Pop Rap, Emo Rap, Melodic Rap]
+    description: Deutscher Rapper und Sänger mit emotionalem Deutschrap
+
+  sarah engels:
+    primary: Pop
+    secondary: [Deutschpop, Schlager, Dance Pop, Ballad]
+    description: Deutsche Sängerin, bekannt durch DSDS und erfolgreiche Deutschpop-Songs
+
+  riton:
+    primary: Electronic
+    secondary: [House, Dance, EDM, Indie Dance, UK Garage]
+    description: Britischer DJ und Produzent mit eingängigen House-Tracks
+
+  taylor swift:
+    primary: Pop
+    secondary: [Country Pop, Singer-Songwriter, Folk Pop, Indie Folk, Synthpop]
+    description: Weltberühmte amerikanische Singer-Songwriterin
+
+  one-t:
+    primary: Electronic
+    secondary: [Big Beat, Breakbeat, Trip Hop, Electronica, French Touch]
+    description: Französisches Projekt mit experimentellem Big Beat
+
+  calvin harris:
+    primary: Electronic
+    secondary: [EDM, Dance-Pop, House, Disco, Electro House]
+    description: Schottischer Superstar-DJ und Produzent
+
+  majan:
+    primary: Hip Hop
+    secondary: [Deutschrap, Gangsta Rap, Straßenrap, Ruhrpott-Rap]
+    description: Deutscher Rapper aus Gelsenkirchen mit hartem Straßenrap
+
+  eminem:
+    primary: Hip Hop
+    secondary: [Rap, Hardcore Hip Hop, Horrorcore, Pop Rap, Conscious Rap]
+    description: Legendärer amerikanischer Rapper
+
+  # YouTube-Kanal-Varianten (für bessere Erkennung)
+  "calvin harris - topic":
+    primary: Electronic
+    secondary: [EDM, Dance-Pop, House]
+    description: YouTube Topic-Kanal von Calvin Harris
+
+  "kygo - topic":
+    primary: Electronic
+    secondary: [Tropical House, Deep House]
+    description: YouTube Topic-Kanal von Kygo
+
+  "lea - topic":
+    primary: Pop
+    secondary: [Deutschpop, Indie-Pop]
+    description: YouTube Topic-Kanal von LEA
+
+  "max giesinger - topic":
+    primary: Pop
+    secondary: [Deutschpop, Pop-Rock]
+    description: YouTube Topic-Kanal von Max Giesinger
+
+  "taylor swift - topic":
+    primary: Pop
+    secondary: [Country Pop, Singer-Songwriter]
+    description: YouTube Topic-Kanal von Taylor Swift
+
+  "glasperlenspiel - topic":
+    primary: Pop
+    secondary: [Elektropop, Synthie-Pop]
+    description: YouTube Topic-Kanal von Glasperlenspiel
+
+  "makko - topic":
+    primary: Hip Hop
+    secondary: [Deutschrap, Emo Rap]
+    description: YouTube Topic-Kanal von makko
+
+  "calvin harris official":
+    primary: Electronic
+    secondary: [EDM, Dance-Pop]
+    description: Offizieller YouTube-Kanal von Calvin Harris
+
+  "calvin harris vevo":
+    primary: Electronic
+    secondary: [EDM, Dance-Pop]
+    description: VEVO-Kanal von Calvin Harris
+
+  "eminem official":
+    primary: Hip Hop
+    secondary: [Rap, Hardcore Hip Hop]
+    description: Offizieller YouTube-Kanal von Eminem
+
+  "eminem vevo":
+    primary: Hip Hop
+    secondary: [Rap, Hardcore Hip Hop]
+    description: VEVO-Kanal von Eminem
+
+  "kygo official":
+    primary: Electronic
+    secondary: [Tropical House, Deep House]
+    description: Offizieller YouTube-Kanal von Kygo
+
+  "kygo vevo":
+    primary: Electronic
+    secondary: [Tropical House, Deep House]
+    description: VEVO-Kanal von Kygo
+
+  "lea official":
+    primary: Pop
+    secondary: [Deutschpop, Indie-Pop]
+    description: Offizieller YouTube-Kanal von LEA
+
+  "lea vevo":
+    primary: Pop
+    secondary: [Deutschpop, Indie-Pop]
+    description: VEVO-Kanal von LEA
+
+  "max giesinger official":
+    primary: Pop
+    secondary: [Deutschpop, Pop-Rock]
+    description: Offizieller YouTube-Kanal von Max Giesinger
+
+  "max giesinger vevo":
+    primary: Pop
+    secondary: [Deutschpop, Pop-Rock]
+    description: VEVO-Kanal von Max Giesinger
+
+  "taylor swift official":
+    primary: Pop
+    secondary: [Country Pop, Singer-Songwriter]
+    description: Offizieller YouTube-Kanal von Taylor Swift
+
+  "taylor swift vevo":
+    primary: Pop
+    secondary: [Country Pop, Singer-Songwriter]
+    description: VEVO-Kanal von Taylor Swift
+
+  backstage boxengasse:
+    primary: Podcast
+    secondary: [Sport, Motorsport, Formel 1]
+    description: Backstage Boxengasse – Der Formel 1 Podcast von Sky Sport
+
+  sky sport formel 1:
+    primary: Podcast
+    secondary: [Sport, Motorsport, Formel 1]
+    description: Sky Sport Formel 1 Podcast-Kanal (Backstage Boxengasse)
+
+  fitbeatbeats:
+    primary: Tech House
+    secondary: [Bass House, Melodic Techno, Electro House, Mainstage House]
+    description: Energetische, treibende und fokussierte House-Musik für Workouts und konzentrierte Sessions, mit schweren Basslines und clubtauglichen Beats
+
+  lighteye beatz:
+    primary: German Hip-Hop
+    secondary: [Remix, Hip-Hop, Electronic, Rap]
+    description: Deutschrap-Remixe und Beat-Produktionen
+    
+  starting grid:
+    primary: Podcast
+    secondary: [Sport, Motorsport, Formel 1]
+    description: Starting Grid
+    
+  alex warren:
+    primary: Pop
+    secondary: [Pop-Rock, Singer-Songwriter, Folk-Pop]
+    description: US-amerikanischer Singer-Songwriter, der emotionale Pop-Rock-Hymnen mit persönlichen Texten und großen Melodien schreib
+
+  justin bieber:
+    primary: Pop
+    secondary: [Dance Pop, Teen Pop]
+    description: Manuelles Genre für Justin Bieber
+
+  linkin park:
+    primary: Rock
+    secondary: [Nu Metal, Alternative Rock, Alternative Metal]
+    description: Manuelles Genre für Linkin Park
+    
+  limp bizkit:
+    primary: Nu Metal
+    secondary: [Rapcore, Alternative Metal, Rap Metal]
+    description: Manuelles Genre für Limp Bizkit    
+
+  # Weitere Pop-Künstler
+  "Dua Lipa":
+    primary: Pop
+    secondary: [Dance Pop, Disco, Synthpop, Electropop]
+    description: Britisch-albanische Pop-Sängerin, bekannt für Disco-inspirierten Dance-Pop
+  
+  "Billie Eilish":
+    primary: Alternative Pop
+    secondary: [Indie Pop, Electropop, Emo Pop, Dark Pop]
+    description: Amerikanische Singer-Songwriterin mit einzigartigem Alternative-Pop-Sound
+  
+  "The Weeknd":
+    primary: R&B
+    secondary: [Alternative R&B, Synthpop, New Wave, Electropop]
+    description: Kanadischer Singer-Songwriter mit einzigartigem R&B- und Pop-Sound
+  
+  "Ariana Grande":
+    primary: Pop
+    secondary: [R&B, Dance Pop, Trap, Electropop]
+    description: Amerikanische Pop- und R&B-Sängerin mit beeindruckender Stimme
+  
+  "Doja Cat":
+    primary: Hip Hop
+    secondary: [Pop, R&B, Trap, Funk]
+    description: Amerikanische Rapperin und Sängerin mit genreübergreifendem Stil
+  
+  "Olivia Rodrigo":
+    primary: Pop
+    secondary: [Pop Rock, Alternative Pop, Singer-Songwriter]
+    description: Amerikanische Singer-Songwriterin mit Pop-Rock-Einflüssen
+  
+  "Post Malone":
+    primary: Hip Hop
+    secondary: [Pop Rap, Alternative Rock, Trap, R&B]
+    description: Amerikanischer Sänger und Rapper mit genreübergreifendem Sound
+  
+  "Harry Styles":
+    primary: Pop
+    secondary: [Pop Rock, Soft Rock, Indie Pop]
+    description: Britischer Pop-Sänger mit Rock-Einflüssen
+  
+  "Lady Gaga":
+    primary: Pop
+    secondary: [Dance Pop, Electropop, Jazz, Rock]
+    description: Amerikanische Pop-Ikone und vielseitige Künstlerin
+
+  # Korrektur für The Weeknd (falls Fuzzy-Match falsch war)
+  "The Weeknd":
+    primary: R&B
+    secondary: [Alternative R&B, Synthpop, New Wave, Electropop]
+    description: Kanadischer Singer-Songwriter mit einzigartigem R&B- und Pop-Sound
+    
+  chapo102:
+    primary: Deutschrap
+    secondary: [Indie-Pop, Pop, Melodic Rap]
+    description: Deutscher Rapper der 102 Boyz mit melodischen, poplastigen Elementen und reflektierenden Lyrics

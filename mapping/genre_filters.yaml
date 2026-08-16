@@ -1,0 +1,647 @@
+---
+# Genre-Filter für Secondary-Genres
+# Diese Genres werden aus den Sekundär-Genres herausgefiltert
+# Optimiert für MusicBrainz und Last.fm Tags
+
+IGNORE_SECONDARY:
+  # ============================================================
+  # 1. ZU ALLGEMEINE ÜBERGENRES (zu breit für Sekundär-Genres)
+  # ============================================================
+  - rock
+  - indie
+  - alternative
+  - metal
+  - jazz
+  - classical
+  - blues
+  - folk
+  - country
+  - latin
+  - world
+  - dance-pop
+  - japanese
+  - japanese music
+  - greeeen
+  - pop
+  - electronic
+  - hip hop
+  - rap
+  - r&b
+  - soul
+  - funk
+  - reggae
+
+  # ============================================================
+  # 2. LÄNDER/REGIONEN (keine Genres)
+  # ============================================================
+  - united states
+  - american
+  - british
+  - german
+  - english
+  - french
+  - canadian
+  - australian
+  - european
+  - asian
+  - african
+  - latin american
+  - uk
+  - usa
+  - germany
+  - france
+  - canada
+  - australia
+  - berlin
+  - hamburg
+  - munich
+  - cologne
+  - austrian
+  - swiss
+  - netherlands
+  - swedish
+  - norwegian
+  - danish
+  - finnish
+  - italian
+  - spanish
+  - brazilian
+  - mexican
+  - japanese
+  - korean
+  - chinese
+  - indian
+
+  # ============================================================
+  # 3. KÜNSTLER-BESCHREIBUNGEN (keine Genres)
+  # ============================================================
+  - seen live
+  - female vocalist
+  - female vocalists
+  - male vocalists
+  - female vocal
+  - male vocal
+  - female
+  - male
+  - vocalist
+  - singer-songwriter
+  - singer
+  - songwriter
+  - producer
+  - band
+  - duo
+  - trio
+  - quartet
+  - diva
+  - nickelodeon
+  - bhz
+  - german artists
+  - artist
+  - musicians
+  - group
+  - solo
+  - instrumentalist
+  - pianist
+  - guitarist
+  - drummer
+  - dj
+  - mc
+  - rapper
+
+  # ============================================================
+  # 4. ZEITANGABEN (zu unspezifisch)
+  # ============================================================
+  - 2020s
+  - 2010s
+  - 2000s
+  - 1990s
+  - 1980s
+  - 1970s
+  - 1960s
+  - 1950s
+  - 1940s
+  - 1930s
+  - 1920s
+  - 1910s
+  - 1900s
+  - '2020'
+  - '2021'
+  - '2022'
+  - '2023'
+  - '2024'
+  - '2025'
+  - '2026'
+  - '2007'
+  - '00s'
+  - '90s'
+  - '80s'
+  - '70s'
+  - '60s'
+  - 20th century
+  - 21st century
+  - modern
+  - classic
+  - vintage
+  - retro
+  - contemporary
+  - oldies
+  - golden age
+  - new era
+
+  # ============================================================
+  # 5. PRODUKTIONS-BESCHREIBUNGEN
+  # ============================================================
+  - instrumental
+  - acoustic
+  - cover
+  - live
+  - remix
+  - explicit
+  - clean
+  - edit
+  - radio edit
+  - extended mix
+  - club mix
+  - dub mix
+  - instrumental version
+  - karaoke
+  - soundtrack
+  - background music
+  - intro
+  - outro
+  - interlude
+  - demo
+  - acoustic version
+  - piano version
+  - orchestral
+  - symphonic
+  - unplugged
+  - stripped
+  - remastered
+  - remaster
+  - rerecorded
+  - bonus track
+  - hidden track
+  - live version
+  - studio version
+  - album version
+  - single version
+  - original mix
+  - radio mix
+  - extended version
+  - short version
+  - alternate version
+  - alternative version
+  - acoustic mix
+  - instrumental mix
+  - a cappella
+  - beatbox
+  - freestyle
+  - cypher
+  - diss
+  - remastered version
+
+  # ============================================================
+  # 6. STIMMUNGS-BESCHREIBUNGEN (subjektiv, keine Genres)
+  # ============================================================
+  - atmospheric
+  - chill
+  - relaxing
+  - calm
+  - upbeat
+  - energetic
+  - catchy
+  - melodic
+  - rhythmic
+  - sad
+  - happy
+  - emotional
+  - romantic
+  - dark
+  - aggressive
+  - powerful
+  - beautiful
+  - peaceful
+  - dreamy
+  - psychedelic
+  - groovy
+  - funky
+  - soulful
+  - smooth
+  - heavy
+  - fast
+  - slow
+  - positive
+  - negative
+  - melancholic
+  - euphoric
+  - intense
+  - mellow
+  - soft
+  - loud
+  - quiet
+  - noisy
+  - sexy
+  - hot
+  - cool
+  - laid back
+  - relaxing
+  - meditative
+  - hypnotic
+  - driving
+  - pulsating
+  - flowing
+  - dynamic
+  - dramatic
+  - epic
+  - cinematic
+  - ethereal
+  - haunting
+  - mysterious
+  - eerie
+  - spooky
+  - dark ambient
+  - light
+  - bright
+  - sunny
+  - winter
+  - summer
+  - spring
+  - autumn
+  - nocturnal
+  - morning
+  - evening
+
+  # ============================================================
+  # 7. PLATTFORM-SPEZIFISCHE TAGS
+  # ============================================================
+  - spotify
+  - apple music
+  - tidal
+  - youtube
+  - soundcloud
+  - bandcamp
+  - deezer
+  - amazon music
+  - pandora
+  - napster
+  - iheartradio
+  - last.fm
+  - musicbrainz
+  - discogs
+  - rateyourmusic
+  - genius
+  - lyric
+  - lyrics
+  - official
+  - video
+  - music video
+  - audio
+  - hd
+  - 4k
+  - vevo
+  - topic
+  - topic channel
+  - auto-generated
+  - youtube music
+  - spotify playlist
+  - apple music playlist
+  - streaming
+  - download
+  - mp3
+  - flac
+  - wav
+  - aac
+  - ogg
+  - lossless
+  - high quality
+  - hifi
+  - 320kbps
+  - 128kbps
+
+  # ============================================================
+  # 8. UNSINNIGE/NICHT-GENRE TAGS (von Last.fm)
+  # ============================================================
+  - i fucking love this song
+  - awesome
+  - amazing
+  - great
+  - favorite
+  - best
+  - perfect
+  - love it
+  - masterpiece
+  - timeless
+  - underrated
+  - overrated
+  - guilty pleasure
+  - catchy song
+  - earworm
+  - banger
+  - hit
+  - chart
+  - top 40
+  - mainstream
+  - underground
+  - lo-fi
+  - diy
+  - bedroom pop
+  - julia mofada
+  - brighterdayinc
+  - isa-song
+  - my favorite
+  - listening to
+  - currently listening
+  - playing now
+  - loved
+  - hated
+  - skipped
+  - repeated
+  - on repeat
+  - on shuffle
+  - background
+  - studying
+  - working out
+  - driving
+  - party
+  - club
+  - festival
+  - concert
+  - live show
+  - tour
+  - world tour
+  - new release
+  - just released
+  - upcoming
+  - anticipated
+  - highly anticipated
+  - comeback
+  - return
+  - debut
+  - first album
+  - sophomore
+  - third album
+  - greatest hits
+  - best of
+  - compilation
+  - collection
+  - anthology
+  - box set
+  - deluxe edition
+  - limited edition
+  - collectors edition
+  - exclusive
+  - bonus
+  - extra
+  - unreleased
+  - rare
+  - b-side
+  - b-sides
+  - rarities
+  - outtakes
+  - demos
+  - sessions
+  - live sessions
+  - studio sessions
+  - rehearsal
+  - soundcheck
+  - backstage
+  - behind the scenes
+  - documentary
+  - interview
+  - podcast
+  - radio show
+  - tv show
+  - film
+  - movie
+  - series
+  - episode
+  - soundtrack song
+  - theme song
+  - title track
+  - opening
+  - closing
+  - credits
+  - end credits
+  - main theme
+  - character song
+  - image song
+  - insert song
+
+  # ============================================================
+  # 9. KÜNSTLERNAMEN (werden oft fälschlich als Genre getaggt)
+  # ============================================================
+  # Allgemeine Platzhalter für Artist-Namen werden zur Laufzeit gefiltert
+  # Hier nur statische Beispiele für häufige Fälle:
+  - kings of leon
+  - beatles
+  - queen
+  - nirvana
+  - radiohead
+  - coldplay
+  - metallica
+  - eminem
+  - beyonce
+  - taylor swift
+  - adele
+  - ed sheeran
+  - drake
+  - kanye west
+  - rolling stones
+  - led zeppelin
+  - pink floyd
+  - foo fighters
+  - red hot chili peppers
+  - linkin park
+  - green day
+  - u2
+  - acdc
+  - guns n roses
+  - bon jovi
+  - elvis presley
+  - michael jackson
+  - madonna
+  - whitney houston
+  - mariah carey
+  - celine dion
+  - britney spears
+  - christina aguilera
+  - justin timberlake
+  - justin bieber
+  - ariana grande
+  - billie eilish
+  - olivia rodrigo
+  - dua lipa
+  - the weeknd
+  - bruno mars
+  - lady gaga
+  - katy perry
+  - rihanna
+  - shakira
+  - jennifer lopez
+  - pink
+  - kelly clarkson
+  - alicia keys
+  - norah jones
+  - john legend
+  - sam smith
+  - lewis capaldi
+  - james blunt
+  - elton john
+  - billy joel
+  - bruce springsteen
+  - bob dylan
+  - bob marley
+  - jimi hendrix
+  - jimi hendrix experience
+  - cream
+  - the doors
+  - the who
+  - the kinks
+  - the smiths
+  - the cure
+  - depeche mode
+  - new order
+  - joy division
+  - the clash
+  - sex pistols
+  - ramones
+  - blink 182
+  - sum 41
+  - offspring
+  - bad religion
+  - nofx
+  - rancid
+  - dropkick murphys
+  - flogging molly
+  - kollegah
+  - farid bang
+  - capital bra
+  - samra
+  - bonez mc
+  - raf camora
+  - ufo361
+  - loredana
+  - shirin david
+  - nimo
+  - mero
+  - eno
+  - azet
+  - veysel
+  - albi
+  - xatar
+  - ssio
+  - trettmann
+  - kitschkrieg
+  - cro
+  - casper
+  - matter
+  - tocotronic
+  - annenmaykantereit
+
+  # ============================================================
+  # 10. MUSICBRAINZ/LAST.FM SPEZIFISCHE TAGS
+  # ============================================================
+  # Tags die häufig von MusicBrainz oder Last.fm kommen
+  # aber keine echten Genres sind
+  - music
+  - songs
+  - tracks
+  - album
+  - single
+  - ep
+  - lp
+  - record
+  - vinyl
+  - cd
+  - cassette
+  - digital
+  - streaming
+  - online
+  - offline
+  - playlist
+  - mixtape
+  - beat
+  - rhythm
+  - flow
+  - rhyme
+  - verse
+  - chorus
+  - hook
+  - bridge
+  - intro
+  - outro
+  - interlude
+  - skit
+  - outro
+  - hidden track
+  - bonus track
+  - prelude
+  - postlude
+  - overture
+  - finale
+  - coda
+  - climax
+  - breakdown
+  - buildup
+  - drop
+  - beat drop
+  - bass drop
+  - kick
+  - snare
+  - hi-hat
+  - bassline
+  - melody
+  - harmony
+  - chord
+  - progression
+  - riff
+  - lick
+  - solo
+  - guitar solo
+  - drum solo
+  - keyboard solo
+  - bass solo
+  - vocal solo
+  - vocal run
+  - vocal chop
+  - vocal sample
+  - sample
+  - loop
+  - drum loop
+  - melody loop
+  - beat loop
+  - synth
+  - synthesizer
+  - drum machine
+  - sampler
+  - sequencer
+  - midi
+  - daw
+  - ableton
+  - fl studio
+  - logic pro
+  - pro tools
+  - cubase
+  - reason
+  - bitwig
+  - reaper
+  - garageband
+  - audacity
+  - production
+  - producing
+  - recording
+  - mixing
+  - mastering
+  - engineering
+  - sound design
+  - sound engineering
+  - audio engineering
+  - music production
+  - beat production
+  - track production
+  - songwriting
+  - composing
+  - arrangement
+  - orchestration
+  - scoring

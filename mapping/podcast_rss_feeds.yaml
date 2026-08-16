@@ -1,0 +1,121 @@
+# mapping/podcast_rss_feeds.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# RSS-Feeds für Spotify-Podcasts
+#
+# Diese Datei mappt Spotify-Show-IDs auf öffentliche RSS-Feeds.
+# Wenn eine Show hier konfiguriert ist, wird der Bot den RSS-Feed
+# für den Download nutzen (KEIN Premium erforderlich!).
+#
+# Format:
+#   spotify_show_id:
+#     name: "Anzeigename des Podcasts"
+#     rss_feed: "https://url.zum/rss/feed.xml"
+#     enabled: true
+#     priority: 1
+#     source: "audiorella|podbean|apple|etc"
+# ─────────────────────────────────────────────────────────────────────────────
+
+podcasts:
+  # =========================================================================
+  # Im Bett mit Anna-Maria und Anis Ferchichi
+  # =========================================================================
+  "7pcioAeV0kKxDJlcAk1zVq":
+    name: "Im Bett mit Anna-Maria und Anis Ferchichi"
+    rss_feed: "https://cdn.audiorella.com/podcasts/1702-im-bett-mit-anna-maria-und-\
+      anis-ferchichi-der-bushido-podcast/feed.rss"
+    enabled: true
+    priority: 1
+    source: "audiorella"
+    description: "Bushido Podcast – persönliche Gespräche über Leben & Beziehung"
+
+  # =========================================================================
+  # DIE GEISSENS - der Podcast
+  # =========================================================================
+  "2CPhTfsqfK2tc2f9kmhFO4":
+    name: "DIE GEISSENS"
+    rss_feed: "https://cdn.audiorella.com/podcasts/1654-die-geissens-der-podcast/fe\
+      ed.rss"
+    enabled: true
+    priority: 1
+    source: "audiorella"
+    description: "Die Geissens - Der offizielle RTL+ Podcast"
+
+  # =========================================================================
+  # Starting Grid
+  # =========================================================================
+  "6Dd0zt88YdbbpLlWtWcVnX":
+    name: "Starting Grid"
+    rss_feed: "https://meinsportpodcast.de/motorsport/starting-grid/feed"
+    enabled: true
+    priority: 1
+    source: "apple_podcasts"
+    description: "Alles rund um Motorsport"
+
+  # =========================================================================
+  # F1 Beyond the Grid
+  # =========================================================================
+  "44YvwJyqsCEEhNZBxuXZQ9":
+    name: "F1 Beyond the Grid"
+    rss_feed: "https://audioboom.com/channels/4964339.rss"
+    enabled: true
+    priority: 1
+    source: "apple_podcasts"
+    description: "Formel-1-Podcast mit exklusiven Fahrer- und Team-Interviews"
+    
+  # =========================================================================
+  #  Baywatch Berlin
+  # =========================================================================
+  "3jtLk2Zlutfjo91QZYXmlA":
+    name: "Baywatch Berlin"
+    rss_feed: "https://baywatch-berlin.podigee.io/feed/mp3"
+    enabled: true
+    priority: 1
+    source: "apple_podcasts"
+    description: "Wöchentlicher Talk-Podcast mit Klaas Heufer-Umlauf, Jakob Lundt
+      und Thomas Schmitt über aktuelle Themen, Popkultur und persönliche
+      Anekdoten"
+      
+  # =========================================================================
+  # Kaulitz Hills - Senf aus Hollywood
+  # =========================================================================
+  "5m4Ll1qIBX29cTd0T9WwKp":
+    name: "Kaulitz Hills"
+    rss_feed: "https://feeds.megaphone.fm/GLT9787442816"
+    enabled: true
+    priority: 1
+    source: "apple_podcasts"
+    description: "Bill und Tom Kaulitz plaudern über Hollywood, Musik und das Leben als Zwillinge"
+    
+  # =========================================================================
+  #  Gemischtes Hack
+  # =========================================================================
+  "7BTOsF2boKmlYr76BelijW":
+    name: "Gemischtes Hack"
+    rss_feed: "https://feeds.megaphone.fm/GLT8390938385"
+    enabled: true
+    priority: 1
+    source: "apple_podcasts"
+    description: "Felix Lobrecht und Tommi Schmitt über Alltag, Gesellschaft und Popkultur"
+    
+  # =========================================================================
+  #  SCHÖN LAUT
+  # =========================================================================
+  "76v1q6enOGuUR19isxM1KT":
+    name: "SCHÖN LAUT"
+    rss_feed: "https://schoenlaut.podigee.io/feed/mp3"
+    enabled: true
+    priority: 1
+    source: "apple_podcasts"
+    description: "Vanessa Mai und Lola Weippert über Showbusiness, Freundschaft und das Leben als Frauen in der Öffentlichkeit"
+    
+  # =========================================================================
+  #  Mordlust
+  # =========================================================================
+  "6wPqbSlsvoi3Rgjjc2Sn4R":
+    name: "Mordlust"
+    rss_feed: "https://mordlust-podcast.podigee.io/feed/mp3"
+    enabled: true
+    priority: 1
+    source: "apple_podcasts"
+    description: "True Crime Podcast mit Paulina Krasa und Laura Wohlers über wahre Kriminalfälle aus Deutschland"    
+      

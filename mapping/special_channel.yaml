@@ -1,0 +1,46 @@
+# mapping/special_channel.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Spezialkanal-Konfiguration mit PRIORITÄT
+#
+# Die REIHENFOLGE der Kategorien bestimmt die Priorität:
+#   1. Podcast      → Höchste Priorität
+#   2. Compilations → Mittlere Priorität
+#   3. Playlist     → Niedrigste Priorität (Fallback für selbst erstellte Playlists)
+#
+# Wenn ein Name in mehreren Kategorien vorkommt, gewinnt die frühere Kategorie.
+# ─────────────────────────────────────────────────────────────────────────────
+
+SPECIAL_CHANNELS:
+
+  # ── 1. PODCAST-Kanäle (HÖCHSTE PRIORITÄT) ─────────────────────────────────
+  # Episoden unter library/Podcast/<Kanal>/<Episodentitel>.m4a
+  Podcast:
+    - Backstage Boxengasse
+    - Sky Sport Formel 1
+    - Hardenacke trifft
+    - Im Bett mit Anna-Maria und Anis Ferchichi
+    - DIE GEISSENS
+    - F1 Beyond the Grid
+    - Starting Grid 
+    - Baywatch Berlin
+    - Gemischtes Hack
+    - Kaulitz Hills
+    - SCHÖN LAUT
+    - Mordlust
+
+  # ── 2. COMPILATION-Kanäle (MITTlERE PRIORITÄT) ────────────────────────────
+  # library/Compilations/<Kanal>/<Künstler> - <Titel>.m4a
+  Compilations:
+    - Deep Territory
+    - FitBeatBeats
+    - MrRevillz
+    - Highontracks
+    - Lighteye Beatz
+
+  # ── 3. PLAYLIST-Namen (NIEDRIGSTE PRIORITÄT - FALLBACK) ───────────────────
+  # library/Playlist/<Playlist-Name>/<Künstler> - <Titel>.m4a
+  # Nur wenn Name in keiner anderen Kategorie gefunden wurde.
+  Playlist:
+    - Workout
+    - Running Mix
+    - Chill Vibes

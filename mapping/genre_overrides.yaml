@@ -1,0 +1,204 @@
+---
+GENRE_OVERRIDES:
+  # Hip Hop & verwandte Genres
+  hiphop: "Hip Hop"
+  Hip-Hop: "Hip Hop"
+  Hip - Hop: "Hip Hop"
+  hip-hop: "Hip Hop"
+  hip hop: "Hip Hop"
+  rap: "Hip Hop"
+  gangsta rap: "Hip Hop"
+  trap: "Hip Hop"
+  drill: "Hip Hop"
+  grime: "Hip Hop"
+  cloud rap: "Hip Hop"
+  straßenrap: "Straßenrap"
+  street rap: "Straßenrap"
+  ruhrpott rap: "Deutschrap"
+
+  # R&B & Soul
+  rnb: "R&B"
+  r&b: "R&B"
+  rhythm and blues: "R&B"
+  soul: "R&B"
+  neo soul: "R&B"
+  alternative r&b: "R&B"
+
+  # Elektronische Musik
+  edm: "Electronic"
+  electro: "Electronic"
+  electronic: "Electronic"
+  electronica: "Electronic"
+  synthpop: "Electronic"
+  dubstep: "Electronic"
+  trance: "Electronic"
+  progressive trance: "Electronic"
+  ambient: "Electronic"
+  chillout: "Electronic"
+  downtempo: "Electronic"
+  idm: "Electronic"
+
+  # Spezifische Elektronische Subgenres
+  dnb: "Drum & Bass"
+  drum and bass: "Drum & Bass"
+  jungle: "Drum & Bass"
+  house: "House"
+  deep house: "House"
+  tech house: "House"
+  progressive house: "House"
+  techno: "Techno"
+  minimal techno: "Techno"
+  acid techno: "Techno"
+  hard techno: "Techno"
+  dance: "Dance"
+  eurodance: "Dance"
+  hardstyle: "Dance"
+  tech house: "Tech House"
+  bass house: "Bass House"
+  melodic techno: "Melodic Techno"
+  electro house: "Electro House"
+  mainstage house: "Mainstage House"
+
+  # Rock-Genres
+  rock: "Rock"
+  alternative rock: "Rock"
+  hard rock: "Rock"
+  classic rock: "Rock"
+  progressive rock: "Rock"
+  punk rock: "Rock"
+  pop-rock: "Pop"
+  pop rock: "Pop"
+  soft rock: "Rock"
+  grunge: "Rock"
+  post-rock: "Rock"
+
+  # Metal
+  heavy metal: "Metal"
+  metal: "Metal"
+  death metal: "Metal"
+  black metal: "Metal"
+  thrash metal: "Metal"
+  power metal: "Metal"
+  doom metal: "Metal"
+  metalcore: "Metal"
+  deathcore: "Metal"
+
+  # Indie
+  indie: "Indie"
+  indie rock: "Indie"
+  indie pop: "Indie"
+  alternative: "Indie"
+
+  # Pop
+  pop: "Pop"
+  pop music: "Pop"
+  mainstream pop: "Pop"
+  synth-pop: "Pop"
+  dance-pop: "Pop"
+  electropop: "Pop"
+
+  # International & Weltmusik
+  k-pop: "K-Pop"
+  j-pop: "J-Pop"
+  c-pop: "C-Pop"
+  latin: "Latin"
+  reggaeton: "Latin"
+  salsa: "Latin"
+  bachata: "Latin"
+  afrobeats: "Afro"
+  afropop: "Afro"
+
+  # Deutschsprachige Musik
+  deutschrap: "Deutschrap"
+  deutscher pop: "Deutscher Pop"
+  deutschpop: "Deutscher Pop"
+  österreichischer pop: "Deutscher Pop"
+  schlager: "Schlager"
+  volksmusik: "Schlager"
+
+  # Klassik & Instrumental
+  classical: "Klassik"
+  klassik: "Klassik"
+  klassische musik: "Klassik"
+  instrumental: "Instrumental"
+  film score: "Soundtrack"
+  soundtrack: "Soundtrack"
+  video game music: "Soundtrack"
+
+  # Jazz & Blues
+  jazz: "Jazz"
+  modern jazz: "Jazz"
+  smooth jazz: "Jazz"
+  blues: "Blues"
+
+  # Country & Folk
+  country: "Country"
+  folk: "Folk"
+  singer-songwriter: "Folk"
+  acoustic: "Folk"
+
+  # Experimentell & Nische
+  lo-fi: "Lo-Fi"
+  lofi: "Lo-Fi"
+  chillhop: "Lo-Fi"
+  vaporwave: "Experimental"
+  experimental: "Experimental"
+  avant-garde: "Experimental"
+
+  # Funk & Disco
+  funk: "Funk"
+  disco: "Disco"
+  nu-disco: "Disco"
+
+  # Reggae & Dub
+  reggae: "Reggae"
+  dub: "Reggae"
+  dancehall: "Reggae"
+
+  # Weitere wichtige Kategorien
+  gospel: "Gospel"
+  christian: "Gospel"
+  hip hop/r&b: "Hip Hop"
+  rock/pop: "Rock"
+  electronic dance: "Electronic"
+
+  # Häufige Tippfehler & Alternativschreibweisen
+  hiphop: "Hip Hop"
+  hip hop: "Hip Hop"
+  r'n'b: "R&B"
+  r & b: "R&B"
+  edm: "Electronic"
+  d&b: "Drum & Bass"
+  drum n bass: "Drum & Bass"
+  kpop: "K-Pop"
+  jpop: "J-Pop"
+  cpop: "C-Pop"
+
+  hardstyle: "Hardstyle"
+  rawstyle: "Hardstyle"
+  hardcore: "Hardcore"
+  progressive house: "Progressive House"
+  melodic house: "Melodic House"
+  big room: "Big Room"
+  country pop: "Country Pop"
+  hard dance: "Hardstyle"
+  euphoric: "Hardstyle"
+  gabber: "Hardcore"
+  frenchcore: "Hardcore"
+  jumpstyle: "Hardstyle"
+
+  electropop: "Electropop"
+  electro house: "Electro House"
+  indie folk: "Indie Folk"
+  folk pop: "Folk Pop"
+  chamber pop: "Chamber Pop"
+  big beat: "Big Beat"
+  breakbeat: "Breakbeat"
+  trip hop: "Trip Hop"
+
+  hardcore hip hop: "Hardcore Hip Hop"
+  horrorcore: "Horrorcore"
+  conscious rap: "Conscious Rap"
+  battle rap: "Battle Rap"
+  technical rap: "Technical Rap"
+  comedy rap: "Comedy Rap"

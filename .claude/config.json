@@ -1,0 +1,7 @@
+{
+  "workspace": "/mnt/128ssd/bot",
+  "python_path": "/home/robin/python/bin/python3",
+  "rules_path": "app/rules/",
+  "tests_path": "app/tests/",
+  "data_path": "data/"
+}

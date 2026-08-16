@@ -1,0 +1,186 @@
+---
+CHANNEL_GENRE_MAP:
+  kontor.tv:
+    primary: Electronic
+    secondary: [Dance]
+    description: German dance music channel
+
+  vibe music:
+    primary: Electronic
+    secondary: [Pop]
+    description: EDM/pop mixes
+
+  highontracks:
+    primary: Electronic
+    secondary: [Dance, House, EDM, Nu-Disco]
+    description: Deutscher Dance-Musik-Channel mit Fokus auf elektronische Club-Tracks, Remixe und ausgewählte Newcomer-Releases
+
+  cloudkid:
+    primary: Electronic
+    secondary: [Indie]
+    description: Indie electronic music
+
+  lighteye beatz:
+    primary: German Hip-Hop
+    secondary: [Remix, Hip-Hop, Electronic, Rap]
+    description: Deutschrap-Remixe und Beat-Produktionen
+
+  selected.:
+    primary: Deep House
+    secondary: [Electronic]
+    description: Curated deep house
+
+  house nation:
+    primary: Electronic
+    secondary: [House]
+    description: House music channel
+
+  the sound you need:
+    primary: Electronic
+    secondary: [Chill]
+    description: Chill electronic
+
+  deep territory:
+    primary: Deep House
+    secondary: [Electronic, Melodic House]
+    description: Tiefgründige & atmosphärische House-Mixe
+
+  mrrevillz:
+    primary: Chill House
+    secondary: [Pop, Electronic, Lo-Fi]
+    description: Entspannte Pop- & Chill-House-Mixe
+
+  trap nation:
+    primary: Hip Hop
+    secondary: [Trap, Electronic]
+    description: Trap music hub
+
+  worldstarhiphop:
+    primary: Hip Hop
+    secondary: []
+    description: Hip hop culture channel
+
+  allesbackspin:
+    primary: Hip Hop
+    secondary: [Deutschrap]
+    description: German hip hop
+
+  16bars:
+    primary: Hip Hop
+    secondary: [Deutschrap]
+    description: German rap channel
+
+  lofi girl:
+    primary: Lo-Fi
+    secondary: [Chillhop]
+    description: 24/7 lo-fi streams
+
+  chillhop music:
+    primary: Lo-Fi
+    secondary: [Chillhop, Jazz]
+    description: Chillhop beats
+
+  alle farben:
+    primary: Electronic
+    secondary: [Pop]
+    description: German DJ/producer
+
+  seeed:
+    primary: Reggae
+    secondary: [Dancehall, Hip Hop]
+    description: Berlin reggae band
+
+  robin schulz:
+    primary: Electronic
+    secondary: [Deep House]
+    description: German DJ
+
+  kygo:
+    primary: Chill House
+    secondary: [Tropical House, Electronic]
+    description: Norwegian DJ
+
+  kraftklub:
+    primary: Rock
+    secondary: [Indie]
+    description: German indie rock band
+
+  rammstein:
+    primary: Metal
+    secondary: [Rock]
+    description: German industrial metal
+
+  t-low:
+    primary: Hip Hop
+    secondary: [Deutschrap]
+    description: German rapper
+
+  sky sport formel 1:
+    primary: Podcast
+    secondary: [Sport, Motorsport]
+    description: Sky Sport Formel 1 Podcast-Kanal (Backstage Boxengasse)
+
+  backstage boxengasse:
+    primary: Podcast
+    secondary: [Sport, Motorsport]
+    description: Backstage Boxengasse – Der Formel 1 Podcast von Sky Sport
+    
+  starting grid:
+    primary: Podcast
+    secondary: [Sport, Motorsport, Formel 1]
+    description: Starting Grid
+
+  fitbeatbeats:
+    primary: Tech House
+    secondary: [Bass House, Melodic Techno, Electro House, Mainstage House]
+    description: Energetische, treibende und fokussierte House-Musik für Workouts und konzentrierte Sessions, mit schweren Basslines und clubtauglichen Beats
+
+  workout:
+    primary: Tech House
+    secondary: [Bass House, Melodic Techno, Electro House, Mainstage House]
+    description: Energetische Workout-Playlist mit treibenden House-Beats
+    
+  Im Bett mit Anna-Maria und Anis Ferchichi:
+    primary: Podcast
+    secondary: [Talk, Interview]
+    description: Bushido Podcast – persönliche Gespräche über Leben & Beziehung
+    
+  die geissens:
+    primary: Podcast
+    secondary: [Talk, Reality, Entertainment]
+    description: Podcast der Geissens-Familie über Luxus, Leben und Familienalltag  
+
+  F1 Beyond the Grid:
+    primary: Podcast
+    secondary: [Sport, Formula 1, Interview, Talk, English]
+    description: Formel-1-Podcast mit exklusiven Fahrer- und Team-Interviews 
+
+  Baywatch Berlin:
+    primary: Podcast
+    secondary: [Gesellschaft, Entertainment, Politik & Gesellschaft]
+    description: Wöchentlicher Talk-Podcast mit Klaas Heufer-Umlauf, Jakob Lundt und Thomas Schmitt über aktuelle Themen, Popkultur und persönliche Anekdoten 
+    
+  Kaulitz Hills:
+    primary: Podcast
+    secondary: [Talk, German, Entertainment, Celebrity]
+    description: Bill und Tom Kaulitz plaudern über Hollywood, Musik und das Leben als Zwillinge
+  
+  Gemischtes Hack:
+    primary: Podcast
+    secondary: [Talk, German, Comedy, Entertainment]
+    description: Felix Lobrecht und Tommi Schmitt über Alltag, Gesellschaft und Popkultur    
+
+  SCHÖN LAUT:
+    primary: Podcast
+    secondary: [Talk, German, Entertainment, Comedy, Music]
+    description: Vanessa Mai und Lola Weippert über Showbusiness, Freundschaft und das Leben als Frauen in der Öffentlichkeit
+    
+  Mordlust:
+    primary: Podcast
+    secondary: [True Crime, German, Society, Psychology, Law]
+    description: True Crime Podcast mit Paulina Krasa und Laura Wohlers über wahre Kriminalfälle aus Deutschland
+    
+  Der Herr der Ringe:
+    primary: Audiobook
+    secondary: [Fantasy, German, Epic, Adventure, Classic]
+    description: J.R.R. Tolkiens Fantasy-Epos als deutsche Hörbuch-Fassung – ungekürzte Lesung oder Hörspiel  

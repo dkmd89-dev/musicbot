@@ -1,0 +1,52 @@
+# Genre-Erkennungsregeln für Künstler und Titel
+
+# Keyword-basierte Regeln
+keyword_rules:
+  # Deutschpop / German Pop
+  - keywords: ["deutschpop", "german pop", "neue deutsche welle"]
+    genre: "Deutschpop"
+    confidence: 0.9
+  
+  # Schlager
+  - keywords: ["schlager", "volkstümlich", "volksmusik", "party schlager"]
+    genre: "Schlager"
+    confidence: 0.9
+  
+  # Deutschrap
+  - keywords: ["deutschrap", "german hip hop", "german rap"]
+    genre: "Deutschrap"
+    confidence: 0.9
+  
+  # Rock
+  - keywords: ["german rock", "deutschrock", "rock"]
+    genre: "Rock"
+    confidence: 0.8
+
+# Künstler-spezifische Regeln
+artist_rules:
+  "Florian Künstler":
+    primary: "Deutschpop"
+    secondary: ["Pop", "Schlager"]
+    source: "rule_based"
+  
+  "Helene Fischer":
+    primary: "Schlager"
+    secondary: ["Pop", "Deutschpop"]
+  
+  "Mark Forster":
+    primary: "Deutschpop"
+    secondary: ["Pop"]
+  
+  "Cro":
+    primary: "Deutschrap"
+    secondary: ["Pop", "Hip Hop"]
+
+# Titel-basierte Regeln
+title_rules:
+  - pattern: "(?i)(party|fest|feier)"
+    genre: "Party"
+    confidence: 0.7
+  
+  - pattern: "(?i)(liebe|herz|gefühl)"
+    genre: "Pop"
+    confidence: 0.6

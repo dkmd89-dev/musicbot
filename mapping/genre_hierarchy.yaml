@@ -1,0 +1,253 @@
+---
+GENRE_HIERARCHY:
+  # ============================================================
+  # ROOT-LEVEL GENRES (Tiefe 0)
+  # ============================================================
+  Deutschrap: null
+  Hip Hop: null
+  Electronic: null
+  Pop: null
+  Rock: null
+  R&B: null
+  Jazz: null
+  Blues: null
+  Country: null
+  Folk: null
+  Latin: null
+  Reggae: null
+  Afro: null
+  Klassik: null
+  Metal: null
+  Indie: null
+
+  # ============================================================
+  # DEUTSCHRAP SUBGENRES (Tiefe 1)
+  # ============================================================
+  Ruhrpott Rap: Deutschrap
+  Berliner Rap: Deutschrap
+  Hamburger Rap: Deutschrap
+  Hamburger Schule: Deutschrap
+  Kölsch Rap: Deutschrap
+  Münchner Rap: Deutschrap
+  Stuttgarter Rap: Deutschrap
+  Frankfurter Rap: Deutschrap
+  Düsseldorfer Rap: Deutschrap
+  Bremer Rap: Deutschrap
+  Leipziger Rap: Deutschrap
+  Dresdner Rap: Deutschrap
+  Österreichischer Rap: Deutschrap
+  Schweizer Rap: Deutschrap
+  Aggro Deutschrap: Deutschrap
+  Deutscher Street Rap: Deutschrap
+  Deutscher Trap: Deutschrap
+  Deutscher Drill: Deutschrap
+  Deutscher Conscious Rap: Deutschrap
+  Deutscher Battle Rap: Deutschrap
+  Deutscher Emo Rap: Deutschrap
+  Deutscher Cloud Rap: Deutschrap
+
+  # ============================================================
+  # HIP HOP SUBGENRES (Tiefe 1)
+  # ============================================================
+  Trap: Hip Hop
+  Drill: Hip Hop
+  Gangsta Rap: Hip Hop
+  Cloud Rap: Hip Hop
+  Emo Rap: Hip Hop
+  Conscious Rap: Hip Hop
+  Pop Rap: Hip Hop
+  Melodic Rap: Hip Hop
+  Hardcore Hip Hop: Hip Hop
+  Horrorcore: Hip Hop
+  Battle Rap: Hip Hop
+  Freestyle Rap: Hip Hop
+  Boom Bap: Hip Hop
+  Old School Hip Hop: Hip Hop
+  G-Funk: Hip Hop
+  Street Rap: Hip Hop
+  UK Rap: Hip Hop
+  West Coast Hip Hop: Hip Hop
+  East Coast Hip Hop: Hip Hop
+  Southern Hip Hop: Hip Hop
+
+  # Drill Subgenres (Tiefe 2)
+  UK Drill: Drill
+  New York Drill: Drill
+  Chicago Drill: Drill
+  Melodic Drill: Drill
+
+  # ============================================================
+  # ELECTRONIC SUBGENRES (Tiefe 1)
+  # ============================================================
+  House: Electronic
+  Techno: Electronic
+  Trance: Electronic
+  Dubstep: Electronic
+  Drum & Bass: Electronic
+  EDM: Electronic
+  Dance: Electronic
+  Big Room: Electronic
+  Electronica: Electronic
+  Ambient: Electronic
+  Downtempo: Electronic
+  Hard Dance: Electronic
+  Hardstyle: Electronic
+  Hardcore: Electronic
+  Big Beat: Electronic
+  Breakbeat: Electronic
+  Trip Hop: Electronic
+  Synthwave: Electronic
+  Vaporwave: Electronic
+  Chillwave: Electronic
+  Lo-Fi: Electronic
+
+  # House Subgenres (Tiefe 2)
+  Deep House: House
+  Tech House: House
+  Melodic House: House
+  Progressive House: House
+  Tropical House: House
+  Chill House: House
+  Piano House: House
+  Future House: House
+  Bass House: House
+  G-House: House
+  Afro House: House
+  Indie Dance: House
+  Electro House: House
+  Mainstage House: House
+
+  # Hardstyle Subgenres (Tiefe 2)
+  Rawstyle: Hardstyle
+  Euphoric Hardstyle: Hardstyle
+  Early Hardstyle: Hardstyle
+  Industrial Hardstyle: Hardstyle
+  Psy Hardstyle: Hardstyle
+  Reverse Bass: Hardstyle
+  Jumpstyle: Hardstyle
+  Nu-Style: Hardstyle
+
+  # Hardcore Subgenres (Tiefe 2)
+  Happy Hardcore: Hardcore
+  UK Hardcore: Hardcore
+  Frenchcore: Hardcore
+  Gabber: Hardcore
+
+  # ============================================================
+  # POP SUBGENRES (Tiefe 1)
+  # ============================================================
+  Deutscher Pop: Pop
+  Indie Pop: Pop
+  Dance-Pop: Pop
+  Electropop: Pop
+  Synthpop: Pop
+  Pop Rock: Pop
+  Baroque Pop: Pop
+  Art Pop: Pop
+  Chamber Pop: Pop
+  Alternative Pop: Pop
+  K-Pop: Pop
+  J-Pop: Pop
+  C-Pop: Pop
+  Latin Pop: Pop
+  Country Pop: Pop
+  Folk Pop: Pop
+  Schlager: Pop
+
+  # ============================================================
+  # ROCK SUBGENRES (Tiefe 1)
+  # ============================================================
+  Alternative Rock: Rock
+  Indie Rock: Rock
+  Hard Rock: Rock
+  Punk Rock: Rock
+  Progressive Rock: Rock
+  Classic Rock: Rock
+  Post-Rock: Rock
+  Grunge: Rock
+  Emo: Rock
+  Pop Punk: Rock
+  Blues Rock: Rock
+  Folk Rock: Rock
+  Deutschrock: Rock
+
+  # Metal Subgenres (Tiefe 2)
+  Metal: Rock
+  Heavy Metal: Metal
+  Nu Metal: Metal
+  Thrash Metal: Metal
+  Death Metal: Metal
+  Black Metal: Metal
+  Power Metal: Metal
+  Symphonic Metal: Metal
+
+  # ============================================================
+  # R&B SUBGENRES (Tiefe 1)
+  # ============================================================
+  Soul: R&B
+  Funk: R&B
+  Neo Soul: R&B
+  Contemporary R&B: R&B
+
+  # ============================================================
+  # JAZZ SUBGENRES (Tiefe 1)
+  # ============================================================
+  Smooth Jazz: Jazz
+  Jazz Fusion: Jazz
+  Acid Jazz: Jazz
+  Bebop: Jazz
+  Swing: Jazz
+  Big Band: Jazz
+  Vocal Jazz: Jazz
+
+  # ============================================================
+  # BLUES SUBGENRES (Tiefe 1)
+  # ============================================================
+  Delta Blues: Blues
+  Chicago Blues: Blues
+
+  # ============================================================
+  # COUNTRY SUBGENRES (Tiefe 1)
+  # ============================================================
+  Americana: Country
+  Country Rock: Country
+  Outlaw Country: Country
+
+  # ============================================================
+  # FOLK SUBGENRES (Tiefe 1)
+  # ============================================================
+  Indie Folk: Folk
+  Singer-Songwriter: Folk
+  Acoustic: Folk
+
+  # ============================================================
+  # LATIN SUBGENRES (Tiefe 1)
+  # ============================================================
+  Reggaeton: Latin
+  Latin Trap: Latin
+  Salsa: Latin
+  Bachata: Latin
+  Merengue: Latin
+  Cumbia: Latin
+  Bossa Nova: Latin
+
+  # ============================================================
+  # REGGAE SUBGENRES (Tiefe 1)
+  # ============================================================
+  Dancehall: Reggae
+  Dub: Reggae
+  Roots Reggae: Reggae
+
+  # ============================================================
+  # AFRO SUBGENRES (Tiefe 1)
+  # ============================================================
+  Afrobeats: Afro
+  Afropop: Afro
+  Amapiano: Afro
+
+  # ============================================================
+  # KLASSIK SUBGENRES (Tiefe 1)
+  # ============================================================
+  Instrumental: Klassik
+  Orchester: Klassik
+  Oper: Klassik

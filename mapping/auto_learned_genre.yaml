@@ -1,0 +1,134 @@
+ARTIST_GENRE_MAP:
+  BHZ:
+    description: Auto-learned via Last.fm (rule)
+    primary: Hip Hop
+    secondary: []
+  BUNT.:
+    description: Auto-learned via Last.fm (rule)
+    primary: Pop
+    secondary: [Electronic, Deutsch, House, Party, Folktronica]
+  Bebe Rexha:
+    description: Auto-learned via Last.fm (rule)
+    primary: Pop
+    secondary: [Electronic]
+  Berq:
+    description: Auto-learned via Last.fm (rule)
+    primary: Pop
+    secondary: [Electronic, Deutschpop]
+  Central Cee:
+    description: Auto-learned via Last.fm (rule)
+    primary: Hip Hop
+    secondary: []
+  Culcha Candela:
+    description: Auto-learned via Last.fm (rule)
+    primary: Hip Hop
+    secondary: [Latin, Reggae]
+  David Guetta:
+    description: Auto-learned via Last.fm (rule)
+    primary: Dance
+    secondary: [House, Pop, Electronic, Club, Techno]
+  Ed Sheeran:
+    description: Auto-learned via Last.fm (rule)
+    primary: Pop
+    secondary: [Folk Pop, Singer-Songwriter, Acoustic Pop, Blue-Eyed Soul]
+  Edwin Rosen:
+    description: Auto-learned via Last.fm (rule)
+    primary: Pop
+    secondary: [New Wave, NDW, Deutsch, Post-punk, Post Punk]
+  Finch:
+    description: Auto-learned via Last.fm (rule)
+    primary: Rock
+    secondary: [Post-hardcore, Emo, Screamo, Punk, Emocore]
+  Gentleman:
+    description: Auto-learned via Last.fm (rule)
+    primary: Reggae
+    secondary: [Electronic]
+  ION Miles:
+    description: Auto-learned via Last.fm (rule)
+    primary: Rap
+    secondary: [Berlin, Hiphop, Bhz]
+  James Blunt:
+    description: Auto-learned via Last.fm (rule)
+    primary: Pop
+    secondary: [singer-songwriter, acoustic, indie, rock, british]
+  Katy Perry:
+    description: Auto-learned via Last.fm (rule)
+    primary: Dance
+    secondary: [pop, female vocalists, pop rock, indie, rock]
+  Kings Of Leon:
+    description: Auto-learned via Last.fm (rule)
+    primary: Rock
+    secondary: [Sex On Fire]
+  Kygo:
+    description: Auto-learned via Last.fm (rule)
+    primary: Electronic
+    secondary: [Tropical House, Deep House, Progressive House, Downtempo, Melodic
+        House]
+  Limp Bizkit:
+    description: Auto-learned via Last.fm (rule)
+    primary: Hip Hop
+    secondary: [Metal, Rock, 00s]
+  Lotte:
+    description: Auto-learned via Last.fm (rule)
+    primary: Pop
+    secondary: [Female Voices, Deutsch]
+  Martin Garrix:
+    description: Auto-learned via Last.fm (rule)
+    primary: House
+    secondary: [electronic, dance, electropop, pop, electro house]
+  Michael Jackson:
+    description: Auto-learned via Last.fm (rule)
+    primary: Soul
+    secondary: [Pop, 80s, Dance, Funk, King of Pop]
+  Monsta:
+    description: Auto-learned via Last.fm (rule)
+    primary: Drum & Bass
+    secondary: [Electronic, Hip Hop, Reggae]
+  Motrip:
+    description: Auto-learned via Last.fm (rule)
+    primary: Deutschrap
+    secondary: [Rap, Hip Hop, Hip-hop, German Hiphop, aachen]
+  ONY:
+    description: Auto-learned via Last.fm (rule)
+    primary: Pop
+    secondary: [synth pop]
+  Paulwetz:
+    description: Auto-learned via Last.fm (rule)
+    primary: Pop
+    secondary: [Deutschpop]
+  Ravyn Lenae:
+    description: Auto-learned via Last.fm (rule)
+    primary: R&B
+    secondary: [Soul, Neo Soul, Electronic, United States, Chicago]
+  Red Hot Chili Peppers:
+    description: Auto-learned via Last.fm (rule)
+    primary: Funk
+    secondary: [Rock, 90s, California, Punk Rock]
+  Samo104:
+    description: Auto-learned via Last.fm (rule)
+    primary: Deutschrap
+    secondary: [german]
+  Sampagne:
+    description: Auto-learned via Last.fm (rule)
+    primary: Deutschrap
+    secondary: [Hip-hop, Rap]
+  Shakira:
+    description: Auto-learned via Last.fm (rule)
+    primary: Dance
+    secondary: [pop, latin, female vocalists, spanish, rock]
+  Temper City:
+    description: Auto-learned via Last.fm (rule)
+    primary: Ktya Core
+    secondary: []
+  The Chainsmokers:
+    description: Auto-learned via Last.fm (rule)
+    primary: House
+    secondary: [electronic, pop, electro house, dance, american]
+  Tokio Hotel:
+    description: Auto-learned via Last.fm (rule)
+    primary: Pop
+    secondary: [Emo, Rock]
+  Toobrokeforfiji:
+    description: Auto-learned via Last.fm (rule)
+    primary: Deutschrap
+    secondary: [Hip Hop]
