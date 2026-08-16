@@ -618,7 +618,18 @@ class CoverProcessor:
             self.logger.debug(f"🖼️ [SCORE] {source} zu klein ({len(data)} bytes) – ignoriert")
             return None
         w, h, sharp, jpeg, colors = self._analyze_image_quality(data)
-        if w > 0 and (w < 100 or h < 100):
+        # _analyze_image_quality() faengt Parse-Fehler ab und liefert dann
+        # w=h=0 zurueck. Die alte Bedingung "w > 0 and (...)" ignorierte
+        # diesen Fall komplett, statt ihn abzulehnen - ein Nicht-Bild-Blob
+        # >= _MIN_IMAGE_BYTES (z.B. eine mit HTTP 200 zurueckgegebene
+        # HTML-Fehlerseite) rutschte so durch und konnte als Cover-Art in
+        # die Audiodatei eingebettet werden.
+        if w <= 0 or h <= 0:
+            self.logger.debug(
+                f"🖼️ [SCORE] {source} kein gültiges Bild (Analyse fehlgeschlagen) – ignoriert"
+            )
+            return None
+        if w < 100 or h < 100:
             self.logger.debug(f"🖼️ [SCORE] {source} zu kleine Auflösung ({w}×{h}) – ignoriert")
             return None
         is_square = w > 0 and h > 0 and abs(w - h) < (max(w, h) * 0.1)

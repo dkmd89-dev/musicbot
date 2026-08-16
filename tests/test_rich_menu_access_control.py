@@ -16,8 +16,14 @@ globale Log-Level aendern (hebelt den SEC-001-Schutz aus) oder den
 Duplicate-Cache leeren.
 
 Fix: zentrale Admin-Pruefung in handle_callback() vor dem Praefix-Dispatch
-fuer die vier betroffenen Praefixe (erradmin:/restart: hatten bereits eigene
+fuer die betroffenen Praefixe (erradmin:/restart: hatten bereits eigene
 Checks in ihren Dispatchern).
+
+Nachtraeglich (Folgeaspekt) ergaenzt: status_ ist ebenfalls admin-only -
+show_storage_status() etc. geben echte Server-Dateisystempfade preis und
+bieten eine destruktive "Cleanup"-Aktion. nav_ bleibt bewusst ungegated
+(reines Bibliotheks-Browsing/Suche, keine destruktiven Aktionen, keine
+Pfad-Offenlegung).
 """
 
 import asyncio
@@ -70,6 +76,13 @@ ADMIN_ONLY_CALLBACKS = [
     "backup_main",
     "logger_main_menu",
     "dup:clear_cache_execute",
+    "status_storage",
+    "status_system",
+]
+
+NON_ADMIN_GATED_CALLBACKS = [
+    "nav_search",
+    "nav_browse_genres",
 ]
 
 
@@ -129,9 +142,9 @@ class TestSelfPromotionIsBlocked:
 
 
 class TestNonAdminPrefixesAreNotAffected:
-    """Sanity-Check: die neue zentrale Pruefung darf nur die vier
-    tatsaechlich betroffenen Praefixe blockieren, nicht regulaere
-    Menue-Navigation fuer normale Nutzer."""
+    """Sanity-Check: die zentrale Pruefung darf nur die tatsaechlich
+    betroffenen Praefixe blockieren, nicht regulaere Menue-Navigation
+    oder Bibliotheks-Browsing/Suche (nav_) fuer normale Nutzer."""
 
     def test_regular_menu_navigation_is_not_blocked_for_non_admin(
         self, menu_system
@@ -146,3 +159,20 @@ class TestNonAdminPrefixesAreNotAffected:
             args, kwargs = call
             message = args[0] if args else kwargs.get("text", "")
             assert "Berechtigung" not in message
+
+    @pytest.mark.parametrize("callback_data", NON_ADMIN_GATED_CALLBACKS)
+    def test_nav_prefix_is_not_blocked_for_non_admin(
+        self, menu_system, callback_data
+    ):
+        update = make_update(NON_ADMIN_USER_ID, callback_data)
+        context = make_context()
+
+        asyncio.run(menu_system.handle_callback(update, context))
+
+        # navidrome_handler ist in diesem Test nicht angebunden (bleibt
+        # None), daher kommt keine echte Aktion zustande - aber die Antwort
+        # darf NICHT die Berechtigungs-Ablehnung sein.
+        update.callback_query.answer.assert_called_once()
+        _args, kwargs = update.callback_query.answer.call_args
+        message = _args[0] if _args else kwargs.get("text", "")
+        assert "Berechtigung" not in message

@@ -1204,7 +1204,14 @@ class RichMenuSystem:
             # aus, prüft aber nichts beim tatsächlichen Callback-Empfang.
             # (erradmin: und restart: haben bereits eigene Admin-Checks in
             # ihren jeweiligen Dispatchern.)
-            _ADMIN_ONLY_PREFIXES = ("logger_", "usermgmt_", "dup:", "backup_")
+            # status_ wurde nachtraeglich ergaenzt (Folgeaspekt aus dem
+            # urspruenglichen SEC-003-Fund): show_storage_status() etc.
+            # geben echte Server-Dateisystempfade preis (LIBRARY_DIR,
+            # DOWNLOAD_DIR, ...) und bieten eine destruktive
+            # "status_storage_cleanup"-Aktion an. nav_ bleibt bewusst
+            # ungegated - reines Bibliotheks-Browsing/Suche ohne
+            # destruktive Aktionen oder Pfad-Offenlegung.
+            _ADMIN_ONLY_PREFIXES = ("logger_", "usermgmt_", "dup:", "backup_", "status_")
             if callback_data.startswith(_ADMIN_ONLY_PREFIXES) and not self._is_admin_check(
                 user_id
             ):

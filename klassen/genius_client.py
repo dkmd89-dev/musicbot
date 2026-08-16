@@ -55,6 +55,9 @@ class GeniusClient:
 
         # Genius API aus der Config-Instanz holen (nicht aus der Klasse)
         self.genius_api = config.genius if hasattr(config, "genius") else None
+        # Fuer _fallback_with_lyricsgenius() (Tier 4) - siehe dort, warum
+        # nicht Config.GENIUS_CONFIG["access_token"] verwendet wird.
+        self.genius_access_token = config.GENIUS_ACCESS_TOKEN
 
         # LyricsCache mit Config initialisieren (NUR EIN AUFRUF!)
         self.lyrics_cache = LyricsCache(
@@ -128,6 +131,84 @@ class GeniusClient:
         song = {}
 
         try:
+            lyrics, genius_url, song = await self._fetch_via_genius_api(
+                clean_title, clean_artist, query
+            )
+
+            # 3. HTML-Scraping Fallback
+            if not self._is_valid_lyrics(lyrics) and genius_url:
+                self.logger.warning("⚠️ API-Lyrics unvollständig → HTML-Scraping...")
+                lyrics = await self._scrape_genius_lyrics_html(genius_url)
+
+            # 4. lyricsgenius Fallback
+            if not self._is_valid_lyrics(lyrics):
+                self.logger.warning("⚠️ HTML-Scraping erfolglos → lyricsgenius...")
+                lyrics = await asyncio.to_thread(
+                    self._fallback_with_lyricsgenius, clean_title, clean_artist
+                )
+
+            # 5. Ergebnis
+            if self._is_valid_lyrics(lyrics):
+                metadata = {
+                    "title": song.get("title", clean_title),
+                    "artist": song.get("primary_artist", {}).get("name", clean_artist),
+                    "lyrics": lyrics,
+                    "genius_url": genius_url,
+                    "cover_url": song.get("song_art_image_url"),
+                    "year": (
+                        str(song.get("release_date_components", {}).get("year") or "")[
+                            :4
+                        ]
+                        or None
+                    ),
+                    "album": (
+                        song.get("album", {}).get("name") if song.get("album") else None
+                    ),
+                }
+                self.logger.info(
+                    f"📜✔️ Lyrics für '{clean_artist} - {clean_title}' gefunden."
+                )
+                self.lyrics_cache.store(clean_artist, clean_title, metadata)
+                self.processed_files += 1
+                return metadata
+
+        except Exception as e:
+            self.logger.error(
+                f"🐛 Unerwarteter Fehler bei '{query}': {e}", exc_info=True
+            )
+
+        self.failed_files += 1
+        self.logger.error(
+            f"❌ Keine Lyrics für '{clean_artist} - {clean_title}' gefunden."
+        )
+        return {}
+
+    async def _fetch_via_genius_api(self, clean_title: str, clean_artist: str, query: str):
+        """
+        Tier 2 (Genius-REST-API) als eigener, isolierter Schritt.
+
+        Gibt bei JEDEM Fehlschlag (kein genius_api konfiguriert, Netzwerkfehler,
+        kein Suchtreffer, keine extrahierbare Song-ID) ("", "", {}) zurueck,
+        statt die Ausnahme/einen fruehen Return nach aussen durchzureichen.
+        Vorher fuehrte ein Fehlschlag hier (z.B. self.genius_api is None, weil
+        kein GENIUS_ACCESS_TOKEN konfiguriert ist) dazu, dass die komplette
+        Methode sofort abbrach und Tier 3 (HTML-Scraping) sowie Tier 4
+        (lyricsgenius-Bibliothek) NIE versucht wurden - obwohl beide
+        unabhaengig von einem erfolgreichen API-Suchtreffer funktionieren
+        koennen (Tier 4 braucht nur einen eigenen Token, keinen API-Client).
+        """
+        lyrics = ""
+        genius_url = ""
+        song: Dict[str, Any] = {}
+
+        if self.genius_api is None:
+            self.logger.debug(
+                "ℹ️ Kein Genius-API-Client konfiguriert (GENIUS_ACCESS_TOKEN fehlt) "
+                "→ überspringe REST-API-Suche."
+            )
+            return lyrics, genius_url, song
+
+        try:
             # 2. Direkte Suche via search_song()
             search_result = await self._fetch_with_retry(
                 self.genius_api.search_song, clean_title, clean_artist
@@ -196,13 +277,13 @@ class GeniusClient:
                         clean_title, clean_artist, [h["result"] for h in hits]
                     )
 
-                # ✅ FIX A: Frühzeitiger Abbruch wenn kein Match
+                # Kein Match gefunden - kein fruehes return {} mehr (siehe
+                # Docstring): Tier 3/4 sollen trotzdem versucht werden.
                 if best_match is None:
                     self.logger.warning(
                         f"⚠️ Kein Genius-Match für: '{clean_title}' / '{clean_artist}'"
                     )
-                    self.failed_files += 1
-                    return {}
+                    return lyrics, genius_url, song
 
                 # Song-ID sicher extrahieren (best_match ist ein Dict im Fallback-Pfad)
                 song_id = best_match.get("id")
@@ -216,8 +297,7 @@ class GeniusClient:
 
                 if not song_id:
                     self.logger.warning("⚠️ Keine Song-ID aus Match extrahierbar")
-                    self.failed_files += 1
-                    return {}
+                    return lyrics, genius_url, song
 
                 song_details = await self._fetch_with_retry(
                     self.genius_api.song, song_id
@@ -226,53 +306,14 @@ class GeniusClient:
                 genius_url = song.get("url", "")
                 lyrics = song.get("lyrics", {}).get("plain", "") or ""
 
-            # 3. HTML-Scraping Fallback
-            if not self._is_valid_lyrics(lyrics) and genius_url:
-                self.logger.warning("⚠️ API-Lyrics unvollständig → HTML-Scraping...")
-                lyrics = await self._scrape_genius_lyrics_html(genius_url)
-
-            # 4. lyricsgenius Fallback
-            if not self._is_valid_lyrics(lyrics):
-                self.logger.warning("⚠️ HTML-Scraping erfolglos → lyricsgenius...")
-                lyrics = await asyncio.to_thread(
-                    self._fallback_with_lyricsgenius, clean_title, clean_artist
-                )
-
-            # 5. Ergebnis
-            if self._is_valid_lyrics(lyrics):
-                metadata = {
-                    "title": song.get("title", clean_title),
-                    "artist": song.get("primary_artist", {}).get("name", clean_artist),
-                    "lyrics": lyrics,
-                    "genius_url": genius_url,
-                    "cover_url": song.get("song_art_image_url"),
-                    "year": (
-                        str(song.get("release_date_components", {}).get("year") or "")[
-                            :4
-                        ]
-                        or None
-                    ),
-                    "album": (
-                        song.get("album", {}).get("name") if song.get("album") else None
-                    ),
-                }
-                self.logger.info(
-                    f"📜✔️ Lyrics für '{clean_artist} - {clean_title}' gefunden."
-                )
-                self.lyrics_cache.store(clean_artist, clean_title, metadata)
-                self.processed_files += 1
-                return metadata
+            return lyrics, genius_url, song
 
         except Exception as e:
-            self.logger.error(
-                f"🐛 Unerwarteter Fehler bei '{query}': {e}", exc_info=True
+            self.logger.warning(
+                f"⚠️ Genius-REST-API-Suche fehlgeschlagen fuer '{query}': {e} "
+                f"→ Tier 3/4 werden trotzdem versucht."
             )
-
-        self.failed_files += 1
-        self.logger.error(
-            f"❌ Keine Lyrics für '{clean_artist} - {clean_title}' gefunden."
-        )
-        return {}
+            return "", "", {}
 
     async def _scrape_genius_lyrics_html(self, url: str) -> str:
         """
@@ -372,9 +413,22 @@ class GeniusClient:
         Returns:
             Lyrics-String oder leerer String bei Fehler.
         """
+        if not self.genius_access_token:
+            self.logger.debug(
+                "ℹ️ Kein GENIUS_ACCESS_TOKEN konfiguriert → lyricsgenius-Fallback "
+                "übersprungen."
+            )
+            return ""
+
         try:
+            # GENIUS_CONFIG (config.py) hat keinen "access_token"-Key (nur
+            # timeout/max_retries/...) - das fuehrte bisher IMMER zu einem
+            # KeyError hier, unabhaengig davon, ob anderswo ein gueltiger
+            # Token konfiguriert war. self.genius_access_token (siehe
+            # __init__) liest den echten Token aus Config.GENIUS_ACCESS_TOKEN,
+            # denselben, den auch die Tier-2-REST-API verwendet.
             client = LyricsGenius(
-                Config.GENIUS_CONFIG["access_token"],
+                self.genius_access_token,
                 skip_non_songs=True,
                 remove_section_headers=True,
                 timeout=10,

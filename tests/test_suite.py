@@ -417,12 +417,24 @@ class TestMenuIntegration:
         assert menu_system.root_menu.parent is None
 
     def test_callback_data_uniqueness(self, menu_system):
-        """Test: Callback-Data Einzigartigkeit"""
+        """
+        Test: Callback-Data Einzigartigkeit.
+
+        Reine Link-Items (handler=None, is_action=False) sind bewusste
+        Navigations-Shortcuts, die absichtlich dieselbe callback_data wie
+        ihr Ziel-Menuepunkt tragen (z.B. "nav_link_stats" verweist bewusst
+        auf dieselbe callback_data "menu:stats" wie der echte "stats"-
+        Menuepunkt, um von einem Untermenue aus direkt dorthin zu
+        springen). Nur echte, eigenstaendige Menuepunkte muessen
+        eindeutige callback_data haben.
+        """
         callback_datas = [
-            item.callback_data for item in menu_system.menu_registry.values()
+            item.callback_data
+            for item in menu_system.menu_registry.values()
+            if item.handler is not None or item.is_action
         ]
 
-        # Alle Callback-Datas sollten einzigartig sein
+        # Alle Callback-Datas eigenstaendiger Menuepunkte sollten einzigartig sein
         assert len(callback_datas) == len(set(callback_datas))
 
 
