@@ -396,6 +396,7 @@ class Config:
     # Navidrome
     NAVIDROME_SCAN_TIMEOUT = 45
     NAVIDROME_SCAN_COMMAND = f"docker exec navidrome /app/navidrome scan --full"
+    NAVIDROME_REQUEST_TIMEOUT = 15
 
     # Last.fm
     LASTFM_ENABLED = True

@@ -129,7 +129,11 @@ class NavidromeAPI:
         )
 
         try:
-            response = requests.get(url, params=full_params)
+            response = requests.get(
+                url,
+                params=full_params,
+                timeout=getattr(Config, "NAVIDROME_REQUEST_TIMEOUT", 15),
+            )
             response.raise_for_status()
 
             log_handler_debug(
