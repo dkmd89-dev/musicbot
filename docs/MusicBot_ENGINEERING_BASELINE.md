@@ -170,7 +170,7 @@ Response
 | TEST-001 | Teile der Tests testen nicht direkt Produktionsimplementierungen | P0 | **teilweise behoben** (Phase 1) — `tests/test_genre_processor.py` importiert jetzt die echte `GenreProcessor`-Produktionsklasse (vorher: eigene Nachimplementierung, wurde von pytest wegen `__init__`-Konstruktor der Testklasse zudem gar nicht eingesammelt). Weitere Bereiche (siehe TEST-002/TEST-003) außerhalb dieses Fixes |
 | TEST-002 | `handlers/duplicate_handler.py` hatte vor Phase 1 keinerlei Testabdeckung; dabei wurde ein aktiver Bug gefunden: `check_library_duplicate()` (Duplicate-Detection Layer 4) rief `re.sub()` ohne `import re` auf → `NameError`, von `except Exception` verschluckt, Layer 4 lieferte in Produktion immer `None` | P0 | **behoben** (Phase 1) — `import re` ergänzt, 12 Charakterisierungstests in `tests/test_duplicate_handler.py`, inkl. Regressionstest für den Bugfix |
 | TEST-003 | `MetadataCacheHandler.check()` und `_normalize_cache_title()` (`services/downloader/utils/metadata/cache.py`) sind seit dem Initial-Commit reine Stubs (Body nur `...`, liefern immer `None`). `EnhancedMetadataProcessor.process_single_track()` nutzt `check()` als Cache-Hit-Prüfung → der Cache-Hit-Pfad der Metadata-Pipeline ist in Produktion vollständig wirkungslos, jeder Track durchläuft immer die volle Pipeline inkl. externer API-Calls | P0 | **offen, bewusst nur charakterisiert** — Nutzerentscheidung: Fix hat größeren Blast-Radius als TEST-002 (ändert Laufzeitverhalten spürbar) und wird als eigener Schritt geplant. 7 Charakterisierungstests in `tests/test_metadata_cache_handler.py` frieren das aktuelle "always None"-Verhalten ein |
-| E2E-001 | Hauptpfad nicht ausreichend Ende-zu-Ende abgesichert | P0 | offen — `EnhancedMetadataProcessor.process_single_track()` (~750 Zeilen, echte FFmpeg-/Mutagen-I/O) braucht einen eigenen, dedizierten Schritt für einen Happy-Path-Test; in Phase 1 zurückgestellt |
+| E2E-001 | Hauptpfad nicht ausreichend Ende-zu-Ende abgesichert | P0 | **behoben** — `tests/test_metadata_processor_happy_path.py`: echter End-to-End-Lauf `EnhancedDuplicateHandler.check_for_duplicates` → `EnhancedMetadataProcessor.process_single_track` → `FilenameFixerTool.move_to_library` → erneuter Duplicate-Check (erkennt jetzt Duplikat), inkl. Negativtest für den globalen `try/except`-Sicherheitsnetz-Charakter der Pipeline. Nur externe Dienste (MusicBrainz/Last.fm/Genius/Cover-Netzwerk/FFmpeg) gefakt, alle Sub-Prozessoren real inkl. echter YAML-Genre-/Artist-Regeln aus einer tmp-Kopie von `mapping/` |
 | CFG-001 | Config enthält Import-/Initialisierungslogik | P1 | offen (bewusst außerhalb Phase-1-Scope, siehe Abschnitt 12) |
 | ARCH-001 | Große Orchestrator-Klassen | P1 | offen — `process_single_track` bei der Phase-1-Exploration als noch größer bestätigt als angenommen (~750 Zeilen) |
 | CACHE-001 | Mehrere Cache-/Normalisierungswege (`get_url_hash` vs. `_normalize_url_for_cache` in `DuplicateCache`) | P1 | offen, bewusst nicht angefasst — nur in `tests/test_duplicate_handler.py` als beobachtetes Verhalten dokumentiert |
@@ -580,10 +580,10 @@ ohne befürchten zu müssen, unbemerkt an einer anderen Stelle Funktionalität z
 ### P0
 - [x] SEC-001 geprüft und behoben (Passwort-Masking in `api/navidrome_api.py` + Regressionstest)
 - [x] TEST-001 teilweise behoben (`test_genre_processor.py` nutzt jetzt echte Produktionsklasse)
-- [x] Metadata Characterization Tests — `AlbumProcessor` (14 Tests), `MetadataCacheHandler` (7 Tests, dokumentiert TEST-003-Stub-Bug); `EnhancedMetadataProcessor.process_single_track` selbst noch offen (siehe E2E-001)
+- [x] Metadata Characterization Tests — `AlbumProcessor` (14 Tests), `MetadataCacheHandler` (7 Tests, dokumentiert TEST-003-Stub-Bug), `EnhancedMetadataProcessor.process_single_track` (2 Tests, siehe E2E-001)
 - [x] Duplicate Characterization Tests — 12 Tests, inkl. Fix + Regressionstest für den TEST-002-Bug (Library-Fallback war wirkungslos)
 - [x] File/Library Characterization Tests — `FilenameFixerTool` (12 Tests: Single/Album/Podcast/Compilation-Pfade, fehlende Quelle, Kollisions-Umbenennung)
-- [ ] erster reproduzierbarer End-to-End-Happy-Path — zurückgestellt, siehe E2E-001 (eigener Schritt wegen Umfang von `process_single_track`)
+- [x] erster reproduzierbarer End-to-End-Happy-Path — siehe E2E-001
 
 ### P1
 - [ ] Config Side Effects untersuchen

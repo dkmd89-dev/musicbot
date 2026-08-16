@@ -1,0 +1,192 @@
+"""
+E2E-001: Reproduzierbarer Happy Path durch die Metadata-Pipeline.
+
+Verkettet echte Produktionsklassen end-to-end:
+    EnhancedDuplicateHandler.check_for_duplicates (kein Duplikat)
+        -> EnhancedMetadataProcessor.process_single_track
+        -> FilenameFixerTool.move_to_library (intern aufgerufen)
+        -> EnhancedDuplicateHandler.register_download + erneuter Check (jetzt Duplikat)
+
+Gefakt werden ausschliesslich externe Dienste (MusicBrainz, Last.fm,
+Genius/Lyrics, Cover-Art-Netzwerk-Lookup, FFmpeg-Subprocess) - siehe
+Regel 7 ("Externe Services in Unit-Tests mocken/faken"). Alle
+Sub-Prozessoren (ArtistProcessor, TitleCleaner, GenreProcessor,
+AlbumProcessor, GenreMapper, ArtistNormalizer, FilenameFixerTool) laufen
+echt, inklusive echter YAML-Genre-/Artist-Regeln aus einer tmp-Kopie von
+mapping/ (siehe conftest.py: mapping_dir_copy) - damit AutoLearnManager
+niemals die echten Mapping-Dateien im Repo veraendert.
+
+Kein echtes, dekodierbares Audio noetig: AudioEnhancer.normalize_loudness
+ist gefakt (FFmpeg ist eine Umgebungsabhaengigkeit, kein fuer diesen Test
+relevanter Kern-Pfad - ein Fehlschlag dort ist laut Code ohnehin nicht
+kritisch), move_to_library macht ein reines Dateisystem-Move, und der
+MP3-Tag-Schreibpfad in _write_metadata_to_file_with_lyrics faengt ein
+ungueltiges ID3-Header ab und schreibt stattdessen einen leeren
+ID3()-Tag - funktioniert nachweislich auch auf einer Dummy-Datei.
+"""
+
+import asyncio
+from pathlib import Path
+
+import pytest
+
+from handlers.duplicate_handler import EnhancedDuplicateHandler
+from services.downloader.utils.enhanced_metadata_processor import (
+    EnhancedMetadataProcessor,
+)
+from utils.audio_enhancer import AudioEnhancer
+from utils.filenamefixer import FilenameFixerTool
+
+
+class HappyPathConfig:
+    """Config-Attribute, die EnhancedMetadataProcessor._do_init,
+    FilenameFixerTool._do_init und EnhancedDuplicateHandler tatsaechlich
+    lesen - alle Verzeichnisse zeigen auf tmp_path, GENRE_MAPPING_DIR auf
+    eine tmp-Kopie des echten mapping/-Verzeichnisses (siehe Modul-Docstring)."""
+
+    def __init__(self, tmp_path: Path, mapping_dir: Path):
+        self.LIBRARY_DIR = tmp_path / "library"
+        self.FAIL_DIR = tmp_path / "fail"
+        self.PROCESSED_DIR = tmp_path / "processed"
+        self.TEMP_DIR = tmp_path / "temp"
+        self.LOG_DIR = tmp_path / "logs"
+        self.GENRE_MAPPING_DIR = mapping_dir
+        self.ARTIST_OVERRIDE_FILE = tmp_path / "artist_overrides.json"
+        self.METADATA_CACHE_DIR = tmp_path / "metadata_cache"
+        self.DUPLICATE_CACHE_DIR = tmp_path / "duplicate_cache"
+        self.FANART_API_KEY = None
+
+
+class FakeExternalClient:
+    """Faked MusicBrainz-/Last.fm-Client: liefert 'kein Treffer'."""
+
+    async def fetch_metadata(self, *args, **kwargs):
+        return {}
+
+
+@pytest.fixture
+def happy_path_config(tmp_path, mapping_dir_copy):
+    return HappyPathConfig(tmp_path, mapping_dir_copy)
+
+
+@pytest.fixture
+def processor(happy_path_config, monkeypatch):
+    monkeypatch.setattr(
+        AudioEnhancer, "normalize_loudness", staticmethod(lambda *a, **kw: True)
+    )
+
+    proc = EnhancedMetadataProcessor(happy_path_config)
+
+    proc._mb_client = FakeExternalClient()
+    proc._lfm_client = FakeExternalClient()
+
+    async def fake_fetch_lyrics(*args, **kwargs):
+        return None, None
+
+    async def fake_fetch_album_from_musicbrainz(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        proc.lyrics_processor, "fetch_lyrics_with_fallback", fake_fetch_lyrics
+    )
+    monkeypatch.setattr(
+        proc.album_processor,
+        "fetch_album_from_musicbrainz",
+        fake_fetch_album_from_musicbrainz,
+    )
+
+    return proc
+
+
+@pytest.fixture
+def filename_fixer(happy_path_config):
+    return FilenameFixerTool(happy_path_config)
+
+
+@pytest.fixture
+def duplicate_handler(happy_path_config):
+    return EnhancedDuplicateHandler(happy_path_config)
+
+
+def test_happy_path_end_to_end(
+    processor, filename_fixer, duplicate_handler, happy_path_config, tmp_path
+):
+    url = "https://www.youtube.com/watch?v=HAPPY123"
+    source = tmp_path / "downloaded.mp3"
+    source.write_bytes(b"fake-audio-bytes-not-real-mp3-data")
+
+    track_metadata = {
+        "title": "Happy Artist - Happy Song (Official Video)",
+        "artist": "Happy Artist",
+        "uploader": "Happy Artist",
+        "channel": "Happy Artist",
+        "id": "HAPPY123",
+        "filepath": str(source),
+        "cover_art": b"fake-cover-bytes",
+        "genre": "Hip Hop",
+    }
+
+    # Schritt 1: Duplicate-Check vor dem ersten Download - kein Duplikat.
+    is_dup, _entry, reason = duplicate_handler.check_for_duplicates(
+        url, raw_artist="Happy Artist", raw_title="Happy Song"
+    )
+    assert is_dup is False
+    assert reason == "none"
+
+    # Schritt 2: Volle Metadata-Pipeline.
+    result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=track_metadata,
+            file_utils=None,
+            filename_fixer=filename_fixer,
+        )
+    )
+
+    assert result.success is True
+    assert result.error is None
+    assert result.from_cache is False
+    assert result.is_duplicate is False
+    assert result.artist == "Happy Artist"
+    assert result.title
+
+    assert result.library_path is not None
+    library_path = Path(result.library_path)
+    assert library_path.exists()
+    assert library_path.is_relative_to(happy_path_config.LIBRARY_DIR)
+
+    # Schritt 3: Nach erfolgreichem Download registrieren - ein zweiter
+    # Versuch derselben URL muss jetzt als Duplikat erkannt werden.
+    duplicate_handler.register_download(
+        url, result.artist, result.title, file_path=library_path
+    )
+    is_dup_again, entry, reason_again = duplicate_handler.check_for_duplicates(url)
+    assert is_dup_again is True
+    assert reason_again == "url"
+    assert entry.artist == result.artist
+
+
+def test_missing_filepath_returns_graceful_failure(processor, filename_fixer):
+    """
+    Charakterisiert das globale try/except in process_single_track: ein
+    fehlender 'filepath'-Schluessel loest intern ein ValueError aus, das
+    NICHT nach aussen dringt, sondern als MetadataResult(success=False)
+    zurueckkommt - wichtige Sicherheitsnetz-Eigenschaft der Pipeline.
+    """
+    track_metadata = {
+        "title": "Some Artist - Some Song",
+        "artist": "Some Artist",
+        "uploader": "Some Artist",
+        "channel": "Some Artist",
+        "id": "NOFILE1",
+    }
+
+    result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=track_metadata,
+            file_utils=None,
+            filename_fixer=filename_fixer,
+        )
+    )
+
+    assert result.success is False
+    assert result.error

@@ -1,3 +1,6 @@
+import shutil
+from pathlib import Path
+
 import pytest
 from config import Config
 
@@ -23,6 +26,22 @@ def reset_singletons():
     SingletonMixin._instances.clear()
     yield
     SingletonMixin._instances.clear()
+
+
+@pytest.fixture
+def mapping_dir_copy(tmp_path):
+    """
+    Kopie des echten mapping/-Verzeichnisses in tmp_path.
+
+    Fuer Tests, die reale Genre-/Artist-Mapping-Logik (GenreMapper,
+    ArtistNormalizer, AutoLearnManager) mit Schreibzugriff ausueben sollen,
+    ohne die echten YAML-Dateien im Repo zu veraendern (Regel 3: Mapping-
+    Aenderungen wie Codeaenderungen behandeln, niemals als Testnebenwirkung).
+    """
+    real_mapping_dir = Path(__file__).resolve().parent.parent / "mapping"
+    dest = tmp_path / "mapping"
+    shutil.copytree(real_mapping_dir, dest)
+    return dest
 
 
 @pytest.fixture
