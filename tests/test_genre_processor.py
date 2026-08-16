@@ -1,329 +1,149 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+"""
+Characterization-Tests fuer den echten GenreProcessor.
 
-import sys
-import yaml
-from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
-from dataclasses import dataclass, field
+Ersetzt die vorherige Testdatei, die eine eigene GenreProcessor-Klasse
+innerhalb der Testdatei nachgebaut hatte (TEST-001 aus der Engineering
+Baseline) und ausserdem nicht von pytest eingesammelt wurde, weil die
+Testklasse einen __init__-Konstruktor besass.
 
-# =========================================================
-# Mocks
-# =========================================================
+Getestet wird die Produktionsklasse
+services.downloader.utils.metadata.genre_processor.GenreProcessor
+zusammen mit dem echten utils.genre_map.GenreMapper gegen die realen
+YAML-Dateien in mapping/. Externe Services (MusicBrainz, Last.fm) werden
+hier nicht angesprochen - normalize_genre_name() und prioritize_genres()
+sind rein lokale, synchrone Methoden ohne externe Aufrufe.
+"""
 
-class MockLogger:
-    def debug(self, msg, *args, **kwargs): pass
-    def info(self, msg, *args, **kwargs): pass
-    def warning(self, msg, *args, **kwargs): pass
-    def error(self, msg, *args, **kwargs): pass
-    def isEnabledFor(self, level): return False
+import asyncio
 
-def get_module_logger(name):
-    return MockLogger()
+import pytest
 
-sys.modules['logger'] = type(sys)('logger')
-sys.modules['logger'].get_module_logger = get_module_logger
-sys.modules['utils'] = type(sys)('utils')
-sys.modules['utils.genre_map'] = type(sys)('utils.genre_map')
-
-@dataclass
-class GenreResult:
-    primary: str = ""
-    secondary: List[str] = field(default_factory=list)
-    source: str = ""
-    confidence: float = 0.0
-    raw_tags: List[str] = field(default_factory=list)
-    mb_ids: Dict[str, str] = field(default_factory=dict)
-
-# =========================================================
-# GenreProcessor
-# =========================================================
-
-class GenreProcessor:
-    def __init__(self, mapping_dir: Path):
-        self.mapping_dir = mapping_dir
-        self.logger = MockLogger()
-        self.GENRE_NORMALIZATION = self._load_genre_normalization()
-        self.IGNORE_SECONDARY = self._load_ignore_secondary()
-        self.GENRE_PRIORITY = self._calculate_genre_priority_from_hierarchy()
-        print(f"✅ GenreProcessor initialisiert:")
-        print(f"   - {len(self.GENRE_NORMALIZATION)} Normalisierungen")
-        print(f"   - {len(self.IGNORE_SECONDARY)} ignorierte Tags")
-        print(f"   - {len(self.GENRE_PRIORITY)} priorisierte Genres")
-
-    def _load_genre_normalization(self) -> Dict[str, str]:
-        aliases_file = self.mapping_dir / "genre_aliases.yaml"
-        if not aliases_file.exists():
-            return {}
-        with open(aliases_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        aliases = data.get("GENRE_ALIASES", {})
-        return {alias.lower(): canonical for alias, canonical in aliases.items()}
-
-    def _load_ignore_secondary(self) -> Set[str]:
-        filter_file = self.mapping_dir / "genre_filters.yaml"
-        if not filter_file.exists():
-            return set()
-        with open(filter_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        return set(data.get("IGNORE_SECONDARY", []))
-
-    def _calculate_genre_priority_from_hierarchy(self) -> Dict[str, int]:
-        hierarchy_file = self.mapping_dir / "genre_hierarchy.yaml"
-        if not hierarchy_file.exists():
-            return {}
-        with open(hierarchy_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        hierarchy = data.get("GENRE_HIERARCHY", {})
-        genre_depth: Dict[str, int] = {}
-        children_map: Dict[str, List[str]] = {}
-        for child, parent in hierarchy.items():
-            if parent is None:
-                continue
-            if parent not in children_map:
-                children_map[parent] = []
-            children_map[parent].append(child)
-        
-        def calculate_depth(genre: str, current_depth: int = 0, visited: set = None):
-            if visited is None:
-                visited = set()
-            if genre in visited:
-                return
-            visited.add(genre)
-            if genre not in genre_depth or current_depth < genre_depth[genre]:
-                genre_depth[genre] = current_depth
-            if genre in children_map:
-                for child in children_map[genre]:
-                    calculate_depth(child, current_depth + 1, visited)
-        
-        top_level = [g for g, p in hierarchy.items() if p is None]
-        for top in top_level:
-            calculate_depth(top, 0)
-        for genre in hierarchy.keys():
-            if genre not in genre_depth:
-                parent = hierarchy.get(genre)
-                if parent and parent in genre_depth:
-                    genre_depth[genre] = genre_depth[parent] + 1
-                else:
-                    genre_depth[genre] = 0
-        return {genre.lower(): depth for genre, depth in genre_depth.items()}
-
-    def normalize_genre_name(self, genre: str) -> str:
-        if not genre:
-            return "Unknown"
-        genre_lower = genre.lower().strip()
-        if genre_lower in self.GENRE_NORMALIZATION:
-            return self.GENRE_NORMALIZATION[genre_lower]
-        for key, value in self.GENRE_NORMALIZATION.items():
-            if key in genre_lower:
-                return value
-        words = genre.split()
-        return " ".join(w.capitalize() for w in words)
-
-    def prioritize_genres(self, tags: List[str], artist_name: Optional[str] = None) -> Tuple[str, List[str]]:
-        if not tags:
-            return "Unknown", []
-        
-        def normalize_for_matching(text: str) -> str:
-            t = text.lower().strip()
-            replacements = {"hip-hop": "hip hop", "r&b": "rnb", "r'n'b": "rnb"}
-            return replacements.get(t, t)
-        
-        valid_tags = []
-        for tag in tags:
-            if not tag:
-                continue
-            tag_lower = tag.lower().strip()
-            if tag_lower in self.IGNORE_SECONDARY:
-                continue
-            if artist_name and tag_lower == artist_name.lower():
-                continue
-            valid_tags.append(normalize_for_matching(tag_lower))
-        
-        if not valid_tags:
-            return "Unknown", []
-        
-        tag_priorities = []
-        for tag in valid_tags:
-            normalized_tag = self.normalize_genre_name(tag).lower()
-            priority = self.GENRE_PRIORITY.get(normalized_tag)
-            if priority is None:
-                priority = self.GENRE_PRIORITY.get(tag)
-            if priority is not None:
-                tag_priorities.append((normalized_tag, priority))
-        
-        if not tag_priorities:
-            primary = self.normalize_genre_name(valid_tags[0])
-            secondary = [self.normalize_genre_name(t) for t in valid_tags[1:6] if self.normalize_genre_name(t) != primary]
-            return primary, secondary
-        
-        tag_priorities.sort(key=lambda x: (-x[1], x[0]))
-        best_normalized = tag_priorities[0][0]
-        
-        correction_map = {
-            "ruhrpott rap": "Ruhrpott Rap",
-            "hamburger schule": "Hamburger Rap",
-            "berliner rap": "Berliner Rap",
-            "kölsch rap": "Kölsch Rap",
-        }
-        primary = correction_map.get(best_normalized, best_normalized.title())
-        
-        secondary = []
-        seen = {primary.lower()}
-        for norm_tag, _ in tag_priorities[1:]:
-            if norm_tag not in seen:
-                seen.add(norm_tag)
-                secondary.append(correction_map.get(norm_tag, norm_tag.title()))
-            if len(secondary) >= 5:
-                break
-        
-        return primary, secondary
+from services.downloader.utils.metadata.genre_processor import GenreProcessor
+from utils.genre_map import GenreMapper
 
 
-# =========================================================
-# TESTS
-# =========================================================
+@pytest.fixture
+def genre_processor(config):
+    genre_mapper = GenreMapper(str(config.GENRE_MAPPING_DIR))
+    return GenreProcessor(config, genre_mapper)
 
-class TestGenreProcessor:
-    def __init__(self):
-        mapping_dir = Path(__file__).parent.parent.parent / "mapping"
-        if not mapping_dir.exists():
-            mapping_dir = Path("mapping")
-        print(f"📁 Mapping-Verzeichnis: {mapping_dir}")
-        self.processor = GenreProcessor(mapping_dir)
 
-    def run_all_tests(self):
-        print("=" * 70)
-        print("🧪 GENRE PROCESSOR TESTS")
-        print("=" * 70)
-        
-        tests = [
-            ("Normalisierung Deutschrap", self.test_normalize_deutschrap),
-            ("Normalisierung Hip Hop", self.test_normalize_hip_hop),
-            ("Normalisierung Pop", self.test_normalize_pop),
-            ("Normalisierung Electronic", self.test_normalize_electronic),
-            ("Priorität Deutschrap > Hip Hop", self.test_priority_deutschrap_over_hip_hop),
-            ("Priorität Subgenre > Hauptgenre", self.test_priority_subgenre_over_main_genre),
-            ("Priorität Deutschrap Subgenres", self.test_priority_deutschrap_subgenres),
-            ("Priorität ignorierte Tags", self.test_priority_ignore_secondary),
-            ("Priorität Artist-Name Filter", self.test_priority_artist_name_filter),
-            ("Sekundär-Genres max 5", self.test_secondary_max_five),
-            ("Sekundär-Genres keine Duplikate", self.test_secondary_no_duplicates),
-            ("Leere Tags", self.test_empty_tags),
-            ("Groß-/Kleinschreibung", self.test_case_insensitive),
-            ("Deutschrap vs German Hip Hop", self.test_german_vs_us_rap),
-            ("Regionale Deutschrap-Subgenres", self.test_regional_subgenres),
-        ]
-        
-        passed, failed = 0, 0
-        for name, test_func in tests:
-            try:
-                test_func()
-                print(f"  ✅ {name}")
-                passed += 1
-            except AssertionError as e:
-                print(f"  ❌ {name}: {e}")
-                failed += 1
-            except Exception as e:
-                print(f"  💥 {name}: {e}")
-                failed += 1
-        
-        print("\n" + "=" * 70)
-        print(f"📊 Ergebnis: {passed} bestanden, {failed} fehlgeschlagen")
-        print("=" * 70)
-        return failed == 0
-
-    def test_normalize_deutschrap(self):
-        test_cases = [
+class TestNormalizeGenreName:
+    def test_deutschrap_variants(self, genre_processor):
+        cases = [
             ("deutschrap", "Deutschrap"),
             ("german hip hop", "Deutschrap"),
             ("ruhrpott rap", "Ruhrpott Rap"),
             ("berliner rap", "Berliner Rap"),
             ("hamburger schule", "Hamburger Rap"),
         ]
-        for inp, exp in test_cases:
-            result = self.processor.normalize_genre_name(inp)
-            assert result == exp, f"'{inp}' → '{result}', erwartet '{exp}'"
+        for raw, expected in cases:
+            assert genre_processor.normalize_genre_name(raw) == expected
 
-    def test_normalize_hip_hop(self):
-        assert self.processor.normalize_genre_name("hip hop") == "Hip Hop"
-        assert self.processor.normalize_genre_name("rap") == "Hip Hop"
+    def test_hip_hop(self, genre_processor):
+        assert genre_processor.normalize_genre_name("hip hop") == "Hip Hop"
+        assert genre_processor.normalize_genre_name("rap") == "Hip Hop"
 
-    def test_normalize_pop(self):
-        assert self.processor.normalize_genre_name("pop") == "Pop"
+    def test_pop(self, genre_processor):
+        assert genre_processor.normalize_genre_name("pop") == "Pop"
 
-    def test_normalize_electronic(self):
-        assert self.processor.normalize_genre_name("edm") == "Electronic"
+    def test_electronic(self, genre_processor):
+        assert genre_processor.normalize_genre_name("edm") == "Electronic"
 
-    def test_priority_deutschrap_over_hip_hop(self):
-        primary, _ = self.processor.prioritize_genres(["deutschrap", "hip hop"])
+    def test_case_insensitive(self, genre_processor):
+        assert genre_processor.normalize_genre_name("DEUTSCHRAP") == "Deutschrap"
+
+    def test_empty_string_returns_unknown(self, genre_processor):
+        assert genre_processor.normalize_genre_name("") == "Unknown"
+
+
+class TestPrioritizeGenres:
+    def test_deutschrap_over_hip_hop(self, genre_processor):
+        primary, _ = genre_processor.prioritize_genres(["deutschrap", "hip hop"])
         assert primary == "Deutschrap"
 
-    def test_priority_subgenre_over_main_genre(self):
-        primary, _ = self.processor.prioritize_genres(["ruhrpott rap", "deutschrap"])
-        assert primary == "Ruhrpott Rap", f"Erwartet 'Ruhrpott Rap', bekam '{primary}'"
+    def test_subgenre_over_main_genre(self, genre_processor):
+        primary, _ = genre_processor.prioritize_genres(["ruhrpott rap", "deutschrap"])
+        assert primary == "Ruhrpott Rap"
 
-    def test_priority_deutschrap_subgenres(self):
-        test_cases = [
+    def test_deutschrap_subgenres(self, genre_processor):
+        cases = [
             (["hamburger schule", "deutschrap"], "Hamburger Rap"),
             (["berliner rap", "deutschrap"], "Berliner Rap"),
         ]
-        for tags, expected in test_cases:
-            primary, _ = self.processor.prioritize_genres(tags)
-            assert primary == expected, f"{tags} → {primary}, erwartet {expected}"
+        for tags, expected in cases:
+            primary, _ = genre_processor.prioritize_genres(tags)
+            assert primary == expected
 
-    def test_priority_ignore_secondary(self):
-        primary, secondary = self.processor.prioritize_genres(["deutschrap", "seen live"])
+    def test_ignored_secondary_tags_are_filtered(self, genre_processor):
+        primary, secondary = genre_processor.prioritize_genres(
+            ["deutschrap", "seen live"]
+        )
         assert primary == "Deutschrap"
-        assert len(secondary) == 0
+        assert secondary == []
 
-    def test_priority_artist_name_filter(self):
-        primary, _ = self.processor.prioritize_genres(["deutschrap", "kollegah"], artist_name="kollegah")
+    def test_artist_name_is_filtered_from_tags(self, genre_processor):
+        primary, _ = genre_processor.prioritize_genres(
+            ["deutschrap", "kollegah"], artist_name="kollegah"
+        )
         assert primary == "Deutschrap"
 
-    def test_secondary_max_five(self):
-        _, secondary = self.processor.prioritize_genres(["deutschrap", "a", "b", "c", "d", "e", "f", "g"])
+    def test_secondary_max_five(self, genre_processor):
+        _, secondary = genre_processor.prioritize_genres(
+            ["deutschrap", "a", "b", "c", "d", "e", "f", "g"]
+        )
         assert len(secondary) <= 5
 
-    def test_secondary_no_duplicates(self):
-        _, secondary = self.processor.prioritize_genres(["deutschrap", "hip hop", "hip hop", "rap"])
+    def test_secondary_has_no_duplicates(self, genre_processor):
+        _, secondary = genre_processor.prioritize_genres(
+            ["deutschrap", "hip hop", "hip hop", "rap"]
+        )
         assert len(secondary) == len(set(secondary))
 
-    def test_empty_tags(self):
-        primary, secondary = self.processor.prioritize_genres([])
+    def test_empty_tags_returns_unknown(self, genre_processor):
+        primary, secondary = genre_processor.prioritize_genres([])
         assert primary == "Unknown"
         assert secondary == []
 
-    def test_case_insensitive(self):
-        assert self.processor.normalize_genre_name("DEUTSCHRAP") == "Deutschrap"
-
-    def test_german_vs_us_rap(self):
-        primary, _ = self.processor.prioritize_genres(["german hip hop", "hip hop"])
+    def test_german_vs_us_rap_prefers_deutschrap(self, genre_processor):
+        primary, _ = genre_processor.prioritize_genres(["german hip hop", "hip hop"])
         assert primary == "Deutschrap"
 
-    def test_regional_subgenres(self):
-        test_cases = [
+    def test_regional_subgenres(self, genre_processor):
+        cases = [
             ("berliner rap", "Berliner Rap"),
             ("hamburger schule", "Hamburger Rap"),
             ("ruhrpott rap", "Ruhrpott Rap"),
         ]
-        for tag, expected in test_cases:
-            result = self.processor.normalize_genre_name(tag)
-            assert result == expected
+        for tag, expected in cases:
+            assert genre_processor.normalize_genre_name(tag) == expected
 
 
-if __name__ == "__main__":
-    mapping_dir = Path(__file__).parent.parent.parent / "mapping"
-    if not mapping_dir.exists():
-        mapping_dir = Path("mapping")
-    print(f"\n📁 Prüfe Mapping-Dateien in: {mapping_dir}")
-    required = ["genre_aliases.yaml", "genre_hierarchy.yaml"]
-    missing = [f for f in required if not (mapping_dir / f).exists()]
-    if missing:
-        print(f"⚠️ Fehlende Dateien: {missing}")
-        sys.exit(1)
-    print("✅ Alle benötigten Dateien gefunden.\n")
-    
-    tester = TestGenreProcessor()
-    success = tester.run_all_tests()
-    sys.exit(0 if success else 1)
+class TestDetermineGenreWithFallbacksManualMapping:
+    """
+    Characterization-Test fuer den ersten Pfad der async Pipeline:
+    ein Artist mit exaktem Eintrag in artist_genre.yaml muss ohne
+    externe Services (mb_client=None, lfm_client=None) sofort das
+    manuelle Genre liefern (Schritt 1 der Pipeline, hoechste Prioritaet).
+    """
+
+    def test_known_manual_artist_returns_manual_genre_without_external_calls(
+        self, genre_processor
+    ):
+        known_artist = next(iter(genre_processor.genre_mapper.artist_map), None)
+        if known_artist is None:
+            pytest.skip("Keine Eintraege in artist_genre.yaml vorhanden")
+
+        expected = genre_processor.genre_mapper.artist_map[known_artist].primary
+
+        result = asyncio.run(
+            genre_processor.determine_genre_with_fallbacks(
+                track_metadata={"title": f"{known_artist} - Testsong"},
+                artist_name=known_artist,
+                channel_name="SomeChannel",
+            )
+        )
+
+        assert result is not None
+        assert result.primary == expected
+        assert result.source == "artist_exact_manual"

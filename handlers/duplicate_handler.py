@@ -4,6 +4,7 @@
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable, Tuple
 from dataclasses import dataclass

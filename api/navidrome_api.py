@@ -118,8 +118,13 @@ class NavidromeAPI:
         url = cls._build_url(endpoint)
         full_params = {**cls._auth_params, **(params or {})}
 
+        safe_params = {
+            **full_params,
+            "u": Config.mask_sensitive(full_params.get("u", "")),
+            "p": Config.mask_sensitive(full_params.get("p", "")),
+        }
         log_handler_info(
-            f"Sende Anfrage an URL: {url}, mit Params: {full_params}",
+            f"Sende Anfrage an URL: {url}, mit Params: {safe_params}",
             context="NavidromeAPI",
         )
 
