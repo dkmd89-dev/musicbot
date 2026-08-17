@@ -88,7 +88,6 @@ GENRE_ALIASES:
   "grunge": "Rock"
   "post-rock": "Rock"
   "rock/pop": "Rock"
-  "indie rock": "Rock"
   "garage rock": "Rock"
   "blues rock": "Rock"
   "folk rock": "Rock"
@@ -163,8 +162,6 @@ GENRE_ALIASES:
   "downtempo": "Electronic"
   "idm": "Electronic"
   "electronic dance": "Electronic"
-  "techno": "Techno"
-  "house": "House"
   "dance": "Dance"
   "eurodance": "Dance"
 
@@ -311,7 +308,6 @@ GENRE_ALIASES:
   "afrobeats": "Afro"
   "afropop": "Afro"
   "afro trap": "Afro"
-  "afro house": "Afro House"
   "afrobeat": "Afro"
 
   # Instrumental / Soundtrack
@@ -388,13 +384,3 @@ GENRE_ALIASES:
   "kids music": "Kindermusik"
   "lullaby": "Kindermusik"
   "nursery rhymes": "Kindermusik"
-  # Deutschrap Subgenres - Explizite Normalisierung
-  "ruhrpott rap": "Ruhrpott Rap"
-  "berliner rap": "Berliner Rap"
-  "hamburger rap": "Hamburger Rap"
-  "hamburger schule": "Hamburger Rap"
-  "kölsch rap": "Kölsch Rap"
-  "münchner rap": "Münchner Rap"
-  "stuttgarter rap": "Stuttgarter Rap"
-  "österreichischer rap": "Österreichischer Rap"
-  "schweizer rap": "Schweizer Rap"

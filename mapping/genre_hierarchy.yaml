@@ -172,7 +172,6 @@ GENRE_HIERARCHY:
   Deutschrock: Rock
 
   # Metal Subgenres (Tiefe 2)
-  Metal: Rock
   Heavy Metal: Metal
   Nu Metal: Metal
   Thrash Metal: Metal

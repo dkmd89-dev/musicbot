@@ -44,15 +44,12 @@ GENRE_OVERRIDES:
   jungle: "Drum & Bass"
   house: "House"
   deep house: "House"
-  tech house: "House"
-  progressive house: "House"
   techno: "Techno"
   minimal techno: "Techno"
   acid techno: "Techno"
   hard techno: "Techno"
   dance: "Dance"
   eurodance: "Dance"
-  hardstyle: "Dance"
   tech house: "Tech House"
   bass house: "Bass House"
   melodic techno: "Melodic Techno"
@@ -95,7 +92,6 @@ GENRE_OVERRIDES:
   mainstream pop: "Pop"
   synth-pop: "Pop"
   dance-pop: "Pop"
-  electropop: "Pop"
 
   # International & Weltmusik
   k-pop: "K-Pop"
@@ -163,11 +159,8 @@ GENRE_OVERRIDES:
   electronic dance: "Electronic"
 
   # Häufige Tippfehler & Alternativschreibweisen
-  hiphop: "Hip Hop"
-  hip hop: "Hip Hop"
   r'n'b: "R&B"
   r & b: "R&B"
-  edm: "Electronic"
   d&b: "Drum & Bass"
   drum n bass: "Drum & Bass"
   kpop: "K-Pop"
@@ -188,7 +181,6 @@ GENRE_OVERRIDES:
   jumpstyle: "Hardstyle"
 
   electropop: "Electropop"
-  electro house: "Electro House"
   indie folk: "Indie Folk"
   folk pop: "Folk Pop"
   chamber pop: "Chamber Pop"
