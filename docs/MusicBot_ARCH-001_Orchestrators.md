@@ -45,7 +45,7 @@ Einziger produktiver Instanziierungspunkt: `handlers/menu/rich_menu_handler.py:8
 - **REL-004** (Event-Loop-Blockierung): betrifft primär `download_utils.py`/`download_executor.py`, nicht direkt diese Klasse
 
 ### Extraktionskandidat
-`_send_final_summary()` + `handle_playlist_success()` + `_build_duplicate_message()` + Genre/Stats-Helfer (~350 Zeilen, weitgehend zustandslos, kaum `self`-Zugriff außer `status_msg`/`update`/`duplicate_handler`) — Kandidat für eine eigene `DownloadResultReporter`-Klasse. Kernpipeline (`handle_url`/`handle_youtube_links`/`handle_spotify_url`/`_process_single_download_result`) bliebe unangetastet.
+`_send_final_summary()` + `handle_playlist_success()` + `_build_duplicate_message()` + Genre/Stats-Helfer (~350 Zeilen, weitgehend zustandslos, kaum `self`-Zugriff außer `status_msg`/`update`/`duplicate_handler`) — Kandidat für eine eigene `DownloadResultReporter`-Klasse. Kernpipeline (`handle_url`/`handle_youtube_links`/`handle_spotify_url`/`_process_single_download_result`) bliebe unangetastet. **Status: noch nicht umgesetzt.**
 
 ---
 
@@ -75,6 +75,8 @@ Einziger lebender Produktionspfad: `bot.py:108`. Zwei tote Nebenpfade gefunden: 
 1. Workflow-Dispatch/State-Machine (hat mit BUG-006 bereits gezeigt, dass die Reihenfolge fehleranfällig ist)
 2. Rollen-/Feature-Resolver (zustandsarm, Telegram-unabhängig, geringes Risiko)
 3. (sekundär) Help-Text-Provider
+
+**Status: noch nicht umgesetzt.**
 
 ---
 
@@ -106,6 +108,8 @@ Nur `RichMenuHandler` (`rich_menu_handler.py:84`) instanziiert sie produktiv. Ei
 1. Die acht `_handle_*_callback`-Dispatcher als eigene, kleine Router-Klassen pro Bereich (z.B. `LoggerCallbackRouter`) — `handle_callback()` würde dann nur noch Präfix→Router-Objekt mappen
 2. Menü-Baum-Definition als separate Factory/Builder-Funktion (rein deklarativ, keine Laufzeit-Abhängigkeiten zu den übrigen Verantwortlichkeiten)
 
+**Status: noch nicht umgesetzt.**
+
 ---
 
 ## 4. `EnhancedMetadataProcessor`
@@ -130,8 +134,8 @@ Da `SingletonMixin`: `download_utils.py`, `rich_menu_handler.py:298` und `servic
 Vollständig delegiert an `MetadataCacheHandler`. Hit-Check primär über stabile YouTube-Video-ID (nicht Artist/Titel, siehe TEST-003-Begründung), beendet Pipeline bei Treffer frühzeitig. Miss zählt Statistik und durchläuft volle Pipeline. Write nach vollständiger Verarbeitung inkl. `cover_source`.
 
 ### Extraktionskandidaten
-1. **Tag-Schreiben** (`_write_metadata_to_file_with_lyrics`, `_write_genres_m4a`, `_write_genres_mp3`, `_extract_genre_parts`, ~180 Zeilen) — einzige, wohldefinierte Aufgabe, kein `self`-Zugriff außer Logger, folgt exakt dem Muster der übrigen Sub-Prozessoren (`TagWriter`-Klasse analog zu `AlbumProcessor`/`CoverProcessor`)
-2. Der "Delegate-Methoden"-Block — reine Weiterleitungen, vermutlich ersatzlos entfernbar, sobald geklärt ist, dass sie nirgends (auch nicht in Tests) mehr direkt aufgerufen werden (eigene kleine Nachfolge-Untersuchung, nicht Teil dieser Analyse)
+1. **Tag-Schreiben** (`_write_metadata_to_file_with_lyrics`, `_write_genres_m4a`, `_write_genres_mp3`, `_extract_genre_parts`, ~180 Zeilen) — einzige, wohldefinierte Aufgabe, kein `self`-Zugriff außer Logger, folgt exakt dem Muster der übrigen Sub-Prozessoren (`TagWriter`-Klasse analog zu `AlbumProcessor`/`CoverProcessor`). **Status: umgesetzt (ARCH-001-STEP-1)** — jetzt `services/downloader/utils/metadata/tag_writer.py`, verdrahtet als `self.tag_writer` in `EnhancedMetadataProcessor._do_init()`, 21 eigene Unit-Tests in `tests/test_tag_writer.py`.
+2. Der "Delegate-Methoden"-Block — reine Weiterleitungen, vermutlich ersatzlos entfernbar, sobald geklärt ist, dass sie nirgends (auch nicht in Tests) mehr direkt aufgerufen werden (eigene kleine Nachfolge-Untersuchung, nicht Teil dieser Analyse). **Status: noch nicht umgesetzt.**
 
 ---
 
