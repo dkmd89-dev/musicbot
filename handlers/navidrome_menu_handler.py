@@ -66,10 +66,18 @@ class NavidromeMenuHandler:
     def _initialize_api(self):
         """Initialisiert die Navidrome API-Verbindung (SYNCHRON)"""
         try:
-            # Prüfe Konfiguration - SYNCHRON
-            if hasattr(self.config, "NAVIDROME_URL") and hasattr(
-                self.config, "NAVIDROME_USER"
-            ):
+            # BUG-007-Fix: NAVIDROME_URL/NAVIDROME_USER sind @property auf
+            # Config und liefern bei fehlender .env-Variable "" statt eine
+            # Exception - hasattr() prueft nur, ob die Property EXISTIERT
+            # (immer der Fall), nicht ob sie einen echten Wert hat. War
+            # daher unabhaengig von der tatsaechlichen Konfiguration immer
+            # True. Der im Kommentar versprochene spaetere asynchrone Check
+            # existiert nirgends im Code - connection_status wurde nie
+            # korrigiert. Ein voller Verbindungstest (NavidromeAPI.
+            # check_connection()) waere ein groesserer, async-basierter
+            # Umbau - hier zunaechst der kleinere, eindeutig richtige Fix:
+            # tatsaechlich konfigurierte (nicht-leere) Werte pruefen.
+            if self.config.NAVIDROME_URL and self.config.NAVIDROME_USER:
                 # Setze zunächst auf True (wird später asynchron getestet)
                 self.connection_status = True
                 self.logger.info(
@@ -501,7 +509,10 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
             artists = set(song.get("artist", "Unbekannt") for song in songs)
             albums = set(song.get("album", "Unbekannt") for song in songs)
 
-            message_text = f"""🎭 **Genre: {genre_name}**
+            # BUG-007-Fix: siehe analoge Begruendung in handle_artist_detail()
+            # - genre_name ungeschuetzt in MarkdownV2-Body eingefuegt (z.B.
+            # "Lo-Fi" oder "R&B/Soul" enthalten MarkdownV2-Sonderzeichen).
+            message_text = f"""🎭 **Genre: {escape_md_v2(genre_name)}**
 
 📊 **Statistiken:**
 • {len(songs)} Songs total
@@ -605,7 +616,16 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
             if star_rating:
                 stats_text += f"• ⭐ Favorit\n"
 
-            message_text = f"""🎤 **Künstler: {artist_name}**
+            # BUG-007-Fix: artist_name kommt unveraendert aus der Navidrome-
+            # Bibliothek (Nutzer-/Library-Daten) und wird hier in einen
+            # MarkdownV2-Nachrichtentext eingefuegt. Ohne escape_md_v2()
+            # fuehrt jeder MarkdownV2-Sonderzeichen im Namen (Punkt,
+            # Bindestrich, Klammern, Ausrufezeichen - in echten Kuenstler-
+            # namen keine Seltenheit) zu einem "can't parse entities"-Fehler
+            # von Telegram, der hier als generische Fehlermeldung endet statt
+            # die Kuenstlerdetails anzuzeigen. process_search_query()/
+            # handle_stats() escapen bereits korrekt, diese Methode nicht.
+            message_text = f"""🎤 **Künstler: {escape_md_v2(artist_name)}**
 
 📊 **Alben:** {len(albums)}
 {stats_text}
