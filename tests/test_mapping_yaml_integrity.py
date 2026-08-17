@@ -25,6 +25,7 @@ reinen Text-Duplikate - einzeln mit Nutzer-Entscheidung aufgeloest:
   Indie (= bereits aktives Verhalten, keine Aenderung).
 """
 
+import json
 from collections import Counter
 from pathlib import Path
 
@@ -68,15 +69,20 @@ def _load_and_find_duplicate_keys(yaml_path: Path) -> list:
     return loader.duplicate_keys
 
 
-MAPPING_FILES_TO_CHECK = [
-    "artist_genre.yaml",
-    "genre_hierarchy.yaml",
-    "genre_overrides.yaml",
-    "genre_aliases.yaml",
-]
+MAPPING_FILES_TO_CHECK = [p.name for p in sorted(MAPPING_DIR.glob("*.yaml"))]
 
 
 class TestNoDuplicateKeysInGenreMappingFiles:
+    """
+    Ueberdeckt inzwischen ALLE mapping/*.yaml-Dateien (nicht mehr nur die vier
+    urspruenglich in DATA-001/DATA-002 gefundenen), damit auch kuenftig neu
+    hinzukommende Mapping-Dateien automatisch gegen dasselbe stille
+    PyYAML-Duplikat-Problem geschuetzt sind. Stand bei Einfuehrung: alle
+    zusaetzlich geprueften Dateien (genre_filters, channel_genre,
+    case_preserve, auto_learned_artists, auto_learned_genre, known_artists,
+    special_channel, podcast_rss_feeds, genre_rules) waren bereits sauber.
+    """
+
     @pytest.mark.parametrize("filename", MAPPING_FILES_TO_CHECK)
     def test_no_duplicate_keys(self, filename):
         duplicates = _load_and_find_duplicate_keys(MAPPING_DIR / filename)
@@ -159,3 +165,34 @@ class TestGenreClassificationDecisions:
         with open(MAPPING_DIR / "genre_aliases.yaml", encoding="utf-8") as f:
             aliases = yaml.safe_load(f)["GENRE_ALIASES"]
         assert aliases["indie rock"] == "Indie"
+
+
+def _find_duplicate_keys_in_json(json_path: Path) -> list:
+    """json.load() hat dasselbe stille 'letzter Key gewinnt'-Verhalten wie
+    PyYAML - Python's json-Modul wirft standardmaessig keinen Fehler bei
+    doppelten Objekt-Keys. object_pairs_hook faengt sie ab, bevor sie
+    stillschweigend verworfen werden."""
+    def _collect(pairs):
+        keys = [k for k, _ in pairs]
+        counts = Counter(keys)
+        duplicate_keys.extend(k for k, n in counts.items() if n > 1)
+        return dict(pairs)
+
+    duplicate_keys: list = []
+    with open(json_path, encoding="utf-8") as f:
+        json.load(f, object_pairs_hook=_collect)
+    return duplicate_keys
+
+
+MAPPING_JSON_FILES_TO_CHECK = [p.name for p in sorted(MAPPING_DIR.glob("*.json"))]
+
+
+class TestNoDuplicateKeysInMappingJsonFiles:
+    @pytest.mark.parametrize("filename", MAPPING_JSON_FILES_TO_CHECK)
+    def test_no_duplicate_keys(self, filename):
+        duplicates = _find_duplicate_keys_in_json(MAPPING_DIR / filename)
+        assert duplicates == [], (
+            f"{filename} hat doppelte Keys: {duplicates} - json.load() "
+            "behaelt beim Laden nur den letzten Wert, fruehere Definitionen "
+            "gehen still verloren (analog zu DATA-001/DATA-002 bei YAML)."
+        )
