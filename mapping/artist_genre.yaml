@@ -440,11 +440,6 @@ ARTIST_GENRE_MAP:
     description: Deutsche Indie-Rock-Band mit gesellschaftskritischen Texten
 
   # Indie / Alternative
-  dominic fike:
-    primary: Alternative Pop
-    secondary: [R&B, Indie Pop, Rap, Alternative Hip Hop, Rock]
-    description: Genreübergreifender Künstler aus Florida
-
   esther graf:
     primary: Alternative
     secondary: [Pop Rock, Pop Punk, Alternative Rock, Indie Rock]
@@ -487,11 +482,6 @@ ARTIST_GENRE_MAP:
     primary: Country
     secondary: [Country Rap, Hip Hop, Alternative Country, Americana, Trap]
     description: US-amerikanischer Künstler, verbindet Country mit Rap und modernen Hip-Hop-Elementen
-
-  dasha:
-    primary: Pop
-    secondary: [Country Pop, Singer-Songwriter, Americana, Folk Pop]
-    description: Amerikanische Singer-Songwriterin mit Country-Pop-Sound
 
   # Latin
   miguel atienza:
@@ -688,51 +678,6 @@ ARTIST_GENRE_MAP:
     secondary: [Deep House, House, Afro House, Melodic House]
     description: Aufstrebender House-Produzent mit Soul-Einflüssen
 
-  fayan:
-    primary: Schlager
-    secondary: [Deutschpop, Party-Schlager, Dance-Schlager]
-    description: Deutscher Sänger bekannt für Partyschlager und eingängige Songs
-
-  herzchen:
-    primary: Hip Hop
-    secondary: [Deutschrap, Pop Rap, Emo Rap, Melodic Rap]
-    description: Deutscher Rapper und Sänger mit emotionalem Deutschrap
-
-  sarah engels:
-    primary: Pop
-    secondary: [Deutschpop, Schlager, Dance Pop, Ballad]
-    description: Deutsche Sängerin, bekannt durch DSDS und erfolgreiche Deutschpop-Songs
-
-  riton:
-    primary: Electronic
-    secondary: [House, Dance, EDM, Indie Dance, UK Garage]
-    description: Britischer DJ und Produzent mit eingängigen House-Tracks
-
-  taylor swift:
-    primary: Pop
-    secondary: [Country Pop, Singer-Songwriter, Folk Pop, Indie Folk, Synthpop]
-    description: Weltberühmte amerikanische Singer-Songwriterin
-
-  one-t:
-    primary: Electronic
-    secondary: [Big Beat, Breakbeat, Trip Hop, Electronica, French Touch]
-    description: Französisches Projekt mit experimentellem Big Beat
-
-  calvin harris:
-    primary: Electronic
-    secondary: [EDM, Dance-Pop, House, Disco, Electro House]
-    description: Schottischer Superstar-DJ und Produzent
-
-  majan:
-    primary: Hip Hop
-    secondary: [Deutschrap, Gangsta Rap, Straßenrap, Ruhrpott-Rap]
-    description: Deutscher Rapper aus Gelsenkirchen mit hartem Straßenrap
-
-  eminem:
-    primary: Hip Hop
-    secondary: [Rap, Hardcore Hip Hop, Horrorcore, Pop Rap, Conscious Rap]
-    description: Legendärer amerikanischer Rapper
-
   # YouTube-Kanal-Varianten (für bessere Erkennung)
   "calvin harris - topic":
     primary: Electronic
@@ -920,12 +865,6 @@ ARTIST_GENRE_MAP:
     secondary: [Dance Pop, Electropop, Jazz, Rock]
     description: Amerikanische Pop-Ikone und vielseitige Künstlerin
 
-  # Korrektur für The Weeknd (falls Fuzzy-Match falsch war)
-  "The Weeknd":
-    primary: R&B
-    secondary: [Alternative R&B, Synthpop, New Wave, Electropop]
-    description: Kanadischer Singer-Songwriter mit einzigartigem R&B- und Pop-Sound
-    
   chapo102:
     primary: Deutschrap
     secondary: [Indie-Pop, Pop, Melodic Rap]
