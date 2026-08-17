@@ -1238,6 +1238,24 @@ class RichMenuHandler:
         user_id = update.effective_user.id
         text = update.message.text
 
+        # Abbruch-Befehl
+        # BUG-006-Fix: stand vorher NACH dem Workflow-Dispatch-Block, der bei
+        # aktivem Workflow immer vorher returnt (siehe unten) - "/cancel"
+        # wurde dadurch nie als Abbruch erkannt, solange ein Workflow aktiv
+        # war, sondern als wortwoertliche Eingabe an den Workflow-Handler
+        # durchgereicht (z.B. process_new_user_id(..., "/cancel") ->
+        # "ungueltige Eingabe"), obwohl die Bot-Nachrichten selbst genau
+        # dieses /cancel als Ausstieg bewerben ("Du kannst /cancel eingeben,
+        # um abzubrechen").
+        if text.lower() in ["/cancel", "cancel", "abbrechen"]:
+            context.user_data.clear()
+            if user_id in self.user_states:
+                del self.user_states[user_id]
+            await update.message.reply_text(
+                "❌ Vorgang abgebrochen.\n\nVerwende /menu, um das Menü zu öffnen."
+            )
+            return
+
         # Navidrome-Suche prüfen
         if self.navidrome_handler:
             if user_id in self.navidrome_handler.browse_states:
@@ -1277,16 +1295,6 @@ class RichMenuHandler:
                     )
                     context.user_data.clear()
                 return
-
-        # Abbruch-Befehl
-        if text.lower() in ["/cancel", "cancel", "abbrechen"]:
-            context.user_data.clear()
-            if user_id in self.user_states:
-                del self.user_states[user_id]
-            await update.message.reply_text(
-                "❌ Vorgang abgebrochen.\n\nVerwende /menu, um das Menü zu öffnen."
-            )
-            return
 
         self.logger.debug(
             f"📝 Unbehandelte Text-Nachricht von User {user_id}: {text[:50]}"
