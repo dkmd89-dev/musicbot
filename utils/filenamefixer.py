@@ -20,7 +20,6 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Optional, Tuple, List, Callable, Dict
-from dataclasses import dataclass
 from datetime import datetime
 import mutagen
 
@@ -173,14 +172,6 @@ def get_special_category(
     return result[0] if result else None
 
 
-@dataclass
-class FixerStats:
-    total: int = 0
-    fixed: int = 0
-    skipped: int = 0
-    moved_to_fail: int = 0
-
-
 class FilenameFixerTool(SingletonMixin):
     """
     Organisiert Medien-Dateien in einer festgelegten Library-Struktur.
@@ -213,7 +204,6 @@ class FilenameFixerTool(SingletonMixin):
 
         # Verzeichnisse
         self.library_dir = Path(self.config.LIBRARY_DIR)
-        self.stats = FixerStats()
         self.fail_dir = Path(self.config.FAIL_DIR)
         self.processed_dir = Path(self.config.PROCESSED_DIR)
         self.temp_dir = Path(self.config.TEMP_DIR)
@@ -538,228 +528,6 @@ class FilenameFixerTool(SingletonMixin):
             self.logger.debug(f"💿 Zielpfad für Album: {final_path}")
 
         return self._ensure_within_roots(final_path)
-
-    async def organize_file(self, source_path: Path, video_info: dict) -> Path:
-        """Organisiert eine heruntergeladene Datei in den Zielordner basierend auf video_info."""
-        if not source_path.exists():
-            self.logger.error(f"❌ Quelldatei existiert nicht: {source_path}")
-            raise FileNotFoundError(f"Source file not found: {source_path}")
-
-        target_folder_name = video_info.get("target_folder", "Standard")
-        target_folder = self.library_dir / sanitize_filename(target_folder_name)
-        target_folder.mkdir(parents=True, exist_ok=True)
-        target_path = target_folder / source_path.name
-
-        self.logger.info(f"📦 Verschiebe {source_path} → {target_path}")
-        try:
-            await safe_rename(source_path, target_path)
-            self.logger.info(f"✅ Erfolgreich verschoben: {target_path}")
-            return target_path
-        except Exception as e:
-            self.logger.error(f"❌ Fehler beim Verschieben: {e}", exc_info=True)
-            fail_path = self.fail_dir / source_path.name
-            await safe_rename(source_path, fail_path)
-            self.logger.warning(f"⚠️ Datei in Fail-Ordner verschoben: {fail_path}")
-            return fail_path
-
-    async def fix_and_move_file(
-        self, file_path: Path, video_info: dict = None, is_single_download: bool = False
-    ) -> Optional[Tuple[Path, Path]]:
-        """
-        Liest Metadaten aus und verschiebt die Datei in strukturierte Ordner.
-        """
-        if not file_path.exists() or not file_path.is_file():
-            self.logger.error(f"❌ Datei nicht gefunden: {file_path}")
-            self.stats.skipped += 1
-            return None
-
-        self.stats.total += 1
-
-        if is_single_download:
-            self.logger.info(
-                f"🎵 [SINGLE-MODE] Bearbeite Einzeldownload: {file_path.name}"
-            )
-        else:
-            self.logger.info(f"📄 Bearbeite Datei: {file_path.name}")
-
-        for attempt in range(4):
-            if await verify_file(file_path):
-                break
-            await asyncio.sleep(0.5)
-
-        try:
-            audio = mutagen.File(file_path, easy=True)
-            if audio is None:
-                raise ValueError("Datei konnte nicht gelesen werden.")
-        except Exception as e:
-            self.logger.error(f"❌ Metadaten-Fehler: {e}", exc_info=True)
-            fail_path = self.fail_dir / file_path.name
-            await safe_rename(file_path, fail_path)
-            self.stats.moved_to_fail += 1
-            return None
-
-        artist = audio.get("artist", ["Unknown Artist"])[0]
-        title = audio.get("title", [file_path.stem])[0]
-        album = audio.get("album", ["Single"])[0]
-        year = audio.get("date") or audio.get("originaldate")
-        year = year[0] if year else ""
-        track_number_str = audio.get("tracknumber")
-        track_number = (
-            int(track_number_str[0].split("/")[0]) if track_number_str else None
-        )
-        uploader = (video_info or {}).get("uploader", "")
-
-        original_album = album
-        if is_single_download:
-            self.logger.info(
-                f"🏷️ [SINGLE-MODE] Album-Tag bleibt '{original_album}' → Ordner wird 'Singles'"
-            )
-
-        final_path = self.build_final_path(
-            artist=artist,
-            title=title,
-            album=album,
-            year=year,
-            track_number=track_number,
-            extension=file_path.suffix.lstrip("."),
-            uploader=uploader,
-            is_single_download=is_single_download,
-        )
-
-        final_path.parent.mkdir(parents=True, exist_ok=True)
-
-        try:
-            await safe_rename(file_path, final_path)
-            self.stats.fixed += 1
-
-            log_msg = (
-                f"✅ [SINGLE-MODE] Einzeldownload erfolgreich verschoben: {final_path}"
-                if is_single_download
-                else f"✅ Datei erfolgreich verschoben: {final_path}"
-            )
-            self.logger.info(log_msg)
-
-            return file_path, final_path
-        except Exception as e:
-            self.logger.error(f"❌ Fehler beim Verschieben: {e}", exc_info=True)
-            fail_path = self.fail_dir / file_path.name
-            await safe_rename(file_path, fail_path)
-            self.stats.moved_to_fail += 1
-            return None
-
-    async def process_directory(
-        self,
-        target_dir: Optional[Path] = None,
-        single_mode: bool = False,
-        return_moved_files: bool = False,
-        force_single_structure: bool = False,
-    ) -> Optional[List[Tuple[Path, Path]]]:
-        """
-        Verarbeitet alle Audiodateien im gegebenen Ordner.
-        """
-        dir_to_process = target_dir or self.processed_dir
-
-        log_msg = (
-            f"🎵 [SINGLE-MODE] Starte Verarbeitung mit Singles-Struktur: {dir_to_process}"
-            if force_single_structure
-            else f"🚀 Starte Verarbeitung: {dir_to_process}"
-        )
-        self.logger.info(log_msg)
-
-        if not dir_to_process.exists():
-            self.logger.error(f"❌ Verzeichnis nicht gefunden: {dir_to_process}")
-            return [] if return_moved_files else None
-
-        self.stats = FixerStats()
-        audio_exts = self._get_supported_audio_extensions()
-        audio_files = [
-            f for ext in audio_exts for f in dir_to_process.glob(f"**/*.{ext}")
-        ]
-
-        if not audio_files:
-            self.logger.info("🔭 Keine passenden Audiodateien gefunden.")
-            return [] if return_moved_files else None
-
-        is_single_processing = (
-            single_mode or len(audio_files) == 1 or force_single_structure
-        )
-
-        if is_single_processing:
-            if len(audio_files) == 1:
-                self.logger.info(
-                    "🎵 [AUTO-SINGLE] Nur eine Datei gefunden → aktiviere Single-Mode automatisch"
-                )
-            elif force_single_structure:
-                self.logger.info(
-                    f"🎵 [FORCE-SINGLE] {len(audio_files)} Dateien werden als Singles verarbeitet"
-                )
-
-        if single_mode:
-            audio_files.sort(key=os.path.getmtime, reverse=True)
-            audio_files = [audio_files[0]]
-
-        moved_files = []
-        tasks = [
-            self.fix_and_move_file(
-                f, video_info={}, is_single_download=is_single_processing
-            )
-            for f in audio_files
-        ]
-        results = await asyncio.gather(*tasks)
-
-        if return_moved_files:
-            moved_files.extend([r for r in results if r])
-
-        self._log_processing_stats(is_single_processing)
-
-        await self._clean_directories()
-        return moved_files if return_moved_files else None
-
-    def _log_processing_stats(self, is_single_mode: bool = False):
-        """Gibt eine übersichtliche Statistik der Verarbeitung aus."""
-        mode_indicator = "🎵 [SINGLE-MODE]" if is_single_mode else "📊"
-
-        self.logger.info(
-            f"{mode_indicator} Verarbeitung abgeschlossen: "
-            f"✅ {self.stats.fixed} erfolgreich, "
-            f"⏭️ {self.stats.skipped} übersprungen, "
-            f"❌ {self.stats.moved_to_fail} fehlerhaft "
-            f"(von {self.stats.total} gesamt)"
-        )
-
-    def _get_supported_audio_extensions(self) -> List[str]:
-        """Liest unterstützte Audioendungen aus der Konfiguration oder nutzt Fallback."""
-        exts_cfg = getattr(self.config, "SUPPORTED_FORMATS", None)
-        exts = (
-            [e.lstrip(".").lower() for e in exts_cfg]
-            if exts_cfg
-            else ["mp3", "m4a", "aac", "ogg", "opus", "wav", "flac", "wma", "alac"]
-        )
-        exts = sorted(set(exts))
-        self.logger.debug(f"🎵 Unterstützte Dateiformate: {exts}")
-        return exts
-
-    async def _clean_directories(self):
-        """Bereinigt temporäre oder leere Verzeichnisse nach Verarbeitung."""
-        try:
-            for item in self.temp_dir.iterdir():
-                if item.is_dir():
-                    shutil.rmtree(item)
-                else:
-                    item.unlink()
-            self.logger.debug("🧹 Temp-Verzeichnis bereinigt")
-        except Exception as e:
-            self.logger.warning(f"⚠️ Fehler beim tmp-Cleanup: {e}")
-
-        try:
-            for root, dirs, _ in os.walk(self.processed_dir, topdown=False):
-                for d in dirs:
-                    target = Path(root) / d
-                    if not any(target.iterdir()):
-                        target.rmdir()
-            self.logger.debug("🧹 Leere Unterordner bereinigt")
-        except Exception as e:
-            self.logger.warning(f"⚠️ Fehler beim Löschen leerer Unterordner: {e}")
 
     def fix(self, text: str) -> str:
         """Einfacher Wrapper um sanitize_filename()."""

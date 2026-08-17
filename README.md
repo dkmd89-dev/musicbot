@@ -64,7 +64,9 @@ Ausführlicher, mit Datenfluss/Fehlerbehandlung pro Bereich: [`CLAUDE.md`](CLAUD
 
 **Voraussetzungen:** Python 3.12, `ffmpeg` (Systempaket, für Audio-Konvertierung), ein laufender Navidrome-Server (optional, aber für die Navidrome-Funktionen nötig).
 
-Es gibt aktuell keine `requirements.txt` im Repository (offener Punkt). Wichtigste Python-Abhängigkeiten laut Imports im Code: `python-telegram-bot`, `yt-dlp`, `musicbrainzngs`, `pylast`, `mutagen`, `Pillow`, `feedparser`, `requests`, `python-dotenv`, `PyYAML`, `numpy`.
+```bash
+pip install -r requirements.txt
+```
 
 Konfiguration erfolgt über eine `.env`-Datei im Projektwurzel-Verzeichnis (wird von `config.py` automatisch geladen). Relevante Variablen (siehe `config.py` für die vollständige, kommentierte Liste inkl. Defaults):
 

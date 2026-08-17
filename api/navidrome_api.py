@@ -269,28 +269,6 @@ class NavidromeAPI:
             )
 
     @classmethod
-    def count_songs_recursive(cls, directory_id: str) -> int:
-        """
-        Zählt rekursiv alle Songs in einem Verzeichnis anhand der API.
-        """
-        song_count = 0
-        try:
-            data = cls.make_request("getMusicDirectory", {"id": directory_id})
-            directory = data.get("subsonic-response", {}).get("directory", {})
-            children = directory.get("child", [])
-
-            for item in children:
-                if item.get("isDir", False):
-                    song_count += cls.count_songs_recursive(item["id"])
-                else:
-                    song_count += 1
-        except Exception as e:
-            log_handler_error(
-                e, context="NavidromeAPI (rekursiver Song-Zähler)", exc_info=True
-            )
-        return song_count
-
-    @classmethod
     async def get_scan_status(cls) -> Dict[str, Any]:
         """Ruft den aktuellen Scan-Status von Navidrome ab."""
         log_handler_info("Abrufen des Navidrome Scan-Status...", context="NavidromeAPI")
@@ -562,50 +540,6 @@ class NavidromeAPI:
         log_handler_info(f"{len(artists)} Künstler gefunden.", context="NavidromeAPI")
         return artists
 
-    @classmethod
-    async def get_genres(cls) -> Dict[str, Any]:
-        """Ruft alle Genres ab (statische Version)."""
-        log_handler_info("Rufe alle Genres ab.", context="NavidromeAPI")
-        response = await asyncio.to_thread(cls.make_request, "getGenres")
-        genres = {}
-        if (
-            "subsonic-response" in response
-            and "genres" in response["subsonic-response"]
-            and "genre" in response["subsonic-response"]["genres"]
-        ):
-            genres = response["subsonic-response"]["genres"]["genre"]
-        log_handler_info(f"{len(genres)} Genres gefunden.", context="NavidromeAPI")
-        return genres
-
-    @classmethod
-    async def get_indexes(cls) -> List[Dict[str, Any]]:
-        """Ruft alle Indexe ab (z.B. A, B, C...)."""
-        log_handler_info("Rufe alle Indexe ab.", context="NavidromeAPI")
-        response = await asyncio.to_thread(cls.make_request, "getIndexes")
-        indexes = (
-            response.get("subsonic-response", {}).get("indexes", {}).get("index", [])
-        )
-        log_handler_info(f"{len(indexes)} Indexe gefunden.", context="NavidromeAPI")
-        return indexes
-
-    @classmethod
-    async def get_album_list(
-        cls, type: str = "newest", size: int = 100
-    ) -> List[Dict[str, Any]]:
-        """Ruft eine Liste von Alben basierend auf Typ (z.B. newest, frequent, random) ab."""
-        log_handler_info(
-            f"Rufe {size} Alben vom Typ '{type}' ab.", context="NavidromeAPI"
-        )
-        params = {"type": type, "size": size}
-        response = await asyncio.to_thread(
-            cls.make_request, "getAlbumList", params=params
-        )
-        albums = (
-            response.get("subsonic-response", {}).get("albumList", {}).get("album", [])
-        )
-        log_handler_info(f"{len(albums)} Alben gefunden.", context="NavidromeAPI")
-        return albums
-
     # ======================================================================
     # KORREKTUR: get_now_playing gibt jetzt eine LISTE aller aktiven
     # Wiedergaben zurück, nicht nur die erste.
@@ -651,95 +585,6 @@ class NavidromeAPI:
 
         # Auch hier KEINE Meldung mehr, wenn keine Daten vorhanden
         return all_playing_data
-
-    @classmethod
-    async def get_last_played(cls, count: int = 10) -> List[Dict[str, Any]]:
-        """Ruft die letzten 'count' gespielten Titel ab (Nutzt getRecentSongs)."""
-        log_handler_info(
-            f"Rufe die letzten {count} gespielten Titel ab.", context="NavidromeAPI"
-        )
-        params = {"count": count}
-        response = await asyncio.to_thread(
-            cls.make_request, "getRecentSongs", params=params
-        )
-        songs = (
-            response.get("subsonic-response", {}).get("recentSongs", {}).get("song", [])
-        )
-        log_handler_info(f"{len(songs)} letzte Titel gefunden.", context="NavidromeAPI")
-        return songs
-
-    @classmethod
-    async def get_top_songs(
-        cls, count: int = 10, period: str = "allTime"
-    ) -> List[Dict[str, Any]]:
-        """Ruft Top-Songs ab. Period kann 'allTime', 'year', 'month', 'week' sein."""
-        log_handler_info(
-            f"Rufe die Top {count} Songs für den Zeitraum '{period}' ab.",
-            context="NavidromeAPI",
-        )
-        params = {"count": count, "timePeriod": period}
-        response = await asyncio.to_thread(
-            cls.make_request, "getTopSongs", params=params
-        )
-        songs = (
-            response.get("subsonic-response", {}).get("topSongs", {}).get("song", [])
-        )
-        log_handler_info(f"{len(songs)} Top-Songs gefunden.", context="NavidromeAPI")
-        return songs
-
-    @classmethod
-    async def get_top_artists(
-        cls, count: int = 10, period: str = "allTime"
-    ) -> List[Dict[str, Any]]:
-        """Ruft Top-Künstler ab. Period kann 'allTime', 'year', 'month', 'week' sein."""
-        log_handler_info(
-            f"Rufe die Top {count} Künstler für den Zeitraum '{period}' ab.",
-            context="NavidromeAPI",
-        )
-        params = {"count": count, "timePeriod": period}
-        response = await asyncio.to_thread(
-            cls.make_request, "getTopArtists", params=params
-        )
-        artists = (
-            response.get("subsonic-response", {})
-            .get("topArtists", {})
-            .get("artist", [])
-        )
-        log_handler_info(
-            f"{len(artists)} Top-Künstler gefunden.", context="NavidromeAPI"
-        )
-        return artists
-
-    @classmethod
-    async def get_period_review_data(
-        cls, period: str, username: str = None
-    ) -> Dict[str, Any]:
-        """
-        Ruft aggregierte Wiedergabedaten für einen bestimmten Zeitraum ab.
-        """
-        log_handler_info(
-            f"Abrufen von Periodenrückblick-Daten für '{period}'. Benutzer: {username if username else 'Alle'}",
-            context="NavidromeAPI",
-        )
-
-        top_songs_count = getattr(Config, "NAVIDROME_REVIEW_TOP_COUNT", 5)
-        top_songs = await cls.get_top_songs(count=top_songs_count, period=period)
-        top_artists = await cls.get_top_artists(count=top_songs_count, period=period)
-
-        total_plays = sum(song.get("playCount", 0) for song in top_songs)
-
-        review_data = {
-            "period": period,
-            "totalPlays": total_plays,
-            "topSongs": top_songs,
-            "topArtists": top_artists,
-            "username": username,
-        }
-        log_handler_info(
-            f"Periodenrückblick-Daten für '{period}' erfolgreich abgerufen. Gesamt-Wiedergaben: {total_plays}.",
-            context="NavidromeAPI",
-        )
-        return review_data
 
     @classmethod
     async def search(cls, query: str) -> Dict[str, Any]:

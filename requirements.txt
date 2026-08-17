@@ -1,0 +1,27 @@
+# MusicBot – Third-Party-Abhängigkeiten
+# Ermittelt aus tatsächlichen Imports im Produktionscode (nicht tests/),
+# Versionen aus dem laufenden Produktions-Environment (pip freeze).
+# Bei Aenderungen: neue Imports pruefen und hier nachziehen (siehe README.md).
+
+aiohttp==3.13.5
+async-timeout==5.0.1
+beautifulsoup4==4.12.3
+cachetools==7.0.5
+colorama==0.4.6
+feedparser==6.0.12
+lyricsgenius==3.12.0
+matplotlib==3.10.8
+musicbrainzngs==0.7.1
+mutagen==1.47.0
+numpy==2.4.4
+Pillow==12.2.0
+psutil==7.2.2
+pylast==7.0.2
+python-dotenv==1.2.2
+python-telegram-bot==22.7
+PyYAML==6.0.2
+RapidFuzz==3.14.5
+requests==2.32.3
+tenacity==9.1.4
+urllib3==2.6.3
+yt-dlp==2026.7.4
