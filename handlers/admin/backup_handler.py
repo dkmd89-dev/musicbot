@@ -357,6 +357,27 @@ class BackupHandler:
             parse_mode="Markdown",
         )
 
+    def _resolve_backup_path(self, filename: str) -> Optional[Path]:
+        """
+        Löst `filename` sicher relativ zu `dest_dir` auf.
+
+        SEC-006: filename kommt unvalidiert aus callback_data
+        (backup_delete_<filename> / backup_delete_confirm_<filename>).
+        Ohne diese Prüfung würde ".."-Traversal oder ein absoluter Pfad
+        (Path.__truediv__ verwirft bei absoluten rechten Operanden den
+        linken Teil komplett - dest_dir / "/etc/passwd" == "/etc/passwd")
+        beliebige, vom Bot-Prozess beschreibbare Dateien löschbar machen,
+        nicht nur Backups. Gibt None zurück, wenn der aufgelöste Pfad
+        außerhalb von dest_dir liegt.
+        """
+        candidate = (self.dest_dir / filename).resolve()
+        if not candidate.is_relative_to(self.dest_dir.resolve()):
+            self.logger.warning(
+                f"🚨 [SECURITY] Backup-Anfrage außerhalb von {self.dest_dir}: {filename}"
+            )
+            return None
+        return candidate
+
     async def confirm_delete(
         self,
         update: Update,
@@ -365,7 +386,10 @@ class BackupHandler:
     ) -> None:
         """Bestätigungs-Dialog für Backup-Löschung."""
         query = update.callback_query
-        filepath = self.dest_dir / filename
+        filepath = self._resolve_backup_path(filename)
+        if filepath is None:
+            await query.edit_message_text("❌ Ungültiger Dateiname")
+            return
         size = self._human_size(filepath.stat().st_size) if filepath.exists() else "?"
 
         await query.edit_message_text(
@@ -397,7 +421,16 @@ class BackupHandler:
     ) -> None:
         """Löscht eine Backup-Datei."""
         query = update.callback_query
-        filepath = self.dest_dir / filename
+        filepath = self._resolve_backup_path(filename)
+        if filepath is None:
+            await query.edit_message_text(
+                "❌ Ungültiger Dateiname",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("🔙 Backup-Menü", callback_data="backup_main")]]
+                ),
+                parse_mode="Markdown",
+            )
+            return
 
         try:
             if filepath.exists():
