@@ -597,14 +597,34 @@ class SpotifyDownloader:
 
         # Erfolg prüfen und Datei finden
         if download_info:
-            files = sorted(
-                [f for f in self.download_dir.glob("*") if f.is_file()],
-                key=lambda x: x.stat().st_mtime,
-                reverse=True,
+            # BUG-004-Fix: die heruntergeladene Datei wurde vorher über
+            # "neueste Datei im gesamten download_dir" ermittelt - dieses
+            # Verzeichnis ist identisch mit Config.DOWNLOAD_DIR, das AUCH
+            # von der regulären YouTube-Download-Pipeline genutzt wird
+            # (Config.SPOTIFY_DOWNLOAD_DIR existiert zwar, wurde aber nie
+            # angebunden). Bei mehreren gleichzeitigen Downloads
+            # (MAX_CONCURRENT_DOWNLOADS erlaubt das explizit) konnte so die
+            # Datei eines PARALLEL laufenden, fremden Downloads
+            # fälschlicherweise als "die eigene" erkannt werden - falscher
+            # Audio-Inhalt unter falschen Metadaten. yt-dlp liefert den
+            # tatsächlichen, nach Postprocessing (FFmpegExtractAudio)
+            # korrigierten Pfad zuverlässig über download_info["filepath"].
+            downloaded_path = download_info.get("filepath") or download_info.get(
+                "_filename"
             )
+            downloaded_file = Path(downloaded_path) if downloaded_path else None
+            if not (downloaded_file and downloaded_file.exists()):
+                # Defensiver Fallback, falls yt-dlp ausnahmsweise keinen
+                # Pfad liefert - alte, unsichere Methode bleibt als
+                # letzter Ausweg erhalten statt komplett zu entfallen.
+                files = sorted(
+                    [f for f in self.download_dir.glob("*") if f.is_file()],
+                    key=lambda x: x.stat().st_mtime,
+                    reverse=True,
+                )
+                downloaded_file = files[0] if files else None
 
-            if files:
-                downloaded_file = files[0]
+            if downloaded_file:
                 self.logger.info(
                     f"   📁 Heruntergeladene Datei: {downloaded_file.name}"
                 )
