@@ -26,6 +26,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 
 from logger import get_module_logger
+from handlers.menu.text_workflow_dispatcher import TextWorkflowDispatcher
 from handlers.menu.rich_menu_system import (
     RichMenuSystem,
     MenuItem,
@@ -107,6 +108,9 @@ class RichMenuHandler:
 
         # State Management
         self.user_states: Dict[int, str] = {}
+        self.workflow_dispatcher = TextWorkflowDispatcher(
+            logger=(self.logger_factory or get_module_logger)("TextWorkflowDispatcher")
+        )
 
         # User-Data für Start/Help
         self.user_data_file = Path("data/user_data.json")
@@ -1247,7 +1251,7 @@ class RichMenuHandler:
         # "ungueltige Eingabe"), obwohl die Bot-Nachrichten selbst genau
         # dieses /cancel als Ausstieg bewerben ("Du kannst /cancel eingeben,
         # um abzubrechen").
-        if text.lower() in ["/cancel", "cancel", "abbrechen"]:
+        if self.workflow_dispatcher.is_cancel_command(text):
             context.user_data.clear()
             if user_id in self.user_states:
                 del self.user_states[user_id]
@@ -1268,33 +1272,11 @@ class RichMenuHandler:
                         return
 
         # Aktive Workflows prüfen
-        workflow = context.user_data.get("workflow")
-        if workflow:
-            self.logger.debug(f"📝 Aktiver Workflow erkannt: {workflow}")
-
-            workflow_handlers = {
-                "add_user_id": (self.user_mgmt_handler, "process_new_user_id"),
-                "add_user_navidrome": (
-                    self.user_mgmt_handler,
-                    "process_new_navidrome_user",
-                ),
-                "edit_navidrome_user": (
-                    self.user_mgmt_handler,
-                    "process_edit_navidrome_user",
-                ),
-            }
-
-            entry = workflow_handlers.get(workflow)
-            if entry:
-                handler_obj, method_name = entry
-                if handler_obj and hasattr(handler_obj, method_name):
-                    await getattr(handler_obj, method_name)(update, context, text)
-                else:
-                    await update.message.reply_text(
-                        f"❌ Handler für Workflow '{workflow}' nicht verfügbar."
-                    )
-                    context.user_data.clear()
-                return
+        handled = await self.workflow_dispatcher.try_dispatch(
+            update, context, text, self.user_mgmt_handler
+        )
+        if handled:
+            return
 
         self.logger.debug(
             f"📝 Unbehandelte Text-Nachricht von User {user_id}: {text[:50]}"

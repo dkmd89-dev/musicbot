@@ -72,11 +72,9 @@ Einziger lebender Produktionspfad: `bot.py:108`. Zwei tote Nebenpfade gefunden: 
 `self.user_states` (Download-URL-Erwartung) — **kein TTL/Cleanup-Mechanismus**, verwaist bei Prozessabbruch ohne expliziten Cancel. `context.user_data["workflow"]` (PTB-Bordmittel).
 
 ### Extraktionskandidaten
-1. Workflow-Dispatch/State-Machine (hat mit BUG-006 bereits gezeigt, dass die Reihenfolge fehleranfällig ist)
-2. Rollen-/Feature-Resolver (zustandsarm, Telegram-unabhängig, geringes Risiko)
-3. (sekundär) Help-Text-Provider
-
-**Status: noch nicht umgesetzt.**
+1. Workflow-Dispatch/State-Machine (hat mit BUG-006 bereits gezeigt, dass die Reihenfolge fehleranfällig ist). **Status: umgesetzt (ARCH-001-STEP-3)** — jetzt `handlers/menu/text_workflow_dispatcher.py` (`TextWorkflowDispatcher`), 17 eigene Unit-Tests in `tests/test_text_workflow_dispatcher.py`. Bewusst nicht mit extrahiert: `user_states` (URL-Erwartung) und Navidrome-Suchlogik. Siehe ARCH-001-STEP-3-Eintrag in der Baseline für die Design-Entscheidung zur `user_mgmt_handler`-Übergabe.
+2. Rollen-/Feature-Resolver (zustandsarm, Telegram-unabhängig, geringes Risiko). **Status: noch nicht umgesetzt.**
+3. (sekundär) Help-Text-Provider. **Status: noch nicht umgesetzt.**
 
 ---
 
