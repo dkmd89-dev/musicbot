@@ -305,12 +305,6 @@ class EnhancedErrorHandler:
         self.config = config
         self.logger_factory = logger_factory or get_module_logger
         self.logger = self.logger_factory("EnhancedErrorHandler")
-        ...
-
-    def __init__(self, config: Config, logger_factory: Callable = None):
-        self.config = config
-        self.logger_factory = logger_factory or get_module_logger
-        self.logger = self.logger_factory("EnhancedErrorHandler")
 
         # Sub-Systeme
         self.exception_monitor = ExceptionMonitor()
@@ -1854,6 +1848,7 @@ class ErrorHandlerAdminInterface:
     async def _reply_or_edit(
         self,
         update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
         text: str,
         reply_markup: InlineKeyboardMarkup = None,
         parse_mode: str = "Markdown",
@@ -1877,6 +1872,9 @@ class ErrorHandlerAdminInterface:
                 )
             elif update.effective_chat:
                 # Fallback, wenn message-Objekt fehlt
+                # BUG-005-Fix: "context" war vorher kein Parameter dieser
+                # Methode - dieser Zweig warf bei Erreichen einen NameError
+                # statt die Nachricht zu senden.
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
                     text=text,
@@ -1906,7 +1904,7 @@ class ErrorHandlerAdminInterface:
         """Admin-Befehl/Button: Error-Statistiken anzeigen (Robust)"""
         if not self.is_admin(update.effective_user.id):
             await self._reply_or_edit(
-                update, "🔒 Keine Berechtigung für Admin-Befehle."
+                update, context, "🔒 Keine Berechtigung für Admin-Befehle."
             )
             return
 
@@ -1950,7 +1948,7 @@ class ErrorHandlerAdminInterface:
                 )
 
             await self._reply_or_edit(
-                update,
+                update, context,
                 "\n".join(response),
                 reply_markup=keyboard,
                 parse_mode="Markdown",
@@ -1961,7 +1959,7 @@ class ErrorHandlerAdminInterface:
                 f"Fehler in handle_error_stats_command: {e}", exc_info=True
             )
             error_msg = f"❌ Fehler beim Abrufen der Statistiken: {e}"
-            await self._reply_or_edit(update, error_msg)
+            await self._reply_or_edit(update, context, error_msg)
 
     async def handle_error_report_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -1969,7 +1967,7 @@ class ErrorHandlerAdminInterface:
         """Admin-Befehl/Button: Gesundheitsbericht (Robust)"""
         if not self.is_admin(update.effective_user.id):
             await self._reply_or_edit(
-                update, "🔒 Keine Berechtigung für Admin-Befehle."
+                update, context, "🔒 Keine Berechtigung für Admin-Befehle."
             )
             return
 
@@ -1996,7 +1994,7 @@ class ErrorHandlerAdminInterface:
                 )
 
             await self._reply_or_edit(
-                update,
+                update, context,
                 f"```\n{report}\n```",
                 parse_mode="Markdown",
                 reply_markup=keyboard,
@@ -2007,7 +2005,7 @@ class ErrorHandlerAdminInterface:
                 f"Fehler in handle_error_report_command: {e}", exc_info=True
             )
             error_msg = f"❌ Fehler beim Erstellen des Berichts: {e}"
-            await self._reply_or_edit(update, error_msg)
+            await self._reply_or_edit(update, context, error_msg)
 
     async def handle_recent_errors_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -2015,7 +2013,7 @@ class ErrorHandlerAdminInterface:
         """Admin-Befehl/Button: Letzte Errors anzeigen (Robust)"""
         if not self.is_admin(update.effective_user.id):
             await self._reply_or_edit(
-                update, "🔒 Keine Berechtigung für Admin-Befehle."
+                update, context, "🔒 Keine Berechtigung für Admin-Befehle."
             )
             return
 
@@ -2031,7 +2029,7 @@ class ErrorHandlerAdminInterface:
 
             if not recent:
                 # FIX: Verwendet _reply_or_edit statt update.message.reply_text
-                await self._reply_or_edit(update, "✅ Keine aktuellen Exceptions!")
+                await self._reply_or_edit(update, context, "✅ Keine aktuellen Exceptions!")
                 return
 
             response = [f"🕐 **LETZTE {len(recent)} EXCEPTIONS:**", ""]
@@ -2062,7 +2060,7 @@ class ErrorHandlerAdminInterface:
                 )
 
             await self._reply_or_edit(
-                update,
+                update, context,
                 "\n".join(response),
                 reply_markup=keyboard,
                 parse_mode="Markdown",
@@ -2075,14 +2073,14 @@ class ErrorHandlerAdminInterface:
                 f"Fehler in handle_recent_errors_command: {e}", exc_info=True
             )
             error_msg = f"❌ Fehler beim Abrufen aktueller Errors: {e}"
-            await self._reply_or_edit(update, error_msg)
+            await self._reply_or_edit(update, context, error_msg)
 
     async def show_reset_stats_confirm(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Zeigt Bestätigungs-Button für Reset (Robust)"""
         if not self.is_admin(update.effective_user.id):
-            await self._reply_or_edit(update, "🔒 Keine Berechtigung.")
+            await self._reply_or_edit(update, context, "🔒 Keine Berechtigung.")
             return
 
         text = "⚠️ **Error-Statistiken zurücksetzen?**\n\nBist du sicher? Alle Zähler werden auf 0 gesetzt. Diese Aktion kann nicht rückgängig gemacht werden."
@@ -2104,7 +2102,7 @@ class ErrorHandlerAdminInterface:
         )
 
         await self._reply_or_edit(
-            update, text, reply_markup=keyboard, parse_mode="Markdown"
+            update, context, text, reply_markup=keyboard, parse_mode="Markdown"
         )
 
     async def execute_reset_stats(
@@ -2112,7 +2110,7 @@ class ErrorHandlerAdminInterface:
     ):
         """Admin-Befehl/Button: Statistiken zurücksetzen (führt die Aktion aus) (Robust)"""
         if not self.is_admin(update.effective_user.id):
-            await self._reply_or_edit(update, "🔒 Keine Berechtigung.")
+            await self._reply_or_edit(update, context, "🔒 Keine Berechtigung.")
             return
 
         query = update.callback_query
@@ -2133,12 +2131,12 @@ class ErrorHandlerAdminInterface:
                     ]
                 )
 
-            await self._reply_or_edit(update, text, reply_markup=keyboard)
+            await self._reply_or_edit(update, context, text, reply_markup=keyboard)
 
         except Exception as e:
             self.logger.error(f"Fehler in execute_reset_stats: {e}", exc_info=True)
             error_msg = f"❌ Fehler beim Zurücksetzen: {e}"
-            await self._reply_or_edit(update, error_msg)
+            await self._reply_or_edit(update, context, error_msg)
 
     def register_admin_commands(self, application):
         """Registriert Admin-Befehle in der Application"""
