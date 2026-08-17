@@ -46,7 +46,15 @@ except ImportError:
 class ScoreThreshold(IntEnum):
     EXCELLENT = 115   # Score-Schwelle für "gutes Cover" (weiter suchen nach Besserem)
     GOOD = 100        # Score-Schwelle für Niedrigprio-Quellen überspringen
-    EARLY_EXIT = 170  # Score UND Mindestauflösung erforderlich für sofortigen Abbruch
+    # Score UND Mindestauflösung erforderlich für sofortigen Abbruch.
+    # BUG-003-Fix: _calculate_score() deckelt den Score auf max. 150
+    # (min(150, ...)) - der vorherige Wert 170 war strukturell unerreichbar,
+    # die Early-Exit-Optimierung griff dadurch nie. 140 wird von den vier
+    # zuverlässigsten Quellen (coverartarchive/fanart_album/apple_music/
+    # deezer) bereits bei der ohnehin geforderten Mindestauflösung
+    # (≥1400px, quadratisch) erreicht, von schwächeren Quellen
+    # (fanart_artist/lastfm/youtube) nur bei deutlich höherer Auflösung.
+    EARLY_EXIT = 140
 
 # Mindestauflösung für den Early Exit (kürzere Seite muss ≥ diesen Wert haben)
 _EARLY_EXIT_MIN_DIM = 1400
