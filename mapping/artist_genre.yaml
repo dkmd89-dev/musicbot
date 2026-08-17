@@ -51,6 +51,11 @@ ARTIST_GENRE_MAP:
     secondary: [Deutschrap, Street Rap, Gangsta Rap, Berliner Rap]
     description: Deutscher Rapper mit hartem Sound, authentischer Straßenrap und Berlin-Flair
 
+  cro:
+    primary: Hip Hop
+    secondary: [Deutschrap, Pop Rap, Cloud Rap]
+    description: Deutscher Rapper mit markanter Panda-Maske, bekannt für die Verbindung von Deutschrap mit eingängigem Pop
+
   dante yn:
     primary: Hip Hop
     secondary: [Deutschrap, Trap, R&B, Emo Rap, Melodic Rap]
@@ -227,6 +232,11 @@ ARTIST_GENRE_MAP:
     secondary: [Dance Pop, R&B, Soul, UK Pop]
     description: Britische Sängerin mit kraftvoller Stimme, bekannt durch X-Factor
 
+  florian künstler:
+    primary: Pop
+    secondary: [Deutschpop, Schlager]
+    description: Deutscher Sänger und Songwriter mit eingängigen Deutschpop-Songs
+
   graham:
     primary: Pop
     secondary: [Deutschpop, Indie Pop, Singer-Songwriter]
@@ -256,6 +266,11 @@ ARTIST_GENRE_MAP:
     primary: Pop
     secondary: [Deutschpop, Dance Pop]
     description: Deutsche Pop-Sängerin
+
+  mark forster:
+    primary: Pop
+    secondary: [Deutschpop, Singer-Songwriter]
+    description: Deutscher Sänger und Songwriter, bekannt für eingängige Deutschpop-Hits und seine Rolle als "The Voice of Germany"-Coach
 
   max giesinger:
     primary: Pop

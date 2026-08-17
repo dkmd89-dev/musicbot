@@ -12,6 +12,14 @@ Zwei bekannte Bugs wurden hier gefunden (siehe docs/MusicBot_ENGINEERING_BASELIN
   ganz andere, umfangreichere Regel-Engine als der Loader implementiert;
   das ist eine Produktentscheidung, kein mechanischer Fix. TestRegexRulesSchemaMismatch
   friert das aktuelle (fehlerhafte) Verhalten ein.
+  ENTSCHIEDEN (siehe Baseline): keyword_rules ist 1:1 redundant mit dem
+  bereits aktiven genre_aliases.yaml (normalize_genre_name(), Schritt 5),
+  artist_rules redundant mit dem bereits aktiven artist_genre.yaml
+  (Schritt 1-2) - nur "Mark Forster"/"Cro"/"Florian Künstler" fehlten dort
+  tatsaechlich und wurden nach artist_genre.yaml migriert (siehe
+  TestGenreRulesArtistMigration). title_rules bewusst NICHT aktiviert
+  (Einzelwort-Titel-Matching wie "liebe"/"herz" -> "Pop" waere zu
+  fehleranfaellig, siehe Baseline).
 - GENRE-003: GenreMapper.get_main_genre() lowercased den Suchschluessel,
   aber self.hierarchy-Keys wurden aus dem YAML unveraendert (Title-Case)
   geladen - der Hierarchie-Lookup traf praktisch nie, source="hierarchy"
@@ -75,6 +83,37 @@ class TestRegexRulesSchemaMismatch:
         result = genre_mapper.determine_genre(raw_genre="some totally novel genre term")
         assert result.source != "rule"
         assert result.source == "normalized"
+
+
+class TestGenreRulesArtistMigration:
+    """
+    GENRE-002-Entscheidung: die einzigen nicht-redundanten Eintraege aus dem
+    toten mapping/genre_rules.yaml (artist_rules) wurden nach
+    mapping/artist_genre.yaml migriert, statt eine zweite, parallele
+    Artist-Regel-Engine zu bauen. "Helene Fischer" war dort schon vorhanden
+    und blieb unveraendert.
+    """
+
+    def test_mark_forster_resolves_via_exact_artist_match(self, genre_mapper):
+        result = genre_mapper.determine_genre(artist_name="Mark Forster")
+        assert result is not None
+        assert result.source == "artist_exact"
+        assert result.primary == "Pop"
+        assert "Deutschpop" in result.secondary
+
+    def test_cro_resolves_via_exact_artist_match(self, genre_mapper):
+        result = genre_mapper.determine_genre(artist_name="Cro")
+        assert result is not None
+        assert result.source == "artist_exact"
+        assert result.primary == "Hip Hop"
+        assert "Deutschrap" in result.secondary
+
+    def test_florian_kuenstler_resolves_via_exact_artist_match(self, genre_mapper):
+        result = genre_mapper.determine_genre(artist_name="Florian Künstler")
+        assert result is not None
+        assert result.source == "artist_exact"
+        assert result.primary == "Pop"
+        assert "Deutschpop" in result.secondary
 
 
 class TestHierarchyCaseFix:
