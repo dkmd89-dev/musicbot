@@ -295,29 +295,108 @@ class TestBuildMetadataFieldExtraction:
         assert result["recording_id"] == "rec-123"
         assert result["artist"] == "Original Artist"
 
-    def test_track_number_is_actually_the_medium_total_track_count_not_position(self):
+    def test_track_number_uses_real_track_position_not_medium_total_count(self):
         """
-        Dokumentiert das bestehende (fachlich falsche, aber folgenlose)
-        Verhalten: "medium-track-count" ist laut musicbrainzngs die
-        GESAMTANZAHL der Tracks auf dem Medium, nicht die Position des
-        gefundenen Recordings. Jeder Track desselben Albums wuerde denselben
-        Wert erhalten. Kein Aufrufer im Repo liest aktuell dieses Feld -
-        deshalb bewusst nur charakterisiert, nicht gefixt.
+        Regressionstest fuer BUG-001 (docs/MusicBot_ENGINEERING_BASELINE.md):
+        vorher wurde faelschlich "medium-track-count" (die GESAMTANZAHL der
+        Tracks auf dem Medium) als Tracknummer verwendet. Die Fixture-Form
+        (release-list -> medium-list -> track-list -> "number") entspricht
+        der echten, live gegen musicbrainz.org verifizierten API-Antwort von
+        search_recordings() fuer "Bohemian Rhapsody" (Track 8 auf einem
+        Medium mit insgesamt 17 Tracks).
         """
         client = self._client_with_genre()
         match = {
             "id": "rec-1",
-            "title": "Track 3 of 12",
+            "title": "Bohemian Rhapsody",
             "release-list": [
-                {"id": "rel-1", "title": "Big Album", "medium-track-count": "12"}
+                {
+                    "id": "rel-1",
+                    "title": "Big Album",
+                    "medium-track-count": "17",
+                    "medium-list": [
+                        {
+                            "position": "1",
+                            "track-count": 17,
+                            "track-list": [
+                                {"id": "trk-1", "number": "8", "title": "Bohemian Rhapsody"}
+                            ],
+                        }
+                    ],
+                }
             ],
         }
         with patch("musicbrainzngs.get_recording_by_id", return_value={}):
             result = asyncio.run(client._build_metadata(match, "Some Artist"))
 
-        # Aktuelles (fachlich irrefuehrendes) Verhalten: liefert die
-        # Gesamt-Trackanzahl des Mediums, nicht die Position des Tracks.
-        assert result["track_number"] == 12
+        assert result["track_number"] == 8
+
+    def test_track_number_falls_back_to_source_track_number_from_release_path(self):
+        """
+        Regressionstest fuer den Release-Fallback-Pfad
+        (_extract_recordings_from_releases): dort ersetzt _source_release
+        first_release komplett (ohne medium-list), die echte Position kommt
+        stattdessen aus _source_track_number.
+        """
+        client = self._client_with_genre()
+        match = {
+            "id": "rec-1",
+            "title": "Some Track",
+            "_source_release": {"id": "rel-1", "title": "Album"},
+            "_source_track_number": "4",
+        }
+        with patch("musicbrainzngs.get_recording_by_id", return_value={}):
+            result = asyncio.run(client._build_metadata(match, "Some Artist"))
+
+        assert result["track_number"] == 4
+
+    def test_track_number_is_none_when_no_position_data_available(self):
+        client = self._client_with_genre()
+        match = {"id": "rec-1", "title": "Some Track", "release-list": []}
+        with patch("musicbrainzngs.get_recording_by_id", return_value={}):
+            result = asyncio.run(client._build_metadata(match, "Some Artist"))
+        assert result["track_number"] is None
+
+    def test_release_group_tags_survive_the_detail_lookup(self):
+        """
+        Regressionstest fuer BUG-002 (docs/MusicBot_ENGINEERING_BASELINE.md):
+        get_recording_by_id() unterstuetzt fuer "recording" keinen
+        "release-groups"-Include, sein release-list hat daher NIE
+        release-group-Daten. Vorher wurde die reichhaltigere release-list
+        des urspruenglichen Suchtreffers (match) durch die aermere
+        Detail-Antwort ueberschrieben - mb_tags/release-group.title waren
+        dadurch in der Praxis IMMER leer/None.
+        """
+        client = self._client_with_genre(genre="Rock")
+        match = {
+            "id": "rec-1",
+            "title": "Some Track",
+            "release-list": [
+                {
+                    "id": "rel-1",
+                    "title": "Release Title",
+                    "release-group": {
+                        "id": "rg-1",
+                        "title": "Release Group Title",
+                        "tags": [{"name": "rock"}],
+                    },
+                }
+            ],
+        }
+        # Simuliert die reale API: get_recording_by_id() liefert ein
+        # release-list OHNE release-group (kein "release-groups"-Include
+        # fuer diese Entity moeglich).
+        detail_response = {
+            "recording": {
+                "id": "rec-1",
+                "title": "Some Track",
+                "release-list": [{"id": "rel-1", "title": "Release Title"}],
+            }
+        }
+        with patch("musicbrainzngs.get_recording_by_id", return_value=detail_response):
+            result = asyncio.run(client._build_metadata(match, "Some Artist"))
+
+        assert result["album"] == "Release Group Title"
 
     def test_genre_determined_from_release_group_tags(self):
         genre_mapper = MagicMock()

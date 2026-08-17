@@ -135,6 +135,42 @@ class MusicBrainzClient:
             metadata_logger.debug(f"⚠️ Fehler beim Extrahieren der Release-Group ID: {e}")
         return None
 
+    def _extract_track_number(self, match: dict, release_list: list) -> Optional[int]:
+        """
+        Ermittelt die echte Position dieses Recordings innerhalb seines Mediums.
+
+        BUG-001-Fix: vorher wurde faelschlich first_release["medium-track-count"]
+        verwendet - laut musicbrainzngs-Quellcode (mbxml.py) ist das die
+        GESAMTANZAHL der Tracks auf dem Medium, nicht die Position des
+        gefundenen Recordings. Jeder Track desselben Albums haette denselben
+        falschen Wert erhalten.
+
+        _source_track_number kommt aus _extract_recordings_from_releases()
+        (Release-Fallback-Pfad, dort bereits aus dem echten Track-Objekt
+        bekannt, first_release wird dort durch _source_release ohne
+        medium-list ersetzt). Fuer den regulaeren Recording-Such-Pfad wird
+        release_list durchsucht - MusicBrainz liefert dort pro Release nur
+        den Medium-/Track-Eintrag, der zu GENAU diesem Recording gehoert.
+        """
+        raw = match.get("_source_track_number")
+        if raw is None:
+            for release in release_list:
+                for medium in release.get("medium-list", []):
+                    for track in medium.get("track-list", []):
+                        raw = track.get("number") or track.get("position")
+                        if raw:
+                            break
+                    if raw:
+                        break
+                if raw:
+                    break
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
     def parse_search_terms(self, title: str, artist: str) -> tuple[str, str]:
         """
         Optimiert Suchtitel und -artist für MusicBrainz.
@@ -267,6 +303,9 @@ class MusicBrainzClient:
                                 "title": release.get("title"),
                                 "artist-credit-phrase": release.get("artist-credit-phrase"),
                             }
+                            recording["_source_track_number"] = track.get(
+                                "number"
+                            ) or track.get("position")
                             recordings.append(recording)
             except Exception as e:
                 metadata_logger.warning(
@@ -336,8 +375,16 @@ class MusicBrainzClient:
         if isrc_list:
             isrc = isrc_list[0]
 
-        release_list = recording_info.get(
-            "release-list", match.get("release-list", [])
+        # BUG-002-Fix: get_recording_by_id() unterstuetzt fuer die Entity
+        # "recording" keinen "release-groups"-Include (MusicBrainz-API-
+        # Limitierung, siehe VALID_INCLUDES['recording'] in musicbrainzngs) -
+        # sein release-list enthaelt daher NIE release-group-Daten (Titel/Tags).
+        # match's release-list (aus search_recordings) hat diese Daten bereits
+        # vorliegen. Vorher wurde sie hier durch die aermere Detail-Antwort
+        # ueberschrieben -> mb_tags war dadurch in der Praxis IMMER leer, der
+        # komplette "MusicBrainz-Tags -> Genre"-Pfad faktisch tot.
+        release_list = match.get("release-list") or recording_info.get(
+            "release-list", []
         )
         first_release = release_list[0] if release_list else {}
 
@@ -405,11 +452,7 @@ class MusicBrainzClient:
             "title":          match.get("title"),
             "artist":         original_artist,
             "album":          release_group.get("title") or first_release.get("title"),
-            "track_number":   (
-                int(first_release.get("medium-track-count", 0))
-                if first_release.get("medium-track-count")
-                else None
-            ),
+            "track_number":   self._extract_track_number(match, release_list),
             "release_date":   release_date,
             "year":           release_year,
             "album_artist":   album_artist,
