@@ -165,7 +165,6 @@ Aktionen:"""
 
             # Session-State für den 2. Schritt setzen
             # (RichMenuHandler.handle_text_message muss dies abfangen)
-            from handlers.menu.rich_menu_system import RichMenuSystem, MenuState
 
             # Zugriff auf menu_system über context (falls verfügbar)
             # HINWEIS: Dies ist eine vereinfachte Variante.

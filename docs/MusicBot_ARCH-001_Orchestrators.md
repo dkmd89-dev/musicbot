@@ -139,13 +139,9 @@ Vollständig delegiert an `MetadataCacheHandler`. Hit-Check primär über stabil
 
 - **Kein Fall rechtfertigt einen sofortigen Refactor.** Alle vier Klassen sind bereits getestet (Regel 1: "Kein größerer Refactor ohne Sicherheitsnetz" ist erfüllt), aber keine akute Notwendigkeit (Bug/Sicherheitsproblem) treibt eine Aufteilung — reine Struktur-Verbesserung wäre laut CLAUDE.md §18/§21 (Regel 1) kein ausreichender Grund für sich allein.
 - **Wiederkehrendes Muster:** Alle vier Klassen sind im Kern Orchestratoren, die fachliche Arbeit an Sub-Komponenten delegieren — die extrahierbaren Reste sind fast immer entweder (a) Telegram-Antwort-/Formatierungscode oder (b) ein sich wiederholendes Dispatch-/Routing-Muster.
-- **Nebenbefunde (nicht Teil von ARCH-001, für spätere Sessions vorgemerkt):**
-  - `handlers/command_integration.py` wird von `bot.py` nie aufgerufen; `handlers/legacy_handler_integration.py` importiert eine nicht existierende Klasse `CommandIntegration` (kaputter Import, nie ausgeführt da selbst nie importiert)
-  - `handlers/migration_system.py` und `scripts/migration_system.py` sind inhaltsgleiche Duplikate, nirgends importiert
-  - `handlers/admin/user_management_handler.py:168` hat einen ungenutzten `RichMenuSystem`/`MenuState`-Import
-  - `rich_menu_handler.py:382-385` durchbricht die Kapselung von `RichMenuSystem.menu_registry`
-  - `download_utils.py:739/934` und `bot.py:287-296` durchbrechen die Kapselung von `EnhancedMetadataProcessor`s internen Sub-Prozessoren
-  - `services/downloader/utils/metadata_utils.py` enthält neben den bereits als LEGACY-002-Fund dokumentierten kaputten Imports auch eine eigene, nirgends benutzte `MetadataProcessor`-Wrapper-Klasse
+- **Nebenbefunde:**
+  - **Inzwischen behoben (LEGACY-005):** `handlers/command_integration.py`, `handlers/legacy_handler_integration.py` (syntaktisch ungültiges Python, importierte zudem eine nie existierende `handlers/statistik_handler.py`), `handlers/migration_system.py`/`scripts/migration_system.py` (identische tote Duplikate), `services/downloader/utils/metadata_utils.py`, `utils/.artist_if.py` sowie der dadurch verwaiste `RichMenuSystem`/`MenuState`-Import in `handlers/admin/user_management_handler.py:168` — alle 6 Dateien gelöscht, siehe LEGACY-005-Eintrag in der Baseline.
+  - **Weiterhin offen, für spätere Sessions vorgemerkt** (Kapselungsverletzungen, keine toten Dateien): `rich_menu_handler.py:382-385` durchbricht die Kapselung von `RichMenuSystem.menu_registry`; `download_utils.py:739/934` und `bot.py:287-296` durchbrechen die Kapselung von `EnhancedMetadataProcessor`s internen Sub-Prozessoren.
 
 ## Nächste Schritte (nicht Teil dieser Analyse, zur Entscheidung)
 
