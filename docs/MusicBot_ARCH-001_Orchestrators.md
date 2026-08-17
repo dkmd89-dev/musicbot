@@ -45,7 +45,7 @@ Einziger produktiver Instanziierungspunkt: `handlers/menu/rich_menu_handler.py:8
 - **REL-004** (Event-Loop-Blockierung): betrifft primär `download_utils.py`/`download_executor.py`, nicht direkt diese Klasse
 
 ### Extraktionskandidat
-`_send_final_summary()` + `handle_playlist_success()` + `_build_duplicate_message()` + Genre/Stats-Helfer (~350 Zeilen, weitgehend zustandslos, kaum `self`-Zugriff außer `status_msg`/`update`/`duplicate_handler`) — Kandidat für eine eigene `DownloadResultReporter`-Klasse. Kernpipeline (`handle_url`/`handle_youtube_links`/`handle_spotify_url`/`_process_single_download_result`) bliebe unangetastet. **Status: noch nicht umgesetzt.**
+`_send_final_summary()` + `handle_playlist_success()` + `_build_duplicate_message()` + Genre/Stats-Helfer (~350 Zeilen, weitgehend zustandslos, kaum `self`-Zugriff außer `status_msg`/`update`/`duplicate_handler`) — Kandidat für eine eigene `DownloadResultReporter`-Klasse. Kernpipeline (`handle_url`/`handle_youtube_links`/`handle_spotify_url`/`_process_single_download_result`) bliebe unangetastet. **Status: umgesetzt (ARCH-001-STEP-2)**, mit einer bewussten Abweichung: `handle_playlist_success()`/`handle_single_track_success()` selbst bleiben in `DownloadHandler` (sie enthalten die Duplikat-Cache-Registrierung, ein echter Seiteneffekt, keine reine Formatierung), delegieren aber an `self.result_reporter` für alles Formatierungs-/Versand-bezogene. Siehe ARCH-001-STEP-2-Eintrag in der Baseline.
 
 ---
 

@@ -1,0 +1,285 @@
+"""
+Unit-Tests für DownloadResultReporter
+(services/downloader/utils/download_result_reporter.py).
+
+Im Zuge von ARCH-001 aus klassen/download_handler.py extrahiert
+(_build_duplicate_message/_extract_genres_from_data/_collect_playlist_genres/
+_extract_stats_from_result/_send_final_summary/Teil von handle_playlist_success
+-> eigene Klasse, 1:1 gleicher Code, siehe
+docs/MusicBot_ARCH-001_Orchestrators.md). Bewusst NICHT mit extrahiert:
+Duplikat-Cache-Registrierung (handle_single_track_success) und die
+Playlist-Wrapper-Delegation (handle_playlist_success) - beides bleibt
+Aufgabe von DownloadHandler, da es echte Seiteneffekte/Kontrollfluss-
+Entscheidungen sind, keine reine Formatierung/Versand.
+
+Diese Tests decken den extrahierten Code jetzt isoliert ab, statt nur
+indirekt über DownloadHandler (der bislang keine dedizierte Testdatei hat).
+"""
+
+import asyncio
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
+from handlers.duplicate_handler import DuplicateEntry
+from services.downloader.utils.download_result_reporter import DownloadResultReporter
+from telegram.error import TelegramError
+
+
+@pytest.fixture
+def reporter():
+    return DownloadResultReporter(logger=Mock())
+
+
+def make_update():
+    update = Mock()
+    update.message = Mock()
+    update.message.reply_text = AsyncMock()
+    return update
+
+
+def make_status_msg():
+    msg = Mock()
+    msg.edit_text = AsyncMock()
+    return msg
+
+
+class TestExtractGenresFromData:
+    def test_dict_with_primary_and_secondary(self, reporter):
+        result = reporter.extract_genres_from_data(
+            {"primary": "Hip Hop", "secondary": ["Rap", "Trap"]}
+        )
+        assert result == ["Hip Hop", "Rap", "Trap"]
+
+    def test_dict_with_only_primary(self, reporter):
+        assert reporter.extract_genres_from_data({"primary": "Techno"}) == ["Techno"]
+
+    def test_list_of_strings(self, reporter):
+        assert reporter.extract_genres_from_data(["Rock", "Pop"]) == ["Rock", "Pop"]
+
+    def test_list_of_dicts_extracts_primary(self, reporter):
+        result = reporter.extract_genres_from_data(
+            [{"primary": "Rock"}, {"primary": "Metal"}]
+        )
+        assert result == ["Rock", "Metal"]
+
+    def test_plain_string(self, reporter):
+        assert reporter.extract_genres_from_data("Jazz") == ["Jazz"]
+
+    def test_none_returns_empty_list(self, reporter):
+        assert reporter.extract_genres_from_data(None) == []
+
+    def test_duplicates_are_removed_preserving_order(self, reporter):
+        result = reporter.extract_genres_from_data(
+            {"primary": "Hip Hop", "secondary": ["Hip Hop", "Rap"]}
+        )
+        assert result == ["Hip Hop", "Rap"]
+
+
+class TestCollectPlaylistGenres:
+    def test_sorted_by_frequency(self, reporter):
+        tracks = [
+            {"genres": {"primary": "Hip Hop"}},
+            {"genres": {"primary": "Hip Hop"}},
+            {"genres": {"primary": "Pop"}},
+        ]
+        assert reporter.collect_playlist_genres(tracks) == ["Hip Hop", "Pop"]
+
+    def test_capped_at_four(self, reporter):
+        tracks = [
+            {"genres": "Genre1"},
+            {"genres": "Genre2"},
+            {"genres": "Genre3"},
+            {"genres": "Genre4"},
+            {"genres": "Genre5"},
+        ]
+        assert len(reporter.collect_playlist_genres(tracks)) == 4
+
+    def test_empty_tracks_returns_empty_list(self, reporter):
+        assert reporter.collect_playlist_genres([]) == []
+
+
+class TestExtractStatsFromResult:
+    def test_prefers_explicit_processing_stats_when_non_empty(self, reporter):
+        result = {"processing_stats": {"total_processed": 5}}
+        assert reporter.extract_stats_from_result(result, []) == {"total_processed": 5}
+
+    def test_ignores_all_zero_explicit_stats_and_falls_through(self, reporter):
+        result = {"processing_stats": {"total_processed": 0, "cache_hits": 0}}
+        tracks = [{"artist_source": "youtube_parsed"}]
+        stats = reporter.extract_stats_from_result(result, tracks)
+        assert stats["total_processed"] == 1
+
+    def test_falls_back_to_processor_instance_statistics(self, reporter):
+        proc = Mock()
+        proc.enhanced_metadata_processor = None
+        proc.get_processing_statistics.return_value = {"total_processed": 3}
+        proc.session_stats = {}
+        result = {"processor_instance": proc}
+        stats = reporter.extract_stats_from_result(result, [])
+        assert stats["total_processed"] == 3
+
+    def test_falls_back_to_track_aggregation(self, reporter):
+        tracks = [
+            {"artist_source": "youtube_parsed", "from_cache": True, "lyrics_available": True},
+            {"artist_source": "unknown", "from_cache": False},
+        ]
+        stats = reporter.extract_stats_from_result({}, tracks)
+        assert stats["total_processed"] == 2
+        assert stats["cache_hits"] == 1
+        assert stats["cache_misses"] == 1
+        assert stats["youtube_parser_used"] == 1
+        assert stats["lyrics_found"] == 1
+
+    def test_no_tracks_and_no_stats_returns_empty_dict(self, reporter):
+        assert reporter.extract_stats_from_result({}, []) == {}
+
+
+class TestBuildDuplicateMessage:
+    def _entry(self, **overrides):
+        defaults = dict(
+            artist="Some Artist",
+            title="Some Title",
+            url="https://youtube.com/watch?v=abc",
+            file_path=Path("/library/Some Artist/Some Title.mp3"),
+            download_date=datetime(2026, 1, 15, 12, 30),
+        )
+        defaults.update(overrides)
+        return DuplicateEntry(**defaults)
+
+    def test_url_type_uses_url_label(self, reporter):
+        msg = reporter.build_duplicate_message(self._entry(), "url")
+        assert "🔗 URL-Treffer" in msg
+        assert "Some Title" in msg
+        assert "Some Artist" in msg
+        assert "15.01.2026 12:30" in msg
+
+    def test_file_conflict_type_uses_conflict_label(self, reporter):
+        msg = reporter.build_duplicate_message(self._entry(), "file_conflict")
+        assert "📄 Datei-Konflikt" in msg
+        assert "🕒 Konflikt erkannt:" in msg
+
+    def test_unknown_type_falls_back_to_generic_label(self, reporter):
+        msg = reporter.build_duplicate_message(self._entry(), "totally_unknown")
+        assert "🔍 Unbekannt" in msg
+
+    def test_conflict_suffix_is_stripped_from_path(self, reporter):
+        entry = self._entry(file_path=Path("/library/Artist/Title (1).mp3"))
+        msg = reporter.build_duplicate_message(entry, "file_conflict")
+        assert "Title.mp3" in msg
+        assert "Title (1).mp3" not in msg
+
+
+class TestSendPlaylistDirectSummary:
+    def test_uses_status_msg_when_present(self, reporter):
+        update = make_update()
+        status_msg = make_status_msg()
+        results = [{"success": True, "artist": "A", "album": "B", "year": 2024, "library_path": "/lib/A/x.mp3"}]
+
+        asyncio.run(reporter.send_playlist_direct_summary(update, status_msg, results, results))
+
+        status_msg.edit_text.assert_called_once()
+        update.message.reply_text.assert_not_called()
+        sent_text = status_msg.edit_text.call_args[0][0]
+        assert "Künstler : A" in sent_text
+        assert "Album    : B" in sent_text
+
+    def test_falls_back_to_update_message_when_no_status_msg(self, reporter):
+        update = make_update()
+        results = [{"success": True, "artist": "A", "library_path": "/lib/A/x.mp3"}]
+
+        asyncio.run(reporter.send_playlist_direct_summary(update, None, results, results))
+
+        update.message.reply_text.assert_called_once()
+
+    def test_telegram_error_is_logged_not_raised(self, reporter):
+        update = make_update()
+        status_msg = make_status_msg()
+        status_msg.edit_text.side_effect = TelegramError("boom")
+        results = [{"success": True, "artist": "A", "library_path": "/lib/A/x.mp3"}]
+
+        asyncio.run(reporter.send_playlist_direct_summary(update, status_msg, results, results))
+
+        reporter.logger.error.assert_called_once()
+
+
+class TestSendFinalSummary:
+    def test_single_track_message_contains_core_fields(self, reporter):
+        update = make_update()
+        status_msg = make_status_msg()
+        result = {
+            "title": "Some Title",
+            "artist": "Some Artist",
+            "album": "Some Album",
+            "year": 2024,
+            "library_path": "/library/Some Artist/Some Title.mp3",
+            "source": "youtube",
+        }
+
+        asyncio.run(reporter.send_final_summary(update, status_msg, result, {}, {}))
+
+        sent_text = status_msg.edit_text.call_args[0][0]
+        assert "Download erfolgreich!" in sent_text
+        assert "Some Title" in sent_text
+        assert "Some Artist" in sent_text
+        assert "📺 YouTube" in sent_text
+        assert "Some Title.mp3" in sent_text
+
+    def test_spotify_podcast_filters_generic_genres(self, reporter):
+        update = make_update()
+        status_msg = make_status_msg()
+        result = {
+            "title": "Episode 1",
+            "artist": "Show Host",
+            "library_path": "/library/Show/Episode 1.mp3",
+            "source": "spotify",
+            "is_podcast": True,
+            "genres": {"primary": "German", "secondary": ["Hip Hop", "Comedy"]},
+        }
+
+        asyncio.run(reporter.send_final_summary(update, status_msg, result, {}, {}))
+
+        sent_text = status_msg.edit_text.call_args[0][0]
+        assert "German" not in sent_text.split("Genres:")[1].split("\n\n")[0]
+        assert "Comedy" in sent_text
+        assert "🎙️ Spotify Podcast" in sent_text
+
+    def test_playlist_type_uses_playlist_header_and_track_counts(self, reporter):
+        update = make_update()
+        status_msg = make_status_msg()
+        result = {
+            "type": "playlist",
+            "tracks": [
+                {"success": True, "artist": "A", "album": "B", "library_path": "/lib/A/1.mp3"},
+                {"success": True, "artist": "A", "album": "B", "library_path": "/lib/A/2.mp3"},
+                {"success": False},
+            ],
+            "source": "youtube",
+        }
+
+        asyncio.run(reporter.send_final_summary(update, status_msg, result, {}, {}))
+
+        sent_text = status_msg.edit_text.call_args[0][0]
+        assert "Playlist erfolgreich heruntergeladen!" in sent_text
+        assert "Tracks   : 2/3" in sent_text
+
+    def test_missing_library_path_shows_na_without_crash(self, reporter):
+        update = make_update()
+        status_msg = make_status_msg()
+        result = {"title": "T", "artist": "A", "source": "youtube"}
+
+        asyncio.run(reporter.send_final_summary(update, status_msg, result, {}, {}))
+
+        sent_text = status_msg.edit_text.call_args[0][0]
+        assert "N/A" in sent_text
+        reporter.logger.warning.assert_called_once()
+
+    def test_falls_back_to_update_message_when_no_status_msg(self, reporter):
+        update = make_update()
+        result = {"title": "T", "artist": "A", "library_path": "/lib/A/T.mp3", "source": "youtube"}
+
+        asyncio.run(reporter.send_final_summary(update, None, result, {}, {}))
+
+        update.message.reply_text.assert_called_once()
