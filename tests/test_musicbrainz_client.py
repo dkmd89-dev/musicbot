@@ -1,0 +1,357 @@
+"""
+Characterization-Tests fuer klassen/musicbrainz_client.py.
+
+MusicBrainz ist explizit Teil des P0-Metadata-Flows in CLAUDE.md
+("MusicBrainz / Lyrics / Cover"), hatte aber vor dieser Session keinerlei
+Testabdeckung (426 Zeilen, 0 Tests).
+
+GenreMapper/ArtistNormalizer werden hier bewusst NICHT real instanziiert,
+sondern gemockt: MusicBrainzClient.__init__() faellt beim ArtistNormalizer
+ohne get_artist_normalizer()-Singleton auf eine EIGENE Instanz mit dem
+ECHTEN Config.LIBRARY_DIR/ARTIST_OVERRIDE_FILE zurueck - genau das Szenario,
+das in tests/test_artist_normalizer.py bereits einmal zu einem versehentlichen
+Schreibzugriff auf die reale mapping/case_preserve.yaml gefuehrt hat. Diese
+Klasse wird hier isoliert unit-getestet (Regel 8 Testpyramide), nicht
+zusammen mit ihren echten Kollaborateuren.
+
+Nebenbefund (dokumentiert, nicht gefixt): _build_metadata() setzt
+"track_number" auf first_release["medium-track-count"]. Laut
+musicbrainzngs-Quellcode (mbxml.py: "medium-list results from search have
+an additional <track-count> element containing the number of tracks")
+ist das die GESAMTANZAHL der Tracks auf dem Medium, nicht die Position des
+gefundenen Recordings. Der Wert waere fuer jeden Track eines Albums
+identisch (z.B. immer "12" bei einem 12-Track-Album) statt der echten
+Tracknummer. Ungefixt, da KEIN Aufrufer im Repo dieses Feld liest
+(track_number in DownloadResult/MetadataResult kommt aus einer anderen
+Quelle, siehe album_processor.extract_track_number_from_string) - reiner
+"toter", aber inhaltlich falscher Wert. Siehe docs/MusicBot_ENGINEERING_BASELINE.md.
+"""
+
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+import klassen.musicbrainz_client as mb_module
+from klassen.musicbrainz_client import (
+    MusicBrainzClient,
+    _musicbrainz_result_cache,
+    cached_musicbrainz_search,
+    similarity,
+)
+
+
+@pytest.fixture(autouse=True)
+def clear_musicbrainz_cache():
+    _musicbrainz_result_cache.clear()
+    yield
+    _musicbrainz_result_cache.clear()
+
+
+def _make_client(genre_mapper=None, artist_normalizer=None):
+    with patch.object(
+        mb_module, "get_genre_mapper", return_value=genre_mapper or MagicMock()
+    ), patch.object(
+        mb_module, "_get_artist_normalizer", return_value=artist_normalizer or MagicMock()
+    ), patch("musicbrainzngs.set_useragent"):
+        return MusicBrainzClient()
+
+
+class TestSimilarity:
+    def test_identical_strings_score_one(self):
+        assert similarity("Bohemian Rhapsody", "Bohemian Rhapsody") == 1.0
+
+    def test_case_insensitive(self):
+        assert similarity("Bohemian Rhapsody", "BOHEMIAN RHAPSODY") == 1.0
+
+    def test_completely_different_strings_score_low(self):
+        assert similarity("abc", "xyz") < 0.3
+
+
+class TestCachedMusicbrainzSearch:
+    def test_cache_hit_does_not_call_api(self):
+        _musicbrainz_result_cache["cached query"] = {"recording-list": [{"id": "1"}]}
+        with patch("musicbrainzngs.search_recordings") as mock_search:
+            result = asyncio.run(cached_musicbrainz_search("cached query", "recording"))
+        mock_search.assert_not_called()
+        assert result == {"recording-list": [{"id": "1"}]}
+
+    def test_cache_miss_calls_search_recordings_for_recording_type(self):
+        with patch(
+            "musicbrainzngs.search_recordings", return_value={"recording-list": []}
+        ) as mock_search:
+            result = asyncio.run(cached_musicbrainz_search("new query", "recording"))
+        mock_search.assert_called_once_with(query="new query", limit=10)
+        assert result == {"recording-list": []}
+        assert _musicbrainz_result_cache["new query"] == {"recording-list": []}
+
+    def test_cache_miss_calls_search_releases_for_release_type(self):
+        with patch(
+            "musicbrainzngs.search_releases", return_value={"release-list": []}
+        ) as mock_search:
+            result = asyncio.run(cached_musicbrainz_search("album query", "release"))
+        mock_search.assert_called_once_with(query="album query", limit=10)
+        assert result == {"release-list": []}
+
+    def test_invalid_search_type_returns_empty_dict(self):
+        result = asyncio.run(cached_musicbrainz_search("q", "not-a-real-type"))
+        assert result == {}
+
+    def test_network_error_is_caught_and_returns_empty_dict_uncached(self):
+        import musicbrainzngs
+
+        with patch(
+            "musicbrainzngs.search_recordings",
+            side_effect=musicbrainzngs.NetworkError("down"),
+        ):
+            result = asyncio.run(cached_musicbrainz_search("q", "recording"))
+        assert result == {}
+        assert "q" not in _musicbrainz_result_cache
+
+    def test_unexpected_exception_is_caught_and_returns_empty_dict(self):
+        with patch(
+            "musicbrainzngs.search_recordings", side_effect=RuntimeError("boom")
+        ):
+            result = asyncio.run(cached_musicbrainz_search("q", "recording"))
+        assert result == {}
+
+
+class TestParseSearchTerms:
+    def test_youtube_format_title_is_reparsed_when_split_succeeds(self):
+        normalizer = MagicMock()
+        parsed = MagicMock()
+        parsed.artist_string = "Real Artist"
+        parsed.title = "Real Title"
+        normalizer.parse_youtube_title.return_value = parsed
+        client = _make_client(artist_normalizer=normalizer)
+
+        title, artist = client.parse_search_terms(
+            "Wrong Artist - Real Title", "Wrong Artist"
+        )
+        assert title == "Real Title"
+        assert artist == "Real Artist"
+
+    def test_falls_through_to_normalize_when_parse_result_incomplete(self):
+        normalizer = MagicMock()
+        parsed = MagicMock()
+        parsed.artist_string = None
+        parsed.title = None
+        normalizer.parse_youtube_title.return_value = parsed
+        normalizer.normalize.return_value = "Normalized Artist"
+        client = _make_client(artist_normalizer=normalizer)
+
+        title, artist = client.parse_search_terms("A - B", "Original Artist")
+        assert title == "A - B"
+        assert artist == "Normalized Artist"
+
+    def test_normalized_artist_used_when_different_from_original(self):
+        normalizer = MagicMock()
+        normalizer.normalize.return_value = "Clean Artist"
+        client = _make_client(artist_normalizer=normalizer)
+
+        title, artist = client.parse_search_terms("Some Title", "clean artist ")
+        assert title == "Some Title"
+        assert artist == "Clean Artist"
+
+    def test_normalized_artist_unknown_keeps_original(self):
+        normalizer = MagicMock()
+        normalizer.normalize.return_value = "Unknown"
+        client = _make_client(artist_normalizer=normalizer)
+
+        title, artist = client.parse_search_terms("Some Title", "Weird Artist")
+        assert artist == "Weird Artist"
+
+    def test_unchanged_normalize_result_returns_original_pair(self):
+        normalizer = MagicMock()
+        normalizer.normalize.return_value = "Same Artist"
+        client = _make_client(artist_normalizer=normalizer)
+
+        title, artist = client.parse_search_terms("Some Title", "Same Artist")
+        assert (title, artist) == ("Some Title", "Same Artist")
+
+
+class TestGetBestMatch:
+    def test_selects_highest_scoring_recording_above_threshold(self):
+        normalizer = MagicMock()
+        normalizer.normalize.side_effect = lambda x: x
+        client = _make_client(artist_normalizer=normalizer)
+
+        recordings = [
+            {"title": "Totally Different Song", "artist-credit-phrase": "Nobody"},
+            {"title": "Bohemian Rhapsody", "artist-credit-phrase": "Queen"},
+        ]
+        best = client._get_best_match(recordings, "Bohemian Rhapsody", "Queen")
+        assert best["title"] == "Bohemian Rhapsody"
+
+    def test_returns_none_when_all_scores_below_threshold(self):
+        normalizer = MagicMock()
+        normalizer.normalize.side_effect = lambda x: x
+        client = _make_client(artist_normalizer=normalizer)
+
+        recordings = [{"title": "Nothing Alike", "artist-credit-phrase": "Someone Else"}]
+        best = client._get_best_match(recordings, "Bohemian Rhapsody", "Queen")
+        assert best is None
+
+    def test_empty_recordings_returns_none(self):
+        client = _make_client()
+        assert client._get_best_match([], "Title", "Artist") is None
+
+
+class TestFetchMetadata:
+    def test_combined_query_match_returns_built_metadata(self):
+        genre_mapper = MagicMock()
+        genre_mapper.determine_genre.return_value = MagicMock(primary="Rock")
+        normalizer = MagicMock()
+        normalizer.normalize.side_effect = lambda x: x
+        client = _make_client(genre_mapper=genre_mapper, artist_normalizer=normalizer)
+
+        recording = {
+            "id": "rec-1",
+            "title": "Bohemian Rhapsody",
+            "artist-credit-phrase": "Queen",
+        }
+        combined_response = {"recording-list": [recording]}
+
+        with patch.object(
+            mb_module, "cached_musicbrainz_search", new=AsyncMock(return_value=combined_response)
+        ), patch("musicbrainzngs.get_recording_by_id", return_value={"recording": recording}):
+            result = asyncio.run(client.fetch_metadata("Bohemian Rhapsody", "Queen"))
+
+        assert result["title"] == "Bohemian Rhapsody"
+        assert result["artist"] == "Queen"
+        assert result["mbid"] == "rec-1"
+
+    def test_falls_back_to_title_only_search_when_combined_empty(self):
+        genre_mapper = MagicMock()
+        genre_mapper.determine_genre.return_value = MagicMock(primary="Rock")
+        normalizer = MagicMock()
+        normalizer.normalize.side_effect = lambda x: x
+        client = _make_client(genre_mapper=genre_mapper, artist_normalizer=normalizer)
+
+        recording = {"id": "rec-2", "title": "Some Song", "artist-credit-phrase": "Some Artist"}
+        responses = [{"recording-list": []}, {"recording-list": [recording]}]
+
+        with patch.object(
+            mb_module, "cached_musicbrainz_search", new=AsyncMock(side_effect=responses)
+        ), patch("musicbrainzngs.get_recording_by_id", return_value={"recording": recording}):
+            result = asyncio.run(client.fetch_metadata("Some Song", "Some Artist"))
+
+        assert result["mbid"] == "rec-2"
+
+    def test_no_results_anywhere_returns_empty_dict(self):
+        normalizer = MagicMock()
+        normalizer.normalize.side_effect = lambda x: x
+        client = _make_client(artist_normalizer=normalizer)
+
+        empty_response = {"recording-list": [], "release-list": []}
+        with patch.object(
+            mb_module, "cached_musicbrainz_search", new=AsyncMock(return_value=empty_response)
+        ):
+            result = asyncio.run(client.fetch_metadata("Nothing", "Nobody"))
+        assert result == {}
+
+    def test_internal_exception_is_caught_and_returns_empty_dict(self):
+        normalizer = MagicMock()
+        normalizer.parse_youtube_title.side_effect = RuntimeError("boom")
+        client = _make_client(artist_normalizer=normalizer)
+
+        result = asyncio.run(client.fetch_metadata("A - B", "Some Artist"))
+        assert result == {}
+
+
+class TestBuildMetadataFieldExtraction:
+    def _client_with_genre(self, genre="Hip-Hop"):
+        genre_mapper = MagicMock()
+        genre_mapper.determine_genre.return_value = MagicMock(primary=genre)
+        return _make_client(genre_mapper=genre_mapper)
+
+    def test_extracts_isrc_release_and_ids(self):
+        client = self._client_with_genre()
+        match = {
+            "id": "rec-123",
+            "title": "Track Title",
+            "release-list": [
+                {
+                    "id": "rel-456",
+                    "title": "Album Title",
+                    "release-group": {"id": "rg-789", "title": "Album Title", "tags": []},
+                }
+            ],
+            "artist-credit": [{"artist": {"id": "artist-999"}}],
+        }
+        recording_detail = {
+            "recording": {
+                **match,
+                "isrc-list": ["USABC1234567"],
+            }
+        }
+        with patch("musicbrainzngs.get_recording_by_id", return_value=recording_detail):
+            result = asyncio.run(client._build_metadata(match, "Original Artist"))
+
+        assert result["isrc"] == "USABC1234567"
+        assert result["release_id"] == "rel-456"
+        assert result["release_group_id"] == "rg-789"
+        assert result["artist_id"] == "artist-999"
+        assert result["recording_id"] == "rec-123"
+        assert result["artist"] == "Original Artist"
+
+    def test_track_number_is_actually_the_medium_total_track_count_not_position(self):
+        """
+        Dokumentiert das bestehende (fachlich falsche, aber folgenlose)
+        Verhalten: "medium-track-count" ist laut musicbrainzngs die
+        GESAMTANZAHL der Tracks auf dem Medium, nicht die Position des
+        gefundenen Recordings. Jeder Track desselben Albums wuerde denselben
+        Wert erhalten. Kein Aufrufer im Repo liest aktuell dieses Feld -
+        deshalb bewusst nur charakterisiert, nicht gefixt.
+        """
+        client = self._client_with_genre()
+        match = {
+            "id": "rec-1",
+            "title": "Track 3 of 12",
+            "release-list": [
+                {"id": "rel-1", "title": "Big Album", "medium-track-count": "12"}
+            ],
+        }
+        with patch("musicbrainzngs.get_recording_by_id", return_value={}):
+            result = asyncio.run(client._build_metadata(match, "Some Artist"))
+
+        # Aktuelles (fachlich irrefuehrendes) Verhalten: liefert die
+        # Gesamt-Trackanzahl des Mediums, nicht die Position des Tracks.
+        assert result["track_number"] == 12
+
+    def test_genre_determined_from_release_group_tags(self):
+        genre_mapper = MagicMock()
+        genre_mapper.determine_genre.return_value = MagicMock(primary="Jazz")
+        client = _make_client(genre_mapper=genre_mapper)
+
+        match = {
+            "id": "rec-1",
+            "title": "Some Track",
+            "release-list": [
+                {
+                    "id": "rel-1",
+                    "release-group": {"tags": [{"name": "jazz"}, {"name": "smooth"}]},
+                }
+            ],
+        }
+        with patch("musicbrainzngs.get_recording_by_id", return_value={}):
+            result = asyncio.run(client._build_metadata(match, "Some Artist"))
+
+        assert result["genre"] == "Jazz"
+        genre_mapper.determine_genre.assert_called_once()
+        _args, kwargs = genre_mapper.determine_genre.call_args
+        assert "jazz" in kwargs["raw_genre"]
+
+    def test_no_tags_falls_back_to_artist_channel_genre_lookup(self):
+        genre_mapper = MagicMock()
+        genre_mapper.determine_genre.return_value = MagicMock(primary="unknown")
+        client = _make_client(genre_mapper=genre_mapper)
+
+        match = {"id": "rec-1", "title": "Some Track", "release-list": []}
+        with patch("musicbrainzngs.get_recording_by_id", return_value={}):
+            result = asyncio.run(client._build_metadata(match, "Some Artist"))
+
+        assert result["genre"] == "unknown"
+        _args, kwargs = genre_mapper.determine_genre.call_args
+        assert kwargs["raw_genre"] == ""
+        assert kwargs["artist_name"] == "Some Artist"
