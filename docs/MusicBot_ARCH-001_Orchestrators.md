@@ -106,7 +106,7 @@ Nur `RichMenuHandler` (`rich_menu_handler.py:84`) instanziiert sie produktiv. Ei
 1. Die acht `_handle_*_callback`-Dispatcher als eigene, kleine Router-Klassen pro Bereich (z.B. `LoggerCallbackRouter`) — `handle_callback()` würde dann nur noch Präfix→Router-Objekt mappen
 2. Menü-Baum-Definition als separate Factory/Builder-Funktion (rein deklarativ, keine Laufzeit-Abhängigkeiten zu den übrigen Verantwortlichkeiten)
 
-**Status: noch nicht umgesetzt.**
+**Status: bewusst NICHT umgesetzt (Entscheidung nach ARCH-001-STEP-1/2/3).** Anders als die drei umgesetzten Kandidaten wäre dies keine 1:1-Verschiebung eines bereits abgeschlossenen Codeblocks, sondern eine neue Architektur-Entscheidung (Design einer generischen Router-Abstraktion) in `RichMenuSystem` — der Datei mit der meisten Sicherheits-Historie im Projekt (SEC-003/SEC-005/SEC-006). Ohne einen konkreten Bug oder sonstigen Treiber wäre das genau der unmotivierte Refactor, den CLAUDE.md Regel 1 vermeiden soll ("Kein größerer Refactor als erste Reaktion auf ein Problem"). Kandidat bleibt hier dokumentiert stehen, falls künftig ein neunter Callback-Bereich hinzukommt oder ein konkretes Problem in der bestehenden Routing-Logik auftaucht.
 
 ---
 
