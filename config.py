@@ -22,7 +22,6 @@ from dotenv import load_dotenv
 env_paths = [
     Path(__file__).parent / ".env",
     Path.cwd() / ".env",
-    Path("/mnt/128ssd/musicbot/.env"),
 ]
 
 env_loaded = False
