@@ -477,6 +477,31 @@ Wähle neue Rolle:"""
         query = update.callback_query
         users = self._load_users()
 
+        # SEC-005-Fix: new_role kommt aus callback_data (clientseitig frei
+        # sendbar, siehe SEC-003) - ohne Validierung gegen self.ROLES koennte
+        # ein beliebiger String als Rolle gesetzt werden. toggle_user_permission()
+        # validiert bereits analog gegen self.PERMISSIONS.
+        if new_role not in self.ROLES:
+            await query.answer("❌ Unbekannte Rolle")
+            return
+
+        # SEC-005-Fix: der Aufrufer muss laut RichMenuSystem._is_admin_check()
+        # nur "Owner ODER in ADMIN_USER_IDS" sein - ADMIN_USER_IDS ist in
+        # config.py explizit als eigene, vom Owner getrennte Liste vorgesehen.
+        # Ohne diese Sperre koennte JEDER konfigurierte Admin sich selbst oder
+        # andere zum Owner befoerdern, obwohl "Owner" die hoechste, eigentlich
+        # nur einmalig vergebene Autoritaet darstellt (permissions=["all"]).
+        if new_role == "owner":
+            acting_user_id = update.effective_user.id
+            owner_id = getattr(self.config, "OWNER_USER_ID", None)
+            if acting_user_id != owner_id:
+                self.logger.warning(
+                    f"🚫 Nicht-Owner {acting_user_id} versuchte, User {user_id} "
+                    f"zum Owner zu befördern - abgelehnt"
+                )
+                await query.answer("❌ Nur der Owner darf die Owner-Rolle vergeben")
+                return
+
         if user_id not in users:
             await query.answer("❌ Benutzer nicht gefunden")
             return
