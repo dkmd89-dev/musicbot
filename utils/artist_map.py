@@ -470,7 +470,13 @@ class ArtistNormalizer(SingletonMixin):
                 "Producer",
             ),
             # Kollaborations-Normalisierung (optimiert)
-            (r"\s*(?:feat\.?|ft\.?)\s*", ", ", re.IGNORECASE, "Featuring"),
+            # ARTISTNORM-001: \b-Wortgrenzen verhindern Fehltreffer in Woertern,
+            # die "ft"/"feat" nur als Teilstring enthalten (z.B. "trifft",
+            # "Kraftklub", "Draft" - wurden vorher zu "trif, ", "Kra, klub",
+            # "Dra, " verstuemmelt). \b nach "feat"/"ft" statt nach dem
+            # optionalen Punkt, da zwischen "." und einem folgenden Leerzeichen
+            # (beides Nicht-Wortzeichen) keine Wortgrenze existiert.
+            (r"\s*\b(?:feat|ft)\b\.?\s*", ", ", re.IGNORECASE, "Featuring"),
             #(r"\s*x\s*(?=[A-Za-z])", ", ", re.IGNORECASE, "x-Kollaboration"),
             (r"\s*&\s*", ", ", re.IGNORECASE, "&-Kollaboration"),
             (r"\s*vs\.?\s*", ", ", re.IGNORECASE, "vs-Kollaboration"),
@@ -615,8 +621,11 @@ class ArtistNormalizer(SingletonMixin):
     def _normalize_collaboration(self, artist_string: str) -> str:
         """🤝 Optimierte Kollaborations-Normalisierung"""
         # Einheits-Separator
+        # ARTISTNORM-001: \b um feat/ft, gleicher Grund wie im Featuring-Pattern
+        # in _compile_patterns() oben (verhindert Fehltreffer in Woertern wie
+        # "trifft"/"Kraftklub").
         unified = re.sub(
-            r"\s*(?:feat\.?|ft\.?|x|&|vs\.?|/|;)\s*",
+            r"\s*(?:\bfeat\b\.?|\bft\b\.?|x|&|vs\.?|/|;)\s*",
             ",",
             artist_string,
             flags=re.IGNORECASE,

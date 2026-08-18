@@ -154,3 +154,38 @@ class TestCollaborationArchitectureCharacterization:
         # "1986zig" verliert seinen Platz im Haupt-Artist.
         result = normalizer.normalize("GReeeN & 1986zig feat. Bausa")
         assert result == "Greeen, 1986zig, Bausa"
+
+
+class TestArtistnorm001FeatFtWordBoundaryFix:
+    """
+    Regressionstest fuer ARTISTNORM-001: das Featuring-Pattern
+    (r"\\s*(?:feat\\.?|ft\\.?)\\s*") matchte "ft"/"feat" bisher als reinen
+    Teilstring ohne Wortgrenzen - Woerter, die diese Buchstabenfolge nur
+    zufaellig enthalten, wurden verstuemmelt. Gefunden beim Testen von
+    AUTOLEARN-001 mit dem echten Kanalnamen "Hardenacke trifft"
+    (mapping/special_channel.yaml).
+    """
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("Hardenacke trifft", "Hardenacke Trifft"),
+            ("Kraftklub", "Kraftklub"),
+            ("Draft", "Draft"),
+            ("Wefts", "Wefts"),
+            ("Softi", "Softi"),
+        ],
+    )
+    def test_words_containing_ft_substring_are_not_mangled(
+        self, normalizer, raw, expected
+    ):
+        assert normalizer.normalize(raw) == expected
+
+    def test_genuine_feat_keyword_still_splits_correctly(self, normalizer):
+        # Regressionsschutz: der eigentliche Zweck des Patterns (echte
+        # "Artist feat. Other"-Trennung) darf durch die \b-Ergaenzung nicht
+        # verloren gehen - bereits oben in
+        # test_single_feat_keyword_preserves_order_but_loses_styled_casing
+        # abgedeckt, hier zusaetzlich ohne Punkt und in Grossschreibung.
+        assert normalizer.normalize("Artist FT Other") == "Artist, Other"
+        assert normalizer.normalize("Artist ft Other") == "Artist, Other"
