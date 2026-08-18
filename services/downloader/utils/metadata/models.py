@@ -32,8 +32,12 @@ def split_main_and_featuring(artist_string: str) -> Tuple[str, List[str]]:
     artist_string = artist_string.strip()
 
     # Schritt 1: feat./ft./featuring Keyword suchen
+    # ARTISTNORM-002: \b-Wortgrenzen verhindern Fehltreffer in Woertern, die
+    # "ft"/"feat" nur als Teilstring enthalten (z.B. "trifft" -> vorher
+    # faelschlich als "tri" + Feature-Artist "ft Jemand" gesplittet, siehe
+    # docs/MusicBot_ENGINEERING_BASELINE.md, ARTISTNORM-001/002).
     feat_pattern = re.compile(
-        r"\s*(?:feat\.?|ft\.?|featuring|with)\s+(.+)$",
+        r"\s*\b(?:feat\b\.?|ft\b\.?|featuring\b|with\b)\s+(.+)$",
         re.IGNORECASE,
     )
     m = feat_pattern.search(artist_string)

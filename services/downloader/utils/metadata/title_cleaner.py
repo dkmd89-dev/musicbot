@@ -297,7 +297,11 @@ class TitleCleaner:
                 "",
                 re.IGNORECASE,
             ),
-            (r"\s*[-–—]?\s*(?:feat\.?|ft\.?|featuring)\s+[^(\[\n]+", ""),
+            # ARTISTNORM-002: \b-Wortgrenzen verhindern Fehltreffer in
+            # Woertern, die "ft"/"feat" nur als Teilstring enthalten (z.B.
+            # "trifft" -> vorher wurde alles ab dem Teilstring-Treffer bis
+            # zum Titelende geloescht, siehe docs/MusicBot_ENGINEERING_BASELINE.md).
+            (r"\s*[-–—]?\s*\b(?:feat\b\.?|ft\b\.?|featuring\b)\s+[^(\[\n]+", ""),
             (r"\s*\(?\s*\d{4}\s*\)?\s*$", ""),
             (r"\s*[-–—:|]\s*(?:official|music|video|audio|lyric|hd|4k).*?$", ""),
             (r"\s*\([^)]*$", ""),

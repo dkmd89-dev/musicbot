@@ -52,7 +52,25 @@ class TestTitleCleaner(unittest.TestCase):
             was_parsed_by_artist_map=False
         )
         self.assertEqual(result, "Song Title")
-    
+
+    def test_clean_title_with_ft_substring_word_is_not_mangled(self):
+        """
+        Regressionstest fuer ARTISTNORM-002: das feat/ft-Cleanup-Pattern
+        matchte vorher "ft" als reinen Teilstring ohne Wortgrenzen - ein
+        Titel wie "Wir trafen Kraftklub gestern" haette alles ab dem "ft" in
+        "Kraftklub" bis zum Titelende geloescht. final_artist ist hier
+        bewusst neutral gehalten (nicht im Titel enthalten), um den Effekt
+        isoliert von remove_artist_from_title() zu pruefen.
+        """
+        result = self.cleaner.clean_track_title_enhanced(
+            original_title="Wir trafen Kraftklub gestern",
+            parsed_title=None,
+            parsed_artist=None,
+            final_artist="Reporter XY",
+            was_parsed_by_artist_map=False
+        )
+        self.assertEqual(result, "Wir trafen Kraftklub gestern")
+
     def test_clean_title_with_explicit(self):
         """Titel mit (explicit) Markierung"""
         result = self.cleaner.clean_track_title_enhanced(
