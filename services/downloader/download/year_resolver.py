@@ -88,12 +88,21 @@ class YearResolver:
                 pass
 
         # ── Quelle 3: playlist_info["upload_date"] ──────────────────────────
+        # Direktes Slicing statt _extract_year_from_text(): upload_date ist im
+        # yt-dlp-Standardformat YYYYMMDD (durchgehende Ziffernfolge, kein
+        # Trennzeichen) - YEAR_PATTERNs (?!\d)-Wortgrenze verhindert dort
+        # JEDEN Treffer, da direkt nach dem Jahr weitere Ziffern (MMDD)
+        # folgen. Dieselbe Logik wie bereits erfolgreich in
+        # determine_dominant_year_from_entries() fuer dasselbe Feld.
         upload_date = playlist_info.get("upload_date", "")
-        if upload_date:
-            y = self._extract_year_from_text(str(upload_date))
-            if y:
-                self.logger.info(f"✅ [YEAR] Quelle 3 (playlist_info.upload_date): {y}")
-                return y
+        if upload_date and len(str(upload_date)) >= 4:
+            try:
+                y = int(str(upload_date)[:4])
+                if self.YEAR_MIN <= y <= self.YEAR_MAX:
+                    self.logger.info(f"✅ [YEAR] Quelle 3 (playlist_info.upload_date): {y}")
+                    return y
+            except (ValueError, TypeError):
+                pass
 
         self.logger.warning(
             "⚠️ [YEAR] Kein dominantes Jahr gefunden in allen 3 Quellen → None"
