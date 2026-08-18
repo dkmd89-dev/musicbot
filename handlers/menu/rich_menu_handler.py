@@ -52,6 +52,7 @@ from handlers.enhanced_error_handler import (
     ErrorHandlerAdminInterface,
 )
 from config import Config
+from api.navidrome_api import NavidromeAPI
 from services.downloader.utils.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
@@ -88,7 +89,6 @@ class RichMenuHandler:
         self.download_handler: Optional[DownloadHandler] = None
         self.stats_handler: Optional[StatistikHandler] = None
         self.admin_handler: Optional[Any] = None
-        self.navidrome_adapter: Optional[Any] = None
         self.test_handler: Optional[TestMenuHandler] = None
         self.logger_handler: Optional[EnhancedLoggerMenuHandler] = None
         self.navidrome_handler: Optional[NavidromeMenuHandler] = None
@@ -418,10 +418,6 @@ class RichMenuHandler:
         self.admin_handler = handler
         self.logger.info("✅ AdminHandler verbunden")
 
-    def set_navidrome_adapter(self, adapter: Any) -> None:
-        self.navidrome_adapter = adapter
-        self.logger.info("✅ NavidromeAdapter verbunden")
-
     def set_logger_handler(self, handler: EnhancedLoggerMenuHandler) -> None:
         self.logger_handler = handler
         if self.menu_system:
@@ -728,18 +724,8 @@ class RichMenuHandler:
             return
         await query.answer("🔄 Starte Scan ...")
         try:
-            if self.navidrome_adapter:
-                result = await self.navidrome_adapter.trigger_scan()
-                text = (
-                    "✅ **Navidrome Scan gestartet**\n\nDie Library wird aktualisiert..."
-                    if result
-                    else "⚠️ **Navidrome Scan**\n\nScan konnte nicht gestartet werden."
-                )
-                await query.edit_message_text(text)
-            else:
-                await query.edit_message_text(
-                    "⚠️ **Navidrome Scan**\n\nNavidrome-Adapter nicht verfügbar."
-                )
+            _success, message = await NavidromeAPI.execute_scan()
+            await query.edit_message_text(message, parse_mode="MarkdownV2")
         except Exception as e:
             self.logger.error(f"❌ Navidrome-Scan-Fehler: {e}")
             await query.edit_message_text(f"❌ **Fehler beim Scan**\n\n{str(e)}")

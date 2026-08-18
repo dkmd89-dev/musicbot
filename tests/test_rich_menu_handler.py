@@ -366,3 +366,73 @@ class TestDownloadWrapperSetsUserState:
         asyncio.run(handler._handle_download_playlist_wrapper(update, context))
 
         assert handler.user_states[111] == "awaiting_playlist_url"
+
+
+class TestHandleNavidromeScan:
+    """
+    Regressionstest: _handle_navidrome_scan() rief vorher self.navidrome_
+    adapter.trigger_scan() auf, obwohl navidrome_adapter nirgends im Repo
+    instanziiert wurde - self.navidrome_adapter war IMMER None, jeder Klick
+    zeigte nur "Navidrome-Adapter nicht verfuegbar". Fix: ruft jetzt direkt
+    NavidromeAPI.execute_scan() auf (bereits an anderer Stelle getestet,
+    siehe tests/test_navidrome_api_characterization.py).
+    """
+
+    def test_admin_triggers_scan_via_navidrome_api(self, tmp_path):
+        handler, _ = _make_handler(tmp_path)
+        update = make_update(MockConfig.OWNER_USER_ID)
+        context = make_context()
+
+        with patch(
+            "handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan",
+            new=AsyncMock(return_value=(True, "Scan erfolgreich")),
+        ) as mock_scan:
+            asyncio.run(handler._handle_navidrome_scan(update, context))
+
+        mock_scan.assert_called_once()
+        update.callback_query.edit_message_text.assert_called_once_with(
+            "Scan erfolgreich", parse_mode="MarkdownV2"
+        )
+
+    def test_scan_failure_message_is_still_shown_to_admin(self, tmp_path):
+        handler, _ = _make_handler(tmp_path)
+        update = make_update(MockConfig.OWNER_USER_ID)
+        context = make_context()
+
+        with patch(
+            "handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan",
+            new=AsyncMock(return_value=(False, "Scan fehlgeschlagen")),
+        ):
+            asyncio.run(handler._handle_navidrome_scan(update, context))
+
+        update.callback_query.edit_message_text.assert_called_once_with(
+            "Scan fehlgeschlagen", parse_mode="MarkdownV2"
+        )
+
+    def test_non_admin_is_rejected_without_calling_scan(self, tmp_path):
+        handler, _ = _make_handler(tmp_path)
+        update = make_update(999999)  # nicht in ADMIN_USER_IDS/OWNER_USER_ID
+        context = make_context()
+
+        with patch(
+            "handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan",
+            new=AsyncMock(),
+        ) as mock_scan:
+            asyncio.run(handler._handle_navidrome_scan(update, context))
+
+        mock_scan.assert_not_called()
+        update.callback_query.answer.assert_called_with("⛔ Keine Berechtigung")
+
+    def test_exception_during_scan_is_caught_and_reported(self, tmp_path):
+        handler, _ = _make_handler(tmp_path)
+        update = make_update(MockConfig.OWNER_USER_ID)
+        context = make_context()
+
+        with patch(
+            "handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan",
+            new=AsyncMock(side_effect=RuntimeError("boom")),
+        ):
+            asyncio.run(handler._handle_navidrome_scan(update, context))
+
+        sent_text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Fehler beim Scan" in sent_text
