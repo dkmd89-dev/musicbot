@@ -1867,6 +1867,21 @@ class RichMenuSystem:
         else:
             self.logger.warning(f"⚠️ Menü-ID '{menu_id}' nicht gefunden")
 
+    def add_child_menu_item(self, parent_id: str, item: "MenuItem") -> bool:
+        """
+        Fügt ein MenuItem nachträglich als Kind eines bestehenden Menüs hinzu
+        und trägt es zusätzlich in die Registry ein (z.B. für Menüpunkte, die
+        erst nach initialize_menu_structure() dynamisch entstehen). Gibt
+        False zurück und tut nichts, wenn parent_id nicht existiert.
+        """
+        parent = self.menu_registry.get(parent_id)
+        if not parent:
+            self.logger.warning(f"⚠️ Eltern-Menü-ID '{parent_id}' nicht gefunden")
+            return False
+        parent.add_child(item)
+        self.menu_registry[item.id] = item
+        return True
+
     def cleanup_expired_sessions(self) -> int:
         """Entfernt abgelaufene Sessions"""
         expired = [

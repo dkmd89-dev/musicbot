@@ -383,10 +383,7 @@ class RichMenuHandler:
             access_level=AccessLevel.ADMIN,
             handler=self._handle_navidrome_scan,
         )
-        admin_menu = self.menu_system.menu_registry.get("admin")
-        if admin_menu:
-            admin_menu.add_child(navidrome_menu)
-            self.menu_system.menu_registry[navidrome_menu.id] = navidrome_menu
+        self.menu_system.add_child_menu_item("admin", navidrome_menu)
         self.logger.debug("🔧 System-Handler registriert")
 
     def _register_test_handlers(self) -> None:

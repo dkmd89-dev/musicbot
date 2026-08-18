@@ -192,6 +192,33 @@ class EnhancedMetadataProcessor(SingletonMixin):
             self.genius_client.close()
         self.logger.info("🧹 Enhanced Metadata Processor cleanup abgeschlossen")
 
+    async def aclose(self) -> None:
+        """
+        Async-fähiger Cleanup für Komponenten, die asynchrone Ressourcen
+        halten (aktuell: GeniusClient/aiohttp-Session). Ergänzt cleanup(),
+        ersetzt es nicht - ruft es selbst NICHT auf (identisches Verhalten
+        zum vorher in bot.py lebenden Code, der ebenfalls unabhängig von
+        cleanup() lief).
+        """
+        genius = getattr(self, "genius_client", None)
+        if not genius:
+            return
+        try:
+            if hasattr(genius, "async_close") and asyncio.iscoroutinefunction(
+                genius.async_close
+            ):
+                await genius.async_close()
+                self.logger.debug("✅ GeniusClient async_close() aufgerufen")
+            elif hasattr(genius, "_session"):
+                session = genius._session
+                if session and not session.closed:
+                    await session.close()
+                    self.logger.debug("✅ GeniusClient._session direkt geschlossen")
+            if hasattr(genius, "close"):
+                genius.close()
+        except Exception as e:
+            self.logger.debug(f"ℹ️ Async-Cleanup von GeniusClient: {e}")
+
     def invalidate_cache_entry(self, artist: str, title: str) -> None:
         """Invalidiert einen einzelnen Cache-Eintrag."""
         self.cache_handler.invalidate(artist, title)

@@ -324,3 +324,36 @@ class TestStatusStorageCleanupIsUnrouted:
         message = update.callback_query.answer.call_args[0][0]
         assert "nicht implementiert" in message
         fake_status_handler.show_storage_status.assert_not_called()
+
+
+class TestAddChildMenuItem:
+    """
+    Tests fuer add_child_menu_item() (ARCH-001-Folge-Fix): ersetzt den
+    direkten Zugriff auf menu_registry, den RichMenuHandler._register_
+    system_handlers() vorher fuer den dynamisch angehaengten
+    "Navidrome Scan"-Menuepunkt genutzt hat.
+    """
+
+    def test_item_becomes_child_of_parent_and_is_registered(self, menu_system):
+        new_item = MenuItem(
+            id="admin_navidrome",
+            title="Navidrome Scan",
+            emoji="🔄",
+            access_level=AccessLevel.ADMIN,
+        )
+
+        result = menu_system.add_child_menu_item("admin", new_item)
+
+        assert result is True
+        assert menu_system.menu_registry["admin_navidrome"] is new_item
+        admin_menu = menu_system.menu_registry["admin"]
+        assert new_item in admin_menu.children
+        assert new_item.parent is admin_menu
+
+    def test_unknown_parent_id_returns_false_and_does_not_register(self, menu_system):
+        new_item = MenuItem(id="orphan", title="Orphan")
+
+        result = menu_system.add_child_menu_item("does_not_exist", new_item)
+
+        assert result is False
+        assert "orphan" not in menu_system.menu_registry

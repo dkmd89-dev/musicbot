@@ -288,25 +288,8 @@ class ExtendedBot:
         if self.rich_menu_handler:
             try:
                 proc = getattr(self.rich_menu_handler, "metadata_processor", None)
-                if proc:
-                    genius = getattr(proc, "genius_client", None)
-                    if genius:
-                        if hasattr(
-                            genius, "async_close"
-                        ) and asyncio.iscoroutinefunction(genius.async_close):
-                            await genius.async_close()
-                            self.logger.debug(
-                                "✅ GeniusClient async_close() aufgerufen"
-                            )
-                        elif hasattr(genius, "_session"):
-                            session = genius._session
-                            if session and not session.closed:
-                                await session.close()
-                                self.logger.debug(
-                                    "✅ GeniusClient._session direkt geschlossen"
-                                )
-                        if hasattr(genius, "close"):
-                            genius.close()
+                if proc and hasattr(proc, "aclose"):
+                    await proc.aclose()
             except Exception as e:
                 self.logger.debug(f"ℹ️ Async-Cleanup der Komponenten: {e}")
 
