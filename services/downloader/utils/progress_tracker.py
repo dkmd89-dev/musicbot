@@ -85,6 +85,18 @@ class ProgressTracker:
         # ➡️ Custom logger integration
         self.logger.debug(f"Aktuelles Item gesetzt: {item_name}")
 
+    def cleanup(self) -> None:
+        """
+        ProgressTracker haelt keine eigenen freizugebenden Ressourcen (nur
+        Zaehler/Zeitstempel und eine Referenz auf ein von aussen kommendes
+        Telegram-Update). Existiert, damit EnhancedDownloadProcessor.cleanup()
+        (DownloadCoordinator-Protocol, services/downloader/utils/download_utils.py)
+        gefahrlos self.tracker.cleanup() aufrufen kann - vorher fehlte diese
+        Methode komplett, ein AttributeError waere die Folge gewesen, sobald
+        init_tracker() jemals tatsaechlich aufgerufen wird.
+        """
+        self.logger.debug("ProgressTracker cleanup (keine eigenen Ressourcen)")
+
 
 def progress_hook(
     tracker: ProgressTracker, d: dict, logger_factory: Optional[Callable] = None
