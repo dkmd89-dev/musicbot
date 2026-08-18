@@ -712,46 +712,12 @@ async def _process_track_metadata(
             )
         )
 
-        # 🆕 AUTO-LEARNING: Nur wenn echter neuer Artist-Name gelernt wurde
-        if enhanced_result.success and enhanced_result.artist:
-            try:
-                _raw = track_info.get("uploader") or playlist_channel or ""
-                _source = getattr(enhanced_result, "artist_source", "") or ""
-                _LEARN_SOURCES = {"youtube_parsed", "raw_metadata", "channel_fallback"}
-                _is_special = False
-                if _raw:
-                    from utils.filenamefixer import (
-                        load_special_channels_merged,
-                        get_special_category,
-                    )
-
-                    _is_special = bool(
-                        get_special_category(
-                            _raw,
-                            load_special_channels_merged(enhanced_processor.config),
-                        )
-                    )
-                if (
-                    _source in _LEARN_SOURCES
-                    and _raw.lower() != enhanced_result.artist.lower()
-                    and not _is_special
-                ):
-                    await enhanced_processor.enhanced_metadata_processor.auto_learn_manager.learn_artist(
-                        raw_name=_raw,
-                        canonical_name=enhanced_result.artist,
-                        source=enhanced_result.artist_source,
-                        channel_name=track_info.get("channel", "")
-                        or track_info.get("uploader", ""),
-                    )
-                else:
-                    logger.debug(
-                        f"🧠 [AUTO-LEARN] Übersprungen: "
-                        f"raw='{_raw}', source='{_source}', is_special={_is_special}"
-                    )
-            except Exception as e:
-                logger.debug(
-                    f"🧠 [AUTO-LEARN] Fehler beim Auto-Learning (nicht kritisch): {e}"
-                )
+        # AUTOLEARN-001: externer, redundanter Auto-Learning-Aufruf entfernt.
+        # process_single_track() ruft auto_learn_manager.learn_artist() intern
+        # bereits fuer jeden Track auf (Schritt 19b) - inkl. derselben breiten
+        # Sonderkanal-Pruefung, die hier vorher zusaetzlich (mit teils
+        # abweichenden Bedingungen) dupliziert wurde. Siehe
+        # docs/MusicBot_ENGINEERING_BASELINE.md.
 
         if enhanced_result.success:
             logger.info(
@@ -908,45 +874,12 @@ async def _process_single_download(
             )
             raise DownloadError(f"Processing failed: {enhanced_result.error}")
 
-        # ── AUTO-LEARNING ─────────────────────────────────────────────────────
-        try:
-            _raw = video_info.get("uploader") or video_info.get("channel") or ""
-            _source = getattr(enhanced_result, "artist_source", "") or ""
-            _LEARN_SOURCES = {"youtube_parsed", "raw_metadata", "channel_fallback"}
-            _is_special = False
-            if _raw:
-                from utils.filenamefixer import (
-                    load_special_channels_merged,
-                    get_special_category,
-                )
-
-                _is_special = bool(
-                    get_special_category(
-                        _raw,
-                        load_special_channels_merged(enhanced_processor.config),
-                    )
-                )
-            if (
-                _source in _LEARN_SOURCES
-                and _raw.lower() != enhanced_result.artist.lower()
-                and not _is_special
-            ):
-                await enhanced_processor.enhanced_metadata_processor.auto_learn_manager.learn_artist(
-                    raw_name=_raw,
-                    canonical_name=enhanced_result.artist,
-                    source=enhanced_result.artist_source,
-                    channel_name=video_info.get("channel", "")
-                    or video_info.get("uploader", ""),
-                )
-            else:
-                logger.debug(
-                    f"🧠 [AUTO-LEARN] Übersprungen: "
-                    f"raw='{_raw}', source='{_source}', is_special={_is_special}"
-                )
-        except Exception as e:
-            logger.debug(
-                f"🧠 [AUTO-LEARN] Fehler beim Auto-Learning (nicht kritisch): {e}"
-            )
+        # AUTOLEARN-001: externer, redundanter Auto-Learning-Aufruf entfernt.
+        # process_single_track() ruft auto_learn_manager.learn_artist() intern
+        # bereits fuer jeden Track auf (Schritt 19b) - inkl. derselben breiten
+        # Sonderkanal-Pruefung, die hier vorher zusaetzlich (mit teils
+        # abweichenden Bedingungen) dupliziert wurde. Siehe
+        # docs/MusicBot_ENGINEERING_BASELINE.md.
 
         # Flags für Log
         flags = " ".join(

@@ -943,7 +943,23 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 "channel_fallback",
                 "first_artist_from_title",
             }
-            if artist_source in _learn_sources and not _is_podcast_channel:
+            # AUTOLEARN-001: _is_podcast_channel prueft nur eine hartcodierte
+            # 2-Kanal-Liste. download_utils.py hatte zusaetzlich einen externen,
+            # redundanten learn_artist()-Aufruf mit einer breiteren Pruefung
+            # ueber die vollstaendige special_channel.yaml-Konfiguration
+            # (get_special_category/load_special_channels_merged) - dieser
+            # externe Aufruf verhinderte fuer SEINEN eigenen zweiten Versuch
+            # das Lernen bei Sonderkanaelen ausserhalb der 2 hartcodierten
+            # Namen, liess die Luecke im internen Aufruf hier aber bestehen.
+            # Erweitert die Ausschlussmenge (nur zusaetzlich einschraenkend,
+            # nie lockernd) um dieselbe breite Pruefung.
+            _is_special_channel_for_learning = _is_podcast_channel or bool(
+                get_special_category(
+                    _channel_for_special_detection,
+                    load_special_channels_merged(self.config),
+                )
+            )
+            if artist_source in _learn_sources and not _is_special_channel_for_learning:
                 try:
                     await self.auto_learn_manager.learn_artist(
                         raw_name=track_metadata.get("uploader")
