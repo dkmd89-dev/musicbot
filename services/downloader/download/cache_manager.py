@@ -116,10 +116,15 @@ class CacheManager:
             f"   Original-Titel : '{search_title}'"
         )
         try:
+            # BUG-011: parse_youtube_title() liefert ParseResult (Dataclass,
+            # kein Dict) - .get()/[...] warfen hier bisher IMMER AttributeError/
+            # TypeError, vom umschliessenden except stillschweigend auf Debug-
+            # Level abgefangen. Stufe 2 funktionierte dadurch nie. Fix:
+            # Attribut-Zugriff statt Dict-Zugriff.
             parsed = self.artist_normalizer.parse_youtube_title(search_title)
-            if parsed and parsed.get("main_artist") and parsed.get("title"):
-                alt_artist = parsed["main_artist"]
-                alt_title = parsed["title"]
+            if parsed and parsed.main_artist and parsed.title:
+                alt_artist = parsed.main_artist
+                alt_title = parsed.title
 
                 self.logger.debug(
                     f"   Geparst → Artist: '{alt_artist}', Titel: '{alt_title}'"
