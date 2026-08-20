@@ -555,13 +555,10 @@ class PlaylistProcessor:
         self, playlist_info: Dict[str, Any]
     ) -> Optional[int]:
         """📅 Extrahiert das wahrscheinlichste Jahr aus den Playlist-Informationen."""
-        year_sources = [
-            playlist_info.get("title"),
-            playlist_info.get("description"),
-            playlist_info.get("upload_date"),
-            playlist_info.get("release_date"),
-        ]
-        for source in year_sources:
+        # Freitext-Quellen (Titel/Beschreibung): Jahreszahl kann irgendwo im
+        # Text stehen, Regex-Suche mit Wortgrenzen ist hier korrekt.
+        text_sources = [playlist_info.get("title"), playlist_info.get("description")]
+        for source in text_sources:
             if source:
                 # Bevorzugt Jahreszahlen zwischen 1950 und 2030
                 year_match = re.search(r"\b(19[5-9]\d|20[0-2]\d)\b", str(source))
@@ -571,63 +568,27 @@ class PlaylistProcessor:
                         f"📅 Jahr {year} aus '{str(source)[:30]}...' gefunden"
                     )
                     return year
-        return None
 
-
-# Diese Standalone-Funktion wird von anderen Modulen genutzt und bleibt erhalten.
-def _determine_dominant_year_from_playlist(
-    results: List[Dict[str, Any]], logger_factory: Optional[Callable] = None
-) -> Optional[int]:
-    """
-    📅 Bestimmt das dominante Jahr aus einer Liste von Track-Ergebnissen.
-    """
-    logger = (
-        logger_factory("PlaylistProcessor")
-        if logger_factory
-        else PlaylistProcessor._get_default_logger(None)
-    )
-
-    logger.info("📅 🔍 Analysiere Track-Liste für dominantes Jahr...")
-
-    if not results:
-        return None
-
-    year_counts = Counter()
-    for track in results:
-        year_sources = [
-            track.get("release_year"),
-            track.get("year"),
-            track.get("upload_date"),
-            track.get("title"),
+        # BUG-012 (analog BUG-010 in YearResolver): upload_date/release_date
+        # liegen im yt-dlp-Standardformat YYYYMMDD vor - durchgehende
+        # Ziffernfolge ohne Trennzeichen. Die \b-Wortgrenze der obigen
+        # Regex existiert dort NIE (Jahr wird direkt von weiteren Ziffern
+        # gefolgt), diese Quellen lieferten dadurch bisher IMMER None.
+        # Fix: direktes Slicing statt Wortgrenzen-Regex.
+        date_sources = [
+            playlist_info.get("upload_date"),
+            playlist_info.get("release_date"),
         ]
-        for source in year_sources:
-            if source:
-                year_match = re.search(r"\b(19[5-9]\d|20[0-2]\d)\b", str(source))
-                if year_match:
-                    year = int(year_match.group())
-                    year_counts[year] += 1
-                    break
+        for source in date_sources:
+            if source and len(str(source)) >= 4:
+                try:
+                    year = int(str(source)[:4])
+                    if 1950 <= year <= 2029:
+                        self._log_playlist_debug(
+                            f"📅 Jahr {year} aus '{str(source)[:30]}...' gefunden"
+                        )
+                        return year
+                except (ValueError, TypeError):
+                    pass
 
-    if not year_counts:
-        logger.warning("⚠️ Keine gültigen Jahreszahlen in den Tracks gefunden")
-        return None
-
-    dominant_year, count = year_counts.most_common(1)[0]
-    total_tracks = len(results)
-    dominance_ratio = count / total_tracks
-
-    logger.info(f"📊 Jahr-Statistik (Top 3):")
-    for year, cnt in year_counts.most_common(3):
-        percentage = (cnt / total_tracks) * 100
-        logger.info(f"   📅 {year}: {cnt}/{total_tracks} ({percentage:.1f}%)")
-
-    if dominance_ratio >= 0.3:
-        logger.info(
-            f"✅ Dominantes Jahr erkannt: {dominant_year} ({dominance_ratio:.1%})"
-        )
-        return dominant_year
-    else:
-        logger.info(
-            f"❌ Kein dominantes Jahr gefunden (höchstes: {dominant_year} bei {dominance_ratio:.1%})"
-        )
         return None
