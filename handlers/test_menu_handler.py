@@ -52,7 +52,7 @@ class TestMenuHandler:
 
     async def run_unit_tests(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Führt Unit Tests aus"""
-        await self._execute_test_run(update, "integration", timeout=600)
+        await self._execute_test_run(update, "unit", timeout=600)
 
     async def run_integration_tests(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -248,7 +248,7 @@ class TestMenuHandler:
 
                 if "FAILED" in stripped_line and "::" in stripped_line:
                     results["failed_tests"].append(
-                        stripped_line.split("FAILED")[0].strip()
+                        stripped_line.split("FAILED", 1)[1].strip()
                     )
 
             results["total"] = (
