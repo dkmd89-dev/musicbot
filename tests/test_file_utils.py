@@ -31,7 +31,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from services.downloader.utils.error_handler import FileProcessingError
+from services.downloader.utils.errors import FileProcessingError
 from services.downloader.utils.file_utils import FileUtils
 
 

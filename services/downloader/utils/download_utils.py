@@ -21,7 +21,7 @@ Diese Datei enthält NUR noch Orchestrierung:
     `_process_track_metadata()` rufen die spezialisierten Module auf
 
 Ausgelagerte Module (services/downloader/download/):
-  models.py            – DownloadResult, PlaylistResult, TrackDownloadState
+  models.py            – DownloadResult, PlaylistResult
   interfaces.py        – CacheProvider, MetadataEnricher, DownloadCoordinator
   cache_manager.py     – CacheManager (2-stufiger Cache-Lookup)
   year_resolver.py     – YearResolver (Jahr-Bestimmung)
@@ -52,7 +52,7 @@ from services.downloader.utils.enhanced_metadata_processor import (
     EnhancedMetadataProcessor as MetadataProcessorCore,
 )
 from services.downloader.utils.metadata.models import MetadataResult
-from services.downloader.utils.error_handler import DownloadError
+from services.downloader.utils.errors import DownloadError
 from services.downloader.utils.file_utils import FileUtils
 from services.downloader.utils.progress_tracker import ProgressTracker
 from services.downloader.playlist_processor import PlaylistProcessor
@@ -941,50 +941,3 @@ async def _process_single_download(
     except Exception as e:
         enhanced_processor.session_stats["failed_downloads"] += 1
         raise DownloadError(f"Single-Download fehlgeschlagen: {e}")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# LEGACY-WRAPPER (Rückwärtskompatibilität)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-async def download_with_retry(
-    url: str,
-    ydl_opts: dict,
-    file_utils: FileUtils,
-    filename_fixer: FilenameFixerTool,
-    max_retries: int = 3,
-    logger=None,
-    logger_factory: Optional[Callable] = None,
-) -> List[Dict[str, Any]]:
-    """Legacy-Wrapper – delegiert an enhanced_download_with_retry."""
-    actual_lf = logger_factory or get_module_logger
-    logger = logger or actual_lf("download_utils")
-    logger.info("🔄 [LEGACY] download_with_retry → enhanced_download_with_retry")
-
-    result = await enhanced_download_with_retry(
-        url=url,
-        chat_id=None,
-        update_id=0,
-        status_callback=None,
-        max_retries=max_retries,
-        logger=logger,
-        logger_factory=actual_lf,
-        processor_logger=actual_lf("EnhancedProcessor"),
-        playlist_logger=actual_lf("PlaylistProcessor"),
-        cache_logger=actual_lf("MetadataCache"),
-    )
-
-    if result["success"]:
-        return (
-            result["tracks"] if result["type"] == "playlist" else [result["track_info"]]
-        )
-    raise DownloadError(result.get("error", "Legacy download failed"))
-
-
-def _determine_dominant_year_from_playlist(
-    results: List[Dict[str, Any]], logger=None
-) -> Optional[int]:
-    """Legacy-Funktion – delegiert an YearResolver."""
-    resolver = YearResolver(logger=logger)
-    return resolver.determine_dominant_year_from_entries(results)

@@ -1,10 +1,61 @@
 # ARCH-003 — Zielarchitektur `services/`: Phase 1 (Analyse)
 
-> Kein Code in diesem Schritt geändert. Dieses Dokument ist die vollständige
-> Analyse-Grundlage für die geplante Migration von `services/` auf eine
-> saubere Zielarchitektur (Auftrag vom 2026-08-20).
+> Dieses Dokument ist die vollständige Analyse-Grundlage für die geplante
+> Migration von `services/` auf eine saubere Zielarchitektur (Auftrag vom
+> 2026-08-20). Phase 1 (Analyse) hat keinen Code geändert.
 
 **Umfang:** `services/` — 30 Python-Dateien, 11.429 Zeilen (`services/downloader/**` + `services/statistik_service.py`).
+
+---
+
+## Phase 2/3 — Status der Umsetzung (Branch `arch/services-migration`)
+
+Nutzer-Entscheidung: **nur risikoarmer Kern**, ausschließlich innerhalb
+`services/`, keine Consumer-Änderungen außerhalb des Verzeichnisses.
+
+**Umgesetzt:**
+
+- P-4: `error_handler.py` in `errors.py` umbenannt, Teil B (tote,
+  Telegram-gekoppelte Handler-Funktionen, ~190 Zeilen, 0 Aufrufer) entfernt.
+  Teil A (Fehler-Taxonomie: `DownloadError` + 6 Subklassen) bleibt
+  unverändert erhalten.
+- P-5: kaputte, tote Methode `YoutubeDownloader.format_download_result_for_log()`
+  entfernt (fehlendes `self`, referenzierte eine nie definierte Variable
+  `lines` — hätte bei jedem Aufruf `NameError` geworfen; 0 Aufrufer).
+- P-12: `services/downloader/interfaces.py` (`IDownloaderConfig`,
+  `IDownloader` — 0 Implementierer/Verwendungen) entfernt.
+- P-13: `download_utils.py::download_with_retry()` (Legacy-Wrapper, 0
+  Aufrufer) und `download_utils.py::_determine_dominant_year_from_playlist()`
+  (zweite, unabhängige tote Legacy-Funktion desselben Namens, ebenfalls 0
+  Aufrufer — nicht zu verwechseln mit der bereits in TEST-018/LEGACY-012
+  entfernten Variante in `playlist_processor.py`) sowie
+  `TrackDownloadState` (Datenklasse, 0 Aufrufer) aus `download/models.py`
+  entfernt.
+- P-8: `PlaylistProcessor.__init__` und `SpotifyDownloader.__init__` nehmen
+  jetzt optional `config` bzw. `rss_manager` injiziert entgegen, statt sie
+  zwingend selbst zu konstruieren. Default-Verhalten (kein Parameter
+  übergeben) bleibt exakt unverändert.
+- P-9: `DownloadExecutor.build_ydl_opts()` liest den Cookie-Datei-Pfad jetzt
+  aus dem bereits injizierten `config`-Parameter (`Config.COOKIES_FILE`,
+  existierte bereits, wurde vorher nicht genutzt) statt einem hartkodierten,
+  CWD-relativen `Path("cookies.txt")`.
+
+**Bewusst nicht umgesetzt** (siehe Abschnitt 5 unten — STOP CONDITIONS,
+Nutzerentscheidung war „nur risikoarmer Kern“):
+
+- P-1 (`FileUtils` totes Gewicht), P-2 (Telegram-Kopplung entfernen), P-3
+  (doppelte Spotify/YouTube-Orchestrierung), P-6 (`StatistikService`
+  aufteilen), P-11 (Import aus `klassen/`), P-14 (`advanced_podcast_finder.py`)
+  bleiben unverändert und sind Kandidaten für eine spätere, dedizierte
+  Migrationsphase.
+
+**Tests:** 6 neue/erweiterte Tests (`test_download_executor.py`,
+`test_playlist_processor.py`, `test_spotify_downloader.py`) für die neuen
+Dependency-Injection-Punkte. Voller Regressionslauf: 920 bestanden (vorher
+914), unverändert 15 vorbestehende Fehler. Kein Type-Checker/Linter im
+Repository konfiguriert (kein `mypy`/`ruff`/`pyproject.toml` gefunden) —
+`python -m py_compile`/Import-Smoke-Test über alle `services/`-Submodule
+als Ersatz-Gate genutzt.
 
 ---
 

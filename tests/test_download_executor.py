@@ -30,10 +30,12 @@ def executor():
 
 
 class FakeConfig:
-    def __init__(self, tmp_path, max_duration=None, mapping_dir=None):
+    def __init__(self, tmp_path, max_duration=None, mapping_dir=None, cookies_file=None):
         self.DOWNLOAD_DIR = tmp_path
         self.MAX_DURATION = max_duration
         self.GENRE_MAPPING_DIR = mapping_dir or (tmp_path / "empty_mapping")
+        if cookies_file is not None:
+            self.COOKIES_FILE = cookies_file
 
 
 class TestExtractInfoAsyncDoesNotBlockEventLoop:
@@ -135,3 +137,41 @@ SPECIAL_CHANNELS:
 
         result = match_filter({"uploader": "Some Artist"})
         assert result is None
+
+
+class TestCookieFilePath:
+    """
+    ARCH-003, P-9: build_ydl_opts() nutzte vorher einen hartkodierten,
+    CWD-relativen Path("cookies.txt") statt der bereits vorhandenen
+    Config.COOKIES_FILE (BASE_DIR/cookies.txt) - der config-Parameter wird
+    hier bereits injiziert entgegengenommen, wurde fuer den Cookie-Pfad
+    aber nicht genutzt.
+    """
+
+    def test_uses_cookies_file_from_config_when_present(self, executor, tmp_path):
+        cookie_file = tmp_path / "custom_cookies.txt"
+        cookie_file.write_text("# netscape cookie file\n")
+        config = FakeConfig(tmp_path, cookies_file=cookie_file)
+
+        opts = executor.build_ydl_opts(config)
+
+        assert opts["cookiefile"] == str(cookie_file)
+
+    def test_falls_back_to_relative_cookies_txt_when_config_has_no_cookies_file(
+        self, executor, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        config = FakeConfig(tmp_path)  # kein cookies_file -> kein COOKIES_FILE-Attribut
+
+        opts = executor.build_ydl_opts(config)
+
+        assert "cookiefile" not in opts
+
+    def test_no_cookiefile_key_when_configured_file_does_not_exist(
+        self, executor, tmp_path
+    ):
+        config = FakeConfig(tmp_path, cookies_file=tmp_path / "does_not_exist.txt")
+
+        opts = executor.build_ydl_opts(config)
+
+        assert "cookiefile" not in opts

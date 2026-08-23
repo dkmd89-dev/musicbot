@@ -132,6 +132,33 @@ def _make_downloader(tmp_path):
     return SpotifyDownloader(config)
 
 
+class TestRssManagerInjection:
+    """
+    ARCH-003, P-8: rss_manager ist jetzt optional injizierbar - vorher wurde
+    IMMER intern ein echter PodcastRSSManager(mapping_dir, ...) konstruiert
+    (Zugriff auf die reale mapping/-YAML), unabhaengig davon ob ein Test
+    das ueberhaupt brauchte.
+    """
+
+    def test_uses_injected_rss_manager_instead_of_constructing_one(self, tmp_path):
+        from unittest.mock import Mock
+
+        fake_rss_manager = Mock()
+        fake_rss_manager.feeds = {}
+        config = FakeConfig(tmp_path)
+
+        downloader = SpotifyDownloader(config, rss_manager=fake_rss_manager)
+
+        assert downloader.rss_manager is fake_rss_manager
+
+    def test_without_injection_constructs_real_rss_manager_as_before(self, tmp_path):
+        downloader = _make_downloader(tmp_path)
+
+        from utils.podcast_rss_manager import PodcastRSSManager
+
+        assert isinstance(downloader.rss_manager, PodcastRSSManager)
+
+
 class TestDownloadedFileDetectionBug004:
     def test_uses_filepath_from_ytdlp_result_not_newest_file_in_dir(self, tmp_path):
         """

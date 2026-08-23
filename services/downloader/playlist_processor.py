@@ -12,8 +12,16 @@ from utils.youtube_parser import parse_youtube_title
 class PlaylistProcessor:
     """Erweiterte Playlist-Verarbeitung mit Enhanced Components und Artist-Override-Priorisierung"""
 
-    def __init__(self, logger_factory: Optional[Callable] = None):
-        """Initialisiert den Prozessor und die erweiterten Komponenten."""
+    def __init__(self, logger_factory: Optional[Callable] = None, config=None):
+        """
+        Initialisiert den Prozessor und die erweiterten Komponenten.
+
+        `config` ist optional injizierbar (ARCH-003, P-8) - ohne Angabe wird
+        wie bisher die globale `config.Config` selbst geladen, damit sich
+        das Default-Verhalten für bestehende Aufrufer (z.B.
+        `download_utils.py`, das PlaylistProcessor ohne config konstruiert)
+        nicht ändert.
+        """
         # ➡️ Custom logger integration mit Dependency Injection
         self.logger = (
             logger_factory("PlaylistProcessor")
@@ -28,10 +36,12 @@ class PlaylistProcessor:
 
         # 🆕 NEU: Enhanced Components laden
         try:
-            # Versuche, die globale Konfiguration zu laden
-            from config import Config
+            if config is None:
+                # Fallback: globale Konfiguration selbst laden (unverändertes
+                # Default-Verhalten, falls kein config injiziert wurde).
+                from config import Config
 
-            config = Config()
+                config = Config()
 
             # ✅ FIX: Entferne logger_factory Parameter - ArtistNormalizer nutzt jetzt get_module_logger
             self.artist_normalizer = ArtistNormalizer(

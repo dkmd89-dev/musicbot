@@ -69,6 +69,35 @@ class TestInit:
         assert proc.artist_normalizer is None
         assert proc.enhanced_processing_enabled is False
 
+    def test_init_uses_injected_config_instead_of_loading_global_config(
+        self, monkeypatch
+    ):
+        """
+        ARCH-003, P-8: config ist jetzt optional injizierbar - vorher wurde
+        IMMER intern `from config import Config; config = Config()` geladen,
+        ein injiziertes config war unmoeglich zu testen/isolieren.
+        """
+        fake_normalizer_instance = Mock()
+        monkeypatch.setattr(
+            pp_module, "ArtistNormalizer", Mock(return_value=fake_normalizer_instance)
+        )
+
+        class FakeConfig:
+            LIBRARY_DIR = "/fake/library"
+            ARTIST_OVERRIDE_FILE = "/fake/overrides.json"
+            ENHANCED_METADATA_PROCESSING = False
+
+        proc = PlaylistProcessor(
+            logger_factory=lambda name: Mock(), config=FakeConfig()
+        )
+
+        assert proc.artist_normalizer is fake_normalizer_instance
+        # ENHANCED_METADATA_PROCESSING=False im injizierten config muss
+        # tatsaechlich verwendet werden (Beweis, dass NICHT die globale
+        # Config geladen wurde, die ENHANCED_METADATA_PROCESSING i.d.R.
+        # nicht auf False stehen hat).
+        assert proc.enhanced_processing_enabled is False
+
     def test_init_without_logger_factory_uses_default_logger(self, monkeypatch):
         monkeypatch.setattr(
             pp_module, "ArtistNormalizer", Mock(side_effect=RuntimeError("boom"))
