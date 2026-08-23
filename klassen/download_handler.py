@@ -52,6 +52,10 @@ from services.downloader.utils.enhanced_metadata_processor import (
 from services.downloader.utils.download_result_reporter import DownloadResultReporter
 from services.downloader.utils.file_utils import FileUtils
 from services.downloader.utils.progress_tracker import ProgressTracker
+from services.downloader.utils.metadata_result_translator import (
+    call_process_single_track,
+    merge_metadata_result_into_dict,
+)
 from utils.filenamefixer import FilenameFixerTool
 
 
@@ -497,7 +501,8 @@ class DownloadHandler:
             self.logger.info(
                 f"🚀 [PROCESS-G] Starte EnhancedMetadataProcessor für '{title}'..."
             )
-            metadata_result = await self.enhanced_metadata_processor.process_single_track(
+            metadata_result = await call_process_single_track(
+                self.enhanced_metadata_processor,
                 track_metadata=result,
                 file_utils=self.file_utils,
                 filename_fixer=self.filename_fixer,
@@ -517,26 +522,10 @@ class DownloadHandler:
                     f"   Cover       : {'✅ eingebettet' if metadata_result.cover_embedded else '❌ fehlt'}\n"
                     f"   Library-Pfad: {metadata_result.library_path}"
                 )
-                return {
-                    **result,
-                    "title":         metadata_result.title,
-                    "artist":        metadata_result.artist,
-                    "album":         metadata_result.album or result.get("album"),
-                    "album_artist":  metadata_result.album_artist,
-                    "year":          metadata_result.year or result.get("year"),
-                    "track_number":  metadata_result.track_number,
-                    "genres":        metadata_result.genres or result.get("genres"),
-                    "lyrics":        metadata_result.lyrics,
-                    "lyrics_available": bool(metadata_result.lyrics),
-                    "lyrics_source": metadata_result.lyrics_source,
-                    "cover_embedded":metadata_result.cover_embedded,
-                    "filepath":      str(metadata_result.filepath) if metadata_result.filepath else result.get("filepath"),
-                    "library_path":  str(metadata_result.library_path) if metadata_result.library_path else result.get("library_path"),
-                    "artist_source": metadata_result.artist_source,
-                    "genre_source":  metadata_result.genre_source,
-                    "title_cleaned": metadata_result.title_cleaned,
-                    "from_cache":    metadata_result.from_cache,
-                }
+                # ARCH-004/P-3: gemeinsame Integrationsschicht statt inline
+                # dupliziertem Dict-Aufbau - siehe
+                # services/downloader/utils/metadata_result_translator.py
+                return merge_metadata_result_into_dict(result, metadata_result)
             else:
                 err = metadata_result.error if metadata_result else "Kein Ergebnis"
                 self.logger.warning(

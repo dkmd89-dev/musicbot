@@ -173,6 +173,32 @@ class TestProcessTrackMetadataPlaylist:
 
         assert result["playlist_album"] == "My Playlist"
 
+    def test_none_library_path_is_stringified_to_literal_none(self):
+        """
+        Dokumentierte Inkonsistenz (ARCH-004 Abschnitt 6): der Playlist-Pfad
+        ruft unbedingt str(enhanced_result.library_path) auf - bei None
+        entsteht der literale String "None", nicht der Wert None. Der
+        Single-Pfad prueft das vorher (siehe TestProcessSingleDownload...).
+        """
+        metadata_result = make_metadata_result(library_path=None)
+        enhanced_processor = make_enhanced_processor(metadata_result)
+
+        result = run_async(
+            _process_track_metadata(
+                track_info={"title": "T"},
+                downloaded_file="/tmp/x.m4a",
+                enhanced_processor=enhanced_processor,
+                file_utils=Mock(),
+                filename_fixer=Mock(),
+                album_name="Album",
+                dominant_artist=None,
+                playlist_year=2000,
+                track_idx=1,
+            )
+        )
+
+        assert result["library_path"] == "None"
+
     def test_no_lyrics_raw_text_or_filepath_key_in_result(self):
         """
         DownloadResult.to_dict() kennt kein "lyrics"/"filepath"-Feld -
@@ -308,6 +334,30 @@ class TestProcessSingleDownloadCacheMiss:
         assert result["title"] == "Clean Title"
         assert result["year"] == 2021  # hier IM GEGENSATZ zum Playlist-Pfad
         # aus enhanced_result uebernommen
+
+    def test_none_library_path_stays_none_not_stringified(self, tmp_path):
+        """
+        Gegenstueck zu test_none_library_path_is_stringified_to_literal_none
+        im Playlist-Pfad: der Single-Pfad prueft library_path VOR dem
+        str()-Aufruf - None bleibt None, wird NICHT zum String "None".
+        """
+        metadata_result = make_metadata_result(library_path=None)
+        enhanced_processor = make_enhanced_processor_for_single(
+            tmp_path, metadata_result
+        )
+
+        result = run_async(
+            _process_single_download(
+                url="https://youtube.com/watch?v=abc",
+                video_info={"title": "T"},
+                ydl_opts={},
+                enhanced_processor=enhanced_processor,
+                file_utils=Mock(),
+                filename_fixer=Mock(),
+            )
+        )
+
+        assert result["library_path"] is None
 
     def test_track_number_and_playlist_album_are_always_default(self, tmp_path):
         """

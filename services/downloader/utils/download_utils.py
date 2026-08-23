@@ -53,6 +53,11 @@ from services.downloader.utils.enhanced_metadata_processor import (
 )
 from services.downloader.utils.metadata.models import MetadataResult
 from services.downloader.utils.errors import DownloadError
+from services.downloader.utils.metadata_result_translator import (
+    build_playlist_track_result,
+    build_single_track_result,
+    call_process_single_track,
+)
 from services.downloader.utils.file_utils import FileUtils
 from services.downloader.utils.progress_tracker import ProgressTracker
 from services.downloader.playlist_processor import PlaylistProcessor
@@ -702,14 +707,13 @@ async def _process_track_metadata(
     )
 
     try:
-        enhanced_result: MetadataResult = (
-            await enhanced_processor.enhanced_metadata_processor.process_single_track(
-                track_metadata=track_metadata,
-                file_utils=file_utils,
-                filename_fixer=filename_fixer,
-                playlist_metadata=playlist_context,
-                dominant_artist=dominant_artist,
-            )
+        enhanced_result: MetadataResult = await call_process_single_track(
+            enhanced_processor.enhanced_metadata_processor,
+            track_metadata=track_metadata,
+            file_utils=file_utils,
+            filename_fixer=filename_fixer,
+            playlist_metadata=playlist_context,
+            dominant_artist=dominant_artist,
         )
 
         # AUTOLEARN-001: externer, redundanter Auto-Learning-Aufruf entfernt.
@@ -729,28 +733,16 @@ async def _process_track_metadata(
                 f"   Genre-Src   : {enhanced_result.genre_source}\n"
                 f"   Library     : {enhanced_result.library_path}"
             )
-            dl_result = DownloadResult(
-                success=True,
-                title=enhanced_result.title,
-                artist=enhanced_result.artist,
-                album=enhanced_result.album,
-                album_artist=enhanced_result.album_artist,
-                year=playlist_year,
-                genres=enhanced_result.genres,
-                genre_source=enhanced_result.genre_source,
-                library_path=str(enhanced_result.library_path),
-                artist_source=enhanced_result.artist_source,
-                title_cleaned=enhanced_result.title_cleaned,
-                playlist_album=album_name,
-                track_number=track_idx,
-                lyrics_available=bool(enhanced_result.lyrics),
-                lyrics_source=enhanced_result.lyrics_source,
-                cover_embedded=enhanced_result.cover_embedded,
-                is_duplicate=enhanced_result.is_duplicate,
-                from_cache=enhanced_result.from_cache,
+            # ARCH-004/P-3: gemeinsame Integrationsschicht statt inline
+            # dupliziertem DownloadResult(...)-Aufbau - siehe
+            # services/downloader/utils/metadata_result_translator.py
+            return build_playlist_track_result(
+                enhanced_result,
+                playlist_year=playlist_year,
+                album_name=album_name,
+                track_idx=track_idx,
                 enhanced_processor_ref=enhanced_processor,
             )
-            return dl_result.to_dict()
         else:
             err = enhanced_result.error or "Metadatenverarbeitung fehlgeschlagen"
             logger.error(
@@ -854,14 +846,13 @@ async def _process_single_download(
             f"   Jahr     : {track_metadata.get('release_year', '?')}"
         )
 
-        enhanced_result: MetadataResult = (
-            await enhanced_processor.enhanced_metadata_processor.process_single_track(
-                track_metadata,
-                file_utils,
-                filename_fixer,
-                playlist_metadata=None,
-                dominant_artist=None,
-            )
+        enhanced_result: MetadataResult = await call_process_single_track(
+            enhanced_processor.enhanced_metadata_processor,
+            track_metadata=track_metadata,
+            file_utils=file_utils,
+            filename_fixer=filename_fixer,
+            playlist_metadata=None,
+            dominant_artist=None,
         )
 
         if enhanced_result is None:
@@ -916,27 +907,13 @@ async def _process_single_download(
             f"   Flags      : {flags or '–'}"
         )
 
-        dl_result = DownloadResult(
-            success=True,
-            title=enhanced_result.title,
-            artist=enhanced_result.artist,
-            album=enhanced_result.album,
-            album_artist=enhanced_result.album_artist,
-            year=enhanced_result.year,
-            genres=enhanced_result.genres,
-            genre_source=enhanced_result.genre_source,
-            library_path=str(enhanced_result.library_path)
-            if enhanced_result.library_path
-            else None,
-            artist_source=enhanced_result.artist_source,
-            title_cleaned=enhanced_result.title_cleaned,
-            lyrics_available=bool(enhanced_result.lyrics),
-            lyrics_source=enhanced_result.lyrics_source,
-            cover_embedded=enhanced_result.cover_embedded,
-            from_cache=enhanced_result.from_cache,
+        # ARCH-004/P-3: gemeinsame Integrationsschicht statt inline
+        # dupliziertem DownloadResult(...)-Aufbau - siehe
+        # services/downloader/utils/metadata_result_translator.py
+        return build_single_track_result(
+            enhanced_result,
             enhanced_processor_ref=enhanced_processor,
         )
-        return dl_result.to_dict()
 
     except Exception as e:
         enhanced_processor.session_stats["failed_downloads"] += 1

@@ -201,6 +201,7 @@ konsistent** überein, auch die beiden YouTube-Stellen nicht:
 | `filepath` | **echt fehlend** — `DownloadResult` hat kein `filepath`-Feld | **echt fehlend** — dito | ✓ gesetzt (wichtig für den „Already-Processed"-Vertrag, s. Abschnitt 3.2) |
 | `enhanced_processor_ref` | ✓ gesetzt (für spätere `get_processing_statistics()`-Abfrage) | ✓ gesetzt | **echt fehlend** — Spotify-Ergebnisse tragen diese Referenz nie (weder als Schlüssel noch als Default) |
 | Rückgabetyp | `DownloadResult(...).to_dict()` (fester Felder-Satz, unbekannte Felder werden NICHT erhalten) | `DownloadResult(...).to_dict()` (dito) | freies `{**result, "title": ..., ...}`-Dict (beliebige Zusatzfelder aus `result`, z. B. `is_podcast`/`podcast_name`/`source`, bleiben erhalten) |
+| `library_path`-Stringifizierung bei `None` | **unbedingt** `str(enhanced_result.library_path)` — bei `None` entsteht der literale String `"None"`, nicht der Wert `None` (verifiziert per Regressionstest) | bedingt: `str(...) if enhanced_result.library_path else None` — `None` bleibt `None` | bedingt: `str(...) if metadata_result.library_path else result.get("library_path")` |
 
 *(Hinweis: „Dataclass-Default" bedeutet: der Schlüssel ist im Ergebnis-Dict
 vorhanden, weil `DownloadResult` dafür einen Default-Wert definiert —
@@ -249,11 +250,58 @@ aus dem Ergebnis-Dict, und was passiert, wenn das Feld fehlt statt
 ## 7. Zurückgestellte Folgeentscheidungen (nicht Teil dieser Extraktion)
 
 - **Already-Processed-Vertrag** (Abschnitt 3, Risiko 2) — Option C aus
-  Abschnitt 4.
-- **`is_duplicate` fehlt im YT-Single-Ergebnis-Dict** — möglicher Bug,
-  nicht verifiziert, nicht behoben.
+  Abschnitt 4. In Schritt 3 bewusst NICHT angetastet: Schritte A–F von
+  `_process_single_download_result()` (inkl. des Already-Processed-Schutzes
+  in Schritt B) blieben unverändert, nur Schritt G (Aufruf +
+  Ergebnis-Übersetzung) wurde durch die neue Integrationsschicht ersetzt.
+- **`is_duplicate` wird im YT-Single-Pfad nie aus `enhanced_result`
+  übernommen** (nur Dataclass-Default `False`) — möglicher Bug, nicht
+  verifiziert, nicht behoben (jetzt explizit in
+  `build_single_track_result()` dokumentiert und regressionsgetestet).
 - **`enhanced_processor_ref` fehlt im Spotify-Ergebnis-Dict** — möglicher
   Bug (könnte `get_processing_statistics()`-Aufrufe für Spotify-Downloads
   beeinträchtigen), nicht verifiziert, nicht behoben.
+- **`library_path` wird im YT-Playlist-Pfad bei `None` zum String `"None"`**
+  (statt `None` zu bleiben, wie in den beiden anderen Pfaden) — möglicher
+  Bug, nicht verifiziert, nicht behoben (jetzt explizit in
+  `build_playlist_track_result()` dokumentiert und regressionsgetestet).
 - **Zwei unabhängige Podcast-Erkennungsmechanismen** (Abschnitt 3,
   Risiko 4).
+
+---
+
+## 8. Umsetzung Option B — Schritt 3: gemeinsame Integrationsschicht
+
+Neue Datei `services/downloader/utils/metadata_result_translator.py` mit
+vier Funktionen:
+
+- `call_process_single_track(...)` — der `process_single_track()`-Aufruf
+  selbst, an allen drei Stellen 1:1 identisch.
+- `build_playlist_track_result(...)` — reproduziert exakt
+  `_process_track_metadata()`s (YT-Playlist) `DownloadResult`-Aufbau,
+  inkl. `year`-Override, `track_number`=Schleifenindex,
+  `playlist_album`, unbedingter `library_path`-Stringifizierung.
+- `build_single_track_result(...)` — reproduziert exakt
+  `_process_single_download()`s (YT-Single) `DownloadResult`-Aufbau, inkl.
+  der Dataclass-Defaults für `track_number`/`playlist_album`/
+  `is_duplicate` und bedingter `library_path`-Stringifizierung.
+- `merge_metadata_result_into_dict(...)` — reproduziert exakt
+  `_process_single_download_result()`s (Spotify) freien
+  `{**result, ...}`-Dict-Aufbau, inkl. `lyrics`/`filepath`-Erhalt und
+  fehlendem `enhanced_processor_ref`/`is_duplicate`.
+
+**Eingebaut in alle drei Aufrufstellen**, jeweils NUR der
+Aufruf-plus-Übersetzungs-Teil ersetzt — `track_metadata`-Aufbau (Rohdaten
+→ track_metadata) sowie alle podcast-/playlist-spezifischen
+Vorbereitungsschritte (A–F bei Spotify) bleiben unverändert je Aufrufer
+bestehen, wie in Abschnitt 6 begründet. `EnhancedMetadataProcessor` selbst
+wurde nicht verändert.
+
+**Verifikation:** 16 neue, isolierte Tests für die Integrationsschicht
+selbst (`tests/test_metadata_result_translator.py`) plus die 31 aus
+Schritt 2 bereits bestehenden Regressionstests für die drei
+Aufrufstellen liefen nach dem Einbau unverändert grün — kein einziger
+Test musste angepasst werden. YouTube- und Spotify-relevante Tests wurden
+zusätzlich separat ausgeführt (136 bzw. 39 bestanden). Voller
+Regressionslauf: 1007 bestanden (vorher 989), unverändert 15
+vorbestehende Fehler.
