@@ -249,24 +249,46 @@ aus dem Ergebnis-Dict, und was passiert, wenn das Feld fehlt statt
 
 ## 7. Zurückgestellte Folgeentscheidungen (nicht Teil dieser Extraktion)
 
+Bewertet am 2026-08-23 per Entscheidungsbericht FIX NOW / DEFER, jeweils
+anhand tatsächlicher Downstream-Konsumenten (nicht nur Vermutung):
+
 - **Already-Processed-Vertrag** (Abschnitt 3, Risiko 2) — Option C aus
-  Abschnitt 4. In Schritt 3 bewusst NICHT angetastet: Schritte A–F von
-  `_process_single_download_result()` (inkl. des Already-Processed-Schutzes
-  in Schritt B) blieben unverändert, nur Schritt G (Aufruf +
-  Ergebnis-Übersetzung) wurde durch die neue Integrationsschicht ersetzt.
+  Abschnitt 4. **DEFER**: struktureller, impliziter Vertrag ohne isolierte
+  Codestelle; eine Härtung wäre ein eigenständiges Refactoring mit eigenem
+  Risiko, kein kleiner Fix. In Schritt 3 bewusst NICHT angetastet: Schritte
+  A–F von `_process_single_download_result()` (inkl. des
+  Already-Processed-Schutzes in Schritt B) blieben unverändert, nur
+  Schritt G (Aufruf + Ergebnis-Übersetzung) wurde durch die neue
+  Integrationsschicht ersetzt.
 - **`is_duplicate` wird im YT-Single-Pfad nie aus `enhanced_result`
-  übernommen** (nur Dataclass-Default `False`) — möglicher Bug, nicht
-  verifiziert, nicht behoben (jetzt explizit in
-  `build_single_track_result()` dokumentiert und regressionsgetestet).
-- **`enhanced_processor_ref` fehlt im Spotify-Ergebnis-Dict** — möglicher
-  Bug (könnte `get_processing_statistics()`-Aufrufe für Spotify-Downloads
-  beeinträchtigen), nicht verifiziert, nicht behoben.
+  übernommen** — **FIX NOW, umgesetzt.** Fließt in den Telegram-Report
+  (`download_handler.py:173`) und zeigte bei jedem YT-Einzeldownload
+  fälschlich „kein Duplikat" an. `build_single_track_result()` übernimmt
+  jetzt den echten Wert; Regressionstests aktualisiert.
+- **`enhanced_processor_ref` fehlt im Spotify-Ergebnis-Dict** — **DEFER**:
+  ist nur Fallback-Quelle 2 von 3 für `get_processing_statistics()`
+  (`download_result_reporter.py:72`), mit `try/except` abgesichert, fällt
+  sonst auf Quelle 3 (Track-Flag-Aggregation) zurück — kein Crash, nur
+  potenziell ungenauere Statistik.
 - **`library_path` wird im YT-Playlist-Pfad bei `None` zum String `"None"`**
-  (statt `None` zu bleiben, wie in den beiden anderen Pfaden) — möglicher
-  Bug, nicht verifiziert, nicht behoben (jetzt explizit in
-  `build_playlist_track_result()` dokumentiert und regressionsgetestet).
+  — **FIX NOW, umgesetzt.** `"None"` ist als String truthy und konnte den
+  Already-Processed-Vertrag (`download_handler.py:400`) fälschlich
+  auslösen sowie in `cache_manager.py:82-83` einen ungültigen
+  `Path("None")` erzeugen. `build_playlist_track_result()` stringifiziert
+  jetzt bedingt wie der Single-Pfad; Regressionstests aktualisiert.
 - **Zwei unabhängige Podcast-Erkennungsmechanismen** (Abschnitt 3,
-  Risiko 4).
+  Risiko 4) — **DEFER**: YouTube-Seite erkennt Podcasts über
+  Kanal-Namens-Matching gegen `special_channel.yaml`
+  (`enhanced_metadata_processor.py`, `_is_podcast_channel`), Spotify-Seite
+  über den API-Content-Typ `meta.get("type") == "episode"`
+  (`spotify_downloader.py:640`) — konzeptionell grundverschiedene
+  Mechanismen. Eine Vereinheitlichung wäre eine Architekturentscheidung
+  (welcher Mechanismus führt, oder werden beide kombiniert?), kein
+  isolierter Fix. Divergenz weiterhin nicht verifiziert, ob sie in der
+  Praxis tatsächlich auftritt.
+
+Umsetzung siehe Commit `7ecc276` (fix(services): ARCH-004 P-3
+Folgeentscheidungen).
 
 ---
 
