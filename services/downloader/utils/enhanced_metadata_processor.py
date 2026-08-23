@@ -37,6 +37,9 @@ from services.downloader.utils.metadata.lyrics_processor import LyricsProcessor
 from services.downloader.utils.metadata.cover_processor import CoverProcessor
 from services.downloader.utils.metadata.auto_learn import AutoLearnManager
 from services.downloader.utils.metadata.tag_writer import TagWriter
+from services.downloader.utils.download_artifact_cleanup import (
+    cleanup_single_download_artifact,
+)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Hauptklasse
@@ -243,6 +246,12 @@ class EnhancedMetadataProcessor(SingletonMixin):
             )
 
         self.logger.info("🚀 1️⃣ Starte erweiterte Track-Metadatenverarbeitung...")
+
+        # ARCH-005 (Temp-Cleanup) Strategie C: vor Schritt 14 gebunden, damit
+        # der except-Block unten immer einen definierten Wert sieht (auch
+        # wenn der Fehler VOR Schritt 14 auftrat, wo original_path erst
+        # gesetzt wird).
+        original_path: Optional[Path] = None
 
         try:
             self.processing_stats.total_processed += 1
@@ -982,6 +991,16 @@ class EnhancedMetadataProcessor(SingletonMixin):
         except Exception as e:
             self.logger.error(
                 f"💥 Fehler bei Metadatenverarbeitung: {e}", exc_info=True
+            )
+            # ARCH-005 (Temp-Cleanup) Strategie C: raeumt die konkret
+            # gescheiterte Download-Datei gezielt auf, statt sie fuer immer
+            # in Config.DOWNLOAD_DIR liegen zu lassen (vorher: kein
+            # einziger Cleanup-Aufruf in der gesamten Pipeline). No-op,
+            # falls original_path None ist, bereits verschoben wurde
+            # (move_to_library() lief schon) oder ausserhalb DOWNLOAD_DIR
+            # liegt.
+            cleanup_single_download_artifact(
+                original_path, getattr(self.config, "DOWNLOAD_DIR", None), self.logger
             )
             return MetadataResult(
                 success=False,

@@ -26,6 +26,9 @@ from telegram.request import HTTPXRequest
 
 from config import Config, get_config
 from logger import setup_enhanced_logging, get_module_logger, EnhancedLogger
+from services.downloader.utils.download_artifact_cleanup import (
+    cleanup_download_artifacts,
+)
 
 # Import der RichMenuSystem Komponenten
 from handlers.menu.rich_menu_handler import RichMenuHandler
@@ -433,6 +436,16 @@ async def async_main():
     except Exception as e:
         print(f"❌ Konfigurationsfehler: {e}")
         sys.exit(1)
+
+    # ARCH-005 (Temp-Cleanup) Strategie A: konservativer Start-Sweep fuer
+    # verwaiste Download-Artefakte, bevor Updates verarbeitet werden - hier
+    # ist garantiert kein Download aktiv. Deckt Faelle ab, die Strategie C
+    # (Cleanup im Fehlerpfad von process_single_track()) nicht erreicht,
+    # z.B. ein gescheiterter yt-dlp-Download selbst.
+    try:
+        cleanup_download_artifacts(config.DOWNLOAD_DIR, logger)
+    except Exception as e:
+        logger.warning(f"⚠️ [CLEANUP] Start-Cleanup fehlgeschlagen (nicht kritisch): {e}")
 
     bot_runner = ExtendedBot(config)
     setup_signal_handlers(bot_runner)
