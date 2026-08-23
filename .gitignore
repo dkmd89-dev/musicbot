@@ -44,3 +44,6 @@ Thumbs.db
 .env
 *.key
 *.pem
+import/downloads/
+*.m4a
+*.info.json
