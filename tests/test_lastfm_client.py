@@ -1,5 +1,5 @@
 """
-Characterization-Tests fuer klassen/lastfm_client.py (LastFMClient).
+Characterization-Tests fuer services/clients/lastfm_client.py (LastFMClient).
 
 Last.fm ist Teil der Genre-Fallback-Kette (siehe GENRE-003-Eintrag in der
 Baseline: "MusicBrainz/Last.fm/Feature-Inferenz-Fallbacks") und hatte vor
@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from klassen.lastfm_client import LastFMClient
+from services.clients.lastfm_client import LastFMClient
 
 
 def _make_tag(name):
@@ -33,12 +33,12 @@ def _make_tag(name):
 
 
 def _make_client(genremapper=None, lastfm_timeout=10):
-    with patch("klassen.lastfm_client.pylast.LastFMNetwork") as mock_network_cls:
-        with patch("klassen.lastfm_client.Config") as mock_config_cls:
+    with patch("services.clients.lastfm_client.pylast.LastFMNetwork") as mock_network_cls:
+        with patch("services.clients.lastfm_client.Config") as mock_config_cls:
             mock_config_cls.return_value.LASTFM_API_KEY = "fake-key"
             mock_config_cls.return_value.LASTFM_API_SECRET = "fake-secret"
             mock_config_cls.LASTFM_TIMEOUT = lastfm_timeout
-            with patch("klassen.lastfm_client.GenreMapper", return_value=genremapper or MagicMock()):
+            with patch("services.clients.lastfm_client.GenreMapper", return_value=genremapper or MagicMock()):
                 client = LastFMClient()
     return client, mock_network_cls.return_value
 

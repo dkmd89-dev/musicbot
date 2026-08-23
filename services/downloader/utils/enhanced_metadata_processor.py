@@ -1013,7 +1013,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
             self._mb_client = MusicBrainzClient()
 
         if self._lfm_client is None:
-            from klassen.lastfm_client import LastFMClient
+            from services.clients.lastfm_client import LastFMClient
 
             self._lfm_client = LastFMClient()
 
