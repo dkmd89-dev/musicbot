@@ -1,4 +1,4 @@
-# klassen/lastfm_client.py
+# services/clients/lastfm_client.py
 
 import asyncio
 import pylast
