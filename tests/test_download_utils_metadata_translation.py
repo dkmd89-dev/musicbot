@@ -1,0 +1,400 @@
+"""
+Regressionstests fuer die Rohdaten->track_metadata->process_single_track()->
+Ergebnis-Dict-Uebersetzung in services/downloader/utils/download_utils.py
+(_process_track_metadata fuer YT-Playlist-Tracks, _process_single_download
+fuer YT-Single-Downloads) — vorher 0 Tests fuer diese beiden Funktionen.
+
+ARCH-004/P-3, Schritt 2: sichert das AKTUELLE Verhalten (inkl. der in
+docs/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md Abschnitt 6
+dokumentierten Feld-Inkonsistenzen, z.B. track_number/playlist_album/
+is_duplicate werden im Single-Download-Pfad NIE aus enhanced_result
+uebernommen, nur Dataclass-Defaults) VOR der geplanten Extraktion einer
+gemeinsamen Integrationsschicht (Option B) ab. Diese Tests duerfen sich
+nach der Extraktion NICHT aendern - genau das ist der Beweis fuer
+Verhaltensgleichheit.
+
+Regel 7: externe Abhaengigkeiten (EnhancedMetadataProcessor,
+DownloadExecutor, CacheManager) werden gemockt.
+"""
+
+import asyncio
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
+from services.downloader.utils.download_utils import (
+    _process_single_download,
+    _process_track_metadata,
+)
+from services.downloader.utils.metadata.models import MetadataResult
+
+
+def run_async(coro):
+    return asyncio.run(coro)
+
+
+def make_metadata_result(**overrides):
+    defaults = dict(
+        success=True,
+        title="Clean Title",
+        artist="Clean Artist",
+        album="Clean Album",
+        album_artist="Clean Album Artist",
+        year=2021,
+        track_number=7,
+        genres={"primary": "Hip Hop", "secondary": []},
+        lyrics="la la la",
+        lyrics_source="genius",
+        cover_embedded=True,
+        library_path="/library/Clean Artist/Clean Album/07 Clean Title.m4a",
+        artist_source="youtube_parsed",
+        genre_source="musicbrainz",
+        title_cleaned=True,
+        is_duplicate=True,
+        from_cache=False,
+        error=None,
+        filepath="/tmp/downloaded_raw.m4a",
+    )
+    defaults.update(overrides)
+    return MetadataResult(**defaults)
+
+
+def make_enhanced_processor(metadata_result=None):
+    processor = Mock()
+    processor.enhanced_metadata_processor = Mock()
+    processor.enhanced_metadata_processor.process_single_track = AsyncMock(
+        return_value=metadata_result or make_metadata_result()
+    )
+    processor.session_stats = {
+        "total_processed": 0,
+        "cache_hits": 0,
+        "failed_downloads": 0,
+    }
+    return processor
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# _process_track_metadata (YT-Playlist)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestProcessTrackMetadataPlaylist:
+    def test_success_maps_fields_from_metadata_result(self):
+        metadata_result = make_metadata_result()
+        enhanced_processor = make_enhanced_processor(metadata_result)
+
+        result = run_async(
+            _process_track_metadata(
+                track_info={"title": "Raw Title", "uploader": "Raw Uploader"},
+                downloaded_file="/tmp/downloaded_raw.m4a",
+                enhanced_processor=enhanced_processor,
+                file_utils=Mock(),
+                filename_fixer=Mock(),
+                album_name="Playlist Album",
+                dominant_artist="Dominant Artist",
+                playlist_year=1999,
+                track_idx=3,
+                playlist_channel=None,
+            )
+        )
+
+        assert result["success"] is True
+        assert result["title"] == "Clean Title"
+        assert result["artist"] == "Clean Artist"
+        assert result["genre_source"] == "musicbrainz"
+        assert result["lyrics_available"] is True
+        assert result["is_duplicate"] is True  # aus enhanced_result uebernommen
+
+    def test_year_uses_playlist_year_not_metadata_result_year(self):
+        """
+        Dokumentiertes, bewusstes Verhalten (ARCH-004 Abschnitt 6): der
+        Playlist-Pfad ignoriert enhanced_result.year zugunsten des vorab
+        bestimmten, einheitlichen playlist_year.
+        """
+        metadata_result = make_metadata_result(year=2021)
+        enhanced_processor = make_enhanced_processor(metadata_result)
+
+        result = run_async(
+            _process_track_metadata(
+                track_info={"title": "T"},
+                downloaded_file="/tmp/x.m4a",
+                enhanced_processor=enhanced_processor,
+                file_utils=Mock(),
+                filename_fixer=Mock(),
+                album_name="Album",
+                dominant_artist=None,
+                playlist_year=1985,
+                track_idx=1,
+            )
+        )
+
+        assert result["year"] == 1985
+
+    def test_track_number_uses_loop_index_not_metadata_result(self):
+        """
+        Dokumentiertes, bewusstes Verhalten: track_number kommt aus dem
+        Schleifen-Index track_idx, nicht aus enhanced_result.track_number.
+        """
+        metadata_result = make_metadata_result(track_number=999)
+        enhanced_processor = make_enhanced_processor(metadata_result)
+
+        result = run_async(
+            _process_track_metadata(
+                track_info={"title": "T"},
+                downloaded_file="/tmp/x.m4a",
+                enhanced_processor=enhanced_processor,
+                file_utils=Mock(),
+                filename_fixer=Mock(),
+                album_name="Album",
+                dominant_artist=None,
+                playlist_year=2000,
+                track_idx=5,
+            )
+        )
+
+        assert result["track_number"] == 5
+
+    def test_playlist_album_is_set(self):
+        enhanced_processor = make_enhanced_processor()
+
+        result = run_async(
+            _process_track_metadata(
+                track_info={"title": "T"},
+                downloaded_file="/tmp/x.m4a",
+                enhanced_processor=enhanced_processor,
+                file_utils=Mock(),
+                filename_fixer=Mock(),
+                album_name="My Playlist",
+                dominant_artist=None,
+                playlist_year=2000,
+                track_idx=1,
+            )
+        )
+
+        assert result["playlist_album"] == "My Playlist"
+
+    def test_no_lyrics_raw_text_or_filepath_key_in_result(self):
+        """
+        DownloadResult.to_dict() kennt kein "lyrics"/"filepath"-Feld -
+        echt fehlend im Ergebnis-Dict (ARCH-004 Abschnitt 6).
+        """
+        enhanced_processor = make_enhanced_processor()
+
+        result = run_async(
+            _process_track_metadata(
+                track_info={"title": "T"},
+                downloaded_file="/tmp/x.m4a",
+                enhanced_processor=enhanced_processor,
+                file_utils=Mock(),
+                filename_fixer=Mock(),
+                album_name="Album",
+                dominant_artist=None,
+                playlist_year=2000,
+                track_idx=1,
+            )
+        )
+
+        assert "lyrics" not in result
+        assert "filepath" not in result
+
+    def test_metadata_failure_returns_error_result(self):
+        failed_result = make_metadata_result(success=False, error="Boom")
+        enhanced_processor = make_enhanced_processor(failed_result)
+
+        result = run_async(
+            _process_track_metadata(
+                track_info={"title": "Original Title"},
+                downloaded_file="/tmp/x.m4a",
+                enhanced_processor=enhanced_processor,
+                file_utils=Mock(),
+                filename_fixer=Mock(),
+                album_name="Album",
+                dominant_artist=None,
+                playlist_year=2000,
+                track_idx=1,
+            )
+        )
+
+        assert result["success"] is False
+        assert result["error"] == "Boom"
+        assert result["title"] == "Original Title"
+
+    def test_exception_during_processing_returns_error_result(self):
+        enhanced_processor = make_enhanced_processor()
+        enhanced_processor.enhanced_metadata_processor.process_single_track = AsyncMock(
+            side_effect=RuntimeError("kaputt")
+        )
+
+        result = run_async(
+            _process_track_metadata(
+                track_info={"title": "Original Title"},
+                downloaded_file="/tmp/x.m4a",
+                enhanced_processor=enhanced_processor,
+                file_utils=Mock(),
+                filename_fixer=Mock(),
+                album_name="Album",
+                dominant_artist=None,
+                playlist_year=2000,
+                track_idx=1,
+            )
+        )
+
+        assert result["success"] is False
+        assert "kaputt" in result["error"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# _process_single_download (YT-Single)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def make_enhanced_processor_for_single(tmp_path, metadata_result=None, cached=None):
+    processor = make_enhanced_processor(metadata_result)
+    processor.cache_manager = Mock()
+    processor.cache_manager.lookup_single_track = Mock(return_value=cached)
+
+    downloaded_file = tmp_path / "song.m4a"
+    downloaded_file.write_bytes(b"x" * 100)
+
+    processor.download_executor = Mock()
+    processor.download_executor.extract_info_async = AsyncMock(
+        return_value={"id": "abc123"}
+    )
+    processor.download_executor.find_downloaded_file = Mock(
+        return_value=str(downloaded_file)
+    )
+    return processor
+
+
+class TestProcessSingleDownloadCacheHit:
+    def test_cache_hit_returns_cached_result_without_download(self, tmp_path):
+        cached = {"success": True, "title": "Cached Title", "artist": "Cached Artist"}
+        enhanced_processor = make_enhanced_processor_for_single(tmp_path, cached=cached)
+
+        result = run_async(
+            _process_single_download(
+                url="https://youtube.com/watch?v=abc",
+                video_info={"title": "Cached Title", "artist": "Cached Artist"},
+                ydl_opts={},
+                enhanced_processor=enhanced_processor,
+                file_utils=Mock(),
+                filename_fixer=Mock(),
+            )
+        )
+
+        assert result["title"] == "Cached Title"
+        enhanced_processor.download_executor.extract_info_async.assert_not_called()
+
+
+class TestProcessSingleDownloadCacheMiss:
+    def test_success_maps_fields_from_metadata_result(self, tmp_path):
+        metadata_result = make_metadata_result()
+        enhanced_processor = make_enhanced_processor_for_single(
+            tmp_path, metadata_result
+        )
+
+        result = run_async(
+            _process_single_download(
+                url="https://youtube.com/watch?v=abc",
+                video_info={"title": "Raw Title", "uploader": "Raw Uploader"},
+                ydl_opts={},
+                enhanced_processor=enhanced_processor,
+                file_utils=Mock(),
+                filename_fixer=Mock(),
+            )
+        )
+
+        assert result["success"] is True
+        assert result["title"] == "Clean Title"
+        assert result["year"] == 2021  # hier IM GEGENSATZ zum Playlist-Pfad
+        # aus enhanced_result uebernommen
+
+    def test_track_number_and_playlist_album_are_always_default(self, tmp_path):
+        """
+        Dokumentierte Inkonsistenz (ARCH-004 Abschnitt 6): track_number/
+        playlist_album werden im Single-Pfad NIE aus enhanced_result
+        uebernommen - nur die DownloadResult-Dataclass-Defaults.
+        """
+        metadata_result = make_metadata_result(track_number=42)
+        enhanced_processor = make_enhanced_processor_for_single(
+            tmp_path, metadata_result
+        )
+
+        result = run_async(
+            _process_single_download(
+                url="https://youtube.com/watch?v=abc",
+                video_info={"title": "T"},
+                ydl_opts={},
+                enhanced_processor=enhanced_processor,
+                file_utils=Mock(),
+                filename_fixer=Mock(),
+            )
+        )
+
+        assert result["track_number"] is None
+        assert result["playlist_album"] is None
+
+    def test_is_duplicate_is_always_false_regardless_of_metadata_result(
+        self, tmp_path
+    ):
+        """
+        Dokumentierte Inkonsistenz (ARCH-004 Abschnitt 6): is_duplicate wird
+        im Single-Pfad NIE aus enhanced_result.is_duplicate uebernommen.
+        """
+        metadata_result = make_metadata_result(is_duplicate=True)
+        enhanced_processor = make_enhanced_processor_for_single(
+            tmp_path, metadata_result
+        )
+
+        result = run_async(
+            _process_single_download(
+                url="https://youtube.com/watch?v=abc",
+                video_info={"title": "T"},
+                ydl_opts={},
+                enhanced_processor=enhanced_processor,
+                file_utils=Mock(),
+                filename_fixer=Mock(),
+            )
+        )
+
+        assert result["is_duplicate"] is False
+
+    def test_metadata_failure_raises_download_error(self, tmp_path):
+        from services.downloader.utils.errors import DownloadError
+
+        failed_result = make_metadata_result(success=False, error="Boom")
+        enhanced_processor = make_enhanced_processor_for_single(
+            tmp_path, failed_result
+        )
+
+        with pytest.raises(DownloadError):
+            run_async(
+                _process_single_download(
+                    url="https://youtube.com/watch?v=abc",
+                    video_info={"title": "T"},
+                    ydl_opts={},
+                    enhanced_processor=enhanced_processor,
+                    file_utils=Mock(),
+                    filename_fixer=Mock(),
+                )
+            )
+
+    def test_download_file_not_found_raises_download_error(self, tmp_path):
+        from services.downloader.utils.errors import DownloadError
+
+        enhanced_processor = make_enhanced_processor_for_single(tmp_path)
+        enhanced_processor.download_executor.find_downloaded_file = Mock(
+            return_value=None
+        )
+
+        with pytest.raises(DownloadError):
+            run_async(
+                _process_single_download(
+                    url="https://youtube.com/watch?v=abc",
+                    video_info={"title": "T"},
+                    ydl_opts={},
+                    enhanced_processor=enhanced_processor,
+                    file_utils=Mock(),
+                    filename_fixer=Mock(),
+                )
+            )

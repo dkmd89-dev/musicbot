@@ -175,3 +175,85 @@ dieser Bedingungen auslösen:
 
 Entsprechend: **keine Umsetzung ohne explizite Nutzerentscheidung**, wie im
 Auftrag vorgesehen.
+
+---
+
+## 6. Umsetzung Option B — Schritt 1: exakte Feld-für-Feld-Charakterisierung
+
+Nutzer-Entscheidung: Option B. Vor jeder Änderung hier die drei (nicht nur
+zwei!) bestehenden Übersetzungsstellen exakt verglichen.
+
+**Wichtiger Fund, der über die Analyse in Abschnitt 1–5 hinausgeht:** Es
+gibt nicht nur eine YouTube- und eine Spotify-Übersetzungsstelle, sondern
+**drei** unabhängige Stellen, die alle `MetadataResult` → flaches
+Ergebnis-Dict übersetzen — und sie stimmen bereits **untereinander nicht
+konsistent** überein, auch die beiden YouTube-Stellen nicht:
+
+| `MetadataResult`-Feld | `download_utils.py::_process_track_metadata()` (YT-Playlist) | `download_utils.py::_process_single_download()` (YT-Single) | `download_handler.py::_process_single_download_result()` (Spotify) |
+|---|---|---|---|
+| `title`/`artist`/`album`/`album_artist` | ✓ direkt übernommen | ✓ direkt übernommen | ✓ direkt übernommen (mit `or result.get(...)`-Fallback) |
+| `year` | **NICHT** aus `enhanced_result.year` — nutzt stattdessen den vorab bestimmten `playlist_year` (bewusst: einheitliches Playlist-Jahr) | ✓ aus `enhanced_result.year` | ✓ aus `enhanced_result.year` (mit Fallback auf `result.get("year")`) |
+| `track_number` | **NICHT** aus `enhanced_result` — nutzt den Schleifen-Index `track_idx` | Dataclass-Default `None` — `DownloadResult(...)`-Aufruf setzt es nie explizit, `to_dict()` liefert also immer `"track_number": None`, nie den echten Wert aus `enhanced_result.track_number` | ✓ aus `enhanced_result.track_number` |
+| `playlist_album` | ✓ gesetzt (`= album_name`) | Dataclass-Default `None` — immer `"playlist_album": None` im Ergebnis-Dict | **echt fehlend** (Spotify-Dict ist kein `DownloadResult`, der Key existiert nur wenn `result` ihn vorher schon hatte — hat er nie) |
+| `is_duplicate` | ✓ aus `enhanced_result.is_duplicate` | Dataclass-Default `False` — immer `"is_duplicate": False` im Ergebnis-Dict, nie der echte Wert aus `enhanced_result.is_duplicate` | **echt fehlend** — wird im Rückgabe-Dict nie gesetzt (weder aus `metadata_result` noch als Default) und war auch nie Teil des rohen Spotify-`track_info`-Dicts |
+| `from_cache` | ✓ aus `enhanced_result.from_cache` | ✓ aus `enhanced_result.from_cache` | ✓ aus `metadata_result.from_cache` (verifiziert, Zeile 538 — **korrigiert gegenüber einer früheren, fehlerhaften Fassung dieser Tabelle**) |
+| `lyrics` (Rohtext) | **echt fehlend** — `DownloadResult` kennt nur `lyrics_available` | **echt fehlend** — dito | ✓ gesetzt (Spotify-Ergebnis-Dict ist kein `DownloadResult`, sondern ein freies `{**result, ...}`-Dict, das den Rohtext behält) |
+| `filepath` | **echt fehlend** — `DownloadResult` hat kein `filepath`-Feld | **echt fehlend** — dito | ✓ gesetzt (wichtig für den „Already-Processed"-Vertrag, s. Abschnitt 3.2) |
+| `enhanced_processor_ref` | ✓ gesetzt (für spätere `get_processing_statistics()`-Abfrage) | ✓ gesetzt | **echt fehlend** — Spotify-Ergebnisse tragen diese Referenz nie (weder als Schlüssel noch als Default) |
+| Rückgabetyp | `DownloadResult(...).to_dict()` (fester Felder-Satz, unbekannte Felder werden NICHT erhalten) | `DownloadResult(...).to_dict()` (dito) | freies `{**result, "title": ..., ...}`-Dict (beliebige Zusatzfelder aus `result`, z. B. `is_podcast`/`podcast_name`/`source`, bleiben erhalten) |
+
+*(Hinweis: „Dataclass-Default" bedeutet: der Schlüssel ist im Ergebnis-Dict
+vorhanden, weil `DownloadResult` dafür einen Default-Wert definiert —
+NICHT weil der echte Wert aus `enhanced_result` übernommen wurde. „echt
+fehlend" bedeutet: der Schlüssel taucht im Ergebnis-Dict überhaupt nicht
+auf.)*
+
+**Einordnung:** Einige Unterschiede sind eindeutig **bewusstes Verhalten**
+(z. B. `year`/`playlist_album`/`track_number` im Playlist-Fall — eine
+Playlist hat ein einheitliches Jahr und eine feste Track-Reihenfolge, das
+ist fachlich korrekt so gewollt). Andere wirken wie **unbeabsichtigte
+Inkonsistenzen**, die durch die getrennte Pflege entstanden sind — allen
+voran: `is_duplicate`/`track_number`/`playlist_album` werden im
+Single-Track-YouTube-Pfad nie aus `enhanced_result` übernommen (nur
+Dataclass-Defaults), und `enhanced_processor_ref`/`is_duplicate` fehlen im
+Spotify-Pfad komplett. Ob das echte Bugs mit sichtbarer Auswirkung sind,
+wurde hier **nicht geprüft** — das würde eine eigene Ursachenanalyse
+erfordern (welche Konsumenten lesen `is_duplicate`/`enhanced_processor_ref`
+aus dem Ergebnis-Dict, und was passiert, wenn das Feld fehlt statt
+`False`/`None` zu sein?).
+
+**Konsequenz für die Umsetzung (bindend für Schritt 3–5):**
+
+1. Die gemeinsame Integrationsschicht wird **so gebaut, dass alle drei
+   Aufrufstellen ihr jeweiliges aktuelles Ergebnis exakt reproduzieren** —
+   über explizite Parameter für die oben identifizierten
+   Divergenzpunkte (`year`-Override, `track_number`-Quelle,
+   `playlist_album`, `is_duplicate`, `from_cache`, `enhanced_processor_ref`,
+   Rückgabetyp `DownloadResult` vs. freies Dict). Keine der gefundenen
+   Inkonsistenzen wird im Rahmen dieser Extraktion angeglichen oder
+   behoben.
+2. Die gefundenen, möglicherweise unbeabsichtigten Inkonsistenzen
+   (`is_duplicate` im YT-Single-Pfad, `enhanced_processor_ref` im
+   Spotify-Pfad) werden **separat als Folgeentscheidung dokumentiert**
+   (Abschnitt 7) statt stillschweigend geändert — analog zum Umgang mit
+   dem „Already-Processed"-Vertrag aus Abschnitt 3.2.
+3. „Rohdaten → `track_metadata`" bleibt bewusst **je Aufrufer** bestehen
+   (YT-Playlist, YT-Single und Spotify haben strukturell verschiedene
+   Rohdaten-Schemas — das zusammenzuführen wäre keine Deduplizierung,
+   sondern eine künstliche Abstraktion ohne Mehrwert). Geteilt wird der
+   Teil, der tatsächlich identisch ist: der `process_single_track()`-Aufruf
+   selbst plus die `MetadataResult`→Ergebnis-Übersetzung.
+
+---
+
+## 7. Zurückgestellte Folgeentscheidungen (nicht Teil dieser Extraktion)
+
+- **Already-Processed-Vertrag** (Abschnitt 3, Risiko 2) — Option C aus
+  Abschnitt 4.
+- **`is_duplicate` fehlt im YT-Single-Ergebnis-Dict** — möglicher Bug,
+  nicht verifiziert, nicht behoben.
+- **`enhanced_processor_ref` fehlt im Spotify-Ergebnis-Dict** — möglicher
+  Bug (könnte `get_processing_statistics()`-Aufrufe für Spotify-Downloads
+  beeinträchtigen), nicht verifiziert, nicht behoben.
+- **Zwei unabhängige Podcast-Erkennungsmechanismen** (Abschnitt 3,
+  Risiko 4).
