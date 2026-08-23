@@ -129,7 +129,6 @@ class MetadataEnricher(Protocol):
     async def process_track(
         self,
         track_metadata: Dict[str, Any],
-        file_utils: Any,
         filename_fixer: Any,
         playlist_metadata: Optional[Dict[str, Any]] = None,
         dominant_artist: Optional[str] = None,

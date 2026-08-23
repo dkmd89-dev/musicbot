@@ -14,9 +14,12 @@ Extraktion einer gemeinsamen Integrationsschicht (Option B) ab.
 DownloadHandler hat einen schweren Konstruktor (Update-Objekt, Config,
 DuplicateHandler, ...) - object.__new__() umgeht ihn bewusst, da
 _process_single_download_result() nur self.logger/
-self.enhanced_metadata_processor/self.file_utils/self.filename_fixer
-tatsaechlich verwendet (etabliertes Muster dieser Session, siehe
+self.enhanced_metadata_processor/self.filename_fixer tatsaechlich
+verwendet (etabliertes Muster dieser Session, siehe
 test_progress_tracker.py/BUG-009).
+
+Update 2026-08-24 (ARCH-003 P-1): self.file_utils entfernt (FileUtils war
+totes Gewicht, siehe docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md).
 """
 
 import asyncio
@@ -65,7 +68,6 @@ def make_handler(metadata_result=None):
     handler.enhanced_metadata_processor.process_single_track = AsyncMock(
         return_value=metadata_result or make_metadata_result()
     )
-    handler.file_utils = Mock()
     handler.filename_fixer = Mock()
     return handler
 

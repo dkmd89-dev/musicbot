@@ -6,7 +6,6 @@ from services.downloader.utils.download_utils import (
 )
 from config import Config
 from cookie_handler import CookieHandler
-from services.downloader.utils.file_utils import FileUtils
 from utils.filenamefixer import FilenameFixerTool
 from services.downloader.utils.download_utils import EnhancedDownloadProcessor
 
@@ -17,7 +16,6 @@ class YoutubeDownloader:
         update,
         config: Config,
         cookie_handler: CookieHandler,
-        file_utils=None,  # Optional parameter hinzufügen
         # ... andere Parameter
     ):
         self.update = update
@@ -26,11 +24,6 @@ class YoutubeDownloader:
 
         self._logger_factory = get_module_logger
         self.logger = self._logger_factory("YoutubeDownloader")
-
-        # Externes file_utils verwenden oder eigenes erstellen
-        self.file_utils = (
-            file_utils if file_utils else FileUtils(logger_factory=self._logger_factory)
-        )
 
         self.enhanced_download_processor = EnhancedDownloadProcessor(
             config=self.config,

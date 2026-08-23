@@ -19,7 +19,6 @@ from utils.filenamefixer import (
     get_special_channel_info,
     load_special_channels_merged,
 )
-from services.downloader.utils.file_utils import FileUtils
 from services.clients.genius_client import GeniusClient
 from utils.metadata_cache import MetadataCache
 from utils.singleton import SingletonMixin
@@ -229,7 +228,6 @@ class EnhancedMetadataProcessor(SingletonMixin):
     async def process_single_track(
         self,
         track_metadata,
-        file_utils,
         filename_fixer,
         playlist_metadata=None,
         dominant_artist=None,
