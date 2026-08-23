@@ -149,7 +149,6 @@ def test_happy_path_end_to_end(
     result = asyncio.run(
         processor.process_single_track(
             track_metadata=track_metadata,
-            file_utils=None,
             filename_fixer=filename_fixer,
         )
     )
@@ -215,7 +214,6 @@ def test_second_call_with_same_video_id_is_a_cache_hit(
     first_result = asyncio.run(
         processor.process_single_track(
             track_metadata=track_metadata,
-            file_utils=None,
             filename_fixer=filename_fixer,
         )
     )
@@ -229,7 +227,6 @@ def test_second_call_with_same_video_id_is_a_cache_hit(
     second_result = asyncio.run(
         processor.process_single_track(
             track_metadata=track_metadata,
-            file_utils=None,
             filename_fixer=filename_fixer,
         )
     )
@@ -259,7 +256,6 @@ def test_missing_filepath_returns_graceful_failure(processor, filename_fixer):
     result = asyncio.run(
         processor.process_single_track(
             track_metadata=track_metadata,
-            file_utils=None,
             filename_fixer=filename_fixer,
         )
     )

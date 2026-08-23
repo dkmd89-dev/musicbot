@@ -56,14 +56,12 @@ class TestCallProcessSingleTrack:
     def test_forwards_all_arguments(self):
         processor = Mock()
         processor.process_single_track = AsyncMock(return_value="RESULT")
-        file_utils = Mock()
         filename_fixer = Mock()
 
         result = run_async(
             call_process_single_track(
                 processor,
                 track_metadata={"title": "T"},
-                file_utils=file_utils,
                 filename_fixer=filename_fixer,
                 playlist_metadata={"album": "A"},
                 dominant_artist="Dom",
@@ -73,7 +71,6 @@ class TestCallProcessSingleTrack:
         assert result == "RESULT"
         processor.process_single_track.assert_awaited_once_with(
             track_metadata={"title": "T"},
-            file_utils=file_utils,
             filename_fixer=filename_fixer,
             playlist_metadata={"album": "A"},
             dominant_artist="Dom",

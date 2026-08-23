@@ -106,7 +106,6 @@ def _run(processor, filename_fixer, tmp_path, channel: str, video_id: str):
     return asyncio.run(
         processor.process_single_track(
             track_metadata=track_metadata,
-            file_utils=None,
             filename_fixer=filename_fixer,
         )
     )

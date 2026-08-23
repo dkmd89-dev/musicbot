@@ -95,7 +95,6 @@ class TestProcessTrackMetadataPlaylist:
                 track_info={"title": "Raw Title", "uploader": "Raw Uploader"},
                 downloaded_file="/tmp/downloaded_raw.m4a",
                 enhanced_processor=enhanced_processor,
-                file_utils=Mock(),
                 filename_fixer=Mock(),
                 album_name="Playlist Album",
                 dominant_artist="Dominant Artist",
@@ -126,7 +125,6 @@ class TestProcessTrackMetadataPlaylist:
                 track_info={"title": "T"},
                 downloaded_file="/tmp/x.m4a",
                 enhanced_processor=enhanced_processor,
-                file_utils=Mock(),
                 filename_fixer=Mock(),
                 album_name="Album",
                 dominant_artist=None,
@@ -150,7 +148,6 @@ class TestProcessTrackMetadataPlaylist:
                 track_info={"title": "T"},
                 downloaded_file="/tmp/x.m4a",
                 enhanced_processor=enhanced_processor,
-                file_utils=Mock(),
                 filename_fixer=Mock(),
                 album_name="Album",
                 dominant_artist=None,
@@ -169,7 +166,6 @@ class TestProcessTrackMetadataPlaylist:
                 track_info={"title": "T"},
                 downloaded_file="/tmp/x.m4a",
                 enhanced_processor=enhanced_processor,
-                file_utils=Mock(),
                 filename_fixer=Mock(),
                 album_name="My Playlist",
                 dominant_artist=None,
@@ -195,7 +191,6 @@ class TestProcessTrackMetadataPlaylist:
                 track_info={"title": "T"},
                 downloaded_file="/tmp/x.m4a",
                 enhanced_processor=enhanced_processor,
-                file_utils=Mock(),
                 filename_fixer=Mock(),
                 album_name="Album",
                 dominant_artist=None,
@@ -218,7 +213,6 @@ class TestProcessTrackMetadataPlaylist:
                 track_info={"title": "T"},
                 downloaded_file="/tmp/x.m4a",
                 enhanced_processor=enhanced_processor,
-                file_utils=Mock(),
                 filename_fixer=Mock(),
                 album_name="Album",
                 dominant_artist=None,
@@ -239,7 +233,6 @@ class TestProcessTrackMetadataPlaylist:
                 track_info={"title": "Original Title"},
                 downloaded_file="/tmp/x.m4a",
                 enhanced_processor=enhanced_processor,
-                file_utils=Mock(),
                 filename_fixer=Mock(),
                 album_name="Album",
                 dominant_artist=None,
@@ -263,7 +256,6 @@ class TestProcessTrackMetadataPlaylist:
                 track_info={"title": "Original Title"},
                 downloaded_file="/tmp/x.m4a",
                 enhanced_processor=enhanced_processor,
-                file_utils=Mock(),
                 filename_fixer=Mock(),
                 album_name="Album",
                 dominant_artist=None,
@@ -310,7 +302,6 @@ class TestProcessSingleDownloadCacheHit:
                 video_info={"title": "Cached Title", "artist": "Cached Artist"},
                 ydl_opts={},
                 enhanced_processor=enhanced_processor,
-                file_utils=Mock(),
                 filename_fixer=Mock(),
             )
         )
@@ -332,7 +323,6 @@ class TestProcessSingleDownloadCacheMiss:
                 video_info={"title": "Raw Title", "uploader": "Raw Uploader"},
                 ydl_opts={},
                 enhanced_processor=enhanced_processor,
-                file_utils=Mock(),
                 filename_fixer=Mock(),
             )
         )
@@ -359,7 +349,6 @@ class TestProcessSingleDownloadCacheMiss:
                 video_info={"title": "T"},
                 ydl_opts={},
                 enhanced_processor=enhanced_processor,
-                file_utils=Mock(),
                 filename_fixer=Mock(),
             )
         )
@@ -383,7 +372,6 @@ class TestProcessSingleDownloadCacheMiss:
                 video_info={"title": "T"},
                 ydl_opts={},
                 enhanced_processor=enhanced_processor,
-                file_utils=Mock(),
                 filename_fixer=Mock(),
             )
         )
@@ -409,7 +397,6 @@ class TestProcessSingleDownloadCacheMiss:
                 video_info={"title": "T"},
                 ydl_opts={},
                 enhanced_processor=enhanced_processor,
-                file_utils=Mock(),
                 filename_fixer=Mock(),
             )
         )
@@ -431,7 +418,6 @@ class TestProcessSingleDownloadCacheMiss:
                     video_info={"title": "T"},
                     ydl_opts={},
                     enhanced_processor=enhanced_processor,
-                    file_utils=Mock(),
                     filename_fixer=Mock(),
                 )
             )
@@ -451,7 +437,6 @@ class TestProcessSingleDownloadCacheMiss:
                     video_info={"title": "T"},
                     ydl_opts={},
                     enhanced_processor=enhanced_processor,
-                    file_utils=Mock(),
                     filename_fixer=Mock(),
                 )
             )

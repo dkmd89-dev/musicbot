@@ -50,7 +50,6 @@ from services.downloader.utils.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
 from services.downloader.utils.download_result_reporter import DownloadResultReporter
-from services.downloader.utils.file_utils import FileUtils
 from services.downloader.utils.progress_tracker import ProgressTracker
 from services.downloader.utils.metadata_result_translator import (
     call_process_single_track,
@@ -144,7 +143,6 @@ _MOD_EMOJI = {
     "EnhancedMetadataProcessor":"🚀",
     "DuplicateHandler":         "🔍",
     "FilenameFixerTool":        "🛠️",
-    "FileUtils":                "📂",
     "ArtistNormalizer":         "👤",
     "GenreMapper":              "🏷️",
     "GeniusClient":             "📜",
@@ -215,7 +213,6 @@ class DownloadHandler:
         self.logger.info("🔌 [INIT] Lade Abhängigkeiten...")
 
         self.cookie_handler = CookieHandler()
-        self.file_utils = FileUtils(logger_factory=self.logger_factory)
         self.filename_fixer = FilenameFixerTool(
             self.config, logger_factory=self.logger_factory
         )
@@ -504,7 +501,6 @@ class DownloadHandler:
             metadata_result = await call_process_single_track(
                 self.enhanced_metadata_processor,
                 track_metadata=result,
-                file_utils=self.file_utils,
                 filename_fixer=self.filename_fixer,
                 playlist_metadata=playlist_metadata_for_processor,
                 dominant_artist=None,

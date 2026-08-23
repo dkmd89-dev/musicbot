@@ -47,7 +47,6 @@ class TestMaxPlaylistItemsEnforced:
                 playlist_info=playlist_info,
                 ydl_opts={},
                 enhanced_processor=processor,
-                file_utils=MagicMock(),
                 filename_fixer=MagicMock(),
             )
         )
@@ -67,7 +66,6 @@ class TestMaxPlaylistItemsEnforced:
                 playlist_info=playlist_info,
                 ydl_opts={},
                 enhanced_processor=processor,
-                file_utils=MagicMock(),
                 filename_fixer=MagicMock(),
             )
         )
@@ -86,7 +84,6 @@ class TestMaxPlaylistItemsEnforced:
                 playlist_info=playlist_info,
                 ydl_opts={},
                 enhanced_processor=processor,
-                file_utils=MagicMock(),
                 filename_fixer=MagicMock(),
             )
         )

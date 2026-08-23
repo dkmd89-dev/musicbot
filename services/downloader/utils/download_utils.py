@@ -58,7 +58,6 @@ from services.downloader.utils.metadata_result_translator import (
     build_single_track_result,
     call_process_single_track,
 )
-from services.downloader.utils.file_utils import FileUtils
 from services.downloader.utils.progress_tracker import ProgressTracker
 from services.downloader.playlist_processor import PlaylistProcessor
 from utils.artist_map import ArtistConfig, ArtistNormalizer
@@ -114,7 +113,6 @@ class EnhancedDownloadProcessor(SingletonMixin):
         )
 
         # ── Basis-Komponenten (alle Singleton – werden nur 1× initialisiert!) ──
-        self.file_utils = FileUtils(logger_factory=self.logger_factory)
         self.filename_fixer = FilenameFixerTool(
             self.config, logger_factory=self.logger_factory
         )
@@ -274,7 +272,6 @@ async def enhanced_download_with_retry(
     if config is None:
         config = enhanced_processor.config
 
-    file_utils = enhanced_processor.file_utils
     filename_fixer = enhanced_processor.filename_fixer
     logger.info("✅ [INIT] Alle Komponenten bereit")
 
@@ -312,7 +309,6 @@ async def enhanced_download_with_retry(
                     playlist_info=info,
                     ydl_opts=ydl_opts,
                     enhanced_processor=enhanced_processor,
-                    file_utils=file_utils,
                     filename_fixer=filename_fixer,
                     chat_id=chat_id,
                     status_callback=status_callback,
@@ -345,7 +341,6 @@ async def enhanced_download_with_retry(
                     video_info=info,
                     ydl_opts=ydl_opts,
                     enhanced_processor=enhanced_processor,
-                    file_utils=file_utils,
                     filename_fixer=filename_fixer,
                     logger=logger,
                 )
@@ -402,7 +397,6 @@ async def _process_playlist_download(
     playlist_info: Dict[str, Any],
     ydl_opts: dict,
     enhanced_processor: EnhancedDownloadProcessor,
-    file_utils: FileUtils,
     filename_fixer: FilenameFixerTool,
     chat_id: Optional[int] = None,
     status_callback: Optional[Callable] = None,
@@ -568,7 +562,6 @@ async def _process_playlist_download(
                 track_info=track_info,
                 downloaded_file=downloaded_file,
                 enhanced_processor=enhanced_processor,
-                file_utils=file_utils,
                 filename_fixer=filename_fixer,
                 album_name=album_name,
                 dominant_artist=dominant_artist,
@@ -628,7 +621,6 @@ async def _process_track_metadata(
     track_info: Dict,
     downloaded_file: str,
     enhanced_processor: EnhancedDownloadProcessor,
-    file_utils: FileUtils,
     filename_fixer: FilenameFixerTool,
     album_name: str,
     dominant_artist: Optional[str],
@@ -710,7 +702,6 @@ async def _process_track_metadata(
         enhanced_result: MetadataResult = await call_process_single_track(
             enhanced_processor.enhanced_metadata_processor,
             track_metadata=track_metadata,
-            file_utils=file_utils,
             filename_fixer=filename_fixer,
             playlist_metadata=playlist_context,
             dominant_artist=dominant_artist,
@@ -774,7 +765,6 @@ async def _process_single_download(
     video_info: Dict[str, Any],
     ydl_opts: dict,
     enhanced_processor: EnhancedDownloadProcessor,
-    file_utils: FileUtils,
     filename_fixer: FilenameFixerTool,
     logger=None,
 ) -> Dict[str, Any]:
@@ -849,7 +839,6 @@ async def _process_single_download(
         enhanced_result: MetadataResult = await call_process_single_track(
             enhanced_processor.enhanced_metadata_processor,
             track_metadata=track_metadata,
-            file_utils=file_utils,
             filename_fixer=filename_fixer,
             playlist_metadata=None,
             dominant_artist=None,

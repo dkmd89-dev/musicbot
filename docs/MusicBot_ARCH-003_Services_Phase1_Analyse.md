@@ -147,6 +147,57 @@ unverändert 15 vorbestehende Fehler.
 
 ---
 
+## Phase 2/3 (Fortsetzung) — P-1: `FileUtils` entfernt (totes Gewicht)
+
+Nutzer-Freigabe: P-1 umsetzen, Richtung „nur entfernen" (nicht
+reaktivieren) — drei Optionen vorgelegt, Nutzer wählte die risikoärmste:
+reine Bereinigung ohne neues Verhalten. Das Temp-Wachstums-Risiko
+(`clean_temp_files()` lief nie) bleibt bewusst als eigene, zurückgestellte
+Folgeentscheidung offen — Aktivierung wäre eine echte
+Verhaltensänderung der Produktions-Pipeline und war nicht Teil dieser
+Freigabe.
+
+`services/downloader/utils/file_utils.py` (`FileUtils`, `SingletonMixin`)
+komplett gelöscht, ebenso `tests/test_file_utils.py` (23 Charakterisierungs-
+Tests für die jetzt entfernte Klasse). Der `file_utils`-Parameter war ein
+reiner Pass-Through ohne jede Verwendung im Zielort
+(`EnhancedMetadataProcessor.process_single_track()` referenzierte ihn im
+gesamten Methodenkörper nicht) — daher durch die komplette Kette entfernt:
+
+- `enhanced_metadata_processor.py::process_single_track()` — Parameter +
+  toter Import entfernt
+- `metadata_result_translator.py::call_process_single_track()` — Parameter
+  + Weiterreichung entfernt
+- `download_utils.py` — Konstruktion (`EnhancedDownloadProcessor.__init__`),
+  Attribut-Zugriff, alle drei Pipeline-Funktionssignaturen
+  (`_process_playlist_download`/`_process_track_metadata`/
+  `_process_single_download`) + deren Aufrufstellen, toter Import entfernt
+- `klassen/download_handler.py` — Konstruktion, Aufrufstelle, Icon-Mapping-
+  Eintrag, toter Import entfernt
+- `services/downloader/downloader.py` (`YoutubeDownloader`) — optionaler
+  Parameter + Fallback-Konstruktion + Attribut entfernt (wurde im Rest der
+  Klasse nie gelesen)
+- `services/downloader/download/interfaces.py` — `MetadataEnricher`-
+  Protocol-Signatur konsistent nachgezogen (rein deklarativ, kein
+  Laufzeit-Effekt)
+
+**Tests:** 6 Testdateien angepasst (Parameter aus Aufrufen entfernt:
+`test_metadata_result_translator.py`, `test_download_utils_metadata_translation.py`,
+`test_download_handler_process_single_download_result.py`,
+`test_metadata_processor_happy_path.py`,
+`test_autolearn_special_channel_gate.py`, `test_playlist_max_items.py`),
+alle unverändert grün. `tests/test_file_utils.py` gelöscht (Klasse existiert
+nicht mehr). Regressionslauf: 985 bestanden (vorher 1008 — Differenz von 23
+entspricht exakt der gelöschten Testdatei), unverändert 15
+Vorbestand-Fehler.
+
+**P-1 damit abgeschlossen.** Verbleibend offen: P-2, P-14, P-3-DEFER-Punkte
+(ARCH-004 Abschnitt 7) sowie die zurückgestellte Folgeentscheidung
+„Temp-Verzeichnis-Bereinigung reaktivieren?" (eigenständiges Cleanup-Problem,
+unabhängig von der jetzt entfernten `FileUtils`-Klasse).
+
+---
+
 ## 0. Wichtigster Gesamtbefund
 
 `services/` ist **kein einheitlich geschichtetes System**, sondern zwei sehr unterschiedliche Zonen:

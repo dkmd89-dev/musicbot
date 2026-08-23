@@ -45,7 +45,6 @@ from services.downloader.utils.metadata.models import MetadataResult
 async def call_process_single_track(
     enhanced_metadata_processor,
     track_metadata: Dict[str, Any],
-    file_utils,
     filename_fixer,
     playlist_metadata: Optional[Dict[str, Any]] = None,
     dominant_artist: Optional[str] = None,
@@ -56,7 +55,6 @@ async def call_process_single_track(
     """
     return await enhanced_metadata_processor.process_single_track(
         track_metadata=track_metadata,
-        file_utils=file_utils,
         filename_fixer=filename_fixer,
         playlist_metadata=playlist_metadata,
         dominant_artist=dominant_artist,
