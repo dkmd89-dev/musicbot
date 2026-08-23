@@ -1,6 +1,6 @@
 """
 Regressionstest fuer zwei in Phase 3 gefundene Bugs in der Lyrics-Fallback-
-Kette von GeniusClient (klassen/genius_client.py), siehe
+Kette von GeniusClient (services/clients/genius_client.py), siehe
 docs/MusicBot_ENGINEERING_BASELINE.md:
 
 1. Tier 2 (Genius-REST-API) und die gesamten Tiers 3+4 (HTML-Scraping,
@@ -31,7 +31,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from klassen.genius_client import GeniusClient
+from services.clients.genius_client import GeniusClient
 from utils.lyrics_cache import LyricsCache
 
 
@@ -136,7 +136,7 @@ class TestFallbackWithLyricsgeniusUsesCorrectToken:
                 return fake_song
 
         monkeypatch.setattr(
-            "klassen.genius_client.LyricsGenius", FakeLyricsGenius
+            "services.clients.genius_client.LyricsGenius", FakeLyricsGenius
         )
 
         result = client._fallback_with_lyricsgenius("Some Song", "Some Artist")

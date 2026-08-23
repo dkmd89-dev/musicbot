@@ -20,7 +20,7 @@ from utils.filenamefixer import (
     load_special_channels_merged,
 )
 from services.downloader.utils.file_utils import FileUtils
-from klassen.genius_client import GeniusClient
+from services.clients.genius_client import GeniusClient
 from utils.metadata_cache import MetadataCache
 from utils.singleton import SingletonMixin
 

@@ -87,7 +87,7 @@ class TestGeniusClientCloseTriggersCleanup:
         sonst über get_config() reale, konfigurierte Verzeichnisse anlegen.
         close() selbst greift nur auf self.lyrics_cache zu, daher reicht das.
         """
-        from klassen.genius_client import GeniusClient
+        from services.clients.genius_client import GeniusClient
 
         fake_self = MagicMock()
         GeniusClient.close(fake_self)
