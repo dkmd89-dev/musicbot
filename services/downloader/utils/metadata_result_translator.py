@@ -14,15 +14,23 @@ Abschnitt 6, für die vollständige Feld-für-Feld-Charakterisierung):
 
 WICHTIG: Die drei bestehenden Aufrufstellen unterschieden sich bereits
 UNTEREINANDER (nicht nur YouTube vs. Spotify) in mehreren Feldern - u. a.
-ob `year`/`track_number`/`playlist_album`/`is_duplicate` aus dem
-MetadataResult übernommen oder überschrieben/weggelassen werden, und ob
-`library_path` bei `None` unbedingt zu `"None"` stringifiziert wird oder
-bedingt `None` bleibt. Diese Funktionen reproduzieren jede der drei
+ob `year`/`track_number`/`playlist_album` aus dem MetadataResult übernommen
+oder überschrieben/weggelassen werden. Diese Funktionen reproduzieren die
 bisherigen Verhaltensweisen bewusst EXAKT (durch Regressionstests
 abgesichert, siehe tests/test_download_utils_metadata_translation.py und
-tests/test_download_handler_process_single_download_result.py) - keine der
-dokumentierten Inkonsistenzen wird hier angeglichen. Das ist eine bewusst
-zurückgestellte Folgeentscheidung (siehe Dokument, Abschnitt 7).
+tests/test_download_handler_process_single_download_result.py).
+
+Ausnahme - zwei am 2026-08-23 bewusst gefixte Inkonsistenzen (ARCH-004
+Section 7, Entscheidung FIX NOW):
+  - `is_duplicate` wird jetzt auch im YT-Single-Pfad aus dem echten
+    MetadataResult übernommen (vorher immer False - täuschte im Telegram-
+    Report ein "kein Duplikat" vor).
+  - `library_path` wird im YT-Playlist-Pfad jetzt bedingt stringifiziert
+    (vorher wurde `None` zum truthy-String `"None"` - konnte den
+    Already-Processed-Vertrag fälschlich auslösen und in cache_manager.py
+    einen ungültigen `Path("None")` erzeugen).
+Alle anderen dokumentierten Inkonsistenzen bleiben bewusst zurückgestellt
+(siehe Dokument, Abschnitt 7).
 
 `EnhancedMetadataProcessor` selbst wird durch diese Extraktion NICHT
 verändert.
@@ -73,8 +81,11 @@ def build_playlist_track_result(
         (Playlist hat ein einheitliches Jahr).
       - `track_number` kommt aus dem Schleifen-Index `track_idx`, nicht aus
         `metadata_result.track_number`.
-      - `library_path` wird UNBEDINGT stringifiziert - bei `None` entsteht
-        der String `"None"`.
+
+    Gefixt (2026-08-23, ARCH-004 Section 7, FIX NOW):
+      - `library_path` wird jetzt bedingt stringifiziert wie im Single-Pfad
+        - bei `None` bleibt es `None` statt zum truthy-String `"None"` zu
+        werden.
     """
     dl_result = DownloadResult(
         success=True,
@@ -85,7 +96,9 @@ def build_playlist_track_result(
         year=playlist_year,
         genres=metadata_result.genres,
         genre_source=metadata_result.genre_source,
-        library_path=str(metadata_result.library_path),
+        library_path=(
+            str(metadata_result.library_path) if metadata_result.library_path else None
+        ),
         artist_source=metadata_result.artist_source,
         title_cleaned=metadata_result.title_cleaned,
         playlist_album=album_name,
@@ -113,12 +126,17 @@ def build_single_track_result(
     Bewusst erhaltene Eigenheiten (NICHT Bugs, die hier gefixt würden):
       - `year` kommt hier (anders als im Playlist-Fall) direkt aus
         `metadata_result.year`.
-      - `track_number`/`playlist_album`/`is_duplicate` werden NIE explizit
-        gesetzt - bleiben bei den `DownloadResult`-Dataclass-Defaults
-        (`None`/`None`/`False`), auch wenn `metadata_result` echte Werte
-        trägt.
+      - `track_number`/`playlist_album` werden NIE explizit gesetzt -
+        bleiben bei den `DownloadResult`-Dataclass-Defaults (`None`/`None`),
+        auch wenn `metadata_result` echte Werte trägt.
       - `library_path` wird bedingt stringifiziert - bei `None` bleibt es
-        `None` (anders als im Playlist-Fall).
+        `None`.
+
+    Gefixt (2026-08-23, ARCH-004 Section 7, FIX NOW):
+      - `is_duplicate` wird jetzt aus `metadata_result.is_duplicate`
+        übernommen statt immer beim Dataclass-Default `False` zu bleiben -
+        vorher zeigte der Telegram-Report bei jedem YT-Einzeldownload
+        fälschlich "kein Duplikat" an, selbst wenn eins erkannt wurde.
     """
     dl_result = DownloadResult(
         success=True,
@@ -137,6 +155,7 @@ def build_single_track_result(
         lyrics_available=bool(metadata_result.lyrics),
         lyrics_source=metadata_result.lyrics_source,
         cover_embedded=metadata_result.cover_embedded,
+        is_duplicate=metadata_result.is_duplicate,
         from_cache=metadata_result.from_cache,
         enhanced_processor_ref=enhanced_processor_ref,
     )

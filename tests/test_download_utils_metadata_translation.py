@@ -6,12 +6,19 @@ fuer YT-Single-Downloads) — vorher 0 Tests fuer diese beiden Funktionen.
 
 ARCH-004/P-3, Schritt 2: sichert das AKTUELLE Verhalten (inkl. der in
 docs/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md Abschnitt 6
-dokumentierten Feld-Inkonsistenzen, z.B. track_number/playlist_album/
-is_duplicate werden im Single-Download-Pfad NIE aus enhanced_result
-uebernommen, nur Dataclass-Defaults) VOR der geplanten Extraktion einer
-gemeinsamen Integrationsschicht (Option B) ab. Diese Tests duerfen sich
-nach der Extraktion NICHT aendern - genau das ist der Beweis fuer
+dokumentierten Feld-Inkonsistenzen, z.B. track_number/playlist_album werden
+im Single-Download-Pfad NIE aus enhanced_result uebernommen, nur
+Dataclass-Defaults) VOR der geplanten Extraktion einer gemeinsamen
+Integrationsschicht (Option B) ab. Diese Tests duerfen sich nach der
+Extraktion NICHT aendern - genau das ist der Beweis fuer
 Verhaltensgleichheit.
+
+Update 2026-08-23 (ARCH-004 Section 7, Entscheidungsbericht FIX NOW/DEFER):
+zwei der urspruenglich dokumentierten Inkonsistenzen (is_duplicate im
+Single-Pfad, library_path-Stringifizierung im Playlist-Pfad bei None)
+wurden als sichtbare bzw. potenziell fehlertraechtige Bugs bewusst gefixt.
+Die zugehoerigen Tests wurden auf das neue, korrigierte Verhalten
+aktualisiert.
 
 Regel 7: externe Abhaengigkeiten (EnhancedMetadataProcessor,
 DownloadExecutor, CacheManager) werden gemockt.
@@ -173,12 +180,12 @@ class TestProcessTrackMetadataPlaylist:
 
         assert result["playlist_album"] == "My Playlist"
 
-    def test_none_library_path_is_stringified_to_literal_none(self):
+    def test_none_library_path_stays_none_not_stringified(self):
         """
-        Dokumentierte Inkonsistenz (ARCH-004 Abschnitt 6): der Playlist-Pfad
-        ruft unbedingt str(enhanced_result.library_path) auf - bei None
-        entsteht der literale String "None", nicht der Wert None. Der
-        Single-Pfad prueft das vorher (siehe TestProcessSingleDownload...).
+        Gefixt (2026-08-23, ARCH-004 Section 7, FIX NOW): der Playlist-Pfad
+        stringifiziert library_path jetzt bedingt wie der Single-Pfad - bei
+        None bleibt es None statt zum truthy-String "None" zu werden (der
+        z.B. cache_manager.py faelschlich einen Path("None") erzeugen liess).
         """
         metadata_result = make_metadata_result(library_path=None)
         enhanced_processor = make_enhanced_processor(metadata_result)
@@ -197,7 +204,7 @@ class TestProcessTrackMetadataPlaylist:
             )
         )
 
-        assert result["library_path"] == "None"
+        assert result["library_path"] is None
 
     def test_no_lyrics_raw_text_or_filepath_key_in_result(self):
         """
@@ -384,12 +391,12 @@ class TestProcessSingleDownloadCacheMiss:
         assert result["track_number"] is None
         assert result["playlist_album"] is None
 
-    def test_is_duplicate_is_always_false_regardless_of_metadata_result(
-        self, tmp_path
-    ):
+    def test_is_duplicate_is_taken_from_metadata_result(self, tmp_path):
         """
-        Dokumentierte Inkonsistenz (ARCH-004 Abschnitt 6): is_duplicate wird
-        im Single-Pfad NIE aus enhanced_result.is_duplicate uebernommen.
+        Gefixt (2026-08-23, ARCH-004 Section 7, FIX NOW): is_duplicate wird
+        im Single-Pfad jetzt aus enhanced_result.is_duplicate uebernommen -
+        vorher blieb es immer False, was im Telegram-Report faelschlich
+        "kein Duplikat" anzeigte.
         """
         metadata_result = make_metadata_result(is_duplicate=True)
         enhanced_processor = make_enhanced_processor_for_single(
@@ -407,7 +414,7 @@ class TestProcessSingleDownloadCacheMiss:
             )
         )
 
-        assert result["is_duplicate"] is False
+        assert result["is_duplicate"] is True
 
     def test_metadata_failure_raises_download_error(self, tmp_path):
         from services.downloader.utils.errors import DownloadError

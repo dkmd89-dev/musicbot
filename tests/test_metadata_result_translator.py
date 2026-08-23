@@ -116,13 +116,13 @@ class TestBuildPlaylistTrackResult:
         )
         assert result["is_duplicate"] is True
 
-    def test_none_library_path_becomes_literal_none_string(self):
+    def test_none_library_path_stays_none(self):
         mr = make_metadata_result(library_path=None)
         result = build_playlist_track_result(
             mr, playlist_year=2000, album_name="Album", track_idx=1,
             enhanced_processor_ref=Mock(),
         )
-        assert result["library_path"] == "None"
+        assert result["library_path"] is None
 
     def test_no_lyrics_or_filepath_key(self):
         mr = make_metadata_result()
@@ -155,8 +155,13 @@ class TestBuildSingleTrackResult:
         assert result["track_number"] is None
         assert result["playlist_album"] is None
 
-    def test_is_duplicate_always_false(self):
+    def test_is_duplicate_taken_from_metadata_result(self):
         mr = make_metadata_result(is_duplicate=True)
+        result = build_single_track_result(mr, enhanced_processor_ref=Mock())
+        assert result["is_duplicate"] is True
+
+    def test_is_duplicate_false_when_not_a_duplicate(self):
+        mr = make_metadata_result(is_duplicate=False)
         result = build_single_track_result(mr, enhanced_processor_ref=Mock())
         assert result["is_duplicate"] is False
 
