@@ -40,14 +40,13 @@ Nutzer-Entscheidung: **nur risikoarmer Kern**, ausschließlich innerhalb
   existierte bereits, wurde vorher nicht genutzt) statt einem hartkodierten,
   CWD-relativen `Path("cookies.txt")`.
 
-**Bewusst nicht umgesetzt** (siehe Abschnitt 5 unten — STOP CONDITIONS,
-Nutzerentscheidung war „nur risikoarmer Kern“):
+**Bewusst nicht umgesetzt in diesem ersten Schritt** (siehe Abschnitt 5 unten
+— STOP CONDITIONS, Nutzerentscheidung war „nur risikoarmer Kern“):
 
 - P-1 (`FileUtils` totes Gewicht), P-2 (Telegram-Kopplung entfernen), P-3
-  (doppelte Spotify/YouTube-Orchestrierung), P-6 (`StatistikService`
-  aufteilen), P-11 (Import aus `klassen/`), P-14 (`advanced_podcast_finder.py`)
-  bleiben unverändert und sind Kandidaten für eine spätere, dedizierte
-  Migrationsphase.
+  (doppelte Spotify/YouTube-Orchestrierung), P-11 (Import aus `klassen/`),
+  P-14 (`advanced_podcast_finder.py`) bleiben unverändert und sind
+  Kandidaten für eine spätere, dedizierte Migrationsphase.
 
 **Tests:** 6 neue/erweiterte Tests (`test_download_executor.py`,
 `test_playlist_processor.py`, `test_spotify_downloader.py`) für die neuen
@@ -56,6 +55,51 @@ Dependency-Injection-Punkte. Voller Regressionslauf: 920 bestanden (vorher
 Repository konfiguriert (kein `mypy`/`ruff`/`pyproject.toml` gefunden) —
 `python -m py_compile`/Import-Smoke-Test über alle `services/`-Submodule
 als Ersatz-Gate genutzt.
+
+## Phase 2/3 (Fortsetzung) — P-6: `StatistikService` aufgeteilt
+
+Nutzer-Entscheidung: nach dem risikoarmen Kern direkt mit P-6 weitermachen.
+
+`services/statistik_service.py` (573 Zeilen, God-Service: Persistenz +
+externer API-Client + Business-Statistik + matplotlib-Rendering +
+Hintergrund-Scheduling) in 4 fokussierte, einzeln injizierbare/testbare
+Klassen unter dem neuen Paket `services/statistik/` aufgeteilt:
+
+- `play_history_repository.py::PlayHistoryRepository` — Lesen/Schreiben/
+  Bereinigen der JSON-Verlaufsdateien (reine Datei-I/O)
+- `play_history_poller.py::PlayHistoryPoller` — Hintergrund-Polling gegen
+  `NavidromeAPI` (injiziert statt selbst konstruiert), schreibt über das
+  injizierte `PlayHistoryRepository`
+- `statistics_calculator.py::StatisticsCalculator` — reine Business-Logik
+  (Top-Artists/Songs/Albums, letzter Song, Play-Count, JSON-Export), liest
+  über das injizierte `PlayHistoryRepository`
+- `chart_renderer.py::ChartRenderer` — matplotlib-Balkendiagramme, einziger
+  Ort im gesamten Repository mit dieser Abhängigkeit
+
+`services/statistik_service.py` selbst ist jetzt eine **bewusst dünne,
+temporäre Fassade** (Abschnitt 14 der Aufgabe: Migrations-Brücke, klar als
+solche gekennzeichnet): exakt dieselbe öffentliche API wie vorher — inkl.
+der als „privat" markierten, aber von `tests/test_statistik_service.py`
+direkt getesteten Methoden `_load_history`/`_save_history`/
+`_cleanup_old_entries` und der Klassenattribute `CHARTS_DIR`/
+`USER_HISTORY_DIR` (weiterhin vor Konstruktion monkeypatchbar) —
+`bot.py`/`handlers/mugge_statistik_handler.py` bleiben **unverändert**.
+Zusätzlich `navidrome_api` optional injizierbar gemacht (P-8-Muster),
+Default-Verhalten (kein Parameter) unverändert.
+
+**Wichtige Verhaltens-Nuance bewusst erhalten:** `cleanup_old_entries()`
+liest `Config.PLAY_HISTORY_RETENTION_DAYS` weiterhin zum Aufrufzeitpunkt
+(nicht beim Konstruieren) — ein bestehender Test verändert diesen
+Config-Wert erst NACH der Service-Konstruktion und erwartet trotzdem
+Wirkung.
+
+**Tests:** 40 neue, isolierte Tests für die 4 neuen Klassen (direkt
+konstruiert, ohne Umweg über die Fassade) + alle 29 bestehenden
+`test_statistik_service.py`/`test_mugge_statistik_handler.py`-Tests
+unverändert grün. Voller Regressionslauf: 960 bestanden (vorher 920),
+unverändert 15 vorbestehende Fehler.
+
+**Verbleibend offen:** P-1, P-2, P-3, P-11, P-14 (siehe Abschnitt 5).
 
 ---
 
