@@ -11,7 +11,6 @@ Metadaten-Modulen verwendet. Hier geht es um die Download-Ebene
 """
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 
@@ -159,42 +158,3 @@ class PlaylistResult:
             self.successful_tracks = sum(1 for t in self.tracks if t.success)
         if not self.failed_tracks and self.tracks:
             self.failed_tracks = sum(1 for t in self.tracks if not t.success)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# TrackDownloadState – Fortschritts-Zustand eines Tracks innerhalb der Playlist
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-@dataclass
-class TrackDownloadState:
-    """
-    Repräsentiert den aktuellen Verarbeitungs-Zustand eines Tracks
-    während der Playlist-Pipeline. Dient als Grundlage für
-    Status-Callbacks und Fortschrittsbalken-Logging.
-
-    `phase` folgt den bestehenden Log-Markern:
-      "pending" → "cache_check" → "downloading" → "metadata" → "done" / "failed"
-    """
-
-    index: int
-    total: int
-    title: str
-    artist: Optional[str] = None
-    phase: str = "pending"
-
-    # Wird gesetzt sobald die Verarbeitung abgeschlossen ist
-    result: Optional[DownloadResult] = None
-    error: Optional[str] = None
-
-    # Pfad zur (zwischenzeitlich) heruntergeladenen Rohdatei, falls vorhanden
-    downloaded_filepath: Optional[Path] = None
-
-    @property
-    def is_finished(self) -> bool:
-        return self.phase in ("done", "failed", "cached")
-
-    @property
-    def progress_label(self) -> str:
-        """Kurzform für Logging/Status-Callback, z. B. 'Track 03/12'."""
-        return f"Track {self.index:02d}/{self.total:02d}"

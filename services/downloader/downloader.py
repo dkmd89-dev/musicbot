@@ -1,14 +1,9 @@
 # downloader.py
 
-from pathlib import Path
-from typing import Any, Dict, List, Union, Optional, Callable
-import asyncio
-import logging
 from logger import get_module_logger
 from services.downloader.utils.download_utils import (
     enhanced_download_with_retry,
 )
-from services.downloader.utils.progress_tracker import ProgressTracker
 from config import Config
 from cookie_handler import CookieHandler
 from services.downloader.utils.file_utils import FileUtils
@@ -129,12 +124,3 @@ class YoutubeDownloader:
                 f"💥 Kritischer Fehler in `download_audio()`: {e}", exc_info=True
             )
             raise
-
-    def format_download_result_for_log(result: Dict[str, Any]) -> str:
-        def _to_german_bool(value: Any) -> str:
-            """Konvertiert boolesche Werte in eine deutsche Ja/Nein-Darstellung."""
-            return "Ja" if value else "Nein"
-
-        lines.append(
-            f"   🖼️ Cover eingebettet: {_to_german_bool(result.get('cover_embedded', False))}"
-        )

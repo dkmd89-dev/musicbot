@@ -93,7 +93,11 @@ class SpotifyDownloader:
     """
 
     def __init__(
-        self, config, logger_factory: Optional[Callable] = None, artist_map=None
+        self,
+        config,
+        logger_factory: Optional[Callable] = None,
+        artist_map=None,
+        rss_manager=None,
     ):
         self.config = config
         self.logger_factory = logger_factory or get_module_logger
@@ -118,9 +122,13 @@ class SpotifyDownloader:
         )
         self.logger.info("   📋 Unterstützte Typen: Track, Episode, Show")
         self.logger.info("=" * 60)
-        # 🆕 Podcast RSS Manager initialisieren
-        mapping_dir = getattr(config, "GENRE_MAPPING_DIR", "mapping")
-        self.rss_manager = PodcastRSSManager(mapping_dir, self.logger_factory)
+        # 🆕 Podcast RSS Manager initialisieren (ARCH-003, P-8: optional
+        # injizierbar - ohne Angabe unverändertes Default-Verhalten)
+        if rss_manager is not None:
+            self.rss_manager = rss_manager
+        else:
+            mapping_dir = getattr(config, "GENRE_MAPPING_DIR", "mapping")
+            self.rss_manager = PodcastRSSManager(mapping_dir, self.logger_factory)
 
         self.logger.info(
             f"📻 Podcast RSS Manager: {len(self.rss_manager.feeds)} Feeds geladen"

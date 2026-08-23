@@ -81,7 +81,10 @@ class DownloadExecutor:
                 f"(Podcast-Kanäle ausgenommen)"
             )
 
-        cookie_file = Path("cookies.txt")
+        # ARCH-003, P-9: Pfad aus der bereits injizierten Config statt
+        # hartkodiertem, CWD-relativem Pfad - Config.COOKIES_FILE existierte
+        # bereits (BASE_DIR/cookies.txt), wurde hier bisher nicht genutzt.
+        cookie_file = Path(getattr(config, "COOKIES_FILE", "cookies.txt"))
         if cookie_file.exists():
             opts["cookiefile"] = str(cookie_file)
             self.logger.info(f"🍪 [YDL-OPTS] Cookie-Datei gefunden: {cookie_file}")

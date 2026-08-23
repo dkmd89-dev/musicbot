@@ -6,7 +6,7 @@ import re
 
 from config import Config
 from utils.singleton import SingletonMixin
-from services.downloader.utils.error_handler import FileProcessingError
+from services.downloader.utils.errors import FileProcessingError
 
 # Regex-Patterns für die Dateinamenbereinigung
 ILLEGAL_CHARS_PATTERN = re.compile(r'[<>:"/\\|?*]')
