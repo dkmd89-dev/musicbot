@@ -103,6 +103,50 @@ unverändert 15 vorbestehende Fehler.
 
 ---
 
+## Phase 2/3 (Fortsetzung) — P-11: externe API-Clients nach `services/clients/`
+
+Nutzer-Freigabe: P-11 analysieren und schrittweise umsetzen.
+
+Ursprünglicher Befund (Abschnitt 3, Zeile 559) betraf nur
+`klassen.genius_client.GeniusClient`. Vertiefte Analyse zeigte: die
+Geschwisterdateien `klassen/lastfm_client.py` und
+`klassen/musicbrainz_client.py` sind strukturell identisch — reine
+externe-API-Adapter, ausschließlich von
+`services/downloader/utils/enhanced_metadata_processor.py` (bzw. zusätzlich
+`services/downloader/utils/metadata/album_processor.py` für MusicBrainz)
+und Tests konsumiert, kein Handler-/Telegram-Bezug. Nur `genius_client` zu
+verschieben hätte eine neue Inkonsistenz mit den beiden Geschwistern
+geschaffen. Nutzer-Entscheidung: alle drei Clients gemeinsam verschieben,
+neues Verzeichnis `services/clients/`.
+
+**Neue Architekturregel:** `services/clients/` enthält ausschließlich
+externe Integrationsadapter (Genius, Last.fm, MusicBrainz). Fachliche
+Logik bleibt außerhalb der Clients.
+
+Durchgeführt in drei Einzelschritten (je eigener Commit, reine
+Verschiebung + Import-Updates, keine Verhaltensänderung):
+
+- `klassen/genius_client.py` → `services/clients/genius_client.py`
+  (Commits `b57a13a`/`7d68d91`)
+- `klassen/lastfm_client.py` → `services/clients/lastfm_client.py`
+  (Commits `31abf2e`/`8108f62`)
+- `klassen/musicbrainz_client.py` → `services/clients/musicbrainz_client.py`
+  (Commit `f3de0f1`)
+
+Alle Import-Stellen (Produktionscode + Tests inkl. `mock.patch(...)`-Ziele)
+aktualisiert. `klassen/` enthält jetzt nur noch `download_handler.py`
+(Orchestrator) — die ursprüngliche Fehlplatzierung ist vollständig
+behoben.
+
+**Tests:** alle direkt betroffenen Testdateien unverändert grün
+(25 + 12 + 28 = 65 Tests). Voller Regressionslauf: 1008 bestanden,
+unverändert 15 vorbestehende Fehler.
+
+**P-11 damit abgeschlossen.** Verbleibend offen: P-1, P-2, P-3-DEFER-Punkte
+(ARCH-004 Abschnitt 7), P-14.
+
+---
+
 ## 0. Wichtigster Gesamtbefund
 
 `services/` ist **kein einheitlich geschichtetes System**, sondern zwei sehr unterschiedliche Zonen:
