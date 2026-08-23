@@ -1,5 +1,5 @@
 """
-Characterization-Tests fuer klassen/musicbrainz_client.py.
+Characterization-Tests fuer services/clients/musicbrainz_client.py.
 
 MusicBrainz ist explizit Teil des P0-Metadata-Flows in CLAUDE.md
 ("MusicBrainz / Lyrics / Cover"), hatte aber vor dieser Session keinerlei
@@ -32,8 +32,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import klassen.musicbrainz_client as mb_module
-from klassen.musicbrainz_client import (
+import services.clients.musicbrainz_client as mb_module
+from services.clients.musicbrainz_client import (
     MusicBrainzClient,
     _musicbrainz_result_cache,
     cached_musicbrainz_search,

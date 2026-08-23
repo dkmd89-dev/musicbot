@@ -1008,7 +1008,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
     ):
         # Lazy-Init MB/LFM Clients
         if self._mb_client is None:
-            from klassen.musicbrainz_client import MusicBrainzClient
+            from services.clients.musicbrainz_client import MusicBrainzClient
 
             self._mb_client = MusicBrainzClient()
 

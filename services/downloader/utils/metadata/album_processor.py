@@ -138,7 +138,7 @@ class AlbumProcessor:
         """
         try:
             if self._mb_client is None:
-                from klassen.musicbrainz_client import MusicBrainzClient
+                from services.clients.musicbrainz_client import MusicBrainzClient
                 self._mb_client = MusicBrainzClient()
 
             self.logger.debug(f"💿 MusicBrainz Album-Suche: {artist!r} - {title!r}")

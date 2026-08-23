@@ -1,4 +1,4 @@
-# klassen/musicbrainz_client.py
+# services/clients/musicbrainz_client.py
 # -*- coding: utf-8 -*-
 """
 MusicBrainzClient – liefert Metadaten (Genre, IDs, Album, Jahr) via MusicBrainz API.
