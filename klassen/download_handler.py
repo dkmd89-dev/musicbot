@@ -259,7 +259,7 @@ class DownloadHandler:
         # ── Status / Progress ─────────────────────────────────────────────────
         self.status_msg: Optional[Message] = None
         self.progress_tracker = ProgressTracker(
-            update, status_message=self.status_msg, logger_factory=self.logger_factory
+            logger_factory=self.logger_factory
         )
         self.downloader = YoutubeDownloader(
             update=update,
@@ -314,7 +314,6 @@ class DownloadHandler:
 
         try:
             await self.status_msg.edit_text("\n".join(lines))
-            self.progress_tracker.status_message = self.status_msg
         except TelegramError as e:
             if "Message is not modified" not in str(e):
                 self.logger.warning(f"⚠️ Telegram-Status konnte nicht aktualisiert werden: {e}")
@@ -348,17 +347,33 @@ class DownloadHandler:
 
         return is_dup, entry, dup_type
 
-    async def _handle_duplicate_found(self, entry: DuplicateEntry, dup_type: str) -> None:
-        """Baut Duplikat-Nachricht und sendet sie an den Benutzer."""
-        self.logger.info(f"🔍 [DUPE] Sende Duplikat-Meldung (Typ: {dup_type})")
-        msg = self.result_reporter.build_duplicate_message(entry, dup_type)
+    async def _send_report_message(
+        self, msg: str, error_log_msg: str, success_log_msg: Optional[str] = None
+    ) -> None:
+        """
+        Sendet eine vorformatierte Nachricht über status_msg (mit Fallback
+        auf update.message), fängt TelegramError. Gemeinsames Send-Muster
+        für Duplikat-/Abschluss-Meldungen (ARCH-007/P-2: der eigentliche
+        Telegram-Versand liegt jetzt vollständig hier statt in services/ -
+        DownloadResultReporter liefert nur noch fertigen Text).
+        """
         try:
             if self.status_msg:
                 await self.status_msg.edit_text(msg)
             else:
                 await self.update.message.reply_text(msg)
+            if success_log_msg:
+                self.logger.info(success_log_msg)
         except TelegramError as e:
-            self.logger.error(f"❌ [DUPE] Fehler beim Senden der Duplikat-Meldung: {e}")
+            self.logger.error(f"{error_log_msg}{e}")
+
+    async def _handle_duplicate_found(self, entry: DuplicateEntry, dup_type: str) -> None:
+        """Baut Duplikat-Nachricht und sendet sie an den Benutzer."""
+        self.logger.info(f"🔍 [DUPE] Sende Duplikat-Meldung (Typ: {dup_type})")
+        msg = self.result_reporter.build_duplicate_message(entry, dup_type)
+        await self._send_report_message(
+            msg, "❌ [DUPE] Fehler beim Senden der Duplikat-Meldung: "
+        )
 
     # ──────────────────────────────────────────────────────────────────────────
     # KERNMETHODE: METADATEN-ANREICHERUNG
@@ -586,8 +601,11 @@ class DownloadHandler:
 
         stats     = self.result_reporter.extract_stats_from_result(result, [])
         dup_stats = getattr(self.duplicate_handler, "get_statistics", lambda: {})()
-        await self.result_reporter.send_final_summary(
-            self.update, self.status_msg, result, stats, dup_stats
+        msg = self.result_reporter.build_final_summary_message(result, stats, dup_stats)
+        await self._send_report_message(
+            msg,
+            "❌ [SUMMARY] Fehler beim Senden: ",
+            success_log_msg="✅ [SUMMARY] Abschluss-Zusammenfassung gesendet",
         )
 
     async def handle_playlist_success(self, results: List[dict]) -> None:
@@ -606,9 +624,8 @@ class DownloadHandler:
             f"{len(successful)}/{len(results)} Tracks ──"
         )
 
-        await self.result_reporter.send_playlist_direct_summary(
-            self.update, self.status_msg, results, successful
-        )
+        msg = self.result_reporter.build_playlist_summary_message(results, successful)
+        await self._send_report_message(msg, "❌ Playlist-Zusammenfassung nicht gesendet: ")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # UNIFIED URL-DISPATCHER
@@ -671,7 +688,6 @@ class DownloadHandler:
         )
 
         self.status_msg = await update.message.reply_text("▶️ Anfrage wird gestartet...")
-        self.progress_tracker.status_message = self.status_msg
         TOTAL = _YT.TOTAL
 
         try:
@@ -803,7 +819,6 @@ class DownloadHandler:
         )
 
         self.status_msg = await update.message.reply_text("🎵 Spotify-Anfrage wird gestartet...")
-        self.progress_tracker.status_message = self.status_msg
 
         try:
             # ── SCHRITT 1: SpotifyDownloader verfügbar? ──────────────────

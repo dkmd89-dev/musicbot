@@ -351,3 +351,54 @@ aber nicht empfohlen.
 Keine Implementierung in diesem Schritt. Entscheidung nötig: Hauptvariante
 bestätigen, Alternative wählen, oder nur eines der beiden Module zuerst
 umsetzen.
+
+---
+
+## 6. Umsetzung (2026-08-24, Branch `arch/p2-telegram-decoupling`)
+
+Nutzer-Entscheidung: Hauptvariante (Rückgabewerte), beide Module in einem
+Schritt.
+
+- `download_result_reporter.py`: `send_playlist_direct_summary()` →
+  `build_playlist_summary_message()`, `send_final_summary()` →
+  `build_final_summary_message()` — beide synchron, geben nur noch Text
+  zurück, `telegram.error.TelegramError`-Import entfernt.
+- `progress_tracker.py`: `update_progress()` → `compute_progress_message()`
+  (`Optional[str]`, `None` wenn Drossel-Intervall nicht erreicht),
+  `update`-/`status_message`-Parameter aus Konstruktor entfernt,
+  `from telegram import Update`-Import entfernt.
+- `klassen/download_handler.py`: neue private Hilfsmethode
+  `_send_report_message(msg, error_log_msg, success_log_msg=None)` bündelt
+  das gemeinsame Send-Muster (status_msg-Fallback auf update.message,
+  TelegramError-Fang, optionales Erfolgs-Log) — vorher 3× dupliziert
+  (`_handle_duplicate_found` bereits vorhanden, `handle_single_track_success`/
+  `handle_playlist_success` neu darauf umgestellt), jetzt an einer Stelle.
+  Alle drei ursprünglichen Log-Texte (inkl. der leicht unterschiedlichen
+  Fehler-/Erfolgsmeldungen je Aufrufstelle) 1:1 erhalten. Die drei
+  `progress_tracker.status_message = ...`-Zuweisungen entfielen ersatzlos
+  (kein Attribut mehr, ohnehin nie gelesen — siehe Abschnitt 0).
+- `download_utils.py::EnhancedDownloadProcessor.init_tracker()`:
+  `update_object`-Parameter entfernt (0 Aufrufer, siehe BUG-009).
+
+**Tests:** `tests/test_download_result_reporter.py` — Versand-/Fallback-/
+`TelegramError`-Tests entfernt (nicht mehr zutreffend, kein Versand mehr
+im Modul), reine Text-Assertions auf die `build_*`-Rückgabewerte
+umgestellt. `tests/test_progress_tracker.py` — auf
+`compute_progress_message()`-Rückgabewert-Assertions umgestellt, ein
+Test entfernt (`test_exception_during_send_is_caught_not_raised`, nicht
+mehr zutreffend). Neue Datei `tests/test_download_handler_send_report_message.py`
+(6 Tests) für `_send_report_message()` — deckt status_msg/Fallback,
+`TelegramError`-Fang mit korrektem Log-Prefix, optionales Erfolgs-Log ab.
+
+**Regressionslauf:** 1007 bestanden (vorher 1005 — Netto +2, exakt
+nachvollziehbar: −3 Tests in `test_download_result_reporter.py`, −1 Test
+in `test_progress_tracker.py`, +6 neue Tests), unverändert 15
+Vorbestand-Fehler.
+
+**Ergebnis:** `services/` besitzt keine Telegram-Abhängigkeit mehr (kein
+`telegram`-Import, kein `handlers`-Import außer weiterhin
+`DuplicateEntry` in `download_result_reporter.py`, siehe Abschnitt 4 —
+bewusst nicht Teil dieser Entscheidung). `api/navidrome_api.py` nicht
+angefasst.
+
+**P-2 damit abgeschlossen.**
