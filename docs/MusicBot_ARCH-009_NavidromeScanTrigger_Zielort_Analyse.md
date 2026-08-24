@@ -532,3 +532,109 @@ vorgenommen.**
    Kompatibilitäts-Bridge (Phase 8/9).
 
 **STOPP. Keine Umsetzung ohne ausdrückliche Nutzerentscheidung.**
+
+---
+
+## Umsetzung (2026-08-24, Branch `arch/arch-009-navidrome-scan-trigger-to-utils`)
+
+Nutzerentscheidung: Variante D wie empfohlen — `NavidromeScanTrigger` nach
+`utils/navidrome_scan_trigger.py` verschoben, `api/` anschließend
+vollständig entfernt.
+
+### Datei verschoben
+
+`api/navidrome_scan_trigger.py` → `utils/navidrome_scan_trigger.py`
+(`git mv`, Inhalt 1:1 erhalten). Einzige Änderung am Dateiinhalt selbst:
+die Pfad-Kopfzeile (`# api/navidrome_scan_trigger.py` →
+`# utils/navidrome_scan_trigger.py`, reine Selbstbeschreibung nach
+Repo-Konvention). `ScanRunResult`, `ScanTimeoutError`,
+`NavidromeScanTrigger`, `run_scan()`, Konfigurationsvalidierung,
+Kommando-Normalisierung, `asyncio.create_subprocess_shell`,
+Timeout-Steuerung, Exception-Verhalten, Logging (inkl. des bewusst
+beibehaltenen Log-Kontexts `"NavidromeAPI"`) und alle Rückgabewerte
+byte-identisch unverändert. Die bereits vor dieser Verschiebung
+vorhandenen, historisch bedingten Docstring-Erwähnungen des längst
+entfernten Moduls `api.navidrome_api` (Modul-Docstring von
+`_get_scan_config()`) wurden bewusst **nicht** angefasst — außerhalb des
+Auftrags dieses Schritts.
+
+### Consumer angepasst
+
+`handlers/menu/rich_menu_handler.py:55` — 1 Importzeile:
+`from api.navidrome_scan_trigger import ...` →
+`from utils.navidrome_scan_trigger import ...`. Keine weitere Änderung
+an dieser Datei.
+
+### Tests angepasst
+
+- `tests/test_navidrome_scan_trigger.py`: 1 Importzeile + alle 8
+  String-Patch-Ziele (`asyncio.create_subprocess_shell` ×3,
+  `_get_scan_config` ×3, `Config` ×1) von `api.navidrome_scan_trigger.*`
+  auf `utils.navidrome_scan_trigger.*` umgestellt. Alle 5 Tests inhaltlich
+  unverändert (Erfolg, `returncode != 0`, Timeout inkl.
+  `timeout_seconds`, fehlende Konfiguration, Listen-Normalisierung).
+- `tests/test_rich_menu_handler.py`: **Korrektur gegenüber der
+  ursprünglichen Analyse** (Abschnitt 9/11 dieses Dokuments hatte „keine
+  Änderung nötig“ vorhergesagt) — die Datei importiert `ScanRunResult`/
+  `ScanTimeoutError` zusätzlich direkt am Dateikopf (für den Bau von
+  Mock-Rückgabewerten), nicht nur über String-Patch-Ziele. Diese eine
+  Importzeile musste ebenfalls auf `utils.navidrome_scan_trigger`
+  umgestellt werden. Die 5 String-Patch-Ziele selbst
+  (`"handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan"`)
+  waren wie vorhergesagt unverändert korrekt, da sie über das
+  konsumierende Modul patchen.
+- Keine Tests entfernt, keine Testabdeckung reduziert.
+
+### `api/` entfernt
+
+Nach der Migration enthielt `api/` nur noch die bereits leere
+`__init__.py` (0 Bytes) und `__pycache__` — beide entfernt
+(`git rm api/__init__.py`, `__pycache__` als Build-Artefakt gelöscht).
+`api/` existiert nicht mehr als Verzeichnis.
+
+### Referenz-Audit nach der Umsetzung
+
+- `api.navidrome_scan_trigger`: **0 Treffer** repo-weit (weder
+  funktional noch prosaisch — die Umstellung war vollständig).
+- `api.navidrome_api`: weiterhin **0 funktionale Treffer** (unverändert
+  seit ARCH-009 Phase 9) — verbleibende 4 Treffer sind ausschließlich
+  historische Prosa in Docstrings/Kommentaren (2× in Testdatei-
+  Kopfkommentaren, 2× im nicht angetasteten Docstring von
+  `utils/navidrome_scan_trigger.py::_get_scan_config()`).
+- `from api.` / `import api.`: **0 Treffer** repo-weit.
+- `import api` (ohne Submodul) resolviert in dieser Entwicklungsumgebung
+  auf ein völlig unabhängiges, nicht mit MusicBot verwandtes
+  Namespace-Package außerhalb des Repos (`/mnt/128ssd/claude/app/api`,
+  zufällig auf dem Python-Pfad) — bestätigt kein Rest-`api`-Package
+  innerhalb von MusicBot selbst; `api.navidrome_scan_trigger` und
+  `api.navidrome_api` schlagen beide nachweislich mit
+  `ModuleNotFoundError` fehl.
+
+### Import-/Zyklusprüfung
+
+`utils.navidrome_scan_trigger`, `handlers.menu.rich_menu_handler`,
+`services.clients.navidrome_api` gemeinsam erfolgreich importierbar,
+keine Zirkelabhängigkeiten.
+
+### Regression
+
+**Gezielt:** `tests/test_navidrome_scan_trigger.py` +
+`tests/test_rich_menu_handler.py` — 38 Tests grün.
+
+**Vollständig:** 1008 bestanden — **unverändert** gegenüber dem Stand vor
+dieser Migration (reine Datei-/Importpfad-Verschiebung ohne Netto-
+Test-Änderung, daher keine Differenz zu erklären), unverändert dieselben
+**15 bekannten Vorbestand-Fehler** (`test_auto_learn.py`,
+`test_metadata_modules.py`, `test_suite.py` RichMenuSystem/
+MenuIntegration), keine neuen Fehlschläge.
+
+### Zielstruktur erreicht
+
+```text
+services/clients/navidrome_api.py   → externer Navidrome-API-Adapter
+utils/navidrome_scan_trigger.py     → lokaler technischer Subprocess-/Docker-Runner
+handlers/                           → Telegram-Präsentation/Benutzerinteraktion
+api/                                → entfernt
+```
+
+**ARCH-009-Folgeumsetzung damit abgeschlossen.**

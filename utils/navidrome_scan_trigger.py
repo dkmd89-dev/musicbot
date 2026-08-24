@@ -1,4 +1,4 @@
-# api/navidrome_scan_trigger.py
+# utils/navidrome_scan_trigger.py
 
 """
 ARCH-009 Phase 4: Kapselt die lokale Docker-/Subprocess-/Timeout-Steuerung
