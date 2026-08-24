@@ -535,6 +535,15 @@ class GenreProcessor:
         """
         Holt Genre von MusicBrainz.
         Gibt immer GenreResult zurück (nie GenreMapping).
+
+        ARCH-012 Phase 3B: MusicBrainzClient liefert seit dieser Phase nur
+        noch die rohen release-group-Tags ("tags"), kein vorberechnetes
+        Einzelgenre mehr - die Priorisierung erfolgt hier ueber
+        prioritize_genres() (analog zu _fetch_genre_from_lastfm()), statt
+        wie zuvor ueber einen zweiten determine_genre()-Aufruf auf dem
+        bereits client-seitig verdichteten (und bei Multi-Tag-Ergebnissen
+        fehlerhaften) Genre-String. Siehe
+        docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md, Phase 3A/3B.
         """
         from utils.genre_map import GenreResult
 
@@ -570,25 +579,28 @@ class GenreProcessor:
             }
             _has_ids = any(_mb_ids.values())
 
-            raw_mb_genre = mb_data.get("genre", "")
-            has_genre = bool(raw_mb_genre and raw_mb_genre != "unknown")
+            tags = mb_data.get("tags", []) or []
 
-            if has_genre:
-                self.logger.info(f"🎵 MusicBrainz lieferte Genre: '{raw_mb_genre}'")
-                # determine_genre() gibt GenreResult zurück
-                mb_genre_result = self.genre_mapper.determine_genre(
-                    raw_genre=raw_mb_genre,
-                    artist_name=artist_name,
+            if tags:
+                self.logger.info(
+                    f"🎵 MusicBrainz lieferte {len(tags)} Tags: {tags[:5]}..."
                 )
-                if mb_genre_result and mb_genre_result.primary:
-                    # GenreResult ist ein normaler Dataclass → direkte Zuweisung OK
-                    mb_genre_result.raw_tags = mb_data.get("tags", []) or []
-                    mb_genre_result.secondary = mb_genre_result.secondary or []
+                primary_genre, secondary_genres = self.prioritize_genres(
+                    tags, artist_name=artist_name
+                )
+                if primary_genre and primary_genre != "Unknown":
+                    mb_genre_result = GenreResult(
+                        primary=primary_genre,
+                        secondary=secondary_genres[:5],
+                        source="musicbrainz_prioritized",
+                        confidence=0.85,
+                        raw_tags=tags,
+                    )
                     if _has_ids:
                         mb_genre_result.mb_ids = _mb_ids
                     return mb_genre_result
 
-            # Nur IDs, kein Genre
+            # Nur IDs, kein (verwertbares) Genre
             if _has_ids:
                 sentinel = GenreResult(
                     primary="",

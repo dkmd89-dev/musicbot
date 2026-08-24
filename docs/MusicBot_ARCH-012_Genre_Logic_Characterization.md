@@ -16,6 +16,12 @@ bereits im **ersten** `determine_genre()`-Aufruf (im Client) ein
 Informations-/Korrektheits-Verlust vor, den der zweite Aufruf nur
 unverändert durchreicht. Kein Refactoring in dieser Phase.
 
+**Phase 3B abgeschlossen (2026-08-24).** Variante A umgesetzt und
+verifiziert (Abschnitt 18): `MusicBrainzClient` liefert nur noch rohe
+Tags, `genre_processor.py` priorisiert sie über die bestehende
+`prioritize_genres()`-Logik. Client-seitige Genre-Fachlogik vollständig
+entfernt.
+
 ---
 
 ## 1. Ziel und Scope
@@ -1341,3 +1347,244 @@ festzuschreiben, bevor sie geändert wird.
 > `prioritize_genres()`), mit vorherigem End-to-End-Characterization-Test
 > auf Client-Ebene vor jeder Codeänderung.** Umsetzung erst nach
 > ausdrücklicher Freigabe.
+
+---
+
+# Phase 3B — Umsetzung
+
+## 18.1 Ausgangszustand
+
+Vor jeder Codeänderung verifiziert (Sicherungslauf):
+`pytest tests/test_musicbrainz_client.py tests/test_genre_processor.py
+tests/test_lastfm_client.py tests/test_genre_mapper_advanced.py -q` →
+**80 passed**; `pytest tests/ -q` → **1014 passed, 15 bekannte
+Vorbestand-Fehler** — exakt identisch zum in der Aufgabenstellung
+genannten Phase-3A-Stand. Kein Abweichen vom dokumentierten Stand
+festgestellt, daher direkt mit der Implementierung fortgefahren.
+
+## 18.2 Konkrete Codeänderung
+
+**`services/clients/musicbrainz_client.py`:**
+- `from utils.genre_map import get_genre_mapper`-Import entfernt.
+- `self.genre_mapper = get_genre_mapper()` in `__init__` entfernt
+  (Log-Nachricht entsprechend angepasst).
+- In `_build_metadata()`: der bedingte Block (`mb_tags_str`-Aufbau +
+  zwei `determine_genre()`-Aufrufe für den Tags-vorhanden- bzw.
+  Tags-leer-Fall) ersetzt durch den festen Literal-Wert
+  `genre_value = "unknown"`. `"tags": mb_tags` (die rohen,
+  release-group-extrahierten Tag-Namen) war bereits Teil der
+  Rückgabestruktur und blieb unverändert bestehen — keine neue
+  Datenstruktur nötig (Vorgabe erfüllt).
+
+**`services/metadata/genre_processor.py`:**
+- `_fetch_genre_from_musicbrainz()`: der `raw_mb_genre =
+  mb_data.get("genre", "")` + zweiter `self.genre_mapper.determine_genre()`-
+  Aufruf ersetzt durch `tags = mb_data.get("tags", []) or []` +
+  `self.prioritize_genres(tags, artist_name=artist_name)` — strukturell
+  identisch zum bereits bestehenden `_fetch_genre_from_lastfm()`-Muster
+  (keine neue Implementierung, Wiederverwendung der vorhandenen
+  `prioritize_genres()`-Methode, wie gefordert).
+- Neuer `source`-Wert `"musicbrainz_prioritized"` für einen erfolgreichen
+  Treffer (vorher: `"normalized"`/`"hierarchy"`/`"rule"`/`"artist_exact"`
+  etc., je nachdem wie weit `determine_genre()` durchlief) — analog zu
+  `"lastfm_prioritized"` im Last.fm-Pfad. `confidence=0.85` ebenfalls
+  analog zum Last.fm-Pfad übernommen (kein neuer Wert erfunden).
+- `mb_ids`-Zuweisung, `raw_tags`-Zuweisung und der
+  `"musicbrainz_ids_only"`-Sentinel-Zweig (kein Tag/kein verwertbares
+  Genre, aber IDs vorhanden) bleiben strukturell unverändert.
+
+## 18.3 Neue Verantwortungsverteilung
+
+```text
+VORHER:
+MusicBrainzClient   → extrahiert Tags UND verdichtet sie via
+                       GenreMapper.determine_genre() zu einem
+                       (bei Multi-Tag fehlerhaften) Einzelgenre-String
+genre_processor.py  → verarbeitet diesen bereits verdichteten String
+                       ERNEUT via GenreMapper.determine_genre()
+
+NACHHER:
+MusicBrainzClient   → extrahiert NUR Tags (reine Adapterlogik,
+                       Regel A/CLAUDE.md §17 konform)
+genre_processor.py  → alleinige fachliche Genre-Priorisierung über
+                       prioritize_genres() (Hierarchie-Ranking, Dedup,
+                       Filter, Alias-pro-Tag)
+```
+
+Damit gilt für MusicBrainz jetzt exakt dasselbe Verantwortungsmuster wie
+für Last.fm (seit Phase 2): Client = reiner Adapter, `genre_processor.py`
+= alleiniger Ort der Genre-Fachentscheidung.
+
+## 18.4 Relevante Tests
+
+**`tests/test_musicbrainz_client.py`** (Produktionsklasse, `GenreMapper`
+nie real instanziiert, jetzt auch nicht mehr gemockt, da nicht mehr Teil
+des Clients):
+- `_make_client()`-Helper: `genre_mapper`-Parameter und der zugehörige
+  `patch.object(mb_module, "get_genre_mapper", ...)` entfernt.
+- `TestBuildMetadataFieldExtraction._client_with_genre()`-Helper entfernt
+  (nicht mehr benötigt), alle 5 Aufrufer auf direktes `_make_client()`
+  umgestellt (reine Signaturanpassung, keine Assertion-Änderung an diesen
+  5 Tests, da sie nie auf das `genre`-Feld prüften).
+- `test_genre_determined_from_release_group_tags` →
+  `test_release_group_tags_are_returned_raw_without_genre_determination`:
+  prüft jetzt, dass `_build_metadata()` die Tags roh (`["jazz", "smooth"]`)
+  zurückgibt und `"genre"` den Platzhalter `"unknown"` trägt — statt
+  vorher eine gemockte `determine_genre()`-Rückgabe zu prüfen.
+- `test_no_tags_falls_back_to_artist_channel_genre_lookup` →
+  `test_no_tags_genre_stays_unknown_placeholder`: prüft den festen
+  Platzhalter statt eines gemockten Fallback-Aufrufs.
+- 2 weitere `genre_mapper=`-Kwargs aus `TestFetchMetadata` entfernt (die
+  Tests prüften nie das Genre-Feld selbst).
+
+**`tests/test_genre_processor.py`:**
+- `test_musicbrainz_genre_hit_populates_mb_ids` (bestehender,
+  vor-ARCH-012 Test): Fake-Response von einem vorberechneten
+  `"genre": "deutschrap"`-Feld auf rohe `"tags"` umgestellt; Assertion
+  `source == "normalized"` → `source == "musicbrainz_prioritized"`.
+- Klasse `TestMusicBrainzDoubleDetermineGenreCharacterization` (Phase 3A)
+  umbenannt in `TestMusicBrainzGenrePrioritizationCharacterization` und
+  inhaltlich an die neue Architektur angepasst — **keine Tests entfernt**,
+  stattdessen:
+  - `test_multi_tag_client_value_is_the_entire_joined_tag_string` →
+    `test_genre_mapper_still_collapses_a_joined_multi_tag_string`:
+    unverändert in der Aussage (testet `GenreMapper.determine_genre()`
+    direkt, das Verhalten selbst wurde in Phase 3B bewusst nicht
+    verändert — dient jetzt als Beleg, *warum* die Verantwortung
+    verschoben wurde).
+  - `test_second_call_reproduces_the_same_value_unchanged` (charakterisierte
+    den jetzt behobenen Fehler) →
+    `test_musicbrainz_path_now_prioritizes_raw_tags_instead_of_a_collapsed_string`:
+    derselbe Multi-Tag-Input, jetzt mit den **korrigierten** Erwartungen
+    (`primary="Ruhrpott Rap"`, `secondary=["Hip Hop"]`,
+    `source="musicbrainz_prioritized"`) — inkl. explizitem Nachweis, dass
+    ein eventuell noch vorhandenes altes `"genre"`-Feld im Response-Dict
+    ignoriert wird.
+  - `test_single_tag_is_not_affected` →
+    `test_single_known_tag_resolves_to_a_clean_genre`: Testfall von
+    `"hip hop"` (durch `IGNORE_SECONDARY` gefiltert, daher für diesen
+    Zweck ungeeignet) auf `"ruhrpott rap"` korrigiert.
+  - Neu: `test_no_tags_falls_back_to_ids_only_sentinel` — Gegenprobe für
+    den unveränderten Sentinel-Pfad.
+  - `test_known_artist_shields_against_the_multi_tag_value` →
+    `test_known_artist_shields_against_musicbrainz_tags`: inhaltlich
+    unverändert (bereits vorher grün), nur an die neue
+    `_run_musicbrainz_path()`-Helper-Signatur angepasst.
+
+Keine Testdatei außerhalb dieser beiden wurde verändert. Kein Test wurde
+ersatzlos entfernt oder in seiner Kernaussage abgeschwächt — jede
+Anpassung ersetzt eine Assertion über das alte (jetzt nicht mehr
+existierende) Verhalten durch eine Assertion über das neue,
+architektonisch korrigierte Verhalten desselben Szenarios.
+
+## 18.5 Vorher/Nachher-Characterization
+
+Für den zentralen Phase-3A-Beispielfall (`["ruhrpott rap", "hip hop",
+"trap"]`, unbekannter Artist):
+
+| | Vorher (Phase 3A-Stand) | Nachher (Phase 3B) |
+|---|---|---|
+| Datenfluss | rohe Tags → Client-`determine_genre()` → verdichteter String → Processor-`determine_genre()` | rohe Tags → `prioritize_genres()` |
+| `primary` | `"Ruhrpott Rap, Hip Hop, Trap"` (kein valides Einzelgenre) | `"Ruhrpott Rap"` |
+| `secondary` | `[]` | `["Hip Hop"]` |
+| `source` | `"normalized"` | `"musicbrainz_prioritized"` |
+| `raw_tags` | `["ruhrpott rap", "hip hop", "trap"]` (angehängt, aber nicht ausgewertet) | `["ruhrpott rap", "hip hop", "trap"]` (Basis der Auswertung) |
+| `mb_ids` | erhalten | erhalten (unverändert) |
+
+Empirisch reproduziert durch
+`tests/test_genre_processor.py::TestMusicBrainzGenrePrioritizationCharacterization::test_musicbrainz_path_now_prioritizes_raw_tags_instead_of_a_collapsed_string`.
+
+## 18.6 Regressionsergebnis
+
+- Gezielt: `pytest tests/test_musicbrainz_client.py
+  tests/test_genre_processor.py tests/test_lastfm_client.py
+  tests/test_genre_mapper_advanced.py tests/test_album_processor.py -q`
+  → **95 passed** (Last.fm/GenreMapper/`album_processor.py` unverändert
+  grün — `album_processor.fetch_album_from_musicbrainz()` liest nur
+  `"album"`/`"year"`, nie `"genre"`/`"tags"`, daher unbeeinflusst).
+- Zusätzlich: `tests/test_enhanced_metadata_processor_aclose.py`,
+  `tests/test_metadata_processor_happy_path.py`,
+  `tests/test_autolearn_special_channel_gate.py` → **16 passed**.
+- Vollständig: `pytest tests/ -q` → **1015 passed, 15 failed** (bekannt,
+  namensgleich mit der Baseline: `test_auto_learn.py` 5 inkl. Subfails,
+  `test_metadata_modules.py::TestTitleCleaner` 5 inkl. Subfails,
+  `test_suite.py` 4 wegen fehlendem `pytest-asyncio`). **Keine neue
+  Regression.**
+
+## 18.7 Vergleich zur Baseline
+
+```text
+Baseline vor ARCH-012:  1010 passed, 15 bekannte Fehler
+Phase 3A-Stand:         1014 passed, 15 bekannte Fehler
+Phase 3B-Stand:         1015 passed, 15 bekannte Fehler  (+1: neuer
+                        Sentinel-Gegenprobe-Test, saldiert mit
+                        umbenannten/anders benannten, aber nicht
+                        zusätzlichen übrigen Tests)
+```
+
+## 18.8 Import-/Dependency-Audit
+
+- `from utils.genre_map import get_genre_mapper` in
+  `services/clients/musicbrainz_client.py`: **entfernt**, 0 verbleibende
+  funktionale Referenzen (nur 2 Docstring-Erwähnungen in historischer/
+  vergleichender Prosa, keine Codezeilen).
+  `determine_genre` kommt im gesamten Client-File nur noch in einem
+  erklärenden Kommentar vor, kein Funktionsaufruf.
+- `genre_processor.py` bleibt alleiniger Ort der Genre-Fachlogik:
+  `self.genre_mapper.determine_genre()` (Schritt 1/2 der
+  Gesamt-Pipeline, unverändert) und jetzt `self.prioritize_genres()` für
+  sowohl Last.fm als auch MusicBrainz.
+- `services/* → handlers/*` und `services/* → klassen/*`: repo-weit
+  weiterhin **0 Treffer** — keine neue Abhängigkeit durch diese Phase.
+- Keine Zirkelimporte: `services.clients.musicbrainz_client`,
+  `services.metadata.genre_processor`,
+  `services.metadata.enhanced_metadata_processor`,
+  `services.metadata.album_processor` importieren fehlerfrei.
+- Keine neue Abstraktion eingeführt (kein neues Modul, keine neue
+  Klasse) — ausschließlich Verhalten innerhalb bestehender Methoden
+  verschoben.
+- Bestehende Services-Boundaries unverändert (`services/clients/` bleibt
+  reiner Adapter-Layer, jetzt sogar konsequenter als zuvor).
+
+## 18.9 Unerwartete Abweichungen
+
+Keine unerwarteten Abweichungen im Sinne von während der Umsetzung neu
+entdeckten Problemen. Eine bewusste, transparent zu dokumentierende
+Konsequenz der exakt wie spezifizierten Umsetzung (Client darf Roh-Tags
+„NICHT mehr durch `GenreMapper.determine_genre()` zu einem Genre
+verdichten" — ohne Ausnahme für den Leere-Tags-Zweig):
+
+- Der vorherige Leere-Tags-Zweig in `_build_metadata()` rief
+  `determine_genre(raw_genre="", artist_name=X, channel_name=X)` auf —
+  das prüfte `channel_map` mit dem **Artist-Namen als Pseudo-Kanal**.
+  Dieser Zweig existiert nach Phase 3B nicht mehr. Praktische Relevanz:
+  sehr gering — `genre_processor.py`s eigener Schritt 1/2 (vor jedem
+  MusicBrainz-Aufruf) prüft bereits `artist_map` **und** den **echten**
+  Kanalnamen; nur der seltene Zufallsfall „`channel_map` enthält einen
+  Eintrag, dessen Key zufällig exakt dem Artist-Namen entspricht" entfällt
+  zusätzlich. Kein bekannter/getesteter Fall im Repo hing von diesem
+  Pseudo-Kanal-Zweig ab (keine bestehende Testerwartung verletzt).
+- `GenreResult.source`-Werte für MusicBrainz-Treffer ändern sich von den
+  bisherigen `determine_genre()`-Quellwerten (`"normalized"`,
+  `"hierarchy"`, `"rule"`, `"artist_exact"` etc.) zu einheitlich
+  `"musicbrainz_prioritized"`. `source` ist ein reines Introspektions-/
+  Log-Feld (`MetadataResult.genre_source`) ohne nachgewiesene
+  Steuerungslogik an anderer Stelle (repo-weit geprüft) — die
+  Feldstruktur selbst (`GenreResult` mit `primary`/`secondary`/`source`/
+  `confidence`/`raw_tags`/`mb_ids`) bleibt unverändert.
+
+## 18.10 Verbleibende ARCH-012-Themen
+
+- Last.fm (Phase 2) — abgeschlossen, nicht erneut angefasst.
+- ARCH-005 Reverse-Edge — unverändert, nicht Teil dieser Phase.
+- Doppelte In-Memory-Repräsentation von `genre_aliases.yaml`
+  (`GenreMapper.genre_aliases` vs. `GenreProcessor.GENRE_NORMALIZATION`,
+  Phase 1 Abschnitt 8) — weiterhin unverändert, kein Teil dieser Phase.
+- Der in Phase 3A dokumentierte, von ARCH-012 unabhängige Nebenbefund
+  (`mapping/genre_rules.yaml` nutzt die Top-Level-Schlüssel
+  `keyword_rules`/`artist_rules`, `GenreMapper._do_init()` liest aber
+  `GENRE_RULES` — `_apply_rules()` dadurch strukturell wirkungslos) bleibt
+  unverändert und außerhalb des ARCH-012-Scopes.
+- Kein weiterer offener ARCH-012-Phase-3-Punkt bekannt — die in Phase
+  3A/3B behandelte MusicBrainz-Genre-Duplikation ist damit vollständig
+  aufgelöst.
