@@ -281,10 +281,41 @@ Roadmap wurde aktualisiert).
 
 ---
 
+## ARCH-009 Phase 9 — Umsetzung A: `execute_scan()` eliminiert
+
+Abgeschlossen (Teilumsetzung der Phase-9-Analyse).
+
+Die in `docs/MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md`
+empfohlene Option 2 wurde umgesetzt: `NavidromeAPI.execute_scan()`
+(zuletzt eine reine historische Bridge, siehe Analyse) wurde vollständig
+entfernt. `handlers/menu/rich_menu_handler.py::_handle_navidrome_scan()`
+ruft jetzt direkt `NavidromeScanTrigger.run_scan()` auf — identische
+Telegram-MarkdownV2-Nachrichten (Erfolg/Fehlschlag/Timeout/generische
+Exception), identische `ScanRunResult`/`ScanTimeoutError`-Semantik.
+`api/navidrome_api.py` wurde vollständig entfernt (keine funktionale
+Referenz mehr im Repo). `api/` bleibt bestehen — enthält jetzt
+ausschließlich `navidrome_scan_trigger.py`.
+
+**Bewusst nicht Teil dieses Schritts** (siehe Analyse, Abschnitt 3):
+endgültiger Zielort von `NavidromeScanTrigger` — bleibt unverändert unter
+`api/navidrome_scan_trigger.py`, wird in einer separaten ARCH-009-
+Folgeanalyse untersucht. Details zur Umsetzung (Consumer-Migration,
+entfernte/angepasste Tests, Regression, Dependency-Audit):
+`docs/MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md`
+(Abschnitt „Umsetzung A“).
+
+---
+
 # Nächste Phasen
 
 Phase 3 bis Phase 8 sind vollständig abgeschlossen (Analyse **und**
-Umsetzung, siehe oben unter „Bereits abgeschlossen“).
+Umsetzung, siehe oben unter „Bereits abgeschlossen“). Phase 9 ist
+teilweise abgeschlossen: `execute_scan()` ist eliminiert (Umsetzung A,
+siehe oben), der endgültige Zielort von `NavidromeScanTrigger` ist noch
+offen und wird in einer separaten Folgeanalyse behandelt — die unten
+stehende ursprüngliche Phase-9-Checkliste („Finaler
+Navidrome-Migrationsabschluss“) bleibt bis zu dieser Folgeentscheidung
+weiterhin gültig und unverändert.
 
 ---
 

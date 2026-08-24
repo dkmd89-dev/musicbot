@@ -371,21 +371,24 @@ class TestDownloadWrapperSetsUserState:
 
 class TestHandleNavidromeScan:
     """
-    ARCH-009 Phase 5 (2026-08-24): NavidromeAPI.execute_scan() ist seitdem
-    ein reiner, telegramfreier Pass-Through zu NavidromeScanTrigger.run_scan()
-    (siehe docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md) -
-    die vorher in execute_scan() eingebaute Telegram-MarkdownV2-Formatierung
-    (Erfolg/Fehlschlag/Timeout/generische Exception) liegt jetzt hier im
-    Handler. Diese Tests verifizieren, dass die vier sichtbaren
+    ARCH-009 Phase 5 (2026-08-24): die Telegram-MarkdownV2-Formatierung
+    (Erfolg/Fehlschlag/Timeout/generische Exception) liegt im Handler
+    (siehe docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md).
+
+    ARCH-009 Phase 9, Umsetzung A (2026-08-24): die zwischenzeitliche
+    NavidromeAPI.execute_scan()-Bridge (api/navidrome_api.py) wurde
+    vollstaendig entfernt - der Handler ruft jetzt direkt
+    NavidromeScanTrigger.run_scan() auf (siehe
+    docs/MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md).
+    Diese Tests verifizieren weiterhin, dass die vier sichtbaren
     Nachrichtenvarianten inhaltlich unveraendert bleiben, jetzt gemockt auf
-    Ebene von NavidromeAPI.execute_scan() (ScanRunResult/ScanTimeoutError)
-    statt eines fertigen (bool, str)-Tupels.
+    Ebene von NavidromeScanTrigger.run_scan() (ScanRunResult/ScanTimeoutError)
+    statt der entfernten Bridge.
 
     Historischer Kontext: vor einem frueheren Fix rief diese Handler-Methode
     self.navidrome_adapter.trigger_scan() auf, obwohl navidrome_adapter
     nirgends im Repo instanziiert wurde - self.navidrome_adapter war IMMER
-    None, jeder Klick zeigte nur "Navidrome-Adapter nicht verfuegbar". Fix:
-    ruft seitdem direkt NavidromeAPI.execute_scan() auf.
+    None, jeder Klick zeigte nur "Navidrome-Adapter nicht verfuegbar".
     """
 
     def test_admin_triggers_scan_via_navidrome_api(self, tmp_path):
@@ -394,7 +397,7 @@ class TestHandleNavidromeScan:
         context = make_context()
 
         with patch(
-            "handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan",
+            "handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan",
             new=AsyncMock(
                 return_value=ScanRunResult(
                     success=True, returncode=0, stdout="Scan complete", stderr=""
@@ -415,7 +418,7 @@ class TestHandleNavidromeScan:
         context = make_context()
 
         with patch(
-            "handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan",
+            "handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan",
             new=AsyncMock(
                 return_value=ScanRunResult(
                     success=False, returncode=1, stdout="", stderr="boom"
@@ -435,7 +438,7 @@ class TestHandleNavidromeScan:
         context = make_context()
 
         with patch(
-            "handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan",
+            "handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan",
             new=AsyncMock(side_effect=ScanTimeoutError(45)),
         ):
             asyncio.run(handler._handle_navidrome_scan(update, context))
@@ -451,7 +454,7 @@ class TestHandleNavidromeScan:
         context = make_context()
 
         with patch(
-            "handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan",
+            "handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan",
             new=AsyncMock(),
         ) as mock_scan:
             asyncio.run(handler._handle_navidrome_scan(update, context))
@@ -465,7 +468,7 @@ class TestHandleNavidromeScan:
         context = make_context()
 
         with patch(
-            "handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan",
+            "handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan",
             new=AsyncMock(side_effect=RuntimeError("boom")),
         ):
             asyncio.run(handler._handle_navidrome_scan(update, context))

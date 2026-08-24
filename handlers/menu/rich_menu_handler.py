@@ -52,8 +52,7 @@ from handlers.enhanced_error_handler import (
     ErrorHandlerAdminInterface,
 )
 from config import Config
-from api.navidrome_api import NavidromeAPI
-from api.navidrome_scan_trigger import ScanTimeoutError
+from api.navidrome_scan_trigger import NavidromeScanTrigger, ScanTimeoutError
 from emoji import EMOJI
 from helfer.markdown_helfer import escape_md_v2
 from services.downloader.utils.enhanced_metadata_processor import (
@@ -721,13 +720,15 @@ class RichMenuHandler:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """
-        ARCH-009 Phase 5: NavidromeAPI.execute_scan() ist seitdem ein reiner
-        Pass-Through zu NavidromeScanTrigger.run_scan() ohne eigene
-        Telegram-Formatierung. Die MarkdownV2-Nachrichtenbildung (Erfolg,
-        Fehlschlag, Timeout, generische Exception) liegt deshalb hier -
-        Text/Emojis/Escaping 1:1 aus der vorherigen execute_scan()-
-        Implementierung übernommen, siehe
-        docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md.
+        ARCH-009 Phase 9 (Umsetzung A): ruft NavidromeScanTrigger.run_scan()
+        direkt auf statt über die inzwischen entfernte
+        NavidromeAPI.execute_scan()-Bridge (api/navidrome_api.py, war seit
+        ARCH-009 Phase 5 nur noch ein reiner Pass-Through ohne eigene
+        Telegram-Formatierung). Die MarkdownV2-Nachrichtenbildung (Erfolg,
+        Fehlschlag, Timeout, generische Exception) bleibt unverändert hier -
+        Text/Emojis/Escaping 1:1 übernommen, siehe
+        docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md
+        und docs/MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md.
         """
         query = update.callback_query
         user_id = update.effective_user.id
@@ -737,7 +738,7 @@ class RichMenuHandler:
         await query.answer("🔄 Starte Scan ...")
         try:
             try:
-                result = await NavidromeAPI.execute_scan()
+                result = await NavidromeScanTrigger.run_scan()
                 if result.success:
                     message = f"{EMOJI['scan']} Scan erfolgreich: \n```{escape_md_v2(result.stdout)}```"
                 else:
