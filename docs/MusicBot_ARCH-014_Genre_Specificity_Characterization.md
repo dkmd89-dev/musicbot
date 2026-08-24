@@ -9,6 +9,13 @@ das aktuelle, fachlich suboptimale Verhalten — keine Lösung). Ergebnis
 ist eine fachliche Entscheidungsgrundlage für eine mögliche spätere,
 separat freizugebende Phase.
 
+**Phase 2 abgeschlossen (2026-08-25). Die in Phase 1 abgeleitete
+Spezifitätsregel (Zeichenlänge, Hierarchie-Tiefe als Tie-Breaker) ist
+umgesetzt** (siehe Abschnitt „Phase 2 — Umsetzung" am Ende dieses
+Dokuments). Alle 55 charakterisierten Fälle korrigiert, keine
+ARCH-013-Regression, 1 dokumentierte, bewusst nicht behobene
+Idempotenz-Ausnahme (`"ny drill"`).
+
 ---
 
 ## 1. Ausgangslage
@@ -595,3 +602,232 @@ selbst nimmt **keine Umsetzung** vor.
 Wie ausdrücklich gefordert: **STOPP nach dieser Characterization.** Keine
 automatische Folgephase gestartet. Wartet auf ausdrückliche Freigabe für
 eine mögliche Umsetzungsphase (vorläufig „ARCH-014 Phase 2").
+
+---
+
+## Phase 2 — Umsetzung
+
+**Status: abgeschlossen (2026-08-25).** Setzt die in Phase 1 eindeutig
+abgeleitete Spezifitätsregel (ERGEBNIS A) im bestehenden
+`GenreProcessor.normalize_genre_name()`-Teilstring-Match-Pfad um.
+
+### Vorbereitungsprüfung
+
+Vor der Änderung verifiziert: der Code entsprach exakt dem in Phase 1
+charakterisierten Stand (`for key, value in self.GENRE_NORMALIZATION.items():
+if self._contains_alias_as_whole_word(...): return value` — First-Match,
+keine Längenprüfung). Keine Abweichung zur Dokumentation festgestellt.
+
+### Implementierte Regel
+
+```python
+candidate_keys = [
+    key
+    for key in self.GENRE_NORMALIZATION
+    if self._contains_alias_as_whole_word(genre_lower, key)
+]
+if candidate_keys:
+    def _specificity(key: str):
+        value = self.GENRE_NORMALIZATION[key]
+        depth = self.GENRE_PRIORITY.get(value.lower(), -1)
+        return (len(key), depth)
+
+    best_key = max(candidate_keys, key=_specificity)
+    return self.GENRE_NORMALIZATION[best_key]
+```
+
+1. **Schritt 1 (Wortgrenzen-Treffer bestimmen):** unverändert —
+   `_contains_alias_as_whole_word()` (ARCH-013 Phase 5) wurde nicht
+   angetastet. Statt beim ersten Treffer zurückzukehren, werden jetzt
+   **alle** gültigen Wortgrenzen-Treffer gesammelt.
+2. **Schritt 2 (Zeichenlänge):** `len(key)` als Primärkriterium — der
+   längste Alias-Key unter allen gültigen Treffern gewinnt. Warum
+   Zeichenlänge und nicht Wortanzahl: Phase 1 hat empirisch gezeigt, dass
+   Wortanzahl bei 5 der 55 Fälle versagt (Bindestrich-/Slash-Komposita
+   wie `"k-pop"` zählen bei `str.split()` fälschlich als 1 Wort).
+   Zeichenlänge deckt alle 55 Fälle korrekt ab.
+3. **Schritt 3 (Hierarchie-Tie-Breaker):** `self.GENRE_PRIORITY.get(value.lower(), -1)`
+   — die bereits bestehende, aus `genre_hierarchy.yaml` berechnete
+   Prioritäts-/Tiefen-Repräsentation (dieselbe, die `prioritize_genres()`
+   für die Multi-Tag-Priorisierung verwendet), **keine neue
+   Hierarchie-Semantik**. Wird nur bei exakt gleicher Zeichenlänge
+   zwischen zwei unterschiedlichen Kandidaten wirksam — unter den 55
+   bekannten Fällen tritt dieser Fall aktuell nicht auf (Phase 1,
+   Abschnitt 5, „Gleichstand-Suche"). Fehlende Hierarchie-Tiefe wird mit
+   `-1` behandelt (verliert im Tie-Break gegen jeden Key mit bekannter
+   Tiefe) — ein bewusster, dokumentierter Default, keine Improvisation
+   einer neuen Regel: er kommt nur zum Tragen, wenn *zusätzlich* bereits
+   Zeichenlängen-Gleichstand besteht, was aktuell nirgends auftritt.
+
+**Nur eine Produktionsdatei geändert** (`services/metadata/genre_processor.py`,
+21 effektive Zeilen) — `GenreMapper`, alle YAML-Dateien und
+`_contains_alias_as_whole_word()` selbst blieben unverändert, wie von der
+Scope-Grenze gefordert.
+
+### Erhaltene ARCH-013-Regeln (empirisch verifiziert)
+
+| Regel | Verifikation | Ergebnis |
+|---|---|---|
+| Alias-Konflikte (`electropop`/`chamber pop`/`tech house`/`ruhrpott rap`) | `GenreMapper`/`GenreProcessor` direkt verglichen | identisch, unverändert |
+| Mixed-Case/Whitespace (`Hip-Hop`, `Hip - Hop`, …) | 6 Schreibweisen getestet | alle → `Hip Hop`, unverändert |
+| Wortgrenzen (`britpop` darf nicht matchen) | `britpop`/`britpop revival` getestet | unverändert `Britpop`/`Britpop Revival` |
+| Wortgrenzen (`ruhrpott rap fanpage` muss matchen) | getestet | unverändert `Ruhrpott Rap` |
+| Multi-Tag-Priorisierung (ARCH-013 Phase 4) | 5 bekannte Fälle erneut ausgeführt | alle unverändert korrekt |
+
+### Ergebnisse der 55er-Revalidierung
+
+Vollständiger Vorher-/Nachher-Vergleich aller 55 programmatisch
+hergeleiteten Paare (Skript identisch zur Phase-1-Methodik, gegen den
+gefixten Code ausgeführt):
+
+- **55/55 korrigiert** — liefern jetzt den spezifischen statt des
+  generischen Werts.
+- **0/55 weiterhin falsch.**
+- **0/55 unerwartetes Ergebnis** (weder generischer noch spezifischer
+  Wert).
+
+### Korrigierte Beispiele
+
+| Eingabe | vorher (Phase 1) | nachher (Phase 2) |
+|---|---|---|
+| `k-pop revival` | `Pop` | `K-Pop` |
+| `tech house mix` | `House` | `Tech House` |
+| `christian rock ballad` | `Rock` | `Gospel` |
+| `indie rock legend` | `Rock` | `Indie` |
+| `bedroom pop vibes` | `Pop` | `Indie` |
+| `country pop hit` | `Pop` | `Country Pop` |
+| `progressive house anthem` | `House` | `Progressive House` |
+| `west coast hip hop classic` | `Hip Hop` | `West Coast Hip Hop` |
+| `symphonic metal choir` | `Klassik` | `Metal` |
+
+### Verbleibende bekannte Edge Cases
+
+**1 von 55 Fällen ist nach der Korrektur nicht mehr idempotent:**
+`"ny drill extra"` → `"New York Drill"` (korrekt, spezifisch) →
+erneut normalisiert → `"Hip Hop"` (falsch zurückfallend).
+
+**Ursache:** `"New York Drill"` ist in `mapping/genre_aliases.yaml`
+**kein eigener Alias-Key** — nur die Abkürzung `"ny drill"` führt dorthin.
+Beim zweiten Normalisierungsdurchlauf ist `"new york drill"` kein exakter
+Match, und im Teilstring-Match enthält der ausgeschriebene Text selbst
+zufällig den generischen Key `"drill"` als gültigen Wortgrenzen-Treffer
+(`"...york DRILL"`) — `"ny drill"` selbst kommt im ausgeschriebenen Text
+nicht mehr als Zeichenfolge vor, kann also nicht erneut gefunden werden.
+
+**Warum das VOR Phase 2 nicht sichtbar war:** vor der Korrektur war der
+ERSTE Durchlauf bereits (fälschlich) `"Hip Hop"` (der generische Treffer
+gewann sofort) — der zweite Durchlauf blieb dann trivial stabil bei
+`"Hip Hop"`. Die Korrektur macht den ersten Durchlauf richtig, deckt dabei
+aber eine vorbestehende, von ARCH-014 unabhängige Datenlücke in
+`genre_aliases.yaml` auf (ein ausgeschriebener kanonischer Wert ohne
+eigenen rückführenden Alias-Eintrag).
+
+**2 weitere, strukturell ähnliche, aber nicht betroffene Fälle geprüft:**
+`"liquid dnb"` → `"Liquid Drum & Bass"` und `"afro trap"` → `"Afro"` sind
+ebenfalls nicht als eigener Alias-Key rückführbar, bleiben aber zufällig
+idempotent, weil ihr ausgeschriebener kanonischer Text **keinen**
+generischen Alias-Key als Wortgrenzen-Treffer enthält (die
+Title-Case-Fallback-Stufe liefert in diesen beiden Fällen zufällig
+denselben Text zurück).
+
+**Nicht behoben** — Scope-Grenze dieser Phase verbietet
+Alias-Daten-Änderungen (`genre_aliases.yaml`) und das Erfinden neuer
+Normalisierungsregeln. Dokumentiert als bekannter, isolierter Folgepunkt
+(siehe Abschluss).
+
+### Import-/Dependency-Audit
+
+- Keine neuen Imports (0 Treffer bei `git diff ... | grep import`).
+- `services/* → handlers/*`: 0 Treffer, unverändert.
+- `services/* → klassen/*`: 0 Treffer, unverändert.
+- Import-Zyklen: AST-Scan über alle `services/*.py` → 0 Zyklen,
+  unverändert.
+- Downloader→Metadata-Richtung: nicht berührt (nur `genre_processor.py`
+  intern geändert, keine neue Abhängigkeit).
+
+### Gezielte Tests
+
+`tests/test_genre_specificity_characterization.py` — von 14 auf 36 Tests
+erweitert, 5 Klassen:
+
+- `TestSpecificAliasNowOutranksGenericAlias` (11 Tests, davon 1
+  vollständiger 55-Paare-Test) — Soll-Verhalten.
+- `TestWordBoundaryNegativeCasesStillExcluded` (2 Tests) — ARCH-013
+  Phase 5 bleibt erhalten.
+- `TestArch013RulesPreserved` (15 Tests) — Alias-Konflikte, Mixed-Case/
+  Whitespace, Multi-Tag-Priorisierung.
+- `TestIdempotency` (7 Tests) — 6 stabile Fälle + 1 explizit
+  dokumentierte, bewusst nicht behobene Ausnahme (`ny drill`).
+- `TestSpecificityPairCountRegressionGuard` (1 Test) — strukturelle
+  Paarzahl (55) als künftiger YAML-Änderungswächter.
+
+Alle bisherigen 14 Phase-1-Tests wurden umbenannt/angepasst (Assertions
+invertiert: spezifischer statt generischer Wert erwartet), **nicht
+gelöscht** — etabliertes Muster aus ARCH-012/013.
+
+Zusätzlich erneut ausgeführt: `tests/test_genre_processor.py` (28),
+`tests/test_genre_mapper_advanced.py` (16), `tests/test_genre_alias_characterization.py`
+(26), `tests/test_mapping_yaml_integrity.py` (22) — alle unverändert grün,
+**125 Tests insgesamt** in der gezielten Genre-Testbasis.
+
+### Vollständige Regression
+
+- Gezielt (5 Genre-Testdateien): 125 passed.
+- Vollständig (`pytest tests/ -q`): **1077 passed**, 15 bekannte
+  Vorbestandsfehler (identisch zu allen vorherigen ARCH-013/014-Ständen).
+- Baseline-Vergleich: 1055 (Phase 1) → 1077 (Phase 2), Delta +22 exakt
+  durch die Testdatei-Erweiterung erklärt (36 − 14 = 22), keine unerklärte
+  Abweichung.
+
+### Diff-/Scope-Audit
+
+Geänderte Dateien:
+
+- `services/metadata/genre_processor.py` — 1 Produktionsdatei, 21
+  effektive Zeilen, keine neuen Imports, keine neue Klasse, keine
+  geänderte öffentliche Signatur.
+- `tests/test_genre_specificity_characterization.py` — Testdatei, wie
+  oben beschrieben.
+- `docs/MusicBot_ARCH-014_Genre_Specificity_Characterization.md` —
+  dieser Abschnitt.
+
+**Nicht verändert:** `utils/genre_map.py`, jede YAML-Mapping-Datei
+(`genre_aliases.yaml`, `genre_overrides.yaml`, `genre_hierarchy.yaml`),
+jede andere Produktionsdatei, Downloader-/Handler-/Klassen-Schicht.
+
+### Bewusst nicht bearbeitet
+
+- Die dokumentierte `"ny drill"`-Idempotenz-Ausnahme (Datenlücke in
+  `genre_aliases.yaml`, kein Code-Bug dieser Phase) — erfordert eine
+  YAML-Änderung, außerhalb der Scope-Grenze dieser Phase.
+- Jede Form von Zentralisierung, neuer Architektur-Layer oder
+  Downloader-/Metadata-Änderung.
+- ARCH-005 und alle anderen bekannten POST-ARCH-013-Folgepunkte.
+
+---
+
+## ARCH-014 Phase 2 — Entscheidungsgate
+
+**Erreicht.** Alle Bedingungen erfüllt:
+
+- Zeichenlängenregel implementiert und an allen 55 charakterisierten
+  Fällen verifiziert.
+- Hierarchie-Tie-Breaker gemäß bestehender `GENRE_PRIORITY`-Semantik
+  berücksichtigt (aktuell folgenlos, da kein Gleichstand-Fall existiert —
+  transparent dokumentiert, nicht improvisiert).
+- 55/55 Fälle korrigiert, 0 verbleibend falsch.
+- ARCH-013 nicht regressiert (Alias-Konflikte, Mixed-Case/Whitespace,
+  Wortgrenzen, Multi-Tag-Priorisierung — alle empirisch bestätigt
+  unverändert).
+- Idempotenz erhalten für 54/55 Fälle; 1 bewusst dokumentierte,
+  vorbestehende Ausnahme (`"ny drill"`, Datenlücke, nicht Teil dieser
+  Phase).
+- Vollregression: 1077 passed, 15 bekannte Vorbestandsfehler, keine neue
+  Regression.
+- Diff/Scope sauber: 1 Produktionsdatei, keine neuen Imports, keine
+  Schichtverletzung.
+
+ARCH-014 hat damit keinen offenen Phasen-Auftrag mehr. Wie ausdrücklich
+gefordert: **STOPP.** Kein weiterer Architektur- oder Genre-Folgepunkt
+selbstständig begonnen, kein automatisches Post-ARCH-014-Audit. Wartet
+auf ausdrückliche Freigabe für jede weitere Aktion (inkl. Merge).

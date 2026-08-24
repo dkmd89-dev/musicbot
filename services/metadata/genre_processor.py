@@ -363,11 +363,32 @@ class GenreProcessor:
         # staendige Wortfolge vorkommt (begrenzt durch Leerzeichen,
         # Satzzeichen oder Stringanfang/-ende), aber nicht, wenn er nur als
         # Zeichenfolge innerhalb eines laengeren Einzelworts auftritt (z.B.
-        # "pop" in "britpop"). Vorher wurde jedes Vorkommen als Teilstring
-        # akzeptiert, unabhaengig von Wortgrenzen.
-        for key, value in self.GENRE_NORMALIZATION.items():
-            if self._contains_alias_as_whole_word(genre_lower, key):
-                return value
+        # "pop" in "britpop").
+        #
+        # ARCH-014 Phase 2 (docs/MusicBot_ARCH-014_Genre_Specificity_Characterization.md):
+        # bei MEHREREN gueltigen Wortgrenzen-Treffern gewinnt nicht mehr
+        # der erste (Iterationsreihenfolge = YAML-Dateireihenfolge,
+        # kein fachlicher Mechanismus), sondern der laengste Alias-Key
+        # (Zeichenlaenge) - empirisch fuer alle 55 charakterisierten
+        # Kollisionsfaelle als vollstaendig und Wortanzahl-unabhaengig
+        # bestaetigt (Bindestrich-/Slash-Komposita wie "k-pop" zaehlen bei
+        # str.split() faelschlich als 1 Wort). Bei exakt gleicher Laenge
+        # entscheidet die bereits vorhandene Hierarchie-Tiefe
+        # (self.GENRE_PRIORITY, aus genre_hierarchy.yaml) als Tie-Breaker -
+        # aktuell tritt dieser Fall bei keinem der 55 bekannten Paare auf.
+        candidate_keys = [
+            key
+            for key in self.GENRE_NORMALIZATION
+            if self._contains_alias_as_whole_word(genre_lower, key)
+        ]
+        if candidate_keys:
+            def _specificity(key: str):
+                value = self.GENRE_NORMALIZATION[key]
+                depth = self.GENRE_PRIORITY.get(value.lower(), -1)
+                return (len(key), depth)
+
+            best_key = max(candidate_keys, key=_specificity)
+            return self.GENRE_NORMALIZATION[best_key]
 
         # Fallback: Kapitalisierung
         words = genre.split()
