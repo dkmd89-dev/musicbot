@@ -7,6 +7,10 @@ geteilten Default-Executor aufgerufen wird (u.a. von check_connection(),
 get_artists(), search()), kann das bei wiederholten Aufrufen den gesamten
 Thread-Pool erschoepfen und damit den ganzen Bot lahmlegen, nicht nur die
 Navidrome-Funktionen.
+
+ARCH-009 Phase 7 (2026-08-24): make_request()/_build_url() sind jetzt
+Instanzmethoden (DI) statt @classmethod/@staticmethod - Tests konstruieren
+daher eine NavidromeAPI()-Instanz statt die Klasse direkt zu verwenden.
 """
 
 from unittest.mock import MagicMock, patch
@@ -28,12 +32,13 @@ def _fake_response():
 
 class TestTimeoutIsPassed:
     def test_make_request_passes_a_timeout_to_requests_get(self):
+        api = NavidromeAPI()
         with patch.object(
-            NavidromeAPI,
+            api,
             "_build_url",
             return_value="https://navidrome.example.test/rest/ping.view",
         ), patch("api.navidrome_api.requests.get", return_value=_fake_response()) as mock_get:
-            NavidromeAPI.make_request("ping")
+            api.make_request("ping")
 
         assert mock_get.call_count == 1
         _args, kwargs = mock_get.call_args
@@ -42,14 +47,15 @@ class TestTimeoutIsPassed:
         assert kwargs["timeout"] > 0
 
     def test_timeout_uses_configured_value(self):
+        api = NavidromeAPI()
         with patch.object(Config, "NAVIDROME_REQUEST_TIMEOUT", 7), patch.object(
-            NavidromeAPI,
+            api,
             "_build_url",
             return_value="https://navidrome.example.test/rest/ping.view",
         ), patch(
             "api.navidrome_api.requests.get", return_value=_fake_response()
         ) as mock_get:
-            NavidromeAPI.make_request("ping")
+            api.make_request("ping")
 
         assert mock_get.call_args.kwargs["timeout"] == 7
 
@@ -61,8 +67,9 @@ class TestTimeoutExceptionIsHandled:
         (ueber den bestehenden allgemeinen except-Block), nicht als
         Erfolg maskiert werden.
         """
+        api = NavidromeAPI()
         with patch.object(
-            NavidromeAPI,
+            api,
             "_build_url",
             return_value="https://navidrome.example.test/rest/ping.view",
         ), patch(
@@ -70,4 +77,4 @@ class TestTimeoutExceptionIsHandled:
             side_effect=requests.exceptions.Timeout("timed out"),
         ):
             with pytest.raises(requests.exceptions.Timeout):
-                NavidromeAPI.make_request("ping")
+                api.make_request("ping")

@@ -37,38 +37,55 @@ def _get_navidrome_config():
 
 class NavidromeAPI:
     """
-    Eine Klasse zur Kapselung aller Interaktionen mit der Subsonic-API von Navidrome.
-    Sie verwaltet die Authentifizierung, das Erstellen von URLs und die Durchführung
-    von asynchronen API-Anfragen.
+    Kapselt alle Interaktionen mit der Subsonic-API von Navidrome:
+    Authentifizierung, URL-Erstellung, asynchrone API-Anfragen.
+
+    ARCH-009 Phase 7: instanziierbar mit injizierbarer Config (DI) statt
+    einer rein statischen Klasse. `NavidromeAPI()` ohne Argumente verhält
+    sich unverändert wie zuvor (nutzt dieselbe globale Config-Singleton-
+    Instanz über `_get_navidrome_config()`). `_auth_params` wird jetzt in
+    `__init__()` gebaut (pro Instanz) statt beim Modul-Import als
+    Klassenattribut (behebt den in der ARCH-009-Migrationsplanung
+    dokumentierten Modul-Import-Seiteneffekt) - die zurückgegebenen Werte
+    sind identisch, da `NAVIDROME_USER`/`NAVIDROME_PASS` `@property`s auf
+    `Config` sind, die live aus der Umgebung lesen.
+
+    `NAVIDROME_REQUEST_TIMEOUT` und `Config.mask_sensitive()` bleiben
+    bewusst an die globale `Config`-Klasse gebunden (nicht an
+    `self.config`) - unverändert seit vor dieser Migration, da für die
+    DI-Umstellung nur `_auth_params`/`NAVIDROME_URL` tatsächlich
+    instanzspezifisch werden mussten (siehe
+    docs/MusicBot_ARCH-009_Phase7_NavidromeAPI_DI.md).
+
+    `execute_scan()` bleibt bewusst ein `@classmethod` (reiner,
+    zustandsloser Pass-Through zu `NavidromeScanTrigger`, siehe ARCH-009
+    Phase 4/5) - benötigt keine injizierte Config/Instanz, daher
+    unverändert.
     """
 
-    # Authentifizierungsparameter und API-Basis-URL
-    _auth_params = {
-        "u": _get_navidrome_config().NAVIDROME_USER,
-        "p": _get_navidrome_config().NAVIDROME_PASS,
-        "v": "1.16.1",
-        "c": "telegram-bot",
-        "f": "json",
-    }
+    def __init__(self, config=None):
+        self.config = config or _get_navidrome_config()
+        self._auth_params = {
+            "u": self.config.NAVIDROME_USER,
+            "p": self.config.NAVIDROME_PASS,
+            "v": "1.16.1",
+            "c": "telegram-bot",
+            "f": "json",
+        }
 
-    @staticmethod
-    def _build_url(endpoint: str) -> str:
+    def _build_url(self, endpoint: str) -> str:
         log_handler_debug(
             f"Erstelle URL für Endpunkt: {endpoint}", context="NavidromeAPI"
         )
-        from config import Config
-
-        config = Config()
-        url = config.NAVIDROME_URL
+        url = self.config.NAVIDROME_URL
         if not url:
             raise ValueError("NAVIDROME_URL ist nicht konfiguriert!")
         return f"{url.rstrip('/')}/rest/{quote(endpoint)}.view"
 
-    @classmethod
-    def make_request(cls, endpoint, params=None):
+    def make_request(self, endpoint, params=None):
         """Führt eine HTTP-Anfrage an die Navidrome API aus."""
-        url = cls._build_url(endpoint)
-        full_params = {**cls._auth_params, **(params or {})}
+        url = self._build_url(endpoint)
+        full_params = {**self._auth_params, **(params or {})}
 
         safe_params = {
             **full_params,
@@ -113,14 +130,13 @@ class NavidromeAPI:
             )
             raise
 
-    @classmethod
-    async def check_connection(cls) -> bool:
+    async def check_connection(self) -> bool:
         """Überprüft, ob die Navidrome API erreichbar ist."""
         log_handler_info(
             "Überprüfe Verbindung zur Navidrome API.", context="NavidromeAPI"
         )
         try:
-            response = await asyncio.to_thread(cls.make_request, "ping")
+            response = await asyncio.to_thread(self.make_request, "ping")
             is_ok = response.get("subsonic-response", {}).get("status") == "ok"
             log_handler_info(f"Verbindung 'ok': {is_ok}", context="NavidromeAPI")
             return is_ok
@@ -150,11 +166,10 @@ class NavidromeAPI:
         log_handler_info("Starte Navidrome Scan-Prozess.", context="NavidromeAPI")
         return await NavidromeScanTrigger.run_scan()
 
-    @classmethod
-    async def get_artists(cls) -> List[Dict[str, Any]]:
+    async def get_artists(self) -> List[Dict[str, Any]]:
         """Ruft eine Liste aller Künstler ab."""
         log_handler_info("Rufe alle Künstler ab.", context="NavidromeAPI")
-        response = await asyncio.to_thread(cls.make_request, "getArtists")
+        response = await asyncio.to_thread(self.make_request, "getArtists")
         artists = []
         if (
             "subsonic-response" in response
@@ -172,14 +187,13 @@ class NavidromeAPI:
     # Wiedergaben zurück, nicht nur die erste.
     # KEINE INFO-LOGS MEHR – NUR FEHLER WERDEN PROTOKOLLIERT
     # ======================================================================
-    @classmethod
-    async def get_now_playing(cls) -> List[Dict[str, Any]]:
+    async def get_now_playing(self) -> List[Dict[str, Any]]:
         """
         Ruft ALLE aktuell spielenden Titel und die zugehörigen Nutzer ab.
         Gibt eine Liste von Wiedergabe-Wörterbüchern zurück.
         """
         # KEINE log_handler_info mehr – still, wenn keine aktiven Plays
-        response = await asyncio.to_thread(cls.make_request, "getNowPlaying")
+        response = await asyncio.to_thread(self.make_request, "getNowPlaying")
 
         all_playing_data = []
 
@@ -213,10 +227,9 @@ class NavidromeAPI:
         # Auch hier KEINE Meldung mehr, wenn keine Daten vorhanden
         return all_playing_data
 
-    @classmethod
-    async def search(cls, query: str) -> Dict[str, Any]:
-        """Führt eine Suche durch (statische Version)."""
+    async def search(self, query: str) -> Dict[str, Any]:
+        """Führt eine Suche durch."""
         log_handler_info(f"Suche nach: {query}", context="NavidromeAPI")
         params = {"query": query}
-        response = await asyncio.to_thread(cls.make_request, "search3", params)
+        response = await asyncio.to_thread(self.make_request, "search3", params)
         return response.get("subsonic-response", {}).get("searchResult3", {})
