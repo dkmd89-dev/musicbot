@@ -5,7 +5,7 @@ import re
 from typing import List, Optional, Tuple
 
 from logger import get_module_logger
-from services.downloader.utils.metadata.models import split_main_and_featuring
+from .models import split_main_and_featuring
 
 
 class ArtistProcessor:

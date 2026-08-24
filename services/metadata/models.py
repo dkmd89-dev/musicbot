@@ -1,4 +1,4 @@
-# services/downloader/utils/metadata/models.py
+# services/metadata/models.py
 # -*- coding: utf-8 -*-
 
 import re

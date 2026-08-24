@@ -29,7 +29,7 @@ from typing import (
     runtime_checkable,
 )
 
-from services.downloader.utils.metadata.models import MetadataResult
+from services.metadata.models import MetadataResult
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

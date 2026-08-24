@@ -1,6 +1,6 @@
 """
 Unit-Tests für split_main_and_featuring()
-(services/downloader/utils/metadata/models.py).
+(services/metadata/models.py).
 
 Diese Funktion hatte vor ARTISTNORM-002 KEINE direkte Testabdeckung
 (nur indirekt ueber ArtistProcessor.determine_best_artist() in
@@ -16,7 +16,7 @@ determine_best_artist() genutzt (P0-Pfad, siehe ARTIST-001).
 
 import pytest
 
-from services.downloader.utils.metadata.models import split_main_and_featuring
+from services.metadata.models import split_main_and_featuring
 
 
 class TestFeatKeywordSplitting:

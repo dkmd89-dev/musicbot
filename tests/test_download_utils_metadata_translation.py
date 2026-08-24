@@ -33,7 +33,7 @@ from services.downloader.utils.download_utils import (
     _process_single_download,
     _process_track_metadata,
 )
-from services.downloader.utils.metadata.models import MetadataResult
+from services.metadata.models import MetadataResult
 
 
 def run_async(coro):
