@@ -26,6 +26,16 @@ get_full_server_info()/get_scan_status()/test_api() wurden entfernt
 zugehoerigen TestGetScanStatus/TestGetFullServerInfo-Klassen wurden
 entfernt. check_connection() bleibt bewusst erhalten (dokumentierter
 BUG-007-Beleg fuer eine bewusst zurueckgestellte, geplante Nutzung).
+
+ARCH-009 Phase 4 (2026-08-24): die Docker-/Subprocess-/Timeout-Steuerung
+von execute_scan() wurde nach api/navidrome_scan_trigger.py
+(NavidromeScanTrigger) ausgelagert - siehe
+docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md. TestExecuteScan
+testet seitdem nur noch die Bridge-Funktion von execute_scan() (Telegram-
+MarkdownV2-Formatierung je nach NavidromeScanTrigger.run_scan()-Ergebnis),
+gemockt auf Ebene von run_scan() statt des Subprocess selbst. Die
+eigentliche Subprocess-Charakterisierung liegt jetzt in
+tests/test_navidrome_scan_trigger.py.
 """
 
 import asyncio
@@ -34,6 +44,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from api.navidrome_api import NavidromeAPI
+from api.navidrome_scan_trigger import NavidromeScanTrigger, ScanRunResult, ScanTimeoutError
 
 
 class TestCheckConnection:
@@ -157,15 +168,23 @@ class TestSearch:
 
 
 class TestExecuteScan:
-    def test_success_returns_true_with_stdout_message(self):
-        fake_process = AsyncMock()
-        fake_process.communicate.return_value = (b"Scan complete", b"")
-        fake_process.returncode = 0
-        fake_process.pid = 1234
+    """
+    Testet seit ARCH-009 Phase 4 nur noch die Bridge-Funktion von
+    execute_scan(): Telegram-MarkdownV2-Formatierung abhaengig vom
+    Ergebnis/der Exception von NavidromeScanTrigger.run_scan(). Die
+    Subprocess-/Timeout-Charakterisierung selbst liegt in
+    tests/test_navidrome_scan_trigger.py.
+    """
 
-        with patch(
-            "api.navidrome_api.asyncio.create_subprocess_shell",
-            return_value=fake_process,
+    def test_success_returns_true_with_stdout_message(self):
+        with patch.object(
+            NavidromeScanTrigger,
+            "run_scan",
+            new=AsyncMock(
+                return_value=ScanRunResult(
+                    success=True, returncode=0, stdout="Scan complete", stderr=""
+                )
+            ),
         ):
             success, message = asyncio.run(NavidromeAPI.execute_scan())
 
@@ -173,45 +192,40 @@ class TestExecuteScan:
         assert "Scan complete" in message or "Scan erfolgreich" in message
 
     def test_nonzero_returncode_returns_false(self):
-        fake_process = AsyncMock()
-        fake_process.communicate.return_value = (b"", b"boom")
-        fake_process.returncode = 1
-        fake_process.pid = 1234
-
-        with patch(
-            "api.navidrome_api.asyncio.create_subprocess_shell",
-            return_value=fake_process,
+        with patch.object(
+            NavidromeScanTrigger,
+            "run_scan",
+            new=AsyncMock(
+                return_value=ScanRunResult(
+                    success=False, returncode=1, stdout="", stderr="boom"
+                )
+            ),
         ):
             success, message = asyncio.run(NavidromeAPI.execute_scan())
 
         assert success is False
 
     def test_timeout_returns_false_with_timeout_message(self):
-        async def never_completes(*args, **kwargs):
-            await asyncio.sleep(9999)
-
-        fake_process = AsyncMock()
-        fake_process.communicate.side_effect = never_completes
-        fake_process.pid = 1234
-
-        with patch(
-            "api.navidrome_api.asyncio.create_subprocess_shell",
-            return_value=fake_process,
-        ), patch("api.navidrome_api._get_navidrome_config") as mock_cfg, patch(
-            "api.navidrome_api.Config"
-        ) as mock_config_cls:
-            mock_cfg.return_value.NAVIDROME_SCAN_COMMAND = "echo test"
-            mock_config_cls.NAVIDROME_SCAN_COMMAND = "echo test"
-            # NAVIDROME_SCAN_TIMEOUT auf 0 setzen, damit wait_for sofort auslaeuft
-            mock_config_cls.NAVIDROME_SCAN_TIMEOUT = 0.01
+        with patch.object(
+            NavidromeScanTrigger,
+            "run_scan",
+            new=AsyncMock(side_effect=ScanTimeoutError(0.01)),
+        ):
             success, message = asyncio.run(NavidromeAPI.execute_scan())
 
         assert success is False
         assert "länger" in message or "Timeout" in message or "warten" in message.lower()
 
     def test_missing_scan_command_returns_false_without_crashing(self):
-        with patch("api.navidrome_api._get_navidrome_config") as mock_cfg:
-            mock_cfg.return_value.NAVIDROME_SCAN_COMMAND = ""
+        with patch.object(
+            NavidromeScanTrigger,
+            "run_scan",
+            new=AsyncMock(
+                side_effect=AttributeError(
+                    "NAVIDROME_SCAN_COMMAND ist nicht in Config definiert oder leer."
+                )
+            ),
+        ):
             success, message = asyncio.run(NavidromeAPI.execute_scan())
 
         assert success is False
