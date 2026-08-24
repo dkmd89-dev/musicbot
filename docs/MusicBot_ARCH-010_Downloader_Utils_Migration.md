@@ -2,17 +2,17 @@
 
 ## Status
 
-PHASE 3G – ALTE `services/downloader/utils/`-STRUKTUR ENTFERNT
-(2026-08-24). Phase 3H (formaler Abschluss) noch offen, Entscheidungsgate
-vor Phase 3H erreicht. Siehe Abschnitt 27 „Ergebnisse" (Phase 1),
-Abschnitt 35 „Phase 2 — Architekturentscheidung", Abschnitt 36
-„Phase 3A/3B — Metadata-Unterprozessoren migriert", Abschnitt 37
-„Phase 3C — Metadata-Modelle migriert", Abschnitt 38
-„Phase 3D — Metadata-Facade + Downloader-Cleanup atomar migriert",
-Abschnitt 39 „Phase 3E — Verbleibende Downloader-Dateien migriert",
-Abschnitt 40 „Phase 3F — Externe Consumer migrieren + Vorabschluss-Audit"
-und Abschnitt 41 „Phase 3G — Alte services/downloader/utils/-Struktur
-entfernt".
+**ARCH-010: ABGESCHLOSSEN (2026-08-24).** Alle Phasen (1, 2, 3A–3H)
+umgesetzt und verifiziert. `services/downloader/utils/` vollständig
+entfernt, Zielarchitektur (Variante A) vollständig erreicht, 0
+funktionale Altpfad-Referenzen, keine Regression (1009 passed, 15 known
+failures, identisch zur Baseline). Details: Abschnitt 27 (Phase 1),
+Abschnitt 35 (Phase 2 — Architekturentscheidung), Abschnitt 36
+(Phase 3A/3B), Abschnitt 37 (Phase 3C), Abschnitt 38 (Phase 3D),
+Abschnitt 39 (Phase 3E), Abschnitt 40 (Phase 3F), Abschnitt 41
+(Phase 3G), Abschnitt 42 (Phase 3H — finaler Abschluss-Audit).
+Verbleibende Themen sind ausdrücklich Folgepunkte außerhalb von
+ARCH-010, siehe Abschnitt 42.7.
 
 ## Typ
 
@@ -2761,3 +2761,204 @@ Phase 3H — finale Regression (bereits in 41.4 durchgeführt und bestätigt;
 
 **STOPP nach Phase 3G. Phase 3H nicht automatisch begonnen. Nicht
 gemergt. Wartet auf ausdrückliche Freigabe für Phase 3H.**
+
+---
+
+# 42. Phase 3H — Finaler Abschluss-Audit (2026-08-24)
+
+Nutzerfreigabe für Phase 3H erhalten. Reiner Verifikations- und
+Dokumentationsschritt, kein Code geändert.
+
+## 42.1 Finaler Strukturaudit
+
+Vollständige Verzeichnisprüfung bestätigt die Zielstruktur exakt:
+
+```text
+services/downloader/  (9 Dateien + download/-Unterpaket)
+    downloader.py, spotify_downloader.py, playlist_processor.py,
+    download_utils.py, download_result_reporter.py,
+    download_artifact_cleanup.py, progress_tracker.py, errors.py,
+    metadata_result_translator.py
+    download/ (cache_manager.py, channel_router.py, download_executor.py,
+               formatters.py, interfaces.py, models.py, year_resolver.py)
+
+services/metadata/  (11 Dateien)
+    enhanced_metadata_processor.py, album_processor.py,
+    artist_processor.py, auto_learn.py, cache.py, cover_processor.py,
+    genre_processor.py, lyrics_processor.py, models.py, tag_writer.py,
+    title_cleaner.py
+```
+
+- `services/downloader/utils/` existiert nicht mehr — bestätigt.
+- `services/downloader/utils/metadata/` existiert nicht mehr — bestätigt.
+- Alle 17 ARCH-010-Dateien (6 → `services/downloader/`, 11 →
+  `services/metadata/`) befinden sich exakt an ihrem in Phase 2/35.10
+  beschlossenen Zielort, je genau einmal — keine Duplikate.
+- Keine leeren Altverzeichnisse zurückgeblieben (`find services -type d
+  -empty` liefert 0 Treffer außerhalb von `__pycache__`).
+
+## 42.2 Finaler Import-/Referenzaudit
+
+Repo-weit (alle Dateitypen) auf `services.downloader.utils` /
+`services/downloader/utils` / `services/downloader/utils/metadata`,
+sämtliche 17 alten Modulpfade einzeln, `mock.patch`-Ziele,
+`TYPE_CHECKING`, dynamische Imports, Config/YAML/JSON/`.cfg`/`.ini`/
+`.toml`-Referenzen geprüft.
+
+**A. Funktionale aktuelle Referenzen:** 0.
+
+**B. Historische Dokumentationsreferenzen** (unverändert korrekt,
+bewusst nicht angefasst): alle Treffer in
+`docs/MusicBot_ARCH-001_Orchestrators.md`,
+`docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md`,
+`docs/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md`,
+`docs/MusicBot_ARCH-005_TempCleanup.md`,
+`docs/MusicBot_ARCH-006_P2_Dependency_Graph.md`,
+`docs/MusicBot_ARCH-007_P2_Entkopplungsvorschlag.md`,
+`docs/MusicBot_ARCH-008_Navidrome_Adapter_Analyse.md`,
+`docs/MusicBot_ARCH-009_Phase8_Zielverschiebung_ServicesClients_Analyse.md`,
+`docs/MusicBot_ENGINEERING_BASELINE.md` (Changelog-Einträge, Präteritum),
+`docs/MusicBot_SERVICES_Zielarchitektur_Audit.md` (datierter Snapshot),
+`docs/musicbot_REVERSE_ENGINEERED_DOCUMENTATION.md` (datierter Snapshot),
+dieses Dokument selbst (Abschnitte 1–41, historische Phasenberichte) —
+sowie `tests/test_download_handler_send_report_message.py:6`
+(Docstring, Präteritum „lag vorher").
+
+**C. Nicht zum ARCH-010-Scope gehörende Treffer:**
+`services/downloader/playlist_processor.py:1` — vorbestehende,
+fehlerhafte Kopfzeile einer Datei, die nie Teil der 17 migrierten
+Dateien war (lag schon vor ARCH-010 direkt in `services/downloader/`).
+Bewusst weiterhin nicht korrigiert (außerhalb des Scopes).
+
+**Ergebnis: 0 funktionale Referenzen auf die entfernte
+`services/downloader/utils/`-Struktur.**
+
+## 42.3 Architektur-Check
+
+Alle 7 Prüfpunkte aus dem Arbeitsauftrag bestätigt:
+
+1. ✅ Downloader-Dateien liegen unter `services/downloader/` (9 Dateien).
+2. ✅ Metadata-Dateien liegen unter `services/metadata/` (11 Dateien).
+3. ✅ `metadata_result_translator.py` liegt unter `services/downloader/`.
+4. ✅ `enhanced_metadata_processor.py` liegt unter `services/metadata/`
+   und ist weiterhin die öffentliche Facade (per `services/metadata/__init__.py`
+   exportiert, 3 externe Produktions-Consumer: `download_utils.py`,
+   `klassen/download_handler.py`, `handlers/menu/rich_menu_handler.py`).
+5. ✅ `services/downloader/utils/` vollständig entfernt.
+6. ✅ `services/metadata/` als eigenständiger, in sich geschlossener
+   Bereich vorhanden (9 von 10 Unterprozessoren weiterhin mit genau
+   einem Consumer — der Facade).
+7. ✅ ARCH-005-Reverse-Edge unverändert erhalten:
+
+   ```text
+   services/metadata/enhanced_metadata_processor.py
+       ↓ (from services.downloader.download_artifact_cleanup import
+          cleanup_single_download_artifact, Zeile 40-41+1002)
+   services/downloader/download_artifact_cleanup.py
+   ```
+
+   Verifiziert: `download_artifact_cleanup.py` importiert nichts aus
+   `services.metadata` — keine neue Gegenabhängigkeit entstanden. Die
+   beiden anderen Downloader→Metadata-Kanten
+   (`download_utils.py`/`metadata_result_translator.py` → `services.metadata.models`
+   bzw. `.enhanced_metadata_processor`) sind unverändert die einzigen
+   Downloader→Metadata-Importe — Dependency-Graph identisch zu 35.5.
+
+## 42.4 Import-Smoke-Test
+
+Alle zentralen Zielmodule (`services.downloader`,
+`services.downloader.downloader`, `.download_utils`,
+`.download_result_reporter`, `.download_artifact_cleanup`,
+`.progress_tracker`, `.errors`, `.metadata_result_translator`,
+`.playlist_processor`, `.spotify_downloader`, `services.metadata`,
+`services.metadata.enhanced_metadata_processor`, `services.metadata.models`)
+sowie externe Consumer (`bot`, `klassen.download_handler`,
+`handlers.menu.rich_menu_handler`, `services.downloader.download.interfaces`)
+— alle importierbar, kein `ImportError`, kein `ModuleNotFoundError`, kein
+Zirkelimport. 5 stellvertretende alte Modulpfade
+(`services.downloader.utils`, `.metadata`, `.enhanced_metadata_processor`,
+`.download_utils`, `.metadata.models`) liefern erwartungsgemäß
+`ModuleNotFoundError`.
+
+## 42.5 Tests
+
+**Gezielte ARCH-010-Tests** (21 Dateien — alle direkt betroffenen
+Module aus Phase 3A–3G): 11 failed, 279 passed, 14 subtests passed —
+alle 11 Fehlschläge sind die bekannten Vorbestand-Fehler aus
+`test_auto_learn.py` (5) und `test_metadata_modules.py::TestTitleCleaner`
+(3, teils Subtests) — unverändert gegenüber dem dokumentierten Bestand.
+
+**Vollständige Regression:**
+
+```text
+Baseline (etabliert, unverändert seit vor ARCH-010): 1009 passed, 15 known failures
+Phase 3H (final):                                     1009 passed, 15 known failures
+```
+
+`pytest tests/ -q` → `15 failed, 1009 passed, 5 warnings, 14 subtests
+passed`, zeilengenau identisch zur Baseline
+(`test_auto_learn.py` ×5, `test_metadata_modules.py::TestTitleCleaner`
+×3, `test_suite.py::TestRichMenuSystem`/`TestMenuIntegration` ×4 — die
+letzten 4 liegen außerhalb des ARCH-010-Scopes und waren zu keinem
+Zeitpunkt der Migration betroffen). **Explizit bestätigt: keine neue
+Regression.**
+
+## 42.6 Dokumentationsänderungen dieser Phase
+
+Ausschließlich dieses Dokument (Abschnitt 42 + Status-Kopf). `README.md`
+und `CLAUDE.md` geprüft — kein aktueller Widerspruch gefunden (README.md
+wurde bereits in Phase 3G korrigiert; CLAUDE.md trifft keine spezifische
+Aussage zur Downloader-/Metadata-Unterstruktur, daher kein
+Korrekturbedarf). Keine historischen ARCH-010-Phasenabschnitte (1–41)
+verändert — ihre jeweiligen Aussagen waren zum damaligen Zeitpunkt
+korrekt.
+
+## 42.7 Verbleibende Folgepunkte (ausdrücklich NICHT Teil von ARCH-010)
+
+Diese Themen bleiben bestehen, unabhängig von ARCH-010, und werden hier
+nur bestätigt — nicht bearbeitet:
+
+- ARCH-005-Reverse-Edge (`enhanced_metadata_processor.py` →
+  `download_artifact_cleanup.py`) — bewusst erhalten, siehe 42.3/35.5.
+- `DuplicateEntry`-Abhängigkeit von `download_result_reporter.py` zu
+  `handlers/duplicate_handler.py` — siehe `docs/MusicBot_SERVICES_Zielarchitektur_Audit.md` P-1.
+- Last.fm-Duplikation in `cover_processor.py` gegenüber
+  `services/clients/lastfm_client.py` — siehe dort P-2.
+- `utils/filenamefixer.py`/mögliche `services/library/`-Frage — außerhalb
+  jedes bisher geprüften Scopes.
+- Mögliche Umbenennung von `enhanced_metadata_processor.py` — kein
+  Treiber, nicht entschieden (siehe 35.6).
+- Namensnähe `services/metadata/cache.py` vs. `utils/metadata_cache.py`
+  — Beobachtung, keine Entscheidung (siehe 27.3).
+- Vorbestehende fehlerhafte Kopfzeile in
+  `services/downloader/playlist_processor.py` — außerhalb des
+  ARCH-010-Scopes (siehe 42.2.C).
+
+## 42.8 Abschlussbewertung
+
+**ARCH-010: ABGESCHLOSSEN.**
+
+Begründung:
+
+- **Zielstruktur:** exakt wie in Phase 2 (Variante A) entschieden,
+  vollständig umgesetzt und verifiziert (42.1).
+- **Import-Audit:** 0 funktionale Altpfad-Referenzen (42.2).
+- **Dependency-Richtung:** Downloader → Metadata dominant, die eine
+  dokumentierte ARCH-005-Ausnahme unverändert und bewusst erhalten,
+  keine neue Gegenabhängigkeit (42.3).
+- **Entfernung der alten Struktur:** `services/downloader/utils/`
+  vollständig entfernt (Phase 3G, hier erneut bestätigt).
+- **Smoke-Test:** vollständig grün, kein Zirkelimport (42.4).
+- **Regression:** identisch zur Baseline, keine neue Regression (42.5).
+- **Dokumentationsstand:** aktuell, konsistent, keine offenen
+  Widersprüche (42.6).
+
+Alle 8 Phasen (1, 2, 3A, 3B, 3C, 3D, 3E, 3F, 3G, 3H) sind abgeschlossen
+und jeweils per eigenem PR gemergt (#14–#20, sowie die direkt auf `main`
+committeten Analyse-Phasen 1/2/3F-Audit-Anteile). Kein weiterer
+ARCH-010-Migrationsschritt offen.
+
+## 42.9 Git
+
+Reiner Dokumentationsschritt — Branch `arch/arch-010-phase3h-final-audit`,
+ein Commit, eigener PR, **nicht automatisch gemergt**.
