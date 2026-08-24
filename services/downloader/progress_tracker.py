@@ -1,4 +1,4 @@
-# yt_music_bot/services/downloader/utils/progress_tracker.py
+# services/downloader/progress_tracker.py
 import asyncio
 from datetime import datetime
 from typing import Optional, Callable
@@ -93,7 +93,7 @@ class ProgressTracker:
         """
         ProgressTracker haelt keine eigenen freizugebenden Ressourcen (nur
         Zaehler/Zeitstempel). Existiert, damit EnhancedDownloadProcessor.cleanup()
-        (DownloadCoordinator-Protocol, services/downloader/utils/download_utils.py)
+        (DownloadCoordinator-Protocol, services/downloader/download_utils.py)
         gefahrlos self.tracker.cleanup() aufrufen kann - vorher fehlte diese
         Methode komplett, ein AttributeError waere die Folge gewesen, sobald
         init_tracker() jemals tatsaechlich aufgerufen wird.

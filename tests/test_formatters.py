@@ -2,7 +2,7 @@
 Unit-Tests für ProgressFormatter (services/downloader/download/formatters.py)
 — vorher 0 Tests, gefunden über die systematische Ungetestet-Prüfung.
 
-Live genutzt in services/downloader/utils/download_utils.py für ASCII-
+Live genutzt in services/downloader/download_utils.py für ASCII-
 Logging (bar/track_header/track_result_block/stats_table werden dort
 aufgerufen). playlist_start()/single_track_header() haben aktuell keine
 Aufrufer - reine, zustandslose Formatierungsmethoden ohne Seiteneffekte,

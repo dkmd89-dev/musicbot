@@ -1,5 +1,5 @@
 """
-Unit-Tests für ProgressTracker (services/downloader/utils/progress_tracker.py)
+Unit-Tests für ProgressTracker (services/downloader/progress_tracker.py)
 — vorher 0 Tests, gefunden über die systematische Ungetestet-Prüfung.
 
 ARCH-007/P-2 (2026-08-24): update_progress() wurde zu
@@ -32,7 +32,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from services.downloader.utils.progress_tracker import (
+from services.downloader.progress_tracker import (
     ProgressTracker,
     progress_hook,
     track_performance,
@@ -177,7 +177,7 @@ class TestTrackPerformance:
 class TestEnhancedDownloadProcessorCleanupRegression:
     """
     Regressionstest fuer den Fund: EnhancedDownloadProcessor.cleanup()
-    (services/downloader/utils/download_utils.py) ruft self.tracker.cleanup()
+    (services/downloader/download_utils.py) ruft self.tracker.cleanup()
     auf - vor dem Fix haette das mit AttributeError gecrasht, sobald
     self.tracker ein ProgressTracker ist (aktuell unerreichbar, da
     init_tracker() nirgends aufgerufen wird - aber ein echter Bug, sollte
@@ -186,7 +186,7 @@ class TestEnhancedDownloadProcessorCleanupRegression:
     """
 
     def test_cleanup_does_not_crash_when_tracker_is_a_real_progress_tracker(self):
-        from services.downloader.utils.download_utils import EnhancedDownloadProcessor
+        from services.downloader.download_utils import EnhancedDownloadProcessor
 
         proc = object.__new__(EnhancedDownloadProcessor)
         proc.logger = Mock()

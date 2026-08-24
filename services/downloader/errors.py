@@ -1,4 +1,4 @@
-# yt_music_bot/services/downloader/utils/errors.py
+# services/downloader/errors.py
 """
 Fehler-Taxonomie für die Download-Pipeline (services/downloader/**).
 

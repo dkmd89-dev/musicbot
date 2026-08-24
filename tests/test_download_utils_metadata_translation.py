@@ -1,6 +1,6 @@
 """
 Regressionstests fuer die Rohdaten->track_metadata->process_single_track()->
-Ergebnis-Dict-Uebersetzung in services/downloader/utils/download_utils.py
+Ergebnis-Dict-Uebersetzung in services/downloader/download_utils.py
 (_process_track_metadata fuer YT-Playlist-Tracks, _process_single_download
 fuer YT-Single-Downloads) — vorher 0 Tests fuer diese beiden Funktionen.
 
@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from services.downloader.utils.download_utils import (
+from services.downloader.download_utils import (
     _process_single_download,
     _process_track_metadata,
 )
@@ -404,7 +404,7 @@ class TestProcessSingleDownloadCacheMiss:
         assert result["is_duplicate"] is True
 
     def test_metadata_failure_raises_download_error(self, tmp_path):
-        from services.downloader.utils.errors import DownloadError
+        from services.downloader.errors import DownloadError
 
         failed_result = make_metadata_result(success=False, error="Boom")
         enhanced_processor = make_enhanced_processor_for_single(
@@ -423,7 +423,7 @@ class TestProcessSingleDownloadCacheMiss:
             )
 
     def test_download_file_not_found_raises_download_error(self, tmp_path):
-        from services.downloader.utils.errors import DownloadError
+        from services.downloader.errors import DownloadError
 
         enhanced_processor = make_enhanced_processor_for_single(tmp_path)
         enhanced_processor.download_executor.find_downloaded_file = Mock(

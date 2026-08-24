@@ -2,13 +2,13 @@
 
 ## Status
 
-PHASE 3D – METADATA-FACADE + DOWNLOADER-CLEANUP MIGRIERT (2026-08-24).
-Phase 3E–3H noch offen, Entscheidungsgate vor Phase 3E erreicht. Siehe
-Abschnitt 27 „Ergebnisse" (Phase 1), Abschnitt 35
-„Phase 2 — Architekturentscheidung", Abschnitt 36
-„Phase 3A/3B — Metadata-Unterprozessoren migriert", Abschnitt 37
-„Phase 3C — Metadata-Modelle migriert" und Abschnitt 38
-„Phase 3D — Metadata-Facade + Downloader-Cleanup atomar migriert".
+PHASE 3E – ÜBRIGE DOWNLOADER-DATEIEN MIGRIERT (2026-08-24). Phase 3F–3H
+noch offen, Entscheidungsgate vor Phase 3F erreicht. Siehe Abschnitt 27
+„Ergebnisse" (Phase 1), Abschnitt 35 „Phase 2 — Architekturentscheidung",
+Abschnitt 36 „Phase 3A/3B — Metadata-Unterprozessoren migriert",
+Abschnitt 37 „Phase 3C — Metadata-Modelle migriert", Abschnitt 38
+„Phase 3D — Metadata-Facade + Downloader-Cleanup atomar migriert" und
+Abschnitt 39 „Phase 3E — Verbleibende Downloader-Dateien migriert".
 
 ## Typ
 
@@ -2265,3 +2265,210 @@ Phase 3H — finale Regression
 
 **STOPP nach Phase 3D. Keine weiteren ARCH-010-Phasen ausgeführt. Nicht
 gemergt. Wartet auf ausdrückliche Freigabe für Phase 3E.**
+
+---
+
+# 39. Phase 3E — Verbleibende Downloader-Dateien migriert (2026-08-24)
+
+Nutzerfreigabe für Phase 3E erhalten. Umsetzung auf Branch
+`arch/arch-010-phase3e-remaining-downloader-files`.
+
+## 39.1 Re-Audit (vor der Migration)
+
+Ausgangslage bestätigt deckungsgleich mit Phase 2/3D. Repo-weiter Audit
+(Imports, interne Cross-Imports, Produktions-/Test-Consumer,
+`mock.patch`-Ziele, `TYPE_CHECKING`, relative Importe, Re-Exports) ergab
+**keine relevante Abweichung** zu den Phase-2-Annahmen — Migration wie
+geplant durchgeführt.
+
+**Interne Cross-Imports der 5 Dateien untereinander festgestellt:**
+`download_utils.py` importiert `errors.DownloadError`,
+`metadata_result_translator.{build_playlist_track_result,
+build_single_track_result, call_process_single_track}` und
+`progress_tracker.ProgressTracker` — alle drei ziehen mit an denselben
+neuen Ort (`services/downloader/`) um und wurden auf relative Importe
+umgestellt (`.errors`, `.metadata_result_translator`, `.progress_tracker`
+— konsistent mit dem in Phase 3C/3D etablierten Stil für echte
+Package-Geschwister). `download_result_reporter.py` hat keine Cross-Importe
+zu den anderen vier.
+
+**0 `mock.patch`-Ziele** repo-weit bestätigt (Phase-2-Befund hält).
+
+**Pfad-Kopfzeilen:** vier der fünf Dateien hatten fehlerhafte
+Kopfzeilen-Kommentare (`download_result_reporter.py`, `progress_tracker.py`,
+`errors.py`, `metadata_result_translator.py` zeigten noch auf
+`.../utils/...`; `progress_tracker.py`/`errors.py` trugen zusätzlich ein
+vorbestehendes, offensichtlich falsches `yt_music_bot/`-Präfix, das nie
+zum tatsächlichen Repository-Namen passte). `download_utils.py`s
+Kopfzeile war bereits — vermutlich vorausschauend oder versehentlich aus
+früherer Arbeit — korrekt auf `services/downloader/download_utils.py`
+gesetzt. Alle vier korrigiert; das fehlerhafte Präfix dabei entfernt, da
+es bereits vor dieser Migration falsch war und beim ohnehin
+notwendigen Anfassen derselben Zeile korrigiert wurde.
+
+## 39.2 Migration
+
+`git mv` aller 5 Dateien:
+
+```text
+services/downloader/utils/download_utils.py            → services/downloader/download_utils.py
+services/downloader/utils/download_result_reporter.py  → services/downloader/download_result_reporter.py
+services/downloader/utils/progress_tracker.py           → services/downloader/progress_tracker.py
+services/downloader/utils/errors.py                     → services/downloader/errors.py
+services/downloader/utils/metadata_result_translator.py → services/downloader/metadata_result_translator.py
+```
+
+`metadata_result_translator.py` **ausdrücklich nicht neu bewertet** —
+bleibt entsprechend der in 35.4 getroffenen Phase-2-Entscheidung in
+`services/downloader/`.
+
+**Angepasste externe Produktions-Consumer** (2 Dateien):
+- `services/downloader/downloader.py` — 2 Importzeilen (`download_utils`),
+  absoluter Pfad korrigiert (kein Stilwechsel — Datei hatte keinen
+  eigenen Präzedenzfall für Geschwister-relative Importe).
+- `klassen/download_handler.py` — 3 Importzeilen
+  (`download_result_reporter`, `progress_tracker`,
+  `metadata_result_translator`) + 1 Kommentar-Pfadangabe.
+
+**Angepasste Tests** (6 Dateien, nur Importzeilen + Docstring-/
+Kommentar-Pfadangaben, keine Testlogik geändert):
+`test_download_utils_metadata_translation.py` (Import + Docstring + 2×
+lokaler `errors`-Import), `test_playlist_max_items.py` (Import +
+Docstring), `test_progress_tracker.py` (Import + Docstring + 1× lokaler
+`download_utils`-Import + 1 Kommentar-Pfadangabe), `test_formatters.py`
+(nur Docstring-Pfadangabe, kein Import), `test_download_result_reporter.py`
+(Import + Docstring), `test_metadata_result_translator.py` (Import +
+Docstring).
+
+**Zusätzlich 2 weitere aktuelle Zustandsbeschreibungen korrigiert**
+(keine historische Aussage): Kommentar in
+`services/downloader/progress_tracker.py::cleanup()` (Bezug auf
+`download_utils.py`), 2× Kommentar in `services/downloader/download_utils.py`
+(Bezug auf `metadata_result_translator.py`, dort erst bei einem zweiten,
+gezielten Grep-Durchlauf gefunden — Import-Audit in 39.3 hat das
+sichergestellt).
+
+**Keine Logik-, Klassen-, Methoden-, Signatur- oder Verhaltensänderung**
+an einer der fünf Dateien — bestätigt per `git diff`: ausschließlich
+Kopfzeilen, Importzeilen und die genannten Kommentar-Pfadangaben
+geändert. `handlers/duplicate_handler`-Dependency in
+`download_result_reporter.py` unverändert (siehe 39.5).
+
+## 39.3 Import-Audit
+
+Repo-weiter Grep auf alle 5 Altpfade (dotted + slash) — erster Durchlauf
+fand noch 4 Kommentar-Reste (Abschnitt 39.2), zweiter Durchlauf nach deren
+Korrektur: **0 verbleibende funktionale oder kommentierte
+Altpfad-Referenzen** in `.py`-Dateien. Zusätzlicher breiter Sweep auf
+`utils/<modul>.py` (ohne volles `services.downloader`-Präfix) ebenfalls 0
+Treffer. `docs/` unangetastet (historische ARCH-Dokumente beschreiben
+korrekt den jeweils damaligen Zustand).
+
+## 39.4 Verifikation
+
+**Import-Smoke-Test:** alle 5 migrierten Module + `services.metadata.models`,
+`services.metadata.enhanced_metadata_processor`,
+`services.downloader.download_artifact_cleanup`,
+`services.downloader.downloader`, `klassen.download_handler`,
+`handlers.menu.rich_menu_handler`, `bot` — alle importierbar, kein
+`ImportError`, kein `ModuleNotFoundError`, kein Zirkelimport. Alle 5 alten
+Pfade korrekt nicht mehr auffindbar (`ModuleNotFoundError`).
+
+**Gezielte Tests** (11 Dateien: 6 direkt migrierte Consumer-Tests + 5
+Grenztests der bereits migrierten Facade/Cleanup):
+
+```text
+tests/test_download_utils_metadata_translation.py
+tests/test_playlist_max_items.py
+tests/test_progress_tracker.py
+tests/test_formatters.py
+tests/test_download_result_reporter.py
+tests/test_metadata_result_translator.py
+tests/test_download_handler_process_single_download_result.py
+tests/test_autolearn_special_channel_gate.py
+tests/test_enhanced_metadata_processor_aclose.py
+tests/test_metadata_processor_happy_path.py
+tests/test_download_artifact_cleanup.py
+```
+
+Ergebnis: **142 passed, 0 failed**.
+
+**Vollständige Regression:**
+
+```text
+vorher (Baseline, Stand nach PR #17):  1009 passed, 15 known failures
+nachher (nach Phase 3E):               1009 passed, 15 known failures
+```
+
+`pytest tests/ -q` → `15 failed, 1009 passed, 5 warnings, 14 subtests
+passed`, zeilengenau identisch zur Baseline. **Keine neuen Fehler.**
+
+## 39.5 Architektur — Bestätigung
+
+```text
+services/downloader/
+    → vollständiger Downloader-Bereich (Orchestrierung, Ergebnis-
+      Reporting, Fortschritt, Fehler-Taxonomie, Metadata-Result-
+      Übersetzung, Artefakt-Cleanup — 10 Dateien + download/-Unterpaket)
+
+services/metadata/
+    → vollständiger Metadata-Bereich (Facade + Modelle +
+      9 Unterprozessoren)
+```
+
+`metadata_result_translator.py → services/downloader/` bleibt exakt gemäß
+Phase-2-Entscheidung (35.4) — keine Neubewertung durchgeführt.
+
+`download_result_reporter.py → handlers/duplicate_handler.py`-Dependency
+**unverändert, bewusst nicht angefasst** — bekannter, separat
+dokumentierter Folgepunkt (siehe 35.9/`docs/MusicBot_SERVICES_Zielarchitektur_Audit.md`).
+
+## 39.6 Strukturprüfung (Ist-Zustand nach Phase 3E)
+
+```text
+services/
+├── metadata/
+│   ├── __init__.py
+│   ├── models.py
+│   ├── enhanced_metadata_processor.py
+│   └── 9 Unterprozessoren
+│
+└── downloader/
+    ├── downloader.py
+    ├── spotify_downloader.py
+    ├── playlist_processor.py
+    ├── download_artifact_cleanup.py
+    ├── download_utils.py                (neu hier)
+    ├── download_result_reporter.py      (neu hier)
+    ├── progress_tracker.py              (neu hier)
+    ├── errors.py                        (neu hier)
+    ├── metadata_result_translator.py    (neu hier)
+    ├── download/                        (unverändert)
+    └── utils/
+        └── metadata/
+            └── __init__.py              (einziger verbleibender Inhalt, leer)
+```
+
+`services/downloader/utils/` und `services/downloader/utils/metadata/`
+bewusst nicht entfernt — folgt erst in Phase 3G.
+
+## 39.7 Git
+
+- Branch: `arch/arch-010-phase3e-remaining-downloader-files`
+- Commit: siehe unten
+- PR: wird erstellt, **nicht gemergt**
+
+## 39.8 Verbleibende Phase-3-Arbeiten
+
+```text
+Phase 3F — verbleibende externe Consumer pruefen (aktuell keine bekannten
+            offenen Referenzen mehr - Audit in 39.3 zeigt 0 Reste; Phase 3F
+            dient als expliziter Verifikationsschritt vor der Struktur-
+            bereinigung)
+Phase 3G — services/downloader/utils/ und services/downloader/utils/metadata/
+            entfernen
+Phase 3H — finale Regression
+```
+
+**STOPP nach Phase 3E. Keine weiteren ARCH-010-Phasen ausgeführt. Nicht
+gemergt. Wartet auf ausdrückliche Freigabe für Phase 3F.**
