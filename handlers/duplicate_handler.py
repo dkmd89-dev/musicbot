@@ -7,7 +7,6 @@ import json
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable, Tuple
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -23,20 +22,7 @@ from utils.metadata_cache import MetadataCache
 
 from utils.artist_map import ArtistNormalizer
 from utils.youtube_parser import parse_youtube_title
-
-
-@dataclass
-class DuplicateEntry:
-    """Repräsentiert einen Duplikat-Eintrag im Cache"""
-
-    artist: str
-    title: str
-    url: str
-    file_path: Optional[Path]
-    download_date: datetime
-    file_hash: Optional[str] = None
-    metadata_hash: str = None
-    duplicate_count: int = 1
+from services.downloader.models import DuplicateEntry
 
 
 class DuplicateCache:

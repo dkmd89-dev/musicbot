@@ -24,7 +24,8 @@ from pathlib import Path
 
 import pytest
 
-from handlers.duplicate_handler import DuplicateEntry, EnhancedDuplicateHandler
+from handlers.duplicate_handler import EnhancedDuplicateHandler
+from services.downloader.models import DuplicateEntry
 
 
 class FakeConfig:

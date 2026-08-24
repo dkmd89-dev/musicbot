@@ -42,7 +42,8 @@ from telegram.ext import ContextTypes
 
 from config import Config
 from cookie_handler import CookieHandler
-from handlers.duplicate_handler import DuplicateEntry, EnhancedDuplicateHandler
+from handlers.duplicate_handler import EnhancedDuplicateHandler
+from services.downloader.models import DuplicateEntry
 from logger import get_module_logger
 from services.downloader.downloader import YoutubeDownloader
 from services.downloader.spotify_downloader import SpotifyDownloader, _is_spotify_url
