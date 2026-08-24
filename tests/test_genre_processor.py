@@ -293,3 +293,135 @@ class TestLastFmGenreFieldIsIgnored:
         assert result_with.source == result_without.source == "lastfm_prioritized"
         assert result_with.secondary == result_without.secondary
         assert result_with.raw_tags == result_without.raw_tags == tags
+
+
+class TestMusicBrainzDoubleDetermineGenreCharacterization:
+    """
+    ARCH-012 Phase 3A (docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md,
+    Abschnitt "Phase 3A"): charakterisiert das AKTUELLE Verhalten der
+    doppelten determine_genre()-Verkettung im MusicBrainz-Pfad fuer echte
+    Multi-Tag-Eingaben, gegen den ECHTEN GenreMapper (keine Mocks fuer
+    determine_genre() selbst - nur der netzwerkgebundene
+    MusicBrainzClient wird per FakeMusicBrainzClient ersetzt, Regel 7).
+
+    Empirisch verifizierter Befund: GenreMapper.normalize_genre_name()
+    (in determine_genre()s Normalisierungs-Schritt) ist fuer EINEN
+    einzelnen Genre-String ausgelegt, nicht fuer eine kommagetrennte
+    Mehrfach-Tag-Liste. musicbrainz_client.py uebergibt jedoch genau eine
+    solche Liste (", ".join(mb_tags)) als raw_genre. Ohne Alias-/
+    Artist-/Channel-Treffer fuer den GESAMTEN String faellt
+    normalize_genre_name() auf reines Whitespace-Title-Case zurueck - das
+    Ergebnis ist KEIN einzelnes Genre, sondern der komplette, title-
+    gecaste Tag-String (z. B. "Ruhrpott Rap, Hip Hop, Trap"). Der zweite
+    determine_genre()-Aufruf in genre_processor._fetch_genre_from_musicbrainz()
+    aendert diesen bereits verunstalteten Wert nicht mehr (idempotent),
+    korrigiert ihn aber auch nicht. Ueber tag_writer.py (liest
+    GenreResult.primary direkt) kann dieser Wert als echtes Datei-Tag
+    landen.
+
+    Diese Tests schreiben NUR das aktuelle Verhalten fest, bewerten es
+    nicht und aendern keine Produktionslogik.
+    """
+
+    UNKNOWN_ARTIST = "Totally Unknown Artist XYZ"
+
+    @staticmethod
+    def _client_genre_value(genre_processor, tags):
+        """
+        Repliziert exakt musicbrainz_client.py::_build_metadata()s
+        genre_value-Berechnung (der ERSTE determine_genre()-Aufruf) mit
+        dem echten, injizierten GenreMapper - ohne die echte
+        MusicBrainzClient-Klasse (kein Netzwerk, Regel 7).
+        """
+        mb_tags_str = ", ".join(tags) if tags else ""
+        artist = TestMusicBrainzDoubleDetermineGenreCharacterization.UNKNOWN_ARTIST
+        if mb_tags_str:
+            r = genre_processor.genre_mapper.determine_genre(
+                raw_genre=mb_tags_str, artist_name=artist
+            )
+        else:
+            r = genre_processor.genre_mapper.determine_genre(
+                raw_genre="", artist_name=artist, channel_name=artist
+            )
+        return r.primary if (r and r.primary) else "unknown"
+
+    async def _run_musicbrainz_path(self, genre_processor, mb_response):
+        return await genre_processor.determine_genre_with_fallbacks(
+            track_metadata={"title": "Some Song"},
+            artist_name=self.UNKNOWN_ARTIST,
+            channel_name="SomeUnknownChannel",
+            mb_client=FakeMusicBrainzClient(mb_response),
+            lfm_client=None,
+        )
+
+    def test_multi_tag_client_value_is_the_entire_joined_tag_string(
+        self, genre_processor
+    ):
+        """Erster determine_genre()-Aufruf (im Client): bei mehreren Tags
+        ist das Ergebnis der komplette, title-gecaste Tag-String, kein
+        einzelnes Genre."""
+        tags = ["ruhrpott rap", "hip hop", "trap"]
+
+        client_genre_value = self._client_genre_value(genre_processor, tags)
+
+        assert client_genre_value == "Ruhrpott Rap, Hip Hop, Trap"
+
+    def test_second_call_reproduces_the_same_value_unchanged(self, genre_processor):
+        """Zweiter determine_genre()-Aufruf (in
+        genre_processor._fetch_genre_from_musicbrainz()): aendert den
+        bereits verdichteten Client-Wert nicht mehr - idempotent, aber
+        weiterhin kein sauberes Einzelgenre."""
+        tags = ["ruhrpott rap", "hip hop", "trap"]
+        client_genre_value = self._client_genre_value(genre_processor, tags)
+
+        mb_response = {
+            "genre": client_genre_value,
+            "tags": tags,
+            "recording_id": "abc-123",
+        }
+        result = asyncio.run(self._run_musicbrainz_path(genre_processor, mb_response))
+
+        assert result is not None
+        assert result.primary == "Ruhrpott Rap, Hip Hop, Trap"
+        assert result.source == "normalized"
+        assert result.raw_tags == tags
+        assert result.mb_ids["recording_id"] == "abc-123"
+
+    def test_single_tag_is_not_affected(self, genre_processor):
+        """Gegenprobe: EIN Tag (kein Komma) wird korrekt zu einem sauberen
+        Einzelgenre normalisiert - das Verhalten aus 3A betrifft
+        ausschliesslich Mehrfach-Tag-Eingaben."""
+        tags = ["hip hop"]
+        client_genre_value = self._client_genre_value(genre_processor, tags)
+        assert client_genre_value == "Hip Hop"
+
+        mb_response = {"genre": client_genre_value, "tags": tags}
+        result = asyncio.run(self._run_musicbrainz_path(genre_processor, mb_response))
+        assert result.primary == "Hip Hop"
+
+    def test_known_artist_shields_against_the_multi_tag_value(self, genre_processor):
+        """Gegenprobe: ein Artist mit manuellem Mapping-Eintrag
+        (artist_genre.yaml) erhaelt sein Genre bereits in Schritt 1 der
+        Gesamt-Pipeline (determine_genre_with_fallbacks) - MusicBrainz
+        wird dann nur noch fuer mb_ids ausgewertet, der title-gecaste
+        Multi-Tag-String wirkt sich auf das Endergebnis nicht aus."""
+        known_artist = next(iter(genre_processor.genre_mapper.artist_map))
+        expected_primary = genre_processor.genre_mapper.artist_map[known_artist].primary
+
+        mb_response = {
+            "genre": "Ruhrpott Rap, Hip Hop, Trap",
+            "tags": ["ruhrpott rap", "hip hop", "trap"],
+            "recording_id": "abc-123",
+        }
+        result = asyncio.run(
+            genre_processor.determine_genre_with_fallbacks(
+                track_metadata={"title": "Some Song"},
+                artist_name=known_artist,
+                channel_name="SomeUnknownChannel",
+                mb_client=FakeMusicBrainzClient(mb_response),
+                lfm_client=None,
+            )
+        )
+
+        assert result.primary == expected_primary
+        assert result.source == "artist_exact_manual"
