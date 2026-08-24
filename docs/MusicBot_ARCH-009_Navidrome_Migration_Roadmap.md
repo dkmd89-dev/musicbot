@@ -138,48 +138,32 @@ Zielposition `services/clients/` blieben bewusst unangetastet. Details:
 
 ---
 
+## ARCH-009 Phase 5 — Verbleibende Präsentations-/Telegram-Verantwortlichkeiten
+
+Abgeschlossen.
+
+Analyse: von sieben verbleibenden `NavidromeAPI`-Methoden verletzte nur
+`execute_scan()` den Grundsatz (Telegram-MarkdownV2-Formatierung in allen
+vier Ausgängen). Zusatzfund: toter `telegram.constants.ParseMode`-Import
+(unabhängige, nicht getroffene Entscheidung).
+
+Umsetzung: `execute_scan()` ist jetzt ein reiner, telegramfreier
+Pass-Through zu `NavidromeScanTrigger.run_scan()` (`ScanRunResult`,
+Exceptions wie `ScanTimeoutError` werden unverändert durchgereicht).
+Die Telegram-MarkdownV2-Formatierung (Erfolg/Fehlschlag/Timeout/generische
+Exception, inkl. Emojis und Escaping) liegt jetzt vollständig im einzigen
+Consumer `handlers/menu/rich_menu_handler.py::_handle_navidrome_scan()`.
+`check_connection()`, `NavidromeScanTrigger` und die Zielposition
+`services/clients/` blieben unangetastet. Details:
+`docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md`
+(Abschnitte „Optionen“ und „Umsetzung“).
+
+---
+
 # Nächste Phasen
 
-Phase 3 und Phase 4 sind abgeschlossen (siehe oben unter „Bereits
+Phase 3, Phase 4 und Phase 5 sind abgeschlossen (siehe oben unter „Bereits
 abgeschlossen“).
-
-## Phase 5 — Verbleibende Präsentations-/Telegram-Verantwortlichkeiten prüfen
-
-### Ziel
-
-Nach der Klärung von `execute_scan()` prüfen, ob im verbleibenden
-Navidrome-Code noch Telegram-spezifische Verantwortlichkeiten vorhanden
-sind.
-
-### Zielarchitektur
-
-```text
-Integrationsadapter
-        ↓
-strukturierte Daten / Ergebnisse
-        ↓
-Anwendungslogik / Consumer
-        ↓
-Handler
-        ↓
-Telegram-Präsentation
-```
-
-### Grundsatz
-
-Ein späterer Navidrome-Client darf:
-
-* keine `telegram.*`-Abhängigkeiten besitzen
-* keine Telegram-Objekte speichern
-* keine Telegram-Nachrichten direkt versenden
-* keine Telegram-spezifische Markdown-Formatierung enthalten
-
-### Entscheidungsgate
-
-Vor einer Umsetzung prüfen, welche konkreten Verantwortlichkeiten nach
-Phase 4 überhaupt noch betroffen sind.
-
-Keine vorsorgliche Umstrukturierung.
 
 ---
 

@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from api.navidrome_scan_trigger import ScanRunResult, ScanTimeoutError
 from handlers.menu.rich_menu_handler import RichMenuHandler
 
 
@@ -370,12 +371,21 @@ class TestDownloadWrapperSetsUserState:
 
 class TestHandleNavidromeScan:
     """
-    Regressionstest: _handle_navidrome_scan() rief vorher self.navidrome_
-    adapter.trigger_scan() auf, obwohl navidrome_adapter nirgends im Repo
-    instanziiert wurde - self.navidrome_adapter war IMMER None, jeder Klick
-    zeigte nur "Navidrome-Adapter nicht verfuegbar". Fix: ruft jetzt direkt
-    NavidromeAPI.execute_scan() auf (bereits an anderer Stelle getestet,
-    siehe tests/test_navidrome_api_characterization.py).
+    ARCH-009 Phase 5 (2026-08-24): NavidromeAPI.execute_scan() ist seitdem
+    ein reiner, telegramfreier Pass-Through zu NavidromeScanTrigger.run_scan()
+    (siehe docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md) -
+    die vorher in execute_scan() eingebaute Telegram-MarkdownV2-Formatierung
+    (Erfolg/Fehlschlag/Timeout/generische Exception) liegt jetzt hier im
+    Handler. Diese Tests verifizieren, dass die vier sichtbaren
+    Nachrichtenvarianten inhaltlich unveraendert bleiben, jetzt gemockt auf
+    Ebene von NavidromeAPI.execute_scan() (ScanRunResult/ScanTimeoutError)
+    statt eines fertigen (bool, str)-Tupels.
+
+    Historischer Kontext: vor einem frueheren Fix rief diese Handler-Methode
+    self.navidrome_adapter.trigger_scan() auf, obwohl navidrome_adapter
+    nirgends im Repo instanziiert wurde - self.navidrome_adapter war IMMER
+    None, jeder Klick zeigte nur "Navidrome-Adapter nicht verfuegbar". Fix:
+    ruft seitdem direkt NavidromeAPI.execute_scan() auf.
     """
 
     def test_admin_triggers_scan_via_navidrome_api(self, tmp_path):
@@ -385,14 +395,19 @@ class TestHandleNavidromeScan:
 
         with patch(
             "handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan",
-            new=AsyncMock(return_value=(True, "Scan erfolgreich")),
+            new=AsyncMock(
+                return_value=ScanRunResult(
+                    success=True, returncode=0, stdout="Scan complete", stderr=""
+                )
+            ),
         ) as mock_scan:
             asyncio.run(handler._handle_navidrome_scan(update, context))
 
         mock_scan.assert_called_once()
-        update.callback_query.edit_message_text.assert_called_once_with(
-            "Scan erfolgreich", parse_mode="MarkdownV2"
-        )
+        args, kwargs = update.callback_query.edit_message_text.call_args
+        assert "Scan complete" in args[0]
+        assert "Scan erfolgreich" in args[0]
+        assert kwargs["parse_mode"] == "MarkdownV2"
 
     def test_scan_failure_message_is_still_shown_to_admin(self, tmp_path):
         handler, _ = _make_handler(tmp_path)
@@ -401,13 +416,34 @@ class TestHandleNavidromeScan:
 
         with patch(
             "handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan",
-            new=AsyncMock(return_value=(False, "Scan fehlgeschlagen")),
+            new=AsyncMock(
+                return_value=ScanRunResult(
+                    success=False, returncode=1, stdout="", stderr="boom"
+                )
+            ),
         ):
             asyncio.run(handler._handle_navidrome_scan(update, context))
 
-        update.callback_query.edit_message_text.assert_called_once_with(
-            "Scan fehlgeschlagen", parse_mode="MarkdownV2"
-        )
+        args, kwargs = update.callback_query.edit_message_text.call_args
+        assert "boom" in args[0]
+        assert "Scan fehlgeschlagen" in args[0]
+        assert kwargs["parse_mode"] == "MarkdownV2"
+
+    def test_timeout_shows_timeout_message(self, tmp_path):
+        handler, _ = _make_handler(tmp_path)
+        update = make_update(MockConfig.OWNER_USER_ID)
+        context = make_context()
+
+        with patch(
+            "handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan",
+            new=AsyncMock(side_effect=ScanTimeoutError(45)),
+        ):
+            asyncio.run(handler._handle_navidrome_scan(update, context))
+
+        args, kwargs = update.callback_query.edit_message_text.call_args
+        assert "45" in args[0]
+        assert "länger" in args[0]
+        assert kwargs["parse_mode"] == "MarkdownV2"
 
     def test_non_admin_is_rejected_without_calling_scan(self, tmp_path):
         handler, _ = _make_handler(tmp_path)
@@ -434,5 +470,7 @@ class TestHandleNavidromeScan:
         ):
             asyncio.run(handler._handle_navidrome_scan(update, context))
 
-        sent_text = update.callback_query.edit_message_text.call_args[0][0]
-        assert "Fehler beim Scan" in sent_text
+        args, kwargs = update.callback_query.edit_message_text.call_args
+        assert "Unerwarteter Fehler" in args[0]
+        assert "boom" in args[0]
+        assert kwargs["parse_mode"] == "MarkdownV2"

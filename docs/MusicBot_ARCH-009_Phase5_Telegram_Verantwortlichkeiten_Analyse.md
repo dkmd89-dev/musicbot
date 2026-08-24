@@ -177,3 +177,129 @@ Offene Entscheidungen für einen möglichen nächsten Schritt:
 Schritt erst nach expliziter Nutzerentscheidung, in einem eigenen Branch,
 mit eigenem PR/Review/Merge-Zyklus wie in allen vorherigen
 ARCH-009-Schritten.
+
+---
+
+## 7. Umsetzung (2026-08-24, Branch `arch/arch-009-phase5-telegram-presentation-extraction`)
+
+Nutzer-Entscheidung: Option 2 (Telegram-Formatierung aus `execute_scan()`
+in den Handler verlagern). Der tote `ParseMode`-Import (Option 3) bleibt
+bewusst unangetastet — separate, nicht getroffene Entscheidung.
+
+### Entscheidungsgate während der Umsetzung
+
+Die bisherige Rückgabe `tuple[bool, str]` von `execute_scan()` **war**
+bereits die fertige Telegram-MarkdownV2-Nachricht — ohne
+Telegram-Formatierung in `NavidromeAPI` konnte diese Bedeutung nicht
+erhalten bleiben. Das ist eine öffentliche API-Änderung im Sinne von
+Umsetzungsregel 4; vor der Umsetzung wurde daher ein Entscheidungsgate
+eingelegt (zwei Varianten zur Wahl gestellt: `execute_scan()` vollständig
+entfernen vs. als dünner Pass-Through mit neuem Rückgabetyp behalten).
+**Nutzerentscheidung: dünner Pass-Through.**
+
+### `api/navidrome_api.py`
+
+- `execute_scan()` ist jetzt ein reiner Pass-Through:
+  ```python
+  @classmethod
+  async def execute_scan(cls) -> ScanRunResult:
+      log_handler_info("Starte Navidrome Scan-Prozess.", context="NavidromeAPI")
+      return await NavidromeScanTrigger.run_scan()
+  ```
+  Kein eigenes Exception-Handling mehr — `ScanTimeoutError`,
+  `AttributeError`/`TypeError` (Konfigurationsfehler) und alle sonstigen
+  Exceptions aus `NavidromeScanTrigger.run_scan()` werden unverändert an
+  den Aufrufer durchgereicht.
+- Imports `from emoji import EMOJI` und
+  `from helfer.markdown_helfer import escape_md_v2` entfernt (nicht mehr
+  benötigt — 0 verbleibende Verwendungen in der Datei, per Grep
+  verifiziert).
+- `from telegram.constants import ParseMode` **bewusst unverändert**
+  belassen (Option 3 — separate, nicht getroffene Entscheidung; war
+  bereits vor diesem Schritt toter Import, siehe Abschnitt 3).
+
+### `handlers/menu/rich_menu_handler.py`
+
+- Neue Imports: `from api.navidrome_scan_trigger import ScanTimeoutError`,
+  `from emoji import EMOJI`, `from helfer.markdown_helfer import escape_md_v2`.
+- `_handle_navidrome_scan()` baut jetzt selbst die vier
+  MarkdownV2-Nachrichten — Text/Emojis/Escaping 1:1 aus der vorherigen
+  `execute_scan()`-Implementierung übernommen:
+  - Erfolg: `f"{EMOJI['scan']} Scan erfolgreich: \n```{escape_md_v2(result.stdout)}```"`
+  - Fehlschlag: `f"{EMOJI['error']} Scan fehlgeschlagen: \n```{escape_md_v2(result.stderr)}```"`
+  - Timeout (`except ScanTimeoutError as e`): `f"{EMOJI['warning']} Scan dauert länger als {e.timeout_seconds} Sekunden \\– bitte im Log prüfen\\."`
+  - generische Exception (`except Exception as e`): `f"{EMOJI['error']} Unerwarteter Fehler: \`{escape_md_v2(str(e))}\`"`
+- Struktur bewusst zweistufig (innerer try/except für
+  `execute_scan()`+Erfolg/Fehlschlag/Timeout, äußerer try/except als
+  Sicherheitsnetz für sonstige Exceptions **und** für einen Fehlschlag
+  des `edit_message_text()`-Aufrufs selbst) — entspricht der
+  ursprünglichen zweistufigen Absicherung vor Phase 4/5, bei der ein
+  Fehlschlag von `edit_message_text()` ebenfalls einen Fallback-Versuch
+  auslöste.
+- Bereits vorhandene `self.logger.error(f"❌ Navidrome-Scan-Fehler: {e}")`-
+  Zeile im äußeren `except` **wiederverwendet** (nicht neu eingeführt) —
+  war laut ARCH-009-Phase-3-Analyse zuvor totes Sicherheitsnetz, da
+  `execute_scan()` bis Phase 4 nie propagierte. Wird durch diesen Schritt
+  erstmals aktiv erreichbar. Ergänzt um `exc_info=True`, um den
+  vollständigen Traceback zu protokollieren — entspricht der Log-Tiefe,
+  die vorher `log_handler_error(e, ..., exc_info=True)` innerhalb von
+  `execute_scan()` selbst lieferte (sonst wäre das eine stille
+  Verschlechterung der Diagnosefähigkeit gewesen, siehe CLAUDE.md Regel 11
+  „Logs als Engineering-Werkzeug“).
+- Timeout- und Konfigurationsfehler-Logging bleibt unverändert an seinem
+  bisherigen Ort: `NavidromeScanTrigger.run_scan()` loggt
+  `ScanTimeoutError`/`AttributeError`/`TypeError` bereits selbst vor dem
+  Werfen (unverändert seit Phase 4) — keine doppelte Protokollierung nötig.
+
+### Tests
+
+- `tests/test_navidrome_api_characterization.py::TestExecuteScan` (4 Tests,
+  neu geschrieben): verifiziert den Pass-Through-Vertrag —
+  `ScanRunResult` wird unverändert (`is`-Identität) zurückgegeben,
+  `ScanTimeoutError`/`AttributeError` werden unverändert durchgereicht
+  (`pytest.raises`). Ersetzt die vorherigen Bridge-Formatierungstests
+  (die Formatierung wird jetzt woanders getestet).
+- `tests/test_rich_menu_handler.py::TestHandleNavidromeScan` (5 Tests,
+  1 neu): Erfolg, Fehlschlag, **neu:** Timeout, Admin-Check, generische
+  Exception — verifiziert für jede der vier sichtbaren Nachrichtenvarianten
+  Emoji, Kerntext und `parse_mode="MarkdownV2"` per Substring-Prüfung
+  gegen `edit_message_text.call_args`.
+- `tests/test_navidrome_scan_trigger.py`: unverändert (Subprocess-Ebene
+  von diesem Schritt nicht berührt, Umsetzungsregel 9).
+
+### Regressionslauf
+
+**Gezielt:** 74 Tests grün (vorher 73 — +1 neuer Timeout-Test im Handler).
+
+**Vollständig:** 1009 bestanden (vorher 1008 — Differenz von 1 entspricht
+exakt dem neuen Timeout-Test), unverändert 15 bekannte Vorbestand-Fehler,
+keine neuen Fehlschläge.
+
+### Import-/Architekturprüfung
+
+- `api/navidrome_api.py`: `EMOJI`/`escape_md_v2` vollständig entfernt (0
+  Treffer per Grep, nur noch in einem Docstring-Kommentar erwähnt).
+  `ParseMode`-Import bleibt bestehen — bewusst unverändert, siehe oben.
+- Kein Zirkelimport: `handlers.menu.rich_menu_handler` →
+  `api.navidrome_api` → `api.navidrome_scan_trigger`, keine Rückkante.
+- `handlers/menu/rich_menu_handler.py` importiert weiterhin korrekt
+  (Import-Smoke-Test erfolgreich).
+- `api/navidrome_scan_trigger.py` (`NavidromeScanTrigger`) unverändert —
+  weiterhin 0 Telegram-Bezüge (per Grep verifiziert), Umsetzungsregel 9
+  eingehalten.
+- `check_connection()` unverändert (Umsetzungsregel 8, per `git diff`
+  verifiziert — 0 geänderte Zeilen).
+- Keine Verschiebung nach `services/clients/` (Umsetzungsregel 7).
+
+### Offen (bewusst nicht Teil dieses Schritts)
+
+- Toter `ParseMode`-Import in `api/navidrome_api.py` (Option 3, separate
+  Entscheidung).
+- ARCH-009 Phase 6-9 (Zielposition/DI des verbleibenden Adapters).
+- Aus `docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md` Abschnitt 8:
+  Punkte 4-6 (ungetestete Normalisierungszweige waren bereits in Phase 4
+  ergänzt, toter Handler-`except`-Pfad ist mit diesem Schritt implizit
+  aktiv geworden statt entfernt, 45-Sekunden-Timeout-Beobachtung weiterhin
+  unverifiziert).
+
+**ARCH-009 Phase 5 damit abgeschlossen.**

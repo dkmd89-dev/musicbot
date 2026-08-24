@@ -53,6 +53,9 @@ from handlers.enhanced_error_handler import (
 )
 from config import Config
 from api.navidrome_api import NavidromeAPI
+from api.navidrome_scan_trigger import ScanTimeoutError
+from emoji import EMOJI
+from helfer.markdown_helfer import escape_md_v2
 from services.downloader.utils.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
@@ -717,6 +720,15 @@ class RichMenuHandler:
     async def _handle_navidrome_scan(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
+        """
+        ARCH-009 Phase 5: NavidromeAPI.execute_scan() ist seitdem ein reiner
+        Pass-Through zu NavidromeScanTrigger.run_scan() ohne eigene
+        Telegram-Formatierung. Die MarkdownV2-Nachrichtenbildung (Erfolg,
+        Fehlschlag, Timeout, generische Exception) liegt deshalb hier -
+        Text/Emojis/Escaping 1:1 aus der vorherigen execute_scan()-
+        Implementierung übernommen, siehe
+        docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md.
+        """
         query = update.callback_query
         user_id = update.effective_user.id
         if not self._is_admin(user_id):
@@ -724,11 +736,21 @@ class RichMenuHandler:
             return
         await query.answer("🔄 Starte Scan ...")
         try:
-            _success, message = await NavidromeAPI.execute_scan()
+            try:
+                result = await NavidromeAPI.execute_scan()
+                if result.success:
+                    message = f"{EMOJI['scan']} Scan erfolgreich: \n```{escape_md_v2(result.stdout)}```"
+                else:
+                    message = f"{EMOJI['error']} Scan fehlgeschlagen: \n```{escape_md_v2(result.stderr)}```"
+            except ScanTimeoutError as e:
+                message = f"{EMOJI['warning']} Scan dauert länger als {e.timeout_seconds} Sekunden \\– bitte im Log prüfen\\."
             await query.edit_message_text(message, parse_mode="MarkdownV2")
         except Exception as e:
-            self.logger.error(f"❌ Navidrome-Scan-Fehler: {e}")
-            await query.edit_message_text(f"❌ **Fehler beim Scan**\n\n{str(e)}")
+            self.logger.error(f"❌ Navidrome-Scan-Fehler: {e}", exc_info=True)
+            await query.edit_message_text(
+                f"{EMOJI['error']} Unerwarteter Fehler: `{escape_md_v2(str(e))}`",
+                parse_mode="MarkdownV2",
+            )
 
     # ====== HILFS-METHODEN ======
 

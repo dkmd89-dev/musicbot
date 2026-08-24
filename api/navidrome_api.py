@@ -18,13 +18,11 @@ from logger import (
     log_handler_warning,
     get_module_logger,
 )
-from emoji import EMOJI
-from helfer.markdown_helfer import escape_md_v2
 
 from config import get_config
 from functools import lru_cache
 
-from api.navidrome_scan_trigger import NavidromeScanTrigger, ScanTimeoutError
+from api.navidrome_scan_trigger import NavidromeScanTrigger, ScanRunResult
 
 # ===== LOGGER AUF ERROR SETZEN (nur Fehler protokollieren) =====
 _navidrome_logger = get_module_logger("NavidromeAPI")
@@ -135,42 +133,22 @@ class NavidromeAPI:
             return False
 
     @classmethod
-    async def execute_scan(cls) -> tuple[bool, str]:
+    async def execute_scan(cls) -> ScanRunResult:
         """
         Führt einen Navidrome-Scan aus.
 
-        ARCH-009 Phase 4: die Docker-/Subprocess-/Timeout-Steuerung liegt
-        seit dieser Auslagerung in api/navidrome_scan_trigger.py
-        (NavidromeScanTrigger), getrennt von der Subsonic-API-Kommunikation
-        dieser Klasse. execute_scan() bleibt als unveränderte öffentliche
-        Schnittstelle bestehen (Consumer: handlers/menu/rich_menu_handler.py)
-        und baut weiterhin die Telegram-MarkdownV2-Nachricht (bewusst nicht
-        Teil dieses Schritts, siehe
-        docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md).
+        ARCH-009 Phase 5: reiner, telegramfreier Pass-Through zu
+        NavidromeScanTrigger.run_scan(). execute_scan() enthält seitdem
+        keinerlei Telegram-Präsentationslogik mehr (kein EMOJI, kein
+        escape_md_v2, kein MarkdownV2) und reicht Exceptions
+        (insbesondere ScanTimeoutError sowie AttributeError/TypeError bei
+        fehlerhafter Konfiguration) unverändert durch. Die
+        Telegram-MarkdownV2-Formatierung liegt seitdem vollständig im
+        Consumer handlers/menu/rich_menu_handler.py::_handle_navidrome_scan()
+        (siehe docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md).
         """
         log_handler_info("Starte Navidrome Scan-Prozess.", context="NavidromeAPI")
-        try:
-            result = await NavidromeScanTrigger.run_scan()
-
-            if result.success:
-                message = f"{EMOJI['scan']} Scan erfolgreich: \n```{escape_md_v2(result.stdout)}```"
-                return True, message
-            else:
-                message = f"{EMOJI['error']} Scan fehlgeschlagen: \n```{escape_md_v2(result.stderr)}```"
-                return False, message
-        except ScanTimeoutError as e:
-            return (
-                False,
-                f"{EMOJI['warning']} Scan dauert länger als {e.timeout_seconds} Sekunden \\– bitte im Log prüfen\\.",
-            )
-        except Exception as e:
-            log_handler_error(
-                e, context="NavidromeAPI (unerwarteter Fehler beim Scan)", exc_info=True
-            )
-            return (
-                False,
-                f"{EMOJI['error']} Unerwarteter Fehler: `{escape_md_v2(str(e))}`",
-            )
+        return await NavidromeScanTrigger.run_scan()
 
     @classmethod
     async def get_artists(cls) -> List[Dict[str, Any]]:

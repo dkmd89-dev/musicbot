@@ -30,12 +30,20 @@ BUG-007-Beleg fuer eine bewusst zurueckgestellte, geplante Nutzung).
 ARCH-009 Phase 4 (2026-08-24): die Docker-/Subprocess-/Timeout-Steuerung
 von execute_scan() wurde nach api/navidrome_scan_trigger.py
 (NavidromeScanTrigger) ausgelagert - siehe
-docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md. TestExecuteScan
-testet seitdem nur noch die Bridge-Funktion von execute_scan() (Telegram-
-MarkdownV2-Formatierung je nach NavidromeScanTrigger.run_scan()-Ergebnis),
-gemockt auf Ebene von run_scan() statt des Subprocess selbst. Die
-eigentliche Subprocess-Charakterisierung liegt jetzt in
-tests/test_navidrome_scan_trigger.py.
+docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md.
+
+ARCH-009 Phase 5 (2026-08-24): execute_scan() ist seitdem ein reiner,
+telegramfreier Pass-Through zu NavidromeScanTrigger.run_scan() - keine
+Telegram-Formatierung, kein Exception-Handling mehr in NavidromeAPI. Die
+MarkdownV2-Formatierung liegt jetzt vollstaendig in
+handlers/menu/rich_menu_handler.py (siehe
+docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md).
+TestExecuteScan testet seitdem nur noch den Pass-Through-Vertrag: gibt
+execute_scan() unveraendert das ScanRunResult von run_scan() zurueck bzw.
+reicht es dessen Exceptions (ScanTimeoutError, AttributeError, ...)
+unveraendert durch? Die Telegram-Formatierung selbst wird jetzt in
+tests/test_rich_menu_handler.py::TestHandleNavidromeScan getestet, die
+Subprocess-Charakterisierung weiterhin in tests/test_navidrome_scan_trigger.py.
 """
 
 import asyncio
@@ -169,54 +177,45 @@ class TestSearch:
 
 class TestExecuteScan:
     """
-    Testet seit ARCH-009 Phase 4 nur noch die Bridge-Funktion von
-    execute_scan(): Telegram-MarkdownV2-Formatierung abhaengig vom
-    Ergebnis/der Exception von NavidromeScanTrigger.run_scan(). Die
-    Subprocess-/Timeout-Charakterisierung selbst liegt in
-    tests/test_navidrome_scan_trigger.py.
+    ARCH-009 Phase 5: execute_scan() ist ein reiner Pass-Through zu
+    NavidromeScanTrigger.run_scan() - keine eigene Formatierung, kein
+    eigenes Exception-Handling mehr.
     """
 
-    def test_success_returns_true_with_stdout_message(self):
+    def test_returns_run_scan_result_unchanged_on_success(self):
+        expected = ScanRunResult(
+            success=True, returncode=0, stdout="Scan complete", stderr=""
+        )
+        with patch.object(
+            NavidromeScanTrigger, "run_scan", new=AsyncMock(return_value=expected)
+        ):
+            result = asyncio.run(NavidromeAPI.execute_scan())
+
+        assert result is expected
+
+    def test_returns_run_scan_result_unchanged_on_failure(self):
+        expected = ScanRunResult(
+            success=False, returncode=1, stdout="", stderr="boom"
+        )
+        with patch.object(
+            NavidromeScanTrigger, "run_scan", new=AsyncMock(return_value=expected)
+        ):
+            result = asyncio.run(NavidromeAPI.execute_scan())
+
+        assert result is expected
+
+    def test_scan_timeout_error_propagates_unchanged(self):
         with patch.object(
             NavidromeScanTrigger,
             "run_scan",
-            new=AsyncMock(
-                return_value=ScanRunResult(
-                    success=True, returncode=0, stdout="Scan complete", stderr=""
-                )
-            ),
+            new=AsyncMock(side_effect=ScanTimeoutError(45)),
         ):
-            success, message = asyncio.run(NavidromeAPI.execute_scan())
+            with pytest.raises(ScanTimeoutError) as exc_info:
+                asyncio.run(NavidromeAPI.execute_scan())
 
-        assert success is True
-        assert "Scan complete" in message or "Scan erfolgreich" in message
+        assert exc_info.value.timeout_seconds == 45
 
-    def test_nonzero_returncode_returns_false(self):
-        with patch.object(
-            NavidromeScanTrigger,
-            "run_scan",
-            new=AsyncMock(
-                return_value=ScanRunResult(
-                    success=False, returncode=1, stdout="", stderr="boom"
-                )
-            ),
-        ):
-            success, message = asyncio.run(NavidromeAPI.execute_scan())
-
-        assert success is False
-
-    def test_timeout_returns_false_with_timeout_message(self):
-        with patch.object(
-            NavidromeScanTrigger,
-            "run_scan",
-            new=AsyncMock(side_effect=ScanTimeoutError(0.01)),
-        ):
-            success, message = asyncio.run(NavidromeAPI.execute_scan())
-
-        assert success is False
-        assert "länger" in message or "Timeout" in message or "warten" in message.lower()
-
-    def test_missing_scan_command_returns_false_without_crashing(self):
+    def test_missing_scan_command_attribute_error_propagates_unchanged(self):
         with patch.object(
             NavidromeScanTrigger,
             "run_scan",
@@ -226,6 +225,5 @@ class TestExecuteScan:
                 )
             ),
         ):
-            success, message = asyncio.run(NavidromeAPI.execute_scan())
-
-        assert success is False
+            with pytest.raises(AttributeError):
+                asyncio.run(NavidromeAPI.execute_scan())
