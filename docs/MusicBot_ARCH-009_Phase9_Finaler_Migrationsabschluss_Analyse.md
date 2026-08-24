@@ -503,3 +503,121 @@ umgeschrieben (wie vorgegeben).
 
 **Erst nach ausdrücklicher Nutzerentscheidung darf Code geändert
 werden.**
+
+---
+
+## Umsetzung A (2026-08-24, Branch `arch/arch-009-phase9-execute-scan-elimination`)
+
+Nutzerentscheidung: Option 2 aus Abschnitt 8 (`execute_scan()` entfernen,
+`NavidromeScanTrigger` vorerst unverändert in `api/` belassen — Punkt 1
+des Entscheidungsgates ausdrücklich **nicht** in diesem Schritt
+entschieden, bleibt separate Folgeanalyse).
+
+### 1. Consumer migriert
+
+`handlers/menu/rich_menu_handler.py::_handle_navidrome_scan()`:
+
+- Import geändert: `from api.navidrome_api import NavidromeAPI` +
+  `from api.navidrome_scan_trigger import ScanTimeoutError` →
+  `from api.navidrome_scan_trigger import NavidromeScanTrigger, ScanTimeoutError`
+  (eine statt zwei Importquellen, wie in Abschnitt 2 vorhergesagt).
+- Aufruf geändert: `await NavidromeAPI.execute_scan()` →
+  `await NavidromeScanTrigger.run_scan()`.
+- Telegram-Präsentationslogik (Erfolg/Fehlschlag/Timeout/generische
+  Exception, Emojis, MarkdownV2-Escaping) **byte-identisch** belassen —
+  keine einzige sichtbare Nutzertext-Änderung, keine Logik zurück nach
+  `NavidromeScanTrigger` verlagert.
+
+### 2. `api/navidrome_api.py` entfernt
+
+Vollständig gelöscht (`git rm`). Dependency-Audit nach der Änderung
+(Abschnitt „Dependency-Audit nach der Umsetzung“ unten) bestätigt: keine
+funktionale Referenz auf `api.navidrome_api` mehr im Repo.
+
+### 3. `api/__init__.py` geprüft
+
+War bereits leer (0 Bytes, keine Re-Exports) — keine Änderung nötig.
+`api/` bleibt bestehen, enthält jetzt ausschließlich
+`navidrome_scan_trigger.py` — wie in Abschnitt 4 der Analyse als einer
+der beiden möglichen Zustände vorhergesagt.
+
+### 4. Tests angepasst
+
+- **Entfernt:** `tests/test_navidrome_api_execute_scan.py` (4 Tests) —
+  testete ausschließlich die jetzt entfernte Bridge-Klasse
+  (`api.navidrome_api.NavidromeAPI.execute_scan()`); Abdeckung war
+  bereits laut Abschnitt 7 der Analyse vollständig redundant zu
+  `tests/test_navidrome_scan_trigger.py` (testet Erfolg/Fehlschlag/
+  Timeout/fehlenden Scan-Befehl von `NavidromeScanTrigger.run_scan()`
+  bereits direkt) — keine Nettoabdeckung verloren.
+- **Angepasst:** `tests/test_rich_menu_handler.py::TestHandleNavidromeScan`
+  (5 Tests, unverändert in der Anzahl) — alle 5 Patch-Ziele von
+  `"handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan"` auf
+  `"handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan"`
+  umgestellt (Patch geht weiterhin über das konsumierende Modul, nicht
+  den Ursprungspfad — unverändertes Muster seit ARCH-009 Phase 8). Alle
+  vier sichtbaren Nachrichtenvarianten weiterhin einzeln verifiziert.
+- **Unverändert:** `tests/test_navidrome_scan_trigger.py` (5 Tests) —
+  nicht angefasst, wie vorgegeben (`NavidromeScanTrigger` bleibt in
+  diesem Schritt unverändert).
+- Keine Testabdeckung reduziert, keine unnötigen Tests gelöscht.
+
+### 5. Dependency-Audit nach der Umsetzung
+
+Repo-weit geprüft: `api.navidrome_api` (Import-Statements), `execute_scan(`,
+`mock.patch(...)`-Ziele, dynamische Imports (`importlib`/`__import__`),
+Testreferenzen.
+
+- **0** verbleibende `from api.navidrome_api import ...`/`import api.navidrome_api`-Statements.
+- **0** verbleibende `mock.patch(...)`-Ziele auf die entfernte Klasse.
+- **0** dynamische Imports gefunden (weder vorher noch nachher).
+- Verbleibende Treffer für den String „api.navidrome_api“/„execute_scan(“
+  sind ausschließlich historische Prosa in Docstrings/Kommentaren (u. a.
+  in `api/navidrome_scan_trigger.py`s eigenem, unverändert gelassenem
+  Docstring, sowie in Testdatei-Kopfkommentaren) — keine funktionale
+  Wirkung, bewusst nicht angefasst.
+- `python3 -c "import api.navidrome_api"` schlägt jetzt erwartungsgemäß
+  mit `ModuleNotFoundError` fehl — bestätigt die vollständige Entfernung.
+
+**Ergebnis: keine funktionale Referenz auf `api.navidrome_api` mehr im
+Repo vorhanden.**
+
+### 6. Regression
+
+**Gezielt:** `tests/test_rich_menu_handler.py` + `tests/test_navidrome_scan_trigger.py`
+— 38 Tests grün.
+
+**Vollständig:** 1008 bestanden (vorher 1012 — Differenz von 4 entspricht
+exakt den 4 entfernten, redundanten Bridge-Tests aus
+`tests/test_navidrome_api_execute_scan.py`), unverändert dieselben **15
+bekannten Vorbestand-Fehler** (`test_auto_learn.py`,
+`test_metadata_modules.py`, `test_suite.py` RichMenuSystem/
+MenuIntegration), keine neuen Fehlschläge.
+
+### 7. Import-Smoke-Test
+
+`handlers.menu.rich_menu_handler`, `api.navidrome_scan_trigger`,
+`services.clients.navidrome_api` gemeinsam erfolgreich importierbar,
+keine Zirkelabhängigkeiten.
+
+### Verbleibender Zustand von `api/`
+
+```text
+api/
+└── navidrome_scan_trigger.py   ← einziger verbleibender Inhalt
+```
+
+`api/navidrome_api.py` existiert nicht mehr. `api/` selbst bleibt
+bestehen (wie in Abschnitt 3/4 der Analyse als möglicher Zustand
+vorhergesagt) — der endgültige Zielort von `NavidromeScanTrigger` ist
+weiterhin offen.
+
+### Offener Folgeentscheid
+
+> **ARCH-009 Folgeanalyse — endgültiger Zielort von `NavidromeScanTrigger`**
+
+Bewusst nicht Teil dieses Schritts (siehe Abschnitt 3 der Analyse:
+Varianten A–D, Empfehlung „vorerst in `api/` belassen“, aber ausdrücklich
+als eigene, spätere Entscheidung markiert). Wird separat entschieden.
+
+**ARCH-009 Phase 9, Umsetzung A, damit abgeschlossen.**
