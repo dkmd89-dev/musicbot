@@ -25,6 +25,15 @@ in echten Künstler-/Genre-Namen keine Seltenheit, z.B. "Lo-Fi", "R&B/Soul")
 hätte zu einem von Telegram abgelehnten "can't parse entities"-Fehler
 geführt, der als generische Fehlermeldung endet statt die Details
 anzuzeigen.
+
+ARCH-009 Phase 8 (2026-08-24): NavidromeAPI (der reine Adapter) wurde nach
+services/clients/navidrome_api.py verschoben. Das Patch-Ziel in
+TestConnectionErrorShownWhenUnconfigured wurde dabei bewusst auf das
+konsumierende Modul umgestellt
+("handlers.navidrome_menu_handler.NavidromeAPI.make_request" statt
+"api.navidrome_api.NavidromeAPI.make_request") - robuster gegenüber
+künftigen Verschiebungen, da der Patch-Pfad dem tatsächlichen Import in
+diesem Handler folgt statt dem Ursprungsmodul.
 """
 
 import asyncio
@@ -97,7 +106,7 @@ class TestConnectionErrorShownWhenUnconfigured:
         update = make_update()
         context = make_context()
 
-        with patch("api.navidrome_api.NavidromeAPI.make_request") as mock_request:
+        with patch("handlers.navidrome_menu_handler.NavidromeAPI.make_request") as mock_request:
             asyncio.run(handler.handle_browse_artists(update, context))
 
         mock_request.assert_not_called()

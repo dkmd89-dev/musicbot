@@ -11,6 +11,10 @@ Navidrome-Funktionen.
 ARCH-009 Phase 7 (2026-08-24): make_request()/_build_url() sind jetzt
 Instanzmethoden (DI) statt @classmethod/@staticmethod - Tests konstruieren
 daher eine NavidromeAPI()-Instanz statt die Klasse direkt zu verwenden.
+
+ARCH-009 Phase 8 (2026-08-24): NavidromeAPI (der reine Adapter) wurde nach
+services/clients/navidrome_api.py verschoben - Import und
+requests.get-Patch-Ziel entsprechend angepasst.
 """
 
 from unittest.mock import MagicMock, patch
@@ -18,7 +22,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from api.navidrome_api import NavidromeAPI
+from services.clients.navidrome_api import NavidromeAPI
 from config import Config
 
 
@@ -37,7 +41,7 @@ class TestTimeoutIsPassed:
             api,
             "_build_url",
             return_value="https://navidrome.example.test/rest/ping.view",
-        ), patch("api.navidrome_api.requests.get", return_value=_fake_response()) as mock_get:
+        ), patch("services.clients.navidrome_api.requests.get", return_value=_fake_response()) as mock_get:
             api.make_request("ping")
 
         assert mock_get.call_count == 1
@@ -53,7 +57,7 @@ class TestTimeoutIsPassed:
             "_build_url",
             return_value="https://navidrome.example.test/rest/ping.view",
         ), patch(
-            "api.navidrome_api.requests.get", return_value=_fake_response()
+            "services.clients.navidrome_api.requests.get", return_value=_fake_response()
         ) as mock_get:
             api.make_request("ping")
 
@@ -73,7 +77,7 @@ class TestTimeoutExceptionIsHandled:
             "_build_url",
             return_value="https://navidrome.example.test/rest/ping.view",
         ), patch(
-            "api.navidrome_api.requests.get",
+            "services.clients.navidrome_api.requests.get",
             side_effect=requests.exceptions.Timeout("timed out"),
         ):
             with pytest.raises(requests.exceptions.Timeout):

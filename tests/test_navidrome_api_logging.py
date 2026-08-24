@@ -17,13 +17,17 @@ ARCH-009 Phase 7 (2026-08-24): _auth_params/make_request()/_build_url()
 sind jetzt Instanzattribut bzw. Instanzmethoden (DI) statt Klassenattribut/
 @classmethod/@staticmethod - der Test patcht daher eine NavidromeAPI()-
 Instanz statt der Klasse.
+
+ARCH-009 Phase 8 (2026-08-24): NavidromeAPI (der reine Adapter) wurde nach
+services/clients/navidrome_api.py verschoben - Import und
+requests.get-Patch-Ziel entsprechend angepasst.
 """
 
 import logging
 from unittest.mock import MagicMock, patch
 
 from logger import get_module_logger
-from api.navidrome_api import NavidromeAPI
+from services.clients.navidrome_api import NavidromeAPI
 
 
 def test_navidrome_password_not_logged_when_module_log_level_raised(caplog):
@@ -53,7 +57,7 @@ def test_navidrome_password_not_logged_when_module_log_level_raised(caplog):
             api,
             "_build_url",
             return_value="https://navidrome.example.test/rest/ping.view",
-        ), patch("api.navidrome_api.requests.get", return_value=fake_response):
+        ), patch("services.clients.navidrome_api.requests.get", return_value=fake_response):
             with caplog.at_level(logging.INFO):
                 api.make_request("ping")
     finally:

@@ -1,5 +1,6 @@
 """
-Characterization-Tests fuer api/navidrome_api.py.
+Characterization-Tests fuer services/clients/navidrome_api.py
+(NavidromeAPI-Adapter).
 
 Vor dieser Session hatte NavidromeAPI ausser SEC-001 (Credential-Masking)
 und REL-001 (Timeout) keinerlei Testabdeckung fuer die eigentliche
@@ -51,19 +52,24 @@ check_connection/get_artists/get_now_playing/search sind jetzt echte
 Instanzmethoden statt @classmethod. TestCheckConnection/TestGetArtists/
 TestGetNowPlaying/TestSearch konstruieren daher jetzt eine Instanz
 (`NavidromeAPI()`) und patchen deren make_request statt der Klasse.
-TestExecuteScan bleibt unveraendert (execute_scan() ist bewusst weiterhin
-ein @classmethod, siehe docs/MusicBot_ARCH-009_Phase7_NavidromeAPI_DI.md).
-Neu: TestDependencyInjection verifiziert die eigentliche DI-Faehigkeit
-(unterschiedliche injizierte Configs ergeben unabhaengige Instanzen).
+Neu (Phase 7): TestDependencyInjection verifiziert die eigentliche
+DI-Faehigkeit (unterschiedliche injizierte Configs ergeben unabhaengige
+Instanzen).
+
+ARCH-009 Phase 8 (2026-08-24): der reine Navidrome-API-Adapter (alle in
+dieser Datei getesteten Methoden) wurde von api/navidrome_api.py nach
+services/clients/navidrome_api.py verschoben (Option B, siehe
+docs/MusicBot_ARCH-009_Phase8_Zielverschiebung_ServicesClients_Analyse.md).
+execute_scan() ist NICHT Teil dieser Verschiebung - bleibt als
+eigenstaendiger Rest in api/navidrome_api.py und wird seitdem separat in
+tests/test_navidrome_api_execute_scan.py getestet (dort auch weiterhin
+Pass-Through-Vertrag zu NavidromeScanTrigger, siehe ARCH-009 Phase 5).
 """
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
-from api.navidrome_api import NavidromeAPI
-from api.navidrome_scan_trigger import NavidromeScanTrigger, ScanRunResult, ScanTimeoutError
+from services.clients.navidrome_api import NavidromeAPI
 
 
 class TestCheckConnection:
@@ -245,57 +251,3 @@ class TestDependencyInjection:
 
         assert api._auth_params["u"] == real_config.NAVIDROME_USER
         assert api._auth_params["p"] == real_config.NAVIDROME_PASS
-
-
-class TestExecuteScan:
-    """
-    ARCH-009 Phase 5: execute_scan() ist ein reiner Pass-Through zu
-    NavidromeScanTrigger.run_scan() - keine eigene Formatierung, kein
-    eigenes Exception-Handling mehr.
-    """
-
-    def test_returns_run_scan_result_unchanged_on_success(self):
-        expected = ScanRunResult(
-            success=True, returncode=0, stdout="Scan complete", stderr=""
-        )
-        with patch.object(
-            NavidromeScanTrigger, "run_scan", new=AsyncMock(return_value=expected)
-        ):
-            result = asyncio.run(NavidromeAPI.execute_scan())
-
-        assert result is expected
-
-    def test_returns_run_scan_result_unchanged_on_failure(self):
-        expected = ScanRunResult(
-            success=False, returncode=1, stdout="", stderr="boom"
-        )
-        with patch.object(
-            NavidromeScanTrigger, "run_scan", new=AsyncMock(return_value=expected)
-        ):
-            result = asyncio.run(NavidromeAPI.execute_scan())
-
-        assert result is expected
-
-    def test_scan_timeout_error_propagates_unchanged(self):
-        with patch.object(
-            NavidromeScanTrigger,
-            "run_scan",
-            new=AsyncMock(side_effect=ScanTimeoutError(45)),
-        ):
-            with pytest.raises(ScanTimeoutError) as exc_info:
-                asyncio.run(NavidromeAPI.execute_scan())
-
-        assert exc_info.value.timeout_seconds == 45
-
-    def test_missing_scan_command_attribute_error_propagates_unchanged(self):
-        with patch.object(
-            NavidromeScanTrigger,
-            "run_scan",
-            new=AsyncMock(
-                side_effect=AttributeError(
-                    "NAVIDROME_SCAN_COMMAND ist nicht in Config definiert oder leer."
-                )
-            ),
-        ):
-            with pytest.raises(AttributeError):
-                asyncio.run(NavidromeAPI.execute_scan())

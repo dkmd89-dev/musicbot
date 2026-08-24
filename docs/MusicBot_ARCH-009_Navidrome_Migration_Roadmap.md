@@ -209,35 +209,82 @@ Zielort-/Verschiebungsfrage unten trägt zur Vermeidung einer doppelten
 
 ---
 
-## ARCH-009 Phase 8 — Zielverschiebung `services/clients/`: Analyse
+## ARCH-009 Phase 8 — Zielverschiebung nach `services/clients/`
 
-Abgeschlossen (reine Analyse, keine Umsetzung).
+Abgeschlossen (Analyse **und** Umsetzung).
 
-6 von 7 Methoden erfüllen die `services/clients/`-Konvention bereits
-vollständig; `execute_scan()` bleibt strukturell fehlplatziert (keine
+### Analyse
+
+6 von 7 Methoden erfüllten die `services/clients/`-Konvention bereits
+vollständig; `execute_scan()` blieb strukturell fehlplatziert (keine
 echte API-Kommunikation, siehe Phase 3/6). Zwei Optionen bewertet: A
 (`execute_scan()` zieht unverändert mit) vs. B (`execute_scan()` bleibt
-als Rest in `api/` zurück) — **empfohlen: Option B**, da nur diese
-Variante `services/clients/navidrome_api.py` vollständig konform macht
-**und** `handlers/menu/rich_menu_handler.py` (einziger Consumer von
-`execute_scan()`, nutzt keine der sechs Adapter-Methoden) komplett von
-der Migration ausnimmt. Kein Zirkelimport-Risiko festgestellt (Präzedenz:
-`services/downloader/utils/enhanced_metadata_processor.py` importiert
-bereits aus `services/clients/`). Zusatzfund: toter
-`telegram.constants.ParseMode`-Import würde bei einer reinen 1:1-Kopie
-sichtbar mit nach `services/clients/` wandern. Konkrete Consumer-/
-Test-Liste, Migrationsschritte und 5 offene Entscheidungspunkte im
-Analysedokument. Details:
+als Rest in `api/` zurück) — empfohlen und vom Nutzer bestätigt: Option
+B. Details (Analysestand, nicht nachträglich verändert):
 `docs/MusicBot_ARCH-009_Phase8_Zielverschiebung_ServicesClients_Analyse.md`.
+
+### Umsetzung (2026-08-24, Branch `arch/arch-009-phase8-navidrome-services-clients`)
+
+Nutzerentscheidungen: Option B, direkter Cutover (keine Kompatibilitäts-
+Bridge), toter `telegram.constants.ParseMode`-Import im selben Schritt
+entfernt, Klassenname `NavidromeAPI`/Dateiname `navidrome_api.py`
+beibehalten (keine Umbenennung zu `NavidromeClient`).
+
+**Neue Zielstruktur:**
+
+```text
+services/clients/navidrome_api.py
+    NavidromeAPI: __init__, _build_url, make_request, check_connection,
+    get_artists, get_now_playing, search
+    → reiner externer Integrationsadapter, 7/7 Konventionskriterien erfüllt
+
+api/navidrome_api.py
+    NavidromeAPI (eigenständige zweite Klasse, nur execute_scan())
+    → unverändert Pass-Through zu NavidromeScanTrigger
+
+api/navidrome_scan_trigger.py
+    unverändert
+```
+
+`services/clients/__init__.py` exportiert `NavidromeAPI` jetzt zusätzlich
+zu `GeniusClient`/`LastFMClient`/`MusicBrainzClient`.
+
+**Migrierte Consumer:** `handlers/navidrome_menu_handler.py`,
+`services/statistik_service.py` (je 1 Importzeile).
+`handlers/menu/rich_menu_handler.py` **unverändert** (einziger
+`execute_scan()`-Consumer, nutzt keine der sechs Adapter-Methoden,
+importiert weiterhin aus `api.navidrome_api`).
+
+**Tests:** `tests/test_navidrome_api_characterization.py` importiert jetzt
+aus `services.clients.navidrome_api`; die vier `execute_scan()`-Tests
+wurden in eine neue Datei `tests/test_navidrome_api_execute_scan.py`
+ausgelagert (testet weiterhin den `api/`-Rest). `tests/test_navidrome_api_timeout.py`/
+`tests/test_navidrome_api_logging.py` auf den neuen Adapter-Importpfad
+umgestellt. `tests/test_navidrome_menu_handler.py`s Patch-Ziel auf das
+konsumierende Modul umgestellt
+(`handlers.navidrome_menu_handler.NavidromeAPI.make_request` statt
+`api.navidrome_api.NavidromeAPI.make_request`) — robuster gegenüber
+künftigen Verschiebungen. `tests/test_rich_menu_handler.py` unverändert
+(patcht bereits über das konsumierende Modul, unabhängig vom
+tatsächlichen Speicherort). Keine Tests gelöscht.
+
+**Kein Zirkelimport-Risiko bestätigt** — verifiziert per Import-Smoke-Test.
+
+**Regression:** 1012 bestanden (unverändert gegenüber Phase 7 — reine
+Verschiebung/Aufteilung, keine neuen oder entfernten Tests in Summe),
+unverändert 15 bekannte Vorbestand-Fehler.
+
+**Bewusst unverändert:** `NavidromeScanTrigger` (nicht verschoben),
+`execute_scan()` (nicht entfernt, nicht architektonisch umgebaut), DI-
+Struktur aus Phase 7, historische ARCH-009-Phasendokumente (nur diese
+Roadmap wurde aktualisiert).
 
 ---
 
 # Nächste Phasen
 
-Phase 3 bis Phase 8 sind abgeschlossen (siehe oben unter „Bereits
-abgeschlossen“) — Phase 8 als reine Analyse, die eigentliche Umsetzung
-der Verschiebung nach `services/clients/` ist noch offen und wartet auf
-die dort benannten 5 Entscheidungspunkte.
+Phase 3 bis Phase 8 sind vollständig abgeschlossen (Analyse **und**
+Umsetzung, siehe oben unter „Bereits abgeschlossen“).
 
 ---
 
