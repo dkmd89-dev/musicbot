@@ -5,14 +5,20 @@ MusicBrainz ist explizit Teil des P0-Metadata-Flows in CLAUDE.md
 ("MusicBrainz / Lyrics / Cover"), hatte aber vor dieser Session keinerlei
 Testabdeckung (426 Zeilen, 0 Tests).
 
-GenreMapper/ArtistNormalizer werden hier bewusst NICHT real instanziiert,
-sondern gemockt: MusicBrainzClient.__init__() faellt beim ArtistNormalizer
-ohne get_artist_normalizer()-Singleton auf eine EIGENE Instanz mit dem
-ECHTEN Config.LIBRARY_DIR/ARTIST_OVERRIDE_FILE zurueck - genau das Szenario,
-das in tests/test_artist_normalizer.py bereits einmal zu einem versehentlichen
+ArtistNormalizer wird hier bewusst NICHT real instanziiert, sondern
+gemockt: MusicBrainzClient.__init__() faellt beim ArtistNormalizer ohne
+get_artist_normalizer()-Singleton auf eine EIGENE Instanz mit dem ECHTEN
+Config.LIBRARY_DIR/ARTIST_OVERRIDE_FILE zurueck - genau das Szenario, das
+in tests/test_artist_normalizer.py bereits einmal zu einem versehentlichen
 Schreibzugriff auf die reale mapping/case_preserve.yaml gefuehrt hat. Diese
 Klasse wird hier isoliert unit-getestet (Regel 8 Testpyramide), nicht
 zusammen mit ihren echten Kollaborateuren.
+
+ARCH-012 Phase 3B: der Client besitzt seit dieser Phase keinen
+GenreMapper mehr (siehe docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md,
+Abschnitt "Phase 3B") - fetch_metadata()/_build_metadata() liefern nur
+noch die rohen release-group-Tags, keine vorberechnete Genre-Entscheidung.
+Die frueheren genre_mapper-Mocks in dieser Datei entfallen entsprechend.
 
 Nebenbefund (dokumentiert, nicht gefixt): _build_metadata() setzt
 "track_number" auf first_release["medium-track-count"]. Laut
@@ -48,10 +54,8 @@ def clear_musicbrainz_cache():
     _musicbrainz_result_cache.clear()
 
 
-def _make_client(genre_mapper=None, artist_normalizer=None):
+def _make_client(artist_normalizer=None):
     with patch.object(
-        mb_module, "get_genre_mapper", return_value=genre_mapper or MagicMock()
-    ), patch.object(
         mb_module, "_get_artist_normalizer", return_value=artist_normalizer or MagicMock()
     ), patch("musicbrainzngs.set_useragent"):
         return MusicBrainzClient()
@@ -199,11 +203,9 @@ class TestGetBestMatch:
 
 class TestFetchMetadata:
     def test_combined_query_match_returns_built_metadata(self):
-        genre_mapper = MagicMock()
-        genre_mapper.determine_genre.return_value = MagicMock(primary="Rock")
         normalizer = MagicMock()
         normalizer.normalize.side_effect = lambda x: x
-        client = _make_client(genre_mapper=genre_mapper, artist_normalizer=normalizer)
+        client = _make_client(artist_normalizer=normalizer)
 
         recording = {
             "id": "rec-1",
@@ -222,11 +224,9 @@ class TestFetchMetadata:
         assert result["mbid"] == "rec-1"
 
     def test_falls_back_to_title_only_search_when_combined_empty(self):
-        genre_mapper = MagicMock()
-        genre_mapper.determine_genre.return_value = MagicMock(primary="Rock")
         normalizer = MagicMock()
         normalizer.normalize.side_effect = lambda x: x
-        client = _make_client(genre_mapper=genre_mapper, artist_normalizer=normalizer)
+        client = _make_client(artist_normalizer=normalizer)
 
         recording = {"id": "rec-2", "title": "Some Song", "artist-credit-phrase": "Some Artist"}
         responses = [{"recording-list": []}, {"recording-list": [recording]}]
@@ -260,13 +260,8 @@ class TestFetchMetadata:
 
 
 class TestBuildMetadataFieldExtraction:
-    def _client_with_genre(self, genre="Hip-Hop"):
-        genre_mapper = MagicMock()
-        genre_mapper.determine_genre.return_value = MagicMock(primary=genre)
-        return _make_client(genre_mapper=genre_mapper)
-
     def test_extracts_isrc_release_and_ids(self):
-        client = self._client_with_genre()
+        client = _make_client()
         match = {
             "id": "rec-123",
             "title": "Track Title",
@@ -305,7 +300,7 @@ class TestBuildMetadataFieldExtraction:
         search_recordings() fuer "Bohemian Rhapsody" (Track 8 auf einem
         Medium mit insgesamt 17 Tracks).
         """
-        client = self._client_with_genre()
+        client = _make_client()
         match = {
             "id": "rec-1",
             "title": "Bohemian Rhapsody",
@@ -338,7 +333,7 @@ class TestBuildMetadataFieldExtraction:
         first_release komplett (ohne medium-list), die echte Position kommt
         stattdessen aus _source_track_number.
         """
-        client = self._client_with_genre()
+        client = _make_client()
         match = {
             "id": "rec-1",
             "title": "Some Track",
@@ -351,7 +346,7 @@ class TestBuildMetadataFieldExtraction:
         assert result["track_number"] == 4
 
     def test_track_number_is_none_when_no_position_data_available(self):
-        client = self._client_with_genre()
+        client = _make_client()
         match = {"id": "rec-1", "title": "Some Track", "release-list": []}
         with patch("musicbrainzngs.get_recording_by_id", return_value={}):
             result = asyncio.run(client._build_metadata(match, "Some Artist"))
@@ -367,7 +362,7 @@ class TestBuildMetadataFieldExtraction:
         Detail-Antwort ueberschrieben - mb_tags/release-group.title waren
         dadurch in der Praxis IMMER leer/None.
         """
-        client = self._client_with_genre(genre="Rock")
+        client = _make_client()
         match = {
             "id": "rec-1",
             "title": "Some Track",
@@ -398,10 +393,17 @@ class TestBuildMetadataFieldExtraction:
 
         assert result["album"] == "Release Group Title"
 
-    def test_genre_determined_from_release_group_tags(self):
-        genre_mapper = MagicMock()
-        genre_mapper.determine_genre.return_value = MagicMock(primary="Jazz")
-        client = _make_client(genre_mapper=genre_mapper)
+    def test_release_group_tags_are_returned_raw_without_genre_determination(self):
+        """
+        ARCH-012 Phase 3B: _build_metadata() liefert die release-group-Tags
+        seit dieser Phase unveraendert als "tags" zurueck - keine
+        GenreMapper.determine_genre()-Verdichtung mehr im Client (siehe
+        docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md, Phase 3B).
+        Die fachliche Priorisierung liegt jetzt ausschliesslich in
+        genre_processor.py::_fetch_genre_from_musicbrainz() ueber
+        prioritize_genres().
+        """
+        client = _make_client()
 
         match = {
             "id": "rec-1",
@@ -416,21 +418,22 @@ class TestBuildMetadataFieldExtraction:
         with patch("musicbrainzngs.get_recording_by_id", return_value={}):
             result = asyncio.run(client._build_metadata(match, "Some Artist"))
 
-        assert result["genre"] == "Jazz"
-        genre_mapper.determine_genre.assert_called_once()
-        _args, kwargs = genre_mapper.determine_genre.call_args
-        assert "jazz" in kwargs["raw_genre"]
+        assert result["tags"] == ["jazz", "smooth"]
+        assert result["genre"] == "unknown"
 
-    def test_no_tags_falls_back_to_artist_channel_genre_lookup(self):
-        genre_mapper = MagicMock()
-        genre_mapper.determine_genre.return_value = MagicMock(primary="unknown")
-        client = _make_client(genre_mapper=genre_mapper)
+    def test_no_tags_genre_stays_unknown_placeholder(self):
+        """
+        ARCH-012 Phase 3B: ohne release-group-Tags liefert "genre" den
+        festen Platzhalter "unknown" - kein Artist-/Channel-Fallback ueber
+        GenreMapper mehr im Client (dieser lag ohnehin bereits vor
+        genre_processor.py's eigenem Schritt 1/2 der Gesamt-Pipeline,
+        siehe ARCH-012 Phase 3A/3B).
+        """
+        client = _make_client()
 
         match = {"id": "rec-1", "title": "Some Track", "release-list": []}
         with patch("musicbrainzngs.get_recording_by_id", return_value={}):
             result = asyncio.run(client._build_metadata(match, "Some Artist"))
 
         assert result["genre"] == "unknown"
-        _args, kwargs = genre_mapper.determine_genre.call_args
-        assert kwargs["raw_genre"] == ""
-        assert kwargs["artist_name"] == "Some Artist"
+        assert result["tags"] == []

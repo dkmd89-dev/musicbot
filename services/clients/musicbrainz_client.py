@@ -14,6 +14,17 @@ MusicBrainzClient – liefert Metadaten (Genre, IDs, Album, Jahr) via MusicBrain
     release_group_id und isrc zurück (waren schon drin, bleiben unverändert).
     GenreProcessor liest diese Felder und hängt sie an GenreResult.mb_ids,
     damit enhanced_metadata_processor den zweiten MB-Aufruf überspringen kann.
+
+ARCH-012 Phase 3B: die client-seitige Genre-Verdichtung per
+GenreMapper.determine_genre() wurde entfernt (Phase 3A hatte belegt, dass
+sie bei Multi-Tag-Ergebnissen keinen sauberen Einzelgenre-Namen liefert,
+sondern den kompletten, title-gecasten Tag-String). fetch_metadata()
+liefert seither nur noch die rohen release-group-Tags ("tags") - die
+fachliche Priorisierung liegt jetzt ausschließlich in
+services/metadata/genre_processor.py::_fetch_genre_from_musicbrainz()
+über die bestehende prioritize_genres()-Logik (analog zum Last.fm-Pfad).
+Siehe docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md, Abschnitt
+"Phase 3B".
 """
 
 import asyncio
@@ -25,7 +36,6 @@ from typing import Optional, Dict, Any
 
 from config import Config
 import async_timeout
-from utils.genre_map import get_genre_mapper
 from logger import get_module_logger
 
 metadata_logger = get_module_logger("metadata")
@@ -92,13 +102,11 @@ class MusicBrainzClient:
     def __init__(self):
         musicbrainzngs.set_useragent("yt_music_bot", "1.0", "support@example.com")
 
-        # Singleton-Referenzen statt eigener Instanzen
-        self.genre_mapper = get_genre_mapper()
+        # Singleton-Referenz statt eigener Instanz
         self.artist_normalizer = _get_artist_normalizer()
 
         metadata_logger.info(
-            "✨ MusicBrainzClient initialisiert "
-            "(GenreMapper + ArtistNormalizer via Singleton)."
+            "✨ MusicBrainzClient initialisiert (ArtistNormalizer via Singleton)."
         )
 
     async def _fetch_release_group_id(self, release_id: str) -> Optional[str]:
@@ -423,21 +431,15 @@ class MusicBrainzClient:
                 break
 
         album_artist = first_release.get("artist-credit-phrase")
-        mb_tags_str = ", ".join(mb_tags) if mb_tags else ""
 
+        # ARCH-012 Phase 3B: keine Client-seitige Genre-Verdichtung mehr -
+        # "tags" (mb_tags, s.u.) sind die rohen release-group-Tags und die
+        # alleinige Grundlage fuer die Genre-Priorisierung in
+        # genre_processor.py::_fetch_genre_from_musicbrainz(). "genre"
+        # bleibt als Schluessel erhalten (unveraenderte Rueckgabestruktur),
+        # liefert aber nur noch den Platzhalter, der zuvor bereits der
+        # Fallback-Wert bei fehlenden Tags war.
         genre_value = "unknown"
-        if mb_tags_str:
-            genre_result = self.genre_mapper.determine_genre(
-                raw_genre=mb_tags_str, artist_name=original_artist
-            )
-            if genre_result and hasattr(genre_result, "primary") and genre_result.primary:
-                genre_value = genre_result.primary
-        else:
-            genre_result = self.genre_mapper.determine_genre(
-                raw_genre="", artist_name=original_artist, channel_name=original_artist
-            )
-            if genre_result and hasattr(genre_result, "primary") and genre_result.primary:
-                genre_value = genre_result.primary
 
         metadata_logger.info(
             f"[{context_str}] 🔖 MB-IDs: "
