@@ -2,9 +2,10 @@
 
 ## Status
 
-PHASE 2 – ARCHITEKTURENTSCHEIDUNG ABGESCHLOSSEN (2026-08-24). Noch keine
-Migration. Siehe Abschnitt 27 „Ergebnisse" (Phase 1) und Abschnitt 35
-„Phase 2 — Architekturentscheidung".
+PHASE 3A/3B – METADATA-UNTERPROZESSOREN MIGRIERT (2026-08-24). Phase 3C–3H
+noch offen, Entscheidungsgate vor Phase 3C erreicht. Siehe Abschnitt 27
+„Ergebnisse" (Phase 1), Abschnitt 35 „Phase 2 — Architekturentscheidung"
+und Abschnitt 36 „Phase 3A/3B — Metadata-Unterprozessoren migriert".
 
 ## Typ
 
@@ -1638,3 +1639,242 @@ Beantwortet in dieser Phase 2:
 > vorgeschlagenen Zielarchitektur beginnen.
 
 Keine Codeänderungen wurden in Phase 2 vorgenommen.
+
+---
+
+# 36. Phase 3A/3B — Metadata-Unterprozessoren migriert (2026-08-24)
+
+Nutzerfreigabe der in Phase 2 vorgeschlagenen Zielarchitektur (Variante A)
+erhalten. Umsetzung auf Branch `arch/arch-010-phase3ab-metadata-processors`.
+
+## 36.1 Pre-Migration-Audit
+
+`git status` vor Beginn: Branch `main` sauber bis auf sessionsfremde,
+bereits vor dieser Aufgabe bestehende Arbeitsverzeichnis-Änderungen
+(gelöschte `.info.json`-Dateien unter `import/downloads/`,
+`mapping/artist_overrides.json`) — nicht angefasst, nicht Teil dieses
+Commits.
+
+Verifikation der Phase-2-Feststellung „9 von 10 Unterprozessoren haben
+genau einen Produktions-Consumer": repo-weit per Grep bestätigt — alle 9
+Module (`album_processor`, `artist_processor`, `auto_learn`, `cache`,
+`cover_processor`, `genre_processor`, `lyrics_processor`, `tag_writer`,
+`title_cleaner`) haben ausschließlich `enhanced_metadata_processor.py` als
+Produktions-Consumer und je eine Testdatei (`artist_processor`/
+`title_cleaner` teilen sich `test_metadata_modules.py`). Interne
+Cross-Importe der 9 Dateien untereinander: keine gefunden. `mock.patch`-
+Ziele auf einen der 9 Modulpfade: keine gefunden (bestätigt Phase-2-Befund
+aus 35.7).
+
+Interne `models.py`-Abhängigkeit vor der Migration geprüft:
+`artist_processor.py` importierte bereits absolut
+(`from services.downloader.utils.metadata.models import
+split_main_and_featuring`) — unverändert gültig, da `models.py` nicht
+migriert wird. `cache.py` importierte relativ (`from .models import
+MetadataResult`) — dieser Import wäre nach der Verschiebung nach
+`services/metadata/` ins Leere gelaufen (kein `services/metadata/models.py`
+vorhanden) und wurde auf den technisch notwendigen absoluten Pfad zum
+unveränderten Altort umgestellt (siehe 36.2).
+
+## 36.2 Umsetzung
+
+**Verschoben (`git mv`, 9 Dateien, Verhalten unverändert):**
+
+```text
+services/downloader/utils/metadata/album_processor.py  → services/metadata/album_processor.py
+services/downloader/utils/metadata/artist_processor.py → services/metadata/artist_processor.py
+services/downloader/utils/metadata/auto_learn.py       → services/metadata/auto_learn.py
+services/downloader/utils/metadata/cache.py            → services/metadata/cache.py
+services/downloader/utils/metadata/cover_processor.py  → services/metadata/cover_processor.py
+services/downloader/utils/metadata/genre_processor.py  → services/metadata/genre_processor.py
+services/downloader/utils/metadata/lyrics_processor.py → services/metadata/lyrics_processor.py
+services/downloader/utils/metadata/tag_writer.py       → services/metadata/tag_writer.py
+services/downloader/utils/metadata/title_cleaner.py    → services/metadata/title_cleaner.py
+```
+
+**Neu angelegt:** `services/metadata/__init__.py` (leer — folgt der bereits
+etablierten Konvention von `services/downloader/utils/metadata/__init__.py`
+und `services/downloader/utils/__init__.py`, keine Re-Exports).
+
+**Technisch notwendige Änderungen an den 9 verschobenen Dateien (durch den
+neuen Pfad erzwungen, keine Verhaltensänderung):**
+- Pfad-Kopfzeilen-Kommentar (`# services/downloader/utils/metadata/X.py` →
+  `# services/metadata/X.py`) in allen 9 Dateien — folgt demselben Muster
+  wie bei der `NavidromeScanTrigger`-Migration in ARCH-009.
+- `cache.py`: relativer Import `from .models import MetadataResult` →
+  `from services.downloader.utils.metadata.models import MetadataResult`
+  (models.py bleibt bewusst am alten Ort, siehe Auftrag Abschnitt 5B).
+- `artist_processor.py`: keine Änderung nötig (Import war bereits absolut
+  und zeigt weiterhin korrekt auf den unveränderten Ort von `models.py`).
+
+**Keine Klassen-, Methoden-, Signatur-, Logging-, Cache- oder
+Netzwerkverhaltensänderung** an einer der 9 Dateien — verifiziert per
+`git diff` (nur Kopfzeile + der eine relative Import in `cache.py`
+geändert, sonst 0 Zeilenänderungen je Datei).
+
+**Angepasster Consumer:** ausschließlich
+`services/downloader/utils/enhanced_metadata_processor.py` (einziger
+Produktions-Consumer, wie in 36.1 verifiziert) — 9 Importzeilen von
+`services.downloader.utils.metadata.<modul>` auf `services.metadata.<modul>`
+umgestellt. Der `models.py`-Import in derselben Datei blieb unverändert
+(`services.downloader.utils.metadata.models`), ebenso der Import von
+`download_artifact_cleanup` — beide nicht Teil dieser Phase. Kein weiterer
+Produktions-Consumer betroffen (`bot.py`,
+`services/downloader/downloader.py`, `services/downloader/download/interfaces.py`,
+`klassen/download_handler.py`, `handlers/menu/rich_menu_handler.py`
+importieren keinen der 9 Unterprozessoren direkt — bestätigt per Audit,
+unverändert gelassen).
+
+**Angepasste Tests (8 Dateien, nur Importzeilen/Docstring-Pfadangaben,
+keine Testlogik geändert):**
+`tests/test_album_processor.py`, `tests/test_metadata_modules.py`
+(`ArtistProcessor` + `TitleCleaner`), `tests/test_auto_learn.py`,
+`tests/test_metadata_cache_handler.py` (Import von `MetadataCacheHandler`
+umgestellt, Import von `MetadataResult` bewusst unverändert gelassen, da
+`models.py` nicht migriert wurde), `tests/test_cover_processor_validation.py`
+(2 Importstellen, inkl. eines lokalen Imports in einer Testmethode),
+`tests/test_genre_processor.py` (Import + Docstring-Pfadangabe),
+`tests/test_lyrics_processor.py` (Import + Docstring-Pfadangabe),
+`tests/test_tag_writer.py` (Import + Docstring-Pfadangabe). Zusätzlich in
+`test_cover_processor_validation.py` eine weitere Docstring-Pfadangabe
+korrigiert (beschreibt den aktuellen Speicherort der getesteten
+Produktionsklasse, keine historische Aussage).
+
+**Nicht angefasst (wie vorgeschrieben):** `enhanced_metadata_processor.py`
+(nur Importzeilen geändert, Datei selbst bleibt am alten Ort),
+`models.py`, `download_utils.py`, `download_result_reporter.py`,
+`download_artifact_cleanup.py`, `progress_tracker.py`, `errors.py`,
+`metadata_result_translator.py`, `services/downloader/utils/` (Verzeichnis
+bleibt bestehen). Keine der in Phase 2 als „nicht ARCH-010-relevant"
+markierten Nebenbaustellen (ARCH-005-Cleanup, DI-Konsistenz
+`album_processor.py`, Last.fm-Duplikation, `DuplicateEntry`,
+`utils/metadata_cache.py`) wurde angefasst.
+
+## 36.3 Verifikation
+
+**Import-Audit:** repo-weiter Grep auf
+`services.downloader.utils.metadata.<modul>` (dotted) und
+`services/downloader/utils/metadata/<modul>.py` (slash) für alle 9 Module
+— 0 verbleibende funktionale Referenzen in `.py`-Dateien außerhalb von
+`docs/`. In `docs/` bewusst unverändert gelassen: alle Vorkommen in den
+historischen ARCH-Phasendokumenten (`ARCH-003`, `ARCH-009 Phase 8`,
+`ARCH-001`) sowie in `docs/MusicBot_ENGINEERING_BASELINE.md` — sie
+beschreiben korrekt den jeweils damaligen Zustand.
+
+**Import-Smoke-Test:**
+
+```text
+import services.metadata.album_processor    → OK
+import services.metadata.artist_processor   → OK
+import services.metadata.auto_learn         → OK
+import services.metadata.cache              → OK
+import services.metadata.cover_processor    → OK
+import services.metadata.genre_processor    → OK
+import services.metadata.lyrics_processor   → OK
+import services.metadata.tag_writer         → OK
+import services.metadata.title_cleaner      → OK
+import services.downloader.utils.enhanced_metadata_processor → OK
+```
+
+Kein `ImportError`, kein `ModuleNotFoundError`, kein Zirkelimport. Alter
+Pfad korrekt nicht mehr auffindbar:
+`python3 -c "import services.downloader.utils.metadata.cache"` →
+`ModuleNotFoundError` (erwartet).
+
+**Gezielte Tests** (12 Dateien: 8 direkt migrierte + 4 weitere Consumer-
+/Grenztests der Facade):
+
+```text
+tests/test_album_processor.py
+tests/test_metadata_modules.py
+tests/test_auto_learn.py
+tests/test_metadata_cache_handler.py
+tests/test_cover_processor_validation.py
+tests/test_genre_processor.py
+tests/test_lyrics_processor.py
+tests/test_tag_writer.py
+tests/test_autolearn_special_channel_gate.py
+tests/test_enhanced_metadata_processor_aclose.py
+tests/test_metadata_processor_happy_path.py
+tests/test_split_main_and_featuring.py
+```
+
+Ergebnis: 11 failed, 147 passed, 14 subtests passed. Alle 11
+Fehlschläge sind exakt die bekannten Vorbestand-Fehler aus
+`test_auto_learn.py` (5) und `test_metadata_modules.py::TestTitleCleaner`
+(3, davon 3 als Subtests), unverändert gegenüber dem dokumentierten
+Bestand (siehe `docs/MusicBot_ENGINEERING_BASELINE.md`) — keine neue
+Regression.
+
+**Vollständige Regression:**
+
+```text
+vorher (Baseline, Stand nach PR #13):  1009 passed, 15 known failures
+nachher (nach Phase 3A/3B):            1009 passed, 15 known failures
+```
+
+`pytest tests/ -q` liefert identisch: `15 failed, 1009 passed, 5 warnings,
+14 subtests passed`. Die 15 Fehlschläge sind zeilengenau dieselben wie vor
+der Migration (`test_auto_learn.py` ×5, `test_metadata_modules.py` ×3,
+`test_suite.py::TestRichMenuSystem`/`TestMenuIntegration` ×4 — letztere
+beide Gruppen unberührt von dieser Migration, da außerhalb des Scopes).
+**Keine neuen Fehler.**
+
+## 36.4 Strukturprüfung (Ist-Zustand nach Phase 3A/3B)
+
+```text
+services/
+├── metadata/
+│   ├── __init__.py                  (neu, leer)
+│   ├── album_processor.py
+│   ├── artist_processor.py
+│   ├── auto_learn.py
+│   ├── cache.py
+│   ├── cover_processor.py
+│   ├── genre_processor.py
+│   ├── lyrics_processor.py
+│   ├── tag_writer.py
+│   └── title_cleaner.py
+│
+└── downloader/
+    └── utils/
+        ├── enhanced_metadata_processor.py   (unverändert am alten Ort)
+        ├── download_utils.py                (unverändert)
+        ├── download_result_reporter.py      (unverändert)
+        ├── download_artifact_cleanup.py     (unverändert)
+        ├── progress_tracker.py              (unverändert)
+        ├── errors.py                        (unverändert)
+        ├── metadata_result_translator.py    (unverändert)
+        └── metadata/
+            ├── __init__.py                  (unverändert, leer)
+            └── models.py                    (unverändert)
+```
+
+Entspricht exakt der in Abschnitt 12 des Arbeitsauftrags geforderten
+Zwischenstruktur.
+
+## 36.5 Git
+
+- Branch: `arch/arch-010-phase3ab-metadata-processors`
+- Commit: siehe unten (wird nach Dokumentation erstellt)
+- PR: wird erstellt, **nicht gemergt** (keine Merge-Freigabe erteilt)
+
+## 36.6 Verbleibende Phase-3-Arbeiten
+
+```text
+Phase 3C — services/downloader/utils/metadata/models.py migrieren
+Phase 3D — enhanced_metadata_processor.py migrieren
+            + download_artifact_cleanup.py (gemeinsam, wegen der in
+            35.5 dokumentierten Reverse-Edge)
+Phase 3E — übrige Downloader-Dateien migrieren (download_utils.py,
+            download_result_reporter.py, progress_tracker.py, errors.py,
+            metadata_result_translator.py)
+Phase 3F — externe Consumer migrieren (bot.py, downloader.py,
+            download/interfaces.py, klassen/download_handler.py,
+            handlers/menu/rich_menu_handler.py)
+Phase 3G — alte services/downloader/utils/-Struktur entfernen
+Phase 3H — finale Regression
+```
+
+**STOPP nach Phase 3A/3B. Keine automatische Fortsetzung mit Phase 3C.
+Wartet auf ausdrückliche Freigabe.**

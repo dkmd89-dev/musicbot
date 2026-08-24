@@ -1,4 +1,4 @@
-# services/downloader/utils/metadata/artist_processor.py
+# services/metadata/artist_processor.py
 # -*- coding: utf-8 -*-
 
 import re

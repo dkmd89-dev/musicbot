@@ -7,7 +7,7 @@ Baseline) und ausserdem nicht von pytest eingesammelt wurde, weil die
 Testklasse einen __init__-Konstruktor besass.
 
 Getestet wird die Produktionsklasse
-services.downloader.utils.metadata.genre_processor.GenreProcessor
+services.metadata.genre_processor.GenreProcessor
 zusammen mit dem echten utils.genre_map.GenreMapper gegen die realen
 YAML-Dateien in mapping/. Externe Services (MusicBrainz, Last.fm) werden
 hier nicht angesprochen - normalize_genre_name() und prioritize_genres()
@@ -18,7 +18,7 @@ import asyncio
 
 import pytest
 
-from services.downloader.utils.metadata.genre_processor import GenreProcessor
+from services.metadata.genre_processor import GenreProcessor
 from utils.genre_map import GenreMapper
 
 

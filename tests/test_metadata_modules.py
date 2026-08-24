@@ -8,8 +8,8 @@ from pathlib import Path
 # Füge Projekt-Root zum Pfad hinzu
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from services.downloader.utils.metadata.title_cleaner import TitleCleaner
-from services.downloader.utils.metadata.artist_processor import ArtistProcessor
+from services.metadata.title_cleaner import TitleCleaner
+from services.metadata.artist_processor import ArtistProcessor
 from utils.artist_map import ArtistNormalizer, ArtistConfig
 
 

@@ -1,7 +1,7 @@
 """
 Regressionstest fuer eine in Phase 3 gefundene Validierungsluecke in
-CoverProcessor._validate_and_score() (services/downloader/utils/metadata/
-cover_processor.py), siehe docs/MusicBot_ENGINEERING_BASELINE.md.
+CoverProcessor._validate_and_score() (services/metadata/cover_processor.py),
+siehe docs/MusicBot_ENGINEERING_BASELINE.md.
 
 _analyze_image_quality() faengt PIL-Parse-Fehler ab und liefert dann
 width=0, height=0 zurueck (kein Crash). Die alte Bedingung
@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 from PIL import Image
 
-from services.downloader.utils.metadata.cover_processor import (
+from services.metadata.cover_processor import (
     CoverCandidate,
     CoverProcessor,
     ScoreThreshold,
@@ -212,7 +212,7 @@ class TestBuildPriorityTaskList:
         assert "Deezer" not in labels
 
     def test_youtube_produces_one_task_per_variant(self):
-        from services.downloader.utils.metadata.cover_processor import _YT_VARIANTS
+        from services.metadata.cover_processor import _YT_VARIANTS
 
         processor = make_processor()
         tasks = processor._build_priority_task_list(
