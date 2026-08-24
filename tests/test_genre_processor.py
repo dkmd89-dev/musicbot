@@ -243,3 +243,53 @@ class TestDetermineGenreWithFallbacksExternalSteps:
             self._run(genre_processor, mb_client=None, lfm_client=None)
         )
         assert result is None
+
+
+class TestLastFmGenreFieldIsIgnored:
+    """
+    ARCH-012 Phase 1 (docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md,
+    Abschnitt 3/9) stellte fest, dass lastfm_client.py intern ein "genre"-
+    Feld per GenreMapper.determine_genre() berechnet, das hier in
+    _fetch_genre_from_lastfm() praktisch nie verwendet wird - stattdessen
+    entscheidet ausschliesslich prioritize_genres() auf den rohen "tags".
+
+    Charakterisiert vor ARCH-012 Phase 2 (Entfernung dieses toten Feldes
+    im Client): das "genre"-Feld im vom Last.fm-Client gelieferten Dict
+    hat KEINEN Einfluss auf das effektive Ergebnis - weder wenn es einen
+    (ggf. voellig falschen) Wert enthaelt, noch wenn es komplett fehlt
+    (der Zustand nach der Client-Bereinigung). Wird dieser Test nach der
+    Entfernung des toten Pfads erneut ausgefuehrt, muss er unveraendert
+    gruen bleiben - das ist der Beleg, dass die Bereinigung keine
+    Verhaltensaenderung ist.
+    """
+
+    async def _run(self, genre_processor, lfm_client):
+        return await genre_processor.determine_genre_with_fallbacks(
+            track_metadata={"title": "Some Song"},
+            artist_name="Totally Unknown Artist XYZ",
+            channel_name="SomeUnknownChannel",
+            mb_client=None,
+            lfm_client=lfm_client,
+        )
+
+    def test_genre_field_value_does_not_affect_effective_result(
+        self, genre_processor
+    ):
+        tags = ["hip hop", "deutschrap"]
+
+        with_bogus_genre = FakeLastFmClient(
+            {"tags": tags, "genre": "Totally Wrong Genre Value"}
+        )
+        without_genre_field = FakeLastFmClient({"tags": tags})
+
+        result_with = asyncio.run(self._run(genre_processor, with_bogus_genre))
+        result_without = asyncio.run(
+            self._run(genre_processor, without_genre_field)
+        )
+
+        assert result_with is not None
+        assert result_without is not None
+        assert result_with.primary == result_without.primary == "Deutschrap"
+        assert result_with.source == result_without.source == "lastfm_prioritized"
+        assert result_with.secondary == result_without.secondary
+        assert result_with.raw_tags == result_without.raw_tags == tags

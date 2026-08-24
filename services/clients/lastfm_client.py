@@ -6,7 +6,6 @@ from typing import Optional, Dict, List, Any, Tuple
 
 from config import Config
 import async_timeout
-from utils.genre_map import GenreMapper
 from logger import (
     log_metadata_info,
     log_metadata_debug,
@@ -38,7 +37,6 @@ class LastFMClient:
             username=None,
             password_hash=None,
         )
-        self.genremapper = GenreMapper()
         metadata_logger.info("✨ LastFMClient initialisiert.")
 
     def _get_lastfm_data(
@@ -124,23 +122,23 @@ class LastFMClient:
                     return {}
                 
                 log_metadata_info(f"[LastFM] 🏷️ {len(tag_names)} Tags: {tag_names[:5] if tag_names else 'keine'}")
-                
-                genre = "unknown"
-                if include_genre and tag_names:
-                    genre_result = self.genremapper.determine_genre(
-                        raw_genre=", ".join(tag_names), artist_name=artist
-                    )
-                    if genre_result and hasattr(genre_result, "primary") and genre_result.primary:
-                        genre = genre_result.primary
-                        log_metadata_info(f"[LastFM] 🎵 Genre: '{genre}'")
-                
+
+                # ARCH-012 Phase 2: das frueher hier per GenreMapper.determine_genre()
+                # berechnete Genre wurde vom einzigen Aufrufer
+                # (genre_processor._fetch_genre_from_lastfm()) praktisch nie
+                # verwendet - die eigentliche Entscheidung faellt dort ueber
+                # prioritize_genres() auf den rohen "tags". "genre" bleibt als
+                # Schluessel erhalten (unveraenderte Rueckgabestruktur), liefert
+                # aber nur noch den Platzhalter, der zuvor bereits der Fallback-
+                # Wert war. include_genre bleibt Teil der Signatur, wird aber
+                # nicht mehr ausgewertet.
                 return {
                     "tags": tag_names,
                     "listeners": track_info.get("listeners"),
                     "playcount": track_info.get("playcount"),
                     "album": track_info.get("album"),
                     "wiki": track_info.get("wiki"),
-                    "genre": genre,
+                    "genre": "unknown",
                 }
                 
         except asyncio.TimeoutError:
