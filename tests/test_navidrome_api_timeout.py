@@ -3,10 +3,10 @@ Regressionstest fuer einen in Phase 3 gefundenen Zuverlaessigkeits-Bug:
 NavidromeAPI.make_request() rief requests.get() ohne timeout auf. Haengt
 Navidrome (nicht abgestuerzt, nur langsam/nicht antwortend), blockiert der
 Aufruf unbegrenzt. Da make_request ueber asyncio.to_thread mit dem
-geteilten Default-Executor aufgerufen wird (check_connection,
-get_scan_status, get_full_server_info etc.), kann das bei wiederholten
-Aufrufen den gesamten Thread-Pool erschoepfen und damit den ganzen Bot
-lahmlegen, nicht nur die Navidrome-Funktionen.
+geteilten Default-Executor aufgerufen wird (u.a. von check_connection(),
+get_artists(), search()), kann das bei wiederholten Aufrufen den gesamten
+Thread-Pool erschoepfen und damit den ganzen Bot lahmlegen, nicht nur die
+Navidrome-Funktionen.
 """
 
 from unittest.mock import MagicMock, patch

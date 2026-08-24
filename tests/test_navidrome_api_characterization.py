@@ -8,15 +8,24 @@ Geschaeftslogik - trotz P1-Status in CLAUDE.md ("externe Adapter",
 produktiv genutzten Methoden (Regel: Characterization First), inkl. der
 Subsonic-API-Eigenheiten (z.B. Einzel-Objekt statt Liste bei genau einem
 Now-Playing-Eintrag) und der Fehlerbehandlungs-Inkonsistenz zwischen den
-Methoden: check_connection()/get_scan_status()/get_full_server_info()
-fangen Exceptions aus make_request() ab und liefern sichere Defaults,
-waehrend get_artists()/search()/get_now_playing() Exceptions unveraendert
+Methoden: check_connection() faengt Exceptions aus make_request() ab und
+liefert einen sicheren Default (False), waehrend
+get_artists()/search()/get_now_playing() Exceptions unveraendert
 propagieren lassen (was in Produktion nur deshalb nicht auffaellt, weil
 alle drei echten Aufrufer - navidrome_menu_handler.py, statistik_service.py
 - selbst try/except um den Aufruf legen).
 
 Alle Netzwerk-/Subprozess-Aufrufe werden gemockt (Regel 7 - externe
 Dienste in Unit-Tests nicht real ansprechen).
+
+ARCH-009 Phase 2 (2026-08-24): format_full_status_message()/
+format_rescan_status_message()/format_web_interface_url_message()/
+get_full_server_info()/get_scan_status()/test_api() wurden entfernt
+(0 Produktions-Consumer, 0 bzw. nur diese eigenen Charakterisierungstests
+- siehe docs/MusicBot_ARCH-009_Phase1_Bestandsaufnahme.md). Die
+zugehoerigen TestGetScanStatus/TestGetFullServerInfo-Klassen wurden
+entfernt. check_connection() bleibt bewusst erhalten (dokumentierter
+BUG-007-Beleg fuer eine bewusst zurueckgestellte, geplante Nutzung).
 """
 
 import asyncio
@@ -48,102 +57,6 @@ class TestCheckConnection:
         ):
             result = asyncio.run(NavidromeAPI.check_connection())
         assert result is False
-
-
-class TestGetScanStatus:
-    def test_returns_scan_status_dict_on_success(self):
-        with patch.object(
-            NavidromeAPI,
-            "make_request",
-            return_value={
-                "subsonic-response": {"scanStatus": {"scanning": True, "count": 42}}
-            },
-        ):
-            result = asyncio.run(NavidromeAPI.get_scan_status())
-        assert result == {"scanning": True, "count": 42}
-
-    def test_returns_empty_dict_instead_of_raising_on_failure(self):
-        with patch.object(NavidromeAPI, "make_request", side_effect=TimeoutError("slow")):
-            result = asyncio.run(NavidromeAPI.get_scan_status())
-        assert result == {}
-
-
-class TestGetFullServerInfo:
-    def _responses(self, **overrides):
-        base = {
-            "getScanStatus": {
-                "subsonic-response": {
-                    "status": "ok",
-                    "scanStatus": {"lastScan": "2026-08-01T00:00:00Z", "scanning": False},
-                }
-            },
-            "getArtists": {
-                "subsonic-response": {
-                    "status": "ok",
-                    "artists": {"index": [{"artist": [{"id": "1"}, {"id": "2"}]}]},
-                }
-            },
-            "getAlbumList2": {
-                "subsonic-response": {
-                    "albumList2": {"album": [{"songCount": 10}, {"songCount": 5}]}
-                }
-            },
-            "getGenres": {
-                "subsonic-response": {
-                    "status": "ok",
-                    "genres": {"genre": [{"value": "Rock"}, {"value": "Pop"}]},
-                }
-            },
-            "ping": {
-                "subsonic-response": {"status": "ok", "version": "1.16.1"}
-            },
-        }
-        base.update(overrides)
-        return base
-
-    def test_happy_path_aggregates_all_fields(self):
-        responses = self._responses()
-
-        def fake_make_request(endpoint, params=None):
-            return responses[endpoint]
-
-        with patch.object(NavidromeAPI, "make_request", side_effect=fake_make_request):
-            info = asyncio.run(NavidromeAPI.get_full_server_info())
-
-        assert info["artist_count"] == 2
-        assert info["song_count"] == 15
-        assert info["genre_count"] == 2
-        assert info["server_version"] == "1.16.1"
-        assert info["scanning"] is False
-        assert info["last_scan"] == "2026-08-01T00:00:00Z"
-
-    def test_exception_mid_way_leaves_remaining_fields_at_defaults(self):
-        """
-        Dokumentiert bestehendes Verhalten: alle funf Sub-Requests liegen in
-        EINEM gemeinsamen try-Block. Schlaegt z.B. getArtists fehl, werden
-        die NACHFOLGENDEN Requests (getAlbumList2/getGenres/ping) gar nicht
-        mehr ausgefuehrt - nur die bereits vor dem Fehler gesetzten Felder
-        (hier: last_scan/scanning aus getScanStatus) bleiben erhalten.
-        """
-        responses = self._responses()
-
-        call_order = ["getScanStatus", "getArtists"]
-
-        def fake_make_request(endpoint, params=None):
-            if endpoint == "getArtists":
-                raise ConnectionError("Navidrome nicht erreichbar")
-            return responses[endpoint]
-
-        with patch.object(NavidromeAPI, "make_request", side_effect=fake_make_request):
-            info = asyncio.run(NavidromeAPI.get_full_server_info())
-
-        assert info["scanning"] is False
-        assert info["last_scan"] == "2026-08-01T00:00:00Z"
-        # Nicht mehr erreichte Felder bleiben bei ihren Initialwerten
-        assert info["artist_count"] == 0
-        assert info["song_count"] == 0
-        assert info["genre_count"] == 0
-        assert info["server_version"] == "Unbekannt"
 
 
 class TestGetArtists:
