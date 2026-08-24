@@ -3,10 +3,13 @@ Unit-Tests für BotRestartHandler (handlers/admin/bot_restart_handler.py)
 — vorher 0 Tests, gefunden über die systematische Ungetestet-Prüfung.
 Live/aktiv verdrahtet in RichMenuHandler.initialize().
 
-WICHTIG (Regel 7): _trigger_restart() ruft echtes subprocess.run(["sudo",
-"systemctl", "restart", ...]) auf, das den laufenden Produktions-Bot
-tatsaechlich neu starten wuerde. subprocess.run wird in JEDEM Test dieser
-Datei gemockt - niemals echt ausgefuehrt.
+POST-ARCH-009 P-1: die eigentliche systemctl-Prozesssteuerung
+(_trigger_restart()) wurde nach utils/bot_restart_trigger.py ausgelagert
+(siehe docs/MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md). Diese Datei
+testet nur noch, DASS BotRestartHandler den Neustart korrekt an
+BotRestartTrigger.trigger_restart() delegiert (via call_later); die
+subprocess.run()-Charakterisierung selbst liegt jetzt in
+tests/test_bot_restart_trigger.py.
 
 Sicherheitscharakterisierung (kein Bug): cancel_restart() prueft _is_admin
 selbst NICHT, im Gegensatz zu show_restart_confirm()/execute_restart().
@@ -16,13 +19,13 @@ bereits VOR dem Dispatch eine eigene _is_admin_check()-Pruefung - cancel_
 restart() kann nie ohne vorherige Admin-Pruefung erreicht werden.
 """
 
-import subprocess
 from unittest.mock import AsyncMock, Mock, patch
 import asyncio
 
 import pytest
 
 from handlers.admin.bot_restart_handler import BotRestartHandler, _PRE_RESTART_DELAY
+from utils.bot_restart_trigger import BotRestartTrigger
 
 
 class MockConfig:
@@ -104,7 +107,9 @@ class TestExecuteRestart:
         assert "neu gestartet" in text
 
         fake_loop.call_later.assert_called_once_with(
-            _PRE_RESTART_DELAY, handler._trigger_restart
+            _PRE_RESTART_DELAY,
+            BotRestartTrigger.trigger_restart,
+            handler.service_name,
         )
 
     def test_non_admin_is_rejected_and_restart_not_scheduled(self, handler):
@@ -138,44 +143,3 @@ class TestCancelRestart:
         update.callback_query.answer.assert_called_once_with("✅ Neustart abgebrochen")
         text = update.callback_query.edit_message_text.call_args.args[0]
         assert "abgebrochen" in text
-
-
-class TestTriggerRestart:
-    def test_success_logs_info_without_raising(self, handler):
-        completed = subprocess.CompletedProcess(
-            args=["sudo", "systemctl", "restart", "bot"], returncode=0, stdout="ok", stderr=""
-        )
-        with patch("subprocess.run", return_value=completed) as mock_run:
-            handler._trigger_restart()
-
-        mock_run.assert_called_once_with(
-            ["sudo", "systemctl", "restart", handler.service_name],
-            check=True,
-            timeout=15,
-            capture_output=True,
-            text=True,
-        )
-        # logger.info() wird bereits einmal in __init__ aufgerufen - hier nur
-        # pruefen, dass _trigger_restart() zusaetzlich einen Erfolg loggt.
-        handler.logger.info.assert_called_with("✅ systemctl restart abgeschlossen: %s", "ok")
-
-    def test_called_process_error_is_caught_and_logged(self, handler):
-        error = subprocess.CalledProcessError(
-            returncode=1, cmd="systemctl", stderr="permission denied"
-        )
-        with patch("subprocess.run", side_effect=error):
-            handler._trigger_restart()  # darf nicht raisen
-
-        handler.logger.error.assert_called_once()
-
-    def test_missing_sudo_binary_is_caught_and_logged(self, handler):
-        with patch("subprocess.run", side_effect=FileNotFoundError("sudo not found")):
-            handler._trigger_restart()
-
-        handler.logger.error.assert_called_once()
-
-    def test_unexpected_exception_is_caught_and_logged(self, handler):
-        with patch("subprocess.run", side_effect=RuntimeError("boom")):
-            handler._trigger_restart()
-
-        handler.logger.error.assert_called_once()

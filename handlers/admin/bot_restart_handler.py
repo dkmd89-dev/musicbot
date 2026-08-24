@@ -14,15 +14,18 @@ Voraussetzung (einmalig auf dem Server einrichten):
 CHANGELOG:
   - v1.0  (2025-07)  Erstellt: Confirmation-Dialog, Execute, Cancel
   - v1.1  (2026-04)  Fix: MarkdownV2 -> HTML (Escape-Probleme behoben)
+  - v1.2  (2026-08)  POST-ARCH-009 P-1: systemctl-Prozesssteuerung nach
+                      utils/bot_restart_trigger.py ausgelagert (siehe
+                      docs/MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md)
 """
 
 import asyncio
-import subprocess
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from logger import get_module_logger
+from utils.bot_restart_trigger import BotRestartTrigger
 
 # Name des systemd-Service (muss mit /etc/systemd/system/<NAME>.service übereinstimmen)
 _SERVICE_NAME = "bot"
@@ -131,7 +134,11 @@ class BotRestartHandler:
         )
 
         # Neustart in separatem Task, damit obige Nachricht gesendet werden kann
-        asyncio.get_event_loop().call_later(_PRE_RESTART_DELAY, self._trigger_restart)
+        asyncio.get_event_loop().call_later(
+            _PRE_RESTART_DELAY,
+            BotRestartTrigger.trigger_restart,
+            self.service_name,
+        )
 
     async def cancel_restart(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -153,46 +160,6 @@ class BotRestartHandler:
     # ------------------------------------------------------------------
     # Interne Hilfsmethoden
     # ------------------------------------------------------------------
-
-    def _trigger_restart(self) -> None:
-        """
-        Ruft `sudo systemctl restart <service>` auf.
-        Wird via call_later ausgeführt, damit der Event-Loop noch Zeit hat,
-        die letzte Telegram-Nachricht abzusenden.
-
-        Voraussetzung: Der Bot-User hat NOPASSWD-Recht für dieses Kommando:
-            robin ALL=(ALL) NOPASSWD: /bin/systemctl restart bot
-        """
-        try:
-            self.logger.warning(
-                "🔄 Starte: sudo systemctl restart %s", self.service_name
-            )
-            result = subprocess.run(
-                ["sudo", "systemctl", "restart", self.service_name],
-                check=True,
-                timeout=15,
-                capture_output=True,
-                text=True,
-            )
-            # Hierhin gelangt der Code nur, wenn systemctl nicht den eigenen Prozess
-            # beendet (z. B. bei einem anderen Service). Im Normalfall wird der
-            # Prozess durch den restart beendet, bevor diese Zeile erreicht wird.
-            self.logger.info("✅ systemctl restart abgeschlossen: %s", result.stdout)
-        except subprocess.CalledProcessError as e:
-            self.logger.error(
-                "❌ systemctl restart fehlgeschlagen (RC=%s): %s",
-                e.returncode,
-                e.stderr,
-            )
-        except FileNotFoundError:
-            self.logger.error(
-                "❌ 'sudo' oder 'systemctl' nicht gefunden. "
-                "Prüfe ob systemd verfügbar ist."
-            )
-        except Exception as e:  # pylint: disable=broad-except
-            self.logger.error(
-                "❌ Unerwarteter Fehler beim Neustart: %s", e, exc_info=True
-            )
 
     def _is_admin(self, user_id: int) -> bool:
         """Prüft, ob der User Admin- oder Owner-Rechte hat."""
