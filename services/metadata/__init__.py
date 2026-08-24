@@ -3,6 +3,7 @@ from .artist_processor import ArtistProcessor
 from .auto_learn import AutoLearnManager
 from .cache import MetadataCacheHandler
 from .cover_processor import CoverProcessor
+from .enhanced_metadata_processor import EnhancedMetadataProcessor
 from .genre_processor import GenreProcessor
 from .lyrics_processor import LyricsProcessor
 from .tag_writer import TagWriter
@@ -14,6 +15,7 @@ __all__ = [
     'AutoLearnManager',
     'MetadataCacheHandler',
     'CoverProcessor',
+    'EnhancedMetadataProcessor',
     'GenreProcessor',
     'LyricsProcessor',
     'TagWriter',

@@ -2237,13 +2237,21 @@ Entspricht exakt der im Arbeitsauftrag geforderten Reststruktur.
 `services/downloader/utils/` und `services/downloader/utils/metadata/`
 bewusst nicht entfernt (folgt erst in Phase 3G).
 
-## 38.6 Git
+## 38.6 Nachtrag — `services/metadata/__init__.py` aktualisiert
+
+Nach Nutzerentscheidung ergänzt: `EnhancedMetadataProcessor` in
+`services/metadata/__init__.py` exportiert (gleiche relative-Import-
++ `__all__`-Konvention wie beim Nachtrag zu Phase 3A/3B, siehe 36.2).
+Import-Smoke-Test und volle Regression erneut verifiziert: 1009
+bestanden, unverändert 15 bekannte Vorbestand-Fehler.
+
+## 38.7 Git
 
 - Branch: `arch/arch-010-phase3d-metadata-facade-cleanup`
 - Commit: siehe unten
 - PR: wird erstellt, **nicht gemergt**
 
-## 38.7 Verbleibende Phase-3-Arbeiten
+## 38.8 Verbleibende Phase-3-Arbeiten
 
 ```text
 Phase 3E — übrige Downloader-Dateien migrieren (download_utils.py,
