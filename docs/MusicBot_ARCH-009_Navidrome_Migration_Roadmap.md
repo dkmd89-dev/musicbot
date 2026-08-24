@@ -306,16 +306,45 @@ entfernte/angepasste Tests, Regression, Dependency-Audit):
 
 ---
 
+## ARCH-009 Folgeanalyse — Endgültiger Zielort von `NavidromeScanTrigger`
+
+Abgeschlossen (reine Analyse, keine Umsetzung).
+
+Vollständige Verantwortlichkeits- und Dependency-Analyse von
+`NavidromeScanTrigger`: kein externer Integrationsadapter (keine
+Netzwerkkommunikation, nur lokale Docker-/Subprocess-Ausführung),
+klassifiziert als technischer Runner/lokaler Infrastruktur-Adapter.
+`api/` selbst als Verzeichnis architektonisch nicht mehr begründbar
+(war laut ARCH-008 historisch nie eine echte Mehrfach-API-Schicht,
+sondern immer nur ein Navidrome-spezifischer Ordner; `CLAUDE.md` definiert
+`api/` an keiner Stelle als Architekturschicht). Fünf Zielvarianten
+bewertet (A: `api/` belassen, B: `services/`, C: neue Schicht
+`infrastructure/`, D: `utils/`, E: `services/clients/` — kritisch
+geprüft und klar verworfen, da kein externer Integrationsadapter).
+
+Empfohlen: **Variante D, `utils/navidrome_scan_trigger.py`** — gestützt
+auf einen im Repository bereits vorhandenen, strukturell nahezu
+identischen Präzedenzfall (`utils/audio_enhancer.py::AudioEnhancer`:
+Subprocess-Wrapper, `@dataclass`-Ergebnis mit `success`-Flag, keine
+Telegram-Kopplung). Einzige Variante ohne Erfindung einer neuen
+Konvention. `api/` könnte danach vollständig entfallen. Details, inkl.
+vollständigem Dependency-Audit, Vergleichsmatrix und Entscheidungsgate:
+`docs/MusicBot_ARCH-009_NavidromeScanTrigger_Zielort_Analyse.md`.
+
+**Keine Umsetzung — wartet auf Nutzerentscheidung.**
+
+---
+
 # Nächste Phasen
 
 Phase 3 bis Phase 8 sind vollständig abgeschlossen (Analyse **und**
 Umsetzung, siehe oben unter „Bereits abgeschlossen“). Phase 9 ist
 teilweise abgeschlossen: `execute_scan()` ist eliminiert (Umsetzung A,
-siehe oben), der endgültige Zielort von `NavidromeScanTrigger` ist noch
-offen und wird in einer separaten Folgeanalyse behandelt — die unten
-stehende ursprüngliche Phase-9-Checkliste („Finaler
-Navidrome-Migrationsabschluss“) bleibt bis zu dieser Folgeentscheidung
-weiterhin gültig und unverändert.
+siehe oben), der endgültige Zielort von `NavidromeScanTrigger` wurde in
+einer separaten Folgeanalyse untersucht (siehe oben) und wartet auf
+Nutzerentscheidung — die unten stehende ursprüngliche Phase-9-Checkliste
+(„Finaler Navidrome-Migrationsabschluss“) bleibt bis zu dieser
+Folgeentscheidung weiterhin gültig und unverändert.
 
 ---
 
