@@ -1,5 +1,5 @@
 """
-Tests fuer services/downloader/utils/download_artifact_cleanup.py.
+Tests fuer services/downloader/download_artifact_cleanup.py.
 
 Deckt beide Strategien ab (siehe Modul-Docstring dort und
 docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md, Temp-Cleanup-Abschnitt):
@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from unittest.mock import Mock
 
-from services.downloader.utils.download_artifact_cleanup import (
+from services.downloader.download_artifact_cleanup import (
     cleanup_download_artifacts,
     cleanup_single_download_artifact,
 )

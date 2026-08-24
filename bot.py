@@ -26,7 +26,7 @@ from telegram.request import HTTPXRequest
 
 from config import Config, get_config
 from logger import setup_enhanced_logging, get_module_logger, EnhancedLogger
-from services.downloader.utils.download_artifact_cleanup import (
+from services.downloader.download_artifact_cleanup import (
     cleanup_download_artifacts,
 )
 

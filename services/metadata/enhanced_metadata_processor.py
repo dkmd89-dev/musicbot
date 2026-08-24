@@ -1,4 +1,4 @@
-# services/downloader/utils/enhanced_metadata_processor.py
+# services/metadata/enhanced_metadata_processor.py
 # -*- coding: utf-8 -*-
 
 import re
@@ -23,21 +23,21 @@ from services.clients.genius_client import GeniusClient
 from utils.metadata_cache import MetadataCache
 from utils.singleton import SingletonMixin
 
-from services.metadata.models import (
+from .models import (
     MetadataResult,
     EnhancedProcessingStats,
     split_main_and_featuring,
 )
-from services.metadata.cache import MetadataCacheHandler
-from services.metadata.artist_processor import ArtistProcessor
-from services.metadata.title_cleaner import TitleCleaner
-from services.metadata.genre_processor import GenreProcessor
-from services.metadata.album_processor import AlbumProcessor
-from services.metadata.lyrics_processor import LyricsProcessor
-from services.metadata.cover_processor import CoverProcessor
-from services.metadata.auto_learn import AutoLearnManager
-from services.metadata.tag_writer import TagWriter
-from services.downloader.utils.download_artifact_cleanup import (
+from .cache import MetadataCacheHandler
+from .artist_processor import ArtistProcessor
+from .title_cleaner import TitleCleaner
+from .genre_processor import GenreProcessor
+from .album_processor import AlbumProcessor
+from .lyrics_processor import LyricsProcessor
+from .cover_processor import CoverProcessor
+from .auto_learn import AutoLearnManager
+from .tag_writer import TagWriter
+from services.downloader.download_artifact_cleanup import (
     cleanup_single_download_artifact,
 )
 

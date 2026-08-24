@@ -46,7 +46,7 @@ from handlers.duplicate_handler import DuplicateEntry, EnhancedDuplicateHandler
 from logger import get_module_logger
 from services.downloader.downloader import YoutubeDownloader
 from services.downloader.spotify_downloader import SpotifyDownloader, _is_spotify_url
-from services.downloader.utils.enhanced_metadata_processor import (
+from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
 from services.downloader.utils.download_result_reporter import DownloadResultReporter

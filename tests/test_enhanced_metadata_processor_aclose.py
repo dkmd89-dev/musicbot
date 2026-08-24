@@ -1,6 +1,6 @@
 """
 Unit-Tests für EnhancedMetadataProcessor.aclose()
-(services/downloader/utils/enhanced_metadata_processor.py).
+(services/metadata/enhanced_metadata_processor.py).
 
 Im Zuge der ARCH-001-Nacharbeit (Kapselungsverletzungen) aus bot.py
 extrahiert: _async_cleanup_components() griff vorher direkt auf
@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from services.downloader.utils.enhanced_metadata_processor import (
+from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
 

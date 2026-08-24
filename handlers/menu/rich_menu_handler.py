@@ -55,7 +55,7 @@ from config import Config
 from utils.navidrome_scan_trigger import NavidromeScanTrigger, ScanTimeoutError
 from emoji import EMOJI
 from helfer.markdown_helfer import escape_md_v2
-from services.downloader.utils.enhanced_metadata_processor import (
+from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
 
