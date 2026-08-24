@@ -6,14 +6,18 @@ Baseline: "MusicBrainz/Last.fm/Feature-Inferenz-Fallbacks") und hatte vor
 dieser Session keinerlei Testabdeckung.
 
 pylast wird komplett gemockt (Regel 7 - externe Dienste in Unit-Tests
-nicht real ansprechen). GenreMapper wird als Mock injiziert statt real
-konstruiert - GenreMapper erbt von SingletonMixin, LastFMClient.__init__
-ruft es ohne Argumente auf (GenreMapper()), was bei einer bereits
-initialisierten Singleton-Instanz schlicht die bestehende Instanz
-zurueckgibt (kein Risiko wie bei der fruehreren ArtistNormalizer-
-Inzidenz, da GenreMapper rein lesend ist - keine Auto-Learning-Schreib-
-zugriffe wie ArtistNormalizer). Die Injektion macht die Tests trotzdem
-unabhaengig vom Inhalt der echten mapping/-Dateien.
+nicht real ansprechen).
+
+ARCH-012 Phase 2 (docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md,
+Abschnitt "Phase 2 - Last.fm-Bereinigung"): der frueher hier per
+GenreMapper.determine_genre() berechnete "genre"-Wert wurde entfernt - er
+wurde vom einzigen Aufrufer (genre_processor._fetch_genre_from_lastfm())
+praktisch nie verwendet (belegt durch ARCH-012 Phase 1 sowie den neuen
+Characterization-Test test_lastfm_genre_field_value_does_not_affect_effective_result
+in tests/test_genre_processor.py). fetch_metadata() liefert "genre" seither
+immer als festen Platzhalter "unknown" - die Rueckgabestruktur (Anzahl/Namen
+der Keys) blieb unveraendert. GenreMapper wird dadurch von LastFMClient gar
+nicht mehr referenziert, die vorherige Mock-Injektion entfaellt.
 """
 
 import asyncio
@@ -32,14 +36,13 @@ def _make_tag(name):
     return tag_wrapper
 
 
-def _make_client(genremapper=None, lastfm_timeout=10):
+def _make_client(lastfm_timeout=10):
     with patch("services.clients.lastfm_client.pylast.LastFMNetwork") as mock_network_cls:
         with patch("services.clients.lastfm_client.Config") as mock_config_cls:
             mock_config_cls.return_value.LASTFM_API_KEY = "fake-key"
             mock_config_cls.return_value.LASTFM_API_SECRET = "fake-secret"
             mock_config_cls.LASTFM_TIMEOUT = lastfm_timeout
-            with patch("services.clients.lastfm_client.GenreMapper", return_value=genremapper or MagicMock()):
-                client = LastFMClient()
+            client = LastFMClient()
     return client, mock_network_cls.return_value
 
 
@@ -115,10 +118,14 @@ class TestFetchMetadata:
         result = asyncio.run(client.fetch_metadata("Some Title", "Some Artist"))
         assert result == {}
 
-    def test_tags_present_with_include_genre_determines_genre(self):
-        genremapper = MagicMock()
-        genremapper.determine_genre.return_value = MagicMock(primary="Hip Hop")
-        client, network = _make_client(genremapper=genremapper)
+    def test_tags_present_genre_field_stays_unknown_placeholder(self):
+        """
+        ARCH-012 Phase 2: "tags" liefert weiterhin die echten, gesammelten
+        Last.fm-Tags - "genre" ist seit der Bereinigung immer der feste
+        Platzhalter "unknown" (vorher: ueber GenreMapper.determine_genre()
+        berechnet, aber vom Aufrufer nie tatsaechlich genutzt).
+        """
+        client, network = _make_client()
 
         artist_obj = MagicMock()
         artist_obj.get_top_tags.return_value = [_make_tag("Hip Hop")]
@@ -130,28 +137,33 @@ class TestFetchMetadata:
         )
 
         assert result["tags"] == ["hip hop"]
-        assert result["genre"] == "Hip Hop"
-        genremapper.determine_genre.assert_called_once()
+        assert result["genre"] == "unknown"
 
-    def test_include_genre_false_skips_genre_determination(self):
-        genremapper = MagicMock()
-        client, network = _make_client(genremapper=genremapper)
+    def test_include_genre_flag_no_longer_affects_result(self):
+        """
+        include_genre bleibt Teil der oeffentlichen Signatur (ARCH-012
+        Phase 2 aendert keine Methodensignaturen), wird aber nicht mehr
+        ausgewertet - True und False liefern identische Ergebnisse.
+        """
+        client, network = _make_client()
 
         artist_obj = MagicMock()
         artist_obj.get_top_tags.return_value = [_make_tag("Hip Hop")]
         network.get_artist.return_value = artist_obj
         network.get_track.return_value = None
 
-        result = asyncio.run(
+        result_true = asyncio.run(
+            client.fetch_metadata("Some Title", "Some Artist", include_genre=True)
+        )
+        result_false = asyncio.run(
             client.fetch_metadata("Some Title", "Some Artist", include_genre=False)
         )
 
-        assert result["genre"] == "unknown"
-        genremapper.determine_genre.assert_not_called()
+        assert result_true == result_false
+        assert result_true["genre"] == "unknown"
 
     def test_no_tags_genre_stays_unknown(self):
-        genremapper = MagicMock()
-        client, network = _make_client(genremapper=genremapper)
+        client, network = _make_client()
 
         artist_obj = MagicMock()
         artist_obj.get_top_tags.return_value = []
@@ -163,7 +175,6 @@ class TestFetchMetadata:
         )
 
         assert result["genre"] == "unknown"
-        genremapper.determine_genre.assert_not_called()
 
     def test_real_timeout_returns_empty_dict_not_raises(self):
         """
