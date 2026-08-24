@@ -180,21 +180,50 @@ wandern. Details:
 
 ---
 
-# Nächste Phasen
+## ARCH-009 Phase 7 — `NavidromeAPI` DI-Umstellung
 
-Phase 3, Phase 4, Phase 5 und Phase 6 sind abgeschlossen (siehe oben unter
-„Bereits abgeschlossen“). Die konkrete Reihenfolge von Phase 7 (Zielort)
-und Phase 8 (DI) ist gemäß Phase-6-Empfehlung noch offen — siehe
-Entscheidungsgate in `docs/MusicBot_ARCH-009_Phase6_Zielposition_DI_Analyse.md`.
+Abgeschlossen.
+
+Umsetzung von Variante B aus Phase 6: `NavidromeAPI` ist jetzt
+instanziierbar mit injizierbarer Config
+(`__init__(self, config=None)`, `_auth_params` pro Instanz statt als
+Modul-Import-Seiteneffekt). Sechs Methoden von `@classmethod`/
+`@staticmethod` auf echte Instanzmethoden umgestellt
+(`_build_url`/`make_request`/`check_connection`/`get_artists`/
+`get_now_playing`/`search`); `execute_scan()` bleibt bewusst
+`@classmethod` (zustandsloser Pass-Through zu `NavidromeScanTrigger`,
+keine DI nötig). Consumer migriert: `handlers/navidrome_menu_handler.py`
+(11 Call-Sites, neuer optionaler `navidrome_api`-Konstruktor-Parameter),
+`services/statistik/play_history_poller.py`/`statistik_service.py`
+verifiziert als bereits konform (kein Code geändert). Verbleibender
+statischer Aufruf: `handlers/menu/rich_menu_handler.py:740`
+(`NavidromeAPI.execute_scan()`, bewusst nicht migriert, siehe
+Analysedokument). Noch **keine** Verschiebung nach `services/clients/`.
+Details: `docs/MusicBot_ARCH-009_Phase7_NavidromeAPI_DI.md`.
+
+Damit ist die vormals als „Phase 8“ geführte DI-Frage bereits erledigt,
+vor der vormals als „Phase 7“ geführten Zielort-Entscheidung (gemäß
+Phase-6-Empfehlung, gestufte Reihenfolge). Die verbleibende
+Zielort-/Verschiebungsfrage unten trägt zur Vermeidung einer doppelten
+„Phase 7“ weiterhin die Nummerierung „Phase 8“.
 
 ---
 
-## Phase 7 — Zielstruktur des Navidrome-Clients entscheiden
+# Nächste Phasen
+
+Phase 3, Phase 4, Phase 5, Phase 6 und Phase 7 sind abgeschlossen (siehe
+oben unter „Bereits abgeschlossen“).
+
+---
+
+## Phase 8 — Zielstruktur des Navidrome-Clients entscheiden (vormals „Phase 7“)
 
 ### Voraussetzung
 
-Phase 6 bestätigt, dass der verbleibende Code ein reiner externer
-Integrationsadapter ist.
+Phase 6 bestätigt, dass der verbleibende Code (bis auf `execute_scan()`,
+siehe Phase 6/7) ein reiner externer Integrationsadapter ist. Phase 7 hat
+die Klasse bereits DI-fähig gemacht — eine Verschiebung ist jetzt ein
+reiner Ortswechsel, keine gleichzeitige Strukturumstellung mehr.
 
 ### Zu entscheiden
 
@@ -207,7 +236,11 @@ services/
 ```
 
 Der konkrete Dateiname und die konkrete Klassenstruktur werden erst nach
-der Analyse entschieden.
+der Analyse entschieden. Zu klären insbesondere (siehe
+`docs/MusicBot_ARCH-009_Phase7_NavidromeAPI_DI.md` Abschnitt 6): Verbleib
+von `execute_scan()` (Kompatibilitätsrest vs. Entfernung zugunsten eines
+direkten `NavidromeScanTrigger`-Aufrufs im Handler) und von
+`NavidromeScanTrigger` selbst (bleibt außerhalb von `services/clients/`).
 
 ### Grundsatz
 
@@ -215,33 +248,6 @@ Keine 1:1-Verschiebung einer Reststruktur nur aufgrund des Namens.
 
 Die Zielstruktur muss sich aus den tatsächlichen Verantwortlichkeiten
 ergeben.
-
----
-
-## Phase 8 — DI und Consumer-Migration entscheiden und umsetzen
-
-### Ausgangslage
-
-Die bisherigen `NavidromeAPI`-Consumer verwenden überwiegend statische
-Methoden.
-
-Eine vollständige Umstellung auf eine Instanz mit Dependency Injection
-hat daher einen größeren Blast Radius als P-11.
-
-### Zu analysieren und entscheiden
-
-* Kann eine statische Struktur sinnvoll erhalten bleiben?
-* Ist eine instanziierbare Client-Klasse architektonisch sinnvoll?
-* Welche Consumer müssen angepasst werden?
-* Können Migration Bridges den Übergang absichern?
-* Welche Test- und Mock-Pfade ändern sich?
-* Kann die Umstellung schrittweise erfolgen?
-
-### Umsetzung
-
-Erst nach einer eigenen Nutzerentscheidung.
-
-Keine automatische DI-Umstellung allein aus Konsistenzgründen.
 
 ---
 

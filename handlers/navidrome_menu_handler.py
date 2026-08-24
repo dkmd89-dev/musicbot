@@ -50,12 +50,25 @@ class MediaItem:
 class NavidromeMenuHandler:
     """Handler für Navidrome-Integration im Menü-System"""
 
-    def __init__(self, config: Config, logger_factory=None):
+    def __init__(self, config: Config, logger_factory=None, navidrome_api=None):
         self.config = config
         self.logger_factory = logger_factory or get_module_logger
         self.logger = self.logger_factory("NavidromeMenuHandler")
 
         self.connection_status = False
+
+        # ARCH-009 Phase 7: navidrome_api optional injizierbar (DI) - ohne
+        # Angabe wird wie bisher eine echte NavidromeAPI()-Instanz
+        # konstruiert (analog zum P-8-Muster in StatistikService).
+        # Bewusst NavidromeAPI() statt NavidromeAPI(config): _auth_params
+        # kam schon vor dieser Migration immer aus der globalen
+        # Config-Singleton-Instanz, unabhaengig vom hier uebergebenen
+        # config-Objekt (z.B. einem Test-Double ohne NAVIDROME_PASS) -
+        # NavidromeAPI(config) wuerde diese Entkopplung aufheben und ist
+        # daher eine Verhaltensaenderung, die hier vermieden wird.
+        self.navidrome_api = (
+            navidrome_api if navidrome_api is not None else NavidromeAPI()
+        )
 
         # Browse-State für jeden User
         self.browse_states: Dict[int, Dict] = {}
@@ -101,7 +114,7 @@ class NavidromeMenuHandler:
 
         try:
             # Gesamtliste der Künstler abrufen und lokal paginieren
-            all_artists = await NavidromeAPI.get_artists()
+            all_artists = await self.navidrome_api.get_artists()
             if not all_artists:
                 await update.callback_query.edit_message_text(
                     "❌ Keine Künstler gefunden."
@@ -195,7 +208,7 @@ Wähle einen Künstler aus oder verwende die Navigation\\:
             if artist_id:
                 # getArtist liefert Albumliste des Künstlers
                 data = await asyncio.to_thread(
-                    NavidromeAPI.make_request, "getArtist", {"id": artist_id}
+                    self.navidrome_api.make_request, "getArtist", {"id": artist_id}
                 )
                 artist = data.get("subsonic-response", {}).get("artist", {})
                 albums = artist.get("album", [])
@@ -212,7 +225,7 @@ Wähle einen Künstler aus oder verwende die Navigation\\:
                     "offset": page * page_size,
                 }
                 data = await asyncio.to_thread(
-                    NavidromeAPI.make_request, "getAlbumList2", params
+                    self.navidrome_api.make_request, "getAlbumList2", params
                 )
                 albums = (
                     data.get("subsonic-response", {})
@@ -321,7 +334,7 @@ Wähle ein Album aus oder verwende die Navigation\\:
             self.logger.info("🎭 Lade Genres von Navidrome API...")
 
             # KORRIGIERT: Direkte API-Anfrage statt get_genres()
-            data = await asyncio.to_thread(NavidromeAPI.make_request, "getGenres", {})
+            data = await asyncio.to_thread(self.navidrome_api.make_request, "getGenres", {})
 
             self.logger.debug(f"🔍 Genre API Response: {data}")
 
@@ -445,7 +458,7 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
             params = {"genre": genre_name, "size": 50, "offset": 0}  # Erste 50 Songs
 
             data = await asyncio.to_thread(
-                NavidromeAPI.make_request, "getSongsByGenre", params
+                self.navidrome_api.make_request, "getSongsByGenre", params
             )
 
             subsonic_response = data.get("subsonic-response", {})
@@ -546,7 +559,7 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
             self.logger.info(f"🎤 Lade Künstler-Details für ID: {artist_id}")
 
             data = await asyncio.to_thread(
-                NavidromeAPI.make_request, "getArtist", {"id": artist_id}
+                self.navidrome_api.make_request, "getArtist", {"id": artist_id}
             )
 
             subsonic_response = data.get("subsonic-response", {})
@@ -654,7 +667,7 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
         try:
             self.logger.info("📋 Lade Playlists...")
             data = await asyncio.to_thread(
-                NavidromeAPI.make_request, "getPlaylists", {}
+                self.navidrome_api.make_request, "getPlaylists", {}
             )
             subsonic_response = data.get("subsonic-response", {})
             playlists_data = subsonic_response.get("playlists", {})
@@ -713,7 +726,7 @@ Du hast {len(playlists)} Playlist(s) verfügbar:
 
         try:
             self.logger.info("⭐ Lade Favoriten (getStarred2)...")
-            data = await asyncio.to_thread(NavidromeAPI.make_request, "getStarred2", {})
+            data = await asyncio.to_thread(self.navidrome_api.make_request, "getStarred2", {})
             subsonic_response = data.get("subsonic-response", {})
             starred_data = subsonic_response.get("starred2", {})
 
@@ -796,7 +809,7 @@ Du hast {len(playlists)} Playlist(s) verfügbar:
             # 'getAlbumList' mit type 'recentlyPlayed'
             params = {"type": "recentlyPlayed", "size": 10}
             data = await asyncio.to_thread(
-                NavidromeAPI.make_request, "getAlbumList", params
+                self.navidrome_api.make_request, "getAlbumList", params
             )
 
             subsonic_response = data.get("subsonic-response", {})
@@ -848,7 +861,7 @@ Du hast {len(playlists)} Playlist(s) verfügbar:
         try:
             self.logger.info("📊 Lade Bibliotheksstatistiken...")
             # getIndexes liefert oft Künstler- und Album-Zahlen
-            data = await asyncio.to_thread(NavidromeAPI.make_request, "getIndexes", {})
+            data = await asyncio.to_thread(self.navidrome_api.make_request, "getIndexes", {})
             subsonic_response = data.get("subsonic-response", {})
             indexes = subsonic_response.get("indexes", {})
 
@@ -962,7 +975,7 @@ Die Suche ist nicht case\\-sensitiv\\!
             search_msg = await update.message.reply_text(f"🔍 Suche nach '{query}'...")
 
             # Führe Suche durch
-            search_results = await NavidromeAPI.search(query)
+            search_results = await self.navidrome_api.search(query)
 
             if not search_results:
                 await search_msg.edit_text("❌ Keine Ergebnisse gefunden.")

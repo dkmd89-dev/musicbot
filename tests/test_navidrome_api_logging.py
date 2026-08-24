@@ -12,6 +12,11 @@ alle _module_loggers iteriert und deren Level gesetzt wird.
 Dieser Test simuliert genau dieses Szenario: das Modul-Logger-Level wird wie
 durch die Admin-Funktion auf INFO angehoben, danach darf das Navidrome-Passwort
 in keinem Log-Record mehr auftauchen.
+
+ARCH-009 Phase 7 (2026-08-24): _auth_params/make_request()/_build_url()
+sind jetzt Instanzattribut bzw. Instanzmethoden (DI) statt Klassenattribut/
+@classmethod/@staticmethod - der Test patcht daher eine NavidromeAPI()-
+Instanz statt der Klasse.
 """
 
 import logging
@@ -41,14 +46,16 @@ def test_navidrome_password_not_logged_when_module_log_level_raised(caplog):
     # das bei jeder Aenderung ALLE _module_loggers-Level ueberschreibt.
     navidrome_logger.logger.setLevel(logging.INFO)
 
+    api = NavidromeAPI()
+
     try:
-        with patch.object(NavidromeAPI, "_auth_params", fake_auth_params), patch.object(
-            NavidromeAPI,
+        with patch.object(api, "_auth_params", fake_auth_params), patch.object(
+            api,
             "_build_url",
             return_value="https://navidrome.example.test/rest/ping.view",
         ), patch("api.navidrome_api.requests.get", return_value=fake_response):
             with caplog.at_level(logging.INFO):
-                NavidromeAPI.make_request("ping")
+                api.make_request("ping")
     finally:
         navidrome_logger.logger.setLevel(original_level)
 

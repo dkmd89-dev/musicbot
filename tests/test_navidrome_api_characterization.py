@@ -44,6 +44,17 @@ reicht es dessen Exceptions (ScanTimeoutError, AttributeError, ...)
 unveraendert durch? Die Telegram-Formatierung selbst wird jetzt in
 tests/test_rich_menu_handler.py::TestHandleNavidromeScan getestet, die
 Subprocess-Charakterisierung weiterhin in tests/test_navidrome_scan_trigger.py.
+
+ARCH-009 Phase 7 (2026-08-24): NavidromeAPI ist jetzt instanziierbar mit
+injizierbarer Config (DI) statt einer rein statischen Klasse - make_request/
+check_connection/get_artists/get_now_playing/search sind jetzt echte
+Instanzmethoden statt @classmethod. TestCheckConnection/TestGetArtists/
+TestGetNowPlaying/TestSearch konstruieren daher jetzt eine Instanz
+(`NavidromeAPI()`) und patchen deren make_request statt der Klasse.
+TestExecuteScan bleibt unveraendert (execute_scan() ist bewusst weiterhin
+ein @classmethod, siehe docs/MusicBot_ARCH-009_Phase7_NavidromeAPI_DI.md).
+Neu: TestDependencyInjection verifiziert die eigentliche DI-Faehigkeit
+(unterschiedliche injizierte Configs ergeben unabhaengige Instanzen).
 """
 
 import asyncio
@@ -57,24 +68,27 @@ from api.navidrome_scan_trigger import NavidromeScanTrigger, ScanRunResult, Scan
 
 class TestCheckConnection:
     def test_returns_true_when_ping_status_ok(self):
+        api = NavidromeAPI()
         with patch.object(
-            NavidromeAPI, "make_request", return_value={"subsonic-response": {"status": "ok"}}
+            api, "make_request", return_value={"subsonic-response": {"status": "ok"}}
         ):
-            result = asyncio.run(NavidromeAPI.check_connection())
+            result = asyncio.run(api.check_connection())
         assert result is True
 
     def test_returns_false_when_ping_status_not_ok(self):
+        api = NavidromeAPI()
         with patch.object(
-            NavidromeAPI, "make_request", return_value={"subsonic-response": {"status": "failed"}}
+            api, "make_request", return_value={"subsonic-response": {"status": "failed"}}
         ):
-            result = asyncio.run(NavidromeAPI.check_connection())
+            result = asyncio.run(api.check_connection())
         assert result is False
 
     def test_returns_false_instead_of_raising_when_make_request_fails(self):
+        api = NavidromeAPI()
         with patch.object(
-            NavidromeAPI, "make_request", side_effect=ConnectionError("unreachable")
+            api, "make_request", side_effect=ConnectionError("unreachable")
         ):
-            result = asyncio.run(NavidromeAPI.check_connection())
+            result = asyncio.run(api.check_connection())
         assert result is False
 
 
@@ -90,15 +104,17 @@ class TestGetArtists:
                 }
             }
         }
-        with patch.object(NavidromeAPI, "make_request", return_value=response):
-            artists = asyncio.run(NavidromeAPI.get_artists())
+        api = NavidromeAPI()
+        with patch.object(api, "make_request", return_value=response):
+            artists = asyncio.run(api.get_artists())
 
         assert len(artists) == 3
         assert artists[0]["name"] == "AC/DC"
 
     def test_missing_artists_key_returns_empty_list_not_error(self):
-        with patch.object(NavidromeAPI, "make_request", return_value={"subsonic-response": {}}):
-            artists = asyncio.run(NavidromeAPI.get_artists())
+        api = NavidromeAPI()
+        with patch.object(api, "make_request", return_value={"subsonic-response": {}}):
+            artists = asyncio.run(api.get_artists())
         assert artists == []
 
 
@@ -119,8 +135,9 @@ class TestGetNowPlaying:
                 }
             }
         }
-        with patch.object(NavidromeAPI, "make_request", return_value=response):
-            result = asyncio.run(NavidromeAPI.get_now_playing())
+        api = NavidromeAPI()
+        with patch.object(api, "make_request", return_value=response):
+            result = asyncio.run(api.get_now_playing())
 
         assert len(result) == 1
         assert result[0]["song"]["title"] == "Song A"
@@ -137,15 +154,17 @@ class TestGetNowPlaying:
                 }
             }
         }
-        with patch.object(NavidromeAPI, "make_request", return_value=response):
-            result = asyncio.run(NavidromeAPI.get_now_playing())
+        api = NavidromeAPI()
+        with patch.object(api, "make_request", return_value=response):
+            result = asyncio.run(api.get_now_playing())
         assert len(result) == 2
 
     def test_no_now_playing_key_returns_empty_list(self):
+        api = NavidromeAPI()
         with patch.object(
-            NavidromeAPI, "make_request", return_value={"subsonic-response": {}}
+            api, "make_request", return_value={"subsonic-response": {}}
         ):
-            result = asyncio.run(NavidromeAPI.get_now_playing())
+            result = asyncio.run(api.get_now_playing())
         assert result == []
 
     def test_missing_song_fields_default_to_na(self):
@@ -154,8 +173,9 @@ class TestGetNowPlaying:
                 "nowPlaying": {"entry": {"song": {}, "username": "robin"}}
             }
         }
-        with patch.object(NavidromeAPI, "make_request", return_value=response):
-            result = asyncio.run(NavidromeAPI.get_now_playing())
+        api = NavidromeAPI()
+        with patch.object(api, "make_request", return_value=response):
+            result = asyncio.run(api.get_now_playing())
         assert result[0]["song"]["title"] == "N/A"
 
 
@@ -166,13 +186,65 @@ class TestSearch:
                 "searchResult3": {"song": [{"title": "Found Song"}]}
             }
         }
-        with patch.object(NavidromeAPI, "make_request", return_value=response) as mock_mr:
-            result = asyncio.run(NavidromeAPI.search("test query"))
+        api = NavidromeAPI()
+        with patch.object(api, "make_request", return_value=response) as mock_mr:
+            result = asyncio.run(api.search("test query"))
 
         assert result == {"song": [{"title": "Found Song"}]}
         _args, kwargs = mock_mr.call_args
         called_args = mock_mr.call_args[0]
         assert "search3" in called_args
+
+
+class TestDependencyInjection:
+    """
+    ARCH-009 Phase 7: verifiziert die eigentliche DI-Faehigkeit von
+    NavidromeAPI - unterschiedliche injizierte Configs ergeben
+    unabhaengige, voneinander isolierte Instanzen.
+    """
+
+    def test_injected_config_is_used_for_auth_params(self):
+        class FakeConfig:
+            NAVIDROME_URL = "http://fake.example.test"
+            NAVIDROME_USER = "fake-user"
+            NAVIDROME_PASS = "fake-pass"
+
+        api = NavidromeAPI(FakeConfig())
+
+        assert api._auth_params["u"] == "fake-user"
+        assert api._auth_params["p"] == "fake-pass"
+
+    def test_two_instances_with_different_configs_are_independent(self):
+        class FakeConfigA:
+            NAVIDROME_URL = "http://a.example.test"
+            NAVIDROME_USER = "user-a"
+            NAVIDROME_PASS = "pass-a"
+
+        class FakeConfigB:
+            NAVIDROME_URL = "http://b.example.test"
+            NAVIDROME_USER = "user-b"
+            NAVIDROME_PASS = "pass-b"
+
+        api_a = NavidromeAPI(FakeConfigA())
+        api_b = NavidromeAPI(FakeConfigB())
+
+        assert api_a._auth_params["u"] == "user-a"
+        assert api_b._auth_params["u"] == "user-b"
+        assert api_a._auth_params is not api_b._auth_params
+
+    def test_no_args_construction_uses_real_global_config(self):
+        """
+        NavidromeAPI() ohne Argumente muss weiterhin die echte globale
+        Config-Singleton-Instanz verwenden (Bestandsschutz - identisches
+        Verhalten zur vorherigen Klassenattribut-Variante).
+        """
+        from config import get_config
+
+        api = NavidromeAPI()
+        real_config = get_config()
+
+        assert api._auth_params["u"] == real_config.NAVIDROME_USER
+        assert api._auth_params["p"] == real_config.NAVIDROME_PASS
 
 
 class TestExecuteScan:
