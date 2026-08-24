@@ -25,6 +25,16 @@ das KORRIGIERTE Verhalten, nicht mehr den Bug - siehe die
 Klassen-Docstring dort fuer den Vorher/Nachher-Vergleich. Alle anderen
 Kernbefunde (2/3 unten) sind von Phase 3 ausdruecklich NICHT beruehrt.
 
+ARCH-013 Phase 4 (docs/MusicBot_ARCH-013_Genre_Alias_Decision.md,
+Abschnitt 4/8/9) hat Kernbefund 2 unten (die 4 Override-vs-Alias-
+Wertkonflikte) aufgeloest: mapping/genre_aliases.yaml und
+mapping/genre_overrides.yaml wurden per hierarchie-basierter
+Einzelfallregel so korrigiert, dass beide Dateien fuer alle 4 Genres
+denselben Wert enthalten. TestOverrideAliasConflictsResolvedInPhase4
+(vormals TestOverrideLayerOnlyAffectsGenreMapper) dokumentiert seit Phase
+4 das KORRIGIERTE Verhalten. Kernbefund 3 (Teilstring-Match) ist von
+Phase 4 ausdruecklich NICHT beruehrt (das ist ARCH-013 Phase 5).
+
 Kernbefunde, die hier eingefroren werden:
 
 1. (Stand vor ARCH-013 Phase 3, siehe TestAliasLoadingDivergence fuer das
@@ -34,13 +44,18 @@ Kernbefunde, die hier eingefroren werden:
    Mixed-Case-Keys im YAML ("Hip-Hop", "Hip - Hop") waren dadurch in
    GenreMapper ueber den regulaeren (stets lowercased suchenden)
    Lookup-Pfad nicht erreichbar.
-2. GenreMapper konsultiert zusaetzlich mapping/genre_overrides.yaml MIT
-   Vorrang vor genre_aliases.yaml (utils/genre_map.py, Schritt 1 vor
-   Schritt 2 in normalize_genre_name()). GenreProcessor kennt
-   genre_overrides.yaml ueberhaupt nicht. Es gibt 4 echte Wertkonflikte
-   zwischen beiden YAML-Dateien fuer denselben Schluessel (electropop,
-   chamber pop, tech house, ruhrpott rap) - diese 4 Genres werden von
-   GenreMapper und GenreProcessor unterschiedlich normalisiert.
+2. (Stand vor ARCH-013 Phase 4, siehe
+   TestOverrideAliasConflictsResolvedInPhase4 fuer das aktuelle,
+   korrigierte Verhalten) GenreMapper konsultierte zusaetzlich
+   mapping/genre_overrides.yaml MIT Vorrang vor genre_aliases.yaml
+   (utils/genre_map.py, Schritt 1 vor Schritt 2 in
+   normalize_genre_name(), Code-Vorrang unveraendert bestehend).
+   GenreProcessor kennt genre_overrides.yaml weiterhin ueberhaupt nicht.
+   Es gab 4 echte Wertkonflikte zwischen beiden YAML-Dateien fuer
+   denselben Schluessel (electropop, chamber pop, tech house, ruhrpott
+   rap) - diese 4 Genres wurden von GenreMapper und GenreProcessor
+   unterschiedlich normalisiert, bis die YAML-Werte in Phase 4
+   angeglichen wurden.
 3. GenreProcessor.normalize_genre_name() hat einen zusaetzlichen
    Teilstring-Match-Schritt (services/metadata/genre_processor.py:341-343),
    den GenreMapper nicht besitzt - ein beliebiger String, der einen
@@ -141,42 +156,64 @@ class TestAliasLoadingDivergence:
         assert genre_processor.normalize_genre_name("Hip - Hop") == "Hip Hop"
 
 
-class TestOverrideLayerOnlyAffectsGenreMapper:
+class TestOverrideAliasConflictsResolvedInPhase4:
     """
-    mapping/genre_overrides.yaml wird ausschliesslich von GenreMapper
-    konsultiert (mit Vorrang vor genre_aliases.yaml). GenreProcessor kennt
-    diese Datei nicht. Fuer 4 Genres widersprechen sich beide YAML-Dateien
-    inhaltlich - dadurch weichen die beiden normalize_genre_name()-
-    Implementierungen fuer genau diese 4 Eingaben voneinander ab.
+    ARCH-013 Phase 4 (docs/MusicBot_ARCH-013_Genre_Alias_Decision.md,
+    Abschnitt 4/8/9) hat die 4 in Phase 1 gefundenen Wertkonflikte zwischen
+    mapping/genre_aliases.yaml und mapping/genre_overrides.yaml per
+    hierarchie-basierter Einzelfallregel aufgeloest:
+
+      - electropop/chamber pop/tech house: Override gewann bereits vorher
+        (DATA-002-Praezedenzfall + reale Consumer in artist_genre.yaml/
+        channel_genre.yaml) - genre_aliases.yaml wurde auf denselben,
+        granularen Wert korrigiert.
+      - ruhrpott rap: umgekehrt - genre_aliases.yaml hatte bereits den mit
+        genre_hierarchy.yaml konsistenten granularen Wert
+        ("Ruhrpott Rap"); genre_overrides.yaml wurde von "Deutschrap" auf
+        "Ruhrpott Rap" korrigiert (einziger von 18 strukturell
+        gleichartigen Regional-Rap-Eintraegen mit abweichendem Override,
+        kein realer Consumer haengt vom alten Wert ab, siehe Phase-2-
+        Konfliktanalyse 3.4 - vom Nutzer vor der Umsetzung ausdruecklich
+        bestaetigt).
+
+    Diese Klasse dokumentierte bis Phase 4 die (bewusst nur bis dahin
+    geltende) Divergenz zwischen GenreMapper und GenreProcessor fuer diese
+    4 Eingaben. Sie haelt jetzt das KORRIGIERTE Verhalten fest: beide
+    Implementierungen liefern fuer alle 4 dasselbe Ergebnis, weil die
+    zugrunde liegenden YAML-Dateien nicht mehr widersprechen. GenreMapper
+    prueft mapping/genre_overrides.yaml weiterhin mit Vorrang vor
+    mapping/genre_aliases.yaml (Code unveraendert) - der Vorrang ist nur
+    seit Phase 4 fuer diese 4 Schluessel folgenlos, weil beide Dateien
+    denselben Wert enthalten.
     """
 
     @pytest.mark.parametrize(
-        "raw_genre,genre_mapper_expected,genre_processor_expected",
+        "raw_genre,expected",
         [
-            ("electropop", "Electropop", "Pop"),
-            ("chamber pop", "Chamber Pop", "Pop"),
-            ("tech house", "Tech House", "House"),
-            ("ruhrpott rap", "Deutschrap", "Ruhrpott Rap"),
+            ("electropop", "Electropop"),
+            ("chamber pop", "Chamber Pop"),
+            ("tech house", "Tech House"),
+            ("ruhrpott rap", "Ruhrpott Rap"),
         ],
     )
-    def test_override_yaml_conflict_produces_diverging_results(
-        self,
-        genre_mapper,
-        genre_processor,
-        raw_genre,
-        genre_mapper_expected,
-        genre_processor_expected,
+    def test_genre_mapper_and_genre_processor_now_agree(
+        self, genre_mapper, genre_processor, raw_genre, expected
     ):
         gm_result = genre_mapper.normalize_genre_name(raw_genre)
         gp_result = genre_processor.normalize_genre_name(raw_genre)
 
-        assert gm_result == genre_mapper_expected
-        assert gp_result == genre_processor_expected
-        assert gm_result != gp_result
+        assert gm_result == expected
+        assert gp_result == expected
+        assert gm_result == gp_result
 
     def test_genre_processor_has_no_knowledge_of_overrides_file(
         self, genre_processor
     ):
+        # Unveraendert durch Phase 4: GenreProcessor liest
+        # genre_overrides.yaml weiterhin nicht - die Uebereinstimmung
+        # oben kommt daher, dass beide YAML-Dateien jetzt denselben Wert
+        # enthalten, nicht daher, dass GenreProcessor die Override-Datei
+        # neu kennengelernt haette.
         assert not hasattr(genre_processor, "overrides")
         assert "genre_overrides" not in genre_processor.__dict__
 
@@ -252,7 +289,14 @@ class TestYamlSourceCollisions:
     angelegt sind (unabhaengig davon, welche Klasse sie laedt).
     """
 
-    def test_genre_aliases_and_genre_overrides_have_four_known_conflicts(self):
+    def test_genre_aliases_and_genre_overrides_have_no_known_conflicts(self):
+        # ARCH-013 Phase 4: die 4 in Phase 1 gefundenen Konflikte
+        # (electropop, chamber pop, tech house, ruhrpott rap) wurden durch
+        # gezielte YAML-Korrekturen aufgeloest (siehe
+        # TestOverrideAliasConflictsResolvedInPhase4). Dieser Test
+        # verifiziert das nicht nur fuer die 4 bekannten Faelle, sondern
+        # als generische Regressionssicherung gegen JEDEN kuenftigen
+        # stillen Konflikt zwischen den beiden Dateien.
         import yaml
         from pathlib import Path
 
@@ -272,12 +316,12 @@ class TestYamlSourceCollisions:
             if aliases_lower[k] != overrides_lower[k]
         }
 
-        assert conflicts == {
-            "electropop",
-            "chamber pop",
-            "tech house",
-            "ruhrpott rap",
-        }
+        assert conflicts == set(), (
+            f"Neue(r) Konflikt(e) zwischen genre_aliases.yaml und "
+            f"genre_overrides.yaml gefunden: {conflicts} - siehe ARCH-013 "
+            f"Phase 2 fuer die zu verwendende Entscheidungsregel "
+            f"(hierarchie-basiert, docs/MusicBot_ARCH-013_Genre_Alias_Decision.md)."
+        )
 
     def test_synth_pop_and_synthpop_are_distinct_keys_with_different_targets(
         self,

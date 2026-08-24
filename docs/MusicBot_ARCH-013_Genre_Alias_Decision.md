@@ -14,6 +14,13 @@ Ende dieses Dokuments). `electropop`/`chamber pop`/`tech house`/
 jede Zentralisierung bleiben unverändert offen und sind **nicht** Teil
 von Phase 3.
 
+**Phase 4 abgeschlossen (2026-08-25). Alle 4 Override-vs-Alias-Konflikte
+aufgelöst** (siehe Abschnitt „Phase 4 — Override-vs-Alias-Konfliktregeln"
+am Ende dieses Dokuments) — per gezielter YAML-Datenkorrektur, keine
+Code-Änderung. Teilstring-/Wortgrenzen-Matching (Phase 5) und jede
+Zentralisierung bleiben unverändert offen und sind **nicht** Teil von
+Phase 4.
+
 ---
 
 ## 1. Ausgangslage
@@ -659,3 +666,173 @@ war notwendig — der Fix war mit einer einzigen, lokalen Änderung an einer
 einzigen Datei vollständig umsetzbar. ARCH-013 Phase 4
 (Override-vs-Alias-Konfliktregeln) und Phase 5 (Teilstring-/Wortgrenzen-
 Matching) bleiben eigene, separat freizugebende Entscheidungsgates.
+
+---
+
+## Phase 4 — Override-vs-Alias-Konfliktregeln
+
+**Status: abgeschlossen (2026-08-25).** Setzt die in Abschnitt 4/8/9 als
+Soll-Spezifikation festgehaltene hierarchie-basierte Einzelfallregel für
+alle 4 bekannten Konflikte um. `ruhrpott rap` (Alias gewinnt) wurde vor der
+Umsetzung explizit vom Repository-Eigentümer bestätigt, wie in Abschnitt
+11 (Risiken) gefordert.
+
+### Umsetzungsentscheidung
+
+Abschnitt 12 empfahl, die Konfliktregeln „vermutlich am saubersten direkt
+in `genre_overrides.yaml`/`genre_aliases.yaml`" umzusetzen, nicht zwingend
+als Code-Zentralisierung. Das wurde geprüft und bestätigt: da beide
+`normalize_genre_name()`-Implementierungen ihre Werte direkt aus den YAML-
+Dateien lesen, genügt eine reine Datenkorrektur — **kein Code in
+`utils/genre_map.py` oder `services/metadata/genre_processor.py` wurde
+verändert.**
+
+### Vorgenommene Änderungen
+
+| Datei | Key | vorher | nachher |
+|---|---|---|---|
+| `mapping/genre_aliases.yaml` | `electropop` | `Pop` | `Electropop` |
+| `mapping/genre_aliases.yaml` | `chamber pop` | `Pop` | `Chamber Pop` |
+| `mapping/genre_aliases.yaml` | `tech house` | `House` | `Tech House` |
+| `mapping/genre_overrides.yaml` | `ruhrpott rap` | `Deutschrap` | `Ruhrpott Rap` |
+
+Für `electropop`/`chamber pop`/`tech house` wurde `genre_overrides.yaml`
+**nicht** verändert (der dortige Wert war bereits korrekt, per DATA-002-
+Präzedenzfall). Für `ruhrpott rap` wurde `genre_aliases.yaml` **nicht**
+verändert (der dortige Wert war bereits korrekt). In jedem Fall wurde nur
+die jeweils abweichende Datei korrigiert — die andere blieb unverändert.
+
+### Empirisch verifizierte Auswirkung
+
+**`normalize_genre_name()` (das eigentliche Ziel dieser Phase) — beide
+Implementierungen stimmen jetzt für alle 4 Genres überein:**
+
+| Eingabe | `GenreMapper` | `GenreProcessor` | Status |
+|---|---|---|---|
+| `electropop` | `Electropop` | `Electropop` | übereinstimmend (vorher: `Electropop`/`Pop`) |
+| `chamber pop` | `Chamber Pop` | `Chamber Pop` | übereinstimmend (vorher: `Chamber Pop`/`Pop`) |
+| `tech house` | `Tech House` | `Tech House` | übereinstimmend (vorher: `Tech House`/`House`) |
+| `ruhrpott rap` | `Ruhrpott Rap` | `Ruhrpott Rap` | übereinstimmend (vorher: `Deutschrap`/`Ruhrpott Rap`) |
+
+**Multi-Tag-Priorisierung (`prioritize_genres()`, der in ARCH-012 zentrale
+MusicBrainz-/Last.fm-Pfad) — der in Phase 2 Abschnitt 6 dokumentierte
+Hierarchie-Priorisierungsdefekt ist als direkte Konsequenz mit behoben,
+ohne eigene Codeänderung:**
+
+```text
+prioritize_genres(["electropop", "pop"])              → ("Electropop", [])       (vorher: ("Pop", []))
+prioritize_genres(["chamber pop", "indie"])            → ("Chamber Pop", [])     (vorher: ("Pop", []))
+prioritize_genres(["tech house", "house", "electronic"]) → ("Tech House", ["House"]) (vorher: ("House", []))
+prioritize_genres(["ruhrpott rap", "hip hop", "trap"]) → ("Ruhrpott Rap", ["Hip Hop"]) (unverändert korrekt)
+```
+
+**Unerwartete, aber korrekt eingeordnete Nebenwirkung —
+`GenreMapper.determine_genre(raw_genre=X)` (der volle Single-String-
+Fallback-Pfad, Schritt 5 der `determine_genre()`-Kette):** dieser Pfad
+wendet nach `normalize_genre_name()` zusätzlich `get_main_genre()` an
+(Hierarchie-Rollup zum Top-Level-Elterngenre, GENRE-003-Mechanismus,
+außerhalb des ARCH-013-Scopes). Dadurch bleibt `primary` für alle 4
+Konflikt-Genres **unverändert**, wenn sie als bloßer `raw_genre`-String
+übergeben werden — `Electropop`/`Chamber Pop`/`Tech House` rollten schon
+vorher zu `Pop`/`Pop`/`House` hoch (unabhängig vom Override-Wert), und
+`Ruhrpott Rap` rollt jetzt neu zu `Deutschrap` hoch (statt es vorher
+direkt per Override zu liefern):
+
+| Eingabe | `primary` (vorher) | `primary` (nachher) | `source` (vorher) | `source` (nachher) |
+|---|---|---|---|---|
+| `Ruhrpott Rap` | `Deutschrap` | `Deutschrap` (unverändert) | `normalized` | `hierarchy` (geändert) |
+| `Electropop` | `Pop` | `Pop` (unverändert) | `hierarchy` | `hierarchy` (unverändert) |
+| `Chamber Pop` | `Pop` | `Pop` (unverändert) | `hierarchy` | `hierarchy` (unverändert) |
+| `Tech House` | `House` | `House` (unverändert) | `hierarchy` | `hierarchy` (unverändert) |
+
+Nur bei `Ruhrpott Rap` ändert sich das `source`-Feld (nicht `primary`) —
+weil `normalize_genre_name()` jetzt direkt den granularen Wert liefert und
+`get_main_genre()` ihn erst danach hochrollt, statt dass der Override den
+bereits hochgerollten Wert direkt zurückgibt. Diese Verhaltensänderung ist
+rein diagnostisch (welches Feld die Herkunft beschreibt), nicht fachlich
+(das Endergebnis von `determine_genre(raw_genre=...)` bleibt identisch).
+Der fachlich relevante Unterschied liegt ausschließlich in
+`normalize_genre_name()` selbst und in `prioritize_genres()` (siehe oben)
+— genau der von Phase 2 als Ziel definierte Scope.
+
+### Betroffene Tests
+
+- `tests/test_genre_alias_characterization.py`:
+  - `TestOverrideLayerOnlyAffectsGenreMapper` → umbenannt zu
+    `TestOverrideAliasConflictsResolvedInPhase4`, Testmethode
+    `test_override_yaml_conflict_produces_diverging_results` (parametrisiert
+    auf Divergenz) → ersetzt durch
+    `test_genre_mapper_and_genre_processor_now_agree` (parametrisiert auf
+    Übereinstimmung). `test_genre_processor_has_no_knowledge_of_overrides_file`
+    unverändert (weiterhin gültig).
+  - `TestYamlSourceCollisions::test_genre_aliases_and_genre_overrides_have_four_known_conflicts`
+    → umbenannt zu `test_genre_aliases_and_genre_overrides_have_no_known_conflicts`,
+    Assertion invertiert (`== set()` statt `== {4 Konflikte}`) — dient jetzt
+    zusätzlich als generische Regressionssicherung gegen künftige neue
+    Konflikte.
+  - Modul-Docstring aktualisiert (Kernbefund 2 als "vor Phase 4" markiert).
+- `tests/test_genre_mapper_advanced.py`:
+  - `TestHierarchyCaseFix::test_ruhrpott_rap_still_resolves_via_override`
+    → umbenannt zu `test_ruhrpott_rap_now_resolves_via_hierarchy_not_override`,
+    `source`-Assertion von `"normalized"` auf `"hierarchy"` geändert,
+    `primary`-Assertion (`"Deutschrap"`) unverändert — mit ausführlichem
+    Kommentar zur Unterscheidung zwischen `normalize_genre_name()`-Ergebnis
+    und `determine_genre()`-Endergebnis.
+- `tests/test_mapping_yaml_integrity.py::TestGenreClassificationDecisions::test_edm_subgenres_stay_granular`
+  — **unverändert grün**, da `genre_overrides.yaml`s Werte für
+  `tech house`/`electropop` nicht verändert wurden (nur
+  `genre_aliases.yaml` wurde für diese beiden korrigiert).
+
+Keine Tests wurden entfernt oder in ihrer Aussagekraft abgeschwächt — alle
+Änderungen sind Umbenennungen/Assertion-Updates mit dokumentiertem
+Vorher/Nachher, konsistent mit dem in ARCH-012/ARCH-013 etablierten Muster.
+
+### Regression
+
+- Gezielt (`test_genre_alias_characterization.py` +
+  `test_genre_mapper_advanced.py` + `test_mapping_yaml_integrity.py` +
+  `test_genre_processor.py`): 87 passed.
+- Vollständig (`pytest tests/ -q`): **1039 passed**, 15 bekannte
+  Vorbestandsfehler (identisch zu allen vorherigen ARCH-013-Ständen) —
+  **keine** Netto-Änderung der Passed-Zahl gegenüber Phase 3, da in
+  Phase 4 Tests umbenannt/angepasst, aber weder neue hinzugefügt noch
+  entfernt wurden.
+
+### Scope-Audit
+
+Geänderte Dateien:
+
+- `mapping/genre_aliases.yaml` — 3 Zeilen geändert (Werte, keine
+  Struktur-/Schlüsseländerung).
+- `mapping/genre_overrides.yaml` — 1 Zeile geändert.
+- `tests/test_genre_alias_characterization.py`,
+  `tests/test_genre_mapper_advanced.py` — Testdateien, wie oben
+  beschrieben.
+- `docs/MusicBot_ARCH-013_Genre_Alias_Decision.md` — dieser Abschnitt.
+
+**Nicht verändert:** `utils/genre_map.py`, `services/metadata/genre_processor.py`,
+jede andere Produktions-Python-Datei, `mapping/genre_hierarchy.yaml`,
+`mapping/artist_genre.yaml`, `mapping/channel_genre.yaml`. Keine neuen
+Imports (0 Code-Diff in Python-Dateien), keine neue Schichtabhängigkeit,
+keine Zirkelimporte — durch die rein datenbasierte Umsetzung strukturell
+ausgeschlossen.
+
+### Bewusst nicht bearbeitete Phase-2-Themen
+
+- Teilstring-/Wortgrenzen-Matching — Phase 5.
+- `GenreMapper.determine_genre(raw_genre=X)`s Hierarchie-Rollup-Verhalten
+  (`get_main_genre()`) — außerhalb des ARCH-013-Scopes, vorbestehender
+  GENRE-003-Mechanismus, nicht verändert (nur empirisch dokumentiert, siehe
+  oben).
+- Jede Form von Zentralisierung oder gemeinsamer Alias-Architektur.
+
+---
+
+## ARCH-013 Phase 4 — Entscheidungsgate
+
+**Erreicht.** Alle 4 Override-vs-Alias-Konflikte sind aufgelöst, beide
+Implementierungen liefern für `electropop`/`chamber pop`/`tech house`/
+`ruhrpott rap` identische Ergebnisse. Die Umsetzung erforderte keine
+Code-Änderung und keine Scope-Erweiterung. ARCH-013 Phase 5
+(Teilstring-/Wortgrenzen-Matching) bleibt ein eigenes, separat
+freizugebendes Entscheidungsgate.

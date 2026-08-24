@@ -129,13 +129,29 @@ class TestHierarchyCaseFix:
     Diese Tests verifizieren den Fix, nicht mehr den Bug.
     """
 
-    def test_ruhrpott_rap_still_resolves_via_override(self, genre_mapper):
-        # "ruhrpott rap" steht in mapping/genre_overrides.yaml direkt auf
-        # "Deutschrap" - das greift weiterhin VOR jedem Hierarchie-Lookup,
-        # unabhaengig vom GENRE-003-Fix.
+    def test_ruhrpott_rap_now_resolves_via_hierarchy_not_override(
+        self, genre_mapper
+    ):
+        # ARCH-013 Phase 4 (docs/MusicBot_ARCH-013_Genre_Alias_Decision.md):
+        # mapping/genre_overrides.yaml wurde von "ruhrpott rap: Deutschrap"
+        # auf "ruhrpott rap: Ruhrpott Rap" korrigiert (Konflikt mit
+        # genre_aliases.yaml und genre_hierarchy.yaml aufgeloest - vorher
+        # war Ruhrpott Rap der einzige von 18 Regional-Rap-Eintraegen mit
+        # einem abweichenden Override).
+        #
+        # determine_genre()'s primary bleibt trotzdem "Deutschrap" -
+        # normalize_genre_name("Ruhrpott Rap") liefert jetzt "Ruhrpott Rap"
+        # (statt vorher "Deutschrap" direkt aus dem Override), aber
+        # get_main_genre() rollt das Subgenre anschliessend weiterhin zum
+        # Hierarchie-Parent "Deutschrap" hoch (GENRE-003-Mechanismus,
+        # unveraendert, ausserhalb des ARCH-013-Scopes). Nur die Quelle
+        # aendert sich: "normalized" (Override direkt) -> "hierarchy"
+        # (Rollup ueber genre_hierarchy.yaml, wie bei allen anderen 17
+        # Regional-Rap-Subgenres ohne eigenen Override, siehe
+        # test_subgenre_without_override_now_resolves_via_hierarchy).
         result = genre_mapper.determine_genre(raw_genre="Ruhrpott Rap")
         assert result.primary == "Deutschrap"
-        assert result.source == "normalized"
+        assert result.source == "hierarchy"
 
     def test_subgenre_without_override_now_resolves_via_hierarchy(
         self, genre_mapper
