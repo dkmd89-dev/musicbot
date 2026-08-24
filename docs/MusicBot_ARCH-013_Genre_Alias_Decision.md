@@ -7,6 +7,13 @@ Keine Produktionscodeänderung, kein Refactoring, keine YAML-Änderung,
 keine Zentralisierung.** Ergebnis ist eine Soll-Spezifikation für eine
 spätere, separat freizugebende Umsetzungsphase.
 
+**Phase 3 abgeschlossen (2026-08-24). Mixed-Case-/Whitespace-Fix
+umgesetzt** (siehe Abschnitt „Phase 3 — Mixed-Case-/Whitespace-Fix" am
+Ende dieses Dokuments). `electropop`/`chamber pop`/`tech house`/
+`ruhrpott rap` (Phase 4), Teilstring-/Wortgrenzen-Matching (Phase 5) und
+jede Zentralisierung bleiben unverändert offen und sind **nicht** Teil
+von Phase 3.
+
 ---
 
 ## 1. Ausgangslage
@@ -457,3 +464,198 @@ Refactoring, keine YAML-Änderung, keine Zentralisierung, kein Merge.
 
 Freigabe für eine Umsetzungsphase (Abschnitt 12) liegt beim Nutzer — diese
 Phase selbst nimmt keine Umsetzung vor.
+
+---
+
+## Phase 3 — Mixed-Case-/Whitespace-Fix
+
+**Status: abgeschlossen (2026-08-24).** Setzt ausschließlich die in
+Abschnitt 7/9 als fachlich unstrittig entschiedene Regel um: `"Hip-Hop"`
+und `"Hip - Hop"` normalisieren kanonisch auf `"Hip Hop"`, ohne
+überflüssige Whitespace-Zeichen. Kein anderer Teil der Phase-2-Spezifikation
+wurde umgesetzt.
+
+### Ausgangsverhalten
+
+| Eingabe | `GenreMapper` (vorher) | `GenreProcessor` |
+|---|---|---|
+| `Hip-Hop` | `Hip Hop` | `Hip Hop` |
+| `Hip - Hop` | `Hip  Hop` (doppeltes Leerzeichen) | `Hip Hop` |
+| `hip - hop` | `Hip  Hop` (doppeltes Leerzeichen) | `Hip Hop` |
+| `hip-hop` | `Hip Hop` | `Hip Hop` |
+| `HIP-HOP` | `Hip Hop` | `Hip Hop` |
+| `Hip  Hop` (Doppel-Leerzeichen als Eingabe) | `Hip Hop` | `Hip Hop` |
+
+Zusätzlich zu den beiden explizit in Phase 1/2 benannten Fällen wurde
+empirisch verifiziert, dass **jede** Schreibweise der Form „hip [Leerzeichen]
+- [Leerzeichen] hop" (unabhängig von Groß-/Kleinschreibung) betroffen war —
+nicht nur der exakte YAML-Key `"Hip - Hop"`. Idempotenz war vorher
+**nicht** gegeben: `normalize("Hip - Hop")` = `"Hip  Hop"`, aber
+`normalize(normalize("Hip - Hop"))` = `"Hip Hop"` (erst der zweite
+Durchlauf war stabil, weil Pythons `str.split()` mehrere Leerzeichen beim
+zweiten Durchlauf automatisch zusammenfasst).
+
+### Ursache
+
+1. **Warum `"Hip  Hop"` entstand:** `GenreMapper.normalize_genre_name()`s
+   Fallback-Pfad (Schritt 3, `utils/genre_map.py`) tokenisiert mit
+   `genre_name.split()`. Für `"Hip - Hop"` ergibt das
+   `["Hip", "-", "Hop"]`. Das isolierte Token `"-"` durchläuft den
+   Bindestrich-Zweig (`elif "-" in word`), der `"-".split("-")` bildet
+   (`['', '']`), leere Teile filtert (`parts = []`) und daraus
+   `"-".join([])` = `""` erzeugt — ein leeres Wort wird trotzdem an die
+   Ergebnisliste angehängt, wodurch `" ".join([...])` ein doppeltes
+   Leerzeichen enthält.
+2. **Warum `"Hip - Hop"` den Alias-Lookup nie traf:** nicht, weil der
+   Alias fehlte (er stand als `"Hip - Hop": "Hip Hop"` in
+   `genre_aliases.yaml`), sondern weil `GenreMapper._load_all_mappings()`
+   die Alias-Keys beim Laden unverändert aus dem YAML übernahm
+   (`utils/genre_map.py:275`, vor dieser Phase), während der Lookup in
+   `normalize_genre_name()` immer mit einem lowercased Key sucht
+   (`genre_lower`). Der Dict-Key `"Hip - Hop"` (Originalschreibweise)
+   konnte von keinem lowercased Such-Key je getroffen werden — unabhängig
+   von der tatsächlichen Eingabe-Schreibweise.
+3. **Bereits vorhandene Case-Normalisierung:** `_parse_genre_mappings()`
+   lowercased bereits `artist_map`/`channel_map`-Keys
+   (`utils/genre_map.py:314-315`), und der GENRE-003-Fix aus einer
+   früheren Phase lowercased bereits die Hierarchie-Keys beim Laden
+   (`utils/genre_map.py:265`) — exakt dasselbe Muster war für
+   `genre_aliases` bisher nicht angewendet worden.
+4. **Kollisionsprüfung vor der Umsetzung:** ein Lowercasing aller
+   `genre_aliases`-Keys könnte theoretisch zwei ursprünglich
+   unterschiedliche Keys mit unterschiedlichen Werten auf denselben
+   lowercased Key kollabieren lassen (stilles Überschreiben, analog zu
+   DATA-001/DATA-002). Empirisch geprüft (vollständiger Scan aller 322
+   Einträge): **genau eine** Kollision existiert (`"Hip-Hop"`/`"hip-hop"`),
+   mit identischem Zielwert `"Hip Hop"` in beiden Fällen — kein
+   Datenverlust.
+
+### Gewählte technische Lösung
+
+Minimale Änderung in `utils/genre_map.py::_load_all_mappings()` (Schritt 5,
+Genre-Aliases-Ladeblock): die Alias-Keys werden beim Laden lowercased,
+exakt analog zum bereits bestehenden Muster für die Hierarchie-Keys
+(GENRE-003):
+
+```python
+raw_genre_aliases = aliases_data.get("GENRE_ALIASES", aliases_data) or {}
+self.genre_aliases = {
+    str(k).lower(): v for k, v in raw_genre_aliases.items()
+}
+```
+
+Damit trifft der reguläre Alias-Lookup (Schritt 2 in
+`normalize_genre_name()`) den korrekten YAML-Zielwert `"Hip Hop"` direkt,
+bevor der fehleranfällige Title-Case-Fallback (Schritt 3) überhaupt
+erreicht wird — der Fallback-Code selbst wurde **nicht** verändert, damit
+kein anderes, über den Fallback verarbeitetes Genre beeinflusst wird.
+
+**Nur eine Stelle betroffen** — kein Bedarf für eine Änderung in
+`GenreProcessor` (dort war das Verhalten bereits korrekt) oder in
+`genre_aliases.yaml`/`genre_overrides.yaml` selbst (die Phase-2-Empfehlung,
+die YAML-Datei zusätzlich zu bereinigen, wurde bewusst nicht umgesetzt —
+der Code-Fix allein erfüllt die Phase-2-Sollregel bereits vollständig,
+eine zusätzliche YAML-Änderung hätte den Scope ohne technischen Zwang
+erweitert).
+
+### Sollverhalten (nachher, empirisch verifiziert)
+
+| Eingabe | `GenreMapper` (nachher) | Status |
+|---|---|---|
+| `Hip-Hop` | `Hip Hop` | unverändert korrekt |
+| `Hip - Hop` | `Hip Hop` | **behoben** (vorher `Hip  Hop`) |
+| `hip - hop` | `Hip Hop` | **behoben** |
+| `HIP - HOP` | `Hip Hop` | **behoben** |
+| `hip-hop` | `Hip Hop` | unverändert korrekt |
+| `HIP-HOP` | `Hip Hop` | unverändert korrekt |
+| `Hip  Hop` | `Hip Hop` | unverändert korrekt |
+| `hiphop` | `Hip Hop` | unverändert korrekt |
+
+Idempotenz jetzt gegeben: `normalize("Hip - Hop")` =
+`normalize(normalize("Hip - Hop"))` = `"Hip Hop"`.
+
+**Explizit unverändert** (empirisch nach dem Fix erneut verifiziert):
+`electropop` → `Electropop`/`Pop`, `chamber pop` → `Chamber Pop`/`Pop`,
+`tech house` → `Tech House`/`House`, `ruhrpott rap` → `Deutschrap`/
+`Ruhrpott Rap` (GenreMapper/GenreProcessor je unverändert), Teilstring-Match
+(`britpop` → `Pop`, `britpop revival` → `Pop`), Multi-Tag-Priorisierung
+(`prioritize_genres(["ruhrpott rap", "hip hop", "trap"])` →
+`("Ruhrpott Rap", ["Hip Hop"])`, unverändert).
+
+### Tests
+
+`tests/test_genre_alias_characterization.py`, Klasse
+`TestAliasLoadingDivergence` aktualisiert (nicht gelöscht, Vorher/Nachher
+im Klassen-Docstring dokumentiert):
+
+- `test_genre_mapper_keeps_yaml_keys_as_written_including_mixed_case` →
+  umbenannt zu `test_genre_mapper_lowercases_all_keys_at_load_time`,
+  Assertion invertiert (`== []` statt `== ["Hip-Hop", "Hip - Hop"]`).
+- `test_mixed_case_yaml_entry_is_unreachable_in_genre_mapper` → umbenannt
+  zu `test_previously_mixed_case_yaml_entry_now_reachable_in_genre_mapper`,
+  verifiziert jetzt `normalize_genre_name("Hip - Hop") == "Hip Hop"` statt
+  des vorherigen `"Hip  Hop"`.
+- 2 neue Tests:
+  `test_hip_hop_case_and_whitespace_variants_all_normalize_identically`
+  (9 Schreibweisen aus Abschnitt „Ausgangsverhalten") und
+  `test_normalize_genre_name_is_idempotent_for_the_fixed_alias`.
+- `test_genre_processor_lowercases_all_keys_at_load_time` und
+  `test_mixed_case_yaml_entry_resolves_correctly_in_genre_processor`
+  unverändert (GenreProcessor war bereits korrekt, nicht betroffen).
+
+Alle Tests laufen gegen den echten produktiven Alias-Pfad
+(`GenreMapper.normalize_genre_name()` über eine echte, aus `mapping/`
+geladene Instanz) — keine isolierte Funktionsprüfung ohne den
+Lade-/Lookup-Kontext.
+
+### Regression
+
+- Gezielt (`tests/test_genre_alias_characterization.py`): 24 passed
+  (vorher 22 — 2 umbenannt/aktualisiert, 2 neu, netto +2).
+- Vollständig (`pytest tests/ -q`): **1039 passed**, 15 bekannte
+  Vorbestandsfehler (identisch zu allen vorherigen ARCH-013-Ständen).
+- Baseline-Vergleich: 1037 (Phase 1/2) → 1039 (Phase 3), Delta +2 exakt
+  durch die oben beschriebenen Teständerungen erklärt, keine unerklärte
+  Abweichung.
+
+### Scope-Audit
+
+Geänderte Dateien:
+
+- `utils/genre_map.py` — 1 Produktionsdatei, 10 effektive Zeilen
+  (Kommentar + Dict-Comprehension), keine neuen Imports, keine neue
+  Klasse/Methode, keine geänderte Signatur.
+- `tests/test_genre_alias_characterization.py` — Testdatei, wie oben
+  beschrieben.
+- `docs/MusicBot_ARCH-013_Genre_Alias_Decision.md` — dieser Abschnitt.
+
+**Nicht verändert:** `services/metadata/genre_processor.py`,
+`mapping/genre_aliases.yaml`, `mapping/genre_overrides.yaml`,
+`mapping/genre_hierarchy.yaml`, jede andere Produktionsdatei. Keine neuen
+Imports zwischen Schichten, keine neue `services→handlers`- oder
+`services→klassen`-Abhängigkeit, keine Zirkelimporte (unverändert, da
+keine neue Importbeziehung entstanden ist).
+
+### Bewusst nicht bearbeitete Phase-2-Themen
+
+- `electropop`, `chamber pop`, `tech house`, `ruhrpott rap`
+  (Override-vs-Alias-Konfliktregel) — Phase 4.
+- Teilstring-/Wortgrenzen-Matching — Phase 5.
+- Multi-Tag-Hierarchie-Korrektur (Abschnitt 6 dieses Dokuments) — Teil von
+  Phase 4, da direkte Konsequenz derselben Konfliktregel.
+- YAML-Bereinigung von `genre_aliases.yaml` selbst (Entfernen der jetzt
+  redundanten Mixed-Case-Zeilen) — technisch unnötig für den Fix (siehe
+  „Gewählte technische Lösung"), bewusst nicht vorgenommen, um den Diff
+  minimal zu halten.
+- Jede Form von Zentralisierung oder gemeinsamer Alias-Architektur.
+
+---
+
+## ARCH-013 Phase 3 — Entscheidungsgate
+
+**Erreicht.** Der fachlich unstrittige Mixed-Case-/Whitespace-Fix ist
+umgesetzt, verifiziert und dokumentiert. Keine unerwartete Scope-Erweiterung
+war notwendig — der Fix war mit einer einzigen, lokalen Änderung an einer
+einzigen Datei vollständig umsetzbar. ARCH-013 Phase 4
+(Override-vs-Alias-Konfliktregeln) und Phase 5 (Teilstring-/Wortgrenzen-
+Matching) bleiben eigene, separat freizugebende Entscheidungsgates.
