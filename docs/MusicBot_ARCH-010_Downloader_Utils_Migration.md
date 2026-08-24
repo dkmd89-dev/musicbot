@@ -2,13 +2,15 @@
 
 ## Status
 
-PHASE 3E – ÜBRIGE DOWNLOADER-DATEIEN MIGRIERT (2026-08-24). Phase 3F–3H
-noch offen, Entscheidungsgate vor Phase 3F erreicht. Siehe Abschnitt 27
-„Ergebnisse" (Phase 1), Abschnitt 35 „Phase 2 — Architekturentscheidung",
-Abschnitt 36 „Phase 3A/3B — Metadata-Unterprozessoren migriert",
-Abschnitt 37 „Phase 3C — Metadata-Modelle migriert", Abschnitt 38
-„Phase 3D — Metadata-Facade + Downloader-Cleanup atomar migriert" und
-Abschnitt 39 „Phase 3E — Verbleibende Downloader-Dateien migriert".
+PHASE 3F – EXTERNE CONSUMER GEPRÜFT, BEREITS VOLLSTÄNDIG MIGRIERT
+(2026-08-24). Phase 3G/3H noch offen, Entscheidungsgate vor Phase 3G
+erreicht. Siehe Abschnitt 27 „Ergebnisse" (Phase 1), Abschnitt 35
+„Phase 2 — Architekturentscheidung", Abschnitt 36
+„Phase 3A/3B — Metadata-Unterprozessoren migriert", Abschnitt 37
+„Phase 3C — Metadata-Modelle migriert", Abschnitt 38
+„Phase 3D — Metadata-Facade + Downloader-Cleanup atomar migriert",
+Abschnitt 39 „Phase 3E — Verbleibende Downloader-Dateien migriert" und
+Abschnitt 40 „Phase 3F — Externe Consumer migrieren + Vorabschluss-Audit".
 
 ## Typ
 
@@ -2472,3 +2474,135 @@ Phase 3H — finale Regression
 
 **STOPP nach Phase 3E. Keine weiteren ARCH-010-Phasen ausgeführt. Nicht
 gemergt. Wartet auf ausdrückliche Freigabe für Phase 3F.**
+
+---
+
+# 40. Phase 3F — Externe Consumer migrieren + Vorabschluss-Audit (2026-08-24)
+
+Nutzerfreigabe für Phase 3F erhalten. Umsetzung auf Branch
+`arch/arch-010-phase3f-external-consumers-audit`.
+
+## 40.1 Pre-Migration-Audit — Kernbefund
+
+Repo-weiter, vollständiger Audit auf `services.downloader.utils`/
+`services.downloader.utils.metadata` (dotted + slash, alle Dateitypen)
+**vor** jeder Änderung durchgeführt — nicht die alte Phase-2-Liste
+übernommen, sondern gegen den tatsächlichen Code verifiziert.
+
+**Ergebnis: die fünf in Phase 2 als Phase-3F-Scope benannten Consumer
+(`bot.py`, `services/downloader/downloader.py`,
+`services/downloader/download/interfaces.py`,
+`klassen/download_handler.py`, `handlers/menu/rich_menu_handler.py`)
+enthalten bereits 0 Referenzen auf den alten Pfad.**
+
+Das ist keine übersehene Migration, sondern eine dokumentierte Abweichung
+gegenüber der Phase-2-Planung: Phase 3D und 3E haben — jeweils als
+notwendigen Bestandteil der dort migrierten Dateien — genau diese fünf
+Consumer bereits mitmigriert (z. B. `klassen/download_handler.py`s
+`enhanced_metadata_processor`-Import in Phase 3D, seine
+`download_result_reporter`/`progress_tracker`/`metadata_result_translator`-
+Importe in Phase 3E; `bot.py`s `download_artifact_cleanup`-Import in
+Phase 3D; `downloader.py`s `download_utils`-Import in Phase 3E;
+`download/interfaces.py`s `models`-Import in Phase 3C). Wie in Auftrag
+Abschnitt „WICHTIG" gefordert: **nicht künstlich geändert**, sondern hier
+als Abweichung dokumentiert.
+
+**Verbleibende repo-weite Treffer (2, beide kein funktionaler Consumer):**
+
+| Fundstelle | Art | Bewertung |
+|---|---|---|
+| `services/downloader/playlist_processor.py:1` (`# services/downloader/utils/playlist_processor.py (KORRIGIERTE VERSION)`) | stale Pfad-Kopfzeile | **Außerhalb des ARCH-010-Scopes** — `playlist_processor.py` war nie Teil der 17 migrierten Dateien, lag schon vor ARCH-010 direkt in `services/downloader/`. Der fehlerhafte Kommentar ist vorbestehend und unabhängig von dieser Migration. Bewusst **nicht** korrigiert (keine „zusätzliche Strukturänderung außerhalb des definierten Scopes", Auftrag Abschnitt „WICHTIG") — als Fund dokumentiert, nicht behoben. |
+| `tests/test_download_handler_send_report_message.py:6` (Docstring: „...lag vorher teils in services/downloader/utils/download_result_reporter.py...") | historische Dokumentation | Korrekt im Präteritum („lag vorher"), beschreibt den Vor-ARCH-007-Zustand — keine aktuelle Zustandsbehauptung, daher **nicht geändert**. |
+
+**Zusätzliche Prüfungen (alle mit dem erwarteten Ergebnis):**
+- `services/downloader/__init__.py`, `services/downloader/utils/__init__.py`: beide weiterhin leer, keine Re-Exports.
+- keine dynamischen Imports (`importlib`) auf die alten Pfade.
+- keine String-Referenzen in `.yaml`/`.yml`/`.json`-Dateien.
+- keine `mock.patch`-Ziele auf `services.downloader.utils*`.
+- keine `TYPE_CHECKING`-Referenzen auf die alten Pfade.
+- **Relative-Import-Konsistenzprüfung** (neu in dieser Phase): alle relativen Importe in `services/downloader/*.py`, `services/metadata/*.py` und `services/downloader/download/*.py` einzeln gegen ihre tatsächlichen Geschwister-Dateien verifiziert — alle 16 Fundstellen lösen korrekt auf, keine durch frühere Verschiebungen „falsch gewordenen" relativen Importe gefunden.
+- `klassen/download_handler.py` vollständig geprüft (lief in dieser Datei mehrere ARCH-010-Pfade zusammen): einzige verbleibende Referenz ist der bereits in Phase 3D korrekt migrierte `services.metadata.enhanced_metadata_processor`-Import — keine weitere Fundstelle.
+
+## 40.2 Umsetzung
+
+**Keine Code-/Importänderung in dieser Phase** — der Audit ergab, dass
+keine der explizit im Auftrag genannten Dateien noch eine Änderung
+benötigt. Es wurden **keine funktionalen Referenzen künstlich erzeugt
+oder Dateien ohne Notwendigkeit angefasst**, um dennoch einen Diff zu
+erzeugen (ausdrücklich vom Auftrag verboten: „Keine bereits erledigten
+Migrationen wieder anfassen").
+
+Diese Dokumentationsergänzung selbst ist die einzige Änderung dieser
+Phase.
+
+## 40.3 Verifikation
+
+**Import-Audit (vorher/nachher identisch, da keine Änderung):** 0
+funktionale Referenzen auf `services.downloader.utils`/
+`services.downloader.utils.metadata` außerhalb der beiden in 40.1
+genannten, bewusst unangetasteten Fundstellen (1 außerhalb des Scopes,
+1 historisch korrekt).
+
+**Import-Smoke-Test:** `bot.py`, `services.downloader.downloader`,
+`services.downloader.download.interfaces`, `klassen.download_handler`,
+`handlers.menu.rich_menu_handler`, sowie alle Downloader-/Metadata-
+Zielmodule (`download_utils`, `download_result_reporter`,
+`progress_tracker`, `errors`, `metadata_result_translator`,
+`download_artifact_cleanup`, `services.metadata`,
+`services.metadata.enhanced_metadata_processor`,
+`services.metadata.models`) — alle importierbar, kein `ImportError`,
+kein `ModuleNotFoundError`, kein Zirkelimport.
+
+**Gezielte Tests** (12 Dateien, alle direkt betroffenen Module):
+
+```text
+tests/test_download_handler_process_single_download_result.py
+tests/test_download_handler_send_report_message.py
+tests/test_download_utils_metadata_translation.py
+tests/test_playlist_max_items.py
+tests/test_progress_tracker.py
+tests/test_formatters.py
+tests/test_download_result_reporter.py
+tests/test_metadata_result_translator.py
+tests/test_autolearn_special_channel_gate.py
+tests/test_enhanced_metadata_processor_aclose.py
+tests/test_metadata_processor_happy_path.py
+tests/test_download_artifact_cleanup.py
+```
+
+Ergebnis: **148 passed, 0 failed**.
+
+**Vollständige Regression:**
+
+```text
+vorher (Baseline, Stand nach PR #18):  1009 passed, 15 known failures
+nachher (nach Phase 3F):               1009 passed, 15 known failures
+```
+
+`pytest tests/ -q` → `15 failed, 1009 passed, 5 warnings, 14 subtests
+passed`, zeilengenau identisch zur Baseline (erwartungsgemäß, da keine
+Codeänderung). **Keine neuen Fehler.**
+
+## 40.4 Unerwartete Abweichungen
+
+Eine dokumentiert (siehe 40.1): alle fünf im Phase-2-Plan für Phase 3F
+vorgesehenen Consumer waren bereits durch Phase 3D/3E migriert. Keine
+weitere Abweichung festgestellt.
+
+## 40.5 Git
+
+- Branch: `arch/arch-010-phase3f-external-consumers-audit`
+- Commit: siehe unten (reine Dokumentation)
+- PR: wird erstellt, **nicht gemergt**
+
+## 40.6 Verbleibende ARCH-010-Arbeiten
+
+```text
+Phase 3G — services/downloader/utils/ und services/downloader/utils/metadata/
+            entfernen
+Phase 3H — finale Regression
+```
+
+**STOPP nach Phase 3F. Keine weiteren ARCH-010-Phasen ausgeführt.
+`services/downloader/utils/` nicht entfernt. Nicht gemergt. Wartet auf
+ausdrückliche Freigabe für Phase 3G.**
