@@ -5,7 +5,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List
 
-from handlers.duplicate_handler import DuplicateEntry
+from services.downloader.models import DuplicateEntry
 from logger import get_module_logger
 
 

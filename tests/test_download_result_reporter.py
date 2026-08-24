@@ -31,8 +31,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from handlers.duplicate_handler import DuplicateEntry
 from services.downloader.download_result_reporter import DownloadResultReporter
+from services.downloader.models import DuplicateEntry
 
 
 @pytest.fixture
