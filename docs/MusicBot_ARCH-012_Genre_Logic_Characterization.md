@@ -8,6 +8,14 @@
 umgesetzt und verifiziert (Abschnitt 16). MusicBrainz-Doppelberechnung
 bewusst unverändert, als Phase 3 zurückgestellt.
 
+**Phase 3A abgeschlossen (2026-08-24).** Reine Characterization, kein
+Produktionscode geändert (Abschnitt 17). Wichtigster Befund: Die
+Arbeitshypothese aus Phase 1 ("zweiter Aufruf ist redundant/tot") ist
+**präzisiert, nicht bestätigt** — bei echten Multi-Tag-Eingaben liegt
+bereits im **ersten** `determine_genre()`-Aufruf (im Client) ein
+Informations-/Korrektheits-Verlust vor, den der zweite Aufruf nur
+unverändert durchreicht. Kein Refactoring in dieser Phase.
+
 ---
 
 ## 1. Ziel und Scope
@@ -852,3 +860,484 @@ des Scopes, und zweitens laut Phase 1 (Abschnitt 9, Lücke 1 und 3) noch
 keine ausreichende Vergleichsbasis (Test, der `determine_genre()` mit
 Multi-Tag-String gegen die tatsächliche MB-Pipeline verifiziert) existiert.
 Empfohlener Kandidat für eine eigene ARCH-012 Phase 3.
+
+---
+
+# Phase 3A — MusicBrainz Genre Characterization
+
+## 17.1 Ziel und Scope
+
+Reine Analyse/Characterization der genau in Phase 1 (Abschnitt 4, 9)
+offen gelassenen Vergleichsbasis: Was passiert **tatsächlich**, mit
+**echten** Multi-Tag-Eingaben, entlang des heutigen MusicBrainz-Genre-
+Datenflusses? Kein Refactoring, keine Änderung an
+`musicbrainz_client.py`, `genre_processor.py`, `GenreMapper` oder den
+Genre-YAML-Dateien. Einzige Änderung dieser Phase: neue
+Characterization-Tests (Abschnitt 17.10).
+
+Methodik: alle Aussagen in diesem Abschnitt sind **empirisch verifiziert**
+— gegen die echte `GenreMapper`-Instanz und echte `mapping/genre_*.yaml`-
+Dateien ausgeführt (kein Mock für `determine_genre()`/`prioritize_genres()`
+selbst), nicht nur aus dem Code hergeleitet. Die verwendeten Tag-Beispiele
+sind, sofern nicht ausdrücklich als „synthetisch" gekennzeichnet, reale
+Genre-Bezeichnungen aus `mapping/genre_hierarchy.yaml`/`genre_aliases.yaml`
+(z. B. `"ruhrpott rap"`, `"hip hop"`) — keine erfundenen Werte, die die
+reale Implementierung nicht stützt.
+
+## 17.2 Rekonstruierter Ist-Datenfluss
+
+```text
+1. MusicBrainz API Response
+   release-group.tags: [{"name": "Ruhrpott Rap"}, {"name": "Hip Hop"}, ...]
+   ↓
+2. musicbrainz_client.py::_build_metadata() (Zeile 414)
+   mb_tags = [t["name"] for t in release_group.get("tags", [])]
+   mb_tags_str = ", ".join(mb_tags)   # z.B. "ruhrpott rap, hip hop, trap"
+   ↓
+3. ERSTER Aufruf: genre_mapper.determine_genre(raw_genre=mb_tags_str, artist_name=X)
+   → Ergebnis siehe 17.4 (kein einzelnes Genre bei >1 Tag!)
+   ↓
+4. Client-Rückgabefeld: {"tags": mb_tags, "genre": genre_value, "mbid": ..., ...}
+   ↓
+5. Übergabe an genre_processor._fetch_genre_from_musicbrainz()
+   raw_mb_genre = mb_data.get("genre", "")
+   ↓
+6. ZWEITER Aufruf: genre_mapper.determine_genre(raw_genre=raw_mb_genre, artist_name=X)
+   → Ergebnis siehe 17.5 (reproduziert i. d. R. denselben Wert)
+   ↓
+7. mb_genre_result.raw_tags = mb_data.get("tags", [])   # Original-Tags werden
+   NUR als Metadatum anhängt, NICHT für primary/secondary neu ausgewertet
+   ↓
+8. finales GenreResult(primary=..., secondary=[], source="normalized"/..., raw_tags=mb_tags, mb_ids=...)
+   ↓
+9. Übergabe an MetadataResult.genres = {"primary": ..., "secondary": ...}
+   ↓
+10. services/metadata/tag_writer.py (Zeile 204) liest genres_result.primary/secondary
+    direkt für das echte Datei-Tag (ID3/MP4 Genre-Feld)
+```
+
+Jede Stufe im Detail (Input/Output/Transformation/Consumer) ist bereits in
+Phase 1, Abschnitt 4 und 5 dokumentiert und wird hier nicht wiederholt —
+neu in Phase 3A ist die **empirische Auswertung** von Stufe 3 und 6.
+
+## 17.3 MusicBrainz-Rohdaten
+
+`release_group.get("tags", [])` liefert bei realen MusicBrainz-Releases
+typischerweise **mehrere** Community-Tags pro Release-Group (0 bis oft
+5–15 Stück, MusicBrainz-Tagging ist community-getrieben und nicht auf
+einen einzelnen Tag begrenzt). Der Code selbst behandelt das als Liste
+(`mb_tags: List[str]`) — die Mehrfach-Tag-Situation ist der **Normalfall**,
+nicht ein Randfall.
+
+## 17.4 Erster `determine_genre()`-Aufruf (im Client)
+
+**Empirisch verifiziert** (echter `GenreMapper` gegen `mapping/`,
+`artist_name` bewusst unbekannt gehalten, um Schritt 1–3 von
+`determine_genre()` zu umgehen und ausschließlich Schritt 4/5 zu prüfen):
+
+| Eingabe-Tags | `raw_genre` (joined) | `determine_genre()`-Ergebnis | `source` |
+|---|---|---|---|
+| `["hip hop"]` | `"hip hop"` | `primary="Hip Hop"` | `normalized` |
+| `["ruhrpott rap", "hip hop", "trap"]` | `"ruhrpott rap, hip hop, trap"` | `primary="Ruhrpott Rap, Hip Hop, Trap"` | `normalized` |
+| `["hip hop", "ruhrpott rap", "trap"]` (andere Reihenfolge) | `"hip hop, ruhrpott rap, trap"` | `primary="Hip Hop, Ruhrpott Rap, Trap"` | `normalized` |
+| `["HIP HOP", "Ruhrpott Rap"]` (Groß-/Kleinschreibung) | `"HIP HOP, Ruhrpott Rap"` | `primary="Hip Hop, Ruhrpott Rap"` | `normalized` |
+| `["german hip hop", "deutscher rap"]` (beide würden einzeln zu „Deutschrap" aliasen) | `"german hip hop, deutscher rap"` | `primary="German Hip Hop, Deutscher Rap"` | `normalized` |
+| `[]` (keine Tags) | `""` | `None` (kein `GenreResult`) | — |
+
+**Zentraler Befund — Root Cause:** `GenreMapper.normalize_genre_name()`
+(`utils/genre_map.py`, Zeile 390–434, aufgerufen aus `determine_genre()`s
+Schritt 5) ist für **einen einzelnen Genre-String** konzipiert:
+
+1. Exakter Lookup in `self.overrides`/`self.genre_aliases` — erwartet den
+   **gesamten** übergebenen String als **einen** Schlüssel. Ein
+   kommagetrennter Multi-Tag-String wie `"ruhrpott rap, hip hop, trap"`
+   ist als Ganzes in keiner YAML-Datei als Schlüssel hinterlegt (Aliase
+   sind pro Einzel-Tag gepflegt) → kein Treffer.
+2. Fallback (Zeile 417–434): `genre_name.split()` — **Whitespace-Split**,
+   dann pro Wort `.capitalize()` (mit Sonderbehandlung für Abkürzungen/
+   Bindestriche), wieder mit `" ".join()` zusammengesetzt. Ein Komma
+   bleibt dabei am vorherigen Wort haften (`split()` trennt nur auf
+   Leerzeichen) — das Ergebnis ist der **komplette Eingabestring,
+   Wort-für-Wort title-gecast, Kommas erhalten**.
+
+`get_main_genre()` (Hierarchie-Aufstieg, Zeile 368–387) wird danach
+ebenfalls mit dem **gesamten** normalisierten String als Schlüssel
+aufgerufen (`self.hierarchy.get(key)`) — auch das schlägt für einen
+Multi-Tag-String fehl (Hierarchie-Schlüssel sind Einzelgenres), weshalb
+`source` bei `"normalized"` bleibt, nie `"hierarchy"` erreicht wird.
+
+**Zusatzbefund (Regex-Regel-Stufe, Schritt 4 vor Schritt 5):**
+`_apply_rules()` (Zeile 580–604) hätte theoretisch die Chance, einen
+Multi-Tag-String über `pattern.search()` (Teilstring-Suche, nicht
+`fullmatch`) zu „retten". Empirisch feuerte in **keinem** der geprüften
+Fälle eine Regel (`source` war nie `"rule"`). Grund (zusätzlich geprüft,
+**nicht** Teil des ARCH-012-Scopes, nur zur Transparenz dokumentiert):
+`GenreMapper._do_init()` lädt Regeln über
+`rules_data.get("GENRE_RULES", [])` (Zeile 280) — die tatsächliche Datei
+`mapping/genre_rules.yaml` verwendet jedoch die Top-Level-Schlüssel
+`keyword_rules`/`artist_rules`, nicht `GENRE_RULES`. `self.rules` ist
+dadurch **für alle Aufrufer, nicht nur MusicBrainz** strukturell leer —
+`_apply_rules()` ist permanent ein No-op. Dies ist ein eigenständiger,
+von der MusicBrainz-Frage unabhängiger Befund in `GenreMapper`/
+`genre_rules.yaml` und **ausdrücklich nicht Gegenstand dieser Phase**
+(„GenreMapper verändern"/„Genre-YAML verändern" sind laut Scope-Gate
+verboten) — hier nur dokumentiert, weil er erklärt, warum Schritt 4 in
+der Praxis nie eingreift und Schritt 5 (mit dem oben beschriebenen
+Title-Case-Verhalten) für jeden nicht manuell gemappten Fall
+entscheidend ist.
+
+## 17.5 Übergabewert an `genre_processor` und zweite Genre-Verarbeitung
+
+`genre_processor._fetch_genre_from_musicbrainz()` liest
+`raw_mb_genre = mb_data.get("genre", "")` — das ist exakt der in 17.4
+ermittelte, ggf. bereits title-gecaste Multi-Tag-String. Ist er nicht leer
+und nicht `"unknown"` (`has_genre`), wird `determine_genre(raw_genre=raw_mb_genre,
+artist_name=artist_name)` **erneut** aufgerufen — **empirisch verifiziert**:
+
+| Client-Ergebnis (Stufe 1) | Zweiter Aufruf (Stufe 2, gleicher Artist) | Divergenz? |
+|---|---|---|
+| `"Hip Hop"` | `"Hip Hop"`, `source=normalized` | Nein |
+| `"Ruhrpott Rap, Hip Hop, Trap"` | `"Ruhrpott Rap, Hip Hop, Trap"`, `source=normalized` | Nein |
+| `"Hip Hop, Ruhrpott Rap, Trap"` | `"Hip Hop, Ruhrpott Rap, Trap"`, `source=normalized` | Nein |
+| `"German Hip Hop, Deutscher Rap"` | `"German Hip Hop, Deutscher Rap"`, `source=normalized` | Nein |
+
+**Der zweite Aufruf ist in allen geprüften Fällen idempotent** — ein
+bereits title-gecaster String bleibt beim erneuten Title-Casing
+unverändert (jedes Wort ist bereits großgeschrieben). Der zweite Aufruf
+**korrigiert den Fehler aus Stufe 1 nicht**, **verschlimmert ihn aber auch
+nicht weiter** — er reproduziert ihn unverändert.
+
+`mb_genre_result.raw_tags = mb_data.get("tags", [])` (Zeile 585) hängt die
+**ursprünglichen, sauberen** Einzel-Tags separat als Metadatum an das
+Ergebnis an — diese werden aber an **keiner Stelle** genutzt, um
+`primary`/`secondary` neu zu berechnen (kein Äquivalent zu
+`prioritize_genres()` für den MusicBrainz-Pfad, siehe 17.6/17.9).
+
+## 17.6 Vergleichsmatrix
+
+| Eingabe | `determine_genre()` (1. Aufruf, Client) | `determine_genre()` (2. Aufruf, Processor) | `prioritize_genres()` (nur Last.fm-Pfad, zum Vergleich) |
+|---|---|---|---|
+| Single Tag (`["hip hop"]`) | `Hip Hop` (`normalized`) | `Hip Hop` (`normalized`) — identisch | `Unknown` (kein Priorität-Mapping-Treffer außerhalb Hierarchie-Tiefe 0 ohne Filterlogik-Sonderfall) |
+| Multi Tag, Subgenre zuerst (`["ruhrpott rap", "hip hop", "trap"]`) | `Ruhrpott Rap, Hip Hop, Trap` (`normalized`) | identisch | `Ruhrpott Rap`, secondary=`[Hip Hop]` |
+| Multi Tag, Hauptgenre zuerst (`["hip hop", "ruhrpott rap", "trap"]`) | `Hip Hop, Ruhrpott Rap, Trap` (`normalized`) | identisch | `Ruhrpott Rap`, secondary=`[Hip Hop]` (Reihenfolge-unabhängig, da nach Hierarchie-Tiefe sortiert) |
+| bekannte + unbekannte Tags gemischt (`["hip hop", "xyz-unknown", "abc-unknown"]`, synthetisch) | `Hip Hop, Xyz-Unknown, Abc-Unknown` (`normalized`) | identisch | `Xyz-unknown`, secondary=`[Abc-unknown]` — **empirisch verifiziert**: `"hip hop"` steht in `mapping/genre_filters.yaml::IGNORE_SECONDARY` (Zeile 27) und wird von `prioritize_genres()` deshalb explizit herausgefiltert, bevor überhaupt priorisiert wird; die verbleibenden unbekannten Tags landen im Fallback-Zweig ohne `tag_priorities`-Treffer (erstes valides Tag = primary) |
+| nur unbekannte Tags (synthetisch) | title-gecaster Gesamtstring (`normalized`) | identisch | erstes Tag als primary, Rest als secondary |
+| leere Eingabe (`[]`) | `None` (kein `GenreResult`) | Sentinel `source="musicbrainz_ids_only"`, `primary=""` (nur falls `mb_ids` vorhanden) | `Unknown, []` |
+| Groß-/Kleinschreibung gemischt (`["HIP HOP", "Ruhrpott Rap"]`) | `Hip Hop, Ruhrpott Rap` (`normalized`) | identisch | `Ruhrpott Rap` (case-insensitive durch `.lower()` in `prioritize_genres()`) |
+| Aliase, die einzeln zusammenfallen würden (`["german hip hop", "deutscher rap"]`, beide → „Deutschrap") | `German Hip Hop, Deutscher Rap` (`normalized` — **Alias greift NICHT**, da der Gesamtstring kein Alias-Schlüssel ist) | identisch | `Deutschrap` (Alias greift korrekt PRO Tag) |
+| Duplikate (`["ruhrpott rap", "ruhrpott rap", "berliner rap"]`) | `Ruhrpott Rap, Ruhrpott Rap, Berliner Rap` (`normalized`, Duplikat bleibt wörtlich erhalten) | identisch | `Berliner Rap`, secondary=`[Ruhrpott Rap]` — **empirisch verifiziert**: `"ruhrpott rap"` erscheint trotz doppelten Vorkommens nur einmal in `secondary` (`seen`-Set-Dedup korrekt), `"Berliner Rap"` gewinnt als primary gegenüber gleich priorisiertem `"Ruhrpott Rap"` durch den alphabetischen Sortier-Tiebreak (`sort(key=lambda x: (-x[1], x[0]))`) |
+
+**Kernaussage der Matrix:** In **jedem** Fall mit mehr als einem Tag
+liefert der aktuelle MusicBrainz-Pfad (`determine_genre()` ×2) ein
+qualitativ anderes, schlechteres Ergebnis als das, was
+`prioritize_genres()` (bereits vorhanden, aber nur für Last.fm verdrahtet)
+auf denselben Rohdaten liefern würde. Bei genau einem Tag sind beide
+Pfade gleichwertig.
+
+## 17.7 Multi-Tag-Characterization (Zusammenfassung)
+
+- **Reihenfolge-Sensitivität:** `determine_genre()` behält die
+  MusicBrainz-Tag-Reihenfolge 1:1 im Ergebnis-String bei (kein Ranking).
+  `prioritize_genres()` ist reihenfolge-**unabhängig** (sortiert nach
+  Hierarchie-Tiefe).
+- **Groß-/Kleinschreibung:** in beiden Pfaden korrekt normalisiert (kein
+  Unterschied).
+- **Aliase:** funktionieren in `determine_genre()` nur, wenn der
+  **gesamte** Eingabestring exakt einem Alias-Schlüssel entspricht — bei
+  mehreren Tags praktisch nie der Fall. `prioritize_genres()` wendet
+  Aliase pro Einzel-Tag an — funktioniert wie vorgesehen.
+- **Duplikate:** `determine_genre()` dedupliziert nicht.
+  `prioritize_genres()` dedupliziert über `seen`.
+- **Bekannt+unbekannt gemischt:** `determine_genre()` behandelt alle
+  gleich (title-cast den ganzen String). `prioritize_genres()` filtert
+  über `IGNORE_SECONDARY`, gewichtet bekannte Genres nach Hierarchie-
+  Tiefe vor unbekannten (sofern ein `tag_priorities`-Treffer existiert).
+
+## 17.8 Informationsverlustanalyse
+
+**Ja, es wird Information verändert/degradiert — bereits beim ERSTEN
+`determine_genre()`-Aufruf, nicht erst beim zweiten:**
+
+- **Welche Information?** Die Fähigkeit, aus mehreren MusicBrainz-Tags
+  das **spezifischste, hierarchisch korrekte** Einzelgenre auszuwählen
+  (Subgenre vor Hauptgenre, wie `prioritize_genres()` es für Last.fm
+  leistet) geht verloren — `determine_genre()` behandelt die
+  Tag-**Liste** als undurchsichtigen String-**Blob**.
+- **Ist sie rekonstruierbar?** Ja — die Original-Tags bleiben unter
+  `GenreResult.raw_tags` erhalten (Zeile 585 in `genre_processor.py`).
+  Eine künftige Änderung könnte sie dort abgreifen und nachträglich
+  korrekt priorisieren. Aktuell tut das aber niemand.
+- **Beeinflusst sie das finale Genre?** Ja, direkt: `GenreResult.primary`
+  (und damit `MetadataResult.genres["primary"]`, und damit potenziell das
+  tatsächliche Datei-Tag über `tag_writer.py`) enthält bei Multi-Tag-
+  MusicBrainz-Treffern für unbekannte Artists/Kanäle **keinen** validen
+  Einzelgenre-Namen, sondern eine kommagetrennte, title-gecaste Aufzählung
+  aller Tags.
+- **Gibt es Fälle, in denen das finale Ergebnis anders wäre, wenn
+  `genre_processor.py` die Roh-Tags statt des Client-Ergebnisses
+  erhalten und über `prioritize_genres()` verarbeitet hätte?** Ja, in
+  **jedem** der in 17.6 geprüften Multi-Tag-Fälle (Abweichung `primary`
+  UND `secondary`).
+
+**Wichtige Einschränkung/Präzisierung:** Dieser Informationsverlust
+**existiert unabhängig vom zweiten Aufruf** — er entsteht bereits im
+Client (Stufe 1). Der zweite Aufruf ist nicht die Ursache, sondern
+reproduziert (idempotent) das bereits degradierte Ergebnis unverändert
+weiter (17.5). Diese Unterscheidung ist zentral für Abschnitt 17.9/17.11.
+
+**Kein Verlust bei Artist-/Channel-Treffern:** Ist der Artist (oder
+Kanal) manuell gemappt (`artist_genre.yaml`/`channel_genre.yaml`), greift
+bereits `genre_processor`s eigener Schritt 1/2 (vor MusicBrainz) oder,
+innerhalb von `determine_genre()` selbst, dessen Schritt 2/3 — **bevor**
+die fehlerhafte Tag-String-Verarbeitung überhaupt erreicht wird
+(empirisch verifiziert, 17.6-Test „bekannter Artist").
+
+## 17.9 Bestehende Tests
+
+| Testdatei | Deckt das in 17.4–17.8 beschriebene Verhalten ab? |
+|---|---|
+| `tests/test_musicbrainz_client.py::test_genre_determined_from_release_group_tags` | **Nein** — `genre_mapper` vollständig `MagicMock`, `determine_genre.return_value` ist ein fest verdrahteter Mock (`primary="Jazz"`). Prüft nur, dass der Client `determine_genre()` mit den erwarteten `raw_genre`-Kwargs **aufruft**, nicht was die echte Methode mit Multi-Tag-Input tatsächlich zurückgibt. |
+| `tests/test_genre_processor.py::test_musicbrainz_genre_hit_populates_mb_ids` (vor Phase 3A) | **Teilweise** — nutzt echten `GenreMapper`, aber der `FakeMusicBrainzClient` liefert direkt `{"genre": "deutschrap", ...}` — ein **einzelnes, bereits kleingeschriebenes Wort**, kein realistischer Multi-Tag-String. Der `source == "normalized"`-Assert bewies zwar bereits den Doppel-Aufruf-Mechanismus (Phase 1, Abschnitt 9), aber **nicht** das Multi-Tag-spezifische Fehlverhalten aus 17.4. |
+| `tests/test_genre_mapper_advanced.py` | Testet `GenreMapper` isoliert, aber (verifiziert per Durchsicht) ohne einen Fall, der `determine_genre()` mit einem kommagetrennten Multi-Tag-String aufruft. |
+
+**Fazit:** Vor Phase 3A existierte **kein** Test im gesamten Repository,
+der das in 17.4 beschriebene Multi-Tag-Verhalten der echten
+`GenreMapper.determine_genre()`-Implementierung nachweist — exakt die in
+Phase 1 (Abschnitt 9, Lücke 1) benannte fehlende Vergleichsbasis.
+
+## 17.10 Neu ergänzte Characterization-Tests
+
+In `tests/test_genre_processor.py`, neue Klasse
+`TestMusicBrainzDoubleDetermineGenreCharacterization` (4 Tests, nutzt den
+echten `GenreMapper` über die bestehende `genre_processor`-Fixture, faked
+nur den netzwerkgebundenen `MusicBrainzClient` via `FakeMusicBrainzClient`,
+Regel 7):
+
+1. `test_multi_tag_client_value_is_the_entire_joined_tag_string` — belegt
+   17.4: bei drei Tags ist der berechnete Client-Genre-Wert der komplette,
+   title-gecaste Tag-String, kein Einzelgenre.
+2. `test_second_call_reproduces_the_same_value_unchanged` — belegt 17.5:
+   der zweite `determine_genre()`-Aufruf über die volle
+   `determine_genre_with_fallbacks()`-Pipeline reproduziert denselben
+   Wert unverändert, `source == "normalized"`, `raw_tags` bleiben als
+   Metadatum erhalten, `mb_ids` unbeeinflusst.
+3. `test_single_tag_is_not_affected` — Gegenprobe: ein einzelnes Tag wird
+   korrekt zu einem sauberen Einzelgenre.
+4. `test_known_artist_shields_against_the_multi_tag_value` — Gegenprobe:
+   ein Artist mit manuellem Mapping-Eintrag erhält sein Genre bereits vor
+   MusicBrainz, der fehlerhafte Multi-Tag-Wert wirkt sich nicht aus.
+
+Keine bestehenden Tests wurden umgeschrieben. Ergebnis:
+`pytest tests/test_genre_processor.py -q` → **27 passed** (23 vorher + 4
+neu). Keine Produktionslogik geändert (siehe Diff-Audit, Abschnitt 17.14).
+
+## 17.11 Bestätigte/widerlegte Hypothese
+
+**Arbeitshypothese:** „MusicBrainz `determine_genre()` wird zweimal
+aufgerufen, wobei der zweite Aufruf auf bereits verdichteten Daten
+erfolgt."
+
+**Ergebnis: B) präzisiert.**
+
+- Der **Mechanismus** (zwei Aufrufe, zweiter auf dem Ergebnis des ersten)
+  ist **bestätigt** — exakt wie in Phase 1 beschrieben.
+- Die **implizite Schlussfolgerung**, die naheläge (aber von Phase 1
+  bewusst *nicht* behauptet wurde) — „der erste Aufruf ist der
+  wichtige/korrekte, der zweite ist der redundante/tote" — ist
+  **widerlegt**. Es ist **nicht** wie beim Last.fm-Fall (Phase 2), wo der
+  Client-Aufruf der überflüssige war und der Processor-Aufruf
+  (`prioritize_genres()`) die tatsächlich korrekte, funktionierende
+  Logik enthielt.
+- Stattdessen: **Beide Aufrufe nutzen dieselbe, für Multi-Tag-Eingaben
+  strukturell ungeeignete Methode.** Der Fehler (Informationsverlust,
+  17.8) entsteht bereits beim **ersten** Aufruf (im Client). Der zweite
+  Aufruf ist zwar im beobachteten Verhalten redundant (idempotent,
+  ändert nichts mehr), aber **nicht**, weil er „tot" wäre wie beim
+  Last.fm-Fall, sondern weil er auf einer bereits kaputten Eingabe
+  operiert, die er nicht reparieren kann. Ein einfaches „zweiten Aufruf
+  entfernen" (analog zur Last.fm-Bereinigung in Phase 2) würde den
+  eigentlichen Fehler **nicht beheben** — er sitzt im ersten Aufruf bzw.
+  strukturell in der Art, wie der Client seine Tags an `determine_genre()`
+  übergibt.
+
+## 17.12 Architekturvarianten (nur bewertet, nicht umgesetzt)
+
+**Variante A — Client liefert nur rohe/API-spezifische Genredaten;
+`genre_processor.py` besitzt die alleinige Fachlogik.**
+Tatsächliches Verhalten nach Umsetzung: `musicbrainz_client.py` würde nur
+noch `mb_tags` (rohe Liste) zurückgeben, kein vorberechnetes `"genre"`
+mehr. `genre_processor.py` müsste eine **neue**, MB-spezifische
+Priorisierung einführen (aktuell existiert dafür kein Äquivalent zu
+`prioritize_genres()` im MB-Pfad — dieser müsste entweder `prioritize_genres()`
+wiederverwenden oder eine eigene Variante erhalten).
+Dependency-Richtung: unverändert (`metadata → clients`).
+Informationsverlust: behoben (Multi-Tag-Priorisierung würde die
+Original-Tags korrekt auswerten).
+Verhaltensrisiko: **mittel–hoch** — neues Verhalten für alle
+MB-Multi-Tag-Fälle, die bisher (fehlerhaft) den Title-Case-Blob
+lieferten; jeder bestehende Consumer, der zufällig mit dem aktuellen
+(kaputten) String-Format „lebt", könnte betroffen sein (kein bekannter
+Fall gefunden, aber nicht ausgeschlossen).
+Testaufwand: hoch (neue Priorisierungslogik + Umstellung).
+Änderungsumfang: `musicbrainz_client.py`, `genre_processor.py`.
+Wartbarkeit/Erweiterbarkeit: gut — vereinheitlicht MB- und Last.fm-Pfad
+konzeptionell.
+Komplexität: mittel.
+
+**Variante B — Client liefert ein bewusst normalisiertes
+Genre-Ergebnis, `genre_processor.py` übernimmt es als fachliche
+Vorstufe.**
+Tatsächliches Verhalten: entspricht in etwa dem **heutigen** Design-
+Intent (Client normalisiert vor), scheitert aber aktuell an der
+fehlenden Multi-Tag-Fähigkeit von `determine_genre()`. Eine korrekte
+Umsetzung würde bedeuten: der Client müsste selbst schon
+`prioritize_genres()`-artige Logik auf seine eigenen Tags anwenden,
+bevor er `determine_genre()` aufruft (oder ganz auf `determine_genre()`
+verzichten und direkt priorisieren). Der zweite Aufruf in
+`genre_processor.py` würde dann tatsächlich redundant und könnte
+entfernt werden (dann näher an der Last.fm-Lösung aus Phase 2).
+Dependency-Richtung: unverändert.
+Informationsverlust: behoben.
+Verhaltensrisiko: **mittel** — ähnlich zu Variante A, aber die Änderung
+konzentriert sich auf den Client statt auf `genre_processor.py`.
+Testaufwand: hoch (Client bekäme neue Verantwortung).
+Änderungsumfang: hauptsächlich `musicbrainz_client.py`.
+Wartbarkeit/Erweiterbarkeit: mittel — verlagert Fachlogik in einen
+Adapter, tendenziell im Widerspruch zu CLAUDE.md §17 („externe APIs
+nicht mit Core-Logik vermischen") und der in POST-DUPLICATEENTRY-Audit
+Regel A formulierten Erwartung an `services/clients/`.
+Komplexität: mittel.
+
+**Variante C — aktueller zweistufiger Prozess ist fachlich
+gerechtfertigt und bleibt bestehen.**
+Nach dieser Characterization **nicht mehr haltbar als „bewusst
+gerechtfertigt"** — der empirische Befund (17.4–17.8) zeigt einen
+nachweisbaren, unbeabsichtigten Informationsverlust für den
+Mehrheitsfall (Multi-Tag-MusicBrainz-Treffer bei unbekannten
+Artists/Kanälen), keinen fachlich begründeten Zwei-Stufen-Entwurf. Diese
+Variante würde bedeuten, den Status quo trotz nachgewiesenem Fehler
+bewusst zu akzeptieren — möglich als Entscheidung, aber nicht durch die
+Analyse gestützt.
+
+## 17.13 Risikobewertung
+
+- **Was ändert sich bei Entfernung des ersten Aufrufs (im Client) ohne
+  Ersatz?** `mb_data["genre"]` wäre immer `"unknown"` (analog zur
+  Last.fm-Bereinigung) — `genre_processor.py`s `has_genre`-Check würde
+  dann **immer** `False` sein, wodurch **jeder** MusicBrainz-Treffer nur
+  noch den `"musicbrainz_ids_only"`-Sentinel liefert (kein Genre mehr aus
+  MusicBrainz, nur noch IDs) — der Fallback auf Last.fm (Schritt 4 der
+  Gesamt-Pipeline) würde dann **öfter** greifen als heute. Das wäre eine
+  **echte Verhaltensänderung**, keine risikofreie Bereinigung wie bei
+  Last.fm — dort blieb der Last.fm-**Fallback selbst** unverändert
+  funktionsfähig (`prioritize_genres()` lief immer schon unabhängig vom
+  Client-Genre); hier gibt es kein äquivalentes „unabhängig laufendes"
+  Verfahren im MB-Pfad.
+- **Was ändert sich bei einer Verschiebung der Logik (Variante A/B)?**
+  Siehe 17.12 — abhängig von der genauen Umsetzung könnten sich
+  `primary`/`secondary` für **alle** bisher Multi-Tag-betroffenen Tracks
+  ändern (vermutlich zum Besseren, aber das ist eine bewusste
+  Verhaltensänderung, kein reiner Strukturumzug).
+- **Welche impliziten Fallbacks existieren?** Der
+  `"musicbrainz_ids_only"`-Sentinel (Zeile 592–600 in
+  `genre_processor.py`) — sorgt dafür, dass `mb_ids` auch ohne Genre-
+  Treffer erhalten bleiben. Bleibt in allen Varianten unverändert
+  relevant.
+- **Welche Tests würden eine Regression erkennen?** Die vier neuen Tests
+  aus 17.10 — sie schreiben exakt die Fälle fest, die sich bei einer
+  Variante-A/B-Umsetzung ändern würden (insbesondere Test 1 und 2 würden
+  bei einer echten Bereinigung bewusst fehlschlagen/angepasst werden
+  müssen — das ist beabsichtigt, sie markieren die Ist-Grenze).
+- **Welche Tests fehlen weiterhin?** Ein Test, der den kompletten Pfad
+  **inklusive** der echten `MusicBrainzClient`-Klasse (mit gemocktem
+  `musicbrainzngs`, nicht nur `FakeMusicBrainzClient`) end-to-end gegen
+  eine realistische API-Response prüft — aktuell wird `_build_metadata()`
+  selbst nirgends mit einem echten, ungemockten `GenreMapper` getestet
+  (siehe 17.9, `test_musicbrainz_client.py` mockt `genre_mapper`
+  komplett). Das wäre erst für eine tatsächliche Umsetzung (Phase 3B)
+  nötig, nicht für diese Characterization.
+- **Unterschied API-Mapping vs. echte Fachlogik?** Klar identifizierbar:
+  `mb_tags`-Extraktion (Zeile 414) = reines API-Mapping. Der
+  `determine_genre()`-Aufruf selbst (Zeile 428–440) = versuchte
+  Fachlogik-Anwendung, aber strukturell fehlerhaft für den vorliegenden
+  Datentyp (Liste statt Einzelwert).
+- **`source == "normalized"` und `mb_ids` nachvollzogen:** `source` zeigt
+  in allen Multi-Tag-Fällen `"normalized"` (nie `"hierarchy"`, nie
+  `"rule"` — siehe 17.4) — ein **beobachtbares Signal**, dass in der
+  Produktion echte MusicBrainz-Multi-Tag-Treffer für unbekannte
+  Artists/Kanäle IMMER über diesen fehlerhaften Pfad laufen, nie über
+  eine Hierarchie-Auflösung. `mb_ids` sind vom Genre-Ergebnis komplett
+  entkoppelt (eigener Dict-Aufbau in `_build_metadata()`, Zeile 416–423,
+  unabhängig von `genre_value`) — **kein** Risiko, dass eine künftige
+  Genre-Korrektur die ID-Weitergabe beeinträchtigt.
+
+## 17.14 Diff-/Scope-Audit dieser Phase
+
+```text
+git diff --stat
+ tests/test_genre_processor.py | 132 +++++++++++++++++++++++++++++
+ 1 file changed, 132 insertions(+)
+```
+
+**Ausschließlich** `tests/test_genre_processor.py` geändert. Keine
+Änderung an `services/clients/musicbrainz_client.py`,
+`services/metadata/genre_processor.py`, `utils/genre_map.py`, Genre-YAML-
+Dateien, `services/clients/lastfm_client.py` (Phase 2 bleibt unangetastet),
+README.md, CLAUDE.md oder `docs/MusicBot_ENGINEERING_BASELINE.md` — kein
+konkreter, durch diese Phase verursachter Dokumentationswiderspruch
+gefunden.
+
+## 17.15 Empfehlung für Phase 3B
+
+**Nicht sofort umsetzen.** Diese Characterization zeigt einen echten,
+nutzerseitig sichtbaren Befund (potenziell fehlerhafte Genre-Tags in
+Musikdateien für MusicBrainz-Treffer ohne bekannten Artist/Kanal) — aber
+im Gegensatz zu Phase 2 (Last.fm) ist hier **keine** risikofreie,
+rein-strukturelle Bereinigung möglich: Der erste Aufruf kann nicht
+ersatzlos entfernt werden, ohne dass entweder (a) MusicBrainz als
+Genre-Quelle faktisch ausfällt (mehr Last.fm-Fallback-Nutzung, echte
+Verhaltensänderung) oder (b) eine neue Multi-Tag-Priorisierung für den
+MB-Pfad eingeführt wird (Variante A/B, jeweils mit eigenem Entwurfs- und
+Testaufwand).
+
+**Empfohlener nächster Schritt (Phase 3B, falls freigegeben):** Variante
+A — MusicBrainz-Client liefert nur rohe Tags, `genre_processor.py`
+erhält die alleinige Fachlogik, unter Wiederverwendung von
+`prioritize_genres()` (bereits vorhanden, bewährt für Last.fm) statt
+einer neuen Implementierung. Vor der Umsetzung: End-to-End-
+Characterization-Test mit echter (gemockter API, aber ungemockter
+`GenreMapper`) `MusicBrainzClient`-Instanz, um die aktuelle
+Title-Case-Blob-Ausgabe für einen realistischen API-Response noch einmal
+auf Client-Ebene direkt (nicht nur über `FakeMusicBrainzClient`)
+festzuschreiben, bevor sie geändert wird.
+
+## 17.16 Entscheidungsgate
+
+> **ARCH-012 Phase 3A — MusicBrainz Genre Characterization abgeschlossen.**
+> **Keine Produktions-Codeänderung durchgeführt.**
+> **Characterization-/Testbasis dokumentiert.**
+> **Entscheidungsgate erreicht.**
+>
+> **Kann der erste `determine_genre()`-Aufruf im MusicBrainz-Client sicher
+> entfallen, ohne das aktuelle Verhalten zu verändern?** **Nein** — anders
+> als beim Last.fm-Fall (Phase 2) ist der erste Aufruf nicht redundant zu
+> einer bereits existierenden, unabhängig funktionierenden Priorisierung.
+> Sein ersatzloses Entfernen würde MusicBrainz als Genre-Quelle für
+> unbekannte Artists/Kanäle faktisch abschalten (mehr Last.fm-Fallback-
+> Nutzung) — eine echte Verhaltensänderung, kein risikofreier
+> Struktur-Umzug.
+>
+> **Welche fachliche Verantwortung muss wo verbleiben?** Die
+> Multi-Tag-Priorisierung (aktuell nur für Last.fm über
+> `prioritize_genres()` vorhanden) muss für den MusicBrainz-Pfad
+> äquivalent bereitgestellt werden — entweder durch Wiederverwendung von
+> `prioritize_genres()` in `genre_processor.py` (Variante A, empfohlen)
+> oder durch eine neue, MB-spezifische Client-seitige Priorisierung
+> (Variante B). Die reine Entfernung eines der beiden `determine_genre()`-
+> Aufrufe ohne diesen Ersatz ist **nicht** empfohlen.
+>
+> **Empfehlung für Phase 3B: Variante A (Client liefert nur rohe Tags,
+> `genre_processor.py` priorisiert über die bestehende
+> `prioritize_genres()`), mit vorherigem End-to-End-Characterization-Test
+> auf Client-Ebene vor jeder Codeänderung.** Umsetzung erst nach
+> ausdrücklicher Freigabe.
