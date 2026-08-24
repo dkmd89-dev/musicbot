@@ -194,7 +194,42 @@ Vorbestand-Fehler.
 **P-1 damit abgeschlossen.** Verbleibend offen: P-2, P-14, P-3-DEFER-Punkte
 (ARCH-004 Abschnitt 7) sowie die zurückgestellte Folgeentscheidung
 „Temp-Verzeichnis-Bereinigung reaktivieren?" (eigenständiges Cleanup-Problem,
-unabhängig von der jetzt entfernten `FileUtils`-Klasse).
+unabhängig von der jetzt entfernten `FileUtils`-Klasse) — umgesetzt als
+ARCH-005, siehe `docs/MusicBot_ARCH-005_TempCleanup.md`.
+
+---
+
+## Phase 2/3 (Fortsetzung) — P-14: `advanced_podcast_finder.py` entfernt
+
+Nutzer-Freigabe: vor jeder Umsetzung vollständig auf aktive Consumer,
+Imports, Tests, Runtime-Nutzung und Dokumentationsreferenzen prüfen; nur
+bei nachgewiesener Nichtnutzung entfernen (nicht migrieren) — analog zum
+Präzedenzfall LEGACY-011 (`services/organizer.py`), wo dieselbe
+Fragestellung bereits einmal auftrat.
+
+Vollständige Prüfung ergab in jeder überprüfbaren Kategorie 0 Treffer:
+keine Python-Importe/Aufrufer (repo-weit), keine Tests, keine
+Shell-Skripte/Cron-Jobs/systemd-Units/Docker-Dateien (existieren im
+gesamten Repo ohnehin nicht), keine README-/Setup-Doku-Referenzen (nur die
+eigenen ARCH-003-Analysedokumente erwähnen den Namen). Einziger indirekter
+Hinweis auf frühere manuelle Nutzung: der Default-Podcast-Name im
+interaktiven Demo-Modus (`if __name__ == "__main__"`) entsprach exakt dem
+einen Eintrag in `mapping/podcast_rss_feeds.yaml` — die repo-seitige
+Analyse konnte die verbleibende Frage nach aktueller *manueller*
+Terminal-Nutzung technisch nicht klären (ein interaktives CLI-Tool
+hinterlässt dafür keine Spuren im Repo). Nutzer bestätigte auf explizite
+Nachfrage: nicht mehr in Gebrauch.
+
+`services/downloader/advanced_podcast_finder.py` (833 Zeilen) komplett
+entfernt — keine Migration nach `tools/`, keine Testdatei zu löschen (gab
+es nie). Import-Smoke-Test über die drei nächstgelegenen Module
+(`downloader.py`, `spotify_downloader.py`, `download_handler.py`) sowie
+voller Regressionslauf: 1005 bestanden, unverändert 15 Vorbestand-Fehler
+— exakt unverändert gegenüber dem Stand vor der Entfernung, wie für ein
+komplett unverdrahtetes Modul erwartet.
+
+**P-14 damit abgeschlossen.** Verbleibend offen: P-2, P-3-DEFER-Punkte
+(ARCH-004 Abschnitt 7).
 
 ---
 
