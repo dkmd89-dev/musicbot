@@ -39,7 +39,7 @@ verändert.
 from typing import Any, Dict, Optional
 
 from services.downloader.download.models import DownloadResult
-from services.downloader.utils.metadata.models import MetadataResult
+from services.metadata.models import MetadataResult
 
 
 async def call_process_single_track(

@@ -19,7 +19,7 @@ from services.downloader.utils.metadata_result_translator import (
     call_process_single_track,
     merge_metadata_result_into_dict,
 )
-from services.downloader.utils.metadata.models import MetadataResult
+from services.metadata.models import MetadataResult
 
 
 def run_async(coro):

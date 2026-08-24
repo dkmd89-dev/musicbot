@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 
 from logger import get_module_logger
 from utils.metadata_cache import MetadataCache as BaseMetadataCache
-from services.downloader.utils.metadata.models import MetadataResult
+from .models import MetadataResult
 
 
 class MetadataCacheHandler:

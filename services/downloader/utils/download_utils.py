@@ -51,7 +51,7 @@ from logger import get_module_logger
 from services.downloader.utils.enhanced_metadata_processor import (
     EnhancedMetadataProcessor as MetadataProcessorCore,
 )
-from services.downloader.utils.metadata.models import MetadataResult
+from services.metadata.models import MetadataResult
 from services.downloader.utils.errors import DownloadError
 from services.downloader.utils.metadata_result_translator import (
     build_playlist_track_result,

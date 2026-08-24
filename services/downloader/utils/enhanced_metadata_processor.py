@@ -23,7 +23,7 @@ from services.clients.genius_client import GeniusClient
 from utils.metadata_cache import MetadataCache
 from utils.singleton import SingletonMixin
 
-from services.downloader.utils.metadata.models import (
+from services.metadata.models import (
     MetadataResult,
     EnhancedProcessingStats,
     split_main_and_featuring,

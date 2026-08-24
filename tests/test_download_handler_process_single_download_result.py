@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from klassen.download_handler import DownloadHandler
-from services.downloader.utils.metadata.models import MetadataResult
+from services.metadata.models import MetadataResult
 
 
 def run_async(coro):

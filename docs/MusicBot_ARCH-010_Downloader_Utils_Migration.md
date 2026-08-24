@@ -2,10 +2,11 @@
 
 ## Status
 
-PHASE 3A/3B – METADATA-UNTERPROZESSOREN MIGRIERT (2026-08-24). Phase 3C–3H
-noch offen, Entscheidungsgate vor Phase 3C erreicht. Siehe Abschnitt 27
-„Ergebnisse" (Phase 1), Abschnitt 35 „Phase 2 — Architekturentscheidung"
-und Abschnitt 36 „Phase 3A/3B — Metadata-Unterprozessoren migriert".
+PHASE 3C – METADATA-MODELLE MIGRIERT (2026-08-24). Phase 3D–3H noch offen,
+Entscheidungsgate vor Phase 3D erreicht. Siehe Abschnitt 27 „Ergebnisse"
+(Phase 1), Abschnitt 35 „Phase 2 — Architekturentscheidung", Abschnitt 36
+„Phase 3A/3B — Metadata-Unterprozessoren migriert" und Abschnitt 37
+„Phase 3C — Metadata-Modelle migriert".
 
 ## Typ
 
@@ -1888,4 +1889,166 @@ Phase 3H — finale Regression
 ```
 
 **STOPP nach Phase 3A/3B. Keine automatische Fortsetzung mit Phase 3C.
+Wartet auf ausdrückliche Freigabe.**
+
+---
+
+# 37. Phase 3C — Metadata-Modelle migriert (2026-08-24)
+
+Nutzerfreigabe für Phase 3C erhalten. Umsetzung auf Branch
+`arch/arch-010-phase3c-metadata-models`.
+
+## 37.1 Vor-Migration-Verifikation
+
+Ausgangspunkt geprüft und bestätigt deckungsgleich mit dem erwarteten
+Phase-3A/3B-Endzustand: `services/metadata/` enthält die 9 bereits
+migrierten Unterprozessoren, `services/downloader/utils/metadata/`
+enthält nur noch `__init__.py` und `models.py`,
+`enhanced_metadata_processor.py` liegt unverändert unter
+`services/downloader/utils/`. Branch `main` sauber bis auf dieselben
+sessionsfremden Arbeitsverzeichnis-Änderungen wie in Phase 3A/3B (nicht
+angefasst).
+
+**Einzige Abweichung von der im Auftrag angenommenen Ausgangslage:**
+`services/metadata/__init__.py` ist entgegen der Auftragsbeschreibung
+(„bleibt leer") **nicht leer** — es exportiert seit einem separaten,
+ausdrücklichen Nutzerauftrag nach Phase 3A/3B die 9 öffentlichen Klassen
+(analog `services/clients/__init__.py`, siehe Abschnitt 36.2). Dies wurde
+als bekannte, bewusste Abweichung gewertet, nicht als defekter
+Repository-Zustand — `__init__.py` wurde in Phase 3C **nicht** angefasst
+(weder auf „leer" zurückgesetzt noch um `models.py`-Exporte erweitert),
+wie in Auftrag Abschnitt 7 gefordert.
+
+## 37.2 Consumer-Audit `models.py` (vor der Migration)
+
+Repo-weit verifiziert (dotted, relativ, slash, `TYPE_CHECKING`,
+`mock.patch`, dynamische Imports) — keine Annahmen aus Phase 2
+übernommen, alle Treffer einzeln geprüft:
+
+| Consumer | aktueller Import | Zielimport | Typ |
+|---|---|---|---|
+| `services/downloader/utils/enhanced_metadata_processor.py` | `from services.downloader.utils.metadata.models import (MetadataResult, EnhancedProcessingStats, split_main_and_featuring)` | `from services.metadata.models import (...)` | Produktion |
+| `services/downloader/download/interfaces.py` | `from services.downloader.utils.metadata.models import MetadataResult` | `from services.metadata.models import MetadataResult` | Produktion |
+| `services/downloader/utils/metadata_result_translator.py` | „ | „ | Produktion |
+| `services/downloader/utils/download_utils.py` | „ | „ | Produktion |
+| `services/metadata/artist_processor.py` (bereits migriert, jetzt Geschwisterdatei) | `from services.downloader.utils.metadata.models import split_main_and_featuring` | `from .models import split_main_and_featuring` (relativ, etablierter Stil wie `services/clients/`) | Produktion |
+| `services/metadata/cache.py` (bereits migriert, jetzt Geschwisterdatei) | `from services.downloader.utils.metadata.models import MetadataResult` | `from .models import MetadataResult` (relativ) | Produktion |
+| `tests/test_download_utils_metadata_translation.py` | `from services.downloader.utils.metadata.models import MetadataResult` | `from services.metadata.models import MetadataResult` | Test |
+| `tests/test_metadata_result_translator.py` | „ | „ | Test |
+| `tests/test_metadata_cache_handler.py` | „ | „ | Test |
+| `tests/test_download_handler_process_single_download_result.py` | „ | „ | Test |
+| `tests/test_split_main_and_featuring.py` | `from services.downloader.utils.metadata.models import split_main_and_featuring` (+ Docstring-Pfadangabe) | `from services.metadata.models import split_main_and_featuring` | Test |
+
+Keine `TYPE_CHECKING`-Referenzen, keine `mock.patch`-Ziele, keine
+dynamischen Imports auf `models.py` gefunden (repo-weit verifiziert).
+
+**Zusätzlich als aktuelle Zustandsbeschreibung korrigiert** (keine
+historische Doku): Docstring-Kommentar in
+`services/downloader/download/models.py` („`MetadataResult` ... lebt
+weiterhin in `services.downloader.utils.metadata.models`") — beschreibt
+den tatsächlichen, jetzt veralteten Ist-Zustand, nicht eine historische
+Entscheidung, daher aktualisiert.
+
+## 37.3 Migration
+
+`git mv services/downloader/utils/metadata/models.py services/metadata/models.py`.
+Implementierung byte-identisch bis auf die technisch erforderliche
+Pfad-Kopfzeile (`# services/downloader/utils/metadata/models.py` →
+`# services/metadata/models.py`, gleiches Muster wie bei allen bisherigen
+Verschiebungen in ARCH-009/ARCH-010). Keine Klassen-, Feld-, Default-,
+Typannotations-, Methoden- oder API-Änderung.
+
+**11 Consumer atomar in diesem Commit mitgezogen** (6 Produktion, 5 Test —
+siehe 37.2). `services/metadata/__init__.py` unverändert gelassen (siehe
+37.1).
+
+## 37.4 Verifikation
+
+**Import-Audit:** repo-weiter Grep auf
+`services.downloader.utils.metadata.models` (dotted) und
+`services/downloader/utils/metadata/models` (slash) — 0 verbleibende
+funktionale Referenzen in `.py`-Dateien. `docs/` bewusst unverändert
+gelassen (historische ARCH-Dokumente beschreiben korrekt den jeweils
+damaligen Zustand).
+
+**Import-Smoke-Test:** `services.metadata.models` sowie alle 9 bereits
+migrierten `services.metadata.*`-Module, `enhanced_metadata_processor.py`,
+`download/interfaces.py`, `metadata_result_translator.py`,
+`download_utils.py` — alle importierbar, kein `ImportError`, kein
+`ModuleNotFoundError`, kein Zirkelimport. Alter Pfad korrekt nicht mehr
+auffindbar (`ModuleNotFoundError` bei
+`import services.downloader.utils.metadata.models`).
+
+**Gezielte Tests** (15 Dateien: 5 direkt migrierte Consumer-Tests + 9
+bereits migrierte Metadata-Prozessor-Tests + 3 Facade-Grenztests, teils
+überlappend): 11 failed, 195 passed, 14 subtests passed — alle 11
+Fehlschläge exakt die bekannten Vorbestand-Fehler aus `test_auto_learn.py`
+(5) und `test_metadata_modules.py::TestTitleCleaner` (3, teils Subtests).
+
+**Vollständige Regression:**
+
+```text
+vorher (Baseline, Stand nach PR #15):  1009 passed, 15 known failures
+nachher (nach Phase 3C):               1009 passed, 15 known failures
+```
+
+`pytest tests/ -q` → `15 failed, 1009 passed, 5 warnings, 14 subtests
+passed`, zeilengenau identische Fehlschläge wie vor der Migration. **Keine
+neuen Fehler.**
+
+## 37.5 Strukturprüfung (Ist-Zustand nach Phase 3C)
+
+```text
+services/
+├── metadata/
+│   ├── __init__.py                  (Exporte, unverändert seit Nachtrag zu 3A/3B)
+│   ├── models.py                    (neu hier)
+│   ├── album_processor.py
+│   ├── artist_processor.py
+│   ├── auto_learn.py
+│   ├── cache.py
+│   ├── cover_processor.py
+│   ├── genre_processor.py
+│   ├── lyrics_processor.py
+│   ├── tag_writer.py
+│   └── title_cleaner.py
+│
+└── downloader/
+    └── utils/
+        ├── enhanced_metadata_processor.py   (unverändert am alten Ort)
+        ├── download_utils.py                (unverändert)
+        ├── download_result_reporter.py      (unverändert)
+        ├── download_artifact_cleanup.py     (unverändert)
+        ├── progress_tracker.py              (unverändert)
+        ├── errors.py                        (unverändert)
+        ├── metadata_result_translator.py    (unverändert)
+        └── metadata/
+            └── __init__.py                  (einziger verbleibender Inhalt, leer)
+```
+
+Entspricht exakt der im Arbeitsauftrag geforderten Reststruktur.
+
+## 37.6 Git
+
+- Branch: `arch/arch-010-phase3c-metadata-models`
+- Commit: siehe unten
+- PR: wird erstellt, **nicht gemergt**
+
+## 37.7 Verbleibende Phase-3-Arbeiten
+
+```text
+Phase 3D — enhanced_metadata_processor.py migrieren
+            + download_artifact_cleanup.py (gemeinsam, wegen der in
+            35.5 dokumentierten Reverse-Edge)
+Phase 3E — übrige Downloader-Dateien migrieren (download_utils.py,
+            download_result_reporter.py, progress_tracker.py, errors.py,
+            metadata_result_translator.py)
+Phase 3F — externe Consumer migrieren (bot.py, downloader.py,
+            download/interfaces.py, klassen/download_handler.py,
+            handlers/menu/rich_menu_handler.py)
+Phase 3G — alte services/downloader/utils/-Struktur entfernen
+Phase 3H — finale Regression
+```
+
+**STOPP nach Phase 3C. Keine automatische Fortsetzung mit Phase 3D.
 Wartet auf ausdrückliche Freigabe.**

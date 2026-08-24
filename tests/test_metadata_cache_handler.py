@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 from services.metadata.cache import MetadataCacheHandler
-from services.downloader.utils.metadata.models import MetadataResult
+from services.metadata.models import MetadataResult
 from utils.metadata_cache import MetadataCache
 
 

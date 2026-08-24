@@ -5,7 +5,7 @@ Dataclasses & Type Aliases für die Download-Pipeline.
 
 Diese Datei enthält ausschließlich reine Datenstrukturen (keine Logik).
 `MetadataResult` wird NICHT dupliziert – es lebt weiterhin in
-`services.downloader.utils.metadata.models` und wird von den
+`services.metadata.models` und wird von den
 Metadaten-Modulen verwendet. Hier geht es um die Download-Ebene
 (Playlist-/Single-Ergebnisse, Fortschritts-Tracking).
 """
