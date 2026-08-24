@@ -1,4 +1,4 @@
-# services/downloader/utils/download_artifact_cleanup.py
+# services/downloader/download_artifact_cleanup.py
 # -*- coding: utf-8 -*-
 """
 Cleanup fuer verwaiste Download-Artefakte in Config.DOWNLOAD_DIR.

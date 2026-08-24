@@ -48,7 +48,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from config import Config
 from utils.singleton import SingletonMixin
 from logger import get_module_logger
-from services.downloader.utils.enhanced_metadata_processor import (
+from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor as MetadataProcessorCore,
 )
 from services.metadata.models import MetadataResult

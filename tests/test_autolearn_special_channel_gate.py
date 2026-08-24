@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services.downloader.utils.enhanced_metadata_processor import (
+from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
 from utils.audio_enhancer import AudioEnhancer

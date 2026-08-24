@@ -31,7 +31,7 @@ from pathlib import Path
 import pytest
 
 from handlers.duplicate_handler import EnhancedDuplicateHandler
-from services.downloader.utils.enhanced_metadata_processor import (
+from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
 from utils.audio_enhancer import AudioEnhancer
@@ -269,7 +269,7 @@ def test_error_after_move_to_library_cleans_up_orphaned_source_file(
 ):
     """
     Temp-Cleanup Strategie C (primaer, siehe
-    services/downloader/utils/download_artifact_cleanup.py): schlaegt
+    services/downloader/download_artifact_cleanup.py): schlaegt
     move_to_library() fehl, nachdem original_path (Schritt 14) bereits
     gebunden wurde, muss der aeussere except-Block die verwaiste
     Quelldatei in DOWNLOAD_DIR gezielt aufraeumen - vorher gab es dafuer
