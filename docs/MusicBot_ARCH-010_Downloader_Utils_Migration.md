@@ -1692,9 +1692,20 @@ services/downloader/utils/metadata/tag_writer.py       → services/metadata/tag
 services/downloader/utils/metadata/title_cleaner.py    → services/metadata/title_cleaner.py
 ```
 
-**Neu angelegt:** `services/metadata/__init__.py` (leer — folgt der bereits
-etablierten Konvention von `services/downloader/utils/metadata/__init__.py`
-und `services/downloader/utils/__init__.py`, keine Re-Exports).
+**Neu angelegt und nachträglich aktualisiert:** `services/metadata/__init__.py`
+— exportiert die 9 öffentlichen Klassen der verschobenen Module
+(`AlbumProcessor`, `ArtistProcessor`, `AutoLearnManager`,
+`MetadataCacheHandler`, `CoverProcessor`, `GenreProcessor`,
+`LyricsProcessor`, `TagWriter`, `TitleCleaner`) über relative Importe +
+`__all__`, nach Nutzerentscheidung analog zur bereits etablierten
+Konvention von `services/clients/__init__.py`. Damit weicht
+`services/metadata/` bewusst von der leeren
+`services/downloader/utils/metadata/__init__.py`/`services/statistik/__init__.py`-
+Konvention ab — `services/metadata/` ist wie `services/clients/` eine neue,
+von außen konsumierbare Top-Level-Domain, kein internes Utility-Paket.
+Import-Smoke-Test (`from services.metadata import ...`, alle 9 Klassen)
+und volle Regression nach der Ergänzung erneut verifiziert (1009 bestanden,
+unverändert 15 Vorbestand-Fehler).
 
 **Technisch notwendige Änderungen an den 9 verschobenen Dateien (durch den
 neuen Pfad erzwungen, keine Verhaltensänderung):**
