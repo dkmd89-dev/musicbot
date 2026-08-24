@@ -1,7 +1,8 @@
-Klar — hier ist der Inhalt für **`docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`** zum Copy/Paste:
-
-````md
 # MusicBot ARCH-009 — Navidrome Migration Roadmap
+
+**Status: ABGESCHLOSSEN** (Phase 1 bis Folgeumsetzung, Stand 2026-08-24,
+Merge-Commit `d07cddb`). Nachfolgende Architekturarbeit außerhalb dieser
+Migration siehe `docs/MusicBot_POST-ARCH-009_Audit.md`.
 
 ## Zweck
 
@@ -469,8 +470,26 @@ notwendige Architekturentscheidung noch offen ist.
 Die Roadmap dient der Orientierung und Nachvollziehbarkeit. Die konkreten
 Arbeitsaufträge werden weiterhin schrittweise und einzeln erteilt.
 
-```
+---
 
-Ich würde diese Roadmap **erst auf `main` dokumentieren, nachdem Phase 2 gemerged wurde**. Die nächsten Phasen selbst bleiben dann bewusst offen, bis jeweils die vorherige Analyse abgeschlossen und entschieden ist.
-```
+# Verifikation (Post-ARCH-009-Audit, 2026-08-24)
+
+Die Prüfliste aus „Phase 9 — Finaler Navidrome-Migrationsabschluss" (oben)
+wurde im Rahmen des Post-ARCH-009-Architektur-Audits gegen den tatsächlichen
+Code verifiziert:
+
+- keine Telegram-Abhängigkeiten im Integrationsadapter — bestätigt
+  (`services/clients/navidrome_api.py` enthält keinen Telegram-Import)
+- keine Präsentationslogik im Client — bestätigt
+- keine ungeklärte Subprocess-Verantwortung — bestätigt
+  (`utils/navidrome_scan_trigger.py`, klar von der API-Kommunikation getrennt)
+- keine Legacy-Importe auf alte Navidrome-Strukturen — bestätigt
+  (`import api.navidrome_api`/`import api.navidrome_scan_trigger` liefern
+  `ModuleNotFoundError`)
+- keine unnötigen Migration Bridges — bestätigt (`execute_scan()` entfernt)
+- keine zyklischen Abhängigkeiten — bestätigt
+- Consumer verwenden die entschiedene Zielstruktur — bestätigt
+- Tests und Mock-Pfade sind konsistent — bestätigt
+
+Details und Methode: `docs/MusicBot_POST-ARCH-009_Audit.md`.
 

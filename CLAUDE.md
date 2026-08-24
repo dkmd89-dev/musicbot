@@ -86,6 +86,38 @@ DownloadHandler
    Navidrome
 ```
 
+## Schichtgrenzen (etabliert durch ARCH-009)
+
+```text
+handlers/
+    → Benutzerinteraktion / Telegram-Präsentation
+      (Nachrichtenversand, MarkdownV2-Formatierung, Callback-Handling)
+
+services/
+    → Fachliche bzw. technische Orchestrierung
+
+services/clients/
+    → externe Integrationsadapter (reine API-/HTTP-Kommunikation)
+      keine Telegram-Präsentation, keine fachliche Orchestrierung
+
+utils/
+    → wiederverwendbare technische Hilfs-/Runner-Komponenten,
+      einschließlich lokaler Subprocess-/Shell-Wrapper ohne externe
+      Netzwerkkommunikation (Beispiele: navidrome_scan_trigger.py,
+      audio_enhancer.py)
+
+api/
+    → keine MusicBot-Schicht mehr (vollständig entfernt, siehe
+      docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md)
+```
+
+Ein Modul, das externe Netzwerk-/API-Kommunikation durchführt, gehört nach
+`services/clients/`. Ein Modul, das nur lokale Prozesse/Shell-Kommandos
+steuert (kein Netzwerk), gehört nach `utils/` — nicht automatisch in
+`services/clients/`, nur weil es "technisch" ist. Telegram-spezifische
+Formatierung/Objekte (`Update`, `CallbackQuery`, `ParseMode`, Emoji-/
+MarkdownV2-Helfer) gehören ausschließlich in `handlers/`.
+
 Beim Arbeiten an einem Bereich immer prüfen:
 
 - Wer ruft ihn auf?
@@ -509,6 +541,14 @@ Keine Reihenfolge der Pipeline ohne Tests verändern.
 # 17. Externe Services
 
 Externe APIs und Tools nicht mit Core-Logik vermischen, wenn dies vermeidbar ist.
+
+Reine externe Integrationsadapter (API-/HTTP-Kommunikation) gehören
+strukturell nach `services/clients/` (Konvention seit ARCH-003 P-11 /
+ARCH-009, siehe Abschnitt 4 „Schichtgrenzen"). Aktuell dort: `genius_client.py`,
+`lastfm_client.py`, `musicbrainz_client.py`, `navidrome_api.py`. Lokale
+Subprocess-/Shell-Steuerung ohne echte Netzwerkkommunikation (z. B. der
+Navidrome-Scan-Trigger) gehört dagegen nach `utils/`, nicht nach
+`services/clients/`.
 
 Relevante Integrationen:
 

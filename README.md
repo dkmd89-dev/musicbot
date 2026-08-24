@@ -50,12 +50,12 @@ Ausführlicher, mit Datenfluss/Fehlerbehandlung pro Bereich: [`CLAUDE.md`](CLAUD
 |---|---|
 | `bot.py` | Einstiegspunkt — initialisiert Telegram-Application, Error-Handler, `RichMenuHandler` |
 | `config.py` | Zentrale Konfiguration, lädt Secrets aus `.env` |
-| `klassen/` | Zentrale Orchestrator-/Client-Klassen: `download_handler.py` (Dispatch YouTube/Spotify), `musicbrainz_client.py`, `lastfm_client.py`, `genius_client.py` |
+| `klassen/` | `download_handler.py` — zentraler Download-Orchestrator (Dispatch YouTube/Spotify), einziges verbliebenes Modul in diesem Verzeichnis |
 | `services/downloader/` | Download-Pipeline: `spotify_downloader.py`, `downloader.py`, `playlist_processor.py`, sowie `utils/` mit der eigentlichen Metadaten-Pipeline (`enhanced_metadata_processor.py`, `utils/metadata/*` — Artist-, Album-, Genre-, Cover-Processor) |
-| `services/` (übrige Dateien) | `statistik_service.py`, `organizer.py`, `notification_service.py`, `status_service.py` |
+| `services/clients/` | Reine externe Integrationsadapter (keine Telegram-Präsentation, keine Fachlogik): `genius_client.py`, `lastfm_client.py`, `musicbrainz_client.py`, `navidrome_api.py` |
+| `services/` (übrige Dateien) | `statistik_service.py` (dünne Fassade) + `services/statistik/` (`play_history_repository.py`, `play_history_poller.py`, `statistics_calculator.py`, `chart_renderer.py`) |
 | `handlers/` | Telegram-Handler: Menüsystem (`handlers/menu/`), Admin-Funktionen (`handlers/admin/`), Navidrome-Menü, Statistik, Fehlerbehandlung |
-| `api/` | `navidrome_api.py` — Subsonic-API-Client für Navidrome |
-| `utils/` | Wiederverwendbare Bausteine: `genre_map.py`, `artist_map.py`, `filenamefixer.py`, `helpers.py`, Caches (`lyrics_cache.py` u. a.), Singleton-Basisklasse |
+| `utils/` | Wiederverwendbare Bausteine: `genre_map.py`, `artist_map.py`, `filenamefixer.py`, `helpers.py`, Caches (`lyrics_cache.py` u. a.), Singleton-Basisklasse, sowie lokale technische Runner ohne Telegram-/API-Kopplung (`navidrome_scan_trigger.py`, `audio_enhancer.py`) |
 | `mapping/` | YAML-/JSON-Dateien mit Fachlogik (Genre-/Artist-Regeln) — **keine belanglose Konfiguration**, siehe unten |
 | `tests/` | ~360 Tests (pytest) — Characterization-Tests für die Produktionsklassen, siehe [`docs/MusicBot_ENGINEERING_BASELINE.md`](docs/MusicBot_ENGINEERING_BASELINE.md) |
 | `docs/` | Engineering-Baseline (Risiko-Tabelle, Testabdeckung, Roadmap) |
