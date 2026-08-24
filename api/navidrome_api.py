@@ -24,6 +24,8 @@ from helfer.markdown_helfer import escape_md_v2
 from config import get_config
 from functools import lru_cache
 
+from api.navidrome_scan_trigger import NavidromeScanTrigger, ScanTimeoutError
+
 # ===== LOGGER AUF ERROR SETZEN (nur Fehler protokollieren) =====
 _navidrome_logger = get_module_logger("NavidromeAPI")
 _navidrome_logger.logger.setLevel(logging.ERROR)
@@ -134,82 +136,32 @@ class NavidromeAPI:
 
     @classmethod
     async def execute_scan(cls) -> tuple[bool, str]:
-        """Führt einen Navidrome-Scan aus."""
+        """
+        Führt einen Navidrome-Scan aus.
+
+        ARCH-009 Phase 4: die Docker-/Subprocess-/Timeout-Steuerung liegt
+        seit dieser Auslagerung in api/navidrome_scan_trigger.py
+        (NavidromeScanTrigger), getrennt von der Subsonic-API-Kommunikation
+        dieser Klasse. execute_scan() bleibt als unveränderte öffentliche
+        Schnittstelle bestehen (Consumer: handlers/menu/rich_menu_handler.py)
+        und baut weiterhin die Telegram-MarkdownV2-Nachricht (bewusst nicht
+        Teil dieses Schritts, siehe
+        docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md).
+        """
         log_handler_info("Starte Navidrome Scan-Prozess.", context="NavidromeAPI")
         try:
-            if (
-                not hasattr(Config, "NAVIDROME_SCAN_COMMAND")
-                or not _get_navidrome_config().NAVIDROME_SCAN_COMMAND
-            ):
-                err_msg = (
-                    "NAVIDROME_SCAN_COMMAND ist nicht in Config definiert oder leer. "
-                    "Bitte definieren Sie es, um die Scan-Funktionalität zu aktivieren."
-                )
-                log_handler_error(
-                    f"Konfigurationsfehler: {err_msg}", context="NavidromeAPI"
-                )
-                raise AttributeError(err_msg)
+            result = await NavidromeScanTrigger.run_scan()
 
-            command_to_execute = _get_navidrome_config().NAVIDROME_SCAN_COMMAND
-            timeout = getattr(Config, "NAVIDROME_SCAN_TIMEOUT", 300)
-
-            if isinstance(command_to_execute, list):
-                command_to_execute = " ".join(command_to_execute)
-                log_handler_info(
-                    "NAVIDROME_SCAN_COMMAND war eine Liste, wurde für subprocess_shell in String umgewandelt.",
-                    context="NavidromeAPI",
-                )
-
-            if not isinstance(command_to_execute, str):
-                err_msg = "NAVIDROME_SCAN_COMMAND muss ein String sein, auch nach der Konvertierung."
-                log_handler_error(f"Typfehler: {err_msg}", context="NavidromeAPI")
-                raise TypeError(err_msg)
-
-            log_handler_info(
-                f"Starte Navidrome Scan mit Befehl: '{command_to_execute}' und Timeout: {timeout}s",
-                context="NavidromeAPI",
-            )
-
-            process = await asyncio.create_subprocess_shell(
-                command_to_execute,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
-            log_handler_debug(
-                f"Unterprozess gestartet (PID: {process.pid}), warte auf Beendigung.",
-                context="NavidromeAPI",
-            )
-
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=timeout
-            )
-
-            stdout_decoded = stdout.decode("utf-8", errors="ignore").strip()
-            stderr_decoded = stderr.decode("utf-8", errors="ignore").strip()
-
-            if process.returncode == 0:
-                message = f"{EMOJI['scan']} Scan erfolgreich: \n```{escape_md_v2(stdout_decoded)}```"
-                log_handler_info(
-                    f"Navidrome Scan erfolgreich. Stdout: {stdout_decoded}",
-                    context="NavidromeAPI",
-                )
+            if result.success:
+                message = f"{EMOJI['scan']} Scan erfolgreich: \n```{escape_md_v2(result.stdout)}```"
                 return True, message
             else:
-                message = f"{EMOJI['error']} Scan fehlgeschlagen: \n```{escape_md_v2(stderr_decoded)}```"
-                log_handler_error(
-                    f"Navidrome Scan fehlgeschlagen. Return Code: {process.returncode}, Stderr: {stderr_decoded}",
-                    context="NavidromeAPI",
-                )
+                message = f"{EMOJI['error']} Scan fehlgeschlagen: \n```{escape_md_v2(result.stderr)}```"
                 return False, message
-        except asyncio.TimeoutError:
-            log_handler_error(
-                f"Navidrome Scan-Timeout ({timeout} Sekunden) erreicht.",
-                context="NavidromeAPI",
-            )
+        except ScanTimeoutError as e:
             return (
                 False,
-                f"{EMOJI['warning']} Scan dauert länger als {timeout} Sekunden \\– bitte im Log prüfen\\.",
+                f"{EMOJI['warning']} Scan dauert länger als {e.timeout_seconds} Sekunden \\– bitte im Log prüfen\\.",
             )
         except Exception as e:
             log_handler_error(

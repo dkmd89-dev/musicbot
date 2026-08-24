@@ -110,85 +110,38 @@ Nicht Bestandteil dieser Phase:
 
 ---
 
+## ARCH-009 Phase 3 — `execute_scan()` / Subprocess-Verantwortung analysieren
+
+Abgeschlossen.
+
+Ergebnis: `execute_scan()` vermischte Konfigurationsvalidierung,
+Docker-Subprocess-/Timeout-Steuerung und Telegram-MarkdownV2-Formatierung.
+Vier Zielarchitektur-Varianten (A-D) bewertet, empfohlen wurde eine
+gestufte Umsetzung (zuerst Subprocess-Extraktion, Telegram-Trennung als
+separater, späterer Schritt). Details:
+`docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md`.
+
+---
+
+## ARCH-009 Phase 4 — Subprocess-Verantwortung extrahieren
+
+Abgeschlossen.
+
+Die Docker-/Subprocess-/Timeout-Steuerung wurde 1:1 nach
+`api/navidrome_scan_trigger.py` (`NavidromeScanTrigger`) ausgelagert.
+`NavidromeAPI.execute_scan()` bleibt als öffentliche Schnittstelle
+unverändert bestehen und fungiert als Bridge; kein Consumer musste
+angepasst werden. Telegram-Formatierung, `check_connection()` und die
+Zielposition `services/clients/` blieben bewusst unangetastet. Details:
+`docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md` (Abschnitt „Phase 4
+— Umsetzung“).
+
+---
+
 # Nächste Phasen
 
-## Phase 3 — `execute_scan()` / Subprocess-Verantwortung analysieren
-
-### Ziel
-
-Ausschließlich analysieren, welche Verantwortlichkeiten aktuell in
-`execute_scan()` liegen und wo diese in der Zielarchitektur hingehören.
-
-### Prüfen
-
-* vollständigen Ablauf von `execute_scan()`
-* API-Kommunikation
-* lokale Shell-/Subprocess-Ausführung
-* Scan-/Bibliotheksoperation
-* Rückgabewerte
-* Fehlerbehandlung
-* Logging
-* Konfiguration
-* Telegram-/Nachrichtenaufbereitung
-* direkte und indirekte Consumer
-* vorhandene Tests
-* Mock-/Patch-Ziele
-* fehlende Charakterisierungstests
-
-### Kernfrage
-
-Es soll entschieden werden, ob `execute_scan()`:
-
-1. beim Navidrome-Integrationskontext bleibt,
-2. in einen separaten Service ausgelagert wird,
-3. eine bestehende Infrastruktur-/Process-Komponente nutzen sollte,
-4. oder in mehrere Verantwortlichkeiten aufgeteilt werden muss.
-
-### Nicht Bestandteil
-
-* keine Codeänderungen
-* keine Dateiverschiebungen
-* keine DI-Umstellung
-* keine Änderung an Handlern
-* keine Änderung an `check_connection()`
-* keine vorgezogene Migration nach `services/clients/`
-
-### Entscheidungsgate
-
-Erst nach der Analyse entscheidet der Nutzer über die konkrete
-Zielarchitektur und Umsetzung.
-
----
-
-## Phase 4 — Entschiedene `execute_scan()`-Architektur umsetzen
-
-### Voraussetzung
-
-Phase 3 ist abgeschlossen und eine konkrete Architekturvariante wurde
-vom Nutzer bestätigt.
-
-### Ziel
-
-Nur die in Phase 3 entschiedene Verantwortlichkeitsaufteilung umsetzen.
-
-### Grundsatz
-
-Dieser Schritt wird in einem eigenen Branch umgesetzt.
-
-Keine zusätzlichen Navidrome-Migrationen ohne separate Entscheidung.
-
-### Abschluss
-
-* betroffene Tests aktualisieren bzw. ergänzen
-* Regressionstest
-* Import-/Dependency-Prüfung
-* Review
-* PR
-* Merge
-
-Danach erst mit der nächsten Phase fortfahren.
-
----
+Phase 3 und Phase 4 sind abgeschlossen (siehe oben unter „Bereits
+abgeschlossen“).
 
 ## Phase 5 — Verbleibende Präsentations-/Telegram-Verantwortlichkeiten prüfen
 

@@ -346,3 +346,131 @@ den in Abschnitt 8 aufgeführten Punkten gebeten — insbesondere:
 **Es wird nicht selbstständig mit Phase 4 begonnen.** Umsetzung erfolgt
 erst nach expliziter Nutzerentscheidung, in einem eigenen Branch, mit
 eigenem PR/Review/Merge-Zyklus wie in allen vorherigen ARCH-009-Schritten.
+
+---
+
+## Phase 4 — Umsetzung (2026-08-24, Branch `arch/arch-009-phase4-execute-scan-extraction`)
+
+Nutzer-Entscheidung: Variante B (Subprocess-/Konfigurationslogik als eigene
+Klasse auslagern), Telegram-MarkdownV2-Formatierung **nicht** in diesem
+Schritt umbauen (Variante D bleibt separater, künftiger Schritt),
+`check_connection()` unverändert, keine Verschiebung nach
+`services/clients/`.
+
+### Neue Datei `api/navidrome_scan_trigger.py`
+
+- `ScanRunResult` (`dataclass`): `success: bool`, `returncode: int`,
+  `stdout: str`, `stderr: str` — rohes Subprocess-Ergebnis ohne
+  Telegram-Formatierung.
+- `ScanTimeoutError(Exception)`: trägt `timeout_seconds`, ersetzt das
+  bisherige implizite `asyncio.TimeoutError`-Durchreichen mit dem in der
+  Telegram-Nachricht benötigten Sekundenwert.
+- `NavidromeScanTrigger.run_scan()` (`@classmethod async`): 1:1 aus
+  `execute_scan()` übernommene Konfigurationsvalidierung, Kommando-
+  Normalisierung, Typvalidierung, Subprocess-Start
+  (`asyncio.create_subprocess_shell`) und Timeout-Steuerung
+  (`asyncio.wait_for`). Verhalten unverändert — dieselben Exceptions
+  (`AttributeError`, `TypeError`), derselbe Timeout-Wert
+  (`Config.NAVIDROME_SCAN_TIMEOUT`), dieselben Log-Zeilen.
+- **Bewusste Design-Entscheidung — Log-Kontext bleibt `"NavidromeAPI"`**:
+  `api/navidrome_api.py` setzt den Logger dieses Kontexts beim Modul-Import
+  auf ERROR-Level (`_navidrome_logger.logger.setLevel(logging.ERROR)`,
+  Zeile 29), wodurch alle `log_handler_info`/`log_handler_debug`-Aufrufe in
+  `execute_scan()` schon vor dieser Auslagerung praktisch nie ausgegeben
+  wurden. Ein neuer Kontextname (z. B. `"NavidromeScanTrigger"`) hätte
+  einen neuen, nicht level-eingeschränkten Logger erzeugt und damit
+  zusätzliche INFO-/DEBUG-Ausgabe verursacht — eine Verhaltensänderung, die
+  der Auftrag ausdrücklich ausschloss („Bestehende Verhaltensweise
+  erhalten“). Deshalb loggt `NavidromeScanTrigger` weiterhin unter
+  `context="NavidromeAPI"`, obwohl der Code jetzt in einem anderen Modul
+  liegt.
+- **Kein Cross-Import mit `api/navidrome_api.py`**: `_get_scan_config()` ist
+  ein eigener, kleiner `@lru_cache`-Wrapper um `config.get_config()`, nicht
+  ein Import von `api.navidrome_api._get_navidrome_config()` — dadurch kein
+  Zyklus, da `navidrome_api.py` umgekehrt `NavidromeScanTrigger` importiert.
+  `get_config()` selbst ist bereits ein globaler Singleton (`config.py`),
+  beide Caches liefern dieselbe `Config`-Instanz.
+
+### `api/navidrome_api.py::execute_scan()` — Bridge
+
+`execute_scan()` bleibt als öffentliche Schnittstelle unverändert bestehen
+(gleiche Signatur, gleicher Rückgabetyp `tuple[bool, str]`, gleicher
+einziger Consumer `handlers/menu/rich_menu_handler.py:727` — **keine
+Codeänderung an diesem Consumer nötig**, wie im Auftrag gefordert). Intern
+ruft es jetzt `await NavidromeScanTrigger.run_scan()` auf und übersetzt
+Ergebnis/Exception in dieselben Telegram-MarkdownV2-Nachrichten wie zuvor:
+
+- `ScanRunResult(success=True, ...)` → identische Erfolgsnachricht
+  (`EMOJI['scan']`, `escape_md_v2(result.stdout)`).
+- `ScanRunResult(success=False, ...)` → identische Fehlernachricht
+  (`EMOJI['error']`, `escape_md_v2(result.stderr)`).
+- `ScanTimeoutError` → identische Timeout-Nachricht, jetzt mit
+  `e.timeout_seconds` statt der vorher per Closure sichtbaren lokalen
+  `timeout`-Variable.
+- alle sonstigen Exceptions (inkl. `AttributeError`/`TypeError` aus der
+  Konfigurationsvalidierung) → identische generische Fehlermeldung, wie
+  zuvor über denselben `except Exception`-Zweig.
+
+### Tests
+
+- **Neu:** `tests/test_navidrome_scan_trigger.py` (5 Tests) — direkte
+  Charakterisierung von `NavidromeScanTrigger.run_scan()`: Erfolg,
+  `returncode != 0`, Timeout (inkl. `timeout_seconds`-Wert auf der
+  Exception), fehlendes `NAVIDROME_SCAN_COMMAND`, sowie **eine neue
+  Testabdeckung** für den zuvor ungetesteten Listen-Normalisierungszweig
+  (Schritt 2 aus der Phase-3-Analyse, Abschnitt 2 der dortigen fehlenden
+  Testabdeckung) — verifiziert, dass eine Listen-`NAVIDROME_SCAN_COMMAND`
+  korrekt zu einem String zusammengefügt wird.
+- **Geändert:** `tests/test_navidrome_api_characterization.py::TestExecuteScan`
+  (4 Tests, unveränderte Anzahl) — testet jetzt ausschließlich die
+  Bridge-Formatierung von `execute_scan()`, gemockt auf Ebene
+  `NavidromeScanTrigger.run_scan()` (`patch.object`) statt des Subprocess
+  selbst. Patch-Ziele `api.navidrome_api.asyncio.create_subprocess_shell`/
+  `_get_navidrome_config`/`Config` entfallen für diese Tests, da die
+  Subprocess-Ebene nicht mehr in `api/navidrome_api.py` liegt.
+- `tests/test_rich_menu_handler.py::TestHandleNavidromeScan` (4 Tests):
+  unverändert — mockt bereits auf Ebene
+  `handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan` (öffentliche
+  Bridge-Schnittstelle), daher von der internen Umstrukturierung nicht
+  betroffen.
+
+### Regressionslauf
+
+**Gezielt:** 73 Tests grün
+(`test_navidrome_scan_trigger.py`, `test_navidrome_api_characterization.py`,
+`test_navidrome_api_logging.py`, `test_navidrome_api_timeout.py`,
+`test_rich_menu_handler.py`, `test_navidrome_menu_handler.py`,
+`test_play_history_poller.py`) — 68 vorher + 5 neue.
+
+**Vollständig:** 1008 bestanden (vorher 1003 — Differenz von 5 entspricht
+exakt den 5 neuen Tests in `test_navidrome_scan_trigger.py`), unverändert
+15 bekannte Vorbestand-Fehler (`test_auto_learn.py`,
+`test_metadata_modules.py`, `test_suite.py` RichMenuSystem/
+MenuIntegration), keine neuen Fehlschläge.
+
+### Import-Smoke-Test
+
+`python3 -c "from api.navidrome_api import NavidromeAPI; from api.navidrome_scan_trigger import NavidromeScanTrigger, ScanRunResult, ScanTimeoutError"`
+— erfolgreich, kein Zirkel-Import zwischen `api/navidrome_api.py` und
+`api/navidrome_scan_trigger.py`.
+
+### Nicht Bestandteil dieses Schritts (wie vorgegeben)
+
+- Telegram-MarkdownV2-Formatierung bleibt vollständig in
+  `NavidromeAPI.execute_scan()` — keine Verschiebung in den Handler.
+- `check_connection()` unverändert.
+- Keine Verschiebung nach `services/clients/`.
+- Keine Änderung an `handlers/menu/rich_menu_handler.py` (Bridge macht das
+  überflüssig).
+- Die in Phase 3 Abschnitt 8 offen gelassenen Punkte 3 (strukturiertes
+  Ergebnisobjekt statt `tuple[bool, str]` für den öffentlichen
+  Rückgabewert von `execute_scan()`), 5 (toter `except`-Pfad im Handler)
+  und 6 (45-Sekunden-Timeout-Beobachtung) bleiben unverändert offen —
+  keine davon war Teil dieses Auftrags.
+
+**ARCH-009 Phase 4 damit abgeschlossen.** Verbleibend offen: die in
+Abschnitt 8 dieses Dokuments sowie in
+`docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md` beschriebenen
+Phasen 5 (restliche Telegram-Präsentationsanteile, inkl. der jetzt in
+`execute_scan()` verbliebenen Formatierung), 6-9 (Zielposition/DI des
+verbleibenden Adapters) — je eigene, spätere Nutzerentscheidung.
