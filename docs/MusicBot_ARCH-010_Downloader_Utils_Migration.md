@@ -2,15 +2,17 @@
 
 ## Status
 
-PHASE 3F – EXTERNE CONSUMER GEPRÜFT, BEREITS VOLLSTÄNDIG MIGRIERT
-(2026-08-24). Phase 3G/3H noch offen, Entscheidungsgate vor Phase 3G
-erreicht. Siehe Abschnitt 27 „Ergebnisse" (Phase 1), Abschnitt 35
-„Phase 2 — Architekturentscheidung", Abschnitt 36
+PHASE 3G – ALTE `services/downloader/utils/`-STRUKTUR ENTFERNT
+(2026-08-24). Phase 3H (formaler Abschluss) noch offen, Entscheidungsgate
+vor Phase 3H erreicht. Siehe Abschnitt 27 „Ergebnisse" (Phase 1),
+Abschnitt 35 „Phase 2 — Architekturentscheidung", Abschnitt 36
 „Phase 3A/3B — Metadata-Unterprozessoren migriert", Abschnitt 37
 „Phase 3C — Metadata-Modelle migriert", Abschnitt 38
 „Phase 3D — Metadata-Facade + Downloader-Cleanup atomar migriert",
-Abschnitt 39 „Phase 3E — Verbleibende Downloader-Dateien migriert" und
-Abschnitt 40 „Phase 3F — Externe Consumer migrieren + Vorabschluss-Audit".
+Abschnitt 39 „Phase 3E — Verbleibende Downloader-Dateien migriert",
+Abschnitt 40 „Phase 3F — Externe Consumer migrieren + Vorabschluss-Audit"
+und Abschnitt 41 „Phase 3G — Alte services/downloader/utils/-Struktur
+entfernt".
 
 ## Typ
 
@@ -2606,3 +2608,156 @@ Phase 3H — finale Regression
 **STOPP nach Phase 3F. Keine weiteren ARCH-010-Phasen ausgeführt.
 `services/downloader/utils/` nicht entfernt. Nicht gemergt. Wartet auf
 ausdrückliche Freigabe für Phase 3G.**
+
+---
+
+# 41. Phase 3G — Alte `services/downloader/utils/`-Struktur entfernt (2026-08-24)
+
+Nutzerfreigabe für Phase 3G erhalten. Umsetzung auf Branch
+`arch/arch-010-phase3g-remove-old-structure`.
+
+## 41.1 Pre-Deletion-Audit
+
+Vollständiger repo-weiter Audit vor jeder Löschung — alle Dateitypen,
+dotted + slash, alte Modulnamen aller 17 ARCH-010-Dateien einzeln,
+`mock.patch`-Ziele, `TYPE_CHECKING`, dynamische Imports,
+Config/YAML/JSON/`.cfg`/`.ini`/`.toml`-Referenzen.
+
+**Ergebnis: genau 2 verbleibende Treffer, beide bereits in Phase 3F
+identifiziert und geprüft, keine neuen Funde:**
+
+| Fundstelle | Funktional? | Bewertung |
+|---|---|---|
+| `services/downloader/playlist_processor.py:1` (Kopfzeilen-Kommentar) | nein | vorbestehend, außerhalb des ARCH-010-Scopes (Datei war nie Teil der Migration) — unverändert gelassen |
+| `tests/test_download_handler_send_report_message.py:6` (Docstring) | nein | historisch korrekt (Präteritum, Vor-ARCH-007-Zustand) — unverändert gelassen |
+
+0 funktionale Python-Import-Referenzen. Kein Grund zum Stoppen — Löschung
+wie geplant durchgeführt.
+
+**Zusätzlich gefunden: eine aktuelle (nicht-historische)
+Dokumentationsstelle, die den alten Pfad als Ist-Zustand behauptete:**
+`README.md`, Abschnitt „Projektstruktur", Zeile zu `services/downloader/`
+— beschrieb noch „sowie `utils/` mit der eigentlichen Metadaten-Pipeline
+(`enhanced_metadata_processor.py`, `utils/metadata/*`...)". Das war seit
+Phase 3D/3B falsch. Aktualisiert (siehe 41.3) — im Rahmen dieser Phase
+ausdrücklich erlaubt („aktualisiere ausschließlich aktuelle
+Dokumentationsstellen, die den alten Pfad als aktuellen Projektstand
+darstellen"). `CLAUDE.md` und `docs/MusicBot_ENGINEERING_BASELINE.md`
+geprüft — keine aktuelle Fehlbehauptung gefunden (`ENGINEERING_BASELINE.md`s
+zahlreiche Treffer sind ausschließlich historische, im Präteritum
+verfasste Changelog-Einträge, korrekt für den jeweils damaligen Stand).
+
+## 41.2 Umsetzung
+
+Entfernt (`git rm` + `rmdir`):
+
+```text
+services/downloader/utils/metadata/__init__.py   (leer)
+services/downloader/utils/metadata/               (Verzeichnis)
+services/downloader/utils/__init__.py             (leer)
+services/downloader/utils/                        (Verzeichnis)
+```
+
+Beide `__init__.py` waren leer und enthielten keine Re-Exports oder
+sonstige Logik — reine Entfernung ohne Inhaltsverlust. Zusätzlich
+zugehörige, nicht versionierte `__pycache__`-Verzeichnisse entfernt (reine
+Bytecode-Caches der bereits in Phase 3B–3E verschobenen/entfernten
+Quelldateien, keine Quelltextänderung).
+
+**Keine Änderung an `services/metadata/`, an der ARCH-005-Reverse-Edge,
+an sonstigen Dateien in `services/downloader/` außer der reinen
+Verzeichnisentfernung.**
+
+## 41.3 Aktualisierte Dokumentation
+
+`README.md`, Abschnitt „Projektstruktur": Zeile zu `services/downloader/`
+korrigiert (listet jetzt die tatsächlichen 9 Dateien + `download/`-
+Unterpaket, keine `utils/`-Erwähnung mehr) und neue Zeile für
+`services/metadata/` ergänzt (Facade + 9 Unterprozessoren + `models.py`).
+
+Keine historischen Phase-1/2/3A–3F-Abschnitte dieses Dokuments
+rückwirkend verändert — deren damalige Aussagen (Planung, Zwischenstände)
+waren zum jeweiligen Zeitpunkt korrekt.
+
+## 41.4 Verifikation (nach der Löschung)
+
+1. `services/downloader/utils/` existiert nicht mehr — bestätigt.
+2. `services/downloader/utils/metadata/` existiert nicht mehr — bestätigt.
+3. 0 funktionale Referenzen auf die alte Struktur — bestätigt (identisch
+   zu 41.1, keine neuen Funde durch die Löschung selbst möglich).
+4. Keine neuen Imports/Zirkelimporte — bestätigt per Smoke-Test.
+5. Zielmodule weiterhin importierbar — bestätigt.
+
+**Import-Smoke-Test:** `services.downloader.{download_utils,
+download_result_reporter, progress_tracker, errors,
+metadata_result_translator, download_artifact_cleanup, downloader,
+playlist_processor, spotify_downloader}`, `services.metadata`,
+`services.metadata.enhanced_metadata_processor`, `services.metadata.models`,
+`bot`, `klassen.download_handler`, `handlers.menu.rich_menu_handler` —
+alle importierbar, kein `ImportError`, kein `ModuleNotFoundError`, kein
+Zirkelimport. `import services.downloader.utils` liefert erwartungsgemäß
+`ModuleNotFoundError`.
+
+**Gezielte Tests** (12 Dateien): **148 passed, 0 failed**.
+
+**Vollständige Regression:**
+
+```text
+vorher (Baseline, Stand nach PR #19):  1009 passed, 15 known failures
+nachher (nach Phase 3G):               1009 passed, 15 known failures
+```
+
+`pytest tests/ -q` → `15 failed, 1009 passed, 5 warnings, 14 subtests
+passed`, zeilengenau identisch zur Baseline. **Keine neuen Fehler.**
+
+## 41.5 Strukturprüfung (Ist-Zustand nach Phase 3G)
+
+```text
+services/
+├── clients/         (unverändert, ARCH-009)
+├── statistik/        (unverändert, ARCH-003 P-6)
+├── metadata/
+│   ├── __init__.py
+│   ├── models.py
+│   ├── enhanced_metadata_processor.py
+│   ├── album_processor.py
+│   ├── artist_processor.py
+│   ├── auto_learn.py
+│   ├── cache.py
+│   ├── cover_processor.py
+│   ├── genre_processor.py
+│   ├── lyrics_processor.py
+│   ├── tag_writer.py
+│   └── title_cleaner.py
+│
+└── downloader/
+    ├── downloader.py
+    ├── playlist_processor.py
+    ├── spotify_downloader.py
+    ├── download_utils.py
+    ├── download_result_reporter.py
+    ├── download_artifact_cleanup.py
+    ├── progress_tracker.py
+    ├── errors.py
+    ├── metadata_result_translator.py
+    └── download/
+```
+
+`services/downloader/utils/` existiert nicht mehr. Entspricht exakt der
+im Arbeitsauftrag geforderten Zielstruktur.
+
+## 41.6 Git
+
+- Branch: `arch/arch-010-phase3g-remove-old-structure`
+- Commit: siehe unten
+- PR: wird erstellt, **nicht gemergt**
+
+## 41.7 Verbleibende ARCH-010-Arbeiten
+
+```text
+Phase 3H — finale Regression (bereits in 41.4 durchgeführt und bestätigt;
+            formaler Abschlussschritt/Audit steht noch aus)
+```
+
+**STOPP nach Phase 3G. Phase 3H nicht automatisch begonnen. Nicht
+gemergt. Wartet auf ausdrückliche Freigabe für Phase 3H.**

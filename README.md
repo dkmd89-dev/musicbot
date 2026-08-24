@@ -51,7 +51,8 @@ Ausführlicher, mit Datenfluss/Fehlerbehandlung pro Bereich: [`CLAUDE.md`](CLAUD
 | `bot.py` | Einstiegspunkt — initialisiert Telegram-Application, Error-Handler, `RichMenuHandler` |
 | `config.py` | Zentrale Konfiguration, lädt Secrets aus `.env` |
 | `klassen/` | `download_handler.py` — zentraler Download-Orchestrator (Dispatch YouTube/Spotify), einziges verbliebenes Modul in diesem Verzeichnis |
-| `services/downloader/` | Download-Pipeline: `spotify_downloader.py`, `downloader.py`, `playlist_processor.py`, sowie `utils/` mit der eigentlichen Metadaten-Pipeline (`enhanced_metadata_processor.py`, `utils/metadata/*` — Artist-, Album-, Genre-, Cover-Processor) |
+| `services/downloader/` | Download-Pipeline: `spotify_downloader.py`, `downloader.py`, `playlist_processor.py`, `download_utils.py`, `download_result_reporter.py`, `download_artifact_cleanup.py`, `progress_tracker.py`, `errors.py`, `metadata_result_translator.py`, sowie `download/` mit den ausgelagerten Orchestrierungs-Modulen (Cache/Jahr/Channel/Executor/Formatters) |
+| `services/metadata/` | Metadaten-Pipeline (ARCH-010): `enhanced_metadata_processor.py` als Facade, sowie die Unterprozessoren `album_processor.py`, `artist_processor.py`, `auto_learn.py`, `cache.py`, `cover_processor.py`, `genre_processor.py`, `lyrics_processor.py`, `tag_writer.py`, `title_cleaner.py`, `models.py` |
 | `services/clients/` | Reine externe Integrationsadapter (keine Telegram-Präsentation, keine Fachlogik): `genius_client.py`, `lastfm_client.py`, `musicbrainz_client.py`, `navidrome_api.py` |
 | `services/` (übrige Dateien) | `statistik_service.py` (dünne Fassade) + `services/statistik/` (`play_history_repository.py`, `play_history_poller.py`, `statistics_calculator.py`, `chart_renderer.py`) |
 | `handlers/` | Telegram-Handler: Menüsystem (`handlers/menu/`), Admin-Funktionen (`handlers/admin/`), Navidrome-Menü, Statistik, Fehlerbehandlung |
