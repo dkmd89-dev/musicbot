@@ -17,7 +17,7 @@ from telegram.error import TelegramError
 from config import Config
 from logger import get_module_logger, EnhancedLogger
 from helfer.markdown_helfer import escape_md_v2, md_bold, md_code
-from api.navidrome_api import NavidromeAPI
+from services.clients.navidrome_api import NavidromeAPI
 
 
 @dataclass

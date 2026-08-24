@@ -22,7 +22,7 @@ bot.py/handlers/mugge_statistik_handler.py unverändert bleiben können.
 
 from typing import Any, Dict, List, Optional
 
-from api.navidrome_api import NavidromeAPI
+from services.clients.navidrome_api import NavidromeAPI
 from config import Config
 from logger import get_module_logger
 
