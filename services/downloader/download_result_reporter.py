@@ -1,4 +1,4 @@
-# services/downloader/utils/download_result_reporter.py
+# services/downloader/download_result_reporter.py
 # -*- coding: utf-8 -*-
 
 from collections import Counter

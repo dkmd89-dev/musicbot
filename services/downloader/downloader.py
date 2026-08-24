@@ -1,13 +1,13 @@
 # downloader.py
 
 from logger import get_module_logger
-from services.downloader.utils.download_utils import (
+from services.downloader.download_utils import (
     enhanced_download_with_retry,
 )
 from config import Config
 from cookie_handler import CookieHandler
 from utils.filenamefixer import FilenameFixerTool
-from services.downloader.utils.download_utils import EnhancedDownloadProcessor
+from services.downloader.download_utils import EnhancedDownloadProcessor
 
 
 class YoutubeDownloader:

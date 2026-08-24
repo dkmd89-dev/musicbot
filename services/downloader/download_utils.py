@@ -52,13 +52,13 @@ from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor as MetadataProcessorCore,
 )
 from services.metadata.models import MetadataResult
-from services.downloader.utils.errors import DownloadError
-from services.downloader.utils.metadata_result_translator import (
+from .errors import DownloadError
+from .metadata_result_translator import (
     build_playlist_track_result,
     build_single_track_result,
     call_process_single_track,
 )
-from services.downloader.utils.progress_tracker import ProgressTracker
+from .progress_tracker import ProgressTracker
 from services.downloader.playlist_processor import PlaylistProcessor
 from utils.artist_map import ArtistConfig, ArtistNormalizer
 from utils.filenamefixer import FilenameFixerTool
@@ -725,7 +725,7 @@ async def _process_track_metadata(
             )
             # ARCH-004/P-3: gemeinsame Integrationsschicht statt inline
             # dupliziertem DownloadResult(...)-Aufbau - siehe
-            # services/downloader/utils/metadata_result_translator.py
+            # services/downloader/metadata_result_translator.py
             return build_playlist_track_result(
                 enhanced_result,
                 playlist_year=playlist_year,
@@ -897,7 +897,7 @@ async def _process_single_download(
 
         # ARCH-004/P-3: gemeinsame Integrationsschicht statt inline
         # dupliziertem DownloadResult(...)-Aufbau - siehe
-        # services/downloader/utils/metadata_result_translator.py
+        # services/downloader/metadata_result_translator.py
         return build_single_track_result(
             enhanced_result,
             enhanced_processor_ref=enhanced_processor,

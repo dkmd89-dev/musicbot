@@ -1,5 +1,5 @@
 """
-Unit-Tests für services/downloader/utils/metadata_result_translator.py
+Unit-Tests für services/downloader/metadata_result_translator.py
 — neue gemeinsame Integrationsschicht (ARCH-004, P-3, Option B).
 
 Jede der drei Übersetzungsfunktionen wird hier isoliert gegen die exakten,
@@ -13,7 +13,7 @@ tests/test_download_handler_process_single_download_result.py für die
 import asyncio
 from unittest.mock import AsyncMock, Mock
 
-from services.downloader.utils.metadata_result_translator import (
+from services.downloader.metadata_result_translator import (
     build_playlist_track_result,
     build_single_track_result,
     call_process_single_track,

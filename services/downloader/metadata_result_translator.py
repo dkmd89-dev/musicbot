@@ -1,4 +1,4 @@
-# services/downloader/utils/metadata_result_translator.py
+# services/downloader/metadata_result_translator.py
 # -*- coding: utf-8 -*-
 """
 Gemeinsame Integrationsschicht: ruft EnhancedMetadataProcessor

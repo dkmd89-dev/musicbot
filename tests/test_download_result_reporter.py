@@ -1,6 +1,6 @@
 """
 Unit-Tests für DownloadResultReporter
-(services/downloader/utils/download_result_reporter.py).
+(services/downloader/download_result_reporter.py).
 
 Im Zuge von ARCH-001 aus klassen/download_handler.py extrahiert
 (_build_duplicate_message/_extract_genres_from_data/_collect_playlist_genres/
@@ -32,7 +32,7 @@ from unittest.mock import Mock
 import pytest
 
 from handlers.duplicate_handler import DuplicateEntry
-from services.downloader.utils.download_result_reporter import DownloadResultReporter
+from services.downloader.download_result_reporter import DownloadResultReporter
 
 
 @pytest.fixture

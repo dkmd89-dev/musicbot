@@ -49,9 +49,9 @@ from services.downloader.spotify_downloader import SpotifyDownloader, _is_spotif
 from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
-from services.downloader.utils.download_result_reporter import DownloadResultReporter
-from services.downloader.utils.progress_tracker import ProgressTracker
-from services.downloader.utils.metadata_result_translator import (
+from services.downloader.download_result_reporter import DownloadResultReporter
+from services.downloader.progress_tracker import ProgressTracker
+from services.downloader.metadata_result_translator import (
     call_process_single_track,
     merge_metadata_result_into_dict,
 )
@@ -535,7 +535,7 @@ class DownloadHandler:
                 )
                 # ARCH-004/P-3: gemeinsame Integrationsschicht statt inline
                 # dupliziertem Dict-Aufbau - siehe
-                # services/downloader/utils/metadata_result_translator.py
+                # services/downloader/metadata_result_translator.py
                 return merge_metadata_result_into_dict(result, metadata_result)
             else:
                 err = metadata_result.error if metadata_result else "Kein Ergebnis"

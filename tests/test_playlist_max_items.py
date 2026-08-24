@@ -4,7 +4,7 @@ nirgends in der Playlist-Pipeline gelesen. Eine Playlist mit tausenden
 Eintraegen wurde bisher komplett unbegrenzt verarbeitet (unbegrenzter
 Speicher-/Bandbreiten-/Zeitverbrauch pro Telegram-Anfrage).
 
-_process_playlist_download() (services/downloader/utils/download_utils.py)
+_process_playlist_download() (services/downloader/download_utils.py)
 kuerzt `entries` jetzt auf MAX_PLAYLIST_ITEMS, bevor irgendetwas mit den
 Eintraegen gemacht wird - insbesondere bevor sie an
 PlaylistProcessor.process_playlist_metadata() weitergereicht werden.
@@ -19,7 +19,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services.downloader.utils.download_utils import _process_playlist_download
+from services.downloader.download_utils import _process_playlist_download
 
 
 def _make_mocked_processor(max_playlist_items):
