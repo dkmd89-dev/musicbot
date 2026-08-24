@@ -163,3 +163,44 @@ keine Verschiebung, keine DI-Umstellung in diesem Schritt — Entscheidung
 liegt beim Nutzer, insbesondere ob die Empfehlungen für Gruppe A/B
 (6 Methoden) so bestätigt werden oder einzelne Methoden abweichend
 behandelt werden sollen.
+
+---
+
+## Phase 2 — Umsetzung (2026-08-24, Branch `arch/arch-009-phase2-dead-navidrome-methods`)
+
+Nutzer-Entscheidung: alle sechs Empfehlungen bestätigt, `check_connection()`
+ausdrücklich unangetastet gelassen.
+
+Vor der Entfernung wurden alle sechs Methoden nochmals repo-weit per Grep
+verifiziert (Bestätigung: 0 Consumer außerhalb der Definitionen selbst und
+der beiden Testdateien, keine neuen Aufrufer seit ARCH-009 Phase 1
+hinzugekommen).
+
+`api/navidrome_api.py`: `format_full_status_message()`,
+`format_rescan_status_message()`, `format_web_interface_url_message()`,
+`get_full_server_info()`, `get_scan_status()`, `test_api()` entfernt
+(zusammen ca. 220 Zeilen). `check_connection()` unverändert. Ein direkt
+durch die Löschung toter Import (`from datetime import datetime`, nur von
+`format_full_status_message()` genutzt) mit entfernt. Andere, bereits
+zuvor unabhängig vom heutigen Schritt tote Imports (`re`, `subprocess`,
+`Path`, `telegram.constants.ParseMode`) bewusst **nicht** angefasst — außerhalb
+des engen Auftrags dieses Schritts.
+
+`tests/test_navidrome_api_characterization.py`: `TestGetScanStatus`
+(2 Tests) und `TestGetFullServerInfo` (2 Tests) komplett entfernt, Docstring
+aktualisiert. `tests/test_navidrome_api_timeout.py`: Docstring-Verweis auf
+die entfernten Methoden korrigiert (die eigentlichen 3 Tests dort testen
+ausschließlich `make_request()` und waren nicht betroffen).
+
+**Regressionslauf:** 1003 bestanden (vorher 1007 — Differenz von 4
+entspricht exakt den 4 entfernten Tests), unverändert 15 bekannte
+Vorbestand-Fehler, keine neuen Fehlschläge.
+
+**Keine Verschiebung nach `services/clients/`, keine DI-Umstellung, keine
+Telegram-Entkopplung, keine Änderung an `execute_scan()`** — wie
+vorgegeben, alles unverändert.
+
+**ARCH-009 Phase 2 damit abgeschlossen.** Verbleibend offen: Phase 3
+(`execute_scan()`-Auslagerung) und Phase 4 (Zielposition/DI des
+verbleibenden Adapters) aus ARCH-009 Abschnitt 7 — je eigene, spätere
+Nutzerentscheidung.
