@@ -16,13 +16,24 @@ Produktionslogik. Alle Werte sind gegen die echten YAML-Dateien in
 mapping/ verifiziert (siehe
 docs/MusicBot_ARCH-013_Genre_Alias_Characterization.md).
 
+ARCH-013 Phase 3 (docs/MusicBot_ARCH-013_Genre_Alias_Decision.md, Abschnitt
+7/9) hat den Mixed-Case-/Whitespace-Befund (Punkt 1 unten, urspruengliche
+Fassung) als fachlich unstrittigen Bug behoben: GenreMapper lowercased
+genre_aliases.yaml-Keys seither beim Laden (utils/genre_map.py,
+_load_all_mappings). TestAliasLoadingDivergence dokumentiert seit Phase 3
+das KORRIGIERTE Verhalten, nicht mehr den Bug - siehe die
+Klassen-Docstring dort fuer den Vorher/Nachher-Vergleich. Alle anderen
+Kernbefunde (2/3 unten) sind von Phase 3 ausdruecklich NICHT beruehrt.
+
 Kernbefunde, die hier eingefroren werden:
 
-1. GenreMapper laedt genre_aliases.yaml OHNE die Keys zu lowercasen
-   (utils/genre_map.py:275); GenreProcessor lowercased sie explizit beim
-   Laden (services/metadata/genre_processor.py:757). Die beiden Mixed-Case-
-   Keys im YAML ("Hip-Hop", "Hip - Hop") sind dadurch in GenreMapper ueber
-   den regulaeren (stets lowercased suchenden) Lookup-Pfad NICHT erreichbar.
+1. (Stand vor ARCH-013 Phase 3, siehe TestAliasLoadingDivergence fuer das
+   aktuelle, korrigierte Verhalten) GenreMapper lud genre_aliases.yaml
+   ohne die Keys zu lowercasen; GenreProcessor lowercased sie explizit
+   beim Laden (services/metadata/genre_processor.py:757). Die beiden
+   Mixed-Case-Keys im YAML ("Hip-Hop", "Hip - Hop") waren dadurch in
+   GenreMapper ueber den regulaeren (stets lowercased suchenden)
+   Lookup-Pfad nicht erreichbar.
 2. GenreMapper konsultiert zusaetzlich mapping/genre_overrides.yaml MIT
    Vorrang vor genre_aliases.yaml (utils/genre_map.py, Schritt 1 vor
    Schritt 2 in normalize_genre_name()). GenreProcessor kennt
@@ -59,16 +70,29 @@ def genre_processor(config, genre_mapper):
 
 
 class TestAliasLoadingDivergence:
-    """Charakterisiert die unterschiedliche interne Repraesentation
-    derselben genre_aliases.yaml-Datei."""
+    """
+    Charakterisiert die unterschiedliche interne Repraesentation derselben
+    genre_aliases.yaml-Datei.
 
-    def test_genre_mapper_keeps_yaml_keys_as_written_including_mixed_case(
+    ARCH-013 Phase 3: bis einschliesslich Phase 2 lud GenreMapper die
+    genre_aliases.yaml-Keys UNVERAENDERT (Mixed-Case-Keys "Hip-Hop"/
+    "Hip - Hop" blieben bestehen), waehrend GenreProcessor sie beim Laden
+    explizit lowercased hat - dadurch war "Hip - Hop" in GenreMapper ueber
+    den regulaeren (stets lowercased suchenden) Lookup nicht erreichbar und
+    fiel auf einen fehlerhaften Title-Case-Fallback zurueck ("Hip  Hop",
+    doppeltes Leerzeichen). Seit Phase 3 lowercased GenreMapper die Keys
+    beim Laden ebenfalls (utils/genre_map.py, _load_all_mappings, analog
+    zum bereits bestehenden GENRE-003-Muster fuer die Hierarchie-Keys) -
+    diese Klasse dokumentiert ab hier das KORRIGIERTE Verhalten.
+    """
+
+    def test_genre_mapper_lowercases_all_keys_at_load_time(
         self, genre_mapper
     ):
         mixed_case_keys = [
             k for k in genre_mapper.genre_aliases if k != k.lower()
         ]
-        assert mixed_case_keys == ["Hip-Hop", "Hip - Hop"]
+        assert mixed_case_keys == []
 
     def test_genre_processor_lowercases_all_keys_at_load_time(
         self, genre_processor
@@ -78,17 +102,36 @@ class TestAliasLoadingDivergence:
         ]
         assert mixed_case_keys == []
 
-    def test_mixed_case_yaml_entry_is_unreachable_in_genre_mapper(
+    def test_previously_mixed_case_yaml_entry_now_reachable_in_genre_mapper(
         self, genre_mapper
     ):
-        # "Hip - Hop" -> "Hip Hop" existiert als Eintrag in
-        # genre_aliases.yaml, aber der Lookup in normalize_genre_name()
-        # sucht IMMER mit einem lowercased Key (genre_lower). Der Key
-        # "Hip - Hop" (mit Grossbuchstaben) im Dict wird dadurch nie
-        # getroffen - statt des YAML-Sollwerts "Hip Hop" entsteht ueber
-        # den Title-Case-Fallback ein Ergebnis mit doppeltem Leerzeichen.
-        assert genre_mapper.genre_aliases["Hip - Hop"] == "Hip Hop"
-        assert genre_mapper.normalize_genre_name("Hip - Hop") == "Hip  Hop"
+        # Vor Phase 3: genre_mapper.genre_aliases["Hip - Hop"] existierte
+        # als eigener Mixed-Case-Key und war ueber normalize_genre_name()
+        # nicht erreichbar (KeyError bei diesem exakten Key-Zugriff, da der
+        # Key seit dem Lowercase-Fix als "hip - hop" gespeichert ist).
+        assert "Hip - Hop" not in genre_mapper.genre_aliases
+        assert genre_mapper.genre_aliases["hip - hop"] == "Hip Hop"
+        assert genre_mapper.normalize_genre_name("Hip - Hop") == "Hip Hop"
+
+    def test_hip_hop_case_and_whitespace_variants_all_normalize_identically(
+        self, genre_mapper
+    ):
+        variants = [
+            "Hip-Hop", "Hip - Hop", "hip-hop", "HIP-HOP",
+            "Hip  Hop", "hiphop", "Hip Hop", "HIP - HOP", "hip - hop",
+        ]
+        for variant in variants:
+            assert genre_mapper.normalize_genre_name(variant) == "Hip Hop", (
+                f"{variant!r} normalisiert nicht auf 'Hip Hop'"
+            )
+
+    def test_normalize_genre_name_is_idempotent_for_the_fixed_alias(
+        self, genre_mapper
+    ):
+        for raw in ["Hip-Hop", "Hip - Hop"]:
+            once = genre_mapper.normalize_genre_name(raw)
+            twice = genre_mapper.normalize_genre_name(once)
+            assert once == twice == "Hip Hop"
 
     def test_mixed_case_yaml_entry_resolves_correctly_in_genre_processor(
         self, genre_processor

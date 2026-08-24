@@ -272,7 +272,17 @@ class GenreMapper(SingletonMixin):
 
         # 5. Genre-Aliases
         aliases_data = load_yaml_data(mapping_path / "genre_aliases.yaml")
-        self.genre_aliases = aliases_data.get("GENRE_ALIASES", aliases_data) or {}
+        raw_genre_aliases = aliases_data.get("GENRE_ALIASES", aliases_data) or {}
+        # Keys lowercased wie hierarchy/artist_map/channel_map (siehe oben,
+        # GENRE-003) - normalize_genre_name() sucht mit einem lowercased Key
+        # (genre_lower). Zwei YAML-Keys ("Hip-Hop", "Hip - Hop") waren nicht
+        # lowercase geschrieben und dadurch ueber den regulaeren Lookup nie
+        # erreichbar (ARCH-013 Phase 3). "Hip-Hop" kollabiert beim Lowercasen
+        # mit dem bereits vorhandenen Key "hip-hop" (identischer Zielwert
+        # "Hip Hop", verifiziert - kein Datenverlust).
+        self.genre_aliases = {
+            str(k).lower(): v for k, v in raw_genre_aliases.items()
+        }
         logger.info(f"   🔄 {len(self.genre_aliases)} Aliases geladen")
 
         # 6. Regex-Regeln
