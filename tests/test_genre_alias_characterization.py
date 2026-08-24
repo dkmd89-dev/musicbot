@@ -33,7 +33,15 @@ Einzelfallregel so korrigiert, dass beide Dateien fuer alle 4 Genres
 denselben Wert enthalten. TestOverrideAliasConflictsResolvedInPhase4
 (vormals TestOverrideLayerOnlyAffectsGenreMapper) dokumentiert seit Phase
 4 das KORRIGIERTE Verhalten. Kernbefund 3 (Teilstring-Match) ist von
-Phase 4 ausdruecklich NICHT beruehrt (das ist ARCH-013 Phase 5).
+Phase 4 ausdruecklich NICHT beruehrt (das war ARCH-013 Phase 5).
+
+ARCH-013 Phase 5 (docs/MusicBot_ARCH-013_Genre_Alias_Decision.md,
+Abschnitt 5) hat Kernbefund 3 unten (Teilstring-Match) auf Wortgrenzen-
+Matching eingeschraenkt: ein Alias matcht nur noch als eigenstaendiges
+Wort/eigenstaendige Wortfolge (begrenzt durch Leerzeichen, Satzzeichen
+oder Stringanfang/-ende), nicht mehr als Zeichenfolge innerhalb eines
+laengeren Einzelworts. TestSubstringMatchingOnlyInGenreProcessor
+dokumentiert seit Phase 5 das KORRIGIERTE Verhalten.
 
 Kernbefunde, die hier eingefroren werden:
 
@@ -56,11 +64,16 @@ Kernbefunde, die hier eingefroren werden:
    rap) - diese 4 Genres wurden von GenreMapper und GenreProcessor
    unterschiedlich normalisiert, bis die YAML-Werte in Phase 4
    angeglichen wurden.
-3. GenreProcessor.normalize_genre_name() hat einen zusaetzlichen
-   Teilstring-Match-Schritt (services/metadata/genre_processor.py:341-343),
-   den GenreMapper nicht besitzt - ein beliebiger String, der einen
-   bekannten Alias als Teilstring enthaelt, wird darueber normalisiert,
-   auch wenn er selbst kein Alias ist.
+3. (Stand vor ARCH-013 Phase 5, siehe
+   TestSubstringMatchingOnlyInGenreProcessor fuer das aktuelle,
+   korrigierte Verhalten) GenreProcessor.normalize_genre_name() hatte
+   einen zusaetzlichen Teilstring-Match-Schritt, den GenreMapper nicht
+   besitzt - ein beliebiger String, der einen bekannten Alias als
+   Zeichenfolge (auch ohne Wortgrenzen) enthielt, wurde darueber
+   normalisiert, auch wenn er selbst kein Alias war (z.B. "britpop" wurde
+   ueber den eingebetteten Alias "pop" zu "Pop"). Seit Phase 5 gilt eine
+   Wortgrenzen-Bedingung; GenreMapper besitzt weiterhin ueberhaupt kein
+   Teilstring-Matching.
 
 Bewusst NICHT Teil dieser Datei: GENRE-002 (mapping/genre_rules.yaml
 Schema-Mismatch, siehe tests/test_genre_mapper_advanced.py) - das ist ein
@@ -221,28 +234,66 @@ class TestOverrideAliasConflictsResolvedInPhase4:
 class TestSubstringMatchingOnlyInGenreProcessor:
     """
     GenreProcessor.normalize_genre_name() hat einen Teilstring-Match-
-    Schritt, der GenreMapper fehlt. Ein String, der KEIN eigener Alias in
-    genre_aliases.yaml ist, aber einen bekannten Alias als Teilstring
-    enthaelt, wird in GenreProcessor trotzdem ueber diesen Alias aufgeloest.
+    Schritt, der GenreMapper fehlt.
+
+    ARCH-013 Phase 5 (docs/MusicBot_ARCH-013_Genre_Alias_Decision.md,
+    Abschnitt 5) hat diesen Schritt auf Wortgrenzen-Matching eingeschraenkt:
+    ein bekannter Alias matcht nur noch, wenn er im Eingabestring als
+    eigenstaendiges Wort/eigenstaendige Wortfolge vorkommt (begrenzt durch
+    Leerzeichen, Satzzeichen oder Stringanfang/-ende) - nicht mehr, wenn er
+    nur als Zeichenfolge innerhalb eines laengeren Einzelworts auftritt
+    (vorheriger Bug: "pop" traf faelschlich auch in "britpop").
+    GenreMapper besitzt weiterhin ueberhaupt kein Teilstring-Matching
+    (Klassenname bezieht sich auf diesen Unterschied, nicht auf
+    Wortgrenzen).
     """
 
-    def test_unknown_genre_containing_known_alias_as_substring(
+    def test_unknown_genre_containing_alias_only_embedded_in_a_word_is_not_matched(
         self, genre_mapper, genre_processor
     ):
-        # "britpop" ist selbst KEIN Eintrag in genre_aliases.yaml, enthaelt
-        # aber "pop" als Teilstring, was ein Alias ist ("pop": "Pop").
+        # "britpop" ist selbst KEIN Eintrag in genre_aliases.yaml und
+        # enthaelt "pop" nur als Zeichenfolge INNERHALB des Einzelworts
+        # "britpop" (kein Leerzeichen/Satzzeichen davor) - seit Phase 5
+        # matcht das nicht mehr, in KEINER der beiden Implementierungen.
         assert "britpop" not in genre_mapper.genre_aliases
         assert "britpop" not in genre_processor.GENRE_NORMALIZATION
 
         assert genre_mapper.normalize_genre_name("britpop") == "Britpop"
-        assert genre_processor.normalize_genre_name("britpop") == "Pop"
+        assert genre_processor.normalize_genre_name("britpop") == "Britpop"
 
-    def test_free_text_containing_known_alias_as_substring(
+    def test_free_text_containing_known_alias_as_whole_word_still_matches(
         self, genre_mapper, genre_processor
     ):
+        # "hip hop" kommt in "some hip hop music" als eigenstaendige
+        # Wortfolge vor (durch Leerzeichen begrenzt) - matcht unveraendert,
+        # Wortgrenzen-Regel aendert hier nichts.
         text = "some hip hop music"
         assert genre_mapper.normalize_genre_name(text) == "Some Hip Hop Music"
         assert genre_processor.normalize_genre_name(text) == "Hip Hop"
+
+    def test_alias_embedded_between_word_boundaries_still_matches(
+        self, genre_processor
+    ):
+        # "ruhrpott rap" ist durch ein Leerzeichen (davor: Stringanfang,
+        # danach: Leerzeichen) begrenzt - Wortgrenzen-Regel erlaubt diesen
+        # Treffer weiterhin (Phase-2 Fall B/D, "korrekter Teilstring-Treffer").
+        assert genre_processor.normalize_genre_name(
+            "ruhrpott rap fanpage"
+        ) == "Ruhrpott Rap"
+        assert genre_processor.normalize_genre_name(
+            "deutschrap only"
+        ) == "Deutschrap"
+
+    def test_alias_embedded_after_hyphen_still_counts_as_word_boundary(
+        self, genre_processor
+    ):
+        # Bindestriche zaehlen laut Phase-2-Spezifikation als
+        # "Satzzeichen"-Wortgrenze, nicht nur Leerzeichen - reales
+        # MusicBrainz-/Last.fm-Tag-Beispiel: durchgekoppelte Tags wie
+        # "deutsch-hip-hop" sollen den Alias weiterhin finden.
+        assert genre_processor.normalize_genre_name(
+            "deutsch-hip-hop"
+        ) == "Hip Hop"
 
 
 class TestBothImplementationsAgreeOnUnambiguousAliases:
