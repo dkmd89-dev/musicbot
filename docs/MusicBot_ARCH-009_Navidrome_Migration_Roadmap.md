@@ -158,41 +158,34 @@ Consumer `handlers/menu/rich_menu_handler.py::_handle_navidrome_scan()`.
 `docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md`
 (Abschnitte „Optionen“ und „Umsetzung“).
 
+## ARCH-009 Phase 6 — Zielposition und DI von `NavidromeAPI`
+
+Abgeschlossen.
+
+Analyse: 6 von 7 verbleibenden Methoden sind reine API-Kommunikation;
+`execute_scan()` ist die einzige Ausnahme (delegiert an
+`NavidromeScanTrigger`, keine echte Navidrome-API-Kommunikation). 13
+Produktions-Call-Sites über 3 Consumer-Dateien, 92 % davon in `handlers/`
+(`navidrome_menu_handler.py`, `rich_menu_handler.py`); der einzige
+`services/`-Consumer (`play_history_poller.py` über `statistik_service.py`)
+ist bereits DI-bereit. ~30 Testreferenzen über 5 Testdateien hängen an der
+statischen Klasse. Drei Varianten bewertet (A: Status quo, B: DI in-place
+ohne Verschiebung, C: DI + Verschiebung kombiniert) — empfohlen: Variante
+B zuerst, Verschiebung nach `services/clients/` als separater, späterer
+Schritt danach (kehrt die Reihenfolge Phase 7/8 unten technisch um, siehe
+Entscheidungsgate im Analysedokument). `execute_scan()` und
+`NavidromeScanTrigger` sollen in keinem Fall nach `services/clients/`
+wandern. Details:
+`docs/MusicBot_ARCH-009_Phase6_Zielposition_DI_Analyse.md`.
+
 ---
 
 # Nächste Phasen
 
-Phase 3, Phase 4 und Phase 5 sind abgeschlossen (siehe oben unter „Bereits
-abgeschlossen“).
-
----
-
-## Phase 6 — Verbleibenden Navidrome-API-Kern analysieren
-
-### Ziel
-
-Nach Abschluss der vorherigen Entflechtung den tatsächlich verbleibenden
-Navidrome-Integrationskern neu bewerten.
-
-Zu prüfen:
-
-* welche Methoden verbleiben
-* welche davon echte externe API-Kommunikation darstellen
-* welche Consumer existieren
-* welche Konfiguration benötigt wird
-* welche Zustände aktuell als Klassenattribute gehalten werden
-* ob `check_connection()` Teil des Integrationskerns ist
-* ob noch vermischte Verantwortlichkeiten vorhanden sind
-
-### Ergebnis
-
-Entscheidungsvorlage:
-
-* Ist der verbleibende Kern jetzt ein reiner Integrationsadapter?
-* Ist `services/clients/` der richtige Zielort?
-* Welche Klasse bzw. welches Modul soll entstehen?
-* Welche bestehende API kann intern beibehalten werden?
-* Welche Migration wäre risikoarm?
+Phase 3, Phase 4, Phase 5 und Phase 6 sind abgeschlossen (siehe oben unter
+„Bereits abgeschlossen“). Die konkrete Reihenfolge von Phase 7 (Zielort)
+und Phase 8 (DI) ist gemäß Phase-6-Empfehlung noch offen — siehe
+Entscheidungsgate in `docs/MusicBot_ARCH-009_Phase6_Zielposition_DI_Analyse.md`.
 
 ---
 
