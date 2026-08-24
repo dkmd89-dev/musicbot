@@ -21,6 +21,14 @@ Code-Änderung. Teilstring-/Wortgrenzen-Matching (Phase 5) und jede
 Zentralisierung bleiben unverändert offen und sind **nicht** Teil von
 Phase 4.
 
+**Phase 5 abgeschlossen (2026-08-25). Teilstring-Matching in
+`GenreProcessor.normalize_genre_name()` auf Wortgrenzen eingeschränkt**
+(siehe Abschnitt „Phase 5 — Teilstring-/Wortgrenzen-Matching" am Ende
+dieses Dokuments). Damit sind alle in Phase 1/2 identifizierten
+Divergenzen zwischen `GenreMapper` und `GenreProcessor` bearbeitet — jede
+Zentralisierung/Architekturänderung bleibt weiterhin **nicht** Teil dieser
+Phase.
+
 ---
 
 ## 1. Ausgangslage
@@ -836,3 +844,155 @@ Implementierungen liefern für `electropop`/`chamber pop`/`tech house`/
 Code-Änderung und keine Scope-Erweiterung. ARCH-013 Phase 5
 (Teilstring-/Wortgrenzen-Matching) bleibt ein eigenes, separat
 freizugebendes Entscheidungsgate.
+
+---
+
+## Phase 5 — Teilstring-/Wortgrenzen-Matching
+
+**Status: abgeschlossen (2026-08-25).** Setzt die in Abschnitt 5 als
+Soll-Spezifikation festgehaltene Wortgrenzen-Bedingung für das
+Teilstring-Matching in `GenreProcessor.normalize_genre_name()` um.
+
+### Ist-Analyse
+
+Der betroffene Code (`services/metadata/genre_processor.py`,
+`normalize_genre_name()`, vor dieser Phase):
+
+```python
+for key, value in self.GENRE_NORMALIZATION.items():
+    if key in genre_lower:
+        return value
+```
+
+`key in genre_lower` ist ein reiner Zeichenfolgen-Test ohne jede
+Wortgrenzen-Prüfung — trifft daher z. B. auch, wenn `key="pop"` nur als
+Fragment innerhalb des längeren Einzelworts `"britpop"` auftritt.
+`GenreMapper.normalize_genre_name()` besitzt keinen entsprechenden Schritt
+überhaupt (bestätigt in Phase 1) — die Wortgrenzen-Frage betrifft
+ausschließlich `GenreProcessor`.
+
+### Gewählte technische Lösung
+
+Neue private Hilfsmethode `GenreProcessor._contains_alias_as_whole_word()`
+(statisch, keine neuen Imports, keine neue Klasse): findet jedes
+Vorkommen von `key` in `text` und prüft für jedes Vorkommen, ob das
+Zeichen davor bzw. danach nicht-alphanumerisch ist (oder der Fundort am
+String-Anfang/-Ende liegt). Das deckt exakt die in Abschnitt 5
+spezifizierten Grenzzeichen ab (Leerzeichen, Satzzeichen,
+Stringanfang/-ende), ohne Sonderfälle für einzelne Satzzeichen
+(Bindestrich, Ampersand, Komma, …) hartzukodieren.
+
+Bewusst **keine** Regex-basierte Lösung (`re.search(rf"\b{key}\b", ...)`
+wurde erwogen und verworfen): Pythons `\b` ist an `\w`-Übergängen
+definiert, was bei Alias-Keys mit eingebetteten Sonderzeichen
+(`"r&b"`, `"k-pop"`) unnötige Sonderfall-Betrachtung erfordert hätte
+(effektiv aber zum selben Ergebnis geführt hätte) — die manuelle
+Zeichenprüfung ist direkter nachvollziehbar und kommt ohne
+Regex-Kompilierung pro Aufruf aus. Kein `lru_cache` hinzugefügt — die
+Methode war vorher schon uncached (im Gegensatz zu
+`GenreMapper.normalize_genre_name()`), das bleibt unverändert bestehen,
+keine Performance-Regression durch diese Phase eingeführt.
+
+**Nur eine Datei betroffen** (`services/metadata/genre_processor.py`) —
+`GenreMapper` besitzt keinen Teilstring-Match-Schritt und ist daher nicht
+berührt.
+
+### Empirisch verifizierte Auswirkung
+
+**Phase-2-Referenzfälle (Fall A–E aus der Soll-Spezifikation):**
+
+| Eingabe | vorher | nachher | Bewertung |
+|---|---|---|---|
+| `britpop` (Fall A/C) | `Pop` | `Britpop` | **korrigiert** — "pop" war nur als Zeichenfolge in "britpop" eingebettet, keine Wortgrenze |
+| `britpop revival` (Fall B) | `Pop` | `Britpop Revival` | **korrigiert**, gleiche Ursache |
+| `ruhrpott rap fanpage` (Fall B/D) | `Ruhrpott Rap` | `Ruhrpott Rap` | unverändert — "ruhrpott rap" ist durch Leerzeichen begrenzt |
+| `deutschrap only` (Fall B/D) | `Deutschrap` | `Deutschrap` | unverändert |
+| `["ruhrpott rap", "hip hop", "trap"]` (Fall E, Multi-Tag) | `("Ruhrpott Rap", ["Hip Hop"])` | `("Ruhrpott Rap", ["Hip Hop"])` | unverändert |
+
+**Vollständige Regressionsprüfung gegen alle bisherigen ARCH-013-Testfälle
+(17 Eingaben aus Phase 1–4):** 0 von 17 ändern sich — die Wortgrenzen-
+Bedingung berührt ausschließlich Fälle wie `britpop`, in denen der
+bestehende Alias-Match nachweislich falsch war.
+
+**Transparent dokumentierte, nicht behobene Randbeobachtung:** die
+Soll-Spezifikation in Abschnitt 5 zählt Satzzeichen (u. a. Bindestriche)
+ausdrücklich als gültige Wortgrenze. Dadurch bleibt `"k-pop revival"`
+weiterhin `"Pop"` (nicht `"K-Pop"`) — der generische Alias `"pop"` steht
+in der YAML-Datei vor dem spezifischeren `"k-pop"` und gewinnt bei der
+Schleifen-Iteration zuerst, weil beide laut der Wortgrenzen-Regel gültige
+Treffer sind (der Bindestrich in `"k-pop"` zählt selbst als Wortgrenze für
+das eingebettete `"pop"`). Dieses **Reihenfolge-/Spezifitäts-Problem ist
+nicht Teil der Phase-2-Spezifikation** (die ausdrücklich nur die
+Wortgrenzen-Frage behandelt, nicht die Priorisierung mehrerer gültiger
+Treffer) und wird hier bewusst nicht mitgelöst — siehe „Bewusst nicht
+bearbeitet" unten.
+
+### Betroffene Tests
+
+`tests/test_genre_alias_characterization.py::TestSubstringMatchingOnlyInGenreProcessor`:
+
+- `test_unknown_genre_containing_known_alias_as_substring` → umbenannt zu
+  `test_unknown_genre_containing_alias_only_embedded_in_a_word_is_not_matched`,
+  Assertion von `genre_processor.normalize_genre_name("britpop") == "Pop"`
+  auf `== "Britpop"` geändert (Vorher/Nachher im Kommentar dokumentiert).
+- `test_free_text_containing_known_alias_as_substring` → umbenannt zu
+  `test_free_text_containing_known_alias_as_whole_word_still_matches`,
+  Assertions unverändert (Fall bleibt korrekt).
+- 2 neue Tests:
+  `test_alias_embedded_between_word_boundaries_still_matches` (Fall B/D
+  aus Phase 2) und
+  `test_alias_embedded_after_hyphen_still_counts_as_word_boundary`
+  (reales MusicBrainz-/Last.fm-Beispiel für durchgekoppelte Tags).
+- Modul-Docstring aktualisiert (Kernbefund 3 als "vor Phase 5" markiert).
+
+Keine Tests entfernt oder in ihrer Aussagekraft abgeschwächt.
+
+### Regression
+
+- Gezielt (`tests/test_genre_alias_characterization.py`): 26 passed
+  (vorher 24 — 2 aktualisiert, 2 neu, netto +2).
+- Vollständig (`pytest tests/ -q`): **1041 passed**, 15 bekannte
+  Vorbestandsfehler (identisch zu allen vorherigen ARCH-013-Ständen).
+
+### Scope-Audit
+
+Geänderte Dateien:
+
+- `services/metadata/genre_processor.py` — 1 Produktionsdatei, 1 neue
+  statische Hilfsmethode + 1 geänderte Zeile im bestehenden
+  Teilstring-Match-Loop, keine neuen Imports, keine neue Klasse, keine
+  geänderte öffentliche Signatur.
+- `tests/test_genre_alias_characterization.py` — Testdatei, wie oben
+  beschrieben.
+- `docs/MusicBot_ARCH-013_Genre_Alias_Decision.md` — dieser Abschnitt.
+
+**Nicht verändert:** `utils/genre_map.py` (kein Teilstring-Matching dort
+vorhanden), jede YAML-Mapping-Datei, jede andere Produktionsdatei. Keine
+neuen Imports, keine neue Schichtabhängigkeit, keine Zirkelimporte.
+
+### Bewusst nicht bearbeitet
+
+- Die Reihenfolge-/Spezifitäts-Frage bei mehreren gültigen
+  Wortgrenzen-Treffern (`"k-pop revival"` → `"Pop"` statt `"K-Pop"`, siehe
+  oben) — nicht Teil der Phase-2-Spezifikation, eigener potenzieller
+  Folgepunkt, falls gewünscht.
+- Jede Form von Zentralisierung oder gemeinsamer Alias-Architektur
+  zwischen `GenreMapper` und `GenreProcessor`.
+- `GenreMapper.determine_genre(raw_genre=X)`s Hierarchie-Rollup-Verhalten
+  (unverändert seit GENRE-003, außerhalb des ARCH-013-Scopes).
+
+---
+
+## ARCH-013 Phase 5 — Entscheidungsgate
+
+**Erreicht.** Das Teilstring-Matching in `GenreProcessor.normalize_genre_name()`
+ist auf Wortgrenzen eingeschränkt, wie in Phase 2 spezifiziert. Damit sind
+alle vier in Phase 1 identifizierten Divergenzursachen zwischen
+`GenreMapper` und `GenreProcessor` (Mixed-Case/Whitespace, Override-vs-
+Alias-Konflikte, Teilstring-Matching, Multi-Tag-Hierarchie-Priorisierung)
+bearbeitet. Eine verbleibende, nicht behobene Randbeobachtung
+(Reihenfolge-/Spezifitäts-Problem bei mehrfach gültigen Wortgrenzen-
+Treffern) ist dokumentiert, aber kein Teil dieser Phase. ARCH-013 selbst
+hat damit keinen offenen Phasen-Auftrag mehr — eine mögliche Fortsetzung
+(Reihenfolge-Problem, Zentralisierung) wäre ein neuer, eigener,
+separat zu beauftragender Vorgang.

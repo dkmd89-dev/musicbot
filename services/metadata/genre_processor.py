@@ -319,6 +319,25 @@ class GenreProcessor:
         )
         return primary, secondary
 
+    @staticmethod
+    def _contains_alias_as_whole_word(text: str, key: str) -> bool:
+        """
+        Prüft, ob `key` in `text` als eigenständiges Wort/eigenständige
+        Wortfolge vorkommt - begrenzt durch Nicht-Alphanumerisches
+        (Leerzeichen, Satzzeichen wie "-"/"&"/",") oder Stringanfang/-ende,
+        nicht nur als Zeichenfolge innerhalb eines längeren Einzelworts
+        (ARCH-013 Phase 5).
+        """
+        idx = text.find(key)
+        while idx != -1:
+            before_ok = idx == 0 or not text[idx - 1].isalnum()
+            after_idx = idx + len(key)
+            after_ok = after_idx == len(text) or not text[after_idx].isalnum()
+            if before_ok and after_ok:
+                return True
+            idx = text.find(key, idx + 1)
+        return False
+
     def normalize_genre_name(self, genre: str) -> str:
         """
         Normalisiert einen Genre-Namen für konsistente Schreibweise.
@@ -337,9 +356,17 @@ class GenreProcessor:
         if genre_lower in self.GENRE_NORMALIZATION:
             return self.GENRE_NORMALIZATION[genre_lower]
 
-        # Teilstring-Match für zusammengesetzte Begriffe
+        # Teilstring-Match für zusammengesetzte Begriffe - nur an
+        # Wortgrenzen (ARCH-013 Phase 5,
+        # docs/MusicBot_ARCH-013_Genre_Alias_Decision.md, Abschnitt 5):
+        # ein Alias darf treffen, wenn er als eigenstaendiges Wort/eigen-
+        # staendige Wortfolge vorkommt (begrenzt durch Leerzeichen,
+        # Satzzeichen oder Stringanfang/-ende), aber nicht, wenn er nur als
+        # Zeichenfolge innerhalb eines laengeren Einzelworts auftritt (z.B.
+        # "pop" in "britpop"). Vorher wurde jedes Vorkommen als Teilstring
+        # akzeptiert, unabhaengig von Wortgrenzen.
         for key, value in self.GENRE_NORMALIZATION.items():
-            if key in genre_lower:
+            if self._contains_alias_as_whole_word(genre_lower, key):
                 return value
 
         # Fallback: Kapitalisierung
