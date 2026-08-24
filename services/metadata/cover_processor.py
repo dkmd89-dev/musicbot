@@ -1,4 +1,4 @@
-# services/downloader/utils/metadata/cover_processor.py
+# services/metadata/cover_processor.py
 # -*- coding: utf-8 -*-
 """
 Moderner Multi-Source Cover Processor mit:

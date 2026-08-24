@@ -1,6 +1,6 @@
 """
 Unit-Tests für LyricsProcessor
-(services/downloader/utils/metadata/lyrics_processor.py) — P0-Metadaten-
+(services/metadata/lyrics_processor.py) — P0-Metadaten-
 Sub-Prozessor, vorher 0 Tests. Gefunden über eine systematische
 Ungetestet-Prüfung aller Quelldateien gegen tests/-Referenzen.
 
@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from services.downloader.utils.metadata.lyrics_processor import LyricsProcessor
+from services.metadata.lyrics_processor import LyricsProcessor
 
 
 def make_processor(genius_client=None):

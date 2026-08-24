@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch, AsyncMock
 # Füge Projekt-Root zum Pfad hinzu
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from services.downloader.utils.metadata.auto_learn import AutoLearnManager
+from services.metadata.auto_learn import AutoLearnManager
 from utils.artist_map import ArtistNormalizer, ArtistConfig
 from utils.genre_map import GenreMapper
 

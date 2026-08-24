@@ -1,5 +1,5 @@
 """
-Unit-Tests für TagWriter (services/downloader/utils/metadata/tag_writer.py).
+Unit-Tests für TagWriter (services/metadata/tag_writer.py).
 
 TagWriter wurde im Zuge von ARCH-001 aus EnhancedMetadataProcessor
 extrahiert (_write_metadata_to_file_with_lyrics/_write_genres_m4a/
@@ -24,7 +24,7 @@ from unittest.mock import Mock
 import pytest
 from mutagen.id3 import ID3, TCON, TXXX
 
-from services.downloader.utils.metadata.tag_writer import TagWriter
+from services.metadata.tag_writer import TagWriter
 
 
 @pytest.fixture

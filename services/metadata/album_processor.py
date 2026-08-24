@@ -1,4 +1,4 @@
-# services/downloader/utils/metadata/album_processor.py
+# services/metadata/album_processor.py
 # -*- coding: utf-8 -*-
 
 import re

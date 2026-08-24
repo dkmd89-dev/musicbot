@@ -1,4 +1,4 @@
-# services/downloader/utils/metadata/lyrics_processor.py
+# services/metadata/lyrics_processor.py
 # -*- coding: utf-8 -*-
 
 from typing import List, Optional, Tuple

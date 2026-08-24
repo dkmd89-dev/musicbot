@@ -1,4 +1,4 @@
-# services/downloader/utils/metadata/title_cleaner.py
+# services/metadata/title_cleaner.py
 # -*- coding: utf-8 -*-
 
 import re

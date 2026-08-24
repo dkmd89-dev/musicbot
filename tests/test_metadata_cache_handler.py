@@ -1,5 +1,5 @@
 """
-Tests fuer MetadataCacheHandler (services/downloader/utils/metadata/cache.py).
+Tests fuer MetadataCacheHandler (services/metadata/cache.py).
 
 TEST-003 (siehe docs/MusicBot_ENGINEERING_BASELINE.md): check() und
 _normalize_cache_title() waren seit dem allerersten Commit reine Stubs
@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from services.downloader.utils.metadata.cache import MetadataCacheHandler
+from services.metadata.cache import MetadataCacheHandler
 from services.downloader.utils.metadata.models import MetadataResult
 from utils.metadata_cache import MetadataCache
 

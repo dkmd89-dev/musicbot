@@ -1,4 +1,4 @@
-# services/downloader/utils/metadata/tag_writer.py
+# services/metadata/tag_writer.py
 # -*- coding: utf-8 -*-
 
 from typing import List, Optional, Tuple

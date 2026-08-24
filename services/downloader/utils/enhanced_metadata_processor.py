@@ -28,15 +28,15 @@ from services.downloader.utils.metadata.models import (
     EnhancedProcessingStats,
     split_main_and_featuring,
 )
-from services.downloader.utils.metadata.cache import MetadataCacheHandler
-from services.downloader.utils.metadata.artist_processor import ArtistProcessor
-from services.downloader.utils.metadata.title_cleaner import TitleCleaner
-from services.downloader.utils.metadata.genre_processor import GenreProcessor
-from services.downloader.utils.metadata.album_processor import AlbumProcessor
-from services.downloader.utils.metadata.lyrics_processor import LyricsProcessor
-from services.downloader.utils.metadata.cover_processor import CoverProcessor
-from services.downloader.utils.metadata.auto_learn import AutoLearnManager
-from services.downloader.utils.metadata.tag_writer import TagWriter
+from services.metadata.cache import MetadataCacheHandler
+from services.metadata.artist_processor import ArtistProcessor
+from services.metadata.title_cleaner import TitleCleaner
+from services.metadata.genre_processor import GenreProcessor
+from services.metadata.album_processor import AlbumProcessor
+from services.metadata.lyrics_processor import LyricsProcessor
+from services.metadata.cover_processor import CoverProcessor
+from services.metadata.auto_learn import AutoLearnManager
+from services.metadata.tag_writer import TagWriter
 from services.downloader.utils.download_artifact_cleanup import (
     cleanup_single_download_artifact,
 )

@@ -1,4 +1,4 @@
-# services/downloader/utils/metadata/genre_processor.py
+# services/metadata/genre_processor.py
 # -*- coding: utf-8 -*-
 """
 GenreProcessor v2.1 – Vereinheitlichte Genre-Pipeline

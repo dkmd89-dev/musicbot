@@ -1,4 +1,4 @@
-# services/downloader/utils/metadata/auto_learn.py
+# services/metadata/auto_learn.py
 # -*- coding: utf-8 -*-
 
 import re

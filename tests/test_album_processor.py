@@ -5,7 +5,7 @@ import unittest
 
 import pytest
 
-from services.downloader.utils.metadata.album_processor import AlbumProcessor
+from services.metadata.album_processor import AlbumProcessor
 
 class TestAlbumProcessor(unittest.TestCase):
     def test_extract_year_from_string(self):
