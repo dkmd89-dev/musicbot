@@ -46,6 +46,7 @@ class HappyPathConfig:
 
     def __init__(self, tmp_path: Path, mapping_dir: Path):
         self.LIBRARY_DIR = tmp_path / "library"
+        self.DOWNLOAD_DIR = tmp_path / "downloads"
         self.FAIL_DIR = tmp_path / "fail"
         self.PROCESSED_DIR = tmp_path / "processed"
         self.TEMP_DIR = tmp_path / "temp"
@@ -251,6 +252,73 @@ def test_missing_filepath_returns_graceful_failure(processor, filename_fixer):
         "uploader": "Some Artist",
         "channel": "Some Artist",
         "id": "NOFILE1",
+    }
+
+    result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=track_metadata,
+            filename_fixer=filename_fixer,
+        )
+    )
+
+    assert result.success is False
+
+
+def test_error_after_move_to_library_cleans_up_orphaned_source_file(
+    processor, filename_fixer, happy_path_config, tmp_path, monkeypatch
+):
+    """
+    Temp-Cleanup Strategie C (primaer, siehe
+    services/downloader/utils/download_artifact_cleanup.py): schlaegt
+    move_to_library() fehl, nachdem original_path (Schritt 14) bereits
+    gebunden wurde, muss der aeussere except-Block die verwaiste
+    Quelldatei in DOWNLOAD_DIR gezielt aufraeumen - vorher gab es dafuer
+    keinen einzigen Cleanup-Aufruf in der gesamten Pipeline.
+    """
+    download_dir = happy_path_config.DOWNLOAD_DIR
+    download_dir.mkdir(parents=True, exist_ok=True)
+    source = download_dir / "orphan_candidate.mp3"
+    source.write_bytes(b"fake-audio-bytes-not-real-mp3-data")
+
+    def _boom(self, *args, **kwargs):
+        raise RuntimeError("simulierter move_to_library-Fehler")
+
+    monkeypatch.setattr(filename_fixer.__class__, "move_to_library", _boom)
+
+    track_metadata = {
+        "title": "Orphan Artist - Orphan Song (Official Video)",
+        "artist": "Orphan Artist",
+        "uploader": "Orphan Artist",
+        "channel": "Orphan Artist",
+        "id": "ORPHAN1",
+        "filepath": str(source),
+        "genre": "Hip Hop",
+    }
+
+    result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=track_metadata,
+            filename_fixer=filename_fixer,
+        )
+    )
+
+    assert result.success is False
+    assert not source.exists()  # Strategie C hat die verwaiste Datei entfernt
+
+
+def test_missing_filepath_error_does_not_crash_cleanup(processor, filename_fixer):
+    """
+    Gegenstueck zu test_missing_filepath_returns_graceful_failure: der
+    Fehler tritt VOR Schritt 14 auf, original_path ist zu diesem Zeitpunkt
+    noch None. Der Cleanup-Aufruf im except-Block muss das als No-op
+    behandeln, ohne selbst eine Exception zu werfen.
+    """
+    track_metadata = {
+        "title": "Some Artist - Some Song",
+        "artist": "Some Artist",
+        "uploader": "Some Artist",
+        "channel": "Some Artist",
+        "id": "NOFILE2",
     }
 
     result = asyncio.run(
