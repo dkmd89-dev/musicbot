@@ -331,20 +331,48 @@ Konvention. `api/` könnte danach vollständig entfallen. Details, inkl.
 vollständigem Dependency-Audit, Vergleichsmatrix und Entscheidungsgate:
 `docs/MusicBot_ARCH-009_NavidromeScanTrigger_Zielort_Analyse.md`.
 
-**Keine Umsetzung — wartet auf Nutzerentscheidung.**
+### Umsetzung (2026-08-24, Branch `arch/arch-009-navidrome-scan-trigger-to-utils`)
+
+Abgeschlossen. Empfehlung (Variante D) 1:1 umgesetzt:
+`api/navidrome_scan_trigger.py` → `utils/navidrome_scan_trigger.py`
+verschoben (Implementierung, öffentliche Schnittstelle, Logging,
+Timeout-/Exception-Verhalten unverändert). Einziger Produktions-Consumer
+(`handlers/menu/rich_menu_handler.py`) auf den neuen Importpfad
+umgestellt. `api/` — nach Entfernung von `navidrome_api.py` in Phase 9
+bereits leer bis auf `navidrome_scan_trigger.py` — anschließend
+vollständig entfernt (inkl. `api/__init__.py`). Repo-weiter
+Referenz-Audit bestätigt 0 verbleibende funktionale Referenzen auf
+`api.*`. Regression unverändert: 1008 bestanden, unverändert 15 bekannte
+Vorbestand-Fehler. Details:
+`docs/MusicBot_ARCH-009_NavidromeScanTrigger_Zielort_Analyse.md`
+(Abschnitt „Umsetzung“).
+
+**Zielstruktur erreicht:**
+
+```text
+services/clients/navidrome_api.py   → externer Navidrome-API-Adapter
+utils/navidrome_scan_trigger.py     → lokaler technischer Subprocess-/Docker-Runner
+handlers/                           → Telegram-Präsentation/Benutzerinteraktion
+api/                                → entfernt
+```
+
+**Damit ist die gesamte ARCH-009-Navidrome-Migration (Phase 1 bis
+Folgeumsetzung) inhaltlich abgeschlossen** — die unten stehende
+ursprüngliche Phase-9-Checkliste („Finaler
+Navidrome-Migrationsabschluss“) bleibt als abschließende
+Verifikations-Referenz bestehen.
 
 ---
 
 # Nächste Phasen
 
-Phase 3 bis Phase 8 sind vollständig abgeschlossen (Analyse **und**
-Umsetzung, siehe oben unter „Bereits abgeschlossen“). Phase 9 ist
-teilweise abgeschlossen: `execute_scan()` ist eliminiert (Umsetzung A,
-siehe oben), der endgültige Zielort von `NavidromeScanTrigger` wurde in
-einer separaten Folgeanalyse untersucht (siehe oben) und wartet auf
-Nutzerentscheidung — die unten stehende ursprüngliche Phase-9-Checkliste
-(„Finaler Navidrome-Migrationsabschluss“) bleibt bis zu dieser
-Folgeentscheidung weiterhin gültig und unverändert.
+Phase 3 bis Phase 9 (inkl. Folgeumsetzung `NavidromeScanTrigger` →
+`utils/`) sind vollständig abgeschlossen (Analyse **und** Umsetzung,
+siehe oben unter „Bereits abgeschlossen“). Die unten stehende
+ursprüngliche Phase-9-Checkliste („Finaler
+Navidrome-Migrationsabschluss“) bleibt als abschließende
+Verifikations-Referenz bestehen und kann bei Bedarf als finale
+Prüfliste durchgegangen werden.
 
 ---
 

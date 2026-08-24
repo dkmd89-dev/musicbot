@@ -1,17 +1,22 @@
 """
-Charakterisierungstests fuer api/navidrome_scan_trigger.py.
+Charakterisierungstests fuer utils/navidrome_scan_trigger.py.
 
 ARCH-009 Phase 4: die Docker-/Subprocess-/Timeout-Steuerung wurde 1:1 aus
 NavidromeAPI.execute_scan() in NavidromeScanTrigger.run_scan() ausgelagert
 (siehe docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md). Diese Tests
 sind die direkte Fortsetzung der vorher in
 tests/test_navidrome_api_characterization.py::TestExecuteScan enthaltenen
-Subprocess-Charakterisierung - Patch-Ziele haben sich auf das neue Modul
-verschoben (api.navidrome_scan_trigger statt api.navidrome_api). Die
-Telegram-Formatierung bleibt bewusst in NavidromeAPI.execute_scan() und
-wird weiterhin in tests/test_navidrome_api_characterization.py getestet,
-dort jetzt gegen NavidromeScanTrigger.run_scan() gemockt statt gegen den
-Subprocess selbst.
+Subprocess-Charakterisierung. Die Telegram-Formatierung liegt seit
+ARCH-009 Phase 9 (Umsetzung A) direkt im Handler
+(handlers/menu/rich_menu_handler.py), nicht mehr in einer eigenen
+execute_scan()-Bridge.
+
+ARCH-009-Folgeumsetzung (2026-08-24): NavidromeScanTrigger wurde von
+api/navidrome_scan_trigger.py nach utils/navidrome_scan_trigger.py
+verschoben (siehe
+docs/MusicBot_ARCH-009_NavidromeScanTrigger_Zielort_Analyse.md) - Import
+und alle Patch-Ziele entsprechend auf utils.navidrome_scan_trigger
+umgestellt. api/ existiert seitdem nicht mehr.
 """
 
 import asyncio
@@ -19,7 +24,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from api.navidrome_scan_trigger import NavidromeScanTrigger, ScanTimeoutError
+from utils.navidrome_scan_trigger import NavidromeScanTrigger, ScanTimeoutError
 
 
 class TestRunScan:
@@ -30,7 +35,7 @@ class TestRunScan:
         fake_process.pid = 1234
 
         with patch(
-            "api.navidrome_scan_trigger.asyncio.create_subprocess_shell",
+            "utils.navidrome_scan_trigger.asyncio.create_subprocess_shell",
             return_value=fake_process,
         ):
             result = asyncio.run(NavidromeScanTrigger.run_scan())
@@ -47,7 +52,7 @@ class TestRunScan:
         fake_process.pid = 1234
 
         with patch(
-            "api.navidrome_scan_trigger.asyncio.create_subprocess_shell",
+            "utils.navidrome_scan_trigger.asyncio.create_subprocess_shell",
             return_value=fake_process,
         ):
             result = asyncio.run(NavidromeScanTrigger.run_scan())
@@ -65,12 +70,12 @@ class TestRunScan:
         fake_process.pid = 1234
 
         with patch(
-            "api.navidrome_scan_trigger.asyncio.create_subprocess_shell",
+            "utils.navidrome_scan_trigger.asyncio.create_subprocess_shell",
             return_value=fake_process,
         ), patch(
-            "api.navidrome_scan_trigger._get_scan_config"
+            "utils.navidrome_scan_trigger._get_scan_config"
         ) as mock_cfg, patch(
-            "api.navidrome_scan_trigger.Config"
+            "utils.navidrome_scan_trigger.Config"
         ) as mock_config_cls:
             mock_cfg.return_value.NAVIDROME_SCAN_COMMAND = "echo test"
             mock_config_cls.NAVIDROME_SCAN_COMMAND = "echo test"
@@ -82,7 +87,7 @@ class TestRunScan:
         assert exc_info.value.timeout_seconds == 0.01
 
     def test_missing_scan_command_raises_attribute_error(self):
-        with patch("api.navidrome_scan_trigger._get_scan_config") as mock_cfg:
+        with patch("utils.navidrome_scan_trigger._get_scan_config") as mock_cfg:
             mock_cfg.return_value.NAVIDROME_SCAN_COMMAND = ""
 
             with pytest.raises(AttributeError):
@@ -95,10 +100,10 @@ class TestRunScan:
         fake_process.pid = 1234
 
         with patch(
-            "api.navidrome_scan_trigger.asyncio.create_subprocess_shell",
+            "utils.navidrome_scan_trigger.asyncio.create_subprocess_shell",
             return_value=fake_process,
         ) as mock_shell, patch(
-            "api.navidrome_scan_trigger._get_scan_config"
+            "utils.navidrome_scan_trigger._get_scan_config"
         ) as mock_cfg:
             mock_cfg.return_value.NAVIDROME_SCAN_COMMAND = [
                 "docker",

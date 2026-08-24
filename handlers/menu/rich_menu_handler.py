@@ -52,7 +52,7 @@ from handlers.enhanced_error_handler import (
     ErrorHandlerAdminInterface,
 )
 from config import Config
-from api.navidrome_scan_trigger import NavidromeScanTrigger, ScanTimeoutError
+from utils.navidrome_scan_trigger import NavidromeScanTrigger, ScanTimeoutError
 from emoji import EMOJI
 from helfer.markdown_helfer import escape_md_v2
 from services.downloader.utils.enhanced_metadata_processor import (

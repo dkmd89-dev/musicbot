@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from api.navidrome_scan_trigger import ScanRunResult, ScanTimeoutError
+from utils.navidrome_scan_trigger import ScanRunResult, ScanTimeoutError
 from handlers.menu.rich_menu_handler import RichMenuHandler
 
 
