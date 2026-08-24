@@ -209,45 +209,35 @@ Zielort-/Verschiebungsfrage unten trägt zur Vermeidung einer doppelten
 
 ---
 
-# Nächste Phasen
+## ARCH-009 Phase 8 — Zielverschiebung `services/clients/`: Analyse
 
-Phase 3, Phase 4, Phase 5, Phase 6 und Phase 7 sind abgeschlossen (siehe
-oben unter „Bereits abgeschlossen“).
+Abgeschlossen (reine Analyse, keine Umsetzung).
+
+6 von 7 Methoden erfüllen die `services/clients/`-Konvention bereits
+vollständig; `execute_scan()` bleibt strukturell fehlplatziert (keine
+echte API-Kommunikation, siehe Phase 3/6). Zwei Optionen bewertet: A
+(`execute_scan()` zieht unverändert mit) vs. B (`execute_scan()` bleibt
+als Rest in `api/` zurück) — **empfohlen: Option B**, da nur diese
+Variante `services/clients/navidrome_api.py` vollständig konform macht
+**und** `handlers/menu/rich_menu_handler.py` (einziger Consumer von
+`execute_scan()`, nutzt keine der sechs Adapter-Methoden) komplett von
+der Migration ausnimmt. Kein Zirkelimport-Risiko festgestellt (Präzedenz:
+`services/downloader/utils/enhanced_metadata_processor.py` importiert
+bereits aus `services/clients/`). Zusatzfund: toter
+`telegram.constants.ParseMode`-Import würde bei einer reinen 1:1-Kopie
+sichtbar mit nach `services/clients/` wandern. Konkrete Consumer-/
+Test-Liste, Migrationsschritte und 5 offene Entscheidungspunkte im
+Analysedokument. Details:
+`docs/MusicBot_ARCH-009_Phase8_Zielverschiebung_ServicesClients_Analyse.md`.
 
 ---
 
-## Phase 8 — Zielstruktur des Navidrome-Clients entscheiden (vormals „Phase 7“)
+# Nächste Phasen
 
-### Voraussetzung
-
-Phase 6 bestätigt, dass der verbleibende Code (bis auf `execute_scan()`,
-siehe Phase 6/7) ein reiner externer Integrationsadapter ist. Phase 7 hat
-die Klasse bereits DI-fähig gemacht — eine Verschiebung ist jetzt ein
-reiner Ortswechsel, keine gleichzeitige Strukturumstellung mehr.
-
-### Zu entscheiden
-
-Ob beispielsweise eine Struktur wie folgt sinnvoll ist:
-
-```text
-services/
-└── clients/
-    └── navidrome_client.py
-```
-
-Der konkrete Dateiname und die konkrete Klassenstruktur werden erst nach
-der Analyse entschieden. Zu klären insbesondere (siehe
-`docs/MusicBot_ARCH-009_Phase7_NavidromeAPI_DI.md` Abschnitt 6): Verbleib
-von `execute_scan()` (Kompatibilitätsrest vs. Entfernung zugunsten eines
-direkten `NavidromeScanTrigger`-Aufrufs im Handler) und von
-`NavidromeScanTrigger` selbst (bleibt außerhalb von `services/clients/`).
-
-### Grundsatz
-
-Keine 1:1-Verschiebung einer Reststruktur nur aufgrund des Namens.
-
-Die Zielstruktur muss sich aus den tatsächlichen Verantwortlichkeiten
-ergeben.
+Phase 3 bis Phase 8 sind abgeschlossen (siehe oben unter „Bereits
+abgeschlossen“) — Phase 8 als reine Analyse, die eigentliche Umsetzung
+der Verschiebung nach `services/clients/` ist noch offen und wartet auf
+die dort benannten 5 Entscheidungspunkte.
 
 ---
 
