@@ -172,9 +172,8 @@ class EnhancedDownloadProcessor(SingletonMixin):
 
         return parse_youtube_title(track_title, logger_factory=self.logger_factory)
 
-    def init_tracker(self, update_object, total_items: int):
+    def init_tracker(self, total_items: int):
         self.tracker = ProgressTracker(
-            update=update_object,
             total_items=total_items,
             logger_factory=self.logger_factory,
         )

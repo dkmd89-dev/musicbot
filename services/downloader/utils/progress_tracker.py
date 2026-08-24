@@ -2,27 +2,28 @@
 import asyncio
 from datetime import datetime
 from typing import Optional, Callable
-from telegram import Update
 
 
 class ProgressTracker:
-    """Verfolgt den Fortschritt von langlaufenden Aufgaben und sendet Updates."""
+    """
+    Verfolgt den Fortschritt von langlaufenden Aufgaben und berechnet die
+    Fortschritts-Nachricht. Sendet selbst nichts mehr (ARCH-007/P-2:
+    services/ hat keine Telegram-Abhängigkeit mehr) - der Aufrufer ist
+    dafür verantwortlich, den von compute_progress_message() gelieferten
+    Text zu versenden, falls er nicht None ist.
+    """
 
     def __init__(
         self,
-        update: Update,
         total_items: int = 1,
-        status_message=None,
         logger_factory: Optional[Callable] = None,
     ):
-        self.update = update
         self.total_items = total_items
         self.processed_items = 0
         self.last_update_time = datetime.now()
         self.start_time = datetime.now()
         self.update_interval = 5  # Sekunden
         self.current_item = ""
-        self.status_message = status_message  # Speichere das übergebene Argument
 
         # ➡️ Custom logger integration mit Dependency Injection
         self.logger = (
@@ -47,8 +48,13 @@ class ProgressTracker:
             logger.setLevel(logging.INFO)
         return logger
 
-    async def update_progress(self, message: str = None) -> None:
-        """Aktualisiert den Fortschritt, aber nicht zu häufig, um Spam zu vermeiden."""
+    def compute_progress_message(self, message: str = None) -> Optional[str]:
+        """
+        Berechnet die Fortschritts-Nachricht, aber nicht zu häufig (Drossel-
+        Intervall), um Spam zu vermeiden. Gibt den Text zurück, wenn er
+        gesendet werden soll, sonst None (Intervall noch nicht erreicht) -
+        der Aufrufer entscheidet selbst, ob/wie er sendet.
+        """
         self.processed_items += 1
         now = datetime.now()
         time_diff = (now - self.last_update_time).total_seconds()
@@ -71,13 +77,11 @@ class ProgressTracker:
                     message = f"⏳ Fortschritt: {self.processed_items}/{self.total_items} (0%)"
 
             # ➡️ Custom logger integration
-            self.logger.debug(f"Sende Fortschritts-Update: {message}")
-            try:
-                await self.update.message.reply_text(message)
-            except Exception as e:
-                # ➡️ Custom logger integration
-                self.logger.warning(f"Konnte Fortschrittsnachricht nicht senden: {e}")
+            self.logger.debug(f"Fortschritts-Update berechnet: {message}")
             self.last_update_time = now
+            return message
+
+        return None
 
     def set_current_item(self, item_name: str) -> None:
         """Setzt den Namen des aktuell verarbeiteten Elements."""
@@ -88,8 +92,7 @@ class ProgressTracker:
     def cleanup(self) -> None:
         """
         ProgressTracker haelt keine eigenen freizugebenden Ressourcen (nur
-        Zaehler/Zeitstempel und eine Referenz auf ein von aussen kommendes
-        Telegram-Update). Existiert, damit EnhancedDownloadProcessor.cleanup()
+        Zaehler/Zeitstempel). Existiert, damit EnhancedDownloadProcessor.cleanup()
         (DownloadCoordinator-Protocol, services/downloader/utils/download_utils.py)
         gefahrlos self.tracker.cleanup() aufrufen kann - vorher fehlte diese
         Methode komplett, ein AttributeError waere die Folge gewesen, sobald

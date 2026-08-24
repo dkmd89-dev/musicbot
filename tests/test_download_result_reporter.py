@@ -14,36 +14,30 @@ Entscheidungen sind, keine reine Formatierung/Versand.
 
 Diese Tests decken den extrahierten Code jetzt isoliert ab, statt nur
 indirekt über DownloadHandler (der bislang keine dedizierte Testdatei hat).
+
+ARCH-007/P-2 (2026-08-24): send_playlist_direct_summary()/send_final_summary()
+wurden zu build_playlist_summary_message()/build_final_summary_message()
+- geben nur noch Text zurueck statt selbst zu senden (services/ hat keine
+Telegram-Abhaengigkeit mehr). Der tatsaechliche Versand (inkl.
+status_msg/update-Fallback und TelegramError-Behandlung) liegt jetzt in
+klassen/download_handler.py::_send_report_message() - die entsprechenden
+Versand-/Fallback-/Fehlerbehandlungs-Tests wurden dorthin verschoben
+(siehe tests/test_download_handler_send_report_message.py).
 """
 
-import asyncio
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
 import pytest
 
 from handlers.duplicate_handler import DuplicateEntry
 from services.downloader.utils.download_result_reporter import DownloadResultReporter
-from telegram.error import TelegramError
 
 
 @pytest.fixture
 def reporter():
     return DownloadResultReporter(logger=Mock())
-
-
-def make_update():
-    update = Mock()
-    update.message = Mock()
-    update.message.reply_text = AsyncMock()
-    return update
-
-
-def make_status_msg():
-    msg = Mock()
-    msg.edit_text = AsyncMock()
-    return msg
 
 
 class TestExtractGenresFromData:
@@ -172,43 +166,18 @@ class TestBuildDuplicateMessage:
         assert "Title (1).mp3" not in msg
 
 
-class TestSendPlaylistDirectSummary:
-    def test_uses_status_msg_when_present(self, reporter):
-        update = make_update()
-        status_msg = make_status_msg()
+class TestBuildPlaylistSummaryMessage:
+    def test_contains_core_fields(self, reporter):
         results = [{"success": True, "artist": "A", "album": "B", "year": 2024, "library_path": "/lib/A/x.mp3"}]
 
-        asyncio.run(reporter.send_playlist_direct_summary(update, status_msg, results, results))
+        sent_text = reporter.build_playlist_summary_message(results, results)
 
-        status_msg.edit_text.assert_called_once()
-        update.message.reply_text.assert_not_called()
-        sent_text = status_msg.edit_text.call_args[0][0]
         assert "Künstler : A" in sent_text
         assert "Album    : B" in sent_text
 
-    def test_falls_back_to_update_message_when_no_status_msg(self, reporter):
-        update = make_update()
-        results = [{"success": True, "artist": "A", "library_path": "/lib/A/x.mp3"}]
 
-        asyncio.run(reporter.send_playlist_direct_summary(update, None, results, results))
-
-        update.message.reply_text.assert_called_once()
-
-    def test_telegram_error_is_logged_not_raised(self, reporter):
-        update = make_update()
-        status_msg = make_status_msg()
-        status_msg.edit_text.side_effect = TelegramError("boom")
-        results = [{"success": True, "artist": "A", "library_path": "/lib/A/x.mp3"}]
-
-        asyncio.run(reporter.send_playlist_direct_summary(update, status_msg, results, results))
-
-        reporter.logger.error.assert_called_once()
-
-
-class TestSendFinalSummary:
+class TestBuildFinalSummaryMessage:
     def test_single_track_message_contains_core_fields(self, reporter):
-        update = make_update()
-        status_msg = make_status_msg()
         result = {
             "title": "Some Title",
             "artist": "Some Artist",
@@ -218,9 +187,8 @@ class TestSendFinalSummary:
             "source": "youtube",
         }
 
-        asyncio.run(reporter.send_final_summary(update, status_msg, result, {}, {}))
+        sent_text = reporter.build_final_summary_message(result, {}, {})
 
-        sent_text = status_msg.edit_text.call_args[0][0]
         assert "Download erfolgreich!" in sent_text
         assert "Some Title" in sent_text
         assert "Some Artist" in sent_text
@@ -228,8 +196,6 @@ class TestSendFinalSummary:
         assert "Some Title.mp3" in sent_text
 
     def test_spotify_podcast_filters_generic_genres(self, reporter):
-        update = make_update()
-        status_msg = make_status_msg()
         result = {
             "title": "Episode 1",
             "artist": "Show Host",
@@ -239,16 +205,13 @@ class TestSendFinalSummary:
             "genres": {"primary": "German", "secondary": ["Hip Hop", "Comedy"]},
         }
 
-        asyncio.run(reporter.send_final_summary(update, status_msg, result, {}, {}))
+        sent_text = reporter.build_final_summary_message(result, {}, {})
 
-        sent_text = status_msg.edit_text.call_args[0][0]
         assert "German" not in sent_text.split("Genres:")[1].split("\n\n")[0]
         assert "Comedy" in sent_text
         assert "🎙️ Spotify Podcast" in sent_text
 
     def test_playlist_type_uses_playlist_header_and_track_counts(self, reporter):
-        update = make_update()
-        status_msg = make_status_msg()
         result = {
             "type": "playlist",
             "tracks": [
@@ -259,27 +222,15 @@ class TestSendFinalSummary:
             "source": "youtube",
         }
 
-        asyncio.run(reporter.send_final_summary(update, status_msg, result, {}, {}))
+        sent_text = reporter.build_final_summary_message(result, {}, {})
 
-        sent_text = status_msg.edit_text.call_args[0][0]
         assert "Playlist erfolgreich heruntergeladen!" in sent_text
         assert "Tracks   : 2/3" in sent_text
 
     def test_missing_library_path_shows_na_without_crash(self, reporter):
-        update = make_update()
-        status_msg = make_status_msg()
         result = {"title": "T", "artist": "A", "source": "youtube"}
 
-        asyncio.run(reporter.send_final_summary(update, status_msg, result, {}, {}))
+        sent_text = reporter.build_final_summary_message(result, {}, {})
 
-        sent_text = status_msg.edit_text.call_args[0][0]
         assert "N/A" in sent_text
         reporter.logger.warning.assert_called_once()
-
-    def test_falls_back_to_update_message_when_no_status_msg(self, reporter):
-        update = make_update()
-        result = {"title": "T", "artist": "A", "library_path": "/lib/A/T.mp3", "source": "youtube"}
-
-        asyncio.run(reporter.send_final_summary(update, None, result, {}, {}))
-
-        update.message.reply_text.assert_called_once()

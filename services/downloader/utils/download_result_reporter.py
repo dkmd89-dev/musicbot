@@ -5,19 +5,21 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List
 
-from telegram.error import TelegramError
-
 from handlers.duplicate_handler import DuplicateEntry
 from logger import get_module_logger
 
 
 class DownloadResultReporter:
     """
-    Verantwortlich für das Formatieren und Versenden von Download-Abschluss-
-    Nachrichten (Duplikat-Meldung, Playlist-Zusammenfassung, finale
-    Zusammenfassung) sowie die zugehörige Genre-/Stats-Aufbereitung aus
-    Download-Ergebnis-Dicts. Enthält bewusst keine Duplikat-Cache- oder
-    sonstige Seiteneffekt-Logik — das bleibt Aufgabe von `DownloadHandler`.
+    Verantwortlich für das Formatieren von Download-Abschluss-Nachrichten
+    (Duplikat-Meldung, Playlist-Zusammenfassung, finale Zusammenfassung)
+    sowie die zugehörige Genre-/Stats-Aufbereitung aus Download-Ergebnis-
+    Dicts. Gibt ausschließlich fertigen Text zurück - der tatsächliche
+    Telegram-Versand (inkl. status_msg/update-Fallback und TelegramError-
+    Behandlung) ist Aufgabe von `DownloadHandler` (ARCH-007/P-2: services/
+    hat keine Telegram-Abhängigkeit mehr). Enthält bewusst keine
+    Duplikat-Cache- oder sonstige Seiteneffekt-Logik — auch das bleibt
+    Aufgabe von `DownloadHandler`.
     """
 
     def __init__(self, logger=None):
@@ -118,15 +120,15 @@ class DownloadResultReporter:
         )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Versand
+    # Nachrichten-Aufbau (kein Versand mehr - siehe Klassen-Docstring)
     # ─────────────────────────────────────────────────────────────────────────
 
-    async def send_playlist_direct_summary(
-        self, update, status_msg, results: List[dict], successful: List[dict]
-    ) -> None:
+    def build_playlist_summary_message(
+        self, results: List[dict], successful: List[dict]
+    ) -> str:
         """
         Abschluss-Meldung für eine "echte" Playlist (nicht der Single-Track-
-        Wrapper-Fall, der stattdessen über send_final_summary läuft).
+        Wrapper-Fall, der stattdessen über build_final_summary_message läuft).
         """
         first  = successful[0]
         artist = first.get("artist", "Unbekannt")
@@ -162,23 +164,15 @@ class DownloadResultReporter:
             f"   💾 Cache-Treffer    : {ch}/{ct} ({pct(ch,ct)})\n\n"
             f"📂 Bibliothek: {folder}"
         )
-        try:
-            if status_msg:
-                await status_msg.edit_text(msg)
-            else:
-                await update.message.reply_text(msg)
-        except TelegramError as e:
-            self.logger.error(f"❌ Playlist-Zusammenfassung nicht gesendet: {e}")
+        return msg
 
-    async def send_final_summary(
+    def build_final_summary_message(
         self,
-        update,
-        status_msg,
         result: Dict[str, Any],
         processing_stats: Dict[str, Any],
         duplicate_stats: Dict[str, Any],
-    ) -> None:
-        """Sendet die vollständige Abschluss-Zusammenfassung."""
+    ) -> str:
+        """Baut die vollständige Abschluss-Zusammenfassung."""
         self.logger.info("📝 [SUMMARY] Erstelle Abschluss-Zusammenfassung...")
 
         PLACEHOLDER = {None, "", "Unbekannt", "Unknown", "Unknown Artist", "Playlist"}
@@ -312,11 +306,4 @@ class DownloadResultReporter:
         final_msg = "\n".join(lines)
         self.logger.info(f"📝 [SUMMARY] Zusammenfassung:\n{final_msg}")
 
-        try:
-            if status_msg:
-                await status_msg.edit_text(final_msg)
-            else:
-                await update.message.reply_text(final_msg)
-            self.logger.info("✅ [SUMMARY] Abschluss-Zusammenfassung gesendet")
-        except TelegramError as e:
-            self.logger.error(f"❌ [SUMMARY] Fehler beim Senden: {e}")
+        return final_msg
