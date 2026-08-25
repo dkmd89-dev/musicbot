@@ -12,7 +12,9 @@ Status-Legende: **CURRENT** = aktuell gültig · **HISTORICAL** = abgeschlossene
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| MusicBot_ENGINEERING_BASELINE_v2.md | CURRENT (eingefroren nach Closure 2026-08-25) | Aktueller technischer Gesamtzustand — neue Findings → MusicBot_ENGINEERING_BASELINE_v3.md |
+| MusicBot_ENGINEERING_BASELINE_v3.md | CURRENT | Nächster verifizierter Referenzzustand nach Post-Baseline-Triage + Deep Audits (FINDING-1/2/3 gefixt, ENHANCED-ERROR-HANDLER als PLANNED/NOT INTEGRATED eingeordnet), 1063 passed / 0 failed |
+| MusicBot_POST_BASELINE_TRIAGE.md | HISTORICAL (Analyseartefakt) | Herleitung von v3 — sechs-Dimensionen-Triage + Deep-Audit-Nachträge, nicht selbst Baseline |
+| MusicBot_ENGINEERING_BASELINE_v2.md | SUPERSEDED (eingefroren nach Closure 2026-08-25) | Abgelöst durch v3 |
 | MusicBot_ENGINEERING_BASELINE.md | SUPERSEDED | v1, abgelöst durch v2 |
 
 ## ARCH – Architektur-Entscheidungsprotokoll (Historie)

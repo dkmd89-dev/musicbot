@@ -423,3 +423,27 @@ aus Abschnitt 14 dieser Triage abgeschlossen (FINDING-1, FINDING-2,
 FINDING-3). Offen bleibt weiterhin nur der dokumentierte, bewusst nicht als
 Deep-Audit-Kandidat vorgeschlagene DEAD-CODE-ERRHANDLER-Fund (Abschnitt 9) —
 reine Lösch-Entscheidung, kein weiterer Untersuchungsbedarf.
+
+---
+
+## Nachtrag (2026-08-25): DEAD-CODE-ERRHANDLER — Nutzerentscheidung: PLANNED / NOT INTEGRATED statt löschen
+
+Ausdrückliche Entscheidung des Nutzers zum in Abschnitt 9 (M3) dokumentierten
+Fund: **nicht löschen, nicht als Dead Code klassifizieren.**
+`ErrorHandlerIntegration` (Klasse), `create_complete_error_handling_system()`,
+`install_global_exception_handler()` und `try_catch_decorator()` in
+`handlers/enhanced_error_handler.py` sind eine bewusst zurückgehaltene,
+für eine spätere RichMenu-Integration vorgesehene Komponente — Status
+**PLANNED / NOT INTEGRATED**, keine Technical Debt.
+
+Zur Einordnung gegenüber der ursprünglichen Triage-Evidenz (Abschnitt 9):
+`EnhancedErrorHandler`, `ExceptionMonitor`, `DebugTracker` und
+`ErrorHandlerAdminInterface` bleiben wie dort verifiziert **aktiv und
+produktiv integriert** (`create_enhanced_error_handler()`/
+`ErrorHandlerAdminInterface(...)` in `bot.py` und
+`handlers/menu/rich_menu_handler.py`) — daran ändert diese Entscheidung
+nichts. Sie betrifft ausschließlich die vier oben genannten, repo-weit
+aufruferlosen Elemente.
+
+Keine Code-Änderung. Diese Klassifizierung fließt als bewusst akzeptierter,
+begründeter Zustand in `docs/MusicBot_ENGINEERING_BASELINE_v3.md` ein.
