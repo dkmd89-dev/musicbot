@@ -5,11 +5,11 @@ ARTIST_GENRE_MAP:
     primary: Hip Hop
     secondary: [Deutschrap, Pop Rap, Alternative Hip Hop, Trap]
     description: Jugendlicher Deutschrap mit Pop- und Trap-Einflüssen aus der Dresdner Hip-Hop-Szene
-    
+
   apache 207:
     primary: Hip Hop
     secondary: [Deutschrap, Trap, Melodic Rap, Pop Rap, Gangsta Rap]
-    description: Deutscher Rapper, bekannt für melodischen Trap-Sound und Hits wie "Roller" oder "200 km/h", oft mit Features aus der Deutschrap-Szene  
+    description: Deutscher Rapper, bekannt für melodischen Trap-Sound und Hits wie "Roller" oder "200 km/h", oft mit Features aus der Deutschrap-Szene
 
   1986zig:
     primary: Hip Hop
@@ -115,7 +115,7 @@ ARTIST_GENRE_MAP:
     primary: Hip Hop
     secondary: [Deutschrap, Pop Rap, Melodic Rap, R&B]
     description: Deutscher Rapper mit eingängigen Melodien und Pop-Rap-Elementen
-    
+
   stickle:
     primary: Hip Hop
     secondary: [Deutschrap, Melodic Rap, R&B]
@@ -277,6 +277,11 @@ ARTIST_GENRE_MAP:
     secondary: [Deutschpop, Pop-Rock, Singer-Songwriter, Akustik Pop]
     description: Deutscher Singer-Songwriter mit eingängigen Gitarren-basierten Songs
 
+  filow:
+    primary: Deutschrap
+    secondary: [Hip Hop, Deutscher Pop, Electronic, Hyperpop]
+    description: Deutscher Social-Media-Influencer, Twitch-Streamer und Musiker aus Potsdam; bekannt durch humorvolle und oft parodistische Deutschrap-Tracks wie "Rasenschach" und "Jiggy"; Musik bewegt sich zwischen Rap, Pop und elektronischen Einflüssen
+
   nico santos:
     primary: Pop
     secondary: [Dance-Pop, R&B, Electropop, Latin Pop]
@@ -365,7 +370,8 @@ ARTIST_GENRE_MAP:
 
   kygo:
     primary: Electronic
-    secondary: [Tropical House, Deep House, Progressive House, Downtempo, Melodic House]
+    secondary:
+      [Tropical House, Deep House, Progressive House, Downtempo, Melodic House]
     description: Norwegischer DJ und Produzent, Pionier des Tropical House
 
   lucky luke:
@@ -421,7 +427,8 @@ ARTIST_GENRE_MAP:
   # Rock / Alternative
   bloodhound gang:
     primary: Rock
-    secondary: [Alternative Hip Hop, Rapcore, Comedy Rock, Punk Rock, Alternative Rock]
+    secondary:
+      [Alternative Hip Hop, Rapcore, Comedy Rock, Punk Rock, Alternative Rock]
     description: Amerikanische Band bekannt für humorvollen, genreübergreifenden Sound
 
   bosse:
@@ -793,12 +800,12 @@ ARTIST_GENRE_MAP:
     primary: German Hip-Hop
     secondary: [Remix, Hip-Hop, Electronic, Rap]
     description: Deutschrap-Remixe und Beat-Produktionen
-    
+
   starting grid:
     primary: Podcast
     secondary: [Sport, Motorsport, Formel 1]
     description: Starting Grid
-    
+
   alex warren:
     primary: Pop
     secondary: [Pop-Rock, Singer-Songwriter, Folk-Pop]
@@ -813,53 +820,53 @@ ARTIST_GENRE_MAP:
     primary: Rock
     secondary: [Nu Metal, Alternative Rock, Alternative Metal]
     description: Manuelles Genre für Linkin Park
-    
+
   limp bizkit:
     primary: Nu Metal
     secondary: [Rapcore, Alternative Metal, Rap Metal]
-    description: Manuelles Genre für Limp Bizkit    
+    description: Manuelles Genre für Limp Bizkit
 
   # Weitere Pop-Künstler
   "Dua Lipa":
     primary: Pop
     secondary: [Dance Pop, Disco, Synthpop, Electropop]
     description: Britisch-albanische Pop-Sängerin, bekannt für Disco-inspirierten Dance-Pop
-  
+
   "Billie Eilish":
     primary: Alternative Pop
     secondary: [Indie Pop, Electropop, Emo Pop, Dark Pop]
     description: Amerikanische Singer-Songwriterin mit einzigartigem Alternative-Pop-Sound
-  
+
   "The Weeknd":
     primary: R&B
     secondary: [Alternative R&B, Synthpop, New Wave, Electropop]
     description: Kanadischer Singer-Songwriter mit einzigartigem R&B- und Pop-Sound
-  
+
   "Ariana Grande":
     primary: Pop
     secondary: [R&B, Dance Pop, Trap, Electropop]
     description: Amerikanische Pop- und R&B-Sängerin mit beeindruckender Stimme
-  
+
   "Doja Cat":
     primary: Hip Hop
     secondary: [Pop, R&B, Trap, Funk]
     description: Amerikanische Rapperin und Sängerin mit genreübergreifendem Stil
-  
+
   "Olivia Rodrigo":
     primary: Pop
     secondary: [Pop Rock, Alternative Pop, Singer-Songwriter]
     description: Amerikanische Singer-Songwriterin mit Pop-Rock-Einflüssen
-  
+
   "Post Malone":
     primary: Hip Hop
     secondary: [Pop Rap, Alternative Rock, Trap, R&B]
     description: Amerikanischer Sänger und Rapper mit genreübergreifendem Sound
-  
+
   "Harry Styles":
     primary: Pop
     secondary: [Pop Rock, Soft Rock, Indie Pop]
     description: Britischer Pop-Sänger mit Rock-Einflüssen
-  
+
   "Lady Gaga":
     primary: Pop
     secondary: [Dance Pop, Electropop, Jazz, Rock]
