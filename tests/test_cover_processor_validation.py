@@ -128,7 +128,6 @@ class TestBug003EarlyExitThresholdWasUnreachable:
         """
         processor = CoverProcessor(
             fanart_api_key="fake-key",
-            lastfm_api_key="fake-key",
             cache_enabled=False,
         )
 
@@ -145,7 +144,6 @@ class TestBug003EarlyExitThresholdWasUnreachable:
         processor._fetch_apple_music = MagicMock()
         processor._fetch_deezer = MagicMock()
         processor._fetch_fanart_artist = MagicMock()
-        processor._fetch_lastfm = MagicMock()
         processor._fetch_youtube = MagicMock()
 
         data, source = processor.get_cover_art(
@@ -163,7 +161,6 @@ class TestBug003EarlyExitThresholdWasUnreachable:
         processor._fetch_apple_music.assert_not_called()
         processor._fetch_deezer.assert_not_called()
         processor._fetch_fanart_artist.assert_not_called()
-        processor._fetch_lastfm.assert_not_called()
         processor._fetch_youtube.assert_not_called()
 
 

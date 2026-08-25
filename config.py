@@ -199,16 +199,6 @@ class Config:
         """Navidrome Docker Container Name"""
         return os.getenv("NAVIDROME_CONTAINER_NAME", "navidrome")
 
-    @property
-    def PODCAST_INDEX_API_KEY(self) -> str:
-        """Podcast Index API Key"""
-        return os.getenv("PODCAST_INDEX_API_KEY", "")
-
-    @property
-    def PODCAST_INDEX_API_SECRET(self) -> str:
-        """Podcast Index API Secret"""
-        return os.getenv("PODCAST_INDEX_API_SECRET", "")
-
     # ─────────────────────────────────────────────────────────────────────────
     # PODCAST_DIR als Property (liest .env zur Laufzeit, Vorrang vor Klassenwert)
     # ─────────────────────────────────────────────────────────────────────────
