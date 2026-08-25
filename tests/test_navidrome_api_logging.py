@@ -24,6 +24,11 @@ requests.get-Patch-Ziel entsprechend angepasst.
 """
 
 import logging
+
+import pytest
+import requests
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from requests.exceptions import HTTPError
 from unittest.mock import MagicMock, patch
 
 from logger import get_module_logger
@@ -66,5 +71,116 @@ def test_navidrome_password_not_logged_when_module_log_level_raised(caplog):
     log_text = "\n".join(record.getMessage() for record in caplog.records)
 
     assert log_text, "Es sollte mindestens ein Log-Record erzeugt worden sein (INFO ist jetzt aktiv)."
+    assert fake_auth_params["p"] not in log_text
+    assert fake_auth_params["u"] not in log_text
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# NAVIDROME-PASSWORD-LOG-LEAK (Post-Baseline-Triage FINDING-3, 2026-08-25)
+#
+# Die obige, historische SEC-001-Regression deckt nur den Erfolgsfall ab.
+# make_request() maskierte u/p zwar korrekt fuer die eigene INFO-Logzeile,
+# loggte im Fehlerfall aber das rohe Exception-Objekt bzw. dessen
+# str()-Repraesentation - requests haengt die vollstaendige Request-URL
+# (inkl. Klartext-u/p aus full_params) sowohl in HTTPError/ConnectionError-
+# Nachrichten als auch (via exc_info=True) in jede daraus formatierte
+# Traceback-Ausgabe ein. Diese drei Tests reproduzieren das exakte
+# requests-Fehlermeldungsformat und waeren VOR dem Fix fehlgeschlagen.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _fake_auth_params():
+    return {
+        "u": "musicbot_admin",
+        "p": "s3cr3t-navidrome-pass",
+        "v": "1.16.1",
+        "c": "telegram-bot",
+        "f": "json",
+    }
+
+
+def test_navidrome_password_not_logged_on_http_error(caplog):
+    fake_auth_params = _fake_auth_params()
+    leaking_url = (
+        "https://navidrome.example.test/rest/ping.view"
+        f"?u={fake_auth_params['u']}&p={fake_auth_params['p']}&v=1.16.1"
+        "&c=telegram-bot&f=json"
+    )
+
+    fake_response = MagicMock()
+    fake_response.status_code = 401
+    fake_response.reason = "Unauthorized"
+    fake_response.url = leaking_url
+    # Exaktes Nachrichtenformat von requests.Response.raise_for_status().
+    fake_response.raise_for_status.side_effect = HTTPError(
+        f"401 Client Error: Unauthorized for url: {leaking_url}",
+        response=fake_response,
+    )
+
+    api = NavidromeAPI()
+    with patch.object(api, "_auth_params", fake_auth_params), patch.object(
+        api, "_build_url", return_value="https://navidrome.example.test/rest/ping.view"
+    ), patch(
+        "services.clients.navidrome_api.requests.get", return_value=fake_response
+    ):
+        with caplog.at_level(logging.INFO):
+            with pytest.raises(RuntimeError):
+                api.make_request("ping")
+
+    log_text = "\n".join(
+        f"{r.getMessage()}\n{r.exc_text or ''}" for r in caplog.records
+    )
+    assert fake_auth_params["p"] not in log_text
+    assert fake_auth_params["u"] not in log_text
+
+
+def test_navidrome_password_not_logged_on_connection_error(caplog):
+    fake_auth_params = _fake_auth_params()
+    leaking_msg = (
+        "HTTPConnectionPool(host='navidrome.example.test', port=443): "
+        "Max retries exceeded with url: /rest/ping.view"
+        f"?u={fake_auth_params['u']}&p={fake_auth_params['p']}"
+        " (Caused by NewConnectionError(...))"
+    )
+
+    api = NavidromeAPI()
+    with patch.object(api, "_auth_params", fake_auth_params), patch.object(
+        api, "_build_url", return_value="https://navidrome.example.test/rest/ping.view"
+    ), patch(
+        "services.clients.navidrome_api.requests.get",
+        side_effect=RequestsConnectionError(leaking_msg),
+    ):
+        with caplog.at_level(logging.INFO):
+            with pytest.raises(RuntimeError):
+                api.make_request("ping")
+
+    log_text = "\n".join(
+        f"{r.getMessage()}\n{r.exc_text or ''}" for r in caplog.records
+    )
+    assert fake_auth_params["p"] not in log_text
+    assert fake_auth_params["u"] not in log_text
+
+
+def test_navidrome_password_not_logged_on_unexpected_exception(caplog):
+    fake_auth_params = _fake_auth_params()
+    leaking_msg = (
+        "unexpected failure for "
+        f"?u={fake_auth_params['u']}&p={fake_auth_params['p']}"
+    )
+
+    api = NavidromeAPI()
+    with patch.object(api, "_auth_params", fake_auth_params), patch.object(
+        api, "_build_url", return_value="https://navidrome.example.test/rest/ping.view"
+    ), patch(
+        "services.clients.navidrome_api.requests.get",
+        side_effect=ValueError(leaking_msg),
+    ):
+        with caplog.at_level(logging.INFO):
+            with pytest.raises(RuntimeError):
+                api.make_request("ping")
+
+    log_text = "\n".join(
+        f"{r.getMessage()}\n{r.exc_text or ''}" for r in caplog.records
+    )
     assert fake_auth_params["p"] not in log_text
     assert fake_auth_params["u"] not in log_text

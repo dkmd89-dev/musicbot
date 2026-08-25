@@ -289,3 +289,50 @@ Priorisiert nach Impact, Evidence, Likelihood, Engineering Value — nicht nach 
 3. **FINDING-2 (PARTIAL-FAILURE-LIBRARY)** — Datenintegritäts-Risiko im P0-Bereich „File/Library Processing" laut CLAUDE.md §5. Etwas geringere Likelihood als FINDING-1 (setzt einen tatsächlichen `write_tags()`-Fehler voraus), aber hoher Impact bei Eintritt (dauerhaft falsche Datei in der Library, keine Telemetrie über tatsächliche Häufigkeit vorhanden — genau das sollte der Deep Audit klären).
 
 DEAD-CODE-ERRHANDLER (Maintainability) wird bewusst **nicht** als Deep-Audit-Kandidat vorgeschlagen — der Fund ist bereits vollständig belegt (kein weiterer Untersuchungsbedarf), die Entscheidung ist eine reine Lösch-Frage außerhalb der Kette TRIAGE → DEEP AUDIT.
+
+---
+
+## Nachtrag (2026-08-25): FINDING-3 (NAVIDROME-PASSWORD-LOG-LEAK) — Deep Audit abgeschlossen, behoben
+
+Freigabe für Empfehlung Nr. 2 aus Abschnitt 14. Deep Audit deckte auf, dass eine
+naive Fix-Variante (nur die Log-Zeile in `make_request()` selbst maskieren)
+**nicht ausgereicht** hätte:
+
+1. `raise` reicht das Original-Exception-Objekt unverändert weiter — jeder
+   Aufrufer, der `str(e)` selbst loggt (repo-weit gefunden: 13 `except
+   Exception`-Blöcke allein in `handlers/navidrome_menu_handler.py`), hätte
+   das Passwort erneut geleakt, unabhängig von der Maskierung an der
+   Ursprungsstelle.
+2. `exc_info=True` haengt bei Python-Logging den vollstaendigen Traceback
+   inkl. der letzten Zeile `ExceptionType: <str(exception)>` an — reproduziert
+   belegt, dass selbst eine bereits maskierte Log-*Nachricht* das Passwort via
+   Traceback erneut offenlegt, wenn `exc_info=True` gesetzt ist.
+
+**Fix:** `services/clients/navidrome_api.py::make_request()` — neue
+`_scrub_credentials()`-Hilfsfunktion (Regex auf `u=`/`p=`-Query-Parameter),
+angewandt auf alle drei Except-Zweige (`HTTPError`, `ConnectionError`,
+generisches `Exception`). Statt das Original-Objekt weiterzureichen, wird ein
+neues `RuntimeError(safe_msg)` **mit `from None`** geworfen (unterdrückt
+Exception-Chaining, damit kein späteres `exc_info=True` bei einem Aufrufer
+das Original-Objekt doch noch ausgibt) — verifiziert per Reproduktion (siehe
+unten). `exc_info=True` im generischen Zweig entfernt (hätte denselben
+Leak-Mechanismus erneut ausgelöst). Kein Aufrufer im Repository unterscheidet
+nach Exception-Typ (repo-weit geprüft) — der Typwechsel zu `RuntimeError` ist
+funktional unkritisch.
+
+**Test:** 3 neue Regressionstests in `tests/test_navidrome_api_logging.py`
+(HTTPError-, ConnectionError-, genereller-Exception-Zweig), reproduzieren
+exakt das `requests`-Fehlermeldungsformat. Per `git stash` gegen den
+Vor-Fix-Stand verifiziert: alle 3 schlagen ohne den Fix fehl (Passwort im
+`caplog`-Text nachweisbar), mit Fix grün. Ein bestehender Test
+(`test_navidrome_api_timeout.py::test_requests_timeout_is_not_silently_swallowed`)
+prüfte bislang den konkreten Exception-*Typ* (`requests.exceptions.Timeout`)
+— an das neue, bewusst geänderte Verhalten angepasst (`RuntimeError`
+propagiert weiterhin sicher, kein Erfolg wird maskiert — der eigentliche
+Testzweck bleibt erhalten).
+
+**Vollregression:** 1060 passed, 0 failed (+3 gegenüber vorherigem Stand,
+keine neue Regression).
+
+FINDING-3 gilt damit als **FIXED**. FINDING-1 (COVER-BLOCKING) und FINDING-2
+(PARTIAL-FAILURE-LIBRARY) sind weiterhin offen.

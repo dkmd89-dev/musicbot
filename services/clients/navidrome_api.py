@@ -32,6 +32,27 @@ def _get_navidrome_config():
     return get_config()
 
 
+_CREDENTIAL_QUERY_PARAM_RE = re.compile(r"([?&][up]=)[^&\s]*")
+
+
+def _scrub_credentials(text: str) -> str:
+    """
+    Entfernt u=/p=-Query-Parameter (Subsonic-Auth) aus einem String.
+
+    requests.Response.raise_for_status() sowie die von requests/urllib3
+    ausgeloesten Connection-/Request-Exceptions formatieren ihre
+    Fehlermeldung u.a. als "... for url: <response.url>" bzw. betten die
+    vollstaendige Request-URL in ihre eigene str()-Repraesentation ein.
+    Da full_params (u/p im Klartext) als params= an requests.get()
+    uebergeben wird, landet das Navidrome-Passwort dadurch unmaskiert im
+    Exception-String - unabhaengig von der bereits vorhandenen
+    Maskierung der Erfolgsfall-Logzeile weiter oben.
+    """
+    if not text:
+        return text
+    return _CREDENTIAL_QUERY_PARAM_RE.sub(r"\1***", text)
+
+
 class NavidromeAPI:
     """
     Kapselt alle Interaktionen mit der Subsonic-API von Navidrome:
@@ -111,24 +132,40 @@ class NavidromeAPI:
             )
             return response.json()
         except HTTPError as http_err:
+            safe_msg = _scrub_credentials(str(http_err))
             log_handler_error(
-                f"Fehler bei HTTP-Anfrage an Navidrome API ({endpoint}): {http_err} für URL: {url}",
+                f"Fehler bei HTTP-Anfrage an Navidrome API ({endpoint}): "
+                f"{safe_msg} für URL: {url}",
                 context="NavidromeAPI",
             )
-            raise
+            # Weder das Original-Objekt weiterreichen (raise http_err) noch
+            # exc_info=True/`from http_err` verwenden: requests haengt die
+            # vollstaendige Request-URL (inkl. Klartext-Passwort aus
+            # full_params) sowohl in die Exception-Message als auch in jede
+            # daraus formatierte Traceback-/Chaining-Ausgabe ein - `from
+            # None` verhindert, dass ein spaeteres exc_info=True beim
+            # Aufrufer das Original-Objekt (und damit das Passwort) doch
+            # noch ausgibt. Kein Aufrufer unterscheidet nach Exception-Typ
+            # (repo-weit geprueft), daher ist RuntimeError unkritisch.
+            raise RuntimeError(safe_msg) from None
         except ConnectionError as conn_err:
+            safe_msg = _scrub_credentials(str(conn_err))
             log_handler_error(
-                f"Verbindungsfehler zur Navidrome API ({endpoint}): {conn_err}",
+                f"Verbindungsfehler zur Navidrome API ({endpoint}): {safe_msg}",
                 context="NavidromeAPI",
             )
-            raise
+            raise RuntimeError(safe_msg) from None
         except Exception as err:
+            safe_msg = _scrub_credentials(str(err))
             log_handler_error(
-                err,
+                safe_msg,
                 context=f"NavidromeAPI (unerwarteter Fehler bei Anfrage an {endpoint})",
-                exc_info=True,
             )
-            raise
+            # exc_info=True bewusst entfernt: haette hier denselben Effekt
+            # wie oben beschrieben (Traceback des Original-`err` haengt
+            # dessen unmaskierte str()-Repraesentation an, auch wenn die
+            # geloggte `msg` selbst bereits sicher ist).
+            raise RuntimeError(safe_msg) from None
 
     async def check_connection(self) -> bool:
         """Überprüft, ob die Navidrome API erreichbar ist."""

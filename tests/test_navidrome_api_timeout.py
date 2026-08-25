@@ -70,6 +70,17 @@ class TestTimeoutExceptionIsHandled:
         Ein requests.exceptions.Timeout muss weiterhin propagiert werden
         (ueber den bestehenden allgemeinen except-Block), nicht als
         Erfolg maskiert werden.
+
+        NAVIDROME-PASSWORD-LOG-LEAK-Fix (Post-Baseline-Triage FINDING-3):
+        der allgemeine except-Block wandelt die Original-Exception seither
+        bewusst in ein RuntimeError mit bereinigter Nachricht um (statt sie
+        unveraendert weiterzureichen) - andernfalls wuerde requests' eigene
+        Exception-Message (bzw. deren Traceback-Chaining via exc_info=True
+        bei Aufrufern) die Klartext-Subsonic-Credentials aus den Request-
+        Query-Params (u=/p=) leaken. Kein Aufrufer im Repo unterscheidet
+        nach Exception-Typ (repo-weit geprueft), der Typwechsel ist daher
+        unkritisch - entscheidend ist weiterhin nur, dass ueberhaupt eine
+        Exception propagiert (kein Erfolg maskiert wird).
         """
         api = NavidromeAPI()
         with patch.object(
@@ -80,5 +91,5 @@ class TestTimeoutExceptionIsHandled:
             "services.clients.navidrome_api.requests.get",
             side_effect=requests.exceptions.Timeout("timed out"),
         ):
-            with pytest.raises(requests.exceptions.Timeout):
+            with pytest.raises(RuntimeError, match="timed out"):
                 api.make_request("ping")
