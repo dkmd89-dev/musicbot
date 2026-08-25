@@ -5,20 +5,24 @@ Gemeinsame Integrationsschicht: ruft EnhancedMetadataProcessor
 .process_single_track() auf und übersetzt das MetadataResult zurück in das
 vom jeweiligen Aufrufer erwartete Ergebnisformat.
 
-ARCH-004, P-3, Option B — extrahiert aus drei unabhängig gewachsenen
-Implementierungen (siehe docs/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md,
-Abschnitt 6, für die vollständige Feld-für-Feld-Charakterisierung):
+ARCH-004, P-3, Option B — ursprünglich aus drei unabhängig gewachsenen
+Implementierungen extrahiert (siehe
+docs/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md, Abschnitt 6, für die
+vollständige Feld-für-Feld-Charakterisierung):
   - download_utils.py::_process_track_metadata()          (YT-Playlist)
   - download_utils.py::_process_single_download()          (YT-Single)
-  - klassen/download_handler.py::_process_single_download_result() (Spotify)
+  - klassen/download_handler.py::_process_single_download_result() (Spotify,
+    entfernt - siehe docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md,
+    Abschnitt "Spotify-Entfernung". Die dafür zuständige Funktion
+    `merge_metadata_result_into_dict()` wurde mit dem Spotify-Aufrufer
+    zusammen entfernt, da sie danach ohne Aufrufer war.)
 
-WICHTIG: Die drei bestehenden Aufrufstellen unterschieden sich bereits
-UNTEREINANDER (nicht nur YouTube vs. Spotify) in mehreren Feldern - u. a.
-ob `year`/`track_number`/`playlist_album` aus dem MetadataResult übernommen
-oder überschrieben/weggelassen werden. Diese Funktionen reproduzieren die
-bisherigen Verhaltensweisen bewusst EXAKT (durch Regressionstests
-abgesichert, siehe tests/test_download_utils_metadata_translation.py und
-tests/test_download_handler_process_single_download_result.py).
+WICHTIG: Die verbleibenden zwei Aufrufstellen unterschieden sich bereits
+UNTEREINANDER in mehreren Feldern - u. a. ob `year`/`track_number`/
+`playlist_album` aus dem MetadataResult übernommen oder überschrieben/
+weggelassen werden. Diese Funktionen reproduzieren die bisherigen
+Verhaltensweisen bewusst EXAKT (durch Regressionstests abgesichert, siehe
+tests/test_download_utils_metadata_translation.py).
 
 Ausnahme - zwei am 2026-08-23 bewusst gefixte Inkonsistenzen (ARCH-004
 Section 7, Entscheidung FIX NOW):
@@ -158,50 +162,3 @@ def build_single_track_result(
         enhanced_processor_ref=enhanced_processor_ref,
     )
     return dl_result.to_dict()
-
-
-def merge_metadata_result_into_dict(
-    original: Dict[str, Any], metadata_result: MetadataResult
-) -> Dict[str, Any]:
-    """
-    Reproduziert exakt `_process_single_download_result()`s (Spotify)
-    bisherige Übersetzung eines erfolgreichen MetadataResult in ein freies
-    `{**original, ...}`-Dict.
-
-    Bewusst erhaltene Eigenheiten (NICHT Bugs, die hier gefixt würden):
-      - kein `enhanced_processor_ref`, kein `is_duplicate`-Schlüssel (waren
-        vorher auch nicht Teil dieses Ergebnis-Dicts).
-      - `lyrics` (Rohtext) UND `filepath` bleiben erhalten - anders als bei
-        den beiden `DownloadResult`-basierten Varianten oben, die diese
-        Felder gar nicht kennen.
-      - `album`/`year`/`genres` fallen auf den jeweiligen Wert aus
-        `original` zurück, falls `metadata_result` sie nicht liefert.
-    """
-    return {
-        **original,
-        "title": metadata_result.title,
-        "artist": metadata_result.artist,
-        "album": metadata_result.album or original.get("album"),
-        "album_artist": metadata_result.album_artist,
-        "year": metadata_result.year or original.get("year"),
-        "track_number": metadata_result.track_number,
-        "genres": metadata_result.genres or original.get("genres"),
-        "lyrics": metadata_result.lyrics,
-        "lyrics_available": bool(metadata_result.lyrics),
-        "lyrics_source": metadata_result.lyrics_source,
-        "cover_embedded": metadata_result.cover_embedded,
-        "filepath": (
-            str(metadata_result.filepath)
-            if metadata_result.filepath
-            else original.get("filepath")
-        ),
-        "library_path": (
-            str(metadata_result.library_path)
-            if metadata_result.library_path
-            else original.get("library_path")
-        ),
-        "artist_source": metadata_result.artist_source,
-        "genre_source": metadata_result.genre_source,
-        "title_cleaned": metadata_result.title_cleaned,
-        "from_cache": metadata_result.from_cache,
-    }

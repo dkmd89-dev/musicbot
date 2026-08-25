@@ -1,13 +1,14 @@
 """
 Unit-Tests für services/downloader/metadata_result_translator.py
-— neue gemeinsame Integrationsschicht (ARCH-004, P-3, Option B).
+— gemeinsame Integrationsschicht (ARCH-004, P-3, Option B).
 
-Jede der drei Übersetzungsfunktionen wird hier isoliert gegen die exakten,
-bereits per Regressionstest gesicherten Verhaltensweisen der drei
-Original-Aufrufstellen geprüft (siehe
-tests/test_download_utils_metadata_translation.py und
-tests/test_download_handler_process_single_download_result.py für die
-"vorher"-Baseline).
+Jede der Übersetzungsfunktionen wird hier isoliert gegen die exakten,
+bereits per Regressionstest gesicherten Verhaltensweisen der zwei
+verbleibenden YouTube-Aufrufstellen geprüft (siehe
+tests/test_download_utils_metadata_translation.py für die
+"vorher"-Baseline). `merge_metadata_result_into_dict()` (dritte,
+Spotify-spezifische Aufrufstelle) wurde mit der Spotify-Entfernung
+mitentfernt (siehe docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md).
 """
 
 import asyncio
@@ -17,7 +18,6 @@ from services.downloader.metadata_result_translator import (
     build_playlist_track_result,
     build_single_track_result,
     call_process_single_track,
-    merge_metadata_result_into_dict,
 )
 from services.metadata.models import MetadataResult
 
@@ -166,40 +166,3 @@ class TestBuildSingleTrackResult:
         mr = make_metadata_result(library_path=None)
         result = build_single_track_result(mr, enhanced_processor_ref=Mock())
         assert result["library_path"] is None
-
-
-class TestMergeMetadataResultIntoDict:
-    def test_success_maps_fields(self):
-        mr = make_metadata_result()
-        original = {"filepath": "/tmp/raw.m4a", "title": "Raw"}
-        result = merge_metadata_result_into_dict(original, mr)
-        assert result["title"] == "Clean Title"
-        assert result["track_number"] == 7
-        assert result["lyrics"] == "la la la"
-        assert result["from_cache"] is False
-
-    def test_original_extra_fields_preserved(self):
-        mr = make_metadata_result()
-        original = {
-            "filepath": "/tmp/raw.m4a",
-            "title": "Raw",
-            "source": "spotify_no_api_embed",
-            "is_podcast": False,
-        }
-        result = merge_metadata_result_into_dict(original, mr)
-        assert result["source"] == "spotify_no_api_embed"
-        assert result["is_podcast"] is False
-
-    def test_no_enhanced_processor_ref_or_is_duplicate_key(self):
-        mr = make_metadata_result(is_duplicate=True)
-        original = {"filepath": "/tmp/raw.m4a", "title": "T"}
-        result = merge_metadata_result_into_dict(original, mr)
-        assert "enhanced_processor_ref" not in result
-        assert "is_duplicate" not in result
-
-    def test_album_and_year_fall_back_to_original(self):
-        mr = make_metadata_result(album=None, year=None)
-        original = {"filepath": "/tmp/raw.m4a", "title": "T", "album": "Raw Album", "year": 2015}
-        result = merge_metadata_result_into_dict(original, mr)
-        assert result["album"] == "Raw Album"
-        assert result["year"] == 2015

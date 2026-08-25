@@ -195,22 +195,6 @@ class TestBuildFinalSummaryMessage:
         assert "📺 YouTube" in sent_text
         assert "Some Title.mp3" in sent_text
 
-    def test_spotify_podcast_filters_generic_genres(self, reporter):
-        result = {
-            "title": "Episode 1",
-            "artist": "Show Host",
-            "library_path": "/library/Show/Episode 1.mp3",
-            "source": "spotify",
-            "is_podcast": True,
-            "genres": {"primary": "German", "secondary": ["Hip Hop", "Comedy"]},
-        }
-
-        sent_text = reporter.build_final_summary_message(result, {}, {})
-
-        assert "German" not in sent_text.split("Genres:")[1].split("\n\n")[0]
-        assert "Comedy" in sent_text
-        assert "🎙️ Spotify Podcast" in sent_text
-
     def test_playlist_type_uses_playlist_header_and_track_counts(self, reporter):
         result = {
             "type": "playlist",

@@ -2,19 +2,16 @@
 # -*- coding: utf-8 -*-
 """
 🎯 RichMenuHandler - ERWEITERT MIT NAVIDROME, LOGGER, START, HELP, BOT-NEUSTART
-                     UND SPOTIFY-INTEGRATION
 
 CHANGELOG:
-  - v2.2  Spotify-Integration:
-          • Import SpotifyDownloader
-          • self.spotify_downloader Attribut (__init__)
-          • SpotifyDownloader-Initialisierung (initialize)
-          • Injektion in DownloadHandler (_initiate_download + _handle_regular_url)
-          • Unified handle_url() statt handle_youtube_links() (erkennt automatisch YT vs Spotify)
   - v2.1  Bot-Neustart-Feature:
           • Import BotRestartHandler
           • BotRestartHandler-Instanziierung (initialize)
           • restart:-Pattern in get_telegram_handlers()
+
+Spotify-Unterstützung (v2.2) wurde entfernt (siehe
+docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md, Abschnitt
+"Spotify-Entfernung") - Spotify wurde im produktiven Betrieb nicht genutzt.
 """
 
 import json
@@ -60,9 +57,6 @@ from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
 
-# ── NEU: Spotify-Integration ──────────────────────────────────────────────────
-from services.downloader.spotify_downloader import SpotifyDownloader, _is_spotify_url
-
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -72,9 +66,6 @@ class RichMenuHandler:
 
     Verwaltet alle Handler-Instanzen, initialisiert sie in der richtigen
     Reihenfolge und verknüpft sie mit dem Menüsystem.
-
-    Neu in v2.2: Geteilte SpotifyDownloader-Instanz wird einmalig initialisiert
-    und bei jedem DownloadHandler-Aufruf injiziert (statt pro Request neu zu erstellen).
     """
 
     def __init__(self, config: Config, logger_factory=None):
@@ -104,12 +95,6 @@ class RichMenuHandler:
         self.backup_handler: Optional[BackupHandler] = None
         self.restart_handler: Optional[BotRestartHandler] = None
 
-        # ── NEU: Geteilte SpotifyDownloader-Instanz ───────────────────────────
-        # Wird einmalig in initialize() erstellt und bei jedem DownloadHandler-
-        # Aufruf injiziert, um Ressourcen (spotdl-Check, Credentials) zu sparen.
-        self.spotify_downloader: Optional[SpotifyDownloader] = None
-        # ─────────────────────────────────────────────────────────────────────
-
         # State Management
         self.user_states: Dict[int, str] = {}
         self.workflow_dispatcher = TextWorkflowDispatcher(
@@ -124,7 +109,7 @@ class RichMenuHandler:
             "download": {
                 "emoji": "📥",
                 "title": "Downloads",
-                "description": "Lade Musik von YouTube oder Spotify herunter",
+                "description": "Lade Musik von YouTube herunter",
                 "commands": ["/download"],
                 "min_role": "user",
                 "menu_id": "download",
@@ -174,9 +159,8 @@ class RichMenuHandler:
         Reihenfolge ist bewusst gewählt:
         1. Error Handler (Basis für alle anderen)
         2. Fachliche Handler (Test, Logger, Stats, Navidrome, ...)
-        3. SpotifyDownloader (eigene Ressource, muss vor DownloadHandler kommen)
-        4. MetadataProcessor (wird von DownloadHandler benötigt)
-        5. Menüsystem-Verknüpfung
+        3. MetadataProcessor (wird von DownloadHandler benötigt)
+        4. Menüsystem-Verknüpfung
         """
         self.logger.info("🚀 Starte Handler-Integration ...")
 
@@ -280,32 +264,7 @@ class RichMenuHandler:
             self.logger.error(f"❌ Restart-Handler Fehler: {e}", exc_info=True)
             self.restart_handler = None
 
-        # ── NEU 11. SpotifyDownloader ─────────────────────────────────────────
-        # Wird einmalig hier initialisiert und später bei jedem DownloadHandler
-        # per Dependency Injection weitergegeben.
-        # Aktivierungsbedingungen (erste zutreffende):
-        #   a) SPOTIFY_CLIENT_ID + SPOTIFY_CLIENT_SECRET in Config → volles Metadaten-Abruf
-        #   b) spotdl installiert ohne eigene Credentials → funktioniert mit spotdl-Auth
-        # Wenn keines zutrifft, bleibt self.spotify_downloader = None
-        # und handle_spotify_url() gibt eine verständliche Fehlermeldung aus.
-        try:
-            self.spotify_downloader = SpotifyDownloader(
-                self.config,
-                logger_factory=self.logger_factory,
-            )
-            self.logger.info(
-                "✅ SpotifyDownloader initialisiert "
-                f"(Credentials: {'✅' if getattr(self.config, 'SPOTIFY_CLIENT_ID', '') else '❌ nicht konfiguriert'})"
-            )
-        except Exception as e:
-            self.logger.warning(
-                f"⚠️ SpotifyDownloader konnte nicht initialisiert werden: {e}. "
-                "Spotify-Downloads sind deaktiviert."
-            )
-            self.spotify_downloader = None
-        # ─────────────────────────────────────────────────────────────────────
-
-        # 12. Metadata Processor
+        # 11. Metadata Processor
         try:
             self.metadata_processor = EnhancedMetadataProcessor(
                 self.config, self.logger_factory
@@ -490,18 +449,6 @@ class RichMenuHandler:
             self.menu_system.set_restart_handler(handler)
         self.logger.info("✅ Restart-Handler verbunden")
 
-    # ── NEU: SpotifyDownloader-Setter ─────────────────────────────────────────
-    def set_spotify_downloader(self, downloader: SpotifyDownloader) -> None:
-        """
-        Setzt eine extern erstellte SpotifyDownloader-Instanz.
-        Nützlich wenn der SpotifyDownloader außerhalb des RichMenuHandlers
-        erstellt wird (z.B. in bot.py).
-        """
-        self.spotify_downloader = downloader
-        self.logger.info("✅ SpotifyDownloader (extern) verbunden")
-
-    # ─────────────────────────────────────────────────────────────────────────
-
     # ====== TELEGRAM HANDLER LISTE ======
 
     def get_telegram_handlers(self) -> list:
@@ -532,7 +479,7 @@ class RichMenuHandler:
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^restart:"),
             # Allgemeines Menü zuletzt
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^menu:"),
-            # URL Handler (YouTube UND Spotify werden automatisch erkannt)
+            # URL Handler (YouTube-URLs)
             MessageHandler(
                 filters.TEXT & filters.Regex(r"https?://"),
                 self.handle_url_message,
@@ -549,23 +496,16 @@ class RichMenuHandler:
     async def _handle_download_single_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Wrapper für Single-Download (YouTube oder Spotify)."""
+        """Wrapper für Single-Download (YouTube)."""
         query = update.callback_query
         user_id = update.effective_user.id
         await query.answer()
 
-        # Hinweistext angepasst um Spotify anzuzeigen
-        spotify_hinweis = (
-            "\nSpotify-Tracks werden ebenfalls unterstützt:\n"
-            "`https://open.spotify.com/track/...`"
-            if self.spotify_downloader
-            else ""
-        )
         await query.edit_message_text(
             "🎵 **Einzelner Track Download**\n\n"
-            "Sende mir einen YouTube- oder Spotify-Link.\n\n"
+            "Sende mir einen YouTube-Link.\n\n"
             "YouTube-Beispiel:\n"
-            "`https://youtube.com/watch?v=...`" + spotify_hinweis
+            "`https://youtube.com/watch?v=...`"
         )
         self.user_states[user_id] = "awaiting_single_url"
         self.logger.info(f"📝 User {user_id} wartet auf Single-URL")
@@ -573,20 +513,14 @@ class RichMenuHandler:
     async def _handle_download_playlist_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Wrapper für Playlist-Download (YouTube oder Spotify)."""
+        """Wrapper für Playlist-Download (YouTube)."""
         query = update.callback_query
         user_id = update.effective_user.id
         await query.answer()
 
-        spotify_hinweis = (
-            "\nSpotify-Playlists werden ebenfalls unterstützt:\n"
-            "`https://open.spotify.com/playlist/...`"
-            if self.spotify_downloader
-            else ""
-        )
         await query.edit_message_text(
             "📋 **Playlist Download**\n\n"
-            "Sende mir einen YouTube-Playlist-Link." + spotify_hinweis
+            "Sende mir einen YouTube-Playlist-Link."
         )
         self.user_states[user_id] = "awaiting_playlist_url"
         self.logger.info(f"📝 User {user_id} wartet auf Playlist-URL")
@@ -828,9 +762,7 @@ class RichMenuHandler:
         Erstellt eine neue DownloadHandler-Instanz mit allen injizierten
         Abhängigkeiten.
 
-        Der SpotifyDownloader wird als geteilte Instanz übergeben, um
-        wiederholte spotdl-Checks und Credential-Initialisierungen zu vermeiden.
-        Der MetadataProcessor und DuplicateHandler werden ebenfalls geteilt.
+        Der MetadataProcessor und DuplicateHandler werden geteilt.
 
         Args:
             update: Telegram-Update-Objekt
@@ -856,10 +788,6 @@ class RichMenuHandler:
             duplicate_detector=self.duplicate_detector,
             metadata_processor=self.metadata_processor,
             logger_factory=self.logger_factory,
-            # ── NEU: Geteilte SpotifyDownloader-Instanz injizieren ────────────
-            # Wenn None: DownloadHandler versucht Auto-Init aus Config-Credentials
-            # oder gibt verständliche Fehlermeldung bei Spotify-URLs aus.
-            spotify_downloader=self.spotify_downloader,
         )
 
     # ====== COMMAND HANDLER ======
@@ -919,7 +847,7 @@ class RichMenuHandler:
 
             if "download" in available_features:
                 greeting_parts.append(
-                    "• Sende mir einen YouTube- oder Spotify-Link zum Download"
+                    "• Sende mir einen YouTube-Link zum Download"
                 )
             if "navidrome" in available_features:
                 greeting_parts.append("• Nutze /search um Musik zu suchen")
@@ -1112,16 +1040,7 @@ class RichMenuHandler:
     # ====== HILFE-TEXTE ======
 
     def _get_download_help(self) -> str:
-        """Hilfe für Download-Funktionen (YouTube + Spotify)."""
-        spotify_section = (
-            "\n\n**🎵 Spotify-Downloads:**\n"
-            "• Einzelne Tracks: `https://open.spotify.com/track/...`\n"
-            "• Alben: `https://open.spotify.com/album/...`\n"
-            "• Playlists: `https://open.spotify.com/playlist/...`\n\n"
-            "_Benötigt: spotdl (pip install spotdl) oder Spotify-Credentials in config.py_"
-            if self.spotify_downloader
-            else ""
-        )
+        """Hilfe für Download-Funktionen (YouTube)."""
         return (
             "📥 **Download-Hilfe**\n\n"
             "**YouTube-Downloads:**\n"
@@ -1130,7 +1049,7 @@ class RichMenuHandler:
             "3. Der Bot lädt die Musik herunter\n\n"
             "Beispiel: `https://youtube.com/watch?v=...`\n\n"
             "**Unterstützte Formate:**\n"
-            "• Einzelne Videos, Playlists, Mix-Playlists" + spotify_section
+            "• Einzelne Videos, Playlists, Mix-Playlists"
         )
 
     def _get_stats_help(self) -> str:
@@ -1173,8 +1092,7 @@ class RichMenuHandler:
         """
         Verarbeitet URL-Nachrichten basierend auf dem User-State.
 
-        Erkennt automatisch ob die URL zu YouTube oder Spotify gehört.
-        Die eigentliche URL-Unterscheidung erfolgt in DownloadHandler.handle_url().
+        Die URL-Validierung erfolgt in DownloadHandler.handle_url().
         """
         user_id = update.effective_user.id
         text = update.message.text
@@ -1200,17 +1118,13 @@ class RichMenuHandler:
         """
         Erstellt einen DownloadHandler und startet den Download-Prozess.
 
-        Verwendet handle_url() als unified Einstiegspunkt, der intern
-        automatisch zwischen YouTube und Spotify unterscheidet.
-
         Args:
             update: Telegram-Update-Objekt
             context: Telegram-Kontext
             url: Die zu verarbeitende URL
         """
-        url_type = "🎵 Spotify" if _is_spotify_url(url) else "📺 YouTube"
         self.logger.info(
-            f"🔗 Verarbeite {url_type}-URL von User {update.effective_user.id}: {url}"
+            f"🔗 Verarbeite 📺 YouTube-URL von User {update.effective_user.id}: {url}"
         )
 
         handler = self._create_download_handler(update)
@@ -1220,9 +1134,6 @@ class RichMenuHandler:
             )
             return
 
-        # ── NEU: handle_url() erkennt automatisch YT vs. Spotify ─────────────
-        # Kein manueller _is_spotify_url-Check nötig – DownloadHandler.handle_url()
-        # delegiert intern an handle_spotify_url() oder handle_youtube_links().
         await handler.handle_url(update, context)
 
     # Alias für Rückwärtskompatibilität (wird von älterem Code ggf. noch aufgerufen)

@@ -104,9 +104,6 @@ class Config:
     PLAY_HISTORY_FILE = BASE_DIR / "history" / "user_histories"
     STATS_DIR = BASE_DIR / "history" / "stats_charts"
 
-    # === SPOTIFY ===
-    SPOTIFY_DOWNLOAD_DIR = BASE_DIR / "import" / "spotify"
-
     # === BACKUP ===
     BACKUP_BOT_SOURCE_DIR = BASE_DIR
     BACKUP_LIBRARY_SOURCE_DIR = Path("/mnt/4tb/library")
@@ -156,16 +153,6 @@ class Config:
     def ADMIN_CHAT_ID(self) -> str:
         """Admin Chat ID (SENSIBEL)"""
         return os.getenv("ADMIN_CHAT_ID", str(self.OWNER_USER_ID))
-
-    @property
-    def SPOTIFY_CLIENT_ID(self) -> str:
-        """Spotify Client ID (SENSIBEL)"""
-        return os.getenv("SPOTIFY_CLIENT_ID", "")
-
-    @property
-    def SPOTIFY_CLIENT_SECRET(self) -> str:
-        """Spotify Client Secret (SENSIBEL)"""
-        return os.getenv("SPOTIFY_CLIENT_SECRET", "")
 
     @property
     def GENIUS_ACCESS_TOKEN(self) -> str:
@@ -389,9 +376,6 @@ class Config:
     YOUTUBE_PARSER_ENABLED = True
     YOUTUBE_PARSER_PRIORITY = True
 
-    # Spotify
-    SPOTIFY_ENABLED = True
-
     # Navidrome
     NAVIDROME_SCAN_TIMEOUT = 45
     NAVIDROME_SCAN_COMMAND = f"docker exec navidrome /app/navidrome scan --full"
@@ -608,7 +592,6 @@ class Config:
             "genre_mapping": cls.GENRE_MAPPING_ENABLED,
             "artist_normalization": cls.ARTIST_NORMALIZATION_ENABLED,
             "playlist_analysis": cls.PLAYLIST_ANALYSIS_ENHANCED,
-            "spotify_enabled": cls.SPOTIFY_ENABLED,
             "navidrome_enabled": bool(cls().NAVIDROME_URL),
         }
 
@@ -624,9 +607,6 @@ class Config:
             print(f"BOT_TOKEN:              {cls.mask_sensitive(config.BOT_TOKEN)}")
             print(f"OWNER_USER_ID:          {config.OWNER_USER_ID}")
             print(f"ADMIN_USER_IDS:         {config.ADMIN_USER_IDS}")
-            print(
-                f"SPOTIFY_CLIENT_ID:      {cls.mask_sensitive(config.SPOTIFY_CLIENT_ID) if config.SPOTIFY_CLIENT_ID else 'nicht gesetzt'}"
-            )
             print(
                 f"GENIUS_TOKEN:           {cls.mask_sensitive(config.GENIUS_ACCESS_TOKEN) if config.GENIUS_ACCESS_TOKEN else 'nicht gesetzt'}"
             )
@@ -667,7 +647,6 @@ class Config:
             cls.ESCAPE_DIR,
             cls.ARCHIVE_DIR,
             cls.STATS_DIR,
-            cls.SPOTIFY_DOWNLOAD_DIR,
         ]
 
         success = True
@@ -714,6 +693,7 @@ class Config:
         # Warnungen reduzieren
         logging.getLogger("musicbrainzngs").setLevel(logging.WARNING)
         logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
         logging.getLogger("requests").setLevel(logging.WARNING)
         logging.getLogger("urllib3").setLevel(logging.WARNING)
         logging.getLogger("matplotlib").setLevel(logging.WARNING)

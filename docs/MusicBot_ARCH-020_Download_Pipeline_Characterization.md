@@ -659,6 +659,64 @@ Anpassung der internen Selbstverweise ("ARCH-020 Phase 1" → "ARCH-021 Phase 1"
 
 ---
 
+## Spotify-Entfernung (2026-08-25, Folgeauftrag)
+
+**Spotify support was intentionally removed.**
+
+Spotify wurde im produktiven Betrieb nicht genutzt und sollte laut ausdrücklichem
+Nutzerauftrag bewusst nicht weiterentwickelt, getestet oder abgesichert werden. Diese
+Charakterisierung (insbesondere Abschnitt 3 "Aktuelle Download-Pipeline" und Abschnitt 5
+"Komponentenmatrix") beschrieb den damaligen Ist-Zustand **inklusive** des Spotify-Pfads —
+dieser historische Befund bleibt oben unverändert stehen, da er den damals tatsächlichen
+Code korrekt wiedergibt.
+
+**Warum entfernt:** Spotify lief ausschließlich über eine inoffizielle Embed-API (kein
+offizieller API-Zugang, keine Premium-Unterstützung) und wurde im laufenden Betrieb nicht
+verwendet. Die Aufrechterhaltung eines ungenutzten, nicht offiziell unterstützten
+Integrationspfads widersprach dem Ziel kontrollierter, sicherer Weiterentwicklung
+(CLAUDE.md §3).
+
+**Was entfernt wurde:**
+- `services/downloader/spotify_downloader.py` (vollständig, inkl. `SpotifyDownloader`,
+  URL-Erkennung/-Parsing)
+- `utils/podcast_rss_manager.py`, `mapping/podcast_rss_feeds.yaml` — die Podcast-RSS-
+  Download-Funktion war ausschließlich über Spotify-Podcast-URLs erreichbar (0 andere
+  Aufrufer, siehe Removal Impact Report), damit entfiel mit Spotify auch diese Funktion
+- `klassen/download_handler.py::handle_spotify_url()` sowie die Punkte D (Podcast-
+  Episodennummer-Korrektur), E (playlist_metadata für Podcasts) und G
+  (`EnhancedMetadataProcessor`-Aufruf) in `_process_single_download_result()` — Punkt G
+  war nachweislich nur für Spotify real erreichbar (siehe Abschnitt 3 oben:
+  "Für Spotify … ist STEP 4 hingegen die einzige reale Verarbeitung"); ohne Spotify
+  existiert kein Aufrufer mehr, der diesen Codepfad mit `filepath` ohne `library_path`
+  erreicht
+- `services/downloader/metadata_result_translator.py::merge_metadata_result_into_dict()`
+  (verlor mit Punkt G ihren einzigen Aufrufer)
+- Spotify-Branches in `services/downloader/download_result_reporter.py`
+  (Quelle-Label, Genre-Filterung für Spotify-Podcasts)
+- `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET`/`SPOTIFY_DOWNLOAD_DIR`/`SPOTIFY_ENABLED`
+  in `config.py` — alle vier waren bereits vor der Entfernung funktionslos
+  (`SpotifyDownloader` nutzte nie Credentials, `SPOTIFY_ENABLED` wurde nirgends
+  gelesen, `SPOTIFY_DOWNLOAD_DIR` war laut eigenem Code-Kommentar "nie angebunden")
+- Zugehörige Tests: `tests/test_spotify_downloader.py`,
+  `tests/test_podcast_rss_manager.py` (vollständig); Spotify-/Podcast-spezifische
+  Einzeltests in `tests/test_download_handler_process_single_download_result.py`,
+  `tests/test_download_result_reporter.py`, `tests/test_metadata_result_translator.py`,
+  `tests/test_rich_menu_handler.py`
+
+**Welche Download-Pipeline übrig bleibt:** Exakt die in Abschnitt 3/4/16 oben
+beschriebene YouTube-Pipeline, unverändert in ihrer internen Struktur
+(`download_utils.py` bleibt der reale Orchestrator, `EnhancedMetadataProcessor` bleibt
+der Metadaten-Orchestrator). `DownloadHandler` verliert die `handle_url()`-Verzweigung
+und wird zu einem reinen YouTube-Dispatcher. `_process_single_download_result()`
+bleibt als Guard/Pass-Through (Punkte A, B, C, F) bestehen, ruft aber `process_single_track()`
+nicht mehr auf.
+
+**Geprüfte Regression:** siehe Abschlussbericht der Spotify-Entfernung (separates Dokument
+bzw. Chat-Zusammenfassung) — vollständige Testsuite vor/nach Entfernung verglichen, YouTube-
+Downloadpfad (Single, Cache, Metadata, Duplicate, Library) funktional bestätigt.
+
+---
+
 ## STOPP
 
 Analyse abgeschlossen. Keine Codeänderungen, kein Commit, kein Push, keine sonstigen

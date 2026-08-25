@@ -197,15 +197,8 @@ class DownloadResultReporter:
 
         year = str(year_v) if year_v else "N/A"
 
-        # Quelle
-        source     = result.get("source", "")
-        is_spotify = "spotify" in source.lower() if source else False
-        is_podcast = result.get("is_podcast", False)
-
         # Genres filtern
         raw_genres = self.collect_playlist_genres(tracks) if is_pl and tracks else self.extract_genres_from_data(result.get("genres"))
-        if is_spotify and is_podcast:
-            raw_genres = [g for g in raw_genres if g.lower() not in {"german", "hip-hop", "hip hop", "deutsch"}]
 
         # Stats
         eff = dict(processing_stats) if processing_stats else {}
@@ -245,11 +238,7 @@ class DownloadResultReporter:
             lyrics_ok = result.get("lyrics_available", False) or lf > 0
             cover_ok  = bool(result.get("cover_embedded"))
 
-        # Quelle-Label
-        if is_spotify:
-            src_label = "🎙️ Spotify Podcast" if is_podcast else "🎵 Spotify"
-        else:
-            src_label = "📺 YouTube"
+        src_label = "📺 YouTube"
 
         genre_lines = [f"   • {g}" for g in raw_genres] if raw_genres else ["   • Keine"]
 
@@ -281,11 +270,10 @@ class DownloadResultReporter:
             f"   🏷️ Genre-Mappings    : {gm}/{n} ({pct(gm,n)})",
             f"   📜 Lyrics gefunden   : {lf}/{n} ({pct(lf,n)})",
         ]
-        if not is_spotify:
-            stats_lines += [
-                f"   📺 YouTube-Parser    : {yp}/{n} ({pct(yp,n)})",
-                f"   🎯 Artist-Map-Fbk    : {amf}/{n} ({pct(amf,n)})",
-            ]
+        stats_lines += [
+            f"   📺 YouTube-Parser    : {yp}/{n} ({pct(yp,n)})",
+            f"   🎯 Artist-Map-Fbk    : {amf}/{n} ({pct(amf,n)})",
+        ]
         stats_lines.append(f"   💾 Cache-Trefferquote: {ch}/{ct} ({pct(ch,ct)})")
 
         lines = (
