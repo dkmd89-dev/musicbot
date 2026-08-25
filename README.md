@@ -2,7 +2,7 @@
 
 Privat entwickelter Telegram-Bot für Musik-Download (YouTube), automatische Metadaten-Anreicherung (Artist, Genre, Cover, Lyrics), Library-Organisation und Steuerung eines [Navidrome](https://www.navidrome.org/)-Servers.
 
-Historisch organisch gewachsenes Hobbyprojekt — siehe [`CLAUDE.md`](CLAUDE.md) für die Engineering-Leitlinien und [`docs/MusicBot_ENGINEERING_BASELINE_v2.md`](docs/MusicBot_ENGINEERING_BASELINE_v2.md) für den aktuellen technischen Status (Architektur, Testabdeckung, Security, Technical Debt).
+Historisch organisch gewachsenes Hobbyprojekt — siehe [`CLAUDE.md`](CLAUDE.md) für die Engineering-Leitlinien und [`docs/MusicBot_ENGINEERING_BASELINE_v3.md`](docs/MusicBot_ENGINEERING_BASELINE_v3.md) für den aktuellen technischen Status (Architektur, Testabdeckung, Security, Technical Debt).
 
 ---
 
@@ -58,8 +58,8 @@ Ausführlicher, mit Datenfluss/Fehlerbehandlung pro Bereich: [`CLAUDE.md`](CLAUD
 | `handlers/` | Telegram-Handler: Menüsystem (`handlers/menu/`), Admin-Funktionen (`handlers/admin/`), Navidrome-Menü, Statistik, Fehlerbehandlung |
 | `utils/` | Wiederverwendbare Bausteine: `genre_map.py`, `artist_map.py`, `filenamefixer.py`, `helpers.py`, Caches (`lyrics_cache.py` u. a.), Singleton-Basisklasse, sowie lokale technische Runner ohne Telegram-/API-Kopplung (`navidrome_scan_trigger.py`, `audio_enhancer.py`) |
 | `mapping/` | YAML-/JSON-Dateien mit Fachlogik (Genre-/Artist-Regeln) — **keine belanglose Konfiguration**, siehe unten |
-| `tests/` | 1057 Tests (pytest), 0 bekannte Fehlschläge (Stand 2026-08-25) — Characterization-Tests für die Produktionsklassen, siehe [`docs/MusicBot_ENGINEERING_BASELINE_v2.md`](docs/MusicBot_ENGINEERING_BASELINE_v2.md) |
-| `docs/` | Engineering-Baseline v2 (aktueller Referenzpunkt) + ARCH-Characterization-Dokumente (historisch) |
+| `tests/` | 1063 Tests (pytest), 0 bekannte Fehlschläge (Stand 2026-08-25) — Characterization-Tests für die Produktionsklassen, siehe [`docs/MusicBot_ENGINEERING_BASELINE_v3.md`](docs/MusicBot_ENGINEERING_BASELINE_v3.md) |
+| `docs/` | Engineering-Baseline v3 (aktueller Referenzpunkt) + ARCH-Characterization-Dokumente (historisch) |
 
 ## Setup
 
@@ -111,7 +111,7 @@ python3 bot.py
 python -m pytest tests/ -q
 ```
 
-`pytest-asyncio` (siehe `requirements-dev.txt`) wird für die `@pytest.mark.asyncio`-Tests in `tests/test_suite.py` benötigt. Aktueller Teststand siehe [`docs/MusicBot_ENGINEERING_BASELINE_v2.md`](docs/MusicBot_ENGINEERING_BASELINE_v2.md).
+`pytest-asyncio` (siehe `requirements-dev.txt`) wird für die `@pytest.mark.asyncio`-Tests in `tests/test_suite.py` benötigt. Aktueller Teststand siehe [`docs/MusicBot_ENGINEERING_BASELINE_v3.md`](docs/MusicBot_ENGINEERING_BASELINE_v3.md).
 
 ## Mapping-Dateien
 
@@ -119,4 +119,4 @@ Die YAML-/JSON-Dateien in `mapping/` (Genre-Aliase, Genre-Hierarchie, Genre-Over
 
 ## Entwicklung
 
-Dieses Projekt wird nicht neu geschrieben, sondern kontrolliert weiterentwickelt: bestehendes Verhalten zuerst verstehen und mit Characterization-Tests absichern, dann verbessern. Die verbindlichen Arbeitsregeln stehen in [`CLAUDE.md`](CLAUDE.md); der aktuelle Stand aller bekannten Risiken, offenen Punkte und der Technical-Debt-Liste in [`docs/MusicBot_ENGINEERING_BASELINE_v2.md`](docs/MusicBot_ENGINEERING_BASELINE_v2.md) (löst [`docs/MusicBot_ENGINEERING_BASELINE.md`](docs/MusicBot_ENGINEERING_BASELINE.md), historischer Stand vom 2026-08-16, als aktuellen Referenzpunkt ab).
+Dieses Projekt wird nicht neu geschrieben, sondern kontrolliert weiterentwickelt: bestehendes Verhalten zuerst verstehen und mit Characterization-Tests absichern, dann verbessern. Die verbindlichen Arbeitsregeln stehen in [`CLAUDE.md`](CLAUDE.md); der aktuelle Stand aller bekannten Risiken, offenen Punkte und der Technical-Debt-Liste in [`docs/MusicBot_ENGINEERING_BASELINE_v3.md`](docs/MusicBot_ENGINEERING_BASELINE_v3.md) (löst [`docs/MusicBot_ENGINEERING_BASELINE_v2.md`](docs/MusicBot_ENGINEERING_BASELINE_v2.md), eingefrorener Closure-Stand vom 2026-08-25 mit 1057 passed/0 failed, als aktuellen Referenzpunkt ab; `docs/MusicBot_ENGINEERING_BASELINE.md` bleibt als noch ältere, historische Referenz vom 2026-08-16 unverändert bestehen).
