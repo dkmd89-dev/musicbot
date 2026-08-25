@@ -390,6 +390,7 @@ class AutoLearnManager:
         non_artist_patterns = [
             r" - topic$",
             r"topic$",
+            r"channel$",
             r"vevo$",
             r"music$",
             r"official$",
@@ -429,7 +430,8 @@ class AutoLearnManager:
         try:
             import yaml
 
-            auto_file = self.mapping_dir / "auto_learned_artists.yaml"
+            mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
+            auto_file = mapping_dir / "auto_learned_artists.yaml"
             if not auto_file.exists():
                 return {}
 
@@ -447,7 +449,8 @@ class AutoLearnManager:
         try:
             import yaml
 
-            auto_file = self.mapping_dir / "auto_learned_genre.yaml"
+            mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
+            auto_file = mapping_dir / "auto_learned_genre.yaml"
             if not auto_file.exists():
                 return {}
 

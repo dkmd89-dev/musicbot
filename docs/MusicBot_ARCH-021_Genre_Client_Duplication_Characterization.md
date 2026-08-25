@@ -270,3 +270,18 @@ git diff --stat  →  (keine Treffer außer dieser neuen Doku-Datei und der
 `CoverProcessor`-Last.fm-Quelle, Abschnitt G/J) erfordert zunächst eine fachliche
 Vorentscheidung des Nutzers (Quelle aktivieren, entfernen oder belassen), bevor eine
 Umsetzungsphase sinnvoll wäre. Wartet auf ausdrückliche Nutzerentscheidung.
+
+## Nachtrag (2026-08-25): Entscheidung getroffen — tote Quelle entfernt
+
+Nutzerentscheidung (im Rahmen der Freigabe für Baseline-v2-Punkt
+LASTFM-COVER-DEAD, siehe `docs/MusicBot_ENGINEERING_BASELINE_v2.md`):
+**entfernen**, nicht aktivieren. `CoverProcessor._fetch_lastfm()`, der
+zugehörige Task-Eintrag in `_build_priority_task_list()`, der
+`lastfm_api_key`-Konstruktorparameter, die `_LASTFM_BASE`-Konstante sowie der
+`"lastfm"`-Eintrag in `_BASE_SCORES` wurden entfernt (`services/metadata/cover_processor.py`).
+
+`services/clients/lastfm_client.py` (`LastFMClient`, Genre-Pipeline) ist davon
+**nicht** betroffen — bleibt vollständig aktiv, wie in Abschnitt G dieses
+Dokuments bereits als unabhängige, aktive Komponente charakterisiert. Diese
+historische Characterization oben bleibt inhaltlich unverändert stehen; sie
+beschreibt korrekt den Zustand vor dieser Entscheidung.

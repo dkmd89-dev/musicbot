@@ -227,6 +227,13 @@ class TestAutoLearnAsync(unittest.TestCase):
         self.assertFalse(result)
     
     def test_learn_artist_same_as_canonical(self):
+        """
+        Identitaets-Mapping (raw_name == canonical_name) ist laut Docstring
+        von learn_artist() KEIN Alias, sondern eine Bestaetigung eines
+        bekannten Kuenstlers - das geht nach known_artists.yaml (nicht
+        auto_learned_artists.yaml) und liefert bei erfolgreichem Schreiben
+        True, kein No-Op/False (STALE-TEST-Fix, vorher fehlerhafte Erwartung).
+        """
         async def test():
             result = await self.auto_learn.learn_artist(
                 raw_name="Same Name",
@@ -235,9 +242,15 @@ class TestAutoLearnAsync(unittest.TestCase):
                 channel_name="Channel"
             )
             return result
-        
+
         result = self.run_async(test())
-        self.assertFalse(result)
+        self.assertTrue(result)
+
+        known_file = self.mapping_dir / "known_artists.yaml"
+        self.assertTrue(known_file.exists())
+        with open(known_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        self.assertIn("Same Name", data["known_artists"])
     
     def test_learn_genre_new(self):
         async def test():

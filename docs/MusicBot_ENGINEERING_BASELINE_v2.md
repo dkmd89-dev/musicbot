@@ -577,5 +577,62 @@ Stand, exakt die 4 vormals blockierten async-Tests; die verbleibenden 5
 Fehler — AUTOLEARN-002 (×2 Subtests), CHANNEL-PATTERN (×2 Subtests),
 STALE-TEST — unverändert, keine neue Regression). PYTEST-ASYNCIO ist damit
 aus der offenen P3-Liste in Abschnitt 14 zu entfernen. AUTOLEARN-002,
-CHANNEL-PATTERN, STALE-TEST, PODCAST-INDEX-KEY und LASTFM-COVER-DEAD sind
-weiterhin offen und unverändert.
+CHANNEL-PATTERN, STALE-TEST, PODCAST-INDEX-KEY und LASTFM-COVER-DEAD waren zu
+diesem Zeitpunkt weiterhin offen.
+
+## Nachtrag (2026-08-25): alle verbleibenden P3-Punkte geschlossen
+
+Freigabe für alle fünf verbleibenden P3-Punkte aus Abschnitt 14 in einem
+Batch. Für LASTFM-COVER-DEAD gab es zwei plausible Richtungen (Last.fm-
+Fallback aktivieren vs. toten Code entfernen) — echte Produktverhaltens-
+Entscheidung, keine reine Codebereinigung, daher vorab per Rückfrage geklärt:
+Nutzerentscheidung war **entfernen**.
+
+- **AUTOLEARN-001** (bereits in einem früheren Nachtrag behoben, hier nur zur
+  Vollständigkeit erwähnt).
+- **AUTOLEARN-002**: `_load_auto_learned_artists()`/`_load_auto_learned_genres()`
+  (`services/metadata/auto_learn.py`) berechnen `mapping_dir` jetzt lokal wie
+  jede andere Methode der Klasse, statt das nie gesetzte `self.mapping_dir`
+  zu referenzieren. Kein neuer Test nötig — die bestehenden
+  `test_load_auto_learned_artists_with_data`/`test_load_auto_learned_genres_with_data`
+  decken das bereits ab.
+- **CHANNEL-PATTERN**: `r"channel$"` zu den Non-Artist-Channel-Mustern in
+  `_is_non_artist_channel()` ergänzt — deckt "Music Channel"/"Topic Channel"
+  ab, ohne die bestehenden True/False-Fälle zu beeinflussen (verifiziert:
+  alle 8 Subtests grün).
+- **STALE-TEST**: `test_learn_artist_same_as_canonical`
+  (`tests/test_auto_learn.py`) an das tatsächliche, laut Docstring
+  beabsichtigte Verhalten angepasst — Identitäts-Mappings (raw==canonical)
+  werden bewusst nach `known_artists.yaml` geschrieben und liefern bei
+  Erfolg `True`, kein No-Op. Test prüft jetzt zusätzlich den geschriebenen
+  Dateiinhalt.
+- **PODCAST-INDEX-KEY**: `Config.PODCAST_INDEX_API_KEY`/`PODCAST_INDEX_API_SECRET`
+  (`config.py`) entfernt — 0 Konsumenten repo-weit verifiziert (zuverlässiger
+  Grep über `find | xargs grep`, da die interaktive Shell-`grep`-Funktion
+  dieser Session `config.py` bei rekursiven Suchen inkonsistent überspringt —
+  für sich genommen eine kleine Umgebungs-Eigenheit, kein Repo-Befund).
+  `.env` selbst (lokale, nicht versionierte Nutzerdatei) bewusst nicht
+  angefasst. `README.md`s `.env`-Dokumentationsblock um die beiden Zeilen
+  bereinigt.
+- **LASTFM-COVER-DEAD**: `CoverProcessor._fetch_lastfm()`, der zugehörige
+  Task-Eintrag in der Prioritätsliste, der `lastfm_api_key`-Konstruktor-
+  parameter, die `_LASTFM_BASE`-URL-Konstante und der `"lastfm"`-Eintrag in
+  `_BASE_SCORES` entfernt (`services/metadata/cover_processor.py`).
+  `services/clients/lastfm_client.py` (`LastFMClient`, Genre-Pipeline) ist
+  **nicht** betroffen — bleibt vollständig aktiv, war nie Teil dieses Fundes.
+  Ein bestehender Orchestrierungstest
+  (`test_get_cover_art_actually_stops_after_early_exit_candidate`) referenzierte
+  `lastfm_api_key`/`_fetch_lastfm` inzidentell mit — angepasst, Testaussage
+  (Early-Exit stoppt niedriger priorisierte Quellen) bleibt unverändert gültig.
+  `docs/MusicBot_ARCH-021_Genre_Client_Duplication_Characterization.md` mit
+  Nachtrag zur getroffenen Entscheidung versehen, historische
+  Characterization oben unverändert gelassen.
+
+Vollregression danach: **1057 passed, 0 failed** (+3 gegenüber vorherigem
+Stand plus 2 vormals fehlschlagende Subtests, macht insgesamt exakt die 5
+zuvor bekannten Fehler — **alle Baseline-Known-Failures sind damit
+behoben**, keine neue Regression). Damit ist die zum Baseline-Erstellungs-
+zeitpunkt dokumentierte P2/P3-Liste aus Abschnitt 14 vollständig
+abgearbeitet: AUTOLEARN-001, RETRY-COVERAGE, AUTOLEARN-002, CHANNEL-PATTERN,
+STALE-TEST, PYTEST-ASYNCIO, PODCAST-INDEX-KEY und LASTFM-COVER-DEAD — alle
+geschlossen.

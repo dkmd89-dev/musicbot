@@ -53,7 +53,7 @@ class ScoreThreshold(IntEnum):
     # zuverlässigsten Quellen (coverartarchive/fanart_album/apple_music/
     # deezer) bereits bei der ohnehin geforderten Mindestauflösung
     # (≥1400px, quadratisch) erreicht, von schwächeren Quellen
-    # (fanart_artist/lastfm/youtube) nur bei deutlich höherer Auflösung.
+    # (fanart_artist/youtube) nur bei deutlich höherer Auflösung.
     EARLY_EXIT = 140
 
 # Mindestauflösung für den Early Exit (kürzere Seite muss ≥ diesen Wert haben)
@@ -65,7 +65,6 @@ _BASE_SCORES = {
     "apple_music": 105,
     "deezer": 100,
     "fanart_artist": 90,
-    "lastfm": 80,
     "youtube_max": 55,
     "youtube_sd": 45,
     "youtube_hq": 35,
@@ -85,7 +84,6 @@ _FANART_BASE = "https://webservice.fanart.tv/v3/music"
 _CAA_BASE = "https://coverartarchive.org/release"
 _APPLE_SEARCH = "https://itunes.apple.com/search"
 _DEEZER_SEARCH = "https://api.deezer.com/search"
-_LASTFM_BASE = "http://ws.audioscrobbler.com/2.0/"
 
 _MIN_IMAGE_BYTES = 5000
 _MAX_WORKERS = 6
@@ -136,12 +134,10 @@ class CoverProcessor:
     def __init__(
         self,
         fanart_api_key: Optional[str] = None,
-        lastfm_api_key: Optional[str] = None,
         logger=None,
         cache_enabled: bool = True,
     ):
         self.fanart_api_key = fanart_api_key
-        self.lastfm_api_key = lastfm_api_key
         self.logger = logger or get_module_logger("CoverProcessor")
         self.cache_enabled = cache_enabled
         self.session = self._build_session()
@@ -541,14 +537,6 @@ class CoverProcessor:
             reason = "kein API-Key" if not self.fanart_api_key else "keine artist_mbid"
             self.logger.debug(f"🖼️ [COVER] ⚠️ Fanart.tv Artist übersprungen: {reason}")
 
-        # 6. Last.fm (benötigt artist_name + API-Key)
-        if self.lastfm_api_key and artist_name:
-            self.logger.debug(f"🖼️ [COVER] ✅ Aktiviere Last.fm (artist={artist_name})")
-            tasks.append((lambda a=artist_name: self._fetch_lastfm(a), "Last.fm", 70))
-        else:
-            reason = "kein API-Key" if not self.lastfm_api_key else "keine artist_name"
-            self.logger.debug(f"🖼️ [COVER] ⚠️ Last.fm übersprungen: {reason}")
-
         # 7. YouTube (niedrigste Priorität, aber immer verfügbar, wenn video_id existiert)
         if video_id:
             self.logger.debug(f"🖼️ [COVER] ✅ Aktiviere YouTube Fallback (video_id={video_id})")
@@ -797,40 +785,6 @@ class CoverProcessor:
                 return self._validate_and_score("deezer", img_data)
         except Exception as e:
             self.logger.debug(f"🖼️ [DEEZER] Exception: {e}")
-        return None
-
-    def _fetch_lastfm(self, artist: str) -> Optional[CoverCandidate]:
-        self.logger.debug(f"🖼️ [LASTFM] Suche: {artist}")
-        if not self.lastfm_api_key:
-            return None
-        cache_key = f"lastfm_{hashlib.md5(artist.encode()).hexdigest()}"
-        cached = self._cache_get(cache_key)
-        if cached:
-            return self._validate_and_score("lastfm", cached)
-        try:
-            params = {
-                "method": "artist.getinfo",
-                "artist": artist,
-                "api_key": self.lastfm_api_key,
-                "format": "json"
-            }
-            resp = self._get(_LASTFM_BASE, params=params)
-            if not resp or resp.status_code != 200:
-                self.logger.debug(f"🖼️ [LASTFM] Keine Antwort, HTTP {resp.status_code if resp else 'None'}")
-                return None
-            data = resp.json()
-            images = data.get("artist", {}).get("image", [])
-            if images:
-                img_url = images[-1].get("#text")
-                if img_url:
-                    img_data = self._fetch_raw(img_url)
-                    if img_data:
-                        self.logger.debug(f"🖼️ [LASTFM] Erfolg: {len(img_data)} bytes")
-                        self._cache_set(cache_key, img_data)
-                        return self._validate_and_score("lastfm", img_data)
-            self.logger.debug("🖼️ [LASTFM] Kein Bild gefunden")
-        except Exception as e:
-            self.logger.debug(f"🖼️ [LASTFM] Exception: {e}")
         return None
 
     def _fetch_youtube(self, video_id: str, variant: str) -> Optional[CoverCandidate]:
