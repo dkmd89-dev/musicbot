@@ -306,6 +306,58 @@ def test_error_after_move_to_library_cleans_up_orphaned_source_file(
     assert not source.exists()  # Strategie C hat die verwaiste Datei entfernt
 
 
+def test_tag_write_failure_after_move_removes_inconsistent_library_file(
+    processor, filename_fixer, happy_path_config, tmp_path, monkeypatch
+):
+    """
+    FINDING-2 (Post-Baseline-Triage, PARTIAL-FAILURE-LIBRARY): schlaegt
+    write_tags() (Schritt 17) fehl, NACHDEM move_to_library() (Schritt 16)
+    bereits erfolgreich war, darf die unvollstaendig/falsch getaggte Datei
+    NICHT dauerhaft in der Library liegen bleiben - vorher gab es dafuer
+    keinen Cleanup (cleanup_single_download_artifact() im aeusseren
+    except-Block ist fuer original_path zustaendig, das an dieser Stelle
+    bereits nicht mehr existiert - siehe dortiger Kommentar in
+    enhanced_metadata_processor.py). Gegenstueck zu
+    test_error_after_move_to_library_cleans_up_orphaned_source_file (dort
+    schlaegt move_to_library() selbst fehl, hier gelingt der Move und erst
+    der nachfolgende Tag-Schreibvorgang scheitert).
+    """
+    source = tmp_path / "downloaded.mp3"
+    source.write_bytes(b"fake-audio-bytes-not-real-mp3-data")
+
+    def _boom(self, *args, **kwargs):
+        raise RuntimeError("simulierter write_tags-Fehler")
+
+    monkeypatch.setattr(processor.tag_writer.__class__, "write_tags", _boom)
+
+    track_metadata = {
+        "title": "Tagfail Artist - Tagfail Song (Official Video)",
+        "artist": "Tagfail Artist",
+        "uploader": "Tagfail Artist",
+        "channel": "Tagfail Artist",
+        "id": "TAGFAIL1",
+        "filepath": str(source),
+        "genre": "Hip Hop",
+    }
+
+    result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=track_metadata,
+            filename_fixer=filename_fixer,
+        )
+    )
+
+    assert result.success is False
+    # Die gesamte Library darf keine von move_to_library() erzeugte, aber
+    # nie fertig getaggte Datei enthalten - unabhaengig vom genauen Pfad
+    # (Artist-/Album-Unterordner werden von FilenameFixerTool bestimmt).
+    leftover_files = list(happy_path_config.LIBRARY_DIR.rglob("*.mp3"))
+    assert leftover_files == [], (
+        f"Inkonsistente, unvollstaendig getaggte Datei(en) in der Library "
+        f"zurueckgeblieben: {leftover_files}"
+    )
+
+
 def test_missing_filepath_error_does_not_crash_cleanup(processor, filename_fixer):
     """
     Gegenstueck zu test_missing_filepath_returns_graceful_failure: der

@@ -846,26 +846,57 @@ class EnhancedMetadataProcessor(SingletonMixin):
 
             # ── 17. Metadaten schreiben ──────────────────────────────────────
             self.logger.info("📝 1️⃣7️⃣ Schreibe Metadaten-Tags...")
-            self.tag_writer.write_tags(
-                target_path=library_path,
-                artist=artist_for_metadata,
-                album_info=album_info,
-                title=clean_title,
-                track_number=track_number,
-                genres_result=genres_result,
-                lyrics=lyrics,
-                cover_art=cover_art,
-                feat_artists=feat_artists,
-                mb_ids={
-                    "recording_id": track_metadata.get("musicbrainz_recording_id"),
-                    "artist_id": track_metadata.get("musicbrainz_artist_id"),
-                    "release_id": track_metadata.get("musicbrainz_release_id"),
-                    "release_group_id": track_metadata.get(
-                        "musicbrainz_release_group_id"
-                    ),
-                    "isrc": track_metadata.get("isrc"),
-                },
-            )
+            try:
+                self.tag_writer.write_tags(
+                    target_path=library_path,
+                    artist=artist_for_metadata,
+                    album_info=album_info,
+                    title=clean_title,
+                    track_number=track_number,
+                    genres_result=genres_result,
+                    lyrics=lyrics,
+                    cover_art=cover_art,
+                    feat_artists=feat_artists,
+                    mb_ids={
+                        "recording_id": track_metadata.get("musicbrainz_recording_id"),
+                        "artist_id": track_metadata.get("musicbrainz_artist_id"),
+                        "release_id": track_metadata.get("musicbrainz_release_id"),
+                        "release_group_id": track_metadata.get(
+                            "musicbrainz_release_group_id"
+                        ),
+                        "isrc": track_metadata.get("isrc"),
+                    },
+                )
+            except Exception as tag_err:
+                # FINDING-2 (Post-Baseline-Triage, PARTIAL-FAILURE-LIBRARY):
+                # move_to_library() (Schritt 16) lief bereits erfolgreich -
+                # ohne diesen Cleanup wuerde eine unvollstaendig/falsch
+                # getaggte Datei dauerhaft in der Library liegen bleiben
+                # (kein Artist/Album/Genre/Lyrics/Cover), waehrend der
+                # Download dem Nutzer als fehlgeschlagen gemeldet wird.
+                # cleanup_single_download_artifact() im aeusseren except
+                # deckt das NICHT ab (No-op, sobald original_path nicht mehr
+                # existiert - siehe dortiger Kommentar). Entfernt die
+                # inkonsistente Datei gezielt hier, am Ort des Fehlers, und
+                # reicht die Exception unveraendert an den aeusseren
+                # except-Block weiter (identisches Fehlerverhalten/
+                # MetadataResult wie zuvor).
+                self.logger.error(
+                    f"💥 Tag-Schreibfehler nach Bibliotheks-Move — entferne "
+                    f"unvollständig getaggte Datei: {library_path} ({tag_err})"
+                )
+                try:
+                    if library_path and Path(library_path).exists():
+                        Path(library_path).unlink()
+                        self.logger.info(
+                            f"🧹 Inkonsistente Library-Datei entfernt: {library_path}"
+                        )
+                except OSError as cleanup_err:
+                    self.logger.error(
+                        f"❌ Konnte inkonsistente Library-Datei nicht entfernen: "
+                        f"{cleanup_err}"
+                    )
+                raise
 
             # ── 18. Ergebnis erstellen ───────────────────────────────────────
             result = MetadataResult(

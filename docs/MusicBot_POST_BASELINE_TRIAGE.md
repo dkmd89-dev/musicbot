@@ -375,3 +375,51 @@ keine neue Regression).
 
 FINDING-1 gilt damit als **FIXED**. FINDING-2 (PARTIAL-FAILURE-LIBRARY)
 bleibt offen — letzter verbleibender Deep-Audit-Kandidat aus Abschnitt 14.
+
+---
+
+## Nachtrag (2026-08-25): FINDING-2 (PARTIAL-FAILURE-LIBRARY) — Deep Audit abgeschlossen, behoben
+
+Freigabe für Empfehlung Nr. 3 aus Abschnitt 14. Deep Audit bestätigte den
+Fund unverändert: `move_to_library()` (Schritt 16) lief vor `write_tags()`
+(Schritt 17), ohne lokales Error-Handling dazwischen; `cleanup_single_download_artifact()`
+im äußeren `except`-Block deckte den Fall nachweislich nicht ab (No-op,
+sobald `original_path` nicht mehr existiert).
+
+**Entscheidung für den Fix-Ansatz:** Der Deep Audit prüfte gezielt, ob nach
+`write_tags()` noch unabschirmter Code läuft, der fälschlich mit betroffen
+wäre (Schritte 18–20: `MetadataResult`-Erstellung, Cache-Speicherung,
+Auto-Learning). Ergebnis: `cache_handler.store()` (Schritt 19) ist der
+einzige ungeschützte Aufruf danach; beide Auto-Learning-Aufrufe sind bereits
+in eigene, nicht weiterreichende `try/except`-Blöcke gekapselt. Ein Fix im
+äußeren, gemeinsamen `except`-Block hätte daher fälschlich auch bereits
+korrekt getaggte Dateien löschen können, wenn z. B. nur die Cache-Speicherung
+fehlschlägt. Gewählter Ansatz: **lokales try/except direkt um
+`write_tags()`** statt einer Erweiterung des äußeren Handlers — trifft
+präzise nur den tatsächlich riskanten Fall, entfernt bei Fehlschlag gezielt
+die soeben verschobene, unvollständig getaggte Datei und reicht die
+Exception danach unverändert weiter (identisches `MetadataResult`/
+Fehlerverhalten wie zuvor für den Aufrufer).
+
+**Fix:** `services/metadata/enhanced_metadata_processor.py`, Schritt 17 —
+`write_tags()`-Aufruf in try/except gekapselt; im Fehlerfall wird
+`library_path` geloggt und per `Path.unlink()` entfernt (mit eigenem
+`except OSError`, damit ein Cleanup-Fehler die eigentliche Fehlermeldung
+nicht verdeckt — analoges Sicherheitsprinzip wie in
+`cleanup_single_download_artifact()`), danach `raise`.
+
+**Test:** neuer Test `test_tag_write_failure_after_move_removes_inconsistent_library_file`
+in `tests/test_metadata_processor_happy_path.py` (Gegenstück zum
+bestehenden `test_error_after_move_to_library_cleans_up_orphaned_source_file`,
+das den Fall „move_to_library() selbst schlägt fehl" abdeckt). Per
+`git stash` gegen den Vor-Fix-Stand als fehlschlagend verifiziert (Datei
+blieb in der Library liegen).
+
+**Vollregression:** 1063 passed, 0 failed (+1 gegenüber vorherigem Stand,
+keine neue Regression).
+
+FINDING-2 gilt damit als **FIXED**. Damit sind alle drei Deep-Audit-Kandidaten
+aus Abschnitt 14 dieser Triage abgeschlossen (FINDING-1, FINDING-2,
+FINDING-3). Offen bleibt weiterhin nur der dokumentierte, bewusst nicht als
+Deep-Audit-Kandidat vorgeschlagene DEAD-CODE-ERRHANDLER-Fund (Abschnitt 9) —
+reine Lösch-Entscheidung, kein weiterer Untersuchungsbedarf.
