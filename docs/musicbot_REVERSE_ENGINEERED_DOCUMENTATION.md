@@ -1,3 +1,7 @@
+> **⚠️ ABGELÖST:** Dieses Dokument ist veraltet (Stand 2026-08-16) und wurde durch [`MusicBot_ENGINEERING_BASELINE_v2.md`](./MusicBot_ENGINEERING_BASELINE_v2.md) abgelöst. Es bleibt als Historie erhalten, ist aber nicht mehr die maßgebliche Quelle für den aktuellen technischen Zustand.
+
+---
+
 # musicbot – Reverse-Engineered Projektdokumentation
 
 **Repository:** `dkmd89-dev/musicbot`  
