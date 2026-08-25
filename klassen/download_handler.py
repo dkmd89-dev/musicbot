@@ -42,7 +42,7 @@ from telegram.ext import ContextTypes
 
 from config import Config
 from cookie_handler import CookieHandler
-from handlers.duplicate_handler import EnhancedDuplicateHandler
+from services.duplicate.detector import DuplicateDetector
 from services.downloader.models import DuplicateEntry
 from logger import get_module_logger
 from services.downloader.downloader import YoutubeDownloader
@@ -200,7 +200,7 @@ class DownloadHandler:
         self,
         update: Update,
         config: Config,
-        duplicate_handler: EnhancedDuplicateHandler,
+        duplicate_detector: DuplicateDetector,
         metadata_processor: EnhancedMetadataProcessor,
         logger_factory: Optional[Callable] = None,
         spotify_downloader: Optional[SpotifyDownloader] = None,
@@ -218,7 +218,7 @@ class DownloadHandler:
             self.config, logger_factory=self.logger_factory
         )
         self.enhanced_metadata_processor = metadata_processor
-        self.duplicate_handler = duplicate_handler
+        self.duplicate_detector = duplicate_detector
         self.result_reporter = DownloadResultReporter(
             logger=self.logger_factory("DownloadResultReporter")
         )
@@ -332,7 +332,7 @@ class DownloadHandler:
         """
         self.logger.info(f"🔍 [DUPE] Starte Duplikat-Prüfung für URL: {url[:80]}...")
 
-        is_dup, entry, dup_type = self.duplicate_handler.check_for_duplicates(url=url)
+        is_dup, entry, dup_type = self.duplicate_detector.check_for_duplicates(url=url)
 
         if is_dup and entry:
             self.logger.warning(
@@ -582,7 +582,7 @@ class DownloadHandler:
             url   = result.get("original_url") or result.get("url") or ""
             path  = result.get("library_path") or result.get("filepath") or ""
             if artist and title and artist not in ("?", "Unbekannt", "Unknown Artist"):
-                self.duplicate_handler.register_download(
+                self.duplicate_detector.register_download(
                     url=url,
                     artist=artist,
                     title=title,
@@ -601,7 +601,7 @@ class DownloadHandler:
             self.logger.error(f"❌ [SUCCESS] Duplikat-Registrierung fehlgeschlagen: {e}", exc_info=True)
 
         stats     = self.result_reporter.extract_stats_from_result(result, [])
-        dup_stats = getattr(self.duplicate_handler, "get_statistics", lambda: {})()
+        dup_stats = getattr(self.duplicate_detector, "get_statistics", lambda: {})()
         msg = self.result_reporter.build_final_summary_message(result, stats, dup_stats)
         await self._send_report_message(
             msg,

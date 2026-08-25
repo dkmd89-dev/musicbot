@@ -2,10 +2,10 @@
 E2E-001: Reproduzierbarer Happy Path durch die Metadata-Pipeline.
 
 Verkettet echte Produktionsklassen end-to-end:
-    EnhancedDuplicateHandler.check_for_duplicates (kein Duplikat)
+    DuplicateDetector.check_for_duplicates (kein Duplikat)
         -> EnhancedMetadataProcessor.process_single_track
         -> FilenameFixerTool.move_to_library (intern aufgerufen)
-        -> EnhancedDuplicateHandler.register_download + erneuter Check (jetzt Duplikat)
+        -> DuplicateDetector.register_download + erneuter Check (jetzt Duplikat)
 
 Gefakt werden ausschliesslich externe Dienste (MusicBrainz, Last.fm,
 Genius/Lyrics, Cover-Art-Netzwerk-Lookup, FFmpeg-Subprocess) - siehe
@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from handlers.duplicate_handler import EnhancedDuplicateHandler
+from services.duplicate.detector import DuplicateDetector
 from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
@@ -40,7 +40,7 @@ from utils.filenamefixer import FilenameFixerTool
 
 class HappyPathConfig:
     """Config-Attribute, die EnhancedMetadataProcessor._do_init,
-    FilenameFixerTool._do_init und EnhancedDuplicateHandler tatsaechlich
+    FilenameFixerTool._do_init und DuplicateDetector tatsaechlich
     lesen - alle Verzeichnisse zeigen auf tmp_path, GENRE_MAPPING_DIR auf
     eine tmp-Kopie des echten mapping/-Verzeichnisses (siehe Modul-Docstring)."""
 
@@ -118,7 +118,7 @@ def filename_fixer(happy_path_config):
 
 @pytest.fixture
 def duplicate_handler(happy_path_config):
-    return EnhancedDuplicateHandler(happy_path_config)
+    return DuplicateDetector(happy_path_config)
 
 
 def test_happy_path_end_to_end(
