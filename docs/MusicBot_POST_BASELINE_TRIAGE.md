@@ -336,3 +336,42 @@ keine neue Regression).
 
 FINDING-3 gilt damit als **FIXED**. FINDING-1 (COVER-BLOCKING) und FINDING-2
 (PARTIAL-FAILURE-LIBRARY) sind weiterhin offen.
+
+---
+
+## Nachtrag (2026-08-25): FINDING-1 (COVER-BLOCKING) — Deep Audit abgeschlossen, behoben
+
+Freigabe für Empfehlung Nr. 1 aus Abschnitt 14. Deep Audit bestätigte den
+Fund unverändert: `CoverProcessor.get_cover_art()` (synchron, sequenzielle
+HTTP-Aufrufe à `timeout=8`) wurde direkt und ungewrappt aus
+`EnhancedMetadataProcessor.process_single_track()` (`async def`) aufgerufen.
+
+**Fix:** `services/metadata/enhanced_metadata_processor.py`, Zeile 697 —
+Aufruf jetzt über `await asyncio.to_thread(self.cover_processor.get_cover_art,
+...)`, exakt nach dem bereits etablierten Muster aus
+`download_executor.py::extract_info_async()` (derselbe Bug-Typ, dort bereits
+in einer früheren Session-Phase behoben). Kein Eingriff in `CoverProcessor`
+selbst nötig — die Methode bleibt synchron, nur der Aufrufpunkt wird
+entkoppelt.
+
+**Test-Methodik-Erkenntnis aus dem Deep Audit:** Ein direkter Timing-Wettlauf
+per `asyncio.gather()` (wie beim yt-dlp-Fund) erwies sich hier als
+unzuverlässig — `process_single_track()` hat vor/nach dem Cover-Schritt
+bereits etliche eigene `await`-Punkte (Cache-Check, Genre-/Lyrics-Fetch auf
+gefakten async-Clients), sodass eine parallele Coroutine auch OHNE Fix
+"ticken" konnte und den Test fälschlich grün erscheinen ließ (per
+`git stash` verifiziert: Timing-Variante war ohne Fix ebenfalls gruen -
+false negative). Stattdessen: `asyncio.to_thread` wird am Modulpfad
+gepatcht und aufgezeichnet, ob `get_cover_art` tatsächlich dort
+hindurchgereicht wird — deterministisch, kein Flackerrisiko.
+
+**Test:** 2 neue Tests in `tests/test_enhanced_metadata_processor_cover_blocking.py`
+(Routing-Nachweis über `asyncio.to_thread` + Nachweis, dass das
+Cover-Ergebnis unverändert durchgereicht wird). Der Routing-Test wurde per
+`git stash` gegen den Vor-Fix-Stand als fehlschlagend verifiziert.
+
+**Vollregression:** 1062 passed, 0 failed (+2 gegenüber vorherigem Stand,
+keine neue Regression).
+
+FINDING-1 gilt damit als **FIXED**. FINDING-2 (PARTIAL-FAILURE-LIBRARY)
+bleibt offen — letzter verbleibender Deep-Audit-Kandidat aus Abschnitt 14.

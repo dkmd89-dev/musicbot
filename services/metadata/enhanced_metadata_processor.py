@@ -694,7 +694,15 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 else:
                     self.logger.debug("🔖 [COVER] Keine MB-IDs → nur YouTube/API-Suche")
 
-                cover_art, cover_source = self.cover_processor.get_cover_art(
+                # FINDING-1 (Post-Baseline-Triage, COVER-BLOCKING): get_cover_art()
+                # ist eine synchrone Methode, die pro Track bis zu 6 Quellen
+                # sequenziell mit je timeout=8s abfragt (worst case ~48s). Ohne
+                # asyncio.to_thread() blockierte dieser Aufruf den gesamten
+                # Event-Loop fuer alle Telegram-Nutzer, bei jedem Track -
+                # strukturell identisch zum bereits behobenen yt-dlp-Blocking-Fund
+                # (siehe download_executor.py::extract_info_async()).
+                cover_art, cover_source = await asyncio.to_thread(
+                    self.cover_processor.get_cover_art,
                     video_id=video_id,
                     release_id=_cover_release_id,
                     release_group_mbid=_cover_release_group_id,
