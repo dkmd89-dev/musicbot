@@ -175,43 +175,37 @@ class TestClassA1CounterExamplesStableWithoutSelfKey:
         assert result == canonical_value
 
 
-class TestClassBFallbackCapitalizationStillOpen:
+class TestClassBFallbackCapitalizationResolvedByArch016:
     """
-    "NDW" ist strukturell unabhaengig von Klasse A und war NICHT
-    Bestandteil von ARCH-015 Phase 2 (explizite Scope-Grenze). Es
-    existiert weiterhin kein Self-Alias-Key UND keine
-    Wortgrenzen-Kandidaten - der Wert faellt weiterhin komplett durch
-    bis zur Title-Case-Fallback-Kapitalisierung (str.capitalize()), die
-    aus "NDW" faelschlich "Ndw" macht.
+    "NDW" war strukturell unabhaengig von Klasse A und ausdruecklich
+    NICHT Bestandteil von ARCH-015 Phase 2 (explizite Scope-Grenze
+    dieser Phase). ARCH-016 Phase 2
+    (docs/MusicBot_ARCH-016_Genre_Canonical_Case_Acronym_Characterization.md)
+    hat den fehlenden Self-Alias-Key "ndw": "NDW" ergaenzt - der
+    Direkt-Match-Zweig greift seither vor dem (ohnehin leeren)
+    Substring-Matching und dem Title-Case-Fallback.
     """
 
-    def test_ndw_has_no_self_key_and_no_substring_candidates(self, genre_processor):
+    def test_ndw_now_has_self_key(self, genre_processor):
         norm_map = genre_processor.GENRE_NORMALIZATION
-        assert "ndw" not in norm_map
-        candidates = [
-            k
-            for k in norm_map
-            if genre_processor._contains_alias_as_whole_word("ndw", k)
-        ]
-        assert candidates == []
+        assert norm_map.get("ndw") == "NDW"
 
-    def test_ndw_second_pass_still_becomes_ndw_titlecase(self, genre_processor):
+    def test_ndw_second_pass_now_stable(self, genre_processor):
         first = genre_processor.normalize_genre_name("neue deutsche welle")
         assert first == "NDW"
 
         second = genre_processor.normalize_genre_name(first)
-        assert second == "Ndw"
-        assert second != first
+        assert second == "NDW"
+        assert second == first
 
-    def test_ndw_is_still_the_only_affected_value_in_genre_processor(
+    def test_ndw_no_longer_the_fallback_only_unstable_value(
         self, genre_processor
     ):
         """
-        Vollstaendigkeits-Beleg: unter allen aktuell erreichbaren
-        kanonischen Werten ist "NDW" weiterhin der einzige, der
-        ausschliesslich ueber den Fallback-Pfad (keine Substring-
-        Kandidaten) instabil wird. Regressionswaechter fuer zukuenftige
-        YAML-Aenderungen.
+        Regressionswaechter: unter allen aktuell erreichbaren
+        kanonischen Werten gibt es keinen mehr, der ausschliesslich
+        ueber den Fallback-Pfad (keine Substring-Kandidaten) instabil
+        wird - vorher genau "NDW".
         """
         norm_map = genre_processor.GENRE_NORMALIZATION
         fallback_only_unstable = []
@@ -227,7 +221,7 @@ class TestClassBFallbackCapitalizationStillOpen:
                 continue
             if genre_processor.normalize_genre_name(v) != v:
                 fallback_only_unstable.append(v)
-        assert fallback_only_unstable == ["NDW"]
+        assert fallback_only_unstable == []
 
 
 class TestGenreMapperNotAffectedByClassA1(object):
@@ -253,34 +247,34 @@ class TestGenreMapperNotAffectedByClassA1(object):
         assert once == canonical_value
         assert twice == canonical_value
 
-    def test_genre_mapper_shares_class_b_mechanism_for_ndw(self, genre_mapper):
+    def test_genre_mapper_now_also_stable_for_ndw(self, genre_mapper):
         """
         GenreMapper reimplementiert denselben str.capitalize()-Fallback
-        unabhaengig - "NDW" ist daher in BEIDEN Implementierungen
-        betroffen, nicht nur in GenreProcessor. Unveraendert seit
-        ARCH-015 Phase 2 (Klasse B ausdruecklich nicht bearbeitet).
+        unabhaengig und war daher in BEIDEN Implementierungen von "NDW"
+        betroffen. ARCH-016 Phase 2 hat den Self-Alias-Key ausschliesslich
+        in genre_aliases.yaml ergaenzt (keine Code-Aenderung an
+        GenreMapper) - da GenreMapper dieselbe Datei laedt, profitiert
+        auch dessen unabhaengiger Codepfad automatisch davon.
         """
         result = genre_mapper.normalize_genre_name("NDW")
-        assert result == "Ndw"
-        assert result != "NDW"
+        assert result == "NDW"
 
 
 class TestFullCanonicalValueIdempotencyInventory:
     """
     Vollstaendiger Bestandsbeweis ueber alle aktuell in
     GenreProcessor.GENRE_NORMALIZATION erreichbaren eindeutigen
-    kanonischen Werte: seit ARCH-015 Phase 2 ist nur noch "NDW"
-    (Klasse B) instabil. Regressionswaechter - aendert sich diese Zahl
-    durch eine YAML-Aenderung, muss ARCH-015 neu bewertet werden.
+    kanonischen Werte: seit ARCH-016 Phase 2 ist KEIN Wert mehr instabil
+    - "NDW" war der letzte verbleibende Fall (Klasse B). Regressionswaechter
+    - aendert sich diese Zahl durch eine YAML-Aenderung, muss neu bewertet
+    werden.
     """
 
-    def test_exactly_one_unstable_canonical_value(self, genre_processor):
+    def test_zero_unstable_canonical_values(self, genre_processor):
         canonical_values = _all_canonical_values(genre_processor)
         unstable = {
             v: genre_processor.normalize_genre_name(v)
             for v in canonical_values
             if genre_processor.normalize_genre_name(v) != v
         }
-        assert unstable == {
-            "NDW": "Ndw",
-        }
+        assert unstable == {}
