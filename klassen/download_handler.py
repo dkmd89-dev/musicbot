@@ -4,16 +4,13 @@
 DownloadHandler v3.0 – Vollständig transparenter Download-Pipeline-Orchestrator
 
 Architektur:
-  handle_url()           → Unified Dispatcher (YT vs. Spotify)
+  handle_url()           → Einstiegspunkt (YouTube-URL-Validierung)
   handle_youtube_links() → YouTube-Pipeline
-  handle_spotify_url()   → Spotify-Pipeline
   _process_single_download_result() → Metadaten-Anreicherung via EnhancedMetadataProcessor
 
 Pipeline-Schritte (vollständig nachvollziehbar):
-  YOUTUBE  : 1 URL-Prüfung → 2 Duplikat-Check → 3 YT-Download →
-             4 Metadaten → 5 Bibliothek → 6 Zusammenfassung
-  SPOTIFY  : 1 URL-Prüfung → 2 Duplikat-Check → 3 Metadata-Fetch →
-             4 YT-Search → 5 Metadaten → 6 Bibliothek → 7 Zusammenfassung
+  1 URL-Prüfung → 2 Duplikat-Check → 3 YT-Download →
+  4 Metadaten → 5 Bibliothek → 6 Zusammenfassung
 
 CHANGELOG v3.0:
   ✅ Vollständige Transparenz – jeder Mikro-Schritt geloggt
@@ -23,9 +20,12 @@ CHANGELOG v3.0:
   ✅ Fehlerkontext mit vollständigem Stack bei kritischen Fehlern
   ✅ Stats-Aggregation aus 3 unabhängigen Quellen (robust)
   ✅ Duplikat-Handling mit detaillierter Begründung
-  ✅ Podcast-Pipeline korrekt mit playlist_metadata
-  ✅ Cover-Art-Transparenz (Spotify → YouTube-Thumbnail → kein Cover)
+  ✅ Cover-Art-Transparenz (YouTube-Thumbnail → kein Cover)
   ✅ Konsistentes Emoji-Schema für schnelle Log-Orientierung
+
+Spotify-Unterstützung wurde entfernt (siehe
+docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md, Abschnitt
+"Spotify-Entfernung") - Spotify wurde im produktiven Betrieb nicht genutzt.
 """
 
 import asyncio
@@ -46,16 +46,11 @@ from services.duplicate.detector import DuplicateDetector
 from services.downloader.models import DuplicateEntry
 from logger import get_module_logger
 from services.downloader.downloader import YoutubeDownloader
-from services.downloader.spotify_downloader import SpotifyDownloader, _is_spotify_url
 from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
 from services.downloader.download_result_reporter import DownloadResultReporter
 from services.downloader.progress_tracker import ProgressTracker
-from services.downloader.metadata_result_translator import (
-    call_process_single_track,
-    merge_metadata_result_into_dict,
-)
 from utils.filenamefixer import FilenameFixerTool
 
 
@@ -124,23 +119,10 @@ class _YT:
     SUMMARY      = (6, "Zusammenfassung")
 
 
-class _SP:
-    """Spotify-Pipeline Schritt-Definitionen"""
-    TOTAL = 7
-    URL_CHECK    = (1, "Spotify-URL analysieren")
-    DUPE_CHECK   = (2, "Duplikat-Check")
-    META_FETCH   = (3, "Spotify-Metadaten laden")
-    YT_SEARCH    = (4, "YouTube-Audio suchen & laden")
-    METADATA     = (5, "Metadaten anreichern")
-    LIBRARY      = (6, "Bibliothek organisieren")
-    SUMMARY      = (7, "Zusammenfassung")
-
-
 # Emojis pro Modul für schnelle visuelle Orientierung in Logs
 _MOD_EMOJI = {
     "DownloadHandler":          "📤",
     "YoutubeDownloader":        "⬇️",
-    "SpotifyDownloader":        "🎵",
     "EnhancedMetadataProcessor":"🚀",
     "DuplicateHandler":         "🔍",
     "FilenameFixerTool":        "🛠️",
@@ -190,7 +172,7 @@ def _progress_bar(current: int, total: int, width: int = 10) -> str:
 
 class DownloadHandler:
     """
-    Orchestriert den vollständigen Download-Prozess für YouTube und Spotify.
+    Orchestriert den vollständigen Download-Prozess für YouTube.
 
     Jeder Schritt wird sowohl im Python-Log (detailliert) als auch als
     Telegram-Statusnachricht (kompakt) sichtbar gemacht.
@@ -203,7 +185,6 @@ class DownloadHandler:
         duplicate_detector: DuplicateDetector,
         metadata_processor: EnhancedMetadataProcessor,
         logger_factory: Optional[Callable] = None,
-        spotify_downloader: Optional[SpotifyDownloader] = None,
     ):
         self.update = update
         self.config = config
@@ -224,38 +205,6 @@ class DownloadHandler:
         )
 
         self.logger.info("✅ [INIT] Duplikat-Handler (geteilt) verbunden")
-
-        # ── Artist-Map für SpotifyDownloader ──────────────────────────────────
-        self.artist_map = None
-        try:
-            from utils.artist_map import ArtistConfig, ArtistNormalizer
-            artist_cfg = ArtistConfig(
-                library_dir=getattr(config, "LIBRARY_DIR", "library"),
-                override_file=getattr(config, "ARTIST_OVERRIDE_FILE", "./artist_overrides.json"),
-            )
-            self.artist_map = ArtistNormalizer(artist_cfg)
-            self.logger.info("✅ [INIT] ArtistNormalizer geladen")
-        except Exception as e:
-            self.logger.warning(f"⚠️ [INIT] ArtistNormalizer nicht verfügbar: {e}")
-
-        # ── SpotifyDownloader ─────────────────────────────────────────────────
-        if spotify_downloader is not None:
-            self.spotify_downloader: Optional[SpotifyDownloader] = spotify_downloader
-            self.logger.info("✅ [INIT] SpotifyDownloader (injiziert) verbunden")
-        elif getattr(config, "SPOTIFY_CLIENT_ID", "") or getattr(config, "SPOTIFY_CLIENT_SECRET", ""):
-            try:
-                self.spotify_downloader = SpotifyDownloader(
-                    config,
-                    logger_factory=self.logger_factory,
-                    artist_map=self.artist_map,
-                )
-                self.logger.info("✅ [INIT] SpotifyDownloader auto-initialisiert (Credentials gefunden)")
-            except Exception as e:
-                self.logger.warning(f"⚠️ [INIT] SpotifyDownloader Init fehlgeschlagen: {e}")
-                self.spotify_downloader = None
-        else:
-            self.spotify_downloader = None
-            self.logger.info("ℹ️ [INIT] SpotifyDownloader nicht konfiguriert (keine Credentials)")
 
         # ── Status / Progress ─────────────────────────────────────────────────
         self.status_msg: Optional[Message] = None
@@ -384,16 +333,22 @@ class DownloadHandler:
         self, result: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Vollständig transparente Metadaten-Anreicherung über EnhancedMetadataProcessor.
+        Guard/Pass-Through für bereits verarbeitete YouTube-Download-Ergebnisse.
+
+        Die eigentliche Metadaten-Anreicherung geschieht für YouTube bereits
+        vollständig innerhalb von services/downloader/download_utils.py,
+        bevor ein Ergebnis hier ankommt (siehe
+        docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md). Diese
+        Methode diente historisch zusätzlich als einzige reale
+        Metadaten-Verarbeitungsstelle für Spotify-Ergebnisse (entfernt) -
+        die dafür nötigen Schritte D/E/G wurden mit der Spotify-Entfernung
+        mitentfernt.
 
         Durchläuft folgende Prüfungen mit explizitem Logging:
           A) Playlist-Wrapper-Schutz
           B) Doppelverarbeitungs-Schutz (already processed)
           C) filepath-Fallback-Suche
-          D) Podcast-Episodennummer-Korrektur
-          E) playlist_metadata-Aufbau für Podcasts (Spezialkanal-Logik)
           F) Cover-Art-Transparenz
-          G) EnhancedMetadataProcessor Aufruf + Ergebnis-Mapping
         """
         title = result.get("title", "Unbekannt")
         self.logger.info(
@@ -457,95 +412,19 @@ class DownloadHandler:
                     result["title"] = echter
                     title = echter
 
-            # ── D: Podcast-Episodennummer-Korrektur ───────────────────────────
-            _EP_PATTERN = re.compile(r"^\d{1,4}/\d{4}$")
-            raw_artist = result.get("artist", "")
-            is_unknown = raw_artist in ("Unbekannt", "Unknown Artist", "Unknown", "")
-            is_ep_num  = bool(_EP_PATTERN.match(raw_artist.strip()))
-
-            if is_unknown or is_ep_num:
-                echter_kuenstler = result.get("uploader") or result.get("channel")
-                if echter_kuenstler:
-                    self.logger.info(
-                        f"🎙️ [PROCESS-D] Artist '{raw_artist}' ist "
-                        f"{'Episodennummer' if is_ep_num else 'unbekannt'} → "
-                        f"ersetze durch Channel-Name: '{echter_kuenstler}'"
-                    )
-                    result["artist"] = echter_kuenstler
-
-            # ── E: playlist_metadata für Podcasts ─────────────────────────────
-            playlist_metadata_for_processor = None
-            if result.get("is_podcast") and result.get("podcast_name"):
-                podcast_name = result["podcast_name"]
-                playlist_name = result.get("playlist_name") or podcast_name
-                self.logger.info(
-                    f"🎙️ [PROCESS-E] Podcast-Track erkannt:\n"
-                    f"   Podcast-Name  : {podcast_name}\n"
-                    f"   Playlist-Name : {playlist_name}\n"
-                    f"   → Baue playlist_metadata für Spezialkanal-Logik auf"
-                )
-                playlist_metadata_for_processor = {
-                    "album":            playlist_name,
-                    "album_artist":     podcast_name,
-                    "track_number":     None,
-                    "year":             result.get("year"),
-                    "is_playlist":      True,
-                    "playlist_channel": podcast_name,
-                }
-            else:
-                self.logger.debug(
-                    f"🎵 [PROCESS-E] Kein Podcast → playlist_metadata=None "
-                    f"(is_podcast={result.get('is_podcast')}, podcast_name={result.get('podcast_name')})"
-                )
-
             # ── F: Cover-Art-Transparenz ───────────────────────────────────────
             cover_bytes = result.get("cover_art")
             if cover_bytes:
                 self.logger.info(
-                    f"🖼️ [PROCESS-F] Cover-Art aus Spotify-Download verfügbar "
-                    f"({len(cover_bytes):,} Bytes) → wird an Processor übergeben"
+                    f"🖼️ [PROCESS-F] Cover-Art bereits im Ergebnis vorhanden "
+                    f"({len(cover_bytes):,} Bytes)"
                 )
             else:
                 self.logger.debug(
-                    "🖼️ [PROCESS-F] Kein Spotify-Cover → Processor lädt YouTube-Thumbnail"
+                    "🖼️ [PROCESS-F] Kein eingebettetes Cover im Ergebnis"
                 )
 
-            # ── G: EnhancedMetadataProcessor ─────────────────────────────────
-            self.logger.info(
-                f"🚀 [PROCESS-G] Starte EnhancedMetadataProcessor für '{title}'..."
-            )
-            metadata_result = await call_process_single_track(
-                self.enhanced_metadata_processor,
-                track_metadata=result,
-                filename_fixer=self.filename_fixer,
-                playlist_metadata=playlist_metadata_for_processor,
-                dominant_artist=None,
-            )
-
-            if metadata_result and metadata_result.success:
-                self.logger.info(
-                    f"✅ [PROCESS-G] Metadaten-Anreicherung erfolgreich:\n"
-                    f"   Titel       : {metadata_result.title}\n"
-                    f"   Künstler    : {metadata_result.artist}  (Quelle: {metadata_result.artist_source})\n"
-                    f"   Album       : {metadata_result.album}\n"
-                    f"   Jahr        : {metadata_result.year}\n"
-                    f"   Genre-Src   : {metadata_result.genre_source}\n"
-                    f"   Lyrics      : {'✅ gefunden' if metadata_result.lyrics else '❌ nicht gefunden'}\n"
-                    f"   Cover       : {'✅ eingebettet' if metadata_result.cover_embedded else '❌ fehlt'}\n"
-                    f"   Library-Pfad: {metadata_result.library_path}"
-                )
-                # ARCH-004/P-3: gemeinsame Integrationsschicht statt inline
-                # dupliziertem Dict-Aufbau - siehe
-                # services/downloader/metadata_result_translator.py
-                return merge_metadata_result_into_dict(result, metadata_result)
-            else:
-                err = metadata_result.error if metadata_result else "Kein Ergebnis"
-                self.logger.warning(
-                    f"⚠️ [PROCESS-G] MetadataProcessor lieferte kein Ergebnis für '{title}':\n"
-                    f"   Fehler: {err}\n"
-                    f"   → Fahre mit Original-Metadaten fort"
-                )
-                return result
+            return result
 
         except Exception as e:
             self.logger.error(
@@ -634,35 +513,28 @@ class DownloadHandler:
 
     async def handle_url(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
-        Unified Einstiegspunkt.
-        Erkennt URL-Typ und delegiert an YT- oder Spotify-Pipeline.
+        Einstiegspunkt.
+        Prüft die URL gegen die unterstützten YouTube-Domains und startet
+        die YouTube-Pipeline.
         """
         url = update.message.text.strip()
         self.logger.info(
             f"📤 [DISPATCH] Neue URL empfangen: {url[:100]}"
         )
 
-        is_spotify = _is_spotify_url(url)
-        if not is_spotify and not _is_supported_download_url(url):
+        if not _is_supported_download_url(url):
             self.logger.warning(
                 f"🚫 [DISPATCH] Nicht unterstützte URL abgelehnt: {url[:100]}"
             )
             await update.message.reply_text(
-                "⚠️ Diese URL wird nicht unterstützt. Bitte einen YouTube- "
-                "oder Spotify-Link senden."
+                "⚠️ Diese URL wird nicht unterstützt. Bitte einen YouTube-Link senden."
             )
             return
 
         semaphore = _get_download_semaphore(self.config)
         async with semaphore:
-            if is_spotify:
-                self.logger.info(
-                    "📤 [DISPATCH] → Spotify-URL erkannt → spotify-Pipeline"
-                )
-                await self.handle_spotify_url(update, context, url)
-            else:
-                self.logger.info("📤 [DISPATCH] → YouTube-URL erkannt → YT-Pipeline")
-                await self.handle_youtube_links(update, context)
+            self.logger.info("📤 [DISPATCH] → YouTube-URL erkannt → YT-Pipeline")
+            await self.handle_youtube_links(update, context)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # YOUTUBE-PIPELINE
@@ -788,166 +660,6 @@ class DownloadHandler:
         except Exception as e:
             self.logger.error(
                 f"💥 [YT-PIPELINE] Unerwarteter Fehler: {e}", exc_info=True
-            )
-            await self.handle_download_failure(str(e))
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # SPOTIFY-PIPELINE
-    # ═══════════════════════════════════════════════════════════════════════════
-
-    async def handle_spotify_url(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        url: str,
-    ) -> None:
-        """
-        Spotify Download-Pipeline mit vollständigen Step-Logs.
-
-        Schritte: URL-Analyse → Duplikat → Spotify-Metadaten → YT-Download →
-                  Metadaten-Anreicherung → Bibliothek → Zusammenfassung
-        """
-        self.update = update
-        TOTAL = _SP.TOTAL
-
-        self.logger.info(
-            f"\n{'═'*60}\n"
-            f"🎵 SPOTIFY-PIPELINE GESTARTET\n"
-            f"   URL      : {url}\n"
-            f"   Chat-ID  : {update.effective_chat.id}\n"
-            f"   Update-ID: {update.update_id}\n"
-            f"{'═'*60}"
-        )
-
-        self.status_msg = await update.message.reply_text("🎵 Spotify-Anfrage wird gestartet...")
-
-        try:
-            # ── SCHRITT 1: SpotifyDownloader verfügbar? ──────────────────
-            step, label = _SP.URL_CHECK
-            await self._update_status(step, TOTAL, label, "SpotifyDownloader", url[:60])
-
-            if not self.spotify_downloader:
-                self.logger.error("❌ [SPOTIFY] SpotifyDownloader nicht konfiguriert")
-                await self.status_msg.edit_text(
-                    "❌ Spotify-Download nicht verfügbar.\n\n"
-                    "SpotifyDownloader ist nicht konfiguriert.\n"
-                    "Lösung: SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET in .env eintragen."
-                )
-                return
-
-            # ── SCHRITT 2: Duplikat-Check ────────────────────────────────
-            step, label = _SP.DUPE_CHECK
-            await self._update_status(step, TOTAL, label, "DuplicateHandler")
-            is_dup, entry, dup_type = await self._check_duplicates_before_download(url)
-            if is_dup and entry:
-                await self._handle_duplicate_found(entry, dup_type)
-                return
-
-            # ── SCHRITT 3: Spotify-Download (Metadaten + Audio) ──────────
-            step, label = _SP.META_FETCH
-            await self._update_status(step, TOTAL, label, "SpotifyDownloader")
-            self.logger.info(f"🎵 [SPOTIFY] Starte spotify_downloader.download({url[:60]})")
-
-            download_result = await self.spotify_downloader.download(url)
-
-            if not download_result or not download_result.get("success"):
-                err = download_result.get("error", "Unbekannter Spotify-Fehler") if download_result else "Kein Ergebnis"
-                self.logger.error(f"❌ [SPOTIFY] Download fehlgeschlagen: {err}")
-                await self.handle_download_failure(err)
-                return
-
-            self.logger.info(
-                f"✅ [SPOTIFY] Download-Ergebnis erhalten:\n"
-                f"   type     : {download_result.get('type')}\n"
-                f"   is_podcast: {download_result.get('track_info', {}).get('is_podcast', False)}"
-            )
-
-            # ── SCHRITT 4: YouTube-Audio geladen ─────────────────────────
-            step, label = _SP.YT_SEARCH
-            await self._update_status(step, TOTAL, label, "SpotifyDownloader")
-
-            # Ergebnis-Liste normalisieren
-            if download_result.get("type") == "playlist":
-                raw_tracks = download_result.get("tracks", [])
-                results_list = raw_tracks if raw_tracks else [download_result]
-                self.logger.info(
-                    f"📋 [SPOTIFY] Playlist mit {len(results_list)} Tracks"
-                )
-            else:
-                track_info = download_result.get("track_info", {})
-                if track_info:
-                    track_info["original_url"] = url
-                    results_list = [track_info]
-                else:
-                    results_list = [download_result]
-                self.logger.info(
-                    f"🎵 [SPOTIFY] Einzelner Track: '{results_list[0].get('title', '?')}'"
-                )
-
-            # ── SCHRITT 5: Metadaten-Anreicherung ────────────────────────
-            step, label = _SP.METADATA
-            await self._update_status(step, TOTAL, label, "EnhancedMetadataProcessor")
-
-            processed_results = []
-            for idx, res in enumerate(results_list, 1):
-                self.logger.info(
-                    f"🔄 [SPOTIFY] Verarbeite Track {idx}/{len(results_list)}: "
-                    f"'{res.get('title', '?')}'"
-                )
-
-                if not (isinstance(res, dict) and res.get("success", True)):
-                    self.logger.warning(
-                        f"⚠️ [SPOTIFY] Track {idx} fehlerhaft — übersprungen"
-                    )
-                    continue
-
-                res.setdefault("original_url", url)
-                res.setdefault("source", "spotify_no_api_embed")
-
-                # playlist_channel für Podcast-Spezialkanal-Erkennung
-                if res.get("is_podcast") and res.get("podcast_name"):
-                    pn = res["podcast_name"]
-                    res.setdefault("playlist_channel", pn)
-                    self.logger.info(
-                        f"🎙️ [SPOTIFY] Podcast-Track: playlist_channel='{pn}' gesetzt "
-                        f"für Spezialkanal-Routing"
-                    )
-
-                processed = await self._process_single_download_result(res)
-                processed_results.append(processed)
-                self.logger.debug(
-                    f"✅ [SPOTIFY] Track {idx} verarbeitet:\n"
-                    f"{_fmt_result(processed)}"
-                )
-
-            if not processed_results:
-                self.logger.warning("🤷 [SPOTIFY] Keine erfolgreichen Ergebnisse")
-                await self.status_msg.edit_text(
-                    "⚠️ Spotify-Download abgeschlossen, aber keine Ergebnisse verarbeitet."
-                )
-                return
-
-            # ── SCHRITT 6 & 7: Bibliothek + Zusammenfassung ──────────────
-            step, label = _SP.LIBRARY
-            await self._update_status(step, TOTAL, label, "FilenameFixerTool")
-
-            step, label = _SP.SUMMARY
-            await self._update_status(step, TOTAL, label, "DownloadHandler")
-
-            if len(processed_results) == 1:
-                await self.handle_single_track_success(processed_results[0])
-            else:
-                await self.handle_playlist_success(processed_results)
-
-            self.logger.info(
-                f"{'═'*60}\n"
-                f"✅ SPOTIFY-PIPELINE ABGESCHLOSSEN — {len(processed_results)} Track(s)\n"
-                f"{'═'*60}"
-            )
-
-        except Exception as e:
-            self.logger.error(
-                f"💥 [SPOTIFY-PIPELINE] Unerwarteter Fehler: {e}", exc_info=True
             )
             await self.handle_download_failure(str(e))
 

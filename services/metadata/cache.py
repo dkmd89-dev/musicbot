@@ -54,8 +54,7 @@ class MetadataCacheHandler:
         result.artist/result.title speichert - ein direkter Artist::Titel-
         Lookup aus rohen Daten wuerde praktisch nie treffen. Stattdessen wird
         die YouTube-Video-ID (track_metadata["id"]) als stabiler Zwischen-
-        Schluessel genutzt: sie ist bei YouTube- wie Spotify-Downloads
-        (gematchtes YouTube-Video) bereits zum Check-Zeitpunkt vorhanden und
+        Schluessel genutzt: sie ist bereits zum Check-Zeitpunkt vorhanden und
         aendert sich durch die Bereinigung nicht.
         """
         try:

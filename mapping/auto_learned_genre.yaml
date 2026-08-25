@@ -132,3 +132,7 @@ ARTIST_GENRE_MAP:
     description: Auto-learned via Last.fm (rule)
     primary: Deutschrap
     secondary: [Hip Hop]
+  Trettmann:
+    description: Auto-learned via Last.fm (rule)
+    primary: Deutschrap
+    secondary: [Hip Hop, Rock]

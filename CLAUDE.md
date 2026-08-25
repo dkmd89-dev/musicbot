@@ -99,8 +99,8 @@ ExtendedBot
 RichMenuHandler
    ↓
 DownloadHandler
-   ├── YouTube
-   └── Spotify
+   ↓
+YouTube
            ↓
    Metadata Pipeline
            ↓
@@ -296,7 +296,6 @@ Beispiele:
 - Genius → Fake/Mock
 - Last.fm → Fake/Mock
 - Navidrome → Fake/Mock
-- Spotify → Fake/Mock
 - Telegram → Fake/Mock
 
 Echte externe Aufrufe gehören in gezielte Integrationstests.
@@ -460,7 +459,6 @@ oder vollständiges Weglassen.
 - History
 - Statistics
 - Mapping
-- Spotify
 - Backups
 - Secrets
 - Feature Flags
@@ -582,7 +580,6 @@ Navidrome-Scan-Trigger) gehört dagegen nach `utils/`, nicht nach
 Relevante Integrationen:
 
 - YouTube / yt-dlp
-- Spotify
 - MusicBrainz
 - Genius
 - Last.fm
@@ -796,7 +793,6 @@ Artist
 
 ```text
 YouTube
-Spotify
 MusicBrainz
 Lyrics
 Cover

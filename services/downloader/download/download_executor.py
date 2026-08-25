@@ -179,7 +179,6 @@ class DownloadExecutor:
         das blockierte den kompletten Event-Loop fuer die gesamte Dauer
         jedes Downloads, wodurch der Bot fuer ALLE Nutzer (nicht nur den
         gerade downloadenden) unresponsive wurde, bis der Aufruf fertig war.
-        Mirrort das bereits korrekte Muster aus spotify_downloader.py.
         """
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(

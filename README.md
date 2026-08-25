@@ -1,6 +1,6 @@
 # MusicBot
 
-Privat entwickelter Telegram-Bot für Musik-/Podcast-Download (YouTube & Spotify), automatische Metadaten-Anreicherung (Artist, Genre, Cover, Lyrics), Library-Organisation und Steuerung eines [Navidrome](https://www.navidrome.org/)-Servers.
+Privat entwickelter Telegram-Bot für Musik-Download (YouTube), automatische Metadaten-Anreicherung (Artist, Genre, Cover, Lyrics), Library-Organisation und Steuerung eines [Navidrome](https://www.navidrome.org/)-Servers.
 
 Historisch organisch gewachsenes Hobbyprojekt — siehe [`CLAUDE.md`](CLAUDE.md) für die Engineering-Leitlinien und [`docs/MusicBot_ENGINEERING_BASELINE.md`](docs/MusicBot_ENGINEERING_BASELINE.md) für den aktuellen technischen Status (Risiken, behobene Bugs, Testabdeckung).
 
@@ -8,8 +8,8 @@ Historisch organisch gewachsenes Hobbyprojekt — siehe [`CLAUDE.md`](CLAUDE.md)
 
 ## Was der Bot macht
 
-- Nimmt YouTube- und Spotify-Links per Telegram entgegen (auch Playlists, Podcasts/Episodes)
-- Lädt Audio via [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) herunter (Spotify-Links werden dafür auf YouTube gesucht, da ohne Premium/API-Key kein direkter Spotify-Download möglich ist)
+- Nimmt YouTube-Links per Telegram entgegen (auch Playlists; YouTube-Videos aus bekannten Podcast-Kanälen werden automatisch erkannt und gesondert einsortiert)
+- Lädt Audio via [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) herunter
 - Reichert Metadaten an: Artist-Normalisierung, Genre-Erkennung (MusicBrainz/Last.fm-Tags, Mapping-Regeln, Fuzzy-Matching), Lyrics (Genius), Cover-Art (Cover Art Archive, Fanart.tv, Apple Music, Deezer, Last.fm, YouTube-Thumbnail als Fallback-Kette)
 - Erkennt Duplikate über mehrere Ebenen (URL, YouTube-ID, Artist+Titel, Library-Abgleich)
 - Organisiert die fertige Datei in der Musik-Library (Dateiname, Verzeichnisstruktur, ID3/MP4-Tags)
@@ -26,8 +26,8 @@ ExtendedBot (bot.py)
 RichMenuHandler
    ↓
 DownloadHandler
-   ├── YouTube (yt-dlp)
-   └── Spotify (SpotifyDownloader → YouTube-Suche / RSS-Feed für Podcasts)
+   ↓
+YouTube (yt-dlp)
            ↓
    Metadata-Pipeline (EnhancedMetadataProcessor)
            ↓
@@ -50,8 +50,8 @@ Ausführlicher, mit Datenfluss/Fehlerbehandlung pro Bereich: [`CLAUDE.md`](CLAUD
 |---|---|
 | `bot.py` | Einstiegspunkt — initialisiert Telegram-Application, Error-Handler, `RichMenuHandler` |
 | `config.py` | Zentrale Konfiguration, lädt Secrets aus `.env` |
-| `klassen/` | `download_handler.py` — zentraler Download-Orchestrator (Dispatch YouTube/Spotify), einziges verbliebenes Modul in diesem Verzeichnis |
-| `services/downloader/` | Download-Pipeline: `spotify_downloader.py`, `downloader.py`, `playlist_processor.py`, `download_utils.py`, `download_result_reporter.py`, `download_artifact_cleanup.py`, `progress_tracker.py`, `errors.py`, `metadata_result_translator.py`, `models.py` (neutrale Datenmodelle, u. a. `DuplicateEntry`), sowie `download/` mit den ausgelagerten Orchestrierungs-Modulen (Cache/Jahr/Channel/Executor/Formatters) |
+| `klassen/` | `download_handler.py` — zentraler Download-Orchestrator (YouTube), einziges verbliebenes Modul in diesem Verzeichnis |
+| `services/downloader/` | Download-Pipeline: `downloader.py`, `playlist_processor.py`, `download_utils.py`, `download_result_reporter.py`, `download_artifact_cleanup.py`, `progress_tracker.py`, `errors.py`, `metadata_result_translator.py`, `models.py` (neutrale Datenmodelle, u. a. `DuplicateEntry`), sowie `download/` mit den ausgelagerten Orchestrierungs-Modulen (Cache/Jahr/Channel/Executor/Formatters) |
 | `services/metadata/` | Metadaten-Pipeline (ARCH-010): `enhanced_metadata_processor.py` als Facade, sowie die Unterprozessoren `album_processor.py`, `artist_processor.py`, `auto_learn.py`, `cache.py`, `cover_processor.py`, `genre_processor.py`, `lyrics_processor.py`, `tag_writer.py`, `title_cleaner.py`, `models.py` |
 | `services/clients/` | Reine externe Integrationsadapter (keine Telegram-Präsentation, keine Fachlogik): `genius_client.py`, `lastfm_client.py`, `musicbrainz_client.py`, `navidrome_api.py` |
 | `services/` (übrige Dateien) | `statistik_service.py` (dünne Fassade) + `services/statistik/` (`play_history_repository.py`, `play_history_poller.py`, `statistics_calculator.py`, `chart_renderer.py`) |
@@ -82,8 +82,6 @@ NAVIDROME_USER=
 NAVIDROME_PASS=
 NAVIDROME_CONTAINER_NAME=
 
-SPOTIFY_CLIENT_ID=            # optional, nur für Spotify-Metadaten-API-Pfad
-SPOTIFY_CLIENT_SECRET=
 GENIUS_ACCESS_TOKEN=          # optional, für Lyrics
 LASTFM_API_KEY=               # optional, für Genre-Tags/Cover-Fallback
 LASTFM_API_SECRET=
