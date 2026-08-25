@@ -4,20 +4,22 @@ Einstiegspunkt für die Dokumentation. Drei Ebenen (siehe README.md für Details
 
 - **README.md** – Was ist MusicBot? (für Menschen)
 - **ENGINEERING_BASELINE** – Wie ist der aktuelle technische Zustand? (für Wartung/Entwicklung)
-- **ARCH-xxx / POST-ARCH-xxx** – Warum wurde eine Architekturentscheidung getroffen? (Historie, unverändert)
+- **archive/arch/ARCH-xxx / archive/post-arch/POST-ARCH-xxx** – Warum wurde eine Architekturentscheidung getroffen? (Historie, unverändert)
 
 Status-Legende: **CURRENT** = aktuell gültig · **HISTORICAL** = abgeschlossenes Entscheidungsprotokoll, nicht mehr verändert · **SUPERSEDED** = durch neuere Version abgelöst
+
+Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/archive/`](archive/) — nur nicht mehr im direkten Sichtfeld von `docs/`.
 
 ## Baseline
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| MusicBot_ENGINEERING_BASELINE_v3.md | CURRENT (eingefroren nach Freeze 2026-08-25) | Nächster verifizierter Referenzzustand nach Post-Baseline-Triage + Deep Audits (FINDING-1/2/3 gefixt, ENHANCED-ERROR-HANDLER als PLANNED/NOT INTEGRATED eingeordnet), 1063 passed / 0 failed — neue Findings → MusicBot_ENGINEERING_BASELINE_v4.md |
-| MusicBot_POST_BASELINE_TRIAGE.md | HISTORICAL (Analyseartefakt) | Herleitung von v3 — sechs-Dimensionen-Triage + Deep-Audit-Nachträge, nicht selbst Baseline |
-| MusicBot_ENGINEERING_BASELINE_v2.md | SUPERSEDED (eingefroren nach Closure 2026-08-25) | Abgelöst durch v3 |
-| MusicBot_ENGINEERING_BASELINE.md | SUPERSEDED | v1, abgelöst durch v2 |
+| [MusicBot_ENGINEERING_BASELINE_v3.md](MusicBot_ENGINEERING_BASELINE_v3.md) | CURRENT (eingefroren nach Freeze 2026-08-25) | Nächster verifizierter Referenzzustand nach Post-Baseline-Triage + Deep Audits (FINDING-1/2/3 gefixt, ENHANCED-ERROR-HANDLER als PLANNED/NOT INTEGRATED eingeordnet), 1063 passed / 0 failed — neue Findings → MusicBot_ENGINEERING_BASELINE_v4.md |
+| [MusicBot_POST_BASELINE_TRIAGE.md](MusicBot_POST_BASELINE_TRIAGE.md) | HISTORICAL (Analyseartefakt) | Herleitung von v3 — sechs-Dimensionen-Triage + Deep-Audit-Nachträge, nicht selbst Baseline |
+| [archive/MusicBot_ENGINEERING_BASELINE_v2.md](archive/MusicBot_ENGINEERING_BASELINE_v2.md) | SUPERSEDED (eingefroren nach Closure 2026-08-25) | Abgelöst durch v3 |
+| [archive/MusicBot_ENGINEERING_BASELINE.md](archive/MusicBot_ENGINEERING_BASELINE.md) | SUPERSEDED | v1, abgelöst durch v2 |
 
-## ARCH – Architektur-Entscheidungsprotokoll (Historie)
+## ARCH – Architektur-Entscheidungsprotokoll (Historie, in [`docs/archive/arch/`](archive/arch/))
 
 | Datei | Status | Kurzthema |
 |---|---|---|
@@ -52,23 +54,25 @@ Status-Legende: **CURRENT** = aktuell gültig · **HISTORICAL** = abgeschlossene
 | MusicBot_ARCH-020_Download_Pipeline_Characterization.md | HISTORICAL | Download-Pipeline & Orchestration Boundary |
 | MusicBot_ARCH-021_Genre_Client_Duplication_Characterization.md | HISTORICAL | Genre-Client-Duplikation / Last.fm-Cover |
 
-## POST-ARCH – Revalidierungs-Audits (Historie)
+## POST-ARCH – Revalidierungs-Audits (Historie, in [`docs/archive/post-arch/`](archive/post-arch/) bzw. [`docs/archive/`](archive/))
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| MusicBot_POST-ARCH-009_Audit.md | HISTORICAL | Architektur-Audit nach ARCH-009 |
-| MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md | HISTORICAL | `bot_restart_handler` Verantwortlichkeitsanalyse |
-| MusicBot_POST-ARCH-010_011_DuplicateEntry_Analyse.md | HISTORICAL | `DuplicateEntry`-Boundary Folgeanalyse |
-| MusicBot_POST-ARCH-010_011_Services_Zielarchitektur_Audit.md | HISTORICAL | Services-Zielarchitektur-Audit nach ARCH-010/011 |
-| MusicBot_POST-DUPLICATEENTRY_Services_Architecture_Audit.md | HISTORICAL | Services Architecture Audit nach DuplicateEntry-Fix |
+| post-arch/MusicBot_POST-ARCH-009_Audit.md | HISTORICAL | Architektur-Audit nach ARCH-009 |
+| post-arch/MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md | HISTORICAL | `bot_restart_handler` Verantwortlichkeitsanalyse |
+| post-arch/MusicBot_POST-ARCH-010_011_DuplicateEntry_Analyse.md | HISTORICAL | `DuplicateEntry`-Boundary Folgeanalyse |
+| post-arch/MusicBot_POST-ARCH-010_011_Services_Zielarchitektur_Audit.md | HISTORICAL | Services-Zielarchitektur-Audit nach ARCH-010/011 |
+| post-arch/MusicBot_POST-DUPLICATEENTRY_Services_Architecture_Audit.md | HISTORICAL | Services Architecture Audit nach DuplicateEntry-Fix |
 | MusicBot_SERVICES_Zielarchitektur_Audit.md | HISTORICAL | Services-Zielarchitektur Audit |
-| POST-ARCH-012_Services_Architecture_Audit.md | HISTORICAL | Services Architecture Audit nach ARCH-012 |
-| POST-ARCH-013_Services_Architecture_Audit.md | HISTORICAL | Services/Genre Architecture Audit nach ARCH-013 |
-| POST-ARCH-018_Services_Architecture_Audit.md | HISTORICAL | Services/Architecture Audit nach ARCH-018 |
+| post-arch/POST-ARCH-012_Services_Architecture_Audit.md | HISTORICAL | Services Architecture Audit nach ARCH-012 |
+| post-arch/POST-ARCH-013_Services_Architecture_Audit.md | HISTORICAL | Services/Genre Architecture Audit nach ARCH-013 |
+| post-arch/POST-ARCH-018_Services_Architecture_Audit.md | HISTORICAL | Services/Architecture Audit nach ARCH-018 |
 | POST-SERVICES_PROJECT-WIDE_ARCHITECTURE_AUDIT.md | HISTORICAL | Projektweites Architecture Audit |
 
-## Sonstiges
+## Sonstiges (in [`docs/archive/`](archive/))
 
 | Datei | Status | Kurzthema |
 |---|---|---|
 | musicbot_REVERSE_ENGINEERED_DOCUMENTATION.md | SUPERSEDED | Reverse-Engineered Projektdokumentation (überschneidet sich mit Baseline) |
+| MusicBot_FINDING_4_FORENSIC_AUDIT.md | HISTORICAL | Forensischer Audit zu Finding 4 |
+| MusicBot_PHASE4_FAILURE_PATH_AUDIT.md | HISTORICAL | Failure-Path-Audit Phase 4 |

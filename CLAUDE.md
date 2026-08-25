@@ -137,7 +137,7 @@ utils/
 
 api/
     → keine MusicBot-Schicht mehr (vollständig entfernt, siehe
-      docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md)
+      docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md)
 ```
 
 Ein Modul, das externe Netzwerk-/API-Kommunikation durchführt, gehört nach
