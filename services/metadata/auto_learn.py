@@ -358,7 +358,7 @@ class AutoLearnManager:
         except Exception:
             pass
 
-        # 4. auto_learned_artists.yaml (Alias-Ziele)
+        # 4. auto_learned_artists.yaml (Alias-Quellen und -Ziele)
         try:
             import yaml
 
@@ -368,8 +368,11 @@ class AutoLearnManager:
                 with open(alias_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f) or {}
                 auto_learned = data.get("auto_learned", {})
-                for canonical in auto_learned.values():
-                    if str(canonical).casefold() == artist_key:
+                for raw_alias, canonical in auto_learned.items():
+                    if (
+                        str(raw_alias).casefold() == artist_key
+                        or str(canonical).casefold() == artist_key
+                    ):
                         return True
         except Exception:
             pass

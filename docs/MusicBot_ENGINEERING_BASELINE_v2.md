@@ -498,3 +498,24 @@ Tests > aktuelle technische Dokumentation > historische Dokumentation.
 `docs/MusicBot_ENGINEERING_BASELINE.md` (v1) bleibt als historische
 Momentaufnahme vom 2026-08-16 unverändert bestehen und wird durch dieses
 Dokument **nicht ersetzt, sondern abgelöst** als aktueller Referenzpunkt.
+
+---
+
+## Nachtrag (2026-08-25): AUTOLEARN-001 behoben
+
+Direkt im Anschluss an die Baseline-Erstellung wurde der unter Abschnitt 9/14
+dokumentierte Fund AUTOLEARN-001 behoben (explizite Freigabe für genau diesen
+einen Punkt): `_is_artist_known()` (`services/metadata/auto_learn.py`) prüfte
+in Schritt 4 nur `auto_learned.values()` (kanonische Namen), nie `.keys()`
+(Roh-Aliase). Fix: Iteration über `auto_learned.items()`, Vergleich sowohl
+gegen `raw_alias` als auch `canonical`. Der bereits vorhandene Test
+`tests/test_auto_learn.py::TestAutoLearnManager::test_is_artist_known_from_auto_learned`
+deckte den Fall bereits ab und dient als Regressionstest — kein neuer Test
+nötig. Vollregression danach: **1040 passed, 9 failed** (genau die verbleibenden,
+in Abschnitt 9 dokumentierten Punkte #2–#10, keine neue Regression).
+
+Die Zahlen in Abschnitt 8/9 oben bleiben als Momentaufnahme zum
+Baseline-Erstellungszeitpunkt unverändert stehen; dieser Nachtrag ist die
+aktuelle Wahrheit. Alle übrigen P2/P3-Punkte aus Abschnitt 14 (RETRY-COVERAGE,
+AUTOLEARN-002, CHANNEL-PATTERN, STALE-TEST, PYTEST-ASYNCIO, PODCAST-INDEX-KEY,
+LASTFM-COVER-DEAD) sind weiterhin offen und unverändert.
