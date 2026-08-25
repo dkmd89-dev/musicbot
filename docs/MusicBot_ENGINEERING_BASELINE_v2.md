@@ -518,4 +518,35 @@ Die Zahlen in Abschnitt 8/9 oben bleiben als Momentaufnahme zum
 Baseline-Erstellungszeitpunkt unverändert stehen; dieser Nachtrag ist die
 aktuelle Wahrheit. Alle übrigen P2/P3-Punkte aus Abschnitt 14 (RETRY-COVERAGE,
 AUTOLEARN-002, CHANNEL-PATTERN, STALE-TEST, PYTEST-ASYNCIO, PODCAST-INDEX-KEY,
-LASTFM-COVER-DEAD) sind weiterhin offen und unverändert.
+LASTFM-COVER-DEAD) waren zu diesem Zeitpunkt weiterhin offen.
+
+## Nachtrag (2026-08-25): RETRY-COVERAGE geschlossen (Characterization-Test)
+
+Freigabe für Empfehlung Nr. 2 aus Abschnitt 18: Characterization-Test für die
+Retry-Schleife in `enhanced_download_with_retry()`
+(`services/downloader/download_utils.py:224`) ergänzt —
+`tests/test_download_utils_retry.py` (10 Tests). Reine
+Verhaltens-Dokumentation, keine Code-Änderung an `download_utils.py`.
+
+Dokumentiertes, dabei neu sichtbar gewordenes Detail: `DownloadError.__str__()`
+formatiert als `"Download-Fehler [CODE]: details"`
+(`services/downloader/errors.py`) — dieser Präfix landet unverändert in der
+finalen `"Download nach N Versuchen fehlgeschlagen: …"`-Fehlermeldung. Der
+generische-`Exception`-Zweig nennt im Gegensatz dazu die Versuchsanzahl gar
+nicht in der Meldung ("Unerwarteter Fehler: …") — eine bestehende
+Formatierungs-Inkonsistenz zwischen beiden Fehlerzweigen, dokumentiert, nicht
+behoben (außerhalb des Scopes dieses Auftrags).
+
+Abgedeckt: Erfolg im ersten Versuch (Single/Playlist), leere `entries`-Liste
+fällt auf den Single-Pfad zurück, Retry nach `info=None`, Retry auch bei
+Exceptions aus `_process_playlist_download()` (nicht nur aus
+`extract_info_async()`), exponentielles Backoff (`2**attempt`), beide
+Fehlermeldungsformate bei Erschöpfung aller Versuche, Default `max_retries=3`,
+sowie der Randfall `max_retries=0` (kein einziger Versuch, sofortiger
+Fehl-Return).
+
+Vollregression danach: **1050 passed, 9 failed** (+10 gegenüber vorherigem
+Stand, exakt die neuen Tests; die 9 bekannten Fehler unverändert, keine neue
+Regression). RETRY-COVERAGE ist damit aus der offenen P2-Liste in Abschnitt 14
+zu entfernen. AUTOLEARN-002, CHANNEL-PATTERN, STALE-TEST, PYTEST-ASYNCIO,
+PODCAST-INDEX-KEY und LASTFM-COVER-DEAD sind weiterhin offen und unverändert.
