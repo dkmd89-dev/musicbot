@@ -326,15 +326,47 @@ class FilenameFixerTool(SingletonMixin):
                 f"⚠️ [LIBRARY] Name existiert — umbenannt zu: {final_target.name}"
             )
 
+        # FINDING-6 (docs/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md): shutil.move()
+        # nutzt os.rename() (atomar) nur, wenn Quelle und Ziel auf demselben
+        # Dateisystem liegen - DOWNLOAD_DIR und LIBRARY_DIR liegen in der
+        # tatsaechlichen Konfiguration (config.py) auf unterschiedlichen
+        # Mountpoints, wodurch shutil.move() intern auf copy2()+unlink()
+        # zurueckfaellt. Ein Prozessabbruch waehrend dieses Kopiervorgangs
+        # konnte eine unvollstaendige Datei am Zielpfad hinterlassen. Fix:
+        # in eine temporaere Datei IM Zielverzeichnis kopieren (garantiert
+        # dasselbe Dateisystem wie final_target), dann atomar per
+        # Path.replace() an den finalen Namen umbenennen - final_target
+        # existiert dadurch nie in einem unvollstaendigen Zustand.
+        tmp_target = final_target.with_name(
+            f".{final_target.name}.tmp_{int(time.time() * 1000)}"
+        )
         try:
-            shutil.move(str(source_path), str(final_target))
-            self.logger.info(f"✅ [LIBRARY] Datei verschoben nach: {final_target}")
-            return final_target
+            shutil.copy2(str(source_path), str(tmp_target))
+            tmp_target.replace(final_target)
         except Exception as e:
             self.logger.error(
                 f"❌ [LIBRARY] Fehler beim Verschieben: {e}", exc_info=True
             )
+            try:
+                tmp_target.unlink(missing_ok=True)
+            except OSError:
+                pass
             raise
+
+        try:
+            source_path.unlink()
+        except OSError as e:
+            # Datei ist bereits sicher am Zielpfad - ein fehlgeschlagenes
+            # Aufraeumen der jetzt redundanten Quelldatei darf die
+            # erfolgreiche Verschiebung nicht nachtraeglich zum Fehlschlag
+            # machen (gleiches Prinzip wie cleanup_single_download_artifact()).
+            self.logger.warning(
+                f"⚠️ [LIBRARY] Datei verschoben, Quelldatei konnte aber "
+                f"nicht entfernt werden: {source_path} ({e})"
+            )
+
+        self.logger.info(f"✅ [LIBRARY] Datei verschoben nach: {final_target}")
+        return final_target
 
     def _ensure_within_roots(self, path: Path) -> Path:
         """

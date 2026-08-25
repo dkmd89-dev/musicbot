@@ -382,3 +382,35 @@ Priorisiert nach Datenintegrität → Security → nutzersichtbare Korrektheit �
 Gemeinsame Grundursache zwischen FINDING-5 und FINDING-6: **inkonsistente Anwendung des bereits im Repository etablierten Tmp-Datei-plus-atomarer-Rename-Musters** (in `utils/metadata_cache.py` bereits korrekt vorhanden) — beide Fixes würden dasselbe, bereits bewährte Muster nur auf zwei weitere Schreibstellen übertragen, kein neues Konzept nötig.
 
 Kein Finding aus diesem Audit erfordert einen Architekturumbau, neue Abstraktionen, verteilte Transaktionen oder ein Retry-Framework — alle drei empfohlenen Fixes sind lokal begrenzte, kleinstmögliche Eingriffe an bereits identifizierten, präzisen Stellen.
+
+---
+
+## Nachtrag (2026-08-25): FINDING-4, FINDING-5, FINDING-6 gefixt
+
+**FINDING-4** separat per Forensic Deep Audit behandelt und gefixt — siehe
+`docs/MusicBot_FINDING_4_FORENSIC_AUDIT.md` (eigenes Dokument, eigener
+Nachtrag dort).
+
+**FINDING-5** (`video_id_index.json` nicht crash-sicher): `services/metadata/cache.py::_save_video_id_index()`
+nutzt jetzt dasselbe Write-Tmp-plus-atomarer-Rename-Muster wie der
+Haupt-Cache (`utils/metadata_cache.py::store()`). 3 neue Tests in
+`tests/test_metadata_cache_handler.py::TestVideoIdIndexAtomicWrite`, per
+`git stash` verifiziert: der entscheidende Test (unterbrochener
+zweiter Schreibvorgang darf den vorherigen gültigen Inhalt nicht
+zerstören) schlägt am Vor-Fix-Stand nachweislich fehl (Datei wurde auf
+leer trunkiert).
+
+**FINDING-6** (`shutil.move()` nicht atomar über Mountpoints hinweg):
+`utils/filenamefixer.py::move_to_library()` kopiert jetzt in eine
+temporäre Datei IM Zielverzeichnis (`shutil.copy2()`), benennt sie per
+`Path.replace()` atomar um, und entfernt die Quelldatei erst danach als
+separaten, nicht-kritischen Aufräumschritt (ein Fehlschlag dort lässt die
+bereits erfolgreiche Verschiebung nicht nachträglich scheitern). 3 neue
+Tests in `tests/test_filenamefixer.py::TestMoveToLibraryAtomicity`, per
+`git stash` verifiziert.
+
+**Vollregression:** 1074 passed, 0 failed (+6 gegenüber dem
+FINDING-4-Fix-Stand, keine neue Regression).
+
+Damit sind alle sechs in dieser Session bearbeiteten Findings (FINDING-1
+bis FINDING-6) abgeschlossen.

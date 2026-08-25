@@ -3,6 +3,7 @@
 
 import json
 import re
+import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -33,11 +34,27 @@ class MetadataCacheHandler:
             return {}
 
     def _save_video_id_index(self) -> None:
+        """
+        Schreibt den video_id-Index atomar (write-tmp -> rename), analog zu
+        MetadataCache.store() (utils/metadata_cache.py). FINDING-5
+        (docs/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md): direktes
+        open(mode="w") truncatet die Datei sofort beim Oeffnen - ein
+        Prozessabbruch waehrend json.dump() hinterliess vorher eine leere
+        oder ungueltige Indexdatei.
+        """
+        tmp_path = self._video_id_index_path.with_suffix(
+            f".tmp_{int(time.time() * 1000)}"
+        )
         try:
-            with open(self._video_id_index_path, "w", encoding="utf-8") as f:
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(self._video_id_index, f, indent=2, ensure_ascii=False)
+            tmp_path.replace(self._video_id_index_path)
         except Exception as e:
             self.logger.warning(f"⚠️ Konnte video_id_index nicht speichern: {e}")
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def check(
         self,

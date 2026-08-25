@@ -200,3 +200,60 @@ class TestInvalidate:
         cache_handler.invalidate("some artist", "some song")
 
         assert base_cache.get("some artist", "some song") is None
+
+
+class TestVideoIdIndexAtomicWrite:
+    """
+    FINDING-5 (docs/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md): _save_video_id_index()
+    schrieb vorher per direktem open(mode="w") + json.dump() - ein
+    Prozessabbruch waehrend des Schreibens konnte die Indexdatei leeren/
+    korrumpieren. Jetzt: write-tmp + atomarer rename, analog zum
+    Haupt-Cache (utils/metadata_cache.py::store()).
+    """
+
+    def test_interrupted_write_leaves_previous_valid_index_untouched(
+        self, cache_handler, monkeypatch
+    ):
+        # Erster, erfolgreicher Schreibvorgang - reale Datei auf Platte.
+        cache_handler._video_id_index["vid1"] = {"artist": "a", "title": "t"}
+        cache_handler._save_video_id_index()
+        assert cache_handler._video_id_index_path.exists()
+        original_content = cache_handler._video_id_index_path.read_text(
+            encoding="utf-8"
+        )
+
+        # Zweiter Schreibvorgang wird simuliert unterbrochen (z.B. Absturz
+        # waehrend json.dump()).
+        cache_handler._video_id_index["vid2"] = {"artist": "b", "title": "u"}
+        monkeypatch.setattr(
+            "services.metadata.cache.json.dump",
+            lambda *a, **kw: (_ for _ in ()).throw(OSError("disk full")),
+        )
+        cache_handler._save_video_id_index()  # darf nicht raisen
+
+        # Die auf Platte liegende Datei muss weiterhin ihren letzten
+        # GUELTIGEN Zustand haben - nicht leer/korrupt.
+        assert cache_handler._video_id_index_path.read_text(
+            encoding="utf-8"
+        ) == original_content
+
+    def test_interrupted_write_leaves_no_leftover_tmp_file(
+        self, cache_handler, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "services.metadata.cache.json.dump",
+            lambda *a, **kw: (_ for _ in ()).throw(OSError("disk full")),
+        )
+        cache_handler._save_video_id_index()
+
+        leftover_tmp_files = list(
+            cache_handler._video_id_index_path.parent.glob("*.tmp_*")
+        )
+        assert leftover_tmp_files == []
+
+    def test_successful_write_updates_index_file(self, cache_handler):
+        cache_handler._video_id_index["vid1"] = {"artist": "a", "title": "t"}
+        cache_handler._save_video_id_index()
+
+        reloaded = cache_handler._load_video_id_index()
+        assert reloaded == {"vid1": {"artist": "a", "title": "t"}}

@@ -267,3 +267,86 @@ class TestMoveToLibrary:
         source.write_bytes(b"data")
         target = tool.move_to_library(source, artist="Artist", title="Title", is_single=True)
         assert target.suffix == ".flac"
+
+
+class TestMoveToLibraryAtomicity:
+    """
+    FINDING-6 (docs/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md): move_to_library()
+    nutzte vorher shutil.move() direkt - faellt bei unterschiedlichen
+    Dateisystemen (wie in der tatsaechlichen Konfiguration DOWNLOAD_DIR vs.
+    LIBRARY_DIR) intern auf copy2()+unlink() zurueck, ohne Schutz gegen
+    einen Abbruch waehrend des Kopiervorgangs. Jetzt: Kopie in eine
+    temporaere Datei IM Zielverzeichnis, dann atomarer Path.replace().
+    """
+
+    def test_failed_copy_leaves_no_partial_file_at_target(
+        self, tool, tmp_path, monkeypatch
+    ):
+        source = tmp_path / "source.mp3"
+        source.write_bytes(b"real audio bytes")
+
+        monkeypatch.setattr(
+            "utils.filenamefixer.shutil.copy2",
+            lambda *a, **kw: (_ for _ in ()).throw(OSError("disk full")),
+        )
+
+        with pytest.raises(OSError):
+            tool.move_to_library(source, artist="Artist", title="Title", is_single=True)
+
+        # Quelldatei ist unangetastet - noch am Originalort, mit Originalinhalt.
+        assert source.exists()
+        assert source.read_bytes() == b"real audio bytes"
+
+        # Kein Teil-/Muellfile im Zielverzeichnis.
+        target_dir = tool.library_dir / "Artist" / "Singles"
+        leftovers = list(target_dir.glob("*")) if target_dir.exists() else []
+        assert leftovers == []
+
+    def test_failed_copy_removes_its_own_tmp_file(self, tool, tmp_path, monkeypatch):
+        source = tmp_path / "source.mp3"
+        source.write_bytes(b"real audio bytes")
+
+        monkeypatch.setattr(
+            "utils.filenamefixer.shutil.copy2",
+            lambda *a, **kw: (_ for _ in ()).throw(OSError("disk full")),
+        )
+
+        with pytest.raises(OSError):
+            tool.move_to_library(source, artist="Artist", title="Title", is_single=True)
+
+        target_dir = tool.library_dir / "Artist" / "Singles"
+        tmp_leftovers = (
+            list(target_dir.glob("*.tmp_*")) if target_dir.exists() else []
+        )
+        assert tmp_leftovers == []
+
+    def test_source_cleanup_failure_does_not_fail_an_otherwise_successful_move(
+        self, tool, tmp_path, monkeypatch
+    ):
+        """
+        Schlaegt nur das abschliessende Loeschen der (jetzt redundanten)
+        Quelldatei fehl, ist die Datei bereits sicher am Zielort -
+        move_to_library() muss trotzdem erfolgreich zurueckkehren.
+        """
+        source = tmp_path / "source.mp3"
+        source.write_bytes(b"real audio bytes")
+
+        # Path nutzt __slots__ (keine Instanz-Attribute) - patcht daher die
+        # Klassenmethode fuer die Testdauer (monkeypatch stellt sie danach
+        # automatisch wieder her), delegiert aber fuer jeden anderen Pfad
+        # an die echte Implementierung.
+        original_unlink = Path.unlink
+
+        def selective_failing_unlink(self_path, *a, **kw):
+            if self_path == source:
+                raise OSError("permission denied")
+            return original_unlink(self_path, *a, **kw)
+
+        monkeypatch.setattr(Path, "unlink", selective_failing_unlink)
+
+        target = tool.move_to_library(
+            source, artist="Artist", title="Title", is_single=True
+        )
+
+        assert target.exists()
+        assert target.read_bytes() == b"real audio bytes"
