@@ -445,7 +445,9 @@ async def async_main():
     try:
         cleanup_download_artifacts(config.DOWNLOAD_DIR, logger)
     except Exception as e:
-        logger.warning(f"⚠️ [CLEANUP] Start-Cleanup fehlgeschlagen (nicht kritisch): {e}")
+        logger.warning(
+            f"⚠️ [CLEANUP] Start-Cleanup fehlgeschlagen (nicht kritisch): {e}"
+        )
 
     bot_runner = ExtendedBot(config)
     setup_signal_handlers(bot_runner)
