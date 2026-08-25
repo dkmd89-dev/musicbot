@@ -808,7 +808,15 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 )
                 _target_lufs = AudioEnhancer.get_target_lufs(_content_type)
 
-                _loudness_ok = AudioEnhancer.normalize_loudness(
+                # FINDING-7 (docs/MusicBot_PHASE5_PERFORMANCE_BASELINE.md):
+                # normalize_loudness() fuehrt zwei volle FFmpeg-subprocess.run()-
+                # Passes aus (~14,5s fuer einen 3-Minuten-Track, gemessen). Ohne
+                # asyncio.to_thread() blockierte dieser Aufruf den gesamten
+                # Event-Loop fuer alle Telegram-Nutzer, bei jedem Track -
+                # strukturell identisch zum bereits behobenen FINDING-1
+                # (COVER-BLOCKING, siehe get_cover_art()-Aufruf oben).
+                _loudness_ok = await asyncio.to_thread(
+                    AudioEnhancer.normalize_loudness,
                     str(original_path),
                     target_lufs=_target_lufs,
                 )
