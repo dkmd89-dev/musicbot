@@ -126,9 +126,19 @@ class TestSpecificAliasNowOutranksGenericAlias:
         keiner der Faelle darf nach Phase 2 noch den generischen Wert
         liefern, wenn der spezifischere Alias als gueltiger
         Wortgrenzen-Treffer vorhanden ist.
+
+        Seit ARCH-015 Phase 2 (Self-Alias-Ergaenzung fuer "new york
+        drill"/"aggro deutschrap",
+        docs/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md)
+        sind es 57 statt urspruenglich 55 Paare: die beiden neuen
+        Self-Alias-Keys enthalten selbst einen kuerzeren generischen
+        Alias ("drill", "deutschrap") als Wortgrenzen-Teilstring und
+        zielen auf ein anderes kanonisches Genre - sie erfuellen damit
+        exakt die Definition eines Spezifitaets-Paares und werden von
+        der ARCH-014-Longest-Match-Regel korrekt aufgeloest.
         """
         pairs = _all_specificity_pairs(genre_processor)
-        assert len(pairs) == 55
+        assert len(pairs) == 57
 
         still_generic = []
         for specific_key, generic_key in pairs:
@@ -141,8 +151,8 @@ class TestSpecificAliasNowOutranksGenericAlias:
                 )
 
         assert still_generic == [], (
-            f"{len(still_generic)} von 55 Paaren liefern weiterhin den "
-            f"generischen statt des spezifischen Werts: {still_generic}"
+            f"{len(still_generic)} von {len(pairs)} Paaren liefern weiterhin "
+            f"den generischen statt des spezifischen Werts: {still_generic}"
         )
 
 
@@ -224,8 +234,11 @@ class TestArch013RulesPreserved:
 class TestIdempotency:
     """
     Normalisierung muss idempotent bleiben (ARCH-014 Phase 1, Invariante
-    6). Fuer 54 der 55 charakterisierten Paare ist das nach Phase 2
-    gegeben.
+    6). Nach ARCH-014 Phase 2 galt das fuer 54 der 55 charakterisierten
+    Paare - die bekannte Ausnahme "ny drill"/"New York Drill" wurde durch
+    ARCH-015 Phase 2 (Self-Alias-Ergaenzung) behoben, siehe
+    docs/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md.
+    Seither sind alle 57 charakterisierten Paare idempotent.
     """
 
     @pytest.mark.parametrize(
@@ -244,28 +257,26 @@ class TestIdempotency:
         twice = genre_processor.normalize_genre_name(once)
         assert once == twice
 
-    def test_known_non_idempotent_exception_ny_drill(self, genre_processor):
+    def test_ny_drill_idempotent_since_arch015_phase2(self, genre_processor):
         """
-        Dokumentierte, bewusst NICHT behobene Ausnahme (ARCH-014 Phase 2,
-        "Verbleibende Edge Cases"): "ny drill" -> "New York Drill" ist der
-        einzige der 55 Faelle, bei dem der kanonische Zielwert selbst
-        nicht auf sich selbst zurueck-normalisiert. Ursache: "New York
-        Drill" ist in mapping/genre_aliases.yaml kein eigener Alias-Key
-        (nur "ny drill" fuehrt dorthin) - beim zweiten Normalisierungs-
-        durchlauf greift stattdessen der im eigenen kanonischen Text
-        enthaltene generische Wortgrenzen-Treffer "drill" -> "Hip Hop".
-        Kein Bug der Spezifitaetsregel selbst (die 54 anderen Faelle sind
-        idempotent), sondern eine vorbestehende, durch diese Phase nur
-        sichtbar gewordene Datenluecke in genre_aliases.yaml. Nicht
-        behoben (Scope-Grenze: keine Alias-Daten-Aenderung in dieser
-        Phase).
+        Ehemals dokumentierte, bewusst nicht behobene Ausnahme (ARCH-014
+        Phase 2, "Verbleibende Edge Cases"): "ny drill" -> "New York
+        Drill" war der einzige der 55 damaligen Faelle, bei dem der
+        kanonische Zielwert selbst nicht auf sich selbst zurueck-
+        normalisierte, weil "New York Drill" keinen eigenen Self-Alias-
+        Key besass. ARCH-015 Phase 1 charakterisierte die Ursache
+        vollstaendig (Klasse A1), Phase 2 hat den fehlenden Self-Alias-
+        Key "new york drill": "New York Drill" ergaenzt
+        (docs/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md).
+        Seither ist dieser Fall idempotent - dieser Test dokumentiert
+        jetzt das korrigierte Soll-Verhalten (Assertion invertiert, nicht
+        geloescht, etabliertes Muster ARCH-012/013/014).
         """
         once = genre_processor.normalize_genre_name("ny drill extra")
         assert once == "New York Drill"
-
         twice = genre_processor.normalize_genre_name(once)
-        assert twice == "Hip Hop"
-        assert once != twice
+        assert twice == "New York Drill"
+        assert once == twice
 
 
 class TestSpecificityPairCountRegressionGuard:
@@ -275,18 +286,27 @@ class TestSpecificityPairCountRegressionGuard:
     einem spezifischeren Alias vorkommt. Dient als Regressionswaechter
     fuer kuenftige YAML-Aenderungen (siehe
     docs/MusicBot_ARCH-014_Genre_Specificity_Characterization.md,
-    Abschnitt 4, fuer die vollstaendige Liste). Seit Phase 2 werden diese
-    Paare korrekt aufgeloest (siehe TestSpecificAliasNowOutranksGenericAlias) -
-    dieser Test prueft nur die STRUKTURELLE Paarmenge, nicht mehr, ob sie
-    fehlerhaft behandelt wird.
+    Abschnitt 4, fuer die urspruengliche Liste von 55). Seit Phase 2
+    werden diese Paare korrekt aufgeloest (siehe
+    TestSpecificAliasNowOutranksGenericAlias) - dieser Test prueft nur
+    die STRUKTURELLE Paarmenge, nicht mehr, ob sie fehlerhaft behandelt
+    wird.
+
+    Seit ARCH-015 Phase 2 (Self-Alias-Ergaenzung "new york drill"/
+    "aggro deutschrap", siehe
+    docs/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md)
+    sind es 57 statt 55: die beiden neuen Self-Alias-Keys erfuellen
+    selbst die Definition eines Spezifitaets-Paares (kuerzerer
+    generischer Alias "drill"/"deutschrap" als Wortgrenzen-Teilstring
+    enthalten, anderes Zielgenre) und werden korrekt aufgeloest.
     """
 
     def test_known_pair_count(self, genre_processor):
         pairs = _all_specificity_pairs(genre_processor)
-        assert len(pairs) == 55, (
-            f"Erwartete 55 bekannte Spezifitaets-Paare, gefunden: "
-            f"{len(pairs)}. Wenn dies durch eine bewusste YAML-Aenderung "
-            f"verursacht wurde, ist das kein Fehler - die ARCH-014-"
-            f"Dokumentation und diese Zahl sollten dann gemeinsam "
-            f"aktualisiert werden."
+        assert len(pairs) == 57, (
+            f"Erwartete 57 bekannte Spezifitaets-Paare (55 aus ARCH-014 + "
+            f"2 aus ARCH-015 Phase 2), gefunden: {len(pairs)}. Wenn dies "
+            f"durch eine bewusste YAML-Aenderung verursacht wurde, ist das "
+            f"kein Fehler - die ARCH-014/015-Dokumentation und diese Zahl "
+            f"sollten dann gemeinsam aktualisiert werden."
         )
