@@ -206,3 +206,17 @@ historische Referenz (Closure-Stand 1057/0) unverändert bestehen und wird
 durch dieses Dokument **abgelöst**, nicht ersetzt, als aktueller
 Referenzpunkt. `docs/MusicBot_POST_BASELINE_TRIAGE.md` bleibt als
 Analyseartefakt/Herleitung dieser Baseline ebenfalls unverändert bestehen.
+
+---
+
+## Baseline Frozen (2026-08-25)
+
+Analog zur Closure von v2: dieses Dokument ist mit Erstellung bereits
+vollständig (alle drei Deep-Audit-Findings der Post-Baseline-Triage gefixt,
+ENHANCED-ERROR-HANDLER bewusst als PLANNED/NOT INTEGRATED eingeordnet,
+1063 passed / 0 failed) und wird ab sofort **eingefroren**.
+
+**Diese Datei ist damit abgeschlossen.** Neue Findings, Nachträge oder
+technische Schulden gehören ab jetzt in eine neue Datei
+`MusicBot_ENGINEERING_BASELINE_v4.md`, nicht mehr hierher — exakt dasselbe
+Prinzip, mit dem v2 nach ihrer Closure abgelöst wurde.
