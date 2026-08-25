@@ -42,6 +42,7 @@ from handlers.admin.user_management_handler import UserManagementHandler
 from handlers.admin.backup_handler import BackupHandler
 from handlers.admin.bot_restart_handler import BotRestartHandler
 from handlers.duplicate_handler import EnhancedDuplicateHandler
+from services.duplicate.detector import DuplicateDetector
 from handlers.enhanced_status_handler import (
     EnhancedStatusHandler,
     create_enhanced_status_handler,
@@ -96,6 +97,7 @@ class RichMenuHandler:
         self.navidrome_handler: Optional[NavidromeMenuHandler] = None
         self.user_mgmt_handler: Optional[Any] = None
         self.duplicate_handler: Optional[EnhancedDuplicateHandler] = None
+        self.duplicate_detector: Optional[DuplicateDetector] = None
         self.error_admin_interface: Optional[ErrorHandlerAdminInterface] = None
         self.metadata_processor: Optional[EnhancedMetadataProcessor] = None
         self.status_handler: Optional[EnhancedStatusHandler] = None
@@ -238,14 +240,18 @@ class RichMenuHandler:
 
         # 7. Duplicate Handler
         try:
-            self.duplicate_handler = EnhancedDuplicateHandler(
+            self.duplicate_detector = DuplicateDetector(
                 self.config, self.logger_factory
+            )
+            self.duplicate_handler = EnhancedDuplicateHandler(
+                self.config, self.duplicate_detector, self.logger_factory
             )
             self.duplicate_handler.error_handler = self.error_handler
             self.logger.info("✅ EnhancedDuplicateHandler initialisiert")
         except Exception as e:
             self.logger.error(f"❌ Duplicate-Handler Fehler: {e}", exc_info=True)
             self.duplicate_handler = None
+            self.duplicate_detector = None
 
         # 8. Status Handler
         try:
@@ -833,9 +839,9 @@ class RichMenuHandler:
             Fertig konfigurierter DownloadHandler oder None bei fehlenden
             Abhängigkeiten.
         """
-        if not self.duplicate_handler:
+        if not self.duplicate_detector:
             self.logger.error(
-                "❌ DuplicateHandler nicht initialisiert – Download nicht möglich."
+                "❌ DuplicateDetector nicht initialisiert – Download nicht möglich."
             )
             return None
         if not self.metadata_processor:
@@ -847,7 +853,7 @@ class RichMenuHandler:
         return DownloadHandler(
             update=update,
             config=self.config,
-            duplicate_handler=self.duplicate_handler,
+            duplicate_detector=self.duplicate_detector,
             metadata_processor=self.metadata_processor,
             logger_factory=self.logger_factory,
             # ── NEU: Geteilte SpotifyDownloader-Instanz injizieren ────────────

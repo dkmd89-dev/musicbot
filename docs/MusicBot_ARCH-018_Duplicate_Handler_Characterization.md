@@ -1,8 +1,8 @@
 # MusicBot ARCH-018 — Duplicate Handler Characterization
 
-**Status:** Phase 1 (Characterization) abgeschlossen. Keine
-Produktionsänderung. Kein Refactoring. Keine Umsetzung. Wartet auf
-ausdrückliche Freigabe für eine mögliche Phase 2.
+**Status:** Phase 1 (Characterization) abgeschlossen. Phase 2 (Extraktion
+gemäß Variante A) abgeschlossen — fachlicher Kern nach `services/duplicate/`
+verschoben, `klassen → handlers`-Reverse-Edge vollständig aufgelöst.
 
 ---
 
@@ -449,11 +449,173 @@ eigenen, ausdrücklich freigegebenen ARCH-018 Phase 2.
 
 ---
 
-## 13. Entscheidungsgate
+## 13. Entscheidungsgate (Phase 1)
 
 **ARCH-018 Phase 1 — Characterization abgeschlossen.**
 **Keine Produktionsänderung durchgeführt.**
 **Kein Refactoring durchgeführt.**
 **Keine Entscheidung über eine Umsetzung erzwungen.**
+
+---
+
+## 14. Phase 2 — Umsetzung (Variante A)
+
+**Status:** abgeschlossen.
+
+### Durchgeführte Extraktion
+
+Neues Paket `services/duplicate/` (analog zur bestehenden Konvention
+`services/statistik/`):
+
+- **`services/duplicate/cache.py`** — `DuplicateCache`, unverändert aus
+  `handlers/duplicate_handler.py` verschoben (Verhalten, Signaturen,
+  Logik byte-identisch).
+- **`services/duplicate/detector.py`** — neue Klasse `DuplicateDetector`,
+  enthält den in Abschnitt 6 identifizierten fachlichen Kern:
+  `check_for_duplicates`, `check_library_duplicate`, `register_download`,
+  `_normalize_artist_for_comparison`, `_clean_title_for_comparison`,
+  `_create_metadata_hash`, `_create_file_hash`, sowie die fachlich
+  neutralen `get_statistics`, `cleanup_cache`, `invalidate_entry`
+  (Abschnitt 6: "ihr einziger heutiger Konsument ist die
+  Präsentationsschicht" — bleiben daher zusammen mit dem Kern, den sie
+  direkt lesen/verändern, nicht in der Präsentationsklasse).
+
+`handlers/duplicate_handler.py::EnhancedDuplicateHandler` reduziert auf
+reine Telegram-Präsentation: Konstruktor nimmt jetzt eine injizierte
+`DuplicateDetector`-Instanz entgegen (`config, detector, logger_factory`)
+statt selbst einen `DuplicateCache` aufzubauen. `error_handler` (extern
+gesetzte, nie intern gelesene Handler-Infrastruktur, Abschnitt 9)
+bleibt unverändert in `handlers/`. `_get_default_config()` bleibt
+unverändert in `handlers/` (kein Kern-Bezug). Die 3
+Präsentationsmethoden (`show_statistics_menu`,
+`show_clear_cache_confirm`, `execute_clear_cache`) rufen jetzt
+`self.detector.get_statistics()`/`self.detector.duplicate_cache` statt
+der vorherigen direkten Attribute auf — Verhalten unverändert.
+
+Die bereits als tot charakterisierten Kompatibilitätsfunktionen
+(`find_duplicates`, `clear_duplicate_cache`) wurden **nicht entfernt**
+(außerhalb des Extraktions-Scopes) und **nicht funktional repariert** —
+der in Abschnitt 9 dokumentierte latente `TypeError`-Bug
+(`EnhancedDuplicateHandler()._get_default_config()`, zu wenige Pflicht-
+Argumente) wurde bewusst **originalgetreu erhalten**, nicht durch die
+Umstrukturierung stillschweigend behoben. Lediglich die strukturell
+notwendige `DuplicateDetector`-Konstruktion wurde ergänzt, damit die
+Datei syntaktisch gültig bleibt — beide Funktionen haben weiterhin
+0 Aufrufer und bleiben unverändert unerreichbar.
+
+### Reverse-Edge-Auflösung
+
+`klassen/download_handler.py` importiert nicht mehr aus `handlers/`:
+
+```python
+# vorher
+from handlers.duplicate_handler import EnhancedDuplicateHandler
+def __init__(self, ..., duplicate_handler: EnhancedDuplicateHandler, ...):
+    self.duplicate_handler = duplicate_handler
+...
+self.duplicate_handler.check_for_duplicates(url=url)
+self.duplicate_handler.register_download(...)
+
+# nachher
+from services.duplicate.detector import DuplicateDetector
+def __init__(self, ..., duplicate_detector: DuplicateDetector, ...):
+    self.duplicate_detector = duplicate_detector
+...
+self.duplicate_detector.check_for_duplicates(url=url)
+self.duplicate_detector.register_download(...)
+```
+
+`handlers/menu/rich_menu_handler.py` (einziger Ort, der beide Instanzen
+erzeugt) erstellt jetzt zuerst den `DuplicateDetector`, reicht **dieselbe
+Instanz** an `EnhancedDuplicateHandler` (Präsentation, für
+`RichMenuSystem`) UND direkt an `DownloadHandler` (Business-Logik,
+`klassen/`) weiter — beide Konsumenten teilen sich weiterhin denselben
+Cache-/Statistik-Zustand (Delegationsmuster statt Zustandsduplikation,
+wie im Risikoabschnitt der Phase 1 gefordert).
+
+### Test-Anpassungen
+
+`tests/test_duplicate_handler.py` (14 Tests) und
+`tests/test_metadata_processor_happy_path.py` (5 Tests): Fixtures von
+`EnhancedDuplicateHandler(...)` auf `DuplicateDetector(...)` umgestellt
+— **reiner Import-Pfad-Wechsel**, wie in Abschnitt 8 der Characterization
+vorhergesagt. Kein Testkörper (Assertions, Testlogik) verändert.
+
+`tests/test_rich_menu_handler.py::TestCreateDownloadHandler` (3 Tests):
+Mock-Setup und Assertions von `duplicate_handler`/`"duplicate_handler"`
+auf `duplicate_detector`/`"duplicate_detector"` umgestellt — notwendige
+Folge der Parameter-Umbenennung im `DownloadHandler`-Konstruktor, keine
+Verhaltensänderung der getesteten Logik.
+
+Keine Tests gelöscht, keine Testabdeckung geschwächt.
+
+### C. Produktive Aufrufer vor/nachher
+
+| Konsument | Vorher | Nachher |
+|---|---|---|
+| `klassen/download_handler.py` | `EnhancedDuplicateHandler.check_for_duplicates`/`register_download` (Reverse-Edge `klassen→handlers`) | `DuplicateDetector.check_for_duplicates`/`register_download` (`klassen→services`, erwartete Richtung) |
+| `handlers/menu/rich_menu_system.py` | `EnhancedDuplicateHandler.show_statistics_menu`/`.show_clear_cache_confirm`/`.execute_clear_cache` | unverändert |
+
+### Import-/Referenz-Audit (nach der Änderung)
+
+```text
+klassen/download_handler.py → handlers/*        : 0 Treffer (Reverse-Edge aufgelöst)
+services/duplicate/*        → handlers/*        : 0 Treffer
+services/*                  → handlers/*        : weiterhin 0
+Importzyklen (repo-weit, AST-basiert)            : 0
+```
+
+`AudioEnhancer` bzw. andere zuvor bestehende Cross-Directory-Kanten
+unverändert. Keine neue Abstraktion außer der bereits in Phase 1
+angekündigten Trennung Kern/Präsentation eingeführt.
+
+### Diff-/Scope-Audit
+
+```text
+Neu:      services/duplicate/__init__.py
+          services/duplicate/cache.py
+          services/duplicate/detector.py
+Geändert: handlers/duplicate_handler.py            (Präsentation, Delegation)
+          handlers/menu/rich_menu_handler.py        (Wiring: Detector + Handler)
+          klassen/download_handler.py               (Import/Attribut-Umbenennung)
+          tests/test_duplicate_handler.py            (Fixture-Importpfad)
+          tests/test_metadata_processor_happy_path.py (Fixture-Importpfad)
+          tests/test_rich_menu_handler.py            (Mock-/Assertion-Umbenennung)
+```
+
+Keine Änderung an `services/downloader/models.py` (`DuplicateEntry`
+unverändert wiederverwendet), `services/metadata/*`, YAML-Dateien,
+`CLAUDE.md`, `README.md`.
+
+### Regression
+
+`pytest tests/ -q` → **1114 passed**, 15 bekannte Vorbestandsfehler,
+**identisch zur Baseline** — 0 neue Fehlschläge. Gezielt zusätzlich
+geprüft: `test_duplicate_handler.py` + `test_metadata_processor_happy_path.py`
++ `test_autolearn_special_channel_gate.py` (23/23) sowie
+`test_rich_menu_handler.py` (33/33).
+
+### Unerwartete Befunde während der Umsetzung
+
+Keine neuen unerwarteten Befunde. Der bereits in Phase 1 dokumentierte
+latente `TypeError`-Bug in den toten Kompatibilitätsfunktionen wurde
+bewusst nicht repariert (s. o.) — kein neuer Fund, nur erneut bestätigt
+weiterhin unreichbar und unverändert.
+
+### Verbleibende ARCH-018-Folgepunkte
+
+- `find_duplicates`/`clear_duplicate_cache` (toter Code) — weiterhin
+  nicht entfernt, außerhalb des Extraktions-Scopes.
+- Der darin enthaltene latente `TypeError`-Bug — weiterhin nur
+  dokumentiert, nicht behoben.
+
+---
+
+## 15. Entscheidungsgate (Phase 2)
+
+**ARCH-018 Phase 2 — Extraktion abgeschlossen.**
+**Fachlicher Kern nach `services/duplicate/` verschoben.**
+**`klassen → handlers`-Reverse-Edge vollständig aufgelöst.**
+**Keine Verhaltensänderung — Regression identisch zur Baseline.**
 **STOPP.**
-**Warte auf ausdrückliche Freigabe für eine mögliche Phase 2.**
+**Keine automatische Folgephase. Warte auf ausdrückliche Freigabe.**

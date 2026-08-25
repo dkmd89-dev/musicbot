@@ -187,10 +187,10 @@ class TestGetAvailableFeatures:
 
 
 class TestCreateDownloadHandler:
-    def test_returns_none_without_duplicate_handler(self, tmp_path):
+    def test_returns_none_without_duplicate_detector(self, tmp_path):
         handler, _ = _make_handler(tmp_path)
         handler.metadata_processor = Mock()
-        handler.duplicate_handler = None
+        handler.duplicate_detector = None
 
         update = make_update(111)
         result = handler._create_download_handler(update)
@@ -199,7 +199,7 @@ class TestCreateDownloadHandler:
 
     def test_returns_none_without_metadata_processor(self, tmp_path):
         handler, _ = _make_handler(tmp_path)
-        handler.duplicate_handler = Mock()
+        handler.duplicate_detector = Mock()
         handler.metadata_processor = None
 
         update = make_update(111)
@@ -209,7 +209,7 @@ class TestCreateDownloadHandler:
 
     def test_creates_handler_with_shared_spotify_downloader(self, tmp_path):
         handler, _ = _make_handler(tmp_path)
-        handler.duplicate_handler = Mock()
+        handler.duplicate_detector = Mock()
         handler.metadata_processor = Mock()
         fake_spotify = Mock()
         handler.spotify_downloader = fake_spotify
@@ -222,7 +222,7 @@ class TestCreateDownloadHandler:
 
         _args, kwargs = mock_download_handler_cls.call_args
         assert kwargs["spotify_downloader"] is fake_spotify
-        assert kwargs["duplicate_handler"] is handler.duplicate_handler
+        assert kwargs["duplicate_detector"] is handler.duplicate_detector
 
 
 class TestHandleUrlMessage:

@@ -1,6 +1,14 @@
 """
 Characterization-Tests fuer die Duplicate-Detection-Pipeline
-(handlers/duplicate_handler.py), Phase 1 der Engineering Baseline.
+(services/duplicate/detector.py::DuplicateDetector), Phase 1 der
+Engineering Baseline.
+
+ARCH-018 Phase 2 (docs/MusicBot_ARCH-018_Duplicate_Handler_Characterization.md):
+der hier getestete fachliche Kern lebte urspruenglich in
+handlers/duplicate_handler.py::EnhancedDuplicateHandler und wurde nach
+services/duplicate/ (DuplicateCache, DuplicateDetector) extrahiert - reiner
+Import-Pfad-Wechsel, Verhalten und Testkoerper unveraendert (wie in der
+Characterization als Migrationspfad vorgesehen).
 
 Vor diesem Test existierte fuer diesen Bereich ueberhaupt keine
 Testabdeckung (siehe docs/musicbot_REVERSE_ENGINEERED_DOCUMENTATION.md,
@@ -13,9 +21,9 @@ Methode ruft re.sub() auf, obwohl "re" im Modul nirgends importiert war.
 Jeder Aufruf loeste einen NameError aus, der vom umgebenden
 "except Exception" verschluckt wurde - die Schicht lieferte in Produktion
 IMMER None, unabhaengig vom tatsaechlichen Library-Inhalt. Der fehlende
-Import wurde als Teil von Phase 1 ergaenzt (siehe handlers/duplicate_handler.py,
-Import-Block); test_check_library_duplicate_finds_existing_file und
-test_check_for_duplicates_end_to_end_library_fallback sind die
+Import wurde als Teil von Phase 1 ergaenzt (heute in
+services/duplicate/detector.py, Import-Block); test_check_library_duplicate_finds_existing_file
+und test_check_for_duplicates_end_to_end_library_fallback sind die
 Regressionstests dafuer.
 """
 
@@ -24,12 +32,12 @@ from pathlib import Path
 
 import pytest
 
-from handlers.duplicate_handler import EnhancedDuplicateHandler
+from services.duplicate.detector import DuplicateDetector
 from services.downloader.models import DuplicateEntry
 
 
 class FakeConfig:
-    """Minimale Config-Attribute, die EnhancedDuplicateHandler/DuplicateCache
+    """Minimale Config-Attribute, die DuplicateDetector/DuplicateCache
     tatsaechlich lesen (getattr mit Fallback) - bewusst kein artist_config,
     damit self.artist_normalizer None bleibt und die reine String-basierte
     Normalisierung charakterisiert wird."""
@@ -41,7 +49,7 @@ class FakeConfig:
 
 @pytest.fixture
 def handler(tmp_path):
-    return EnhancedDuplicateHandler(FakeConfig(tmp_path))
+    return DuplicateDetector(FakeConfig(tmp_path))
 
 
 # ─────────────────────────────────────────────────────────────────────────
