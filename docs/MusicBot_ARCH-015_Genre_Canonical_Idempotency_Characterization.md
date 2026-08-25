@@ -1,8 +1,9 @@
 # MusicBot ARCH-015 — Genre Canonical-Value / Idempotency Characterization
 
-**Status:** Phase 1 (Characterization) abgeschlossen. Keine Produktionsänderung.
-Keine Lösungsvariante umgesetzt. Wartet auf ausdrückliche Freigabe für eine
-mögliche Phase 2.
+**Status:** Phase 1 (Characterization) abgeschlossen. Phase 2 (Self-Alias-
+Implementierung gemäß Variante A) abgeschlossen — Klasse A1 behoben, Klasse B
+(`NDW`) bewusst nicht bearbeitet. Wartet auf ausdrückliche Freigabe für eine
+mögliche Folgephase.
 
 **Ausgangspunkt:** POST-ARCH-014 Services/Genre Architecture Audit (Abschnitt
 D "Systematische Idempotenzanalyse", Abschnitt I "Neue Befunde") identifizierte
@@ -515,3 +516,124 @@ ARCH-015 Phase 2.
 **Keine Lösungsvariante umgesetzt.**
 **STOPP.**
 **Warte auf ausdrückliche Freigabe für eine mögliche Phase 2.**
+
+---
+
+## Phase 2 — Self-Alias-Implementierung
+
+**Status:** abgeschlossen. Umsetzung ausschließlich gemäß der in Phase 1
+empfohlenen Variante A (Self-Alias-Keys ergänzen).
+
+### Hinzugefügte Self-Alias-Keys
+
+In `mapping/genre_aliases.yaml`:
+
+```yaml
+"aggro deutschrap": "Aggro Deutschrap"    # nach Zeile "aggro rap": "Aggro Deutschrap"
+"new york drill": "New York Drill"        # nach Zeile "ny drill": "New York Drill"
+```
+
+Beide folgen exakt dem bereits 73-fach etablierten Muster (lowercased
+kanonischer Wert als eigener Alias-Key auf sich selbst), das im selben
+Abschnitt der Datei unmittelbar benachbart bereits verwendet wird (z. B.
+Zeile 8 `"deutscher pop": "Deutscher Pop"`, Zeile 122 `"uk drill": "UK
+Drill"`).
+
+### Warum genau diese beiden
+
+Diese beiden — und ausschließlich diese beiden — waren in Phase 1 als
+Klasse A1 identifiziert: kanonische Mehrwort-Werte ohne eigenen
+Self-Alias-Key, bei denen ein kürzerer Wortbestandteil (`drill`,
+`deutschrap`) selbst ein registrierter, generischer Alias ist und beim
+zweiten Normalisierungsdurchlauf über das Wortgrenzen-Substring-Matching
+fälschlich gewinnt. Kein weiterer kanonischer Wert erfüllt dieses Muster
+(Phase 1, Abschnitt C: vollständige Kandidatenprüfung über alle 115
+Werte).
+
+### Klasse A behoben
+
+Der Direkt-Match-Zweig in `GenreProcessor.normalize_genre_name()`
+(`genre_processor.py:356-357`, unverändert) greift jetzt für beide Werte,
+bevor das Wortgrenzen-Substring-Matching überhaupt erreicht wird — exakt
+derselbe Mechanismus, der bereits für 73 andere Mehrwort-Werte Stabilität
+garantiert. Keine Code-Änderung notwendig oder vorgenommen.
+
+### `NDW` bewusst nicht Bestandteil dieser Phase
+
+Klasse B (`NDW` → `Ndw`) ist strukturell unabhängig (Title-Case-
+Fallback-Mechanismus statt Substring-Matching, siehe Phase 1 Abschnitt G)
+und war explizit außerhalb des Scopes dieser Phase. `NDW` bleibt nach
+Phase 2 unverändert instabil (verifiziert, siehe unten) — dokumentiert als
+offene Entscheidung für eine mögliche Folgephase.
+
+### Testergebnis
+
+- Gezielt: `tests/test_genre_canonical_idempotency_characterization.py`
+  (aktualisiert, 15 Tests, Assertions für Klasse A1 invertiert) +
+  `tests/test_genre_specificity_characterization.py` (aktualisiert, 3
+  betroffene Tests angepasst) → **51/51 passed**.
+- Direkte Normalisierung: `new york drill` → `New York Drill`,
+  `aggro deutschrap` → `Aggro Deutschrap` — beide korrekt.
+- Idempotenz Klasse A: `ny drill`/`aggro rap` sowie die kanonischen Werte
+  direkt erneut normalisiert — alle vier Fälle jetzt stabil
+  (`once == twice`).
+- ARCH-013/014-Revalidierung: alle in der Aufgabe genannten Fälle
+  (`k-pop revival`, `tech house mix`, `christian rock ballad`,
+  `symphonic metal choir`, `britpop`, `ruhrpott rap`, `electropop`,
+  `chamber pop`, `pop`, `rock`, `house`, `tech house`) liefern
+  unverändert die erwarteten Werte — keine Regression.
+- Systematische 115er-Prüfung: **1 von 115** kanonischen Werten
+  weiterhin instabil (`NDW` → `Ndw`, Klasse B, bewusst nicht bearbeitet).
+  Vorher: 3/115. Keine neuen instabilen Werte entstanden.
+
+### Unerwarteter, aber unkritischer Nebeneffekt: ARCH-014-Paarzahl 55 → 57
+
+Die beiden neuen Self-Alias-Keys erfüllen selbst formal die Definition
+eines ARCH-014-Spezifitäts-Paares (kürzerer generischer Alias als
+Wortgrenzen-Teilstring enthalten, anderes Zielgenre) — der
+programmatische 55er-Recheck aus ARCH-014 liefert seither **57** Paare.
+Alle 57/57 werden weiterhin korrekt durch die Longest-Match-Regel
+aufgelöst (0 Abweichungen), und alle 57 sind seit dieser Phase idempotent
+(vorher 54/55). Dies ist **kein Fehler und keine Regression**, sondern
+eine erwartbare, direkte Konsequenz der Datenergänzung — dennoch wurde es
+gemäß der Anweisung, unerwartete Effekte zu dokumentieren statt
+stillschweigend zu übergehen, hier explizit festgehalten. Die
+betroffenen Regressionswächter-Tests in
+`tests/test_genre_specificity_characterization.py`
+(`test_all_55_characterized_pairs_resolve_to_specific_value`,
+`test_known_pair_count`) sowie der dort bereits nicht mehr zutreffende
+`test_known_non_idempotent_exception_ny_drill` wurden entsprechend
+aktualisiert (Assertions invertiert/Zahl korrigiert, nicht gelöscht) —
+dieser Fall war im dortigen Test-Kommentar bereits vorgesehen ("Wenn dies
+durch eine bewusste YAML-Änderung verursacht wurde, ist das kein
+Fehler…").
+
+### Regressionsergebnis
+
+`pytest tests/ -q` → **1092 passed**, 15 bekannte Vorbestandsfehler
+(identisch zu allen vorherigen Phasen, keine Verschiebung). Keine neuen
+Fehlschläge.
+
+### Diff-/Scope-Ergebnis
+
+- `mapping/genre_aliases.yaml`: +2 Zeilen (genau die beiden Self-Alias-
+  Einträge; eine bereits vorhandene, leere Whitespace-Zeile wurde dabei
+  inzident zu einer echten Leerzeile ohne Trailing-Whitespace — keine
+  inhaltliche YAML-Änderung).
+- `tests/test_genre_canonical_idempotency_characterization.py`: aktualisiert
+  (Klasse-A1-Tests invertiert, Klasse-B-Tests unverändert übernommen).
+- `tests/test_genre_specificity_characterization.py`: aktualisiert (3
+  Tests, s. o.).
+- **0 Zeilen Produktionscode geändert** (`git diff --stat -- services/
+  klassen/ utils/` → leer).
+- **0 neue Python-Imports, 0 neue Dependency-Edges**, `services/*→handlers/*`
+  und `services/*→klassen/*` weiterhin 0.
+
+---
+
+**ARCH-015 Phase 2 — Self-Alias-Implementierung abgeschlossen.**
+**Klasse A behoben (2/2), Klasse B (`NDW`) bewusst unverändert.**
+**Keine Produktionscode-Änderung. Keine YAML-Änderung außerhalb der
+beiden beauftragten Einträge.**
+**STOPP.**
+**Keine automatische Folgephase. Warte auf ausdrückliche Freigabe.**

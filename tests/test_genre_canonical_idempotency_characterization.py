@@ -1,16 +1,16 @@
 # tests/test_genre_canonical_idempotency_characterization.py
 # -*- coding: utf-8 -*-
 """
-ARCH-015 Phase 1 - Genre Canonical-Value / Idempotency Characterization.
+ARCH-015 - Genre Canonical-Value / Idempotency Characterization.
 
-POST-ARCH-014 (docs/POST-ARCH-014_Services_Genre_Architecture_Audit.md)
-identifizierte, dass GenreProcessor.normalize_genre_name() fuer 3 der 115
-aktuell erreichbaren kanonischen Genre-Werte NICHT idempotent ist, d.h.
+Phase 1 (docs/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md)
+charakterisierte, dass GenreProcessor.normalize_genre_name() fuer 3 der 115
+damals erreichbaren kanonischen Genre-Werte NICHT idempotent war, d.h.
 normalize(normalize(x)) != normalize(x):
 
-  Klasse A1 (generischer Teilwort-Alias ueberstimmt bei erneuter
+  Klasse A1 (generischer Teilwort-Alias ueberstimmte bei erneuter
   Normalisierung einen kanonischen Mehrwort-Wert, der selbst keinen
-  Self-Alias-Key besitzt):
+  Self-Alias-Key besass):
     "New York Drill"   -> "Hip Hop"        (ueber generischen Alias "drill")
     "Aggro Deutschrap"  -> "Deutschrap"     (ueber generischen Alias "deutschrap")
 
@@ -18,17 +18,25 @@ normalize(normalize(x)) != normalize(x):
   strukturell unabhaengig von Klasse A - kein Substring-Match beteiligt):
     "NDW" -> "Ndw"
 
-Diese Datei dokumentiert AUSSCHLIESSLICH das aktuelle (fehlerhafte)
-Verhalten als Beweismittel fuer eine spaetere Entscheidungsphase
-(moegliches ARCH-015 Phase 2). Es werden KEINE Aenderungen an
-GenreProcessor, GenreMapper oder den YAML-Mapping-Dateien vorgenommen.
-Kein gewuenschtes Zukunftsverhalten wird hier festgeschrieben.
+Phase 2 (docs/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md,
+Abschnitt "Phase 2 - Self-Alias-Implementierung") hat gemaess der in Phase 1
+empfohlenen Variante A die beiden fehlenden Self-Alias-Keys
+"new york drill": "New York Drill" und "aggro deutschrap": "Aggro
+Deutschrap" in mapping/genre_aliases.yaml ergaenzt. Klasse A1 ist damit
+behoben. Klasse B ("NDW") wurde bewusst NICHT bearbeitet (explizite
+Scope-Grenze von Phase 2) und bleibt weiterhin instabil.
+
+Diese Datei dokumentiert seit Phase 2 das KORRIGIERTE Soll-Verhalten fuer
+Klasse A1 - nicht mehr den Bug. Assertions wurden invertiert (stabil statt
+instabil erwartet), nicht geloescht (etabliertes Muster aus
+ARCH-012/013/014). Klasse B bleibt unveraendert als aktuelles (weiterhin
+fehlerhaftes) Verhalten dokumentiert.
 
 Zusaetzlich wird GenreMapper.normalize_genre_name() (utils/genre_map.py) -
 eine strukturell unabhaengige zweite Normalisierungs-Implementierung ohne
-Wortgrenzen-Substring-Matching - direkt gegengeprueft: sie ist fuer
-Klasse A1 NICHT betroffen (kein Substring-Matching vorhanden), teilt aber
-denselben Klasse-B-Mechanismus (str.capitalize()) fuer "NDW".
+Wortgrenzen-Substring-Matching - direkt gegengeprueft: sie war fuer
+Klasse A1 nie betroffen (kein Substring-Matching vorhanden), teilt aber
+weiterhin denselben Klasse-B-Mechanismus (str.capitalize()) fuer "NDW".
 """
 
 import pytest
@@ -52,52 +60,62 @@ def _all_canonical_values(genre_processor):
     return sorted(set(genre_processor.GENRE_NORMALIZATION.values()))
 
 
-class TestClassA1GenericSubstringInstability:
+class TestClassA1StableAfterSelfAliasFix:
     """
-    "New York Drill" und "Aggro Deutschrap" besitzen keinen eigenen
-    Self-Alias-Key in genre_aliases.yaml. Bei erneuter Normalisierung
-    greift daher das Wortgrenzen-Substring-Matching (ARCH-013/014) auf
-    einen kuerzeren, generischen Alias, der zufaellig als eigenstaendiges
-    Wort im ausgeschriebenen kanonischen Text enthalten ist.
+    Seit ARCH-015 Phase 2 besitzen "New York Drill" und "Aggro
+    Deutschrap" eigene Self-Alias-Keys in genre_aliases.yaml
+    ("new york drill", "aggro deutschrap"). Der Direkt-Match-Zweig in
+    normalize_genre_name() (Zeile 356-357) greift dadurch VOR dem
+    Wortgrenzen-Substring-Matching - der zuvor auslösende generische
+    Alias ("drill", "deutschrap") wird nicht mehr erreicht.
     """
 
     @pytest.mark.parametrize(
-        "alias_key,expected_canonical,second_pass_result",
+        "alias_key,expected_canonical",
         [
-            ("ny drill", "New York Drill", "Hip Hop"),
-            ("aggro rap", "Aggro Deutschrap", "Deutschrap"),
+            ("ny drill", "New York Drill"),
+            ("aggro rap", "Aggro Deutschrap"),
         ],
     )
-    def test_second_normalization_diverges_from_first(
-        self, genre_processor, alias_key, expected_canonical, second_pass_result
+    def test_second_normalization_now_stable(
+        self, genre_processor, alias_key, expected_canonical
     ):
         first = genre_processor.normalize_genre_name(alias_key)
         assert first == expected_canonical
 
         second = genre_processor.normalize_genre_name(first)
-        assert second == second_pass_result
-        assert second != first, (
-            f"Erwartete bekannte Instabilitaet fuer {alias_key!r}: "
-            f"{first!r} sollte sich bei erneuter Normalisierung aendern "
-            f"(aktueller Befund, kein Soll-Verhalten)."
+        assert second == first, (
+            f"Erwartete Stabilitaet fuer {alias_key!r} seit ARCH-015 "
+            f"Phase 2: {first!r} sollte sich bei erneuter Normalisierung "
+            f"NICHT mehr aendern."
         )
 
     def test_new_york_drill_direct_reentry(self, genre_processor):
         """Direkter zweiter Durchlauf ausgehend vom kanonischen Wert selbst."""
-        assert genre_processor.normalize_genre_name("New York Drill") == "Hip Hop"
+        assert (
+            genre_processor.normalize_genre_name("New York Drill")
+            == "New York Drill"
+        )
 
     def test_aggro_deutschrap_direct_reentry(self, genre_processor):
         """Direkter zweiter Durchlauf ausgehend vom kanonischen Wert selbst."""
-        assert genre_processor.normalize_genre_name("Aggro Deutschrap") == "Deutschrap"
+        assert (
+            genre_processor.normalize_genre_name("Aggro Deutschrap")
+            == "Aggro Deutschrap"
+        )
 
-    def test_auslösender_generischer_alias_ist_wortgrenzen_treffer(
-        self, genre_processor
-    ):
+    def test_neue_self_alias_keys_existieren(self, genre_processor):
+        norm_map = genre_processor.GENRE_NORMALIZATION
+        assert norm_map.get("new york drill") == "New York Drill"
+        assert norm_map.get("aggro deutschrap") == "Aggro Deutschrap"
+
+    def test_direkter_match_greift_vor_substring_matching(self, genre_processor):
         """
-        Verifiziert den exakten Mechanismus: der jeweils generische Alias
-        ("drill", "deutschrap") ist der EINZIGE Wortgrenzen-Kandidat im
-        ausgeschriebenen kanonischen Text - kein Spezifitaets-Tie, kein
-        Fehlverhalten der ARCH-014-Regel selbst.
+        Verifiziert den Fix-Mechanismus: der Direkt-Match liefert das
+        korrekte Ergebnis, OBWOHL der generische Alias ("drill",
+        "deutschrap") weiterhin als Wortgrenzen-Kandidat vorhanden waere
+        - er wird schlicht nicht mehr erreicht, weil der Direkt-Match-
+        Zweig frueher im Code liegt und zuerst greift.
         """
         norm_map = genre_processor.GENRE_NORMALIZATION
 
@@ -106,7 +124,11 @@ class TestClassA1GenericSubstringInstability:
             for k in norm_map
             if genre_processor._contains_alias_as_whole_word("new york drill", k)
         ]
-        assert candidates_ny == ["drill"]
+        assert "drill" in candidates_ny
+        assert "new york drill" in candidates_ny
+        assert genre_processor.normalize_genre_name("new york drill") == (
+            "New York Drill"
+        )
 
         candidates_aggro = [
             k
@@ -115,21 +137,21 @@ class TestClassA1GenericSubstringInstability:
                 "aggro deutschrap", k
             )
         ]
-        assert candidates_aggro == ["deutschrap"]
-
-    def test_kanonische_werte_haben_keinen_self_alias_key(self, genre_processor):
-        norm_map = genre_processor.GENRE_NORMALIZATION
-        assert "new york drill" not in norm_map
-        assert "aggro deutschrap" not in norm_map
+        assert "deutschrap" in candidates_aggro
+        assert "aggro deutschrap" in candidates_aggro
+        assert genre_processor.normalize_genre_name("aggro deutschrap") == (
+            "Aggro Deutschrap"
+        )
 
 
 class TestClassA1CounterExamplesStableWithoutSelfKey:
     """
     Gegenbeispiele zur reinen Self-Alias-Hypothese: "Drum & Bass" und
-    "Liquid Drum & Bass" besitzen ebenfalls KEINEN Self-Alias-Key, sind
-    aber trotzdem stabil, weil keiner ihrer Wortbestandteile ("drum",
-    "bass", "liquid") selbst als generischer Alias-Key registriert ist -
-    der Title-Case-Fallback reproduziert den Wert unveraendert.
+    "Liquid Drum & Bass" besitzen weiterhin KEINEN Self-Alias-Key (nicht
+    Teil von ARCH-015 Phase 2), sind aber trotzdem stabil, weil keiner
+    ihrer Wortbestandteile ("drum", "bass", "liquid") selbst als
+    generischer Alias-Key registriert ist - der Title-Case-Fallback
+    reproduziert den Wert unveraendert.
     """
 
     @pytest.mark.parametrize(
@@ -153,12 +175,14 @@ class TestClassA1CounterExamplesStableWithoutSelfKey:
         assert result == canonical_value
 
 
-class TestClassBFallbackCapitalization:
+class TestClassBFallbackCapitalizationStillOpen:
     """
-    "NDW" ist strukturell unabhaengig von Klasse A: es existiert kein
-    Self-Alias-Key UND keine Wortgrenzen-Kandidaten - der Wert faellt
-    komplett durch bis zur Title-Case-Fallback-Kapitalisierung
-    (str.capitalize()), die aus "NDW" faelschlich "Ndw" macht.
+    "NDW" ist strukturell unabhaengig von Klasse A und war NICHT
+    Bestandteil von ARCH-015 Phase 2 (explizite Scope-Grenze). Es
+    existiert weiterhin kein Self-Alias-Key UND keine
+    Wortgrenzen-Kandidaten - der Wert faellt weiterhin komplett durch
+    bis zur Title-Case-Fallback-Kapitalisierung (str.capitalize()), die
+    aus "NDW" faelschlich "Ndw" macht.
     """
 
     def test_ndw_has_no_self_key_and_no_substring_candidates(self, genre_processor):
@@ -171,7 +195,7 @@ class TestClassBFallbackCapitalization:
         ]
         assert candidates == []
 
-    def test_ndw_second_pass_becomes_ndw_titlecase(self, genre_processor):
+    def test_ndw_second_pass_still_becomes_ndw_titlecase(self, genre_processor):
         first = genre_processor.normalize_genre_name("neue deutsche welle")
         assert first == "NDW"
 
@@ -179,12 +203,15 @@ class TestClassBFallbackCapitalization:
         assert second == "Ndw"
         assert second != first
 
-    def test_ndw_is_the_only_affected_value_in_genre_processor(self, genre_processor):
+    def test_ndw_is_still_the_only_affected_value_in_genre_processor(
+        self, genre_processor
+    ):
         """
-        Vollstaendigkeits-Beleg: unter allen 115 aktuell erreichbaren
-        kanonischen Werten ist "NDW" der einzige, der ausschliesslich
-        ueber den Fallback-Pfad (keine Substring-Kandidaten) instabil
-        wird. Regressionswaechter fuer zukuenftige YAML-Aenderungen.
+        Vollstaendigkeits-Beleg: unter allen aktuell erreichbaren
+        kanonischen Werten ist "NDW" weiterhin der einzige, der
+        ausschliesslich ueber den Fallback-Pfad (keine Substring-
+        Kandidaten) instabil wird. Regressionswaechter fuer zukuenftige
+        YAML-Aenderungen.
         """
         norm_map = genre_processor.GENRE_NORMALIZATION
         fallback_only_unstable = []
@@ -208,9 +235,10 @@ class TestGenreMapperNotAffectedByClassA1(object):
     utils/genre_map.py::GenreMapper besitzt eine strukturell unabhaengige
     zweite normalize_genre_name()-Implementierung OHNE
     Wortgrenzen-Substring-Matching (nur exakter Dict-Lookup + Fallback).
-    Sie ist daher fuer Klasse A1 NICHT betroffen - reale Multi-Pass-Risiko-
+    Sie war fuer Klasse A1 nie betroffen - reale Multi-Pass-Risiko-
     Reduktion, da die "lokale Genre"-Pipeline (determine_genre) ueber
     GenreMapper laeuft, nicht ueber GenreProcessor.normalize_genre_name().
+    Bleibt nach dem ARCH-015-Phase-2-Fix unveraendert stabil.
     """
 
     @pytest.mark.parametrize(
@@ -229,7 +257,8 @@ class TestGenreMapperNotAffectedByClassA1(object):
         """
         GenreMapper reimplementiert denselben str.capitalize()-Fallback
         unabhaengig - "NDW" ist daher in BEIDEN Implementierungen
-        betroffen, nicht nur in GenreProcessor.
+        betroffen, nicht nur in GenreProcessor. Unveraendert seit
+        ARCH-015 Phase 2 (Klasse B ausdruecklich nicht bearbeitet).
         """
         result = genre_mapper.normalize_genre_name("NDW")
         assert result == "Ndw"
@@ -238,14 +267,14 @@ class TestGenreMapperNotAffectedByClassA1(object):
 
 class TestFullCanonicalValueIdempotencyInventory:
     """
-    Vollstaendiger Bestandsbeweis ueber alle 115 aktuell in
+    Vollstaendiger Bestandsbeweis ueber alle aktuell in
     GenreProcessor.GENRE_NORMALIZATION erreichbaren eindeutigen
-    kanonischen Werte: genau 3 sind instabil (2x Klasse A1, 1x Klasse B).
-    Regressionswaechter - aendert sich diese Zahl durch eine YAML-
-    Aenderung, muss ARCH-015 neu bewertet werden.
+    kanonischen Werte: seit ARCH-015 Phase 2 ist nur noch "NDW"
+    (Klasse B) instabil. Regressionswaechter - aendert sich diese Zahl
+    durch eine YAML-Aenderung, muss ARCH-015 neu bewertet werden.
     """
 
-    def test_exactly_three_unstable_canonical_values(self, genre_processor):
+    def test_exactly_one_unstable_canonical_value(self, genre_processor):
         canonical_values = _all_canonical_values(genre_processor)
         unstable = {
             v: genre_processor.normalize_genre_name(v)
@@ -253,7 +282,5 @@ class TestFullCanonicalValueIdempotencyInventory:
             if genre_processor.normalize_genre_name(v) != v
         }
         assert unstable == {
-            "New York Drill": "Hip Hop",
-            "Aggro Deutschrap": "Deutschrap",
             "NDW": "Ndw",
         }
