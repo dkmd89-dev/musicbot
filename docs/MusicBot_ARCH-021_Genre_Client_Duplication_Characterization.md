@@ -1,4 +1,4 @@
-# ARCH-020 Phase 1 — Genre-Client-Duplikation / Last.fm-Cover-Charakterisierung
+# ARCH-021 Phase 1 — Genre-Client-Duplikation / Last.fm-Cover-Charakterisierung
 
 **Datum:** 2026-08-25
 **Typ:** Reine Characterization (keine Produktions-/Test-/Mapping-Änderungen)
@@ -6,8 +6,11 @@
 "ARCH-019 Phase 1". `ARCH-019 Phase 1` existiert jedoch bereits (abgeschlossen, PR #46,
 `docs/MusicBot_ARCH-019_Genre_Client_Logic_Characterization.md`, andere Fragestellung:
 `determine_genre()`-Nutzung in den Clients). Diese neue, inhaltlich breitere Untersuchung
-(inkl. Last.fm-Cover-Bezug) wurde nach Nutzerentscheidung als **ARCH-020 Phase 1** eingeordnet,
-um die etablierte sequenzielle Nummerierung fortzuführen.
+(inkl. Last.fm-Cover-Bezug) wurde zunächst irrtümlich als "ARCH-020 Phase 1" bezeichnet, ohne
+vorher zu prüfen, ob diese Nummer bereits reserviert war. Sie war es: `docs/ARCH-020_Phase.md`
+(Download-Pipeline-Characterization) existierte bereits vor dieser Session. Nach Klärung dieser
+Kollision (siehe `docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md`) wurde diese
+Datei auf ausdrücklichen Nutzerwunsch zu **ARCH-021 Phase 1** umbenannt.
 
 ---
 
@@ -146,7 +149,7 @@ klassen → handlers:   0 Treffer  (durch ARCH-018 beseitigt, weiterhin bestäti
   Genre-Entscheidungen, keine Präsentationslogik.
 - Einzige direkte Client-Nutzung durch einen Handler: `handlers/navidrome_menu_handler.py`
   importiert `services.clients.navidrome_api.NavidromeAPI` direkt. Dies ist ein
-  **vorbestehendes, von ARCH-020 nicht berührtes Muster** (Navidrome-Suche im Menü ist ein reiner
+  **vorbestehendes, von ARCH-021 nicht berührtes Muster** (Navidrome-Suche im Menü ist ein reiner
   Pass-Through-Anwendungsfall) — hier nur zur Vollständigkeit erwähnt, nicht neu bewertet und
   nicht Teil dieser Untersuchung.
 - Keine neuen Importzyklen.
@@ -233,7 +236,7 @@ kein Duplikations-, sondern ein separates, isoliertes Konfigurationsthema — f�
 weder ERGEBNIS A (klare Regel sofort ableitbar — es fehlt die fachliche Vorentscheidung, ob die
 Quelle aktiviert werden soll) noch ERGEBNIS B im ursprünglich adressierten Duplikations-Sinn.
 Es wird als eigenständiger, dokumentierter P2/P3-Folgepunkt festgehalten, nicht als Grund für eine
-automatische ARCH-020 Phase 2.
+automatische ARCH-021 Phase 2.
 
 ---
 
@@ -263,7 +266,7 @@ git diff --stat  →  (keine Treffer außer dieser neuen Doku-Datei und der
 
 ## M. Entscheidungsgate
 
-**STOPP.** Keine ARCH-020 Phase 2 automatisch starten. Der einzige neue Befund (tote
+**STOPP.** Keine ARCH-021 Phase 2 automatisch starten. Der einzige neue Befund (tote
 `CoverProcessor`-Last.fm-Quelle, Abschnitt G/J) erfordert zunächst eine fachliche
 Vorentscheidung des Nutzers (Quelle aktivieren, entfernen oder belassen), bevor eine
 Umsetzungsphase sinnvoll wäre. Wartet auf ausdrückliche Nutzerentscheidung.
