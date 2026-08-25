@@ -981,6 +981,14 @@ Dokumentation soll vor allem erklären:
 
 Nicht jede einzelne triviale Funktion braucht eine seitenlange Beschreibung.
 
+## Baseline-Pflege
+
+Nach Abschluss jeder ARCH-Phase mit Code-/YAML-Änderung wird die
+aktuelle ENGINEERING_BASELINE_vN.md im selben PR aktualisiert
+(mindestens: Abschnitt „ARCH Status", „Recent Major Changes",
+Testzahlen). Bei größerer Drift (>3 ARCH-Phasen seit letztem Sync)
+wird eine neue vN+1 statt eines Nachtrags erstellt.
+
 ---
 
 # 31. Zielbild
