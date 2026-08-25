@@ -312,6 +312,13 @@ def _parse_artist_and_title(
                 artist_part = right
                 title_part = left
 
+            # Entferne einen abschließenden Klammer-/Eckklammer-Zusatz vom
+            # Artist-Teil (z.B. "TOOBROKEFORFIJI (2b4F)" -> "TOOBROKEFORFIJI").
+            # Analog zur Bereinigung, die der Songtitel bereits erhält.
+            artist_part = re.sub(
+                r"\s*[\(\[][^\)\]]*[\)\]]\s*$", "", artist_part
+            ).strip()
+
             if len(artist_part) > 1 and len(title_part) > 1:
                 return artist_part, title_part, base_confidence
 

@@ -92,7 +92,16 @@ class TitleCleaner:
             self.logger.warning(
                 "🎵 Titel-Bereinigung ergab zu kurzes Ergebnis, nutze Original"
             )
-            cleaned_title = self.apply_title_cleanup_rules(original_title.strip())
+            fallback_title = original_title.strip()
+            if final_artist:
+                fallback_title = self.remove_artist_from_title(
+                    fallback_title, final_artist
+                )
+            if parsed_artist and parsed_artist != final_artist:
+                fallback_title = self.remove_artist_from_title(
+                    fallback_title, parsed_artist
+                )
+            cleaned_title = self.apply_title_cleanup_rules(fallback_title)
 
         return cleaned_title.strip()
 
@@ -169,6 +178,11 @@ class TitleCleaner:
             r"\s*\([^)]*\b(?:uk|us|de|au|nz)\s+version\b[^)]*\)",
             r"\s*\(\s*\d{4}\s*(?:remaster|version)?\s*\)",
             r"\s*\[[^\]]*\b(?:version|edit|mix)\b[^\]]*\]",
+            # Official/Music/Lyric-Video-Suffixe (auch ohne Klammern), damit
+            # externe API-Suchen (MusicBrainz etc.) nicht daran scheitern.
+            r"\s*\(?\s*(?:official\s+)?(?:music\s+)?video\s*\)?\s*$",
+            r"\s*\(?\s*lyric\s*video\s*\)?\s*$",
+            r"\s*\(?\s*official\s+audio\s*\)?\s*$",
         ]
         search = base
         for p in version_patterns:
@@ -291,12 +305,14 @@ class TitleCleaner:
             (r"\s+-\s+offiziell(?:es|er|em|en)?\s*(?:musik\s*)?video\s*$", ""),
             # Allgemeine Official/Video-Tags
             (
-                r"\(?\s*(?:official|music|lyric|video|audio|live|version|remaster|hd|4k|vevo)"
-                r"(?:\s+(?:official|music|lyric|video|audio|live|version|remaster|hd|4k|vevo))*"
+                r"\(?\s*(?:official|music|lyric|video|audio|live|version|remaster|hd|4k|vevo|explicit)"
+                r"(?:\s+(?:official|music|lyric|video|audio|live|version|remaster|hd|4k|vevo|explicit))*"
                 r"\s*\)?",
                 "",
                 re.IGNORECASE,
             ),
+            # YouTube-Auto-Kanal-Suffix ("<Artist> - Topic")
+            (r"\s*[-–—]\s*Topic\s*$", "", re.IGNORECASE),
             # ARTISTNORM-002: \b-Wortgrenzen verhindern Fehltreffer in
             # Woertern, die "ft"/"feat" nur als Teilstring enthalten (z.B.
             # "trifft" -> vorher wurde alles ab dem Teilstring-Treffer bis
@@ -325,7 +341,7 @@ class TitleCleaner:
                 )
 
         cleaned = re.sub(r"\s+", " ", cleaned.strip())
-        cleaned = re.sub(r"^[-–—\s]+|[-–—\s]+$", "", cleaned)
+        cleaned = re.sub(r"^[-–—|\s]+|[-–—|\s]+$", "", cleaned)
         cleaned = re.sub(r"\s*\(\s*\)\s*", " ", cleaned).strip()
         cleaned = re.sub(r"\s*\[\s*\]\s*", " ", cleaned).strip()
         cleaned = re.sub(r"\s+", " ", cleaned)

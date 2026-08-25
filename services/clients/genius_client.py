@@ -432,7 +432,6 @@ class GeniusClient:
                 skip_non_songs=True,
                 remove_section_headers=True,
                 timeout=10,
-                verbose=False,
             )
             song = client.search_song(title=title, artist=artist)
             if song and song.lyrics:

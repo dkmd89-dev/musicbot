@@ -483,7 +483,9 @@ class EnhancedMetadataProcessor(SingletonMixin):
             else:
                 parsed_song_title = youtube_parsed.get("song_title")
                 if parsed_song_title and len(parsed_song_title.strip()) >= 3:
-                    clean_title = parsed_song_title.strip()
+                    clean_title = self.title_cleaner.light_title_cleanup(
+                        parsed_song_title.strip(), final_artist
+                    )
                 else:
                     clean_title = self.title_cleaner.light_title_cleanup(
                         raw_title, final_artist
@@ -576,7 +578,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 self.processing_stats.lyrics_found += 1
 
             # ── 11a. MB-IDs vorab holen (für Cover) ──────────────────────────
-            
+
             _mb_album_prefetch: Optional[Dict[str, Any]] = None
             _ids_already_known = False  # Default; wird ggf. unten überschrieben
             if not _is_special_channel_pre:
@@ -591,7 +593,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
                         "🔖 1️⃣1️⃣a MB-IDs bereits aus Genre-Pipeline vorhanden "
                         "→ überspringe zweiten MusicBrainz-Aufruf"
                     )
-                    
+
                 else:
                     self.logger.debug(
                         "🔖 1️⃣1️⃣a Hole MB-IDs vorab (noch keine IDs bekannt)..."
@@ -611,7 +613,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
                             f"[DEBUG ALBUM PREFETCH] Keys: {list(_mb_album_prefetch.keys())}"
                         )
                     if _mb_album_prefetch:
-                        
+
                         def _pick(*keys):
                             for k in keys:
                                 v = _mb_album_prefetch.get(k)
@@ -660,7 +662,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 self.processing_stats.cover_art_found += 1
                 cover_source = "embedded"
             else:
-                
+
                 def _get_mb_id(tm_key: str, prefetch_key: str) -> Optional[str]:
                     return track_metadata.get(tm_key) or (
                         _mb_album_prefetch.get(prefetch_key)
@@ -756,10 +758,10 @@ class EnhancedMetadataProcessor(SingletonMixin):
                     album_info["album"] = _playlist_name
 
             elif is_single_download:
-                
+
                 _mb_album = _mb_album_prefetch
                 if _mb_album is None and _ids_already_known:
-                    
+
                     _mb_album = (
                         await self.album_processor.fetch_album_from_musicbrainz(
                             artist=final_artist,
