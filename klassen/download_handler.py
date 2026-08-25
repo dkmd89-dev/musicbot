@@ -491,7 +491,25 @@ class DownloadHandler:
     async def handle_playlist_success(self, results: List[dict]) -> None:
         """Abschluss-Meldung für Playlists oder Playlist-Wrapper."""
         if results and results[0].get("type") == "playlist":
-            await self.handle_single_track_success(results[0])
+            playlist_result = results[0]
+            tracks = playlist_result.get("tracks", [])
+            total = len(tracks)
+            ok = sum(1 for t in tracks if t.get("success"))
+            # FINDING-4 (docs/MusicBot_FINDING_4_FORENSIC_AUDIT.md):
+            # enhanced_download_with_retry() meldet für Playlists immer
+            # success=True auf oberster Ebene, unabhängig vom tatsächlichen
+            # Track-Ergebnis - ohne diese Prüfung zeigte
+            # handle_single_track_success() auch bei 0/N erfolgreichen
+            # Tracks einen "✅ ... erfolgreich"-Header. Betrifft nur den
+            # Grenzfall "alle Tracks fehlgeschlagen"; die bewusst
+            # akzeptierte Partial-Success-Anzeige (1..N-1 von N) bleibt
+            # unverändert.
+            if total > 0 and ok == 0:
+                await self.handle_download_failure(
+                    f"Alle {total} Tracks der Playlist sind fehlgeschlagen."
+                )
+                return
+            await self.handle_single_track_success(playlist_result)
             return
 
         successful = [r for r in results if r.get("success")]
@@ -584,6 +602,18 @@ class DownloadHandler:
             if not download_result:
                 self.logger.error("❌ [YT-PIPELINE] download_audio() lieferte leeres Ergebnis")
                 raise ValueError("Download-Ergebnis war leer oder ungültig")
+
+            # FINDING-4 (docs/MusicBot_FINDING_4_FORENSIC_AUDIT.md): erschöpfte
+            # Retries signalisieren Fehlschlag über einen Rückgabewert
+            # ({"success": False, "error": ...}), nicht über eine Exception -
+            # ohne diese Prüfung lief das direkt in die Ergebnis-Schleife und
+            # wurde dort stillschweigend übersprungen (kein Aufruf von
+            # handle_download_failure(), keine Telegram-Rückmeldung).
+            if not download_result.get("success"):
+                await self.handle_download_failure(
+                    download_result.get("error", "Unbekannter Fehler.")
+                )
+                return
 
             # ── SCHRITT 4: Metadaten anreichern ────────────────────────────
             step, label = _YT.METADATA

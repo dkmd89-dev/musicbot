@@ -723,3 +723,47 @@ Nach Freigabe und Implementierung (nicht Teil dieses Audits):
    neuen Tests.
 3. **Kein neues `BASELINE_v4.md`** vor Abschluss von FIX → REGRESSION →
    VERIFICATION für dieses Finding (und ggf. weitere aus Phase 4).
+
+---
+
+## Nachtrag (2026-08-25): Fix implementiert, verifiziert
+
+Freigabe erteilt, Implementierung exakt nach dem in §19 spezifizierten
+minimalen Fix umgesetzt — beide Änderungen ausschließlich in
+`klassen/download_handler.py`:
+
+1. **`handle_youtube_links()`**, nach dem bestehenden
+   `if not download_result:`-Guard: neue Prüfung
+   `if not download_result.get("success"): await self.handle_download_failure(...); return`.
+   Platzierung bewusst NACH statt VOR dem bestehenden Leer-Guard (kleine
+   Präzisierung gegenüber §19s Wortlaut „unmittelbar nach Zeile 582" —
+   `download_result.get(...)` auf einem potenziell `None`-Wert wäre sonst
+   selbst abgestürzt; funktional identisches Ergebnis, da der Leer-Guard
+   bei jedem produktiven Aufruf ohnehin vor Erreichen des neuen Codes
+   greift oder durchläuft).
+2. **`handle_playlist_success()`**: `ok`/`total` werden direkt aus der
+   `tracks`-Liste berechnet (nicht aus `successful_tracks`/`total_tracks`,
+   die im an dieser Stelle vorliegenden Dict nicht existieren — verifiziert
+   beim Implementieren: `download_audio()` kopiert diese beiden Felder
+   nicht in `final_result`, nur `tracks` selbst überlebt bis hierher).
+   Bei `total > 0 and ok == 0` wird `handle_download_failure()` aufgerufen
+   statt `handle_single_track_success()`.
+
+**Test:** neue Datei
+`tests/test_download_handler_youtube_pipeline_failure_reporting.py` (5
+Tests, erste direkte Testabdeckung für `handle_youtube_links()`/
+`handle_playlist_success()` überhaupt) — prüft beobachtbares Verhalten
+(gesendeter/editierter Telegram-Text), nicht Implementierungsdetails.
+Nutzt das etablierte `object.__new__(DownloadHandler)`-Testmuster. Per
+`git stash` gegen den Vor-Fix-Stand verifiziert: 3 der 5 Tests schlagen
+exakt wie in §5/§9 vorhergesagt fehl (Single-Track-Stille, 0/N-Erfolgs-
+Header), die 2 Regressionsschutz-Tests (Partial/Full-Success) sind bereits
+am Vor-Fix-Stand grün — bestätigt, dass der Fix ausschließlich die
+tatsächlich defekten Pfade ändert.
+
+**Vollregression:** 1068 passed, 0 failed (+5 gegenüber vorherigem Stand,
+keine neue Regression — insbesondere alle 10
+`test_download_utils_retry.py`-Tests unverändert grün, wie in §20
+prognostiziert).
+
+FINDING-4 gilt damit als **FIXED**.
