@@ -57,6 +57,35 @@ Besonders geschützt werden müssen:
 - Cache-Verhalten
 
 ---
+#3.A Architecture Migration Policy
+
+Das Projekt befindet sich in einer kontrollierten Architekturmigration.
+
+Architekturänderungen erfolgen phasenweise.
+
+Für jede ARCH-Phase gilt:
+
+1. Ist-Zustand analysieren
+2. Verantwortlichkeiten bestimmen
+3. Zielgrenzen definieren
+4. kleinsten sinnvollen Migrationsschritt bestimmen
+5. Änderung implementieren
+6. Tests ausführen
+7. Dependency Audit durchführen
+8. Ergebnis dokumentieren
+
+Keine großflächigen Refactorings ohne vorherige Characterization.
+
+Frühere ARCH-Dokumente sind historische Architekturentscheidungen.
+Das aktuellste bestätigte Architekturresultat hat Vorrang.
+
+Eine ARCH-Phase darf nicht eigenmächtig mehrere zukünftige ARCH-Phasen vorwegnehmen.
+
+Leitsatz:
+
+Characterize → Decide → Extract → Audit → Regression
+
+---
 
 # 4. Kritische Architektur
 
