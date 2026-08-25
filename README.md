@@ -69,6 +69,12 @@ Ausführlicher, mit Datenfluss/Fehlerbehandlung pro Bereich: [`CLAUDE.md`](CLAUD
 pip install -r requirements.txt
 ```
 
+Für Tests zusätzlich:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
 Konfiguration erfolgt über eine `.env`-Datei im Projektwurzel-Verzeichnis (wird von `config.py` automatisch geladen). Relevante Variablen (siehe `config.py` für die vollständige, kommentierte Liste inkl. Defaults):
 
 ```text
@@ -107,7 +113,7 @@ python3 bot.py
 python -m pytest tests/ -q
 ```
 
-Stand bei letzter Prüfung: 359 Tests, davon 15 bekannte, vorbestehende Fehlschläge (u. a. weil `pytest-asyncio` in dieser Umgebung nicht installiert ist — `@pytest.mark.asyncio`-Tests in `tests/test_suite.py` laufen dadurch nicht). Details siehe [`docs/MusicBot_ENGINEERING_BASELINE.md`](docs/MusicBot_ENGINEERING_BASELINE.md).
+`pytest-asyncio` (siehe `requirements-dev.txt`) wird für die `@pytest.mark.asyncio`-Tests in `tests/test_suite.py` benötigt. Aktueller Teststand siehe [`docs/MusicBot_ENGINEERING_BASELINE_v2.md`](docs/MusicBot_ENGINEERING_BASELINE_v2.md).
 
 ## Mapping-Dateien
 

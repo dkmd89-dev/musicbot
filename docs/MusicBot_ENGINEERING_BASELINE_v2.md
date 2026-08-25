@@ -549,4 +549,33 @@ Vollregression danach: **1050 passed, 9 failed** (+10 gegenüber vorherigem
 Stand, exakt die neuen Tests; die 9 bekannten Fehler unverändert, keine neue
 Regression). RETRY-COVERAGE ist damit aus der offenen P2-Liste in Abschnitt 14
 zu entfernen. AUTOLEARN-002, CHANNEL-PATTERN, STALE-TEST, PYTEST-ASYNCIO,
-PODCAST-INDEX-KEY und LASTFM-COVER-DEAD sind weiterhin offen und unverändert.
+PODCAST-INDEX-KEY und LASTFM-COVER-DEAD waren zu diesem Zeitpunkt weiterhin
+offen.
+
+## Nachtrag (2026-08-25): PYTEST-ASYNCIO geschlossen
+
+Freigabe für Empfehlung Nr. 3 aus Abschnitt 18: `pytest-asyncio` (1.4.0)
+installiert und als Test-/Dev-Abhängigkeit in neuer Datei
+`requirements-dev.txt` festgehalten (`requirements.txt` bleibt laut eigenem
+Header-Kommentar ausdrücklich auf Produktionscode-Imports beschränkt, daher
+eine separate Datei statt Vermischung). Kein Code-Umbau der betroffenen
+Tests nötig — `TestRichMenuSystem`/`TestMenuIntegration` in `tests/test_suite.py`
+nutzten bereits das Standard-`@pytest.mark.asyncio`-Muster, das ist mit
+installiertem Plugin ohne weitere Konfiguration (kein `asyncio_mode` in
+`pytest.ini` nötig) lauffähig. Die 4 zuvor blockierten Tests laufen jetzt
+grün, die vorher 4 auftretenden `PytestUnknownMarkWarning` sind ebenfalls
+verschwunden (Marker wird vom Plugin selbst registriert).
+
+`README.md` korrigiert: der jetzt falsche Satz ("pytest-asyncio nicht
+installiert") entfernt, Setup-Hinweis auf `requirements-dev.txt` ergänzt.
+Die dort separat vorhandenen veralteten Test-Zahlen (359/15) wurden bewusst
+NICHT angefasst — das ist eine vorbestehende, von diesem Auftrag unabhängige
+Staleness, außerhalb des Scopes dieser Freigabe.
+
+Vollregression danach: **1054 passed, 5 failed** (+4 gegenüber vorherigem
+Stand, exakt die 4 vormals blockierten async-Tests; die verbleibenden 5
+Fehler — AUTOLEARN-002 (×2 Subtests), CHANNEL-PATTERN (×2 Subtests),
+STALE-TEST — unverändert, keine neue Regression). PYTEST-ASYNCIO ist damit
+aus der offenen P3-Liste in Abschnitt 14 zu entfernen. AUTOLEARN-002,
+CHANNEL-PATTERN, STALE-TEST, PODCAST-INDEX-KEY und LASTFM-COVER-DEAD sind
+weiterhin offen und unverändert.

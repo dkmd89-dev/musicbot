@@ -1,0 +1,7 @@
+# MusicBot – Test-/Dev-Abhängigkeiten (nur für tests/, nicht Teil des Produktionscodes)
+# Installation zusätzlich zu requirements.txt: pip install -r requirements-dev.txt
+#
+# pytest selbst ist bewusst nicht hier gelistet (in dieser Umgebung bereits
+# global vorhanden) - nur echte Zusatz-Plugins.
+
+pytest-asyncio==1.4.0
