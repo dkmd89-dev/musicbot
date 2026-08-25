@@ -609,3 +609,9 @@ Resolved items:
 No new regression detected.
 
 The repository is now considered a clean regression baseline.
+
+---
+
+**Diese Datei ist mit der Closure abgeschlossen.** Neue Findings, Nachträge
+oder technische Schulden gehören ab jetzt in eine neue Datei
+`MusicBot_ENGINEERING_BASELINE_v3.md`, nicht mehr hierher.

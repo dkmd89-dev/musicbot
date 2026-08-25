@@ -12,7 +12,7 @@ Status-Legende: **CURRENT** = aktuell gültig · **HISTORICAL** = abgeschlossene
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| MusicBot_ENGINEERING_BASELINE_v2.md | CURRENT | Aktueller technischer Gesamtzustand |
+| MusicBot_ENGINEERING_BASELINE_v2.md | CURRENT (eingefroren nach Closure 2026-08-25) | Aktueller technischer Gesamtzustand — neue Findings → MusicBot_ENGINEERING_BASELINE_v3.md |
 | MusicBot_ENGINEERING_BASELINE.md | SUPERSEDED | v1, abgelöst durch v2 |
 
 ## ARCH – Architektur-Entscheidungsprotokoll (Historie)
