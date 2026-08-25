@@ -58,7 +58,8 @@ GENRE_ALIASES:
   "deutscher cloud rap": "Deutscher Cloud Rap"
   "deutscher melodischer rap": "Deutscher Melodischer Rap"
   "aggro rap": "Aggro Deutschrap"
-  
+  "aggro deutschrap": "Aggro Deutschrap"
+
   # Pop
   "pop": "Pop"
   "popsong": "Pop"
@@ -121,6 +122,7 @@ GENRE_ALIASES:
   "uk rap": "UK Rap"
   "uk drill": "UK Drill"
   "ny drill": "New York Drill"
+  "new york drill": "New York Drill"
   "chicago drill": "Chicago Drill"
   "west coast hip hop": "West Coast Hip Hop"
   "east coast hip hop": "East Coast Hip Hop"
