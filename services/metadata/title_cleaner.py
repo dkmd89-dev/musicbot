@@ -125,25 +125,23 @@ class TitleCleaner:
 
         cleaned = title.strip()
 
-        # META-11: "video"/"audio" ohne \b davor matchten auch als reiner
-        # Teilstring innerhalb eines laengeren Wortes - deutsche YouTube-
-        # Titel enthalten sehr haeufig das zusammengesetzte Wort
-        # "Musikvideo" (kein Leerzeichen wie im englischen "Music Video").
-        # Ohne Wortgrenze wurde dabei nur das Suffix "video)" entfernt,
-        # der Rest ("Musik") blieb als abgeschnittenes Fragment im Titel
-        # stehen ("(Offizielles Musikvideo)" -> "(Offizielles Musik"
-        # statt vollstaendig entfernt). \b verhindert das Match mitten in
-        # einem Wort (zwischen zwei Wortzeichen existiert keine
-        # Wortgrenze), aendert nichts am Fall mit echtem Leerzeichen/
-        # Klammer davor. Zusaetzliches Pattern erkennt das deutsche
-        # Kompositum "(Offizielles) Musikvideo" explizit als Ganzes -
-        # analog zum bereits bewaehrten Pattern in
-        # apply_title_cleanup_rules() ("offiziell...(?:musik\s*)?video"),
-        # damit der Suffix wie im englischen Fall vollstaendig entfernt
-        # wird statt nur unangetastet (aber unkorrumpiert) stehenzubleiben.
-        # Nur die häufigsten YouTube-Suffixe entfernen
+        # META-11 (+ Nachtrag): "video"/"audio" ohne \b davor matchten auch
+        # als reiner Teilstring innerhalb eines laengeren Wortes (deutsches
+        # Kompositum "Musikvideo"). Ausserdem erkannte das urspruengliche
+        # Klammer-Pattern nur die exakten Wortfolgen "(official [music]
+        # video)"/"(audio)" - Kombinationen mit weiteren Woertern wie "HD"
+        # ("(Official HD Video)", real via Live-Test-Download reproduziert)
+        # oder "(Official Audio)"/"(Official Lyric Video)" fuehrten zum
+        # selben Muster: nur das letzte Wort ("Video)"/"Audio)") wurde
+        # entfernt, der Rest blieb mit haengender Klammer stehen. Fix:
+        # geklammerte Form zuerst - jede schliessende Klammer, deren
+        # Inhalt "video" oder "audio" als eigenstaendiges Wort enthaelt,
+        # wird komplett entfernt, unabhaengig von sonstigen Woertern davor
+        # (analog zum bereits bewaehrten Muster in
+        # apply_title_cleanup_rules(), META-03). Klammerlose Form bleibt
+        # als separates, engeres Pattern bestehen (kein Klammer-Risiko).
         cleaned = re.sub(
-            r"\s*\(?\s*(?:official\s+)?(?:music\s+)?\bvideo\b\s*\)?\s*$",
+            r"\s*\([^()]*\b(?:video|audio)\b[^()]*\)\s*$",
             "",
             cleaned,
             flags=re.IGNORECASE,
@@ -157,7 +155,10 @@ class TitleCleaner:
         ).strip()
 
         cleaned = re.sub(
-            r"\s*\(?\s*\baudio\b\s*\)?\s*$", "", cleaned, flags=re.IGNORECASE
+            r"\s*(?:official\s+)?(?:music\s+)?\b(?:video|audio)\b\s*$",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
         ).strip()
 
         cleaned = re.sub(
@@ -201,16 +202,18 @@ class TitleCleaner:
             r"\s*\([^)]*\b(?:uk|us|de|au|nz)\s+version\b[^)]*\)",
             r"\s*\(\s*\d{4}\s*(?:remaster|version)?\s*\)",
             r"\s*\[[^\]]*\b(?:version|edit|mix)\b[^\]]*\]",
-            # Official/Music/Lyric-Video-Suffixe (auch ohne Klammern), damit
-            # externe API-Suchen (MusicBrainz etc.) nicht daran scheitern.
-            # META-11: \b vor "video"/"audio" - siehe Kommentar in
-            # light_title_cleanup() (identische Schwachstelle: ohne
-            # Wortgrenze matchte "video" auch als Teilstring im deutschen
-            # Kompositum "Musikvideo", z.B. "(Offizielles Musikvideo)"
-            # wurde nur zu "(Offizielles Musik" statt vollstaendig entfernt).
-            r"\s*\(?\s*(?:official\s+)?(?:music\s+)?\bvideo\b\s*\)?\s*$",
+            # Official/Music/Lyric-Video-Suffixe, damit externe API-Suchen
+            # (MusicBrainz etc.) nicht daran scheitern. META-11 (+ Nachtrag):
+            # geklammerte Form zuerst - jede schliessende Klammer, deren
+            # Inhalt "video"/"audio" als eigenstaendiges Wort enthaelt, wird
+            # komplett entfernt (unabhaengig von sonstigen Woertern davor
+            # wie "HD" - "(Official HD Video)" wurde vorher nur zu
+            # "(Official HD" statt vollstaendig entfernt, real via
+            # Live-Test-Download reproduziert). Klammerlose Form bleibt als
+            # engeres Pattern bestehen.
+            r"\s*\([^()]*\b(?:video|audio)\b[^()]*\)\s*$",
             r"\s*\(?\s*lyric\s*\bvideo\b\s*\)?\s*$",
-            r"\s*\(?\s*official\s+\baudio\b\s*\)?\s*$",
+            r"\s*(?:official\s+)?(?:music\s+)?\b(?:video|audio)\b\s*$",
             # Deutsches Kompositum "(Offizielles) Musikvideo" explizit als
             # Ganzes erkannt (siehe Kommentar in light_title_cleanup()).
             r"\s*\(?\s*offiziell(?:es|er|em|en)?\s*(?:musik\s*)?video\s*\)?\s*$",

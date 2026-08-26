@@ -7,7 +7,7 @@
 > `/tmp/musicbot_test/`) am 2026-08-26, nach Abschluss von META-04.
 
 **Status: META-11 — ABGESCHLOSSEN (committed), live end-to-end
-re-verifiziert.**
+re-verifiziert. META-11-Nachtrag (Abschnitt 7) — ABGESCHLOSSEN (committed).**
 
 ---
 
@@ -169,3 +169,67 @@ aber uber einen echten deutschen Titel sofort reproduzierbarer Bug mit
 Auswirkung auf Title-, Album-Tag UND Dateiname gleichzeitig. Commit/
 Push/PR/Merge auf explizite Nutzerfreigabe hin durchgeführt (siehe
 Git-Historie).
+
+---
+
+## 7. Nachtrag — unvollständige Wortkombinationsabdeckung
+
+**Entdeckt:** zweiter Live-Test-Download (Cyndi Lauper - „Time After
+Time (Official HD Video)"), direkt im Anschluss an MB-01.
+
+**Finding:** der ursprüngliche META-11-Fix (Abschnitt 3) deckte nur die
+exakten Wortfolgen `(official [music] video)` bzw. `(audio)` ab. Reale
+YouTube-Titel kombinieren diese Schlüsselwörter jedoch mit weiteren
+Wörtern:
+
+```
+"Time After Time (Official HD Video)"  -> "Time After Time (Official HD"
+"Song (Official Audio)"                -> "Song (Official"
+"Song (HD Audio)"                      -> "Song (HD"
+"Song (Official Lyric Video)"          -> "Song (Official Lyric"
+```
+
+Live reproduziert: `Cyndi Lauper/Singles/2009 - Time After Time
+(Official HD.m4a` — dieselbe hängende-Klammer-Korruption wie im
+ursprünglichen META-11-Fall, nur mit anderem Zusatzwort. Diese Datei
+existiert weiterhin unverändert in der isolierten Test-Library (Alt-
+Stand, vor diesem Nachtrags-Fix heruntergeladen).
+
+**Fix:** die geklammerte Form wird jetzt zuerst und robust behandelt —
+jede schließende Klammer, deren Inhalt „video" oder „audio" als
+eigenständiges Wort enthält, wird komplett entfernt, unabhängig von
+sonstigen Wörtern davor (analog zum bereits bewährten Muster in
+`apply_title_cleanup_rules()`, META-03):
+
+```diff
+-            r"\s*\(?\s*(?:official\s+)?(?:music\s+)?\bvideo\b\s*\)?\s*$",
+-            r"\s*\(?\s*\baudio\b\s*\)?\s*$",
++            r"\s*\([^()]*\b(?:video|audio)\b[^()]*\)\s*$",
++            r"\s*(?:official\s+)?(?:music\s+)?\b(?:video|audio)\b\s*$",
+```
+
+(analog in `build_search_title()`'s `version_patterns`-Liste).
+
+**Geänderte Datei:** ausschließlich `services/metadata/title_cleaner.py`
+(dieselben zwei Funktionen wie beim ursprünglichen META-11-Fix).
+
+**Neue Tests:**
+`tests/test_title_cleaner_video_audio_bracket_combinations.py` — 12
+Tests: 5 Kernfälle je Funktion (HD+Video, Official Audio, HD+Audio,
+Official+Lyric+Video, „keine hängende Klammer"-Zusammenfassung), 5
+Regressionstests (deckungsgleich mit bestehenden META-11/META-03-Fällen),
+2 direkt für `build_search_title()`.
+
+**Testergebnisse:**
+
+```
+STUFE 1 (gezielt): 12 passed
+STUFE 2 (direkte Regression): 92 passed (11 subtests)
+STUFE 3 (thematische Suite): 407 passed (11 subtests)
+STUFE 4 (vollständige Suite): 1270 passed, 0 failed, 0 errors
+(Baseline vor diesem Nachtrag: 1258 passed → +12 neue Tests, 0 Regressionen)
+```
+
+Vierter unabhängiger Fund aus der vom Nutzer initiierten Test-Download-
+Serie (nach META-11, TESTENV-01, MB-01) — bestätigt erneut den Wert
+mehrerer, unterschiedlicher Test-Downloads statt nur eines Einzelfalls.
