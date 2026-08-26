@@ -2,7 +2,7 @@
 
 Privat entwickelter Telegram-Bot für Musik-Download (YouTube), automatische Metadaten-Anreicherung (Artist, Genre, Cover, Lyrics), Library-Organisation und Steuerung eines [Navidrome](https://www.navidrome.org/)-Servers.
 
-Historisch organisch gewachsenes Hobbyprojekt — siehe [`CLAUDE.md`](CLAUDE.md) für die Engineering-Leitlinien und [`docs/MusicBot_ENGINEERING_BASELINE_v4.md`](docs/MusicBot_ENGINEERING_BASELINE_v4.md) für den aktuellen technischen Status (Architektur, Testabdeckung, Security, Technical Debt).
+Historisch organisch gewachsenes Hobbyprojekt — siehe [`CLAUDE.md`](CLAUDE.md) für die Engineering-Leitlinien und [`docs/MusicBot_ENGINEERING_BASELINE_v5.md`](docs/MusicBot_ENGINEERING_BASELINE_v5.md) für den aktuellen technischen Status (Architektur, Testabdeckung, Security, Technical Debt).
 
 ---
 
@@ -58,8 +58,8 @@ Ausführlicher, mit Datenfluss/Fehlerbehandlung pro Bereich: [`CLAUDE.md`](CLAUD
 | `handlers/` | Telegram-Handler: Menüsystem (`handlers/menu/`), Admin-Funktionen (`handlers/admin/`), Navidrome-Menü, Statistik, Fehlerbehandlung |
 | `utils/` | Wiederverwendbare Bausteine: `genre_map.py`, `artist_map.py`, `filenamefixer.py`, `helpers.py`, Caches (`lyrics_cache.py` u. a.), Singleton-Basisklasse, sowie lokale technische Runner ohne Telegram-/API-Kopplung (`navidrome_scan_trigger.py`, `audio_enhancer.py`) |
 | `mapping/` | YAML-/JSON-Dateien mit Fachlogik (Genre-/Artist-Regeln) — **keine belanglose Konfiguration**, siehe unten |
-| `tests/` | 1107 Tests (pytest), 0 bekannte Fehlschläge (Stand 2026-08-26) — Characterization-Tests für die Produktionsklassen, siehe [`docs/MusicBot_ENGINEERING_BASELINE_v4.md`](docs/MusicBot_ENGINEERING_BASELINE_v4.md) |
-| `docs/` | Engineering-Baseline v4 (aktueller Referenzpunkt) + ARCH-Characterization-Dokumente (historisch) |
+| `tests/` | 1123 Tests (pytest), 0 bekannte Fehlschläge (Stand 2026-08-26) — Characterization-Tests für die Produktionsklassen, siehe [`docs/MusicBot_ENGINEERING_BASELINE_v5.md`](docs/MusicBot_ENGINEERING_BASELINE_v5.md) |
+| `docs/` | Engineering-Baseline v5 (aktueller Referenzpunkt) + ARCH-Characterization-Dokumente (historisch) |
 
 ## Setup
 
@@ -111,7 +111,7 @@ python3 bot.py
 python -m pytest tests/ -q
 ```
 
-`pytest-asyncio` (siehe `requirements-dev.txt`) wird für die `@pytest.mark.asyncio`-Tests in `tests/test_suite.py` benötigt. Aktueller Teststand siehe [`docs/MusicBot_ENGINEERING_BASELINE_v4.md`](docs/MusicBot_ENGINEERING_BASELINE_v4.md).
+`pytest-asyncio` (siehe `requirements-dev.txt`) wird für die `@pytest.mark.asyncio`-Tests in `tests/test_suite.py` benötigt. Aktueller Teststand siehe [`docs/MusicBot_ENGINEERING_BASELINE_v5.md`](docs/MusicBot_ENGINEERING_BASELINE_v5.md).
 
 ## Mapping-Dateien
 
@@ -119,4 +119,4 @@ Die YAML-/JSON-Dateien in `mapping/` (Genre-Aliase, Genre-Hierarchie, Genre-Over
 
 ## Entwicklung
 
-Dieses Projekt wird nicht neu geschrieben, sondern kontrolliert weiterentwickelt: bestehendes Verhalten zuerst verstehen und mit Characterization-Tests absichern, dann verbessern. Die verbindlichen Arbeitsregeln stehen in [`CLAUDE.md`](CLAUDE.md); der aktuelle Stand aller bekannten Risiken, offenen Punkte und der Technical-Debt-Liste in [`docs/MusicBot_ENGINEERING_BASELINE_v4.md`](docs/MusicBot_ENGINEERING_BASELINE_v4.md) (löst [`docs/MusicBot_ENGINEERING_BASELINE_v3.md`](docs/MusicBot_ENGINEERING_BASELINE_v3.md), eingefrorener Stand vom 2026-08-25 mit 1063 passed/0 failed, als aktuellen Referenzpunkt ab; ältere Baselines bleiben unter [`docs/archive/`](docs/archive/) unverändert bestehen). Ältere Architektur-Analysen (ARCH-xxx/POST-ARCH-xxx) liegen vollständig erhalten unter [`docs/archive/`](docs/archive/), siehe [`docs/INDEX.md`](docs/INDEX.md).
+Dieses Projekt wird nicht neu geschrieben, sondern kontrolliert weiterentwickelt: bestehendes Verhalten zuerst verstehen und mit Characterization-Tests absichern, dann verbessern. Die verbindlichen Arbeitsregeln stehen in [`CLAUDE.md`](CLAUDE.md); der aktuelle Stand aller bekannten Risiken, offenen Punkte und der Technical-Debt-Liste in [`docs/MusicBot_ENGINEERING_BASELINE_v5.md`](docs/MusicBot_ENGINEERING_BASELINE_v5.md) (löst [`docs/MusicBot_ENGINEERING_BASELINE_v4.md`](docs/MusicBot_ENGINEERING_BASELINE_v4.md), eingefrorener Stand vom 2026-08-26 mit 1107 passed/0 failed, als aktuellen Referenzpunkt ab; ältere Baselines bleiben unter [`docs/archive/`](docs/archive/) unverändert bestehen). Ältere Architektur-Analysen (ARCH-xxx/POST-ARCH-xxx) liegen vollständig erhalten unter [`docs/archive/`](docs/archive/), siehe [`docs/INDEX.md`](docs/INDEX.md).
