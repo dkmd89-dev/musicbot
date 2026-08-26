@@ -52,6 +52,7 @@ from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor as MetadataProcessorCore,
 )
 from services.metadata.models import MetadataResult
+from .download_artifact_cleanup import cleanup_single_download_artifact
 from .errors import DownloadError
 from .metadata_result_translator import (
     build_playlist_track_result,
@@ -805,9 +806,34 @@ async def _process_single_download(
     # ── Download ──────────────────────────────────────────────────────────────
     logger.info(f"⬇️  [DL] Starte Single-Download: {url[:80]}")
 
+    # DL-02 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md):
+    # schlaegt yt-dlp/FFmpeg WAEHREND extract_info_async() fehl (z.B.
+    # FFmpeg-Postprocessing-Fehler), wird download_info unten nie zugewiesen -
+    # beide Strategien von find_downloaded_file() benoetigen dieses Dict und
+    # sind in diesem Fehlerfall grundsaetzlich nicht anwendbar. Ein
+    # progress_hooks-Callback liefert den tatsaechlichen Rohdatei-Pfad bereits
+    # VOR dem Postprocessing-Schritt (yt_dlp/downloader/common.py,
+    # status='finished') - unabhaengig davon, ob dieser Schritt spaeter
+    # erfolgreich ist. Nur dieser eine, fuer DIESEN Aufruf spezifische Pfad
+    # (lokale Closure, kein globaler Zustand) wird im Fehlerfall bereinigt.
+    raw_downloaded_path: Optional[str] = None
+
+    def _capture_raw_downloaded_path(status: Dict[str, Any]) -> None:
+        nonlocal raw_downloaded_path
+        if status.get("status") == "finished" and status.get("filename"):
+            raw_downloaded_path = status["filename"]
+
+    hooked_ydl_opts = {
+        **ydl_opts,
+        "progress_hooks": [
+            *ydl_opts.get("progress_hooks", []),
+            _capture_raw_downloaded_path,
+        ],
+    }
+
     try:
         download_info = await enhanced_processor.download_executor.extract_info_async(
-            url, ydl_opts, download=True
+            url, hooked_ydl_opts, download=True
         )
 
         downloaded_file = enhanced_processor.download_executor.find_downloaded_file(
@@ -912,4 +938,10 @@ async def _process_single_download(
 
     except Exception as e:
         enhanced_processor.session_stats["failed_downloads"] += 1
+        if raw_downloaded_path:
+            cleanup_single_download_artifact(
+                Path(raw_downloaded_path),
+                getattr(enhanced_processor.config, "DOWNLOAD_DIR", None),
+                logger,
+            )
         raise DownloadError(f"Single-Download fehlgeschlagen: {e}")

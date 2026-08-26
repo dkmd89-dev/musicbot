@@ -60,7 +60,7 @@ async def run_test_bot(debug=False, dry_run=False):
         # Teste Imports
         try:
             import bot as production_bot
-            from handlers.download_handler import DownloadHandler
+            from klassen.download_handler import DownloadHandler
             logger.info("✅ Alle Module können geladen werden")
         except Exception as e:
             logger.error(f"❌ Import-Fehler: {e}")

@@ -5,6 +5,8 @@ Verwendet isolierte Verzeichnisse und Test-Token.
 Niemals mit Produktions-Config verwechseln!
 """
 
+from dotenv import load_dotenv
+load_dotenv()  # sucht automatisch nach .env im aktuellen Verzeichnis
 import os
 from pathlib import Path
 
@@ -32,7 +34,14 @@ for d in [LIBRARY_DIR, PODCAST_DIR, DOWNLOAD_DIR, BACKUP_DIR, CACHE_DIR, LOG_DIR
 # ============================================================================
 # !!! NIEMALS den echten Produktions-Token hier verwenden !!!
 # Erstelle einen neuen Bot über @BotFather mit einem anderen Namen
-TELEGRAM_TOKEN = os.getenv("TEST_TELEGRAM_TOKEN", "DEIN_TEST_BOT_TOKEN_HIER")
+# !!! Token NUR aus Umgebungsvariable laden - NIEMALS hartcodieren !!!
+TELEGRAM_TOKEN = os.getenv("TEST_TELEGRAM_TOKEN")
+
+if not TELEGRAM_TOKEN:
+    raise ValueError(
+        "❌ TEST_TELEGRAM_TOKEN ist nicht als Umgebungsvariable gesetzt!\n"
+        "   Bitte setze: export TEST_TELEGRAM_TOKEN='dein_token'"
+    )
 
 # ============================================================================
 # NAVIDROME (für Tests - optional)
