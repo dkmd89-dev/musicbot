@@ -330,22 +330,41 @@ class MusicBrainzClient:
         best_score = 0
         best_match = None
         min_score_threshold = Config.MUSICBRAINZ_MIN_SIMILARITY
+        min_artist_similarity = Config.MUSICBRAINZ_MIN_ARTIST_SIMILARITY
         for r in recordings:
             rec_title = r.get("title", "")
             rec_artist_phrase = r.get("artist-credit-phrase", "")
             title_sim = similarity(clean_title, rec_title)
             artist_sim = similarity(clean_artist, rec_artist_phrase)
-            score = (title_sim * 0.7) + (artist_sim * 0.3)
-            if clean_artist.lower() == rec_artist_phrase.lower():
-                score += 0.1
+
+            normalized_artist_match = False
             if hasattr(self, "artist_normalizer"):
                 normalized_rec_artist = self.artist_normalizer.normalize(rec_artist_phrase)
                 normalized_clean_artist = self.artist_normalizer.normalize(clean_artist)
-                if (
+                normalized_artist_match = (
                     normalized_rec_artist == normalized_clean_artist
                     and normalized_rec_artist != "Unknown"
-                ):
-                    score += 0.05
+                )
+
+            # MB-01: ein (nahezu) perfekter Titeltreffer allein konnte die
+            # Gesamtschwelle bisher im Alleingang ueberwinden, selbst bei
+            # einem komplett unverwandten Kuenstler (real reproduziert:
+            # "Yearboox" vs. "sweetbox" - siehe Config.MUSICBRAINZ_MIN_ARTIST_SIMILARITY-
+            # Kommentar). Kandidaten mit zu geringer Artist-Aehnlichkeit
+            # werden verworfen, AUSSER die kanonisierten Namen stimmen
+            # exakt ueberein (staerkeres Signal als reine Rohstring-
+            # Aehnlichkeit, z.B. bei stark abweichenden Schreibweisen).
+            if artist_sim < min_artist_similarity and not normalized_artist_match:
+                continue
+
+            score = (
+                title_sim * Config.MUSICBRAINZ_TITLE_WEIGHT
+                + artist_sim * Config.MUSICBRAINZ_ARTIST_WEIGHT
+            )
+            if clean_artist.lower() == rec_artist_phrase.lower():
+                score += 0.1
+            if normalized_artist_match:
+                score += 0.05
             if score > best_score:
                 best_score = score
                 best_match = r

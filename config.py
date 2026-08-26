@@ -416,6 +416,17 @@ class Config:
     MUSICBRAINZ_TITLE_WEIGHT = 0.5
     MUSICBRAINZ_ARTIST_WEIGHT = 0.5
     MUSICBRAINZ_MIN_SIMILARITY = 0.7
+    # MB-01: harte Mindestschwelle fuer die Artist-Aehnlichkeit allein -
+    # verhindert, dass ein (nahezu) perfekter Titeltreffer die
+    # Gesamtschwelle MUSICBRAINZ_MIN_SIMILARITY im Alleingang ueberwindet,
+    # obwohl der Kuenstler komplett unverwandt ist (real reproduziert:
+    # "Yearboox" vs. "sweetbox" erreichte per Zufall 0.5 Rohstring-
+    # Aehnlichkeit). Kalibriert gegen reale Kollaborations-/Schreibweisen-
+    # Faelle (z.B. "Travis Scott" vs. "Travis Scott feat. Drake" = 0.667),
+    # die weiterhin durchgelassen werden muessen - siehe
+    # services/clients/musicbrainz_client.py::_get_best_match() und
+    # tests/test_musicbrainz_client_artist_mismatch.py.
+    MUSICBRAINZ_MIN_ARTIST_SIMILARITY = 0.55
 
     # Interactive Tagging
     INTERACTIVE_TAGGING = {
