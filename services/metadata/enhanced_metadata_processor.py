@@ -855,7 +855,20 @@ class EnhancedMetadataProcessor(SingletonMixin):
             # ── 17. Metadaten schreiben ──────────────────────────────────────
             self.logger.info("📝 1️⃣7️⃣ Schreibe Metadaten-Tags...")
             try:
-                self.tag_writer.write_tags(
+                # AE-12 (docs/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md): write_tags()
+                # lief bisher synchron direkt im Event-Loop-Thread. Seit dem
+                # AE-11-Fix (Copy+Tag+Replace statt In-Place-Save) real gegen
+                # 10-100MB-Dateien gemessen: 0 von 0 moeglichen Heartbeat-Ticks
+                # bei jeder getesteten Groesse, mit Laufzeiten bis 1,6s unter
+                # realer I/O-Last (Podcast-Klasse-Dateien) - der gesamte Bot war
+                # waehrenddessen fuer ALLE Telegram-Nutzer eingefroren. Kein
+                # Lock noetig (anders als beim strukturell verwandten AE-10):
+                # TagWriter haelt keinen globalen mutierbaren Zustand (kein
+                # Analogon zu matplotlib.pyplot), deterministisch mit 5
+                # gleichzeitigen Threads auf unterschiedlichen Dateien
+                # verifiziert (siehe Audit-Dokument, Abschnitt 7D).
+                await asyncio.to_thread(
+                    self.tag_writer.write_tags,
                     target_path=library_path,
                     artist=artist_for_metadata,
                     album_info=album_info,
