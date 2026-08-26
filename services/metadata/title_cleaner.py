@@ -304,10 +304,29 @@ class TitleCleaner:
             (r"\s*\(?\s*offiziell(?:es|er|em|en)?\s*\)?", ""),
             (r"\s+-\s+offiziell(?:es|er|em|en)?\s*(?:musik\s*)?video\s*$", ""),
             # Allgemeine Official/Video-Tags
+            # META-03: die vorherige Version behandelte oeffnende ("\(?") und
+            # schliessende Klammer ("\)?") unabhaengig voneinander optional.
+            # Enthielt eine Klammer neben Schluesselwoertern auch ein nicht
+            # gelistetes Wort (z.B. "(Official Visual)"), wurde nur der
+            # Schluesselwort-Teil entfernt - die schliessende Klammer blieb
+            # als haengendes Fragment stehen ("Sad Girls Visual)" statt
+            # "Sad Girls", real in der Library bestaetigt). Fix: geklammerte
+            # Form verlangt jetzt zwingend eine echte schliessende Klammer
+            # und entfernt bei erkanntem Schluesselwort als erstem Wort den
+            # gesamten Klammerinhalt (auch nicht gelistete Folgewoerter) -
+            # kann dadurch nie mehr eine haengende Klammer hinterlassen.
+            # Klammerlose Form bleibt unveraendert (nur bekannte
+            # Schluesselwoerter, kein Klammer-Handling).
             (
-                r"\(?\s*(?:official|music|lyric|video|audio|live|version|remaster|hd|4k|vevo|explicit)"
+                r"\(\s*(?:official|music|lyric|video|audio|live|version|remaster|hd|4k|vevo|explicit)"
+                r"(?:\s+\S+)*\s*\)",
+                "",
+                re.IGNORECASE,
+            ),
+            (
+                r"\s*(?:official|music|lyric|video|audio|live|version|remaster|hd|4k|vevo|explicit)"
                 r"(?:\s+(?:official|music|lyric|video|audio|live|version|remaster|hd|4k|vevo|explicit))*"
-                r"\s*\)?",
+                r"\s*",
                 "",
                 re.IGNORECASE,
             ),
