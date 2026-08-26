@@ -944,6 +944,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 filepath=original_path,
                 library_path=library_path,
                 renamed_due_to_conflict=renamed_due_to_conflict,
+                url=track_metadata.get("webpage_url"),
                 original_metadata=track_metadata,
                 artist_source=artist_source,
                 title_cleaned=clean_title != raw_title,

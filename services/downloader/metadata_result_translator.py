@@ -101,6 +101,7 @@ def build_playlist_track_result(
         library_path=(
             str(metadata_result.library_path) if metadata_result.library_path else None
         ),
+        url=metadata_result.url,
         artist_source=metadata_result.artist_source,
         title_cleaned=metadata_result.title_cleaned,
         playlist_album=album_name,
@@ -153,6 +154,7 @@ def build_single_track_result(
         library_path=(
             str(metadata_result.library_path) if metadata_result.library_path else None
         ),
+        url=metadata_result.url,
         artist_source=metadata_result.artist_source,
         title_cleaned=metadata_result.title_cleaned,
         lyrics_available=bool(metadata_result.lyrics),

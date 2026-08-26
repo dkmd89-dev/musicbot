@@ -532,6 +532,81 @@ class DownloadHandler:
             success_log_msg="✅ [SUMMARY] Abschluss-Zusammenfassung gesendet",
         )
 
+    def _register_playlist_track_duplicates(self, tracks: List[Dict[str, Any]]) -> None:
+        """
+        DUP-01 + DUP-08 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+        handle_playlist_success() rief bisher ausschließlich
+        handle_single_track_success() mit dem Playlist-Wrapper auf. Dessen
+        "artist" ist strukturell immer "?" (der Wrapper besitzt kein eigenes
+        Artist-Feld) - die bestehende Guard-Bedingung in
+        handle_single_track_success() unterdrückte die Registrierung dadurch
+        für JEDEN Playlist-Track (DUP-01), und ein pro Track gesetztes
+        renamed_due_to_conflict-Signal wurde nie ausgewertet, da nur der
+        Wrapper selbst geprüft wurde (DUP-08).
+
+        Verarbeitet hier jeden tatsächlich erfolgreichen Track mit seiner
+        EIGENEN Identität (Artist/Titel/URL/Library-Pfad aus `tracks[i]`,
+        niemals aus dem Playlist-Wrapper). Ein Kollisions-Fund bei einem
+        einzelnen Track betrifft ausschließlich diesen Track - die Schleife
+        läuft für alle übrigen Tracks unverändert weiter (kein Abbruch, kein
+        Einfluss auf bereits verarbeitete oder noch folgende Tracks).
+        """
+        for track in tracks:
+            if not (isinstance(track, dict) and track.get("success")):
+                continue
+
+            artist = track.get("artist", "?")
+            title = track.get("title", "?")
+            library_path = track.get("library_path")
+
+            if track.get("renamed_due_to_conflict"):
+                self.logger.warning(
+                    f"📄 [PLAYLIST] Dateikonflikt erkannt (Track '{artist} - {title}') "
+                    f"— lösche: {library_path}"
+                )
+                try:
+                    if library_path and Path(library_path).exists():
+                        os.remove(library_path)
+                        self.logger.info(
+                            f"✅ [PLAYLIST] Duplikat-Datei gelöscht: {library_path}"
+                        )
+                except OSError as oe:
+                    self.logger.error(f"❌ [PLAYLIST] Löschen fehlgeschlagen: {oe}")
+                # Die kollidierte Kopie repräsentiert denselben Content wie
+                # der bereits vorhandene Cache-Eintrag - keine eigene
+                # Registrierung nötig, andere Tracks bleiben unberührt.
+                continue
+
+            if not (artist and title and artist not in ("?", "Unbekannt", "Unknown Artist")):
+                self.logger.warning(
+                    f"⚠️ [PLAYLIST] Duplikat-Registrierung übersprungen "
+                    f"(artist='{artist}', title='{title}')"
+                )
+                continue
+
+            try:
+                self.duplicate_detector.register_download(
+                    url=track.get("url") or "",
+                    artist=artist,
+                    title=title,
+                    file_path=Path(library_path) if library_path else None,
+                    metadata={
+                        "artist": artist,
+                        "title": title,
+                        "album": track.get("album"),
+                        "year": track.get("year"),
+                    },
+                )
+                self.logger.info(
+                    f"📝 [PLAYLIST] Im Duplikat-Cache registriert: '{artist} - {title}'"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"❌ [PLAYLIST] Duplikat-Registrierung fehlgeschlagen "
+                    f"('{artist} - {title}'): {e}",
+                    exc_info=True,
+                )
+
     async def handle_playlist_success(self, results: List[dict]) -> None:
         """Abschluss-Meldung für Playlists oder Playlist-Wrapper."""
         if results and results[0].get("type") == "playlist":
@@ -553,6 +628,7 @@ class DownloadHandler:
                     f"Alle {total} Tracks der Playlist sind fehlgeschlagen."
                 )
                 return
+            self._register_playlist_track_duplicates(tracks)
             await self.handle_single_track_success(playlist_result)
             return
 

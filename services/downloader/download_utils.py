@@ -675,6 +675,13 @@ async def _process_track_metadata(
         "uploader": track_info.get("uploader"),
         "channel": track_info.get("channel") or track_info.get("uploader"),
         "upload_date": track_info.get("upload_date"),
+        # DUP-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+        # eigene Video-URL des Tracks - dieselbe Quelle, die
+        # download_executor.py::download_single_track() bereits fuer den
+        # eigentlichen Download verwendet (track_info["webpage_url"]/["url"]).
+        # Wird fuer die spaetere Duplicate-Cache-Registrierung benoetigt -
+        # vorher ging dieses Feld beim Uebergang zu MetadataResult verloren.
+        "webpage_url": track_info.get("webpage_url") or track_info.get("url"),
         "playlist_album": album_name,
         "playlist_channel": playlist_channel or "",
         "playlist_name": album_name,
