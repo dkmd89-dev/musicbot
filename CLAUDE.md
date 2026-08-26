@@ -983,11 +983,28 @@ Nicht jede einzelne triviale Funktion braucht eine seitenlange Beschreibung.
 
 ## Baseline-Pflege
 
+Aktuelle Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v4.md` (Freeze
+2026-08-26, 1107 passed / 0 failed). Referenziert von `README.md` und
+`docs/INDEX.md`.
+
 Nach Abschluss jeder ARCH-Phase mit Code-/YAML-Änderung wird die
 aktuelle ENGINEERING_BASELINE_vN.md im selben PR aktualisiert
 (mindestens: Abschnitt „ARCH Status", „Recent Major Changes",
 Testzahlen). Bei größerer Drift (>3 ARCH-Phasen seit letztem Sync)
 wird eine neue vN+1 statt eines Nachtrags erstellt.
+
+**Freeze-Abschluss ist selbsttätig, nicht die Freeze-Entscheidung
+selbst:** Schließt ein Freeze-Gate-Audit explizit mit 🟢 APPROVED ab
+(alle Kriterien PASS, kein offener P0/P1-Befund, mit Evidenz belegt),
+gehören das Erstellen der nächsten `ENGINEERING_BASELINE_vN+1.md` und
+das Nachziehen der Referenzen in `README.md`, `docs/INDEX.md` und
+diesem Abschnitt zum Abschluss dieser Phase dazu — dafür ist keine
+gesonderte Nutzeranfrage nötig, sofern nicht ausdrücklich anders
+verlangt. Die Freeze-Entscheidung selbst (GO/NO-GO mit Evidenz) bleibt
+ein expliziter, eigenständiger Prüfschritt und wird dadurch nicht
+automatisiert — nur die mechanische Nacharbeit nach einem bereits
+gefällten APPROVED. Commit/Push bleiben wie immer nur nach expliziter
+Anweisung.
 
 ---
 
