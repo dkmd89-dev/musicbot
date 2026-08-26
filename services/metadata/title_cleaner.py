@@ -317,7 +317,17 @@ class TitleCleaner:
             # Woertern, die "ft"/"feat" nur als Teilstring enthalten (z.B.
             # "trifft" -> vorher wurde alles ab dem Teilstring-Treffer bis
             # zum Titelende geloescht, siehe docs/MusicBot_ENGINEERING_BASELINE.md).
-            (r"\s*[-–—]?\s*\b(?:feat\b\.?|ft\b\.?|featuring\b)\s+[^(\[\n]+", ""),
+            # META-02: "feat"/"ft" verlangten zusaetzlich zwingend ein
+            # Leerzeichen nach dem optionalen Punkt - "feat.Someone" (ohne
+            # Leerzeichen) blieb dadurch unveraendert im Titel stehen.
+            # Alternation analog zu META-01/DUP-04: nach "feat"/"ft" entweder
+            # Punkt + optionaler Whitespace, oder mindestens ein Leerzeichen -
+            # "Featherweight" bleibt weiterhin geschuetzt (weder Punkt noch
+            # Leerzeichen folgt dort direkt auf "Feat").
+            (
+                r"\s*[-–—]?\s*\b(?:feat(?:\.\s*|\s+)|ft(?:\.\s*|\s+)|featuring\s+)[^(\[\n]+",
+                "",
+            ),
             (r"\s*\(?\s*\d{4}\s*\)?\s*$", ""),
             (r"\s*[-–—:|]\s*(?:official|music|video|audio|lyric|hd|4k).*?$", ""),
             (r"\s*\([^)]*$", ""),
