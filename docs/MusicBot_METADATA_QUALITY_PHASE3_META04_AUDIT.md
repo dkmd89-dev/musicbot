@@ -5,8 +5,7 @@
 > erstmals identifiziert). Freigabe zur Tiefenanalyse und Nutzer-
 > Bestätigung der korrekten Schreibweise für "makko" am 2026-08-26 erhalten.
 
-**Status: META-04 ("makko" und "t-low") — ABGESCHLOSSEN (committed).
-"Max Giesinger" — OFFEN, Rückfrage an Nutzer ausstehend.**
+**Status: META-04 — VOLLSTÄNDIG ABGESCHLOSSEN (committed).**
 
 ---
 
@@ -129,11 +128,13 @@ STUFE 4 (vollständige Suite, am Ende der Arbeitsphase):
 
 ---
 
-## 6. Offen — Rückfrage an Nutzer
+## 6. „Max Giesinger" — geklärt, kein MusicBot-Problem
 
-**„Max Giesinger"**: vom Nutzer als „wird ein Problem sein" markiert,
-konkrete Art des Problems noch nicht spezifiziert — keine Änderung ohne
-weitere Information vorgenommen.
+Nutzer-Rückmeldung: die ursprüngliche Sorge betraf wiederkehrende
+Tippfehler bei den Buchstaben x/y/z (klassische QWERTZ/QWERTY-
+Verwechslung), keine fehlerhafte Normalisierung durch MusicBot. Bei
+Prüfung in Symfonium (Navidrome-Client) ist „Max Giesinger" bereits
+korrekt geschrieben. Kein Finding, keine Mapping-Änderung nötig.
 
 **Library-Konsolidierung**: die bestehenden, durch die Altlast entstandenen
 Ordner „makko/" (1 Album) und „T-Low/" (1 Datei, jeweils bereits auch
@@ -149,6 +150,8 @@ META-04 gilt für die Teilaspekte „makko" und „t-low" hiermit als
 **abgeschlossen**. Root Cause vollständig identifiziert (Mapping-
 Datenfehler, kein Code-Bug), Vor-Fix-Charakterisierung für beide Fälle
 erfolgreich, Fix jeweils minimal (ein JSON-Wert), vollständige Suite grün
-(1238 passed, 0 failed, 0 errors). „Max Giesinger" sowie die Library-
-Konsolidierung bleiben offen bis zur Nutzerrückmeldung. Commit/Push/PR/
-Merge auf explizite Nutzerfreigabe hin durchgeführt (siehe Git-Historie).
+(1238 passed, 0 failed, 0 errors). „Max Giesinger" wurde als Fehlalarm
+(Tippfehler, kein MusicBot-Problem) geklärt. Die Library-Konsolidierung
+(bestehende „makko"/„T-Low"-Altlast-Ordner) bleibt eine separate,
+noch nicht freigegebene Library-Schreiboperation. Commit/Push/PR/Merge
+auf explizite Nutzerfreigabe hin durchgeführt (siehe Git-Historie).
