@@ -1,82 +1,67 @@
-# /mnt/128ssd/musicbot/config_test.py
-"""
-Test-Konfiguration für den MusicBot
-Verwendet isolierte Verzeichnisse und Test-Token.
-Niemals mit Produktions-Config verwechseln!
-"""
+#!/usr/bin/env python3
+# config_test.py – Test-Konfiguration (erbt von Produktion)
 
-from dotenv import load_dotenv
-load_dotenv()  # sucht automatisch nach .env im aktuellen Verzeichnis
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Lade .env für den Test-Token
+load_dotenv()
+
+# Importiere die originale Config-Klasse
+from config import Config as ProdConfig
+
+class Config(ProdConfig):
+    """
+    Test-Konfiguration – überschreibt Pfade und Token.
+    Alle nicht überschriebenen Attribute werden von der Produktions-Config geerbt.
+    """
+    
+    # Alle Pfade auf /tmp/musicbot_test/ umleiten
+    BASE_DIR = Path("/tmp/musicbot_test")
+    LIBRARY_DIR = BASE_DIR / "library"
+    PODCAST_DIR = BASE_DIR / "podcast"
+    DOWNLOAD_DIR = BASE_DIR / "downloads"
+    BACKUP_DIR = BASE_DIR / "backup"
+    CACHE_DIR = BASE_DIR / "cache"
+    LOG_DIR = BASE_DIR / "logs"
+    LOG_FILE = LOG_DIR / "bot.log"
+    STATS_DIR = BASE_DIR / "stats"
+    
+    # Token überschreiben (aus Umgebungsvariable)
+    BOT_TOKEN = os.getenv("TEST_TELEGRAM_TOKEN")
+    if not BOT_TOKEN:
+        raise ValueError(
+            "❌ TEST_TELEGRAM_TOKEN nicht gesetzt!\n"
+            "   Bitte setze: export TEST_TELEGRAM_TOKEN='dein_token'"
+        )
+    
+    # Test-spezifische Einstellungen
+    LOG_LEVEL = "DEBUG"
+    ENABLE_STATISTICS = False    # Deaktiviert für Tests
+    ENABLE_BACKUP = False
+    
+    # Admin-IDs (optional – hier deine Telegram-ID eintragen)
+    ADMIN_USER_IDS = []   # z.B. [123456789]
 
 # ============================================================================
-# BASIS-VERZEICHNIS (ALLE Tests isoliert in /tmp)
+# WICHTIG: get_config() gibt eine INSTANZ zurück (nicht die Klasse!)
 # ============================================================================
-# !!! WICHTIG: Nichts in /mnt/4tb/ oder /mnt/128ssd/ schreiben !!!
-BASE_DIR = Path("/tmp/musicbot_test")  # Temporäres Verzeichnis
-
-# Alle Unterverzeichnisse unter /tmp/musicbot_test/
-TEST_DIR = BASE_DIR
-LIBRARY_DIR = BASE_DIR / "library"
-PODCAST_DIR = BASE_DIR / "podcast"
-DOWNLOAD_DIR = BASE_DIR / "downloads"
-BACKUP_DIR = BASE_DIR / "backup"
-CACHE_DIR = BASE_DIR / "cache"
-LOG_DIR = BASE_DIR / "logs"
-
-# Verzeichnisse automatisch anlegen
-for d in [LIBRARY_DIR, PODCAST_DIR, DOWNLOAD_DIR, BACKUP_DIR, CACHE_DIR, LOG_DIR]:
-    d.mkdir(parents=True, exist_ok=True)
+def get_config():
+    """Gibt eine Instanz der Test-Config zurück – so werden @property aufgelöst."""
+    return Config()
 
 # ============================================================================
-# TELEGRAM - TEST BOT (VON @BotFather ERSTELLT!)
+# Sicherheitsprüfung: NIE auf /mnt/ zeigen!
 # ============================================================================
-# !!! NIEMALS den echten Produktions-Token hier verwenden !!!
-# Erstelle einen neuen Bot über @BotFather mit einem anderen Namen
-# !!! Token NUR aus Umgebungsvariable laden - NIEMALS hartcodieren !!!
-TELEGRAM_TOKEN = os.getenv("TEST_TELEGRAM_TOKEN")
-
-if not TELEGRAM_TOKEN:
-    raise ValueError(
-        "❌ TEST_TELEGRAM_TOKEN ist nicht als Umgebungsvariable gesetzt!\n"
-        "   Bitte setze: export TEST_TELEGRAM_TOKEN='dein_token'"
-    )
-
-# ============================================================================
-# NAVIDROME (für Tests - optional)
-# ============================================================================
-NAVIDROME_URL = os.getenv("TEST_NAVIDROME_URL", "http://localhost:4533")
-NAVIDROME_USER = os.getenv("TEST_NAVIDROME_USER", "testuser")
-NAVIDROME_PASSWORD = os.getenv("TEST_NAVIDROME_PASSWORD", "testpass")
-
-# ============================================================================
-# API KEYS (für Tests - Dummy oder echte Test-Keys)
-# ============================================================================
-LASTFM_API_KEY = os.getenv("TEST_LASTFM_API_KEY", "dummy_key")
-GENIUS_API_KEY = os.getenv("TEST_GENIUS_API_KEY", "dummy_key")
-MUSICBRAINZ_USER = os.getenv("TEST_MUSICBRAINZ_USER", "")
-
-# ============================================================================
-# BOT SETTINGS
-# ============================================================================
-LOG_LEVEL = "DEBUG"
-ENABLE_STATISTICS = False  # In Tests deaktivieren
-ENABLE_BACKUP = False       # In Tests deaktivieren
-ENABLE_DOWNLOADS = True     # Downloads erlaubt (aber in TEST-Verzeichnis!)
-
-# ============================================================================
-# PFADE - ZUR SICHERHEIT NOCHMALS PRÜFEN
-# ============================================================================
-def verify_isolation():
-    """Prüft ob wir wirklich im Test-Modus sind"""
-    if str(LIBRARY_DIR).startswith("/mnt/"):
+def _verify_isolation():
+    config = get_config()
+    if str(config.LIBRARY_DIR).startswith("/mnt/"):
         raise RuntimeError(
-            "❌ Test-Config zeigt auf /mnt/ - das ist PRODUKTION!\n"
-            f"   LIBRARY_DIR = {LIBRARY_DIR}\n"
+            "❌ Test-Config zeigt auf /mnt/ – das ist PRODUKTION!\n"
+            f"   LIBRARY_DIR = {config.LIBRARY_DIR}\n"
             "   Ändere BASE_DIR in /tmp/ oder ~/test/"
         )
     return True
 
-# Führe Prüfung beim Import aus
-verify_isolation()
+_verify_isolation()
