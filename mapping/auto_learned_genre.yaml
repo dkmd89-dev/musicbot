@@ -136,3 +136,7 @@ ARTIST_GENRE_MAP:
     description: Auto-learned via Last.fm (rule)
     primary: Deutschrap
     secondary: [Hip Hop, Rock]
+  Westernhagen:
+    description: Auto-learned via Last.fm (rule)
+    primary: Rock
+    secondary: [german, deutschrock, deutsch, pop, singer-songwriter]
