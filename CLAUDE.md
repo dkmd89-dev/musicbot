@@ -983,8 +983,8 @@ Nicht jede einzelne triviale Funktion braucht eine seitenlange Beschreibung.
 
 ## Baseline-Pflege
 
-Aktuelle Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v4.md` (Freeze
-2026-08-26, 1107 passed / 0 failed). Referenziert von `README.md` und
+Aktuelle Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v5.md` (Freeze
+2026-08-26, 1123 passed / 0 failed). Referenziert von `README.md` und
 `docs/INDEX.md`.
 
 Nach Abschluss jeder ARCH-Phase mit Code-/YAML-Änderung wird die

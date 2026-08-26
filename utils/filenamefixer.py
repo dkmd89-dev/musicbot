@@ -280,10 +280,17 @@ class FilenameFixerTool(SingletonMixin):
         track_number: int = None,
         uploader: str = None,
         is_single: bool = False,
-    ) -> Path:
+    ) -> Tuple[Path, bool]:
         """
         Verschiebt eine Datei von PROCESSED_DIR in die Library-Struktur.
         Podcast-Dateien landen automatisch in self._podcast_dir.
+
+        Gibt (final_target, renamed_due_to_conflict) zurück - Letzteres ist
+        True, wenn der berechnete Zielname bereits existierte und die Datei
+        deshalb mit " (N)"-Suffix abgelegt wurde (siehe P1-Fund, Post-
+        Baseline-v4 Health & Risk Audit, Finding 2: dieses Signal wurde
+        vorher gar nicht erst zurückgegeben, der darauf wartende Cleanup in
+        klassen/download_handler.py war dadurch toter Code).
         """
         if not source_path or not Path(source_path).exists():
             self.logger.error(f"❌ [LIBRARY] Quelldatei nicht gefunden: {source_path}")
@@ -321,7 +328,8 @@ class FilenameFixerTool(SingletonMixin):
                 f"{target_path.stem} ({counter}){target_path.suffix}"
             )
             counter += 1
-        if final_target != target_path:
+        renamed_due_to_conflict = final_target != target_path
+        if renamed_due_to_conflict:
             self.logger.warning(
                 f"⚠️ [LIBRARY] Name existiert — umbenannt zu: {final_target.name}"
             )
@@ -366,7 +374,7 @@ class FilenameFixerTool(SingletonMixin):
             )
 
         self.logger.info(f"✅ [LIBRARY] Datei verschoben nach: {final_target}")
-        return final_target
+        return final_target, renamed_due_to_conflict
 
     def _ensure_within_roots(self, path: Path) -> Path:
         """

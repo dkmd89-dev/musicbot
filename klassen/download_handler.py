@@ -272,16 +272,60 @@ class DownloadHandler:
     # DUPLIKAT-HANDLING
     # ──────────────────────────────────────────────────────────────────────────
 
+    async def _probe_artist_title_for_duplicate_check(
+        self, url: str
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Leichtgewichtiger yt-dlp-Vorab-Abruf (download=False), NUR um
+        Artist/Titel für check_for_duplicates() zu ermitteln.
+
+        P1-Fund (Post-Baseline-v4 Health & Risk Audit, Finding 1):
+        check_for_duplicates() wurde produktiv bisher ausschließlich mit
+        url= aufgerufen - die Content-/Parser-/Library-Fallback-Ebenen in
+        DuplicateDetector waren dadurch vor dem eigentlichen Download nie
+        erreichbar (z.B. dieselbe Aufnahme unter einer anderen Video-ID
+        erneut hochgeladen). Kostet einen zusätzlichen yt-dlp-Netzwerk-
+        Roundtrip pro Download-Versuch (bewusste, freigegebene
+        Kosten/Nutzen-Entscheidung).
+
+        Schlägt der Abruf fehl oder handelt es sich um eine Playlist-URL
+        (kein einzelner Songtitel), wird (None, None) zurückgegeben - die
+        URL-Ebene in check_for_duplicates() bleibt davon unberührt, es
+        wird nichts blockiert.
+        """
+        try:
+            download_executor = (
+                self.downloader.enhanced_download_processor.download_executor
+            )
+            ydl_opts = download_executor.build_ydl_opts(self.config)
+            info = await download_executor.extract_info_async(
+                url, ydl_opts, download=False
+            )
+            if not info or info.get("entries"):
+                return None, None
+            return info.get("uploader") or info.get("channel"), info.get("title")
+        except Exception as e:
+            self.logger.warning(
+                f"⚠️ [DUPE] Vorab-Metadaten-Abruf fehlgeschlagen — "
+                f"nur URL-Ebene aktiv: {e}"
+            )
+            return None, None
+
     async def _check_duplicates_before_download(
         self, url: str
     ) -> Tuple[bool, Optional[DuplicateEntry], str]:
         """
-        Prüft URL-basiert auf Duplikate im Cache.
+        Prüft auf Duplikate: URL-Ebene immer, zusätzlich Artist/Titel/
+        Parser/Library-Ebenen sofern der Vorab-Metadaten-Abruf gelang.
         Gibt (is_duplicate, entry, type) zurück.
         """
         self.logger.info(f"🔍 [DUPE] Starte Duplikat-Prüfung für URL: {url[:80]}...")
 
-        is_dup, entry, dup_type = self.duplicate_detector.check_for_duplicates(url=url)
+        raw_artist, raw_title = await self._probe_artist_title_for_duplicate_check(url)
+
+        is_dup, entry, dup_type = self.duplicate_detector.check_for_duplicates(
+            url=url, raw_artist=raw_artist, raw_title=raw_title
+        )
 
         if is_dup and entry:
             self.logger.warning(

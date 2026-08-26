@@ -841,7 +841,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
 
             # ── 16. Datei verschieben ────────────────────────────────────────
             self.logger.info("📂 1️⃣6️⃣ Verschiebe Datei in die Bibliothek...")
-            library_path = filename_fixer.move_to_library(
+            library_path, renamed_due_to_conflict = filename_fixer.move_to_library(
                 source_path=original_path,
                 artist=artist_for_filename,
                 album=album_info.get("album"),
@@ -943,6 +943,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 genre_source=genres_result.source if genres_result else None,
                 filepath=original_path,
                 library_path=library_path,
+                renamed_due_to_conflict=renamed_due_to_conflict,
                 original_metadata=track_metadata,
                 artist_source=artist_source,
                 title_cleaned=clean_title != raw_title,

@@ -104,6 +104,12 @@ class MetadataResult:
     # Technische Daten
     filepath: Optional[Path] = None
     library_path: Optional[Path] = None
+    # P1-Fund (Post-Baseline-v4 Health & Risk Audit, Finding 2):
+    # True, wenn move_to_library() den Zieldateinamen wegen einer bereits
+    # existierenden Datei umbenennen musste ("Titel (1).ext") - ermöglicht
+    # dem darauf wartenden Cleanup in klassen/download_handler.py, tatsächlich
+    # zu greifen (vorher nie gesetzt, siehe utils/filenamefixer.py).
+    renamed_due_to_conflict: bool = False
     original_metadata: Optional[Dict] = field(default_factory=dict)
 
     # Verarbeitungsdetails
