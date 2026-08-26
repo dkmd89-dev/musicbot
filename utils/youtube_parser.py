@@ -187,13 +187,31 @@ def _extract_features(song_title: str, logger) -> Tuple[str, List[str]]:
     if not song_title:
         return song_title, []
 
+    # META-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2N_RES01_AUDIT.md-
+    # Nachfolgephase, Metadata-Quality-Read-Only-Audit vom 2026-08-26): "feat"/
+    # "ft" verlangten bisher nach dem optionalen Punkt zwingend ein Leerzeichen
+    # (\s+) - "feat.Artist"/"ft.Artist" (ohne Leerzeichen) wurde dadurch NICHT
+    # als Featuring erkannt. Alternation analog zu DUP-04
+    # (services/duplicate/detector.py): nach "feat"/"ft" entweder (a) Punkt +
+    # optionaler Whitespace, oder (b) mindestens ein Leerzeichen (ohne Punkt) -
+    # verhindert weiterhin Fehltreffer wie "Featherweight" (weder Punkt noch
+    # Leerzeichen folgt dort direkt auf "Feat").
     feature_patterns = [
         # In runden Klammern (höchste Priorität)
-        (r"\(\s*(?:feat\.?|ft\.?|featuring|with|pres\.?)\s+(.+?)\s*\)", "()"),
+        (
+            r"\(\s*(?:feat(?:\.\s*|\s+)|ft(?:\.\s*|\s+)|featuring\s+|with\s+|pres(?:\.\s*|\s+))(.+?)\s*\)",
+            "()",
+        ),
         # In eckigen Klammern
-        (r"\[\s*(?:feat\.?|ft\.?|featuring)\s+(.+?)\s*\]", "[]"),
+        (
+            r"\[\s*(?:feat(?:\.\s*|\s+)|ft(?:\.\s*|\s+)|featuring\s+)(.+?)\s*\]",
+            "[]",
+        ),
         # Ohne Klammern (niedrigste Priorität) - NUR am Ende des Titels
-        (r"\s+(?:feat\.?|ft\.?|featuring|with|pres\.?)\s+(.+?)$", "plain"),
+        (
+            r"\s+(?:feat(?:\.\s*|\s+)|ft(?:\.\s*|\s+)|featuring\s+|with\s+|pres(?:\.\s*|\s+))(.+?)$",
+            "plain",
+        ),
     ]
 
     features_found = []
@@ -250,8 +268,10 @@ def _parse_artist_and_title(
         return combined_artist, song, 0.95
 
     # 🔥 "Artist1 feat. Artist2 - Title" Format
+    # META-01: gleiche Alternation wie in _extract_features() oben - siehe
+    # dortiger Kommentar.
     feat_in_artist_pattern = re.compile(
-        r"^(.+?)\s+(?:feat\.?|ft\.?|featuring|with)\s+(.+?)\s*[-–—|:]\s*(.+)$",
+        r"^(.+?)\s+(?:feat(?:\.\s*|\s+)|ft(?:\.\s*|\s+)|featuring\s+|with\s+)(.+?)\s*[-–—|:]\s*(.+)$",
         re.IGNORECASE,
     )
     match = feat_in_artist_pattern.match(title)
