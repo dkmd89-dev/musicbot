@@ -110,6 +110,7 @@ def build_playlist_track_result(
         cover_embedded=metadata_result.cover_embedded,
         is_duplicate=metadata_result.is_duplicate,
         from_cache=metadata_result.from_cache,
+        renamed_due_to_conflict=metadata_result.renamed_due_to_conflict,
         enhanced_processor_ref=enhanced_processor_ref,
     )
     return dl_result.to_dict()
@@ -159,6 +160,7 @@ def build_single_track_result(
         cover_embedded=metadata_result.cover_embedded,
         is_duplicate=metadata_result.is_duplicate,
         from_cache=metadata_result.from_cache,
+        renamed_due_to_conflict=metadata_result.renamed_due_to_conflict,
         enhanced_processor_ref=enhanced_processor_ref,
     )
     return dl_result.to_dict()

@@ -224,6 +224,51 @@ class TestProcessTrackMetadataPlaylist:
         assert "lyrics" not in result
         assert "filepath" not in result
 
+    def test_renamed_due_to_conflict_is_propagated(self):
+        """
+        P1-Fund (Post-Baseline-v4 Health & Risk Audit, Finding 2):
+        renamed_due_to_conflict aus dem MetadataResult (gesetzt von
+        move_to_library() bei einer Zieldateinamens-Kollision) muss bis ins
+        Ergebnis-Dict durchgereicht werden - der darauf wartende Cleanup in
+        klassen/download_handler.py::handle_youtube_links() liest genau
+        dieses Feld.
+        """
+        metadata_result = make_metadata_result(renamed_due_to_conflict=True)
+        enhanced_processor = make_enhanced_processor(metadata_result)
+
+        result = run_async(
+            _process_track_metadata(
+                track_info={"title": "T"},
+                downloaded_file="/tmp/x.m4a",
+                enhanced_processor=enhanced_processor,
+                filename_fixer=Mock(),
+                album_name="Album",
+                dominant_artist=None,
+                playlist_year=2000,
+                track_idx=1,
+            )
+        )
+
+        assert result["renamed_due_to_conflict"] is True
+
+    def test_renamed_due_to_conflict_defaults_to_false(self):
+        enhanced_processor = make_enhanced_processor()
+
+        result = run_async(
+            _process_track_metadata(
+                track_info={"title": "T"},
+                downloaded_file="/tmp/x.m4a",
+                enhanced_processor=enhanced_processor,
+                filename_fixer=Mock(),
+                album_name="Album",
+                dominant_artist=None,
+                playlist_year=2000,
+                track_idx=1,
+            )
+        )
+
+        assert result["renamed_due_to_conflict"] is False
+
     def test_metadata_failure_returns_error_result(self):
         failed_result = make_metadata_result(success=False, error="Boom")
         enhanced_processor = make_enhanced_processor(failed_result)
@@ -354,6 +399,29 @@ class TestProcessSingleDownloadCacheMiss:
         )
 
         assert result["library_path"] is None
+
+    def test_renamed_due_to_conflict_is_propagated(self, tmp_path):
+        """
+        P1-Fund (Post-Baseline-v4 Health & Risk Audit, Finding 2), Gegenstueck
+        zum Playlist-Test: auch im Single-Download-Pfad muss
+        renamed_due_to_conflict aus dem MetadataResult durchgereicht werden.
+        """
+        metadata_result = make_metadata_result(renamed_due_to_conflict=True)
+        enhanced_processor = make_enhanced_processor_for_single(
+            tmp_path, metadata_result
+        )
+
+        result = run_async(
+            _process_single_download(
+                url="https://youtube.com/watch?v=abc",
+                video_info={"title": "T"},
+                ydl_opts={},
+                enhanced_processor=enhanced_processor,
+                filename_fixer=Mock(),
+            )
+        )
+
+        assert result["renamed_due_to_conflict"] is True
 
     def test_track_number_and_playlist_album_are_always_default(self, tmp_path):
         """

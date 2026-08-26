@@ -235,7 +235,7 @@ class TestMoveToLibrary:
     def test_existing_destination_is_renamed_not_overwritten(self, tool, tmp_path):
         source1 = tmp_path / "source1.mp3"
         source1.write_bytes(b"first file content")
-        first_target = tool.move_to_library(
+        first_target, first_renamed = tool.move_to_library(
             source1,
             artist="Some Artist",
             title="Some Song",
@@ -243,10 +243,11 @@ class TestMoveToLibrary:
             is_single=True,
         )
         assert first_target.read_bytes() == b"first file content"
+        assert first_renamed is False
 
         source2 = tmp_path / "source2.mp3"
         source2.write_bytes(b"second file content")
-        second_target = tool.move_to_library(
+        second_target, second_renamed = tool.move_to_library(
             source2,
             artist="Some Artist",
             title="Some Song",
@@ -261,12 +262,17 @@ class TestMoveToLibrary:
         assert first_target.exists()
         assert first_target.read_bytes() == b"first file content"
         assert second_target.read_bytes() == b"second file content"
+        # P1-Fund (Post-Baseline-v4 Health & Risk Audit, Finding 2): die
+        # Kollision muss jetzt tatsaechlich signalisiert werden - vorher gab
+        # es dieses zweite Rueckgabeelement gar nicht.
+        assert second_renamed is True
 
     def test_move_uses_source_extension(self, tool, tmp_path):
         source = tmp_path / "source.flac"
         source.write_bytes(b"data")
-        target = tool.move_to_library(source, artist="Artist", title="Title", is_single=True)
+        target, renamed = tool.move_to_library(source, artist="Artist", title="Title", is_single=True)
         assert target.suffix == ".flac"
+        assert renamed is False
 
 
 class TestMoveToLibraryAtomicity:
@@ -344,9 +350,10 @@ class TestMoveToLibraryAtomicity:
 
         monkeypatch.setattr(Path, "unlink", selective_failing_unlink)
 
-        target = tool.move_to_library(
+        target, renamed = tool.move_to_library(
             source, artist="Artist", title="Title", is_single=True
         )
 
         assert target.exists()
         assert target.read_bytes() == b"real audio bytes"
+        assert renamed is False

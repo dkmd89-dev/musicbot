@@ -71,6 +71,10 @@ class DownloadResult:
     # Status-Flags
     is_duplicate: bool = False
     from_cache: bool = False
+    # P1-Fund (Post-Baseline-v4 Health & Risk Audit, Finding 2): signalisiert
+    # eine Zieldateinamens-Kollision in move_to_library() - konsumiert vom
+    # Cleanup in klassen/download_handler.py::handle_youtube_links().
+    renamed_due_to_conflict: bool = False
 
     # Fehler-Information (nur bei success=False relevant)
     error: Optional[str] = None
@@ -106,6 +110,7 @@ class DownloadResult:
             "cover_embedded": self.cover_embedded,
             "is_duplicate": self.is_duplicate,
             "from_cache": self.from_cache,
+            "renamed_due_to_conflict": self.renamed_due_to_conflict,
             "error": self.error,
         }
         if self.enhanced_processor_ref is not None:
