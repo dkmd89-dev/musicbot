@@ -671,27 +671,15 @@ class EnhancedStatusHandler:
                 "Temp": self.config.TEMP_DIR,
             }
 
-            storage_text = "📁 **Storage-Status**\n\n"
-
-            total_used = 0
-            for name, path in directories.items():
-                try:
-                    if path.exists():
-                        size = sum(
-                            f.stat().st_size for f in path.rglob("*") if f.is_file()
-                        )
-                        size_gb = size / (1024**3)
-                        total_used += size
-
-                        storage_text += f"📦 **{name}:**\n"
-                        storage_text += f"   {size_gb:.2f} GB\n"
-                        storage_text += f"   {path}\n\n"
-                    else:
-                        storage_text += f"❌ **{name}:** Nicht gefunden\n\n"
-                except Exception as e:
-                    storage_text += f"⚠️ **{name}:** Fehler beim Lesen\n\n"
-
-            storage_text += f"**Gesamt verwendet:** {total_used / (1024**3):.2f} GB"
+            # INV-01 (docs/MusicBot_ARCHITECTURE_EVOLUTION.md, Abschnitt 27,
+            # P1): rglob()+stat() ueber 5 Verzeichnisse inkl. LIBRARY_DIR -
+            # real gemessen 9,46s allein fuer die Library dieser Umgebung.
+            # Ohne run_in_executor() blockierte das den gesamten Event-Loop
+            # fuer alle Telegram-Nutzer. Gleiches Muster wie
+            # handlers/admin/backup_handler.py::_dir_size().
+            storage_text = await asyncio.get_event_loop().run_in_executor(
+                None, self._build_storage_report, directories
+            )
 
             keyboard = InlineKeyboardMarkup(
                 [
@@ -721,6 +709,36 @@ class EnhancedStatusHandler:
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Storage-Status: {e}")
             await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
+
+    @staticmethod
+    def _build_storage_report(directories: dict) -> str:
+        """
+        Sync-Kern von show_storage_status() - traversiert die uebergebenen
+        Verzeichnisse (rglob+stat) und baut den fertigen Report-Text. Laeuft
+        via run_in_executor() in einem Worker-Thread (INV-01, siehe Aufrufer).
+        """
+        storage_text = "📁 **Storage-Status**\n\n"
+        total_used = 0
+
+        for name, path in directories.items():
+            try:
+                if path.exists():
+                    size = sum(
+                        f.stat().st_size for f in path.rglob("*") if f.is_file()
+                    )
+                    size_gb = size / (1024**3)
+                    total_used += size
+
+                    storage_text += f"📦 **{name}:**\n"
+                    storage_text += f"   {size_gb:.2f} GB\n"
+                    storage_text += f"   {path}\n\n"
+                else:
+                    storage_text += f"❌ **{name}:** Nicht gefunden\n\n"
+            except Exception:
+                storage_text += f"⚠️ **{name}:** Fehler beim Lesen\n\n"
+
+        storage_text += f"**Gesamt verwendet:** {total_used / (1024**3):.2f} GB"
+        return storage_text
 
     # ==================== UTILITY FUNCTIONS ====================
 

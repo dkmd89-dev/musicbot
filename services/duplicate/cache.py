@@ -12,6 +12,7 @@ unverändert in Verhalten und Signatur übernommen.
 
 import hashlib
 import json
+import time
 from pathlib import Path
 from typing import Dict, Optional, Any
 from datetime import datetime, timedelta
@@ -104,7 +105,27 @@ class DuplicateCache:
         return {}
 
     def _save_caches(self):
-        """Speichert beide Caches"""
+        """
+        Speichert beide Caches.
+
+        INV-02 (docs/MusicBot_ARCHITECTURE_EVOLUTION.md, Abschnitt 27, P0-B):
+        vorher direktes open(mode="w") - ein Prozessabbruch waehrend
+        json.dump() konnte url_duplicates.json/content_duplicates.json leeren
+        oder korrumpieren. Jetzt: write-tmp + atomarer rename, analog zu
+        MetadataCache.store() (utils/metadata_cache.py). INV-01 (Event-Loop-
+        Blockierung) wird hier bewusst NICHT behoben: eine to_thread()-
+        Umstellung wuerde eine Async-Kaskade durch DuplicateDetector,
+        EnhancedDuplicateHandler (Telegram-Schicht) und die Aufrufer in
+        klassen/download_handler.py erzwingen ("mass conversion" - ausserhalb
+        des Scopes dieser Phase), waehrend die tatsaechliche Blockierungsdauer
+        bei den hier typischen Cache-Groessen nicht als meaningful gemessen
+        ist (im Gegensatz zu den real gemessenen backup_handler.py/
+        enhanced_status_handler.py-Funden). Da add_entry()/_save_caches()
+        weiterhin vollstaendig synchron (kein await dazwischen) im
+        Event-Loop-Thread laufen, bleibt die bisherige, zufaellige
+        Serialisierung zwischen gleichzeitigen Downloads erhalten - der
+        atomare Schreibvorgang fuehrt dadurch KEINE neue Race Condition ein.
+        """
         try:
             url_data = {
                 url_hash: {
@@ -119,8 +140,7 @@ class DuplicateCache:
                 }
                 for url_hash, entry in self.url_cache.items()
             }
-            with open(self.url_cache_file, "w", encoding="utf-8") as f:
-                json.dump(url_data, f, indent=2, ensure_ascii=False)
+            self._write_json_atomic(self.url_cache_file, url_data)
 
             content_data = {
                 content_hash: {
@@ -135,12 +155,26 @@ class DuplicateCache:
                 }
                 for content_hash, entry in self.content_cache.items()
             }
-            with open(self.content_cache_file, "w", encoding="utf-8") as f:
-                json.dump(content_data, f, indent=2, ensure_ascii=False)
+            self._write_json_atomic(self.content_cache_file, content_data)
 
             self.logger.debug("💾 Duplikat-Caches erfolgreich gespeichert")
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Speichern der Caches: {e}")
+
+    @staticmethod
+    def _write_json_atomic(path: Path, data: dict) -> None:
+        """Schreibt JSON atomar (write-tmp -> rename)."""
+        tmp_path = path.with_suffix(f".tmp_{int(time.time() * 1000)}")
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            tmp_path.replace(path)
+        except Exception:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
 
     def get_url_hash(self, url: str) -> str:
         # Nutzt dieselbe YouTube-bewusste Normalisierung wie check_url_duplicate()

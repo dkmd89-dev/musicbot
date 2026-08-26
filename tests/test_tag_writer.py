@@ -271,20 +271,38 @@ class TestWriteTagsLyricsAndCover:
 
 
 class TestWriteTagsM4aGracefulFailure:
-    def test_invalid_m4a_bytes_are_caught_and_logged_without_crash(self, writer, tmp_path):
+    def test_invalid_m4a_bytes_raise_log_and_leave_original_untouched(
+        self, writer, tmp_path
+    ):
+        """
+        AE-11 (docs/MusicBot_ARCHITECTURE_EVOLUTION.md): write_tags() darf
+        einen fehlgeschlagenen Tagging-Vorgang nicht mehr als Erfolg
+        erscheinen lassen (verschluckte Exception) - die Exception muss
+        jetzt propagieren, damit der uebergeordnete FINDING-2-Cleanup
+        (enhanced_metadata_processor.py) tatsaechlich erreicht wird.
+        """
         path = tmp_path / "track.m4a"
-        path.write_bytes(b"not-a-real-m4a-container")
+        original_bytes = b"not-a-real-m4a-container"
+        path.write_bytes(original_bytes)
 
-        writer.write_tags(
-            target_path=path,
-            artist="Artist",
-            title="Title",
-            album_info={},
-            track_number=None,
-            genres_result=None,
-        )
+        with pytest.raises(Exception):
+            writer.write_tags(
+                target_path=path,
+                artist="Artist",
+                title="Title",
+                album_info={},
+                track_number=None,
+                genres_result=None,
+            )
 
         writer.logger.error.assert_called_once()
+        assert path.read_bytes() == original_bytes, (
+            "Original muss bei einem Tagging-Fehler byteidentisch bleiben"
+        )
+        leftover_tmp_files = list(tmp_path.glob(".track.m4a.tmp_*"))
+        assert not leftover_tmp_files, (
+            f"Temporaere Datei(en) nach Fehler nicht aufgeraeumt: {leftover_tmp_files}"
+        )
 
 
 class TestExtractGenreParts:

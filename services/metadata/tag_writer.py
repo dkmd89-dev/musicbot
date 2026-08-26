@@ -1,6 +1,8 @@
 # services/metadata/tag_writer.py
 # -*- coding: utf-8 -*-
 
+import shutil
+import time
 from typing import List, Optional, Tuple
 
 from logger import get_module_logger
@@ -47,13 +49,45 @@ class TagWriter:
         all_artists = [artist] + feat_artists
         artists_semicolon = "; ".join(all_artists)
 
+        ext = target_path.suffix.lower()
+        if ext not in (".m4a", ".mp4", ".m4v", ".mp3"):
+            self.logger.warning(f"⚠️ Unbekanntes Format: {ext}")
+            return
+
+        # AE-11 (docs/MusicBot_ARCHITECTURE_EVOLUTION.md): mutagen schreibt
+        # via audio.save() in-place in die bereits ausgelieferte Library-Datei
+        # (rb+, chunk-basiertes Byte-Shifting, kein Tempfile/Rename - direkt
+        # im installierten mutagen-Quellcode verifiziert). Ein Fehler oder
+        # Prozessabbruch waehrend dieses Vorgangs konnte die zuvor gueltige
+        # Datei beschaedigen (empirisch reproduziert: mutagen/ffprobe meldeten
+        # die beschaedigte Datei faelschlich als gesund, ein echter
+        # ffmpeg-Decode-Pass deckte die Korruption auf). Fix: wie bereits in
+        # utils/filenamefixer.py::move_to_library() etabliert - auf einer
+        # temporaeren Sibling-Kopie (garantiert selbes Verzeichnis/Dateisystem)
+        # taggen, erst bei Erfolg atomar per Path.replace() uebernehmen.
+        # target_path bleibt bei jedem Fehler byteidentisch zum Ausgangszustand.
+        #
+        # Bewusst OHNE fsync(): auf demselben Filesystem wie LIBRARY_DIR
+        # gemessen kostet fsync() 77-500ms je nach Dateigroesse (vs. <20ms
+        # fuer den reinen Copy+Tag-Vorgang) - write_tags() laeuft synchron
+        # direkt im Event-Loop-Thread (kein asyncio.to_thread()), fsync()
+        # wuerde also eine neue INV-01-Verletzung einfuehren. Schuetzt damit
+        # gezielt gegen Exception/Prozessabbruch waehrend des Schreibens
+        # (der bestaetigte, reproduzierte AE-11-Befund) - ein Maschinen-
+        # absturz/Stromausfall bleibt ein bereits im gesamten bestehenden
+        # Schreibpfad (auch move_to_library()) akzeptiertes Restrisiko,
+        # keine neue, inkonsistente Ausnahme nur fuer diese eine Datei.
+        tmp_path = target_path.with_name(
+            f".{target_path.name}.tmp_{int(time.time() * 1000)}"
+        )
+
         try:
-            ext = target_path.suffix.lower()
+            shutil.copy2(target_path, tmp_path)
 
             if ext in (".m4a", ".mp4", ".m4v"):
                 from mutagen.mp4 import MP4, MP4Cover, MP4FreeForm
 
-                audio = MP4(target_path)
+                audio = MP4(tmp_path)
                 audio["©nam"] = [title]
                 audio["©ART"] = all_artists
                 if album_info.get("album"):
@@ -110,11 +144,11 @@ class TagWriter:
                 )
 
                 try:
-                    audio = ID3(target_path)
+                    audio = ID3(tmp_path)
                 except Exception:
                     audio = ID3()
-                    audio.save(target_path)
-                    audio = ID3(target_path)
+                    audio.save(tmp_path)
+                    audio = ID3(tmp_path)
 
                 audio.add(TIT2(encoding=3, text=title))
                 audio.add(TPE1(encoding=3, text=all_artists))
@@ -147,9 +181,8 @@ class TagWriter:
                     audio.add(TXXX(encoding=3, desc="ARTISTS", text=artists_semicolon))
 
                 audio.save()
-            else:
-                self.logger.warning(f"⚠️ Unbekanntes Format: {ext}")
-                return
+
+            tmp_path.replace(target_path)
 
             log_msg = f"📝 Metadaten für '{title}' geschrieben"
             if lyrics:
@@ -162,6 +195,13 @@ class TagWriter:
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Schreiben: {e}")
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError as cleanup_err:
+                self.logger.error(
+                    f"❌ Konnte temporäre Datei nicht entfernen: {cleanup_err}"
+                )
+            raise
 
     # ─────────────────────────────────────────────────────────────────────────
     # Interne Helfer

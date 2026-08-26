@@ -10,6 +10,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 import json
+import time
 
 from logger import get_module_logger
 
@@ -44,17 +45,32 @@ class UserManagementHandler:
             return {}
 
     def _save_users(self, users: Dict[str, Any]) -> bool:
-        """Speichert User-Daten und aktualisiert Cache"""
+        """
+        Speichert User-Daten und aktualisiert Cache.
+
+        INV-02 (docs/MusicBot_ARCHITECTURE_EVOLUTION.md, Abschnitt 27, P0-C):
+        vorher direktes open(mode="w") - ein Prozessabbruch waehrend
+        json.dump() konnte data/user_data.json (Rollen/Berechtigungen,
+        sicherheitsrelevant) leeren oder korrumpieren, mit dem Risiko eines
+        Admin-/Owner-Lockouts. Jetzt: write-tmp + atomarer rename, analog zu
+        MetadataCache.store() (utils/metadata_cache.py).
+        """
+        tmp_path = self.user_data_file.with_suffix(f".tmp_{int(time.time() * 1000)}")
         try:
             self.user_data_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.user_data_file, "w", encoding="utf-8") as f:
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(users, f, indent=2, ensure_ascii=False)
+            tmp_path.replace(self.user_data_file)
 
             # Cache aktualisieren
             self.user_data_cache = users
             return True
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Speichern der User-Daten: {e}")
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
             return False
 
     # ==================== NEU: NAVIDROME-USER MANAGEMENT ====================
