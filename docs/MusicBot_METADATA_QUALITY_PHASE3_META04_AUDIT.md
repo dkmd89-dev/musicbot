@@ -5,7 +5,7 @@
 > erstmals identifiziert). Freigabe zur Tiefenanalyse und Nutzer-
 > Bestätigung der korrekten Schreibweise für "makko" am 2026-08-26 erhalten.
 
-**Status: META-04 ("makko") — ABGESCHLOSSEN (committed). "t-Low" und
+**Status: META-04 ("makko" und "t-low") — ABGESCHLOSSEN (committed).
 "Max Giesinger" — OFFEN, Rückfrage an Nutzer ausstehend.**
 
 ---
@@ -42,10 +42,11 @@ Künstlername ist. Die 7 „Makko"-Alben in der Library entsprechen dem
 aktuellen (fehlerhaften) Override-Verhalten; das 1 „makko"-Album ist
 vermutlich vor Einführung dieses Overrides entstanden (Altlast).
 
-Analog dazu enthält dieselbe Datei `"t-low": "t-Low"` — erklärt
-strukturell identisch die gefundene Aufspaltung „t-Low" (7 Alben, aktuell)
-vs. „T-Low" (1 Datei, Altlast). Ob „t-Low" die vom Nutzer gewünschte
-Schreibweise ist, wurde **nicht** bestätigt — siehe Abschnitt 6.
+Analog dazu enthielt dieselbe Datei `"t-low": "t-Low"` — erklärt
+strukturell identisch die gefundene Aufspaltung „t-Low" (7 Alben, damals
+aktuell) vs. „T-Low" (1 Datei, Altlast). Nutzer hat bestätigt: die
+tatsächliche Eigenschreibweise ist „t-low" (durchgehend klein) — auch
+„t-Low" war also bereits falsch. Fix siehe Abschnitt 4b.
 
 ---
 
@@ -90,31 +91,45 @@ ein versehentliches Zurücksetzen dieser Korrektur).
 
 ---
 
+## 4b. Fix — „t-low" (Nachtrag, nach Nutzerbestätigung)
+
+```diff
+-  "t-low": "t-Low",
++  "t-low": "t-low",
+```
+
+Vor-Fix-Charakterisierung: `normalize("t-low"/"t-Low"/"T-Low"/"T-LOW")`
+lieferte einheitlich `"t-Low"`. `tests/test_artist_overrides_t_low_case_preserve.py`
+gegen den ungefixten Stand: **1 failed, 3 passed** (identisches Muster wie
+beim makko-Fix).
+
+**Neue Tests:** `tests/test_artist_overrides_t_low_case_preserve.py` — 4
+Tests, identischer Aufbau wie beim makko-Fix.
+
+---
+
 ## 5. Testergebnisse
 
 ```
 STUFE 1 (gezielt):
-tests/test_artist_overrides_makko_case_preserve.py:   4 passed
+tests/test_artist_overrides_makko_case_preserve.py:    4 passed
+tests/test_artist_overrides_t_low_case_preserve.py:    4 passed
 
 STUFE 2 (direkte Regression):
-tests/test_artist_normalizer.py:                     17 passed
-tests/test_metadata_modules.py:                 15 passed (11 subtests)
+tests/test_artist_normalizer.py:                      17 passed
+tests/test_metadata_modules.py:                  15 passed (11 subtests)
 
 STUFE 3 (thematische Suite — Metadata + Artist + Genre + Duplicate):
-348 passed, 11 subtests passed
+352 passed, 11 subtests passed
 
 STUFE 4 (vollständige Suite, am Ende der Arbeitsphase):
-1234 passed, 1 warning (vorbestehend, unabhängig), 19 subtests passed
-(Baseline vor diesem Fix: 1230 passed → +4 neue Tests, 0 Regressionen)
+1238 passed, 1 warning (vorbestehend, unabhängig), 19 subtests passed
+(Baseline vor beiden Fixes: 1230 passed → +8 neue Tests, 0 Regressionen)
 ```
 
 ---
 
 ## 6. Offen — Rückfrage an Nutzer
-
-**„t-Low"**: aktueller Override-Wert unverändert gelassen (keine explizite
-Bestätigung erhalten, ob „t-Low" — mit kleinem „t", großem „L" — die vom
-Nutzer gewünschte Schreibweise ist, oder ob eine andere Form korrekt wäre).
 
 **„Max Giesinger"**: vom Nutzer als „wird ein Problem sein" markiert,
 konkrete Art des Problems noch nicht spezifiziert — keine Änderung ohne
@@ -130,10 +145,10 @@ CLAUDE.md explizite gesonderte Freigabe.
 
 ## 7. Abschluss
 
-META-04 gilt für den Teilaspekt „makko" hiermit als **abgeschlossen**.
-Root Cause vollständig identifiziert (Mapping-Datenfehler, kein
-Code-Bug), Vor-Fix-Charakterisierung erfolgreich, Fix minimal (ein
-JSON-Wert), vollständige Suite grün (1234 passed, 0 failed, 0 errors).
-„t-Low"/„Max Giesinger" sowie die Library-Konsolidierung bleiben offen
-bis zur Nutzerrückmeldung. Commit/Push/PR/Merge auf explizite
-Nutzerfreigabe hin durchgeführt (siehe Git-Historie).
+META-04 gilt für die Teilaspekte „makko" und „t-low" hiermit als
+**abgeschlossen**. Root Cause vollständig identifiziert (Mapping-
+Datenfehler, kein Code-Bug), Vor-Fix-Charakterisierung für beide Fälle
+erfolgreich, Fix jeweils minimal (ein JSON-Wert), vollständige Suite grün
+(1238 passed, 0 failed, 0 errors). „Max Giesinger" sowie die Library-
+Konsolidierung bleiben offen bis zur Nutzerrückmeldung. Commit/Push/PR/
+Merge auf explizite Nutzerfreigabe hin durchgeführt (siehe Git-Historie).
