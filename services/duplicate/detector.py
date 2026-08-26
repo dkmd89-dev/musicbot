@@ -276,11 +276,17 @@ class DuplicateDetector:
         patterns_to_remove = [
             r"\(Official.*?\)",
             r"\[.*?\]",
-            r"\(feat\.?\s+.*?\)",
-            r"\(ft\.?\s+.*?\)",
-            r"\(.*?Version\)",
-            r"\(Live.*?\)",
-            r"\(Remix\)",
+            # DUP-04 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+            # vorher zwingend \s+ nach "feat"/"ft" - "Featuring" und
+            # "feat.Someone"/"ft.Someone" (ohne Leerzeichen) wurden dadurch
+            # nicht erkannt (False Negative). Jede Alternative unten
+            # konsumiert mindestens ein echtes, unterscheidendes Zeichen
+            # (Punkt, "uring" oder Whitespace) - bewusst KEIN \s* anstelle
+            # von \s+, da das eine Nullbreiten-Luecke oeffnen wuerde: Inhalte
+            # wie "(Featherweight Mix)" muessen unangetastet bleiben (kein
+            # Kollaborations-Credit, nur zufaelliges "Feat"-Praefix).
+            r"\(feat(?:\.\s*|uring\s*|\s+).*?\)",
+            r"\(ft(?:\.\s*|\s+).*?\)",
         ]
         for pattern in patterns_to_remove:
             cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
