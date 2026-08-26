@@ -104,6 +104,12 @@ class MetadataResult:
     # Technische Daten
     filepath: Optional[Path] = None
     library_path: Optional[Path] = None
+    # DUP-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+    # eigene Quell-URL des Tracks (aus track_metadata["webpage_url"]) - wird
+    # fuer die Duplicate-Cache-Registrierung von Playlist-Tracks benoetigt,
+    # da diese (anders als Single-Downloads) keine eigene Registrierung ueber
+    # klassen/download_handler.py::handle_single_track_success() erhalten.
+    url: Optional[str] = None
     # P1-Fund (Post-Baseline-v4 Health & Risk Audit, Finding 2):
     # True, wenn move_to_library() den Zieldateinamen wegen einer bereits
     # existierenden Datei umbenennen musste ("Titel (1).ext") - ermöglicht

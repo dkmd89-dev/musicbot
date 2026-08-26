@@ -44,6 +44,7 @@ Log-Konventionen (unverändert über alle Phasen):
 import asyncio
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from urllib.parse import parse_qs, urlparse
 
 from config import Config
 from utils.singleton import SingletonMixin
@@ -52,6 +53,7 @@ from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor as MetadataProcessorCore,
 )
 from services.metadata.models import MetadataResult
+from .download_artifact_cleanup import cleanup_single_download_artifact
 from .errors import DownloadError
 from .metadata_result_translator import (
     build_playlist_track_result,
@@ -72,6 +74,36 @@ from services.downloader.download.year_resolver import YearResolver
 from services.downloader.download.channel_router import ChannelRouter
 from services.downloader.download.download_executor import DownloadExecutor
 from services.downloader.download.formatters import ProgressFormatter
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# URL-ERKENNUNG: YouTube-Mix-/Radio-Pseudo-Playlists
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# DUP-06 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md): yt-dlp
+# behandelt jede URL mit list=... (echte Playlist "PL..." UND automatisch
+# generierte Mix-/Radio-Liste "RD...") ueber denselben Playlist-faehigen
+# Extractor (YoutubeTabIE) - ohne noplaylist=True entsteht in beiden Faellen
+# ein entries-tragendes Ergebnis (verifiziert gegen den installierten
+# yt-dlp-Quellcode: extractor/youtube/_base.py::_PLAYLIST_ID_RE listet "RD"
+# als eigenes, von "PL" unterschiedenes Praefix; extractor/common.py::
+# _yes_playlist() liest genau den noplaylist-Parameter). Gemeinsam genutzt
+# von enhanced_download_with_retry() (dieses Modul) und
+# klassen/download_handler.py::_probe_artist_title_for_duplicate_check() -
+# eine einzige Erkennungsfunktion, damit beide Stellen niemals auseinanderlaufen.
+_YOUTUBE_MIX_LIST_ID_PREFIX = "RD"
+
+
+def is_youtube_mix_url(url: str) -> bool:
+    """True, wenn die URL einen list=-Query-Parameter besitzt, dessen Wert
+    mit "RD" beginnt (yt-dlps Praefix fuer automatisch generierte Mix-/
+    Radio-Listen). Bewusst case-sensitiv, wie yt-dlps eigene Konvention.
+    Echte Playlists ("list=PL...") liefern bewusst False."""
+    try:
+        list_values = parse_qs(urlparse(url.strip()).query).get("list", [])
+    except Exception:
+        return False
+    return bool(list_values) and list_values[0].startswith(_YOUTUBE_MIX_LIST_ID_PREFIX)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -276,6 +308,16 @@ async def enhanced_download_with_retry(
 
     # ── 2. yt-dlp Optionen ────────────────────────────────────────────────────
     ydl_opts = enhanced_processor.download_executor.build_ydl_opts(config)
+    if is_youtube_mix_url(url):
+        # DUP-06: verhindert, dass yt-dlp fuer eine automatisch generierte
+        # Mix-/Radio-Liste (list=RD...) ueberhaupt ein entries-tragendes
+        # Playlist-Ergebnis erzeugt - die bestehende entries-Verzweigung
+        # weiter unten bleibt dadurch unveraendert, sie sieht fuer diese
+        # URLs schlicht kein entries mehr.
+        ydl_opts = {**ydl_opts, "noplaylist": True}
+        logger.info(
+            "🎯 [DL] list=RD…-URL erkannt (Mix/Radio) — noplaylist=True gesetzt"
+        )
 
     # ── 3. Retry-Loop ─────────────────────────────────────────────────────────
     last_error: Optional[str] = None
@@ -535,11 +577,19 @@ async def _process_playlist_download(
                 continue
 
             # ── DOWNLOAD ──────────────────────────────────────────────────────
+            # PL-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+            # download_single_track() besitzt eine echte Retry-Schleife, der
+            # Funktions-Default max_retries=1 (kein Retry) griff hier bisher
+            # mangels Uebergabe fuer jeden Playlist-Track - waehrend Single-
+            # Downloads bereits 3 Versuche ueber enhanced_download_with_retry()
+            # erhalten. Explizit freigegebene fachliche Entscheidung: Playlist-
+            # Tracks erhalten denselben festen Wert wie der Single-Pfad.
             downloaded_file = await enhanced_processor.download_executor.download_single_track(
                 track_info=track_info,
                 ydl_opts=ydl_opts,
                 track_idx=idx,
                 download_dir=enhanced_processor.config.DOWNLOAD_DIR,
+                max_retries=3,
             )
 
             if not downloaded_file:
@@ -583,6 +633,26 @@ async def _process_playlist_download(
                     enhanced_processor.session_stats["title_cleanups"] += 1
 
             logger.info(ProgressFormatter.track_result_block(idx, track_result))
+
+        except asyncio.CancelledError as ce:
+            # DL-08 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md,
+            # Abschnitt 6): CancelledError erbt seit Python 3.8 von BaseException,
+            # nicht von Exception - wuerde ohne diesen Zweig die Funktion sofort
+            # verlassen und die bereits fuer vorherige Tracks gesammelten `results`
+            # unwiederbringlich verlieren, bevor sie
+            # klassen/download_handler.py::_register_playlist_track_duplicates()
+            # erreichen. Bereits erfolgreiche Tracks liegen zu diesem Zeitpunkt
+            # real in der Library - ohne diese Weitergabe wuerde ein spaeterer
+            # erneuter Download desselben Tracks nicht als Duplikat erkannt.
+            # Das Attribut ist der einzige Weg, die Teilergebnisse ueber die
+            # Exception-Propagation hinweg an handle_youtube_links() (Aufrufer
+            # mehrere Ebenen hoeher) weiterzureichen, ohne Rueckgabevertraege
+            # von enhanced_download_with_retry()/download_audio() zu aendern -
+            # beide fangen CancelledError bereits jetzt nicht ab und lassen sie
+            # samt Attribut unveraendert durch. Cancellation wird NICHT
+            # unterdrueckt: die Exception wird unveraendert erneut geworfen.
+            ce.partial_playlist_results = results
+            raise
 
         except Exception as e:
             enhanced_processor.session_stats["failed_downloads"] += 1
@@ -675,6 +745,13 @@ async def _process_track_metadata(
         "uploader": track_info.get("uploader"),
         "channel": track_info.get("channel") or track_info.get("uploader"),
         "upload_date": track_info.get("upload_date"),
+        # DUP-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+        # eigene Video-URL des Tracks - dieselbe Quelle, die
+        # download_executor.py::download_single_track() bereits fuer den
+        # eigentlichen Download verwendet (track_info["webpage_url"]/["url"]).
+        # Wird fuer die spaetere Duplicate-Cache-Registrierung benoetigt -
+        # vorher ging dieses Feld beim Uebergang zu MetadataResult verloren.
+        "webpage_url": track_info.get("webpage_url") or track_info.get("url"),
         "playlist_album": album_name,
         "playlist_channel": playlist_channel or "",
         "playlist_name": album_name,
@@ -798,9 +875,34 @@ async def _process_single_download(
     # ── Download ──────────────────────────────────────────────────────────────
     logger.info(f"⬇️  [DL] Starte Single-Download: {url[:80]}")
 
+    # DL-02 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md):
+    # schlaegt yt-dlp/FFmpeg WAEHREND extract_info_async() fehl (z.B.
+    # FFmpeg-Postprocessing-Fehler), wird download_info unten nie zugewiesen -
+    # beide Strategien von find_downloaded_file() benoetigen dieses Dict und
+    # sind in diesem Fehlerfall grundsaetzlich nicht anwendbar. Ein
+    # progress_hooks-Callback liefert den tatsaechlichen Rohdatei-Pfad bereits
+    # VOR dem Postprocessing-Schritt (yt_dlp/downloader/common.py,
+    # status='finished') - unabhaengig davon, ob dieser Schritt spaeter
+    # erfolgreich ist. Nur dieser eine, fuer DIESEN Aufruf spezifische Pfad
+    # (lokale Closure, kein globaler Zustand) wird im Fehlerfall bereinigt.
+    raw_downloaded_path: Optional[str] = None
+
+    def _capture_raw_downloaded_path(status: Dict[str, Any]) -> None:
+        nonlocal raw_downloaded_path
+        if status.get("status") == "finished" and status.get("filename"):
+            raw_downloaded_path = status["filename"]
+
+    hooked_ydl_opts = {
+        **ydl_opts,
+        "progress_hooks": [
+            *ydl_opts.get("progress_hooks", []),
+            _capture_raw_downloaded_path,
+        ],
+    }
+
     try:
         download_info = await enhanced_processor.download_executor.extract_info_async(
-            url, ydl_opts, download=True
+            url, hooked_ydl_opts, download=True
         )
 
         downloaded_file = enhanced_processor.download_executor.find_downloaded_file(
@@ -905,4 +1007,10 @@ async def _process_single_download(
 
     except Exception as e:
         enhanced_processor.session_stats["failed_downloads"] += 1
+        if raw_downloaded_path:
+            cleanup_single_download_artifact(
+                Path(raw_downloaded_path),
+                getattr(enhanced_processor.config, "DOWNLOAD_DIR", None),
+                logger,
+            )
         raise DownloadError(f"Single-Download fehlgeschlagen: {e}")

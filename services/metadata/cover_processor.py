@@ -21,6 +21,7 @@ import io
 import json
 import os
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -858,11 +859,23 @@ class CoverProcessor:
         if not self.cache_enabled:
             return
         path = self._cache_path(key)
+        # RES-02 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+        # vorher direktes open(path, "wb") - ein Prozessabbruch/Fehler
+        # waehrend f.write() konnte die gecachte Cover-Datei leeren oder
+        # korrumpieren. Jetzt: write-tmp + atomarer os.replace(), analog zu
+        # DuplicateCache._write_json_atomic()/MetadataCache.store() (dort
+        # JSON-spezifisch, hier fuer rohe Bild-Bytes adaptiert).
+        tmp_path = f"{path}.tmp_{int(time.time() * 1000)}"
         try:
-            with open(path, "wb") as f:
+            with open(tmp_path, "wb") as f:
                 f.write(data)
+            os.replace(tmp_path, path)
         except Exception as e:
             self.logger.debug(f"🖼️ [CACHE] Schreiben fehlgeschlagen: {e}")
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
     def _cache_best_cover(self, artist: str, title: str, best: CoverCandidate) -> None:
         cache_key = f"best_{hashlib.md5(f'{artist}|{title}'.encode()).hexdigest()}"

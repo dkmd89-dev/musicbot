@@ -214,9 +214,22 @@ class DuplicateDetector:
         file_path: Optional[Path] = None,
         metadata: Dict = None,
     ):
+        # DUP-02 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+        # check_for_duplicates() hasht ausschliesslich normalisierte/bereinigte
+        # Werte (_normalize_artist_for_comparison/_clean_title_for_comparison),
+        # register_download() hashte bisher die rohen, vom Aufrufer
+        # uebergebenen Werte direkt - fuer dieselbe Aufnahme konnten Check-
+        # und Registrierungs-Hash dadurch strukturell auseinanderlaufen (z.B.
+        # bei Artist-Suffixen wie " - Topic" oder Titel-Zusaetzen wie
+        # "(Official Video)"). Fix: dieselbe Normalisierung wie beim Check
+        # anwenden, bevor der Eintrag gehasht/gespeichert wird - identische
+        # kanonische Repraesentation fuer beide Pfade.
+        normalized_artist = self._normalize_artist_for_comparison(artist)
+        cleaned_title = self._clean_title_for_comparison(title, normalized_artist)
+
         entry = DuplicateEntry(
-            artist=artist,
-            title=title,
+            artist=normalized_artist,
+            title=cleaned_title,
             url=url,
             file_path=file_path,
             download_date=datetime.now(),
@@ -263,11 +276,17 @@ class DuplicateDetector:
         patterns_to_remove = [
             r"\(Official.*?\)",
             r"\[.*?\]",
-            r"\(feat\.?\s+.*?\)",
-            r"\(ft\.?\s+.*?\)",
-            r"\(.*?Version\)",
-            r"\(Live.*?\)",
-            r"\(Remix\)",
+            # DUP-04 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+            # vorher zwingend \s+ nach "feat"/"ft" - "Featuring" und
+            # "feat.Someone"/"ft.Someone" (ohne Leerzeichen) wurden dadurch
+            # nicht erkannt (False Negative). Jede Alternative unten
+            # konsumiert mindestens ein echtes, unterscheidendes Zeichen
+            # (Punkt, "uring" oder Whitespace) - bewusst KEIN \s* anstelle
+            # von \s+, da das eine Nullbreiten-Luecke oeffnen wuerde: Inhalte
+            # wie "(Featherweight Mix)" muessen unangetastet bleiben (kein
+            # Kollaborations-Credit, nur zufaelliges "Feat"-Praefix).
+            r"\(feat(?:\.\s*|uring\s*|\s+).*?\)",
+            r"\(ft(?:\.\s*|\s+).*?\)",
         ]
         for pattern in patterns_to_remove:
             cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)

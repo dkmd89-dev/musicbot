@@ -54,6 +54,10 @@ class DownloadResult:
 
     # Datei-Informationen
     library_path: Optional[str] = None
+    # DUP-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+    # eigene Quell-URL des Tracks - fuer die Duplicate-Cache-Registrierung
+    # von Playlist-Tracks benoetigt (klassen/download_handler.py).
+    url: Optional[str] = None
 
     # Herkunfts-Informationen
     artist_source: Optional[str] = None
@@ -101,6 +105,7 @@ class DownloadResult:
             "genres": self.genres,
             "genre_source": self.genre_source,
             "library_path": self.library_path,
+            "url": self.url,
             "artist_source": self.artist_source,
             "title_cleaned": self.title_cleaned,
             "playlist_album": self.playlist_album,
