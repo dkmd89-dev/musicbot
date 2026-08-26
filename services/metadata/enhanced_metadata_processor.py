@@ -252,6 +252,11 @@ class EnhancedMetadataProcessor(SingletonMixin):
         # wenn der Fehler VOR Schritt 14 auftrat, wo original_path erst
         # gesetzt wird).
         original_path: Optional[Path] = None
+        # DL-01: analog original_path vorab gebunden, damit der
+        # CancelledError-Zweig unten sie immer sicher referenzieren kann,
+        # auch wenn die Cancellation vor move_to_library() (Schritt 16)
+        # eintraf.
+        library_path: Optional[Path] = None
 
         try:
             self.processing_stats.total_processed += 1
@@ -1051,6 +1056,30 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 f"🎉 2️⃣0️⃣ Track erfolgreich verarbeitet: '{artist_for_metadata}' - '{clean_title}'"
             )
             return result
+
+        except asyncio.CancelledError:
+            # DL-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2D_DL01_AUDIT.md):
+            # CancelledError erbt seit Python 3.8 von BaseException, wird vom
+            # except Exception unten nicht gefangen. Spiegelt das bereits
+            # geprüfte tag_err-Lösch-Idiom (siehe oben) für den Fall, dass
+            # move_to_library() bereits gelaufen ist.
+            if library_path is not None:
+                self.logger.warning(
+                    f"⚠️ Cancellation nach Bibliotheks-Move erkannt — entferne "
+                    f"unvollständige/nicht registrierte Datei: {library_path}"
+                )
+                try:
+                    if Path(library_path).exists():
+                        Path(library_path).unlink()
+                        self.logger.info(
+                            f"🧹 Datei nach Cancellation entfernt: {library_path}"
+                        )
+                except OSError as cleanup_err:
+                    self.logger.error(
+                        f"❌ Konnte Datei nach Cancellation nicht entfernen: "
+                        f"{cleanup_err}"
+                    )
+            raise
 
         except Exception as e:
             self.logger.error(
