@@ -114,6 +114,13 @@ def _prepare_isolated_mapping_dir() -> None:
 
 _prepare_isolated_mapping_dir()
 
+# TESTENV-01-Nachtrag: PLAY_HISTORY_FILE existiert in Produktion bereits
+# dauerhaft und wird dort nirgends per mkdir() angelegt - in der frisch
+# isolierten Testumgebung fehlte das Verzeichnis dadurch beim ersten
+# Start nach --clean (StatisticsHandler/History-Polling scheiterte mit
+# FileNotFoundError, Bot lief aber mit deaktivierter Statistik weiter).
+Config.PLAY_HISTORY_FILE.mkdir(parents=True, exist_ok=True)
+
 # ============================================================================
 # Sicherheitsprüfung: NIE auf Produktionspfade zeigen!
 # ============================================================================
