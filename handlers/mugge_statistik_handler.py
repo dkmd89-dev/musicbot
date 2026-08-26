@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 from typing import Callable
 from telegram.constants import ParseMode
 from typing import Any, Dict, List, Optional
+import asyncio
 import time
 from datetime import datetime
 import json  # NEU
@@ -226,8 +227,12 @@ class StatistikHandler:
             await msg.edit_text("\n".join(lines))
 
             # Diagramme generieren
-            song_chart_path = self.statistik_service.create_chart(stats, "songs")
-            artist_chart_path = self.statistik_service.create_chart(stats, "artists")
+            song_chart_path = await asyncio.to_thread(
+                self.statistik_service.create_chart, stats, "songs"
+            )
+            artist_chart_path = await asyncio.to_thread(
+                self.statistik_service.create_chart, stats, "artists"
+            )
 
             if song_chart_path and song_chart_path.exists():
                 with open(song_chart_path, "rb") as f1:
@@ -317,8 +322,12 @@ class StatistikHandler:
             )
 
             # Diagramme generieren
-            song_chart_path = self.statistik_service.create_chart(stats, "songs")
-            artist_chart_path = self.statistik_service.create_chart(stats, "artists")
+            song_chart_path = await asyncio.to_thread(
+                self.statistik_service.create_chart, stats, "songs"
+            )
+            artist_chart_path = await asyncio.to_thread(
+                self.statistik_service.create_chart, stats, "artists"
+            )
 
             if song_chart_path and song_chart_path.exists():
                 with open(song_chart_path, "rb") as f1:
@@ -401,7 +410,9 @@ class StatistikHandler:
             )
 
             # Diagramm generieren und senden
-            chart_path = self.statistik_service.create_chart(stats, "songs")
+            chart_path = await asyncio.to_thread(
+                self.statistik_service.create_chart, stats, "songs"
+            )
             if chart_path and chart_path.exists():
                 with open(chart_path, "rb") as chart_file:
                     await reply_target.reply_photo(
@@ -468,7 +479,9 @@ class StatistikHandler:
             )
 
             # Diagramm generieren und senden
-            chart_path = self.statistik_service.create_chart(stats, "artists")
+            chart_path = await asyncio.to_thread(
+                self.statistik_service.create_chart, stats, "artists"
+            )
             if chart_path and chart_path.exists():
                 with open(chart_path, "rb") as chart_file:
                     await reply_target.reply_photo(
