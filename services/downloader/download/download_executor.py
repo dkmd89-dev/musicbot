@@ -28,6 +28,7 @@ from typing import Any, Dict, Optional
 import yt_dlp
 
 from logger import get_module_logger
+from services.downloader.download_artifact_cleanup import cleanup_single_download_artifact
 
 
 class DownloadExecutor:
@@ -236,9 +237,35 @@ class DownloadExecutor:
                 f"   Template : {outtmpl}"
             )
 
+            # DL-06 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md):
+            # analog zu DL-02 (_process_single_download() in download_utils.py) -
+            # schlaegt yt-dlp/FFmpeg WAEHREND extract_info() fehl, wird
+            # download_info unten nie zugewiesen; find_downloaded_file() ist in
+            # diesem Fall nicht anwendbar (beide Strategien brauchen dieses
+            # Dict). Ein progress_hooks-Callback liefert den tatsaechlichen
+            # Rohdatei-Pfad bereits VOR dem Postprocessing-Schritt. Pro Versuch
+            # NEU gebunden (innerhalb der Schleife, nicht davor) - anders als
+            # bei DL-02 gibt es hier eine echte Retry-Schleife; ohne Neubindung
+            # koennte ein Cleanup faelschlich den Pfad eines fruaeheren
+            # Versuchs treffen (Retry-Isolation).
+            raw_downloaded_path: Optional[str] = None
+
+            def _capture_raw_downloaded_path(status: Dict[str, Any]) -> None:
+                nonlocal raw_downloaded_path
+                if status.get("status") == "finished" and status.get("filename"):
+                    raw_downloaded_path = status["filename"]
+
+            hooked_track_ydl_opts = {
+                **track_ydl_opts,
+                "progress_hooks": [
+                    *track_ydl_opts.get("progress_hooks", []),
+                    _capture_raw_downloaded_path,
+                ],
+            }
+
             try:
                 def _do_download() -> Optional[Dict[str, Any]]:
-                    with yt_dlp.YoutubeDL(track_ydl_opts) as ydl:
+                    with yt_dlp.YoutubeDL(hooked_track_ydl_opts) as ydl:
                         return ydl.extract_info(track_url, download=True)
 
                 # run_in_executor statt direktem Aufruf - blockiert sonst
@@ -265,6 +292,10 @@ class DownloadExecutor:
 
             except Exception as e:
                 last_error = e
+                if raw_downloaded_path:
+                    cleanup_single_download_artifact(
+                        Path(raw_downloaded_path), download_dir, self.logger
+                    )
                 if attempt < max_retries:
                     wait = retry_backoff_seconds * attempt
                     self.logger.warning(
