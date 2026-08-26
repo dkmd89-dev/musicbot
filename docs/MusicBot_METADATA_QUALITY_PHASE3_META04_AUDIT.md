@@ -1,0 +1,139 @@
+# MusicBot — Metadata Quality Phase — PHASE 3: META-04
+
+> Analyse-, Fix- und Abschluss-Dokumentation für META-04 (Teil: "makko").
+> Basis: `docs/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md` (Finding
+> erstmals identifiziert). Freigabe zur Tiefenanalyse und Nutzer-
+> Bestätigung der korrekten Schreibweise für "makko" am 2026-08-26 erhalten.
+
+**Status: META-04 ("makko") — ABGESCHLOSSEN (committed). "t-Low" und
+"Max Giesinger" — OFFEN, Rückfrage an Nutzer ausstehend.**
+
+---
+
+## 1. Finding (aus PHASE 0)
+
+**ID:** META-04 — P1 — Artist — Case-sensitive Artist-Ordner-Duplikate mit
+echter Diskografie-Aufspaltung (`makko/` vs. `Makko/`, `t-Low/` vs.
+`T-Low/`, real in der Library gefunden).
+
+---
+
+## 2. Root Cause (Tiefenanalyse)
+
+**Kein Bug im `ArtistNormalizer`-Mechanismus.** `utils/artist_map.py::
+_standard_normalization()`/`_normalize_rest()` fällt für unbekannte, nicht
+in `case_preserve.yaml` oder `artist_overrides.json` geschützte Namen
+bewusst auf Title-Case (`.capitalize()`) zurück — bereits charakterisiert
+und getestet in
+`tests/test_artist_normalizer.py::test_plain_lowercase_name_falls_back_to_title_case`.
+Dieses Verhalten ist unabhängig von der im Quelltext (YouTube-Titel/
+Kanalname) vorkommenden Groß-/Kleinschreibung, da `_check_overrides()`
+sowohl den exakten als auch den über `_normalize_key()` case-insensitiv
+normalisierten Override-Lookup durchführt (verifiziert: `normalize("makko")`,
+`normalize("Makko")`, `normalize("MAKKO")` liefern vor dem Fix alle
+identisch `"Makko"`).
+
+**Tatsächliche Ursache:** `mapping/artist_overrides.json` enthielt einen
+expliziten, aktiven Eintrag `"makko": "Makko"` — dieser überschreibt für
+**jeden** Download den eigentlich vorgesehenen Case-Preserve-Mechanismus
+und erzwingt konsistent Großschreibung, obwohl „makko" laut
+Nutzerbestätigung sein tatsächlicher, bewusst kleingeschriebener
+Künstlername ist. Die 7 „Makko"-Alben in der Library entsprechen dem
+aktuellen (fehlerhaften) Override-Verhalten; das 1 „makko"-Album ist
+vermutlich vor Einführung dieses Overrides entstanden (Altlast).
+
+Analog dazu enthält dieselbe Datei `"t-low": "t-Low"` — erklärt
+strukturell identisch die gefundene Aufspaltung „t-Low" (7 Alben, aktuell)
+vs. „T-Low" (1 Datei, Altlast). Ob „t-Low" die vom Nutzer gewünschte
+Schreibweise ist, wurde **nicht** bestätigt — siehe Abschnitt 6.
+
+---
+
+## 3. Vor-Fix-Charakterisierung
+
+Gegen die echten Mapping-Dateien (`utils/artist_map.py::ArtistNormalizer`
+mit `mapping_dir="mapping"`) ausgeführt:
+
+```
+normalize("makko") -> "Makko"
+normalize("Makko") -> "Makko"
+normalize("MAKKO") -> "Makko"
+```
+
+`tests/test_artist_overrides_makko_case_preserve.py` gegen den
+ungefixten Stand: **1 failed, 3 passed**. Fehlgeschlagen (diskriminierend):
+der Daten-Integritätstest gegen die reale `artist_overrides.json`. Bereits
+vorher grün: der isolierte Mechanismus-Test (belegt, dass der Case-
+Preserve-Mechanismus selbst korrekt funktioniert, sobald der Override-Wert
+stimmt).
+
+---
+
+## 4. Fix
+
+```diff
+-  "makko": "Makko",
++  "makko": "makko",
+```
+
+**Geänderte Datei:** ausschließlich `mapping/artist_overrides.json` (ein
+Eintrag). Keine Code-Änderung — der Mechanismus selbst war bereits
+korrekt.
+
+**Neue Tests:** `tests/test_artist_overrides_makko_case_preserve.py` — 4
+Tests: 3 isolierte Mechanismus-Tests (case-insensitiver Input, alle
+resultieren im kleingeschriebenen Override-Wert — nutzt dieselbe
+`tmp_path`-Isolationsstruktur wie `tests/test_artist_normalizer.py`, echtes
+`mapping/`-Verzeichnis bleibt unberührt), 1 Daten-Integritätstest direkt
+gegen die reale `mapping/artist_overrides.json` (schützt gezielt gegen
+ein versehentliches Zurücksetzen dieser Korrektur).
+
+---
+
+## 5. Testergebnisse
+
+```
+STUFE 1 (gezielt):
+tests/test_artist_overrides_makko_case_preserve.py:   4 passed
+
+STUFE 2 (direkte Regression):
+tests/test_artist_normalizer.py:                     17 passed
+tests/test_metadata_modules.py:                 15 passed (11 subtests)
+
+STUFE 3 (thematische Suite — Metadata + Artist + Genre + Duplicate):
+348 passed, 11 subtests passed
+
+STUFE 4 (vollständige Suite, am Ende der Arbeitsphase):
+1234 passed, 1 warning (vorbestehend, unabhängig), 19 subtests passed
+(Baseline vor diesem Fix: 1230 passed → +4 neue Tests, 0 Regressionen)
+```
+
+---
+
+## 6. Offen — Rückfrage an Nutzer
+
+**„t-Low"**: aktueller Override-Wert unverändert gelassen (keine explizite
+Bestätigung erhalten, ob „t-Low" — mit kleinem „t", großem „L" — die vom
+Nutzer gewünschte Schreibweise ist, oder ob eine andere Form korrekt wäre).
+
+**„Max Giesinger"**: vom Nutzer als „wird ein Problem sein" markiert,
+konkrete Art des Problems noch nicht spezifiziert — keine Änderung ohne
+weitere Information vorgenommen.
+
+**Library-Konsolidierung**: die bestehenden, durch die Altlast entstandenen
+Ordner „makko/" (1 Album) und „T-Low/" (1 Datei, jeweils bereits auch
+unter „Makko/" bzw. „t-Low/" vorhanden) wurden **nicht** angefasst — das
+wäre eine Schreiboperation auf der realen Library und erfordert nach
+CLAUDE.md explizite gesonderte Freigabe.
+
+---
+
+## 7. Abschluss
+
+META-04 gilt für den Teilaspekt „makko" hiermit als **abgeschlossen**.
+Root Cause vollständig identifiziert (Mapping-Datenfehler, kein
+Code-Bug), Vor-Fix-Charakterisierung erfolgreich, Fix minimal (ein
+JSON-Wert), vollständige Suite grün (1234 passed, 0 failed, 0 errors).
+„t-Low"/„Max Giesinger" sowie die Library-Konsolidierung bleiben offen
+bis zur Nutzerrückmeldung. Commit/Push/PR/Merge auf explizite
+Nutzerfreigabe hin durchgeführt (siehe Git-Historie).
