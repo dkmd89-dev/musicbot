@@ -20,6 +20,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -58,6 +59,22 @@ class ScoreThreshold(IntEnum):
 
 # Mindestauflösung für den Early Exit (kürzere Seite muss ≥ diesen Wert haben)
 _EARLY_EXIT_MIN_DIM = 1400
+
+# P1-Fund (Post-Baseline-v4 Health & Risk Audit): der Fanart.tv-API-Key wird
+# als params={"api_key": ...} an session.get() uebergeben. requests/urllib3
+# betten bei Connection-/Timeout-Fehlern die vollstaendige Request-URL
+# (inkl. Query-String) in die eigene str()-Repraesentation der Exception ein
+# - ohne Scrubbing wuerde der Key bei LOG_LEVEL=DEBUG im Klartext geloggt.
+# Gleiches Muster bereits behoben in services/clients/navidrome_api.py
+# (_scrub_credentials fuer u=/p=).
+_CREDENTIAL_QUERY_PARAM_RE = re.compile(r"([?&]api_key=)[^&\s]*", re.IGNORECASE)
+
+
+def _scrub_credentials(text: str) -> str:
+    """Entfernt den api_key-Query-Parameter (Fanart.tv) aus einem String."""
+    if not text:
+        return text
+    return _CREDENTIAL_QUERY_PARAM_RE.sub(r"\1***", text)
 
 _BASE_SCORES = {
     "coverartarchive": 120,
@@ -876,7 +893,7 @@ class CoverProcessor:
         try:
             return self.session.get(url, params=params, timeout=8, allow_redirects=True)
         except requests.RequestException as e:
-            self.logger.debug(f"🖼️ [HTTP] ❌ {url[:50]}: {e}")
+            self.logger.debug(f"🖼️ [HTTP] ❌ {url[:50]}: {_scrub_credentials(str(e))}")
             return None
 
     def _fetch_raw(self, url: str) -> Optional[bytes]:
