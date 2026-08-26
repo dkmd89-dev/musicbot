@@ -214,9 +214,22 @@ class DuplicateDetector:
         file_path: Optional[Path] = None,
         metadata: Dict = None,
     ):
+        # DUP-02 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+        # check_for_duplicates() hasht ausschliesslich normalisierte/bereinigte
+        # Werte (_normalize_artist_for_comparison/_clean_title_for_comparison),
+        # register_download() hashte bisher die rohen, vom Aufrufer
+        # uebergebenen Werte direkt - fuer dieselbe Aufnahme konnten Check-
+        # und Registrierungs-Hash dadurch strukturell auseinanderlaufen (z.B.
+        # bei Artist-Suffixen wie " - Topic" oder Titel-Zusaetzen wie
+        # "(Official Video)"). Fix: dieselbe Normalisierung wie beim Check
+        # anwenden, bevor der Eintrag gehasht/gespeichert wird - identische
+        # kanonische Repraesentation fuer beide Pfade.
+        normalized_artist = self._normalize_artist_for_comparison(artist)
+        cleaned_title = self._clean_title_for_comparison(title, normalized_artist)
+
         entry = DuplicateEntry(
-            artist=artist,
-            title=title,
+            artist=normalized_artist,
+            title=cleaned_title,
             url=url,
             file_path=file_path,
             download_date=datetime.now(),
