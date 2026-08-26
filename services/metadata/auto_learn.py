@@ -1,8 +1,12 @@
 # services/metadata/auto_learn.py
 # -*- coding: utf-8 -*-
 
+import asyncio
 import re
+import time
+import yaml
 from pathlib import Path
+from threading import Lock
 from types import SimpleNamespace
 from typing import Dict, List, Any, Optional, Set, Tuple, TYPE_CHECKING
 from logger import get_module_logger
@@ -12,6 +16,19 @@ if TYPE_CHECKING:
     from utils.genre_map import GenreMapper
 
 
+class _InlineListDumper(yaml.SafeDumper):
+    """YAML-Dumper mit Inline-Listen (flow_style) fuer 'secondary' - vorher
+    ein lokales Duplikat innerhalb von learn_genre(), jetzt einmalig auf
+    Modulebene, da von _write_yaml_atomic() fuer alle drei Schreibpfade
+    gemeinsam genutzt."""
+
+    def represent_list(self, data):
+        return self.represent_sequence("tag:yaml.org,2002:seq", data, flow_style=True)
+
+
+_InlineListDumper.add_representer(list, _InlineListDumper.represent_list)
+
+
 class AutoLearnManager:
     """
     Verwaltet das automatische Lernen von Artist- und Genre-Informationen.
@@ -19,9 +36,25 @@ class AutoLearnManager:
     Schreibt ausschließlich in:
       - auto_learned_artists.yaml  (Artist-Aliase)
       - auto_learned_genre.yaml    (Genre-Zuordnungen)
+      - known_artists.yaml         (bestaetigte Identitaets-Mappings)
 
     Liest NIEMALS aus artist_overrides.yaml oder artist_genre.yaml heraus,
     aber prüft diese als Duplikat-Schutz.
+
+    INV-01/INV-02 (docs/MusicBot_ARCHITECTURE_EVOLUTION.md, Abschnitt 27):
+    Alle drei Schreibpfade liefen frueher synchron (open(mode="w")) direkt
+    im Event-Loop-Thread, ohne asyncio.to_thread() und ohne Lock. Die
+    Read-Modify-Write-Sequenz enthielt keinen await-Punkt, wodurch
+    asyncios kooperatives Scheduling zufaellig eine Serialisierung
+    zwischen gleichzeitig laufenden Tracks (MAX_CONCURRENT_DOWNLOADS=3)
+    herstellte. Ein naiver asyncio.to_thread()-Fix ohne Lock haette diese
+    zufaellige Sicherheit aufgehoben und eine echte Lost-Update-Race
+    zwischen zwei parallelen Worker-Threads eingefuehrt. Der Fix
+    kombiniert daher beides: asyncio.to_thread() fuer INV-01 (Event-Loop
+    bleibt frei) PLUS ein threading.Lock (self._write_lock, Vorbild
+    utils/artist_map.py::_write_lock) fuer die Serialisierung ueber echte
+    OS-Threads hinweg, PLUS atomares Schreiben (tmp-Datei + Path.replace)
+    fuer INV-02 (Vorbild utils/metadata_cache.py::store()).
     """
 
     ALLOWED_ARTIST_SOURCES = {"youtube_parsed", "first_artist_from_title"}
@@ -37,6 +70,45 @@ class AutoLearnManager:
         self.artist_normalizer = artist_normalizer
         self.genre_mapper = genre_mapper
         self.logger = logger or get_module_logger("AutoLearnManager")
+        # INV-01/INV-02: ein gemeinsames Lock fuer alle drei Schreibpfade
+        # (auto_learned_genre.yaml, known_artists.yaml,
+        # auto_learned_artists.yaml) - bewusst EIN Lock statt drei
+        # dateispezifischen Locks, da Schreibfrequenz niedrig ist und ein
+        # einzelnes Lock die Komplexitaet/Deadlock-Flaeche minimiert
+        # (CLAUDE.md §18: kleinste sinnvolle Aenderung).
+        self._write_lock = Lock()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Gemeinsame atomare Schreib-Hilfsmethode (INV-02)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _write_yaml_atomic(path: Path, data: dict, inline_lists: bool = False) -> None:
+        """
+        Schreibt YAML atomar (write-tmp -> rename), analog zu
+        MetadataCache.store() (utils/metadata_cache.py). Muss unter
+        self._write_lock aufgerufen werden.
+        """
+        import yaml
+
+        tmp_path = path.with_suffix(f".tmp_{int(time.time() * 1000)}")
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                yaml.dump(
+                    data,
+                    f,
+                    Dumper=_InlineListDumper if inline_lists else yaml.SafeDumper,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=True,
+                )
+            tmp_path.replace(path)
+        except Exception:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
 
     # ─────────────────────────────────────────────────────────────────────────
     # Öffentliche API
@@ -85,63 +157,41 @@ class AutoLearnManager:
             f"'{genre_result.primary}' (Quelle: {getattr(genre_result, 'source', 'unknown')})"
         )
 
-        try:
-            import yaml
+        # Sekundäre Genres bestimmen (reine In-Memory-Berechnung, kein I/O)
+        secondary_genres = []
+        if hasattr(genre_result, "secondary") and genre_result.secondary:
+            secondary_genres = list(genre_result.secondary[:5])
+        elif hasattr(genre_result, "raw_tags") and genre_result.raw_tags:
+            tag_list = [
+                t
+                for t in genre_result.raw_tags
+                if t.lower() != genre_result.primary.lower()
+            ]
+            secondary_genres = tag_list[:5]
 
+        entry = {
+            "primary": genre_result.primary,
+            "secondary": secondary_genres if secondary_genres else [],
+            "description": "Auto-learned via Last.fm (rule)",
+        }
+
+        try:
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
             auto_genre_path = mapping_dir / "auto_learned_genre.yaml"
 
-            data: dict = {}
-            if auto_genre_path.exists():
-                with open(auto_genre_path, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or {}
+            written = await asyncio.to_thread(
+                self._write_genre_entry_sync,
+                auto_genre_path,
+                canonical_name.strip(),
+                entry,
+            )
 
-            genre_map = data.get("ARTIST_GENRE_MAP", {})
-            key_yaml = canonical_name.strip()
-
-            if key_yaml in genre_map:
+            if not written:
                 self.logger.debug(
-                    f"🧠 [AUTO-LEARN] Genre für '{canonical_name}' bereits in YAML vorhanden"
+                    f"🧠 [AUTO-LEARN] Genre für '{canonical_name}' bereits in YAML "
+                    f"vorhanden (Race-Schutz beim Schreiben erkannt)"
                 )
                 return False
-
-            # Sekundäre Genres bestimmen
-            secondary_genres = []
-            if hasattr(genre_result, "secondary") and genre_result.secondary:
-                secondary_genres = list(genre_result.secondary[:5])
-            elif hasattr(genre_result, "raw_tags") and genre_result.raw_tags:
-                tag_list = [
-                    t
-                    for t in genre_result.raw_tags
-                    if t.lower() != genre_result.primary.lower()
-                ]
-                secondary_genres = tag_list[:5]
-
-            genre_map[key_yaml] = {
-                "primary": genre_result.primary,
-                "secondary": secondary_genres if secondary_genres else [],
-                "description": "Auto-learned via Last.fm (rule)",
-            }
-            data["ARTIST_GENRE_MAP"] = genre_map
-
-            # YAML mit Inline-Listen für secondary
-            class InlineListDumper(yaml.SafeDumper):
-                def represent_list(self, data):
-                    return self.represent_sequence(
-                        "tag:yaml.org,2002:seq", data, flow_style=True
-                    )
-
-            InlineListDumper.add_representer(list, InlineListDumper.represent_list)
-
-            with open(auto_genre_path, "w", encoding="utf-8") as f:
-                yaml.dump(
-                    data,
-                    f,
-                    Dumper=InlineListDumper,
-                    allow_unicode=True,
-                    default_flow_style=False,
-                    sort_keys=True,
-                )
 
             self.logger.info(
                 f"🧠 [AUTO-LEARN] ✅ Genre gelernt: '{canonical_name}' → "
@@ -157,6 +207,34 @@ class AutoLearnManager:
         except Exception as e:
             self.logger.warning(f"⚠️ [AUTO-LEARN] Genre-YAML fehlgeschlagen: {e}")
             return False
+
+    def _write_genre_entry_sync(
+        self, auto_genre_path: Path, key_yaml: str, entry: dict
+    ) -> bool:
+        """
+        Liest, prueft (Double-Check gegen Race) und schreibt einen einzelnen
+        Genre-Eintrag atomar. Laeuft in einem Worker-Thread (asyncio.to_thread)
+        - self._write_lock serialisiert konkurrierende Aufrufe ueber echte
+        OS-Threads hinweg (INV-01+INV-02 kombiniert, siehe Klassen-Docstring).
+        """
+        with self._write_lock:
+            data: dict = {}
+            if auto_genre_path.exists():
+                with open(auto_genre_path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+
+            genre_map = data.get("ARTIST_GENRE_MAP", {})
+            if key_yaml in genre_map:
+                # Double-Check: ein anderer Thread hat den Eintrag zwischen
+                # dem async-seitigen Vorab-Check und dem Erwerb des Locks
+                # bereits geschrieben.
+                return False
+
+            genre_map[key_yaml] = entry
+            data["ARTIST_GENRE_MAP"] = genre_map
+
+            self._write_yaml_atomic(auto_genre_path, data, inline_lists=True)
+            return True
 
     async def learn_artist(
         self,
@@ -194,30 +272,17 @@ class AutoLearnManager:
     async def _save_known_artist(self, artist_name: str) -> bool:
         """Speichert einen bekannten Künstler in known_artists.yaml"""
         try:
-            import yaml
-
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
             known_file = mapping_dir / "known_artists.yaml"
 
-            data = {"known_artists": []}
-            if known_file.exists():
-                with open(known_file, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or {"known_artists": []}
-
-            known_artists = set(a.lower() for a in data.get("known_artists", []))
-
-            if artist_name.lower() not in known_artists:
-                data.setdefault("known_artists", []).append(artist_name)
-                # Sortieren für bessere Lesbarkeit
-                data["known_artists"] = sorted(set(data["known_artists"]))
-
-                with open(known_file, "w", encoding="utf-8") as f:
-                    yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
-
+            written = await asyncio.to_thread(
+                self._write_known_artist_sync, known_file, artist_name
+            )
+            if written:
                 self.logger.info(
                     f"🧠 [AUTO-LEARN] ✅ Bekannter Künstler gespeichert: '{artist_name}'"
                 )
-                return True
+            return written
 
         except Exception as e:
             self.logger.warning(
@@ -225,43 +290,66 @@ class AutoLearnManager:
             )
         return False
 
+    def _write_known_artist_sync(self, known_file: Path, artist_name: str) -> bool:
+        """Sync-Kern von _save_known_artist() - siehe Klassen-Docstring INV-01/INV-02."""
+        with self._write_lock:
+            data = {"known_artists": []}
+            if known_file.exists():
+                with open(known_file, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {"known_artists": []}
+
+            known_artists = set(a.lower() for a in data.get("known_artists", []))
+            if artist_name.lower() in known_artists:
+                return False
+
+            data.setdefault("known_artists", []).append(artist_name)
+            data["known_artists"] = sorted(set(data["known_artists"]))
+
+            self._write_yaml_atomic(known_file, data)
+            return True
+
     async def _save_alias(self, raw_name: str, canonical_name: str) -> bool:
         """Speichert einen Alias in auto_learned_artists.yaml"""
         try:
-            import yaml
-
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
             alias_file = mapping_dir / "auto_learned_artists.yaml"
 
-            data = {"auto_learned": {}}
-            if alias_file.exists():
-                with open(alias_file, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or {"auto_learned": {}}
-
-            auto_learned = data.get("auto_learned", {})
-
-            # Prüfe ob Alias bereits existiert
-            if raw_name.casefold() in (k.casefold() for k in auto_learned.keys()):
+            written = await asyncio.to_thread(
+                self._write_alias_sync, alias_file, raw_name, canonical_name
+            )
+            if written:
+                self.logger.info(
+                    f"🧠 [AUTO-LEARN] ✅ Alias gelernt: '{raw_name}' → '{canonical_name}'"
+                )
+            else:
                 self.logger.debug(
                     f"🧠 [AUTO-LEARN] Alias '{raw_name}' bereits vorhanden"
                 )
-                return False
-
-            data["auto_learned"][raw_name] = canonical_name
-
-            with open(alias_file, "w", encoding="utf-8") as f:
-                yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
-
-            self.logger.info(
-                f"🧠 [AUTO-LEARN] ✅ Alias gelernt: '{raw_name}' → '{canonical_name}'"
-            )
-            return True
+            return written
 
         except Exception as e:
             self.logger.warning(
                 f"⚠️ [AUTO-LEARN] auto_learned_artists.yaml fehlgeschlagen: {e}"
             )
         return False
+
+    def _write_alias_sync(
+        self, alias_file: Path, raw_name: str, canonical_name: str
+    ) -> bool:
+        """Sync-Kern von _save_alias() - siehe Klassen-Docstring INV-01/INV-02."""
+        with self._write_lock:
+            data = {"auto_learned": {}}
+            if alias_file.exists():
+                with open(alias_file, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {"auto_learned": {}}
+
+            auto_learned = data.get("auto_learned", {})
+            if raw_name.casefold() in (k.casefold() for k in auto_learned.keys()):
+                return False
+
+            data["auto_learned"][raw_name] = canonical_name
+            self._write_yaml_atomic(alias_file, data)
+            return True
 
     # ─────────────────────────────────────────────────────────────────────────
     # Hilfsmethoden

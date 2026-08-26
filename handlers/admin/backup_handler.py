@@ -94,9 +94,19 @@ class BackupHandler:
         bot_backups = self._list_backups("bot")
         lib_backups = self._list_backups("library")
 
-        # Größen der Quellverzeichnisse (nicht-blockierend schätzen)
-        bot_size = self._human_size(self._dir_size(self.bot_source))
-        lib_size = self._human_size(self._dir_size(self.lib_source))
+        # INV-01 (docs/MusicBot_ARCHITECTURE_EVOLUTION.md, Abschnitt 27, P1):
+        # _dir_size() traversiert das komplette Quellverzeichnis (rglob+stat) -
+        # real gemessen 9,46s fuer die Library dieser Umgebung. Ohne
+        # run_in_executor() blockierte das den gesamten Event-Loop, obwohl der
+        # Kommentar "nicht-blockierend schaetzen" das Gegenteil suggerierte.
+        # Gleiches Muster wie bereits fuer _create_archive() (Zeile 207/259).
+        loop = asyncio.get_event_loop()
+        bot_size = self._human_size(
+            await loop.run_in_executor(None, self._dir_size, self.bot_source)
+        )
+        lib_size = self._human_size(
+            await loop.run_in_executor(None, self._dir_size, self.lib_source)
+        )
 
         text = (
             "💾 **Backup-Verwaltung**\n\n"
@@ -142,7 +152,13 @@ class BackupHandler:
     ) -> None:
         """Sicherheitsabfrage vor Bot-Backup."""
         query = update.callback_query
-        bot_size = self._human_size(self._dir_size(self.bot_source))
+        # INV-01 (siehe show_main_menu weiter oben): _dir_size() via
+        # run_in_executor(), damit der Event-Loop nicht blockiert.
+        bot_size = self._human_size(
+            await asyncio.get_event_loop().run_in_executor(
+                None, self._dir_size, self.bot_source
+            )
+        )
 
         text = (
             "⚠️ **Bot-Verzeichnis sichern**\n\n"
@@ -170,7 +186,13 @@ class BackupHandler:
     ) -> None:
         """Sicherheitsabfrage vor Library-Backup."""
         query = update.callback_query
-        lib_size = self._human_size(self._dir_size(self.lib_source))
+        # INV-01 (siehe show_main_menu weiter oben): _dir_size() via
+        # run_in_executor(), damit der Event-Loop nicht blockiert.
+        lib_size = self._human_size(
+            await asyncio.get_event_loop().run_in_executor(
+                None, self._dir_size, self.lib_source
+            )
+        )
 
         text = (
             "⚠️ **Musikbibliothek sichern**\n\n"
