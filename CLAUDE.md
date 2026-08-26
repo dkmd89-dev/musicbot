@@ -302,6 +302,70 @@ Echte externe Aufrufe gehören in gezielte Integrationstests.
 
 ---
 
+# 8.A Testausführungsstrategie
+
+Für **jede einzelne Änderung** gilt diese verbindliche Reihenfolge bei der
+Testausführung:
+
+```text
+1. Gezielte Tests
+   → nur die Tests für das aktuell bearbeitete Finding
+   → Beispiel: python3 -m pytest tests/test_<aktuelles_finding>.py -q
+
+2. Direkt relevante Regressionstests
+   → nur Tests, die unmittelbar von der geänderten Funktionalität betroffen sind
+   → Beispiel (DUP-03): python3 -m pytest tests/test_duplicate_detector_hash_consistency.py -q
+
+3. Thematische Testsuite (optional, wenn sinnvoll)
+   → die zum Bereich gehörende Testgruppe
+   → Beispiel: python3 -m pytest tests/test_duplicate*.py -q
+
+4. Vollständige Suite
+   → python3 -m pytest tests/ -q
+   → NICHT nach jedem einzelnen Finding
+   → erst wenn ALLE Findings der aktuell gemeinsam bearbeiteten
+     Arbeitsphase abgeschlossen sind
+```
+
+Als Zyklus über mehrere Findings hinweg einer Arbeitsphase:
+
+```text
+Finding → gezielte Tests → direkte Regressionstests → thematische Suite
+   ↓
+nächstes Finding → gezielte Tests → direkte Regressionstests → thematische Suite
+   ↓
+   ...
+   ↓
+erst am Ende der Arbeitsphase: vollständige Testsuite
+```
+
+Diese Reihenfolge gilt für **jedes** Finding, auch für zukünftige, nicht nur
+für die zum Zeitpunkt der Formulierung dieser Regel aktuell bearbeiteten.
+
+**Nach dem Abschlusslauf (Punkt 4):** Ergebnisse unterscheiden zwischen
+
+- durch die aktuelle Arbeitsphase verursachten Fehlern
+- bereits vorher bestehenden Fehlern
+- unabhängigen Fehlern außerhalb des Scopes
+
+Bereits bestehende, unabhängige Fehler werden **nicht ungefragt behoben**,
+auch nicht im Rahmen eines späteren Findings, das zufällig denselben
+Testlauf berührt.
+
+**Bei einem fehlschlagenden gezielten Test:**
+
+1. zuerst Root Cause bestimmen
+2. prüfen, ob die aktuelle Änderung ursächlich verantwortlich ist
+3. keine vorschnellen Folgeänderungen
+4. Scope nicht erweitern
+5. bei Unsicherheit STOPP und Befund melden statt zu raten
+
+Vor-Fix-Diskriminierung (Reproduktion des Fehlers am ungefixten Stand vor
+der Implementierung) bleibt unabhängig davon etabliertes Vorgehen, siehe
+Abschnitt 6 (Characterization First) und Abschnitt 26 (Bei Bugs).
+
+---
+
 # 9. P0-Testumfang
 
 Bei Änderungen an Metadata:
