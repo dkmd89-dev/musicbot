@@ -46,6 +46,7 @@ from services.duplicate.detector import DuplicateDetector
 from services.downloader.models import DuplicateEntry
 from logger import get_module_logger
 from services.downloader.downloader import YoutubeDownloader
+from services.downloader.download_utils import is_youtube_mix_url
 from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
@@ -298,6 +299,12 @@ class DownloadHandler:
                 self.downloader.enhanced_download_processor.download_executor
             )
             ydl_opts = download_executor.build_ydl_opts(self.config)
+            if is_youtube_mix_url(url):
+                # DUP-06: siehe services/downloader/download_utils.py -
+                # verhindert, dass diese Vorab-Probe fuer eine Mix-/Radio-
+                # Liste (list=RD...) faelschlich ein entries-Ergebnis erhaelt
+                # und dadurch die Content-/Parser-Duplicate-Ebene ueberspringt.
+                ydl_opts = {**ydl_opts, "noplaylist": True}
             info = await download_executor.extract_info_async(
                 url, ydl_opts, download=False
             )
@@ -806,6 +813,26 @@ class DownloadHandler:
                 f"✅ YOUTUBE-PIPELINE ABGESCHLOSSEN — {len(processed_results)} Track(s)\n"
                 f"{'═'*60}"
             )
+
+        except asyncio.CancelledError as ce:
+            # DL-08 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md,
+            # Abschnitt 6): services/downloader/download_utils.py::
+            # _process_playlist_download() haengt bei einer Cancellation
+            # mitten in der Playlist-Verarbeitung die bereits erfolgreich
+            # abgeschlossenen Tracks als partial_playlist_results-Attribut an
+            # die CancelledError, statt sie unwiederbringlich zu verlieren.
+            # Hier - der einzigen Stelle mit Zugriff auf self.duplicate_detector
+            # zwischen Pipeline-Layer und Handler-Layer - werden sie ueber das
+            # bereits bestehende, unveraenderte _register_playlist_track_duplicates()
+            # registriert. Der aktuell abgebrochene bzw. nicht erfolgreiche Track
+            # ist in dieser Liste nie enthalten (siehe download_utils.py).
+            # getattr() mit Default schuetzt vor einer "nackten" CancelledError
+            # ohne dieses Attribut (Cancellation an anderer Stelle der Pipeline).
+            # Cancellation wird NICHT unterdrueckt: re-raise erfolgt in jedem Fall.
+            partial_results = getattr(ce, "partial_playlist_results", None)
+            if partial_results:
+                self._register_playlist_track_duplicates(partial_results)
+            raise
 
         except Exception as e:
             self.logger.error(
