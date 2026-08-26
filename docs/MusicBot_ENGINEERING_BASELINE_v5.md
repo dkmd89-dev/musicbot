@@ -4,7 +4,7 @@
 > read-only Post-Baseline-v4 Health & Risk Audit
 > (`docs/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md`) und der
 > anschließend freigegebenen, eng umrissenen Behebung der dabei gefundenen
-> drei P1-Findings. `docs/MusicBot_ENGINEERING_BASELINE_v4.md` bleibt als
+> drei P1-Findings. `docs/archive/MusicBot_ENGINEERING_BASELINE_v4.md` bleibt als
 > eingefrorene, historische Referenz unverändert bestehen.
 
 ---
@@ -14,7 +14,7 @@
 | Feld | Wert |
 |---|---|
 | Datum | 2026-08-26 |
-| Vorherige Baseline | `docs/MusicBot_ENGINEERING_BASELINE_v4.md` (1107 passed / 0 failed, eingefroren) |
+| Vorherige Baseline | `docs/archive/MusicBot_ENGINEERING_BASELINE_v4.md` (1107 passed / 0 failed, eingefroren) |
 | Herleitung | `docs/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md` (Findings 1–3) |
 | Test-Kommando | `python3 -m pytest tests/ -q` |
 | Testergebnis | **1123 passed, 0 failed**, 19 subtests passed, 1 Warning (bekannte, harmlose Pytest-Collection-Warning aus v3/v4, unverändert) |
@@ -180,7 +180,7 @@ Fehlschlagen gebracht.
 Bei Widersprüchen zwischen diesem Dokument und älteren Dokumenten gilt
 weiterhin: aktueller Code > tatsächlich ausgeführte Tests > aktuelle
 technische Dokumentation > historische Dokumentation.
-`docs/MusicBot_ENGINEERING_BASELINE_v4.md` bleibt als eingefrorene,
+`docs/archive/MusicBot_ENGINEERING_BASELINE_v4.md` bleibt als eingefrorene,
 historische Referenz (1107/0) unverändert bestehen und wird durch dieses
 Dokument **abgelöst**, nicht ersetzt, als aktueller Referenzpunkt.
 `docs/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md` bleibt als
@@ -195,7 +195,7 @@ Analyseartefakt/Herleitung dieser Baseline unverändert bestehen.
 ```
 
 Der Post-Baseline-v4-Audit hat den bestehenden Freeze (Baseline v4,
-`docs/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md`) nicht neu geöffnet — die
+`docs/archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md`) nicht neu geöffnet — die
 drei gefundenen P1-Findings waren eng umrissene, unabhängige Ein-Datei-Fixes
 nach bereits im Repo etablierten Mustern (`run_in_executor`,
 `_scrub_credentials`, explizite Parameter-Durchreichung), keiner davon

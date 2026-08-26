@@ -1,6 +1,6 @@
 # MusicBot — Post-Baseline-v4 Health & Risk Audit
 
-> Strikt read-only Audit nach `docs/MusicBot_ENGINEERING_BASELINE_v4.md`
+> Strikt read-only Audit nach `docs/archive/MusicBot_ENGINEERING_BASELINE_v4.md`
 > (Freeze 2026-08-26, 1107 passed/0 failed). Ziel: unabhängig verifizieren,
 > ob seit dem Freeze neue P0/P1-Risiken bestehen, und eine Entscheidungsvorlage
 > für die nächste Phase (Engineering-Fix vs. Produktphase) erzeugen. Die

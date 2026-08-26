@@ -16,13 +16,14 @@ Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/a
 |---|---|---|
 | [MusicBot_ENGINEERING_BASELINE_v5.md](MusicBot_ENGINEERING_BASELINE_v5.md) | CURRENT (eingefroren nach Freeze 2026-08-26) | Nächster verifizierter Referenzzustand nach Post-Baseline-v4 Health & Risk Audit + Behebung von 3 P1-Findings (Duplicate-Detection-Artist/Titel-Ebene, renamed_due_to_conflict-Signal, Fanart-API-Key-Log-Leak) + Doku-Korrektur (enhanced_error_handler.py), 1123 passed / 0 failed — neue Findings → MusicBot_ENGINEERING_BASELINE_v6.md |
 | [MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md](MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md) | HISTORICAL (Analyseartefakt) | Strikt read-only Audit nach v4, Re-Verifikation AE-10/11/12 + 3 neue P1-Findings — Herleitung von v5 |
-| [MusicBot_ENGINEERING_BASELINE_v4.md](MusicBot_ENGINEERING_BASELINE_v4.md) | SUPERSEDED (eingefroren nach Freeze 2026-08-26) | Abgelöst durch v5 |
 | [MusicBot_ARCHITECTURE_EVOLUTION.md](MusicBot_ARCHITECTURE_EVOLUTION.md) | CURRENT | Architektur-Invarianten (INV-01–04), Evolution-Kandidaten, ADRs, Closure-Verifikation der Enforcement Fix Phase sowie AE-10/AE-11/AE-12 (Abschnitt 29) — Herleitung von v4 |
-| [MusicBot_FINAL_ARCHITECTURE_CLOSURE.md](MusicBot_FINAL_ARCHITECTURE_CLOSURE.md) | HISTORICAL (Analyseartefakt) | Freeze-Gate-Audit — initial BLOCKED durch AE-12, nach dessen Schließung per Nachtrag auf APPROVED aktualisiert |
-| [MusicBot_AE12_DESIGN_SAFETY_AUDIT.md](MusicBot_AE12_DESIGN_SAFETY_AUDIT.md) | HISTORICAL (Analyseartefakt) | Forensischer Design-/Safety-Audit vor der AE-12-Implementierung |
-| [AE-12_Closure_Audit.md](AE-12_Closure_Audit.md) | HISTORICAL (Analyseartefakt) | Unabhängig gegengeprüfte Closure-Kriterien-Matrix für den AE-12-Fix (7/7 PASS) |
-| [MusicBot_ENGINEERING_BASELINE_v3.md](MusicBot_ENGINEERING_BASELINE_v3.md) | SUPERSEDED (eingefroren nach Freeze 2026-08-25) | Abgelöst durch v4, v4 wiederum durch v5 |
-| [MusicBot_POST_BASELINE_TRIAGE.md](MusicBot_POST_BASELINE_TRIAGE.md) | HISTORICAL (Analyseartefakt) | Herleitung von v3 — sechs-Dimensionen-Triage + Deep-Audit-Nachträge, nicht selbst Baseline |
+| [archive/MusicBot_ENGINEERING_BASELINE_v4.md](archive/MusicBot_ENGINEERING_BASELINE_v4.md) | SUPERSEDED (eingefroren nach Freeze 2026-08-26) | Abgelöst durch v5 |
+| [archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md](archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md) | HISTORICAL (Analyseartefakt) | Freeze-Gate-Audit — initial BLOCKED durch AE-12, nach dessen Schließung per Nachtrag auf APPROVED aktualisiert |
+| [archive/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md](archive/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md) | HISTORICAL (Analyseartefakt) | Forensischer Design-/Safety-Audit vor der AE-12-Implementierung |
+| [archive/AE-12_Closure_Audit.md](archive/AE-12_Closure_Audit.md) | HISTORICAL (Analyseartefakt) | Unabhängig gegengeprüfte Closure-Kriterien-Matrix für den AE-12-Fix (7/7 PASS) |
+| [archive/MusicBot_PHASE5_PERFORMANCE_BASELINE.md](archive/MusicBot_PHASE5_PERFORMANCE_BASELINE.md) | HISTORICAL (Analyseartefakt) | Performance-Charakterisierung nach v3/Phase-4, inkl. FINDING-7-Fix (Event-Loop-Blocking in `normalize_loudness()`) |
+| [archive/MusicBot_ENGINEERING_BASELINE_v3.md](archive/MusicBot_ENGINEERING_BASELINE_v3.md) | SUPERSEDED (eingefroren nach Freeze 2026-08-25) | Abgelöst durch v4, v4 wiederum durch v5 |
+| [archive/MusicBot_POST_BASELINE_TRIAGE.md](archive/MusicBot_POST_BASELINE_TRIAGE.md) | HISTORICAL (Analyseartefakt) | Herleitung von v3 — sechs-Dimensionen-Triage + Deep-Audit-Nachträge, nicht selbst Baseline |
 | [archive/MusicBot_ENGINEERING_BASELINE_v2.md](archive/MusicBot_ENGINEERING_BASELINE_v2.md) | SUPERSEDED (eingefroren nach Closure 2026-08-25) | Abgelöst durch v3 |
 | [archive/MusicBot_ENGINEERING_BASELINE.md](archive/MusicBot_ENGINEERING_BASELINE.md) | SUPERSEDED | v1, abgelöst durch v2 |
 

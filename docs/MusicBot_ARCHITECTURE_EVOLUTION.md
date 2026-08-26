@@ -34,7 +34,7 @@ Branch: main
 
 **Verifiziert (dieser Audit):**
 ```
-git status --short   → nur docs/MusicBot_PHASE5_PERFORMANCE_BASELINE.md (Freeze-Point-Nachtrag, unkommittiert)
+git status --short   → nur docs/archive/MusicBot_PHASE5_PERFORMANCE_BASELINE.md (Freeze-Point-Nachtrag, unkommittiert)
 pytest tests/ -q      → 1077 passed, 0 failed
 ```
 
@@ -46,11 +46,11 @@ pytest tests/ -q      → 1077 passed, 0 failed
 
 | Dokument | Aktueller Pfad | Hinweis |
 |---|---|---|
-| Engineering Baseline v3 | `docs/MusicBot_ENGINEERING_BASELINE_v3.md` | CURRENT, eingefroren |
-| Post-Baseline Triage | `docs/MusicBot_POST_BASELINE_TRIAGE.md` | HISTORICAL |
+| Engineering Baseline v3 | `docs/archive/MusicBot_ENGINEERING_BASELINE_v3.md` | CURRENT, eingefroren |
+| Post-Baseline Triage | `docs/archive/MusicBot_POST_BASELINE_TRIAGE.md` | HISTORICAL |
 | Phase 4 Failure-Path Audit | `docs/archive/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md` | **Pfad-Korrektur:** liegt nicht mehr unter `docs/`, sondern wurde durch eine zwischenzeitliche Dokumentations-Umstrukturierung (Commits zwischen `ea01c62` und `b26166d`, nicht Teil dieser Session) nach `docs/archive/` verschoben. Inhalt unverändert, hier zitiert. |
 | FINDING-4 Forensic Audit | `docs/archive/MusicBot_FINDING_4_FORENSIC_AUDIT.md` | ebenso verschoben |
-| Phase 5 Performance Baseline | `docs/MusicBot_PHASE5_PERFORMANCE_BASELINE.md` | CURRENT, inkl. FINDING-7-Nachtrag + Technical-Freeze-Point |
+| Phase 5 Performance Baseline | `docs/archive/MusicBot_PHASE5_PERFORMANCE_BASELINE.md` | CURRENT, inkl. FINDING-7-Nachtrag + Technical-Freeze-Point |
 | `docs/INDEX.md` | — | 24 ARCH-\*-Dokumente + 9 POST-ARCH-\*-Audits unter `docs/archive/`, als historische Entscheidungsgrundlage herangezogen, nicht reproduziert |
 
 Zusätzlich direkt gegen den aktuellen Code verifiziert (nicht aus Dokumentation
@@ -359,7 +359,7 @@ kosmetisch).
 
 ### `handlers/enhanced_error_handler.py` — Status-Korrektur
 
-`docs/MusicBot_ENGINEERING_BASELINE_v3.md` (Zeile 64, 145) klassifiziert dieses
+`docs/archive/MusicBot_ENGINEERING_BASELINE_v3.md` (Zeile 64, 145) klassifiziert dieses
 Modul als **"PLANNED / NOT INTEGRATED"**. Diese Aussage ist bei direkter
 Code-Verifikation **für den überwiegenden Teil des Moduls falsch**:
 
@@ -1519,7 +1519,7 @@ anderen Gruenden weiterhin sinnvoll (Konsistenz mit `move_to_library()`).
 Rein dokumentarisch, keine funktionale Auswirkung - zur Kenntnisnahme
 fuer eine kuenftige Dokumentationspflege vermerkt.
 
-**Status: CLOSED** (siehe `docs/AE-12_Closure_Audit.md` fuer die
+**Status: CLOSED** (siehe `docs/archive/AE-12_Closure_Audit.md` fuer die
 vollstaendige, unabhaengig gegengepruefte Closure-Kriterien-Matrix).
 
 ### Verbleibende Findings (P2/P3, unveraendert gegenueber Abschnitt 28)
@@ -1540,7 +1540,7 @@ DEFER. Zusaetzlich, aus den AE-10/11/12-Audits:
 
 ### Architecture Freeze Status (aktuell)
 
-**Siehe `docs/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md` (urspruenglicher
-Gate-Audit, damals BLOCKED durch AE-12) und `docs/AE-12_Closure_Audit.md`
+**Siehe `docs/archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md` (urspruenglicher
+Gate-Audit, damals BLOCKED durch AE-12) und `docs/archive/AE-12_Closure_Audit.md`
 (AE-12 selbst: CLOSED — GO). Mit AE-12 geschlossen ist der einzige
 damals identifizierte technische Blocker aufgeloest.**
