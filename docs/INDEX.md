@@ -14,7 +14,12 @@ Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/a
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| [MusicBot_ENGINEERING_BASELINE_v3.md](MusicBot_ENGINEERING_BASELINE_v3.md) | CURRENT (eingefroren nach Freeze 2026-08-25) | Nächster verifizierter Referenzzustand nach Post-Baseline-Triage + Deep Audits (FINDING-1/2/3 gefixt, ENHANCED-ERROR-HANDLER als PLANNED/NOT INTEGRATED eingeordnet), 1063 passed / 0 failed — neue Findings → MusicBot_ENGINEERING_BASELINE_v4.md |
+| [MusicBot_ENGINEERING_BASELINE_v4.md](MusicBot_ENGINEERING_BASELINE_v4.md) | CURRENT (eingefroren nach Freeze 2026-08-26) | Nächster verifizierter Referenzzustand nach INV-01/INV-02-Enforcement-Fix-Phase + AE-10/AE-11/AE-12 (ChartRenderer-, TagWriter-Event-Loop-/Crash-Safety-Fixes), Freeze-Gate-Audit 🟢 APPROVED, 1107 passed / 0 failed — neue Findings → MusicBot_ENGINEERING_BASELINE_v5.md |
+| [MusicBot_ARCHITECTURE_EVOLUTION.md](MusicBot_ARCHITECTURE_EVOLUTION.md) | CURRENT | Architektur-Invarianten (INV-01–04), Evolution-Kandidaten, ADRs, Closure-Verifikation der Enforcement Fix Phase sowie AE-10/AE-11/AE-12 (Abschnitt 29) — Herleitung von v4 |
+| [MusicBot_FINAL_ARCHITECTURE_CLOSURE.md](MusicBot_FINAL_ARCHITECTURE_CLOSURE.md) | HISTORICAL (Analyseartefakt) | Freeze-Gate-Audit — initial BLOCKED durch AE-12, nach dessen Schließung per Nachtrag auf APPROVED aktualisiert |
+| [MusicBot_AE12_DESIGN_SAFETY_AUDIT.md](MusicBot_AE12_DESIGN_SAFETY_AUDIT.md) | HISTORICAL (Analyseartefakt) | Forensischer Design-/Safety-Audit vor der AE-12-Implementierung |
+| [AE-12_Closure_Audit.md](AE-12_Closure_Audit.md) | HISTORICAL (Analyseartefakt) | Unabhängig gegengeprüfte Closure-Kriterien-Matrix für den AE-12-Fix (7/7 PASS) |
+| [MusicBot_ENGINEERING_BASELINE_v3.md](MusicBot_ENGINEERING_BASELINE_v3.md) | SUPERSEDED (eingefroren nach Freeze 2026-08-25) | Abgelöst durch v4 |
 | [MusicBot_POST_BASELINE_TRIAGE.md](MusicBot_POST_BASELINE_TRIAGE.md) | HISTORICAL (Analyseartefakt) | Herleitung von v3 — sechs-Dimensionen-Triage + Deep-Audit-Nachträge, nicht selbst Baseline |
 | [archive/MusicBot_ENGINEERING_BASELINE_v2.md](archive/MusicBot_ENGINEERING_BASELINE_v2.md) | SUPERSEDED (eingefroren nach Closure 2026-08-25) | Abgelöst durch v3 |
 | [archive/MusicBot_ENGINEERING_BASELINE.md](archive/MusicBot_ENGINEERING_BASELINE.md) | SUPERSEDED | v1, abgelöst durch v2 |
