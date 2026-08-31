@@ -1,9 +1,9 @@
 # MusicBot — Download Pipeline Stability Phase — PHASE 2D: DL-01 Audit
 
 > Strikt read-only Analyse gemäß Auftrag PHASE 2D. Basis:
-> `docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md`,
-> `docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md`,
-> `docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md`.
+> `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md`,
+> `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md`,
+> `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md`.
 > Aufbauend auf Commit `dc09e42` (DL-02, working tree sauber verifiziert).
 > **Keine Codeänderungen in dieser Phase.**
 

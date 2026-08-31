@@ -1,5 +1,5 @@
 """
-DL-06 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md):
+DL-06 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md):
 DownloadExecutor.download_single_track() (Playlist-Track-Download) liess
 nach einem Fehler INNERHALB des yt-dlp-/FFmpeg-Aufrufs selbst (z.B. ein
 scheiterndes FFmpeg-Postprocessing) die bereits heruntergeladene Rohdatei

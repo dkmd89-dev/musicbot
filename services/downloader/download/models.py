@@ -54,7 +54,7 @@ class DownloadResult:
 
     # Datei-Informationen
     library_path: Optional[str] = None
-    # DUP-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+    # DUP-01 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
     # eigene Quell-URL des Tracks - fuer die Duplicate-Cache-Registrierung
     # von Playlist-Tracks benoetigt (klassen/download_handler.py).
     url: Optional[str] = None

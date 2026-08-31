@@ -1,8 +1,8 @@
 # MusicBot — Download Pipeline Stability Phase — PHASE 2C: DL-02 Audit
 
 > Strikt read-only Analyse gemäß Auftrag PHASE 2C. Basis:
-> `docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md`,
-> `docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md`. Aufbauend auf
+> `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md`,
+> `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md`. Aufbauend auf
 > Commit `754979d` (DUP-01+DUP-08). **Keine Codeänderungen in dieser Phase.**
 > Zusätzlich zur reinen Repository-Analyse wurde der installierte
 > `yt-dlp`-Quellcode (`/home/robin/python/lib/python3.12/site-packages/yt_dlp/`)

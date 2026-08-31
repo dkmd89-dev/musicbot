@@ -214,7 +214,7 @@ class DuplicateDetector:
         file_path: Optional[Path] = None,
         metadata: Dict = None,
     ):
-        # DUP-02 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+        # DUP-02 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
         # check_for_duplicates() hasht ausschliesslich normalisierte/bereinigte
         # Werte (_normalize_artist_for_comparison/_clean_title_for_comparison),
         # register_download() hashte bisher die rohen, vom Aufrufer
@@ -276,7 +276,7 @@ class DuplicateDetector:
         patterns_to_remove = [
             r"\(Official.*?\)",
             r"\[.*?\]",
-            # DUP-04 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+            # DUP-04 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
             # vorher zwingend \s+ nach "feat"/"ft" - "Featuring" und
             # "feat.Someone"/"ft.Someone" (ohne Leerzeichen) wurden dadurch
             # nicht erkannt (False Negative). Jede Alternative unten

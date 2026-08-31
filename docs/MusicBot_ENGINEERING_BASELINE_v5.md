@@ -2,7 +2,7 @@
 
 > Nächster verifizierter Engineering-Referenzzustand nach einem strikt
 > read-only Post-Baseline-v4 Health & Risk Audit
-> (`docs/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md`) und der
+> (`docs/archive/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md`) und der
 > anschließend freigegebenen, eng umrissenen Behebung der dabei gefundenen
 > drei P1-Findings. `docs/archive/MusicBot_ENGINEERING_BASELINE_v4.md` bleibt als
 > eingefrorene, historische Referenz unverändert bestehen.
@@ -15,7 +15,7 @@
 |---|---|
 | Datum | 2026-08-26 |
 | Vorherige Baseline | `docs/archive/MusicBot_ENGINEERING_BASELINE_v4.md` (1107 passed / 0 failed, eingefroren) |
-| Herleitung | `docs/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md` (Findings 1–3) |
+| Herleitung | `docs/archive/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md` (Findings 1–3) |
 | Test-Kommando | `python3 -m pytest tests/ -q` |
 | Testergebnis | **1123 passed, 0 failed**, 19 subtests passed, 1 Warning (bekannte, harmlose Pytest-Collection-Warning aus v3/v4, unverändert) |
 | Python-Version | 3.12.3 |
@@ -59,7 +59,7 @@ reine Dokumentations-Ungenauigkeit korrigiert (siehe Abschnitt 4).
 | Finding 3 `cover_processor.py` Secret-Leak | Security | `_scrub_credentials()` (analog `navidrome_api.py`) entfernt den `api_key`-Query-Parameter aus dem Exception-String, bevor er geloggt wird. |
 | Dokumentation `enhanced_error_handler.py` | Dokumentation | Baseline v3/v4 bezeichnete den Handler fälschlich als „PLANNED / NOT INTEGRATED" — tatsächlich seit dem Initial-Commit vollständig integriert (`bot.py` registriert ihn als globalen Telegram-Error-Handler). Reine Korrektur, kein Codefehler. |
 
-Details je Fund: `docs/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md`.
+Details je Fund: `docs/archive/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md`.
 
 ---
 
@@ -183,7 +183,7 @@ technische Dokumentation > historische Dokumentation.
 `docs/archive/MusicBot_ENGINEERING_BASELINE_v4.md` bleibt als eingefrorene,
 historische Referenz (1107/0) unverändert bestehen und wird durch dieses
 Dokument **abgelöst**, nicht ersetzt, als aktueller Referenzpunkt.
-`docs/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md` bleibt als
+`docs/archive/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md` bleibt als
 Analyseartefakt/Herleitung dieser Baseline unverändert bestehen.
 
 ---

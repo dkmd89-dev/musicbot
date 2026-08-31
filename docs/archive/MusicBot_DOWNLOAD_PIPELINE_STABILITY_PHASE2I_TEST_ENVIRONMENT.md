@@ -154,6 +154,6 @@ PHASE 2H.
 
 **Status:** PHASE 2I abgeschlossen. DL-06 bleibt **TECHNISCH FREIGEGEBEN /
 ABGESCHLOSSEN** (siehe
-`docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md`,
+`docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md`,
 Abschnitt 5), jetzt zusätzlich durch reale Erfolgspfad-Bestätigung in
 Produktion UND Testumgebung untermauert.

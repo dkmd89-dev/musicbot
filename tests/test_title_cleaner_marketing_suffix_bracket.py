@@ -1,5 +1,5 @@
 """
-META-03 (docs/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md, Read-Only-Audit
+META-03 (docs/archive/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md, Read-Only-Audit
 vom 2026-08-26): services/metadata/title_cleaner.py::apply_title_cleanup_rules()
 enthielt ein Pattern, das Marketing-Suffixe wie "(Official Video)" entfernt,
 dabei aber Klammer-Oeffnung ("\\(?") und Klammer-Schluss ("\\)?") unabhaengig

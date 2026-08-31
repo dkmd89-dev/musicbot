@@ -1,5 +1,5 @@
 """
-RES-02 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md,
+RES-02 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md,
 Kurzliste): services/metadata/cover_processor.py::CoverProcessor._cache_set()
 schrieb Cover-Art-Bytes bisher per direktem open(path, "wb") + f.write() -
 ein Prozessabbruch/Fehler waehrend des Schreibens konnte die gecachte

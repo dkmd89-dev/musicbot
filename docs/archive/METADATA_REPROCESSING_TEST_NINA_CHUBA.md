@@ -1,7 +1,7 @@
 # MusicBot — Zweiter Validierungslauf des offiziellen Reprocessing-Tools: Nina Chuba
 
 > Zweiter, unabhängiger Validierungslauf von `scripts/reprocess_artist_metadata.py`
-> (nach dem ersten, in [`docs/METADATA_REPROCESSING_TEST_CHAPO102.md`](METADATA_REPROCESSING_TEST_CHAPO102.md)
+> (nach dem ersten, in [`docs/archive/METADATA_REPROCESSING_TEST_CHAPO102.md`](METADATA_REPROCESSING_TEST_CHAPO102.md)
 > dokumentierten CHAPO102-Lauf), diesmal gegen eine deutlich größere, reale
 > Mehr-Album-Discographie (39 Dateien, 6 Alben/EPs + Singles-Ordner) statt
 > einer reinen Singles-Sammlung. Durchgeführt am 2026-08-31.
@@ -158,7 +158,7 @@ Regression (TagWriter/Config-Isolation): 37 passed. Vollständige Suite:
 1306 passed, 8 failed — die 8 Fehlschläge sind ein bereits vor dieser
 Arbeit bestehender, unabhängiger Syntaxfehler in einem uncommitted lokalen
 Edit von `mapping/artist_genre.yaml` (Zeile 111), nicht durch dieses Tool
-verursacht (siehe `docs/METADATA_REPROCESSING_TEST_CHAPO102.md` bzw.
+verursacht (siehe `docs/archive/METADATA_REPROCESSING_TEST_CHAPO102.md` bzw.
 Session-Historie — nicht behoben, außerhalb des Scopes).
 
 ## 8. Finale Bewertung

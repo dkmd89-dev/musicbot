@@ -1,7 +1,7 @@
 # MusicBot — Metadata Quality Phase — PHASE 2: META-03
 
 > Analyse-, Fix- und Abschluss-Dokumentation für META-03. Basis:
-> `docs/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md` (Finding erstmals
+> `docs/archive/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md` (Finding erstmals
 > identifiziert), umgesetzt nach Abschluss von META-01/META-02 (PHASE 1),
 > wie dort als offener Folge-Kandidat vorgesehen.
 

@@ -1,6 +1,6 @@
 """
-DUP-04 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md /
-MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md):
+DUP-04 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md /
+docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md):
 
 DuplicateDetector._clean_title_for_comparison() verlangte in den beiden
 "feat"/"ft"-Mustern nach dem optionalen Punkt zwingend mindestens ein

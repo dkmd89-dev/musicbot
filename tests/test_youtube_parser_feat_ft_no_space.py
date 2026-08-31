@@ -1,5 +1,5 @@
 """
-META-01 (docs/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md, Read-Only-Audit
+META-01 (docs/archive/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md, Read-Only-Audit
 vom 2026-08-26): utils/youtube_parser.py verlangte in _extract_features()
 (alle drei Klammer-/Plain-Varianten) und in _parse_artist_and_title()'s
 feat_in_artist_pattern nach dem optionalen Punkt bei "feat"/"ft" zwingend

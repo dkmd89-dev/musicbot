@@ -1,6 +1,6 @@
 """
 META-11 (entdeckt via Live-Test-Download am 2026-08-26, siehe
-docs/MusicBot_METADATA_QUALITY_PHASE4_META11_AUDIT.md): sowohl
+docs/archive/MusicBot_METADATA_QUALITY_PHASE4_META11_AUDIT.md): sowohl
 services/metadata/title_cleaner.py::TitleCleaner.light_title_cleanup()
 als auch ::build_search_title() enthielten ein Pattern zum Entfernen des
 englischen YouTube-Suffixes "(Official Music Video)" bzw. "Video", das

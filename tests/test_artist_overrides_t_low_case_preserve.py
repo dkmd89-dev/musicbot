@@ -1,7 +1,7 @@
 """
-META-04 (docs/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md, Read-Only-Audit
+META-04 (docs/archive/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md, Read-Only-Audit
 vom 2026-08-26), Fortsetzung von PHASE 3 (siehe
-docs/MusicBot_METADATA_QUALITY_PHASE3_META04_AUDIT.md, dort noch als
+docs/archive/MusicBot_METADATA_QUALITY_PHASE3_META04_AUDIT.md, dort noch als
 offene Rueckfrage markiert): mapping/artist_overrides.json enthielt einen
 expliziten Eintrag "t-low": "t-Low" (kleines t, grosses L). Nutzer hat
 bestaetigt: die tatsaechliche Eigenschreibweise des Kuenstlers ist

@@ -1,5 +1,5 @@
 """
-DL-02 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md):
+DL-02 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md):
 services/downloader/download_utils.py::_process_single_download() liess
 nach einem Fehler INNERHALB des yt-dlp-/FFmpeg-Aufrufs selbst (z.B. ein
 scheiterndes FFmpeg-Postprocessing) die bereits heruntergeladene Rohdatei

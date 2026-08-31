@@ -1,5 +1,5 @@
 """
-DL-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2D_DL01_AUDIT.md):
+DL-01 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2D_DL01_AUDIT.md):
 asyncio.CancelledError erbt seit Python 3.8 von BaseException, wurde von
 keinem der bestehenden `except Exception`-Bloecke in
 EnhancedMetadataProcessor.process_single_track() abgefangen. Eine

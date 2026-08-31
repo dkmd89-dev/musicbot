@@ -80,7 +80,7 @@ from services.downloader.download.formatters import ProgressFormatter
 # URL-ERKENNUNG: YouTube-Mix-/Radio-Pseudo-Playlists
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# DUP-06 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md): yt-dlp
+# DUP-06 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md): yt-dlp
 # behandelt jede URL mit list=... (echte Playlist "PL..." UND automatisch
 # generierte Mix-/Radio-Liste "RD...") ueber denselben Playlist-faehigen
 # Extractor (YoutubeTabIE) - ohne noplaylist=True entsteht in beiden Faellen
@@ -577,7 +577,7 @@ async def _process_playlist_download(
                 continue
 
             # ── DOWNLOAD ──────────────────────────────────────────────────────
-            # PL-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+            # PL-01 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
             # download_single_track() besitzt eine echte Retry-Schleife, der
             # Funktions-Default max_retries=1 (kein Retry) griff hier bisher
             # mangels Uebergabe fuer jeden Playlist-Track - waehrend Single-
@@ -635,7 +635,7 @@ async def _process_playlist_download(
             logger.info(ProgressFormatter.track_result_block(idx, track_result))
 
         except asyncio.CancelledError as ce:
-            # DL-08 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md,
+            # DL-08 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md,
             # Abschnitt 6): CancelledError erbt seit Python 3.8 von BaseException,
             # nicht von Exception - wuerde ohne diesen Zweig die Funktion sofort
             # verlassen und die bereits fuer vorherige Tracks gesammelten `results`
@@ -745,7 +745,7 @@ async def _process_track_metadata(
         "uploader": track_info.get("uploader"),
         "channel": track_info.get("channel") or track_info.get("uploader"),
         "upload_date": track_info.get("upload_date"),
-        # DUP-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+        # DUP-01 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
         # eigene Video-URL des Tracks - dieselbe Quelle, die
         # download_executor.py::download_single_track() bereits fuer den
         # eigentlichen Download verwendet (track_info["webpage_url"]/["url"]).
@@ -875,7 +875,7 @@ async def _process_single_download(
     # ── Download ──────────────────────────────────────────────────────────────
     logger.info(f"⬇️  [DL] Starte Single-Download: {url[:80]}")
 
-    # DL-02 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md):
+    # DL-02 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md):
     # schlaegt yt-dlp/FFmpeg WAEHREND extract_info_async() fehl (z.B.
     # FFmpeg-Postprocessing-Fehler), wird download_info unten nie zugewiesen -
     # beide Strategien von find_downloaded_file() benoetigen dieses Dict und

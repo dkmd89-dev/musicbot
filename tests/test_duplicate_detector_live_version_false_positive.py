@@ -1,6 +1,6 @@
 """
-DUP-03 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md /
-MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md):
+DUP-03 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md /
+docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md):
 DuplicateDetector._clean_title_for_comparison() entfernte bisher jeglichen
 Inhalt in Klammern, die mit "Live" beginnen oder mit "Version" enden, sowie
 den exakten Zusatz "(Remix)" - unabhaengig davon, ob dieser Inhalt eine

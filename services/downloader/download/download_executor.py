@@ -237,7 +237,7 @@ class DownloadExecutor:
                 f"   Template : {outtmpl}"
             )
 
-            # DL-06 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md):
+            # DL-06 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md):
             # analog zu DL-02 (_process_single_download() in download_utils.py) -
             # schlaegt yt-dlp/FFmpeg WAEHREND extract_info() fehl, wird
             # download_info unten nie zugewiesen; find_downloaded_file() ist in

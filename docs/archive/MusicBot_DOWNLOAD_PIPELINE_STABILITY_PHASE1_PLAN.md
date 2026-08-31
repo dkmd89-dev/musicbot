@@ -2,7 +2,7 @@
 
 > Read-only Priorisierungs- und Fix-Plan-Phase gemäß
 > `docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE.md`. Basis:
-> `docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md`
+> `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md`
 > (Commit `29ed994`). **Keine Codeänderungen in dieser Phase.**
 
 ---

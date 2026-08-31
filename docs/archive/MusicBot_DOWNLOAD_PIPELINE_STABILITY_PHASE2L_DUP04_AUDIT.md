@@ -1,7 +1,7 @@
 # MusicBot — Download Pipeline Stability Phase — PHASE 2L: DUP-04
 
 > Analyse-, Fix- und Abschluss-Dokumentation für DUP-04. Basis:
-> `docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md` (Finding
+> `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md` (Finding
 > erstmals identifiziert), umgesetzt nach Abschluss von DUP-03 (PHASE 2J),
 > wie im PHASE-1-Plan als Reihenfolge vorgesehen.
 

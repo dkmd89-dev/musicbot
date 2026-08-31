@@ -1,5 +1,5 @@
 """
-PL-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md,
+PL-01 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md,
 Kurzliste): services/downloader/download/download_executor.py::
 download_single_track() besitzt eine echte Retry-Schleife
 (`for attempt in range(1, max_retries + 1)`), der einzige Produktions-

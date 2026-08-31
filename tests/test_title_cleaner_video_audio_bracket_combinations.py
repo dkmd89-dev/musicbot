@@ -1,7 +1,7 @@
 """
 META-11-Nachtrag (entdeckt via zweiten Live-Test-Download am 2026-08-26,
 direkt im Anschluss an MB-01): der urspruengliche META-11-Fix
-(docs/MusicBot_METADATA_QUALITY_PHASE4_META11_AUDIT.md) ergaenzte \b vor
+(docs/archive/MusicBot_METADATA_QUALITY_PHASE4_META11_AUDIT.md) ergaenzte \b vor
 "video"/"audio" sowie ein explizites deutsches Kompositum-Pattern, deckte
 aber nur die exakten Wortfolgen "(official [music] video)" bzw. "(audio)"
 ab. Reale YouTube-Titel kombinieren diese Schluesselwoerter jedoch mit
