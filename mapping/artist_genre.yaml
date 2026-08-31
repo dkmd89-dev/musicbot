@@ -106,9 +106,9 @@ ARTIST_GENRE_MAP:
     secondary: [Deutschrap, Emo Rap, Cloud Rap, Alternative Hip Hop, Lo-Fi]
     description: Deutscher Rapper mit atmosphärischem, melodischem Sound zwischen Emo- und Cloud Rap
 
-  miksu/macloud:
-    primary: Hip Hop
-    secondary: [Deutschrap, Trap, EDM, Pop Rap, Electronic]
+  miksu & macloud:
+    primary: Deutschrap
+    secondary: [Hip Hop, Pop, Electronic, Trap]
     description: Deutsches Produzenten-Duo, das Beats für zahlreiche deutsche Rapper produziert
 
   montez:
