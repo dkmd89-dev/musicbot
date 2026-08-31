@@ -1,5 +1,5 @@
 """
-Regressionstest fuer DATA-001/DATA-002 (docs/MusicBot_ENGINEERING_BASELINE.md):
+Regressionstest fuer DATA-001/DATA-002 (docs/archive/MusicBot_ENGINEERING_BASELINE.md):
 mehrere mapping/*.yaml-Dateien hatten doppelte Top-Level-Keys unter ihrem
 jeweiligen Wurzel-Key (z.B. ARTIST_GENRE_MAP, GENRE_OVERRIDES). PyYAML
 behaelt beim Laden standardmaessig nur den JEWEILS LETZTEN Wert pro Key -

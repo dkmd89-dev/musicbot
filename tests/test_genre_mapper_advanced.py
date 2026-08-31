@@ -3,7 +3,7 @@ Characterization-Tests fuer GenreMapper.determine_genre() gegen die echte
 mapping/-Dir - Phase 2, deckt Pfade ab, die tests/test_genre_processor.py
 (Phase 1) nicht beruehrt: Fuzzy-Matching, Regex-Regeln, Hierarchie-Fallback.
 
-Zwei bekannte Bugs wurden hier gefunden (siehe docs/MusicBot_ENGINEERING_BASELINE.md):
+Zwei bekannte Bugs wurden hier gefunden (siehe docs/archive/MusicBot_ENGINEERING_BASELINE.md):
 
 - GENRE-002: mapping/genre_rules.yaml hat keinen Top-Level-Key "GENRE_RULES"
   (nur keyword_rules/artist_rules/title_rules) - GenreMapper.rules ist mit
@@ -132,7 +132,7 @@ class TestHierarchyCaseFix:
     def test_ruhrpott_rap_now_resolves_via_hierarchy_not_override(
         self, genre_mapper
     ):
-        # ARCH-013 Phase 4 (docs/MusicBot_ARCH-013_Genre_Alias_Decision.md):
+        # ARCH-013 Phase 4 (docs/archive/arch/MusicBot_ARCH-013_Genre_Alias_Decision.md):
         # mapping/genre_overrides.yaml wurde von "ruhrpott rap: Deutschrap"
         # auf "ruhrpott rap: Ruhrpott Rap" korrigiert (Konflikt mit
         # genre_aliases.yaml und genre_hierarchy.yaml aufgeloest - vorher

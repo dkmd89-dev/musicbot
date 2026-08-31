@@ -37,7 +37,7 @@ class MetadataCacheHandler:
         """
         Schreibt den video_id-Index atomar (write-tmp -> rename), analog zu
         MetadataCache.store() (utils/metadata_cache.py). FINDING-5
-        (docs/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md): direktes
+        (docs/archive/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md): direktes
         open(mode="w") truncatet die Datei sofort beim Oeffnen - ein
         Prozessabbruch waehrend json.dump() hinterliess vorher eine leere
         oder ungueltige Indexdatei.

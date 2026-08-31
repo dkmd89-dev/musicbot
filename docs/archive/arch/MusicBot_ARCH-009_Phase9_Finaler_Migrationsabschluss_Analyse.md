@@ -2,7 +2,7 @@
 
 Reine Analysephase. **Keine Codeänderung, keine Verschiebung, keine
 Löschung, keine Test-/Importänderung, kein automatisches Aufräumen.**
-`docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md` ist verbindliche
+`docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md` ist verbindliche
 Grundlage — Abweichungen zwischen dieser Analyse und der dort
 dokumentierten Reihenfolge werden im Entscheidungsgate (Abschnitt 9)
 ausgewiesen, nicht eigenmächtig in der Roadmap umnummeriert.
@@ -31,8 +31,8 @@ Repo-weit per Grep verifiziert (`api.navidrome_api`, `api.navidrome_scan_trigger
 | `tests/test_navidrome_api_execute_scan.py` (4 Tests) | testet `api.navidrome_api.NavidromeAPI.execute_scan()` (Pass-Through-Vertrag) | Test | entfällt vollständig bei Option 2/3 — Inhalt bereits redundant zu `test_navidrome_scan_trigger.py` (testet exakt dasselbe Verhalten von `NavidromeScanTrigger.run_scan()` bereits direkt) |
 | `tests/test_navidrome_scan_trigger.py` | 8 String-Patch-Ziele: `"api.navidrome_scan_trigger.asyncio.create_subprocess_shell"` (3×), `"api.navidrome_scan_trigger._get_scan_config"` (3×), `"api.navidrome_scan_trigger.Config"` (1×), `from api.navidrome_scan_trigger import ...` (1×) | Test/Patch-Ziel/Import | bleibt unverändert (Variante A) bzw. alle 8 Ziele + Import ändern sich (Variante B/C/D) |
 | `tests/test_rich_menu_handler.py::TestHandleNavidromeScan` (5 Tests) | 5× `patch("handlers.menu.rich_menu_handler.NavidromeAPI.execute_scan", ...)` | Test/Patch-Ziel | Patch-Ziel ändert sich zu `"handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan"` bei Option 2/3 (Patch geht bereits über das konsumierende Modul, nicht den Ursprungspfad — vgl. ARCH-009 Phase 8) |
-| `docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md` | Prosa-Erwähnungen in „Bereits abgeschlossen“-Einträgen (Phase 3–8) | Doku (lebend) | müsste bei tatsächlicher Umsetzung ergänzt werden (nicht Teil dieser Analysephase) |
-| `docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md`, `ARCH-006_P2_Dependency_Graph.md`, `ARCH-008_Navidrome_Adapter_Analyse.md`, `ARCH-009_Phase3/5/6/7/8_*.md`, `ENGINEERING_BASELINE.md` | Prosa-Erwähnungen (Zeitpunkt-Snapshots vergangener Phasen) | Doku (historisch) | unverändert — historische ARCH-Dokumente werden laut etablierter Regel dieser Session nicht nachträglich umgeschrieben |
+| `docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md` | Prosa-Erwähnungen in „Bereits abgeschlossen“-Einträgen (Phase 3–8) | Doku (lebend) | müsste bei tatsächlicher Umsetzung ergänzt werden (nicht Teil dieser Analysephase) |
+| `docs/archive/arch/MusicBot_ARCH-003_Services_Phase1_Analyse.md`, `ARCH-006_P2_Dependency_Graph.md`, `ARCH-008_Navidrome_Adapter_Analyse.md`, `ARCH-009_Phase3/5/6/7/8_*.md`, `ENGINEERING_BASELINE.md` | Prosa-Erwähnungen (Zeitpunkt-Snapshots vergangener Phasen) | Doku (historisch) | unverändert — historische ARCH-Dokumente werden laut etablierter Regel dieser Session nicht nachträglich umgeschrieben |
 
 **Beantwortung der drei Leitfragen:**
 
@@ -489,7 +489,7 @@ Punkte werden ausdrücklich zur Nutzerentscheidung vorgelegt:
    entfernen, dann `NavidromeScanTrigger` separat verschieben)?
 
 **Abweichung von der bestehenden Roadmap-Reihenfolge:**
-`docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md` beschreibt
+`docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md` beschreibt
 „Phase 9 — Finaler Navidrome-Migrationsabschluss“ bislang als reine
 Abschlussverifikation (Regressionstest, Import-Audit,
 Dokumentationsaktualisierung, PR/Merge) **nach** bereits getroffenen

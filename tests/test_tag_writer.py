@@ -4,7 +4,7 @@ Unit-Tests für TagWriter (services/metadata/tag_writer.py).
 TagWriter wurde im Zuge von ARCH-001 aus EnhancedMetadataProcessor
 extrahiert (_write_metadata_to_file_with_lyrics/_write_genres_m4a/
 _write_genres_mp3/_extract_genre_parts -> eigene Klasse, 1:1 gleicher
-Code, siehe docs/MusicBot_ARCH-001_Orchestrators.md). Diese Tests decken
+Code, siehe docs/archive/arch/MusicBot_ARCH-001_Orchestrators.md). Diese Tests decken
 den extrahierten Code jetzt isoliert ab, statt nur indirekt über den
 E2E-Test (tests/test_metadata_processor_happy_path.py).
 

@@ -3,7 +3,7 @@ Characterization-Tests fuer die Retry-Schleife in
 enhanced_download_with_retry() (services/downloader/download_utils.py:224).
 
 Vorher 0 dedizierte Tests fuer diese Schleife (siehe
-docs/MusicBot_ENGINEERING_BASELINE_v2.md, Abschnitt 14, RETRY-COVERAGE).
+docs/archive/MusicBot_ENGINEERING_BASELINE_v2.md, Abschnitt 14, RETRY-COVERAGE).
 Dieses Modul dokumentiert das TATSAECHLICHE aktuelle Verhalten, es aendert
 nichts daran.
 

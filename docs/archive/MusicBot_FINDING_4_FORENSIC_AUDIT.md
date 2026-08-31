@@ -37,13 +37,13 @@ python3 -m pytest tests/ -q
 ```
 
 Repository entspricht dem in Phase 4 auditierten Zustand
-(`docs/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md` wurde zwischenzeitlich vom
+(`docs/archive/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md` wurde zwischenzeitlich vom
 Nutzer committet, keine Code-Änderung). Kein Reinterpretations-Bedarf,
 Audit wird fortgesetzt.
 
 ## 3. Original Evidence
 
-Aus `docs/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md`, Abschnitt 9/19: beide
+Aus `docs/archive/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md`, Abschnitt 9/19: beide
 Pfade erreichbar, 0 direkte Testabdeckung für
 `handle_youtube_links()`/`handle_playlist_success()`/
 `handle_single_track_success()`, Exception-Propagation und

@@ -7,7 +7,7 @@
 | Repository | `dkmd89-dev/musicbot` |
 | HEAD Commit | `33fae211ca8af3d981ef16da98dd022be48a86a3` (main) |
 | Audit-Datum | 2026-08-25 |
-| Baseline-Referenz | `docs/MusicBot_ENGINEERING_BASELINE_v2.md` (eingefroren, Closure-Stand: 1057 passed / 0 failed) |
+| Baseline-Referenz | `docs/archive/MusicBot_ENGINEERING_BASELINE_v2.md` (eingefroren, Closure-Stand: 1057 passed / 0 failed) |
 | Aktueller Teststand (verifiziert) | 1057 passed, 0 failed, 19 subtests passed, 75.6s Laufzeit — bestätigt via `python3 -m pytest tests/ -q` |
 | Explizit ausgeschlossen | Titel-Parsing-Bug (CLOSED), HTTP-Request-Logging (CLOSED), AUTOLEARN-001/002, RETRY-COVERAGE, CHANNEL-PATTERN, STALE-TEST, PYTEST-ASYNCIO, PODCAST-INDEX-KEY, LASTFM-COVER-DEAD (alle CLOSED), Spotify (REMOVED, kein offenes Finding) |
 
@@ -446,4 +446,4 @@ nichts. Sie betrifft ausschließlich die vier oben genannten, repo-weit
 aufruferlosen Elemente.
 
 Keine Code-Änderung. Diese Klassifizierung fließt als bewusst akzeptierter,
-begründeter Zustand in `docs/MusicBot_ENGINEERING_BASELINE_v3.md` ein.
+begründeter Zustand in `docs/archive/MusicBot_ENGINEERING_BASELINE_v3.md` ein.

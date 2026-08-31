@@ -16,7 +16,7 @@
 | Python-Version (Runtime) | 3.12.3 |
 | Test-Kommando | `python3 -m pytest tests/ -q` |
 | Testlaufzeit | 76.02s |
-| Vorherige Baseline | `docs/MusicBot_ENGINEERING_BASELINE.md` (2026-08-16, historisch, bleibt unverändert) |
+| Vorherige Baseline | `docs/archive/MusicBot_ENGINEERING_BASELINE.md` (2026-08-16, historisch, bleibt unverändert) |
 | Zweck dieser Baseline | Referenzpunkt NACH vollständiger Spotify-Entfernung |
 
 Es gibt kein `pyproject.toml`, kein `pytest.ini`/`setup.cfg`, kein Dockerfile,
@@ -167,7 +167,7 @@ Traversal-Schutz über `_ensure_within_roots()` (Zeilen 339, 471, 488, 530) und
 `sanitize_filename()` (`utils/helpers.py`). Duplicate Detection läuft über
 `services/duplicate/` (`DuplicateDetector`, `DuplicateCache`), seit ARCH-018
 sauber aus `klassen/` extrahiert (0 Reverse-Edges zu `handlers/`/`klassen/`,
-AST-verifiziert in `docs/POST-ARCH-018_Services_Architecture_Audit.md`).
+AST-verifiziert in `docs/archive/post-arch/POST-ARCH-018_Services_Architecture_Audit.md`).
 
 ---
 
@@ -215,7 +215,7 @@ Ursache verifiziert — nicht geraten).
 in dieser Session als "15 vorbestehende Fehler" bzw. nach vorherigen Fixes
 (TitleCleaner-Fixes, PR #48) als "10 vorbestehende Fehler" stabil und
 unverändert über mehrere volle Regressionsläufe hinweg (siehe
-`docs/POST-ARCH-018_Services_Architecture_Audit.md` und die Spotify-Removal-
+`docs/archive/post-arch/POST-ARCH-018_Services_Architecture_Audit.md` und die Spotify-Removal-
 Regressionsläufe). Kein exaktes Einführungsdatum/-commit ermittelbar ohne
 `git bisect` — außerhalb des Scopes dieser Baseline.
 
@@ -428,13 +428,13 @@ Spotify-Config-Felder (`SPOTIFY_DOWNLOAD_DIR`, `SPOTIFY_CLIENT_ID/SECRET`,
 **Ergebnis:** 0 aktive Spotify-Referenzen (repo-weit erneut verifiziert für
 diese Baseline, siehe Abschnitt 3-Prüfung), YouTube-Pipeline strukturell
 unverändert, 1039 passed/10 failed (0 neue Fehler gegenüber Vor-Removal-Stand),
-keine neuen Importzyklen. Details: `docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md`,
+keine neuen Importzyklen. Details: `docs/archive/arch/MusicBot_ARCH-020_Download_Pipeline_Characterization.md`,
 Abschnitt "Spotify-Entfernung".
 
 ### ARCH-018 — Duplicate Detection Extraction (PR #47)
 
 Duplicate-Detection-Kern nach `services/duplicate/` extrahiert, 0 Reverse-Edges
-zu `handlers/`/`klassen/`. Verifiziert in `docs/POST-ARCH-018_Services_Architecture_Audit.md`.
+zu `handlers/`/`klassen/`. Verifiziert in `docs/archive/post-arch/POST-ARCH-018_Services_Architecture_Audit.md`.
 
 ### ARCH-020 — Download Pipeline Characterization
 
@@ -495,7 +495,7 @@ eigenen Arbeitsschritt.
 Bei Widersprüchen zwischen dieser Baseline und älteren Dokumenten gilt die in
 diesem Dokument angewandte Priorität: aktueller Code > tatsächlich ausgeführte
 Tests > aktuelle technische Dokumentation > historische Dokumentation.
-`docs/MusicBot_ENGINEERING_BASELINE.md` (v1) bleibt als historische
+`docs/archive/MusicBot_ENGINEERING_BASELINE.md` (v1) bleibt als historische
 Momentaufnahme vom 2026-08-16 unverändert bestehen und wird durch dieses
 Dokument **nicht ersetzt, sondern abgelöst** als aktueller Referenzpunkt.
 

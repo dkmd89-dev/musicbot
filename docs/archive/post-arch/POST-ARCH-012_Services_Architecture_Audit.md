@@ -13,7 +13,7 @@ Kandidaten.** Entscheidungsgate am Ende, wartet auf Freigabe.
 ARCH-009/010/011 sind abgeschlossen. ARCH-012 (Phase 1/2/3A/3B) ist
 abgeschlossen und in `main` gemergt (PR #24 Phase 2, PR #25 Phase 3A,
 PR #26 Phase 3B). Damit ist der im vorherigen Audit
-(`docs/MusicBot_POST-DUPLICATEENTRY_Services_Architecture_Audit.md`,
+(`docs/archive/post-arch/MusicBot_POST-DUPLICATEENTRY_Services_Architecture_Audit.md`,
 Abschnitt 5.2/8) als architektonisch wichtigster offener Befund
 identifizierte Punkt — Genre-Fachlogik in `services/clients/`
 (`lastfm_client.py`, `musicbrainz_client.py`) — vollständig aufgelöst:
@@ -478,9 +478,9 @@ die Entscheidung, ob und welcher davon verfolgt wird, liegt beim Nutzer.
 
 ## M. Dokumentationsänderungen
 
-Dieses Dokument (`docs/POST-ARCH-012_Services_Architecture_Audit.md`) neu
+Dieses Dokument (`docs/archive/post-arch/POST-ARCH-012_Services_Architecture_Audit.md`) neu
 erstellt. Keine Änderung an bestehenden Dokumenten — insbesondere
-`docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md` bleibt
+`docs/archive/arch/MusicBot_ARCH-012_Genre_Logic_Characterization.md` bleibt
 unverändert (historische Dokumentation, nicht rückwirkend umgeschrieben).
 
 ---

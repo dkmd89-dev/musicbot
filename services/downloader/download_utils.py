@@ -788,7 +788,7 @@ async def _process_track_metadata(
         # bereits fuer jeden Track auf (Schritt 19b) - inkl. derselben breiten
         # Sonderkanal-Pruefung, die hier vorher zusaetzlich (mit teils
         # abweichenden Bedingungen) dupliziert wurde. Siehe
-        # docs/MusicBot_ENGINEERING_BASELINE.md.
+        # docs/archive/MusicBot_ENGINEERING_BASELINE.md.
 
         if enhanced_result.success:
             logger.info(
@@ -960,7 +960,7 @@ async def _process_single_download(
         # bereits fuer jeden Track auf (Schritt 19b) - inkl. derselben breiten
         # Sonderkanal-Pruefung, die hier vorher zusaetzlich (mit teils
         # abweichenden Bedingungen) dupliziert wurde. Siehe
-        # docs/MusicBot_ENGINEERING_BASELINE.md.
+        # docs/archive/MusicBot_ENGINEERING_BASELINE.md.
 
         # Flags für Log
         flags = " ".join(

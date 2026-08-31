@@ -4,12 +4,12 @@
 **Typ:** Reine Characterization (keine Produktions-/Test-/Mapping-Änderungen)
 **Hinweis zur Nummerierung:** Der ursprüngliche Auftragstext bezeichnete diese Phase als
 "ARCH-019 Phase 1". `ARCH-019 Phase 1` existiert jedoch bereits (abgeschlossen, PR #46,
-`docs/MusicBot_ARCH-019_Genre_Client_Logic_Characterization.md`, andere Fragestellung:
+`docs/archive/arch/MusicBot_ARCH-019_Genre_Client_Logic_Characterization.md`, andere Fragestellung:
 `determine_genre()`-Nutzung in den Clients). Diese neue, inhaltlich breitere Untersuchung
 (inkl. Last.fm-Cover-Bezug) wurde zunächst irrtümlich als "ARCH-020 Phase 1" bezeichnet, ohne
 vorher zu prüfen, ob diese Nummer bereits reserviert war. Sie war es: `docs/ARCH-020_Phase.md`
 (Download-Pipeline-Characterization) existierte bereits vor dieser Session. Nach Klärung dieser
-Kollision (siehe `docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md`) wurde diese
+Kollision (siehe `docs/archive/arch/MusicBot_ARCH-020_Download_Pipeline_Characterization.md`) wurde diese
 Datei auf ausdrücklichen Nutzerwunsch zu **ARCH-021 Phase 1** umbenannt.
 
 ---
@@ -274,7 +274,7 @@ Umsetzungsphase sinnvoll wäre. Wartet auf ausdrückliche Nutzerentscheidung.
 ## Nachtrag (2026-08-25): Entscheidung getroffen — tote Quelle entfernt
 
 Nutzerentscheidung (im Rahmen der Freigabe für Baseline-v2-Punkt
-LASTFM-COVER-DEAD, siehe `docs/MusicBot_ENGINEERING_BASELINE_v2.md`):
+LASTFM-COVER-DEAD, siehe `docs/archive/MusicBot_ENGINEERING_BASELINE_v2.md`):
 **entfernen**, nicht aktivieren. `CoverProcessor._fetch_lastfm()`, der
 zugehörige Task-Eintrag in `_build_priority_task_list()`, der
 `lastfm_api_key`-Konstruktorparameter, die `_LASTFM_BASE`-Konstante sowie der

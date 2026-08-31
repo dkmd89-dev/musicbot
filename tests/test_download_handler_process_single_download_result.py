@@ -2,7 +2,7 @@
 Regressionstests fuer klassen/download_handler.py::_process_single_download_result()
 
 Nach der Spotify-Entfernung (siehe
-docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md, Abschnitt
+docs/archive/arch/MusicBot_ARCH-020_Download_Pipeline_Characterization.md, Abschnitt
 "Spotify-Entfernung") ist diese Methode ein reiner Guard/Pass-Through fuer
 YouTube-Ergebnisse: die Schritte D (Podcast-Episodennummer-Korrektur), E
 (playlist_metadata fuer Podcasts) und G (EnhancedMetadataProcessor-Aufruf +

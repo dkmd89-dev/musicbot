@@ -1,6 +1,6 @@
 # ARCH-009 Phase 6 — Zielposition und DI von `NavidromeAPI`: Analyse
 
-Reine Analysephase gemäß `docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`
+Reine Analysephase gemäß `docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`
 Phase 6. Keine Codeänderung, keine Verschiebung, keine DI-Umstellung.
 Bewertet den nach ARCH-009 Phase 1–5 tatsächlich verbleibenden
 `NavidromeAPI`-Kern gegen die etablierte Konvention:
@@ -313,7 +313,7 @@ eine Instanzstruktur besaßen (keiner von ihnen wurde als statische Klasse
 verschoben und erst danach umgebaut).
 
 **Offener Punkt für das Entscheidungsgate:** Das kehrt die aktuelle
-Reihenfolge in `docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`
+Reihenfolge in `docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`
 um (dort steht Phase 7 „Zielstruktur entscheiden“ vor Phase 8 „DI
 umsetzen“). Diese Analyse empfiehlt technisch die umgekehrte Reihenfolge
 (DI vor Ortswechsel), entscheidet das aber nicht selbst — das bleibt Teil

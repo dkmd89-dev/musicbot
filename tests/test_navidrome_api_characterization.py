@@ -23,7 +23,7 @@ ARCH-009 Phase 2 (2026-08-24): format_full_status_message()/
 format_rescan_status_message()/format_web_interface_url_message()/
 get_full_server_info()/get_scan_status()/test_api() wurden entfernt
 (0 Produktions-Consumer, 0 bzw. nur diese eigenen Charakterisierungstests
-- siehe docs/MusicBot_ARCH-009_Phase1_Bestandsaufnahme.md). Die
+- siehe docs/archive/arch/MusicBot_ARCH-009_Phase1_Bestandsaufnahme.md). Die
 zugehoerigen TestGetScanStatus/TestGetFullServerInfo-Klassen wurden
 entfernt. check_connection() bleibt bewusst erhalten (dokumentierter
 BUG-007-Beleg fuer eine bewusst zurueckgestellte, geplante Nutzung).
@@ -31,14 +31,14 @@ BUG-007-Beleg fuer eine bewusst zurueckgestellte, geplante Nutzung).
 ARCH-009 Phase 4 (2026-08-24): die Docker-/Subprocess-/Timeout-Steuerung
 von execute_scan() wurde nach api/navidrome_scan_trigger.py
 (NavidromeScanTrigger) ausgelagert - siehe
-docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md.
+docs/archive/arch/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md.
 
 ARCH-009 Phase 5 (2026-08-24): execute_scan() ist seitdem ein reiner,
 telegramfreier Pass-Through zu NavidromeScanTrigger.run_scan() - keine
 Telegram-Formatierung, kein Exception-Handling mehr in NavidromeAPI. Die
 MarkdownV2-Formatierung liegt jetzt vollstaendig in
 handlers/menu/rich_menu_handler.py (siehe
-docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md).
+docs/archive/arch/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md).
 TestExecuteScan testet seitdem nur noch den Pass-Through-Vertrag: gibt
 execute_scan() unveraendert das ScanRunResult von run_scan() zurueck bzw.
 reicht es dessen Exceptions (ScanTimeoutError, AttributeError, ...)
@@ -59,7 +59,7 @@ Instanzen).
 ARCH-009 Phase 8 (2026-08-24): der reine Navidrome-API-Adapter (alle in
 dieser Datei getesteten Methoden) wurde von api/navidrome_api.py nach
 services/clients/navidrome_api.py verschoben (Option B, siehe
-docs/MusicBot_ARCH-009_Phase8_Zielverschiebung_ServicesClients_Analyse.md).
+docs/archive/arch/MusicBot_ARCH-009_Phase8_Zielverschiebung_ServicesClients_Analyse.md).
 execute_scan() ist NICHT Teil dieser Verschiebung - bleibt als
 eigenstaendiger Rest in api/navidrome_api.py und wird seitdem separat in
 tests/test_navidrome_api_execute_scan.py getestet (dort auch weiterhin

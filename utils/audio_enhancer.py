@@ -2,7 +2,7 @@
 Audio Enhancer Service für den Bot
 Loudness-Normalisierung (FFmpeg loudnorm) für den Download-Workflow.
 
-ARCH-017 Phase 2 (docs/MusicBot_ARCH-017_Download_Audio_Enhancement_Characterization.md):
+ARCH-017 Phase 2 (docs/archive/arch/MusicBot_ARCH-017_Download_Audio_Enhancement_Characterization.md):
 die zuvor hier enthaltenen ReplayGain-, Künstlerbild- und MusicBrainz-ID-
 Fähigkeiten wurden entfernt, da sie im gesamten Repository nachweislich
 keinen produktiven Aufrufer besaßen (nie instanziiert, 0 Aufrufe außerhalb

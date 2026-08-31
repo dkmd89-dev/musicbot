@@ -2,8 +2,8 @@
 
 > Nächster verifizierter Engineering-Referenzzustand nach Abschluss der
 > Kette TRIAGE → DEEP AUDIT → FIX → REGRESSION → VERIFICATION
-> (`docs/MusicBot_POST_BASELINE_TRIAGE.md`). Kein reiner Finding-Report —
-> siehe Abschnitt 1 für die Herleitung. `docs/MusicBot_ENGINEERING_BASELINE_v2.md`
+> (`docs/archive/MusicBot_POST_BASELINE_TRIAGE.md`). Kein reiner Finding-Report —
+> siehe Abschnitt 1 für die Herleitung. `docs/archive/MusicBot_ENGINEERING_BASELINE_v2.md`
 > bleibt als eingefrorene, historische Referenz unverändert bestehen.
 
 ---
@@ -14,8 +14,8 @@
 |---|---|
 | Datum | 2026-08-25 |
 | Git Commit (main) | `c332e05a4df5423299f6bbda9abaeaabe46f726c` |
-| Vorherige Baseline | `docs/MusicBot_ENGINEERING_BASELINE_v2.md` (Closure-Stand 2026-08-25, 1057 passed / 0 failed, eingefroren — Abschnitt „Diese Datei ist mit der Closure abgeschlossen“) |
-| Herleitung | `docs/MusicBot_POST_BASELINE_TRIAGE.md` (Phase 1, sechs Dimensionen) → 3 Deep-Audit-Kandidaten (E3/HIGH) → alle 3 verifiziert, gefixt, regressionsgetestet → 1 weiterer Fund per Nutzerentscheidung als PLANNED/NOT INTEGRATED reklassifiziert (kein Fix) |
+| Vorherige Baseline | `docs/archive/MusicBot_ENGINEERING_BASELINE_v2.md` (Closure-Stand 2026-08-25, 1057 passed / 0 failed, eingefroren — Abschnitt „Diese Datei ist mit der Closure abgeschlossen“) |
+| Herleitung | `docs/archive/MusicBot_POST_BASELINE_TRIAGE.md` (Phase 1, sechs Dimensionen) → 3 Deep-Audit-Kandidaten (E3/HIGH) → alle 3 verifiziert, gefixt, regressionsgetestet → 1 weiterer Fund per Nutzerentscheidung als PLANNED/NOT INTEGRATED reklassifiziert (kein Fix) |
 | Test-Kommando | `python3 -m pytest tests/ -q` |
 | Testergebnis | **1063 passed, 0 failed**, 19 subtests passed, 1 Warning (Pytest-Collection-Warning, harmlos, siehe v2 §8), Laufzeit ~55–75s |
 | Python-Version | 3.12.3 |
@@ -54,7 +54,7 @@ Testfehlschlag im Repository.
 
 Alle drei: eigener Regressionstest, per `git stash` gegen den Vor-Fix-Stand
 als fehlschlagend verifiziert, volle Regressionssuite nach jedem Fix grün.
-Details je Fund in `docs/MusicBot_POST_BASELINE_TRIAGE.md`, Abschnitt 11
+Details je Fund in `docs/archive/MusicBot_POST_BASELINE_TRIAGE.md`, Abschnitt 11
 und den zugehörigen Nachträgen am Dateiende.
 
 ---
@@ -201,10 +201,10 @@ den neu hinzugefügten Regressionstests.
 Bei Widersprüchen zwischen diesem Dokument und älteren Dokumenten gilt
 weiterhin: aktueller Code > tatsächlich ausgeführte Tests > aktuelle
 technische Dokumentation > historische Dokumentation.
-`docs/MusicBot_ENGINEERING_BASELINE_v2.md` bleibt als eingefrorene,
+`docs/archive/MusicBot_ENGINEERING_BASELINE_v2.md` bleibt als eingefrorene,
 historische Referenz (Closure-Stand 1057/0) unverändert bestehen und wird
 durch dieses Dokument **abgelöst**, nicht ersetzt, als aktueller
-Referenzpunkt. `docs/MusicBot_POST_BASELINE_TRIAGE.md` bleibt als
+Referenzpunkt. `docs/archive/MusicBot_POST_BASELINE_TRIAGE.md` bleibt als
 Analyseartefakt/Herleitung dieser Baseline ebenfalls unverändert bestehen.
 
 ---

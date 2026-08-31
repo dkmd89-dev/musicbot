@@ -8,7 +8,7 @@ verbleibenden YouTube-Aufrufstellen geprüft (siehe
 tests/test_download_utils_metadata_translation.py für die
 "vorher"-Baseline). `merge_metadata_result_into_dict()` (dritte,
 Spotify-spezifische Aufrufstelle) wurde mit der Spotify-Entfernung
-mitentfernt (siehe docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md).
+mitentfernt (siehe docs/archive/arch/MusicBot_ARCH-020_Download_Pipeline_Characterization.md).
 """
 
 import asyncio

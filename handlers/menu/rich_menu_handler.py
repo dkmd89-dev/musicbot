@@ -10,7 +10,7 @@ CHANGELOG:
           • restart:-Pattern in get_telegram_handlers()
 
 Spotify-Unterstützung (v2.2) wurde entfernt (siehe
-docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md, Abschnitt
+docs/archive/arch/MusicBot_ARCH-020_Download_Pipeline_Characterization.md, Abschnitt
 "Spotify-Entfernung") - Spotify wurde im produktiven Betrieb nicht genutzt.
 """
 
@@ -667,8 +667,8 @@ class RichMenuHandler:
         Telegram-Formatierung). Die MarkdownV2-Nachrichtenbildung (Erfolg,
         Fehlschlag, Timeout, generische Exception) bleibt unverändert hier -
         Text/Emojis/Escaping 1:1 übernommen, siehe
-        docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md
-        und docs/MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md.
+        docs/archive/arch/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md
+        und docs/archive/arch/MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md.
         """
         query = update.callback_query
         user_id = update.effective_user.id

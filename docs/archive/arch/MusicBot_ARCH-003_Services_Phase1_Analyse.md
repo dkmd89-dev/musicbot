@@ -195,7 +195,7 @@ Vorbestand-Fehler.
 (ARCH-004 Abschnitt 7) sowie die zurückgestellte Folgeentscheidung
 „Temp-Verzeichnis-Bereinigung reaktivieren?" (eigenständiges Cleanup-Problem,
 unabhängig von der jetzt entfernten `FileUtils`-Klasse) — umgesetzt als
-ARCH-005, siehe `docs/MusicBot_ARCH-005_TempCleanup.md`.
+ARCH-005, siehe `docs/archive/arch/MusicBot_ARCH-005_TempCleanup.md`.
 
 ---
 

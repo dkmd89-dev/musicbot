@@ -7,12 +7,12 @@ vom jeweiligen Aufrufer erwartete Ergebnisformat.
 
 ARCH-004, P-3, Option B — ursprünglich aus drei unabhängig gewachsenen
 Implementierungen extrahiert (siehe
-docs/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md, Abschnitt 6, für die
+docs/archive/arch/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md, Abschnitt 6, für die
 vollständige Feld-für-Feld-Charakterisierung):
   - download_utils.py::_process_track_metadata()          (YT-Playlist)
   - download_utils.py::_process_single_download()          (YT-Single)
   - klassen/download_handler.py::_process_single_download_result() (Spotify,
-    entfernt - siehe docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md,
+    entfernt - siehe docs/archive/arch/MusicBot_ARCH-020_Download_Pipeline_Characterization.md,
     Abschnitt "Spotify-Entfernung". Die dafür zuständige Funktion
     `merge_metadata_result_into_dict()` wurde mit dem Spotify-Aufrufer
     zusammen entfernt, da sie danach ohne Aufrufer war.)

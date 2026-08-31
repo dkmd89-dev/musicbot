@@ -13,7 +13,7 @@ Entscheidungsgate am Ende, wartet auf Freigabe.
 ARCH-009/010/011 sind abgeschlossen. Zusätzlich wurde seither
 `DuplicateEntry` aus `handlers/duplicate_handler.py` nach
 `services/downloader/models.py` verschoben (PR #23, Merge-Commit `31bf700`)
-— der im vorherigen Audit (`docs/MusicBot_POST-ARCH-010_011_Services_Zielarchitektur_Audit.md`)
+— der im vorherigen Audit (`docs/archive/post-arch/MusicBot_POST-ARCH-010_011_Services_Zielarchitektur_Audit.md`)
 empfohlene nächste Schritt.
 
 Dieser Audit ist die Fortsetzung: ein erneuter, vollständiger, aber
@@ -26,9 +26,9 @@ Wunschliste.
 
 Referenzierte, bereits etablierte Regelbasis (nicht neu erfunden):
 `CLAUDE.md`, ARCH-009, ARCH-010, ARCH-011,
-`docs/MusicBot_SERVICES_Zielarchitektur_Audit.md`,
-`docs/MusicBot_POST-ARCH-010_011_Services_Zielarchitektur_Audit.md`,
-`docs/MusicBot_POST-ARCH-010_011_DuplicateEntry_Analyse.md`.
+`docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md`,
+`docs/archive/post-arch/MusicBot_POST-ARCH-010_011_Services_Zielarchitektur_Audit.md`,
+`docs/archive/post-arch/MusicBot_POST-ARCH-010_011_DuplicateEntry_Analyse.md`.
 
 ---
 

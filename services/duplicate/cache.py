@@ -4,7 +4,7 @@
 DuplicateCache – JSON-basierter Persistenz-Cache für die
 Duplicate-Detection (URL- und Content-Hashes).
 
-ARCH-018 Phase 2 (docs/MusicBot_ARCH-018_Duplicate_Handler_Characterization.md):
+ARCH-018 Phase 2 (docs/archive/arch/MusicBot_ARCH-018_Duplicate_Handler_Characterization.md):
 verschoben aus handlers/duplicate_handler.py. Reine Cache-/Persistenzlogik
 ohne Telegram-Bezug (Abschnitt 6 der Characterization, "fachlicher Kern") –
 unverändert in Verhalten und Signatur übernommen.

@@ -1,7 +1,7 @@
 # ARCH-004 — P-3: Doppelte Spotify/YouTube-Orchestrierung (Analyse)
 
 > Reine Analyse, kein Code geändert. Vertiefung von P-3 aus
-> `docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md` — dort nur grob
+> `docs/archive/arch/MusicBot_ARCH-003_Services_Phase1_Analyse.md` — dort nur grob
 > charakterisiert, hier vollständig end-to-end nachvollzogen.
 
 ## 0. Ergebnis in einem Satz

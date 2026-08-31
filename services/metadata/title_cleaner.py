@@ -369,7 +369,7 @@ class TitleCleaner:
             # ARTISTNORM-002: \b-Wortgrenzen verhindern Fehltreffer in
             # Woertern, die "ft"/"feat" nur als Teilstring enthalten (z.B.
             # "trifft" -> vorher wurde alles ab dem Teilstring-Treffer bis
-            # zum Titelende geloescht, siehe docs/MusicBot_ENGINEERING_BASELINE.md).
+            # zum Titelende geloescht, siehe docs/archive/MusicBot_ENGINEERING_BASELINE.md).
             # META-02: "feat"/"ft" verlangten zusaetzlich zwingend ein
             # Leerzeichen nach dem optionalen Punkt - "feat.Someone" (ohne
             # Leerzeichen) blieb dadurch unveraendert im Titel stehen.

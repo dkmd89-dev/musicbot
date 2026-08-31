@@ -35,7 +35,7 @@ def split_main_and_featuring(artist_string: str) -> Tuple[str, List[str]]:
     # ARTISTNORM-002: \b-Wortgrenzen verhindern Fehltreffer in Woertern, die
     # "ft"/"feat" nur als Teilstring enthalten (z.B. "trifft" -> vorher
     # faelschlich als "tri" + Feature-Artist "ft Jemand" gesplittet, siehe
-    # docs/MusicBot_ENGINEERING_BASELINE.md, ARTISTNORM-001/002).
+    # docs/archive/MusicBot_ENGINEERING_BASELINE.md, ARTISTNORM-001/002).
     feat_pattern = re.compile(
         r"\s*\b(?:feat\b\.?|ft\b\.?|featuring\b|with\b)\s+(.+)$",
         re.IGNORECASE,

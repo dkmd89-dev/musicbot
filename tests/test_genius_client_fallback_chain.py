@@ -1,7 +1,7 @@
 """
 Regressionstest fuer zwei in Phase 3 gefundene Bugs in der Lyrics-Fallback-
 Kette von GeniusClient (services/clients/genius_client.py), siehe
-docs/MusicBot_ENGINEERING_BASELINE.md:
+docs/archive/MusicBot_ENGINEERING_BASELINE.md:
 
 1. Tier 2 (Genius-REST-API) und die gesamten Tiers 3+4 (HTML-Scraping,
    lyricsgenius-Bibliothek) liefen frueher in EINEM gemeinsamen try-Block.

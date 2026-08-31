@@ -1,6 +1,6 @@
 """
 Regressionstest fuer einen in Phase 3 gefundenen Path-Traversal-Bug (SEC-003,
-siehe docs/MusicBot_ENGINEERING_BASELINE.md), Teil desselben Fundes wie die
+siehe docs/archive/MusicBot_ENGINEERING_BASELINE.md), Teil desselben Fundes wie die
 fehlende Admin-Pruefung in RichMenuSystem.handle_callback():
 
 EnhancedLoggerMenuHandler.show_log_file_detail() baute file_path = log_dir /

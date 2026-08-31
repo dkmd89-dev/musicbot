@@ -1,7 +1,7 @@
 """
 Regressionstest fuer eine in Phase 3 gefundene Validierungsluecke in
 CoverProcessor._validate_and_score() (services/metadata/cover_processor.py),
-siehe docs/MusicBot_ENGINEERING_BASELINE.md.
+siehe docs/archive/MusicBot_ENGINEERING_BASELINE.md.
 
 _analyze_image_quality() faengt PIL-Parse-Fehler ab und liefert dann
 width=0, height=0 zurueck (kein Crash). Die alte Bedingung
@@ -82,7 +82,7 @@ class TestValidImageStillPasses:
 
 class TestBug003EarlyExitThresholdWasUnreachable:
     """
-    Regressionstest fuer BUG-003 (docs/MusicBot_ENGINEERING_BASELINE.md):
+    Regressionstest fuer BUG-003 (docs/archive/MusicBot_ENGINEERING_BASELINE.md):
     ScoreThreshold.EARLY_EXIT war auf 170 gesetzt, aber _calculate_score()
     deckelt den Score auf maximal 150 (min(150, ...)). Der Schwellenwert
     war dadurch strukturell unerreichbar - get_cover_art() durchlief immer

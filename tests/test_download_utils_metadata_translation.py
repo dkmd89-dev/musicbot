@@ -5,7 +5,7 @@ Ergebnis-Dict-Uebersetzung in services/downloader/download_utils.py
 fuer YT-Single-Downloads) — vorher 0 Tests fuer diese beiden Funktionen.
 
 ARCH-004/P-3, Schritt 2: sichert das AKTUELLE Verhalten (inkl. der in
-docs/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md Abschnitt 6
+docs/archive/arch/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md Abschnitt 6
 dokumentierten Feld-Inkonsistenzen, z.B. track_number/playlist_album werden
 im Single-Download-Pfad NIE aus enhanced_result uebernommen, nur
 Dataclass-Defaults) VOR der geplanten Extraktion einer gemeinsamen

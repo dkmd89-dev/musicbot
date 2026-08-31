@@ -26,7 +26,7 @@ entfernt.
 
 ## 1. Ziel und Scope
 
-Der `docs/MusicBot_POST-DUPLICATEENTRY_Services_Architecture_Audit.md`
+Der `docs/archive/post-arch/MusicBot_POST-DUPLICATEENTRY_Services_Architecture_Audit.md`
 identifizierte die Genre-Logik-Duplikation zwischen
 `services/clients/lastfm_client.py`, `services/clients/musicbrainz_client.py`
 und `services/metadata/genre_processor.py` als architektonisch wichtigsten,
@@ -850,7 +850,7 @@ und 2 Testdateien (`tests/test_genre_processor.py` +50,
 `tests/test_lastfm_client.py` +63/-26) geändert. Keine Änderung an
 `genre_processor.py`, `musicbrainz_client.py`, `utils/genre_map.py`,
 Mapping-YAMLs, README.md, CLAUDE.md oder
-`docs/MusicBot_ENGINEERING_BASELINE.md` — kein konkreter, durch diese
+`docs/archive/MusicBot_ENGINEERING_BASELINE.md` — kein konkreter, durch diese
 Phase verursachter Dokumentationswiderspruch gefunden, daher keine dieser
 Dateien angefasst. Keine unbeabsichtigten Änderungen außerhalb des
 beschriebenen Scopes.
@@ -1289,7 +1289,7 @@ git diff --stat
 Änderung an `services/clients/musicbrainz_client.py`,
 `services/metadata/genre_processor.py`, `utils/genre_map.py`, Genre-YAML-
 Dateien, `services/clients/lastfm_client.py` (Phase 2 bleibt unangetastet),
-README.md, CLAUDE.md oder `docs/MusicBot_ENGINEERING_BASELINE.md` — kein
+README.md, CLAUDE.md oder `docs/archive/MusicBot_ENGINEERING_BASELINE.md` — kein
 konkreter, durch diese Phase verursachter Dokumentationswiderspruch
 gefunden.
 

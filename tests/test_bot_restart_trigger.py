@@ -3,7 +3,7 @@ Unit-Tests für BotRestartTrigger (utils/bot_restart_trigger.py).
 
 POST-ARCH-009 P-1: 1:1 aus BotRestartHandler._trigger_restart() extrahiert
 (vorher tests/test_bot_restart_handler.py::TestTriggerRestart), siehe
-docs/MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md.
+docs/archive/post-arch/MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md.
 
 WICHTIG (Regel 7): trigger_restart() ruft echtes subprocess.run(["sudo",
 "systemctl", "restart", ...]) auf, das den laufenden Produktions-Bot

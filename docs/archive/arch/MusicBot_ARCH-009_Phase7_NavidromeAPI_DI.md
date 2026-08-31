@@ -1,7 +1,7 @@
 # ARCH-009 Phase 7 — `NavidromeAPI` auf Dependency Injection umgestellt
 
 Umsetzung von Variante B aus der ARCH-009-Phase-6-Analyse
-(`docs/MusicBot_ARCH-009_Phase6_Zielposition_DI_Analyse.md`): `NavidromeAPI`
+(`docs/archive/arch/MusicBot_ARCH-009_Phase6_Zielposition_DI_Analyse.md`): `NavidromeAPI`
 DI-fähig machen, **keine** Verschiebung nach `services/clients/` in diesem
 Schritt. Branch `arch/arch-009-phase7-navidrome-di`.
 
@@ -238,7 +238,7 @@ injizierte bzw. bewusst default-konstruierte Instanzen
 Diese Punkte sind **nicht** Teil dieser Phase, werden hier nur für die
 nächste Entscheidung festgehalten:
 
-1. **Reihenfolge-Klärung in der Roadmap**: `docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`
+1. **Reihenfolge-Klärung in der Roadmap**: `docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`
    führte DI bisher als „Phase 8“ nach der Zielort-Entscheidung „Phase 7“.
    Diese Migration hat DI vorgezogen (gemäß Phase-6-Empfehlung) — die
    Roadmap-Nummerierung sollte entsprechend angepasst oder zumindest
@@ -271,7 +271,7 @@ nächste Entscheidung festgehalten:
 
 ## 7. Roadmap-Nachtrag
 
-`docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md` wurde um einen
+`docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md` wurde um einen
 Abschluss-Eintrag „ARCH-009 Phase 7 — NavidromeAPI DI-Umstellung“ unter
 „Bereits abgeschlossen“ ergänzt. Die dort noch offene „Phase 7 —
 Zielstruktur entscheiden“ (Verschiebung nach `services/clients/`) bleibt

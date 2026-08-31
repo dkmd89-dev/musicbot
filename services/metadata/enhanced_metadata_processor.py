@@ -813,7 +813,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 )
                 _target_lufs = AudioEnhancer.get_target_lufs(_content_type)
 
-                # FINDING-7 (docs/MusicBot_PHASE5_PERFORMANCE_BASELINE.md):
+                # FINDING-7 (docs/archive/MusicBot_PHASE5_PERFORMANCE_BASELINE.md):
                 # normalize_loudness() fuehrt zwei volle FFmpeg-subprocess.run()-
                 # Passes aus (~14,5s fuer einen 3-Minuten-Track, gemessen). Ohne
                 # asyncio.to_thread() blockierte dieser Aufruf den gesamten
@@ -860,7 +860,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
             # ── 17. Metadaten schreiben ──────────────────────────────────────
             self.logger.info("📝 1️⃣7️⃣ Schreibe Metadaten-Tags...")
             try:
-                # AE-12 (docs/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md): write_tags()
+                # AE-12 (docs/archive/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md): write_tags()
                 # lief bisher synchron direkt im Event-Loop-Thread. Seit dem
                 # AE-11-Fix (Copy+Tag+Replace statt In-Place-Save) real gegen
                 # 10-100MB-Dateien gemessen: 0 von 0 moeglichen Heartbeat-Ticks

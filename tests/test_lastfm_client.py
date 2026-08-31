@@ -8,7 +8,7 @@ dieser Session keinerlei Testabdeckung.
 pylast wird komplett gemockt (Regel 7 - externe Dienste in Unit-Tests
 nicht real ansprechen).
 
-ARCH-012 Phase 2 (docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md,
+ARCH-012 Phase 2 (docs/archive/arch/MusicBot_ARCH-012_Genre_Logic_Characterization.md,
 Abschnitt "Phase 2 - Last.fm-Bereinigung"): der frueher hier per
 GenreMapper.determine_genre() berechnete "genre"-Wert wurde entfernt - er
 wurde vom einzigen Aufrufer (genre_processor._fetch_genre_from_lastfm())

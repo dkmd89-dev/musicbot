@@ -3,7 +3,7 @@
 """
 ARCH-014 - Genre Specificity / Longest-Match.
 
-Phase 1 (docs/MusicBot_ARCH-014_Genre_Specificity_Characterization.md)
+Phase 1 (docs/archive/arch/MusicBot_ARCH-014_Genre_Specificity_Characterization.md)
 charakterisierte, dass GenreProcessor.normalize_genre_name()s
 Wortgrenzen-Teilstring-Match (ARCH-013 Phase 5) beim ERSTEN gueltigen
 Treffer in Dict-Iterationsreihenfolge zurueckkehrte, ohne Spezifitaet zu
@@ -12,7 +12,7 @@ spezifischeren Alias (z.B. "tech house") ueberstimmen, wenn beide in
 einem dekorierten String (z.B. "tech house mix") gueltige
 Wortgrenzen-Treffer waren. 55 betroffene Alias-Paare wurden identifiziert.
 
-Phase 2 (docs/MusicBot_ARCH-014_Genre_Specificity_Characterization.md,
+Phase 2 (docs/archive/arch/MusicBot_ARCH-014_Genre_Specificity_Characterization.md,
 Abschnitt "Phase 2 - Umsetzung") hat die daraus abgeleitete Regel
 umgesetzt: bei mehreren gueltigen Wortgrenzen-Treffern gewinnt der Treffer
 mit der groessten Zeichenlaenge des Alias-Keys, mit der bestehenden
@@ -47,7 +47,7 @@ def _all_specificity_pairs(genre_processor):
     (fruehere Iterationsposition, kuerzer) als Wortgrenzen-Teilstring in
     einem spezifischeren Alias vorkommt und beide auf unterschiedliche
     Zielgenres normalisieren. Identischer Erkennungsmechanismus wie in
-    ARCH-014 Phase 1 (docs/MusicBot_ARCH-014_Genre_Specificity_Characterization.md,
+    ARCH-014 Phase 1 (docs/archive/arch/MusicBot_ARCH-014_Genre_Specificity_Characterization.md,
     Abschnitt 4) - programmatisch, nicht hartkodiert, damit der Test bei
     YAML-Aenderungen automatisch die aktuelle Paarmenge prueft.
     """
@@ -129,7 +129,7 @@ class TestSpecificAliasNowOutranksGenericAlias:
 
         Seit ARCH-015 Phase 2 (Self-Alias-Ergaenzung fuer "new york
         drill"/"aggro deutschrap",
-        docs/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md)
+        docs/archive/arch/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md)
         sind es 57 statt urspruenglich 55 Paare: die beiden neuen
         Self-Alias-Keys enthalten selbst einen kuerzeren generischen
         Alias ("drill", "deutschrap") als Wortgrenzen-Teilstring und
@@ -237,7 +237,7 @@ class TestIdempotency:
     6). Nach ARCH-014 Phase 2 galt das fuer 54 der 55 charakterisierten
     Paare - die bekannte Ausnahme "ny drill"/"New York Drill" wurde durch
     ARCH-015 Phase 2 (Self-Alias-Ergaenzung) behoben, siehe
-    docs/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md.
+    docs/archive/arch/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md.
     Seither sind alle 57 charakterisierten Paare idempotent.
     """
 
@@ -267,7 +267,7 @@ class TestIdempotency:
         Key besass. ARCH-015 Phase 1 charakterisierte die Ursache
         vollstaendig (Klasse A1), Phase 2 hat den fehlenden Self-Alias-
         Key "new york drill": "New York Drill" ergaenzt
-        (docs/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md).
+        (docs/archive/arch/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md).
         Seither ist dieser Fall idempotent - dieser Test dokumentiert
         jetzt das korrigierte Soll-Verhalten (Assertion invertiert, nicht
         geloescht, etabliertes Muster ARCH-012/013/014).
@@ -285,7 +285,7 @@ class TestSpecificityPairCountRegressionGuard:
     (fruehere Iterationsposition, kuerzer) als Wortgrenzen-Teilstring in
     einem spezifischeren Alias vorkommt. Dient als Regressionswaechter
     fuer kuenftige YAML-Aenderungen (siehe
-    docs/MusicBot_ARCH-014_Genre_Specificity_Characterization.md,
+    docs/archive/arch/MusicBot_ARCH-014_Genre_Specificity_Characterization.md,
     Abschnitt 4, fuer die urspruengliche Liste von 55). Seit Phase 2
     werden diese Paare korrekt aufgeloest (siehe
     TestSpecificAliasNowOutranksGenericAlias) - dieser Test prueft nur
@@ -294,7 +294,7 @@ class TestSpecificityPairCountRegressionGuard:
 
     Seit ARCH-015 Phase 2 (Self-Alias-Ergaenzung "new york drill"/
     "aggro deutschrap", siehe
-    docs/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md)
+    docs/archive/arch/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md)
     sind es 57 statt 55: die beiden neuen Self-Alias-Keys erfuellen
     selbst die Definition eines Spezifitaets-Paares (kuerzerer
     generischer Alias "drill"/"deutschrap" als Wortgrenzen-Teilstring

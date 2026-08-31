@@ -88,7 +88,7 @@ ausgeklammert) durchgegangen — kein Zyklus gefunden. Insbesondere:
 - `metadata_result_translator.py` → `download/models.py` +
   `utils/metadata/models.py` — beide ohne Rückimporte.
 
-Bestätigt den bereits in `docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md`
+Bestätigt den bereits in `docs/archive/arch/MusicBot_ARCH-003_Services_Phase1_Analyse.md`
 (Abschnitt 2) dokumentierten Befund — weiterhin gültig nach P-1, P-11,
 ARCH-005 und P-14.
 

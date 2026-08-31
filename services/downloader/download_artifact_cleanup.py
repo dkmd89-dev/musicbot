@@ -5,7 +5,7 @@ Cleanup fuer verwaiste Download-Artefakte in Config.DOWNLOAD_DIR.
 
 Ersetzt das nie aktivierte, in ARCH-003/P-1 entfernte
 FileUtils.clean_temp_files() (siehe
-docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md). Der alte Name war
+docs/archive/arch/MusicBot_ARCH-003_Services_Phase1_Analyse.md). Der alte Name war
 irrefuehrend: betroffen ist Config.DOWNLOAD_DIR, nicht Config.TEMP_DIR
 (TEMP_DIR hat repo-weit keine einzige echte Datei-Operation).
 

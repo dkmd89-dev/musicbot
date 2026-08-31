@@ -9,7 +9,7 @@
 > "ARCH-020" bezeichnet, ohne vorher zu prüfen, ob die Nummer bereits reserviert war. Diese
 > Datei hier ist die tatsächliche, bereits vor Sessionbeginn geplante ARCH-020 (Download-
 > Pipeline). Die Kollision wurde geklärt: die Genre-Client-Duplikations-Doku wurde auf
-> ausdrücklichen Nutzerwunsch zu `docs/MusicBot_ARCH-021_Genre_Client_Duplication_Characterization.md`
+> ausdrücklichen Nutzerwunsch zu `docs/archive/arch/MusicBot_ARCH-021_Genre_Client_Duplication_Characterization.md`
 > umbenannt (siehe Abschlussnotiz am Ende). Diese Kollision hat keinen Einfluss auf den Inhalt
 > dieses Berichts.
 
@@ -654,7 +654,7 @@ git status --short  →  keine durch diesen Bericht verursachten Änderungen
 
 Erledigt: `docs/MusicBot_ARCH-020_Genre_Client_Duplication_Characterization.md` (aus dieser
 Session, vor Kenntnis der bereits reservierten ARCH-020) wurde auf ausdrücklichen Nutzerwunsch
-zu `docs/MusicBot_ARCH-021_Genre_Client_Duplication_Characterization.md` umbenannt, inklusive
+zu `docs/archive/arch/MusicBot_ARCH-021_Genre_Client_Duplication_Characterization.md` umbenannt, inklusive
 Anpassung der internen Selbstverweise ("ARCH-020 Phase 1" → "ARCH-021 Phase 1").
 
 ---

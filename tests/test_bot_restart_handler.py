@@ -5,7 +5,7 @@ Live/aktiv verdrahtet in RichMenuHandler.initialize().
 
 POST-ARCH-009 P-1: die eigentliche systemctl-Prozesssteuerung
 (_trigger_restart()) wurde nach utils/bot_restart_trigger.py ausgelagert
-(siehe docs/MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md). Diese Datei
+(siehe docs/archive/post-arch/MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md). Diese Datei
 testet nur noch, DASS BotRestartHandler den Neustart korrekt an
 BotRestartTrigger.trigger_restart() delegiert (via call_later); die
 subprocess.run()-Charakterisierung selbst liegt jetzt in

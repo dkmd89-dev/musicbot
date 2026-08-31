@@ -1,7 +1,7 @@
 # ARCH-005 — Temp-Cleanup: Analyse, Strategie, Umsetzung
 
 Folgeentscheidung aus ARCH-003/P-1 (`FileUtils` entfernt, siehe
-`docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md`): `clean_temp_files()`
+`docs/archive/arch/MusicBot_ARCH-003_Services_Phase1_Analyse.md`): `clean_temp_files()`
 lief nie, unbegrenztes Wachstum von `Config.DOWNLOAD_DIR` war ein
 dokumentiertes, unbehobenes operationelles Risiko. Diese Analyse klärt das
 Problem konkret und legt die Umsetzung fest.
