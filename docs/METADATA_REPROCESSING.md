@@ -6,7 +6,7 @@ Audiodateien eines Artists erneut durch die aktuelle MusicBot-Metadata-
 Pipeline laufen zu lassen — vollständig isoliert von der Produktion.
 
 Technische Referenz und erster, vollständig durchgeführter Validierungslauf:
-[`docs/METADATA_REPROCESSING_TEST_CHAPO102.md`](METADATA_REPROCESSING_TEST_CHAPO102.md).
+[`docs/archive/METADATA_REPROCESSING_TEST_CHAPO102.md`](archive/METADATA_REPROCESSING_TEST_CHAPO102.md).
 
 ---
 
@@ -187,7 +187,7 @@ auf den Stem angewendet) — eine fruehere Version dieses Tools sanitisierte
 Stem+Endung zusammen, wodurch ein durch ein illegales Zeichen (z. B. `?`)
 erzeugtes Leerzeichen vor der Endung stehenblieb (`"...GESEHEN .m4a"`,
 real aufgetreten und korrigiert, siehe
-`docs/METADATA_REPROCESSING_TEST_CHAPO102.md`).
+`docs/archive/METADATA_REPROCESSING_TEST_CHAPO102.md`).
 
 **UNRESOLVED statt automatischer Korrektur:** enthaelt der Title-Tag
 Zeichen, die `sanitize_filename()` aus dem Dateinamen entfernen wuerde
@@ -261,7 +261,7 @@ nächste Start kopiert frisch) oder die betroffene(n) Datei(en) manuell
 nachsynchronisiert werden. Symptom: Genre-/Artist-Normalisierung wirkt
 inkonsistent oder ignoriert ein eigentlich vorhandenes Mapping, obwohl
 `mapping/` selbst korrekt ist - real aufgetreten und dokumentiert in
-`docs/METADATA_REPROCESSING_TEST_NINA_CHUBA.md`, Abschnitt 9.2.
+`docs/archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md`, Abschnitt 9.2.
 
 ## 13. Workflow
 

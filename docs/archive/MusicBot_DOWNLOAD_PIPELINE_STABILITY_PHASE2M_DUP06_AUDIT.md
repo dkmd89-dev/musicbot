@@ -2,7 +2,7 @@
 
 > Analyse-, Fix- und Abschluss-Dokumentation für DUP-06. Ursprünglich in
 > PHASE 2F identifiziert (Audit-Dokument nicht als Datei im Repository
-> erhalten — siehe `docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2K_DL08_AUDIT.md`,
+> erhalten — siehe `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2K_DL08_AUDIT.md`,
 > Abschnitt 6, für den gleichen Sachverhalt bei DL-08), hier vollständig
 > mit eigener Tiefenanalyse und Controlled Fix dokumentiert.
 

@@ -1,6 +1,6 @@
 """
-DUP-01 + DUP-08 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md /
-MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md):
+DUP-01 + DUP-08 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md /
+docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md):
 
 DUP-01: klassen/download_handler.py::handle_playlist_success() rief bisher
 ausschliesslich handle_single_track_success() mit dem Playlist-Wrapper auf.

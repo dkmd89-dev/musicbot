@@ -1,7 +1,7 @@
 # MusicBot — Metadata Quality Phase — PHASE 3: META-04
 
 > Analyse-, Fix- und Abschluss-Dokumentation für META-04 (Teil: "makko").
-> Basis: `docs/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md` (Finding
+> Basis: `docs/archive/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md` (Finding
 > erstmals identifiziert). Freigabe zur Tiefenanalyse und Nutzer-
 > Bestätigung der korrekten Schreibweise für "makko" am 2026-08-26 erhalten.
 

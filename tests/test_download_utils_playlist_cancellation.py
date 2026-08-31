@@ -1,5 +1,5 @@
 """
-DL-08 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md,
+DL-08 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md,
 Abschnitt 6 "DL-07 und DL-08 bewusst nicht bearbeitet"):
 
 services/downloader/download_utils.py::_process_playlist_download() sammelt

@@ -13,7 +13,7 @@ Download, KEINE Aenderung der Library-/Verzeichnisstruktur, KEINE
 Audio-Neucodierung.
 
 Technische Referenz und vollstaendig durchgefuehrter erster Validierungslauf:
-docs/METADATA_REPROCESSING_TEST_CHAPO102.md
+docs/archive/METADATA_REPROCESSING_TEST_CHAPO102.md
 Allgemeine Dokumentation (Sicherheitsmodell, CLI, Workflow):
 docs/METADATA_REPROCESSING.md
 
@@ -569,7 +569,7 @@ async def process_file(
         # AEUSSEREN Raender des uebergebenen Strings. Wuerde die Endung
         # mitsanitisiert (z.B. "...GESEHEN?.m4a"), bliebe ein durch "?"
         # erzeugtes Leerzeichen VOR der Endung stehen (waehrend Phase C real
-        # aufgetreten und korrigiert, siehe docs/METADATA_REPROCESSING_TEST_CHAPO102.md).
+        # aufgetreten und korrigiert, siehe docs/archive/METADATA_REPROCESSING_TEST_CHAPO102.md).
         is_singles = before["parent_dirname"] == "Singles"
         existing_track_number = before["track_number"]
         rename_planned = False
@@ -607,7 +607,7 @@ async def process_file(
                 rename_blocked_reason = f"Zieldatei existiert bereits ({rename_target.name})"
             elif ILLEGAL_CHARS_PATTERN.search(clean_title):
                 # BUGFIX (waehrend Nina-Chuba-Validierungslauf entdeckt,
-                # siehe docs/METADATA_REPROCESSING_TEST_NINA_CHUBA.md):
+                # siehe docs/archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md):
                 # check_unresolved() erkennt diesen Fall bereits und meldet
                 # ihn als UNRESOLVED, verhinderte den Rename bisher aber
                 # NICHT - real aufgetreten bei "F*cked Up" -> sanitisiert zu

@@ -1,6 +1,6 @@
 """
 TESTENV-01 (entdeckt via Live-Test-Download am 2026-08-26, siehe
-docs/MusicBot_TESTENV01_ISOLATION_AUDIT.md): config_test.py::Config
+docs/archive/MusicBot_TESTENV01_ISOLATION_AUDIT.md): config_test.py::Config
 ueberschreibt zwar BASE_DIR auf /tmp/musicbot_test, viele davon
 ABGELEITETE Pfade in der Basis-Config.py::Config-Klasse sind aber als
 "BASE_DIR / '...'"-Ausdruecke direkt im Klassenkoerper der PRODUKTIONS-

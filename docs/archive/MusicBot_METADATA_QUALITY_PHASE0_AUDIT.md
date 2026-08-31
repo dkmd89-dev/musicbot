@@ -74,7 +74,7 @@ Chat-Protokoll der PHASE-0-Analyse vom 2026-08-26 (Read-Only-Audit,
 **META-01 + META-02** (gebündelt, identische Wurzelursache: fehlende
 Behandlung von "feat."/"ft." ohne Leerzeichen nach dem Punkt) — umgesetzt
 in PHASE 1, siehe
-`docs/MusicBot_METADATA_QUALITY_PHASE1_META01_META02_AUDIT.md`.
+`docs/archive/MusicBot_METADATA_QUALITY_PHASE1_META01_META02_AUDIT.md`.
 
 META-03 bleibt offener Kategorie-A-Kandidat für einen Folge-Fix (andere
 Regex-Struktur, höheres Regressionsrisiko in derselben, vielfach

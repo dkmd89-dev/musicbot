@@ -1,5 +1,5 @@
 """
-META-04 (docs/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md, Read-Only-Audit
+META-04 (docs/archive/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md, Read-Only-Audit
 vom 2026-08-26): case-sensitive Artist-Ordner-Duplikate in der realen
 Library (makko/Makko, t-Low/T-Low). Root Cause fuer den Fall "makko" war
 KEIN Bug im ArtistNormalizer-Mechanismus selbst - der Fallback auf

@@ -1,7 +1,7 @@
 # MusicBot — Download Pipeline Stability Phase — PHASE 2G/2H: DL-06
 
 > Fix-, Review- und Abschluss-Dokumentation für DL-06. Basis:
-> `docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2D_DL01_AUDIT.md`
+> `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2D_DL01_AUDIT.md`
 > (PHASE-2F-Audit, dort erstmals als neues Finding identifiziert),
 > aufbauend auf Commit `b7857e7` (DL-02, DUP-01/DUP-08, DUP-02).
 > Dieses Dokument wird von einem Code-Kommentar in
@@ -133,7 +133,7 @@ sondern die Testumgebung lief unter einem eigenständigen Telegram-Bot-
 Account (`@dkmd_test_bot`, eigener `TEST_TELEGRAM_TOKEN` in `.env`,
 getrennt vom Produktions-`BOT_TOKEN`) — Testnachrichten waren zunächst an
 den falschen (Produktions-)Bot gesendet worden. Details siehe
-`docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2I_TEST_ENVIRONMENT.md`.
+`docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2I_TEST_ENVIRONMENT.md`.
 
 Nach der Korrektur wurde DL-06 zusätzlich **live in der Testumgebung über
 den echten Playlist-Pfad bestätigt**: ein 5-Track-Playlist-Download über

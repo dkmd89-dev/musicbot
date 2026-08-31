@@ -1058,7 +1058,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
             return result
 
         except asyncio.CancelledError:
-            # DL-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2D_DL01_AUDIT.md):
+            # DL-01 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2D_DL01_AUDIT.md):
             # CancelledError erbt seit Python 3.8 von BaseException, wird vom
             # except Exception unten nicht gefangen. Spiegelt das bereits
             # geprüfte tag_err-Lösch-Idiom (siehe oben) für den Fall, dass

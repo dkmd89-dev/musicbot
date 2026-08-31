@@ -1,7 +1,7 @@
 # MusicBot — Download Pipeline Stability Phase — PHASE 2J: DUP-03
 
 > Fix- und Abschluss-Dokumentation für DUP-03. Basis:
-> `docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md` (Finding
+> `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md` (Finding
 > erstmals identifiziert), aufbauend auf Commit `b7857e7` (DL-02,
 > DUP-01/DUP-08, DUP-02).
 

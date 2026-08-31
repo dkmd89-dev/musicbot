@@ -8,14 +8,14 @@ Einstiegspunkt für die Dokumentation. Drei Ebenen (siehe README.md für Details
 
 Status-Legende: **CURRENT** = aktuell gültig · **HISTORICAL** = abgeschlossenes Entscheidungsprotokoll, nicht mehr verändert · **SUPERSEDED** = durch neuere Version abgelöst
 
-Ältere Baseline-/Architektur-Entscheidungsdokumente liegen vollständig erhalten unter [`docs/archive/`](archive/) — nur nicht mehr im direkten Sichtfeld von `docs/`. Findings-Audits (Download Pipeline Stability, Metadata Quality, Einzelfund-Audits) bleiben dagegen bewusst in `docs/` liegen, auch wenn HISTORICAL: ihre Pfade werden aus Code-Kommentaren und Testdatei-Docstrings zur Traceability zitiert (z. B. `# DL-01 (docs/MusicBot_..._AUDIT.md): ...`); ein Verschieben würde diese Referenzen brechen.
+Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/archive/`](archive/) — nur nicht mehr im direkten Sichtfeld von `docs/`, sodass dort ausschließlich die aktuell gültigen (CURRENT) Dokumente stehen. Die Pfade der Findings-Audits (Download Pipeline Stability, Metadata Quality, Einzelfund-Audits) werden aus Code-Kommentaren und Testdatei-Docstrings zur Traceability zitiert (z. B. `# DL-01 (docs/archive/MusicBot_..._AUDIT.md): ...`); beim Verschieben nach `docs/archive/` wurden alle ca. 30 betroffenen Referenzen in Code-Kommentaren, Test-Docstrings und Cross-References zwischen den Dokumenten selbst mit umgezogen.
 
 ## Baseline
 
 | Datei | Status | Kurzthema |
 |---|---|---|
 | [MusicBot_ENGINEERING_BASELINE_v5.md](MusicBot_ENGINEERING_BASELINE_v5.md) | CURRENT (eingefroren nach Freeze 2026-08-26) | Nächster verifizierter Referenzzustand nach Post-Baseline-v4 Health & Risk Audit + Behebung von 3 P1-Findings (Duplicate-Detection-Artist/Titel-Ebene, renamed_due_to_conflict-Signal, Fanart-API-Key-Log-Leak) + Doku-Korrektur (enhanced_error_handler.py), 1123 passed / 0 failed — neue Findings → MusicBot_ENGINEERING_BASELINE_v6.md |
-| [MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md](MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md) | HISTORICAL (Analyseartefakt) | Strikt read-only Audit nach v4, Re-Verifikation AE-10/11/12 + 3 neue P1-Findings — Herleitung von v5 |
+| [archive/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md](archive/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md) | HISTORICAL (Analyseartefakt) | Strikt read-only Audit nach v4, Re-Verifikation AE-10/11/12 + 3 neue P1-Findings — Herleitung von v5 |
 | [MusicBot_ARCHITECTURE_EVOLUTION.md](MusicBot_ARCHITECTURE_EVOLUTION.md) | CURRENT | Architektur-Invarianten (INV-01–04), Evolution-Kandidaten, ADRs, Closure-Verifikation der Enforcement Fix Phase sowie AE-10/AE-11/AE-12 (Abschnitt 29) — Herleitung von v4 |
 | [archive/MusicBot_ENGINEERING_BASELINE_v4.md](archive/MusicBot_ENGINEERING_BASELINE_v4.md) | SUPERSEDED (eingefroren nach Freeze 2026-08-26) | Abgelöst durch v5 |
 | [archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md](archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md) | HISTORICAL (Analyseartefakt) | Freeze-Gate-Audit — initial BLOCKED durch AE-12, nach dessen Schließung per Nachtrag auf APPROVED aktualisiert |
@@ -32,43 +32,43 @@ Status-Legende: **CURRENT** = aktuell gültig · **HISTORICAL** = abgeschlossene
 | Datei | Status | Kurzthema |
 |---|---|---|
 | [METADATA_REPROCESSING.md](METADATA_REPROCESSING.md) | CURRENT | `scripts/reprocess_artist_metadata.py` — bestehende Library-Tracks erneut durch die Metadaten-Pipeline laufen lassen (Tags/Cover/Lyrics/Genre/Multi-Artist/MusicBrainz), ohne Download, ohne Produktionszugriff (read-only), ohne Audio-Reencoding |
-| [METADATA_REPROCESSING_TEST_CHAPO102.md](METADATA_REPROCESSING_TEST_CHAPO102.md) | HISTORICAL (Validierungsprotokoll) | Erster Live-Validierungslauf des Tools gegen echten Artist-Bestand (CHAPO102), inkl. Post-Run Safety Check |
-| [METADATA_REPROCESSING_TEST_NINA_CHUBA.md](METADATA_REPROCESSING_TEST_NINA_CHUBA.md) | HISTORICAL (Validierungsprotokoll) | Zweiter Validierungslauf (Nina Chuba) + Final-Audit-Nachtrag zu Genre-Mapping-Konsistenz und UNRESOLVED-Praezisierung |
+| [archive/METADATA_REPROCESSING_TEST_CHAPO102.md](archive/METADATA_REPROCESSING_TEST_CHAPO102.md) | HISTORICAL (Validierungsprotokoll) | Erster Live-Validierungslauf des Tools gegen echten Artist-Bestand (CHAPO102), inkl. Post-Run Safety Check |
+| [archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md](archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md) | HISTORICAL (Validierungsprotokoll) | Zweiter Validierungslauf (Nina Chuba) + Final-Audit-Nachtrag zu Genre-Mapping-Konsistenz und UNRESOLVED-Praezisierung |
 
 ## Download Pipeline Stability Phase
 
 | Datei | Status | Kurzthema |
 |---|---|---|
 | [MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE.md](MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE.md) | CURRENT (Status: PLANNED, noch offen) | Umbrella-Phase: Download-Pipeline- und Duplicate-Detection-Stabilität (Fehlerpfade, Retries, Cancellation, Cleanup) — Metadaten-Qualität explizit out of scope |
-| [MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md](MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md) | HISTORICAL (Analyseartefakt, in Code-Kommentaren referenziert) | Read-Only Deep Audit — Ursprung der Findings DUP-01/02/04/06, PL-01, RES-01/02 |
-| [MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md](MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md) | HISTORICAL (Analyseartefakt, in Code-Kommentaren referenziert) | Priorisierung/Fix-Reihenfolge der PHASE-0-Findings |
-| [MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md](MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DL-02 — Cleanup verwaister Datei bei fehlgeschlagenem Single-Download |
-| [MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2D_DL01_AUDIT.md](MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2D_DL01_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DL-01 — Library-Artefakt-Cleanup bei Task-Cancellation |
-| [MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md](MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DL-06 — Playlist-Track-Cleanup bei yt-dlp/FFmpeg-Fehler |
-| [MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2I_TEST_ENVIRONMENT.md](MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2I_TEST_ENVIRONMENT.md) | HISTORICAL | Test-Environment-Diagnose (Bot-Account-Mismatch) — Grundlage für TESTENV-01 |
-| [MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2J_DUP03_AUDIT.md](MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2J_DUP03_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DUP-03 — Live-Version-False-Positive bei Duplicate Detection |
-| [MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2K_DL08_AUDIT.md](MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2K_DL08_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DL-08 — Playlist-Cancellation-Results erhalten, Mix/Radio-Routing, Track-Retry |
-| [MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2L_DUP04_AUDIT.md](MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2L_DUP04_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DUP-04 — Feat/ft-Normalisierung im Duplicate-Titel-Vergleich |
-| [MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2M_DUP06_AUDIT.md](MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2M_DUP06_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DUP-06 — YouTube-Mix/Radio-URL-Erkennung |
-| [MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2N_RES01_AUDIT.md](MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2N_RES01_AUDIT.md) | HISTORICAL | RES-01 — analysiert, bewusst nicht behoben (akzeptiertes Risiko) |
+| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md) | HISTORICAL (Analyseartefakt, in Code-Kommentaren referenziert) | Read-Only Deep Audit — Ursprung der Findings DUP-01/02/04/06, PL-01, RES-01/02 |
+| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md) | HISTORICAL (Analyseartefakt, in Code-Kommentaren referenziert) | Priorisierung/Fix-Reihenfolge der PHASE-0-Findings |
+| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DL-02 — Cleanup verwaister Datei bei fehlgeschlagenem Single-Download |
+| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2D_DL01_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2D_DL01_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DL-01 — Library-Artefakt-Cleanup bei Task-Cancellation |
+| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DL-06 — Playlist-Track-Cleanup bei yt-dlp/FFmpeg-Fehler |
+| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2I_TEST_ENVIRONMENT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2I_TEST_ENVIRONMENT.md) | HISTORICAL | Test-Environment-Diagnose (Bot-Account-Mismatch) — Grundlage für TESTENV-01 |
+| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2J_DUP03_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2J_DUP03_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DUP-03 — Live-Version-False-Positive bei Duplicate Detection |
+| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2K_DL08_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2K_DL08_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DL-08 — Playlist-Cancellation-Results erhalten, Mix/Radio-Routing, Track-Retry |
+| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2L_DUP04_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2L_DUP04_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DUP-04 — Feat/ft-Normalisierung im Duplicate-Titel-Vergleich |
+| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2M_DUP06_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2M_DUP06_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DUP-06 — YouTube-Mix/Radio-URL-Erkennung |
+| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2N_RES01_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2N_RES01_AUDIT.md) | HISTORICAL | RES-01 — analysiert, bewusst nicht behoben (akzeptiertes Risiko) |
 
 ## Metadata Quality Phase
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| [MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md](MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | Read-Only-Audit — Ursprung der Findings META-01–META-04, META-11 |
-| [MusicBot_METADATA_QUALITY_PHASE1_META01_META02_AUDIT.md](MusicBot_METADATA_QUALITY_PHASE1_META01_META02_AUDIT.md) | HISTORICAL (committed) | META-01 + META-02 — `feat.`/`ft.` ohne Leerzeichen nach Punkt wird erkannt |
-| [MusicBot_METADATA_QUALITY_PHASE2_META03_AUDIT.md](MusicBot_METADATA_QUALITY_PHASE2_META03_AUDIT.md) | HISTORICAL (committed) | META-03 — hängende schließende Klammer nach Marketing-Suffix-Cleanup entfernt |
-| [MusicBot_METADATA_QUALITY_PHASE3_META04_AUDIT.md](MusicBot_METADATA_QUALITY_PHASE3_META04_AUDIT.md) | HISTORICAL (committed) | META-04 — Einzelfall war Tippfehler, kein Bug; ohne Codeänderung geschlossen |
-| [MusicBot_METADATA_QUALITY_PHASE4_META11_AUDIT.md](MusicBot_METADATA_QUALITY_PHASE4_META11_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | META-11 — "video"/"audio" in Klammern kombiniert mit anderen Wörtern wird erkannt |
+| [archive/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md](archive/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | Read-Only-Audit — Ursprung der Findings META-01–META-04, META-11 |
+| [archive/MusicBot_METADATA_QUALITY_PHASE1_META01_META02_AUDIT.md](archive/MusicBot_METADATA_QUALITY_PHASE1_META01_META02_AUDIT.md) | HISTORICAL (committed) | META-01 + META-02 — `feat.`/`ft.` ohne Leerzeichen nach Punkt wird erkannt |
+| [archive/MusicBot_METADATA_QUALITY_PHASE2_META03_AUDIT.md](archive/MusicBot_METADATA_QUALITY_PHASE2_META03_AUDIT.md) | HISTORICAL (committed) | META-03 — hängende schließende Klammer nach Marketing-Suffix-Cleanup entfernt |
+| [archive/MusicBot_METADATA_QUALITY_PHASE3_META04_AUDIT.md](archive/MusicBot_METADATA_QUALITY_PHASE3_META04_AUDIT.md) | HISTORICAL (committed) | META-04 — Einzelfall war Tippfehler, kein Bug; ohne Codeänderung geschlossen |
+| [archive/MusicBot_METADATA_QUALITY_PHASE4_META11_AUDIT.md](archive/MusicBot_METADATA_QUALITY_PHASE4_META11_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | META-11 — "video"/"audio" in Klammern kombiniert mit anderen Wörtern wird erkannt |
 
 ## Weitere Einzelfund-Audits
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| [MusicBot_MB01_ARTIST_MISMATCH_AUDIT.md](MusicBot_MB01_ARTIST_MISMATCH_AUDIT.md) | HISTORICAL (committed) | MB-01 — MusicBrainz-Artist-Mismatch durch Titel-dominierte Gewichtung |
-| [MusicBot_TAG01_MULTI_ARTIST_TAG_AUDIT.md](MusicBot_TAG01_MULTI_ARTIST_TAG_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | TAG-01 — Multi-Artist-`ARTISTS`-Tag wird als separate Werte statt als String geschrieben |
-| [MusicBot_TESTENV01_ISOLATION_AUDIT.md](MusicBot_TESTENV01_ISOLATION_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | TESTENV-01 — `config_test.py` vollständig von Produktionspfaden isoliert |
+| [archive/MusicBot_MB01_ARTIST_MISMATCH_AUDIT.md](archive/MusicBot_MB01_ARTIST_MISMATCH_AUDIT.md) | HISTORICAL (committed) | MB-01 — MusicBrainz-Artist-Mismatch durch Titel-dominierte Gewichtung |
+| [archive/MusicBot_TAG01_MULTI_ARTIST_TAG_AUDIT.md](archive/MusicBot_TAG01_MULTI_ARTIST_TAG_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | TAG-01 — Multi-Artist-`ARTISTS`-Tag wird als separate Werte statt als String geschrieben |
+| [archive/MusicBot_TESTENV01_ISOLATION_AUDIT.md](archive/MusicBot_TESTENV01_ISOLATION_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | TESTENV-01 — `config_test.py` vollständig von Produktionspfaden isoliert |
 
 ## ARCH – Architektur-Entscheidungsprotokoll (Historie, in [`docs/archive/arch/`](archive/arch/))
 

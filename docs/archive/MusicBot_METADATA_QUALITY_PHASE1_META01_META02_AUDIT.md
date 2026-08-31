@@ -1,7 +1,7 @@
 # MusicBot — Metadata Quality Phase — PHASE 1: META-01 + META-02
 
 > Analyse-, Fix- und Abschluss-Dokumentation für META-01 und META-02.
-> Basis: `docs/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md` (Findings
+> Basis: `docs/archive/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md` (Findings
 > erstmals identifiziert). Gebündelt behandelt, da identische
 > Wurzelursache und identisches, bereits durch DUP-04 bewährtes Fix-Muster.
 

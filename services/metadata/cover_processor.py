@@ -859,7 +859,7 @@ class CoverProcessor:
         if not self.cache_enabled:
             return
         path = self._cache_path(key)
-        # RES-02 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+        # RES-02 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
         # vorher direktes open(path, "wb") - ein Prozessabbruch/Fehler
         # waehrend f.write() konnte die gecachte Cover-Datei leeren oder
         # korrumpieren. Jetzt: write-tmp + atomarer os.replace(), analog zu

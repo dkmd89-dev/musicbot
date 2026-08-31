@@ -1,7 +1,7 @@
 # MusicBot — Download Pipeline Stability Phase — PHASE 2N: RES-01
 
 > Analyse- und Entscheidungs-Dokumentation für RES-01. Basis:
-> `docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md` (Finding
+> `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md` (Finding
 > erstmals identifiziert). Im Gegensatz zu den vorangegangenen PHASE-2-
 > Dokumenten enthält diese Phase **keinen Code-Fix** — das Ergebnis ist
 > eine bewusste, dokumentierte Design-Entscheidung.

@@ -104,7 +104,7 @@ class MetadataResult:
     # Technische Daten
     filepath: Optional[Path] = None
     library_path: Optional[Path] = None
-    # DUP-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+    # DUP-01 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
     # eigene Quell-URL des Tracks (aus track_metadata["webpage_url"]) - wird
     # fuer die Duplicate-Cache-Registrierung von Playlist-Tracks benoetigt,
     # da diese (anders als Single-Downloads) keine eigene Registrierung ueber

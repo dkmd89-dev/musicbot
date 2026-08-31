@@ -1,5 +1,5 @@
 """
-META-02 (docs/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md, Read-Only-Audit
+META-02 (docs/archive/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md, Read-Only-Audit
 vom 2026-08-26): services/metadata/title_cleaner.py::apply_title_cleanup_rules()
 verlangte im feat/ft-Cleanup-Pattern nach dem optionalen Punkt zwingend
 mindestens ein Leerzeichen (\\s+) - identische Wurzelursache wie META-01

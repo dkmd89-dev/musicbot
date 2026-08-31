@@ -1,6 +1,6 @@
 """
-DUP-02 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md /
-MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md): DuplicateDetector.
+DUP-02 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md /
+docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md): DuplicateDetector.
 check_for_duplicates() hasht Artist/Titel ausschliesslich nach Normalisierung
 (_normalize_artist_for_comparison/_clean_title_for_comparison), waehrend
 register_download() bisher die vom Aufrufer uebergebenen Rohwerte direkt

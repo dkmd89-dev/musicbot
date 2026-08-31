@@ -187,7 +187,7 @@ def _extract_features(song_title: str, logger) -> Tuple[str, List[str]]:
     if not song_title:
         return song_title, []
 
-    # META-01 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2N_RES01_AUDIT.md-
+    # META-01 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2N_RES01_AUDIT.md-
     # Nachfolgephase, Metadata-Quality-Read-Only-Audit vom 2026-08-26): "feat"/
     # "ft" verlangten bisher nach dem optionalen Punkt zwingend ein Leerzeichen
     # (\s+) - "feat.Artist"/"ft.Artist" (ohne Leerzeichen) wurde dadurch NICHT

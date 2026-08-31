@@ -19,7 +19,7 @@ class Config(ProdConfig):
     
     # Alle Pfade auf /tmp/musicbot_test/ umleiten
     #
-    # TESTENV-01 (docs/MusicBot_TESTENV01_ISOLATION_AUDIT.md): in
+    # TESTENV-01 (docs/archive/MusicBot_TESTENV01_ISOLATION_AUDIT.md): in
     # config.py::Config sind viele Pfade als "BASE_DIR / '...'" direkt im
     # Klassenkoerper der PRODUKTIONS-Klasse berechnet - das wird einmalig
     # bei DEREN Definition ausgewertet, nicht dynamisch pro Subklasse neu.

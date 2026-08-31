@@ -1,5 +1,5 @@
 """
-DUP-06 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+DUP-06 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
 
 Sowohl services/downloader/download_utils.py::enhanced_download_with_retry()
 als auch klassen/download_handler.py::_probe_artist_title_for_duplicate_check()

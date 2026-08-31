@@ -541,7 +541,7 @@ class DownloadHandler:
 
     def _register_playlist_track_duplicates(self, tracks: List[Dict[str, Any]]) -> None:
         """
-        DUP-01 + DUP-08 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+        DUP-01 + DUP-08 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
         handle_playlist_success() rief bisher ausschließlich
         handle_single_track_success() mit dem Playlist-Wrapper auf. Dessen
         "artist" ist strukturell immer "?" (der Wrapper besitzt kein eigenes
@@ -815,7 +815,7 @@ class DownloadHandler:
             )
 
         except asyncio.CancelledError as ce:
-            # DL-08 (docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md,
+            # DL-08 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md,
             # Abschnitt 6): services/downloader/download_utils.py::
             # _process_playlist_download() haengt bei einer Cancellation
             # mitten in der Playlist-Verarbeitung die bereits erfolgreich
