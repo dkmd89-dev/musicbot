@@ -1,5 +1,5 @@
 """
-Regressionstests fuer FINDING-4 (docs/MusicBot_FINDING_4_FORENSIC_AUDIT.md)
+Regressionstests fuer FINDING-4 (docs/archive/MusicBot_FINDING_4_FORENSIC_AUDIT.md)
 — klassen/download_handler.py::handle_youtube_links()/handle_playlist_success().
 
 Vor diesem Fix gab es 0 direkte Tests fuer beide Methoden. Der Forensic

@@ -3,7 +3,7 @@
 """
 ARCH-015 - Genre Canonical-Value / Idempotency Characterization.
 
-Phase 1 (docs/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md)
+Phase 1 (docs/archive/arch/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md)
 charakterisierte, dass GenreProcessor.normalize_genre_name() fuer 3 der 115
 damals erreichbaren kanonischen Genre-Werte NICHT idempotent war, d.h.
 normalize(normalize(x)) != normalize(x):
@@ -18,7 +18,7 @@ normalize(normalize(x)) != normalize(x):
   strukturell unabhaengig von Klasse A - kein Substring-Match beteiligt):
     "NDW" -> "Ndw"
 
-Phase 2 (docs/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md,
+Phase 2 (docs/archive/arch/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md,
 Abschnitt "Phase 2 - Self-Alias-Implementierung") hat gemaess der in Phase 1
 empfohlenen Variante A die beiden fehlenden Self-Alias-Keys
 "new york drill": "New York Drill" und "aggro deutschrap": "Aggro
@@ -180,7 +180,7 @@ class TestClassBFallbackCapitalizationResolvedByArch016:
     "NDW" war strukturell unabhaengig von Klasse A und ausdruecklich
     NICHT Bestandteil von ARCH-015 Phase 2 (explizite Scope-Grenze
     dieser Phase). ARCH-016 Phase 2
-    (docs/MusicBot_ARCH-016_Genre_Canonical_Case_Acronym_Characterization.md)
+    (docs/archive/arch/MusicBot_ARCH-016_Genre_Canonical_Case_Acronym_Characterization.md)
     hat den fehlenden Self-Alias-Key "ndw": "NDW" ergaenzt - der
     Direkt-Match-Zweig greift seither vor dem (ohnehin leeren)
     Substring-Matching und dem Title-Case-Fallback.

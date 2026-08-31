@@ -14,9 +14,9 @@ Diese Tests frieren das AKTUELLE Verhalten beider Implementierungen fest -
 sie bewerten NICHT, welches Verhalten "richtig" ist, und sie aendern keine
 Produktionslogik. Alle Werte sind gegen die echten YAML-Dateien in
 mapping/ verifiziert (siehe
-docs/MusicBot_ARCH-013_Genre_Alias_Characterization.md).
+docs/archive/arch/MusicBot_ARCH-013_Genre_Alias_Characterization.md).
 
-ARCH-013 Phase 3 (docs/MusicBot_ARCH-013_Genre_Alias_Decision.md, Abschnitt
+ARCH-013 Phase 3 (docs/archive/arch/MusicBot_ARCH-013_Genre_Alias_Decision.md, Abschnitt
 7/9) hat den Mixed-Case-/Whitespace-Befund (Punkt 1 unten, urspruengliche
 Fassung) als fachlich unstrittigen Bug behoben: GenreMapper lowercased
 genre_aliases.yaml-Keys seither beim Laden (utils/genre_map.py,
@@ -25,7 +25,7 @@ das KORRIGIERTE Verhalten, nicht mehr den Bug - siehe die
 Klassen-Docstring dort fuer den Vorher/Nachher-Vergleich. Alle anderen
 Kernbefunde (2/3 unten) sind von Phase 3 ausdruecklich NICHT beruehrt.
 
-ARCH-013 Phase 4 (docs/MusicBot_ARCH-013_Genre_Alias_Decision.md,
+ARCH-013 Phase 4 (docs/archive/arch/MusicBot_ARCH-013_Genre_Alias_Decision.md,
 Abschnitt 4/8/9) hat Kernbefund 2 unten (die 4 Override-vs-Alias-
 Wertkonflikte) aufgeloest: mapping/genre_aliases.yaml und
 mapping/genre_overrides.yaml wurden per hierarchie-basierter
@@ -35,7 +35,7 @@ denselben Wert enthalten. TestOverrideAliasConflictsResolvedInPhase4
 4 das KORRIGIERTE Verhalten. Kernbefund 3 (Teilstring-Match) ist von
 Phase 4 ausdruecklich NICHT beruehrt (das war ARCH-013 Phase 5).
 
-ARCH-013 Phase 5 (docs/MusicBot_ARCH-013_Genre_Alias_Decision.md,
+ARCH-013 Phase 5 (docs/archive/arch/MusicBot_ARCH-013_Genre_Alias_Decision.md,
 Abschnitt 5) hat Kernbefund 3 unten (Teilstring-Match) auf Wortgrenzen-
 Matching eingeschraenkt: ein Alias matcht nur noch als eigenstaendiges
 Wort/eigenstaendige Wortfolge (begrenzt durch Leerzeichen, Satzzeichen
@@ -171,7 +171,7 @@ class TestAliasLoadingDivergence:
 
 class TestOverrideAliasConflictsResolvedInPhase4:
     """
-    ARCH-013 Phase 4 (docs/MusicBot_ARCH-013_Genre_Alias_Decision.md,
+    ARCH-013 Phase 4 (docs/archive/arch/MusicBot_ARCH-013_Genre_Alias_Decision.md,
     Abschnitt 4/8/9) hat die 4 in Phase 1 gefundenen Wertkonflikte zwischen
     mapping/genre_aliases.yaml und mapping/genre_overrides.yaml per
     hierarchie-basierter Einzelfallregel aufgeloest:
@@ -236,7 +236,7 @@ class TestSubstringMatchingOnlyInGenreProcessor:
     GenreProcessor.normalize_genre_name() hat einen Teilstring-Match-
     Schritt, der GenreMapper fehlt.
 
-    ARCH-013 Phase 5 (docs/MusicBot_ARCH-013_Genre_Alias_Decision.md,
+    ARCH-013 Phase 5 (docs/archive/arch/MusicBot_ARCH-013_Genre_Alias_Decision.md,
     Abschnitt 5) hat diesen Schritt auf Wortgrenzen-Matching eingeschraenkt:
     ein bekannter Alias matcht nur noch, wenn er im Eingabestring als
     eigenstaendiges Wort/eigenstaendige Wortfolge vorkommt (begrenzt durch
@@ -371,7 +371,7 @@ class TestYamlSourceCollisions:
             f"Neue(r) Konflikt(e) zwischen genre_aliases.yaml und "
             f"genre_overrides.yaml gefunden: {conflicts} - siehe ARCH-013 "
             f"Phase 2 fuer die zu verwendende Entscheidungsregel "
-            f"(hierarchie-basiert, docs/MusicBot_ARCH-013_Genre_Alias_Decision.md)."
+            f"(hierarchie-basiert, docs/archive/arch/MusicBot_ARCH-013_Genre_Alias_Decision.md)."
         )
 
     def test_synth_pop_and_synthpop_are_distinct_keys_with_different_targets(

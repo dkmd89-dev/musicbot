@@ -1,5 +1,5 @@
 """
-AE-12 (docs/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md): TagWriter.write_tags()
+AE-12 (docs/archive/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md): TagWriter.write_tags()
 (Schritt 17 der Metadaten-Pipeline) lief synchron und ungewrappt direkt im
 Event-Loop-Thread. Seit dem AE-11-Fix (Copy+Tag+Replace statt In-Place-Save)
 real gegen 10-100MB-Dateien gemessen: 0 von 0 moeglichen Heartbeat-Ticks bei

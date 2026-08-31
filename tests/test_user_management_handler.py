@@ -12,7 +12,7 @@ auf ein tmp_path-Verzeichnis, damit KEIN Test jemals die reale Datei liest
 oder ueberschreibt - analog zur ArtistNormalizer-Inzidenz aus einer
 frueheren Session (siehe tests/test_artist_normalizer.py).
 
-SEC-005 (docs/MusicBot_ENGINEERING_BASELINE.md): set_user_role() hatte
+SEC-005 (docs/archive/MusicBot_ENGINEERING_BASELINE.md): set_user_role() hatte
 zwei Luecken:
 1. new_role wurde nicht gegen self.ROLES validiert (im Gegensatz zur
    Schwester-Methode toggle_user_permission(), die das fuer Permissions

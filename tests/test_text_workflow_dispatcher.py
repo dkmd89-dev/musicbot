@@ -4,7 +4,7 @@ Unit-Tests für TextWorkflowDispatcher
 
 Im Zuge von ARCH-001 aus RichMenuHandler.handle_text_message() extrahiert
 (Cancel-Erkennung + Workflow-Dispatch-Block -> eigene Klasse, 1:1 gleiche
-Logik, siehe docs/MusicBot_ARCH-001_Orchestrators.md). Bewusst NICHT mit
+Logik, siehe docs/archive/arch/MusicBot_ARCH-001_Orchestrators.md). Bewusst NICHT mit
 extrahiert: `user_states` (URL-Erwartung) und die Navidrome-Suchlogik -
 beides bleibt Eigentum von RichMenuHandler/NavidromeMenuHandler.
 

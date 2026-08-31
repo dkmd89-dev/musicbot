@@ -6,7 +6,7 @@ Im Zuge von ARCH-001 aus klassen/download_handler.py extrahiert
 (_build_duplicate_message/_extract_genres_from_data/_collect_playlist_genres/
 _extract_stats_from_result/_send_final_summary/Teil von handle_playlist_success
 -> eigene Klasse, 1:1 gleicher Code, siehe
-docs/MusicBot_ARCH-001_Orchestrators.md). Bewusst NICHT mit extrahiert:
+docs/archive/arch/MusicBot_ARCH-001_Orchestrators.md). Bewusst NICHT mit extrahiert:
 Duplikat-Cache-Registrierung (handle_single_track_success) und die
 Playlist-Wrapper-Delegation (handle_playlist_success) - beides bleibt
 Aufgabe von DownloadHandler, da es echte Seiteneffekte/Kontrollfluss-

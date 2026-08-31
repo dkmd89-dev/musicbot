@@ -2,7 +2,7 @@
 
 **Status: ABGESCHLOSSEN** (Phase 1 bis Folgeumsetzung, Stand 2026-08-24,
 Merge-Commit `d07cddb`). Nachfolgende Architekturarbeit außerhalb dieser
-Migration siehe `docs/MusicBot_POST-ARCH-009_Audit.md`.
+Migration siehe `docs/archive/post-arch/MusicBot_POST-ARCH-009_Audit.md`.
 
 ## Zweck
 
@@ -120,7 +120,7 @@ Docker-Subprocess-/Timeout-Steuerung und Telegram-MarkdownV2-Formatierung.
 Vier Zielarchitektur-Varianten (A-D) bewertet, empfohlen wurde eine
 gestufte Umsetzung (zuerst Subprocess-Extraktion, Telegram-Trennung als
 separater, späterer Schritt). Details:
-`docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md`.
+`docs/archive/arch/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md`.
 
 ---
 
@@ -134,7 +134,7 @@ Die Docker-/Subprocess-/Timeout-Steuerung wurde 1:1 nach
 unverändert bestehen und fungiert als Bridge; kein Consumer musste
 angepasst werden. Telegram-Formatierung, `check_connection()` und die
 Zielposition `services/clients/` blieben bewusst unangetastet. Details:
-`docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md` (Abschnitt „Phase 4
+`docs/archive/arch/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md` (Abschnitt „Phase 4
 — Umsetzung“).
 
 ---
@@ -156,7 +156,7 @@ Exception, inkl. Emojis und Escaping) liegt jetzt vollständig im einzigen
 Consumer `handlers/menu/rich_menu_handler.py::_handle_navidrome_scan()`.
 `check_connection()`, `NavidromeScanTrigger` und die Zielposition
 `services/clients/` blieben unangetastet. Details:
-`docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md`
+`docs/archive/arch/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md`
 (Abschnitte „Optionen“ und „Umsetzung“).
 
 ## ARCH-009 Phase 6 — Zielposition und DI von `NavidromeAPI`
@@ -177,7 +177,7 @@ Schritt danach (kehrt die Reihenfolge Phase 7/8 unten technisch um, siehe
 Entscheidungsgate im Analysedokument). `execute_scan()` und
 `NavidromeScanTrigger` sollen in keinem Fall nach `services/clients/`
 wandern. Details:
-`docs/MusicBot_ARCH-009_Phase6_Zielposition_DI_Analyse.md`.
+`docs/archive/arch/MusicBot_ARCH-009_Phase6_Zielposition_DI_Analyse.md`.
 
 ---
 
@@ -200,7 +200,7 @@ verifiziert als bereits konform (kein Code geändert). Verbleibender
 statischer Aufruf: `handlers/menu/rich_menu_handler.py:740`
 (`NavidromeAPI.execute_scan()`, bewusst nicht migriert, siehe
 Analysedokument). Noch **keine** Verschiebung nach `services/clients/`.
-Details: `docs/MusicBot_ARCH-009_Phase7_NavidromeAPI_DI.md`.
+Details: `docs/archive/arch/MusicBot_ARCH-009_Phase7_NavidromeAPI_DI.md`.
 
 Damit ist die vormals als „Phase 8“ geführte DI-Frage bereits erledigt,
 vor der vormals als „Phase 7“ geführten Zielort-Entscheidung (gemäß
@@ -222,7 +222,7 @@ echte API-Kommunikation, siehe Phase 3/6). Zwei Optionen bewertet: A
 (`execute_scan()` zieht unverändert mit) vs. B (`execute_scan()` bleibt
 als Rest in `api/` zurück) — empfohlen und vom Nutzer bestätigt: Option
 B. Details (Analysestand, nicht nachträglich verändert):
-`docs/MusicBot_ARCH-009_Phase8_Zielverschiebung_ServicesClients_Analyse.md`.
+`docs/archive/arch/MusicBot_ARCH-009_Phase8_Zielverschiebung_ServicesClients_Analyse.md`.
 
 ### Umsetzung (2026-08-24, Branch `arch/arch-009-phase8-navidrome-services-clients`)
 
@@ -286,7 +286,7 @@ Roadmap wurde aktualisiert).
 
 Abgeschlossen (Teilumsetzung der Phase-9-Analyse).
 
-Die in `docs/MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md`
+Die in `docs/archive/arch/MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md`
 empfohlene Option 2 wurde umgesetzt: `NavidromeAPI.execute_scan()`
 (zuletzt eine reine historische Bridge, siehe Analyse) wurde vollständig
 entfernt. `handlers/menu/rich_menu_handler.py::_handle_navidrome_scan()`
@@ -302,7 +302,7 @@ endgültiger Zielort von `NavidromeScanTrigger` — bleibt unverändert unter
 `api/navidrome_scan_trigger.py`, wird in einer separaten ARCH-009-
 Folgeanalyse untersucht. Details zur Umsetzung (Consumer-Migration,
 entfernte/angepasste Tests, Regression, Dependency-Audit):
-`docs/MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md`
+`docs/archive/arch/MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md`
 (Abschnitt „Umsetzung A“).
 
 ---
@@ -330,7 +330,7 @@ Subprocess-Wrapper, `@dataclass`-Ergebnis mit `success`-Flag, keine
 Telegram-Kopplung). Einzige Variante ohne Erfindung einer neuen
 Konvention. `api/` könnte danach vollständig entfallen. Details, inkl.
 vollständigem Dependency-Audit, Vergleichsmatrix und Entscheidungsgate:
-`docs/MusicBot_ARCH-009_NavidromeScanTrigger_Zielort_Analyse.md`.
+`docs/archive/arch/MusicBot_ARCH-009_NavidromeScanTrigger_Zielort_Analyse.md`.
 
 ### Umsetzung (2026-08-24, Branch `arch/arch-009-navidrome-scan-trigger-to-utils`)
 
@@ -345,7 +345,7 @@ vollständig entfernt (inkl. `api/__init__.py`). Repo-weiter
 Referenz-Audit bestätigt 0 verbleibende funktionale Referenzen auf
 `api.*`. Regression unverändert: 1008 bestanden, unverändert 15 bekannte
 Vorbestand-Fehler. Details:
-`docs/MusicBot_ARCH-009_NavidromeScanTrigger_Zielort_Analyse.md`
+`docs/archive/arch/MusicBot_ARCH-009_NavidromeScanTrigger_Zielort_Analyse.md`
 (Abschnitt „Umsetzung“).
 
 **Zielstruktur erreicht:**
@@ -491,5 +491,5 @@ Code verifiziert:
 - Consumer verwenden die entschiedene Zielstruktur — bestätigt
 - Tests und Mock-Pfade sind konsistent — bestätigt
 
-Details und Methode: `docs/MusicBot_POST-ARCH-009_Audit.md`.
+Details und Methode: `docs/archive/post-arch/MusicBot_POST-ARCH-009_Audit.md`.
 

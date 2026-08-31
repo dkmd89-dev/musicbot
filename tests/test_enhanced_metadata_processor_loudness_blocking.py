@@ -1,5 +1,5 @@
 """
-FINDING-7 (docs/MusicBot_PHASE5_PERFORMANCE_BASELINE.md): AudioEnhancer.normalize_loudness()
+FINDING-7 (docs/archive/MusicBot_PHASE5_PERFORMANCE_BASELINE.md): AudioEnhancer.normalize_loudness()
 fuehrt pro Track zwei volle FFmpeg-subprocess.run()-Passes aus (~14,5s fuer einen
 3-Minuten-Track, lokal gemessen). Ohne asyncio.to_thread() blockierte der Aufruf aus
 EnhancedMetadataProcessor.process_single_track() (async def) den gesamten Event-Loop

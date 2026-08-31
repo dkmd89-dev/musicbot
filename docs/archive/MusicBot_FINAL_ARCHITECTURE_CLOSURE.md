@@ -13,7 +13,7 @@ Scope: AE-10 (`chart_renderer.py`), AE-11 (`tag_writer.py`), Cross-Invariant-Pr�
 Diff exakt auf die bereits bekannten AE-10/AE-11-Dateien beschränkt:
 
 ```
-docs/MusicBot_PHASE5_PERFORMANCE_BASELINE.md
+docs/archive/MusicBot_PHASE5_PERFORMANCE_BASELINE.md
 handlers/admin/backup_handler.py
 handlers/admin/user_management_handler.py
 handlers/enhanced_status_handler.py
@@ -32,7 +32,7 @@ Plus 8 neue, unversionierte Dateien (1 Doku + 7 Testdateien) — alle bereits au
 
 | Änderung | Erwartet? | Bestandteil AE-10/AE-11? | Freeze-relevant? |
 |---|---|---|---|
-| `docs/MusicBot_PHASE5_PERFORMANCE_BASELINE.md` | Ja | Phase-5-Abschluss (vor AE-10) | Nein |
+| `docs/archive/MusicBot_PHASE5_PERFORMANCE_BASELINE.md` | Ja | Phase-5-Abschluss (vor AE-10) | Nein |
 | `handlers/admin/backup_handler.py` | Ja | Vor-AE-10-Fix-Phase (INV-01) | Nein |
 | `handlers/admin/user_management_handler.py` | Ja | Vor-AE-10-Fix-Phase (INV-02) | Nein |
 | `handlers/enhanced_status_handler.py` | Ja | Vor-AE-10-Fix-Phase (INV-01) | Nein |
@@ -286,8 +286,8 @@ Eine gezielte, auf **genau diesen einen Befund** beschränkte Folge-Fix-Phase (A
 
 Die in Abschnitt 15 vorgeschlagenen Schritte 1-3 wurden durchgeführt:
 AE-12 wurde in einer eigenen, engen Fix-Phase geschlossen
-(`docs/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md` für Design/Beweis,
-`docs/AE-12_Closure_Audit.md` für die unabhängig gegengeprüfte
+(`docs/archive/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md` für Design/Beweis,
+`docs/archive/AE-12_Closure_Audit.md` für die unabhängig gegengeprüfte
 Closure-Kriterien-Matrix, Verdict **CLOSED — GO**), und
 `docs/MusicBot_ARCHITECTURE_EVOLUTION.md` wurde um Abschnitt 29
 (AE-10/AE-11/AE-12 Closure Summary) ergänzt, ohne historische Abschnitte
@@ -303,7 +303,7 @@ alle übrigen Zeilen aus Abschnitt 13 unverändert PASS):
 
 | Gate | Requirement | Evidence | Status |
 |---|---|---|---|
-| AE-11 INV-01 (→ AE-12) | charakterisiert + geschlossen | `docs/AE-12_Closure_Audit.md`, 7/7 Kriterien PASS | **PASS** |
+| AE-11 INV-01 (→ AE-12) | charakterisiert + geschlossen | `docs/archive/AE-12_Closure_Audit.md`, 7/7 Kriterien PASS | **PASS** |
 | INV-01 (repo-weit) | keine offene P0/P1-Verletzung | AE-12 war der einzige offene P0/P1-INV-01-Fund; jetzt geschlossen | **PASS** |
 | Documentation | Code/Doku konsistent | `MusicBot_ARCHITECTURE_EVOLUTION.md` Abschnitt 29 ergänzt | **PASS** |
 

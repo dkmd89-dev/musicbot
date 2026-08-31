@@ -4,7 +4,7 @@
 POST-ARCH-009 P-1: Kapselt die lokale systemd-Prozesssteuerung fuer den
 Bot-Neustart, getrennt von der Telegram-Praesentation in
 handlers/admin/bot_restart_handler.py (siehe
-docs/MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md).
+docs/archive/post-arch/MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md).
 
 1:1 aus BotRestartHandler._trigger_restart() ausgelagert, Verhalten
 unveraendert: weiterhin synchroner subprocess.run()-Aufruf (kein Wechsel auf

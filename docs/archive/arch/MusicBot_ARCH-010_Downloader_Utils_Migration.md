@@ -787,15 +787,15 @@ Sondern ausschließlich:
 **Methode:** Direkte Repository-Inspektion (Datei-für-Datei-Lektüre,
 repo-weite Import-/Consumer-Greps, Verifikation gegen Falsch-Positive).
 Vor Beginn gelesen: `CLAUDE.md` (Abschnitt 4 „Schichtgrenzen"),
-`docs/MusicBot_POST-ARCH-009_Audit.md`,
-`docs/MusicBot_SERVICES_Zielarchitektur_Audit.md` (deckt denselben
+`docs/archive/post-arch/MusicBot_POST-ARCH-009_Audit.md`,
+`docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md` (deckt denselben
 Verzeichnisbaum bereits auf Datei-Ebene ab, hier vertieft um
 komponentengenaue Consumer-/Dependency-Ketten),
-`docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`,
-`docs/MusicBot_ENGINEERING_BASELINE.md`,
-`docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md`,
-`docs/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md`,
-`docs/MusicBot_ARCH-006_P2_Dependency_Graph.md`.
+`docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`,
+`docs/archive/MusicBot_ENGINEERING_BASELINE.md`,
+`docs/archive/arch/MusicBot_ARCH-003_Services_Phase1_Analyse.md`,
+`docs/archive/arch/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md`,
+`docs/archive/arch/MusicBot_ARCH-006_P2_Dependency_Graph.md`.
 
 ### Scope-Bestandsaufnahme
 
@@ -829,7 +829,7 @@ services/downloader/utils/metadata/              (10 Dateien, 3.476 Zeilen)
 | Komponente | aktuelle Position | Verantwortung (tatsächlich festgestellt) | Consumer (repo-weit, verifiziert) | Dependencies | möglicher Zielbereich | Begründung | Risiko |
 |---|---|---|---|---|---|---|---|
 | `download_utils.py` (`EnhancedDownloadProcessor`, `enhanced_download_with_retry`) | `services/downloader/utils/` | Orchestriert die YouTube-Download-Pipeline (Retry, Playlist-/Single-Track-Flow); delegiert Metadaten-Verarbeitung vollständig an `metadata_result_translator.py` — enthält selbst keine Metadaten-Feldlogik | `services/downloader/downloader.py` (direkt), `klassen/download_handler.py` (indirekt über `YoutubeDownloader`), 3 Testdateien | `services/downloader/download/*` (Cache/Year/Channel/Executor/Formatters), `services/downloader/playlist_processor.py`, `utils/artist_map.py`, `utils/filenamefixer.py`, `utils/metadata_cache.py`, `utils/singleton.py` | `services/downloader/` | Selbst-dokumentiert als „NUR noch Orchestrierung" der Download-Pipeline (Moduldocstring); 0 Metadaten-Fachlogik im Code selbst | niedrig (Position bereits korrekt für den Vorschlag) |
-| `download_result_reporter.py` (`DownloadResultReporter`) | `services/downloader/utils/` | Formatiert Download-Ergebnistexte (Duplikat/Playlist-Summary/Final-Summary) für Telegram — reiner Text, kein Versand | `klassen/download_handler.py`, 1 Testdatei | `handlers.duplicate_handler.DuplicateEntry` (**bekannte Schichtverletzung**, siehe unten) | `services/downloader/` | Fachlich Download-Ergebnis-spezifisch, nicht Metadaten-spezifisch | niedrig für die Positionierung selbst; die `DuplicateEntry`-Abhängigkeit ist ein separater, bereits in `docs/MusicBot_SERVICES_Zielarchitektur_Audit.md` als P-1 empfohlener Punkt — **nicht Teil dieser Migration**, bleibt unverändert bestehen, wohin auch immer die Datei physisch wandert |
+| `download_result_reporter.py` (`DownloadResultReporter`) | `services/downloader/utils/` | Formatiert Download-Ergebnistexte (Duplikat/Playlist-Summary/Final-Summary) für Telegram — reiner Text, kein Versand | `klassen/download_handler.py`, 1 Testdatei | `handlers.duplicate_handler.DuplicateEntry` (**bekannte Schichtverletzung**, siehe unten) | `services/downloader/` | Fachlich Download-Ergebnis-spezifisch, nicht Metadaten-spezifisch | niedrig für die Positionierung selbst; die `DuplicateEntry`-Abhängigkeit ist ein separater, bereits in `docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md` als P-1 empfohlener Punkt — **nicht Teil dieser Migration**, bleibt unverändert bestehen, wohin auch immer die Datei physisch wandert |
 | `download_artifact_cleanup.py` | `services/downloader/utils/` | Löscht verwaiste Download-Artefakte in `Config.DOWNLOAD_DIR` (2 Strategien: gezielt im Fehlerpfad, Sweep beim Bot-Start) | `bot.py`, `enhanced_metadata_processor.py`, 1 Testdatei | keine internen (nur `pathlib`, `time`) | `services/downloader/` | Explizit auf `DOWNLOAD_DIR` bezogen (Download-Artefakte), nicht auf die organisierte Library — Moduldocstring grenzt dies bewusst ab | niedrig |
 | `progress_tracker.py` (`ProgressTracker`) | `services/downloader/utils/` | Berechnet Fortschritts-Text für langlaufende Aufgaben, sendet selbst nichts (ARCH-007/P-2) | `download_utils.py`, `klassen/download_handler.py`, 1 Testdatei | keine internen | `services/downloader/` | Aktuell ausschließlich vom Download-Pfad konsumiert; generischer Name könnte künftige Wiederverwendung suggerieren, dafür gibt es aber **keinen Beleg im aktuellen Code** | niedrig |
 | `errors.py` (`DownloadError` + 6 Subklassen) | `services/downloader/utils/` | Fehler-Taxonomie, selbst-dokumentiert als „für die Download-Pipeline (services/downloader/**)" (Moduldocstring) | `download_utils.py`, 1 Testdatei (alle anderen Treffer für „NetworkError"/„PermissionError" sind verifizierte Falsch-Positive: `musicbrainzngs.NetworkError`, `telegram.error.NetworkError`, Python-Builtin `PermissionError`) | keine internen | `services/downloader/` | Name und Docstring sind bereits eindeutig download-spezifisch | niedrig |
@@ -839,7 +839,7 @@ services/downloader/utils/metadata/              (10 Dateien, 3.476 Zeilen)
 | `metadata/artist_processor.py` (`ArtistProcessor`) | `services/downloader/utils/metadata/` | Bestimmt Haupt-/Feature-Artist aus Rohdaten | ausschließlich `enhanced_metadata_processor.py` (+ 1 Testdatei) | `metadata/models.py::split_main_and_featuring` | `services/metadata/` | Reine Metadaten-Fachlogik | niedrig |
 | `metadata/auto_learn.py` (`AutoLearnManager`) | `services/downloader/utils/metadata/` | Auto-Learning für Artist/Genre-Mappings | ausschließlich `enhanced_metadata_processor.py` (+ 1 Testdatei) | `TYPE_CHECKING`-Referenzen auf `utils.artist_map.ArtistNormalizer`/`utils.genre_map.GenreMapper` | `services/metadata/` | Reine Metadaten-Fachlogik | niedrig |
 | `metadata/cache.py` (`MetadataCacheHandler`) | `services/downloader/utils/metadata/` | Metadaten-Cache-Zugriff (wrapt `utils/metadata_cache.py::MetadataCache`) | ausschließlich `enhanced_metadata_processor.py` (+ 1 Testdatei) | `utils.metadata_cache.MetadataCache`, `metadata/models.py` | `services/metadata/` | Reine Metadaten-Fachlogik; **Namensrisiko** siehe Abschnitt 27.3 | niedrig |
-| `metadata/cover_processor.py` (`CoverProcessor`) | `services/downloader/utils/metadata/` | Cover-Art-Fallback-Kette mit Scoring (5 externe Quellen: Cover Art Archive, Fanart.tv Album/Artist, Apple Music, Deezer, Last.fm) | ausschließlich `enhanced_metadata_processor.py` (+ 1 Testdatei) | eigener `requests.Session`; **dupliziert Last.fm-Zugriffslogik ggü. `services/clients/lastfm_client.py`** (bereits in `docs/MusicBot_SERVICES_Zielarchitektur_Audit.md` als P-2 dokumentiert) | `services/metadata/` | Reine Metadaten-Fachlogik (Cover-Ermittlung ist Teil der Metadaten-Anreicherung); die externe-HTTP-Frage ist ein separater, bereits dokumentierter Punkt, unabhängig vom Verzeichnis-Zielort | niedrig für die Positionierung; die Last.fm-Duplikation bleibt unabhängig davon offen (nicht Teil von ARCH-010) |
+| `metadata/cover_processor.py` (`CoverProcessor`) | `services/downloader/utils/metadata/` | Cover-Art-Fallback-Kette mit Scoring (5 externe Quellen: Cover Art Archive, Fanart.tv Album/Artist, Apple Music, Deezer, Last.fm) | ausschließlich `enhanced_metadata_processor.py` (+ 1 Testdatei) | eigener `requests.Session`; **dupliziert Last.fm-Zugriffslogik ggü. `services/clients/lastfm_client.py`** (bereits in `docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md` als P-2 dokumentiert) | `services/metadata/` | Reine Metadaten-Fachlogik (Cover-Ermittlung ist Teil der Metadaten-Anreicherung); die externe-HTTP-Frage ist ein separater, bereits dokumentierter Punkt, unabhängig vom Verzeichnis-Zielort | niedrig für die Positionierung; die Last.fm-Duplikation bleibt unabhängig davon offen (nicht Teil von ARCH-010) |
 | `metadata/genre_processor.py` (`GenreProcessor`) | `services/downloader/utils/metadata/` | Genre-Bestimmung (Fuzzy/Hierarchie/Fallback) | ausschließlich `enhanced_metadata_processor.py` (+ 1 Testdatei) | `TYPE_CHECKING`-Referenz auf `utils.genre_map.GenreMapper` | `services/metadata/` | Reine Metadaten-Fachlogik | niedrig |
 | `metadata/lyrics_processor.py` (`LyricsProcessor`) | `services/downloader/utils/metadata/` | Lyrics-Abruf über injizierten `genius_client` | ausschließlich `enhanced_metadata_processor.py` (+ 1 Testdatei) | `services.clients.genius_client.GeniusClient` (injiziert, DI-konsistent) | `services/metadata/` | Reine Metadaten-Fachlogik | niedrig |
 | `metadata/models.py` (`MetadataResult`, `EnhancedProcessingStats`, `split_main_and_featuring`) | `services/downloader/utils/metadata/` | Zentrale Datenmodelle der Metadaten-Domäne | breiter als alle anderen `metadata/`-Dateien: `enhanced_metadata_processor.py`, `metadata_result_translator.py`, `download_utils.py`, `metadata/artist_processor.py`, `metadata/cache.py`, `services/downloader/download/interfaces.py`, `services/downloader/download/models.py` (Docstring-Referenz), 5 Testdateien | keine internen | `services/metadata/` | `MetadataResult` ist der Namensgeber und das zentrale Ergebnis-Objekt der Metadaten-Domäne; wird bereits jetzt von `services/downloader/download/` konsumiert — eine Verschiebung nach `services/metadata/` würde diese Abhängigkeit lediglich explizit machen (Service→Service, erwartbare Richtung) | mittel (meistkonsumierte Datei im Scope, 7 Produktions-Consumer) |
@@ -880,7 +880,7 @@ services/downloader/utils/metadata/              (10 Dateien, 3.476 Zeilen)
    (siehe offene Frage in 27.3).
 5. **Zwei bereits bekannte, nicht neu gefundene Punkte bleiben unverändert
    außerhalb des Scopes:** die `DuplicateEntry`-Schichtverletzung in
-   `download_result_reporter.py` (`docs/MusicBot_SERVICES_Zielarchitektur_Audit.md`,
+   `download_result_reporter.py` (`docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md`,
    dortiges P-1) und die duplizierte Last.fm-Logik in `cover_processor.py`
    (dortiges P-2). Beide werden hier nur als Kontext mitgeführt, nicht neu
    bewertet — ihre Lösung ist unabhängig vom physischen Verzeichnis, in dem
@@ -977,12 +977,12 @@ Beispielsweise:
 
 - `download_result_reporter.py` importiert `DuplicateEntry` aus
   `handlers/duplicate_handler.py` (Service→Handler-Schichtverletzung).
-  Bereits als P-1-Kandidat in `docs/MusicBot_SERVICES_Zielarchitektur_Audit.md`
+  Bereits als P-1-Kandidat in `docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md`
   dokumentiert. Unabhängig von ARCH-010 — bleibt bestehen, unabhängig davon,
   in welchen Top-Level-Bereich die Datei am Ende wandert.
 - `metadata/cover_processor.py` dupliziert Last.fm-Zugriffslogik gegenüber
   `services/clients/lastfm_client.py`. Bereits als P-2-Kandidat in
-  `docs/MusicBot_SERVICES_Zielarchitektur_Audit.md` dokumentiert. Ebenfalls
+  `docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md` dokumentiert. Ebenfalls
   unabhängig von der Verzeichnis-Zielposition.
 
 ## 28.2 Neu in Phase 1 identifiziert, außerhalb des ARCH-010-Scopes
@@ -996,7 +996,7 @@ Beispielsweise:
   von Top-Level-`utils/` ab.
 - **`services/statistics/`** ist durch diesen Scope ebenfalls nicht
   berührt — `services/statistik/` (bereits DI-konsistent, siehe
-  `docs/MusicBot_SERVICES_Zielarchitektur_Audit.md`) liegt außerhalb von
+  `docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md`) liegt außerhalb von
   `services/downloader/`.
 - DI-Inkonsistenz zwischen `metadata/lyrics_processor.py` (injizierter
   `genius_client`) und `metadata/album_processor.py` (selbst konstruierter
@@ -1317,7 +1317,7 @@ strikten Sinne und wird hier ausdrücklich als solche benannt.
 **Diese Kante wird NICHT im Rahmen von ARCH-010 aufgelöst:**
 
 1. Sie ist keine versehentliche Kopplung, sondern eine 2026 bewusst
-   getroffene, in `docs/MusicBot_ENGINEERING_BASELINE.md` dokumentierte
+   getroffene, in `docs/archive/MusicBot_ENGINEERING_BASELINE.md` dokumentierte
    Entscheidung (ARCH-005, Strategie C — genau der eine garantierte
    Durchlaufpunkt für zuverlässigen Cleanup).
 2. Eine Auflösung (z. B. Cleanup stattdessen downloader-seitig nach einem
@@ -1377,7 +1377,7 @@ unvermeidbar, ohne die zugrunde liegende Entscheidung zu ändern.
 einziges** `mock.patch("services.downloader.utils...")`-Ziel im gesamten
 Testbaum (verifiziert per Grep über alle 19 betroffenen Testdateien). Alle
 Tests im Scope konstruieren die Klassen direkt (echter DI-Stil,
-konsistent mit dem in `docs/MusicBot_SERVICES_Zielarchitektur_Audit.md`
+konsistent mit dem in `docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md`
 bestätigten Befund für `services/downloader/`). Das reduziert das
 Migrationsrisiko erheblich gegenüber der ARCH-009-Navidrome-Migration
 (dort mussten String-Patch-Ziele mitgezogen werden — hier entfällt dieser
@@ -1410,7 +1410,7 @@ dadurch nicht getestet, aber auch nicht verletzt.
 
 | Thema | ARCH-010 relevant? | Begründung |
 |---|---|---|
-| `download_result_reporter.py` importiert `DuplicateEntry` aus `handlers/duplicate_handler.py` | **nein** | Schichtverletzung Service→Handler, unabhängig vom Zielverzeichnis der Datei; bereits als P-1 in `docs/MusicBot_SERVICES_Zielarchitektur_Audit.md` dokumentiert → bleibt eigener Folgepunkt |
+| `download_result_reporter.py` importiert `DuplicateEntry` aus `handlers/duplicate_handler.py` | **nein** | Schichtverletzung Service→Handler, unabhängig vom Zielverzeichnis der Datei; bereits als P-1 in `docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md` dokumentiert → bleibt eigener Folgepunkt |
 | `metadata/cover_processor.py` dupliziert Last.fm-Zugriff ggü. `services/clients/lastfm_client.py` | **nein** | Externe-Kommunikations-Frage, unabhängig vom Zielverzeichnis; bereits als P-2 dort dokumentiert → bleibt eigener Folgepunkt |
 | `utils/filenamefixer.py`/`sanitize_filename()` | **nein** | Liegt außerhalb des ARCH-010-Scopes (Top-Level-`utils/`, nicht `services/downloader/utils/`); `services/library/` bleibt ohne Kandidaten aus dieser Analyse |
 | DI-Inkonsistenz `album_processor.py` (selbst konstruierter `MusicBrainzClient`) vs. `lyrics_processor.py` (injizierter `genius_client`) | **nein** | Testbarkeits-/Konsistenz-Detail, keine Boundary-Frage; kann bei der Migration unverändert mitgezogen werden |
@@ -1776,7 +1776,7 @@ markierten Nebenbaustellen (ARCH-005-Cleanup, DI-Konsistenz
 — 0 verbleibende funktionale Referenzen in `.py`-Dateien außerhalb von
 `docs/`. In `docs/` bewusst unverändert gelassen: alle Vorkommen in den
 historischen ARCH-Phasendokumenten (`ARCH-003`, `ARCH-009 Phase 8`,
-`ARCH-001`) sowie in `docs/MusicBot_ENGINEERING_BASELINE.md` — sie
+`ARCH-001`) sowie in `docs/archive/MusicBot_ENGINEERING_BASELINE.md` — sie
 beschreiben korrekt den jeweils damaligen Zustand.
 
 **Import-Smoke-Test:**
@@ -1821,7 +1821,7 @@ Ergebnis: 11 failed, 147 passed, 14 subtests passed. Alle 11
 Fehlschläge sind exakt die bekannten Vorbestand-Fehler aus
 `test_auto_learn.py` (5) und `test_metadata_modules.py::TestTitleCleaner`
 (3, davon 3 als Subtests), unverändert gegenüber dem dokumentierten
-Bestand (siehe `docs/MusicBot_ENGINEERING_BASELINE.md`) — keine neue
+Bestand (siehe `docs/archive/MusicBot_ENGINEERING_BASELINE.md`) — keine neue
 Regression.
 
 **Vollständige Regression:**
@@ -2425,7 +2425,7 @@ Phase-2-Entscheidung (35.4) — keine Neubewertung durchgeführt.
 
 `download_result_reporter.py → handlers/duplicate_handler.py`-Dependency
 **unverändert, bewusst nicht angefasst** — bekannter, separat
-dokumentierter Folgepunkt (siehe 35.9/`docs/MusicBot_SERVICES_Zielarchitektur_Audit.md`).
+dokumentierter Folgepunkt (siehe 35.9/`docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md`).
 
 ## 39.6 Strukturprüfung (Ist-Zustand nach Phase 3E)
 
@@ -2642,7 +2642,7 @@ Dokumentationsstelle, die den alten Pfad als Ist-Zustand behauptete:**
 Phase 3D/3B falsch. Aktualisiert (siehe 41.3) — im Rahmen dieser Phase
 ausdrücklich erlaubt („aktualisiere ausschließlich aktuelle
 Dokumentationsstellen, die den alten Pfad als aktuellen Projektstand
-darstellen"). `CLAUDE.md` und `docs/MusicBot_ENGINEERING_BASELINE.md`
+darstellen"). `CLAUDE.md` und `docs/archive/MusicBot_ENGINEERING_BASELINE.md`
 geprüft — keine aktuelle Fehlbehauptung gefunden (`ENGINEERING_BASELINE.md`s
 zahlreiche Treffer sind ausschließlich historische, im Präteritum
 verfasste Changelog-Einträge, korrekt für den jeweils damaligen Stand).
@@ -2809,17 +2809,17 @@ sämtliche 17 alten Modulpfade einzeln, `mock.patch`-Ziele,
 
 **B. Historische Dokumentationsreferenzen** (unverändert korrekt,
 bewusst nicht angefasst): alle Treffer in
-`docs/MusicBot_ARCH-001_Orchestrators.md`,
-`docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md`,
-`docs/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md`,
-`docs/MusicBot_ARCH-005_TempCleanup.md`,
-`docs/MusicBot_ARCH-006_P2_Dependency_Graph.md`,
-`docs/MusicBot_ARCH-007_P2_Entkopplungsvorschlag.md`,
-`docs/MusicBot_ARCH-008_Navidrome_Adapter_Analyse.md`,
-`docs/MusicBot_ARCH-009_Phase8_Zielverschiebung_ServicesClients_Analyse.md`,
-`docs/MusicBot_ENGINEERING_BASELINE.md` (Changelog-Einträge, Präteritum),
-`docs/MusicBot_SERVICES_Zielarchitektur_Audit.md` (datierter Snapshot),
-`docs/musicbot_REVERSE_ENGINEERED_DOCUMENTATION.md` (datierter Snapshot),
+`docs/archive/arch/MusicBot_ARCH-001_Orchestrators.md`,
+`docs/archive/arch/MusicBot_ARCH-003_Services_Phase1_Analyse.md`,
+`docs/archive/arch/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md`,
+`docs/archive/arch/MusicBot_ARCH-005_TempCleanup.md`,
+`docs/archive/arch/MusicBot_ARCH-006_P2_Dependency_Graph.md`,
+`docs/archive/arch/MusicBot_ARCH-007_P2_Entkopplungsvorschlag.md`,
+`docs/archive/arch/MusicBot_ARCH-008_Navidrome_Adapter_Analyse.md`,
+`docs/archive/arch/MusicBot_ARCH-009_Phase8_Zielverschiebung_ServicesClients_Analyse.md`,
+`docs/archive/MusicBot_ENGINEERING_BASELINE.md` (Changelog-Einträge, Präteritum),
+`docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md` (datierter Snapshot),
+`docs/archive/musicbot_REVERSE_ENGINEERED_DOCUMENTATION.md` (datierter Snapshot),
 dieses Dokument selbst (Abschnitte 1–41, historische Phasenberichte) —
 sowie `tests/test_download_handler_send_report_message.py:6`
 (Docstring, Präteritum „lag vorher").
@@ -2921,7 +2921,7 @@ nur bestätigt — nicht bearbeitet:
 - ARCH-005-Reverse-Edge (`enhanced_metadata_processor.py` →
   `download_artifact_cleanup.py`) — bewusst erhalten, siehe 42.3/35.5.
 - `DuplicateEntry`-Abhängigkeit von `download_result_reporter.py` zu
-  `handlers/duplicate_handler.py` — siehe `docs/MusicBot_SERVICES_Zielarchitektur_Audit.md` P-1.
+  `handlers/duplicate_handler.py` — siehe `docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md` P-1.
 - Last.fm-Duplikation in `cover_processor.py` gegenüber
   `services/clients/lastfm_client.py` — siehe dort P-2.
 - `utils/filenamefixer.py`/mögliche `services/library/`-Frage — außerhalb

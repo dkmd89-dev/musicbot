@@ -12,7 +12,7 @@ Entscheidungsgate am Ende, wartet auf Freigabe für Phase 2.
 ## 1. Ausgangslage
 
 Der `POST-ARCH-012 SERVICES ARCHITECTURE AUDIT`
-(`docs/POST-ARCH-012_Services_Architecture_Audit.md`, Abschnitt E.6)
+(`docs/archive/post-arch/POST-ARCH-012_Services_Architecture_Audit.md`, Abschnitt E.6)
 identifizierte, dass `mapping/genre_aliases.yaml` von zwei unabhängigen
 Klassen geladen und normalisiert wird:
 

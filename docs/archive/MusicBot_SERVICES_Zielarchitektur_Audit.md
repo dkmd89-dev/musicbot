@@ -13,7 +13,7 @@ Dokumentation als primäre Quelle für den Ist-Zustand.
 ARCH-009 und P-1 sind abgeschlossen und gemergt (`81df5be`). Die Navidrome-
 Struktur ist bereinigt (`services/clients/navidrome_api.py`,
 `utils/navidrome_scan_trigger.py`, `utils/bot_restart_trigger.py`, `api/`
-entfernt). Der vorherige Post-ARCH-009-Audit (`docs/MusicBot_POST-ARCH-009_Audit.md`)
+entfernt). Der vorherige Post-ARCH-009-Audit (`docs/archive/post-arch/MusicBot_POST-ARCH-009_Audit.md`)
 hatte `services/downloader/spotify_downloader.py` als möglichen Kandidaten
 für externe Kommunikation außerhalb `services/clients/` benannt, aber noch
 nicht vertieft geprüft. Dieser Audit erweitert die Prüfung auf die gesamte
@@ -42,7 +42,7 @@ mit `utils/` (16 Dateien, ~5.667 Zeilen).
 | `services/downloader/download/models.py` | Datenmodelle | Download-Pipeline | nein | nein | nein | — | **A** |
 | `services/downloader/utils/enhanced_metadata_processor.py` | Metadata-Pipeline-Orchestrator (1203 Zeilen) | `klassen/download_handler.py`, `download_utils.py` | nein | **totes `import requests`** (Zeile 6, nirgends verwendet) | nein | ja | **A**, 1 Fund |
 | `services/downloader/utils/download_utils.py` | YouTube-Download-Orchestrierung | `klassen/download_handler.py`, `bot.py` | nein | nein | nein | ja | **A** |
-| `services/downloader/utils/download_result_reporter.py` | Baut Telegram-Ergebnistexte (String, kein Versand) | `klassen/download_handler.py`, `download_utils.py` | nein (kein `telegram`-Import, nur Text-Erzeugung) | nein | nein | ja | **A**, aber **`from handlers.duplicate_handler import DuplicateEntry`** (Service→Handler-Import, bereits als offener DEFER-Punkt in `docs/MusicBot_ENGINEERING_BASELINE.md` dokumentiert) |
+| `services/downloader/utils/download_result_reporter.py` | Baut Telegram-Ergebnistexte (String, kein Versand) | `klassen/download_handler.py`, `download_utils.py` | nein (kein `telegram`-Import, nur Text-Erzeugung) | nein | nein | ja | **A**, aber **`from handlers.duplicate_handler import DuplicateEntry`** (Service→Handler-Import, bereits als offener DEFER-Punkt in `docs/archive/MusicBot_ENGINEERING_BASELINE.md` dokumentiert) |
 | `services/downloader/utils/download_artifact_cleanup.py` | Aufräumen verwaister Download-Artefakte | `enhanced_metadata_processor.py`, `bot.py` | nein | nein | nein | ja | **A** |
 | `services/downloader/utils/progress_tracker.py` | Fortschritts-Text-Berechnung (kein Versand) | Download-Pipeline | nein | nein | nein | ja | **A** |
 | `services/downloader/utils/metadata_result_translator.py` | Integrationsschicht Metadata↔Pipeline-Ergebnis | `download_utils.py`, `klassen/download_handler.py` | nein | nein | nein | ja | **A** |
@@ -172,7 +172,7 @@ injizierbare Config) — siehe Abschnitt 3.
 | Richtung | Fund | Bewertung |
 |---|---|---|
 | `handlers/` → `services/` | `handlers/navidrome_menu_handler.py` → `NavidromeAPI`; `handlers/mugge_statistik_handler.py`/`handlers/navidrome_menu_handler.py` → `StatistikService`; `handlers/menu/rich_menu_handler.py` → `services/downloader/*` | **normal, erwartbar** |
-| `services/` → `handlers/` | `services/downloader/utils/download_result_reporter.py:8` → `from handlers.duplicate_handler import DuplicateEntry` | **potenzielle Schichtverletzung** — bereits als offener DEFER-Punkt in `docs/MusicBot_ENGINEERING_BASELINE.md` (Abschnitt 20) dokumentiert, kein neuer Fund, aber hier erstmals im Kontext eines vollständigen `services/`-Audits eingeordnet. `DuplicateEntry` selbst ist ein reines `@dataclass`-Datenmodell ohne Telegram-Bezug — die Verletzung ist eine Frage der Modul-Zugehörigkeit/Importrichtung, keine Präsentationskopplung. |
+| `services/` → `handlers/` | `services/downloader/utils/download_result_reporter.py:8` → `from handlers.duplicate_handler import DuplicateEntry` | **potenzielle Schichtverletzung** — bereits als offener DEFER-Punkt in `docs/archive/MusicBot_ENGINEERING_BASELINE.md` (Abschnitt 20) dokumentiert, kein neuer Fund, aber hier erstmals im Kontext eines vollständigen `services/`-Audits eingeordnet. `DuplicateEntry` selbst ist ein reines `@dataclass`-Datenmodell ohne Telegram-Bezug — die Verletzung ist eine Frage der Modul-Zugehörigkeit/Importrichtung, keine Präsentationskopplung. |
 | `services/` → `Telegram` | keine Treffer (siehe Abschnitt 5) | — |
 | `utils/` → `services/` | keine Treffer | **sauber** |
 | `services/` → `klassen/` | keine Treffer | **sauber**, bestätigt den ARCH-006-Befund erneut |
@@ -219,12 +219,12 @@ außer der genannten Einschränkung bei `audio_enhancer.py`.
 
 | Regel | Dokumentierte Vorgabe | Tatsächlicher Zustand | Abweichung |
 |---|---|---|---|
-| `services/clients/` = externe Integrationsadapter (`CLAUDE.md` Abschnitt 4/17, `docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`) | Ausschließlich externe API-/HTTP-Kommunikation, keine Telegram-Präsentation, keine Fachlogik | Funktional erfüllt (4/4 Module) | keine funktionale Abweichung; totes `import subprocess` in `navidrome_api.py` ist kosmetisch |
+| `services/clients/` = externe Integrationsadapter (`CLAUDE.md` Abschnitt 4/17, `docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`) | Ausschließlich externe API-/HTTP-Kommunikation, keine Telegram-Präsentation, keine Fachlogik | Funktional erfüllt (4/4 Module) | keine funktionale Abweichung; totes `import subprocess` in `navidrome_api.py` ist kosmetisch |
 | `utils/` = technische Hilfs-/Runner-Komponenten „ohne externe Netzwerkkommunikation" (`CLAUDE.md` Abschnitt 4, aus Post-ARCH-009-Audit übernommen) | kein Netzwerk-I/O in `utils/` | `audio_enhancer.py` kommuniziert extern (Last.fm/MusicBrainz/Cover Art Archive) | **echte Abweichung** — Regel war zum Zeitpunkt ihrer Formulierung nicht gegen `audio_enhancer.py` geprüft worden |
 | `services/` → `handlers/` sollte nicht vorkommen (Schichtgrenzen, `CLAUDE.md` Abschnitt 4) | keine Importe aus `handlers/` in `services/` | `download_result_reporter.py` importiert `DuplicateEntry` aus `handlers/duplicate_handler.py` | **bekannte, bereits dokumentierte Abweichung** (ARCH-007 Abschnitt 4, ENGINEERING_BASELINE DEFER-Punkt) |
-| „Der YouTube-Download-Kern ist bereits sauber geschichtet (echte DI, funktionierendes Protocol-Port-System)" (`docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md`) | DI-Konsistenz im Download-Kern | bestätigt (`interfaces.py`-Protocols, injizierbare Konstruktoren in `download/`, `downloader.py`, `playlist_processor.py`) | keine Abweichung |
+| „Der YouTube-Download-Kern ist bereits sauber geschichtet (echte DI, funktionierendes Protocol-Port-System)" (`docs/archive/arch/MusicBot_ARCH-003_Services_Phase1_Analyse.md`) | DI-Konsistenz im Download-Kern | bestätigt (`interfaces.py`-Protocols, injizierbare Konstruktoren in `download/`, `downloader.py`, `playlist_processor.py`) | keine Abweichung |
 | `klassen/download_handler.py`s Telegram-Kopplung ist architektonisch vorgesehen (`CLAUDE.md` Abschnitt 4/19) | Telegram-Kopplung dort erwartet, kein Fehler | bestätigt, nicht erneut geprüft (außerhalb `services/`) | keine Abweichung |
-| „`services/clients/` enthält ausschließlich externe Integrationsadapter, keine Fachlogik" (`docs/MusicBot_POST-ARCH-009_Audit.md`) | keine Fachlogik in `services/clients/` | bestätigt, aber DI-Musterinkonsistenz zwischen den 4 Clients war dort nicht geprüft | Ergänzung, keine Korrektur |
+| „`services/clients/` enthält ausschließlich externe Integrationsadapter, keine Fachlogik" (`docs/archive/post-arch/MusicBot_POST-ARCH-009_Audit.md`) | keine Fachlogik in `services/clients/` | bestätigt, aber DI-Musterinkonsistenz zwischen den 4 Clients war dort nicht geprüft | Ergänzung, keine Korrektur |
 
 **Keine bestehende Regel wird durch diesen Audit geändert** — die Tabelle
 dokumentiert ausschließlich Ist-Zustand gegen bereits formulierte Vorgaben.
@@ -321,7 +321,7 @@ eine eigene, kleinteilige Entscheidung.
   (`build_duplicate_message()`), ein reines `@dataclass`-Datenmodell ohne
   Telegram-Bezug — strukturell vergleichbar mit der Größe des bereits
   erfolgreich umgesetzten `bot_restart_trigger.py`-Schritts.
-- **Bereits bekannt und wartend:** in `docs/MusicBot_ENGINEERING_BASELINE.md`
+- **Bereits bekannt und wartend:** in `docs/archive/MusicBot_ENGINEERING_BASELINE.md`
   (Abschnitt 20) seit ARCH-007 als offener DEFER-Punkt dokumentiert — dieser
   Audit ordnet ihn erstmals in einen vollständigen Architekturkontext ein.
 - **Warum nicht `cover_processor.py`/`spotify_downloader.py` jetzt:** beide
@@ -341,7 +341,7 @@ ist Gegenstand einer eigenen kurzen Analyse, nicht dieses Audits.
 Datenmodell ohne Verhalten, keine Telegram-Kopplung im Datentyp selbst.
 
 **Bestehende Tests:** `tests/test_download_result_reporter.py` existiert
-bereits (laut `docs/MusicBot_ENGINEERING_BASELINE.md` ARCH-003 P-2, 6 neue
+bereits (laut `docs/archive/MusicBot_ENGINEERING_BASELINE.md` ARCH-003 P-2, 6 neue
 Tests für `build_final_summary_message()`/`build_playlist_summary_message()`).
 Ob `DuplicateEntry` selbst dediziert getestet ist, wäre Teil einer
 Folgeanalyse.

@@ -4,7 +4,7 @@
 > Kette CHARACTERIZE → AUDIT → FIX → CLOSURE-AUDIT für drei
 > aufeinanderfolgende Architektur-Findings (AE-10, AE-11, AE-12), die auf
 > die INV-01/INV-02-Enforcement-Fix-Phase (`docs/MusicBot_ARCHITECTURE_EVOLUTION.md`,
-> Abschnitt 28) folgten. `docs/MusicBot_ENGINEERING_BASELINE_v3.md` bleibt
+> Abschnitt 28) folgten. `docs/archive/MusicBot_ENGINEERING_BASELINE_v3.md` bleibt
 > als eingefrorene, historische Referenz unverändert bestehen.
 
 ---
@@ -15,8 +15,8 @@
 |---|---|
 | Datum | 2026-08-26 |
 | Git Commit (main, Basis dieser Baseline) | `9946cc8d6445a9537ef4ab18ba129d8f88f984c1` |
-| Vorherige Baseline | `docs/MusicBot_ENGINEERING_BASELINE_v3.md` (1063 passed / 0 failed, eingefroren) |
-| Herleitung | `docs/MusicBot_ARCHITECTURE_EVOLUTION.md` Abschnitte 26–29 (Closure-Verifikation, Enforcement Fix Phase, AE-10/11/12) + `docs/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md` (Freeze-Gate-Audit, Re-Verification) + `docs/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md` + `docs/AE-12_Closure_Audit.md` |
+| Vorherige Baseline | `docs/archive/MusicBot_ENGINEERING_BASELINE_v3.md` (1063 passed / 0 failed, eingefroren) |
+| Herleitung | `docs/MusicBot_ARCHITECTURE_EVOLUTION.md` Abschnitte 26–29 (Closure-Verifikation, Enforcement Fix Phase, AE-10/11/12) + `docs/archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md` (Freeze-Gate-Audit, Re-Verification) + `docs/archive/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md` + `docs/archive/AE-12_Closure_Audit.md` |
 | Test-Kommando | `python3 -m pytest tests/ -q` |
 | Testergebnis | **1107 passed, 0 failed**, 19 subtests passed, 1 Warning (bekannte, harmlose Pytest-Collection-Warning aus v3, unverändert) |
 | Python-Version | 3.12.3 |
@@ -51,7 +51,7 @@ gegen den jeweiligen Vor-Fix-Stand per `git stash` als fehlschlagend
 verifiziert wurden. Die Testsuite steht bei **1107 passed, 0 failed** —
 44 neue Tests gegenüber v3, kein einziger Regressionsschritt hat einen
 vorher bestandenen Test zum Fehlschlagen gebracht. Ein anschließender,
-eigenständiger Freeze-Gate-Audit (`docs/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md`)
+eigenständiger Freeze-Gate-Audit (`docs/archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md`)
 bewertete zunächst 🔴 BLOCKED (durch den noch offenen AE-12-Fund) und nach
 dessen Schließung sowie einer Dokumentations-Nachpflege abschließend
 🟢 APPROVED.
@@ -72,8 +72,8 @@ dessen Schließung sowie einer Dokumentations-Nachpflege abschließend
 | AE-12 `enhanced_metadata_processor.py` | INV-01 | Einzige Zeile: `write_tags()`-Aufruf über `asyncio.to_thread()`. Vom AE-11-Fix selbst verursachte neue Regression (bis 1,6s Blockierung bei Podcast-Klasse-Dateien) geschlossen, ohne AE-11 zurückzubauen. |
 
 Details je Fund: `docs/MusicBot_ARCHITECTURE_EVOLUTION.md` Abschnitte
-27–29, `docs/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md`,
-`docs/AE-12_Closure_Audit.md`.
+27–29, `docs/archive/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md`,
+`docs/archive/AE-12_Closure_Audit.md`.
 
 ---
 
@@ -178,7 +178,7 @@ Evidenz gegen die dortigen Bewertungen gefunden.
 Keine neuen Risiken durch die vier Fix-Phasen dieser Runde eingeführt —
 jeder Fix wurde einzeln adversariell auf Race Conditions, Cross-Invariant-
 Regressionen und Cancellation-Verhalten geprüft (siehe
-`docs/AE-12_Closure_Audit.md` Abschnitt 8 für das aktuellste, detaillierteste
+`docs/archive/AE-12_Closure_Audit.md` Abschnitt 8 für das aktuellste, detaillierteste
 Beispiel dieser Prüfmethodik). Die beiden in Abschnitt 4 genannten,
 bewusst zurückgestellten Punkte (`move_to_library()` TOCTOU,
 `duplicate/cache.py` INV-01) sind vorbestehend, nicht neu.
@@ -226,18 +226,18 @@ Fehlschlagen gebracht.
 > Engineering-Referenzzustand von MusicBot nach vollständigem Abschluss
 > der Enforcement Fix Phase und der drei Folge-Audits AE-10/AE-11/AE-12,
 > einschließlich eines eigenständigen Freeze-Gate-Audits
-> (`docs/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md`).
+> (`docs/archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md`).
 
 Bei Widersprüchen zwischen diesem Dokument und älteren Dokumenten gilt
 weiterhin: aktueller Code > tatsächlich ausgeführte Tests > aktuelle
 technische Dokumentation > historische Dokumentation.
-`docs/MusicBot_ENGINEERING_BASELINE_v3.md` bleibt als eingefrorene,
+`docs/archive/MusicBot_ENGINEERING_BASELINE_v3.md` bleibt als eingefrorene,
 historische Referenz (1063/0) unverändert bestehen und wird durch dieses
 Dokument **abgelöst**, nicht ersetzt, als aktueller Referenzpunkt.
 `docs/MusicBot_ARCHITECTURE_EVOLUTION.md`,
-`docs/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md`,
-`docs/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md` und
-`docs/AE-12_Closure_Audit.md` bleiben als Analyseartefakte/Herleitung
+`docs/archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md`,
+`docs/archive/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md` und
+`docs/archive/AE-12_Closure_Audit.md` bleiben als Analyseartefakte/Herleitung
 dieser Baseline unverändert bestehen.
 
 ---
@@ -248,7 +248,7 @@ dieser Baseline unverändert bestehen.
 🟢 ARCHITECTURE FREEZE — APPROVED
 ```
 
-gemäß `docs/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md`, Abschnitt 16
+gemäß `docs/archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md`, Abschnitt 16
 (Re-Verification nach AE-12-Closure). Alle 14 dort geprüften Freeze-Gates
 stehen auf PASS, kein offener P0/P1-Befund, kein offener Blocker.
 

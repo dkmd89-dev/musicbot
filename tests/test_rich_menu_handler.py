@@ -293,7 +293,7 @@ class TestHandleTextMessageWorkflow:
 
     def test_cancel_works_even_with_active_workflow_bug006_regression(self, tmp_path):
         """
-        Regressionstest fuer BUG-006 (docs/MusicBot_ENGINEERING_BASELINE.md):
+        Regressionstest fuer BUG-006 (docs/archive/MusicBot_ENGINEERING_BASELINE.md):
         die Abbruch-Pruefung stand vorher NACH dem Workflow-Dispatch-Block,
         der bei aktivem Workflow immer vorher returnt - "/cancel" wurde
         nie als Abbruch erkannt, solange context.user_data["workflow"]
@@ -370,13 +370,13 @@ class TestHandleNavidromeScan:
     """
     ARCH-009 Phase 5 (2026-08-24): die Telegram-MarkdownV2-Formatierung
     (Erfolg/Fehlschlag/Timeout/generische Exception) liegt im Handler
-    (siehe docs/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md).
+    (siehe docs/archive/arch/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md).
 
     ARCH-009 Phase 9, Umsetzung A (2026-08-24): die zwischenzeitliche
     NavidromeAPI.execute_scan()-Bridge (api/navidrome_api.py) wurde
     vollstaendig entfernt - der Handler ruft jetzt direkt
     NavidromeScanTrigger.run_scan() auf (siehe
-    docs/MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md).
+    docs/archive/arch/MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md).
     Diese Tests verifizieren weiterhin, dass die vier sichtbaren
     Nachrichtenvarianten inhaltlich unveraendert bleiben, jetzt gemockt auf
     Ebene von NavidromeScanTrigger.run_scan() (ScanRunResult/ScanTimeoutError)

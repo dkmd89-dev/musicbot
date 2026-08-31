@@ -358,14 +358,14 @@ class GenreProcessor:
 
         # Teilstring-Match für zusammengesetzte Begriffe - nur an
         # Wortgrenzen (ARCH-013 Phase 5,
-        # docs/MusicBot_ARCH-013_Genre_Alias_Decision.md, Abschnitt 5):
+        # docs/archive/arch/MusicBot_ARCH-013_Genre_Alias_Decision.md, Abschnitt 5):
         # ein Alias darf treffen, wenn er als eigenstaendiges Wort/eigen-
         # staendige Wortfolge vorkommt (begrenzt durch Leerzeichen,
         # Satzzeichen oder Stringanfang/-ende), aber nicht, wenn er nur als
         # Zeichenfolge innerhalb eines laengeren Einzelworts auftritt (z.B.
         # "pop" in "britpop").
         #
-        # ARCH-014 Phase 2 (docs/MusicBot_ARCH-014_Genre_Specificity_Characterization.md):
+        # ARCH-014 Phase 2 (docs/archive/arch/MusicBot_ARCH-014_Genre_Specificity_Characterization.md):
         # bei MEHREREN gueltigen Wortgrenzen-Treffern gewinnt nicht mehr
         # der erste (Iterationsreihenfolge = YAML-Dateireihenfolge,
         # kein fachlicher Mechanismus), sondern der laengste Alias-Key
@@ -591,7 +591,7 @@ class GenreProcessor:
         wie zuvor ueber einen zweiten determine_genre()-Aufruf auf dem
         bereits client-seitig verdichteten (und bei Multi-Tag-Ergebnissen
         fehlerhaften) Genre-String. Siehe
-        docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md, Phase 3A/3B.
+        docs/archive/arch/MusicBot_ARCH-012_Genre_Logic_Characterization.md, Phase 3A/3B.
         """
         from utils.genre_map import GenreResult
 

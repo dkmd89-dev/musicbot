@@ -10,7 +10,7 @@ explizite Freigabe für eine etwaige Phase 2.
 
 ## 1. Ausgangslage
 
-ARCH-010 (`docs/MusicBot_ARCH-010_Downloader_Utils_Migration.md`) hat die
+ARCH-010 (`docs/archive/arch/MusicBot_ARCH-010_Downloader_Utils_Migration.md`) hat die
 alte `services/downloader/utils/`-Struktur vollständig in `services/downloader/`
 und `services/metadata/` aufgelöst und ist abgeschlossen. Als nächster
 Schritt der schrittweisen Zielarchitektur-Bereinigung wird nun geprüft, ob
@@ -33,7 +33,7 @@ hingegen ist laut eigenem Docstring in `download_utils.py` explizit als
 der eine andere Bewertung nahelegt (siehe Abschnitt 8).
 
 Ein historischer Präzedenzfall existiert bereits: **ARCH-003 Phase 1**
-(`docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md`, Abschnitt 4) schlug
+(`docs/archive/arch/MusicBot_ARCH-003_Services_Phase1_Analyse.md`, Abschnitt 4) schlug
 testweise einen Rename `services/downloader/download/` →
 `services/downloader/youtube/` vor. Dieser Vorschlag wurde nie umgesetzt
 (kein Folge-Commit, keine spätere ADR) und wird hier nicht ungeprüft
@@ -113,11 +113,11 @@ etablierte Zielrichtung (`Downloader → Metadata`), keine Verletzung.
   Testdateien (Modul-Docstrings mit Pfadangabe). Alle sind aktuell korrekt
   — keine Widersprüche zum tatsächlichen Pfad gefunden.
 - **Dokumentation:** `README.md` (Projektstruktur-Tabelle, aktuell korrekt
-  seit ARCH-010 Phase 3G), `docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md`
+  seit ARCH-010 Phase 3G), `docs/archive/arch/MusicBot_ARCH-003_Services_Phase1_Analyse.md`
   (historische Analyse, Rename-Vorschlag nie umgesetzt),
-  `docs/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md` (historische
-  Analyse, 1 Pfadverweis), `docs/MusicBot_ENGINEERING_BASELINE.md`,
-  `docs/MusicBot_SERVICES_Zielarchitektur_Audit.md` (aktuelle
+  `docs/archive/arch/MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md` (historische
+  Analyse, 1 Pfadverweis), `docs/archive/MusicBot_ENGINEERING_BASELINE.md`,
+  `docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md` (aktuelle
   Zielarchitektur-Bestandsaufnahme, POST-ARCH-009).
 
 ---
@@ -429,7 +429,7 @@ Sonderfall liegt vollständig außerhalb dieses Pakets und bleibt unberührt.
 - `services/metadata/cache.py`-Namenskollisions-Frage (bereits aus
   ARCH-010 bekannt, hier nur zusätzlich gegen `cache_manager.py` geprüft).
 - `download_result_reporter.py`'s `DuplicateEntry`-Import aus `handlers/`
-  (P-1 aus `docs/MusicBot_SERVICES_Zielarchitektur_Audit.md`) — liegt
+  (P-1 aus `docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md`) — liegt
   außerhalb von `download/`, nicht Teil dieses Scopes.
 - Last.fm-Duplizierung in `cover_processor.py` (P-2, ebenda) — betrifft
   `services/metadata/`, nicht `download/`.

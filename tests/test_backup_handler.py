@@ -2,7 +2,7 @@
 Characterization-Tests fuer handlers/admin/backup_handler.py
 (BackupHandler) - 509 Zeilen, vorher 0 Tests.
 
-SEC-006 (docs/MusicBot_ENGINEERING_BASELINE.md): confirm_delete() und
+SEC-006 (docs/archive/MusicBot_ENGINEERING_BASELINE.md): confirm_delete() und
 delete_backup() bauten filepath = self.dest_dir / filename, wobei
 filename unvalidiert aus callback_data kommt
 (backup_delete_<filename> / backup_delete_confirm_<filename> - Telegram

@@ -15,7 +15,7 @@ Klasse wird hier isoliert unit-getestet (Regel 8 Testpyramide), nicht
 zusammen mit ihren echten Kollaborateuren.
 
 ARCH-012 Phase 3B: der Client besitzt seit dieser Phase keinen
-GenreMapper mehr (siehe docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md,
+GenreMapper mehr (siehe docs/archive/arch/MusicBot_ARCH-012_Genre_Logic_Characterization.md,
 Abschnitt "Phase 3B") - fetch_metadata()/_build_metadata() liefern nur
 noch die rohen release-group-Tags, keine vorberechnete Genre-Entscheidung.
 Die frueheren genre_mapper-Mocks in dieser Datei entfallen entsprechend.
@@ -30,7 +30,7 @@ identisch (z.B. immer "12" bei einem 12-Track-Album) statt der echten
 Tracknummer. Ungefixt, da KEIN Aufrufer im Repo dieses Feld liest
 (track_number in DownloadResult/MetadataResult kommt aus einer anderen
 Quelle, siehe album_processor.extract_track_number_from_string) - reiner
-"toter", aber inhaltlich falscher Wert. Siehe docs/MusicBot_ENGINEERING_BASELINE.md.
+"toter", aber inhaltlich falscher Wert. Siehe docs/archive/MusicBot_ENGINEERING_BASELINE.md.
 """
 
 import asyncio
@@ -292,7 +292,7 @@ class TestBuildMetadataFieldExtraction:
 
     def test_track_number_uses_real_track_position_not_medium_total_count(self):
         """
-        Regressionstest fuer BUG-001 (docs/MusicBot_ENGINEERING_BASELINE.md):
+        Regressionstest fuer BUG-001 (docs/archive/MusicBot_ENGINEERING_BASELINE.md):
         vorher wurde faelschlich "medium-track-count" (die GESAMTANZAHL der
         Tracks auf dem Medium) als Tracknummer verwendet. Die Fixture-Form
         (release-list -> medium-list -> track-list -> "number") entspricht
@@ -354,7 +354,7 @@ class TestBuildMetadataFieldExtraction:
 
     def test_release_group_tags_survive_the_detail_lookup(self):
         """
-        Regressionstest fuer BUG-002 (docs/MusicBot_ENGINEERING_BASELINE.md):
+        Regressionstest fuer BUG-002 (docs/archive/MusicBot_ENGINEERING_BASELINE.md):
         get_recording_by_id() unterstuetzt fuer "recording" keinen
         "release-groups"-Include, sein release-list hat daher NIE
         release-group-Daten. Vorher wurde die reichhaltigere release-list
@@ -398,7 +398,7 @@ class TestBuildMetadataFieldExtraction:
         ARCH-012 Phase 3B: _build_metadata() liefert die release-group-Tags
         seit dieser Phase unveraendert als "tags" zurueck - keine
         GenreMapper.determine_genre()-Verdichtung mehr im Client (siehe
-        docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md, Phase 3B).
+        docs/archive/arch/MusicBot_ARCH-012_Genre_Logic_Characterization.md, Phase 3B).
         Die fachliche Priorisierung liegt jetzt ausschliesslich in
         genre_processor.py::_fetch_genre_from_musicbrainz() ueber
         prioritize_genres().

@@ -1,5 +1,5 @@
 """
-Regressionstest fuer AUTOLEARN-001 (docs/MusicBot_ENGINEERING_BASELINE.md):
+Regressionstest fuer AUTOLEARN-001 (docs/archive/MusicBot_ENGINEERING_BASELINE.md):
 EnhancedMetadataProcessor.process_single_track() prueft beim Auto-Learning-
 Schritt (19b) den Kanal nur gegen eine hartcodierte 2-Namen-Podcast-Liste
 (_is_podcast_channel = {"backstage boxengasse", "sky sport formel 1"}),

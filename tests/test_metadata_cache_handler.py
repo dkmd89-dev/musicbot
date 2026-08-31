@@ -1,7 +1,7 @@
 """
 Tests fuer MetadataCacheHandler (services/metadata/cache.py).
 
-TEST-003 (siehe docs/MusicBot_ENGINEERING_BASELINE.md): check() und
+TEST-003 (siehe docs/archive/MusicBot_ENGINEERING_BASELINE.md): check() und
 _normalize_cache_title() waren seit dem allerersten Commit reine Stubs
 (Methodenrumpf nur "..."), gaben also immer None zurueck. Der Cache-Hit-Pfad
 der Metadata-Pipeline war dadurch in Produktion vollstaendig wirkungslos -
@@ -204,7 +204,7 @@ class TestInvalidate:
 
 class TestVideoIdIndexAtomicWrite:
     """
-    FINDING-5 (docs/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md): _save_video_id_index()
+    FINDING-5 (docs/archive/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md): _save_video_id_index()
     schrieb vorher per direktem open(mode="w") + json.dump() - ein
     Prozessabbruch waehrend des Schreibens konnte die Indexdatei leeren/
     korrumpieren. Jetzt: write-tmp + atomarer rename, analog zum

@@ -4,7 +4,7 @@
 EnhancedDuplicateHandler – Telegram-Präsentationsschicht für die
 Duplicate-Detection.
 
-ARCH-018 Phase 2 (docs/MusicBot_ARCH-018_Duplicate_Handler_Characterization.md):
+ARCH-018 Phase 2 (docs/archive/arch/MusicBot_ARCH-018_Duplicate_Handler_Characterization.md):
 der fachliche Kern (Duplicate-Detection-Kaskade, Cache, Registrierung,
 Statistik-Berechnung) wurde nach services/duplicate/ extrahiert
 (DuplicateCache, DuplicateDetector) - Abschnitt 6 der Characterization.

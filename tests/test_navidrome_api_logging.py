@@ -1,5 +1,5 @@
 """
-Regressionstest fuer SEC-001 (Engineering Baseline, docs/MusicBot_ENGINEERING_BASELINE.md).
+Regressionstest fuer SEC-001 (Engineering Baseline, docs/archive/MusicBot_ENGINEERING_BASELINE.md).
 
 api.navidrome_api.NavidromeAPI.make_request loggte frueher die vollstaendigen
 Request-Params inkl. NAVIDROME_USER/NAVIDROME_PASS im Klartext ueber

@@ -3,7 +3,7 @@ Charakterisierungstests fuer utils/navidrome_scan_trigger.py.
 
 ARCH-009 Phase 4: die Docker-/Subprocess-/Timeout-Steuerung wurde 1:1 aus
 NavidromeAPI.execute_scan() in NavidromeScanTrigger.run_scan() ausgelagert
-(siehe docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md). Diese Tests
+(siehe docs/archive/arch/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md). Diese Tests
 sind die direkte Fortsetzung der vorher in
 tests/test_navidrome_api_characterization.py::TestExecuteScan enthaltenen
 Subprocess-Charakterisierung. Die Telegram-Formatierung liegt seit
@@ -14,7 +14,7 @@ execute_scan()-Bridge.
 ARCH-009-Folgeumsetzung (2026-08-24): NavidromeScanTrigger wurde von
 api/navidrome_scan_trigger.py nach utils/navidrome_scan_trigger.py
 verschoben (siehe
-docs/MusicBot_ARCH-009_NavidromeScanTrigger_Zielort_Analyse.md) - Import
+docs/archive/arch/MusicBot_ARCH-009_NavidromeScanTrigger_Zielort_Analyse.md) - Import
 und alle Patch-Ziele entsprechend auf utils.navidrome_scan_trigger
 umgestellt. api/ existiert seitdem nicht mehr.
 """

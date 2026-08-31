@@ -7,7 +7,7 @@ Consumer sind.
 `DuplicateEntry` lebte zuvor in `handlers/duplicate_handler.py` und wurde
 von dort auch von `services/downloader/download_result_reporter.py`
 importiert - eine services/->handlers/-Schichtverletzung (POST-ARCH-010/011
-Services-Audit, siehe docs/MusicBot_POST-ARCH-010_011_DuplicateEntry_Analyse.md).
+Services-Audit, siehe docs/archive/post-arch/MusicBot_POST-ARCH-010_011_DuplicateEntry_Analyse.md).
 Reine Datenstruktur ohne Telegram-Bezug, daher hierher verschoben.
 """
 

@@ -2,7 +2,7 @@
 
 **Stand:** 2026-08-24
 **Status:** Analyse abgeschlossen, keine Umsetzung
-**Bezug:** `docs/MusicBot_POST-ARCH-009_Audit.md`, Abschnitt 5 (P-1)
+**Bezug:** `docs/archive/post-arch/MusicBot_POST-ARCH-009_Audit.md`, Abschnitt 5 (P-1)
 
 ---
 

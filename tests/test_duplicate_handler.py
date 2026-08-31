@@ -3,7 +3,7 @@ Characterization-Tests fuer die Duplicate-Detection-Pipeline
 (services/duplicate/detector.py::DuplicateDetector), Phase 1 der
 Engineering Baseline.
 
-ARCH-018 Phase 2 (docs/MusicBot_ARCH-018_Duplicate_Handler_Characterization.md):
+ARCH-018 Phase 2 (docs/archive/arch/MusicBot_ARCH-018_Duplicate_Handler_Characterization.md):
 der hier getestete fachliche Kern lebte urspruenglich in
 handlers/duplicate_handler.py::EnhancedDuplicateHandler und wurde nach
 services/duplicate/ (DuplicateCache, DuplicateDetector) extrahiert - reiner
@@ -11,7 +11,7 @@ Import-Pfad-Wechsel, Verhalten und Testkoerper unveraendert (wie in der
 Characterization als Migrationspfad vorgesehen).
 
 Vor diesem Test existierte fuer diesen Bereich ueberhaupt keine
-Testabdeckung (siehe docs/musicbot_REVERSE_ENGINEERED_DOCUMENTATION.md,
+Testabdeckung (siehe docs/archive/musicbot_REVERSE_ENGINEERED_DOCUMENTATION.md,
 Abschnitt 23/27F) - schlimmer als der bekannte GenreProcessor-Fall, wo
 zumindest eine (Fake-)Implementierung getestet wurde.
 

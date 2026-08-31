@@ -20,7 +20,7 @@ Idempotenz-Ausnahme (`"ny drill"`).
 
 ## 1. Ausgangslage
 
-`docs/POST-ARCH-013_Services_Architecture_Audit.md` (Abschnitt G/L, PR
+`docs/archive/post-arch/POST-ARCH-013_Services_Architecture_Audit.md` (Abschnitt G/L, PR
 #32, gemergt) identifizierte, dass `"k-pop revival"` → `"Pop"` (statt
 `"K-Pop"`) kein Einzelfall ist, sondern ein systematisches Muster: 55
 Alias-Paare in `mapping/genre_aliases.yaml` sind von derselben
@@ -788,7 +788,7 @@ Geänderte Dateien:
   geänderte öffentliche Signatur.
 - `tests/test_genre_specificity_characterization.py` — Testdatei, wie
   oben beschrieben.
-- `docs/MusicBot_ARCH-014_Genre_Specificity_Characterization.md` —
+- `docs/archive/arch/MusicBot_ARCH-014_Genre_Specificity_Characterization.md` —
   dieser Abschnitt.
 
 **Nicht verändert:** `utils/genre_map.py`, jede YAML-Mapping-Datei

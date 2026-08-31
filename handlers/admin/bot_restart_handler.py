@@ -16,7 +16,7 @@ CHANGELOG:
   - v1.1  (2026-04)  Fix: MarkdownV2 -> HTML (Escape-Probleme behoben)
   - v1.2  (2026-08)  POST-ARCH-009 P-1: systemctl-Prozesssteuerung nach
                       utils/bot_restart_trigger.py ausgelagert (siehe
-                      docs/MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md)
+                      docs/archive/post-arch/MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md)
 """
 
 import asyncio

@@ -255,7 +255,7 @@ class TestDetermineGenreWithFallbacksExternalSteps:
 
 class TestLastFmGenreFieldIsIgnored:
     """
-    ARCH-012 Phase 1 (docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md,
+    ARCH-012 Phase 1 (docs/archive/arch/MusicBot_ARCH-012_Genre_Logic_Characterization.md,
     Abschnitt 3/9) stellte fest, dass lastfm_client.py intern ein "genre"-
     Feld per GenreMapper.determine_genre() berechnet, das hier in
     _fetch_genre_from_lastfm() praktisch nie verwendet wird - stattdessen
@@ -305,7 +305,7 @@ class TestLastFmGenreFieldIsIgnored:
 
 class TestMusicBrainzGenrePrioritizationCharacterization:
     """
-    ARCH-012 Phase 3A/3B (docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md).
+    ARCH-012 Phase 3A/3B (docs/archive/arch/MusicBot_ARCH-012_Genre_Logic_Characterization.md).
 
     Phase 3A hatte empirisch belegt (gegen den echten GenreMapper): der
     fruehere zweistufige determine_genre()-Aufruf im MusicBrainz-Pfad war

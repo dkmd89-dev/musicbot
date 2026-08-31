@@ -3,7 +3,7 @@
 **Datum:** 2026-08-25
 **Typ:** Reine Verifikation (keine Produktions-/Test-/Mapping-Änderungen)
 **Basis:** `arch-018/phase2-duplicate-kern-extraction` (Commit `fa8f718`), PR #47 (offen, `base=main`, nicht gemergt)
-**Vorgänger:** `docs/MusicBot_ARCH-018_Duplicate_Handler_Characterization.md` (Phase 1 + Phase 2)
+**Vorgänger:** `docs/archive/arch/MusicBot_ARCH-018_Duplicate_Handler_Characterization.md` (Phase 1 + Phase 2)
 
 ---
 
@@ -209,7 +209,7 @@ Keine neuen Fehlschläge, keine still entfernten Tests, keine Testkosmetik als v
 ausgeklammert):
 
 ```
-docs/MusicBot_ARCH-018_Duplicate_Handler_Characterization.md
+docs/archive/arch/MusicBot_ARCH-018_Duplicate_Handler_Characterization.md
 handlers/duplicate_handler.py
 handlers/menu/rich_menu_handler.py
 klassen/download_handler.py

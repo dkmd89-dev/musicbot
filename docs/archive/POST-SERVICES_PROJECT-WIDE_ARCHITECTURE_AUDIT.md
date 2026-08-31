@@ -30,7 +30,7 @@ Kein Abweichen vom erwarteten Ausgangsstand — Analyse wie geplant fortgesetzt.
 
 **Wichtiger Hinweis zur Quellenlage:** Es existiert bereits ein sehr
 aktueller, vollständiger Services-Audit —
-`docs/MusicBot_POST-DUPLICATEENTRY_Services_Architecture_Audit.md`
+`docs/archive/post-arch/MusicBot_POST-DUPLICATEENTRY_Services_Architecture_Audit.md`
 (Stand desselben Tages wie dieser Audit, nach der letzten
 `services/`-relevanten Migration). Dieser Audit deckt `services/`
 selbst bereits erschöpfend ab (Dependency-Graph, Boundary-Prüfung,

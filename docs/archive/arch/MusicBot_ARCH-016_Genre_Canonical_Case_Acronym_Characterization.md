@@ -4,7 +4,7 @@
 Keine YAML-Änderung. Keine Lösungsvariante umgesetzt. Wartet auf ausdrückliche
 Freigabe für eine mögliche Phase 2.
 
-**Ausgangspunkt:** ARCH-015 Phase 2 (`docs/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md`,
+**Ausgangspunkt:** ARCH-015 Phase 2 (`docs/archive/arch/MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md`,
 Abschnitt „Phase 2 — Self-Alias-Implementierung") behob Klasse A1
 (`New York Drill`, `Aggro Deutschrap`) durch Self-Alias-Keys, ließ aber
 Klasse B (`NDW` → `Ndw`) bewusst unbehandelt — explizite Scope-Grenze

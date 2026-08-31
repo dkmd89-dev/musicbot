@@ -3,7 +3,7 @@
 """
 ARCH-016 - Genre Canonical-Case / Acronym.
 
-Phase 1 (docs/MusicBot_ARCH-016_Genre_Canonical_Case_Acronym_Characterization.md)
+Phase 1 (docs/archive/arch/MusicBot_ARCH-016_Genre_Canonical_Case_Acronym_Characterization.md)
 untersuchte systematisch, ob "NDW" -> "Ndw" (der nach ARCH-015 Phase 2
 verbleibende Idempotenzbefund) ein isolierter Datenfehler oder Ausdruck
 einer allgemeineren Klasse von Problemen bei kanonischen Genre-Werten mit
@@ -24,7 +24,7 @@ besonderer Gross-/Kleinschreibung bzw. Akronymen ist. Ergebnis:
     TROTZDEM stabil waren (Klasse C): "Afro", "Drum & Bass", "Liquid
     Drum & Bass".
 
-Phase 2 (docs/MusicBot_ARCH-016_Genre_Canonical_Case_Acronym_Characterization.md,
+Phase 2 (docs/archive/arch/MusicBot_ARCH-016_Genre_Canonical_Case_Acronym_Characterization.md,
 Abschnitt "Phase 2 - NDW Self-Alias Implementation") hat gemaess der in
 Phase 1 empfohlenen Variante A den fehlenden Self-Alias-Key
 "ndw": "NDW" in mapping/genre_aliases.yaml ergaenzt. "NDW" ist damit

@@ -5,7 +5,7 @@ DuplicateDetector – fachlicher Kern der Duplicate-Detection
 (URL-/Content-/Parser-/Library-Fallback-Kaskade, Registrierung neuer
 Downloads, Statistik).
 
-ARCH-018 Phase 2 (docs/MusicBot_ARCH-018_Duplicate_Handler_Characterization.md):
+ARCH-018 Phase 2 (docs/archive/arch/MusicBot_ARCH-018_Duplicate_Handler_Characterization.md):
 extrahiert aus handlers/duplicate_handler.py::EnhancedDuplicateHandler.
 Dieser Kern (Abschnitt 6 der Characterization) hat keine Telegram-
 Abhängigkeit - er wurde bereits vor der Extraktion ausschließlich über

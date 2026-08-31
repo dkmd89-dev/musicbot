@@ -1,6 +1,6 @@
 # ARCH-009 Phase 5 — Verbleibende Präsentations-/Telegram-Verantwortlichkeiten: Analyse
 
-Reine Analysephase gemäß `docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`
+Reine Analysephase gemäß `docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`
 Phase 5. Keine Codeänderung, keine vorsorgliche Umstrukturierung. Prüft,
 welche Telegram-spezifischen Verantwortlichkeiten in `api/navidrome_api.py`
 nach ARCH-009 Phase 2 (tote Methoden entfernt) und Phase 4
@@ -35,7 +35,7 @@ Grundsatz-Punkte geprüft:
 eine (`execute_scan()`) den Grundsatz** — und zwar ausschließlich beim
 vierten Kriterium (Telegram-spezifische Markdown-Formatierung), nicht bei
 den ersten drei. Das bestätigt exakt die in
-`docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md` (Abschnitt 3)
+`docs/archive/arch/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md` (Abschnitt 3)
 dokumentierte Vermischung und zeigt, dass Phase 4 diese bewusst
 unverändert gelassen hat (wie vorgegeben).
 
@@ -167,7 +167,7 @@ Offene Entscheidungen für einen möglichen nächsten Schritt:
    vorerst bestehen?
 2. Falls Option 2: soll das zusammen mit oder getrennt von der
    Ergebnis-/Rückgabestruktur-Frage aus
-   `docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md` (Abschnitt 8,
+   `docs/archive/arch/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md` (Abschnitt 8,
    Punkt 3) entschieden werden?
 3. Soll der tote `ParseMode`-Import (Abschnitt 3) unabhängig davon entfernt
    werden (Option 3), oder weiterhin unangetastet bleiben, bis eine
@@ -296,7 +296,7 @@ keine neuen Fehlschläge.
 - Toter `ParseMode`-Import in `api/navidrome_api.py` (Option 3, separate
   Entscheidung).
 - ARCH-009 Phase 6-9 (Zielposition/DI des verbleibenden Adapters).
-- Aus `docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md` Abschnitt 8:
+- Aus `docs/archive/arch/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md` Abschnitt 8:
   Punkte 4-6 (ungetestete Normalisierungszweige waren bereits in Phase 4
   ergänzt, toter Handler-`except`-Pfad ist mit diesem Schritt implizit
   aktiv geworden statt entfernt, 45-Sekunden-Timeout-Beobachtung weiterhin

@@ -33,7 +33,7 @@ Phase.
 
 ## 1. Ausgangslage
 
-ARCH-013 Phase 1 (`docs/MusicBot_ARCH-013_Genre_Alias_Characterization.md`,
+ARCH-013 Phase 1 (`docs/archive/arch/MusicBot_ARCH-013_Genre_Alias_Characterization.md`,
 PR #28, nicht gemergt) hat empirisch nachgewiesen, dass `GenreMapper` und
 `GenreProcessor` für dieselben rohen Genre-Eingaben in mindestens 3
 unabhängigen Fällen unterschiedliche Ergebnisse liefern: 4 Wertkonflikte
@@ -52,7 +52,7 @@ Phase 1, für die Entscheidung aber ausschlaggebend):
   `Tech House: House`, `Electropop: Pop`, `Chamber Pop: Pop`) — eine
   **dritte**, bisher nicht im Konflikt betrachtete Quelle mit einer
   eigenen, strukturell verankerten Meinung.
-- `docs/MusicBot_ENGINEERING_BASELINE.md` (DATA-002) und
+- `docs/archive/MusicBot_ENGINEERING_BASELINE.md` (DATA-002) und
   `tests/test_mapping_yaml_integrity.py::TestGenreClassificationDecisions`
   dokumentieren, dass **innerhalb** von `genre_overrides.yaml` selbst
   bereits einmal ein fast identischer Konflikt aufgetreten und per
@@ -642,7 +642,7 @@ Geänderte Dateien:
   Klasse/Methode, keine geänderte Signatur.
 - `tests/test_genre_alias_characterization.py` — Testdatei, wie oben
   beschrieben.
-- `docs/MusicBot_ARCH-013_Genre_Alias_Decision.md` — dieser Abschnitt.
+- `docs/archive/arch/MusicBot_ARCH-013_Genre_Alias_Decision.md` — dieser Abschnitt.
 
 **Nicht verändert:** `services/metadata/genre_processor.py`,
 `mapping/genre_aliases.yaml`, `mapping/genre_overrides.yaml`,
@@ -816,7 +816,7 @@ Geänderte Dateien:
 - `tests/test_genre_alias_characterization.py`,
   `tests/test_genre_mapper_advanced.py` — Testdateien, wie oben
   beschrieben.
-- `docs/MusicBot_ARCH-013_Genre_Alias_Decision.md` — dieser Abschnitt.
+- `docs/archive/arch/MusicBot_ARCH-013_Genre_Alias_Decision.md` — dieser Abschnitt.
 
 **Nicht verändert:** `utils/genre_map.py`, `services/metadata/genre_processor.py`,
 jede andere Produktions-Python-Datei, `mapping/genre_hierarchy.yaml`,
@@ -964,7 +964,7 @@ Geänderte Dateien:
   geänderte öffentliche Signatur.
 - `tests/test_genre_alias_characterization.py` — Testdatei, wie oben
   beschrieben.
-- `docs/MusicBot_ARCH-013_Genre_Alias_Decision.md` — dieser Abschnitt.
+- `docs/archive/arch/MusicBot_ARCH-013_Genre_Alias_Decision.md` — dieser Abschnitt.
 
 **Nicht verändert:** `utils/genre_map.py` (kein Teilstring-Matching dort
 vorhanden), jede YAML-Mapping-Datei, jede andere Produktionsdatei. Keine

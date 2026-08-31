@@ -3,7 +3,7 @@
 """
 ARCH-009 Phase 4: Kapselt die lokale Docker-/Subprocess-/Timeout-Steuerung
 fuer Navidrome-Scans, getrennt von der Subsonic-API-Kommunikation in
-api/navidrome_api.py (siehe docs/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md,
+api/navidrome_api.py (siehe docs/archive/arch/MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md,
 Abschnitt 3: execute_scan() vermischte bislang Konfigurationsvalidierung,
 Subprocess-Steuerung und Telegram-Formatierung).
 

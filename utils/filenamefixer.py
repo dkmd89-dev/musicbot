@@ -334,7 +334,7 @@ class FilenameFixerTool(SingletonMixin):
                 f"⚠️ [LIBRARY] Name existiert — umbenannt zu: {final_target.name}"
             )
 
-        # FINDING-6 (docs/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md): shutil.move()
+        # FINDING-6 (docs/archive/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md): shutil.move()
         # nutzt os.rename() (atomar) nur, wenn Quelle und Ziel auf demselben
         # Dateisystem liegen - DOWNLOAD_DIR und LIBRARY_DIR liegen in der
         # tatsaechlichen Konfiguration (config.py) auf unterschiedlichen

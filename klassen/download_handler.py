@@ -24,7 +24,7 @@ CHANGELOG v3.0:
   ✅ Konsistentes Emoji-Schema für schnelle Log-Orientierung
 
 Spotify-Unterstützung wurde entfernt (siehe
-docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md, Abschnitt
+docs/archive/arch/MusicBot_ARCH-020_Download_Pipeline_Characterization.md, Abschnitt
 "Spotify-Entfernung") - Spotify wurde im produktiven Betrieb nicht genutzt.
 """
 
@@ -389,7 +389,7 @@ class DownloadHandler:
         Die eigentliche Metadaten-Anreicherung geschieht für YouTube bereits
         vollständig innerhalb von services/downloader/download_utils.py,
         bevor ein Ergebnis hier ankommt (siehe
-        docs/MusicBot_ARCH-020_Download_Pipeline_Characterization.md). Diese
+        docs/archive/arch/MusicBot_ARCH-020_Download_Pipeline_Characterization.md). Diese
         Methode diente historisch zusätzlich als einzige reale
         Metadaten-Verarbeitungsstelle für Spotify-Ergebnisse (entfernt) -
         die dafür nötigen Schritte D/E/G wurden mit der Spotify-Entfernung
@@ -621,7 +621,7 @@ class DownloadHandler:
             tracks = playlist_result.get("tracks", [])
             total = len(tracks)
             ok = sum(1 for t in tracks if t.get("success"))
-            # FINDING-4 (docs/MusicBot_FINDING_4_FORENSIC_AUDIT.md):
+            # FINDING-4 (docs/archive/MusicBot_FINDING_4_FORENSIC_AUDIT.md):
             # enhanced_download_with_retry() meldet für Playlists immer
             # success=True auf oberster Ebene, unabhängig vom tatsächlichen
             # Track-Ergebnis - ohne diese Prüfung zeigte
@@ -730,7 +730,7 @@ class DownloadHandler:
                 self.logger.error("❌ [YT-PIPELINE] download_audio() lieferte leeres Ergebnis")
                 raise ValueError("Download-Ergebnis war leer oder ungültig")
 
-            # FINDING-4 (docs/MusicBot_FINDING_4_FORENSIC_AUDIT.md): erschöpfte
+            # FINDING-4 (docs/archive/MusicBot_FINDING_4_FORENSIC_AUDIT.md): erschöpfte
             # Retries signalisieren Fehlschlag über einen Rückgabewert
             # ({"success": False, "error": ...}), nicht über eine Exception -
             # ohne diese Prüfung lief das direkt in die Ergebnis-Schleife und

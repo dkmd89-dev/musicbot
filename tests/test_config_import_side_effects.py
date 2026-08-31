@@ -1,5 +1,5 @@
 """
-Characterization-Tests fuer CFG-001 (docs/MusicBot_ENGINEERING_BASELINE.md):
+Characterization-Tests fuer CFG-001 (docs/archive/MusicBot_ENGINEERING_BASELINE.md):
 "import config" hat Seiteneffekte, die beim reinen Import ausgefuehrt
 werden (nicht erst bei expliziter Initialisierung) - .env-Datei-Suche
 ueber mehrere Pfade, print()-Ausgaben (nicht ueber das logging-Modul),

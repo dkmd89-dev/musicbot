@@ -7,7 +7,7 @@
 | Repository | `dkmd89-dev/musicbot` |
 | HEAD Commit | `eea8cd824bcc4dcafc6b58109aca67541e90d9ec` (main) |
 | Audit-Datum | 2026-08-25 |
-| Baseline-Referenz | `docs/MusicBot_ENGINEERING_BASELINE_v3.md` (eingefroren) |
+| Baseline-Referenz | `docs/archive/MusicBot_ENGINEERING_BASELINE_v3.md` (eingefroren) |
 | Vorausgesetzter Teststand | 1063 passed, 0 failed |
 | Verifizierter Teststand | **1063 passed, 0 failed** (eigener Lauf, siehe Abschnitt 2) — Repository entspricht v3, Audit wird fortgesetzt |
 | Explizit ausgeschlossen (CLOSED/HISTORICAL) | Titel-Parsing-Bug, HTTP-Request-Logging, Spotify-Entfernung, AUTOLEARN-001, RETRY-COVERAGE, AUTOLEARN-002, CHANNEL-PATTERN, STALE-TEST, PYTEST-ASYNCIO, PODCAST-INDEX-KEY, LASTFM-COVER-DEAD, FINDING-1 (COVER-BLOCKING), FINDING-2 (PARTIAL-FAILURE-LIBRARY), FINDING-3 (NAVIDROME-PASSWORD-LOG-LEAK) — alle bereits gefixt/geschlossen |
@@ -388,7 +388,7 @@ Kein Finding aus diesem Audit erfordert einen Architekturumbau, neue Abstraktion
 ## Nachtrag (2026-08-25): FINDING-4, FINDING-5, FINDING-6 gefixt
 
 **FINDING-4** separat per Forensic Deep Audit behandelt und gefixt — siehe
-`docs/MusicBot_FINDING_4_FORENSIC_AUDIT.md` (eigenes Dokument, eigener
+`docs/archive/MusicBot_FINDING_4_FORENSIC_AUDIT.md` (eigenes Dokument, eigener
 Nachtrag dort).
 
 **FINDING-5** (`video_id_index.json` nicht crash-sicher): `services/metadata/cache.py::_save_video_id_index()`

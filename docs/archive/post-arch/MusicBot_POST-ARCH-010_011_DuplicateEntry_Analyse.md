@@ -311,7 +311,7 @@ Migration wie in Abschnitt 12 empfohlen (Variante A) durchgeführt.
 Repo-weiter Re-Check unmittelbar vor der Migration bestätigte den Audit
 unverändert: identische Definition, identische Consumer-Liste (Abschnitte
 1–10), keine `mock.patch`-/`isinstance()`-Treffer, keine `__init__.py`-
-Re-Exports. Einziger Zusatzfund: `docs/MusicBot_ENGINEERING_BASELINE.md`
+Re-Exports. Einziger Zusatzfund: `docs/archive/MusicBot_ENGINEERING_BASELINE.md`
 enthielt einen offenen Checklisten-Punkt, der genau diese Abhängigkeit als
 unentschieden auflistete — kein architektonischer Neufund, sondern ein
 durch die Migration aufzulösender Dokumentationsstand (siehe 13.6). Kein
@@ -362,8 +362,8 @@ services/downloader/models.py
 - Schichtprüfung `services/* → handlers/*` (repo-weit, `^from handlers`/
   `^import handlers` unter `services/`): **0 Treffer.**
 - Historische/dokumentarische Erwähnungen des Altpfads in
-  `docs/MusicBot_ARCH-003_Services_Phase1_Analyse.md`,
-  `docs/MusicBot_ARCH-007_P2_Entkopplungsvorschlag.md` — bewusst
+  `docs/archive/arch/MusicBot_ARCH-003_Services_Phase1_Analyse.md`,
+  `docs/archive/arch/MusicBot_ARCH-007_P2_Entkopplungsvorschlag.md` — bewusst
   unverändert gelassen (datierte Analyse-/Vorschlags-Snapshots, keine
   Korrektur historischer Dokumente).
 
@@ -393,11 +393,11 @@ vorhergesagt).
 
 ### 13.7 Dokumentation
 
-- `docs/MusicBot_POST-ARCH-010_011_DuplicateEntry_Analyse.md` (dieses
+- `docs/archive/post-arch/MusicBot_POST-ARCH-010_011_DuplicateEntry_Analyse.md` (dieses
   Dokument) — Status aktualisiert, dieser Abschnitt ergänzt.
 - `README.md` — Zeile zu `services/downloader/` um `models.py` ergänzt
   (Projektstruktur-Tabelle war zuvor vollständig, jetzt wieder korrekt).
-- `docs/MusicBot_ENGINEERING_BASELINE.md` — offener Checklisten-Punkt zur
+- `docs/archive/MusicBot_ENGINEERING_BASELINE.md` — offener Checklisten-Punkt zur
   `DuplicateEntry`-Abhängigkeit (Zeile im Abschnitt „Weitere geplante
   Schritte") durch neuen `[x]`-Eintrag ersetzt/aufgelöst.
 - `CLAUDE.md` — unverändert (keine Aussage darin wurde durch die Migration

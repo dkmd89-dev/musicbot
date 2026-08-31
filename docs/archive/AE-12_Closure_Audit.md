@@ -156,7 +156,7 @@ Aus der Implementierungsphase übernommen und stichprobenartig nachvollzogen (Me
 `git diff --name-only` (ohne Tests):
 
 ```
-docs/MusicBot_PHASE5_PERFORMANCE_BASELINE.md   ← vor AE-10 (Phase-5-Abschluss)
+docs/archive/MusicBot_PHASE5_PERFORMANCE_BASELINE.md   ← vor AE-10 (Phase-5-Abschluss)
 handlers/admin/backup_handler.py               ← vor AE-10 (Enforcement Fix Phase)
 handlers/admin/user_management_handler.py      ← vor AE-10 (Enforcement Fix Phase)
 handlers/enhanced_status_handler.py            ← vor AE-10 (Enforcement Fix Phase)

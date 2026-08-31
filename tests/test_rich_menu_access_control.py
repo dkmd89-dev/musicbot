@@ -1,6 +1,6 @@
 """
 Regressionstest fuer eine kritische, in Phase 3 gefundene Sicherheitsluecke
-(SEC-003, siehe docs/MusicBot_ENGINEERING_BASELINE.md):
+(SEC-003, siehe docs/archive/MusicBot_ENGINEERING_BASELINE.md):
 
 RichMenuSystem.handle_callback() (handlers/menu/rich_menu_system.py)
 dispatchte callback_data rein nach String-Praefix an die jeweiligen

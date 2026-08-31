@@ -23,7 +23,7 @@ liefert seither nur noch die rohen release-group-Tags ("tags") - die
 fachliche Priorisierung liegt jetzt ausschließlich in
 services/metadata/genre_processor.py::_fetch_genre_from_musicbrainz()
 über die bestehende prioritize_genres()-Logik (analog zum Last.fm-Pfad).
-Siehe docs/MusicBot_ARCH-012_Genre_Logic_Characterization.md, Abschnitt
+Siehe docs/archive/arch/MusicBot_ARCH-012_Genre_Logic_Characterization.md, Abschnitt
 "Phase 3B".
 """
 

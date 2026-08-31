@@ -1,10 +1,10 @@
 # ARCH-009 Phase 3 — `execute_scan()` / Subprocess-Verantwortung: Analyse
 
-Reine Analysephase gemäß `docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`
+Reine Analysephase gemäß `docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md`
 Phase 3. Keine Codeänderung, keine Verschiebung, keine DI-Umstellung,
 keine Änderung an `check_connection()` oder `execute_scan()` selbst.
 Aufbauend auf ARCH-008, ARCH-009 (Migrationsplanung) und ARCH-009 Phase 1/2
-(abgeschlossen, siehe `docs/MusicBot_ARCH-009_Phase1_Bestandsaufnahme.md`).
+(abgeschlossen, siehe `docs/archive/arch/MusicBot_ARCH-009_Phase1_Bestandsaufnahme.md`).
 
 ---
 
@@ -470,7 +470,7 @@ MenuIntegration), keine neuen Fehlschläge.
 
 **ARCH-009 Phase 4 damit abgeschlossen.** Verbleibend offen: die in
 Abschnitt 8 dieses Dokuments sowie in
-`docs/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md` beschriebenen
+`docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md` beschriebenen
 Phasen 5 (restliche Telegram-Präsentationsanteile, inkl. der jetzt in
 `execute_scan()` verbliebenen Formatierung), 6-9 (Zielposition/DI des
 verbleibenden Adapters) — je eigene, spätere Nutzerentscheidung.

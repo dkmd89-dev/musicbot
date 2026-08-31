@@ -66,7 +66,7 @@ class NavidromeAPI:
     Docker-Steuerung. `execute_scan()` ist bewusst NICHT Teil dieser
     Klasse - bleibt als eigenständiger Rest in `api/navidrome_api.py`
     (delegiert an `NavidromeScanTrigger`, keine echte API-Kommunikation,
-    siehe docs/MusicBot_ARCH-009_Phase8_Zielverschiebung_ServicesClients_Analyse.md).
+    siehe docs/archive/arch/MusicBot_ARCH-009_Phase8_Zielverschiebung_ServicesClients_Analyse.md).
 
     ARCH-009 Phase 7: instanziierbar mit injizierbarer Config (DI) statt
     einer rein statischen Klasse. `NavidromeAPI()` ohne Argumente verhält

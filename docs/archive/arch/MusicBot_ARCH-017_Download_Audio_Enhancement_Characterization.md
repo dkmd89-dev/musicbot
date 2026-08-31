@@ -8,7 +8,7 @@ ausdrückliche Freigabe für eine mögliche Phase 2.
 
 ## 1. Ausgangsbefund
 
-Der POST-SERVICES-Audit (`docs/POST-SERVICES_PROJECT-WIDE_ARCHITECTURE_AUDIT.md`,
+Der POST-SERVICES-Audit (`docs/archive/POST-SERVICES_PROJECT-WIDE_ARCHITECTURE_AUDIT.md`,
 Abschnitt G.1) hatte festgestellt, dass `utils/audio_enhancer.py` echte
 HTTP-Aufrufe an MusicBrainz und Cover Art Archive enthält, obwohl
 CLAUDE.md §4 das Modul als Beispiel für netzwerkfreie `utils/`-Module

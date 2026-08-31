@@ -8,7 +8,7 @@ verschoben, `klassen → handlers`-Reverse-Edge vollständig aufgelöst.
 
 ## 1. Ausgangslage
 
-Der POST-SERVICES-Audit (`docs/POST-SERVICES_PROJECT-WIDE_ARCHITECTURE_AUDIT.md`,
+Der POST-SERVICES-Audit (`docs/archive/POST-SERVICES_PROJECT-WIDE_ARCHITECTURE_AUDIT.md`,
 Abschnitt G.2) hatte `handlers/duplicate_handler.py` als P1-Befund
 markiert: Vermischung von P0-Duplicate-Detection-Business-Logik mit
 Telegram-Präsentation. Frühere Audits (ARCH-006/007, POST-ARCH-010/011,

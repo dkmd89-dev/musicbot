@@ -277,7 +277,7 @@ class TestMoveToLibrary:
 
 class TestMoveToLibraryAtomicity:
     """
-    FINDING-6 (docs/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md): move_to_library()
+    FINDING-6 (docs/archive/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md): move_to_library()
     nutzte vorher shutil.move() direkt - faellt bei unterschiedlichen
     Dateisystemen (wie in der tatsaechlichen Konfiguration DOWNLOAD_DIR vs.
     LIBRARY_DIR) intern auf copy2()+unlink() zurueck, ohne Schutz gegen
