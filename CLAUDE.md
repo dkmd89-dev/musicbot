@@ -138,6 +138,14 @@ utils/
 api/
     → keine MusicBot-Schicht mehr (vollständig entfernt, siehe
       docs/archive/arch/MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md)
+
+scripts/
+    → keine Laufzeit-Schicht des Bots. Eigenständige, manuell gestartete
+      Wartungs-/Reprocessing-Tools, die auf isolierten Testdaten arbeiten
+      (Path-Safety-Guards, Produktion strikt read-only) und die
+      bestehenden Produktions-Unterprozessoren wiederverwenden statt
+      Fachlogik zu duplizieren (Beispiel: reprocess_artist_metadata.py,
+      siehe docs/METADATA_REPROCESSING.md)
 ```
 
 Ein Modul, das externe Netzwerk-/API-Kommunikation durchführt, gehört nach

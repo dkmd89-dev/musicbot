@@ -58,8 +58,9 @@ Ausführlicher, mit Datenfluss/Fehlerbehandlung pro Bereich: [`CLAUDE.md`](CLAUD
 | `handlers/` | Telegram-Handler: Menüsystem (`handlers/menu/`), Admin-Funktionen (`handlers/admin/`), Navidrome-Menü, Statistik, Fehlerbehandlung |
 | `utils/` | Wiederverwendbare Bausteine: `genre_map.py`, `artist_map.py`, `filenamefixer.py`, `helpers.py`, Caches (`lyrics_cache.py` u. a.), Singleton-Basisklasse, sowie lokale technische Runner ohne Telegram-/API-Kopplung (`navidrome_scan_trigger.py`, `audio_enhancer.py`) |
 | `mapping/` | YAML-/JSON-Dateien mit Fachlogik (Genre-/Artist-Regeln) — **keine belanglose Konfiguration**, siehe unten |
-| `tests/` | 1123 Tests (pytest), 0 bekannte Fehlschläge (Stand 2026-08-26) — Characterization-Tests für die Produktionsklassen, siehe [`docs/MusicBot_ENGINEERING_BASELINE_v5.md`](docs/MusicBot_ENGINEERING_BASELINE_v5.md) |
-| `docs/` | Engineering-Baseline v5 (aktueller Referenzpunkt) + ARCH-Characterization-Dokumente (historisch) |
+| `scripts/` | Eigenständige Wartungs-Tools, die außerhalb des Bot-Laufzeitbetriebs auf isolierten Testdaten arbeiten, z. B. `reprocess_artist_metadata.py` — bestehende Library-Tracks erneut durch die Metadaten-Pipeline laufen lassen (Tags/Cover/Lyrics/Genre/Multi-Artist/MusicBrainz), ohne Download, ohne Produktionszugriff, ohne Audio-Reencoding. Details: [`docs/METADATA_REPROCESSING.md`](docs/METADATA_REPROCESSING.md) |
+| `tests/` | 1316 Tests (pytest), 0 bekannte Fehlschläge (Stand 2026-08-31) — Characterization-Tests für die Produktionsklassen, siehe [`docs/MusicBot_ENGINEERING_BASELINE_v5.md`](docs/MusicBot_ENGINEERING_BASELINE_v5.md) |
+| `docs/` | Engineering-Baseline v5 (aktueller Referenzpunkt) + Findings-Audits (Download Pipeline Stability, Metadata Quality, Einzelfunde) + Reprocessing-Tool-Doku + ARCH-Characterization-Dokumente (historisch), siehe [`docs/INDEX.md`](docs/INDEX.md) |
 
 ## Setup
 
