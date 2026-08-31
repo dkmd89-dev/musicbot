@@ -80,11 +80,28 @@ class EnhancedMetadataProcessor(SingletonMixin):
         self.logger.info("Initialisiere Enhanced Metadata Processor...")
 
         # ── Sub-Prozessoren ──────────────────────────────────────────────────
+        # ISOLATION-001: mapping_dir fehlte hier komplett. ArtistNormalizer.
+        # _save_case_preserve_entry() faellt bei fehlendem
+        # ArtistConfig.mapping_dir auf den relativen Pfad "mapping" zurueck
+        # (utils/artist_map.py: "self.config.mapping_dir or Path('mapping')")
+        # - je nach Arbeitsverzeichnis des Bot-Prozesses landete das in der
+        # ECHTEN Produktions-mapping/case_preserve.yaml statt in
+        # Config.GENRE_MAPPING_DIR, obwohl config_test.Config eine isolierte
+        # Test-Umgebung vorgibt. Live reproduziert: ein Testdownload mit
+        # Channel-Name "SQP" (All-Caps, <=8 Zeichen, case_preserve.yaml
+        # Rule 2 in _standard_normalization()) schrieb "sqp: SQP" in die
+        # echte mapping/case_preserve.yaml. Betraf ausschliesslich das
+        # case_preserve-Auto-Save (der einzige aktiv erreichbare der vier
+        # "self.config.mapping_dir"-Aufrufer in artist_map.py - die
+        # aequivalenten Alias-Lernpfade dort sind unbenutzter toter Code,
+        # der produktive Alias-Lernpfad laeuft ueber AutoLearnManager, das
+        # korrekt Config.GENRE_MAPPING_DIR verwendet).
         artist_config = ArtistConfig(
             library_dir=getattr(self.config, "LIBRARY_DIR", "library"),
             override_file=getattr(
                 self.config, "ARTIST_OVERRIDE_FILE", "./artist_overrides.json"
             ),
+            mapping_dir=getattr(self.config, "GENRE_MAPPING_DIR", None),
         )
         self.artist_normalizer = ArtistNormalizer(artist_config)
         self.artist_processor = ArtistProcessor(
@@ -991,7 +1008,14 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 if (
                     genre_source not in ("none", "unknown")
                     and not auto_learn_disabled
-                    and not self.auto_learn_manager._is_genre_already_learned(
+                    # AUTOLEARN-GENRE-AGG: vorher _is_genre_already_learned()
+                    # (blockierte JEDEN weiteren Aufruf sobald irgendein
+                    # Auto-Learn-Eintrag existierte - "last value wins for-
+                    # ever"). Jetzt nur noch der manuelle Block, damit
+                    # learn_genre() ueber mehrere Tracks/Laeufe hinweg
+                    # weiter aggregieren kann (Auto-Learn-Auftrag
+                    # Abschnitt 11/12/13/14).
+                    and not self.auto_learn_manager._is_genre_manually_defined(
                         final_artist
                     )
                 ):
@@ -1049,6 +1073,29 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 except Exception as _learn_err:
                     self.logger.warning(
                         f"⚠️ Artist-Learning fehlgeschlagen: {_learn_err}"
+                    )
+
+            # ── 19c. Feature-Artist-Beobachtung (Auto-Learn-Auftrag) ─────────
+            # Primary-/Feature-Trennung kommt bereits fertig aus Schritt 6
+            # (feat_artists, TAG-01-Multi-Artist-Logik) - hier keine eigene
+            # Parsing-Logik, nur Beobachtung/Aggregation. Gleiche Kanal-/
+            # Podcast-Schutzschicht wie beim Artist-Alias-Learning oben;
+            # zusaetzlich kein Lernen bei unsicher bestimmtem Primary-Artist
+            # (artist_source == "fallback").
+            if (
+                feat_artists
+                and artist_source != "fallback"
+                and not _is_special_channel_for_learning
+            ):
+                try:
+                    await self.auto_learn_manager.observe_featured_artists(
+                        primary_artist=artist_for_metadata,
+                        feat_artists=feat_artists,
+                        track_context=f"{artist_for_metadata} - {clean_title}",
+                    )
+                except Exception as _learn_err:
+                    self.logger.warning(
+                        f"⚠️ Feature-Artist-Beobachtung fehlgeschlagen: {_learn_err}"
                     )
 
             # --- 20. Abschluss ---

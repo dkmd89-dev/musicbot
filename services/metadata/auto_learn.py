@@ -5,6 +5,7 @@ import asyncio
 import re
 import time
 import yaml
+from collections import Counter
 from pathlib import Path
 from threading import Lock
 from types import SimpleNamespace
@@ -14,6 +15,110 @@ from logger import get_module_logger
 if TYPE_CHECKING:
     from utils.artist_map import ArtistNormalizer
     from utils.genre_map import GenreMapper
+
+
+# Kappungsgrenze fuer die pro Artist/Genre gespeicherte Beobachtungshistorie
+# (observation_log) - verhindert unbegrenztes Wachstum der YAML-Dateien bei
+# vielstrackigen Artists, behaelt aber genug Historie fuer eine belastbare
+# Mehrheitsentscheidung (Auto-Learn-Auftrag Abschnitt 7/12).
+_MAX_OBSERVATION_LOG = 10
+_MAX_PRIMARY_ARTISTS_SEEN = 10
+
+# CONFIDENCE-AUDIT Abschnitt 3: Schwellenwerte als benannte Konstanten statt
+# eingebetteter Zahlenwerte - besser auffindbar/dokumentiert, ABSICHTLICH
+# aber keine YAML-Konfigurationsschicht (config.py o.ae.) dafuer eingefuehrt.
+# Begruendung (Audit-Auftrag Abschnitt 3: "keine unnoetige Konfigurations-
+# architektur bauen"): die Schwellen sind bereits zentral an genau dieser
+# einen Stelle definiert und werden bereits identisch fuer Artist- UND
+# Genre-Observations verwendet (_confidence_tier() ist die einzige Quelle
+# fuer beide Domaenen, siehe Aufrufer in learn_genre()/_compute_genre_decision()
+# und in _write_featured_observation_sync()/_compute_featured_artist_decision())
+# - es gibt aktuell keinen Anwendungsfall, der unterschiedliche Schwellen je
+# Domaene oder eine Laufzeit-Aenderung ohne Codeaenderung erfordert. Eine
+# YAML-Konfigurationsschicht (auto_learn.genre.learned_threshold/...) haette
+# hier nur zusaetzliche Komplexitaet ohne konkreten Bedarf eingefuehrt.
+_LEARNED_THRESHOLD = 2  # ab dieser Beobachtungszahl: LEARNED
+_CONFIRMED_THRESHOLD = 4  # ab dieser Beobachtungszahl: CONFIRMED
+
+
+def _confidence_tier(observations: int) -> str:
+    """
+    Deterministische, nachvollziehbare Konfidenz-/Status-Einstufung fuer
+    Auto-Learn-Beobachtungen - fuer Artist- UND Genre-Observations
+    gleichermassen verwendet (Auto-Learn-Auftrag Abschnitt 6/17):
+
+        1 Beobachtung                          -> OBSERVED
+        _LEARNED_THRESHOLD..<_CONFIRMED_THRESHOLD Beobachtungen -> LEARNED
+        >=_CONFIRMED_THRESHOLD Beobachtungen    -> CONFIRMED (Auftrag
+                                     Abschnitt 17 nennt dies "HIGH
+                                     CONFIDENCE" - hier auf die in
+                                     Abschnitt 6 explizit benannte
+                                     3-Stufen-Statushierarchie vereinheitlicht,
+                                     keine vierte Stufe erfunden)
+
+    Bewusst keine ML-/Wahrscheinlichkeits-basierte Bewertung - rein
+    beobachtungszahlbasiert und damit vollstaendig nachvollziehbar.
+
+    WICHTIGE EINSCHRAENKUNG (Confidence-Audit-Auftrag Abschnitt 4, live
+    verifiziert am NOAH-Fall): dieser Mechanismus schuetzt ausschliesslich
+    vor EINER EINZELNEN fehlerhaften Beobachtung, die sofort zu einem
+    dauerhaften Mapping wuerde. Er kann NICHT erkennen, ob eine externe
+    Quelle (Last.fm/MusicBrainz) SYSTEMATISCH/KONSISTENT denselben falschen
+    Wert liefert (z.B. bei einer Namenskollision mit einem gleichnamigen,
+    anderen Kuenstler) - liefert dieselbe fehlerhafte Quelle
+    _CONFIRMED_THRESHOLD-mal denselben falschen Wert, erreicht dieser Wert
+    trotzdem CONFIRMED. Confidence-Gating ist ein Schutz gegen einzelne
+    Ausreisser, keine Loesung fuer Artist-Identitaets-/Namenskonflikte in
+    externen Metadata-Quellen (dafuer waere ein MusicBrainz-ID-basierter
+    Abgleich noetig - nicht Teil dieser Implementierung).
+    """
+    if observations <= 1:
+        return "OBSERVED"
+    if observations < _CONFIRMED_THRESHOLD:
+        return "LEARNED"
+    return "CONFIRMED"
+
+
+def _aggregate_genre_observations(
+    observation_log: List[Dict[str, Any]],
+) -> Tuple[str, List[str]]:
+    """
+    Leitet aus mehreren Genre-Beobachtungen eine belastbare primary/secondary-
+    Kombination per Mehrheitsentscheidung ab (Auto-Learn-Auftrag Abschnitt 12:
+    "nicht einfach last value wins"). Gleiches Counter-Mehrheitsvotum-Idiom
+    wie GenreProcessor._infer_genre_from_feat_artists() - keine neue
+    parallele Normalisierungs-/Bewertungslogik.
+
+    TIE-BREAK (Confidence-Audit-Auftrag Abschnitt 8): bei echtem Gleichstand
+    (z.B. 2x Genre A, 2x Genre B) liefert Counter.most_common() deterministisch
+    den zuerst BEOBACHTETEN (im observation_log zuerst aufgetretenen) Wert -
+    Python-Standardverhalten von Counter bei gleicher Haeufigkeit, keine
+    eigene Zufalls-/Heuristik-Logik. Es wird bewusst KEIN neuer "UNRESOLVED"-
+    o.ae. Status fuer Genre-Konflikte eingefuehrt (Auftrag: "keine neue
+    Status-Hierarchie erfinden") - ein Gleichstand bleibt bei der bereits
+    vorhandenen OBSERVED/LEARNED/CONFIRMED-Einstufung, rein basierend auf der
+    Gesamt-Beobachtungszahl, unabhaengig davon ob die Beobachtungen intern
+    uneinig sind. Das ist bewusst nachvollziehbar/deterministisch statt
+    "intelligent", siehe Docstring von _confidence_tier().
+    """
+    primary_counter = Counter(
+        obs["primary"] for obs in observation_log if obs.get("primary")
+    )
+    if not primary_counter:
+        return "", []
+    primary = primary_counter.most_common(1)[0][0]
+
+    secondary_counter: Counter = Counter()
+    for obs in observation_log:
+        for genre in obs.get("secondary") or []:
+            secondary_counter[genre] += 1
+    secondary = [
+        genre
+        for genre, _ in secondary_counter.most_common(8)
+        if genre.lower() != primary.lower()
+    ][:5]
+
+    return primary, secondary
 
 
 class _InlineListDumper(yaml.SafeDumper):
@@ -121,24 +226,37 @@ class AutoLearnManager:
         raw_name: str = "",
     ) -> bool:
         """
-        Schreibt Genre-Informationen in auto_learned_genre.yaml.
-        Gibt True zurück wenn ein neuer Eintrag geschrieben wurde, sonst False.
+        Schreibt/aggregiert Genre-Beobachtungen in auto_learned_genre.yaml.
+        Gibt True zurück wenn geschrieben wurde (neuer ODER aktualisierter
+        Eintrag), sonst False.
 
         Wird NICHT geschrieben wenn:
-          - Genre bereits in artist_genre.yaml oder auto_learned_genre.yaml vorhanden
+          - Artist in artist_genre.yaml (manuell) vorhanden ist (dauerhafter
+            Block, siehe Abschnitt 13/14 des Auto-Learn-Auftrags)
           - Artist in artist_overrides.json existiert
           - genre_result ist None oder hat kein primary-Genre
-        """
-        if not genre_result or not genre_result.primary:
-            return False
 
-        if self._is_genre_already_learned(canonical_name):
+        Ein bereits vorhandener AUTO-Learn-Eintrag blockiert NICHT mehr
+        weitere Beobachtungen (frueheres Verhalten: einmal geschrieben,
+        fuer immer eingefroren) - stattdessen wird die Beobachtung der
+        vorhandenen observation_log hinzugefuegt und primary/secondary per
+        Mehrheitsvotum neu abgeleitet (Abschnitt 11/12: "nicht last value
+        wins"). Die Entscheidungsberechnung selbst ist reine, testbare Logik
+        in _compute_genre_decision() - identisch fuer den Schreibpfad hier
+        und den Dry-Run-Vorschaupfad preview_genre_learning().
+        """
+        decision = self._compute_genre_decision(canonical_name, genre_result)
+
+        if decision["decision"] == "BLOCKED_MANUAL":
             self.logger.debug(
-                f"🧠 [AUTO-LEARN] Genre für '{canonical_name}' bereits vorhanden (überspringe)"
+                f"🧠 [AUTO-LEARN] '{canonical_name}' manuell in artist_genre.yaml "
+                f"definiert → kein Auto-Learning"
             )
             return False
+        if decision["decision"] == "SKIPPED_NO_GENRE":
+            return False
 
-        # Prüfe ob Artist in artist_overrides.json existiert
+        # Prüfe ob Artist in artist_overrides.json existiert (Abschnitt 10)
         overrides_normalized = getattr(
             self.artist_normalizer, "overrides_normalized", {}
         )
@@ -153,50 +271,33 @@ class AutoLearnManager:
                 return False
 
         self.logger.info(
-            f"🧠 [AUTO-LEARN] Verarbeite Genre für '{canonical_name}': "
-            f"'{genre_result.primary}' (Quelle: {getattr(genre_result, 'source', 'unknown')})"
+            f"🧠 [AUTO-LEARN] Verarbeite Genre-Beobachtung für '{canonical_name}': "
+            f"'{decision['observed_primary']}' (Quelle: {getattr(genre_result, 'source', 'unknown')}, "
+            f"Beobachtung {decision['predicted_observations']}, "
+            f"Konfidenz {decision['predicted_confidence']})"
         )
-
-        # Sekundäre Genres bestimmen (reine In-Memory-Berechnung, kein I/O)
-        secondary_genres = []
-        if hasattr(genre_result, "secondary") and genre_result.secondary:
-            secondary_genres = list(genre_result.secondary[:5])
-        elif hasattr(genre_result, "raw_tags") and genre_result.raw_tags:
-            tag_list = [
-                t
-                for t in genre_result.raw_tags
-                if t.lower() != genre_result.primary.lower()
-            ]
-            secondary_genres = tag_list[:5]
-
-        entry = {
-            "primary": genre_result.primary,
-            "secondary": secondary_genres if secondary_genres else [],
-            "description": "Auto-learned via Last.fm (rule)",
-        }
 
         try:
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
             auto_genre_path = mapping_dir / "auto_learned_genre.yaml"
 
             written = await asyncio.to_thread(
-                self._write_genre_entry_sync,
+                self._write_genre_observation_sync,
                 auto_genre_path,
                 canonical_name.strip(),
-                entry,
+                decision["observed_primary"],
+                decision["observed_secondary"],
             )
 
             if not written:
-                self.logger.debug(
-                    f"🧠 [AUTO-LEARN] Genre für '{canonical_name}' bereits in YAML "
-                    f"vorhanden (Race-Schutz beim Schreiben erkannt)"
-                )
                 return False
 
             self.logger.info(
-                f"🧠 [AUTO-LEARN] ✅ Genre gelernt: '{canonical_name}' → "
-                f"primary='{genre_result.primary}', "
-                f"secondary={secondary_genres[:3] if secondary_genres else 'keine'}"
+                f"🧠 [AUTO-LEARN] ✅ Genre {'aktualisiert' if decision['decision'] == 'WOULD_UPDATE' else 'gelernt'}: "
+                f"'{canonical_name}' → primary='{decision['predicted_primary']}', "
+                f"secondary={decision['predicted_secondary'][:3] if decision['predicted_secondary'] else 'keine'}, "
+                f"observations={decision['predicted_observations']}, "
+                f"confidence={decision['predicted_confidence']}"
             )
 
             if hasattr(self.genre_mapper, "clear_caches"):
@@ -208,14 +309,122 @@ class AutoLearnManager:
             self.logger.warning(f"⚠️ [AUTO-LEARN] Genre-YAML fehlgeschlagen: {e}")
             return False
 
-    def _write_genre_entry_sync(
-        self, auto_genre_path: Path, key_yaml: str, entry: dict
+    def preview_genre_learning(self, canonical_name: str, genre_result) -> Dict[str, Any]:
+        """
+        Reine Dry-Run-Vorschau der Genre-Auto-Learn-Entscheidung - identische
+        Logik wie learn_genre(), aber ohne jegliches Schreiben. Fuer
+        scripts/reprocess_artist_metadata.py --dry-run (Auto-Learn-Auftrag
+        Abschnitt 21).
+        """
+        return self._compute_genre_decision(canonical_name, genre_result)
+
+    def _compute_genre_decision(
+        self, canonical_name: str, genre_result
+    ) -> Dict[str, Any]:
+        """
+        Reine Entscheidungsberechnung (kein I/O ausser dem lesenden
+        Nachschlagen des bestehenden Eintrags) fuer Genre-Auto-Learn. Wird
+        sowohl vom echten Schreibpfad (learn_genre) als auch vom
+        Dry-Run-Vorschaupfad (preview_genre_learning) verwendet, damit
+        Dry-Run und echter Lauf garantiert identisch entscheiden.
+        """
+        result: Dict[str, Any] = {
+            "artist": canonical_name,
+            "observed_primary": None,
+            "observed_secondary": [],
+            "decision": "SKIPPED_NO_GENRE",
+            "existing": None,
+            "predicted_primary": None,
+            "predicted_secondary": [],
+            "predicted_observations": 0,
+            "predicted_confidence": None,
+            "observation_log": [],
+        }
+        if not genre_result or not getattr(genre_result, "primary", None):
+            return result
+
+        observed_primary = genre_result.primary
+        secondary_genres: List[str] = []
+        if getattr(genre_result, "secondary", None):
+            secondary_genres = list(genre_result.secondary[:5])
+        elif getattr(genre_result, "raw_tags", None):
+            secondary_genres = [
+                t
+                for t in genre_result.raw_tags
+                if t.lower() != observed_primary.lower()
+            ][:5]
+        result["observed_primary"] = observed_primary
+        result["observed_secondary"] = secondary_genres
+
+        if self._is_genre_manually_defined(canonical_name):
+            result["decision"] = "BLOCKED_MANUAL"
+            return result
+
+        _existing_key, existing_entry = self._read_genre_entry(canonical_name)
+        result["existing"] = existing_entry
+
+        observation_log = (
+            list(existing_entry.get("observation_log", [])) if existing_entry else []
+        )
+        observation_log.append(
+            {"primary": observed_primary, "secondary": secondary_genres}
+        )
+        observation_log = observation_log[-_MAX_OBSERVATION_LOG:]
+
+        predicted_primary, predicted_secondary = _aggregate_genre_observations(
+            observation_log
+        )
+
+        result["decision"] = "WOULD_UPDATE" if existing_entry else "WOULD_LEARN"
+        result["predicted_primary"] = predicted_primary
+        result["predicted_secondary"] = predicted_secondary
+        result["predicted_observations"] = len(observation_log)
+        result["predicted_confidence"] = _confidence_tier(len(observation_log))
+        result["observation_log"] = observation_log
+        return result
+
+    def _read_genre_entry(
+        self, artist_name: str
+    ) -> Tuple[Optional[str], Optional[dict]]:
+        """
+        Liest (nur lesend) einen bestehenden Auto-Learn-Genre-Eintrag,
+        case-insensitiv. Gibt (bestehender_key_wie_in_yaml, entry) zurück,
+        (None, None) wenn nicht vorhanden - der bestehende Key wird beim
+        Schreiben wiederverwendet, um keine Duplikate mit abweichender
+        Groß-/Kleinschreibung zu erzeugen.
+        """
+        try:
+            mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
+            auto_file = mapping_dir / "auto_learned_genre.yaml"
+            if not auto_file.exists():
+                return None, None
+            with open(auto_file, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            genre_map = data.get("ARTIST_GENRE_MAP", {})
+            if artist_name in genre_map:
+                return artist_name, genre_map[artist_name]
+            search_lower = artist_name.lower()
+            for key, value in genre_map.items():
+                if str(key).lower() == search_lower:
+                    return key, value
+            return None, None
+        except Exception as e:
+            self.logger.debug(f"Fehler in _read_genre_entry: {e}")
+            return None, None
+
+    def _write_genre_observation_sync(
+        self,
+        auto_genre_path: Path,
+        canonical_key: str,
+        observed_primary: str,
+        observed_secondary: List[str],
     ) -> bool:
         """
-        Liest, prueft (Double-Check gegen Race) und schreibt einen einzelnen
-        Genre-Eintrag atomar. Laeuft in einem Worker-Thread (asyncio.to_thread)
+        Liest den bestehenden Eintrag (falls vorhanden), haengt die neue
+        Beobachtung an, leitet primary/secondary per Mehrheitsvotum neu ab
+        und schreibt atomar. Laeuft in einem Worker-Thread (asyncio.to_thread)
         - self._write_lock serialisiert konkurrierende Aufrufe ueber echte
-        OS-Threads hinweg (INV-01+INV-02 kombiniert, siehe Klassen-Docstring).
+        OS-Threads hinweg (INV-01+INV-02, siehe Klassen-Docstring).
         """
         with self._write_lock:
             data: dict = {}
@@ -224,13 +433,41 @@ class AutoLearnManager:
                     data = yaml.safe_load(f) or {}
 
             genre_map = data.get("ARTIST_GENRE_MAP", {})
-            if key_yaml in genre_map:
-                # Double-Check: ein anderer Thread hat den Eintrag zwischen
-                # dem async-seitigen Vorab-Check und dem Erwerb des Locks
-                # bereits geschrieben.
-                return False
 
-            genre_map[key_yaml] = entry
+            existing_key = canonical_key
+            existing_entry = None
+            if canonical_key in genre_map:
+                existing_entry = genre_map[canonical_key]
+            else:
+                search_lower = canonical_key.lower()
+                for key, value in genre_map.items():
+                    if str(key).lower() == search_lower:
+                        existing_key = key
+                        existing_entry = value
+                        break
+
+            observation_log = (
+                list(existing_entry.get("observation_log", []))
+                if existing_entry
+                else []
+            )
+            observation_log.append(
+                {"primary": observed_primary, "secondary": observed_secondary}
+            )
+            observation_log = observation_log[-_MAX_OBSERVATION_LOG:]
+
+            predicted_primary, predicted_secondary = _aggregate_genre_observations(
+                observation_log
+            )
+
+            genre_map[existing_key] = {
+                "primary": predicted_primary,
+                "secondary": predicted_secondary,
+                "description": "Auto-learned via Last.fm (rule)",
+                "observations": len(observation_log),
+                "confidence": _confidence_tier(len(observation_log)),
+                "observation_log": observation_log,
+            }
             data["ARTIST_GENRE_MAP"] = genre_map
 
             self._write_yaml_atomic(auto_genre_path, data, inline_lists=True)
@@ -352,6 +589,238 @@ class AutoLearnManager:
             return True
 
     # ─────────────────────────────────────────────────────────────────────────
+    # Feature-Artist-Beobachtung (Auto-Learn-Auftrag Abschnitt 4-10)
+    #
+    # Primary-/Feature-Trennung kommt bereits fertig vom Aufrufer (bestehende
+    # TAG-01-Multi-Artist-Logik: split_main_and_featuring() /
+    # ArtistProcessor.determine_best_artist()) - hier KEINE eigene
+    # Artist-Parsing-Logik. Diese Methoden beobachten NUR, welche bereits
+    # als "Feature-Artist" erkannten Namen wiederholt auftauchen, und lernen
+    # AUSDRÜCKLICH KEIN Genre für sie (Abschnitt 16 - dafür existiert kein
+    # Aufruf von learn_genre()/_write_genre_observation_sync() in diesem
+    # Abschnitt).
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def observe_featured_artists(
+        self,
+        primary_artist: str,
+        feat_artists: List[str],
+        track_context: str = "",
+    ) -> List[Dict[str, Any]]:
+        """
+        Beobachtet Feature-Artists eines Tracks und aggregiert sie in
+        auto_learned_artists.yaml unter dem neuen, additiven Schlüssel
+        "featured_artists" (der bestehende "auto_learned"-Schlüssel für
+        Channel-Name-Aliase bleibt unberührt).
+
+        Schreibt NIEMALS, wenn der (normalisierte) Name bereits anderweitig
+        bekannt ist (Library/Overrides/known_artists/auto_learned - siehe
+        _is_artist_known(), Abschnitt 10: manuelle Mappings gewinnen immer).
+
+        Gibt eine Liste von Decision-Dicts zurück (ein Eintrag je
+        Feature-Artist, gleiche Struktur wie preview_featured_artists() für
+        identisches Dry-Run-/Live-Logging, Abschnitt 21/22).
+        """
+        return [
+            await self._observe_single_featured_artist(
+                primary_artist, raw_feat, track_context
+            )
+            for raw_feat in feat_artists
+        ]
+
+    def preview_featured_artists(
+        self,
+        primary_artist: str,
+        feat_artists: List[str],
+        track_context: str = "",
+    ) -> List[Dict[str, Any]]:
+        """
+        Reine Dry-Run-Vorschau (kein Schreiben) - identische
+        Entscheidungslogik wie observe_featured_artists(), für
+        scripts/reprocess_artist_metadata.py --dry-run.
+        """
+        return [
+            self._compute_featured_artist_decision(
+                primary_artist, raw_feat, track_context
+            )
+            for raw_feat in feat_artists
+        ]
+
+    def _compute_featured_artist_decision(
+        self, primary_artist: str, raw_feat: str, track_context: str
+    ) -> Dict[str, Any]:
+        """
+        Reine Entscheidungsberechnung (kein Schreiben) für einen einzelnen
+        Feature-Artist. Wendet vor der Beobachtung die bestehende zentrale
+        Artist-Normalisierung an (ArtistNormalizer.normalize() -
+        case_preserve.yaml/artist_overrides.json/Kollaborations-Logik,
+        Abschnitt 9 - keine eigene Normalisierung).
+        """
+        canonical = None
+        if raw_feat and self.artist_normalizer is not None:
+            canonical = self.artist_normalizer.normalize(raw_feat)
+
+        decision: Dict[str, Any] = {
+            "raw": raw_feat,
+            "canonical": canonical,
+            "primary_artist": primary_artist,
+            "role": "featured_artist",
+            "decision": "SKIPPED_INVALID",
+            "reason": "leer oder nicht normalisierbar",
+            "existing": None,
+            "predicted_observations": 0,
+            "predicted_confidence": None,
+        }
+        if not raw_feat or not canonical or canonical.strip().lower() == "unknown":
+            return decision
+
+        if canonical.strip().lower() == (primary_artist or "").strip().lower():
+            decision["decision"] = "SKIPPED_IS_PRIMARY"
+            decision["reason"] = "identisch mit Primary Artist"
+            return decision
+
+        if self._is_artist_known(canonical):
+            decision["decision"] = "SKIPPED_KNOWN"
+            decision["reason"] = (
+                "bereits bekannt (Library/Overrides/known_artists/auto_learned) "
+                "→ manuelle/bestehende Information hat Vorrang"
+            )
+            return decision
+
+        _existing_key, existing_entry = self._read_featured_artist_entry(canonical)
+        decision["existing"] = existing_entry
+        decision["reason"] = None
+        observations = (existing_entry.get("observations", 0) if existing_entry else 0) + 1
+        decision["predicted_observations"] = observations
+        decision["predicted_confidence"] = _confidence_tier(observations)
+        decision["decision"] = "WOULD_UPDATE" if existing_entry else "WOULD_LEARN"
+        return decision
+
+    async def _observe_single_featured_artist(
+        self, primary_artist: str, raw_feat: str, track_context: str
+    ) -> Dict[str, Any]:
+        decision = self._compute_featured_artist_decision(
+            primary_artist, raw_feat, track_context
+        )
+        if decision["decision"] not in ("WOULD_LEARN", "WOULD_UPDATE"):
+            return decision
+
+        was_new = decision["decision"] == "WOULD_LEARN"
+        try:
+            mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
+            alias_file = mapping_dir / "auto_learned_artists.yaml"
+
+            await asyncio.to_thread(
+                self._write_featured_observation_sync,
+                alias_file,
+                decision["canonical"],
+                primary_artist,
+                track_context,
+            )
+            decision["decision"] = "LEARNED" if was_new else "UPDATED"
+            self.logger.info(
+                f"🧠 [AUTO-LEARN] ✅ Feature-Artist beobachtet: '{decision['canonical']}' "
+                f"(Rolle: featured_artist, Beobachtungen: {decision['predicted_observations']}, "
+                f"Status: {decision['predicted_confidence']}, Primary: '{primary_artist}')"
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"⚠️ [AUTO-LEARN] Feature-Artist-Beobachtung fehlgeschlagen: {e}"
+            )
+            decision["decision"] = "ERROR"
+            decision["reason"] = str(e)
+        return decision
+
+    def _read_featured_artist_entry(
+        self, canonical_name: str
+    ) -> Tuple[Optional[str], Optional[dict]]:
+        """Liest (nur lesend) einen bestehenden Feature-Artist-Eintrag, case-insensitiv."""
+        try:
+            mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
+            alias_file = mapping_dir / "auto_learned_artists.yaml"
+            if not alias_file.exists():
+                return None, None
+            with open(alias_file, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            featured = data.get("featured_artists", {})
+            if canonical_name in featured:
+                return canonical_name, featured[canonical_name]
+            search_lower = canonical_name.lower()
+            for key, value in featured.items():
+                if str(key).lower() == search_lower:
+                    return key, value
+            return None, None
+        except Exception as e:
+            self.logger.debug(f"Fehler in _read_featured_artist_entry: {e}")
+            return None, None
+
+    def _write_featured_observation_sync(
+        self,
+        alias_file: Path,
+        canonical_name: str,
+        primary_artist: str,
+        track_context: str,
+    ) -> bool:
+        """
+        Sync-Kern der Feature-Artist-Beobachtung (siehe Klassen-Docstring
+        INV-01/INV-02). Schreibt additiv unter data["featured_artists"] -
+        data["auto_learned"] (Channel-Aliase) bleibt beim Read-Modify-Write
+        unangetastet erhalten.
+        """
+        with self._write_lock:
+            data: dict = {}
+            if alias_file.exists():
+                with open(alias_file, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+            data.setdefault("auto_learned", {})
+            data.setdefault("featured_artists", {})
+
+            featured = data["featured_artists"]
+            existing_key = canonical_name
+            entry = None
+            if canonical_name in featured:
+                entry = featured[canonical_name]
+            else:
+                search_lower = canonical_name.lower()
+                for key, value in featured.items():
+                    if str(key).lower() == search_lower:
+                        existing_key = key
+                        entry = value
+                        break
+
+            if entry is None:
+                entry = {
+                    "canonical": canonical_name,
+                    "role": "featured_artist",
+                    "status": "OBSERVED",
+                    "observations": 0,
+                    "primary_artists": [],
+                    "sources": [],
+                }
+
+            entry["observations"] = int(entry.get("observations", 0)) + 1
+            entry["status"] = _confidence_tier(entry["observations"])
+
+            primary_artists_seen = list(entry.get("primary_artists", []))
+            if primary_artist and primary_artist not in primary_artists_seen:
+                primary_artists_seen.append(primary_artist)
+            entry["primary_artists"] = primary_artists_seen[-_MAX_PRIMARY_ARTISTS_SEEN:]
+
+            sources = list(entry.get("sources", []))
+            if "metadata" not in sources:
+                sources.append("metadata")
+            entry["sources"] = sources
+
+            if track_context:
+                entry["last_observed_track"] = track_context
+
+            featured[existing_key] = entry
+            data["featured_artists"] = featured
+
+            self._write_yaml_atomic(alias_file, data)
+            return True
+
+    # ─────────────────────────────────────────────────────────────────────────
     # Hilfsmethoden
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -403,6 +872,34 @@ class AutoLearnManager:
         except Exception as e:
             self.logger.debug(f"Fehler in _is_genre_already_learned: {e}")
         return False
+
+    def _is_genre_manually_defined(self, artist_name: str) -> bool:
+        """
+        Prüft NUR artist_genre.yaml (manuelle Konfiguration) - im Unterschied
+        zu _is_genre_already_learned() (das zusätzlich auto_learned_genre.yaml
+        einschließt und daher für die Frage "darf weiter aggregiert werden"
+        zu weit greift). Nur ein manueller Eintrag blockiert Auto-Learn
+        dauerhaft (Auto-Learn-Auftrag Abschnitt 13/14) - ein bereits
+        vorhandener Auto-Learn-Eintrag soll stattdessen weiter aggregiert
+        werden statt für immer eingefroren zu bleiben (Abschnitt 11/12).
+        """
+        try:
+            mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
+            manual_file = mapping_dir / "artist_genre.yaml"
+            if not manual_file.exists():
+                return False
+            with open(manual_file, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            genre_map = data.get("ARTIST_GENRE_MAP", {})
+            if not genre_map:
+                return False
+            if artist_name in genre_map:
+                return True
+            search_lower = artist_name.lower()
+            return any(str(key).lower() == search_lower for key in genre_map.keys())
+        except Exception as e:
+            self.logger.debug(f"Fehler in _is_genre_manually_defined: {e}")
+            return False
 
     def _is_artist_known(self, artist_name: str) -> bool:
         """Prüft ob Artist bekannt ist (Library, Overrides, known_artists.yaml, auto_learned_artists.yaml)"""

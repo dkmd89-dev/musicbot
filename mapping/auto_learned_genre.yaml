@@ -1,142 +1,289 @@
 ARTIST_GENRE_MAP:
   BHZ:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id001 {primary: Hip Hop, secondary: &id002 []}, *id001, *id001,
+      *id001]
+    observations: 4
     primary: Hip Hop
-    secondary: []
+    secondary: *id002
   BUNT.:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id003 {primary: Pop, secondary: &id004 [Electronic, Deutsch,
+          House, Party, Folktronica]}, *id003, *id003, *id003]
+    observations: 4
     primary: Pop
-    secondary: [Electronic, Deutsch, House, Party, Folktronica]
+    secondary: *id004
   Bebe Rexha:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id005 {primary: Pop, secondary: &id006 [Electronic]}, *id005,
+      *id005, *id005]
+    observations: 4
     primary: Pop
-    secondary: [Electronic]
+    secondary: *id006
   Berq:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id007 {primary: Pop, secondary: &id008 [Electronic, Deutschpop]},
+      *id007, *id007, *id007]
+    observations: 4
     primary: Pop
-    secondary: [Electronic, Deutschpop]
+    secondary: *id008
   Central Cee:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id009 {primary: Hip Hop, secondary: &id010 []}, *id009, *id009,
+      *id009]
+    observations: 4
     primary: Hip Hop
-    secondary: []
+    secondary: *id010
   Culcha Candela:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id011 {primary: Hip Hop, secondary: &id012 [Latin, Reggae]},
+      *id011, *id011, *id011]
+    observations: 4
     primary: Hip Hop
-    secondary: [Latin, Reggae]
+    secondary: *id012
   David Guetta:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id013 {primary: Dance, secondary: &id014 [House, Pop, Electronic,
+          Club, Techno]}, *id013, *id013, *id013]
+    observations: 4
     primary: Dance
-    secondary: [House, Pop, Electronic, Club, Techno]
-  Ed Sheeran:
-    description: Auto-learned via Last.fm (rule)
-    primary: Pop
-    secondary: [Folk Pop, Singer-Songwriter, Acoustic Pop, Blue-Eyed Soul]
+    secondary: *id014
   Edwin Rosen:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id015 {primary: Pop, secondary: &id016 [New Wave, NDW, Deutsch,
+          Post-punk, Post Punk]}, *id015, *id015, *id015]
+    observations: 4
     primary: Pop
-    secondary: [New Wave, NDW, Deutsch, Post-punk, Post Punk]
+    secondary: *id016
   Finch:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id017 {primary: Rock, secondary: &id018 [Post-hardcore, Emo,
+          Screamo, Punk, Emocore]}, *id017, *id017, *id017]
+    observations: 4
     primary: Rock
-    secondary: [Post-hardcore, Emo, Screamo, Punk, Emocore]
+    secondary: *id018
   Gentleman:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id019 {primary: Reggae, secondary: &id020 [Electronic]}, *id019,
+      *id019, *id019]
+    observations: 4
     primary: Reggae
-    secondary: [Electronic]
+    secondary: *id020
   ION Miles:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id021 {primary: Rap, secondary: &id022 [Berlin, Hiphop, Bhz]},
+      *id021, *id021, *id021]
+    observations: 4
     primary: Rap
-    secondary: [Berlin, Hiphop, Bhz]
+    secondary: *id022
   James Blunt:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id023 {primary: Pop, secondary: &id024 [singer-songwriter,
+          acoustic, indie, rock, british]}, *id023, *id023, *id023]
+    observations: 4
     primary: Pop
-    secondary: [singer-songwriter, acoustic, indie, rock, british]
+    secondary: *id024
   Katy Perry:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id025 {primary: Dance, secondary: &id026 [pop, female vocalists,
+          pop rock, indie, rock]}, *id025, *id025, *id025]
+    observations: 4
     primary: Dance
-    secondary: [pop, female vocalists, pop rock, indie, rock]
+    secondary: *id026
   Kings Of Leon:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id027 {primary: Rock, secondary: &id028 [Sex On Fire]}, *id027,
+      *id027, *id027]
+    observations: 4
     primary: Rock
-    secondary: [Sex On Fire]
-  Kygo:
-    description: Auto-learned via Last.fm (rule)
-    primary: Electronic
-    secondary: [Tropical House, Deep House, Progressive House, Downtempo, Melodic
-        House]
-  Limp Bizkit:
-    description: Auto-learned via Last.fm (rule)
-    primary: Hip Hop
-    secondary: [Metal, Rock, 00s]
+    secondary: *id028
   Lotte:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id029 {primary: Pop, secondary: &id030 [Female Voices, Deutsch]},
+      *id029, *id029, *id029]
+    observations: 4
     primary: Pop
-    secondary: [Female Voices, Deutsch]
+    secondary: *id030
   Martin Garrix:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id031 {primary: House, secondary: &id032 [electronic, dance,
+          electropop, pop, electro house]}, *id031, *id031, *id031]
+    observations: 4
     primary: House
-    secondary: [electronic, dance, electropop, pop, electro house]
+    secondary: *id032
   Michael Jackson:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id033 {primary: Soul, secondary: &id034 [Pop, 80s, Dance, Funk,
+          King of Pop]}, *id033, *id033, *id033]
+    observations: 4
     primary: Soul
-    secondary: [Pop, 80s, Dance, Funk, King of Pop]
+    secondary: *id034
   Monsta:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id035 {primary: Drum & Bass, secondary: &id036 [Electronic,
+          Hip Hop, Reggae]}, *id035, *id035, *id035]
+    observations: 4
     primary: Drum & Bass
-    secondary: [Electronic, Hip Hop, Reggae]
+    secondary: *id036
   Motrip:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id037 {primary: Deutschrap, secondary: &id038 [Rap, Hip Hop,
+          Hip-hop, German Hiphop, aachen]}, *id037, *id037, *id037]
+    observations: 4
     primary: Deutschrap
-    secondary: [Rap, Hip Hop, Hip-hop, German Hiphop, aachen]
+    secondary: *id038
   ONY:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id039 {primary: Pop, secondary: &id040 [synth pop]}, *id039,
+      *id039, *id039]
+    observations: 4
     primary: Pop
-    secondary: [synth pop]
+    secondary: *id040
   Paulwetz:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id041 {primary: Pop, secondary: &id042 [Deutschpop]}, *id041,
+      *id041, *id041]
+    observations: 4
     primary: Pop
-    secondary: [Deutschpop]
+    secondary: *id042
   Ravyn Lenae:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id043 {primary: R&B, secondary: &id044 [Soul, Neo Soul, Electronic,
+          United States, Chicago]}, *id043, *id043, *id043]
+    observations: 4
     primary: R&B
-    secondary: [Soul, Neo Soul, Electronic, United States, Chicago]
+    secondary: *id044
   Red Hot Chili Peppers:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id045 {primary: Funk, secondary: &id046 [Rock, 90s, California,
+          Punk Rock]}, *id045, *id045, *id045]
+    observations: 4
     primary: Funk
-    secondary: [Rock, 90s, California, Punk Rock]
+    secondary: *id046
   Samo104:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id047 {primary: Deutschrap, secondary: &id048 [german]}, *id047,
+      *id047, *id047]
+    observations: 4
     primary: Deutschrap
-    secondary: [german]
+    secondary: *id048
   Sampagne:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id049 {primary: Deutschrap, secondary: &id050 [Hip-hop, Rap]},
+      *id049, *id049, *id049]
+    observations: 4
     primary: Deutschrap
-    secondary: [Hip-hop, Rap]
+    secondary: *id050
   Shakira:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id051 {primary: Dance, secondary: &id052 [pop, latin, female
+            vocalists, spanish, rock]}, *id051, *id051, *id051]
+    observations: 4
     primary: Dance
-    secondary: [pop, latin, female vocalists, spanish, rock]
+    secondary: *id052
   Temper City:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id053 {primary: Ktya Core, secondary: &id054 []}, *id053, *id053,
+      *id053]
+    observations: 4
     primary: Ktya Core
-    secondary: []
+    secondary: *id054
   The Chainsmokers:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id055 {primary: House, secondary: &id056 [electronic, pop,
+          electro house, dance, american]}, *id055, *id055, *id055]
+    observations: 4
     primary: House
-    secondary: [electronic, pop, electro house, dance, american]
+    secondary: *id056
   Tokio Hotel:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id057 {primary: Pop, secondary: &id058 [Emo, Rock]}, *id057,
+      *id057, *id057]
+    observations: 4
     primary: Pop
-    secondary: [Emo, Rock]
+    secondary: *id058
   Toobrokeforfiji:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id059 {primary: Deutschrap, secondary: &id060 [Hip Hop]}, *id059,
+      *id059, *id059]
+    observations: 4
     primary: Deutschrap
-    secondary: [Hip Hop]
+    secondary: *id060
   Trettmann:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id061 {primary: Deutschrap, secondary: &id062 [Hip Hop, Rock]},
+      *id061, *id061, *id061]
+    observations: 4
     primary: Deutschrap
-    secondary: [Hip Hop, Rock]
+    secondary: *id062
   Westernhagen:
-    description: Auto-learned via Last.fm (rule)
+    confidence: CONFIRMED
+    description: Auto-learned via Last.fm (rule) - Bestandsdaten, vor Einfuehrung
+      des Konfidenz-Gatings bereits produktiv genutzt, daher mit Vertrauensbonus migriert
+    observation_log: [&id063 {primary: Rock, secondary: &id064 [german, deutschrock,
+          deutsch, pop, singer-songwriter]}, *id063, *id063, *id063]
+    observations: 4
     primary: Rock
-    secondary: [german, deutschrock, deutsch, pop, singer-songwriter]
+    secondary: *id064

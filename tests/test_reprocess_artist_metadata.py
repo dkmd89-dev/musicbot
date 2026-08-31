@@ -115,6 +115,28 @@ def make_processor_stub(cover_bytes=None, cover_source=None, lyrics="Test Lyrics
     )
     processor.cover_processor.get_cover_art = Mock(return_value=(cover_bytes, cover_source))
     processor.tag_writer = TagWriter(logger=Mock())
+    # auto_learn_manager: fuer die bestehenden Rename-/Tag-fokussierten Tests
+    # hier bewusst neutral gemockt (kein Feature-Artist, kein Genre-Lernen) -
+    # das eigentliche Auto-Learn-Verhalten wird dediziert in
+    # tests/test_reprocess_artist_metadata_auto_learn.py gegen den echten
+    # AutoLearnManager getestet.
+    processor.auto_learn_manager = Mock()
+    processor.auto_learn_manager.preview_featured_artists = Mock(return_value=[])
+    processor.auto_learn_manager.observe_featured_artists = AsyncMock(return_value=[])
+    processor.auto_learn_manager.preview_genre_learning = Mock(
+        return_value={
+            "artist": None,
+            "observed_primary": None,
+            "observed_secondary": [],
+            "decision": "SKIPPED_NO_GENRE",
+            "existing": None,
+            "predicted_primary": None,
+            "predicted_secondary": [],
+            "predicted_observations": 0,
+            "predicted_confidence": None,
+        }
+    )
+    processor.auto_learn_manager.learn_genre = AsyncMock(return_value=False)
     return processor
 
 

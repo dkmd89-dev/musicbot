@@ -92,7 +92,7 @@ class TestLearnGenreRoutedThroughToThread:
             calls.append(func)
             return await real_to_thread(func, *args, **kwargs)
 
-        with patch.object(auto_learn, "_is_genre_already_learned", return_value=False):
+        with patch.object(auto_learn, "_is_genre_manually_defined", return_value=False):
             with patch(
                 "services.metadata.auto_learn.asyncio.to_thread",
                 side_effect=recording_to_thread,
@@ -106,7 +106,13 @@ class TestLearnGenreRoutedThroughToThread:
                 )
 
         assert result is True
-        assert auto_learn._write_genre_entry_sync in calls, (
+        # AUTOLEARN-GENRE-AGG: _write_genre_entry_sync (Insert-only, blockierte
+        # weitere Beobachtungen fuer immer) wurde durch
+        # _write_genre_observation_sync ersetzt (aggregiert Beobachtungen ueber
+        # observation_log statt sie nach dem ersten Schreiben abzulehnen) -
+        # gleiches asyncio.to_thread()+Lock-Muster, nur der Methodenname aendert
+        # sich.
+        assert auto_learn._write_genre_observation_sync in calls, (
             "learn_genre() schreibt nicht ueber asyncio.to_thread() - der "
             "Schreibvorgang wuerde damit wieder direkt im Event-Loop-Thread "
             "laufen und diesen fuer alle Telegram-Nutzer blockieren."
@@ -204,7 +210,7 @@ class TestConcurrentWriteRace:
 
         async def learn_many():
             with patch.object(
-                auto_learn, "_is_genre_already_learned", return_value=False
+                auto_learn, "_is_genre_manually_defined", return_value=False
             ):
                 tasks = [
                     auto_learn.learn_genre(
