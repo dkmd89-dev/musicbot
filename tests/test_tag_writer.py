@@ -183,7 +183,12 @@ class TestWriteTagsFeatArtists:
         assert tags["TPE1"].text == ["Main Artist", "Feature One", "Feature Two"]
         artists_txxx = tags.getall("TXXX:ARTISTS")
         assert len(artists_txxx) == 1
-        assert artists_txxx[0].text == ["Main Artist; Feature One; Feature Two"]
+        # TAG-01 (docs/MusicBot_TAG01_MULTI_ARTIST_TAG_AUDIT.md): mehrere
+        # separate Werte statt eines mit "; " zusammengefuegten Strings -
+        # Navidrome braucht das fuer Multi-Artist-Splitting (siehe
+        # tests/test_tag_writer_multi_value_artists_tag.py fuer den
+        # vollstaendigen Fund inkl. M4A-Seite).
+        assert list(artists_txxx[0].text) == ["Main Artist", "Feature One", "Feature Two"]
 
     def test_feat_artists_are_normalized_when_normalizer_present(self, mp3_path):
         normalizer = Mock()

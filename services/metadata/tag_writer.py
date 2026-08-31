@@ -108,9 +108,18 @@ class TagWriter:
                         MP4Cover(cover_art, imageformat=MP4Cover.FORMAT_JPEG)
                     ]
                 if feat_artists:
-                    audio["ARTISTS"] = [artists_semicolon]
+                    # TAG-01: Navidrome liest dieses Feld fuer "Zusaetzlicher
+                    # Interpret"/Multi-Artist-Splitting (MusicBrainz-Picard-
+                    # Konvention) - dafuer muss es mehrere SEPARATE Werte
+                    # enthalten, kein mit "; " zusammengefuegter String
+                    # (sonst wird der Track unter den Feature-Artists nicht
+                    # auffindbar, real via Navidrome/Symfonium bestaetigt).
+                    # Das vorherige "ARTISTS"-Atom (ohne "----:"-Praefix) war
+                    # ausserdem gar kein gueltiges 4-Byte-MP4-Atom - mutagen
+                    # kappte es zu einem bedeutungslosen "ARTI"-Atom, das
+                    # keine Software liest. Entfernt.
                     audio["----:com.apple.iTunes:ARTISTS"] = [
-                        artists_semicolon.encode("utf-8")
+                        MP4FreeForm(a.encode("utf-8")) for a in all_artists
                     ]
 
                 if mb_ids:
@@ -178,7 +187,10 @@ class TagWriter:
                         )
                     )
                 if feat_artists:
-                    audio.add(TXXX(encoding=3, desc="ARTISTS", text=artists_semicolon))
+                    # TAG-01: mehrere separate Werte statt eines
+                    # zusammengefuegten Strings - siehe Kommentar im
+                    # MP4-Zweig oben.
+                    audio.add(TXXX(encoding=3, desc="ARTISTS", text=all_artists))
 
                 audio.save()
 
