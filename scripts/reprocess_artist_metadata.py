@@ -413,6 +413,7 @@ async def process_file(
         "audio_stream_changed": False,
         "audio_essence_changed": False,
         "dry_run": dry_run,
+        "auto_learn": {"featured_artists": [], "genre": None},
     }
 
     try:
@@ -501,6 +502,92 @@ async def process_file(
         log.kv("→ IDs vorhanden (Tag)", before["mb_ids"], indent=2)
         log.kv("→ IDs neu ermittelt", fresh_mb_ids, indent=2)
         log.kv("→ IDs final", final_mb_ids, indent=2)
+
+        # ── Auto-Learn: Feature-Artist-Beobachtung + Genre-Aggregation ─────
+        # Primary-/Feature-Trennung kommt bereits fertig aus dem
+        # ArtistNormalizer-Schritt oben (final_artist/feat_artists) - hier
+        # keine eigene Parsing-Logik. Im Dry-Run werden ausschliesslich die
+        # reinen preview_*()-Methoden verwendet (kein Schreibzugriff auf
+        # mapping/auto_learned_*.yaml); im Live-Lauf zusaetzlich die
+        # echten learn_genre()/observe_featured_artists()-Schreibpfade der
+        # bereits produktiv genutzten AutoLearnManager-Instanz
+        # (processor.auto_learn_manager - dieselbe Instanz, die auch der
+        # echte Bot-Download-Pfad verwendet).
+        log.line("🧠 AUTO-LEARN")
+        feat_decisions = []
+        genre_decision = None
+        if feat_artists:
+            track_context = f"{final_artist} - {clean_title}"
+            if dry_run:
+                feat_decisions = processor.auto_learn_manager.preview_featured_artists(
+                    primary_artist=final_artist,
+                    feat_artists=feat_artists,
+                    track_context=track_context,
+                )
+            else:
+                feat_decisions = await processor.auto_learn_manager.observe_featured_artists(
+                    primary_artist=final_artist,
+                    feat_artists=feat_artists,
+                    track_context=track_context,
+                )
+            for d in feat_decisions:
+                log.kv("→ Feature-Artist", d["canonical"] or d["raw"], indent=2)
+                log.kv("  Role", d["role"], indent=2)
+                log.kv("  Current mapping", "FOUND" if d["existing"] else "NOT FOUND", indent=2)
+                log.kv("  Observation", track_context, indent=2)
+                log.kv("  Decision", d["decision"], indent=2)
+                if d["decision"] in ("WOULD_LEARN", "WOULD_UPDATE", "LEARNED", "UPDATED"):
+                    log.kv("  Observations", d["predicted_observations"], indent=2)
+                    log.kv("  Confidence", d["predicted_confidence"], indent=2)
+                elif d.get("reason"):
+                    log.kv("  Reason", d["reason"], indent=2)
+                log.kv(
+                    "  Action",
+                    "NO FILE WRITE" if dry_run else (
+                        "FILE WRITE" if d["decision"] in ("LEARNED", "UPDATED") else "NO FILE WRITE"
+                    ),
+                    indent=2,
+                )
+        else:
+            log.kv("→ Feature-Artists", "keine", indent=2)
+
+        log.line("🎼 GENRE AUTO-LEARN")
+        genre_source = getattr(genres_result, "source", None) if genres_result else None
+        if genres_result and genres_result.primary and genre_source not in ("none", "unknown", None):
+            genre_decision = processor.auto_learn_manager.preview_genre_learning(
+                final_artist, genres_result
+            )
+            genre_action_will_write = (
+                not dry_run and genre_decision["decision"] in ("WOULD_LEARN", "WOULD_UPDATE")
+            )
+            if genre_action_will_write:
+                await processor.auto_learn_manager.learn_genre(
+                    canonical_name=final_artist, genre_result=genres_result
+                )
+            log.kv("→ Artist", final_artist, indent=2)
+            log.kv(
+                "  Observed",
+                f"{genre_decision['observed_primary']} / "
+                f"{', '.join(genre_decision['observed_secondary'])}"
+                if genre_decision["observed_secondary"]
+                else genre_decision["observed_primary"],
+                indent=2,
+            )
+            if genre_decision["existing"]:
+                log.kv(
+                    "  Existing learned",
+                    f"{genre_decision['existing'].get('primary')} / "
+                    f"{', '.join(genre_decision['existing'].get('secondary') or [])}",
+                    indent=2,
+                )
+            log.kv("  Decision", genre_decision["decision"], indent=2)
+            if genre_decision["decision"] in ("WOULD_LEARN", "WOULD_UPDATE"):
+                log.kv("  Predicted primary", genre_decision["predicted_primary"], indent=2)
+                log.kv("  Predicted observations", genre_decision["predicted_observations"], indent=2)
+                log.kv("  Predicted confidence", genre_decision["predicted_confidence"], indent=2)
+            log.kv("  Action", "NO FILE WRITE" if not genre_action_will_write else "FILE WRITE", indent=2)
+        else:
+            log.kv("→ Genre-Auto-Learn", "uebersprungen (kein verwertbares Genre)", indent=2)
 
         # ── LyricsProcessor (immer neu, bestehende Fallback-Logik) ─────────
         lyrics, lyrics_source = await processor.lyrics_processor.fetch_lyrics_with_fallback(
@@ -764,6 +851,29 @@ async def process_file(
             for u in result["unresolved"]:
                 log.line(f"   - {u}")
 
+        result["auto_learn"] = {
+            "featured_artists": [
+                {
+                    "canonical": d["canonical"],
+                    "decision": d["decision"],
+                    "observations": d.get("predicted_observations"),
+                    "confidence": d.get("predicted_confidence"),
+                }
+                for d in feat_decisions
+            ],
+            "genre": (
+                {
+                    "artist": final_artist,
+                    "decision": genre_decision["decision"],
+                    "predicted_primary": genre_decision.get("predicted_primary"),
+                    "observations": genre_decision.get("predicted_observations"),
+                    "confidence": genre_decision.get("predicted_confidence"),
+                }
+                if genre_decision
+                else None
+            ),
+        }
+
         status_emoji = {"changed": "✏️", "unchanged": "⚪", "error": "❌"}.get(
             result["status"], "❓"
         )
@@ -968,12 +1078,32 @@ async def main():
     audio_stream_changed = [r for r in results if r["audio_stream_changed"]]
     audio_essence_changed = [r for r in results if r["audio_essence_changed"]]
 
+    _feat_learned_decisions = {"LEARNED", "UPDATED", "WOULD_LEARN", "WOULD_UPDATE"}
+    auto_learn_artists = {
+        d["canonical"]
+        for r in results
+        for d in r.get("auto_learn", {}).get("featured_artists", [])
+        if d["decision"] in _feat_learned_decisions
+    }
+    auto_learn_genres = {
+        r["auto_learn"]["genre"]["artist"]
+        for r in results
+        if r.get("auto_learn", {}).get("genre")
+        and r["auto_learn"]["genre"]["decision"] in _feat_learned_decisions
+    }
+
     log.section("FINAL SUMMARY", emoji="🏁")
     log.kv("Files processed", len(results), indent=0)
     log.kv("Changed", len(changed), indent=0)
     log.kv("Unchanged", len(unchanged), indent=0)
     log.kv("Unresolved", len(unresolved), indent=0)
     log.kv("Errors", len(errors), indent=0)
+    log.kv("Auto-Learn Artists (Feature-Artists)", len(auto_learn_artists), indent=0)
+    if auto_learn_artists:
+        log.kv("  Artists", sorted(auto_learn_artists), indent=0)
+    log.kv("Auto-Learn Genres", len(auto_learn_genres), indent=0)
+    if auto_learn_genres:
+        log.kv("  Artists", sorted(auto_learn_genres), indent=0)
 
     log.section("POST-RUN SAFETY CHECK", emoji="🔎")
     log.kv("Production files changed", f"{len(production_changed)}/{len(prod_snapshot_before)}", indent=0)
@@ -1020,6 +1150,8 @@ async def main():
         "production_file_changes": len(production_changed),
         "files_created": len(files_created),
         "files_deleted": len(files_deleted),
+        "auto_learn_artists": sorted(auto_learn_artists),
+        "auto_learn_genres": sorted(auto_learn_genres),
         "overall": overall,
         "log": str(log_path),
         "results": results,

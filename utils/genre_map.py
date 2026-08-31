@@ -235,9 +235,31 @@ class GenreMapper(SingletonMixin):
         auto_learned_path = mapping_path / "auto_learned_genre.yaml"
         if auto_learned_path.exists():
             auto_data = load_yaml_data(auto_learned_path)
-            auto_map = self._parse_genre_mappings(
-                auto_data.get("ARTIST_GENRE_MAP", auto_data)
-            )
+            raw_auto_map = auto_data.get("ARTIST_GENRE_MAP", auto_data) or {}
+
+            # AUTOLEARN-GENRE-TRUST: eine einzelne Beobachtung (confidence
+            # "OBSERVED", z.B. ein einziger Last.fm-Treffer) wird NICHT in
+            # die aktive artist_map gemerged und beeinflusst damit noch
+            # KEINE zukuenftige Genre-Bestimmung - erst ab "LEARNED"
+            # (>= 2 konsistente Beobachtungen ueber mehrere Tracks/Laeufe
+            # hinweg) gilt ein Auto-Learn-Eintrag als vertrauenswuerdig
+            # genug. Live-Fund: ein einzelner, fehlerhafter Last.fm-Treffer
+            # (Namenskollision - "NOAH" traf einen gleichnamigen, voellig
+            # anderen Kuenstler) haette sonst sofort und dauerhaft jede
+            # kuenftige Genre-Bestimmung fuer diesen Artist-Namen verfaelscht,
+            # noch bevor ein zweiter, unabhaengiger Download die Beobachtung
+            # haette bestaetigen (oder widerlegen) koennen. Fehlt das
+            # confidence-Feld (aeltere/manuell nachgetragene Eintraege ohne
+            # dieses Schema), wird weiterhin wie bisher vertraut (kein
+            # rueckwirkender Vertrauensentzug).
+            trusted_raw_map = {
+                key: value
+                for key, value in raw_auto_map.items()
+                if not (isinstance(value, dict) and value.get("confidence") == "OBSERVED")
+            }
+            skipped_unverified = len(raw_auto_map) - len(trusted_raw_map)
+
+            auto_map = self._parse_genre_mappings(trusted_raw_map)
             # FIX: Nur Einträge hinzufügen, die NICHT manuell gepflegt sind
             # (manual hat immer Vorrang!)
             added = 0
@@ -247,7 +269,8 @@ class GenreMapper(SingletonMixin):
                     added += 1
             logger.info(
                 f"   🧠 {added} Auto-Learned Artist-Mappings hinzugefügt "
-                f"({len(auto_map)} gesamt in auto_learned_genre.yaml)"
+                f"({len(raw_auto_map)} gesamt in auto_learned_genre.yaml, "
+                f"{skipped_unverified} noch unbestaetigt/OBSERVED - nicht aktiv verwendet)"
             )
         else:
             logger.debug(
