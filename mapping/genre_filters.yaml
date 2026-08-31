@@ -56,6 +56,10 @@ IGNORE_SECONDARY:
   - hamburg
   - munich
   - cologne
+  - chicago
+  - aachen
+  - california
+  - deutsch
   - austrian
   - swiss
   - netherlands
@@ -78,6 +82,7 @@ IGNORE_SECONDARY:
   - seen live
   - female vocalist
   - female vocalists
+  - female voices
   - male vocalists
   - female vocal
   - male vocal
@@ -427,6 +432,7 @@ IGNORE_SECONDARY:
   - character song
   - image song
   - insert song
+  - sex on fire
 
   # ============================================================
   # 9. KÜNSTLERNAMEN (werden oft fälschlich als Genre getaggt)
@@ -460,6 +466,7 @@ IGNORE_SECONDARY:
   - bon jovi
   - elvis presley
   - michael jackson
+  - king of pop
   - madonna
   - whitney houston
   - mariah carey
