@@ -5,7 +5,10 @@
 **Scope:** Download Pipeline + Duplicate Detection  
 **Status:** PLANNED  
 **Architecture Freeze:** APPROVED  
-**Basis:** `MusicBot_ENGINEERING_BASELINE_v5.md`
+**Basis:** `MusicBot_ENGINEERING_BASELINE_v6.md` (ursprünglich v5, seither per
+Post-Baseline-v5 Health & Risk Audit auf v6 aktualisiert; die für diese
+Phase relevanten Punkte — DL-03/DL-05/DUP-05 — sind dort unverändert als
+zurückgestellt/akzeptiert bestätigt)
 
 ---
 
@@ -170,7 +173,7 @@ erscheint.
 
 Vor Beginn dieser Phase müssen mindestens gelesen werden:
 
-1. `docs/MusicBot_ENGINEERING_BASELINE_v5.md`
+1. `docs/MusicBot_ENGINEERING_BASELINE_v6.md`
 2. `docs/archive/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md`
 3. dieses Dokument
 4. der aktuelle Repository-Code

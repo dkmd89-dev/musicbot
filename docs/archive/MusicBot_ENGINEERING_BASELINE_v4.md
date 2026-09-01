@@ -263,4 +263,4 @@ Freeze-Gate-Audit APPROVED, 1107 passed / 0 failed) und wird ab sofort
 
 **Diese Datei ist damit abgeschlossen.** Neue Findings, Nachträge oder
 technische Schulden gehören ab jetzt in eine neue Datei
-`MusicBot_ENGINEERING_BASELINE_v5.md`, nicht mehr hierher.
+`docs/archive/MusicBot_ENGINEERING_BASELINE_v5.md`, nicht mehr hierher.

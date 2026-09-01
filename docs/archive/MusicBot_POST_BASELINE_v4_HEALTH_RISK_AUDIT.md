@@ -5,7 +5,7 @@
 > ob seit dem Freeze neue P0/P1-Risiken bestehen, und eine Entscheidungsvorlage
 > für die nächste Phase (Engineering-Fix vs. Produktphase) erzeugen. Die
 > anschließend freigegebenen Fixes sind in
-> `docs/MusicBot_ENGINEERING_BASELINE_v5.md` dokumentiert.
+> `docs/archive/MusicBot_ENGINEERING_BASELINE_v5.md` dokumentiert.
 
 ---
 
@@ -68,7 +68,7 @@ selbst verifiziert).
 
 **OPTION A (eng begrenzt)** — drei kleine, unabhängige Engineering-Fixes
 (Finding 1–3), kein neuer Architektur-Freeze-Bruch, keine große Phase. Details,
-Umsetzung und Regressionstests: `docs/MusicBot_ENGINEERING_BASELINE_v5.md`.
+Umsetzung und Regressionstests: `docs/archive/MusicBot_ENGINEERING_BASELINE_v5.md`.
 
 ## 7. Explicit Non-Actions (während des Audits selbst)
 
