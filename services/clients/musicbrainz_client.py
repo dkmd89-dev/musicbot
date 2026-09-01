@@ -99,13 +99,22 @@ def _get_artist_normalizer():
 
 
 class MusicBrainzClient:
-    def __init__(self):
+    def __init__(self, logger: Optional[Any] = None):
+        """
+        Initialisiert den MusicBrainzClient.
+
+        Args:
+            logger: Optionale Logger-Instanz. Wird keine übergeben, wird eine
+                    neue Instanz über `get_module_logger` erstellt.
+        """
+        self.logger = logger or get_module_logger("MusicBrainzClient")
+
         musicbrainzngs.set_useragent("yt_music_bot", "1.0", "support@example.com")
 
         # Singleton-Referenz statt eigener Instanz
         self.artist_normalizer = _get_artist_normalizer()
 
-        metadata_logger.info(
+        self.logger.info(
             "✨ MusicBrainzClient initialisiert (ArtistNormalizer via Singleton)."
         )
 
@@ -115,7 +124,7 @@ class MusicBrainzClient:
             if not release_id:
                 return None
 
-            metadata_logger.debug(f"🔍 Hole Release-Group ID für Release: {release_id[:8]}...")
+            self.logger.debug(f"🔍 Hole Release-Group ID für Release: {release_id[:8]}...")
             release_data = await asyncio.to_thread(
                 musicbrainzngs.get_release_by_id,
                 release_id,
@@ -124,10 +133,10 @@ class MusicBrainzClient:
 
             if "release" in release_data and "release-group" in release_data["release"]:
                 release_group_id = release_data["release"]["release-group"]["id"]
-                metadata_logger.info(f"🎨 Release-Group ID gefunden: {release_group_id[:8]}...")
+                self.logger.info(f"🎨 Release-Group ID gefunden: {release_group_id[:8]}...")
                 return release_group_id
         except Exception as e:
-            metadata_logger.debug(f"⚠️ Fehler beim Holen der Release-Group ID: {e}")
+            self.logger.debug(f"⚠️ Fehler beim Holen der Release-Group ID: {e}")
         return None
 
     def _extract_release_group_id(self, recording_data: dict) -> Optional[str]:
@@ -137,10 +146,10 @@ class MusicBrainzClient:
                 for release in recording_data["releases"]:
                     if "release-group" in release and "id" in release["release-group"]:
                         release_group_id = release["release-group"]["id"]
-                        metadata_logger.debug(f"🎵 Release-Group ID gefunden: {release_group_id}")
+                        self.logger.debug(f"🎵 Release-Group ID gefunden: {release_group_id}")
                         return release_group_id
         except Exception as e:
-            metadata_logger.debug(f"⚠️ Fehler beim Extrahieren der Release-Group ID: {e}")
+            self.logger.debug(f"⚠️ Fehler beim Extrahieren der Release-Group ID: {e}")
         return None
 
     def _extract_track_number(self, match: dict, release_list: list) -> Optional[int]:
@@ -190,7 +199,7 @@ class MusicBrainzClient:
         """
         context_str = f"MusicBrainzParser:{artist} - {title}"
         if " - " in title:
-            metadata_logger.debug(
+            self.logger.debug(
                 f"[{context_str}] 🔍 Prüfe ob Titel YouTube-Format hat: '{title}'"
             )
             parsed_result = self.artist_normalizer.parse_youtube_title(title)
@@ -198,7 +207,7 @@ class MusicBrainzClient:
             artist_string = getattr(parsed_result, "artist_string", None)
             parsed_title = getattr(parsed_result, "title", None)
             if artist_string and parsed_title:
-                metadata_logger.info(
+                self.logger.info(
                     f"[{context_str}] 🎯 YouTube-Titel umgeparst: '{title}' "
                     f"→ Artist: '{artist_string}', Title: '{parsed_title}'"
                 )
@@ -206,7 +215,7 @@ class MusicBrainzClient:
 
         normalized_artist = self.artist_normalizer.normalize(artist)
         if normalized_artist != artist and normalized_artist != "Unknown":
-            metadata_logger.debug(
+            self.logger.debug(
                 f"[{context_str}] 🧹 Artist normalisiert: '{artist}' → '{normalized_artist}'"
             )
             return title, normalized_artist
@@ -214,7 +223,7 @@ class MusicBrainzClient:
 
     async def fetch_metadata(self, title: str, artist: str) -> dict:
         original_context = f"MusicBrainzClient:{artist} - {title}"
-        metadata_logger.debug(
+        self.logger.debug(
             f"[{original_context}] 📥 fetch_metadata(): artist='{artist}', title='{title}'"
         )
         try:
@@ -222,7 +231,7 @@ class MusicBrainzClient:
                 clean_title, clean_artist = self.parse_search_terms(title, artist)
                 context_str = f"MusicBrainzClient:{clean_artist} - {clean_title}"
                 if clean_title != title or clean_artist != artist:
-                    metadata_logger.info(
+                    self.logger.info(
                         f"[{context_str}] 🔄 Suchbegriffe optimiert: "
                         f"'{artist}' - '{title}' → '{clean_artist}' - '{clean_title}'"
                     )
@@ -232,7 +241,7 @@ class MusicBrainzClient:
                 recordings = result_combined.get("recording-list", [])
 
                 if not recordings:
-                    metadata_logger.debug(
+                    self.logger.debug(
                         f"[{context_str}] ❓ Keine Ergebnisse, Fallback auf Titelsuche."
                     )
                     query_title = f'recording:"{clean_title}"'
@@ -240,7 +249,7 @@ class MusicBrainzClient:
                     recordings = result_title.get("recording-list", [])
 
                     if not recordings:
-                        metadata_logger.debug(
+                        self.logger.debug(
                             f"[{context_str}] ❓ Keine Aufnahme-Ergebnisse, "
                             "Fallback auf Release-Suche."
                         )
@@ -252,7 +261,7 @@ class MusicBrainzClient:
                         )
                         releases = result_release.get("release-list", [])
                         if releases:
-                            metadata_logger.debug(
+                            self.logger.debug(
                                 f"[{context_str}] 🔁 {len(releases)} Releases gefunden."
                             )
                             recordings = await self._extract_recordings_from_releases(
@@ -262,19 +271,19 @@ class MusicBrainzClient:
                 if recordings:
                     best = self._get_best_match(recordings, clean_title, clean_artist)
                     if best:
-                        metadata_logger.info(
+                        self.logger.info(
                             f"[{context_str}] ✅ MusicBrainz Match: "
                             f"'{best.get('artist-credit-phrase')}' - '{best.get('title')}'"
                         )
                         return await self._build_metadata(best, artist)
 
-                metadata_logger.warning(
+                self.logger.warning(
                     f"[{context_str}] ⚠️ Kein Ergebnis für '{clean_artist}' – '{clean_title}'"
                 )
                 return {}
 
         except Exception as e:
-            metadata_logger.error(
+            self.logger.error(
                 f"[{original_context}] 💥 Unerwarteter Fehler: {e}", exc_info=True
             )
         return {}
@@ -290,7 +299,7 @@ class MusicBrainzClient:
             if not release_id:
                 continue
             try:
-                metadata_logger.debug(
+                self.logger.debug(
                     f"[{context_str}] 🔍 Untersuche Release: "
                     f"'{release.get('title')}' (ID: {release_id})"
                 )
@@ -316,11 +325,11 @@ class MusicBrainzClient:
                             ) or track.get("position")
                             recordings.append(recording)
             except Exception as e:
-                metadata_logger.warning(
+                self.logger.warning(
                     f"[{context_str}] ⚠️ Fehler bei Release {release_id}: {e}"
                 )
                 continue
-        metadata_logger.info(
+        self.logger.info(
             f"[{context_str}] 📊 {len(recordings)} Recordings aus "
             f"{len(top_releases)} Releases extrahiert"
         )
@@ -369,7 +378,7 @@ class MusicBrainzClient:
                 best_score = score
                 best_match = r
         if best_match and best_score >= min_score_threshold:
-            metadata_logger.info(
+            self.logger.info(
                 f"[MusicBrainzMatch] ✅ Bestes Match mit Score {best_score:.2f} "
                 f"(über Schwelle {min_score_threshold:.2f})"
             )
@@ -382,7 +391,7 @@ class MusicBrainzClient:
         recording_detail = {}
         if recording_mbid:
             try:
-                metadata_logger.debug(
+                self.logger.debug(
                     f"[{context_str}] 🔍 Lade Recording-Details: {recording_mbid}"
                 )
                 recording_detail = await asyncio.to_thread(
@@ -391,7 +400,7 @@ class MusicBrainzClient:
                     includes=["artists", "releases", "isrcs"],
                 )
             except Exception as e:
-                metadata_logger.warning(
+                self.logger.warning(
                     f"[{context_str}] ⚠️ Konnte Recording-Details nicht laden: {e}"
                 )
 
@@ -460,7 +469,7 @@ class MusicBrainzClient:
         # Fallback-Wert bei fehlenden Tags war.
         genre_value = "unknown"
 
-        metadata_logger.info(
+        self.logger.info(
             f"[{context_str}] 🔖 MB-IDs: "
             f"recording={recording_mbid}, "
             f"artist={artist_id}, "
