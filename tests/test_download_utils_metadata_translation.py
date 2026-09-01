@@ -546,3 +546,150 @@ class TestProcessSingleDownloadCacheMiss:
                     filename_fixer=Mock(),
                 )
             )
+
+
+class TestProcessSingleDownloadErrorClassification:
+    """
+    DL-03/DL-05 (docs/audits/DL_RETRY_CLASSIFICATION_2026-09-01.md):
+    _process_single_download() wrappte VORHER jede Exception - auch bereits
+    fachlich klassifizierte oder rohe yt-dlp-Fehler - in ein frisches,
+    generisches DownloadError. Damit ging jede Klassifikation verloren,
+    bevor enhanced_download_with_retry() ueberhaupt eine Retry-Entscheidung
+    treffen konnte. Diese Tests sichern die jetzt erhaltene Klassifikation ab.
+    """
+
+    def test_metadata_failure_raises_metadata_error_not_generic(self, tmp_path):
+        from services.downloader.errors import MetadataError
+
+        failed_result = make_metadata_result(success=False, error="Boom")
+        enhanced_processor = make_enhanced_processor_for_single(
+            tmp_path, failed_result
+        )
+
+        with pytest.raises(MetadataError):
+            run_async(
+                _process_single_download(
+                    url="https://youtube.com/watch?v=abc",
+                    video_info={"title": "T"},
+                    ydl_opts={},
+                    enhanced_processor=enhanced_processor,
+                    filename_fixer=Mock(),
+                )
+            )
+
+    def test_ytdlp_unsupported_url_raises_invalid_url_error(self, tmp_path):
+        from yt_dlp.utils import UnsupportedError
+
+        from services.downloader.errors import InvalidURLError
+
+        enhanced_processor = make_enhanced_processor_for_single(tmp_path)
+        enhanced_processor.download_executor.extract_info_async = AsyncMock(
+            side_effect=UnsupportedError("https://example.com/not-a-video")
+        )
+
+        with pytest.raises(InvalidURLError):
+            run_async(
+                _process_single_download(
+                    url="https://example.com/not-a-video",
+                    video_info={"title": "T"},
+                    ydl_opts={},
+                    enhanced_processor=enhanced_processor,
+                    filename_fixer=Mock(),
+                )
+            )
+
+    def test_ytdlp_geo_restricted_raises_invalid_url_error(self, tmp_path):
+        from yt_dlp.utils import GeoRestrictedError
+
+        from services.downloader.errors import InvalidURLError
+
+        enhanced_processor = make_enhanced_processor_for_single(tmp_path)
+        enhanced_processor.download_executor.extract_info_async = AsyncMock(
+            side_effect=GeoRestrictedError(
+                "not available from your location due to geo restriction"
+            )
+        )
+
+        with pytest.raises(InvalidURLError):
+            run_async(
+                _process_single_download(
+                    url="https://youtube.com/watch?v=abc",
+                    video_info={"title": "T"},
+                    ydl_opts={},
+                    enhanced_processor=enhanced_processor,
+                    filename_fixer=Mock(),
+                )
+            )
+
+    def test_ytdlp_private_video_message_raises_invalid_url_error(self, tmp_path):
+        from yt_dlp.utils import ExtractorError
+
+        from services.downloader.errors import InvalidURLError
+
+        enhanced_processor = make_enhanced_processor_for_single(tmp_path)
+        enhanced_processor.download_executor.extract_info_async = AsyncMock(
+            side_effect=ExtractorError("Private video", expected=True)
+        )
+
+        with pytest.raises(InvalidURLError):
+            run_async(
+                _process_single_download(
+                    url="https://youtube.com/watch?v=abc",
+                    video_info={"title": "T"},
+                    ydl_opts={},
+                    enhanced_processor=enhanced_processor,
+                    filename_fixer=Mock(),
+                )
+            )
+
+    def test_ytdlp_rate_limit_message_is_not_classified_as_permanent(self, tmp_path):
+        """
+        Bewusste Abgrenzung: der yt-dlp-eigene Rate-Limit-Hinweis ("isn't
+        available, try again later") ist ausdruecklich transient - er darf
+        NICHT als permanenter Fehler klassifiziert werden.
+        """
+        from yt_dlp.utils import ExtractorError
+
+        from services.downloader.errors import DownloadError, InvalidURLError
+
+        enhanced_processor = make_enhanced_processor_for_single(tmp_path)
+        enhanced_processor.download_executor.extract_info_async = AsyncMock(
+            side_effect=ExtractorError(
+                "This content isn't available, try again later", expected=True
+            )
+        )
+
+        with pytest.raises(DownloadError) as exc_info:
+            run_async(
+                _process_single_download(
+                    url="https://youtube.com/watch?v=abc",
+                    video_info={"title": "T"},
+                    ydl_opts={},
+                    enhanced_processor=enhanced_processor,
+                    filename_fixer=Mock(),
+                )
+            )
+
+        assert not isinstance(exc_info.value, InvalidURLError)
+
+    def test_unexpected_raw_exception_still_wrapped_generically(self, tmp_path):
+        """Regressionsschutz: fuer echte, unklassifizierte Fehler bleibt das
+        bisherige Wrap-Verhalten (generisches DownloadError mit
+        'Single-Download fehlgeschlagen'-Praefix) unveraendert."""
+        from services.downloader.errors import DownloadError, MetadataError
+
+        enhanced_processor = make_enhanced_processor_for_single(tmp_path)
+        enhanced_processor.download_executor.extract_info_async = AsyncMock(
+            side_effect=RuntimeError("etwas komplett Unerwartetes")
+        )
+
+        with pytest.raises(DownloadError, match="Single-Download fehlgeschlagen"):
+            run_async(
+                _process_single_download(
+                    url="https://youtube.com/watch?v=abc",
+                    video_info={"title": "T"},
+                    ydl_opts={},
+                    enhanced_processor=enhanced_processor,
+                    filename_fixer=Mock(),
+                )
+            )

@@ -267,6 +267,139 @@ class TestRetryAndBackoff:
         assert deps["processor"].download_executor.extract_info_async.await_count == 3
 
 
+class TestNonRetryableErrorsSkipRemainingAttempts:
+    """
+    DL-03/DL-05 (docs/audits/DL_RETRY_CLASSIFICATION_2026-09-01.md): permanente
+    Fehler (ungueltige/nicht unterstuetzte URL, deterministischer Metadata-
+    Fehler) wurden VORHER identisch zu transienten Fehlern bis zu max_retries-
+    mal wiederholt - inkl. komplettem Neu-Download von YouTube. Diese Tests
+    sichern ab, dass genau diese Faelle jetzt NUR EINEN Versuch erhalten,
+    waehrend alles andere (insbesondere NetworkError/generische Fehler)
+    unveraendert die volle Retry-/Backoff-Behandlung erhaelt.
+    """
+
+    def test_invalid_url_error_from_single_download_is_not_retried(self, deps):
+        from services.downloader.errors import InvalidURLError
+
+        deps["processor"].download_executor.extract_info_async.return_value = {
+            "id": "v1",
+            "title": "T",
+        }
+        deps["single"].side_effect = InvalidURLError("Unsupported URL: ...")
+
+        result = run_async(
+            enhanced_download_with_retry(
+                url="https://example.com/not-a-video",
+                chat_id=1,
+                update_id=1,
+                max_retries=3,
+            )
+        )
+
+        assert result["success"] is False
+        assert "dauerhaft fehlgeschlagen" in result["error"]
+        assert deps["single"].await_count == 1
+        deps["sleep"].assert_not_awaited()
+
+    def test_metadata_error_from_single_download_is_not_retried(self, deps):
+        from services.downloader.errors import MetadataError
+
+        deps["processor"].download_executor.extract_info_async.return_value = {
+            "id": "v1",
+            "title": "T",
+        }
+        deps["single"].side_effect = MetadataError("Processing failed: Boom")
+
+        result = run_async(
+            enhanced_download_with_retry(
+                url="https://youtube.com/watch?v=v1",
+                chat_id=1,
+                update_id=1,
+                max_retries=3,
+            )
+        )
+
+        assert result["success"] is False
+        assert "dauerhaft fehlgeschlagen" in result["error"]
+        assert deps["single"].await_count == 1
+        deps["sleep"].assert_not_awaited()
+
+    def test_raw_ytdlp_permanent_error_from_initial_extract_is_not_retried(
+        self, deps
+    ):
+        from yt_dlp.utils import GeoRestrictedError
+
+        deps["processor"].download_executor.extract_info_async.side_effect = (
+            GeoRestrictedError(
+                "not available from your location due to geo restriction"
+            )
+        )
+
+        result = run_async(
+            enhanced_download_with_retry(
+                url="https://youtube.com/watch?v=v1",
+                chat_id=1,
+                update_id=1,
+                max_retries=3,
+            )
+        )
+
+        assert result["success"] is False
+        assert (
+            deps["processor"].download_executor.extract_info_async.await_count == 1
+        )
+        deps["sleep"].assert_not_awaited()
+
+    def test_network_error_is_still_retried_unchanged(self, deps):
+        """Regressionsschutz: NetworkError (transient) ist bewusst NICHT in
+        der Non-Retryable-Menge - unveraendertes Verhalten, volle Retries."""
+        from services.downloader.errors import NetworkError
+
+        deps["processor"].download_executor.extract_info_async.side_effect = (
+            NetworkError("timeout")
+        )
+
+        result = run_async(
+            enhanced_download_with_retry(
+                url="https://youtube.com/watch?v=v1",
+                chat_id=1,
+                update_id=1,
+                max_retries=3,
+            )
+        )
+
+        assert result["success"] is False
+        assert (
+            deps["processor"].download_executor.extract_info_async.await_count == 3
+        )
+        assert deps["sleep"].await_count == 2
+
+    def test_unclassified_raw_ytdlp_error_is_still_retried_unchanged(self, deps):
+        """Regressionsschutz: ein yt-dlp-Fehler ohne bekannten Permanent-
+        Marker (expected=False, z.B. ein interner yt-dlp-Bug) bleibt
+        unklassifiziert und wird weiterhin wie bisher retried."""
+        from yt_dlp.utils import ExtractorError
+
+        deps["processor"].download_executor.extract_info_async.side_effect = (
+            ExtractorError("Something went wrong internally", expected=False)
+        )
+
+        result = run_async(
+            enhanced_download_with_retry(
+                url="https://youtube.com/watch?v=v1",
+                chat_id=1,
+                update_id=1,
+                max_retries=3,
+            )
+        )
+
+        assert result["success"] is False
+        assert (
+            deps["processor"].download_executor.extract_info_async.await_count == 3
+        )
+        assert deps["sleep"].await_count == 2
+
+
 class TestMaxRetriesEdgeCase:
     def test_max_retries_zero_returns_immediately_without_any_attempt(self, deps):
         """Dokumentiertes Verhalten: range(0) durchlaeuft die Schleife nie,
