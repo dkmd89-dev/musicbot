@@ -81,15 +81,28 @@ Mechanismus sich künftig ändern sollte, würden diese 18 Einträge **keine
 falsche Genre-Zuordnung** produzieren — sie sind redundant, nicht
 fehlerhaft.
 
-## Offene Entscheidung (bewusst nicht in diesem Schritt entschieden)
+## Nachtrag: 18 tote Einträge entfernt (separater Commit)
 
-Die 18 toten Einträge sind ein reiner Aufräum-Kandidat, kein Bug. Gemäß
-CLAUDE.md Abschnitt 10/28 (Mapping-Änderungen wie Code behandeln, keine
-unkontrollierten Bulk-Änderungen) wird hier **keine** Löschung vorgenommen,
-ohne dass das explizit angefragt wird — auch wenn es sich um 18 gleichartige
-Fälle handelt. Empfehlung: separater, expliziter Mini-Schritt („mapping:
-remove 18 dead channel-suffix entries from artist_genre.yaml“) mit den
-konkreten Vorher/Nachher-Beispielen aus dieser Tabelle, falls gewünscht.
+Auf explizite Nutzeranfrage wurden die 18 toten Einträge in einem eigenen,
+nachfolgenden Commit auf diesem Branch entfernt (siehe Commit „mapping:
+remove 18 dead channel-suffix entries from artist_genre.yaml“). `mapping/
+artist_genre.yaml` schrumpft dadurch von 172 auf 154 Einträge.
+`"glasperlenspiel - topic"` (der einzige tatsächlich load-bearing Suffix-
+Eintrag) blieb unverändert erhalten.
+
+Verifiziert nach der Löschung:
+- YAML weiterhin valide, exakt 154 Einträge (172 − 18).
+- Alle Basis-Keys (`kygo`, `eminem`, `calvin harris`, `lea`,
+  `max giesinger`, `taylor swift`, `makko`) unverändert vorhanden.
+- Live-Lookup via `GenreMapper.determine_genre()`: `"Kygo"` und `"Eminem"`
+  matchen weiterhin exakt (`source=artist_exact`) auf ihre Basis-Einträge;
+  `"Glasperlenspiel"` matcht weiterhin über den Fuzzy-Fallback
+  (`source=artist_fuzzy`, `matched_key="glasperlenspiel - topic"`) —
+  identisches Verhalten wie vor der Löschung, da diese Keys ohnehin nie
+  über den Lookup-Pfad erreicht wurden.
+- Tests: 57 gezielt (`genre_map`/`genre_processor`/`genre_mapper`) +
+  145 thematisch (alle Tests, die `artist_genre.yaml` referenzieren) —
+  alle grün, keine Regression.
 
 ## Tests
 
