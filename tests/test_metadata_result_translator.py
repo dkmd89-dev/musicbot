@@ -146,10 +146,19 @@ class TestBuildSingleTrackResult:
         result = build_single_track_result(mr, enhanced_processor_ref=Mock())
         assert result["year"] == 2021
 
-    def test_track_number_and_playlist_album_stay_default(self):
+    def test_track_number_taken_from_metadata_result(self):
+        """Gefixt (DOC-01): vorher immer Dataclass-Default None, siehe
+        tests/test_download_utils_metadata_translation.py fuer die volle
+        Begruendung."""
         mr = make_metadata_result(track_number=42)
         result = build_single_track_result(mr, enhanced_processor_ref=Mock())
-        assert result["track_number"] is None
+        assert result["track_number"] == 42
+
+    def test_playlist_album_stays_default_none(self):
+        """Weiterhin bewusst None - ein Einzeltrack gehoert zu keiner
+        Playlist, kein Bug."""
+        mr = make_metadata_result(track_number=42)
+        result = build_single_track_result(mr, enhanced_processor_ref=Mock())
         assert result["playlist_album"] is None
 
     def test_is_duplicate_taken_from_metadata_result(self):

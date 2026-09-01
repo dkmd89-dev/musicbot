@@ -20,6 +20,14 @@ wurden als sichtbare bzw. potenziell fehlertraechtige Bugs bewusst gefixt.
 Die zugehoerigen Tests wurden auf das neue, korrigierte Verhalten
 aktualisiert.
 
+Update (DOC-01, docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+die nachgeholte Downstream-Konsumenten-Analyse (kein Konsument liest
+track_number aus dem finalen Ergebnis-Dict; der einzige playlist_album-
+Konsument hat einen sicheren Fallback) ergab, dass track_number im
+Single-Pfad ein echter, bislang stillschweigend verworfener Wert war -
+gefixt. playlist_album bleibt bewusst None (kein Bug, ein Einzeltrack
+gehoert zu keiner Playlist). Siehe die beiden getrennten Tests unten.
+
 Regel 7: externe Abhaengigkeiten (EnhancedMetadataProcessor,
 DownloadExecutor, CacheManager) werden gemockt.
 """
@@ -423,11 +431,16 @@ class TestProcessSingleDownloadCacheMiss:
 
         assert result["renamed_due_to_conflict"] is True
 
-    def test_track_number_and_playlist_album_are_always_default(self, tmp_path):
+    def test_track_number_is_taken_from_metadata_result(self, tmp_path):
         """
-        Dokumentierte Inkonsistenz (ARCH-004 Abschnitt 6): track_number/
-        playlist_album werden im Single-Pfad NIE aus enhanced_result
-        uebernommen - nur die DownloadResult-Dataclass-Defaults.
+        Gefixt (DOC-01, docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
+        track_number wird im Single-Pfad jetzt aus enhanced_result
+        uebernommen (vorher immer der DownloadResult-Dataclass-Default
+        None, obwohl enhanced_result.track_number einen echten, von
+        album_processor.determine_track_number() ermittelten Wert
+        trug - siehe ARCH-004 Abschnitt 6, dort als "moeglicherweise
+        unbeabsichtigte Inkonsistenz" identifiziert, aber mangels
+        Downstream-Konsumenten-Analyse zunaechst zurueckgestellt).
         """
         metadata_result = make_metadata_result(track_number=42)
         enhanced_processor = make_enhanced_processor_for_single(
@@ -444,7 +457,32 @@ class TestProcessSingleDownloadCacheMiss:
             )
         )
 
-        assert result["track_number"] is None
+        assert result["track_number"] == 42
+
+    def test_playlist_album_stays_default_none(self, tmp_path):
+        """
+        Weiterhin bewusstes Verhalten (unveraendert seit ARCH-004): anders
+        als track_number bleibt playlist_album im Single-Pfad None - ein
+        Einzeltrack gehoert zu keiner Playlist, das ist kein Bug. Der
+        einzige Konsument im finalen Ergebnis-Dict
+        (download_result_reporter.py::build_final_summary_message()) hat
+        dafuer einen sicheren `or result.get("album", ...)`-Fallback.
+        """
+        metadata_result = make_metadata_result(track_number=42)
+        enhanced_processor = make_enhanced_processor_for_single(
+            tmp_path, metadata_result
+        )
+
+        result = run_async(
+            _process_single_download(
+                url="https://youtube.com/watch?v=abc",
+                video_info={"title": "T"},
+                ydl_opts={},
+                enhanced_processor=enhanced_processor,
+                filename_fixer=Mock(),
+            )
+        )
+
         assert result["playlist_album"] is None
 
     def test_is_duplicate_is_taken_from_metadata_result(self, tmp_path):

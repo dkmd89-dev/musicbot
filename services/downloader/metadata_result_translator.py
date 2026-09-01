@@ -24,15 +24,24 @@ weggelassen werden. Diese Funktionen reproduzieren die bisherigen
 Verhaltensweisen bewusst EXAKT (durch Regressionstests abgesichert, siehe
 tests/test_download_utils_metadata_translation.py).
 
-Ausnahme - zwei am 2026-08-23 bewusst gefixte Inkonsistenzen (ARCH-004
-Section 7, Entscheidung FIX NOW):
-  - `is_duplicate` wird jetzt auch im YT-Single-Pfad aus dem echten
-    MetadataResult übernommen (vorher immer False - täuschte im Telegram-
-    Report ein "kein Duplikat" vor).
-  - `library_path` wird im YT-Playlist-Pfad jetzt bedingt stringifiziert
-    (vorher wurde `None` zum truthy-String `"None"` - konnte den
-    Already-Processed-Vertrag fälschlich auslösen und in cache_manager.py
-    einen ungültigen `Path("None")` erzeugen).
+Ausnahme - bewusst gefixte Inkonsistenzen:
+  - (2026-08-23, ARCH-004 Section 7, FIX NOW) `is_duplicate` wird jetzt
+    auch im YT-Single-Pfad aus dem echten MetadataResult übernommen
+    (vorher immer False - täuschte im Telegram-Report ein "kein Duplikat"
+    vor).
+  - (2026-08-23, ARCH-004 Section 7, FIX NOW) `library_path` wird im
+    YT-Playlist-Pfad jetzt bedingt stringifiziert (vorher wurde `None`
+    zum truthy-String `"None"` - konnte den Already-Processed-Vertrag
+    fälschlich auslösen und in cache_manager.py einen ungültigen
+    `Path("None")` erzeugen).
+  - (DOC-01, docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md)
+    `track_number` wird jetzt auch im YT-Single-Pfad aus dem echten
+    MetadataResult übernommen (vorher immer Dataclass-Default `None` -
+    verwarf stillschweigend einen echten, von
+    `album_processor.determine_track_number()` ermittelten Wert). Anders
+    als `track_number` bleibt `playlist_album` im Single-Pfad weiterhin
+    bewusst `None` - das ist kein Bug, sondern korrekt: ein Einzeltrack
+    gehört zu keiner Playlist.
 Alle anderen dokumentierten Inkonsistenzen bleiben bewusst zurückgestellt
 (siehe Dokument, Abschnitt 7).
 
@@ -130,9 +139,12 @@ def build_single_track_result(
     Bewusst erhaltene Eigenheiten (NICHT Bugs, die hier gefixt würden):
       - `year` kommt hier (anders als im Playlist-Fall) direkt aus
         `metadata_result.year`.
-      - `track_number`/`playlist_album` werden NIE explizit gesetzt -
-        bleiben bei den `DownloadResult`-Dataclass-Defaults (`None`/`None`),
-        auch wenn `metadata_result` echte Werte trägt.
+      - `playlist_album` wird NIE explizit gesetzt - bleibt beim
+        `DownloadResult`-Dataclass-Default (`None`). Das ist inhaltlich
+        korrekt: ein Einzeltrack gehört zu keiner Playlist. Der einzige
+        Konsument dieses Felds im finalen Ergebnis-Dict
+        (`download_result_reporter.py::build_final_summary_message()`)
+        hat ohnehin einen sicheren `or result.get("album", ...)`-Fallback.
       - `library_path` wird bedingt stringifiziert - bei `None` bleibt es
         `None`.
 
@@ -141,6 +153,19 @@ def build_single_track_result(
         übernommen statt immer beim Dataclass-Default `False` zu bleiben -
         vorher zeigte der Telegram-Report bei jedem YT-Einzeldownload
         fälschlich "kein Duplikat" an, selbst wenn eins erkannt wurde.
+
+    Gefixt (DOC-01, docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md,
+    Ursachenanalyse nachgeholt - vorher laut ARCH-004 Section 6/7 zweimal
+    bewusst zurückgestellt mangels Downstream-Konsumenten-Analyse):
+      - `track_number` wird jetzt aus `metadata_result.track_number`
+        übernommen statt immer beim Dataclass-Default `None` zu bleiben.
+        Anders als `playlist_album` ist das kein playlist-spezifisches
+        Feld, sondern ein echter, von `album_processor.determine_track_number()`
+        ermittelter Wert (z. B. aus MusicBrainz-Release-Tracking), der -
+        anders als `album`/`year` - bislang inkonsistent verworfen wurde.
+        Aktuell liest kein Konsument dieses Feld aus dem finalen
+        Ergebnis-Dict (verifiziert), daher ohne sichtbare Auswirkung, aber
+        nicht mehr "fragil für zukünftigen Code" (Phase-0-Audit-Formulierung).
     """
     dl_result = DownloadResult(
         success=True,
@@ -157,6 +182,7 @@ def build_single_track_result(
         url=metadata_result.url,
         artist_source=metadata_result.artist_source,
         title_cleaned=metadata_result.title_cleaned,
+        track_number=metadata_result.track_number,
         lyrics_available=bool(metadata_result.lyrics),
         lyrics_source=metadata_result.lyrics_source,
         cover_embedded=metadata_result.cover_embedded,
