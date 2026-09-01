@@ -353,7 +353,6 @@ class Config:
     MAX_CONCURRENT_DOWNLOADS = 3
     DOWNLOAD_RETRY_COUNT = 3
     DOWNLOAD_RETRY_DELAY = 2
-    DOWNLOAD_TIMEOUT = 300
     PROGRESS_UPDATE_INTERVAL = 2
     PROGRESS_DETAILED_LOGGING = True
 
@@ -481,41 +480,6 @@ class Config:
             "is_single": {"required": False, "default": True},
         },
     }
-
-    # YT-DLP Options
-    @property
-    def YTDL_BASE_OPTIONS(self) -> Dict[str, Any]:
-        return {
-            "format": f"bestaudio[ext={self.AUDIO_FORMAT}]/bestaudio/best",
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": self.AUDIO_FORMAT,
-                    "preferredquality": str(self.AUDIO_QUALITY),
-                }
-            ],
-            "outtmpl": str(self.DOWNLOAD_DIR / "%(title)s.%(ext)s"),
-            "writethumbnail": True,
-            "max_duration": self.MAX_DURATION,
-            "ignoreerrors": False,
-            "socket_timeout": 30,
-            "retries": self.DOWNLOAD_RETRY_COUNT,
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "web"],
-                    "skip": ["sabr"],
-                }
-            },
-            "audio_multistreams": True,
-            "allow_multiple_audio_streams": True,
-            "format_sort": [
-                f"ext:{self.AUDIO_FORMAT}",
-                f"acodec:{self.AUDIO_FORMAT}",
-                "abr",
-            ],
-            "no_resize_buffer": True,
-            "http_chunk_size": 1048576,
-        }
 
     # Play History
     PLAY_HISTORY_RETENTION_DAYS = 380

@@ -69,14 +69,21 @@ class TagWriter:
         #
         # Bewusst OHNE fsync(): auf demselben Filesystem wie LIBRARY_DIR
         # gemessen kostet fsync() 77-500ms je nach Dateigroesse (vs. <20ms
-        # fuer den reinen Copy+Tag-Vorgang) - write_tags() laeuft synchron
-        # direkt im Event-Loop-Thread (kein asyncio.to_thread()), fsync()
-        # wuerde also eine neue INV-01-Verletzung einfuehren. Schuetzt damit
-        # gezielt gegen Exception/Prozessabbruch waehrend des Schreibens
-        # (der bestaetigte, reproduzierte AE-11-Befund) - ein Maschinen-
-        # absturz/Stromausfall bleibt ein bereits im gesamten bestehenden
-        # Schreibpfad (auch move_to_library()) akzeptiertes Restrisiko,
-        # keine neue, inkonsistente Ausnahme nur fuer diese eine Datei.
+        # fuer den reinen Copy+Tag-Vorgang). Schuetzt gezielt gegen
+        # Exception/Prozessabbruch waehrend des Schreibens (der bestaetigte,
+        # reproduzierte AE-11-Befund) - ein Maschinenabsturz/Stromausfall
+        # bleibt ein bereits im gesamten bestehenden Schreibpfad (auch
+        # move_to_library()) akzeptiertes Restrisiko, keine neue,
+        # inkonsistente Ausnahme nur fuer diese eine Datei.
+        #
+        # Korrektur (AE-12, docs/MusicBot_ARCHITECTURE_EVOLUTION.md
+        # Abschnitt 29): write_tags() lief zum Zeitpunkt der AE-11-
+        # Entscheidung noch synchron direkt im Event-Loop-Thread, dort war
+        # die INV-01-Vermeidung ein zusaetzliches Argument gegen fsync().
+        # Seit AE-12 ruft enhanced_metadata_processor.py write_tags() ueber
+        # await asyncio.to_thread(...) auf - dieses spezielle Argument
+        # entfaellt damit, die Entscheidung selbst (kein fsync()) bleibt aus
+        # den oben genannten, unveraenderten Gruenden weiterhin sinnvoll.
         tmp_path = target_path.with_name(
             f".{target_path.name}.tmp_{int(time.time() * 1000)}"
         )

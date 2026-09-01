@@ -109,13 +109,14 @@ class DownloadExecutor:
         im Spezialkanal-Mapping hinterlegt (Podcasts sind typischerweise
         deutlich länger als Musik-Tracks und sollen nicht limitiert werden).
 
-        Vorher wurde `Config.MAX_DURATION` nur in der ungenutzten
-        `Config.YTDL_BASE_OPTIONS`-Property unter dem Key "max_duration"
-        gesetzt - das ist kein echter yt-dlp-Options-Key UND
-        `YTDL_BASE_OPTIONS` selbst hat keinerlei Aufrufer im Repo. Die
-        tatsächlich verwendeten Optionen kommen ausschließlich aus dieser
-        Methode (`build_ydl_opts`), die `max_duration` bisher gar nicht
-        kannte - das Limit war also komplett wirkungslos.
+        Vorher wurde `Config.MAX_DURATION` nur in der inzwischen entfernten,
+        ungenutzten `Config.YTDL_BASE_OPTIONS`-Property unter dem Key
+        "max_duration" gesetzt - das war kein echter yt-dlp-Options-Key UND
+        `YTDL_BASE_OPTIONS` selbst hatte keinerlei Aufrufer im Repo (AE-05,
+        docs/MusicBot_ARCHITECTURE_EVOLUTION.md, entfernt). Die tatsächlich
+        verwendeten Optionen kommen ausschließlich aus dieser Methode
+        (`build_ydl_opts`), die `max_duration` bisher gar nicht kannte - das
+        Limit war also komplett wirkungslos.
 
         Podcast-Erkennung nutzt dieselbe Quelle wie FilenameFixerTool
         (`load_special_channels_merged`/`get_special_channel_info`), damit
