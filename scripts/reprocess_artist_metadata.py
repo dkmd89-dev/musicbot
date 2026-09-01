@@ -770,7 +770,7 @@ async def process_file(
             secondary = getattr(genres_result, "secondary", None) if genres_result else None
             if primary and secondary:
                 combined = [primary] + list(secondary)[:3]
-                genre_tag_planned = [" / ".join(combined)]
+                genre_tag_planned = ["; ".join(combined)]
                 genre_freeform_planned = [", ".join(combined)]
             elif primary:
                 genre_tag_planned = [primary]
