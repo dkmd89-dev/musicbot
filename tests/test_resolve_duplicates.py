@@ -219,6 +219,81 @@ class TestReadOnlyProductionRoot:
             rd.validate_scan_root(Path("/mnt/musik_bilder/Podcast"), allow_execute=False)
 
 
+class TestConfirmProductionExecute:
+    """Zusätzliche Reibungsstufe für den ersten realen Production-Execute-
+    Piloten ("Freigabe Schritt 3", nach Manual Review). Ausschließlich
+    gefakte Read-Only-Roots - niemals der echte Produktionspfad."""
+
+    def test_execute_without_confirmation_flag_still_rejected(self, tmp_path):
+        fake_production = tmp_path / "fake_production_library"
+        (fake_production / "SomeArtist").mkdir(parents=True)
+        with patch.object(rd, "ALLOWED_READONLY_ROOTS", [fake_production]):
+            with pytest.raises(rd.PathSafetyError, match="confirm-production-execute"):
+                rd.validate_scan_root(
+                    fake_production / "SomeArtist",
+                    allow_execute=True,
+                    production_execute_confirmed=False,
+                )
+
+    def test_execute_against_bare_readonly_root_rejected_even_with_confirmation(self, tmp_path):
+        """Selbst mit Bestätigung: der Root SELBST (nicht eingegrenzt)
+        bleibt für Execute gesperrt."""
+        fake_production = tmp_path / "fake_production_library"
+        fake_production.mkdir()
+        with patch.object(rd, "ALLOWED_READONLY_ROOTS", [fake_production]):
+            with pytest.raises(rd.PathSafetyError, match="GESAMTEN Produktions-Root"):
+                rd.validate_scan_root(
+                    fake_production, allow_execute=True, production_execute_confirmed=True
+                )
+
+    def test_execute_against_scoped_subdir_accepted_with_confirmation(self, tmp_path):
+        fake_production = tmp_path / "fake_production_library"
+        (fake_production / "SomeArtist").mkdir(parents=True)
+        with patch.object(rd, "ALLOWED_READONLY_ROOTS", [fake_production]):
+            resolved = rd.validate_scan_root(
+                fake_production / "SomeArtist",
+                allow_execute=True,
+                production_execute_confirmed=True,
+            )
+        assert resolved == (fake_production / "SomeArtist").resolve()
+
+    @requires_ffmpeg
+    def test_execute_pilot_end_to_end_against_fake_scoped_production_dir(self, tmp_path):
+        """Voller End-to-End-Beweis des Piloten-Mechanismus mit echten
+        (synthetischen) Audiodateien - weiterhin ausschließlich in
+        tmp_path, nie gegen die reale Produktionsbibliothek."""
+        fake_production = tmp_path / "fake_production_library"
+        artist_dir = fake_production / "SomeArtist"
+        single = artist_dir / "Singles" / "2025 - Track.m4a"
+        _make_real_m4a(single, "SomeArtist", "Track", duration=1)
+        album = artist_dir / "2025 - Album" / "01 - Track.m4a"
+        _make_real_m4a(album, "SomeArtist", "Track", album="Album", trkn=1, duration=1)
+
+        with patch.object(rd, "ALLOWED_READONLY_ROOTS", [fake_production]), \
+             patch.object(rd, "REPORT_JSON_PATH", tmp_path / "report.json"), \
+             patch.object(rd, "EXECUTION_PLAN_JSON_PATH", tmp_path / "plan.json"), \
+             patch.object(rd, "EXECUTION_REPORT_JSON_PATH", tmp_path / "exec_report.json"), \
+             patch.object(rd, "AUDIT_LOG_JSONL_PATH", tmp_path / "audit.jsonl"):
+            exit_code = rd.main([
+                "--path", str(artist_dir), "--execute", "--confirm-production-execute",
+            ])
+            exec_report = json.loads((tmp_path / "exec_report.json").read_text())
+
+        assert exit_code == 0
+        assert exec_report["execution_result"] == "SUCCESS"
+        assert exec_report["files_deleted"] == 1
+        assert album.exists()
+        assert not single.exists()
+
+    def test_confirmation_flag_has_no_effect_against_forbidden_roots(self):
+        """Die Bestätigung darf ausschließlich für ALLOWED_READONLY_ROOTS
+        wirken - ein tatsächlich verbotener Pfad bleibt verboten."""
+        with pytest.raises(rd.PathSafetyError, match="verbotenen"):
+            rd.validate_scan_root(
+                Path("/mnt/128ssd"), allow_execute=True, production_execute_confirmed=True
+            )
+
+
 class TestNoExecuteFlags:
     """Phase 1 (Auftrag Abschnitt 18): --execute/--apply/--delete durften
     NICHT existieren. Phase 3 (MusicBot — Duplicate Resolution Phase 3,

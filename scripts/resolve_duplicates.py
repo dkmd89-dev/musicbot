@@ -130,19 +130,32 @@ class PathSafetyError(Exception):
     pass
 
 
-def validate_scan_root(path: Path, allow_execute: bool = True) -> Path:
+def validate_scan_root(
+    path: Path, allow_execute: bool = True, production_execute_confirmed: bool = False
+) -> Path:
     """Denylist zuerst (Defense-in-Depth), dann Containment-Check.
 
     `allow_execute` MUSS von main() exakt auf `args.execute` gesetzt
     werden. Liegt der Pfad in ALLOWED_READONLY_ROOTS UND allow_execute
-    ist True, wird UNBEDINGT und VOR jeder anderen Prüfung mit
-    PathSafetyError abgelehnt - Auftrag "Freigabe Schritt 3": Produktion
-    darf ausschließlich per Dry-Run gescannt werden, --execute dagegen
-    ist dort strukturell ausgeschlossen, unabhängig von allen sonstigen
-    Flags/Argumenten.
+    ist True, gilt zusätzliche, mehrstufige Reibung ("Freigabe Schritt
+    3" - gezielter Execute-Pilot, explizit nach Manual Review):
 
-    ALLOWED_ROOT (Testbibliothek) behält vollen Zugriff (Dry-Run +
-    Execute) wie bisher.
+      1. Ohne `production_execute_confirmed=True` (CLI: separates,
+         eigenes Flag `--confirm-production-execute`, NICHT durch
+         `--execute` allein auslösbar) wird UNBEDINGT und vor jeder
+         anderen Prüfung abgelehnt - kein implizites Production-Execute,
+         exakt wie das bestehende Prinzip "kein implizites --execute"
+         auf die nächste Sicherheitsstufe angewendet.
+      2. Selbst mit Bestätigung wird der READONLY-ROOT SELBST (unskaliert,
+         z. B. bare `/mnt/musik_bilder/library`) für Execute abgelehnt -
+         nur ein NAMENTLICH eingegrenztes Unterverzeichnis (z. B. per
+         `--artist`/`--path .../EinArtist`) ist zulässig. Verhindert
+         einen versehentlichen Full-Library-Execute gegen Produktion in
+         einem einzigen Aufruf (Gruppenweise-statt-Batch-Prinzip auf
+         Scan-Root-Ebene).
+
+    ALLOWED_ROOT (Testbibliothek) behält vollen, uneingeschränkten
+    Zugriff (Dry-Run + Execute) wie bisher.
     """
     try:
         resolved = path.resolve(strict=True)
@@ -160,10 +173,17 @@ def validate_scan_root(path: Path, allow_execute: bool = True) -> Path:
             continue
         if resolved == readonly_resolved or resolved.is_relative_to(readonly_resolved):
             if allow_execute:
-                raise PathSafetyError(
-                    f"--execute gegen Read-Only-Produktions-Root nicht erlaubt "
-                    f"({readonly_root}) - nur Dry-Run gestattet: {resolved}"
-                )
+                if not production_execute_confirmed:
+                    raise PathSafetyError(
+                        f"--execute gegen Read-Only-Produktions-Root ({readonly_root}) "
+                        f"erfordert zusätzlich --confirm-production-execute: {resolved}"
+                    )
+                if resolved == readonly_resolved:
+                    raise PathSafetyError(
+                        f"--execute gegen den GESAMTEN Produktions-Root ({readonly_root}) "
+                        f"ist auch mit --confirm-production-execute nicht erlaubt - "
+                        f"auf ein konkretes Unterverzeichnis eingrenzen (z. B. --artist): {resolved}"
+                    )
             return resolved
 
     for forbidden in FORBIDDEN_ROOTS:
@@ -444,12 +464,19 @@ def build_single_candidate(path: Path) -> Candidate:
     )
 
 
-def _validate_file_within_allowed_root(path: Path) -> bool:
-    """1-Parameter-Adapter auf validate_file_within_root() für die
-    Dependency Injection in services/duplicate/execution.py (dessen
-    Callable-Signatur nimmt nur den Pfad - der Root ist hier bereits
-    fest ALLOWED_ROOT, identisch zur Scan-Zeit-Prüfung)."""
-    return validate_file_within_root(path, ALLOWED_ROOT)
+def _make_file_validator(permitted_root: Path):
+    """Erzeugt einen 1-Parameter-Adapter auf validate_file_within_root()
+    für die Dependency Injection in services/duplicate/execution.py
+    (dessen Callable-Signatur nimmt nur den Pfad). `permitted_root` MUSS
+    der von validate_scan_root()/permitted_root_for() für DIESEN Lauf
+    tatsächlich bestätigte Root sein (ALLOWED_ROOT bei der Testbibliothek,
+    ODER ein ALLOWED_READONLY_ROOTS-Eintrag beim bestätigten Production-
+    Execute-Piloten) - niemals fest auf ALLOWED_ROOT verdrahtet, sonst
+    würde jede Datei eines Production-Execute-Laufs fälschlich als
+    "außerhalb erlaubtem Root" abgelehnt."""
+    def _validator(path: Path) -> bool:
+        return validate_file_within_root(path, permitted_root)
+    return _validator
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -686,7 +713,9 @@ def _append_audit_log_entries(path: Path, group_results: list) -> None:
 # ─────────────────────────────────────────────────────────────────────────
 
 
-def _run_execute_phase(scan_root: Path, decisions: list, scan_after_snapshot: dict) -> int:
+def _run_execute_phase(
+    scan_root: Path, decisions: list, scan_after_snapshot: dict, permitted_root: Path
+) -> int:
     """Auftrag Phase 3 Abschnitt 3/4/15/16/20: baut den Execution Plan,
     revalidiert + löscht gruppenweise, schreibt Manifest/Report/Audit-Log
     und verifiziert danach, dass AUSSCHLIESSLICH die erwarteten Dateien
@@ -705,8 +734,9 @@ def _run_execute_phase(scan_root: Path, decisions: list, scan_after_snapshot: di
         },
     )
 
+    validate_file = _make_file_validator(permitted_root)
     group_results = [
-        execute_group(entry, _validate_file_within_allowed_root, build_single_candidate)
+        execute_group(entry, validate_file, build_single_candidate)
         for entry in plan
     ]
 
@@ -888,12 +918,23 @@ def main(argv=None) -> int:
             f"Teilbereich innerhalb {ALLOWED_ROOT} (Default: gesamter Root). "
             f"Alternativ ein Pfad innerhalb eines Read-Only-Produktions-Roots "
             f"({', '.join(str(r) for r in ALLOWED_READONLY_ROOTS)}) - dort "
-            f"NUR ohne --execute zulässig."
+            f"nur ohne --execute, es sei denn --confirm-production-execute "
+            f"UND ein konkretes Unterverzeichnis (nicht der Root selbst)."
         ),
     )
     parser.add_argument(
         "--artist", type=str, default=None,
         help="Auf einen Artist-Ordner unterhalb des Roots einschränken.",
+    )
+    parser.add_argument(
+        "--confirm-production-execute", action="store_true",
+        help=(
+            "Zusätzlich zu --execute erforderlich, wenn der Scan-Root "
+            "innerhalb eines Read-Only-Produktions-Roots liegt. Muss auf "
+            "ein konkretes Unterverzeichnis eingegrenzt sein (z. B. --path "
+            ".../EinArtist) - gegen den gesamten Produktions-Root ist "
+            "Execute auch damit nicht möglich."
+        ),
     )
     for forbidden_flag in ("--apply", "--delete"):
         parser.add_argument(forbidden_flag, action="store_true", help=argparse.SUPPRESS)
@@ -917,7 +958,11 @@ def main(argv=None) -> int:
             target = Path(args.path)
         else:
             target = ALLOWED_ROOT
-        scan_root = validate_scan_root(target, allow_execute=args.execute)
+        scan_root = validate_scan_root(
+            target,
+            allow_execute=args.execute,
+            production_execute_confirmed=args.confirm_production_execute,
+        )
     except PathSafetyError as e:
         print(f"❌ PATH SAFETY: {e}", file=sys.stderr)
         return 2
@@ -1004,7 +1049,7 @@ def main(argv=None) -> int:
         return 3
 
     if args.execute:
-        return _run_execute_phase(scan_root, decisions, scan_after_snapshot)
+        return _run_execute_phase(scan_root, decisions, scan_after_snapshot, permitted_root)
 
     return 0
 
