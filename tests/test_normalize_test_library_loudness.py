@@ -18,15 +18,21 @@ Auftrag ausdruecklich erlaubten Mocking-Policy ("Mocks verwenden, wo reale
 FFmpeg-Ausfuehrung fuer Unit-Tests nicht erforderlich ist").
 
 WICHTIGER FUND waehrend der Implementierung (siehe Modul-Docstring von
-normalize_test_library_loudness.py): AudioEnhancer.normalize_loudness()
-hinterlaesst eine leere 0-Byte-Datei (meldet aber True/Erfolg), wenn die
-Eingabedatei ein eingebettetes Cover hat, da der FFmpeg-apply-Aufruf ohne
-"-map 0:a"/"-vn" auch das Cover als Videostream re-encodieren will, was im
-ipod/mp4-Container fehlschlaegt. Test 13 (test_backup_restores_file_when_
-audio_enhancer_leaves_it_corrupted) verankert das als dauerhaften
-Regressionstest fuer das in diesem Script eingebaute Backup/Restore-
-Sicherheitsnetz - NICHT fuer utils/audio_enhancer.py selbst, das laut
-Auftrag unveraendert bleibt.
+normalize_test_library_loudness.py) - INZWISCHEN BEHOBEN (2026-09-Fix in
+utils/audio_enhancer.py, eigener expliziter Folgeauftrag, siehe
+tests/test_audio_enhancer_cover_preservation.py): AudioEnhancer
+.normalize_loudness() hinterliess eine leere 0-Byte-Datei (meldete aber
+True/Erfolg), wenn die Eingabedatei ein eingebettetes Cover hatte, da der
+FFmpeg-apply-Aufruf ohne "-map 0:a"/"-vn" auch das Cover als Videostream
+re-encodieren wollte, was im ipod/mp4-Container fehlschlug. Test 13
+(test_backup_restores_file_when_audio_enhancer_leaves_it_corrupted)
+verankert weiterhin einen Regressionstest fuer das in diesem Script
+eingebaute Backup/Restore-Sicherheitsnetz selbst (mit einem gemockten
+normalize_loudness() - bleibt unabhaengig vom AudioEnhancer-Fix als
+generelle Absicherung sinnvoll). Der zweite, urspruenglich hier
+verankerte Test gegen den ECHTEN, unbehobenen Defekt wurde nach dem Fix
+auf das jetzt korrekte Verhalten aktualisiert (siehe
+test_real_audio_enhancer_bug_with_embedded_cover_is_now_fixed).
 """
 
 import importlib.util
@@ -435,29 +441,31 @@ class TestBackupRestoreSafetyNet:
             "Kein Backup-Rest nach erfolgreicher Wiederherstellung"
         )
 
-    def test_real_audio_enhancer_bug_with_embedded_cover_is_caught_and_restored(
+    def test_real_audio_enhancer_bug_with_embedded_cover_is_now_fixed(
         self, isolated_test_dir, real_cover_jpeg
     ):
         """
-        Nicht gemockter End-to-End-Beweis mit ECHTEM AudioEnhancer und
-        einem echten, gueltigen JPEG-Cover - reproduziert den in diesem
-        Auftrag live entdeckten Defekt ohne Mock und beweist, dass das
-        Backup/Restore-Sicherheitsnetz auch gegen den echten FFmpeg-Fehler
-        greift (kein Datenverlust trotz bestehendem AudioEnhancer-Defekt).
-        """
+        Nicht gemockter End-to-End-Test mit ECHTEM AudioEnhancer und einem
+        echten, gueltigen JPEG-Cover. Bewies urspruenglich den in diesem
+        Auftrag live entdeckten Defekt (Datei wurde beschaedigt, Backup/
+        Restore-Netz griff) - nach dem 2026-09-Fix in utils/audio_enhancer
+        .py (eigener, expliziter Folgeauftrag) MUSS die Normalisierung jetzt
+        tatsaechlich gelingen: Cover bleibt erhalten, kein Backup-Rest, kein
+        FAILED-Status mehr trotz eingebettetem Cover."""
         path = isolated_test_dir / "Singles" / "quiet_with_cover.m4a"
         _make_quiet_m4a(path)
         _add_cover(path, real_cover_jpeg)
-        original_bytes = path.read_bytes()
 
         result = nll.process_file(path, isolated_test_dir, dry_run=False)
 
-        assert result["status"] == "FAILED"
-        assert path.exists() and path.read_bytes() == original_bytes, (
-            "Bekannter AudioEnhancer-Cover-Stream-Defekt darf die Testdatei "
-            "nicht dauerhaft beschaedigen"
+        assert result["status"] == "NORMALIZED"
+        assert path.exists() and path.stat().st_size > 0
+        assert not list(isolated_test_dir.rglob("*.lufs_backup")), (
+            "Kein Backup-Rest bei erfolgreicher Normalisierung"
         )
-        assert not list(isolated_test_dir.rglob("*.lufs_backup"))
+        after_audio = MP4(path)
+        assert after_audio.tags.get("covr"), "Cover muss nach dem Fix erhalten bleiben"
+        assert bytes(after_audio.tags["covr"][0]) == real_cover_jpeg
 
 
 # ─────────────────────────────────────────────────────────────────────────

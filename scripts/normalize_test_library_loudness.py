@@ -36,37 +36,47 @@ loudnorm-Re-Encoding setzt kein "-map_metadata"/"-map 0" (siehe
 utils/audio_enhancer.py) - ob Metadaten/Cover erhalten bleiben, ist damit
 reines FFmpeg-Standardverhalten, nicht garantiert (ARCH-017,
 docs/archive/arch/MusicBot_ARCH-017_Download_Audio_Enhancement_Characterization.md,
-Abschnitt 6: "nicht weiter verifiziert, ausserhalb Scope").
+Abschnitt 6: "nicht weiter verifiziert, ausserhalb Scope"). Live gegen
+die echte Testbibliothek bestaetigt (siehe 2026-09-Fix-Kommentar in
+utils/audio_enhancer.py, separater NICHT behobener Befund): das
+freeform-GENRE-Atom ging bei allen 8 getesteten Dateien verloren, bei
+einer Datei zusaetzlich zwei MusicBrainz-IDs - genau der Fall, den
+dieser Absatz vorhersagt und den die Metadaten-Diff-Pruefung dieses
+Scripts (status FAILED statt stillschweigendem Verlust) korrekt
+aufdeckt.
 
 GEFUNDENER DEFEKT in AudioEnhancer.normalize_loudness() (live reproduziert
-waehrend der Implementierung dieses Scripts, NICHT behoben - nur
-dokumentiert, wie vom Auftrag verlangt): der "apply"-FFmpeg-Aufruf
-(utils/audio_enhancer.py, cmd_apply) setzt weder "-map 0:a" noch "-vn"
-noch "-c:v copy". Enthaelt die Eingabedatei bereits ein eingebettetes
-Cover (covr-Atom - IMMER der Fall bei bereits fertig heruntergeladenen
-MusicBot-Tracks, aber NIE der Fall an der Aufrufstelle in der
-Produktionspipeline, da dort noch vor dem Tag-Schreiben aufgerufen wird -
-deshalb bisher nie aufgefallen), behandelt FFmpegs mp4-Demuxer das Cover
-als eigenstaendigen Videostream. Der apply-Aufruf versucht dann, DIESEN
-Videostream zusaetzlich zum Audio zu re-encodieren (H.264 via libx264),
-was der ipod/mp4-Muxer in dieser Konstellation ablehnt ("Could not find
-tag for codec h264 in stream #0" / "Conversion failed!" / "Nothing was
-written into output file"). FFmpeg legt die Zieldatei aber bereits VOR
-diesem Fehler an (0 Byte). AudioEnhancer.normalize_loudness() prueft nach
-subprocess.run() weder den Return-Code noch die Dateigroesse, sondern nur
-"if temp_path.exists()" - eine leere Datei erfuellt diese Bedingung, wird
-per temp_path.replace(path) ueber die intakte Originaldatei geschrieben,
-und die Funktion liefert True (Erfolg!) zurueck, obwohl die Originaldatei
-soeben durch eine leere 0-Byte-Datei ersetzt wurde.
+waehrend der Implementierung dieses Scripts) - INZWISCHEN BEHOBEN, siehe
+2026-09-Fix in utils/audio_enhancer.py (eigener, expliziter Folgeauftrag,
+nachdem der Defekt zunaechst wie beauftragt nur dokumentiert wurde): der
+"apply"-FFmpeg-Aufruf (utils/audio_enhancer.py, cmd_apply) setzte weder
+"-map 0:a" noch "-vn" noch "-c:v copy". Enthielt die Eingabedatei bereits
+ein eingebettetes Cover (covr-Atom - IMMER der Fall bei bereits fertig
+heruntergeladenen MusicBot-Tracks, aber NIE der Fall an der Aufrufstelle
+in der Produktionspipeline, da dort noch vor dem Tag-Schreiben aufgerufen
+wird - deshalb dort bisher nie aufgefallen), behandelte FFmpegs mp4-
+Demuxer das Cover als eigenstaendigen Videostream. Der apply-Aufruf
+versuchte dann, DIESEN Videostream zusaetzlich zum Audio zu re-encodieren
+(H.264 via libx264), was der ipod/mp4-Muxer in dieser Konstellation
+ablehnte ("Could not find tag for codec h264 in stream #0" / "Conversion
+failed!" / "Nothing was written into output file"). FFmpeg legte die
+Zieldatei aber bereits VOR diesem Fehler an (0 Byte), und
+AudioEnhancer.normalize_loudness() pruefte nach subprocess.run() weder
+den Return-Code noch die Dateigroesse, sondern nur "if temp_path.exists()"
+- eine leere Datei erfuellte diese Bedingung, wurde per
+temp_path.replace(path) ueber die intakte Originaldatei geschrieben, und
+die Funktion lieferte True (Erfolg!) zurueck, obwohl die Originaldatei
+soeben durch eine leere 0-Byte-Datei ersetzt worden war.
 
-Da dieses Script explizit NICHT utils/audio_enhancer.py aendern darf
-(Auftrag: "nur dokumentieren, nicht ungefragt beheben"), aber gleichzeitig
-die Testbibliothek nicht beschaedigen darf, sichert process_file() JEDE
-Datei vor dem Normalize-Aufruf in eine lokale .bak-Kopie und stellt sie
-automatisch wieder her, falls die Datei danach leer/nicht mehr als
-Audiodatei lesbar ist (siehe _is_file_intact()/BACKUP-Handling in
-process_file()). Das ist eine Absicherung IN DIESEM Script, keine
-Aenderung an AudioEnhancer selbst.
+Das eingebaute Backup/Restore-Sicherheitsnetz (process_file() sichert
+JEDE Datei vor dem Normalize-Aufruf in eine lokale .bak-Kopie und stellt
+sie automatisch wieder her, falls die Datei danach leer/nicht mehr als
+Audiodatei lesbar ist, siehe _is_file_intact()) bleibt trotz des
+behobenen Defekts bestehen - als generelle Absicherung gegen jeden
+zukuenftigen, moeglicherweise noch unbekannten Fall, in dem
+AudioEnhancer.normalize_loudness() False zurueckliefert oder die Datei
+unerwartet beschaedigt. Es soll nicht bei jedem regulaeren Lauf mehr
+greifen.
 
 Die Tags "replaygain_track_gain"/"loudness_normalized" (freeform,
 com.apple.iTunes) werden von der AKTUELLEN Pipeline (tag_writer.py,
@@ -319,10 +329,12 @@ def _is_file_intact(path: Path) -> bool:
     """
     Schneller Sanity-Check nach einem AudioEnhancer.normalize_loudness()-
     Aufruf: existiert die Datei, ist sie nicht leer, und liefert ffprobe
-    einen lesbaren Audio-Stream? Schutz gegen den im Modul-Docstring
-    dokumentierten AudioEnhancer-Cover-Stream-Defekt (leere 0-Byte-Datei
-    nach fehlgeschlagenem Re-Encode, von normalize_loudness() faelschlich
-    als Erfolg gemeldet).
+    einen lesbaren Audio-Stream? Generelle Absicherung (siehe
+    Backup/Restore-Abschnitt im Modul-Docstring) - urspruenglich gegen
+    den inzwischen behobenen AudioEnhancer-Cover-Stream-Defekt gebaut
+    (leere 0-Byte-Datei nach fehlgeschlagenem Re-Encode, von
+    normalize_loudness() faelschlich als Erfolg gemeldet), bleibt aber
+    als Schutz gegen jeden aehnlichen, noch unbekannten Fall bestehen.
     """
     try:
         if not path.exists() or path.stat().st_size == 0:
@@ -505,10 +517,10 @@ def process_file(path: Path, scan_root: Path, dry_run: bool) -> dict:
         log(f"   🔒 DRY-RUN: keine Datei veraendert")
         return result
 
-    # Backup VOR dem Aufruf - Absicherung gegen den im Modul-Docstring
-    # dokumentierten AudioEnhancer-Cover-Stream-Defekt (leere Datei bei
-    # Erfolg=True). Aenderung ist ausschliesslich hier in diesem Script,
-    # nicht an AudioEnhancer selbst.
+    # Backup VOR dem Aufruf - generelle Absicherung gegen eine leere/
+    # beschaedigte Zieldatei trotz gemeldetem Erfolg (siehe Modul-
+    # Docstring; urspruenglicher Ausloeser war der inzwischen behobene
+    # AudioEnhancer-Cover-Stream-Defekt).
     backup_path = path.with_name(f".{path.name}.lufs_backup")
     shutil.copy2(path, backup_path)
 
@@ -532,18 +544,18 @@ def process_file(path: Path, scan_root: Path, dry_run: bool) -> dict:
         return result
 
     if not _is_file_intact(path):
-        # Bekannter AudioEnhancer-Defekt ausgeloest (siehe Modul-Docstring):
-        # normalize_loudness() meldete True, hat die Datei aber leer/
-        # unlesbar hinterlassen. Original-Datei aus dem Backup wiederherstellen
-        # statt den Datenverlust stehen zu lassen.
+        # Der urspruenglich hier dokumentierte AudioEnhancer-Cover-Stream-
+        # Defekt ist inzwischen behoben (siehe Modul-Docstring, 2026-09-Fix
+        # in utils/audio_enhancer.py) - dieser Zweig ist die generelle
+        # Absicherung fuer den Fall, dass normalize_loudness() aus einem
+        # ANDEREN, noch unbekannten Grund True meldet, die Datei aber leer/
+        # unlesbar hinterlaesst. Original-Datei aus dem Backup
+        # wiederherstellen statt den Datenverlust stehen zu lassen.
         backup_path.replace(path)
         result["status"] = "FAILED"
         result["error"] = (
             "AudioEnhancer.normalize_loudness() hat die Datei beschaedigt/leer "
-            "hinterlassen, obwohl es True zurueckgab (bekannter Defekt - siehe "
-            "Modul-Docstring: FFmpeg versucht ohne '-map 0:a'/'-vn' auch das "
-            "eingebettete Cover als Videostream zu re-encodieren, was im "
-            "ipod/mp4-Container fehlschlaegt). Original-Datei aus Backup "
+            "hinterlassen, obwohl es True zurueckgab. Original-Datei aus Backup "
             "wiederhergestellt - kein Datenverlust."
         )
         log(f"   ❌ FAILED: {result['error']}")
