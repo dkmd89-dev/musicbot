@@ -125,6 +125,100 @@ class TestPathSafety:
         assert rd.validate_file_within_root(link, ALLOWED_ROOT) is False
 
 
+class TestReadOnlyProductionRoot:
+    """MusicBot — Duplicate Resolution: Production Read-Only Dry-Run
+    Enablement ("Freigabe Schritt 3"). Nutzt AUSSCHLIESSLICH einen
+    gefakten Read-Only-Root (tmp_path, per patch.object in
+    ALLOWED_READONLY_ROOTS eingehängt) - niemals den echten
+    Produktionspfad /mnt/musik_bilder/library in Tests."""
+
+    def test_dry_run_scan_against_fake_readonly_root_is_accepted(self, tmp_path):
+        fake_production = tmp_path / "fake_production_library"
+        fake_production.mkdir()
+        with patch.object(rd, "ALLOWED_READONLY_ROOTS", [fake_production]):
+            resolved = rd.validate_scan_root(fake_production, allow_execute=False)
+        assert resolved == fake_production.resolve()
+
+    def test_execute_against_fake_readonly_root_is_rejected(self, tmp_path):
+        fake_production = tmp_path / "fake_production_library"
+        fake_production.mkdir()
+        with patch.object(rd, "ALLOWED_READONLY_ROOTS", [fake_production]):
+            with pytest.raises(rd.PathSafetyError, match="Read-Only-Produktions-Root"):
+                rd.validate_scan_root(fake_production, allow_execute=True)
+
+    def test_execute_against_fake_readonly_root_via_main_returns_error_exit_code(self, tmp_path):
+        fake_production = tmp_path / "fake_production_library"
+        fake_production.mkdir()
+        (fake_production / "dummy.m4a").write_bytes(b"not-really-audio")
+        with patch.object(rd, "ALLOWED_READONLY_ROOTS", [fake_production]):
+            exit_code = rd.main(["--path", str(fake_production), "--execute"])
+        assert exit_code == 2
+        # Datei darf unter keinen Umstaenden angefasst worden sein.
+        assert (fake_production / "dummy.m4a").exists()
+
+    def test_dry_run_via_main_against_fake_readonly_root_succeeds_without_mutation(
+        self, tmp_path
+    ):
+        fake_production = tmp_path / "fake_production_library"
+        fake_production.mkdir()
+        f = fake_production / "dummy.m4a"
+        f.write_bytes(b"not-really-audio")
+        before = f.stat().st_mtime_ns
+
+        with patch.object(rd, "ALLOWED_READONLY_ROOTS", [fake_production]), \
+             patch.object(rd, "REPORT_JSON_PATH", tmp_path / "report.json"):
+            exit_code = rd.main(["--path", str(fake_production)])
+
+        assert exit_code == 0
+        assert f.exists()
+        assert f.stat().st_mtime_ns == before
+
+    def test_subpath_of_fake_readonly_root_is_accepted(self, tmp_path):
+        fake_production = tmp_path / "fake_production_library"
+        (fake_production / "SomeArtist").mkdir(parents=True)
+        with patch.object(rd, "ALLOWED_READONLY_ROOTS", [fake_production]):
+            resolved = rd.validate_scan_root(
+                fake_production / "SomeArtist", allow_execute=False
+            )
+        assert resolved == (fake_production / "SomeArtist").resolve()
+
+    def test_path_outside_both_allowed_and_readonly_roots_still_blocked(self, tmp_path):
+        fake_production = tmp_path / "fake_production_library"
+        fake_production.mkdir()
+        unrelated = tmp_path / "unrelated"
+        unrelated.mkdir()
+        with patch.object(rd, "ALLOWED_READONLY_ROOTS", [fake_production]):
+            with pytest.raises(rd.PathSafetyError, match="außerhalb"):
+                rd.validate_scan_root(unrelated, allow_execute=False)
+
+    def test_allowed_root_test_library_keeps_full_execute_access(self):
+        """Sicherstellen, dass die neue allow_execute-Unterscheidung die
+        bestehende Testbibliothek (ALLOWED_ROOT) nicht einschränkt."""
+        resolved = rd.validate_scan_root(ALLOWED_ROOT, allow_execute=True)
+        assert resolved == ALLOWED_ROOT.resolve()
+
+    def test_permitted_root_for_test_library_and_fake_production(self, tmp_path):
+        assert rd.permitted_root_for(ALLOWED_ROOT.resolve()) == ALLOWED_ROOT.resolve()
+        fake_production = tmp_path / "fake_production_library"
+        fake_production.mkdir()
+        with patch.object(rd, "ALLOWED_READONLY_ROOTS", [fake_production]):
+            assert rd.permitted_root_for(fake_production.resolve()) == fake_production.resolve()
+
+    def test_real_production_library_configured_as_readonly_root(self):
+        """Dokumentierender Test (kein Dateisystemzugriff): die reale
+        Produktionsbibliothek gemäß config.py::Config.LIBRARY_DIR muss
+        in ALLOWED_READONLY_ROOTS eingetragen sein, sonst wäre der reale
+        Read-Only-Dry-Run gar nicht erreichbar."""
+        assert Path("/mnt/musik_bilder/library") in rd.ALLOWED_READONLY_ROOTS
+
+    def test_forbidden_roots_still_blocks_other_musik_bilder_subpaths(self, tmp_path):
+        """Nur der explizit erlaubte Unterpfad wird freigeschaltet - ein
+        Geschwisterverzeichnis unter demselben Mount bleibt über
+        FORBIDDEN_ROOTS weiterhin blockiert."""
+        with pytest.raises(rd.PathSafetyError, match="verbotenen"):
+            rd.validate_scan_root(Path("/mnt/musik_bilder/Podcast"), allow_execute=False)
+
+
 class TestNoExecuteFlags:
     """Phase 1 (Auftrag Abschnitt 18): --execute/--apply/--delete durften
     NICHT existieren. Phase 3 (MusicBot — Duplicate Resolution Phase 3,

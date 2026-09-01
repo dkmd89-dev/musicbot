@@ -824,3 +824,86 @@ ihrem eigentlichen Ort dabei nachweislich unangetastet).
 
 **EXECUTE_IMPLEMENTED_AND_TESTED** — siehe Abschlussbericht der Phase
 für die vollständige Begründung inklusive des Vorfalls aus 23.1.
+
+---
+
+## 24. Production Read-Only Dry-Run Enablement ("Freigabe Schritt 3")
+
+Ziel: reiner Lesezugriff auf die reale Produktionsbibliothek
+(`config.py::Config.LIBRARY_DIR`, seit dem Commit "Konfiguration:
+library/ Verzeichnis in config.py angepasst" `/mnt/musik_bilder/library`,
+vormals `/mnt/4tb/library`), ohne die bestehende Execute-Sperre für
+Produktion aufzuweichen.
+
+### 24.1 Architektur
+
+Neue Konstante `ALLOWED_READONLY_ROOTS = [Path("/mnt/musik_bilder/library")]`.
+`validate_scan_root(path, allow_execute)`: Testbibliothek (`ALLOWED_ROOT`)
+behält vollen Zugriff; ein `ALLOWED_READONLY_ROOTS`-Pfad wird NUR
+akzeptiert, wenn `allow_execute` (== `args.execute`) `False` ist -
+`--execute` gegen einen Read-Only-Root wird unbedingt und vor jeder
+anderen Prüfung mit `PathSafetyError` abgelehnt. `--path` bleibt der
+einzige CLI-Zugang - keine neue Flag nötig.
+
+### 24.2 Gefundener und behobener Fehler (vor dem ersten realen Lauf)
+
+Der erste reale Testlauf gegen `/mnt/musik_bilder/library` lieferte
+`Files scanned: 0` - `validate_file_within_root()` prüfte `FORBIDDEN_ROOTS`
+(worunter weiterhin das gesamte `/mnt/musik_bilder` fällt) VOR der
+Zugehörigkeit zum tatsächlich übergebenen `permitted_root`, wodurch
+jede Datei fälschlich als "außerhalb erlaubtem Root" übersprungen wurde
+- der neue Read-Only-Root liegt bewusst VERSCHACHTELT innerhalb eines
+weiterhin verbotenen Mounts, eine Konstellation, die im ursprünglichen,
+überlappungsfreien ALLOWED_ROOT-/FORBIDDEN_ROOTS-Design nicht vorkam.
+Fix: Root-Zugehörigkeit wird jetzt zuerst geprüft (autoritativ, da
+`permitted_root` bereits durch `validate_scan_root()` bestätigt wurde),
+`FORBIDDEN_ROOTS` greift nur noch als Verteidigung für Pfade außerhalb
+des übergebenen Roots. Vor dem realen Lauf durch 10 gezielte Tests
+(gefakte Read-Only-Roots, niemals der echte Produktionspfad in Tests)
+sowie den anschließenden realen Nachweis (416/416 Dateien erfolgreich
+gescannt) verifiziert.
+
+### 24.3 Realer Dry-Run gegen /mnt/musik_bilder/library
+
+```text
+Files scanned:      416
+Duplicate groups:   14
+Auto-resolvable:    12
+Manual review:      2
+Single (no dup):    386
+Read-only intact:   PASS (zusätzlich verifiziert: Dateianzahl vor/nach
+                      unverändert, keine Datei mit mtime nach Scan-Start)
+```
+
+Neue, in der kuratierten Testbibliothek bisher nicht vorhandene Muster:
+
+- **2Pac / Changes** → `MANUAL_REVIEW` (Duration-Abweichung 11.34s, kein
+  MB-ID) - Safety Gate korrekt ausgelöst, kein automatischer REMOVE.
+- **Badchieff / LAUF, MANCHMAL, PARKHAUS** → `RESOLVED` über den
+  ALBUM_LIKE-vs-ALBUM_LIKE-Tie-Breaker (nicht Album-vs-Single wie in
+  allen bisherigen Fällen) - derselbe MB-ID/ISRC-bestätigte Track
+  erscheint auf zwei verschiedenen Alben (`2022 - I SEE YOU WHEN I SEE
+  YOU` und `2022 - MANCHMAL`); der Tie-Breaker wählt deterministisch
+  eine Version, die andere wird REMOVE-Vorschlag.
+- Alle 12 `RESOLVED`-Gruppen mit vorhandener MusicBrainz Recording
+  ID/ISRC zeigen durchgehend `mb_match=True`/`isrc_match=True` - keine
+  einzige widersprüchliche ID in der gesamten realen Bibliothek
+  beobachtet.
+
+Bekannte Fälle (Bequem/Dein Lügner/Grad mal ein Jahr/Nachts wach/Pueblo/
+GUT AUS) bestätigen sich 1:1 gegen die reale Produktionsbibliothek.
+
+### 24.4 Sicherheit
+
+Kein `--execute` gegen `/mnt/musik_bilder/library` ausgeführt (strukturell
+blockiert, per Test verifiziert). Keine Datei verändert, verschoben oder
+gelöscht. Einziger Schreibzugriff: der bestehende Sandbox-JSON-Report
+unter `/tmp/musicbot_test/`.
+
+### 24.5 Verdict
+
+Vollständige Rohdaten (14 Gruppen, alle Evidenzfelder) liegen im
+Gesprächsverlauf/JSON-Report vor - **rein informativ, keine
+Löschempfehlung dieser Phase**. Ob und welche der 12 automatisch
+auflösbaren Gruppen tatsächlich per `--execute` bereinigt werden,
+bleibt ein separater, eigens freizugebender nächster Schritt.
