@@ -887,11 +887,22 @@ class CoverProcessor:
             "sharpness": best.sharpness, "timestamp": datetime.now().isoformat(),
         }
         meta_path = self._meta_path(cache_key)
+        # AE-03 (docs/MusicBot_ARCHITECTURE_EVOLUTION.md): vorher direktes
+        # open(meta_path, "w") - ein Prozessabbruch/Fehler waehrend
+        # json.dump() konnte die Metadaten-Datei leeren oder korrumpieren.
+        # Jetzt: write-tmp + atomarer os.replace(), identisches Muster zu
+        # _cache_set() (RES-02) und DuplicateCache._write_json_atomic().
+        tmp_path = f"{meta_path}.tmp_{int(time.time() * 1000)}"
         try:
-            with open(meta_path, "w") as f:
+            with open(tmp_path, "w") as f:
                 json.dump(meta, f, indent=2)
+            os.replace(tmp_path, meta_path)
         except Exception as e:
             self.logger.debug(f"🖼️ [CACHE] Metadaten speichern fehlgeschlagen: {e}")
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
     def _build_session(self) -> requests.Session:
         session = requests.Session()
