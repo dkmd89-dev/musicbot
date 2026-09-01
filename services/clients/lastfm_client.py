@@ -9,6 +9,30 @@ import async_timeout
 from logger import get_module_logger
 
 
+# Baseline v5/v6 Technical Debt (P3, latentes Secret-Leak-Risiko):
+# pylast.LastFMNetwork.__repr__() baut den API-Key/API-Secret/Session-Key/
+# Password-Hash direkt in den Repr-String ein (pylast/__init__.py, Klasse
+# LastFMNetwork). Da praktisch jedes von einem Network-Objekt erzeugte
+# pylast-Domainobjekt (Artist, Track, Album, Tag, ...) sein eigenes
+# __repr__() wiederum ueber repr(self.network) aufbaut, wuerde JEDES
+# versehentliche repr()/f"{obj!r}"-Logging eines beliebigen pylast-Objekts
+# (nicht nur des Network-Objekts selbst) alle vier Secrets im Klartext
+# offenlegen - aktuell nirgends im Code aufgerufen (kein aktives Leck),
+# aber ein latentes Risiko bei kuenftigen Aenderungen. Instanz-Attribute
+# koennen __repr__ nicht ueberschreiben (Python loest Dunder-Methoden fuer
+# eingebaute Funktionen wie repr() immer auf der Klasse auf, nie auf der
+# Instanz) - der Fix patcht daher die Klassenmethode selbst, einmalig beim
+# Modul-Import. Das macht automatisch auch Artist.__repr__()/
+# Track.__repr__() etc. sicher, da diese lediglich repr(self.network)
+# delegieren. __str__() ("{name} Network") ist bereits sicher und bleibt
+# unveraendert.
+def _safe_lastfm_network_repr(self: "pylast.LastFMNetwork") -> str:
+    return "pylast.LastFMNetwork(<redacted>)"
+
+
+pylast.LastFMNetwork.__repr__ = _safe_lastfm_network_repr
+
+
 class LastFMClient:
     """
     Client zur Abfrage von Last.fm-Metadaten.
