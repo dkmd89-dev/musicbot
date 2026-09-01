@@ -449,3 +449,125 @@ class TestMusicBrainzGenrePrioritizationCharacterization:
 
         assert result.primary == expected_primary
         assert result.source == "artist_exact_manual"
+
+
+class TestDetermineGenreWithFallbacksLocalChannelPath(TestDetermineGenreWithFallbacksExternalSteps):
+    """
+    P0-C (docs/audits/, Genre-Charakterisierung): Schritt 2 der
+    Gesamt-Pipeline (lokales Genre ueber GenreMapper.determine_genre() -
+    Channel-Mapping/Fuzzy/Hierarchie) war bislang nur indirekt ueber
+    GenreMapper-eigene Tests abgedeckt, nicht End-to-End durch
+    determine_genre_with_fallbacks(). Nutzt einen Artist ohne manuellen
+    Mapping-Eintrag, aber einen Channel-Namen mit exaktem Treffer in
+    channel_genre.yaml, damit Schritt 1 (manuell) durchfaellt und Schritt 2
+    (lokal/Channel) tatsaechlich das Ergebnis liefert - ohne dass externe
+    Services ueberhaupt aufgerufen werden muessten.
+    """
+
+    def test_channel_exact_match_returns_local_result_without_external_calls(
+        self, genre_processor
+    ):
+        result = asyncio.run(
+            self._run(
+                genre_processor,
+                artist_name="Totally Unknown Artist XYZ",
+                channel_name="kontor.tv",
+                mb_client=None,
+                lfm_client=None,
+            )
+        )
+
+        assert result is not None
+        assert result.primary == "Electronic"
+        assert result.secondary == ["Dance"]
+        assert result.source == "channel_exact"
+
+
+class TestDetermineGenreWithFallbacksMbIdsAttachToKnownResult:
+    """
+    P0-C: Schritt 3a der Pipeline (Kommentar in determine_genre_with_fallbacks:
+    "Bekanntes Genre + MB-IDs -> fertig") behauptet, dass MusicBrainz-IDs
+    auch dann an ein bereits BEKANNTES Genre (manuell oder lokal) angehaengt
+    werden, wenn dessen primary/secondary unveraendert vom manuellen Mapping
+    stammt. test_known_artist_shields_against_musicbrainz_tags (oben) prueft
+    nur primary/source, NICHT ob mb_ids tatsaechlich ankommen - diese Luecke
+    schliesst dieser Test explizit.
+    """
+
+    async def _run(self, genre_processor, artist_name, mb_client):
+        return await genre_processor.determine_genre_with_fallbacks(
+            track_metadata={"title": "Some Song"},
+            artist_name=artist_name,
+            channel_name="SomeChannel",
+            mb_client=mb_client,
+            lfm_client=None,
+        )
+
+    def test_manual_result_still_receives_mb_ids(self, genre_processor):
+        known_artist = next(iter(genre_processor.genre_mapper.artist_map))
+        expected = genre_processor.genre_mapper.artist_map[known_artist]
+
+        mb_client = FakeMusicBrainzClient(
+            {
+                "tags": ["ruhrpott rap"],
+                "recording_id": "abc-123",
+                "release_id": "rel-456",
+            }
+        )
+        result = asyncio.run(self._run(genre_processor, known_artist, mb_client))
+
+        assert result is not None
+        assert result.source == "artist_exact_manual"
+        # Genre kommt unveraendert aus dem manuellen Mapping - die MB-Tags
+        # ("ruhrpott rap") duerfen es NICHT ueberschreiben:
+        assert result.primary == expected.primary
+        assert result.secondary == expected.secondary
+        # aber die MB-IDs muessen trotzdem angehaengt sein:
+        assert result.mb_ids is not None
+        assert result.mb_ids["recording_id"] == "abc-123"
+        assert result.mb_ids["release_id"] == "rel-456"
+
+
+class TestFeatureArtistInferenceTieBreaking:
+    """
+    P0-C: _infer_genre_from_feat_artists() nutzt Counter.most_common(1),
+    was bei Stimmengleichheit zwischen mehreren Genres NICHT alphabetisch
+    oder nach Hierarchie-Tiefe entscheidet, sondern nach der Reihenfolge
+    des ERSTEN Auftretens in der uebergebenen feat_artists-Liste (Python-
+    Counter-Implementierungsdetail). Live gegen den echten GenreMapper
+    verifiziert: "Bausa" (Hip Hop) und "Aurora" (Alternative Pop) ergeben
+    bei genau einer Stimme je Genre ein unterschiedliches Ergebnis, je
+    nachdem welcher Name zuerst in der Liste steht. Dieses Verhalten war
+    bisher nicht durch einen Test abgesichert (test_feature_artist_inference_
+    when_no_external_clients nutzt nur einen einzelnen Feature-Artist, kein
+    Gleichstand-Szenario).
+    """
+
+    def test_majority_vote_wins_with_more_than_one_matching_artist(
+        self, genre_processor
+    ):
+        """Gegenprobe ohne Gleichstand: zwei Hip-Hop-Feature-Artists gegen
+        keinen Widerspruch ergeben eindeutig Hip Hop."""
+        result = genre_processor._infer_genre_from_feat_artists(["Bausa", "Eminem"])
+
+        assert result is not None
+        assert result.primary == "Hip Hop"
+        assert result.source == "feature_inference"
+
+    def test_tie_is_broken_by_first_occurrence_order_not_alphabetically(
+        self, genre_processor
+    ):
+        result_bausa_first = genre_processor._infer_genre_from_feat_artists(
+            ["Bausa", "Aurora"]
+        )
+        result_aurora_first = genre_processor._infer_genre_from_feat_artists(
+            ["Aurora", "Bausa"]
+        )
+
+        assert result_bausa_first is not None and result_aurora_first is not None
+        assert result_bausa_first.primary == "Hip Hop"
+        assert result_aurora_first.primary == "Alternative Pop"
+        # Waere die Entscheidung alphabetisch, wuerde "Alternative Pop" in
+        # beiden Faellen gewinnen (kommt vor "Hip Hop") - das ist erkennbar
+        # nicht der Fall:
+        assert result_bausa_first.primary != result_aurora_first.primary
