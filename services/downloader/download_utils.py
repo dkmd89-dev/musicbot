@@ -46,6 +46,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
+from yt_dlp.utils import GeoRestrictedError, UnsupportedError, YoutubeDLError
+
 from config import Config
 from utils.singleton import SingletonMixin
 from logger import get_module_logger
@@ -54,7 +56,13 @@ from services.metadata.enhanced_metadata_processor import (
 )
 from services.metadata.models import MetadataResult
 from .download_artifact_cleanup import cleanup_single_download_artifact
-from .errors import DownloadError
+from .errors import (
+    DownloadError,
+    FormatNotAvailableError,
+    InvalidURLError,
+    MetadataError,
+    PermissionError as DownloadPermissionError,
+)
 from .metadata_result_translator import (
     build_playlist_track_result,
     build_single_track_result,
@@ -104,6 +112,93 @@ def is_youtube_mix_url(url: str) -> bool:
     except Exception:
         return False
     return bool(list_values) and list_values[0].startswith(_YOUTUBE_MIX_LIST_ID_PREFIX)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DL-03/DL-05 (docs/audits/DL_RETRY_CLASSIFICATION_2026-09-01.md): Fehler-
+# klassifikation fuer Retry-Entscheidungen
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Vorher wurden ALLE Fehler in enhanced_download_with_retry() identisch
+# behandelt (DownloadError/Exception -> immer bis zu max_retries-mal erneut
+# versucht, inkl. komplettem Neu-Download von YouTube) - auch fuer Fehler,
+# die garantiert bei jedem weiteren Versuch identisch wieder auftreten
+# (privates/geloeschtes/altersbeschraenktes Video, nicht unterstuetzte URL,
+# ein deterministischer Bug in der Metadaten-Pipeline). Das war reine
+# Ressourcenverschwendung ohne Aussicht auf Erfolg (DL-03/DL-05).
+#
+# _NON_RETRYABLE_ERROR_TYPES listet die bereits bestehenden
+# services/downloader/errors.py-Klassen, die laut ihrer eigenen Semantik
+# permanente, nicht durch Wiederholung behebbare Fehler beschreiben.
+# NetworkError (transient) und die unklassifizierte Basisklasse
+# DownloadError (unbekannt) sind bewusst NICHT enthalten - fuer beide bleibt
+# das bisherige, konservative Verhalten (Retry) unveraendert. FileProcessing-
+# Error ist ebenfalls bewusst NICHT enthalten: die Klasse wird aktuell
+# nirgends in der Download-Pipeline geworfen, ihre tatsaechlichen
+# Fehlerursachen (z.B. voruebergehend volle Disk vs. dauerhafter
+# Rechtefehler) sind ohne konkrete Call-Site nicht seriös klassifizierbar
+# (Abschnitt 6/10 der Aufgabenstellung: keine Klassifikation ohne
+# tatsaechlichen Fehlerfluss).
+_NON_RETRYABLE_ERROR_TYPES = (
+    InvalidURLError,
+    FormatNotAvailableError,
+    DownloadPermissionError,
+    MetadataError,
+)
+
+# Bekannte, aus dem echten yt-dlp-Quellcode belegte Marker fuer permanente
+# (nicht-transiente) Fehlermeldungen. Quelle: yt_dlp/extractor/youtube/
+# _video.py (Auswertung von player_response["playabilityStatus"], von
+# YouTube selbst gelieferter "reason"-Text) sowie
+# yt_dlp/extractor/common.py::raise_login_required()/raise_no_formats() -
+# beide setzen expected=True fuer genau diese Klasse von Meldungen. Bewusst
+# NICHT enthalten: "isn't available, try again later" (yt-dlps eigener
+# Rate-Limit-Hinweis, siehe _video.py - das ist ausdruecklich transient,
+# Retry ist hier sinnvoll und bleibt unveraendert erhalten).
+_YTDLP_PERMANENT_MESSAGE_MARKERS = (
+    "private video",
+    "video unavailable",
+    "video has been removed",
+    "video is no longer available",
+    "account associated with this video has been terminated",
+    "sign in to confirm your age",
+    "age-restricted",
+    "this video is not available",
+    "copyright",
+)
+
+
+def _classify_ytdlp_error(exc: YoutubeDLError) -> DownloadError:
+    """
+    Uebersetzt eine rohe yt-dlp-Exception an der Boundary in die bestehende
+    MusicBot-Fehlertaxonomie (services/downloader/errors.py).
+
+    Nur eindeutig belegte Faelle werden klassifiziert:
+      - GeoRestrictedError / UnsupportedError: yt-dlp-eigene, dedizierte
+        Exception-Typen fuer Geo-Sperre bzw. nicht unterstuetzte/ungueltige
+        URL - typsicher, keine String-Heuristik noetig.
+      - ExtractorError (bzw. YoutubeDLError allgemein) mit expected=True
+        UND einer Nachricht, die einen der bekannten, aus dem yt-dlp-
+        Quellcode belegten Permanent-Marker enthaelt.
+
+    Alles andere (insbesondere echte Netzwerkfehler, Timeouts, unerwartete
+    yt-dlp-interne Fehler mit expected=False) wird bewusst NICHT
+    klassifiziert und faellt auf die generische DownloadError-Basisklasse
+    zurueck - identisch zum bisherigen, konservativen Verhalten (Retry).
+    Kein Rateraten bei Unsicherheit (Abschnitt 10 der Aufgabenstellung).
+    """
+    if isinstance(exc, UnsupportedError):
+        return InvalidURLError(str(exc), url=getattr(exc, "url", ""))
+    if isinstance(exc, GeoRestrictedError):
+        return InvalidURLError(str(exc))
+
+    message = str(exc).lower()
+    if getattr(exc, "expected", False) and any(
+        marker in message for marker in _YTDLP_PERMANENT_MESSAGE_MARKERS
+    ):
+        return InvalidURLError(str(exc))
+
+    return DownloadError(str(exc))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -396,8 +491,27 @@ async def enhanced_download_with_retry(
                     "processor_instance": enhanced_processor,
                 }
 
-        except DownloadError as e:
+        except (YoutubeDLError, DownloadError) as e:
+            # DL-03/DL-05: rohe yt-dlp-Fehler (z.B. aus extract_info_async()
+            # oben, bevor ueberhaupt zwischen Playlist/Single unterschieden
+            # wird) werden zuerst an der Boundary klassifiziert; bereits
+            # klassifizierte DownloadError-Subtypen (z.B. MetadataError aus
+            # _process_single_download()) werden unveraendert uebernommen.
             last_error = str(e)
+            classified = e if isinstance(e, DownloadError) else _classify_ytdlp_error(e)
+
+            if isinstance(classified, _NON_RETRYABLE_ERROR_TYPES):
+                logger.error(
+                    f"⛔ [RETRY {attempt+1}] Permanenter Fehler erkannt — "
+                    f"kein weiterer Versuch (DL-03/DL-05):\n"
+                    f"   Typ    : {type(classified).__name__}\n"
+                    f"   Fehler : {last_error}"
+                )
+                return {
+                    "success": False,
+                    "error": f"Download dauerhaft fehlgeschlagen (kein Retry sinnvoll): {last_error}",
+                }
+
             logger.error(
                 f"❌ [RETRY {attempt+1}] DownloadError:\n"
                 f"   Fehler : {last_error}\n"
@@ -953,7 +1067,21 @@ async def _process_single_download(
             logger.error(
                 f"❌ [META] Enhanced Processing fehlgeschlagen: {enhanced_result.error}"
             )
-            raise DownloadError(f"Processing failed: {enhanced_result.error}")
+            # DL-05: process_single_track() faengt intern bereits ALLE
+            # Fehler der eigentlichen Metadaten-Pipeline per except Exception
+            # ab (services/metadata/enhanced_metadata_processor.py) - ein
+            # hier ankommendes success=False ist damit ein deterministischer
+            # Fehler in bereits abgeschlossenen, lokalen Verarbeitungs-
+            # schritten (Tag-Schreiben, Bibliotheks-Move, Pipeline-Logik),
+            # NICHT ein voruebergehender externer Fehler (optionale externe
+            # Dienste wie Genius/MusicBrainz/Last.fm degradieren dort bereits
+            # graceful statt success=False auszuloesen, siehe
+            # docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md
+            # Abschnitt 29.3). Ein erneuter kompletter YouTube-Download
+            # aendert an diesem deterministischen Fehler nichts - vorher
+            # wurde trotzdem bis zu 3x der komplette Track erneut
+            # heruntergeladen (DL-05).
+            raise MetadataError(f"Processing failed: {enhanced_result.error}")
 
         # AUTOLEARN-001: externer, redundanter Auto-Learning-Aufruf entfernt.
         # process_single_track() ruft auto_learn_manager.learn_artist() intern
@@ -1004,6 +1132,35 @@ async def _process_single_download(
             enhanced_result,
             enhanced_processor_ref=enhanced_processor,
         )
+
+    except DownloadError:
+        # DL-03/DL-05: bereits klassifiziert (z.B. MetadataError oben) -
+        # Klassifikation unveraendert an enhanced_download_with_retry()
+        # weiterreichen, NICHT erneut in ein generisches DownloadError
+        # verpacken (das wuerde die Retry-Entscheidung dort wieder auf
+        # "unbekannt" zuruecksetzen und die Klassifikation wirkungslos
+        # machen).
+        enhanced_processor.session_stats["failed_downloads"] += 1
+        if raw_downloaded_path:
+            cleanup_single_download_artifact(
+                Path(raw_downloaded_path),
+                getattr(enhanced_processor.config, "DOWNLOAD_DIR", None),
+                logger,
+            )
+        raise
+
+    except YoutubeDLError as e:
+        # DL-03: roher yt-dlp-Fehler aus extract_info_async(download=True)
+        # oben - an der Boundary klassifizieren (siehe _classify_ytdlp_error()),
+        # bevor er enhanced_download_with_retry() erreicht.
+        enhanced_processor.session_stats["failed_downloads"] += 1
+        if raw_downloaded_path:
+            cleanup_single_download_artifact(
+                Path(raw_downloaded_path),
+                getattr(enhanced_processor.config, "DOWNLOAD_DIR", None),
+                logger,
+            )
+        raise _classify_ytdlp_error(e) from e
 
     except Exception as e:
         enhanced_processor.session_stats["failed_downloads"] += 1
