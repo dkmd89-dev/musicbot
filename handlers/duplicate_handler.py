@@ -110,18 +110,23 @@ class EnhancedDuplicateHandler:
             )
         except Exception as e:
             self.logger.error(f"❌ Fehler bei Duplikat-Statistik: {e}", exc_info=True)
-            await query.edit_message_text(
-                f"❌ Fehler beim Laden der Duplikat-Statistiken: {e}",
-                reply_markup=InlineKeyboardMarkup(
-                    [
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "duplicate_statistics_menu", e
+                )
+            else:
+                await query.edit_message_text(
+                    f"❌ Fehler beim Laden der Duplikat-Statistiken: {e}",
+                    reply_markup=InlineKeyboardMarkup(
                         [
-                            InlineKeyboardButton(
-                                "⬅️ Zurück", callback_data="menu:admin_duplicates"
-                            )
+                            [
+                                InlineKeyboardButton(
+                                    "⬅️ Zurück", callback_data="menu:admin_duplicates"
+                                )
+                            ]
                         ]
-                    ]
-                ),
-            )
+                    ),
+                )
 
     async def show_clear_cache_confirm(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -223,18 +228,23 @@ Diese Aktion kann nicht rückgängig gemacht werden!"""
             self.logger.error(
                 f"❌ Fehler beim Löschen des Duplikat-Cache: {e}", exc_info=True
             )
-            await query.edit_message_text(
-                f"❌ Fehler beim Löschen des Duplikat-Cache: {e}",
-                reply_markup=InlineKeyboardMarkup(
-                    [
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "duplicate_clear_cache", e
+                )
+            else:
+                await query.edit_message_text(
+                    f"❌ Fehler beim Löschen des Duplikat-Cache: {e}",
+                    reply_markup=InlineKeyboardMarkup(
                         [
-                            InlineKeyboardButton(
-                                "⬅️ Zurück", callback_data="menu:admin_duplicates"
-                            )
+                            [
+                                InlineKeyboardButton(
+                                    "⬅️ Zurück", callback_data="menu:admin_duplicates"
+                                )
+                            ]
                         ]
-                    ]
-                ),
-            )
+                    ),
+                )
 
 
 async def find_duplicates(update: Update, context: ContextTypes.DEFAULT_TYPE):
