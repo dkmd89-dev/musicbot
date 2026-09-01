@@ -11,14 +11,27 @@ from services.downloader.download_utils import EnhancedDownloadProcessor
 
 
 class YoutubeDownloader:
+    """
+    services/-Schicht: haelt bewusst KEIN Telegram-Update-Objekt (siehe
+    docs/audits/SERVICES_TELEGRAM_COUPLING_2026-09-01.md) - chat_id/
+    update_id werden als einfache Werte entgegengenommen, exakt wie von
+    enhanced_download_with_retry() (download_utils.py) und dem
+    DownloadCoordinator-Protocol (download/interfaces.py) bereits
+    erwartet. Der Aufrufer (klassen/download_handler.py, oberhalb der
+    services/-Schicht) extrahiert diese Werte aus dem eigenen
+    Telegram-Update-Objekt.
+    """
+
     def __init__(
         self,
-        update,
+        chat_id: int,
+        update_id: int,
         config: Config,
         cookie_handler: CookieHandler,
         # ... andere Parameter
     ):
-        self.update = update
+        self.chat_id = chat_id
+        self.update_id = update_id
         self.config = config
         self.cookie_handler = cookie_handler
 
@@ -46,8 +59,8 @@ class YoutubeDownloader:
             )
             download_result = await enhanced_download_with_retry(
                 url=url,
-                chat_id=self.update.effective_chat.id,
-                update_id=self.update.update_id,
+                chat_id=self.chat_id,
+                update_id=self.update_id,
                 logger_factory=self._logger_factory,
             )
 
