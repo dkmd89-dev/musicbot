@@ -2,7 +2,7 @@
 
 Read-only Ist-Zustand-Audit von `services/` gegen die dokumentierte
 Zielarchitektur (CLAUDE.md Abschnitt 4, `docs/MusicBot_ARCHITECTURE_EVOLUTION.md`,
-`docs/MusicBot_ENGINEERING_BASELINE_v6.md`). Analysephase vor einer
+`docs/archive/MusicBot_ENGINEERING_BASELINE_v6.md`). Analysephase vor einer
 eigentlichen Migration — keine Code-/Test-/Config-Änderung in diesem Audit.
 
 ## 1. Executive Summary
@@ -65,7 +65,7 @@ Download-Retry, siehe Abschnitt 20). Der Rest ist P2/P3.
 | HEAD (Audit-Start) | `b90f8dc60b490d783cba21cba306a6a6a6220a96` |
 | Branch | `main` |
 | Working Tree | 1 vorbestehend geänderte Datei: `mapping/artist_overrides.json` (nicht durch dieses Audit verursacht — kein laufender Bot-Prozess zum Zeitpunkt der Prüfung gefunden, `mtime` vor Audit-Start; Ursache nicht Teil des Scopes, unverändert belassen) |
-| Referenzierte Baseline | `docs/MusicBot_ENGINEERING_BASELINE_v6.md` (Freeze 2026-09-01) |
+| Referenzierte Baseline | `docs/archive/MusicBot_ENGINEERING_BASELINE_v6.md` (Freeze 2026-09-01) |
 | Referenzierter Track-A-Report | `docs/audits/TECHNICAL_DEBT_CLEANUP_2026-09-01.md` (1652 passed, 1 skipped, 0 failed zum Zeitpunkt des Merges von PR #91) |
 | Teststatus (dieses Audit, `python3 -m pytest tests/ -q` auf HEAD `b90f8dc`) | **1652 passed, 1 skipped, 0 failed** (19 Subtests, Laufzeit 162.51s) — identisch zum Stand nach PR #91, keine Regression seit dem letzten Merge |
 

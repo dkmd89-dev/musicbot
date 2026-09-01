@@ -1,7 +1,7 @@
 # Technical Debt Cleanup — 2026-09-01
 
 Read-only-Ausgangspunkt: Post-Baseline-v5 Health & Risk Audit
-(`docs/MusicBot_ENGINEERING_BASELINE_v6.md`) + Durchsicht von
+(`docs/archive/MusicBot_ENGINEERING_BASELINE_v6.md`) + Durchsicht von
 `docs/MusicBot_ARCHITECTURE_EVOLUTION.md` (AE-Punkte). Dieser Report
 dokumentiert die anschließend tatsächlich umgesetzte Behebung der dabei
 identifizierten, noch offenen P2/P3-Findings ("Track A").
@@ -10,7 +10,7 @@ identifizierten, noch offenen P2/P3-Findings ("Track A").
 
 | Feld | Wert |
 |---|---|
-| Baseline-Dokument | `docs/MusicBot_ENGINEERING_BASELINE_v6.md` (Freeze 2026-09-01) |
+| Baseline-Dokument | `docs/archive/MusicBot_ENGINEERING_BASELINE_v6.md` (Freeze 2026-09-01) |
 | Baseline-Testergebnis | 1634 passed, 1 skipped, 0 failed |
 
 ## HEAD

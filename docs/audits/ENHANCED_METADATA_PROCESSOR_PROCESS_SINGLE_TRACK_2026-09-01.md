@@ -13,7 +13,7 @@ pauschales Zerlegen der Methode.
 | HEAD (Start) | `b8edd1d816a59b4b4e8757266c324e79a41084cc` (main, nach DL-03/DL-05-Merge PR #94) |
 | Branch | `refactor/enhanced-metadata-processor-process-single-track` |
 | Teststatus (Start) | 1663 passed, 1 skipped, 0 failed |
-| Referenzierte Docs | `docs/MusicBot_ENGINEERING_BASELINE_v6.md`, `docs/MusicBot_ARCHITECTURE_EVOLUTION.md`, `docs/audits/SERVICES_ARCHITECTURE_AUDIT_2026-09-01.md`, `docs/audits/DL_RETRY_CLASSIFICATION_2026-09-01.md` |
+| Referenzierte Docs | `docs/archive/MusicBot_ENGINEERING_BASELINE_v6.md`, `docs/MusicBot_ARCHITECTURE_EVOLUTION.md`, `docs/audits/SERVICES_ARCHITECTURE_AUDIT_2026-09-01.md`, `docs/audits/DL_RETRY_CLASSIFICATION_2026-09-01.md` |
 
 Bereits getroffene, hier respektierte Vorentscheidungen: der
 Services-Audit hatte `process_single_track()` bereits als „LEGITIMATE

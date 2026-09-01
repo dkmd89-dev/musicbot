@@ -173,7 +173,7 @@ erscheint.
 
 Vor Beginn dieser Phase müssen mindestens gelesen werden:
 
-1. `docs/MusicBot_ENGINEERING_BASELINE_v6.md`
+1. `docs/archive/MusicBot_ENGINEERING_BASELINE_v6.md`
 2. `docs/archive/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md`
 3. dieses Dokument
 4. der aktuelle Repository-Code
