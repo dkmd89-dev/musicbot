@@ -76,7 +76,7 @@ class Config:
     BASE_DIR = Path("/mnt/128ssd/musicbot")
 
     # === DIRECTORY STRUCTURE ===
-    LIBRARY_DIR = Path("/mnt/4tb/library")
+    LIBRARY_DIR = Path("/mnt/musik_bilder/library")
     PODCAST_DIR = Path("/mnt/musik_bilder/Podcast")
     DOWNLOAD_DIR = BASE_DIR / "import" / "downloads"
     TEMP_DIR = BASE_DIR / "import" / "temp"
@@ -106,7 +106,7 @@ class Config:
 
     # === BACKUP ===
     BACKUP_BOT_SOURCE_DIR = BASE_DIR
-    BACKUP_LIBRARY_SOURCE_DIR = Path("/mnt/4tb/library")
+    BACKUP_LIBRARY_SOURCE_DIR = Path("/mnt/musik_bilder/library")
     BACKUP_DEST_DIR = Path("/mnt/4tb/backup/musik")
     BACKUP_MAX_KEEP = 5
     BACKUP_EXCLUDE_PATTERNS = [
