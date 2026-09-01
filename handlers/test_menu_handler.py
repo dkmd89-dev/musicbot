@@ -150,7 +150,14 @@ class TestMenuHandler:
 
             if test_type == "unit":
                 try:
-                    subprocess.run(
+                    # INV-01: subprocess.run() blockiert synchron - ohne
+                    # asyncio.to_thread() wuerde bereits dieser kurze
+                    # Verfuegbarkeits-Check den Event-Loop fuer alle
+                    # Telegram-Nutzer einfrieren (etabliertes Muster, siehe
+                    # z.B. enhanced_metadata_processor.py::normalize_loudness()-
+                    # Aufruf, FINDING-7).
+                    await asyncio.to_thread(
+                        subprocess.run,
                         [sys.executable, "-m", "coverage", "--version"],
                         capture_output=True,
                         timeout=5,
@@ -171,7 +178,12 @@ class TestMenuHandler:
             )
 
             start_time = datetime.now()
-            result = subprocess.run(
+            # INV-01: der eigentliche pytest-Lauf blockiert bis zu `timeout`
+            # Sekunden (900s bei Performance-Tests) - ohne asyncio.to_thread()
+            # friert das den gesamten Event-Loop fuer ALLE Telegram-Nutzer
+            # ein, nicht nur fuer den anfragenden Admin.
+            result = await asyncio.to_thread(
+                subprocess.run,
                 cmd,
                 capture_output=True,
                 text=True,
@@ -474,8 +486,14 @@ class TestMenuHandler:
                 "pytest",
                 str(self.unit_tests_dir),
             ]
-            subprocess.run(
-                cmd_run, cwd=self.project_root, timeout=120, capture_output=True
+            # INV-01: beide subprocess.run()-Aufrufe blockieren synchron
+            # (bis zu 120s+30s) - asyncio.to_thread() wie im Testlauf oben.
+            await asyncio.to_thread(
+                subprocess.run,
+                cmd_run,
+                cwd=self.project_root,
+                timeout=120,
+                capture_output=True,
             )
 
             cmd_report = [
@@ -486,7 +504,8 @@ class TestMenuHandler:
                 "--show-missing",
                 "--skip-covered",
             ]
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 cmd_report,
                 capture_output=True,
                 text=True,
@@ -719,8 +738,16 @@ class TestMenuHandler:
             cmd.append("-x")
 
         start_time = datetime.now()
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=self.project_root
+        # INV-01: analog zu _execute_test_run() oben - asyncio.to_thread(),
+        # damit run_all_tests() (das diese Methode dreimal nacheinander
+        # aufruft) den Event-Loop nicht insgesamt bis zu 900s blockiert.
+        result = await asyncio.to_thread(
+            subprocess.run,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=self.project_root,
         )
         end_time = datetime.now()
 
