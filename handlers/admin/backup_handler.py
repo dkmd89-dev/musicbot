@@ -11,12 +11,15 @@ import tarfile
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from logger import get_module_logger
+
+if TYPE_CHECKING:
+    from handlers.enhanced_error_handler import EnhancedErrorHandler
 
 
 class BackupHandler:
@@ -72,6 +75,10 @@ class BackupHandler:
                 "cache",
             ],
         )
+
+        # Wird von RichMenuHandler nach der Konstruktion zugewiesen
+        # (self.backup_handler.error_handler = self.error_handler)
+        self.error_handler: "Optional[EnhancedErrorHandler]" = None
 
         self.logger.info(
             f"💾 BackupHandler initialisiert | "
@@ -254,19 +261,24 @@ class BackupHandler:
             self.logger.info(f"✅ Bot-Backup erstellt: {archive_path}")
         except Exception as e:
             self.logger.error(f"❌ Bot-Backup fehlgeschlagen: {e}", exc_info=True)
-            await query.edit_message_text(
-                f"❌ **Backup fehlgeschlagen**\n\n`{e}`",
-                reply_markup=InlineKeyboardMarkup(
-                    [
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "backup_bot_start", e
+                )
+            else:
+                await query.edit_message_text(
+                    f"❌ **Backup fehlgeschlagen**\n\n`{e}`",
+                    reply_markup=InlineKeyboardMarkup(
                         [
-                            InlineKeyboardButton(
-                                "🔙 Backup-Menü", callback_data="backup_main"
-                            )
+                            [
+                                InlineKeyboardButton(
+                                    "🔙 Backup-Menü", callback_data="backup_main"
+                                )
+                            ]
                         ]
-                    ]
-                ),
-                parse_mode="Markdown",
-            )
+                    ),
+                    parse_mode="Markdown",
+                )
 
     async def start_lib_backup(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -306,19 +318,24 @@ class BackupHandler:
             self.logger.info(f"✅ Library-Backup erstellt: {archive_path}")
         except Exception as e:
             self.logger.error(f"❌ Library-Backup fehlgeschlagen: {e}", exc_info=True)
-            await query.edit_message_text(
-                f"❌ **Backup fehlgeschlagen**\n\n`{e}`",
-                reply_markup=InlineKeyboardMarkup(
-                    [
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "backup_lib_start", e
+                )
+            else:
+                await query.edit_message_text(
+                    f"❌ **Backup fehlgeschlagen**\n\n`{e}`",
+                    reply_markup=InlineKeyboardMarkup(
                         [
-                            InlineKeyboardButton(
-                                "🔙 Backup-Menü", callback_data="backup_main"
-                            )
+                            [
+                                InlineKeyboardButton(
+                                    "🔙 Backup-Menü", callback_data="backup_main"
+                                )
+                            ]
                         ]
-                    ]
-                ),
-                parse_mode="Markdown",
-            )
+                    ),
+                    parse_mode="Markdown",
+                )
 
     # ── Auflistung und Löschung ───────────────────
 

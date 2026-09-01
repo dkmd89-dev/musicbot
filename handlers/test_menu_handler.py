@@ -10,7 +10,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
 import json
 import os
 
@@ -22,6 +22,9 @@ from config import Config
 from logger import get_module_logger, EnhancedLogger
 
 # Die Markdown-Helfer werden nicht mehr benötigt
+
+if TYPE_CHECKING:
+    from handlers.enhanced_error_handler import EnhancedErrorHandler
 
 
 class TestMenuHandler:
@@ -48,26 +51,48 @@ class TestMenuHandler:
         self.test_results_cache: Dict[str, Any] = {}
         self.running_tests: Dict[int, str] = {}  # user_id -> test_type
 
+        # Wird von RichMenuHandler nach der Konstruktion zugewiesen
+        # (self.test_handler.error_handler = self.error_handler)
+        self.error_handler: "Optional[EnhancedErrorHandler]" = None
+
         self.logger.info(f"{self.module_emoji} Test-Menu-Handler initialisiert.")
 
     async def run_unit_tests(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Führt Unit Tests aus"""
-        await self._execute_test_run(update, "unit", timeout=600)
+        await self._execute_test_run(update, "unit", timeout=600, context=context)
 
     async def run_integration_tests(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Führt Integration Tests aus"""
-        await self._execute_test_run(update, "integration", timeout=600)
+        await self._execute_test_run(
+            update, "integration", timeout=600, context=context
+        )
 
     async def run_performance_tests(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Führt Performance Tests aus"""
-        await self._execute_test_run(update, "performance", timeout=900)
+        await self._execute_test_run(
+            update, "performance", timeout=900, context=context
+        )
 
-    async def _execute_test_run(self, update: Update, test_type: str, timeout: int):
-        """Zentrale Methode zur Ausführung von Tests"""
+    async def _execute_test_run(
+        self,
+        update: Update,
+        test_type: str,
+        timeout: int,
+        context: Optional[ContextTypes.DEFAULT_TYPE] = None,
+    ):
+        """Zentrale Methode zur Ausführung von Tests
+
+        context ist optional (Default None) fuer Abwaertskompatibilitaet zu
+        bestehenden direkten Aufrufen/Tests dieser internen Methode ohne
+        Context-Objekt; ohne context kann der error_handler nicht sinnvoll
+        benachrichtigen (siehe EnhancedErrorHandler.handle_exception - ohne
+        telegram_context wird die Nutzerbenachrichtigung uebersprungen),
+        deshalb greift in diesem Fall stets der lokale Fallback.
+        """
         user_id = update.effective_user.id
         self.logger.info(
             f"{self.module_emoji} [{test_type}_tests] Anfrage von User {user_id} erhalten."
@@ -171,7 +196,7 @@ class TestMenuHandler:
             )
 
             self.test_results_cache[test_type] = test_results
-            await self._show_test_results(update, test_results, test_type)
+            await self._show_test_results(update, test_results, test_type, context=context)
 
         except subprocess.TimeoutExpired:
             self.logger.error(
@@ -185,9 +210,14 @@ class TestMenuHandler:
                 f"{self.module_emoji} [_{test_type}_tests] Unerwarteter Fehler: {e}",
                 exc_info=True,
             )
-            await update.callback_query.edit_message_text(
-                f"❌ Fehler bei der Ausführung der {test_type.title()}-Tests:\n{str(e)}"
-            )
+            if self.error_handler and context is not None:
+                await self.error_handler.handle_callback_error(
+                    update, context, f"test_run_{test_type}", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    f"❌ Fehler bei der Ausführung der {test_type.title()}-Tests:\n{str(e)}"
+                )
         finally:
             if user_id in self.running_tests:
                 del self.running_tests[user_id]
@@ -268,7 +298,11 @@ class TestMenuHandler:
         return results
 
     async def _show_test_results(
-        self, update: Update, results: Dict[str, Any], test_type: str
+        self,
+        update: Update,
+        results: Dict[str, Any],
+        test_type: str,
+        context: Optional[ContextTypes.DEFAULT_TYPE] = None,
     ):
         """Zeigt Test-Ergebnisse formatiert als reinen Text an"""
         self.logger.info(
@@ -340,9 +374,14 @@ class TestMenuHandler:
                 f"{self.module_emoji} [_show_test_results] Fehler beim Anzeigen der Ergebnisse: {e}",
                 exc_info=True,
             )
-            await update.callback_query.edit_message_text(
-                f"❌ Fehler beim Formatieren der Test-Ergebnisse:\n{str(e)}"
-            )
+            if self.error_handler and context is not None:
+                await self.error_handler.handle_callback_error(
+                    update, context, "test_show_results", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    f"❌ Fehler beim Formatieren der Test-Ergebnisse:\n{str(e)}"
+                )
 
     async def show_test_details(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, test_type: str
@@ -405,9 +444,14 @@ class TestMenuHandler:
             self.logger.error(
                 f"{self.module_emoji} [show_test_details] Fehler: {e}", exc_info=True
             )
-            await update.callback_query.edit_message_text(
-                f"❌ Fehler beim Laden der Details:\n{str(e)}"
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "test_show_details", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    f"❌ Fehler beim Laden der Details:\n{str(e)}"
+                )
 
     async def show_coverage_report(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -502,9 +546,14 @@ class TestMenuHandler:
             self.logger.error(
                 f"{self.module_emoji} [show_coverage_report] Fehler: {e}", exc_info=True
             )
-            await update.callback_query.edit_message_text(
-                f"❌ Fehler beim Generieren des Reports:\n{str(e)}"
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "test_coverage_report", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    f"❌ Fehler beim Generieren des Reports:\n{str(e)}"
+                )
 
     async def show_all_test_results(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -570,9 +619,14 @@ class TestMenuHandler:
                 f"{self.module_emoji} [show_all_test_results] Fehler: {e}",
                 exc_info=True,
             )
-            await update.callback_query.edit_message_text(
-                f"❌ Fehler beim Laden der Übersicht:\n{str(e)}"
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "test_all_results", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    f"❌ Fehler beim Laden der Übersicht:\n{str(e)}"
+                )
 
     async def run_all_tests(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Führt alle verfügbaren Test-Typen nacheinander aus"""
@@ -617,9 +671,14 @@ class TestMenuHandler:
                 f"{self.module_emoji} [run_all_tests] Fehler in der Test-Suite: {e}",
                 exc_info=True,
             )
-            await update.callback_query.edit_message_text(
-                f"❌ Fehler bei der Ausführung der Test-Suite:\n{str(e)}"
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "test_run_all", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    f"❌ Fehler bei der Ausführung der Test-Suite:\n{str(e)}"
+                )
         finally:
             if user_id in self.running_tests:
                 del self.running_tests[user_id]

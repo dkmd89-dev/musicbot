@@ -112,33 +112,36 @@ class TestBug013RunUnitTestsTypeRegression:
         handler = make_handler(tmp_path)
         handler._execute_test_run = AsyncMock()
         update = make_update()
+        context = Mock()
 
-        run_async(handler.run_unit_tests(update, context=Mock()))
+        run_async(handler.run_unit_tests(update, context=context))
 
         handler._execute_test_run.assert_awaited_once_with(
-            update, "unit", timeout=600
+            update, "unit", timeout=600, context=context
         )
 
     def test_run_integration_tests_calls_execute_with_integration_type(self, tmp_path):
         handler = make_handler(tmp_path)
         handler._execute_test_run = AsyncMock()
         update = make_update()
+        context = Mock()
 
-        run_async(handler.run_integration_tests(update, context=Mock()))
+        run_async(handler.run_integration_tests(update, context=context))
 
         handler._execute_test_run.assert_awaited_once_with(
-            update, "integration", timeout=600
+            update, "integration", timeout=600, context=context
         )
 
     def test_run_performance_tests_calls_execute_with_performance_type(self, tmp_path):
         handler = make_handler(tmp_path)
         handler._execute_test_run = AsyncMock()
         update = make_update()
+        context = Mock()
 
-        run_async(handler.run_performance_tests(update, context=Mock()))
+        run_async(handler.run_performance_tests(update, context=context))
 
         handler._execute_test_run.assert_awaited_once_with(
-            update, "performance", timeout=900
+            update, "performance", timeout=900, context=context
         )
 
 
