@@ -12,7 +12,7 @@ unnötig wiederholt werden. Kein allgemeines Downloader-Refactoring.
 | HEAD (Start) | `bb9b0525e9df77205e0d91b1327c96e80b8c596e` |
 | Branch | `fix/dl03-dl05-retry-error-classification` (von `main`) |
 | Tests (Start) | 1652 passed, 1 skipped, 0 failed |
-| Referenzierte Docs | `docs/MusicBot_ENGINEERING_BASELINE_v6.md`, `docs/MusicBot_ARCHITECTURE_EVOLUTION.md`, `docs/audits/SERVICES_ARCHITECTURE_AUDIT_2026-09-01.md`, `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md`, `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md` |
+| Referenzierte Docs | `docs/archive/MusicBot_ENGINEERING_BASELINE_v6.md`, `docs/MusicBot_ARCHITECTURE_EVOLUTION.md`, `docs/audits/SERVICES_ARCHITECTURE_AUDIT_2026-09-01.md`, `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md`, `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md` |
 
 Bereits getroffene, hier respektierte Vorentscheidungen: Phase1-Plan
 klassifizierte DL-03/DL-05 explizit als „bewusste technische Schuld"
