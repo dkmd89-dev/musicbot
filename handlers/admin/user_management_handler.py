@@ -8,11 +8,14 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 import json
 import time
 
 from logger import get_module_logger
+
+if TYPE_CHECKING:
+    from handlers.enhanced_error_handler import EnhancedErrorHandler
 
 
 class UserManagementHandler:
@@ -29,6 +32,11 @@ class UserManagementHandler:
 
         # NEU: Cache für schnellen Zugriff
         self.user_data_cache = self._load_users()
+
+        # Wird von RichMenuHandler nach der Konstruktion zugewiesen
+        # (self.user_mgmt_handler.error_handler = self.error_handler)
+        self.error_handler: "Optional[EnhancedErrorHandler]" = None
+
         self.logger.info(
             f"✅ UserManagement initialisiert ({len(self.user_data_cache)} Benutzer)"
         )
@@ -206,9 +214,14 @@ Aktionen:"""
             )
         except Exception as e:
             self.logger.error(f"Fehler beim Hinzufügen von User: {e}", exc_info=True)
-            await update.message.reply_text(
-                f"❌ **Fehler**\n\nEin interner Fehler ist aufgetreten: {e}"
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "usermgmt_add_user_step1", e
+                )
+            else:
+                await update.message.reply_text(
+                    f"❌ **Fehler**\n\nEin interner Fehler ist aufgetreten: {e}"
+                )
 
     async def process_new_navidrome_user(
         self,
@@ -272,7 +285,12 @@ Aktionen:"""
             self.logger.error(
                 f"Fehler beim Speichern des Navidrome-Users: {e}", exc_info=True
             )
-            await update.message.reply_text(f"❌ **Fehler**\n\n{e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "usermgmt_add_user_step2", e
+                )
+            else:
+                await update.message.reply_text(f"❌ **Fehler**\n\n{e}")
 
     async def process_edit_navidrome_user(
         self,
@@ -337,7 +355,12 @@ Aktionen:"""
             self.logger.error(
                 f"Fehler beim Bearbeiten des Navidrome-Users: {e}", exc_info=True
             )
-            await update.message.reply_text(f"❌ **Fehler**\n\n{e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "usermgmt_edit_navidrome_user", e
+                )
+            else:
+                await update.message.reply_text(f"❌ **Fehler**\n\n{e}")
 
     # ==================== BESTEHENDE METHODEN (unverändert) ====================
 
