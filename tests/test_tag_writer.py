@@ -135,7 +135,7 @@ class TestWriteTagsGenreMp3:
         )
 
         tags = ID3(mp3_path)
-        assert tags["TCON"].text == ["Hip Hop / Rap / Trap"]
+        assert tags["TCON"].text == ["Hip Hop; Rap; Trap"]
 
     def test_secondary_list_is_capped_at_three(self, writer, mp3_path):
         writer.write_tags(
@@ -151,7 +151,7 @@ class TestWriteTagsGenreMp3:
         )
 
         tags = ID3(mp3_path)
-        assert tags["TCON"].text == ["Hip Hop / Rap / Trap / Drill"]
+        assert tags["TCON"].text == ["Hip Hop; Rap; Trap; Drill"]
 
     def test_missing_genres_result_writes_no_genre_tag(self, writer, mp3_path):
         writer.write_tags(

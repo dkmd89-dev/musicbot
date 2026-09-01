@@ -226,7 +226,12 @@ class TagWriter:
         primary, secondary = self._extract_genre_parts(genres_result)
         if primary and secondary:
             combined = [primary] + secondary[:3]
-            genre_string = " / ".join(combined)
+            # "; " statt " / " als Genre-Separator (2026-09, auf
+            # ausdruecklichen Wunsch) - zunaechst kontrolliert nur ueber
+            # das isolierte Reprocessing-Script validiert
+            # (scripts/reprocess_artist_metadata.py), Phase 2: hier direkt
+            # uebernommen.
+            genre_string = "; ".join(combined)
             audio["©gen"] = [genre_string]
             audio["----:com.apple.iTunes:GENRE"] = [", ".join(combined).encode("utf-8")]
             self.logger.info(f"🏷️ Genres (M4A): '{genre_string}'")
@@ -241,7 +246,9 @@ class TagWriter:
         primary, secondary = self._extract_genre_parts(genres_result)
         if primary and secondary:
             combined = [primary] + secondary[:3]
-            genre_string = " / ".join(combined)
+            # "; " statt " / " als Separator - siehe Kommentar in
+            # _write_genres_m4a() oben.
+            genre_string = "; ".join(combined)
             audio.add(TCON(encoding=3, text=genre_string))
             audio.add(TXXX(encoding=3, desc="GENRE", text=", ".join(combined)))
             audio.add(TXXX(encoding=3, desc="MULTI_GENRE", text=", ".join(combined)))

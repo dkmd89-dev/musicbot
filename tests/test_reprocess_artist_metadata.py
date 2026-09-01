@@ -588,6 +588,86 @@ class TestProcessFileEndToEnd:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Genre-Separator
+#
+# Der produktive TagWriter (services/metadata/tag_writer.py) schrieb das
+# primaere Genre-Tag (©gen) bei mehreren Genres frueher mit " / " als
+# Separator (z.B. "Hip Hop / Deutschrap / Emo Rap / Cloud Rap"). Seit
+# Phase 2 (2026-09) schreibt TagWriter direkt "; " (z.B. "Hip Hop;
+# Deutschrap; Emo Rap; Cloud Rap") - vorab ueber ein auf dieses
+# Reprocessing-Script begrenztes Phase-1-Shim kontrolliert validiert.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@requires_ffmpeg
+class TestGenreSeparator:
+    @pytest.mark.asyncio
+    async def test_real_write_uses_semicolon_separator_for_multiple_genres(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        processor = make_processor_stub()
+        processor.genre_processor.determine_genre_with_fallbacks = AsyncMock(
+            return_value=DummyMBIdsResult(
+                primary="Hip Hop",
+                secondary=["Deutschrap", "Emo Rap", "Cloud Rap"],
+            )
+        )
+
+        result = await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        after = MP4(tagged_m4a)
+        assert after["©gen"] == ["Hip Hop; Deutschrap; Emo Rap; Cloud Rap"]
+        # Freeform-GENRE-Atom bleibt komma-separiert (unveraendert).
+        freeform_genre = after["----:com.apple.iTunes:GENRE"]
+        assert bytes(freeform_genre[0]).decode("utf-8") == "Hip Hop, Deutschrap, Emo Rap, Cloud Rap"
+        assert result["status"] == "changed"
+
+    @pytest.mark.asyncio
+    async def test_real_write_single_genre_untouched(self, tagged_m4a, isolated_artist_dir):
+        """Einzelnes Genre (kein secondary) - kein Separator im Spiel."""
+        processor = make_processor_stub()  # Default: primary="Pop", secondary=[]
+
+        await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        after = MP4(tagged_m4a)
+        assert after["©gen"] == ["Pop"]
+
+    @pytest.mark.asyncio
+    async def test_dry_run_predicts_semicolon_separator(self, tagged_m4a, isolated_artist_dir):
+        """Dry-Run darf keine Datei schreiben, muss aber das tatsaechliche
+        TagWriter-Endergebnis vorhersagen."""
+        processor = make_processor_stub()
+        processor.genre_processor.determine_genre_with_fallbacks = AsyncMock(
+            return_value=DummyMBIdsResult(
+                primary="Hip Hop",
+                secondary=["Deutschrap", "Emo Rap", "Cloud Rap"],
+            )
+        )
+        before_hash = rpam.audio_essence_md5(tagged_m4a)
+
+        result = await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=True,
+        )
+
+        assert result["changes"]["genre_tag"] == {
+            "before": [], "after": ["Hip Hop; Deutschrap; Emo Rap; Cloud Rap"],
+        }
+        # Weiterhin komplett unangetastet.
+        assert MP4(tagged_m4a).get("©gen") is None
+        assert rpam.audio_essence_md5(tagged_m4a) == before_hash
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Album- vs. Singles-Dateinamenskonvention
 #
 # Waehrend der Vorbereitung des zweiten Validierungslaufs (Nina Chuba, echte
