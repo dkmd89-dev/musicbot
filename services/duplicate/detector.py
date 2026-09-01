@@ -17,6 +17,16 @@ den bestehenden Präsentations-Anwendungsfall unverändert bleibt.
 
 Verhalten, Signaturen und Logik unverändert gegenüber dem Ausgangszustand
 übernommen - keine fachliche Änderung im Rahmen dieser Extraktion.
+
+Phase 2.2 (MusicBot — Duplicate Resolution Phase 2.2, Parität zu
+services/duplicate/classification.py::normalize_title_for_identity()):
+_clean_title_for_comparison() entfernt zusätzlich ein umschließendes
+Anführungszeichen-Paar (_strip_wrapping_quote_pair()) - Fix für einen in
+Phase 2.1 (Real Findings Audit) dokumentierten False-Negative-Fund
+(inkonsistent gesetzte Anführungszeichen zwischen Single-/Album-Tag
+derselben Aufnahme, z. B. '"Bequem"' vs. 'Bequem'). Minimale,
+nachweislich notwendige Paritätsanpassung - keine sonstige Änderung an
+dieser Klasse.
 """
 
 import hashlib
@@ -33,6 +43,34 @@ from utils.artist_map import ArtistNormalizer
 from utils.youtube_parser import parse_youtube_title
 from services.downloader.models import DuplicateEntry
 from services.duplicate.cache import DuplicateCache
+
+# Phase 2.2: exakte Kopie von services/duplicate/classification.py::
+# _TITLE_QUOTE_PAIRS/_strip_wrapping_quote_pair() - siehe dortige
+# Begründung (Real Findings Audit Phase 2.1). Bewusst als freie Funktion
+# auf Modulebene (nicht als Instanzmethode), da sie keinen Zugriff auf
+# "self" benötigt - exakt dasselbe Muster wie bei den bereits
+# bestehenden, in classification.py gespiegelten Methoden dieser Klasse.
+_TITLE_QUOTE_PAIRS = (
+    ("\u0022", "\u0022"),  # straight double quote, U+0022
+    ("'", "'"),  # straight single quote, U+0027
+    ("„", "“"),  # „...“  (deutsche Konvention)
+    ("“", "”"),  # “...”  (englische Konvention, curly double)
+    ("‘", "’"),  # ‘...’  (englische Konvention, curly single)
+)
+
+
+def _strip_wrapping_quote_pair(text: str) -> str:
+    """Entfernt GENAU EIN äußeres, vollständig umschließendes und
+    zusammenpassendes Anführungszeichen-Paar - siehe
+    services/duplicate/classification.py::_strip_wrapping_quote_pair()
+    für die vollständige Begründung (identische Implementierung)."""
+    if len(text) < 2:
+        return text
+    for open_q, close_q in _TITLE_QUOTE_PAIRS:
+        if text[0] == open_q and text[-1] == close_q:
+            inner = text[1:-1].strip()
+            return inner if inner else text
+    return text
 
 
 class DuplicateDetector:
@@ -291,6 +329,9 @@ class DuplicateDetector:
         for pattern in patterns_to_remove:
             cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        # Phase 2.2 (Parität zu classification.py::normalize_title_for_identity()):
+        # entfernt ein umschließendes Anführungszeichen-Paar, siehe Modul-Docstring.
+        cleaned = _strip_wrapping_quote_pair(cleaned)
         return cleaned if cleaned else "Unknown"
 
     def _create_metadata_hash(self, metadata: Dict) -> str:
