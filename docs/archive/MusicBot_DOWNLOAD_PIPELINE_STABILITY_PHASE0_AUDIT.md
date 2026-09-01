@@ -1,7 +1,7 @@
 # MusicBot — Download Pipeline Stability Phase — PHASE 0 Audit Report
 
 > Strikt read-only Deep Audit gemäß `docs/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE.md`.
-> Basis: `docs/MusicBot_ENGINEERING_BASELINE_v5.md` (1123 passed/0 failed, Freeze APPROVED).
+> Basis: `docs/archive/MusicBot_ENGINEERING_BASELINE_v5.md` (1123 passed/0 failed, Freeze APPROVED).
 > Scope: Download Pipeline + Duplicate Detection Integrity. Metadata Quality
 > explizit OUT OF SCOPE (außer wo sie unmittelbar die Pipeline-Stabilität
 > beeinträchtigt). **Keine Codeänderungen in dieser Phase.**
