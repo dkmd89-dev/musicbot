@@ -122,6 +122,18 @@ handlers/
     → Benutzerinteraktion / Telegram-Präsentation
       (Nachrichtenversand, MarkdownV2-Formatierung, Callback-Handling)
 
+klassen/
+    → historisch gewachsene Orchestrierungsschicht zwischen handlers/ und
+      services/ (aktuell: download_handler.py::DownloadHandler, von
+      handlers/menu/rich_menu_handler.py konstruiert). Hält wie handlers/
+      bewusst Telegram-Objekte (Update, Message) und sendet/editiert
+      Nachrichten direkt — keine reine services/-artige Fachorchestrierung.
+      Kein neuer Code sollte hier ansiedeln, ohne dass dafür ein expliziter
+      Grund vorliegt; bestehender Code hier bleibt unangetastet, bis eine
+      eigene Migrationsentscheidung getroffen wird (siehe
+      docs/audits/SERVICES_ARCHITECTURE_AUDIT_2026-09-01.md, Abschnitt 6/7,
+      wo diese Schicht als klassen/→services/-Grenze mitgeprüft wurde).
+
 services/
     → Fachliche bzw. technische Orchestrierung
 
@@ -153,7 +165,10 @@ Ein Modul, das externe Netzwerk-/API-Kommunikation durchführt, gehört nach
 steuert (kein Netzwerk), gehört nach `utils/` — nicht automatisch in
 `services/clients/`, nur weil es "technisch" ist. Telegram-spezifische
 Formatierung/Objekte (`Update`, `CallbackQuery`, `ParseMode`, Emoji-/
-MarkdownV2-Helfer) gehören ausschließlich in `handlers/`.
+MarkdownV2-Helfer) gehören in `handlers/` — in `services/` dürfen sie
+nie vorkommen (repoweit verifiziert, `docs/audits/SERVICES_ARCHITECTURE_AUDIT_2026-09-01.md`).
+Die historisch gewachsene Ausnahme ist `klassen/` (s. o.), das aus
+denselben Gründen wie `handlers/` Telegram-Objekte halten darf.
 
 Beim Arbeiten an einem Bereich immer prüfen:
 
