@@ -824,3 +824,141 @@ ihrem eigentlichen Ort dabei nachweislich unangetastet).
 
 **EXECUTE_IMPLEMENTED_AND_TESTED** — siehe Abschlussbericht der Phase
 für die vollständige Begründung inklusive des Vorfalls aus 23.1.
+
+---
+
+## 24. Production Read-Only Dry-Run Enablement ("Freigabe Schritt 3")
+
+Ziel: reiner Lesezugriff auf die reale Produktionsbibliothek
+(`config.py::Config.LIBRARY_DIR`, seit dem Commit "Konfiguration:
+library/ Verzeichnis in config.py angepasst" `/mnt/musik_bilder/library`,
+vormals `/mnt/4tb/library`), ohne die bestehende Execute-Sperre für
+Produktion aufzuweichen.
+
+### 24.1 Architektur
+
+Neue Konstante `ALLOWED_READONLY_ROOTS = [Path("/mnt/musik_bilder/library")]`.
+`validate_scan_root(path, allow_execute)`: Testbibliothek (`ALLOWED_ROOT`)
+behält vollen Zugriff; ein `ALLOWED_READONLY_ROOTS`-Pfad wird NUR
+akzeptiert, wenn `allow_execute` (== `args.execute`) `False` ist -
+`--execute` gegen einen Read-Only-Root wird unbedingt und vor jeder
+anderen Prüfung mit `PathSafetyError` abgelehnt. `--path` bleibt der
+einzige CLI-Zugang - keine neue Flag nötig.
+
+### 24.2 Gefundener und behobener Fehler (vor dem ersten realen Lauf)
+
+Der erste reale Testlauf gegen `/mnt/musik_bilder/library` lieferte
+`Files scanned: 0` - `validate_file_within_root()` prüfte `FORBIDDEN_ROOTS`
+(worunter weiterhin das gesamte `/mnt/musik_bilder` fällt) VOR der
+Zugehörigkeit zum tatsächlich übergebenen `permitted_root`, wodurch
+jede Datei fälschlich als "außerhalb erlaubtem Root" übersprungen wurde
+- der neue Read-Only-Root liegt bewusst VERSCHACHTELT innerhalb eines
+weiterhin verbotenen Mounts, eine Konstellation, die im ursprünglichen,
+überlappungsfreien ALLOWED_ROOT-/FORBIDDEN_ROOTS-Design nicht vorkam.
+Fix: Root-Zugehörigkeit wird jetzt zuerst geprüft (autoritativ, da
+`permitted_root` bereits durch `validate_scan_root()` bestätigt wurde),
+`FORBIDDEN_ROOTS` greift nur noch als Verteidigung für Pfade außerhalb
+des übergebenen Roots. Vor dem realen Lauf durch 10 gezielte Tests
+(gefakte Read-Only-Roots, niemals der echte Produktionspfad in Tests)
+sowie den anschließenden realen Nachweis (416/416 Dateien erfolgreich
+gescannt) verifiziert.
+
+### 24.3 Realer Dry-Run gegen /mnt/musik_bilder/library
+
+```text
+Files scanned:      416
+Duplicate groups:   14
+Auto-resolvable:    12
+Manual review:      2
+Single (no dup):    386
+Read-only intact:   PASS (zusätzlich verifiziert: Dateianzahl vor/nach
+                      unverändert, keine Datei mit mtime nach Scan-Start)
+```
+
+Neue, in der kuratierten Testbibliothek bisher nicht vorhandene Muster:
+
+- **2Pac / Changes** → `MANUAL_REVIEW` (Duration-Abweichung 11.34s, kein
+  MB-ID) - Safety Gate korrekt ausgelöst, kein automatischer REMOVE.
+- **Badchieff / LAUF, MANCHMAL, PARKHAUS** → `RESOLVED` über den
+  ALBUM_LIKE-vs-ALBUM_LIKE-Tie-Breaker (nicht Album-vs-Single wie in
+  allen bisherigen Fällen) - derselbe MB-ID/ISRC-bestätigte Track
+  erscheint auf zwei verschiedenen Alben (`2022 - I SEE YOU WHEN I SEE
+  YOU` und `2022 - MANCHMAL`); der Tie-Breaker wählt deterministisch
+  eine Version, die andere wird REMOVE-Vorschlag.
+- Alle 12 `RESOLVED`-Gruppen mit vorhandener MusicBrainz Recording
+  ID/ISRC zeigen durchgehend `mb_match=True`/`isrc_match=True` - keine
+  einzige widersprüchliche ID in der gesamten realen Bibliothek
+  beobachtet.
+
+Bekannte Fälle (Bequem/Dein Lügner/Grad mal ein Jahr/Nachts wach/Pueblo/
+GUT AUS) bestätigen sich 1:1 gegen die reale Produktionsbibliothek.
+
+### 24.4 Sicherheit
+
+Kein `--execute` gegen `/mnt/musik_bilder/library` ausgeführt (strukturell
+blockiert, per Test verifiziert). Keine Datei verändert, verschoben oder
+gelöscht. Einziger Schreibzugriff: der bestehende Sandbox-JSON-Report
+unter `/tmp/musicbot_test/`.
+
+### 24.5 Verdict
+
+Vollständige Rohdaten (14 Gruppen, alle Evidenzfelder) liegen im
+Gesprächsverlauf/JSON-Report vor - **rein informativ, keine
+Löschempfehlung dieser Phase**. Ob und welche der 12 automatisch
+auflösbaren Gruppen tatsächlich per `--execute` bereinigt werden,
+bleibt ein separater, eigens freizugebender nächster Schritt.
+
+### 24.6 Manuelles Review (nach Freigabe)
+
+Alle 12 automatisch auflösbaren Gruppen (15 REMOVE-Dateien) einzeln
+forensisch geprüft (mutagen + ffprobe + SHA-256, zusätzlich Bitrate-
+Vergleich bei auffälligen Größendifferenzen, Cover-Hash-Vergleich bei
+Ghetto Gospel, vollständige Tracklisten-Prüfung bei den Badchieff-
+Album-vs-Album-Fällen). Ergebnis: **12/12 TRUE_DUPLICATE**, keine
+FALSE_POSITIVE/UNCERTAIN-Einstufung. Zwei Anmerkungen ohne
+Blocker-Charakter:
+
+- **2Pac / Ghetto Gospel** (Single `2025 - Ghetto Gospel.m4a`): einziger
+  Fall der 15 ohne direkten ID-Match zum KEEP-Kandidaten, mit 47ms
+  Duration-Abweichung und abweichendem Cover (SHA-256 unterschiedlich)
+  - schwächste Evidenz, weiterhin plausibel dieselbe Aufnahme, aber
+  explizit als Grenzfall dokumentiert.
+- **Badchieff LAUF/MANCHMAL/PARKHAUS**: `2022 - MANCHMAL/` enthält nur
+  Tracks 01/02/04 (Tracknummer 03 fehlt) - starkes Indiz für einen
+  unvollständigen Frühdownload, der später durch das vollständige Album
+  `2022 - I SEE YOU WHEN I SEE YOU/` ersetzt wurde. Nach Entfernen der 3
+  Duplikate bliebe `2022 - MANCHMAL/` als leerer Ordner zurück -
+  Ordner-Cleanup liegt außerhalb des Scopes dieses Tools (löscht
+  ausschließlich einzelne Dateien, nie Verzeichnisse) und bleibt
+  manuelle Nutzeraufgabe.
+
+---
+
+## 25. Production-Execute-Pilot: Bestätigungsmechanismus
+
+Vor dem ersten realen Production-Delete zusätzliche, bewusst hohe
+Reibungsstufe (Auftrag: "Freigabe für Schritt 2 und direkt Schritt 3",
+nach abgeschlossenem manuellem Review):
+
+`validate_scan_root()` erlaubt `--execute` gegen einen
+`ALLOWED_READONLY_ROOTS`-Eintrag NUR, wenn:
+
+1. zusätzlich `--confirm-production-execute` gesetzt ist (eigenes,
+   separates Flag - `--execute` allein löst gegen Produktion weiterhin
+   NICHTS aus), UND
+2. der Scan-Root NICHT der Read-Only-Root selbst ist, sondern ein
+   konkretes Unterverzeichnis (z. B. ein einzelner Artist-Ordner) -
+   verhindert einen versehentlichen Full-Library-Execute in einem
+   einzigen Aufruf.
+
+Zusätzlicher, während der Implementierung gefundener und behobener
+Fehler: `_validate_file_within_allowed_root()` (Execute-Zeit-Pfad-
+Validierung) war fest auf `ALLOWED_ROOT` verdrahtet - beim ersten
+End-to-End-Test gegen einen gefakten Production-Root wurde dadurch
+jede Datei fälschlich als "außerhalb erlaubtem Root" abgelehnt
+(`Execution result: PARTIAL`, kein Delete). Fix: `_make_file_validator
+(permitted_root)` - Closure-Factory, die den tatsächlich für den
+jeweiligen Lauf bestätigten Root verwendet (analog zum bereits in
+Abschnitt 24.2 behobenen `build_candidates()`-Fehler).
+
+5 neue Tests (ausschließlich gefakte Read-Only-Roots).
