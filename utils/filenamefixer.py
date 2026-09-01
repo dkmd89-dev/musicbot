@@ -321,13 +321,41 @@ class FilenameFixerTool(SingletonMixin):
         target_path.parent.mkdir(parents=True, exist_ok=True)
         self.logger.debug(f"📍 [LIBRARY] Zielpfad: {target_path}")
 
-        final_target = target_path
-        counter = 1
-        while final_target.exists():
-            final_target = target_path.with_name(
-                f"{target_path.stem} ({counter}){target_path.suffix}"
+        # TOCTOU-Fix (Baseline v6 Technical Debt): eine reine .exists()-
+        # Pruefung vor dem spaeteren Path.replace() konnte das Fenster
+        # zwischen Pruefung und tatsaechlichem Schreiben nicht schliessen -
+        # bei zwei Prozessen, die zufaellig denselben Zielnamen berechnen
+        # (z.B. der laufende Bot + ein gleichzeitig manuell gestarteter
+        # scripts/reprocess_artist_metadata.py-Lauf, der bewusst dieselbe
+        # move_to_library()-Implementierung wiederverwendet), konnten beide
+        # die Pruefung passieren, bevor einer geschrieben hatte - der
+        # Verlierer wurde durch das anschliessende Path.replace() dann
+        # stillschweigend ueberschrieben (Datenverlust, keine Korruption -
+        # das Copy+Rename-Muster aus FINDING-6 schuetzt bereits davor).
+        # os.O_EXCL beansprucht den jeweiligen Kandidatennamen atomar auf
+        # Betriebssystemebene (funktioniert damit auch prozessuebergreifend,
+        # kein reiner In-Prozess-Lock) - bei Kollision wird der naechste
+        # Kandidat probiert, exakt dieselbe "(N)"-Namenskonvention wie
+        # bisher.
+        final_target = None
+        attempt = 0
+        while final_target is None:
+            candidate = (
+                target_path
+                if attempt == 0
+                else target_path.with_name(
+                    f"{target_path.stem} ({attempt}){target_path.suffix}"
+                )
             )
-            counter += 1
+            try:
+                claim_fd = os.open(
+                    str(candidate), os.O_CREAT | os.O_EXCL | os.O_WRONLY
+                )
+                os.close(claim_fd)
+                final_target = candidate
+            except FileExistsError:
+                attempt += 1
+
         renamed_due_to_conflict = final_target != target_path
         if renamed_due_to_conflict:
             self.logger.warning(
@@ -357,6 +385,16 @@ class FilenameFixerTool(SingletonMixin):
             )
             try:
                 tmp_target.unlink(missing_ok=True)
+            except OSError:
+                pass
+            # final_target wurde oben per os.O_EXCL bereits als leere Datei
+            # geclaimt (0 Bytes) - schlaegt der eigentliche Copy+Replace-
+            # Schritt fehl, darf dieser leere Platzhalter nicht in der
+            # Library liegen bleiben (Path.replace() ist atomar: entweder
+            # es lief vollstaendig durch, oder final_target haelt hier noch
+            # unveraendert den leeren Claim).
+            try:
+                final_target.unlink(missing_ok=True)
             except OSError:
                 pass
             raise
