@@ -539,29 +539,10 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 clean_title=search_title_for_genre,
             )
 
-            # ── DEBUG 9: genres_result untersuchen ───────────────────────────────────
-            self.logger.info(f"[DEBUG 9] genres_result type: {type(genres_result)}")
-
-            self.logger.info(
-                f"[DEBUG 9] genres_result.__dict__ = "
-                f"{getattr(genres_result, '__dict__', genres_result)}"
-            )
-
-            self.logger.info(
-                f"[DEBUG 9] genres_result.mb_ids = "
-                f"{getattr(genres_result, 'mb_ids', None)}"
-            )
-
             # ── 9b. MBIDs aus Genre-Pipeline übernehmen ─────────────────────────────
             _mb_ids_from_genre = getattr(genres_result, "mb_ids", None) or {}
 
-            self.logger.info(f"[DEBUG 9b] _mb_ids_from_genre = {_mb_ids_from_genre}")
-
             if _mb_ids_from_genre:
-                self.logger.info(
-                    f"[DEBUG 9b] verfügbare Keys: {list(_mb_ids_from_genre.keys())}"
-                )
-
                 _id_mapping = {
                     "recording_id": "musicbrainz_recording_id",
                     "release_id": "musicbrainz_release_id",
@@ -578,13 +559,6 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 if _ids_written:
                     self.logger.info(
                         f"🔖 [MB-IDs] Aus Genre-Pipeline übernommen: {_ids_written}"
-                    )
-                    self.logger.info(
-                        f"[DEBUG 9b] track_metadata nach Übernahme:\n"
-                        f"  recording_id = {track_metadata.get('musicbrainz_recording_id', '—')[:16] if track_metadata.get('musicbrainz_recording_id') else '—'}...\n"
-                        f"  release_id   = {track_metadata.get('musicbrainz_release_id', '—')[:16] if track_metadata.get('musicbrainz_release_id') else '—'}...\n"
-                        f"  release_group= {track_metadata.get('musicbrainz_release_group_id', '—')[:16] if track_metadata.get('musicbrainz_release_group_id') else '—'}...\n"
-                        f"  artist_id    = {track_metadata.get('musicbrainz_artist_id', '—')[:16] if track_metadata.get('musicbrainz_artist_id') else '—'}..."
                     )
 
             # ── 10. Lyrics ───────────────────────────────────────────────────
@@ -626,14 +600,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
                             title=search_title_for_genre,
                         )
                     )
-                    self.logger.info(
-                        f"[DEBUG ALBUM PREFETCH] Rückgabe:\n{_mb_album_prefetch}"
-                    )
 
-                    if _mb_album_prefetch:
-                        self.logger.info(
-                            f"[DEBUG ALBUM PREFETCH] Keys: {list(_mb_album_prefetch.keys())}"
-                        )
                     if _mb_album_prefetch:
 
                         def _pick(*keys):
@@ -1053,10 +1020,21 @@ class EnhancedMetadataProcessor(SingletonMixin):
             # Namen, liess die Luecke im internen Aufruf hier aber bestehen.
             # Erweitert die Ausschlussmenge (nur zusaetzlich einschraenkend,
             # nie lockernd) um dieselbe breite Pruefung.
+            #
+            # process_single_track()-Characterization-Audit (docs/audits/
+            # ENHANCED_METADATA_PROCESSOR_PROCESS_SINGLE_TRACK_2026-09-01.md):
+            # _special_channels_cfg wurde bei Schritt 5.5 bereits mit
+            # identischem self.config berechnet (self.config wird innerhalb
+            # dieser Methode nirgends neu zugewiesen) - vorher rief diese
+            # Stelle load_special_channels_merged(self.config) ein zweites
+            # Mal auf und las damit mapping/special_channel.yaml ein zweites
+            # Mal unnoetig von der Platte (kein Caching in
+            # load_special_channels_from_yaml()). Jetzt: Wiederverwendung
+            # des bereits berechneten Ergebnisses.
             _is_special_channel_for_learning = _is_podcast_channel or bool(
                 get_special_category(
                     _channel_for_special_detection,
-                    load_special_channels_merged(self.config),
+                    _special_channels_cfg,
                 )
             )
             if artist_source in _learn_sources and not _is_special_channel_for_learning:
