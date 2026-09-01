@@ -177,6 +177,52 @@ def test_happy_path_end_to_end(
     assert entry.artist == result.artist
 
 
+def test_happy_path_artist_with_ft_substring_and_genuine_feat_is_not_mangled(
+    processor, filename_fixer, tmp_path
+):
+    """
+    Regressions-Tripwire fuer die Klasse von Fehlern hinter ARTISTNORM-001/
+    ARTISTNORM-002 (siehe tests/test_split_main_and_featuring.py::
+    TestArtistnorm002WordBoundaryFix und die Doku in
+    tests/test_autolearn_special_channel_gate.py): ein Artist-String, der
+    "ft" nur als Teilstring UND zusaetzlich ein echtes "feat."-Keyword
+    enthaelt, muss durch die volle Pipeline (process_single_track() ->
+    ArtistProcessor.determine_best_artist() -> split_main_and_featuring())
+    unbeschaedigt als Hauptartist "Kraftklub" hervorgehen - nicht als
+    "Kraft" (faelschliches Auftrennen am Teilstring "ft" in "Kraftklub")
+    und nicht als der komplette, ungetrennte String inkl. "feat. Marteria".
+
+    test_happy_path_end_to_end() oben deckt diesen Pfad nicht ab (Fixture-
+    Artist "Happy Artist" enthaelt kein "ft"/"feat") - dieser Test schliesst
+    genau diese Luecke, damit ein kuenftiges Wiederauftreten der ARTISTNORM-
+    001/002-Fehlerklasse sofort im Happy-Path auffaellt statt nur in den
+    dedizierten Unit-Tests von split_main_and_featuring().
+    """
+    source = tmp_path / "kraftklub.mp3"
+    source.write_bytes(b"fake-audio-bytes-not-real-mp3-data")
+
+    track_metadata = {
+        "title": "Kraftklub feat. Marteria - Test Song (Official Video)",
+        "artist": "Kraftklub feat. Marteria",
+        "uploader": "Kraftklub feat. Marteria",
+        "channel": "Kraftklub feat. Marteria",
+        "id": "FTSUBSTR1",
+        "filepath": str(source),
+        "cover_art": b"fake-cover-bytes",
+        "genre": "Hip Hop",
+    }
+
+    result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=track_metadata,
+            filename_fixer=filename_fixer,
+        )
+    )
+
+    assert result.success is True
+    assert result.artist == "Kraftklub"
+
+
 def test_second_call_with_same_video_id_is_a_cache_hit(
     processor, filename_fixer, tmp_path
 ):
