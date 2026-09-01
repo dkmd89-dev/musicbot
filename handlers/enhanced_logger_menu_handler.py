@@ -10,7 +10,7 @@ from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Any, Callable
+from typing import Dict, List, Optional, Set, Any, Callable, TYPE_CHECKING
 from collections import Counter, defaultdict
 from datetime import datetime
 import json
@@ -25,6 +25,9 @@ from logger import (
     MODULE_EMOJIS,
     LOG_LEVEL_EMOJIS,
 )
+
+if TYPE_CHECKING:
+    from handlers.enhanced_error_handler import EnhancedErrorHandler
 
 
 class ModuleLoggerManager:
@@ -264,6 +267,10 @@ class EnhancedLoggerMenuHandler:
         self.log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         self.ITEMS_PER_PAGE = 10  # Hinzugefügt für Paginierung
 
+        # Wird von RichMenuHandler nach der Konstruktion zugewiesen
+        # (self.logger_handler.error_handler = self.error_handler)
+        self.error_handler: "Optional[EnhancedErrorHandler]" = None
+
     async def _safe_edit_message(
         self, update: Update, text: str, reply_markup: InlineKeyboardMarkup = None
     ):
@@ -340,6 +347,10 @@ class EnhancedLoggerMenuHandler:
 
         except TelegramError as e:
             self.logger.error(f"❌ Fehler beim Anzeigen des Logger-Hauptmenüs: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_main_menu", e
+                )
 
     # === MODUL-VERWALTUNG ===
 
@@ -460,6 +471,10 @@ class EnhancedLoggerMenuHandler:
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Anzeigen der Module-Liste: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_modules_list", e
+                )
 
     async def show_module_detail(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, module_name: str
@@ -531,6 +546,10 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Anzeigen der Modul-Details: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_module_detail", e
+                )
 
     async def show_comprehensive_statistics(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -596,9 +615,14 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Sammeln der Statistiken: {e}")
-            await self._show_error_message(
-                update, f"Fehler beim Laden der Statistiken: {str(e)}"
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_global_stats", e
+                )
+            else:
+                await self._show_error_message(
+                    update, f"Fehler beim Laden der Statistiken: {str(e)}"
+                )
 
     async def toggle_module(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, module_name: str
@@ -647,7 +671,12 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
             self.logger.error(
                 f"❌ Fehler beim Umschalten des Moduls {module_name}: {e}"
             )
-            await self._show_error_message(update, f"Fehler beim Umschalten: {str(e)}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_toggle_module", e
+                )
+            else:
+                await self._show_error_message(update, f"Fehler beim Umschalten: {str(e)}")
 
     async def show_module_level_menu(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, module_name: str
@@ -693,9 +722,14 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
             self.logger.error(
                 f"❌ Fehler beim Laden des Level-Menüs für {module_name}: {e}"
             )
-            await self._show_error_message(
-                update, f"Fehler beim Laden des Level-Menüs: {str(e)}"
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_module_level_menu", e
+                )
+            else:
+                await self._show_error_message(
+                    update, f"Fehler beim Laden des Level-Menüs: {str(e)}"
+                )
 
     async def set_module_level(
         self,
@@ -760,9 +794,14 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
             self.logger.error(
                 f"❌ Fehler beim Setzen des Log-Levels für {module_name}: {e}"
             )
-            await self._show_error_message(
-                update, f"Fehler beim Setzen des Log-Levels: {str(e)}"
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_set_module_level", e
+                )
+            else:
+                await self._show_error_message(
+                    update, f"Fehler beim Setzen des Log-Levels: {str(e)}"
+                )
 
     # === LOG-DATEIEN VERWALTUNG ===
 
@@ -862,9 +901,14 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Laden der Log-Dateien: {e}")
-            await self._show_error_message(
-                update, f"Fehler beim Laden der Log-Dateien: {str(e)}"
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_files_list", e
+                )
+            else:
+                await self._show_error_message(
+                    update, f"Fehler beim Laden der Log-Dateien: {str(e)}"
+                )
 
     async def show_log_file_detail(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, filename: str
@@ -977,9 +1021,14 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
             self.logger.error(
                 f"❌ Fehler beim Laden der Datei-Details für {filename}: {e}"
             )
-            await self._show_error_message(
-                update, f"Fehler beim Laden der Datei-Details: {str(e)}"
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_file_detail", e
+                )
+            else:
+                await self._show_error_message(
+                    update, f"Fehler beim Laden der Datei-Details: {str(e)}"
+                )
 
     # === ERWEITERTE STATISTIKEN ===
 
@@ -1152,9 +1201,14 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Laden des Cleanup-Menüs: {e}")
-            await self._show_error_message(
-                update, f"Fehler beim Laden des Cleanup-Menüs: {str(e)}"
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_cleanup_menu", e
+                )
+            else:
+                await self._show_error_message(
+                    update, f"Fehler beim Laden des Cleanup-Menüs: {str(e)}"
+                )
 
     async def _get_cleanup_statistics(self, log_dir: Path) -> Dict[str, Any]:
         """Sammelt Cleanup-relevante Statistiken"""
@@ -1535,9 +1589,14 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
 
         except Exception as e:
             self.logger.error(f"❌ Fehler bei erweiterter Handler-Verwaltung: {e}")
-            await self._show_error_message(
-                update, f"Fehler bei Handler-Verwaltung: {str(e)}"
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_handlers_advanced", e
+                )
+            else:
+                await self._show_error_message(
+                    update, f"Fehler bei Handler-Verwaltung: {str(e)}"
+                )
 
     # === LEGACY-KOMPATIBILITÄT ===
 
@@ -1594,6 +1653,10 @@ Verfügbare Level:
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Global-Level-Menü: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_global_level_menu", e
+                )
 
     async def set_global_log_level(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, level_name: str
@@ -1647,7 +1710,12 @@ Die Änderung ist sofort aktiv!"""
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Setzen des globalen Levels: {e}")
-            await update.callback_query.answer("❌ Fehler beim Setzen des Log-Levels")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_set_global_level", e
+                )
+            else:
+                await update.callback_query.answer("❌ Fehler beim Setzen des Log-Levels")
 
 
 class LoggerModuleManager:
