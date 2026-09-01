@@ -213,7 +213,8 @@ class DownloadHandler:
             logger_factory=self.logger_factory
         )
         self.downloader = YoutubeDownloader(
-            update=update,
+            chat_id=update.effective_chat.id,
+            update_id=update.update_id,
             config=self.config,
             cookie_handler=self.cookie_handler,
         )
