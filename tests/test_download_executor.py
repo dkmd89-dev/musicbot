@@ -8,12 +8,14 @@ blockierte den gesamten asyncio-Event-Loop fuer die gesamte Downloaddauer,
 wodurch der Bot fuer ALLE Telegram-Nutzer unresponsive wurde, nicht nur fuer
 den gerade downloadenden. extract_info_async() faengt das jetzt ab.
 
-Zweiter Fund: Config.MAX_DURATION wurde nur in der toten
-Config.YTDL_BASE_OPTIONS-Property (0 Aufrufer im Repo) unter einem
+Zweiter Fund: Config.MAX_DURATION wurde nur in der inzwischen entfernten,
+toten Config.YTDL_BASE_OPTIONS-Property (0 Aufrufer im Repo) unter einem
 nicht-existenten yt-dlp-Options-Key gesetzt - wirkungslos. build_ydl_opts()
 (die tatsaechlich genutzte Methode) kannte MAX_DURATION gar nicht.
 _build_duration_match_filter() implementiert das jetzt echt, mit Ausnahme
-fuer als Podcast erkannte Kanaele.
+fuer als Podcast erkannte Kanaele. (AE-05,
+docs/MusicBot_ARCHITECTURE_EVOLUTION.md: YTDL_BASE_OPTIONS selbst spaeter
+komplett entfernt.)
 """
 
 import asyncio
