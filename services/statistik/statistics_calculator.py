@@ -15,6 +15,8 @@ Extrahiert aus services/statistik_service.py (ARCH-003, P-6) - 1:1
 """
 
 import json
+import os
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -211,11 +213,21 @@ class StatisticsCalculator:
             / f"statistics_{period}_{safe_username}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         )
 
+        # Baseline v5/v6 Technical Debt: vorher direktes open(export_file, "w")
+        # - ein Prozessabbruch/Fehler waehrend json.dump() konnte eine
+        # unvollstaendige/korrupte Export-Datei hinterlassen (export_file
+        # selbst ist dank des Sekunden-Zeitstempels im Dateinamen immer neu,
+        # ueberschreibt also keinen vorherigen Export - das Risiko betrifft
+        # nur diese eine, gerade erst erzeugte Datei). Jetzt: write-tmp +
+        # atomarer os.replace(), analog zu DuplicateCache._write_json_atomic()/
+        # MetadataCache.store().
+        tmp_file = export_file.with_name(f"{export_file.name}.tmp_{int(time.time() * 1000)}")
         try:
             self.export_dir.mkdir(exist_ok=True)
 
-            with open(export_file, "w", encoding="utf-8") as f:
+            with open(tmp_file, "w", encoding="utf-8") as f:
                 json.dump(stats, f, indent=2, ensure_ascii=False, default=str)
+            os.replace(tmp_file, export_file)
 
             self.logger.info(
                 f"📤 Statistiken für '{navidrome_username}' erfolgreich exportiert: {export_file}"
@@ -227,4 +239,8 @@ class StatisticsCalculator:
                 f"❌ Fehler beim Export der Statistiken für '{navidrome_username}': {e}",
                 exc_info=True,
             )
+            try:
+                tmp_file.unlink(missing_ok=True)
+            except OSError:
+                pass
             return None
