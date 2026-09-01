@@ -251,6 +251,7 @@ class RichMenuHandler:
         # 9. Backup Handler
         try:
             self.backup_handler = BackupHandler(self.config, self.logger_factory)
+            self.backup_handler.error_handler = self.error_handler
             self.logger.info("✅ BackupHandler initialisiert")
         except Exception as e:
             self.logger.error(f"❌ Backup-Handler Fehler: {e}", exc_info=True)
