@@ -204,3 +204,109 @@ class TestGenreDetailMarkdownEscapingBug007b:
 
         text = update.callback_query.edit_message_text.call_args[0][0]
         assert "Keine Songs" in text
+
+
+class TestErrorHandlerIntegration:
+    """error_handler wird von rich_menu_handler.py nach der Konstruktion
+    zugewiesen (self.navidrome_handler.error_handler = self.error_handler).
+    Ohne explizite Zuweisung bleibt er None - alle obigen Tests (ohne
+    error_handler) decken bereits ab, dass der bisherige Fallback dann
+    unveraendert greift. Diese Klasse deckt den NEUEN Pfad ab: ist
+    error_handler gesetzt, wird er tatsaechlich aufgerufen - und zwar
+    STATT der bisherigen lokalen Fehlermeldung (kein doppeltes
+    Benachrichtigen), analog zum bereits etablierten Muster in
+    handlers/enhanced_status_handler.py / handlers/menu/rich_menu_system.py."""
+
+    def test_browse_artists_routes_through_error_handler_when_set(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        handler.error_handler = Mock()
+        handler.error_handler.handle_callback_error = AsyncMock()
+        handler.navidrome_api.get_artists = AsyncMock(side_effect=RuntimeError("boom"))
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_browse_artists(update, context))
+
+        handler.error_handler.handle_callback_error.assert_awaited_once()
+        call_args = handler.error_handler.handle_callback_error.call_args[0]
+        assert call_args[0] is update
+        assert call_args[1] is context
+        assert call_args[2] == "navidrome_browse_artists"
+        assert isinstance(call_args[3], RuntimeError)
+        # kein doppeltes Benachrichtigen: die alte lokale Fehlermeldung
+        # darf NICHT zusaetzlich gesendet werden.
+        update.callback_query.edit_message_text.assert_not_called()
+
+    def test_browse_artists_falls_back_to_local_message_without_error_handler(self):
+        """Nichtregression, explizit gegen den neuen Codepfad geprueft
+        (nicht nur implizit ueber bestehende Tests)."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        assert handler.error_handler is None
+        handler.navidrome_api.get_artists = AsyncMock(side_effect=RuntimeError("boom"))
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_browse_artists(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Fehler beim Laden der Künstler" in text
+
+    def test_search_query_routes_through_error_handler_when_set(self):
+        """process_search_query wird per Textnachricht (nicht per
+        Callback) ausgeloest - prueft, dass die Integration auch fuer
+        diesen Update-Typ korrekt verdrahtet ist. Die erste reply_text()
+        ("Suche nach ...") passiert VOR dem Fehler und bleibt daher immer
+        bestehen - entscheidend ist, dass keine ZWEITE, lokale
+        Fehlermeldung mehr gesendet wird, wenn error_handler gesetzt ist."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        handler.error_handler = Mock()
+        handler.error_handler.handle_callback_error = AsyncMock()
+        handler.navidrome_api.search = AsyncMock(side_effect=RuntimeError("boom"))
+        user_id = 111
+        handler.browse_states[user_id] = {"waiting_for_search": True, "search_type": "all"}
+        update = make_update(user_id=user_id)
+        update.message = Mock()
+        update.message.reply_text = AsyncMock(return_value=Mock())
+        context = make_context()
+
+        asyncio.run(handler.process_search_query(update, context, "query text"))
+
+        handler.error_handler.handle_callback_error.assert_awaited_once()
+        assert handler.error_handler.handle_callback_error.call_args[0][2] == "navidrome_search_query"
+        # nur die "Suche nach ..."-Nachricht, KEINE zusaetzliche lokale
+        # Fehlermeldung mehr.
+        assert update.message.reply_text.await_count == 1
+
+    def test_search_query_falls_back_to_local_message_without_error_handler(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        assert handler.error_handler is None
+        handler.navidrome_api.search = AsyncMock(side_effect=RuntimeError("boom"))
+        user_id = 111
+        handler.browse_states[user_id] = {"waiting_for_search": True, "search_type": "all"}
+        update = make_update(user_id=user_id)
+        update.message = Mock()
+        update.message.reply_text = AsyncMock(return_value=Mock())
+        context = make_context()
+
+        asyncio.run(handler.process_search_query(update, context, "query text"))
+
+        # "Suche nach ..." + lokale Fehlermeldung = 2 Aufrufe.
+        assert update.message.reply_text.await_count == 2
+        error_text = update.message.reply_text.call_args[0][0]
+        assert "Fehler bei der Suche" in error_text
+
+    def test_stats_routes_through_error_handler_when_set(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        handler.error_handler = Mock()
+        handler.error_handler.handle_callback_error = AsyncMock()
+        update = make_update()
+        context = make_context()
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(side_effect=RuntimeError("boom")),
+        ):
+            asyncio.run(handler.handle_stats(update, context))
+
+        handler.error_handler.handle_callback_error.assert_awaited_once()
+        assert handler.error_handler.handle_callback_error.call_args[0][2] == "navidrome_stats"

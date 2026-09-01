@@ -7,6 +7,7 @@ Integrierte Mediensuche und -verwaltung über Navidrome API
 
 import asyncio
 from typing import Dict, List, Optional, Any, Tuple
+from typing import TYPE_CHECKING
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +19,9 @@ from config import Config
 from logger import get_module_logger, EnhancedLogger
 from helfer.markdown_helfer import escape_md_v2, md_bold, md_code
 from services.clients.navidrome_api import NavidromeAPI
+
+if TYPE_CHECKING:
+    from handlers.enhanced_error_handler import EnhancedErrorHandler
 
 
 @dataclass
@@ -73,6 +77,12 @@ class NavidromeMenuHandler:
         # Browse-State für jeden User
         self.browse_states: Dict[int, Dict] = {}
         self.search_cache: Dict[str, List[MediaItem]] = {}
+
+        # Wird von rich_menu_handler.py nach der Konstruktion zugewiesen
+        # (self.navidrome_handler.error_handler = self.error_handler) -
+        # Default None, damit sowohl direkte Konstruktion (Tests) als auch
+        # der Zeitraum vor dieser Zuweisung sicher funktionieren.
+        self.error_handler: "Optional[EnhancedErrorHandler]" = None
 
         self._initialize_api()
 
@@ -187,9 +197,14 @@ Wähle einen Künstler aus oder verwende die Navigation\\:
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Laden der Künstler: {e}")
-            await update.callback_query.edit_message_text(
-                "❌ Fehler beim Laden der Künstler. Bitte versuche es später erneut."
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_browse_artists", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    "❌ Fehler beim Laden der Künstler. Bitte versuche es später erneut."
+                )
 
     async def handle_browse_albums(
         self,
@@ -318,9 +333,14 @@ Wähle ein Album aus oder verwende die Navigation\\:
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Laden der Alben: {e}")
-            await update.callback_query.edit_message_text(
-                "❌ Fehler beim Laden der Alben. Bitte versuche es später erneut."
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_browse_albums", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    "❌ Fehler beim Laden der Alben. Bitte versuche es später erneut."
+                )
 
     async def handle_browse_genres(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -438,9 +458,14 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Laden der Genres: {e}")
-            await update.callback_query.edit_message_text(
-                "❌ Fehler beim Laden der Genres. Bitte versuche es später erneut."
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_browse_genres", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    "❌ Fehler beim Laden der Genres. Bitte versuche es später erneut."
+                )
 
     # NEU: Genre-Details anzeigen
     async def handle_genre_detail(
@@ -542,9 +567,14 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Laden der Genre-Details: {e}")
-            await update.callback_query.edit_message_text(
-                f"❌ Fehler beim Laden der Details für Genre '{genre_name}'."
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_genre_detail", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    f"❌ Fehler beim Laden der Details für Genre '{genre_name}'."
+                )
 
     # NEU: Artist-Details anzeigen
     async def handle_artist_detail(
@@ -652,9 +682,14 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Laden der Künstler-Details: {e}")
-            await update.callback_query.edit_message_text(
-                "❌ Fehler beim Laden der Künstler-Details."
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_artist_detail", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    "❌ Fehler beim Laden der Künstler-Details."
+                )
 
     async def handle_my_playlists(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0
@@ -712,9 +747,14 @@ Du hast {len(playlists)} Playlist(s) verfügbar:
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Laden der Playlists: {e}")
-            await update.callback_query.edit_message_text(
-                "❌ Fehler beim Laden der Playlists."
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_my_playlists", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    "❌ Fehler beim Laden der Playlists."
+                )
 
     async def handle_favorites(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -794,9 +834,14 @@ Du hast {len(playlists)} Playlist(s) verfügbar:
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Laden der Favoriten: {e}")
-            await update.callback_query.edit_message_text(
-                "❌ Fehler beim Laden der Favoriten."
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_favorites", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    "❌ Fehler beim Laden der Favoriten."
+                )
 
     async def handle_recent(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Zeigt zuletzt gespielte Alben"""
@@ -848,9 +893,14 @@ Du hast {len(playlists)} Playlist(s) verfügbar:
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Laden der 'Zuletzt gespielt'-Liste: {e}")
-            await update.callback_query.edit_message_text(
-                "❌ Fehler beim Laden der 'Zuletzt gespielt'-Liste."
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_recent", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    "❌ Fehler beim Laden der 'Zuletzt gespielt'-Liste."
+                )
 
     async def handle_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Zeigt allgemeine Bibliotheksstatistiken"""
@@ -900,9 +950,14 @@ Du hast {len(playlists)} Playlist(s) verfügbar:
 
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Laden der Statistiken: {e}")
-            await update.callback_query.edit_message_text(
-                "❌ Fehler beim Laden der Statistiken."
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_stats", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    "❌ Fehler beim Laden der Statistiken."
+                )
 
     async def handle_search(
         self,
@@ -1073,9 +1128,14 @@ Die Suche ist nicht case\\-sensitiv\\!
 
         except Exception as e:
             self.logger.error(f"❌ Fehler bei der Suche: {e}")
-            await update.message.reply_text(
-                "❌ Fehler bei der Suche. Bitte versuche es später erneut."
-            )
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_search_query", e
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ Fehler bei der Suche. Bitte versuche es später erneut."
+                )
             return True
 
     def _check_connection(self) -> bool:
