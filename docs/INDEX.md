@@ -63,6 +63,12 @@ Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/a
 | [archive/MusicBot_METADATA_QUALITY_PHASE3_META04_AUDIT.md](archive/MusicBot_METADATA_QUALITY_PHASE3_META04_AUDIT.md) | HISTORICAL (committed) | META-04 — Einzelfall war Tippfehler, kein Bug; ohne Codeänderung geschlossen |
 | [archive/MusicBot_METADATA_QUALITY_PHASE4_META11_AUDIT.md](archive/MusicBot_METADATA_QUALITY_PHASE4_META11_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | META-11 — "video"/"audio" in Klammern kombiniert mit anderen Wörtern wird erkannt |
 
+## Technical Debt Cleanup Reports
+
+| Datei | Status | Kurzthema |
+|---|---|---|
+| [audits/TECHNICAL_DEBT_CLEANUP_2026-09-01.md](audits/TECHNICAL_DEBT_CLEANUP_2026-09-01.md) | HISTORICAL (committed) | Behebung der in Baseline v6 + `MusicBot_ARCHITECTURE_EVOLUTION.md` (AE-Punkte) offen gelisteten P2/P3-Findings (PR #85–#90): TestMenuHandler INV-01, move_to_library() TOCTOU, pylast-Repr-Secret-Leak, tote Config-Werte (AE-05), CoverProcessor-Metadaten-Atomarität (AE-03), statistics_calculator-Export-Atomarität |
+
 ## Weitere Einzelfund-Audits
 
 | Datei | Status | Kurzthema |
