@@ -339,15 +339,33 @@ Testausführung:
    → nur Tests, die unmittelbar von der geänderten Funktionalität betroffen sind
    → Beispiel (DUP-03): python3 -m pytest tests/test_duplicate_detector_hash_consistency.py -q
 
-3. Thematische Testsuite (optional, wenn sinnvoll)
+3. Thematische Testsuite
    → die zum Bereich gehörende Testgruppe
    → Beispiel: python3 -m pytest tests/test_duplicate*.py -q
+   → Für eine einzelne kleine Änderung (ein Fix, ein Finding, ein
+     eng umrissenes Skript/Modul) sind Schritte 1-3 der Standard-
+     Abschluss. Die vollständige Suite (Schritt 4) ist NICHT der
+     Normalfall nach jeder Änderung.
 
 4. Vollständige Suite
    → python3 -m pytest tests/ -q
-   → NICHT nach jedem einzelnen Finding
-   → erst wenn ALLE Findings der aktuell gemeinsam bearbeiteten
-     Arbeitsphase abgeschlossen sind
+   → NICHT nach jedem einzelnen Finding/Fix - nur bei einer
+     "größeren Veränderung":
+       - mehrere Findings/Fixes einer gemeinsam bearbeiteten
+         Arbeitsphase sind ALLE abgeschlossen (Abschluss der Phase,
+         nicht jeder einzelne Schritt darin)
+       - eine ARCH-Phase wird abgeschlossen
+       - unmittelbar vor PR/Merge einer Änderung, die vorher noch
+         nicht vollständig gegengeprüft wurde
+       - Änderung an gemeinsam genutzter Produktionslogik mit
+         breitem, nicht klar eingrenzbarem Blast-Radius (z.B.
+         tag_writer.py, download_utils.py - nicht ein isoliertes
+         scripts/-Tool)
+       - der Nutzer fragt ausdrücklich danach
+   → Bei Unsicherheit, ob eine Änderung schon "größer" genug ist:
+     lieber bei Schritt 3 (thematische Suite) bleiben und im Bericht
+     transparent machen, dass die volle Suite bewusst ausgelassen
+     wurde - nicht im Zweifel automatisch die volle Suite anhängen
 ```
 
 Als Zyklus über mehrere Findings hinweg einer Arbeitsphase:
@@ -359,7 +377,8 @@ nächstes Finding → gezielte Tests → direkte Regressionstests → thematisch
    ↓
    ...
    ↓
-erst am Ende der Arbeitsphase: vollständige Testsuite
+erst am Ende der Arbeitsphase (nicht nach jedem einzelnen Finding
+darin): vollständige Testsuite
 ```
 
 Diese Reihenfolge gilt für **jedes** Finding, auch für zukünftige, nicht nur
