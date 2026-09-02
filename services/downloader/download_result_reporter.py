@@ -272,7 +272,20 @@ class DownloadResultReporter:
             return f"{int(count / max(total, 1) * 100)}%"
 
         # Pfad
-        lib_path = result.get("library_path") if not is_pl else (tracks[-1].get("library_path") if tracks else None)
+        # Live-Fund 2026-09-02 (Abbruch-Test): bei einem per ❌ abgebrochenen
+        # Playlist-Download ist der LETZTE Eintrag in tracks oft der
+        # abgebrochene/fehlgeschlagene Track selbst (kein library_path) -
+        # ein simples tracks[-1] zeigte dadurch faelschlich "N/A" als
+        # Beispiel-Track, obwohl vorherige Tracks erfolgreich waren. Sucht
+        # stattdessen rueckwaerts den letzten Track MIT tatsaechlichem
+        # library_path.
+        if is_pl:
+            lib_path = next(
+                (t.get("library_path") for t in reversed(tracks) if t.get("library_path")),
+                None,
+            )
+        else:
+            lib_path = result.get("library_path")
         if not lib_path:
             self.logger.warning("⚠️ [SUMMARY] library_path fehlt im Ergebnis")
         fname, fdir_short = _example_track_and_short_dir(lib_path)
@@ -305,7 +318,18 @@ class DownloadResultReporter:
             lyrics_line = f"📜 Lyrics   : {'✅ verfügbar' if lyrics_ok else '❌ fehlt'}"
             loud_line = f"🔊 Loudness : {'✅ normalisiert' if loud_ok else '❌ fehlt'}"
 
-        header = "🎉 Download erfolgreich abgeschlossen!"
+        # Download-Control-Center 2026-09-02: ein per ❌-Button abgebrochener
+        # Playlist-Download hat weiterhin result["success"] == True (die
+        # bereits VOR dem Abbruch fertig heruntergeladenen Tracks sind
+        # echte Erfolge, siehe _process_playlist_download()) - der Header/
+        # die Tracks-Zeile machen die Teil-Fertigstellung trotzdem sichtbar,
+        # statt einen vollen Erfolg vorzutaeuschen.
+        was_cancelled = bool(result.get("cancelled"))
+        header = (
+            "🛑 Download abgebrochen"
+            if was_cancelled
+            else "🎉 Download erfolgreich abgeschlossen!"
+        )
         meta = []
         if not is_pl:
             meta.append(f"🎵 Titel    : {title}")
@@ -316,7 +340,8 @@ class DownloadResultReporter:
         ]
         if is_pl:
             ok = sum(1 for t in tracks if t.get("success"))
-            meta.append(f"🎵 Tracks   : {ok}/{len(tracks)} erfolgreich")
+            tracks_label = "abgebrochen bei" if was_cancelled else "erfolgreich"
+            meta.append(f"🎵 Tracks   : {ok}/{len(tracks)} {tracks_label}")
         meta.append(f"📡 Quelle   : {src_label}")
         meta.append(f"⏱️ Dauer    : {duration}")
 

@@ -46,6 +46,7 @@ from services.duplicate.detector import DuplicateDetector
 from services.downloader.models import DuplicateEntry
 from logger import get_module_logger
 from services.downloader.downloader import YoutubeDownloader
+from services.downloader.active_downloads import ActiveDownloadRegistry
 from services.downloader.download_utils import is_youtube_mix_url
 from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
@@ -186,6 +187,7 @@ class DownloadHandler:
         duplicate_detector: DuplicateDetector,
         metadata_processor: EnhancedMetadataProcessor,
         logger_factory: Optional[Callable] = None,
+        active_downloads: Optional[ActiveDownloadRegistry] = None,
     ):
         self.update = update
         self.config = config
@@ -212,14 +214,16 @@ class DownloadHandler:
         self.progress_tracker = ProgressTracker(
             logger_factory=self.logger_factory
         )
-        self.downloader = YoutubeDownloader(
-            chat_id=update.effective_chat.id,
-            update_id=update.update_id,
-            config=self.config,
-            cookie_handler=self.cookie_handler,
-            duplicate_detector=self.duplicate_detector,
-            status_callback=self._on_playlist_progress,
-        )
+        # Download-Control-Center 2026-09-02: geteilte, prozessweite
+        # Registry (auf RichMenuHandler, langlebig - im Gegensatz zu
+        # DownloadHandler selbst, das pro Update neu instanziiert wird,
+        # siehe services/downloader/active_downloads.py-Docstring).
+        # self.active_download wird erst in handle_youtube_links()
+        # gesetzt, sobald die URL bekannt ist - self.downloader (braucht
+        # das cancel_event) wird deshalb dort (nicht mehr hier) gebaut.
+        self.active_downloads = active_downloads
+        self.active_download = None
+        self.downloader: Optional[YoutubeDownloader] = None
 
         self.logger.info(
             f"🚀 [INIT] DownloadHandler bereit — update_id={update.update_id}"
@@ -781,6 +785,37 @@ class DownloadHandler:
         self.status_msg = await update.message.reply_text("▶️ Anfrage wird gestartet...")
         TOTAL = _YT.TOTAL
 
+        # Download-Control-Center 2026-09-02: Registrierung VOR dem
+        # eigentlichen Download, damit "🔄 Aktive Downloads"/"❌ Abbrechen"
+        # ab dem ersten Moment (schon waehrend Schritt 1/2) greifen.
+        # download_type ist zunaechst eine grobe URL-Heuristik - sobald
+        # yt-dlp den echten Typ kennt, korrigiert enhanced_download_with_retry()
+        # ihn (siehe download_utils.py). getattr() mit Default statt
+        # self.active_downloads: bestehende Tests bypassen __init__()
+        # (object.__new__(), etabliertes Muster dieser Testsuite) und
+        # setzen dieses Attribut nicht.
+        active_downloads = getattr(self, "active_downloads", None)
+        if active_downloads is not None:
+            self.active_download = active_downloads.register(
+                chat_id=update.effective_chat.id,
+                url=url,
+                download_type="playlist" if "list=" in url else "single",
+            )
+        # self.downloader wird nur gebaut, wenn noch keiner injiziert
+        # wurde - bestehende Tests setzen handler.downloader = Mock(...)
+        # VOR dem Aufruf dieser Methode (ebenfalls object.__new__()-
+        # Muster) und erwarten, dass genau dieser Mock verwendet wird.
+        if getattr(self, "downloader", None) is None:
+            self.downloader = YoutubeDownloader(
+                chat_id=update.effective_chat.id,
+                update_id=update.update_id,
+                config=self.config,
+                cookie_handler=self.cookie_handler,
+                duplicate_detector=self.duplicate_detector,
+                status_callback=self._on_playlist_progress,
+                active_download=self.active_download,
+            )
+
         try:
             # ── SCHRITT 1: URL-Prüfung ─────────────────────────────────────
             step, label = _YT.URL_CHECK
@@ -802,6 +837,26 @@ class DownloadHandler:
             if not download_result:
                 self.logger.error("❌ [YT-PIPELINE] download_audio() lieferte leeres Ergebnis")
                 raise ValueError("Download-Ergebnis war leer oder ungültig")
+
+            # Download-Control-Center 2026-09-02: ein per ❌-Button
+            # abgebrochener PLAYLIST-Download hat weiterhin
+            # download_result["success"] == True (die vor dem Abbruch
+            # fertig heruntergeladenen Tracks sind echte Erfolge) - dieser
+            # Check MUSS daher vor der success-Prüfung unten laufen, sonst
+            # wuerde ein abgebrochener Single-Download (success=False)
+            # faelschlich als generischer Fehlschlag gemeldet, UND ein
+            # abgebrochener Playlist-Download wuerde die Abbruch-Meldung
+            # nie erreichen (success=True faellt sonst einfach durch).
+            if download_result.get("cancelled") and not download_result.get("tracks"):
+                # Nur der reine Single-/Vor-Playlist-Abbruch (keine Tracks
+                # ueberhaupt begonnen) bekommt die eigene, kurze Meldung -
+                # ein Playlist-Abbruch MIT bereits fertigen Tracks laeuft
+                # bewusst normal weiter (Metadaten/Bibliothek/Zusammenfassung
+                # fuer die echten Teilergebnisse, siehe unten - die
+                # Zusammenfassung selbst macht den Abbruch dort sichtbar,
+                # siehe DownloadResultReporter.build_final_summary_message()).
+                await self._handle_download_cancelled()
+                return
 
             # FINDING-4 (docs/archive/MusicBot_FINDING_4_FORENSIC_AUDIT.md): erschöpfte
             # Retries signalisieren Fehlschlag über einen Rückgabewert
@@ -913,9 +968,39 @@ class DownloadHandler:
             )
             await self.handle_download_failure(str(e))
 
+        finally:
+            # Download-Control-Center 2026-09-02: laeuft bei JEDEM Ausgang
+            # dieser Methode (return, Exception, normaler Abschluss) -
+            # ohne dieses finally wuerde ein Chat nach einem Fehler/
+            # Abbruch faelschlich dauerhaft als "aktiver Download"
+            # gelten, "🔄 Aktive Downloads"/"❌ Abbrechen" blieben ohne
+            # tatsaechlichen Download sichtbar.
+            if active_downloads is not None:
+                active_downloads.unregister(update.effective_chat.id)
+
     # ──────────────────────────────────────────────────────────────────────────
     # FEHLER-HANDLING
     # ──────────────────────────────────────────────────────────────────────────
+
+    async def _handle_download_cancelled(self) -> None:
+        """
+        Download-Control-Center 2026-09-02: Meldung fuer einen per
+        ❌-Button abgebrochenen Download OHNE bereits fertige Tracks
+        (reiner Single-Abbruch, oder Playlist-Abbruch vor dem ersten
+        fertigen Track) - siehe Aufrufstelle in handle_youtube_links()
+        fuer den Playlist-mit-Teilergebnissen-Fall (laeuft stattdessen
+        normal weiter, die Zusammenfassung selbst macht den Abbruch
+        sichtbar).
+        """
+        self.logger.info("🛑 [YT-PIPELINE] Download abgebrochen (Nutzeranfrage)")
+        text = "🛑 Download abgebrochen"
+        try:
+            if self.status_msg:
+                await self.status_msg.edit_text(text)
+            else:
+                await self.update.message.reply_text(text)
+        except TelegramError as te:
+            self.logger.error(f"❌ Fehler beim Senden der Abbruch-Meldung: {te}")
 
     async def handle_download_failure(self, error_message: str) -> None:
         """Loggt den Fehler und sendet eine verständliche Fehlermeldung an den User."""

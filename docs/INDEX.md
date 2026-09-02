@@ -57,6 +57,12 @@ Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/a
 | [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2M_DUP06_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2M_DUP06_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DUP-06 — YouTube-Mix/Radio-URL-Erkennung |
 | [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2N_RES01_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2N_RES01_AUDIT.md) | HISTORICAL | RES-01 — analysiert, bewusst nicht behoben (akzeptiertes Risiko) |
 
+## Telegram Menü-System
+
+| Datei | Status | Kurzthema |
+|---|---|---|
+| [MusicBot_TELEGRAM_MENU_SYSTEM.md](MusicBot_TELEGRAM_MENU_SYSTEM.md) | CURRENT (lebendes Dokument) | Zentrale Referenz für das Telegram-Inline-Menü-System: Zwei-Ebenen-Routing (PTB-`CallbackQueryHandler`-Pattern + interner `handle_callback()`-Dispatch), bestehender Menübaum, Download-Control-Center (Live-Status, Hard-Cancel, Details) inkl. vier live gefundener/gefixter Bugs, offene Punkte (Download-Verlauf), Muster für künftige Menü-Erweiterungen |
+
 ## Metadata Quality Phase
 
 | Datei | Status | Kurzthema |

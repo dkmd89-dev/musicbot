@@ -14,6 +14,7 @@ docs/archive/arch/MusicBot_ARCH-020_Download_Pipeline_Characterization.md, Absch
 "Spotify-Entfernung") - Spotify wurde im produktiven Betrieb nicht genutzt.
 """
 
+import asyncio
 import json
 from datetime import datetime
 from typing import Dict, Callable, Optional, Any
@@ -31,6 +32,7 @@ from handlers.menu.rich_menu_system import (
     MenuState,
 )
 from klassen.download_handler import DownloadHandler
+from services.downloader.active_downloads import ActiveDownloadRegistry
 from handlers.test_menu_handler import TestMenuHandler
 from handlers.enhanced_logger_menu_handler import EnhancedLoggerMenuHandler
 from handlers.navidrome_menu_handler import NavidromeMenuHandler
@@ -94,6 +96,14 @@ class RichMenuHandler:
         self.status_handler: Optional[EnhancedStatusHandler] = None
         self.backup_handler: Optional[BackupHandler] = None
         self.restart_handler: Optional[BotRestartHandler] = None
+
+        # Download-Control-Center 2026-09-02: EINE prozessweite Registry,
+        # ueber die gesamte Bot-Laufzeit auf diesem (im Gegensatz zu
+        # DownloadHandler pro Update neu erzeugten) Objekt gehalten - siehe
+        # services/downloader/active_downloads.py-Docstring.
+        self.active_downloads = ActiveDownloadRegistry(
+            logger_factory=self.logger_factory
+        )
 
         # State Management
         self.user_states: Dict[int, str] = {}
@@ -296,6 +306,7 @@ class RichMenuHandler:
             self.menu_system.set_backup_handler(self.backup_handler)
         if self.restart_handler:
             self.menu_system.set_restart_handler(self.restart_handler)
+        self.menu_system.set_active_downloads(self.active_downloads)
 
         # Handler registrieren
         self._register_download_handlers()
@@ -478,6 +489,19 @@ class RichMenuHandler:
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^status_"),
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^backup_"),
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^restart:"),
+            # Download-Control-Center 2026-09-02 (Live-Fund: "restliche
+            # Buttons sind tot außer Hauptmenü"): CallbackQueryHandler
+            # werden PTB-seitig über feste pattern=-Allowlists geroutet -
+            # das interne dl:-Präfix-Routing in
+            # RichMenuSystem.handle_callback() (siehe dort) wird nie
+            # erreicht, wenn hier kein eigener Handler für "^dl:"
+            # registriert ist. menu:download selbst funktionierte bereits
+            # (passt auf "^menu:" unten), nur die dl:*-Folge-Callbacks
+            # (Neuer Download/Aktive Downloads/Verlauf/Abbrechen/Details/
+            # Zurück) liefen dadurch ins Leere - PTB ignorierte sie
+            # komplett (kein Handler-Match), daher weder Log-Eintrag noch
+            # Exception.
+            CallbackQueryHandler(self.menu_system.handle_callback, pattern="^dl:"),
             # Allgemeines Menü zuletzt
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^menu:"),
             # URL Handler (YouTube-URLs)
@@ -789,6 +813,7 @@ class RichMenuHandler:
             duplicate_detector=self.duplicate_detector,
             metadata_processor=self.metadata_processor,
             logger_factory=self.logger_factory,
+            active_downloads=self.active_downloads,
         )
 
     # ====== COMMAND HANDLER ======
@@ -1123,6 +1148,34 @@ class RichMenuHandler:
             update: Telegram-Update-Objekt
             context: Telegram-Kontext
             url: Die zu verarbeitende URL
+
+        Live-Fund 2026-09-02 (Nutzer-Report: "sobald Download läuft öffnet
+        sich das Menü nicht"): die Telegram-`Application` läuft ohne
+        `concurrent_updates=True` (siehe bot.py) - PTB holt das NÄCHSTE
+        Update aus der Warteschlange erst, NACHDEM der Handler für das
+        aktuelle Update komplett zurückgekehrt ist. Ein direktes
+        `await handler.handle_url(...)` hier blockierte dadurch die
+        Verarbeitung JEDES weiteren Updates (inkl. Menü-Klicks wie "🔄
+        Aktive Downloads"/"❌ Abbrechen") für die GESAMTE Downloaddauer -
+        bestätigt über einen live beobachteten "Query is too old"-
+        BadRequest für einen während eines laufenden Downloads geklickten
+        Button, der erst NACH Downloadende (und damit zu spät für
+        Telegrams Callback-Query-Gültigkeitsfenster) verarbeitet wurde.
+
+        Fix: der eigentliche Download läuft als eigenständiger
+        Hintergrund-Task (asyncio.create_task) - _process_url() selbst
+        kehrt sofort zurück, PTB kann direkt das nächste Update
+        verarbeiten. Bewusst NICHT die globale `concurrent_updates`-
+        Einstellung geändert (deutlich größerer Blast-Radius: beträfe
+        ALLE Handler, nicht nur Downloads) - dieser gezielte Task deckt
+        genau den gemeldeten Fall ab.
+
+        handle_youtube_links() (aufgerufen über handler.handle_url())
+        fängt eigene Fehler bereits breit ab und meldet sie dem Nutzer
+        per Telegram - der add_done_callback()-Handler unten ist nur ein
+        Sicherheitsnetz für wirklich unerwartete, durchrutschende
+        Ausnahmen (verhindert eine stumme "Task exception was never
+        retrieved"-Warnung ohne jedes Logging).
         """
         self.logger.info(
             f"🔗 Verarbeite 📺 YouTube-URL von User {update.effective_user.id}: {url}"
@@ -1135,7 +1188,20 @@ class RichMenuHandler:
             )
             return
 
-        await handler.handle_url(update, context)
+        task = asyncio.create_task(handler.handle_url(update, context))
+        task.add_done_callback(self._log_background_download_task_exception)
+
+    def _log_background_download_task_exception(self, task: "asyncio.Task") -> None:
+        """add_done_callback()-Sicherheitsnetz für _process_url()'s
+        Hintergrund-Download-Task - siehe dortigen Docstring."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc:
+            self.logger.error(
+                f"💥 Unerwarteter Fehler im Hintergrund-Download-Task: {exc}",
+                exc_info=exc,
+            )
 
     # Alias für Rückwärtskompatibilität (wird von älterem Code ggf. noch aufgerufen)
     async def _initiate_download(

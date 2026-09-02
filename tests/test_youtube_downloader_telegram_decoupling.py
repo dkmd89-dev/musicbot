@@ -130,6 +130,95 @@ class TestDownloadAudioPassesChatIdAndUpdateIdToRetry:
         _, kwargs = deps["retry"].await_args
         assert kwargs["status_callback"] is None
 
+    def test_active_download_is_forwarded_unchanged(self, deps):
+        """Download-Control-Center 2026-09-02: optionales active_download
+        (services.downloader.active_downloads.ActiveDownload) wird
+        unveraendert an enhanced_download_with_retry() durchgereicht."""
+        deps["retry"].return_value = {
+            "success": True,
+            "type": "single",
+            "track_info": {},
+        }
+        active_download = Mock()
+        downloader = YoutubeDownloader(
+            chat_id=1,
+            update_id=2,
+            config=Mock(),
+            cookie_handler=Mock(),
+            active_download=active_download,
+        )
+
+        run_async(downloader.download_audio("https://youtube.com/watch?v=x"))
+
+        _, kwargs = deps["retry"].await_args
+        assert kwargs["active_download"] is active_download
+
+    def test_active_download_defaults_to_none(self, deps):
+        deps["retry"].return_value = {
+            "success": True,
+            "type": "single",
+            "track_info": {},
+        }
+        downloader = make_downloader(deps)
+
+        run_async(downloader.download_audio("https://youtube.com/watch?v=x"))
+
+        _, kwargs = deps["retry"].await_args
+        assert kwargs["active_download"] is None
+
+
+class TestDownloadAudioCancelledFlag:
+    def test_cancelled_flag_is_propagated_on_failure(self, deps):
+        deps["retry"].return_value = {
+            "success": False,
+            "error": "Download abgebrochen",
+            "cancelled": True,
+        }
+        downloader = make_downloader(deps)
+
+        result = run_async(downloader.download_audio("https://youtube.com/watch?v=x"))
+
+        assert result == {
+            "success": False,
+            "error": "Download abgebrochen",
+            "cancelled": True,
+        }
+
+    def test_cancelled_flag_defaults_to_false_on_normal_failure(self, deps):
+        deps["retry"].return_value = {"success": False, "error": "boom"}
+        downloader = make_downloader(deps)
+
+        result = run_async(downloader.download_audio("https://youtube.com/watch?v=x"))
+
+        assert result["cancelled"] is False
+
+    def test_cancelled_flag_is_false_on_normal_success(self, deps):
+        deps["retry"].return_value = {
+            "success": True,
+            "type": "single",
+            "track_info": {},
+        }
+        downloader = make_downloader(deps)
+
+        result = run_async(downloader.download_audio("https://youtube.com/watch?v=x"))
+
+        assert result["cancelled"] is False
+
+    def test_cancelled_flag_is_true_on_partially_completed_playlist(self, deps):
+        deps["retry"].return_value = {
+            "success": True,
+            "type": "playlist",
+            "tracks": [{"success": True}],
+            "cancelled": True,
+        }
+        downloader = make_downloader(deps)
+
+        result = run_async(
+            downloader.download_audio("https://youtube.com/playlist?list=x")
+        )
+
+        assert result["cancelled"] is True
+
 
 class TestDownloadAudioSingleTrackResultTransformation:
     def test_success_single_track_maps_fields(self, deps):
@@ -206,7 +295,7 @@ class TestDownloadAudioFailureAndErrorPaths:
 
         result = run_async(downloader.download_audio("https://youtube.com/watch?v=x"))
 
-        assert result == {"success": False, "error": "boom"}
+        assert result == {"success": False, "error": "boom", "cancelled": False}
 
     def test_empty_result_returns_clean_error_dict(self, deps):
         """
@@ -231,7 +320,11 @@ class TestDownloadAudioFailureAndErrorPaths:
 
         result = run_async(downloader.download_audio("https://youtube.com/watch?v=x"))
 
-        assert result == {"success": False, "error": "Unbekannter Fehler."}
+        assert result == {
+            "success": False,
+            "error": "Unbekannter Fehler.",
+            "cancelled": False,
+        }
 
     def test_exception_from_retry_propagates(self, deps):
         deps["retry"].side_effect = RuntimeError("kaputt")

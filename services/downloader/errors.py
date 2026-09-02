@@ -97,3 +97,23 @@ class PermissionError(DownloadError):
     def __init__(self, details: str = ""):
         super().__init__(details=details, code=self.code)
         logger.debug(f"PermissionError erstellt: {self}")
+
+
+class DownloadCancelledError(DownloadError):
+    """
+    Nutzer-initiierter Abbruch über den ❌ Abbrechen-Button (Telegram
+    Download-Control-Center, 2026-09-02). Wird von einem progress_hooks-
+    Callback geworfen, sobald ein ActiveDownloadRegistry-Eintrag als
+    "cancel angefordert" markiert wurde (services/downloader/
+    active_downloads.py) - yt-dlp bricht den laufenden Download sofort ab,
+    sobald ein Hook eine Exception wirft. Bewusst NICHT retry-faehig (siehe
+    _NON_RETRYABLE_ERROR_TYPES in download_utils.py) - ein Nutzer-Abbruch
+    darf niemals automatisch erneut versucht werden.
+    """
+
+    base_message = "Download abgebrochen"
+    code = "CANCELLED"
+
+    def __init__(self, details: str = ""):
+        super().__init__(details=details or "Vom Nutzer abgebrochen", code=self.code)
+        logger.debug(f"DownloadCancelledError erstellt: {self}")

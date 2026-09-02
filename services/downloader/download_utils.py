@@ -58,6 +58,7 @@ from services.metadata.enhanced_metadata_processor import (
 from services.metadata.models import MetadataResult
 from .download_artifact_cleanup import cleanup_single_download_artifact
 from .errors import (
+    DownloadCancelledError,
     DownloadError,
     FormatNotAvailableError,
     InvalidURLError,
@@ -145,7 +146,32 @@ _NON_RETRYABLE_ERROR_TYPES = (
     FormatNotAvailableError,
     DownloadPermissionError,
     MetadataError,
+    # Download-Control-Center 2026-09-02: ein Nutzer-Abbruch (❌-Button)
+    # darf niemals automatisch erneut versucht werden.
+    DownloadCancelledError,
 )
+
+
+def _make_cancel_check_hook(cancel_event):
+    """
+    Baut einen yt-dlp progress_hooks-Callback, der bei jedem Aufruf
+    (mehrfach pro Sekunde waehrend eines laufenden Downloads) prueft, ob
+    ein Abbruch angefordert wurde (ActiveDownload.cancel_event, siehe
+    services/downloader/active_downloads.py) - falls ja, wirft er
+    DownloadCancelledError. yt-dlp bricht den Download sofort ab, sobald
+    ein Hook eine Exception wirft (dokumentiertes yt-dlp-Verhalten) -
+    das ist der Hard-Cancel-Mechanismus fuer den gerade laufenden Track/
+    Single-Download, nicht nur fuer "naechster Track startet nicht mehr".
+
+    cancel_event ist ein threading.Event - dieser Hook laeuft im
+    Executor-Thread (run_in_executor), Abfrage ist dort sicher.
+    """
+
+    def _check(status):
+        if cancel_event is not None and cancel_event.is_set():
+            raise DownloadCancelledError()
+
+    return _check
 
 # Bekannte, aus dem echten yt-dlp-Quellcode belegte Marker fuer permanente
 # (nicht-transiente) Fehlermeldungen. Quelle: yt_dlp/extractor/youtube/
@@ -361,6 +387,7 @@ async def enhanced_download_with_retry(
     cache_logger=None,
     logger_factory: Optional[Callable] = None,
     duplicate_detector=None,
+    active_download=None,
 ) -> Dict[str, Any]:
     """
     Haupt-Einstiegspunkt für Downloads mit Retry-Logik.
@@ -370,6 +397,15 @@ async def enhanced_download_with_retry(
       2. yt-dlp Optionen via DownloadExecutor zusammenstellen
       3. Retry-Loop: Info extrahieren → Playlist oder Single weiterleiten
       4. Rückgabe: { success, type, tracks/track_info, processor_instance }
+
+    Download-Control-Center 2026-09-02: active_download (optional, ein
+    services.downloader.active_downloads.ActiveDownload) liefert - falls
+    übergeben - den geteilten ProgressTracker (für "🔄 Aktive Downloads")
+    sowie das cancel_event für den ❌-Abbrechen-Button. Ohne
+    active_download (z.B. isolierte Tests, oder Aufrufer die (noch) keine
+    ActiveDownloadRegistry haben) verhält sich diese Funktion unverändert
+    wie bisher - kein Cancel-Hook, lokaler ProgressTracker in
+    _process_playlist_download().
     """
     actual_lf = logger_factory or get_module_logger
     logger = logger or actual_lf("download_utils")
@@ -410,6 +446,19 @@ async def enhanced_download_with_retry(
 
     # ── 2. yt-dlp Optionen ────────────────────────────────────────────────────
     ydl_opts = enhanced_processor.download_executor.build_ydl_opts(config)
+    if active_download is not None:
+        # Hard-Cancel-Hook: wird an JEDEM nachfolgenden yt-dlp-Aufruf
+        # (Single-Download UND jeder einzelne Playlist-Track, siehe
+        # download_executor.py::download_single_track()) automatisch
+        # mitgezogen, da beide Stellen ydl_opts["progress_hooks"]
+        # erweitern statt ersetzen.
+        ydl_opts = {
+            **ydl_opts,
+            "progress_hooks": [
+                *ydl_opts.get("progress_hooks", []),
+                _make_cancel_check_hook(active_download.cancel_event),
+            ],
+        }
     if is_youtube_mix_url(url):
         # DUP-06: verhindert, dass yt-dlp fuer eine automatisch generierte
         # Mix-/Radio-Liste (list=RD...) ueberhaupt ein entries-tragendes
@@ -425,6 +474,13 @@ async def enhanced_download_with_retry(
     last_error: Optional[str] = None
 
     for attempt in range(max_retries):
+        if active_download is not None and active_download.is_cancel_requested():
+            logger.warning(
+                f"🛑 [RETRY {attempt + 1}] Abbruch bereits vor Versuchsstart angefordert"
+            )
+            active_download.cancelled = True
+            return {"success": False, "error": "Download abgebrochen", "cancelled": True}
+
         logger.info(
             f"\n🔄 [RETRY {attempt + 1}/{max_retries}] Starte Download-Versuch..."
         )
@@ -448,6 +504,10 @@ async def enhanced_download_with_retry(
                     f"   Einträge   : {n_entries}\n"
                     f"   Playlist-ID: {info.get('id', '?')}"
                 )
+                if active_download is not None:
+                    active_download.title = (
+                        f"{info.get('uploader', '?')} – {info.get('title', '?')}"
+                    )
                 tracks = await _process_playlist_download(
                     playlist_info=info,
                     ydl_opts=ydl_opts,
@@ -457,11 +517,23 @@ async def enhanced_download_with_retry(
                     status_callback=status_callback,
                     logger=logger,
                     duplicate_detector=duplicate_detector,
+                    active_download=active_download,
                 )
                 logger.info(
                     f"✅ [RETRY {attempt+1}] Playlist fertig: "
                     f"{len([t for t in tracks if t.get('success')])}/{len(tracks)} Tracks"
                 )
+                # Download-Control-Center: _process_playlist_download()
+                # bricht bei Abbruch die Schleife ab und liefert die
+                # bisherigen Ergebnisse zurueck (success:True waere hier
+                # sonst irrefuehrend - Playlist NICHT vollstaendig
+                # verarbeitet, sondern abgebrochen).
+                was_cancelled = (
+                    active_download is not None
+                    and active_download.is_cancel_requested()
+                )
+                if was_cancelled and active_download is not None:
+                    active_download.cancelled = True
                 return {
                     "success": True,
                     "type": "playlist",
@@ -472,6 +544,7 @@ async def enhanced_download_with_retry(
                         [t for t in tracks if t.get("success")]
                     ),
                     "duration_seconds": time.monotonic() - _dl_start,
+                    "cancelled": was_cancelled,
                 }
             else:
                 logger.info(
@@ -481,6 +554,11 @@ async def enhanced_download_with_retry(
                     f"   Dauer    : {info.get('duration', '?')}s\n"
                     f"   Video-ID : {info.get('id', '?')}"
                 )
+                if active_download is not None:
+                    active_download.title = (
+                        f"{info.get('uploader', '?')} – {info.get('title', '?')}"
+                    )
+                    active_download.tracker.set_current_item(active_download.title)
                 single = await _process_single_download(
                     url=url,
                     video_info=info,
@@ -499,6 +577,7 @@ async def enhanced_download_with_retry(
                     "track_info": single,
                     "processor_instance": enhanced_processor,
                     "duration_seconds": time.monotonic() - _dl_start,
+                    "cancelled": False,
                 }
 
         except (YoutubeDLError, DownloadError) as e:
@@ -511,15 +590,28 @@ async def enhanced_download_with_retry(
             classified = e if isinstance(e, DownloadError) else _classify_ytdlp_error(e)
 
             if isinstance(classified, _NON_RETRYABLE_ERROR_TYPES):
-                logger.error(
-                    f"⛔ [RETRY {attempt+1}] Permanenter Fehler erkannt — "
-                    f"kein weiterer Versuch (DL-03/DL-05):\n"
-                    f"   Typ    : {type(classified).__name__}\n"
-                    f"   Fehler : {last_error}"
-                )
+                is_cancel = isinstance(classified, DownloadCancelledError)
+                if is_cancel:
+                    if active_download is not None:
+                        active_download.cancelled = True
+                    logger.warning(
+                        f"🛑 [RETRY {attempt+1}] Download abgebrochen (Nutzeranfrage)"
+                    )
+                else:
+                    logger.error(
+                        f"⛔ [RETRY {attempt+1}] Permanenter Fehler erkannt — "
+                        f"kein weiterer Versuch (DL-03/DL-05):\n"
+                        f"   Typ    : {type(classified).__name__}\n"
+                        f"   Fehler : {last_error}"
+                    )
                 return {
                     "success": False,
-                    "error": f"Download dauerhaft fehlgeschlagen (kein Retry sinnvoll): {last_error}",
+                    "error": (
+                        "Download abgebrochen"
+                        if is_cancel
+                        else f"Download dauerhaft fehlgeschlagen (kein Retry sinnvoll): {last_error}"
+                    ),
+                    "cancelled": is_cancel,
                 }
 
             logger.error(
@@ -567,6 +659,7 @@ async def _process_playlist_download(
     status_callback: Optional[Callable] = None,
     logger=None,
     duplicate_detector=None,
+    active_download=None,
 ) -> List[Dict[str, Any]]:
     """
     Playlist-Pipeline (reine Orchestrierung).
@@ -617,6 +710,19 @@ async def _process_playlist_download(
     importiert dafuer nichts Telegram-Spezifisches. Ersetzt die vorherige,
     nie tatsaechlich verdrahtete status_callback-Signatur
     (chat_id, step, total, message, module) - hatte 0 echte Aufrufer.
+
+    Download-Control-Center 2026-09-02: active_download (optional, siehe
+    services.downloader.active_downloads.ActiveDownload) liefert - falls
+    uebergeben - den GETEILTEN ProgressTracker (damit "🔄 Aktive
+    Downloads" denselben Fortschritt sieht, den auch status_callback
+    bekommt) statt eines rein lokalen. Vor jedem Track wird zusaetzlich
+    active_download.is_cancel_requested() geprueft - bei Abbruch werden
+    KEINE weiteren Tracks mehr gestartet (Soft-Cancel zwischen Tracks).
+    Ein Abbruch WAEHREND eines laufenden Tracks (Hard-Cancel, ueber den
+    in ydl_opts["progress_hooks"] injizierten Hook, siehe
+    enhanced_download_with_retry()) wirft DownloadCancelledError - wird
+    hier separat (nicht als generischer Fehler) behandelt: die Schleife
+    bricht sofort ab, statt zum naechsten Track weiterzugehen.
     """
     logger = logger or get_module_logger("download_utils")
 
@@ -697,9 +803,20 @@ async def _process_playlist_download(
     processed_tracks = processed_playlist["tracks"]
     cache_hits = 0
     total = len(processed_tracks)
-    tracker = ProgressTracker(total_items=total)
+    if active_download is not None:
+        tracker = active_download.tracker
+        tracker.total_items = total
+    else:
+        tracker = ProgressTracker(total_items=total)
 
     for idx, track_info in enumerate(processed_tracks, 1):
+        if active_download is not None and active_download.is_cancel_requested():
+            logger.warning(
+                f"🛑 [PL] Abbruch angefordert — starte keine weiteren Tracks "
+                f"({idx}/{total} nicht mehr versucht)"
+            )
+            break
+
         track_title = track_info.get("title", "?")
         track_artist = track_info.get("artist", "?")
         display_name = f"{idx:02d} - {track_title}"
@@ -870,6 +987,28 @@ async def _process_playlist_download(
             # unterdrueckt: die Exception wird unveraendert erneut geworfen.
             ce.partial_playlist_results = results
             raise
+
+        except DownloadCancelledError:
+            # Download-Control-Center 2026-09-02: Hard-Cancel WAEHREND
+            # dieses Tracks (progress_hooks-Hook hat ausgeloest, siehe
+            # enhanced_download_with_retry()). Anders als ein generischer
+            # Fehler wird hier NICHT zum naechsten Track weitergegangen -
+            # die Schleife bricht komplett ab (der Nutzer hat den GANZEN
+            # Download abgebrochen, nicht nur diesen einen Track).
+            logger.warning(
+                f"🛑 [TRACK {idx:02d}] Abgebrochen (Nutzeranfrage) — "
+                f"verbleibende Tracks werden nicht mehr gestartet"
+            )
+            if active_download is not None:
+                active_download.cancelled = True
+            results.append(
+                DownloadResult(
+                    success=False,
+                    title=track_info.get("title"),
+                    error="Download abgebrochen",
+                ).to_dict()
+            )
+            break
 
         except Exception as e:
             enhanced_processor.session_stats["failed_downloads"] += 1
