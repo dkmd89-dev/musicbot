@@ -37,11 +37,15 @@ class TestLightTitleCleanupProducerCreditSuffix:
         self.cleaner = TitleCleaner()
 
     def test_bare_producer_credit_removed(self):
-        """Kernfall, real via Live-Download reproduziert."""
+        """Kernfall, real via Live-Download reproduziert. Erwartetes
+        Ergebnis inkl. Anfuehrungszeichen-Entfernung (Folge-Fund,
+        siehe test_title_cleaner_wrapping_quotes.py) - die umschliessenden
+        '"'-Zeichen werden erst NACH der Produzenten-Credit-Entfernung
+        sichtbar/entfernbar."""
         result = self.cleaner.light_title_cleanup(
             '"ADLIBS" prod. Safecall777', "makko"
         )
-        assert result == '"ADLIBS"'
+        assert result == "ADLIBS"
 
     def test_parenthesized_producer_credit_removed(self):
         result = self.cleaner.light_title_cleanup(

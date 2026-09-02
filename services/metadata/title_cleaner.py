@@ -194,6 +194,38 @@ class TitleCleaner:
             r"\s*[-–—]?\s*\bprod\.?\s+(?:by\s+)?\S.*$", "", cleaned, flags=re.IGNORECASE
         ).strip()
 
+        # Live-Fund 2026-09-02 (Nutzer-Report, Bibliotheks-Scan von
+        # /tmp/musicbot_test/metadaten): Artist "makko" stylisiert seine
+        # YouTube-Titel systematisch mit umschliessenden Anfuehrungszeichen
+        # ('"ADLIBS"', '"Bequem"', '"Grad mal ein Jahr"', ... - 7 von 13
+        # gescannten Tracks betroffen). Die Zeichen selbst wurden bisher nie
+        # entfernt. Laeuft bewusst NACH der Produzenten-Credit-Bereinigung
+        # oben - ein Titel wie '"ADLIBS" prod. Safecall777' ist VOR dieser
+        # Entfernung noch nicht vollstaendig umschlossen (Ende ist "777",
+        # nicht das schliessende Anfuehrungszeichen); erst danach wird das
+        # umschliessende Paar sichtbar. Entfernt NUR ein Anfuehrungszeichen-
+        # Paar, das den GESAMTEN (verbleibenden) Titel umschliesst (Start
+        # UND Ende) - ein einzelnes Apostroph MITTEN im Titel (z.B. "It
+        # Ain't Me", "als ob ich's einfach haette", beides real in der
+        # Library bestaetigt) wird NIE angefasst, da es weder am Anfang
+        # noch am Ende steht. Deckt gerade Anfuehrungszeichen sowie die
+        # gaengigen typografischen Varianten ab (deutsch/franzoesisch/
+        # englisch).
+        _QUOTE_PAIRS = (
+            ('"', '"'), ("'", "'"), ("„", "“"), ("«", "»"),
+            ("‹", "›"), ("‘", "’"), ("“", "”"),
+        )
+        for _open_q, _close_q in _QUOTE_PAIRS:
+            if (
+                len(cleaned) >= 2
+                and cleaned.startswith(_open_q)
+                and cleaned.endswith(_close_q)
+            ):
+                _inner = cleaned[len(_open_q):-len(_close_q)].strip()
+                if _inner:
+                    cleaned = _inner
+                break
+
         # Artist-Präfix entfernen (z.B. "Ariana Grande - ")
         if artist:
             escaped_artist = re.escape(artist)
