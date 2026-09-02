@@ -14,12 +14,13 @@ FilenameFixerTool  –  Organisiert Medien in der Library-Struktur.
 
 import re
 import os
+import json
 import time
 import shutil
 import asyncio
 import logging
 from pathlib import Path
-from typing import Optional, Tuple, List, Callable, Dict
+from typing import Optional, Tuple, List, Callable, Dict, Set
 from datetime import datetime
 import mutagen
 
@@ -113,6 +114,48 @@ def load_special_channels_merged(config) -> Dict[str, List[str]]:
         extra = [c for c in config_list if c.lower() not in seen]
         merged[cat] = yaml_list + extra
     return merged
+
+
+def load_known_group_names_from_overrides(override_file: Path) -> Set[str]:
+    """
+    Laedt die kanonischen Zielwerte aus artist_overrides.json (kleingeschrieben)
+    als Menge "bekannter, atomarer Gruppennamen".
+
+    Live-Fund 2026-09-02 (Nutzer-Testdownload, Nachfolge des Miksu & Macloud-
+    Mapping-Fixes in mapping/artist_overrides.json): extract_main_artist() in
+    build_final_path() splittet JEDEN Artist-String an ","/"&"/"feat."/"ft."/
+    " x " fuer die Library-ORDNER-Gruppierung - sinnvoll fuer echte Kollabo-
+    rationen (z.B. "Artist1 feat. Artist2" -> Ordner "Artist1"), zerlegt aber
+    den bereits als atomarer Duo-Name normalisierten Override-Wert "Miksu &
+    Macloud" zurueck in nur "Miksu". Tag/Metadaten zeigten dadurch korrekt
+    "Miksu & Macloud", der Library-Ordner blieb aber "Miksu" - inkonsistent,
+    und zusaetzlich die Ursache dafuer, dass check_library_duplicate()
+    (services/duplicate/detector.py) den bereits vorhandenen Ordner nicht
+    mehr fand (der dort verwendete ArtistNormalizer liefert seit dem
+    Override-Fix "Miksu & Macloud", nicht mehr "Miksu").
+
+    Fix: bekannte, in artist_overrides.json als Zielwert hinterlegte
+    Gruppennamen (die selbst ein Trennzeichen enthalten) werden in
+    extract_main_artist() NICHT weiter gesplittet - sie sind bereits die
+    kanonische, atomare Bezeichnung. Reine Zwei-Personen-"Ad-hoc"-Kollabos
+    ohne eigenen Override-Eintrag sind davon unberuehrt und werden weiterhin
+    wie bisher am ersten Trennzeichen gruppiert.
+    """
+    if not override_file or not Path(override_file).exists():
+        return set()
+    try:
+        with open(override_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {
+            str(v).strip().lower()
+            for v in data.values()
+            if isinstance(v, str) and v.strip()
+        }
+    except Exception as e:
+        logging.getLogger("filenamefixer").warning(
+            f"⚠️ Konnte artist_overrides.json fuer Gruppennamen nicht laden: {e}"
+        )
+        return set()
 
 
 def _normalize_channel_name(channel_name: str) -> str:
@@ -260,6 +303,13 @@ class FilenameFixerTool(SingletonMixin):
                 self.logger.info(
                     f"⭐ SPECIAL_CHANNELS aus Config.SPECIAL_CHANNELS geladen ({sum(len(v) for v in self._special_channels.values())} Kanäle)"
                 )
+
+        # Bekannte, atomare Gruppennamen (z.B. "Miksu & Macloud") aus
+        # artist_overrides.json - siehe load_known_group_names_from_overrides()
+        # fuer die volle Begruendung.
+        self._known_group_names = load_known_group_names_from_overrides(
+            getattr(self.config, "ARTIST_OVERRIDE_FILE", None)
+        )
 
         self._BATCH_SIZE = 10
         self.logger.info("✅ FilenameFixerTool initialisiert.")
@@ -461,6 +511,11 @@ class FilenameFixerTool(SingletonMixin):
         artist = clean(artist) or "Unknown Artist"
 
         def extract_main_artist(artist_str: str) -> str:
+            # Bekannte, atomare Gruppennamen (Override-Zielwerte, z.B.
+            # "Miksu & Macloud") nicht weiter zerlegen - siehe
+            # load_known_group_names_from_overrides() fuer die Begruendung.
+            if artist_str.strip().lower() in self._known_group_names:
+                return artist_str.strip()
             parts = re.split(
                 r"\s*(?:,|&| feat\.?| ft\.?| x )\s*", artist_str, flags=re.IGNORECASE
             )
