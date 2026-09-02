@@ -32,6 +32,7 @@ dieser Klasse.
 import hashlib
 import json
 import re
+import time
 from pathlib import Path
 from typing import Dict, Optional, Callable, Tuple
 from datetime import datetime
@@ -154,7 +155,56 @@ class DuplicateDetector:
             "total_checks": 0,
             "duplicates_skipped": 0,
         }
+
+        # DUP-05 (docs/FINDINGS_INDEX.md, urspruenglich docs/archive/
+        # MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md): zwischen
+        # einem "kein Duplikat"-Ergebnis von check_for_duplicates() und der
+        # tatsaechlichen Registrierung via register_download() liegt die
+        # komplette Download+Verarbeitungsdauer (Sekunden bis Minuten) -
+        # ein zweiter, paralleler Request fuer denselben Content sah in
+        # dieser Zeit ebenfalls "kein Duplikat" (Check-then-Register-Race,
+        # begrenzt auf maximal _download_semaphore gleichzeitige Downloads).
+        # Minimaler Fix wie im Audit vorgeschlagen: In-Memory-Set "aktuell
+        # in Bearbeitung befindlicher" Hashes, zusaetzlich zum persistenten
+        # Cache geprueft. TTL-basierter Ablauf (statt zwingendem
+        # try/finally an jeder Aufrufstelle) haelt den Fix bewusst auf
+        # DuplicateDetector beschraenkt, ohne klassen/download_handler.py
+        # anzufassen - ein verwaister Eintrag (Absturz/Exception waehrend
+        # des Downloads) loest sich nach der TTL von selbst auf, statt
+        # dauerhaft einen erneuten Download derselben URL/desselben
+        # Contents zu blockieren. register_download() raeumt den Eintrag
+        # zusaetzlich sofort bei tatsaechlichem Erfolg ab (siehe dort).
+        self._in_flight: Dict[str, float] = {}
+        self._in_flight_ttl_seconds = getattr(
+            config, "DUPLICATE_IN_FLIGHT_TTL_SECONDS", 900
+        )
+
         self.logger.info("🔍 DuplicateDetector initialisiert")
+
+    def _is_in_flight(self, content_or_url_hash: Optional[str]) -> bool:
+        if not content_or_url_hash:
+            return False
+        claimed_at = self._in_flight.get(content_or_url_hash)
+        if claimed_at is None:
+            return False
+        if time.time() - claimed_at > self._in_flight_ttl_seconds:
+            # Abgelaufen - vermutlich verwaist (Absturz/Exception ohne
+            # register_download()). Kein Match mehr, wird beim naechsten
+            # claim ueberschrieben statt den Download dauerhaft zu blockieren.
+            del self._in_flight[content_or_url_hash]
+            return False
+        return True
+
+    def _claim_in_flight(self, *hashes: Optional[str]) -> None:
+        now = time.time()
+        for h in hashes:
+            if h:
+                self._in_flight[h] = now
+
+    def _release_in_flight(self, *hashes: Optional[str]) -> None:
+        for h in hashes:
+            if h:
+                self._in_flight.pop(h, None)
 
     def check_for_duplicates(
         self,
@@ -175,10 +225,25 @@ class DuplicateDetector:
             )
             return True, url_duplicate, "url"
 
+        # DUP-05: In-Flight-Check schliesst die Race zwischen zwei
+        # parallelen Downloads derselben URL, bevor der erste registriert
+        # hat (siehe Begruendung/Kommentar in __init__).
+        url_hash = self.duplicate_cache.get_url_hash(url)
+        if self._is_in_flight(url_hash):
+            self.stats["duplicates_skipped"] += 1
+            self.logger.info(
+                f"⏳ URL bereits in Bearbeitung (paralleler Download): {url}"
+            )
+            return True, None, "in_flight"
+
+        content_hash = None
         if raw_artist and raw_title:
             normalized_artist = self._normalize_artist_for_comparison(raw_artist)
             cleaned_title = self._clean_title_for_comparison(
                 raw_title, normalized_artist
+            )
+            content_hash = self.duplicate_cache.get_content_hash(
+                normalized_artist, cleaned_title
             )
             content_duplicate = self.duplicate_cache.check_content_duplicate(
                 normalized_artist, cleaned_title
@@ -190,6 +255,13 @@ class DuplicateDetector:
                     f"🎵 Content-Duplikat gefunden: {content_duplicate.artist} - {content_duplicate.title}"
                 )
                 return True, content_duplicate, "content"
+            if self._is_in_flight(content_hash):
+                self.stats["duplicates_skipped"] += 1
+                self.logger.info(
+                    f"⏳ Content bereits in Bearbeitung (paralleler Download): "
+                    f"{normalized_artist} - {cleaned_title}"
+                )
+                return True, None, "in_flight"
 
         title_to_parse = raw_title or (
             track_metadata and track_metadata.get("title", "")
@@ -240,6 +312,16 @@ class DuplicateDetector:
                 )
                 return True, lib_entry, "library"
 
+        # DUP-05: kein Duplikat gefunden - URL/Content als "in Bearbeitung"
+        # markieren, damit ein paralleler zweiter Request fuer dieselbe
+        # URL/denselben Content waehrend der laufenden Download-/
+        # Verarbeitungsdauer als Duplikat erkannt wird (Race-Fenster
+        # geschlossen). Deckt bewusst nur url_hash/content_hash ab
+        # (dieselben zwei Ebenen, die register_download() tatsaechlich
+        # registriert) - der parsed_content-/Library-Fallback-Pfad bleibt
+        # ungeklaimt (kleinster sinnvoller Fix, kein zusaetzlicher Nutzen
+        # fuer einen bereits selbst nur als Fallback gedachten Pfad).
+        self._claim_in_flight(url_hash, content_hash)
         self.logger.debug("✅ Kein Duplikat gefunden")
         return False, None, "none"
 
@@ -329,6 +411,17 @@ class DuplicateDetector:
         self.duplicate_cache.add_entry(entry)
         self.stats["new_entries_added"] += 1
         self.logger.info(f"📝 Download registriert: {artist} - {title}")
+
+        # DUP-05: In-Flight-Claim jetzt ueberfluessig - der permanente
+        # Cache-Eintrag deckt ab sofort denselben Fall ab (der naechste
+        # check_for_duplicates()-Aufruf faende ohnehin den url_duplicate/
+        # content_duplicate-Treffer zuerst). Sofortige Freigabe statt auf
+        # die TTL zu warten, rein aus Hygiene (kleinerer Dict, kein
+        # funktionaler Unterschied).
+        self._release_in_flight(
+            self.duplicate_cache.get_url_hash(url),
+            self.duplicate_cache.get_content_hash(normalized_artist, cleaned_title),
+        )
 
     def _normalize_artist_for_comparison(self, artist: str) -> str:
         if not artist:
