@@ -857,6 +857,136 @@ class TestGenreDowngradeProtection:
         assert rpam.audio_essence_md5(tagged_m4a) == before_hash
 
 
+class TestAlbumFallbackStripsRemixSuffix:
+    """
+    Nutzer-Fund (2026-09-02, Live-Testlauf Artist 'Möwe'): fehlt ein
+    echter Album-Tag, fiel process_file() bisher blind auf den kompletten
+    clean_title als Album zurueck - fuer einen Remix-Titel wie 'Blauer
+    Tag (Robin Schulz Remix)' landete der Remix-Zusatz dadurch unnoetig
+    auch im Album ('album: [Blauer Tag (Robin Schulz Remix)]', identisch
+    zum Titel). Nutzer-Entscheidung bei Rueckfrage: Album = Titel OHNE
+    den Remix-Zusatz ('Blauer Tag'), der TITEL-Tag selbst bleibt
+    unveraendert mit Remix-Hinweis.
+    """
+
+    @pytest.mark.asyncio
+    async def test_album_fallback_strips_trailing_remix_suffix(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        audio = MP4(tagged_m4a)
+        audio["©nam"] = ["Blauer Tag (Robin Schulz Remix)"]
+        # Kein "©alb"-Tag gesetzt - genau der Faelle aus dem Live-Fund
+        # (existing_album ist None, Fallback greift).
+        del audio["©alb"]
+        audio.save()
+        # Dateiname passend zum neuen Titel vorab angleichen, damit die
+        # (bereits separat getestete) Rename-Logik hier nicht zusaetzlich
+        # zuschlaegt - dieser Test prueft ausschliesslich den
+        # Album-Fallback, nicht das Renaming.
+        renamed = tagged_m4a.with_name("2024 - Blauer Tag (Robin Schulz Remix).m4a")
+        tagged_m4a.rename(renamed)
+
+        processor = make_processor_stub()
+
+        result = await rpam.process_file(
+            renamed, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        after = MP4(renamed)
+        assert after["©nam"] == ["Blauer Tag (Robin Schulz Remix)"], (
+            "Der TITEL-Tag selbst darf durch den Album-Fallback nicht "
+            "veraendert werden."
+        )
+        assert after["©alb"] == ["Blauer Tag"], (
+            "Album-Fallback muss den Remix-Zusatz entfernen, wenn kein "
+            "echter Album-Tag vorhanden ist."
+        )
+        assert result["changes"]["album"] == {
+            "before": [], "after": ["Blauer Tag"],
+        }
+
+    @pytest.mark.asyncio
+    async def test_existing_album_tag_is_never_overwritten_by_fallback(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        """Gegenprobe: ist bereits ein Album-Tag vorhanden, greift der
+        Remix-Strip-Fallback gar nicht - bestehende Werte haben weiterhin
+        Vorrang (etabliertes Muster dieses Skripts)."""
+        audio = MP4(tagged_m4a)
+        audio["©nam"] = ["Blauer Tag (Robin Schulz Remix)"]
+        audio["©alb"] = ["Existierendes Album"]
+        audio.save()
+        renamed = tagged_m4a.with_name("2024 - Blauer Tag (Robin Schulz Remix).m4a")
+        tagged_m4a.rename(renamed)
+
+        processor = make_processor_stub()
+
+        await rpam.process_file(
+            renamed, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        after = MP4(renamed)
+        assert after["©alb"] == ["Existierendes Album"]
+
+    @pytest.mark.asyncio
+    async def test_title_that_is_only_a_remix_parenthetical_keeps_full_title(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        """Sicherheitsfall: bliebe nach dem Strip nichts Sinnvolles uebrig,
+        wird der Original-Titel unveraendert als Album verwendet - kein
+        leeres Album raten."""
+        assert rpam.strip_remix_suffix_for_album("(Remix)") == "(Remix)"
+
+    def test_strip_remix_suffix_helper_directly(self):
+        assert (
+            rpam.strip_remix_suffix_for_album("Blauer Tag (Robin Schulz Remix)")
+            == "Blauer Tag"
+        )
+        assert (
+            rpam.strip_remix_suffix_for_album("Blauer Tag (Robin Schulz REMIX)")
+            == "Blauer Tag"
+        )
+        # Kein Remix-Zusatz vorhanden - unveraendert.
+        assert (
+            rpam.strip_remix_suffix_for_album("Blauer Tag")
+            == "Blauer Tag"
+        )
+        # Ein anderes Klammerpaar (kein "remix") bleibt unangetastet -
+        # nur echte Remix-Zusaetze werden entfernt.
+        assert (
+            rpam.strip_remix_suffix_for_album("Blauer Tag (feat. SIDO)")
+            == "Blauer Tag (feat. SIDO)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_dry_run_prediction_matches_live_album_fallback(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        audio = MP4(tagged_m4a)
+        audio["©nam"] = ["Blauer Tag (Robin Schulz Remix)"]
+        del audio["©alb"]
+        audio.save()
+        before_hash = rpam.audio_essence_md5(tagged_m4a)
+
+        processor = make_processor_stub()
+
+        result = await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=True,
+        )
+
+        assert result["changes"]["album"] == {
+            "before": [], "after": ["Blauer Tag"],
+        }
+        assert MP4(tagged_m4a).get("©alb") is None
+        assert rpam.audio_essence_md5(tagged_m4a) == before_hash
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Album- vs. Singles-Dateinamenskonvention
 #

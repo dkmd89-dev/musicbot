@@ -44,6 +44,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -370,6 +371,30 @@ def genre_would_downgrade(before_genre_tag: list, genres_result) -> bool:
     fresh_count = 1 + len(getattr(genres_result, "secondary", None) or [])
     existing_count = count_existing_genre_entries(before_genre_tag)
     return existing_count > fresh_count
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Album-Fallback ohne Remix-Zusatz (Phase 1, 2026-09-02, Nutzer-Fund)
+# ─────────────────────────────────────────────────────────────────────────
+
+_REMIX_SUFFIX_PATTERN = re.compile(r"\s*\([^()]*\bremix\b[^()]*\)\s*$", re.IGNORECASE)
+
+
+def strip_remix_suffix_for_album(title: str) -> str:
+    """Leitet aus einem Titel wie 'Blauer Tag (Robin Schulz Remix)' den
+    Basis-Song-Namen 'Blauer Tag' fuer den Album-FALLBACK ab, wenn kein
+    echter Album-Tag vorhanden ist (Nutzer-Fund/-Entscheidung 2026-09-02,
+    Live-Testlauf Artist 'Möwe': album fiel bisher blind auf den
+    kompletten clean_title zurueck, inkl. Remix-Zusatz - 'album:
+    [Blauer Tag (Robin Schulz Remix)]' identisch zu title). Der TITEL
+    selbst (Tag-Wert) bleibt davon unberuehrt - nur dieser Album-
+    FALLBACK-Wert wird bereinigt. Entfernt ausschliesslich ein
+    abschliessendes '(...Remix...)'-Klammerpaar, keine sonstige
+    Bereinigung. Bleibt am Ende nichts Sinnvolles uebrig (z.B. Titel
+    bestand nur aus der Klammer), wird der Original-Titel unveraendert
+    zurueckgegeben - kein leeres Album raten."""
+    stripped = _REMIX_SUFFIX_PATTERN.sub("", title).strip()
+    return stripped or title
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -713,7 +738,7 @@ async def process_file(
         except (TypeError, ValueError):
             existing_year = None
         album_info = {
-            "album": existing_album or clean_title,
+            "album": existing_album or strip_remix_suffix_for_album(clean_title),
             "album_artist": final_artist,
             "year": existing_year,
         }

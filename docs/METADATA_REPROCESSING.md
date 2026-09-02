@@ -114,7 +114,12 @@ Album/Jahr werden **nicht** ueber `AlbumProcessor.determine_album_info()`
 neu bestimmt (diese Methode ist fuer Download-Zeit-Metadaten aus
 Playlist/yt-dlp gebaut und faellt bei fehlenden Kandidaten auf das aktuelle
 Kalenderjahr zurueck) — die bereits vorhandenen Album-/Jahr-Tags werden als
-Vertrauensbasis uebernommen.
+Vertrauensbasis uebernommen. Fehlt ein Album-Tag komplett, fungiert der
+bereinigte Titel als Fallback — ein abschliessender `(...Remix...)`-Zusatz
+wird dabei entfernt (`strip_remix_suffix_for_album()`, Nutzer-Fund
+2026-09-02: „Blauer Tag (Robin Schulz Remix)" als Titel darf nicht 1:1 als
+Album uebernommen werden). Der Titel-Tag selbst bleibt davon unberuehrt.
+Ist bereits ein Album-Tag vorhanden, greift dieser Fallback gar nicht.
 
 ## 5a. Fehlerisolierung (Phase 1, 2026-09-02)
 
@@ -325,7 +330,9 @@ tatsaechliches erneutes Lesen von der Platte, Unresolved-Erkennung,
 Verzeichnis-Invariante, Genre-Downgrade-Schutz (Abschnitt 8a, inkl.
 Legacy-" / "-Separator), Fehlerisolierung bei beschaedigten Dateien
 (Abschnitt 5a), Cover-Suche laeuft auch bei bereits vorhandenem Cover,
-MusicBrainz-IDs werden nicht unnoetig ueberschrieben, sowie
+MusicBrainz-IDs werden nicht unnoetig ueberschrieben, Album-Fallback ohne
+Remix-Zusatz (Abschnitt 5), feste Log-Datei inkl. Anhaengen ueber mehrere
+Laeufe hinweg, Regressions-Tripwire fuer `DEFAULT_PRODUCTION_ROOT`, sowie
 Integrationstests gegen `main()` selbst (CLI-Parsing, Post-Run-Safety-
 Check-Aggregation, gemischte Erfolgs-/Fehler-Zusammenfassung). Externe
 Adapter (Genre/Lyrics/Cover-API-Aufrufe) sind gemockt; `TagWriter` und
