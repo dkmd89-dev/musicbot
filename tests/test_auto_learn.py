@@ -75,8 +75,9 @@ class TestAutoLearnManager(unittest.TestCase):
         self.assertFalse(result)
     
     def test_is_artist_known_from_auto_learned(self):
-        """Artist aus auto_learned_artists.yaml erkennen"""
-        auto_file = self.mapping_dir / "auto_learned_artists.yaml"
+        """Artist aus auto_learned_artist_aliases.yaml erkennen
+        (ARCH-022: vorher auto_learned_artists.yaml)"""
+        auto_file = self.mapping_dir / "auto_learned_artist_aliases.yaml"
         auto_data = {
             "auto_learned": {
                 "raw alias": "Canonical Artist"
@@ -129,13 +130,14 @@ class TestAutoLearnManager(unittest.TestCase):
         self.assertTrue(self.auto_learn._is_genre_already_learned("MANUAL ARTIST"))
     
     def test_load_auto_learned_artists_empty(self):
-        """Leere auto_learned_artists.yaml"""
+        """Leere auto_learned_artist_aliases.yaml"""
         result = self.auto_learn._load_auto_learned_artists()
         self.assertEqual(result, {})
-    
+
     def test_load_auto_learned_artists_with_data(self):
-        """auto_learned_artists.yaml mit Daten"""
-        auto_file = self.mapping_dir / "auto_learned_artists.yaml"
+        """auto_learned_artist_aliases.yaml mit Daten (ARCH-022: vorher
+        auto_learned_artists.yaml)"""
+        auto_file = self.mapping_dir / "auto_learned_artist_aliases.yaml"
         test_data = {
             "auto_learned": {
                 "alias1": "Artist1",
@@ -231,7 +233,7 @@ class TestAutoLearnAsync(unittest.TestCase):
         Identitaets-Mapping (raw_name == canonical_name) ist laut Docstring
         von learn_artist() KEIN Alias, sondern eine Bestaetigung eines
         bekannten Kuenstlers - das geht nach known_artists.yaml (nicht
-        auto_learned_artists.yaml) und liefert bei erfolgreichem Schreiben
+        auto_learned_artist_aliases.yaml) und liefert bei erfolgreichem Schreiben
         True, kein No-Op/False (STALE-TEST-Fix, vorher fehlerhafte Erwartung).
         """
         async def test():

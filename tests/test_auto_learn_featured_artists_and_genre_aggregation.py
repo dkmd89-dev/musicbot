@@ -139,7 +139,7 @@ class TestFeaturedArtistObservation:
         assert d["predicted_observations"] == 1
         assert d["predicted_confidence"] == "OBSERVED"
 
-        auto_file = mapping_dir / "auto_learned_artists.yaml"
+        auto_file = mapping_dir / "auto_learned_featured_artists.yaml"
         assert not auto_file.exists(), "Dry-Run darf NICHTS schreiben"
 
     def test_unknown_featured_artist_gets_learned_live(self, tmp_path):
@@ -156,7 +156,7 @@ class TestFeaturedArtistObservation:
         )
 
         assert decisions[0]["decision"] == "LEARNED"
-        auto_file = mapping_dir / "auto_learned_artists.yaml"
+        auto_file = mapping_dir / "auto_learned_featured_artists.yaml"
         assert auto_file.exists()
         with open(auto_file) as f:
             data = yaml.safe_load(f)
@@ -180,7 +180,7 @@ class TestFeaturedArtistObservation:
         )
         assert len(decisions) == 2
         assert {d["decision"] for d in decisions} == {"LEARNED"}
-        with open(mapping_dir / "auto_learned_artists.yaml") as f:
+        with open(mapping_dir / "auto_learned_featured_artists.yaml") as f:
             data = yaml.safe_load(f)
         assert set(data["featured_artists"].keys()) == {"1986zig", "Sido"}
 
@@ -198,7 +198,7 @@ class TestFeaturedArtistObservation:
         assert decisions[0]["predicted_observations"] == 3
         assert decisions[0]["predicted_confidence"] == "LEARNED"
 
-        with open(mapping_dir / "auto_learned_artists.yaml") as f:
+        with open(mapping_dir / "auto_learned_featured_artists.yaml") as f:
             data = yaml.safe_load(f)
         entry = data["featured_artists"]["Noah"]
         assert entry["observations"] == 3
@@ -215,7 +215,7 @@ class TestFeaturedArtistObservation:
         decisions = _run(manager.observe_featured_artists("Gustav", ["Noah"], "Track 1 Remix"))
 
         assert decisions[0]["predicted_observations"] == 2
-        with open(mapping_dir / "auto_learned_artists.yaml") as f:
+        with open(mapping_dir / "auto_learned_featured_artists.yaml") as f:
             data = yaml.safe_load(f)
         # Gustav darf trotz zweifacher Beobachtung nur EINMAL in primary_artists stehen
         assert data["featured_artists"]["Noah"]["primary_artists"] == ["Gustav"]
@@ -246,7 +246,7 @@ class TestFeaturedArtistObservation:
         )
         assert decisions[0]["canonical"] == "NOAH"
 
-        with open(mapping_dir_copy / "auto_learned_artists.yaml") as f:
+        with open(mapping_dir_copy / "auto_learned_featured_artists.yaml") as f:
             data = yaml.safe_load(f)
         assert "NOAH" in data["featured_artists"]
         assert "Noah" not in data["featured_artists"]
@@ -264,7 +264,7 @@ class TestFeaturedArtistObservation:
         )
         assert decisions[0]["decision"] == "SKIPPED_KNOWN"
 
-        auto_file = mapping_dir_copy / "auto_learned_artists.yaml"
+        auto_file = mapping_dir_copy / "auto_learned_featured_artists.yaml"
         if auto_file.exists():
             with open(auto_file) as f:
                 data = yaml.safe_load(f) or {}
@@ -519,7 +519,12 @@ class TestGustavLuftballonScenario:
     """
 
     def test_gustav_primary_noah_featured_full_flow(self, mapping_dir_copy):
-        with open(mapping_dir_copy / "auto_learned_artists.yaml") as f:
+        # ARCH-022: auto_learned_artists.yaml wurde in zwei Dateien
+        # aufgeteilt - auto_learned_artist_aliases.yaml (Channel-Aliase)
+        # und auto_learned_featured_artists.yaml (Feature-Artist-
+        # Beobachtungen). mapping_dir_copy kopiert die echten mapping/-
+        # Dateien 1:1, enthaelt also bereits beide neuen Dateien.
+        with open(mapping_dir_copy / "auto_learned_artist_aliases.yaml") as f:
             original_channel_aliases = yaml.safe_load(f)["auto_learned"]
 
         manager = _make_manager(mapping_dir_copy)
@@ -547,7 +552,7 @@ class TestGustavLuftballonScenario:
         assert d["predicted_observations"] == 1
         assert d["predicted_confidence"] == "OBSERVED"
 
-        with open(mapping_dir_copy / "auto_learned_artists.yaml") as f:
+        with open(mapping_dir_copy / "auto_learned_featured_artists.yaml") as f:
             data = yaml.safe_load(f)
         noah_entry = data["featured_artists"]["NOAH"]
         assert noah_entry["primary_artists"] == ["Gustav"]
@@ -560,6 +565,87 @@ class TestGustavLuftballonScenario:
             assert "NOAH" not in gdata.get("ARTIST_GENRE_MAP", {})
             assert "Noah" not in gdata.get("ARTIST_GENRE_MAP", {})
 
-        # Bestehende Channel-Alias-Eintraege (auto_learned:) bleiben von der
-        # Feature-Artist-Beobachtung unberuehrt
-        assert data["auto_learned"] == original_channel_aliases
+        # Bestehende Channel-Alias-Eintraege bleiben von der Feature-
+        # Artist-Beobachtung unberuehrt - jetzt sogar physisch garantiert
+        # (eigene Datei statt nur eigener Key in derselben Datei).
+        with open(mapping_dir_copy / "auto_learned_artist_aliases.yaml") as f:
+            aliases_after = yaml.safe_load(f)["auto_learned"]
+        assert aliases_after == original_channel_aliases
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# ARCH-022 — Testluecke: Namespace-Trennung in auto_learned_artists.yaml
+# ─────────────────────────────────────────────────────────────────────────
+#
+# auto_learned_artists.yaml vermischt zwei komplett getrennte Namespaces:
+# Top-Level-Key "auto_learned" (Channel-Alias-Learning, geschrieben von
+# AutoLearnManager.learn_artist()/_save_alias() UND gelesen von
+# utils/artist_map.py::ArtistNormalizer) und Top-Level-Key
+# "featured_artists" (Feature-Artist-Beobachtungen, geschrieben von
+# AutoLearnManager.observe_featured_artists()). Der Test oben
+# (test_gustav_primary_noah_featured_full_flow) deckt bereits eine
+# Richtung ab (featured_artists-Schreiben laesst auto_learned
+# unveraendert) - hier die bisher fehlende umgekehrte Richtung.
+
+
+class TestAutoLearnedArtistsNamespaceSeparation:
+    """
+    ARCH-022: auto_learned_artists.yaml wurde in zwei physisch getrennte
+    Dateien aufgeteilt (auto_learned_artist_aliases.yaml fuer
+    Channel-Aliase, auto_learned_featured_artists.yaml fuer
+    Feature-Artist-Beobachtungen) - vorher zwei Top-Level-Keys in
+    derselben Datei. Diese Tests bleiben trotzdem sinnvoll: sie
+    garantieren, dass ein Schreibvorgang in der einen Datei die andere
+    nicht veraendert (z.B. falls ein zukuenftiger Bug versehentlich den
+    falschen Dateinamen verwendet oder beide Schreibpfade eine gemeinsame
+    Variable teilen wuerden).
+    """
+
+    def test_auto_learned_alias_write_does_not_touch_featured_artists_file(
+        self, tmp_path
+    ):
+        mapping_dir = tmp_path / "mapping"
+        mapping_dir.mkdir()
+        manager = _make_manager(mapping_dir)
+
+        # Vorbedingung: featured_artists-Datei ist bereits befuellt.
+        _run(
+            manager.observe_featured_artists(
+                primary_artist="Some Primary",
+                feat_artists=["Some Feature"],
+                track_context="Some Primary - Track",
+            )
+        )
+        featured_file = mapping_dir / "auto_learned_featured_artists.yaml"
+        with open(featured_file) as f:
+            before = yaml.safe_load(f)
+        assert "SOME FEATURE" in before["featured_artists"] or any(
+            k.lower() == "some feature" for k in before["featured_artists"]
+        )
+
+        # Aktion: nur die auto_learned_artist_aliases.yaml wird beschrieben.
+        result = _run(
+            manager.learn_artist(
+                raw_name="Some Channel Name",
+                canonical_name="Some Canonical Artist",
+                source="youtube_parsed",
+            )
+        )
+        assert result is True
+
+        aliases_file = mapping_dir / "auto_learned_artist_aliases.yaml"
+        with open(aliases_file) as f:
+            aliases_data = yaml.safe_load(f)
+        assert (
+            aliases_data["auto_learned"]["Some Channel Name"]
+            == "Some Canonical Artist"
+        )
+
+        with open(featured_file) as f:
+            after = yaml.safe_load(f)
+        assert after == before, (
+            "Die auto_learned_featured_artists.yaml wurde durch das "
+            "Schreiben eines Channel-Alias in auto_learned_artist_"
+            "aliases.yaml veraendert - die beiden Dateien sind nicht "
+            "sauber getrennt."
+        )

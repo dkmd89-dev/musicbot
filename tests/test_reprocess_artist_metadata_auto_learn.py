@@ -155,7 +155,7 @@ class TestReprocessToolAutoLearnDryRun:
         assert len(feat) == 1
         assert feat[0]["canonical"] == "Noah"
         assert feat[0]["decision"] == "WOULD_LEARN"
-        assert not (mapping_dir / "auto_learned_artists.yaml").exists(), (
+        assert not (mapping_dir / "auto_learned_featured_artists.yaml").exists(), (
             "Dry-Run darf keine Datei schreiben"
         )
 
@@ -212,7 +212,7 @@ class TestReprocessToolAutoLearnLive:
         assert feat[0]["observations"] == 1
         assert feat[0]["confidence"] == "OBSERVED"
 
-        with open(mapping_dir / "auto_learned_artists.yaml") as f:
+        with open(mapping_dir / "auto_learned_featured_artists.yaml") as f:
             data = yaml.safe_load(f)
         entry = data["featured_artists"]["Noah"]
         assert entry["role"] == "featured_artist"

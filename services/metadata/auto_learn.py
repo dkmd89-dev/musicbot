@@ -139,7 +139,11 @@ class AutoLearnManager:
     Verwaltet das automatische Lernen von Artist- und Genre-Informationen.
 
     Schreibt ausschließlich in:
-      - auto_learned_artists.yaml  (Artist-Aliase)
+      - auto_learned_artist_aliases.yaml    (Channel-Name-Aliase, ARCH-022:
+        vorher auto_learned_artists.yaml)
+      - auto_learned_featured_artists.yaml  (Feature-Artist-Beobachtungen,
+        ARCH-022: vorher derselbe "featured_artists"-Schluessel in
+        auto_learned_artists.yaml)
       - auto_learned_genre.yaml    (Genre-Zuordnungen)
       - known_artists.yaml         (bestaetigte Identitaets-Mappings)
 
@@ -175,9 +179,11 @@ class AutoLearnManager:
         self.artist_normalizer = artist_normalizer
         self.genre_mapper = genre_mapper
         self.logger = logger or get_module_logger("AutoLearnManager")
-        # INV-01/INV-02: ein gemeinsames Lock fuer alle drei Schreibpfade
+        # INV-01/INV-02: ein gemeinsames Lock fuer alle vier Schreibpfade
         # (auto_learned_genre.yaml, known_artists.yaml,
-        # auto_learned_artists.yaml) - bewusst EIN Lock statt drei
+        # auto_learned_artist_aliases.yaml, auto_learned_featured_artists.yaml,
+        # ARCH-022: letztere zwei vorher eine gemeinsame Datei
+        # auto_learned_artists.yaml) - bewusst EIN Lock statt vier
         # dateispezifischen Locks, da Schreibfrequenz niedrig ist und ein
         # einzelnes Lock die Komplexitaet/Deadlock-Flaeche minimiert
         # (CLAUDE.md §18: kleinste sinnvolle Aenderung).
@@ -481,7 +487,8 @@ class AutoLearnManager:
         channel_name: str = "",
     ) -> bool:
         """
-        Schreibt NUR Aliase in auto_learned_artists.yaml.
+        Schreibt NUR Aliase in auto_learned_artist_aliases.yaml (ARCH-022:
+        vorher auto_learned_artists.yaml).
         Identitäts-Mappings (raw == canonical) gehen nach known_artists.yaml.
         """
         if source not in self.ALLOWED_ARTIST_SOURCES:
@@ -503,7 +510,7 @@ class AutoLearnManager:
         if raw_key.casefold() == canonical_value.casefold():
             return await self._save_known_artist(canonical_value)
 
-        # 3. Echter Alias → auto_learned_artists.yaml
+        # 3. Echter Alias → auto_learned_artist_aliases.yaml
         return await self._save_alias(raw_key, canonical_value)
 
     async def _save_known_artist(self, artist_name: str) -> bool:
@@ -546,10 +553,13 @@ class AutoLearnManager:
             return True
 
     async def _save_alias(self, raw_name: str, canonical_name: str) -> bool:
-        """Speichert einen Alias in auto_learned_artists.yaml"""
+        """Speichert einen Alias in auto_learned_artist_aliases.yaml
+        (ARCH-022: vorher auto_learned_artists.yaml, umbenannt zur
+        Namespace-Trennung vom "featured_artists"-Schluessel, siehe
+        _write_featured_observation_sync())."""
         try:
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
-            alias_file = mapping_dir / "auto_learned_artists.yaml"
+            alias_file = mapping_dir / "auto_learned_artist_aliases.yaml"
 
             written = await asyncio.to_thread(
                 self._write_alias_sync, alias_file, raw_name, canonical_name
@@ -566,7 +576,7 @@ class AutoLearnManager:
 
         except Exception as e:
             self.logger.warning(
-                f"⚠️ [AUTO-LEARN] auto_learned_artists.yaml fehlgeschlagen: {e}"
+                f"⚠️ [AUTO-LEARN] auto_learned_artist_aliases.yaml fehlgeschlagen: {e}"
             )
         return False
 
@@ -609,9 +619,10 @@ class AutoLearnManager:
     ) -> List[Dict[str, Any]]:
         """
         Beobachtet Feature-Artists eines Tracks und aggregiert sie in
-        auto_learned_artists.yaml unter dem neuen, additiven Schlüssel
-        "featured_artists" (der bestehende "auto_learned"-Schlüssel für
-        Channel-Name-Aliase bleibt unberührt).
+        auto_learned_featured_artists.yaml unter dem Schlüssel
+        "featured_artists" (ARCH-022: eigene Datei, getrennt von
+        auto_learned_artist_aliases.yaml für Channel-Name-Aliase - vorher
+        beide Schlüssel in derselben Datei auto_learned_artists.yaml).
 
         Schreibt NIEMALS, wenn der (normalisierte) Name bereits anderweitig
         bekannt ist (Library/Overrides/known_artists/auto_learned - siehe
@@ -708,7 +719,7 @@ class AutoLearnManager:
         was_new = decision["decision"] == "WOULD_LEARN"
         try:
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
-            alias_file = mapping_dir / "auto_learned_artists.yaml"
+            alias_file = mapping_dir / "auto_learned_featured_artists.yaml"
 
             await asyncio.to_thread(
                 self._write_featured_observation_sync,
@@ -737,7 +748,7 @@ class AutoLearnManager:
         """Liest (nur lesend) einen bestehenden Feature-Artist-Eintrag, case-insensitiv."""
         try:
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
-            alias_file = mapping_dir / "auto_learned_artists.yaml"
+            alias_file = mapping_dir / "auto_learned_featured_artists.yaml"
             if not alias_file.exists():
                 return None, None
             with open(alias_file, "r", encoding="utf-8") as f:
@@ -763,16 +774,17 @@ class AutoLearnManager:
     ) -> bool:
         """
         Sync-Kern der Feature-Artist-Beobachtung (siehe Klassen-Docstring
-        INV-01/INV-02). Schreibt additiv unter data["featured_artists"] -
-        data["auto_learned"] (Channel-Aliase) bleibt beim Read-Modify-Write
-        unangetastet erhalten.
+        INV-01/INV-02). Schreibt in die eigene Datei
+        auto_learned_featured_artists.yaml (ARCH-022: vorher gemeinsam mit
+        dem "auto_learned"-Channel-Alias-Schluessel in derselben Datei -
+        seit der Namespace-Trennung braucht diese Datei keinen
+        "auto_learned"-Schluessel mehr).
         """
         with self._write_lock:
             data: dict = {}
             if alias_file.exists():
                 with open(alias_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f) or {}
-            data.setdefault("auto_learned", {})
             data.setdefault("featured_artists", {})
 
             featured = data["featured_artists"]
@@ -902,7 +914,7 @@ class AutoLearnManager:
             return False
 
     def _is_artist_known(self, artist_name: str) -> bool:
-        """Prüft ob Artist bekannt ist (Library, Overrides, known_artists.yaml, auto_learned_artists.yaml)"""
+        """Prüft ob Artist bekannt ist (Library, Overrides, known_artists.yaml, auto_learned_artist_aliases.yaml)"""
         if not artist_name:
             return False
 
@@ -943,12 +955,12 @@ class AutoLearnManager:
         except Exception:
             pass
 
-        # 4. auto_learned_artists.yaml (Alias-Quellen und -Ziele)
+        # 4. auto_learned_artist_aliases.yaml (Alias-Quellen und -Ziele)
         try:
             import yaml
 
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
-            alias_file = mapping_dir / "auto_learned_artists.yaml"
+            alias_file = mapping_dir / "auto_learned_artist_aliases.yaml"
             if alias_file.exists():
                 with open(alias_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f) or {}
@@ -1011,12 +1023,13 @@ class AutoLearnManager:
         )
 
     def _load_auto_learned_artists(self) -> Dict[str, str]:
-        """Lädt auto_learned_artists.yaml"""
+        """Lädt auto_learned_artist_aliases.yaml (ARCH-022: vorher
+        auto_learned_artists.yaml)."""
         try:
             import yaml
 
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
-            auto_file = mapping_dir / "auto_learned_artists.yaml"
+            auto_file = mapping_dir / "auto_learned_artist_aliases.yaml"
             if not auto_file.exists():
                 return {}
 

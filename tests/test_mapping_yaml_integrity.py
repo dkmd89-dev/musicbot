@@ -79,8 +79,10 @@ class TestNoDuplicateKeysInGenreMappingFiles:
     hinzukommende Mapping-Dateien automatisch gegen dasselbe stille
     PyYAML-Duplikat-Problem geschuetzt sind. Stand bei Einfuehrung: alle
     zusaetzlich geprueften Dateien (genre_filters, channel_genre,
-    case_preserve, auto_learned_artists, auto_learned_genre, known_artists,
-    special_channel, podcast_rss_feeds, genre_rules) waren bereits sauber.
+    case_preserve, auto_learned_artist_aliases, auto_learned_featured_artists
+    (ARCH-022: vorher gemeinsam auto_learned_artists), auto_learned_genre,
+    known_artists, special_channel, podcast_rss_feeds, genre_rules) waren
+    bereits sauber.
     """
 
     @pytest.mark.parametrize("filename", MAPPING_FILES_TO_CHECK)
