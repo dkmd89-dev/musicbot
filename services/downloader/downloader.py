@@ -28,12 +28,19 @@ class YoutubeDownloader:
         update_id: int,
         config: Config,
         cookie_handler: CookieHandler,
+        duplicate_detector=None,
         # ... andere Parameter
     ):
         self.chat_id = chat_id
         self.update_id = update_id
         self.config = config
         self.cookie_handler = cookie_handler
+        # Live-Fund 2026-09-02: wird nur fuer die Pro-Track-Duplikatpruefung
+        # innerhalb von Playlist-Downloads gebraucht (siehe
+        # _process_playlist_download() in download_utils.py) - optional,
+        # damit Aufrufer ohne eigenen DuplicateDetector (z.B. isolierte
+        # Tests) unveraendert funktionieren.
+        self.duplicate_detector = duplicate_detector
 
         self._logger_factory = get_module_logger
         self.logger = self._logger_factory("YoutubeDownloader")
@@ -62,6 +69,7 @@ class YoutubeDownloader:
                 chat_id=self.chat_id,
                 update_id=self.update_id,
                 logger_factory=self._logger_factory,
+                duplicate_detector=self.duplicate_detector,
             )
 
             self.logger.info(

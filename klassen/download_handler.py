@@ -217,6 +217,7 @@ class DownloadHandler:
             update_id=update.update_id,
             config=self.config,
             cookie_handler=self.cookie_handler,
+            duplicate_detector=self.duplicate_detector,
         )
 
         self.logger.info(

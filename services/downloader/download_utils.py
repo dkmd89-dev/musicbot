@@ -359,6 +359,7 @@ async def enhanced_download_with_retry(
     playlist_logger=None,
     cache_logger=None,
     logger_factory: Optional[Callable] = None,
+    duplicate_detector=None,
 ) -> Dict[str, Any]:
     """
     Haupt-Einstiegspunkt für Downloads mit Retry-Logik.
@@ -449,6 +450,7 @@ async def enhanced_download_with_retry(
                     chat_id=chat_id,
                     status_callback=status_callback,
                     logger=logger,
+                    duplicate_detector=duplicate_detector,
                 )
                 logger.info(
                     f"✅ [RETRY {attempt+1}] Playlist fertig: "
@@ -556,6 +558,7 @@ async def _process_playlist_download(
     chat_id: Optional[int] = None,
     status_callback: Optional[Callable] = None,
     logger=None,
+    duplicate_detector=None,
 ) -> List[Dict[str, Any]]:
     """
     Playlist-Pipeline (reine Orchestrierung).
@@ -564,8 +567,20 @@ async def _process_playlist_download(
       [PL-ANALYSE]    PlaylistProcessor.process_playlist_metadata()
       [CHANNEL]       ChannelRouter.resolve_dominant_artist() (P1–P5)
       [YEAR]          YearResolver.resolve_playlist_year()
-      [TRACK XX/NN]   CacheManager → DownloadExecutor → _process_track_metadata
+      [TRACK XX/NN]   CacheManager → Duplicate-Check → DownloadExecutor → _process_track_metadata
       [STATS]         ProgressFormatter.stats_table()
+
+    Live-Fund 2026-09-02 (Nutzer-Report): _probe_artist_title_for_duplicate_check()
+    (klassen/download_handler.py) liefert fuer Playlist-URLs bewusst (None,
+    None) zurueck - check_for_duplicates() prueft fuer Playlists bisher NUR
+    die URL-Ebene der Playlist selbst, nie Artist/Titel der einzelnen darin
+    enthaltenen Tracks. Ein Track, der bereits als Single existiert (z.B.
+    "Zartmann - schoenhauser" unter Zartmann/Singles/), wurde beim Download
+    derselben Playlist erneut heruntergeladen UND der alte Duplicate-Cache-
+    Eintrag durch den neuen (gleicher Content-Hash) stillschweigend
+    ueberschrieben. duplicate_detector ist optional (None fuer Aufrufer, die
+    keinen haben, z.B. isolierte Tests) - ohne ihn faellt dieser Schritt
+    bewusst aus, exakt das bisherige Verhalten.
     """
     logger = logger or get_module_logger("download_utils")
 
@@ -689,6 +704,42 @@ async def _process_playlist_download(
                     f"→ überspringe Download"
                 )
                 continue
+
+            # ── DUPLIKAT-CHECK (Artist/Titel) ────────────────────────────────
+            # Live-Fund 2026-09-02: siehe Docstring oben. Nur wenn ein
+            # duplicate_detector uebergeben wurde UND Artist/Titel dieses
+            # Tracks bekannt sind (kein Platzhalter "?") - fehlende Werte
+            # blockieren nichts, exakt wie beim bereits bestehenden
+            # URL-Ebenen-Verhalten fuer Playlists.
+            if (
+                duplicate_detector is not None
+                and track_artist
+                and track_artist != "?"
+                and track_title
+                and track_title != "?"
+            ):
+                track_url = track_info.get("webpage_url") or track_info.get("url") or ""
+                is_dup, dup_entry, dup_type = duplicate_detector.check_for_duplicates(
+                    url=track_url,
+                    raw_artist=track_artist,
+                    raw_title=track_title,
+                )
+                if is_dup and dup_entry:
+                    logger.warning(
+                        f"🔍 [DUPE] Track {idx:02d} '{track_artist} - {track_title}' "
+                        f"bereits vorhanden (Typ: {dup_type}, Pfad: {dup_entry.file_path}) "
+                        f"— überspringe"
+                    )
+                    results.append(
+                        DownloadResult(
+                            success=False,
+                            title=track_title,
+                            artist=track_artist,
+                            is_duplicate=True,
+                            error=f"Duplikat — bereits vorhanden: {dup_entry.file_path}",
+                        ).to_dict()
+                    )
+                    continue
 
             # ── DOWNLOAD ──────────────────────────────────────────────────────
             # PL-01 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
