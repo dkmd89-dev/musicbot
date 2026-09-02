@@ -44,6 +44,22 @@ class TestParseYoutubeTitleDocumentedExamples:
         assert result["song_title"] == "Nur ein Trost"
         assert result["featuring"] == []
 
+    def test_t_low_comma_separated_no_x_keyword_is_not_split_on_bare_hyphen(self):
+        """YTPARSE-01 (Live-Fund 2026-09-02): ohne ein " x "/"feat"-Keyword,
+        das dem generischen Trennzeichen-Loop in _parse_artist_and_title()
+        zuvorkommt (siehe test_t_low_slash_artists_no_featuring oben, wo das
+        x-Pattern frueher greift), landete "t-low" im letzten Komma-Feld vor
+        dem eigentlichen " - "-Trenner und wurde am BAREN Bindestrich in
+        "t-low" selbst gesplittet: Artist-Liste enthielt faelschlich ein
+        isoliertes "t" statt "t-low", der Titel begann mit dem Leak "low - ".
+        """
+        result = parse_youtube_title(
+            "Miksu/Macloud, makko, t-low - Ich will (Official Video)"
+        )
+        assert result["all_artists"] == ["Miksu", "Macloud", "makko", "t-low"]
+        assert result["song_title"] == "Ich will"
+        assert result["featuring"] == []
+
     def test_peter_fox_with_remix_and_feat(self):
         result = parse_youtube_title(
             "Peter Fox - Zukunft Pink (NoooN Remix) feat. Inéz"
