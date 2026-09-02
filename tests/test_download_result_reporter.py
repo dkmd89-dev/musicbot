@@ -222,6 +222,42 @@ class TestBuildFinalSummaryMessageCancelled:
         assert "🎉 Download erfolgreich abgeschlossen!" not in sent_text
         assert "Tracks   : 2/2 abgebrochen bei" in sent_text
 
+    def test_cancelled_mid_track_shows_last_successful_track_not_na(self, reporter):
+        """
+        Live-Fund 2026-09-02 (echter Abbruch-Test): der LETZTE Eintrag in
+        tracks ist bei einem waehrend Track 2 abgebrochenen Download der
+        abgebrochene Track selbst (kein library_path, siehe
+        DownloadResult(success=False, error="Download abgebrochen", ...)
+        in _process_playlist_download()) - "Beispiel-Track"/"Speicherort"
+        zeigten dadurch faelschlich "N/A", obwohl Track 1 bereits
+        erfolgreich fertig war.
+        """
+        result = {
+            "type": "playlist",
+            "tracks": [
+                {
+                    "success": True,
+                    "artist": "01099",
+                    "album": "orange",
+                    "library_path": "/lib/01099/2025 - orange/01 - so heiß.m4a",
+                },
+                {
+                    "success": False,
+                    "title": "Track 2",
+                    "error": "Download abgebrochen",
+                    # kein library_path - wie im echten Abbruch-Fall
+                },
+            ],
+            "source": "youtube",
+            "cancelled": True,
+        }
+
+        sent_text = reporter.build_final_summary_message(result, {}, {})
+
+        assert "`01 - so heiß.m4a`" in sent_text
+        assert "`01099/2025 - orange`" in sent_text
+        assert "`N/A`" not in sent_text  # Beispiel-Track/Speicherort betroffen
+
     def test_non_cancelled_playlist_keeps_success_header(self, reporter):
         result = {
             "type": "playlist",

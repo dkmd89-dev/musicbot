@@ -272,7 +272,20 @@ class DownloadResultReporter:
             return f"{int(count / max(total, 1) * 100)}%"
 
         # Pfad
-        lib_path = result.get("library_path") if not is_pl else (tracks[-1].get("library_path") if tracks else None)
+        # Live-Fund 2026-09-02 (Abbruch-Test): bei einem per ❌ abgebrochenen
+        # Playlist-Download ist der LETZTE Eintrag in tracks oft der
+        # abgebrochene/fehlgeschlagene Track selbst (kein library_path) -
+        # ein simples tracks[-1] zeigte dadurch faelschlich "N/A" als
+        # Beispiel-Track, obwohl vorherige Tracks erfolgreich waren. Sucht
+        # stattdessen rueckwaerts den letzten Track MIT tatsaechlichem
+        # library_path.
+        if is_pl:
+            lib_path = next(
+                (t.get("library_path") for t in reversed(tracks) if t.get("library_path")),
+                None,
+            )
+        else:
+            lib_path = result.get("library_path")
         if not lib_path:
             self.logger.warning("⚠️ [SUMMARY] library_path fehlt im Ergebnis")
         fname, fdir_short = _example_track_and_short_dir(lib_path)
