@@ -563,3 +563,62 @@ class TestGustavLuftballonScenario:
         # Bestehende Channel-Alias-Eintraege (auto_learned:) bleiben von der
         # Feature-Artist-Beobachtung unberuehrt
         assert data["auto_learned"] == original_channel_aliases
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# ARCH-022 — Testluecke: Namespace-Trennung in auto_learned_artists.yaml
+# ─────────────────────────────────────────────────────────────────────────
+#
+# auto_learned_artists.yaml vermischt zwei komplett getrennte Namespaces:
+# Top-Level-Key "auto_learned" (Channel-Alias-Learning, geschrieben von
+# AutoLearnManager.learn_artist()/_save_alias() UND gelesen von
+# utils/artist_map.py::ArtistNormalizer) und Top-Level-Key
+# "featured_artists" (Feature-Artist-Beobachtungen, geschrieben von
+# AutoLearnManager.observe_featured_artists()). Der Test oben
+# (test_gustav_primary_noah_featured_full_flow) deckt bereits eine
+# Richtung ab (featured_artists-Schreiben laesst auto_learned
+# unveraendert) - hier die bisher fehlende umgekehrte Richtung.
+
+
+class TestAutoLearnedArtistsNamespaceSeparation:
+    def test_auto_learned_alias_write_does_not_touch_featured_artists_key(
+        self, tmp_path
+    ):
+        mapping_dir = tmp_path / "mapping"
+        mapping_dir.mkdir()
+        manager = _make_manager(mapping_dir)
+
+        # Vorbedingung: featured_artists-Namespace ist bereits befuellt.
+        _run(
+            manager.observe_featured_artists(
+                primary_artist="Some Primary",
+                feat_artists=["Some Feature"],
+                track_context="Some Primary - Track",
+            )
+        )
+        with open(mapping_dir / "auto_learned_artists.yaml") as f:
+            before = yaml.safe_load(f)
+        assert "SOME FEATURE" in before["featured_artists"] or any(
+            k.lower() == "some feature" for k in before["featured_artists"]
+        )
+        original_featured = before["featured_artists"]
+
+        # Aktion: nur der auto_learned-Namespace wird beschrieben.
+        result = _run(
+            manager.learn_artist(
+                raw_name="Some Channel Name",
+                canonical_name="Some Canonical Artist",
+                source="youtube_parsed",
+            )
+        )
+        assert result is True
+
+        with open(mapping_dir / "auto_learned_artists.yaml") as f:
+            after = yaml.safe_load(f)
+
+        assert after["auto_learned"]["Some Channel Name"] == "Some Canonical Artist"
+        assert after["featured_artists"] == original_featured, (
+            "Der featured_artists-Namespace wurde durch das Schreiben "
+            "eines Channel-Alias veraendert - die beiden Namespaces "
+            "sind nicht sauber getrennt."
+        )

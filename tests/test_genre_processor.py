@@ -94,6 +94,57 @@ class TestPrioritizeGenres:
         )
         assert len(secondary) <= 5
 
+    def test_secondary_capped_at_five_with_real_priority_tags(self, genre_processor):
+        """
+        ARCH-022 — Testluecke: test_secondary_max_five oben uebergibt
+        Fake-Tags ("a".."g"), die NIE in GENRE_PRIORITY landen (kein
+        Treffer in prioritize_genres() Zeile 257-272) - der Test prueft
+        dadurch de facto nur den Fallback-Zweig (Zeile 274-280) mit
+        genau einem echten Tag ("deutschrap"), nicht den eigentlichen
+        Cap-Zweig mit mehreren tatsaechlich bekannten Prioritaeten
+        (Zeile 306-315). Hier werden 7 echte, in genre_hierarchy.yaml
+        vorhandene Tags uebergeben (6 House-Subgenres + 1 Hip-Hop-Tag),
+        um den Cap unter realen Bedingungen zu pruefen.
+        """
+        tags = [
+            "hip hop",
+            "deep house",
+            "tech house",
+            "melodic house",
+            "progressive house",
+            "tropical house",
+            "chill house",
+        ]
+        primary, secondary = genre_processor.prioritize_genres(tags)
+
+        assert len(secondary) <= 5
+        assert primary != "Unknown"
+        # Beweis, dass der Cap-Zweig (nicht der Fallback-Zweig) griff:
+        # jeder zurueckgegebene Wert muss selbst wieder ein bekanntes
+        # Genre sein (normalize_genre_name() liefert fuer echte Treffer
+        # nie "Unknown").
+        for genre in [primary] + secondary:
+            assert genre_processor.normalize_genre_name(genre.lower()) != "Unknown"
+
+    def test_only_unknown_tags_falls_back_to_first_tag_as_primary(
+        self, genre_processor
+    ):
+        """
+        ARCH-022 — deckt genre_processor.py:274-280 (Fallback-Zweig,
+        wenn KEIN einziger Tag in GENRE_PRIORITY bekannt ist) direkt
+        ab - bisher nur zufaellig ueber test_secondary_max_five
+        mitgetestet, nie als eigener, benannter Fall.
+        """
+        tags = [
+            "zzz-unmapped-tag-one",
+            "zzz-unmapped-tag-two",
+            "zzz-unmapped-tag-three",
+        ]
+        primary, secondary = genre_processor.prioritize_genres(tags)
+
+        assert primary == "Zzz-unmapped-tag-one"
+        assert secondary == ["Zzz-unmapped-tag-two", "Zzz-unmapped-tag-three"]
+
     def test_secondary_has_no_duplicates(self, genre_processor):
         _, secondary = genre_processor.prioritize_genres(
             ["deutschrap", "hip hop", "hip hop", "rap"]
