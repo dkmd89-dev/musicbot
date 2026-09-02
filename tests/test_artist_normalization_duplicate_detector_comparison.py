@@ -126,49 +126,45 @@ class TestNormalizationDivergence:
         assert dd_result.lower() == expected_shared_result.lower()
         assert ap_result.lower() == expected_shared_result.lower()
 
-    def test_music_suffix_diverges(self, handler, artist_processor):
+    def test_music_suffix_now_agrees(self, handler, artist_processor):
         """
-        DuplicateDetectors eigene Liste kennt nur " - Topic"/" VEVO"/
-        " Official" - "Music" (das ArtistProcessor.
-        clean_artist_before_normalization() sehr wohl entfernt, siehe P0-A/
-        P0-D) fehlt. Realistisches Beispiel: viele YouTube-Kanaele von
-        Labels/Artists tragen "... Music" im Namen.
+        P0-E-Fix: DuplicateDetectors eigene Suffix-Liste wurde um "Music"
+        erweitert (das ArtistProcessor.clean_artist_before_normalization()
+        bereits vorher entfernte, siehe P0-A/P0-D). Realistisches Beispiel:
+        viele YouTube-Kanaele von Labels/Artists tragen "... Music" im
+        Namen. Vor dem Fix lieferte dd_result unveraendert "SomeArtist
+        Music" (Divergenz) - siehe docs/audits/
+        P0_DUPLICATE_DETECTOR_AUDIT_2026-09-02.md.
         """
         raw = "SomeArtist Music"
         dd_result = handler._normalize_artist_for_comparison(raw)
         ap_result = self._artist_processor_result(artist_processor, raw)
 
-        assert dd_result == "SomeArtist Music"  # unveraendert - Suffix nicht erkannt
-        assert ap_result == "Someartist"  # Suffix entfernt + normalisiert
-        assert dd_result.lower() != ap_result.lower()
+        assert dd_result.lower() == ap_result.lower() == "someartist"
 
-    def test_records_suffix_diverges(self, handler, artist_processor):
-        """Analog zu Music - "Records" fehlt ebenfalls in der eigenen
-        Suffix-Liste von DuplicateDetector."""
+    def test_records_suffix_now_agrees(self, handler, artist_processor):
+        """Analog zu Music - P0-E-Fix ergaenzt "Records" in derselben
+        Suffix-Liste."""
         raw = "SomeArtist Records"
         dd_result = handler._normalize_artist_for_comparison(raw)
         ap_result = self._artist_processor_result(artist_processor, raw)
 
-        assert dd_result == "SomeArtist Records"
-        assert ap_result == "Someartist"
-        assert dd_result.lower() != ap_result.lower()
+        assert dd_result.lower() == ap_result.lower() == "someartist"
 
-    def test_comma_separated_multi_artist_diverges(self, handler, artist_processor):
+    def test_comma_separated_multi_artist_now_agrees(self, handler, artist_processor):
         """
-        ArtistProcessor.clean_artist_before_normalization() nimmt bei einem
-        kommagetrennten Multi-Artist-String (z.B. ein kombinierter Upload-
-        Kanalname fuer eine Kollaboration) nur den ersten Namen als
-        Hauptartist. DuplicateDetector kennt diese Regel nicht (nur
-        erreichbar, wenn self.artist_normalizer gesetzt waere - ist er in
-        Produktion nie) und behaelt den kompletten String.
+        P0-E-Fix: DuplicateDetector uebernimmt jetzt denselben Komma-Split
+        wie ArtistProcessor.clean_artist_before_normalization() fuer
+        kommagetrennte Multi-Artist-Strings (z.B. ein kombinierter Upload-
+        Kanalname fuer eine Kollaboration) - nur der erste Name gilt als
+        Hauptartist. Vor dem Fix behielt DuplicateDetector den kompletten,
+        ungetrennten String.
         """
         raw = "Artist One, Artist Two"
         dd_result = handler._normalize_artist_for_comparison(raw)
         ap_result = self._artist_processor_result(artist_processor, raw)
 
-        assert dd_result == "Artist One, Artist Two"
-        assert ap_result == "Artist One"
-        assert dd_result.lower() != ap_result.lower()
+        assert dd_result == ap_result == "Artist One"
 
 
 class TestEndToEndFalseNegative:
@@ -183,25 +179,23 @@ class TestEndToEndFalseNegative:
     die Pipeline ueberhaupt laeuft.
     """
 
-    def test_reupload_via_music_suffixed_channel_is_not_detected_as_duplicate(
+    def test_reupload_via_music_suffixed_channel_is_detected_as_duplicate(
         self, handler
     ):
         """
-        AKTUELLES (fehlerhaftes) Verhalten, live reproduziert: derselbe Song
-        wird zunaechst unter dem bereits bereinigten Artist "Someartist"
-        registriert. Ein Re-Upload/erneuter Download-Versuch desselben
-        Songs, dessen YouTube-Kanal "SomeArtist Music" heisst, wird beim
-        Pre-Download-Check NICHT als Duplikat erkannt - False Negative, weil
-        DuplicateDetector den Suffix "Music" nicht kennt (siehe
-        TestNormalizationDivergence.test_music_suffix_diverges).
+        Regressionstest fuer den P0-E-Fix: derselbe Song wird zunaechst
+        unter dem bereits bereinigten Artist "Someartist" registriert. Ein
+        Re-Upload/erneuter Download-Versuch desselben Songs, dessen
+        YouTube-Kanal "SomeArtist Music" heisst, MUSS beim Pre-Download-
+        Check als Duplikat erkannt werden - vor dem Fix war das ein False
+        Negative, weil DuplicateDetector den Suffix "Music" nicht kannte
+        (siehe TestNormalizationDivergence.test_music_suffix_diverges,
+        jetzt ebenfalls auf das korrekte Verhalten umgestellt).
 
-        Dieser Test haelt den AKTUELLEN Bug-Zustand fest (Characterization),
-        keine Fixture-Manipulation - die Assertion beschreibt bewusst das
-        WEITERHIN unerwuenschte 'is_dup is False'. Wird der Fix (Suffix-
-        Liste um Music/Records erweitern + Komma-Split ergaenzen)
-        umgesetzt, MUSS dieser Test umgekehrt werden (is_dup wird dann True)
-        - das ist beabsichtigt und im Audit-Dokument als offener Fix-
-        Kandidat vermerkt.
+        Pre-Fix-Diskriminierung: dieser Test (in seiner jetzigen Fassung
+        mit is_dup is True) schlug am ungefixten Code nachweislich fehl
+        (is_dup war False) - siehe docs/audits/
+        P0_DUPLICATE_DETECTOR_AUDIT_2026-09-02.md.
         """
         handler.register_download(
             "https://www.youtube.com/watch?v=AAA111",
@@ -215,5 +209,5 @@ class TestEndToEndFalseNegative:
             raw_title="Cool Song",
         )
 
-        assert is_dup is False
-        assert reason == "none"
+        assert is_dup is True
+        assert reason == "content"

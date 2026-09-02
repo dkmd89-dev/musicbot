@@ -130,21 +130,36 @@ Eingriff (Konstruktor-Verhalten, Singleton-Interaktion, Config-Erweiterung)
 — passend für eine spätere, eigene Entscheidung, nicht für den
 „kleinsten sinnvollen Schritt“ dieses P0-Fixes.
 
-**Wartet auf explizite Freigabe** bevor Produktionscode geändert wird
-(entspricht dem im P0-Plan vorgesehenen Commit 5: „fix: ... ← nur falls
-konkreter Fehler bewiesen“ — der Fehler ist hiermit bewiesen).
+**Umgesetzt** (Freigabe erteilt, separater Folge-Commit „fix: resolve
+duplicate detector artist normalization gap (P0-E)“): `_normalize_artist_
+for_comparison()` um den Komma-Split (1:1 aus `clean_artist_before_
+normalization()` übernommen) sowie die Suffixe `" Music"`/`" Records"`
+erweitert — exakt der oben vorgeschlagene Minimal-Fix, keine
+Architekturänderung an der `artist_config`/`ArtistNormalizer`-Verdrahtung.
+
+**Pre-Fix-Diskriminierung:** die 3 divergenten Vergleichstests und der
+End-to-End-Test wurden vor dem Fix auf die gewünschte (korrekte)
+Erwartung umgestellt und liefen damit nachweislich gegen den ungefixten
+Code fehl (4 failed) — danach mit dem Fix erneut ausgeführt: alle 9 Tests
+grün.
 
 ## Tests
 
 - Neu: `tests/test_artist_normalization_duplicate_detector_comparison.py`
   (9 Tests: Grundlagen-Beweis `artist_normalizer is None` in Produktion,
-  3 übereinstimmende Suffix-Fälle als Gegenprobe, 3 divergente Fälle, 1
-  End-to-End-False-Negative-Reproduktion). Alle 9 grün — sie
-  charakterisieren bewusst den **aktuellen** (fehlerhaften) Zustand, keine
-  Fixture-Manipulation.
+  3 übereinstimmende Suffix-Fälle als Gegenprobe, 3 Divergenz-/jetzt-
+  Übereinstimmungs-Fälle, 1 End-to-End-False-Negative-Regressionstest).
+  Vor dem Fix charakterisierten 4 dieser Tests bewusst den fehlerhaften
+  Zustand; nach Freigabe auf die korrekte Erwartung umgestellt und als
+  Pre-Fix-Diskriminierung gegen den ungefixten Code laufen lassen (4
+  failed, wie erwartet) — nach dem Fix: 9 passed.
+- Gezielt (direkte Regression): `tests/test_duplicate_detector_hash_
+  consistency.py` + `tests/test_duplicate_handler.py` — 19 passed.
 - Thematisch: `pytest tests/ -q -k duplicate` — 298 passed, 1 skipped
-  (umgebungsbedingt, vorbestehend), keine Regression.
-- Keine Produktionscode-Änderung in diesem Schritt.
+  (umgebungsbedingt, vorbestehend), keine Regression (identische Zahl vor
+  und nach dem Fix).
+- Produktionscode-Änderung: `services/duplicate/detector.py::
+  _normalize_artist_for_comparison()` (siehe Abschnitt 4).
 
 ## Sonstige Beobachtungen (keine weiteren Funde)
 
