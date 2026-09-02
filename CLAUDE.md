@@ -811,6 +811,9 @@ Eine Änderung ist grundsätzlich fertig, wenn:
 [ ] keine Secrets im Log
 [ ] Mapping-Änderungen geprüft
 [ ] Dokumentation aktualisiert, falls Verhalten/API geändert
+[ ] docs/FINDINGS_INDEX.md aktualisiert, falls ein dort gelisteter Punkt
+    geschlossen wurde oder ein neuer offener/zurückgestellter Punkt
+    entstanden ist
 ```
 
 ---
@@ -1070,9 +1073,18 @@ Nicht jede einzelne triviale Funktion braucht eine seitenlange Beschreibung.
 
 ## Baseline-Pflege
 
-Aktuelle Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v7.md` (Freeze
-2026-09-01, 1673 passed / 0 failed, 1 umgebungsbedingt skipped).
+Aktuelle Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v8.md` (Freeze
+2026-09-02, 1698 passed / 0 failed, 1 umgebungsbedingt skipped).
 Referenziert von `README.md` und `docs/INDEX.md`.
+
+Der aktuelle Stand aller offenen/zurückgestellten Punkte steht ab sofort
+in `docs/FINDINGS_INDEX.md`, nicht in der Tech-Debt-Tabelle der jeweils
+aktuellen Baseline — die bleibt ein eingefrorener Schnappschuss zum
+Freeze-Zeitpunkt und wird danach nicht mehr editiert. Beim Erstellen
+einer neuen Baseline vN+1 wird deren eigene Tech-Debt-Tabelle weiterhin
+wie bisher als Schnappschuss befüllt (Vergleichswert zum Vorgänger,
+Abschnitt „Baseline-Pflege" oben), ersetzt aber nicht die Pflege von
+`docs/FINDINGS_INDEX.md` als lebende Quelle.
 
 Nach Abschluss jeder ARCH-Phase mit Code-/YAML-Änderung wird die
 aktuelle ENGINEERING_BASELINE_vN.md im selben PR aktualisiert
