@@ -9,6 +9,39 @@ from services.downloader.models import DuplicateEntry
 from logger import get_module_logger
 
 
+def _format_duration(seconds) -> str:
+    """"⏱️ Dauer"-Zeile: formatiert Sekunden als "M:SS min". Fehlt der Wert
+    (z.B. bei einem noch nicht ueberall durchgereichten Aufrufer), wird
+    "N/A" statt eines falschen Platzhalters gezeigt."""
+    if seconds is None:
+        return "N/A"
+    try:
+        total = int(round(float(seconds)))
+    except (TypeError, ValueError):
+        return "N/A"
+    minutes, secs = divmod(max(total, 0), 60)
+    return f"{minutes}:{secs:02d} min"
+
+
+def _example_track_and_short_dir(library_path) -> tuple:
+    """
+    Nutzer-Wunsch 2026-09-02: "Speicherort" zeigt nur noch "Artist/Album"
+    (bzw. "Artist/Singles") statt des vollen Dateisystempfads
+    (z.B. "/tmp/musicbot_test/library/..." in der Testumgebung, in Produktion
+    "/mnt/musik_bilder/library/..."). Bewusst ueber die letzten zwei
+    Pfadsegmente relativ zur Datei bestimmt (Artist-Ordner + Album-/Singles-
+    Ordner) statt eine Library-Root-Config zu importieren - funktioniert
+    dadurch identisch in Test- und Produktionsumgebung, ohne dass dieses
+    reine Formatierungsmodul eine Config-Abhaengigkeit braucht.
+    """
+    if not library_path:
+        return "N/A", "N/A"
+    lp = Path(library_path)
+    album_dir = lp.parent
+    short_dir = f"{album_dir.parent.name}/{album_dir.name}" if album_dir.parent.name else album_dir.name
+    return lp.name, short_dir
+
+
 class DownloadResultReporter:
     """
     Verantwortlich für das Formatieren von Download-Abschluss-Nachrichten
@@ -132,9 +165,8 @@ class DownloadResultReporter:
 
         Nutzer-Redesign 2026-09-02: gleiches Format wie
         build_final_summary_message() (siehe dortiger Docstring) -
-        "Lyrics gefunden"/"Loudness normalisiert" kommen bewusst direkt aus
-        `successful`, nicht aus einem geteilten, nie zurückgesetzten
-        Processor-Zähler.
+        "Lyrics"/"Loudness" kommen bewusst direkt aus `successful`, nicht
+        aus einem geteilten, nie zurückgesetzten Processor-Zähler.
         """
         first  = successful[0]
         artist = first.get("artist", "Unbekannt")
@@ -142,6 +174,7 @@ class DownloadResultReporter:
         year   = str(first.get("year", "")) or "N/A"
         genres = self.collect_playlist_genres(successful)
         lib    = successful[-1].get("library_path", "")
+        duration = _format_duration(successful[-1].get("duration_seconds"))
 
         n  = max(len(successful), 1)
         lf = sum(1 for t in successful if t.get("lyrics_available"))
@@ -156,13 +189,7 @@ class DownloadResultReporter:
         genre_lines = [f"• {g}" for g in genres] if genres else ["• Keine"]
         genre_str   = "\n".join(genre_lines)
 
-        if lib:
-            lp = Path(lib)
-            fname = lp.name
-            fdir  = str(lp.parent)
-        else:
-            fname = "N/A"
-            fdir  = "N/A"
+        fname, fdir_short = _example_track_and_short_dir(lib)
 
         msg = (
             "🎉 Download erfolgreich abgeschlossen!\n\n"
@@ -170,19 +197,17 @@ class DownloadResultReporter:
             f"💿 Album    : {album}\n"
             f"📅 Jahr     : {year}\n"
             f"🎵 Tracks   : {len(successful)}/{len(results)} erfolgreich\n"
-            "📡 Quelle   : 📺 YouTube\n\n"
+            "📡 Quelle   : 📺 YouTube\n"
+            f"⏱️ Dauer    : {duration}\n\n"
             f"🏷️ Genres\n{genre_str}\n\n"
-            "📊 Verarbeitung\n"
-            f"📜 Lyrics gefunden       : {lf}/{n} · {stat_pct(lf, n)}\n"
-            f"🔊 Loudness normalisiert : {ln}/{n} · {stat_pct(ln, n)}\n\n"
             "✨ Ergebnis\n"
             f"🖼️ Cover    : {'✅ eingebettet' if cover_ok else '❌ fehlt'}\n"
-            f"📜 Lyrics   : {'✅ verfügbar' if lyrics_ok else '❌ fehlt'}\n"
-            f"🔊 Loudness : {'✅ normalisiert' if loud_ok else '❌ fehlt'}\n\n"
+            f"📜 Lyrics   : {'✅ verfügbar' if lyrics_ok else '❌ fehlt'} ({lf}/{n} · {stat_pct(lf, n)})\n"
+            f"🔊 Loudness : {'✅ normalisiert' if loud_ok else '❌ fehlt'} ({ln}/{n} · {stat_pct(ln, n)})\n\n"
             "🎵 Beispiel-Track\n"
             f'"{fname}"\n\n'
             "📂 Speicherort\n"
-            f'"{fdir}"'
+            f'"{fdir_short}"'
         )
         return msg
 
@@ -248,14 +273,11 @@ class DownloadResultReporter:
 
         # Pfad
         lib_path = result.get("library_path") if not is_pl else (tracks[-1].get("library_path") if tracks else None)
-        if lib_path:
-            lp = Path(lib_path)
-            fname = lp.name
-            fdir  = str(lp.parent)
-        else:
+        if not lib_path:
             self.logger.warning("⚠️ [SUMMARY] library_path fehlt im Ergebnis")
-            fname = "N/A"
-            fdir  = "N/A"
+        fname, fdir_short = _example_track_and_short_dir(lib_path)
+
+        duration = _format_duration(result.get("duration_seconds"))
 
         # Ergebnis-Flags (mind. ein Track hat's, wie bisher bei "any")
         if is_pl and tracks:
@@ -284,13 +306,7 @@ class DownloadResultReporter:
             ok = sum(1 for t in tracks if t.get("success"))
             meta.append(f"🎵 Tracks   : {ok}/{len(tracks)} erfolgreich")
         meta.append(f"📡 Quelle   : {src_label}")
-
-        stats_lines = [
-            "",
-            "📊 Verarbeitung",
-            f"📜 Lyrics gefunden       : {lf}/{n} · {stat_pct(lf, n)}",
-            f"🔊 Loudness normalisiert : {ln}/{n} · {stat_pct(ln, n)}",
-        ]
+        meta.append(f"⏱️ Dauer    : {duration}")
 
         example_label = "🎵 Beispiel-Track" if is_pl else "🎵 Datei"
 
@@ -299,19 +315,18 @@ class DownloadResultReporter:
             + meta
             + ["", "🏷️ Genres"]
             + genre_lines
-            + stats_lines
             + [
                 "",
                 "✨ Ergebnis",
                 f"🖼️ Cover    : {'✅ eingebettet' if cover_ok else '❌ fehlt'}",
-                f"📜 Lyrics   : {'✅ verfügbar' if lyrics_ok else '❌ fehlt'}",
-                f"🔊 Loudness : {'✅ normalisiert' if loud_ok else '❌ fehlt'}",
+                f"📜 Lyrics   : {'✅ verfügbar' if lyrics_ok else '❌ fehlt'} ({lf}/{n} · {stat_pct(lf, n)})",
+                f"🔊 Loudness : {'✅ normalisiert' if loud_ok else '❌ fehlt'} ({ln}/{n} · {stat_pct(ln, n)})",
                 "",
                 example_label,
                 f'"{fname}"',
                 "",
                 "📂 Speicherort",
-                f'"{fdir}"',
+                f'"{fdir_short}"',
             ]
         )
 

@@ -42,6 +42,7 @@ Log-Konventionen (unverändert über alle Phasen):
 """
 
 import asyncio
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
@@ -373,6 +374,11 @@ async def enhanced_download_with_retry(
     actual_lf = logger_factory or get_module_logger
     logger = logger or actual_lf("download_utils")
 
+    # Nutzer-Wunsch (Abschlussmeldung "⏱️ Dauer"): Gesamtlaufzeit dieses
+    # Downloads (inkl. aller Retry-Versuche) - misst ab hier bis zum
+    # jeweiligen Erfolgs-Return unten, nicht nur den reinen yt-dlp-Anteil.
+    _dl_start = time.monotonic()
+
     logger.info(
         f"\n{'═'*60}\n"
         f"⬇️  DOWNLOAD GESTARTET\n"
@@ -465,6 +471,7 @@ async def enhanced_download_with_retry(
                     "successful_tracks": len(
                         [t for t in tracks if t.get("success")]
                     ),
+                    "duration_seconds": time.monotonic() - _dl_start,
                 }
             else:
                 logger.info(
@@ -491,6 +498,7 @@ async def enhanced_download_with_retry(
                     "type": "single",
                     "track_info": single,
                     "processor_instance": enhanced_processor,
+                    "duration_seconds": time.monotonic() - _dl_start,
                 }
 
         except (YoutubeDLError, DownloadError) as e:

@@ -31,7 +31,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from services.downloader.download_result_reporter import DownloadResultReporter
+from services.downloader.download_result_reporter import (
+    DownloadResultReporter,
+    _example_track_and_short_dir,
+    _format_duration,
+)
 from services.downloader.models import DuplicateEntry
 
 
@@ -248,8 +252,8 @@ class TestBuildFinalSummaryMessage:
             result, stale_processing_stats, {}
         )
 
-        assert "📜 Lyrics gefunden       : 1/2 · 50%" in sent_text
-        assert "🔊 Loudness normalisiert : 2/2 · 100%" in sent_text
+        assert "📜 Lyrics   : ✅ verfügbar (1/2 · 50%)" in sent_text
+        assert "🔊 Loudness : ✅ normalisiert (2/2 · 100%)" in sent_text
         assert "999" not in sent_text
 
     def test_missing_library_path_shows_na_without_crash(self, reporter):
@@ -259,3 +263,80 @@ class TestBuildFinalSummaryMessage:
 
         assert "N/A" in sent_text
         reporter.logger.warning.assert_called_once()
+
+    def test_duration_line_uses_duration_seconds_from_result(self, reporter):
+        """Nutzer-Wunsch 2026-09-02: neue "⏱️ Dauer"-Zeile, gespeist aus
+        duration_seconds (jetzt durch enhanced_download_with_retry() ->
+        YoutubeDownloader.download_audio() durchgereicht)."""
+        result = {
+            "title": "T",
+            "artist": "A",
+            "library_path": "/library/A/Singles/T.m4a",
+            "source": "youtube",
+            "duration_seconds": 94,
+        }
+
+        sent_text = reporter.build_final_summary_message(result, {}, {})
+
+        assert "⏱️ Dauer    : 1:34 min" in sent_text
+
+    def test_duration_line_shows_na_when_missing(self, reporter):
+        result = {"title": "T", "artist": "A", "library_path": "/library/A/Singles/T.m4a", "source": "youtube"}
+
+        sent_text = reporter.build_final_summary_message(result, {}, {})
+
+        assert "⏱️ Dauer    : N/A" in sent_text
+
+    def test_storage_location_shows_only_artist_album_not_full_path(self, reporter):
+        """Nutzer-Wunsch 2026-09-02: "Speicherort" zeigt nur noch
+        Artist/Album statt des vollen Dateisystempfads."""
+        result = {
+            "type": "playlist",
+            "tracks": [
+                {
+                    "success": True,
+                    "artist": "Zartmann",
+                    "album": "schönhauser EP",
+                    "library_path": "/tmp/musicbot_test/library/Zartmann/2025 - schönhauser EP/08 - Track.m4a",
+                }
+            ],
+            "source": "youtube",
+        }
+
+        sent_text = reporter.build_final_summary_message(result, {}, {})
+
+        assert '"Zartmann/2025 - schönhauser EP"' in sent_text
+        assert "/tmp/musicbot_test" not in sent_text
+
+
+class TestFormatDuration:
+    def test_formats_minutes_and_seconds(self):
+        assert _format_duration(94) == "1:34 min"
+
+    def test_formats_under_a_minute(self):
+        assert _format_duration(7) == "0:07 min"
+
+    def test_none_returns_na(self):
+        assert _format_duration(None) == "N/A"
+
+    def test_rounds_to_nearest_second(self):
+        assert _format_duration(59.6) == "1:00 min"
+
+
+class TestExampleTrackAndShortDir:
+    def test_extracts_filename_and_artist_album(self):
+        fname, short_dir = _example_track_and_short_dir(
+            "/tmp/musicbot_test/library/Zartmann/2025 - schönhauser EP/08 - Track.m4a"
+        )
+        assert fname == "08 - Track.m4a"
+        assert short_dir == "Zartmann/2025 - schönhauser EP"
+
+    def test_works_for_singles_structure(self):
+        fname, short_dir = _example_track_and_short_dir(
+            "/mnt/musik_bilder/library/Clueso/Singles/2017 - Achterbahn.m4a"
+        )
+        assert fname == "2017 - Achterbahn.m4a"
+        assert short_dir == "Clueso/Singles"
+
+    def test_none_returns_na_tuple(self):
+        assert _example_track_and_short_dir(None) == ("N/A", "N/A")

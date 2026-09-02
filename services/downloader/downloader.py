@@ -109,6 +109,7 @@ class YoutubeDownloader:
                 "success": True,
                 "type": download_result.get("type"),
                 "processing_stats": processing_stats,
+                "duration_seconds": download_result.get("duration_seconds"),
             }
 
             if download_result.get("type") == "playlist":
