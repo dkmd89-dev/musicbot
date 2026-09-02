@@ -254,8 +254,29 @@ class DownloadExecutor:
 
             def _capture_raw_downloaded_path(status: Dict[str, Any]) -> None:
                 nonlocal raw_downloaded_path
-                if status.get("status") == "finished" and status.get("filename"):
-                    raw_downloaded_path = status["filename"]
+                # P2-Fund (docs/FINDINGS_INDEX.md, "Hard-Cancel waehrend
+                # laufendem Download - .part-Datei bleibt liegen"): vorher
+                # nur bei status=="finished" erfasst - ein Abbruch (Hard-
+                # Cancel oder jeder andere Fehler) WAEHREND des eigentlichen
+                # Downloads (status=="downloading", der weitaus groesste
+                # Teil der Downloaddauer) liess raw_downloaded_path dadurch
+                # auf None stehen, obwohl yt-dlp zu diesem Zeitpunkt bereits
+                # real eine ".part"-Datei auf der Platte hat
+                # (status["tmpfilename"], siehe yt_dlp/downloader/http.py::
+                # temp_name() - Standard-Suffix ".part" fuer die noch
+                # laufende Datei). Der Cleanup unten (except-Zweige) griff
+                # dadurch faktisch nie, wenn der Fehler waehrend statt nach
+                # dem Download auftrat - und der 24h-Start-Sweep
+                # (download_artifact_cleanup.py::cleanup_download_artifacts())
+                # beruehrt .part-Dateien bewusst NIE (siehe dortiger
+                # Docstring). Jetzt: bei jedem Hook-Aufruf die aktuell
+                # tatsaechlich vorhandene Datei merken - tmpfilename waehrend
+                # des Downloads (die echte, physische ".part"-Datei),
+                # filename bei "finished" (tmpfilename existiert dort nicht
+                # mehr, yt-dlp hat bereits umbenannt).
+                candidate = status.get("tmpfilename") or status.get("filename")
+                if candidate:
+                    raw_downloaded_path = candidate
 
             hooked_track_ydl_opts = {
                 **track_ydl_opts,

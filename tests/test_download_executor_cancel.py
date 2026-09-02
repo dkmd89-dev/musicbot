@@ -143,3 +143,71 @@ class TestDownloadCancelledErrorIsNotRetried:
             )
 
         assert not artifact.exists()
+
+    def test_cancel_during_downloading_status_cleans_up_part_file(
+        self, executor, tmp_path, monkeypatch
+    ):
+        """
+        P2-Fund (docs/FINDINGS_INDEX.md, "Hard-Cancel waehrend laufendem
+        Download - .part-Datei bleibt liegen"): der realistische Fall ist
+        NICHT wie im Test oben (ein "finished"-Event VOR dem Abbruch) -
+        ein echter Nutzer-Abbruch trifft fast immer status=="downloading",
+        das "finished"-Event fuer den aktuellen Track feuert dann nie. Zu
+        diesem Zeitpunkt existiert bereits eine physische ".part"-Datei
+        (status["tmpfilename"], siehe yt_dlp/downloader/http.py::
+        temp_name()) - die finale Datei (status["filename"]) existiert noch
+        nicht. Ohne Fix blieb raw_downloaded_path in diesem Fall auf None,
+        cleanup_single_download_artifact() wurde nie mit einem echten Pfad
+        aufgerufen - und der 24h-Start-Sweep beruehrt .part-Dateien bewusst
+        nie.
+        """
+        final_name = tmp_path / "Track_01_cancelme4.webm"
+        part_file = tmp_path / "Track_01_cancelme4.webm.part"
+        part_file.write_bytes(b"partial-bytes-still-downloading")
+
+        # yt-dlp ruft progress_hooks mehrfach pro Sekunde auf (siehe
+        # download_utils.py::_make_cancel_check_hook()-Docstring). Realistisch
+        # simuliert: EIN "downloading"-Event OHNE Abbruch (dabei erfasst der
+        # intern angehaengte _capture_raw_downloaded_path-Hook bereits die
+        # .part-Datei), DANACH ein zweites Event, bei dem der Cancel-Hook
+        # tatsaechlich abbricht - genau wie im echten Betrieb, wo der
+        # Capture-Hook (zweiter in der Hook-Liste) laengst schon vor dem
+        # eigentlichen Abbruch mehrfach gefeuert hat.
+        downloading_status = {
+            "status": "downloading",
+            "filename": str(final_name),
+            "tmpfilename": str(part_file),
+            "downloaded_bytes": 1234,
+            "total_bytes": 999999,
+        }
+
+        class FakeYoutubeDLDownloadingStatus(FakeYoutubeDL):
+            def extract_info(self, url, download=True):
+                for hook in self.ydl_opts.get("progress_hooks", []):
+                    hook(downloading_status)
+                for hook in self.ydl_opts.get("progress_hooks", []):
+                    hook(downloading_status)
+                return {}
+
+        monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYoutubeDLDownloadingStatus)
+
+        calls = {"n": 0}
+
+        def cancel_hook(status):
+            calls["n"] += 1
+            if calls["n"] >= 2:
+                raise DownloadCancelledError()
+
+        with pytest.raises(DownloadCancelledError):
+            run_async(
+                executor.download_single_track(
+                    track_info=make_track_info("cancelme4"),
+                    ydl_opts={"progress_hooks": [cancel_hook]},
+                    track_idx=1,
+                    download_dir=tmp_path,
+                    max_retries=1,
+                )
+            )
+
+        assert not part_file.exists()
+        assert not final_name.exists()

@@ -155,6 +155,115 @@ class TestFailureBeforeHookIsSafe:
         assert unrelated.exists()
 
 
+class TestDownloadingStatusPartFileCleanup:
+    """
+    P2-Fund (docs/FINDINGS_INDEX.md, "Hard-Cancel waehrend laufendem
+    Download - .part-Datei bleibt liegen"): der Hook wurde bisher nur bei
+    status=="finished" ausgewertet. Ein Abbruch (Hard-Cancel via
+    DownloadCancelledError) oder jeder andere Fehler WAEHREND des
+    eigentlichen Downloads (status=="downloading", der weitaus groesste
+    Teil der gesamten Downloaddauer) feuert "finished" nie - der Hook
+    liefert in diesem Zustand aber bereits status["tmpfilename"], die
+    ECHTE physische ".part"-Datei, die yt-dlp zu diesem Zeitpunkt auf der
+    Platte hat (siehe yt_dlp/downloader/http.py::temp_name()). Ohne Fix
+    blieb raw_downloaded_path auf None, cleanup_single_download_artifact()
+    wurde nie mit einem echten Pfad aufgerufen - und der 24h-Start-Sweep
+    (download_artifact_cleanup.py::cleanup_download_artifacts()) beruehrt
+    .part-Dateien bewusst NIE (siehe dortiger Docstring). Diese Klasse von
+    Abbruchartefakten hatte damit KEINEN Cleanup-Pfad ueberhaupt.
+    """
+
+    def test_cancel_during_downloading_status_cleans_up_part_file(
+        self, tmp_path, monkeypatch
+    ):
+        processor = make_processor(tmp_path)
+        final_name = tmp_path / "Song.webm"
+        part_file = tmp_path / "Song.webm.part"
+        part_file.write_bytes(b"partial-bytes-still-downloading")
+
+        cleanup_calls = []
+        monkeypatch.setattr(
+            "services.downloader.download_utils.cleanup_single_download_artifact",
+            lambda *a, **kw: cleanup_calls.append(a),
+        )
+
+        async def cancelled_mid_download_extract_info_async(url, ydl_opts, download=True):
+            for hook in ydl_opts.get("progress_hooks", []):
+                hook(
+                    {
+                        "status": "downloading",
+                        "filename": str(final_name),
+                        "tmpfilename": str(part_file),
+                        "downloaded_bytes": 1234,
+                        "total_bytes": 999999,
+                    }
+                )
+            raise RuntimeError("SIMULATED Hard-Cancel waehrend des Downloads")
+
+        processor.download_executor.extract_info_async = (
+            cancelled_mid_download_extract_info_async
+        )
+
+        with pytest.raises(DownloadError):
+            run_async(
+                _process_single_download(
+                    url="https://youtube.com/watch?v=x",
+                    video_info=make_video_info(),
+                    ydl_opts={},
+                    enhanced_processor=processor,
+                    filename_fixer=Mock(),
+                )
+            )
+
+        assert len(cleanup_calls) == 1
+        assert cleanup_calls[0][0] == part_file, (
+            "Cleanup muss die tatsaechlich physisch vorhandene .part-Datei "
+            "treffen (status['tmpfilename']), nicht die noch nicht "
+            "existierende finale Datei (status['filename'])."
+        )
+
+    def test_cancel_during_downloading_status_actually_removes_part_file_from_disk(
+        self, tmp_path
+    ):
+        """Wie oben, aber ohne Mock - prueft den tatsaechlichen
+        Dateisystemzustand nach dem Fix."""
+        processor = make_processor(tmp_path)
+        final_name = tmp_path / "Song2.webm"
+        part_file = tmp_path / "Song2.webm.part"
+        part_file.write_bytes(b"partial-bytes-still-downloading")
+
+        async def cancelled_mid_download_extract_info_async(url, ydl_opts, download=True):
+            for hook in ydl_opts.get("progress_hooks", []):
+                hook(
+                    {
+                        "status": "downloading",
+                        "filename": str(final_name),
+                        "tmpfilename": str(part_file),
+                        "downloaded_bytes": 1234,
+                        "total_bytes": 999999,
+                    }
+                )
+            raise RuntimeError("SIMULATED Hard-Cancel waehrend des Downloads")
+
+        processor.download_executor.extract_info_async = (
+            cancelled_mid_download_extract_info_async
+        )
+
+        with pytest.raises(DownloadError):
+            run_async(
+                _process_single_download(
+                    url="https://youtube.com/watch?v=x",
+                    video_info=make_video_info(),
+                    ydl_opts={},
+                    enhanced_processor=processor,
+                    filename_fixer=Mock(),
+                )
+            )
+
+        assert not part_file.exists()
+        assert not final_name.exists()
+
+
 class TestSuccessRegression:
     def test_successful_download_never_triggers_cleanup(self, tmp_path, monkeypatch):
         """Test 3: Hook meldet Datei, Download insgesamt erfolgreich -
