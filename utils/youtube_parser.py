@@ -107,6 +107,22 @@ def _clean_bracket_content(text: str, preserve_remix: bool = True) -> str:
     cleaned_text = re.sub(r"\(\s*\)", "", cleaned_text)
     cleaned_text = re.sub(r"\[\s*\]", "", cleaned_text)
 
+    # Live-Fund 2026-09-02 (Nutzer-Report): "Zartmann - Mama (prod. by
+    # Drumla) [Official Video] 4K" wurde zu Titel "Mama 4K" statt "Mama" -
+    # die Aufloesungsangabe stand im Original-Titel NICHT in eigenen
+    # Klammern ("[Official Video] 4K", kein "[4K]"), daher griff das
+    # obige "\[4k\]"-Pattern nicht. Nach Entfernen von "[Official Video]"
+    # blieb "4K" als freistehendes Suffix zurueck. Fix: ein freistehender
+    # Aufloesungs-/Qualitaets-Marker am Titelende (durch Whitespace
+    # abgetrennt, nicht Teil eines laengeren Worts) wird zusaetzlich
+    # entfernt - unabhaengig davon, ob er urspruenglich geklammert war.
+    cleaned_text = re.sub(
+        r"\s+(?:4k|8k|2k|hd|uhd|fullhd|full\s*hd|1080p|720p|480p|360p)\s*$",
+        "",
+        cleaned_text,
+        flags=re.IGNORECASE,
+    ).strip()
+
     # 🔧 FIX: Entferne doppelte Leerzeichen, aber behalte einzelne Wörter
     cleaned_text = re.sub(r"\s+", " ", cleaned_text).strip()
 

@@ -101,6 +101,33 @@ class TestParseYoutubeTitleDocumentedExamples:
         assert result["featuring"] == ["Drake"]
 
 
+class TestParseYoutubeTitleBareTrailingResolutionMarker:
+    """Live-Fund 2026-09-02 (Nutzer-Report, Album 'Zartmann - 11 bis 2'):
+    3 von 6 Playlist-Tracks wurden mit einer angehängten Auflösungsangabe
+    ("4K"/"4k") als Songtitel getaggt, weil diese im Original-Titel NICHT
+    in eigenen Klammern stand ("[Official Video] 4K", kein "[4K]") - siehe
+    _clean_bracket_content()-Fix in utils/youtube_parser.py."""
+
+    def test_mama_4k(self):
+        result = parse_youtube_title(
+            "Zartmann - Mama (prod. by Drumla) [Official Video] 4K"
+        )
+        assert result["song_title"] == "Mama"
+
+    def test_ritalin_4k(self):
+        result = parse_youtube_title(
+            "Zartmann - Ritalin (prod. by Drumla) [Official Video] 4K"
+        )
+        assert result["song_title"] == "Ritalin"
+
+    def test_easy_4k_lowercase_and_multi_artist(self):
+        result = parse_youtube_title(
+            "Zartmann x XAVER x Emileo - Easy (prod. by Drumla) [Official Video] 4k"
+        )
+        assert result["all_artists"] == ["Zartmann", "XAVER", "Emileo"]
+        assert result["song_title"] == "Easy"
+
+
 class TestParseYoutubeTitleEdgeCases:
     def test_empty_string_returns_zero_confidence(self):
         result = parse_youtube_title("")
@@ -234,6 +261,22 @@ class TestCleanBracketContent:
 
     def test_removes_4k_hd_tags(self):
         assert _clean_bracket_content("Title [4K] [HD]") == "Title"
+
+    def test_removes_bare_trailing_resolution_marker(self):
+        """Live-Fund 2026-09-02 (Nutzer-Report): "4K" nach "[Official
+        Video]" steht NICHT in eigenen Klammern - das "\\[4k\\]"-Pattern
+        greift dann nicht, "4K" blieb bisher als freistehendes Suffix
+        zurück (z.B. "Zartmann - Mama (prod. by Drumla) [Official Video]
+        4K" → Titel "Mama 4K" statt "Mama")."""
+        assert _clean_bracket_content("Title [Official Video] 4K") == "Title"
+        assert _clean_bracket_content("Title [Official Video] 4k") == "Title"
+        assert _clean_bracket_content("Title 1080p") == "Title"
+
+    def test_does_not_strip_resolution_marker_that_is_part_of_a_word(self):
+        """Nur ein durch Whitespace abgetrennter, freistehender Marker am
+        Titelende wird entfernt - kein Teilstring-Treffer innerhalb eines
+        längeren Worts."""
+        assert _clean_bracket_content("Title Ahead") == "Title Ahead"
 
     def test_preserves_remix_by_default(self):
         result = _clean_bracket_content("Title (Cool Remix)", preserve_remix=True)
