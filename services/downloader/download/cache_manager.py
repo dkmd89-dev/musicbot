@@ -231,6 +231,16 @@ class CacheManager:
             "track_number": track_idx,
             "lyrics_available": bool(cached.get("lyrics")),
             "lyrics_source": cached.get("lyrics_source"),
+            # Live-Fund 2026-09-02 (Nutzer-Report): fehlten hier bisher
+            # komplett - ein Playlist-Cache-Treffer (Stufe 1/2) zeigte in der
+            # Telegram-Abschlussmeldung dadurch faelschlich "Cover fehlt"/
+            # "Loudness fehlt" fuer genau diesen Track, obwohl beides beim
+            # urspruenglichen Download (das den Cache-Eintrag erzeugte)
+            # tatsaechlich vorhanden war - services/metadata/cache.py::
+            # MetadataCacheHandler.store() schreibt beide Felder bereits in
+            # denselben zugrundeliegenden Cache-Eintrag.
+            "cover_embedded": bool(cached.get("cover_embedded", False)),
+            "loudness_normalized": bool(cached.get("loudness_normalized", False)),
             "is_duplicate": False,
             "title_cleaned": cached.get("title_cleaned", False),
             "from_cache": True,

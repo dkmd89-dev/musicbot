@@ -16,12 +16,18 @@ class FakeConfig:
     (kein special_channel.yaml) -> _special_channels bleibt leer, damit die
     Standard-Musik-Pfad-Logik isoliert getestet werden kann."""
 
-    def __init__(self, tmp_path: Path, mapping_dir: Path = None):
+    def __init__(self, tmp_path: Path, mapping_dir: Path = None, override_file: Path = None):
         self.LIBRARY_DIR = tmp_path / "library"
         self.FAIL_DIR = tmp_path / "fail"
         self.PROCESSED_DIR = tmp_path / "processed"
         self.TEMP_DIR = tmp_path / "temp"
         self.GENRE_MAPPING_DIR = mapping_dir or (tmp_path / "empty_mapping")
+        # ARTIST_OVERRIDE_FILE bewusst NICHT immer gesetzt (fehlt bei den
+        # meisten Tests hier ganz) - FilenameFixerTool liest es ueber
+        # getattr(..., None), muss also auch ohne dieses Attribut robust
+        # bleiben (siehe load_known_group_names_from_overrides()).
+        if override_file is not None:
+            self.ARTIST_OVERRIDE_FILE = override_file
 
 
 @pytest.fixture
@@ -100,6 +106,77 @@ class TestBuildFinalPathStandard:
             extension="m4a",
         )
         assert path.parent.parent.name == "Main Artist"
+
+
+class TestBuildFinalPathKnownGroupNames:
+    """
+    Live-Fund 2026-09-02 (Nutzer-Testdownload, Nachfolge des Miksu & Macloud-
+    Mapping-Fixes in mapping/artist_overrides.json): extract_main_artist()
+    zerlegte den bereits als atomarer Duo-Name normalisierten Artist "Miksu &
+    Macloud" fuer die Library-ORDNER-Gruppierung zurueck in nur "Miksu" -
+    inkonsistent zum Tag (der korrekt "Miksu & Macloud" zeigt) und Ursache
+    dafuer, dass check_library_duplicate() (services/duplicate/detector.py)
+    den bereits vorhandenen Ordner nicht mehr fand (dessen ArtistNormalizer
+    liefert seit dem Override-Fix ebenfalls "Miksu & Macloud").
+
+    Fix: Artist-Strings, die exakt einem Zielwert aus artist_overrides.json
+    entsprechen, gelten als bereits kanonisch/atomar und werden nicht mehr
+    gesplittet - unabhaengig gesetzte Nutzer-Entscheidung, bestaetigt per
+    AskUserQuestion.
+    """
+
+    @pytest.fixture
+    def override_file(self, tmp_path):
+        import json
+
+        path = tmp_path / "artist_overrides.json"
+        path.write_text(
+            json.dumps({"miksu & macloud": "Miksu & Macloud"}), encoding="utf-8"
+        )
+        return path
+
+    @pytest.fixture
+    def tool_with_overrides(self, tmp_path, override_file):
+        return FilenameFixerTool(FakeConfig(tmp_path, override_file=override_file))
+
+    def test_known_group_name_is_not_split_for_folder(self, tool_with_overrides):
+        path = tool_with_overrides.build_final_path(
+            artist="Miksu & Macloud",
+            title="Ich will",
+            year="2023",
+            extension="m4a",
+            is_single_download=True,
+        )
+        assert path.parent == tool_with_overrides.library_dir / "Miksu & Macloud" / "Singles"
+
+    def test_unrelated_collaboration_is_still_split_for_folder(
+        self, tool_with_overrides
+    ):
+        """Regressionsschutz: nur EXAKT als Override-Zielwert bekannte
+        Gruppennamen sind atomar - eine beliebige, nicht in
+        artist_overrides.json hinterlegte Ad-hoc-Kollaboration wird
+        weiterhin wie bisher am ersten Trennzeichen gruppiert."""
+        path = tool_with_overrides.build_final_path(
+            artist="Ski Aggu, Sido",
+            title="Mein Block",
+            year="2023",
+            extension="m4a",
+            is_single_download=True,
+        )
+        assert path.parent == tool_with_overrides.library_dir / "Ski Aggu" / "Singles"
+
+    def test_missing_override_file_falls_back_to_normal_splitting(self, tool):
+        """tool (Standard-Fixture) hat kein ARTIST_OVERRIDE_FILE gesetzt -
+        load_known_group_names_from_overrides() muss robust auf eine leere
+        Menge zurueckfallen, statt zu crashen."""
+        path = tool.build_final_path(
+            artist="Miksu & Macloud",
+            title="Ich will",
+            year="2023",
+            extension="m4a",
+            is_single_download=True,
+        )
+        assert path.parent == tool.library_dir / "Miksu" / "Singles"
 
     def test_forbidden_filesystem_characters_are_stripped(self, tool):
         path = tool.build_final_path(

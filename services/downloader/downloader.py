@@ -28,12 +28,29 @@ class YoutubeDownloader:
         update_id: int,
         config: Config,
         cookie_handler: CookieHandler,
+        duplicate_detector=None,
+        status_callback=None,
         # ... andere Parameter
     ):
         self.chat_id = chat_id
         self.update_id = update_id
         self.config = config
         self.cookie_handler = cookie_handler
+        # Live-Fund 2026-09-02: wird nur fuer die Pro-Track-Duplikatpruefung
+        # innerhalb von Playlist-Downloads gebraucht (siehe
+        # _process_playlist_download() in download_utils.py) - optional,
+        # damit Aufrufer ohne eigenen DuplicateDetector (z.B. isolierte
+        # Tests) unveraendert funktionieren.
+        self.duplicate_detector = duplicate_detector
+        # Playlist-Progress-State 2026-09-02 (Nutzer-Wunsch): optionaler
+        # async Callable, wird von _process_playlist_download() pro Track
+        # mit dem ProgressTracker (reiner Zustand, siehe dort) aufgerufen -
+        # bleibt bewusst ein opakes Callable ohne Telegram-Typ in dieser
+        # Schicht (services/), exakt wie duplicate_detector oben. Der
+        # Aufrufer (klassen/download_handler.py) uebergibt eine an sich
+        # selbst gebundene Methode, die dort die Telegram-Formatierung und
+        # den eigentlichen Versand uebernimmt.
+        self.status_callback = status_callback
 
         self._logger_factory = get_module_logger
         self.logger = self._logger_factory("YoutubeDownloader")
@@ -62,6 +79,8 @@ class YoutubeDownloader:
                 chat_id=self.chat_id,
                 update_id=self.update_id,
                 logger_factory=self._logger_factory,
+                duplicate_detector=self.duplicate_detector,
+                status_callback=self.status_callback,
             )
 
             self.logger.info(
@@ -101,6 +120,7 @@ class YoutubeDownloader:
                 "success": True,
                 "type": download_result.get("type"),
                 "processing_stats": processing_stats,
+                "duration_seconds": download_result.get("duration_seconds"),
             }
 
             if download_result.get("type") == "playlist":

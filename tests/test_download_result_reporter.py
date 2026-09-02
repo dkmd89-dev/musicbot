@@ -31,7 +31,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from services.downloader.download_result_reporter import DownloadResultReporter
+from services.downloader.download_result_reporter import (
+    DownloadResultReporter,
+    _example_track_and_short_dir,
+    _format_duration,
+)
 from services.downloader.models import DuplicateEntry
 
 
@@ -175,6 +179,25 @@ class TestBuildPlaylistSummaryMessage:
         assert "Künstler : A" in sent_text
         assert "Album    : B" in sent_text
 
+    def test_filename_and_storage_location_use_inline_code_not_quotes(self, reporter):
+        """Nutzer-Wunsch 2026-09-02: Dateiname/Speicherort als Inline-Code
+        (Backticks) statt in Anführungszeichen - wirkt in Telegram sauberer."""
+        results = [
+            {
+                "success": True,
+                "artist": "A",
+                "album": "B",
+                "year": 2024,
+                "library_path": "/lib/A/2024 - B/01 - x.mp3",
+            }
+        ]
+
+        sent_text = reporter.build_playlist_summary_message(results, results)
+
+        assert "`01 - x.mp3`" in sent_text
+        assert "`A/2024 - B`" in sent_text
+        assert '"01 - x.mp3"' not in sent_text
+
 
 class TestBuildFinalSummaryMessage:
     def test_single_track_message_contains_core_fields(self, reporter):
@@ -189,11 +212,11 @@ class TestBuildFinalSummaryMessage:
 
         sent_text = reporter.build_final_summary_message(result, {}, {})
 
-        assert "Download erfolgreich!" in sent_text
+        assert "🎉 Download erfolgreich abgeschlossen!" in sent_text
         assert "Some Title" in sent_text
         assert "Some Artist" in sent_text
         assert "📺 YouTube" in sent_text
-        assert "Some Title.mp3" in sent_text
+        assert "`Some Title.mp3`" in sent_text
 
     def test_playlist_type_uses_playlist_header_and_track_counts(self, reporter):
         result = {
@@ -208,8 +231,49 @@ class TestBuildFinalSummaryMessage:
 
         sent_text = reporter.build_final_summary_message(result, {}, {})
 
-        assert "Playlist erfolgreich heruntergeladen!" in sent_text
-        assert "Tracks   : 2/3" in sent_text
+        assert "🎉 Download erfolgreich abgeschlossen!" in sent_text
+        assert "Tracks   : 2/3 erfolgreich" in sent_text
+
+    def test_loudness_and_lyrics_stats_come_from_current_tracks_not_shared_processor_stats(
+        self, reporter
+    ):
+        """Nutzer-Redesign 2026-09-02: processing_stats (der geteilte,
+        nie zurueckgesetzte EnhancedMetadataProcessor-Zaehler) darf die
+        "Lyrics gefunden"/"Loudness normalisiert"-Zeilen nicht beeinflussen
+        - nur die tatsaechlichen Tracks DIESES Downloads zaehlen."""
+        result = {
+            "type": "playlist",
+            "tracks": [
+                {
+                    "success": True,
+                    "artist": "A",
+                    "album": "B",
+                    "library_path": "/lib/A/1.mp3",
+                    "lyrics_available": True,
+                    "loudness_normalized": True,
+                },
+                {
+                    "success": True,
+                    "artist": "A",
+                    "album": "B",
+                    "library_path": "/lib/A/2.mp3",
+                    "lyrics_available": False,
+                    "loudness_normalized": True,
+                },
+            ],
+            "source": "youtube",
+        }
+        # Absichtlich stark veraltete/irrefuehrende Werte - duerfen NICHT
+        # in der Meldung landen.
+        stale_processing_stats = {"lyrics_found": 999, "total_processed": 999}
+
+        sent_text = reporter.build_final_summary_message(
+            result, stale_processing_stats, {}
+        )
+
+        assert "📜 Lyrics   : ✅ verfügbar (1/2 · 50%)" in sent_text
+        assert "🔊 Loudness : ✅ normalisiert (2/2 · 100%)" in sent_text
+        assert "999" not in sent_text
 
     def test_missing_library_path_shows_na_without_crash(self, reporter):
         result = {"title": "T", "artist": "A", "source": "youtube"}
@@ -218,3 +282,102 @@ class TestBuildFinalSummaryMessage:
 
         assert "N/A" in sent_text
         reporter.logger.warning.assert_called_once()
+
+    def test_duration_line_uses_duration_seconds_from_result(self, reporter):
+        """Nutzer-Wunsch 2026-09-02: neue "⏱️ Dauer"-Zeile, gespeist aus
+        duration_seconds (jetzt durch enhanced_download_with_retry() ->
+        YoutubeDownloader.download_audio() durchgereicht)."""
+        result = {
+            "title": "T",
+            "artist": "A",
+            "library_path": "/library/A/Singles/T.m4a",
+            "source": "youtube",
+            "duration_seconds": 94,
+        }
+
+        sent_text = reporter.build_final_summary_message(result, {}, {})
+
+        assert "⏱️ Dauer    : 1:34 min" in sent_text
+
+    def test_duration_line_shows_na_when_missing(self, reporter):
+        result = {"title": "T", "artist": "A", "library_path": "/library/A/Singles/T.m4a", "source": "youtube"}
+
+        sent_text = reporter.build_final_summary_message(result, {}, {})
+
+        assert "⏱️ Dauer    : N/A" in sent_text
+
+    def test_storage_location_shows_only_artist_album_not_full_path(self, reporter):
+        """Nutzer-Wunsch 2026-09-02: "Speicherort" zeigt nur noch
+        Artist/Album statt des vollen Dateisystempfads."""
+        result = {
+            "type": "playlist",
+            "tracks": [
+                {
+                    "success": True,
+                    "artist": "Zartmann",
+                    "album": "schönhauser EP",
+                    "library_path": "/tmp/musicbot_test/library/Zartmann/2025 - schönhauser EP/08 - Track.m4a",
+                }
+            ],
+            "source": "youtube",
+        }
+
+        sent_text = reporter.build_final_summary_message(result, {}, {})
+
+        assert "`Zartmann/2025 - schönhauser EP`" in sent_text
+        assert "/tmp/musicbot_test" not in sent_text
+
+    def test_single_track_lyrics_and_loudness_omit_redundant_count(self, reporter):
+        """Nutzer-Wunsch 2026-09-02: bei einem Einzeltitel (n=1) ist
+        "(1/1 · 100%)" hinter Lyrics/Loudness reine Redundanz zum bereits
+        gezeigten ✅/❌-Status - nur bei Playlists bleibt der Zaehler/die
+        Prozentangabe sinnvoll und wird gezeigt (siehe
+        test_loudness_and_lyrics_stats_come_from_current_tracks_not_shared_processor_stats)."""
+        result = {
+            "title": "T",
+            "artist": "A",
+            "library_path": "/library/A/Singles/T.m4a",
+            "source": "youtube",
+            "lyrics_available": True,
+            "loudness_normalized": True,
+        }
+
+        sent_text = reporter.build_final_summary_message(result, {}, {})
+
+        assert "📜 Lyrics   : ✅ verfügbar" in sent_text
+        assert "🔊 Loudness : ✅ normalisiert" in sent_text
+        assert "1/1" not in sent_text
+        assert "100%" not in sent_text
+
+
+class TestFormatDuration:
+    def test_formats_minutes_and_seconds(self):
+        assert _format_duration(94) == "1:34 min"
+
+    def test_formats_under_a_minute(self):
+        assert _format_duration(7) == "0:07 min"
+
+    def test_none_returns_na(self):
+        assert _format_duration(None) == "N/A"
+
+    def test_rounds_to_nearest_second(self):
+        assert _format_duration(59.6) == "1:00 min"
+
+
+class TestExampleTrackAndShortDir:
+    def test_extracts_filename_and_artist_album(self):
+        fname, short_dir = _example_track_and_short_dir(
+            "/tmp/musicbot_test/library/Zartmann/2025 - schönhauser EP/08 - Track.m4a"
+        )
+        assert fname == "08 - Track.m4a"
+        assert short_dir == "Zartmann/2025 - schönhauser EP"
+
+    def test_works_for_singles_structure(self):
+        fname, short_dir = _example_track_and_short_dir(
+            "/mnt/musik_bilder/library/Clueso/Singles/2017 - Achterbahn.m4a"
+        )
+        assert fname == "2017 - Achterbahn.m4a"
+        assert short_dir == "Clueso/Singles"
+
+    def test_none_returns_na_tuple(self):
+        assert _example_track_and_short_dir(None) == ("N/A", "N/A")

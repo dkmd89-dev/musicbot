@@ -93,6 +93,43 @@ class TestDownloadAudioPassesChatIdAndUpdateIdToRetry:
         assert kwargs["update_id"] == 1337
         assert kwargs["url"] == "https://youtube.com/watch?v=x"
 
+    def test_status_callback_is_forwarded_unchanged(self, deps):
+        """Playlist-Progress-State 2026-09-02 (Nutzer-Wunsch): optionales
+        status_callback wird unveraendert an enhanced_download_with_retry()
+        durchgereicht - bleibt in dieser Schicht ein opakes Callable ohne
+        Telegram-Typ, exakt wie duplicate_detector."""
+        deps["retry"].return_value = {
+            "success": True,
+            "type": "single",
+            "track_info": {},
+        }
+        callback = Mock()
+        downloader = YoutubeDownloader(
+            chat_id=1,
+            update_id=2,
+            config=Mock(),
+            cookie_handler=Mock(),
+            status_callback=callback,
+        )
+
+        run_async(downloader.download_audio("https://youtube.com/watch?v=x"))
+
+        _, kwargs = deps["retry"].await_args
+        assert kwargs["status_callback"] is callback
+
+    def test_status_callback_defaults_to_none(self, deps):
+        deps["retry"].return_value = {
+            "success": True,
+            "type": "single",
+            "track_info": {},
+        }
+        downloader = make_downloader(deps)
+
+        run_async(downloader.download_audio("https://youtube.com/watch?v=x"))
+
+        _, kwargs = deps["retry"].await_args
+        assert kwargs["status_callback"] is None
+
 
 class TestDownloadAudioSingleTrackResultTransformation:
     def test_success_single_track_maps_fields(self, deps):

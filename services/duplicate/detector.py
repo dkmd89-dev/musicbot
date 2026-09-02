@@ -376,6 +376,88 @@ class DuplicateDetector:
 
         return None
 
+    def resolve_playlist_single_conflict(
+        self, artist: str, title: str
+    ) -> Optional[Path]:
+        """
+        Playlist-Prioritaet (Nutzer-Wunsch 2026-09-02): ein Playlist-Track
+        darf nicht fehlen, nur weil derselbe Titel bereits als eigenstaendiger
+        Single-Download unter library/<Artist>/Singles/ existiert - vorher
+        griff in diesem Fall entweder der Metadata-Cache-Kurzschluss
+        (CacheManager.lookup_playlist_track(), der die alte Singles-Datei
+        einfach als "Erfolg" meldet, OHNE sie in den Album-Ordner zu
+        verschieben) oder der Playlist-Duplikat-Check
+        (_process_playlist_download() in download_utils.py), der den Track
+        komplett uebersprang - in beiden Faellen blieb das Album danach
+        unvollstaendig (live beobachtet: Track 6 von "Zartmann - dafuer bin
+        ich frei EP" fehlte, weil "wie du manchmal fehlst" schon als Single
+        vorlag).
+
+        Aufgerufen VOR dem Cache-/Duplikat-Check in
+        _process_playlist_download() (download_utils.py). Findet einen
+        Singles-Konflikt fuer (artist, title), loescht die alte
+        Singles-Datei physisch und invalidiert den zugehoerigen
+        Duplicate-Cache-Eintrag - beide nachfolgenden Pruefungen (Cache-Hit
+        und regulaerer Duplikat-Check) sehen die Datei danach korrekt als
+        nicht mehr vorhanden bzw. den Cache-Eintrag als entfernt und lassen
+        den Track dadurch normal (neu) herunterladen, sodass er in den
+        Album-Ordner einsortiert wird.
+
+        Bewusst NUR fuer einen Treffer in einem Ordner, der exakt "Singles"
+        heisst (Library-Konvention fuer eigenstaendige Downloads) - ein
+        Treffer in einem ANDEREN, bereits existierenden Album wird nicht
+        angetastet (deutlich riskanterer Eingriff, nicht Teil dieser
+        Freigabe). Gibt den geloeschten Pfad zurueck (fuer Logging durch
+        den Aufrufer) oder None, wenn kein solcher Konflikt vorliegt bzw.
+        das Loeschen fehlschlaegt.
+        """
+        normalized_artist = self._normalize_artist_for_comparison(artist)
+        cleaned_title = self._clean_title_for_comparison(title, normalized_artist)
+
+        # Bevorzugt ueber den Duplicate-Cache aufloesen (liefert die
+        # Original-URL fuer eine saubere Invalidierung mit); fehlt der
+        # Cache-Eintrag (z.B. nach Neustart ohne register_download), direkt
+        # in der Library nachschauen - derselbe Fallback wie
+        # check_for_duplicates() ihn bereits fuer den "library"-Treffertyp
+        # verwendet.
+        cache_entry = self.duplicate_cache.check_content_duplicate(
+            normalized_artist, cleaned_title
+        )
+        existing_path = (
+            Path(cache_entry.file_path)
+            if cache_entry and cache_entry.file_path
+            else None
+        )
+        if not existing_path:
+            existing_path = self.check_library_duplicate(artist, title)
+
+        if not existing_path or not Path(existing_path).exists():
+            return None
+        existing_path = Path(existing_path)
+
+        if existing_path.parent.name.lower() != "singles":
+            return None
+
+        try:
+            existing_path.unlink()
+        except OSError as e:
+            self.logger.warning(
+                f"⚠️ [PLAYLIST-PRIO] Konnte Singles-Datei nicht loeschen "
+                f"({existing_path}): {e}"
+            )
+            return None
+
+        self.logger.info(
+            f"🗑️ [PLAYLIST-PRIO] Singles-Datei entfernt zugunsten des "
+            f"vollstaendigen Album-Downloads: {existing_path}"
+        )
+        self.invalidate_entry(
+            url=cache_entry.url if cache_entry else None,
+            artist=normalized_artist,
+            title=cleaned_title,
+        )
+        return existing_path
+
     def register_download(
         self,
         url: str,

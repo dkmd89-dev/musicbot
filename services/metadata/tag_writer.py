@@ -46,6 +46,26 @@ class TagWriter:
             ]
 
         feat_artists = feat_artists or []
+
+        # Live-Fund 2026-09-02 (Nutzer-Report, Nachfolge des Miksu & Macloud-
+        # Mapping-Fixes): ein Feature-Artist kann nach der Normalisierung
+        # oben auf denselben kanonischen String abbilden wie `artist` selbst
+        # (z.B. roher Eintrag "Miksu" -> Override -> "Miksu & Macloud",
+        # identisch zum bereits finalen Haupt-Artist "Miksu & Macloud") -
+        # ohne Dedup landete der Duo-Name doppelt im ARTISTS-Tag
+        # ("Miksu & Macloud; Miksu & Macloud; MACLOUD; makko"). Case-
+        # insensitiv dedupen, `artist` behaelt immer den ersten Slot,
+        # Reihenfolge der uebrigen feat_artists bleibt erhalten.
+        seen = {artist.strip().lower()}
+        deduped_feat_artists = []
+        for fa in feat_artists:
+            key = fa.strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped_feat_artists.append(fa)
+        feat_artists = deduped_feat_artists
+
         all_artists = [artist] + feat_artists
         artists_semicolon = "; ".join(all_artists)
 

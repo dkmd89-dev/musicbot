@@ -67,10 +67,15 @@ class TestComputeProgressMessage:
         result = tracker.compute_progress_message()
 
         assert result is None
-        assert tracker.processed_items == 1
+        # Playlist-Progress-State-Erweiterung 2026-09-02: processed_items
+        # wird nicht mehr von compute_progress_message() selbst erhoeht -
+        # ohne mark_completed()-Aufruf bleibt es bei 0 (siehe
+        # TestMarkCompleted fuer die neue Zaehl-Semantik).
+        assert tracker.processed_items == 0
 
     def test_returns_generated_message_once_interval_has_elapsed(self):
         tracker = ProgressTracker(total_items=5)
+        tracker.mark_completed("Song A")
         tracker.last_update_time = datetime.now() - timedelta(seconds=10)
 
         result = tracker.compute_progress_message()
@@ -94,16 +99,33 @@ class TestComputeProgressMessage:
         """
         tracker = ProgressTracker(total_items=10)
         tracker.last_update_time = datetime.now() - timedelta(seconds=10)
+        tracker.mark_completed("Song A")
 
         first = tracker.compute_progress_message()  # Intervall abgelaufen
+        tracker.mark_completed("Song B")
         second = tracker.compute_progress_message()  # gedrosselt
 
         assert first is not None
         assert second is None
         assert tracker.processed_items == 2
 
+    def test_compute_progress_message_alone_does_not_advance_processed_items(self):
+        """Playlist-Progress-State-Erweiterung 2026-09-02: mehrfache
+        Zwischen-Status-Aufrufe (z.B. "lädt herunter...") fuer DASSELBE
+        Element duerfen es nicht mehrfach zaehlen - nur mark_completed()
+        zaehlt echte Abschluesse."""
+        tracker = ProgressTracker(total_items=5)
+        tracker.last_update_time = datetime.now() - timedelta(seconds=10)
+
+        tracker.compute_progress_message()
+        tracker.compute_progress_message()
+        tracker.compute_progress_message()
+
+        assert tracker.processed_items == 0
+
     def test_final_item_always_returns_message_regardless_of_throttle(self):
         tracker = ProgressTracker(total_items=1)
+        tracker.mark_completed("only item")
 
         result = tracker.compute_progress_message()
 
@@ -118,6 +140,49 @@ class TestComputeProgressMessage:
         result = tracker.compute_progress_message()
 
         assert "Song A" in result
+
+    def test_current_item_is_included_even_before_first_completion(self):
+        """Playlist-Progress-State-Erweiterung 2026-09-02: processed_items
+        kann jetzt echt 0 sein (z.B. erster Track laedt noch, noch keine
+        mark_completed()-Meldung) - der 0%-Zweig zeigte current_item vorher
+        nicht an, weil er durch den alten blinden Zaehler faktisch nie mit
+        processed_items == 0 erreicht wurde."""
+        tracker = ProgressTracker(total_items=3)
+        tracker.set_current_item("Song A")
+        tracker.last_update_time = datetime.now() - timedelta(seconds=10)
+
+        result = tracker.compute_progress_message()
+
+        assert "0/3" in result
+        assert "Song A" in result
+
+
+class TestMarkCompleted:
+    """Playlist-Progress-State-Erweiterung 2026-09-02 (Nutzer-Vorschlag):
+    mark_completed() ist die einzige Stelle, die processed_items/
+    completed_items veraendert - trennt "Element abgeschlossen" sauber
+    von "Fortschrittstext angefragt" (siehe Klassen-Docstring)."""
+
+    def test_appends_item_name_to_completed_items(self):
+        tracker = ProgressTracker(total_items=3)
+
+        tracker.mark_completed("01 - Track 1")
+        tracker.mark_completed("02 - Track 2")
+
+        assert tracker.completed_items == ["01 - Track 1", "02 - Track 2"]
+
+    def test_processed_items_reflects_completed_count(self):
+        tracker = ProgressTracker(total_items=3)
+
+        tracker.mark_completed("01 - Track 1")
+        assert tracker.processed_items == 1
+
+        tracker.mark_completed("02 - Track 2")
+        assert tracker.processed_items == 2
+
+    def test_completed_items_starts_empty(self):
+        tracker = ProgressTracker(total_items=3)
+        assert tracker.completed_items == []
 
 
 class TestSetCurrentItem:

@@ -42,6 +42,7 @@ Log-Konventionen (unverändert über alle Phasen):
 """
 
 import asyncio
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
@@ -359,6 +360,7 @@ async def enhanced_download_with_retry(
     playlist_logger=None,
     cache_logger=None,
     logger_factory: Optional[Callable] = None,
+    duplicate_detector=None,
 ) -> Dict[str, Any]:
     """
     Haupt-Einstiegspunkt für Downloads mit Retry-Logik.
@@ -371,6 +373,11 @@ async def enhanced_download_with_retry(
     """
     actual_lf = logger_factory or get_module_logger
     logger = logger or actual_lf("download_utils")
+
+    # Nutzer-Wunsch (Abschlussmeldung "⏱️ Dauer"): Gesamtlaufzeit dieses
+    # Downloads (inkl. aller Retry-Versuche) - misst ab hier bis zum
+    # jeweiligen Erfolgs-Return unten, nicht nur den reinen yt-dlp-Anteil.
+    _dl_start = time.monotonic()
 
     logger.info(
         f"\n{'═'*60}\n"
@@ -449,6 +456,7 @@ async def enhanced_download_with_retry(
                     chat_id=chat_id,
                     status_callback=status_callback,
                     logger=logger,
+                    duplicate_detector=duplicate_detector,
                 )
                 logger.info(
                     f"✅ [RETRY {attempt+1}] Playlist fertig: "
@@ -463,6 +471,7 @@ async def enhanced_download_with_retry(
                     "successful_tracks": len(
                         [t for t in tracks if t.get("success")]
                     ),
+                    "duration_seconds": time.monotonic() - _dl_start,
                 }
             else:
                 logger.info(
@@ -489,6 +498,7 @@ async def enhanced_download_with_retry(
                     "type": "single",
                     "track_info": single,
                     "processor_instance": enhanced_processor,
+                    "duration_seconds": time.monotonic() - _dl_start,
                 }
 
         except (YoutubeDLError, DownloadError) as e:
@@ -556,6 +566,7 @@ async def _process_playlist_download(
     chat_id: Optional[int] = None,
     status_callback: Optional[Callable] = None,
     logger=None,
+    duplicate_detector=None,
 ) -> List[Dict[str, Any]]:
     """
     Playlist-Pipeline (reine Orchestrierung).
@@ -564,8 +575,48 @@ async def _process_playlist_download(
       [PL-ANALYSE]    PlaylistProcessor.process_playlist_metadata()
       [CHANNEL]       ChannelRouter.resolve_dominant_artist() (P1–P5)
       [YEAR]          YearResolver.resolve_playlist_year()
-      [TRACK XX/NN]   CacheManager → DownloadExecutor → _process_track_metadata
+      [TRACK XX/NN]   Singles-Konflikt → CacheManager → Duplicate-Check → DownloadExecutor → _process_track_metadata
       [STATS]         ProgressFormatter.stats_table()
+
+    Live-Fund 2026-09-02 (Nutzer-Report): _probe_artist_title_for_duplicate_check()
+    (klassen/download_handler.py) liefert fuer Playlist-URLs bewusst (None,
+    None) zurueck - check_for_duplicates() prueft fuer Playlists bisher NUR
+    die URL-Ebene der Playlist selbst, nie Artist/Titel der einzelnen darin
+    enthaltenen Tracks. Ein Track, der bereits als Single existiert (z.B.
+    "Zartmann - schoenhauser" unter Zartmann/Singles/), wurde beim Download
+    derselben Playlist erneut heruntergeladen UND der alte Duplicate-Cache-
+    Eintrag durch den neuen (gleicher Content-Hash) stillschweigend
+    ueberschrieben. duplicate_detector ist optional (None fuer Aufrufer, die
+    keinen haben, z.B. isolierte Tests) - ohne ihn faellt dieser Schritt
+    bewusst aus, exakt das bisherige Verhalten.
+
+    Playlist-Prioritaet (Nutzer-Wunsch 2026-09-02, Folge-Fund desselben
+    Reports): der obige Duplikat-Check allein loeste das Problem nicht
+    vollstaendig - er UEBERSPRINGT den Track nur, das Album blieb weiter
+    unvollstaendig. Zusaetzlich griff bereits VOR diesem Check der
+    Metadata-Cache-Kurzschluss (CacheManager.lookup_playlist_track()), der
+    einen Treffer als "Erfolg" meldet, ohne die Datei in den Album-Ordner
+    zu verschieben - live beobachtet fuer "wie du manchmal fehlst" (fehlte
+    im Album "dafuer bin ich frei EP", obwohl bereits als Single
+    vorhanden). Fix: DuplicateDetector.resolve_playlist_single_conflict()
+    laeuft jetzt VOR dem Cache-Check und loescht eine vorhandene
+    Singles-Datei physisch (inkl. Duplicate-Cache-Invalidierung), sodass
+    der Track danach normal (neu) heruntergeladen und korrekt im
+    Album-Ordner einsortiert wird - das Playlist-/Album-Ergebnis hat damit
+    bewusst Prioritaet vor der aelteren Einzel-Datei.
+
+    Playlist-Progress-State (Nutzer-Wunsch 2026-09-02, Folgeschritt zur
+    ProgressTracker-Erweiterung): status_callback (falls uebergeben) wird
+    jetzt pro Track mit dem ProgressTracker selbst aufgerufen (reiner
+    Zustand: current_item/completed_items/processed_items/total_items,
+    KEIN vorformatierter Text) - throttled ueber
+    tracker.compute_progress_message() (bestehende update_interval-
+    Drosselung, 5s). Die Telegram-spezifische Darstellung (Fortschritts-
+    balken, "⬇️ Aktuell"/"✅ Abgeschlossen"-Sektionen) bleibt bewusst
+    Aufgabe des Aufrufers (klassen/download_handler.py) - dieses Modul
+    importiert dafuer nichts Telegram-Spezifisches. Ersetzt die vorherige,
+    nie tatsaechlich verdrahtete status_callback-Signatur
+    (chat_id, step, total, message, module) - hatte 0 echte Aufrufer.
     """
     logger = logger or get_module_logger("download_utils")
 
@@ -646,24 +697,40 @@ async def _process_playlist_download(
     processed_tracks = processed_playlist["tracks"]
     cache_hits = 0
     total = len(processed_tracks)
+    tracker = ProgressTracker(total_items=total)
 
     for idx, track_info in enumerate(processed_tracks, 1):
         track_title = track_info.get("title", "?")
         track_artist = track_info.get("artist", "?")
+        display_name = f"{idx:02d} - {track_title}"
 
         logger.info(ProgressFormatter.track_header(idx, total, track_title, track_artist))
+
+        tracker.set_current_item(display_name)
+        if status_callback and tracker.compute_progress_message() is not None:
+            await status_callback(tracker)
 
         try:
             enhanced_processor.session_stats["total_processed"] += 1
 
-            # Status-Callback für Bot-UI
-            if status_callback and chat_id:
-                await status_callback(
-                    chat_id,
-                    idx + 3,
-                    total + 8,
-                    f"Track {idx}/{total}: {track_title[:40]}...",
-                    "EnhancedProcessor",
+            # ── SINGLES-KONFLIKT AUFLOESEN (Playlist-Prioritaet) ────────────────
+            # Nutzer-Wunsch 2026-09-02: siehe Docstring von
+            # DuplicateDetector.resolve_playlist_single_conflict() - MUSS vor
+            # dem CACHE-CHECK laufen, da genau dieser Cache-Kurzschritt bisher
+            # eine bereits als Single vorhandene Datei als "Erfolg" meldete,
+            # ohne sie in den Album-Ordner zu verschieben (Album blieb
+            # unvollstaendig). Nach dem Loeschen sieht sowohl der Cache- als
+            # auch der nachfolgende Duplikat-Check die Datei korrekt als
+            # nicht mehr vorhanden und laesst den Track normal herunterladen.
+            if (
+                duplicate_detector is not None
+                and track_artist
+                and track_artist != "?"
+                and track_title
+                and track_title != "?"
+            ):
+                duplicate_detector.resolve_playlist_single_conflict(
+                    track_artist, track_title
                 )
 
             # ── CACHE-CHECK ───────────────────────────────────────────────────
@@ -689,6 +756,42 @@ async def _process_playlist_download(
                     f"→ überspringe Download"
                 )
                 continue
+
+            # ── DUPLIKAT-CHECK (Artist/Titel) ────────────────────────────────
+            # Live-Fund 2026-09-02: siehe Docstring oben. Nur wenn ein
+            # duplicate_detector uebergeben wurde UND Artist/Titel dieses
+            # Tracks bekannt sind (kein Platzhalter "?") - fehlende Werte
+            # blockieren nichts, exakt wie beim bereits bestehenden
+            # URL-Ebenen-Verhalten fuer Playlists.
+            if (
+                duplicate_detector is not None
+                and track_artist
+                and track_artist != "?"
+                and track_title
+                and track_title != "?"
+            ):
+                track_url = track_info.get("webpage_url") or track_info.get("url") or ""
+                is_dup, dup_entry, dup_type = duplicate_detector.check_for_duplicates(
+                    url=track_url,
+                    raw_artist=track_artist,
+                    raw_title=track_title,
+                )
+                if is_dup and dup_entry:
+                    logger.warning(
+                        f"🔍 [DUPE] Track {idx:02d} '{track_artist} - {track_title}' "
+                        f"bereits vorhanden (Typ: {dup_type}, Pfad: {dup_entry.file_path}) "
+                        f"— überspringe"
+                    )
+                    results.append(
+                        DownloadResult(
+                            success=False,
+                            title=track_title,
+                            artist=track_artist,
+                            is_duplicate=True,
+                            error=f"Duplikat — bereits vorhanden: {dup_entry.file_path}",
+                        ).to_dict()
+                    )
+                    continue
 
             # ── DOWNLOAD ──────────────────────────────────────────────────────
             # PL-01 (docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md):
@@ -783,6 +886,16 @@ async def _process_playlist_download(
                     error=str(e),
                 ).to_dict()
             )
+
+        finally:
+            # Laeuft bei JEDEM Ausgang der Schleifen-Iteration (continue,
+            # normaler Durchlauf, Exception-Zweig) - siehe Docstring oben.
+            # CancelledError propagiert unveraendert weiter, finally laeuft
+            # trotzdem vorher (harmloses Bookkeeping, beeinflusst die
+            # Exception-Weitergabe nicht).
+            tracker.mark_completed(display_name)
+            if status_callback and tracker.compute_progress_message() is not None:
+                await status_callback(tracker)
 
     # ── PHASE 5: Finale Statistiken ───────────────────────────────────────────
     final_stats = (

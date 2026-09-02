@@ -100,6 +100,11 @@ class MetadataResult:
     lyrics_source: Optional[str] = None
     cover_art: Optional[bytes] = None
     cover_embedded: bool = False
+    # War der FFmpeg-loudnorm-Schritt (Schritt 15b) fuer diesen Track
+    # erfolgreich? Vorher nur geloggt, nie strukturiert zurueckgegeben -
+    # noetig fuer die "Loudness normalisiert"-Zeile in der Telegram-
+    # Abschlussmeldung (download_result_reporter.py).
+    loudness_normalized: bool = False
 
     # Technische Daten
     filepath: Optional[Path] = None

@@ -109,6 +109,78 @@ class TestMp3ArtistsTxxxIsMultiValued:
         ]
 
 
+class _FakeNormalizer:
+    """Simuliert einen ArtistNormalizer mit einem Mapping-Override, das
+    einen rohen Feature-Artist auf denselben kanonischen String abbildet
+    wie der bereits finale Haupt-Artist (Live-Fund 2026-09-02)."""
+
+    def __init__(self, mapping: dict):
+        self._mapping = {k.lower(): v for k, v in mapping.items()}
+
+    def normalize(self, name: str) -> str:
+        return self._mapping.get(name.strip().lower(), name)
+
+
+class TestFeatArtistDuplicateAfterNormalizationIsDeduped:
+    """
+    Live-Fund 2026-09-02 (Nutzer-Report, Nachfolge des Miksu & Macloud-
+    Mapping-Fixes in mapping/artist_overrides.json): ein roher Feature-
+    Artist-Eintrag ("Miksu") normalisiert ueber einen Override auf denselben
+    kanonischen String wie der bereits finale Haupt-Artist ("Miksu &
+    Macloud") - ohne Dedup nach der Normalisierung landete der Duo-Name
+    doppelt im ARTISTS-Tag ("Miksu & Macloud; Miksu & Macloud; MACLOUD;
+    makko" statt "Miksu & Macloud; MACLOUD; makko").
+    """
+
+    def test_feat_artist_matching_final_artist_after_normalization_is_removed(
+        self, mp3_path
+    ):
+        writer = TagWriter(
+            logger=Mock(),
+            artist_normalizer=_FakeNormalizer(
+                {
+                    "miksu": "Miksu & Macloud",
+                    "macloud": "MACLOUD",
+                    "makko": "makko",
+                }
+            ),
+        )
+        writer.write_tags(
+            target_path=mp3_path,
+            artist="Miksu & Macloud",
+            title="Nachts wach",
+            album_info={},
+            track_number=None,
+            genres_result=None,
+            feat_artists=["Miksu", "Macloud", "makko"],
+        )
+
+        tags = ID3(mp3_path)
+        artists_txxx = tags.getall("TXXX:ARTISTS")
+        assert list(artists_txxx[0].text) == ["Miksu & Macloud", "MACLOUD", "makko"]
+
+    def test_dedup_is_case_insensitive_and_keeps_first_occurrence_order(
+        self, mp3_path
+    ):
+        writer = TagWriter(
+            logger=Mock(),
+            artist_normalizer=_FakeNormalizer({}),  # Identitaets-Normalisierung
+        )
+        writer.write_tags(
+            target_path=mp3_path,
+            artist="Main Artist",
+            title="Title",
+            album_info={},
+            track_number=None,
+            genres_result=None,
+            feat_artists=["main artist", "Feature One", "MAIN ARTIST", "Feature One"],
+        )
+
+        tags = ID3(mp3_path)
+        artists_txxx = tags.getall("TXXX:ARTISTS")
+        assert list(artists_txxx[0].text) == ["Main Artist", "Feature One"]
+
+
 @pytest.mark.skipif(not FFMPEG_AVAILABLE, reason="ffmpeg nicht auf PATH verfuegbar")
 class TestM4aArtistsFreeformIsMultiValued:
     def test_feat_artists_are_written_as_separate_freeform_values(
