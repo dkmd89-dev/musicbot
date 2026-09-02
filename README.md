@@ -14,7 +14,7 @@ Historisch organisch gewachsenes Hobbyprojekt — siehe [`CLAUDE.md`](CLAUDE.md)
 - Erkennt Duplikate über mehrere Ebenen (URL, YouTube-ID, Artist+Titel, Library-Abgleich)
 - Organisiert die fertige Datei in der Musik-Library (Dateiname, Verzeichnisstruktur, ID3/MP4-Tags)
 - Steuert einen laufenden Navidrome-Server (Scan anstoßen, Status abfragen, Bibliothek durchsuchen) über die Subsonic-API
-- Bietet ein Telegram-Menüsystem für Statistiken, Nutzerverwaltung, Logs und Backups (rollenbasiert: Owner/Admin/User)
+- Bietet ein Telegram-Menüsystem für Statistiken, Nutzerverwaltung, Logs und Backups (rollenbasiert: Owner/Admin/User), inkl. eines Download-Control-Centers mit Live-Fortschritt und Hard-Cancel für laufende Downloads (Details: [`docs/MusicBot_TELEGRAM_MENU_SYSTEM.md`](docs/MusicBot_TELEGRAM_MENU_SYSTEM.md))
 
 ## Architektur (vereinfacht)
 
@@ -60,8 +60,8 @@ Ausführlicher, mit Datenfluss/Fehlerbehandlung pro Bereich: [`CLAUDE.md`](CLAUD
 | `utils/` | Wiederverwendbare Bausteine: `genre_map.py`, `artist_map.py`, `filenamefixer.py`, `helpers.py`, Caches (`lyrics_cache.py` u. a.), Singleton-Basisklasse, sowie lokale technische Runner ohne Telegram-/API-Kopplung (`navidrome_scan_trigger.py`, `audio_enhancer.py`) |
 | `mapping/` | YAML-/JSON-Dateien mit Fachlogik (Genre-/Artist-Regeln) — **keine belanglose Konfiguration**, siehe unten |
 | `scripts/` | Eigenständige Wartungs-Tools, die außerhalb des Bot-Laufzeitbetriebs auf isolierten Testdaten arbeiten, z. B. `reprocess_artist_metadata.py` — bestehende Library-Tracks erneut durch die Metadaten-Pipeline laufen lassen (Tags/Cover/Lyrics/Genre/Multi-Artist/MusicBrainz), ohne Download, ohne Produktionszugriff, ohne Audio-Reencoding. Details: [`docs/METADATA_REPROCESSING.md`](docs/METADATA_REPROCESSING.md) |
-| `tests/` | 1698 Tests (pytest), 0 bekannte Fehlschläge, 1 umgebungsbedingt übersprungen (Stand 2026-09-02) — Characterization-Tests für die Produktionsklassen, siehe [`docs/MusicBot_ENGINEERING_BASELINE_v8.md`](docs/MusicBot_ENGINEERING_BASELINE_v8.md) |
-| `docs/` | Engineering-Baseline v8 (aktueller Referenzpunkt) + Findings-Audits (P0-Metadata/Duplicate-Detection, Download Pipeline Stability, Metadata Quality, Einzelfunde) + Reprocessing-Tool-Doku + ARCH-Characterization-Dokumente (historisch), siehe [`docs/INDEX.md`](docs/INDEX.md) |
+| `tests/` | 1908 Tests (pytest), 0 bekannte Fehlschläge, 1 umgebungsbedingt übersprungen (Stand 2026-09-02, nach Telegram-Download-Control-Center-Phase — Baseline v8 selbst bleibt bei ihrem Freeze-Stand 1698/0, aktueller Stand siehe [`docs/FINDINGS_INDEX.md`](docs/FINDINGS_INDEX.md)) — Characterization-Tests für die Produktionsklassen, siehe [`docs/MusicBot_ENGINEERING_BASELINE_v8.md`](docs/MusicBot_ENGINEERING_BASELINE_v8.md) |
+| `docs/` | Engineering-Baseline v8 (aktueller Referenzpunkt) + Findings-Audits (P0-Metadata/Duplicate-Detection, Download Pipeline Stability, Metadata Quality, Einzelfunde) + Telegram-Menü-System-Doku + Reprocessing-Tool-Doku + ARCH-Characterization-Dokumente (historisch), siehe [`docs/INDEX.md`](docs/INDEX.md) |
 
 ## Setup
 
