@@ -44,6 +44,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -72,7 +73,7 @@ MB_ID_ATOM_MAP = {
 # davon darf jemals angefasst werden - siehe validate_input_path().
 ALLOWED_ROOT = Path("/tmp/musicbot_test")
 DEFAULT_METADATEN_ROOT = ALLOWED_ROOT / "metadaten"
-DEFAULT_PRODUCTION_ROOT = Path("/mnt/4tb/library")
+DEFAULT_PRODUCTION_ROOT = Path("/mnt/musik_bilder/library")
 
 
 class PathSafetyError(Exception):
@@ -334,6 +335,107 @@ def flatten_existing_artists(raw_artist_values: list) -> list:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Genre-Downgrade-Schutz (Phase 1, 2026-09-02)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def count_existing_genre_entries(genre_tag_values: list) -> int:
+    """Zaehlt, wie viele einzelne Genre-Werte im bestehenden ©gen-Tag
+    stecken - unabhaengig davon, ob mit dem aktuellen '; '-Separator
+    (seit 2026-09, siehe services/metadata/tag_writer.py) oder dem
+    aelteren ' / '-Separator geschrieben wurde (reale Bestandsdateien der
+    Produktions-Library koennen beides enthalten, je nachdem wann sie
+    zuletzt getaggt wurden). Ein einzelner, unsepariert er String zaehlt
+    als 1 Eintrag."""
+    if not genre_tag_values or not genre_tag_values[0]:
+        return 0
+    value = genre_tag_values[0]
+    for sep in ("; ", " / "):
+        if sep in value:
+            return len([p for p in value.split(sep) if p.strip()])
+    return 1
+
+
+def genre_would_downgrade(before_genre_tag: list, genres_result) -> bool:
+    """Analog zur bereits bestehenden MB-IDs-Regel ('keine vorhandenen
+    korrekten IDs unnoetig ueberschreiben', siehe process_file()): eine
+    frische determine_genre_with_fallbacks()-Antwort ist normales
+    Antwortverhalten externer Quellen und kann - ohne dass irgendetwas
+    fehlerhaft ist - diesmal WENIGER Genre-Werte liefern als bereits im
+    Tag stehen (z.B. aus einem frueheren, reichhaltigeren Lauf). Ein
+    bereits reichhaltigerer bestehender Tag soll dadurch nicht ERSETZT
+    werden - siehe process_file() fuer die Verwendung (UNRESOLVED statt
+    stillem Downgrade, 'nicht raten')."""
+    if not genres_result or not getattr(genres_result, "primary", None):
+        return False
+    fresh_count = 1 + len(getattr(genres_result, "secondary", None) or [])
+    existing_count = count_existing_genre_entries(before_genre_tag)
+    return existing_count > fresh_count
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Produzenten-Credit-Bereinigung (Phase 1, 2026-09-02, Nutzer-Fund)
+# ─────────────────────────────────────────────────────────────────────────
+
+# Geklammerte Form ("(prod. by X)", "(prod X)") - deckungsgleich zur
+# Produktions-Regel in utils/youtube_parser.py::_clean_title_suffixes().
+_PRODUCER_CREDIT_PAREN_PATTERN = re.compile(
+    r"\s*\(\s*prod\.?\s*(?:by\s+)?[^)]*\)", re.IGNORECASE
+)
+# Klammerlose, trennerlose Form am Titelende ("'ADLIBS' prod. Safecall777")
+# - Live-Fund 2026-09-02 (Nutzer-Report, Track "makko - \"ADLIBS\" prod.
+# Safecall777"): WEDER die geklammerte Form oben NOCH die in
+# _clean_title_suffixes() zusaetzlich vorhandene Bindestrich-Form
+# ("- prod...") erkennen dieses Muster - per echtem
+# utils.youtube_parser.parse_youtube_title()-Aufruf verifiziert, dass
+# selbst die volle Download-Pipeline diesen Titel unveraendert liesse
+# (kein Klammer-/Bindestrich-Trenner vor "prod." vorhanden). Eigenstaendiger
+# Fund, nicht in dieser Phase in der Produktionslogik behoben (siehe
+# docs/FINDINGS_INDEX.md) - hier nur fuer das Reprocessing-Tool selbst
+# ergaenzt. \bprod\b mit zwingendem "."/Whitespace danach verhindert
+# Fehltreffer in Woertern wie "Producer"/"Production".
+_PRODUCER_CREDIT_BARE_PATTERN = re.compile(
+    r"\s*[-–—]?\s*\bprod\.?\s+(?:by\s+)?\S.*$", re.IGNORECASE
+)
+
+
+def strip_producer_credit(title: str) -> str:
+    """Entfernt einen abschliessenden Produzenten-Credit aus dem TITEL
+    selbst (anders als strip_remix_suffix_for_album() unten, das nur den
+    Album-Fallback betrifft) - '\"ADLIBS\" prod. Safecall777' -> '\"ADLIBS\"'.
+    Deckt sowohl die geklammerte als auch die klammerlose/trennerlose Form
+    ab. Bleibt am Ende nichts Sinnvolles uebrig, wird der Original-Titel
+    unveraendert zurueckgegeben - kein leerer Titel."""
+    cleaned = _PRODUCER_CREDIT_PAREN_PATTERN.sub("", title)
+    cleaned = _PRODUCER_CREDIT_BARE_PATTERN.sub("", cleaned).strip()
+    return cleaned or title
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Album-Fallback ohne Remix-Zusatz (Phase 1, 2026-09-02, Nutzer-Fund)
+# ─────────────────────────────────────────────────────────────────────────
+
+_REMIX_SUFFIX_PATTERN = re.compile(r"\s*\([^()]*\bremix\b[^()]*\)\s*$", re.IGNORECASE)
+
+
+def strip_remix_suffix_for_album(title: str) -> str:
+    """Leitet aus einem Titel wie 'Blauer Tag (Robin Schulz Remix)' den
+    Basis-Song-Namen 'Blauer Tag' fuer den Album-FALLBACK ab, wenn kein
+    echter Album-Tag vorhanden ist (Nutzer-Fund/-Entscheidung 2026-09-02,
+    Live-Testlauf Artist 'Möwe': album fiel bisher blind auf den
+    kompletten clean_title zurueck, inkl. Remix-Zusatz - 'album:
+    [Blauer Tag (Robin Schulz Remix)]' identisch zu title). Der TITEL
+    selbst (Tag-Wert) bleibt davon unberuehrt - nur dieser Album-
+    FALLBACK-Wert wird bereinigt. Entfernt ausschliesslich ein
+    abschliessendes '(...Remix...)'-Klammerpaar, keine sonstige
+    Bereinigung. Bleibt am Ende nichts Sinnvolles uebrig (z.B. Titel
+    bestand nur aus der Klammer), wird der Original-Titel unveraendert
+    zurueckgegeben - kein leeres Album raten."""
+    stripped = _REMIX_SUFFIX_PATTERN.sub("", title).strip()
+    return stripped or title
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # UNRESOLVED-Erkennung (Abschnitt 22 des Auftrags: bewusst nicht geaenderte
 # Faelle sind NICHT automatisch UNCHANGED)
 # ─────────────────────────────────────────────────────────────────────────
@@ -399,11 +501,6 @@ async def process_file(
     if dry_run:
         log.kv("🔒 Modus", "DRY-RUN - keine Datei wird veraendert")
 
-    before = snapshot(path, artist_root)
-    log.line("📋 BEFORE SNAPSHOT")
-    for k, v in before.items():
-        log.kv(k, v)
-
     result = {
         "file": str(rel),
         "status": "unchanged",
@@ -415,6 +512,31 @@ async def process_file(
         "dry_run": dry_run,
         "auto_learn": {"featured_artists": [], "genre": None},
     }
+
+    # Phase 1 (2026-09-02, Fehlerisolierung): der BEFORE-Snapshot (inkl.
+    # mutagen.mp4.MP4(path)) lief bisher VOR dem folgenden try/except-Block
+    # - eine echte, unlesbare/beschaedigte .m4a-Datei liess mutagen dabei
+    # eine Exception werfen, die ungefangen aus process_file() propagierte
+    # und in main() die gesamte for-Schleife ueber alle Dateien des Artists
+    # abbrach, statt nur diese eine Datei als "error" zu protokollieren und
+    # mit den uebrigen fortzufahren ("ein fehlerhafter Track darf nicht
+    # automatisch den gesamten Artist-Lauf zerstoeren"). Eigener,
+    # dedizierter try/except mit identischer result-Struktur wie der
+    # bestehende Haupt-except-Block unten, damit main()s Aggregation
+    # (status=="error"-Zaehlung) fuer beide Fehlerklassen gleich funktioniert.
+    try:
+        before = snapshot(path, artist_root)
+    except Exception as e:
+        result["status"] = "error"
+        result["error"] = f"BEFORE-Snapshot fehlgeschlagen: {e}"
+        log.line("❌ ERROR (BEFORE SNAPSHOT)")
+        log.kv("exception", repr(e))
+        log.line("❌ FINAL RESULT: ERROR")
+        return result
+
+    log.line("📋 BEFORE SNAPSHOT")
+    for k, v in before.items():
+        log.kv(k, v)
 
     try:
         log.line("🔄 METADATA PIPELINE")
@@ -459,6 +581,7 @@ async def process_file(
         clean_title = processor.title_cleaner.light_title_cleanup(
             existing_title, final_artist
         )
+        clean_title = strip_producer_credit(clean_title)
         search_title = processor.title_cleaner.build_search_title(
             parsed_title=None, original_title=clean_title, final_artist=final_artist
         )
@@ -485,6 +608,17 @@ async def process_file(
         for key in MB_ID_ATOM_MAP:
             final_mb_ids[key] = before["mb_ids"].get(key) or fresh_mb_ids.get(key)
 
+        # Genre-Downgrade-Schutz (Phase 1, siehe genre_would_downgrade()):
+        # analog zur MB-IDs-Regel oben - ein bereits reichhaltigerer
+        # bestehender Genre-Tag wird nicht durch ein schwaecheres frisches
+        # Ergebnis ersetzt. genres_result_for_write ist ausschliesslich fuer
+        # den TagWriter-Aufruf/die Dry-Run-Vorhersage relevant - Logging und
+        # Auto-Learn unten verwenden weiterhin das echte, ungefilterte
+        # genres_result (die frische Bestimmung selbst ist nicht falsch,
+        # nur fuer DIESEN Tag-Schreibvorgang nicht die bessere Wahl).
+        genre_downgrade = genre_would_downgrade(before["genre_tag"], genres_result)
+        genres_result_for_write = None if genre_downgrade else genres_result
+
         log.line("🎼 GenreProcessor")
         log.kv(
             "→ source",
@@ -498,6 +632,13 @@ async def process_file(
             if genres_result else None,
             indent=2,
         )
+        if genre_downgrade:
+            log.kv(
+                "→ ⚠️ Downgrade-Schutz",
+                f"bestehender Tag ({before['genre_tag']}) reichhaltiger als "
+                f"frisches Ergebnis - Genre-Tag wird NICHT ueberschrieben",
+                indent=2,
+            )
         log.line("🧬 MusicBrainz")
         log.kv("→ IDs vorhanden (Tag)", before["mb_ids"], indent=2)
         log.kv("→ IDs neu ermittelt", fresh_mb_ids, indent=2)
@@ -630,13 +771,33 @@ async def process_file(
 
         # ── Album/Jahr: bestehende Werte als Vertrauensbasis uebernehmen ───
         existing_album = before["album"][0] if before["album"] else None
+        # Nutzer-Fund (2026-09-02, echter Testlauf Artist "makko" ueber
+        # main, VOR diesem Branch): das bisherige "existing_album or ..."
+        # nahm ein vorhandenes Album-Tag IMMER unveraendert - real
+        # heruntergeladene Bestandsdateien haben aber so gut wie immer
+        # bereits ein Album-Tag (meist eine 1:1-Kopie des urspruenglich
+        # dirty Titels), wodurch der Album-Fallback unten in der Praxis
+        # kaum je griff. '"Bequem"'/'"Zickzack"'/'"ADLIBS" prod.
+        # Safecall777' blieben als Album-Wert unveraendert stehen, obwohl
+        # der Titel zur selben Zeit korrekt bereinigt wurde. Nutzer-
+        # Entscheidung bei Rueckfrage: ein VORHANDENES Album-Tag wird jetzt
+        # denselben Bereinigungsregeln unterzogen wie der Titel
+        # (light_title_cleanup(), inkl. dessen Produzenten-Credit-/
+        # Anfuehrungszeichen-Fixes) - keine zweite, abweichende
+        # Bereinigungslogik, dieselbe bereits produktiv laufende Regelmenge.
+        # Bewusst OHNE Artist-Praefix-Entfernung (leerer Artist-Parameter) -
+        # ein Album-Wert hat kein Artist-Praefix-Muster wie ein Titel.
+        if existing_album:
+            existing_album = processor.title_cleaner.light_title_cleanup(
+                existing_album, ""
+            )
         existing_year_raw = before["year"][0] if before["year"] else None
         try:
             existing_year = int(existing_year_raw) if existing_year_raw else None
         except (TypeError, ValueError):
             existing_year = None
         album_info = {
-            "album": existing_album or clean_title,
+            "album": existing_album or strip_remix_suffix_for_album(clean_title),
             "album_artist": final_artist,
             "year": existing_year,
         }
@@ -726,7 +887,7 @@ async def process_file(
                 title=clean_title,
                 album_info=album_info,
                 track_number=None,
-                genres_result=genres_result,
+                genres_result=genres_result_for_write,
                 lyrics=lyrics,
                 cover_art=cover_bytes,
                 feat_artists=feat_artists,
@@ -766,8 +927,14 @@ async def process_file(
             # werden von diesem Tool nie beruehrt, bleiben also immer gleich
             # BEFORE. Klar als Vorhersage gekennzeichnet, kein echter Read.
             all_artists_planned = [final_artist] + feat_artists
-            primary = getattr(genres_result, "primary", None) if genres_result else None
-            secondary = getattr(genres_result, "secondary", None) if genres_result else None
+            primary = (
+                getattr(genres_result_for_write, "primary", None)
+                if genres_result_for_write else None
+            )
+            secondary = (
+                getattr(genres_result_for_write, "secondary", None)
+                if genres_result_for_write else None
+            )
             if primary and secondary:
                 combined = [primary] + list(secondary)[:3]
                 genre_tag_planned = ["; ".join(combined)]
@@ -838,6 +1005,14 @@ async def process_file(
         for reason in check_unresolved(before, after, clean_title):
             if reason not in result["unresolved"]:
                 result["unresolved"].append(reason)
+        if genre_downgrade:
+            result["unresolved"].append(
+                f"Genre-Downgrade-Schutz: bestehender Genre-Tag "
+                f"({before['genre_tag']}) enthaelt mehr Werte als das "
+                f"frische Ergebnis (primary={getattr(genres_result, 'primary', None)!r} "
+                f"secondary={getattr(genres_result, 'secondary', None)!r}). "
+                f"Kein automatisches Ersetzen - manuelle Pruefung empfohlen."
+            )
 
         log.line("📊 CHANGES")
         if changes:
@@ -988,6 +1163,9 @@ async def main():
         else:
             skipped_unsafe.append(f)
 
+    # Nutzer-Wunsch (2026-09-02): feste Log-Datei (Config.LOG_DIR/script.log)
+    # wieder zurueckgenommen - zurueck zu einer eigenen, zeit-gestempelten
+    # Datei pro Lauf.
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = Path(
         f"/tmp/musicbot_test/metadata_reprocessing_{artist_name}_{timestamp}.log"

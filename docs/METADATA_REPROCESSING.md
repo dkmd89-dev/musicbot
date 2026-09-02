@@ -22,7 +22,7 @@ die Produktions-Library direkt anzufassen.
 ## 2. Sicherheitsmodell
 
 ```text
-Produktions-Library (/mnt/4tb/library)   → READ-ONLY, niemals beschrieben
+Produktions-Library (/mnt/musik_bilder/library)   → READ-ONLY, niemals beschrieben
 Test-Input   (/tmp/musicbot_test/metadaten/<ARTIST>) → einzig erlaubter Input
 Test-Output  (dieselbe Stelle, in-place aktualisiert) → einzig erlaubter Output
 Test-Ziel nach manueller Pruefung (/tmp/musicbot_test/libary/<ARTIST>)
@@ -62,7 +62,7 @@ Optionen:
 | `--input` (Pflicht) | Vollstaendiger Pfad zum Artist-Testverzeichnis | — |
 | `--dry-run` | Nur analysieren, keine Datei veraendern | aus |
 | `--metadaten-root` | Erlaubte Wurzel fuer `--input` | `/tmp/musicbot_test/metadaten` |
-| `--production-root` | Nur-lesend fuer den automatischen Post-Run-Safety-Check | `/mnt/4tb/library` |
+| `--production-root` | Nur-lesend fuer den automatischen Post-Run-Safety-Check | `/mnt/musik_bilder/library` |
 | `--no-production-check` | Production-Protection-Vergleich auslassen | aus |
 
 ## 4. Dry-Run
@@ -114,7 +114,33 @@ Album/Jahr werden **nicht** ueber `AlbumProcessor.determine_album_info()`
 neu bestimmt (diese Methode ist fuer Download-Zeit-Metadaten aus
 Playlist/yt-dlp gebaut und faellt bei fehlenden Kandidaten auf das aktuelle
 Kalenderjahr zurueck) — die bereits vorhandenen Album-/Jahr-Tags werden als
-Vertrauensbasis uebernommen.
+Vertrauensbasis uebernommen, aber nicht mehr ungeprueft: ein vorhandenes
+Album-Tag durchlaeuft seit Phase 1 dieselbe Bereinigung wie der Titel
+(`TitleCleaner.light_title_cleanup()`, ohne Artist-Praefix-Entfernung) —
+Nutzer-Fund 2026-09-02 (Artist "makko"): reale Bestandsdateien haben so
+gut wie immer bereits ein Album-Tag (meist eine 1:1-Kopie des
+urspruenglich dirty Titels, z. B. `'"Bequem"'`), das ohne diese
+Bereinigung fuer immer dirty geblieben waere, waehrend der Titel zur
+selben Zeit korrekt bereinigt wurde. Fehlt ein Album-Tag komplett,
+fungiert der bereinigte Titel als Fallback — ein abschliessender
+`(...Remix...)`-Zusatz wird dabei zusaetzlich entfernt
+(`strip_remix_suffix_for_album()`, Nutzer-Fund 2026-09-02: „Blauer Tag
+(Robin Schulz Remix)" als Titel darf nicht 1:1 als Album uebernommen
+werden). Der Titel-Tag selbst bleibt von beiden Album-Regeln unberuehrt.
+
+## 5a. Fehlerisolierung (Phase 1, 2026-09-02)
+
+Ein fehlerhafter Track darf nicht den gesamten Artist-Lauf abbrechen, sofern
+ein isoliertes Weiterarbeiten fachlich möglich ist. `process_file()` liest
+den BEFORE-Snapshot (inkl. `mutagen.mp4.MP4(path)`) in einem eigenen
+`try`/`except` **vor** der eigentlichen Metadaten-Pipeline — eine
+unlesbare/beschädigte `.m4a`-Datei (mutagen wirft z. B.
+`MP4StreamInfoError`) wird dadurch als `status: "error"` protokolliert und
+übersprungen, die übrigen Dateien des Artists werden trotzdem verarbeitet.
+Vor Phase 1 propagierte eine solche Exception ungefangen aus
+`process_file()` heraus und brach die gesamte `for`-Schleife in `main()`
+ab — alle noch nicht verarbeiteten Dateien blieben dabei unverarbeitet und
+ungemeldet.
 
 ## 6. Cover-Reprocessing
 
@@ -170,6 +196,37 @@ Namen auf. Nach dem Schreiben wird `©ART`, das
 `----:com.apple.iTunes:ARTISTS`-Freeform-Feld und `album_artist` erneut
 direkt von der Platte gelesen und validiert.
 
+## 8a. Genre-Downgrade-Schutz (Phase 1, 2026-09-02)
+
+Eine frische `determine_genre_with_fallbacks()`-Antwort ist normales
+Antwortverhalten externer Quellen (MusicBrainz/Last.fm/Mapping) und kann —
+ohne dass etwas fehlerhaft ist — diesmal **weniger** Genre-Werte liefern
+als bereits im `©gen`-Tag stehen (z. B. aus einem früheren, reichhaltigeren
+Lauf). Analog zur bereits bestehenden MB-IDs-Regel unten wird ein bereits
+reichhaltigerer bestehender Genre-Tag dadurch nicht ersetzt — der
+Genre-Tag-Schreibvorgang wird für diese Datei übersprungen (der bestehende
+Wert bleibt exakt erhalten) und als `UNRESOLVED` protokolliert.
+`count_existing_genre_entries()` erkennt dabei sowohl den aktuellen
+`"; "`-Separator als auch den älteren `" / "`-Separator (siehe Abschnitt 5,
+TagWriter-Separator-Wechsel 2026-09) — reale Bestandsdateien der
+Produktions-Library können je nach letztem Tagging-Zeitpunkt beides
+enthalten. Liefert die frische Bestimmung gleich viele oder mehr Werte,
+greift der Schutz nicht — eine echte Verbesserung wird normal geschrieben.
+
+## 8b. Produzenten-Credit-Bereinigung (Phase 1, 2026-09-02)
+
+`strip_producer_credit()` entfernt einen abschliessenden Produzenten-
+Credit direkt aus dem TITEL selbst (anders als der Album-Fallback in
+Abschnitt 8a, der nur den Album-Wert betrifft) —
+`'"ADLIBS" prod. Safecall777'` → `'"ADLIBS"'`. Deckt sowohl die
+geklammerte Form (`"(prod. by X)"`) als auch die klammerlose,
+trennerlose Form ab. Live-Fund: selbst `utils.youtube_parser.
+parse_youtube_title()` (die volle Download-Pipeline) erkennt die
+klammerlose Form nicht — ein eigenständiger, bestehender Fund in der
+Produktionslogik, der hier bewusst NUR für dieses Reprocessing-Tool
+behoben wurde (siehe `docs/FINDINGS_INDEX.md`). Bleibt nach dem Strip
+nichts Sinnvolles übrig, wird der Originaltitel unverändert verwendet.
+
 ## 9. Title Cleaning / Dateinamen-Sicherheit
 
 Ein Rename findet **ausschliesslich** innerhalb desselben
@@ -224,7 +281,8 @@ Faelle (`check_unresolved()`):
 2. Title-Tag enthaelt fuer Dateinamen illegale Zeichen (Abschnitt 9)
 
 Weitere `UNRESOLVED`-Gruende koennen situativ waehrend der
-Rename-Pruefung entstehen (Kollision, Parent-Mismatch) oder aus einer
+Rename-Pruefung entstehen (Kollision, Parent-Mismatch), aus dem
+Genre-Downgrade-Schutz (Abschnitt 8a) oder aus einer
 Audiointegritaets-Abweichung (sollte nie auftreten, siehe Abschnitt 7 —
 ein Treffer hier ist ein hartes Warnsignal, kein normaler Betriebsfall).
 
@@ -241,7 +299,7 @@ Audio stream (codec/rate/channels/duration) changes
 Overall: PASS / PASS WITH UNRESOLVED CASES / FAIL
 ```
 
-Der Production-Vergleich (`--production-root`, Standard `/mnt/4tb/library`)
+Der Production-Vergleich (`--production-root`, Standard `/mnt/musik_bilder/library`)
 liest die zum verarbeiteten relativen Pfad korrespondierende
 Produktionsdatei rein lesend vor UND nach dem Lauf (mtime, Groesse, SHA256)
 und meldet `FAIL`, sobald sich irgendetwas daran aendert. Mit
@@ -290,9 +348,17 @@ Produktionspfad-Ablehnung, Path-Traversal-Ablehnung, Symlink-Sicherheit
 Dateinamens-Parent-Invariante, Kollisionsschutz, Endungs-Invariante,
 Multi-Artist-Validierung (echter `TagWriter`), Before/After-Snapshot,
 tatsaechliches erneutes Lesen von der Platte, Unresolved-Erkennung,
-Verzeichnis-Invariante. Externe Adapter (Genre/Lyrics/Cover-API-Aufrufe)
-sind gemockt; `TagWriter` und alle Path-Safety-/Snapshot-/Multi-Artist-
-Funktionen sind die echten Produktionsimplementierungen.
+Verzeichnis-Invariante, Genre-Downgrade-Schutz (Abschnitt 8a, inkl.
+Legacy-" / "-Separator), Fehlerisolierung bei beschaedigten Dateien
+(Abschnitt 5a), Cover-Suche laeuft auch bei bereits vorhandenem Cover,
+MusicBrainz-IDs werden nicht unnoetig ueberschrieben, Album-Fallback ohne
+Remix-Zusatz (Abschnitt 5), zeit-gestempelte Log-Datei pro Lauf,
+Regressions-Tripwire fuer `DEFAULT_PRODUCTION_ROOT`, vorhandenes Album-Tag
+wird ebenfalls bereinigt (Abschnitt 5), sowie Integrationstests gegen
+`main()` selbst (CLI-Parsing, Post-Run-Safety-Check-Aggregation, gemischte
+Erfolgs-/Fehler-Zusammenfassung). Externe Adapter (Genre/Lyrics/Cover-API-
+Aufrufe) sind gemockt; `TagWriter` und alle Path-Safety-/Snapshot-/
+Multi-Artist-Funktionen sind die echten Produktionsimplementierungen.
 
 ```bash
 python3 -m pytest tests/test_reprocess_artist_metadata.py -q
