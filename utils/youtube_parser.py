@@ -396,6 +396,47 @@ def parse_youtube_title(
         }
 
     logger.info(f"📺 Starte Parsing für Titel: '{title}'")
+    _true_original_title = title
+
+    # Live-Fund 2026-09-02 (Nutzer-Report, echter Testdownload): YouTube
+    # trennt bei Feature-Collabs die komplette Artist-Liste ("Artist1,
+    # Artist2 & Artist3") vom eigentlichen Songtitel manchmal NUR durch
+    # ein doppeltes Leerzeichen, ohne eines der von _parse_artist_and_
+    # title() erkannten Standard-Trennzeichen ("-", "|", ":", ...). Real
+    # reproduziert: "toobrokeforfiji, Sin Davis & makko  40 Stunden
+    # Woche" - alle Standard-Muster scheiterten, der komplette String
+    # landete unveraendert im "Kein Artist gefunden"-Fallback (der zudem
+    # ueber _clean_bracket_content() das doppelte Leerzeichen selbst
+    # normalisiert, wodurch das Signal spaeter - z.B. in
+    # TitleCleaner.light_title_cleanup() - nicht mehr verfuegbar ist;
+    # zwei fruehere Loesungsversuche AN SPAETERER STELLE scheiterten
+    # deshalb ebenfalls, siehe docs/FINDINGS_INDEX.md). Muss deshalb
+    # bewusst hier, GANZ am Anfang auf dem noch unveraenderten Roh-Titel
+    # ansetzen - vor jeder Klammer-/Whitespace-Normalisierung. Ersetzt
+    # das doppelte Leerzeichen durch das bereits unterstuetzte
+    # Standard-Trennzeichen " - ", damit die bestehende, bereits gut
+    # getestete Parsing-Pipeline (Klammer-Bereinigung des Artist-Teils,
+    # Feature-Extraktion, Multi-Artist-Split, Confidence-Berechnung)
+    # unveraendert weiterlaeuft, statt Logik zu duplizieren. Bewusst NUR
+    # wenn der linke Teil bereits als Multi-Artist-Liste erkennbar ist
+    # (>= 2 Namen via _split_multi_artists(), dieselbe Funktion, die
+    # Schritt 5 unten ohnehin fuer den Artist-Teil verwendet) - ein
+    # zufaelliges doppeltes Leerzeichen in einem normalen Songtitel OHNE
+    # Komma-/&-Muster davor loest dieses Muster NICHT aus.
+    _double_space_parts = re.split(r"\s{2,}", title, maxsplit=1)
+    if len(_double_space_parts) == 2:
+        _ds_left = _normalize_string(_double_space_parts[0])
+        _ds_right = _double_space_parts[1].strip()
+        if (
+            len(_ds_left) > 1
+            and len(_ds_right) > 1
+            and len(_split_multi_artists(_ds_left)) >= 2
+        ):
+            logger.debug(
+                f"🔥 Doppeltes-Leerzeichen-Trennzeichen erkannt "
+                f"(Multi-Artist-Liste): Artist='{_ds_left}', Song='{_ds_right}'"
+            )
+            title = f"{_ds_left} - {_ds_right}"
 
     # Schritt 1: Grundlegende Bereinigung (behalte Remix-Info)
     cleaned_title = _clean_bracket_content(title, preserve_remix=True)
@@ -412,7 +453,7 @@ def parse_youtube_title(
             "artist": None,
             "all_artists": [],
             "song_title": final_song_title,
-            "original_title": title,
+            "original_title": _true_original_title,
             "featuring": [],
             "confidence": 0.0,
             "raw_artist_string": None,
@@ -476,7 +517,7 @@ def parse_youtube_title(
         "artist": primary_artist,
         "all_artists": all_artists,
         "song_title": song_title,
-        "original_title": title,
+        "original_title": _true_original_title,
         "featuring": featuring,
         "confidence": confidence,
         "raw_artist_string": artist,
