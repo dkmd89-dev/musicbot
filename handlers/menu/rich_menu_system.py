@@ -28,6 +28,16 @@ from telegram.ext import ContextTypes, CallbackQueryHandler
 from logger import get_module_logger
 
 
+def _dl_progress_bar(current: int, total: int, width: int = 10) -> str:
+    """Track-Fortschrittsbalken für "🔄 Aktive Downloads" (Download-
+    Control-Center 2026-09-02) - eigener, kleiner Helfer für die
+    Track-Anzahl innerhalb EINES Downloads, nicht zu verwechseln mit dem
+    6-Schritte-Pipelinebalken in klassen/download_handler.py."""
+    filled = round(width * current / max(total, 1))
+    bar = "█" * filled + "░" * (width - filled)
+    return f"{bar} {current}/{total}"
+
+
 class MenuState(Enum):
     """Menü-Zustände für State Machine"""
 
@@ -159,6 +169,10 @@ class RichMenuSystem:
         self.status_handler = None
         self.backup_handler = None
         self.restart_handler = None  # NEU: Bot-Neustart-Handler
+        # Download-Control-Center 2026-09-02: geteilte, prozessweite
+        # ActiveDownloadRegistry (services/downloader/active_downloads.py),
+        # von RichMenuHandler injiziert - siehe set_active_downloads().
+        self.active_downloads = None
 
         # Konfiguration
         self.session_timeout = getattr(config, "SESSION_TIMEOUT", 300)
@@ -221,6 +235,11 @@ class RichMenuSystem:
         self.restart_handler = handler
         self.logger.info("✅ Restart-Handler verknüpft")
 
+    def set_active_downloads(self, registry) -> None:
+        """Setzt die geteilte ActiveDownloadRegistry (Download-Control-Center)."""
+        self.active_downloads = registry
+        self.logger.info("✅ ActiveDownloadRegistry verknüpft")
+
     # ====== MENÜ-STRUKTUR ======
 
     def initialize_menu_structure(self) -> None:
@@ -236,11 +255,20 @@ class RichMenuSystem:
         )
 
         # Download-Menü
+        # Download-Control-Center 2026-09-02 (Nutzer-Vorgabe): handler=
+        # macht "download" zu einem eigenen Aktions-Menüpunkt statt der
+        # generischen render_menu()-Darstellung seiner Kinder (analog zu
+        # dup:/status_/backup_/restart: - siehe _handle_download_menu()
+        # weiter unten). Die beiden statischen Kinder darunter bleiben in
+        # der Registry bestehen (harmlos, ungenutzt) - _handle_download_menu()
+        # baut die Tastatur komplett selbst.
         download_menu = MenuItem(
             id="download",
             title="Downloads",
             emoji="📥",
             description="Musik herunterladen",
+            handler=self._handle_download_menu,
+            is_action=True,
         )
         download_menu.add_child(
             MenuItem(
@@ -1265,6 +1293,10 @@ class RichMenuSystem:
                 await self._handle_backup_callback(update, context, callback_data)
                 return
 
+            if callback_data.startswith("dl:"):
+                await self._handle_download_control_callback(update, context, callback_data)
+                return
+
             # ── NEU: Bot-Neustart ─────────────────────────────────────
             if callback_data.startswith("restart:"):
                 await self._handle_restart_callback(update, context, callback_data)
@@ -1897,6 +1929,222 @@ class RichMenuSystem:
             self.logger.info(f"🧹 {len(expired)} abgelaufene Sessions bereinigt")
 
         return len(expired)
+
+    # ====== DOWNLOAD-CONTROL-CENTER (2026-09-02, Nutzer-Vorgabe) ======
+    #
+    # "📥 Downloads" wird zu einem echten Steuerzentrum statt der
+    # bisherigen statischen 2-Optionen-Liste (Einzelner Track/Playlist -
+    # ohnehin redundant, da download_utils.py Single/Playlist automatisch
+    # anhand der URL erkennt, siehe _handle_download_new()). "❌
+    # Abbrechen" erscheint NUR, wenn tatsächlich ein Download für diesen
+    # Chat aktiv ist (self.active_downloads, siehe
+    # services/downloader/active_downloads.py) - "keine toten Buttons".
+    #
+    # 📋 Download-Verlauf / 🔁 Erneut versuchen (Nutzer-Prioritäten 3/4)
+    # sind bewusst NOCH NICHT Teil dieser ersten Ausbaustufe - sie
+    # brauchen einen persistenten Verlaufsspeicher, der als eigener
+    # Folgeschritt kommt (siehe _handle_download_history()-Platzhalter).
+    # 🔄 Reprocessing (Priorität 5) ist laut Nutzer-Entscheidung ein
+    # eigener Bereich, absichtlich NICHT Teil dieses Menüs.
+
+    async def _handle_download_menu(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Wird über den regulären menu:download-Callback aufgerufen
+        (query.answer() bereits vom generischen Dispatcher erledigt, siehe
+        handle_callback())."""
+        query = update.callback_query
+        chat_id = update.effective_chat.id
+        active = self.active_downloads.get(chat_id) if self.active_downloads else None
+        await self._render_download_menu(query, active)
+
+    async def _render_download_menu(self, query, active) -> None:
+        lines = ["📥 *Downloads*", ""]
+        if active is not None:
+            lines.append(f"🔄 Läuft gerade: {active.title or 'wird vorbereitet …'}")
+        else:
+            lines.append("Lade Musik von YouTube herunter oder verwalte Downloads.")
+
+        keyboard = [
+            [InlineKeyboardButton("➕ Neuer Download", callback_data="dl:new")],
+            [InlineKeyboardButton("🔄 Aktive Downloads", callback_data="dl:active")],
+            [InlineKeyboardButton("📋 Download-Verlauf", callback_data="dl:history")],
+        ]
+        if active is not None:
+            keyboard.append(
+                [InlineKeyboardButton("❌ Abbrechen", callback_data="dl:cancel")]
+            )
+        keyboard.append(
+            [InlineKeyboardButton("◀️ Hauptmenü", callback_data="menu:main")]
+        )
+
+        await query.edit_message_text(
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown",
+        )
+
+    async def _handle_download_control_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: str
+    ) -> None:
+        """Spezial-Handler für alle dl:*-Callbacks (Download-Control-Center),
+        analog zu _handle_backup_callback() etc."""
+        query = update.callback_query
+        await query.answer()
+        chat_id = update.effective_chat.id
+
+        if callback_data == "dl:new":
+            await self._handle_download_new(query)
+            return
+        if callback_data == "dl:active":
+            await self._handle_download_active(query, chat_id)
+            return
+        if callback_data == "dl:cancel":
+            await self._handle_download_cancel_request(query, chat_id)
+            return
+        if callback_data == "dl:details":
+            await self._handle_download_details(query, chat_id)
+            return
+        if callback_data == "dl:history":
+            await self._handle_download_history(query)
+            return
+        if callback_data == "dl:menu":
+            active = (
+                self.active_downloads.get(chat_id) if self.active_downloads else None
+            )
+            await self._render_download_menu(query, active)
+            return
+
+        self.logger.warning(f"⚠️ Unbekannter dl:-Callback: {callback_data}")
+        await query.edit_message_text("⚠️ Unbekannte Aktion.")
+
+    async def _handle_download_new(self, query) -> None:
+        await query.edit_message_text(
+            "🎵 *Neuer Download*\n\n"
+            "Sende mir einfach einen YouTube-Link (Song oder Playlist) - "
+            "ich erkenne automatisch, um welchen Typ es sich handelt.",
+            parse_mode="Markdown",
+        )
+
+    async def _handle_download_active(self, query, chat_id: int) -> None:
+        """
+        "📥 Download läuft" (Nutzer-Vorgabe, P1): zeigt aktuellen Track,
+        bereits abgeschlossene Tracks und die verbleibende Anzahl anhand
+        des GETEILTEN ProgressTrackers (ActiveDownload.tracker) - derselbe
+        Zustand, den auch die automatischen Zwischen-Updates während des
+        Downloads nutzen (klassen/download_handler.py::
+        _on_playlist_progress()) - hier nur zusätzlich manuell abrufbar,
+        statt nur passiv gepusht.
+        """
+        active = self.active_downloads.get(chat_id) if self.active_downloads else None
+        if active is None:
+            await query.edit_message_text(
+                "🔄 *Aktive Downloads*\n\nAktuell läuft kein Download.",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
+                ),
+                parse_mode="Markdown",
+            )
+            return
+
+        tracker = active.tracker
+        bar = _dl_progress_bar(tracker.processed_items, tracker.total_items)
+        remaining = max(tracker.total_items - tracker.processed_items, 0)
+
+        lines = [
+            "📥 *Download läuft*",
+            "",
+            f"🎵 {active.title or 'wird vorbereitet …'}",
+            "",
+            bar,
+        ]
+        if tracker.current_item:
+            lines += ["", "⬇️ Aktuell", tracker.current_item]
+        if tracker.completed_items:
+            lines += ["", "✅ Abgeschlossen"] + tracker.completed_items[-5:]
+        if remaining > 0:
+            lines += ["", f"⏳ Noch {remaining} Tracks"]
+
+        keyboard = [
+            [InlineKeyboardButton("❌ Download abbrechen", callback_data="dl:cancel")],
+            [InlineKeyboardButton("ℹ️ Details", callback_data="dl:details")],
+            [InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")],
+        ]
+
+        await query.edit_message_text(
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown",
+        )
+
+    async def _handle_download_cancel_request(self, query, chat_id: int) -> None:
+        active = self.active_downloads.get(chat_id) if self.active_downloads else None
+        if active is None:
+            await query.edit_message_text(
+                "ℹ️ Kein aktiver Download zum Abbrechen.",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
+                ),
+            )
+            return
+
+        active.request_cancel()
+        self.logger.info(f"🛑 [DL-CONTROL] Abbruch angefordert für Chat {chat_id}")
+        await query.edit_message_text(
+            "🛑 Abbruch angefordert - der Download wird in Kürze gestoppt.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
+            ),
+        )
+
+    async def _handle_download_details(self, query, chat_id: int) -> None:
+        active = self.active_downloads.get(chat_id) if self.active_downloads else None
+        if active is None:
+            await query.edit_message_text(
+                "ℹ️ Kein aktiver Download.",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
+                ),
+            )
+            return
+
+        tracker = active.tracker
+        elapsed = int(active.elapsed_seconds())
+        minutes, seconds = divmod(elapsed, 60)
+
+        lines = [
+            "ℹ️ *Download-Details*",
+            "",
+            f"🎵 Titel      : {active.title or '?'}",
+            f"🔗 URL        : {active.url}",
+            f"📦 Typ        : {active.download_type}",
+            f"⏱️ Laufzeit   : {minutes}:{seconds:02d} min",
+            f"📊 Fortschritt: {tracker.processed_items}/{tracker.total_items}",
+        ]
+        if tracker.current_item:
+            lines.append(f"⬇️ Aktuell    : {tracker.current_item}")
+
+        await query.edit_message_text(
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:active")]]
+            ),
+            parse_mode="Markdown",
+        )
+
+    async def _handle_download_history(self, query) -> None:
+        """
+        Download-Verlauf (Nutzer-Priorität 3) - bewusst noch nicht Teil
+        dieser ersten Ausbaustufe (siehe Abschnitts-Kommentar oben).
+        Persistenter JSON-Verlaufsspeicher folgt in einem eigenen Schritt.
+        """
+        await query.edit_message_text(
+            "📋 *Download-Verlauf*\n\nKommt in einem späteren Schritt.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
+            ),
+            parse_mode="Markdown",
+        )
 
     # ====== PLATZHALTER-HANDLER ======
 

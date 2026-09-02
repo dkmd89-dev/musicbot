@@ -305,6 +305,7 @@ class RichMenuHandler:
             self.menu_system.set_backup_handler(self.backup_handler)
         if self.restart_handler:
             self.menu_system.set_restart_handler(self.restart_handler)
+        self.menu_system.set_active_downloads(self.active_downloads)
 
         # Handler registrieren
         self._register_download_handlers()

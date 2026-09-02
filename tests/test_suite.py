@@ -392,9 +392,17 @@ class TestMenuIntegration:
         assert session.current_menu.id == "main"
 
         # 2. Zu Download navigieren
+        # Download-Control-Center 2026-09-02 (Nutzer-Vorgabe): "download"
+        # hat jetzt einen eigenen handler= (wie dup:/backup_/status_) und
+        # rendert seine Tastatur komplett selbst (_render_download_menu()),
+        # statt ueber die generische show_menu()-Navigation zu laufen -
+        # session.current_menu bleibt dadurch bewusst unveraendert auf
+        # "main" (analog zu allen anderen Aktions-Menuepunkten).
         mock_update.callback_query.data = "menu:download"
         await menu_system.handle_callback(mock_update, mock_context)
-        assert session.current_menu.id == "download"
+        assert session.current_menu.id == "main"
+        sent_text = mock_update.callback_query.edit_message_text.call_args.args[0]
+        assert "Downloads" in sent_text
 
         # 3. Zurück navigieren
         mock_update.callback_query.data = "menu:back"
