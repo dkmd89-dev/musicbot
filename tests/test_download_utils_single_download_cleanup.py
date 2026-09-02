@@ -264,6 +264,63 @@ class TestDownloadingStatusPartFileCleanup:
         assert not final_name.exists()
 
 
+class TestAsyncioCancelledErrorDuringDownload:
+    """
+    P2-Fund (docs/FINDINGS_INDEX.md, "Verwaiste Teildatei bei
+    Task-Cancellation"): analog zur identischen Stelle in
+    download_executor.py::download_single_track() - eine ECHTE
+    asyncio-Task-Cancellation (z.B. Bot-Shutdown waehrend eines laufenden
+    Downloads) ist NICHT dasselbe wie ein Nutzer-Hard-Cancel
+    (DownloadCancelledError, faellt unter "except DownloadError"). Da
+    asyncio.CancelledError seit Python 3.8 von BaseException statt
+    Exception erbt, faengt "except Exception" sie nicht ab - ohne eigenen
+    except-Zweig lief das Cleanup nie.
+    """
+
+    def test_cancelled_error_still_cleans_up_and_propagates(
+        self, tmp_path
+    ):
+        processor = make_processor(tmp_path)
+        final_name = tmp_path / "Song3.webm"
+        part_file = tmp_path / "Song3.webm.part"
+        part_file.write_bytes(b"partial-bytes-still-downloading")
+
+        async def cancelled_task_extract_info_async(url, ydl_opts, download=True):
+            for hook in ydl_opts.get("progress_hooks", []):
+                hook(
+                    {
+                        "status": "downloading",
+                        "filename": str(final_name),
+                        "tmpfilename": str(part_file),
+                        "downloaded_bytes": 1234,
+                        "total_bytes": 999999,
+                    }
+                )
+            raise asyncio.CancelledError()
+
+        processor.download_executor.extract_info_async = (
+            cancelled_task_extract_info_async
+        )
+
+        with pytest.raises(asyncio.CancelledError):
+            run_async(
+                _process_single_download(
+                    url="https://youtube.com/watch?v=x",
+                    video_info=make_video_info(),
+                    ydl_opts={},
+                    enhanced_processor=processor,
+                    filename_fixer=Mock(),
+                )
+            )
+
+        assert not part_file.exists(), (
+            "Task-Cancellation (asyncio.CancelledError) muss dieselbe "
+            "Rohdatei-Bereinigung ausloesen wie ein Nutzer-Hard-Cancel/ "
+            "regulaerer Fehler."
+        )
+        assert not final_name.exists()
+
+
 class TestSuccessRegression:
     def test_successful_download_never_triggers_cleanup(self, tmp_path, monkeypatch):
         """Test 3: Hook meldet Datei, Download insgesamt erfolgreich -

@@ -211,3 +211,61 @@ class TestDownloadCancelledErrorIsNotRetried:
 
         assert not part_file.exists()
         assert not final_name.exists()
+
+
+class TestAsyncioCancelledErrorDuringDownload:
+    """
+    P2-Fund (docs/FINDINGS_INDEX.md, "Verwaiste Teildatei bei
+    Task-Cancellation"): eine ECHTE asyncio-Task-Cancellation (z.B.
+    Bot-Shutdown waehrend eines laufenden Downloads - asyncio.run() bricht
+    beim Beenden alle noch offenen Tasks ab) ist NICHT dasselbe wie ein
+    Nutzer-Hard-Cancel (DownloadCancelledError, siehe Klasse oben). Da
+    asyncio.CancelledError seit Python 3.8 von BaseException statt
+    Exception erbt, faengt "except Exception" sie nicht ab - ohne eigenen
+    except-Zweig wuerde das Cleanup unten nie laufen UND die Exception
+    ohne jedes Logging einfach durchrauschen.
+    """
+
+    def test_cancelled_error_still_cleans_up_and_propagates(
+        self, executor, tmp_path, monkeypatch
+    ):
+        final_name = tmp_path / "Track_01_asynccancel.webm"
+        part_file = tmp_path / "Track_01_asynccancel.webm.part"
+        part_file.write_bytes(b"partial-bytes-still-downloading")
+
+        class FakeYoutubeDLAsyncioCancelled(FakeYoutubeDL):
+            def extract_info(self, url, download=True):
+                for hook in self.ydl_opts.get("progress_hooks", []):
+                    hook(
+                        {
+                            "status": "downloading",
+                            "filename": str(final_name),
+                            "tmpfilename": str(part_file),
+                            "downloaded_bytes": 1234,
+                            "total_bytes": 999999,
+                        }
+                    )
+                # Simuliert eine echte Task-Cancellation, die genau an
+                # dieser Stelle (waehrend des blockierenden yt-dlp-Aufrufs
+                # im Executor-Thread) eintrifft.
+                raise asyncio.CancelledError()
+
+        monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYoutubeDLAsyncioCancelled)
+
+        with pytest.raises(asyncio.CancelledError):
+            run_async(
+                executor.download_single_track(
+                    track_info=make_track_info("asynccancel"),
+                    ydl_opts={"progress_hooks": []},
+                    track_idx=1,
+                    download_dir=tmp_path,
+                    max_retries=3,
+                    retry_backoff_seconds=0.0,
+                )
+            )
+
+        assert not part_file.exists(), (
+            "Task-Cancellation (asyncio.CancelledError) muss dieselbe "
+            "Rohdatei-Bereinigung ausloesen wie ein Nutzer-Hard-Cancel."
+        )
+        assert not final_name.exists()
