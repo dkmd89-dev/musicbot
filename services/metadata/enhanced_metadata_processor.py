@@ -533,9 +533,24 @@ class EnhancedMetadataProcessor(SingletonMixin):
                         raw_title, final_artist
                     )
 
+            # Live-Fund 2026-09-02 (Nutzer-Report): search_title_for_genre
+            # wurde bisher NEU aus den ROHEN Quellen
+            # (youtube_parsed.get("song_title")/raw_title) berechnet - ein
+            # separater Pfad, der von light_title_cleanup() (inkl. dessen
+            # Produzenten-Credit-/Anfuehrungszeichen-Bereinigung) nie
+            # profitierte. clean_title (oben, Schritt 7) ist bereits der
+            # tatsaechlich final geschriebene, vollstaendig bereinigte
+            # Titel - Lyrics/Cover verwenden ihn bereits korrekt (siehe
+            # Schritt 10/11b unten), MusicBrainz (Genre- UND
+            # Album-Suche) aber bisher nicht, was real zu einer erfolglosen
+            # MusicBrainz-Suche mit z.B. '"ADLIBS" prod. Safecall777' statt
+            # 'ADLIBS' fuehrte. build_search_title() macht auf clean_title
+            # weiterhin seine eigene, zusaetzliche Versions-/Remaster-
+            # Bereinigung fuer die Suchanfrage - keine doppelte/abweichende
+            # Bereinigungslogik, nur ein saubererer Ausgangspunkt.
             search_title_for_genre = self.title_cleaner.build_search_title(
-                parsed_title=youtube_parsed.get("song_title"),
-                original_title=raw_title,
+                parsed_title=clean_title,
+                original_title=clean_title,
                 final_artist=final_artist,
             )
 
