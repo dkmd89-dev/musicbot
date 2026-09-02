@@ -1,7 +1,7 @@
 # services/downloader/progress_tracker.py
 import asyncio
 from datetime import datetime
-from typing import Optional, Callable
+from typing import List, Optional, Callable
 
 
 class ProgressTracker:
@@ -11,6 +11,30 @@ class ProgressTracker:
     services/ hat keine Telegram-Abhängigkeit mehr) - der Aufrufer ist
     dafür verantwortlich, den von compute_progress_message() gelieferten
     Text zu versenden, falls er nicht None ist.
+
+    Nutzer-Wunsch 2026-09-02 (Playlist-Progress-State-Erweiterung, keine
+    Neuimplementierung): drei getrennte Verantwortlichkeiten statt einer
+    einzigen, blind hochgezählten Zahl:
+
+        set_current_item(name)   → aktuell heruntergeladenes Element setzen
+        mark_completed(name)     → Element als abgeschlossen verbuchen
+        compute_progress_message() → Text aus dem aktuellen Zustand erzeugen
+
+    `processed_items` zählt ab sofort ausschließlich tatsächlich über
+    mark_completed() abgeschlossene Elemente (vorher: wurde bei JEDEM
+    compute_progress_message()-Aufruf blind um 1 erhöht, unabhängig davon,
+    ob überhaupt ein Element fertig war - zu grob für eine echte
+    Playlist-Fortschrittsanzeige mit mehreren Aufrufen pro Track). Die
+    bestehende Drosselung (update_interval) und die Abschlussbedingung
+    (processed_items == total_items) bleiben unverändert - nur die
+    Semantik von processed_items wurde geschärft, nicht die Kontrollogik.
+
+    `completed_items` hält die Namen aller bisher abgeschlossenen Elemente
+    in Reihenfolge - reiner Zustand, keine Formatierung. Die konkrete,
+    Telegram-spezifische Darstellung (Fortschrittsbalken, Emoji-Sektionen
+    wie "⬇️ Aktuell"/"✅ Abgeschlossen") bleibt bewusst Aufgabe der
+    aufrufenden Schicht (handlers/klassen) - services/ bleibt dadurch
+    weiterhin frei von Telegram-Formatierung.
     """
 
     def __init__(
@@ -24,6 +48,7 @@ class ProgressTracker:
         self.start_time = datetime.now()
         self.update_interval = 5  # Sekunden
         self.current_item = ""
+        self.completed_items: List[str] = []
 
         # ➡️ Custom logger integration mit Dependency Injection
         self.logger = (
@@ -54,8 +79,13 @@ class ProgressTracker:
         Intervall), um Spam zu vermeiden. Gibt den Text zurück, wenn er
         gesendet werden soll, sonst None (Intervall noch nicht erreicht) -
         der Aufrufer entscheidet selbst, ob/wie er sendet.
+
+        Erhöht `processed_items` NICHT mehr selbst (siehe Klassen-Docstring)
+        - das übernimmt jetzt ausschließlich mark_completed(). Ein Aufrufer,
+        der pro Element mehrfach compute_progress_message() aufruft (z.B.
+        für Zwischen-Status wie "lädt herunter..."), zählt das Element
+        dadurch nicht mehrfach.
         """
-        self.processed_items += 1
         now = datetime.now()
         time_diff = (now - self.last_update_time).total_seconds()
 
@@ -75,6 +105,8 @@ class ProgressTracker:
                         message += f" | {self.current_item}"
                 else:
                     message = f"⏳ Fortschritt: {self.processed_items}/{self.total_items} (0%)"
+                    if self.current_item:
+                        message += f" | {self.current_item}"
 
             # ➡️ Custom logger integration
             self.logger.debug(f"Fortschritts-Update berechnet: {message}")
@@ -88,6 +120,21 @@ class ProgressTracker:
         self.current_item = item_name
         # ➡️ Custom logger integration
         self.logger.debug(f"Aktuelles Item gesetzt: {item_name}")
+
+    def mark_completed(self, item_name: str) -> None:
+        """
+        Verbucht <item_name> als abgeschlossen: hängt den Namen an
+        completed_items an und leitet processed_items daraus ab (Anzahl
+        tatsächlich abgeschlossener Elemente, siehe Klassen-Docstring) -
+        nicht mehr die Anzahl der compute_progress_message()-Aufrufe.
+        """
+        self.completed_items.append(item_name)
+        self.processed_items = len(self.completed_items)
+        # ➡️ Custom logger integration
+        self.logger.debug(
+            f"Element abgeschlossen: '{item_name}' "
+            f"({self.processed_items}/{self.total_items})"
+        )
 
     def cleanup(self) -> None:
         """
