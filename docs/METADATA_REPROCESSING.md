@@ -352,13 +352,13 @@ Verzeichnis-Invariante, Genre-Downgrade-Schutz (Abschnitt 8a, inkl.
 Legacy-" / "-Separator), Fehlerisolierung bei beschaedigten Dateien
 (Abschnitt 5a), Cover-Suche laeuft auch bei bereits vorhandenem Cover,
 MusicBrainz-IDs werden nicht unnoetig ueberschrieben, Album-Fallback ohne
-Remix-Zusatz (Abschnitt 5), feste Log-Datei inkl. Anhaengen ueber mehrere
-Laeufe hinweg, Regressions-Tripwire fuer `DEFAULT_PRODUCTION_ROOT`, sowie
-Integrationstests gegen `main()` selbst (CLI-Parsing, Post-Run-Safety-
-Check-Aggregation, gemischte Erfolgs-/Fehler-Zusammenfassung). Externe
-Adapter (Genre/Lyrics/Cover-API-Aufrufe) sind gemockt; `TagWriter` und
-alle Path-Safety-/Snapshot-/Multi-Artist-Funktionen sind die echten
-Produktionsimplementierungen.
+Remix-Zusatz (Abschnitt 5), zeit-gestempelte Log-Datei pro Lauf,
+Regressions-Tripwire fuer `DEFAULT_PRODUCTION_ROOT`, vorhandenes Album-Tag
+wird ebenfalls bereinigt (Abschnitt 5), sowie Integrationstests gegen
+`main()` selbst (CLI-Parsing, Post-Run-Safety-Check-Aggregation, gemischte
+Erfolgs-/Fehler-Zusammenfassung). Externe Adapter (Genre/Lyrics/Cover-API-
+Aufrufe) sind gemockt; `TagWriter` und alle Path-Safety-/Snapshot-/
+Multi-Artist-Funktionen sind die echten Produktionsimplementierungen.
 
 ```bash
 python3 -m pytest tests/test_reprocess_artist_metadata.py -q
