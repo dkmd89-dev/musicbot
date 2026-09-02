@@ -492,3 +492,99 @@ class TestHandleNavidromeScan:
         assert "Unerwarteter Fehler" in args[0]
         assert "boom" in args[0]
         assert kwargs["parse_mode"] == "MarkdownV2"
+
+
+class TestProcessUrlRunsAsBackgroundTask:
+    """
+    Live-Fund 2026-09-02 (Nutzer-Report: "sobald Download läuft öffnet
+    sich das Menü nicht"): ohne concurrent_updates=True (bot.py) blockiert
+    ein direktes `await handler.handle_url(...)` in _process_url() die
+    Verarbeitung JEDES weiteren Telegram-Updates fuer die gesamte
+    Downloaddauer. Fix: der Download laeuft als asyncio.create_task() -
+    _process_url() selbst kehrt sofort zurueck.
+    """
+
+    def test_returns_before_handle_url_completes(self, tmp_path):
+        handler, _ = _make_handler(tmp_path)
+        update = make_update(MockConfig.OWNER_USER_ID, text="https://youtu.be/x")
+        context = make_context()
+
+        started = asyncio.Event()
+        may_finish = asyncio.Event()
+
+        async def slow_handle_url(update, context):
+            started.set()
+            await may_finish.wait()
+
+        download_handler = Mock()
+        download_handler.handle_url = AsyncMock(side_effect=slow_handle_url)
+
+        async def scenario():
+            with patch.object(
+                handler, "_create_download_handler", return_value=download_handler
+            ):
+                await handler._process_url(update, context, "https://youtu.be/x")
+                # _process_url() ist bereits zurueck, obwohl handle_url()
+                # noch auf may_finish wartet - das beweist, dass es NICHT
+                # inline awaited wurde.
+                assert not may_finish.is_set()
+                await asyncio.wait_for(started.wait(), timeout=1)
+                may_finish.set()
+                await asyncio.sleep(0)  # Hintergrund-Task fertig laufen lassen
+
+        asyncio.run(scenario())
+        download_handler.handle_url.assert_awaited_once()
+
+    def test_background_task_exception_is_logged_not_raised(self, tmp_path):
+        handler, _ = _make_handler(tmp_path)
+        handler.logger = Mock()
+        update = make_update(MockConfig.OWNER_USER_ID, text="https://youtu.be/x")
+        context = make_context()
+
+        download_handler = Mock()
+        download_handler.handle_url = AsyncMock(side_effect=RuntimeError("kaputt"))
+
+        async def scenario():
+            with patch.object(
+                handler, "_create_download_handler", return_value=download_handler
+            ):
+                await handler._process_url(update, context, "https://youtu.be/x")
+                await asyncio.sleep(0.05)  # Hintergrund-Task Zeit geben
+
+        asyncio.run(scenario())  # darf NICHT raisen
+
+        handler.logger.error.assert_called_once()
+        logged = handler.logger.error.call_args[0][0]
+        assert "kaputt" in logged
+
+    def test_successful_background_task_does_not_log_error(self, tmp_path):
+        handler, _ = _make_handler(tmp_path)
+        handler.logger = Mock()
+        update = make_update(MockConfig.OWNER_USER_ID, text="https://youtu.be/x")
+        context = make_context()
+
+        download_handler = Mock()
+        download_handler.handle_url = AsyncMock(return_value=None)
+
+        async def scenario():
+            with patch.object(
+                handler, "_create_download_handler", return_value=download_handler
+            ):
+                await handler._process_url(update, context, "https://youtu.be/x")
+                await asyncio.sleep(0.05)
+
+        asyncio.run(scenario())
+
+        handler.logger.error.assert_not_called()
+
+    def test_no_handler_still_replies_synchronously(self, tmp_path):
+        """Der 'Download-Dienst nicht verfügbar'-Fall bleibt synchron
+        (kein Task noetig, da nichts Langlaufendes passiert)."""
+        handler, _ = _make_handler(tmp_path)
+        update = make_update(MockConfig.OWNER_USER_ID, text="https://youtu.be/x")
+        context = make_context()
+
+        with patch.object(handler, "_create_download_handler", return_value=None):
+            asyncio.run(handler._process_url(update, context, "https://youtu.be/x"))
+
+        update.message.reply_text.assert_awaited_once()

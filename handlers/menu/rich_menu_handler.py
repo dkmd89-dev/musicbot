@@ -14,6 +14,7 @@ docs/archive/arch/MusicBot_ARCH-020_Download_Pipeline_Characterization.md, Absch
 "Spotify-Entfernung") - Spotify wurde im produktiven Betrieb nicht genutzt.
 """
 
+import asyncio
 import json
 from datetime import datetime
 from typing import Dict, Callable, Optional, Any
@@ -1134,6 +1135,34 @@ class RichMenuHandler:
             update: Telegram-Update-Objekt
             context: Telegram-Kontext
             url: Die zu verarbeitende URL
+
+        Live-Fund 2026-09-02 (Nutzer-Report: "sobald Download läuft öffnet
+        sich das Menü nicht"): die Telegram-`Application` läuft ohne
+        `concurrent_updates=True` (siehe bot.py) - PTB holt das NÄCHSTE
+        Update aus der Warteschlange erst, NACHDEM der Handler für das
+        aktuelle Update komplett zurückgekehrt ist. Ein direktes
+        `await handler.handle_url(...)` hier blockierte dadurch die
+        Verarbeitung JEDES weiteren Updates (inkl. Menü-Klicks wie "🔄
+        Aktive Downloads"/"❌ Abbrechen") für die GESAMTE Downloaddauer -
+        bestätigt über einen live beobachteten "Query is too old"-
+        BadRequest für einen während eines laufenden Downloads geklickten
+        Button, der erst NACH Downloadende (und damit zu spät für
+        Telegrams Callback-Query-Gültigkeitsfenster) verarbeitet wurde.
+
+        Fix: der eigentliche Download läuft als eigenständiger
+        Hintergrund-Task (asyncio.create_task) - _process_url() selbst
+        kehrt sofort zurück, PTB kann direkt das nächste Update
+        verarbeiten. Bewusst NICHT die globale `concurrent_updates`-
+        Einstellung geändert (deutlich größerer Blast-Radius: beträfe
+        ALLE Handler, nicht nur Downloads) - dieser gezielte Task deckt
+        genau den gemeldeten Fall ab.
+
+        handle_youtube_links() (aufgerufen über handler.handle_url())
+        fängt eigene Fehler bereits breit ab und meldet sie dem Nutzer
+        per Telegram - der add_done_callback()-Handler unten ist nur ein
+        Sicherheitsnetz für wirklich unerwartete, durchrutschende
+        Ausnahmen (verhindert eine stumme "Task exception was never
+        retrieved"-Warnung ohne jedes Logging).
         """
         self.logger.info(
             f"🔗 Verarbeite 📺 YouTube-URL von User {update.effective_user.id}: {url}"
@@ -1146,7 +1175,20 @@ class RichMenuHandler:
             )
             return
 
-        await handler.handle_url(update, context)
+        task = asyncio.create_task(handler.handle_url(update, context))
+        task.add_done_callback(self._log_background_download_task_exception)
+
+    def _log_background_download_task_exception(self, task: "asyncio.Task") -> None:
+        """add_done_callback()-Sicherheitsnetz für _process_url()'s
+        Hintergrund-Download-Task - siehe dortigen Docstring."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc:
+            self.logger.error(
+                f"💥 Unerwarteter Fehler im Hintergrund-Download-Task: {exc}",
+                exc_info=exc,
+            )
 
     # Alias für Rückwärtskompatibilität (wird von älterem Code ggf. noch aufgerufen)
     async def _initiate_download(
