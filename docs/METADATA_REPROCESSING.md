@@ -116,6 +116,20 @@ Playlist/yt-dlp gebaut und faellt bei fehlenden Kandidaten auf das aktuelle
 Kalenderjahr zurueck) — die bereits vorhandenen Album-/Jahr-Tags werden als
 Vertrauensbasis uebernommen.
 
+## 5a. Fehlerisolierung (Phase 1, 2026-09-02)
+
+Ein fehlerhafter Track darf nicht den gesamten Artist-Lauf abbrechen, sofern
+ein isoliertes Weiterarbeiten fachlich möglich ist. `process_file()` liest
+den BEFORE-Snapshot (inkl. `mutagen.mp4.MP4(path)`) in einem eigenen
+`try`/`except` **vor** der eigentlichen Metadaten-Pipeline — eine
+unlesbare/beschädigte `.m4a`-Datei (mutagen wirft z. B.
+`MP4StreamInfoError`) wird dadurch als `status: "error"` protokolliert und
+übersprungen, die übrigen Dateien des Artists werden trotzdem verarbeitet.
+Vor Phase 1 propagierte eine solche Exception ungefangen aus
+`process_file()` heraus und brach die gesamte `for`-Schleife in `main()`
+ab — alle noch nicht verarbeiteten Dateien blieben dabei unverarbeitet und
+ungemeldet.
+
 ## 6. Cover-Reprocessing
 
 Die Cover-Suche laeuft fuer **jede** Datei, auch wenn bereits ein Cover
@@ -169,6 +183,23 @@ Ausschliesslich bestehende Logik: `split_main_and_featuring()`
 Namen auf. Nach dem Schreiben wird `©ART`, das
 `----:com.apple.iTunes:ARTISTS`-Freeform-Feld und `album_artist` erneut
 direkt von der Platte gelesen und validiert.
+
+## 8a. Genre-Downgrade-Schutz (Phase 1, 2026-09-02)
+
+Eine frische `determine_genre_with_fallbacks()`-Antwort ist normales
+Antwortverhalten externer Quellen (MusicBrainz/Last.fm/Mapping) und kann —
+ohne dass etwas fehlerhaft ist — diesmal **weniger** Genre-Werte liefern
+als bereits im `©gen`-Tag stehen (z. B. aus einem früheren, reichhaltigeren
+Lauf). Analog zur bereits bestehenden MB-IDs-Regel unten wird ein bereits
+reichhaltigerer bestehender Genre-Tag dadurch nicht ersetzt — der
+Genre-Tag-Schreibvorgang wird für diese Datei übersprungen (der bestehende
+Wert bleibt exakt erhalten) und als `UNRESOLVED` protokolliert.
+`count_existing_genre_entries()` erkennt dabei sowohl den aktuellen
+`"; "`-Separator als auch den älteren `" / "`-Separator (siehe Abschnitt 5,
+TagWriter-Separator-Wechsel 2026-09) — reale Bestandsdateien der
+Produktions-Library können je nach letztem Tagging-Zeitpunkt beides
+enthalten. Liefert die frische Bestimmung gleich viele oder mehr Werte,
+greift der Schutz nicht — eine echte Verbesserung wird normal geschrieben.
 
 ## 9. Title Cleaning / Dateinamen-Sicherheit
 
@@ -224,7 +255,8 @@ Faelle (`check_unresolved()`):
 2. Title-Tag enthaelt fuer Dateinamen illegale Zeichen (Abschnitt 9)
 
 Weitere `UNRESOLVED`-Gruende koennen situativ waehrend der
-Rename-Pruefung entstehen (Kollision, Parent-Mismatch) oder aus einer
+Rename-Pruefung entstehen (Kollision, Parent-Mismatch), aus dem
+Genre-Downgrade-Schutz (Abschnitt 8a) oder aus einer
 Audiointegritaets-Abweichung (sollte nie auftreten, siehe Abschnitt 7 —
 ein Treffer hier ist ein hartes Warnsignal, kein normaler Betriebsfall).
 
@@ -290,9 +322,15 @@ Produktionspfad-Ablehnung, Path-Traversal-Ablehnung, Symlink-Sicherheit
 Dateinamens-Parent-Invariante, Kollisionsschutz, Endungs-Invariante,
 Multi-Artist-Validierung (echter `TagWriter`), Before/After-Snapshot,
 tatsaechliches erneutes Lesen von der Platte, Unresolved-Erkennung,
-Verzeichnis-Invariante. Externe Adapter (Genre/Lyrics/Cover-API-Aufrufe)
-sind gemockt; `TagWriter` und alle Path-Safety-/Snapshot-/Multi-Artist-
-Funktionen sind die echten Produktionsimplementierungen.
+Verzeichnis-Invariante, Genre-Downgrade-Schutz (Abschnitt 8a, inkl.
+Legacy-" / "-Separator), Fehlerisolierung bei beschaedigten Dateien
+(Abschnitt 5a), Cover-Suche laeuft auch bei bereits vorhandenem Cover,
+MusicBrainz-IDs werden nicht unnoetig ueberschrieben, sowie
+Integrationstests gegen `main()` selbst (CLI-Parsing, Post-Run-Safety-
+Check-Aggregation, gemischte Erfolgs-/Fehler-Zusammenfassung). Externe
+Adapter (Genre/Lyrics/Cover-API-Aufrufe) sind gemockt; `TagWriter` und
+alle Path-Safety-/Snapshot-/Multi-Artist-Funktionen sind die echten
+Produktionsimplementierungen.
 
 ```bash
 python3 -m pytest tests/test_reprocess_artist_metadata.py -q

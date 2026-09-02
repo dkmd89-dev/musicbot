@@ -334,6 +334,45 @@ def flatten_existing_artists(raw_artist_values: list) -> list:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Genre-Downgrade-Schutz (Phase 1, 2026-09-02)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def count_existing_genre_entries(genre_tag_values: list) -> int:
+    """Zaehlt, wie viele einzelne Genre-Werte im bestehenden ©gen-Tag
+    stecken - unabhaengig davon, ob mit dem aktuellen '; '-Separator
+    (seit 2026-09, siehe services/metadata/tag_writer.py) oder dem
+    aelteren ' / '-Separator geschrieben wurde (reale Bestandsdateien der
+    Produktions-Library koennen beides enthalten, je nachdem wann sie
+    zuletzt getaggt wurden). Ein einzelner, unsepariert er String zaehlt
+    als 1 Eintrag."""
+    if not genre_tag_values or not genre_tag_values[0]:
+        return 0
+    value = genre_tag_values[0]
+    for sep in ("; ", " / "):
+        if sep in value:
+            return len([p for p in value.split(sep) if p.strip()])
+    return 1
+
+
+def genre_would_downgrade(before_genre_tag: list, genres_result) -> bool:
+    """Analog zur bereits bestehenden MB-IDs-Regel ('keine vorhandenen
+    korrekten IDs unnoetig ueberschreiben', siehe process_file()): eine
+    frische determine_genre_with_fallbacks()-Antwort ist normales
+    Antwortverhalten externer Quellen und kann - ohne dass irgendetwas
+    fehlerhaft ist - diesmal WENIGER Genre-Werte liefern als bereits im
+    Tag stehen (z.B. aus einem frueheren, reichhaltigeren Lauf). Ein
+    bereits reichhaltigerer bestehender Tag soll dadurch nicht ERSETZT
+    werden - siehe process_file() fuer die Verwendung (UNRESOLVED statt
+    stillem Downgrade, 'nicht raten')."""
+    if not genres_result or not getattr(genres_result, "primary", None):
+        return False
+    fresh_count = 1 + len(getattr(genres_result, "secondary", None) or [])
+    existing_count = count_existing_genre_entries(before_genre_tag)
+    return existing_count > fresh_count
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # UNRESOLVED-Erkennung (Abschnitt 22 des Auftrags: bewusst nicht geaenderte
 # Faelle sind NICHT automatisch UNCHANGED)
 # ─────────────────────────────────────────────────────────────────────────
@@ -399,11 +438,6 @@ async def process_file(
     if dry_run:
         log.kv("🔒 Modus", "DRY-RUN - keine Datei wird veraendert")
 
-    before = snapshot(path, artist_root)
-    log.line("📋 BEFORE SNAPSHOT")
-    for k, v in before.items():
-        log.kv(k, v)
-
     result = {
         "file": str(rel),
         "status": "unchanged",
@@ -415,6 +449,31 @@ async def process_file(
         "dry_run": dry_run,
         "auto_learn": {"featured_artists": [], "genre": None},
     }
+
+    # Phase 1 (2026-09-02, Fehlerisolierung): der BEFORE-Snapshot (inkl.
+    # mutagen.mp4.MP4(path)) lief bisher VOR dem folgenden try/except-Block
+    # - eine echte, unlesbare/beschaedigte .m4a-Datei liess mutagen dabei
+    # eine Exception werfen, die ungefangen aus process_file() propagierte
+    # und in main() die gesamte for-Schleife ueber alle Dateien des Artists
+    # abbrach, statt nur diese eine Datei als "error" zu protokollieren und
+    # mit den uebrigen fortzufahren ("ein fehlerhafter Track darf nicht
+    # automatisch den gesamten Artist-Lauf zerstoeren"). Eigener,
+    # dedizierter try/except mit identischer result-Struktur wie der
+    # bestehende Haupt-except-Block unten, damit main()s Aggregation
+    # (status=="error"-Zaehlung) fuer beide Fehlerklassen gleich funktioniert.
+    try:
+        before = snapshot(path, artist_root)
+    except Exception as e:
+        result["status"] = "error"
+        result["error"] = f"BEFORE-Snapshot fehlgeschlagen: {e}"
+        log.line("❌ ERROR (BEFORE SNAPSHOT)")
+        log.kv("exception", repr(e))
+        log.line("❌ FINAL RESULT: ERROR")
+        return result
+
+    log.line("📋 BEFORE SNAPSHOT")
+    for k, v in before.items():
+        log.kv(k, v)
 
     try:
         log.line("🔄 METADATA PIPELINE")
@@ -485,6 +544,17 @@ async def process_file(
         for key in MB_ID_ATOM_MAP:
             final_mb_ids[key] = before["mb_ids"].get(key) or fresh_mb_ids.get(key)
 
+        # Genre-Downgrade-Schutz (Phase 1, siehe genre_would_downgrade()):
+        # analog zur MB-IDs-Regel oben - ein bereits reichhaltigerer
+        # bestehender Genre-Tag wird nicht durch ein schwaecheres frisches
+        # Ergebnis ersetzt. genres_result_for_write ist ausschliesslich fuer
+        # den TagWriter-Aufruf/die Dry-Run-Vorhersage relevant - Logging und
+        # Auto-Learn unten verwenden weiterhin das echte, ungefilterte
+        # genres_result (die frische Bestimmung selbst ist nicht falsch,
+        # nur fuer DIESEN Tag-Schreibvorgang nicht die bessere Wahl).
+        genre_downgrade = genre_would_downgrade(before["genre_tag"], genres_result)
+        genres_result_for_write = None if genre_downgrade else genres_result
+
         log.line("🎼 GenreProcessor")
         log.kv(
             "→ source",
@@ -498,6 +568,13 @@ async def process_file(
             if genres_result else None,
             indent=2,
         )
+        if genre_downgrade:
+            log.kv(
+                "→ ⚠️ Downgrade-Schutz",
+                f"bestehender Tag ({before['genre_tag']}) reichhaltiger als "
+                f"frisches Ergebnis - Genre-Tag wird NICHT ueberschrieben",
+                indent=2,
+            )
         log.line("🧬 MusicBrainz")
         log.kv("→ IDs vorhanden (Tag)", before["mb_ids"], indent=2)
         log.kv("→ IDs neu ermittelt", fresh_mb_ids, indent=2)
@@ -726,7 +803,7 @@ async def process_file(
                 title=clean_title,
                 album_info=album_info,
                 track_number=None,
-                genres_result=genres_result,
+                genres_result=genres_result_for_write,
                 lyrics=lyrics,
                 cover_art=cover_bytes,
                 feat_artists=feat_artists,
@@ -766,8 +843,14 @@ async def process_file(
             # werden von diesem Tool nie beruehrt, bleiben also immer gleich
             # BEFORE. Klar als Vorhersage gekennzeichnet, kein echter Read.
             all_artists_planned = [final_artist] + feat_artists
-            primary = getattr(genres_result, "primary", None) if genres_result else None
-            secondary = getattr(genres_result, "secondary", None) if genres_result else None
+            primary = (
+                getattr(genres_result_for_write, "primary", None)
+                if genres_result_for_write else None
+            )
+            secondary = (
+                getattr(genres_result_for_write, "secondary", None)
+                if genres_result_for_write else None
+            )
             if primary and secondary:
                 combined = [primary] + list(secondary)[:3]
                 genre_tag_planned = ["; ".join(combined)]
@@ -838,6 +921,14 @@ async def process_file(
         for reason in check_unresolved(before, after, clean_title):
             if reason not in result["unresolved"]:
                 result["unresolved"].append(reason)
+        if genre_downgrade:
+            result["unresolved"].append(
+                f"Genre-Downgrade-Schutz: bestehender Genre-Tag "
+                f"({before['genre_tag']}) enthaelt mehr Werte als das "
+                f"frische Ergebnis (primary={getattr(genres_result, 'primary', None)!r} "
+                f"secondary={getattr(genres_result, 'secondary', None)!r}). "
+                f"Kein automatisches Ersetzen - manuelle Pruefung empfohlen."
+            )
 
         log.line("📊 CHANGES")
         if changes:

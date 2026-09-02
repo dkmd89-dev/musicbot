@@ -587,6 +587,69 @@ class TestProcessFileEndToEnd:
         assert "import audio_enhancer" not in source
 
 
+class TestCorruptedFileErrorIsolation:
+    """
+    Phase-1-Optimierungsauftrag (2026-09-02, CLAUDE.md Abschnitt 9
+    'Fehlerbehandlung': 'beschaedigte Dateien, nicht lesbare Tags' -
+    'Ein fehlerhafter Track darf nicht automatisch den gesamten
+    Artist-Lauf zerstoeren'): process_file() liest den BEFORE-Snapshot
+    (snapshot(), inkl. mutagen.mp4.MP4(path)) VOR dem eigentlichen
+    try/except-Block. Fuer eine echte, unlesbare/beschaedigte .m4a-Datei
+    wirft mutagen dabei eine Exception, die NICHT vom bestehenden
+    try/except in process_file() abgefangen wird - sie propagiert
+    ungefangen aus process_file() heraus und wuerde in main() die
+    komplette for-Schleife ueber alle Dateien des Artists abbrechen,
+    statt nur DIESE eine Datei als 'error' zu protokollieren und mit den
+    uebrigen Dateien fortzufahren."""
+
+    @pytest.mark.asyncio
+    async def test_unreadable_file_returns_error_result_instead_of_raising(
+        self, isolated_artist_dir
+    ):
+        corrupted = isolated_artist_dir / "Singles" / "2024 - Corrupted.m4a"
+        corrupted.write_bytes(b"this-is-not-a-valid-mp4-container")
+
+        processor = make_processor_stub()
+
+        result = await rpam.process_file(
+            corrupted, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        assert result["status"] == "error"
+        assert result["error"]
+
+    @pytest.mark.asyncio
+    async def test_one_corrupted_file_does_not_abort_processing_of_other_files(
+        self, isolated_artist_dir, tagged_m4a
+    ):
+        """Reproduziert die eigentliche Auswirkung direkt auf Loop-Ebene
+        (wie main()): eine beschaedigte Datei VOR einer gesunden Datei in
+        derselben Iteration darf die gesunde Datei nicht unverarbeitet
+        lassen."""
+        corrupted = isolated_artist_dir / "Singles" / "2024 - Corrupted.m4a"
+        corrupted.write_bytes(b"this-is-not-a-valid-mp4-container")
+
+        processor = make_processor_stub()
+        log = rpam.ReprocessLogger(isolated_artist_dir / "test.log")
+
+        results = []
+        for f in sorted(isolated_artist_dir.rglob("*.m4a")):
+            r = await rpam.process_file(
+                f, isolated_artist_dir, processor, Mock(), Mock(), log,
+                dry_run=False,
+            )
+            results.append(r)
+
+        statuses = {r["file"]: r["status"] for r in results}
+        assert any(s == "error" for s in statuses.values())
+        assert any(s != "error" for s in statuses.values()), (
+            "Die gesunde Datei wurde nicht erreicht/verarbeitet - die "
+            "beschaedigte Datei hat die Schleife vorzeitig beendet."
+        )
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Genre-Separator
 #
@@ -664,6 +727,123 @@ class TestGenreSeparator:
         }
         # Weiterhin komplett unangetastet.
         assert MP4(tagged_m4a).get("©gen") is None
+        assert rpam.audio_essence_md5(tagged_m4a) == before_hash
+
+
+class TestGenreDowngradeProtection:
+    """
+    Phase-1-Optimierungsauftrag (2026-09-02): der bestehende ©gen-Tag kann
+    bereits mehrere Genre-Werte enthalten (z.B. aus einem frueheren,
+    reichhaltigeren Reprocessing-Lauf oder manueller Pflege). Eine neue
+    determine_genre_with_fallbacks()-Anfrage kann - je nach aktueller
+    MusicBrainz-/Last.fm-/Mapping-Antwort - diesmal nur ein einzelnes,
+    schwaecheres Ergebnis liefern (kein Fehler, sondern normales
+    Antwortverhalten externer Quellen). Analog zur bereits bestehenden
+    MB-IDs-Regel ("keine vorhandenen korrekten IDs unnoetig ueberschreiben")
+    soll ein bereits reichhaltigerer bestehender Genre-Tag nicht durch ein
+    schwaecheres frisches Ergebnis ERSETZT werden - stattdessen UNRESOLVED,
+    analog zum bereits etablierten "nicht raten"-Muster (z.B.
+    Dateinamens-illegale-Zeichen-Rename-Block).
+    """
+
+    @pytest.mark.asyncio
+    async def test_richer_existing_genre_is_not_downgraded_by_weaker_fresh_result(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        audio = MP4(tagged_m4a)
+        audio["©gen"] = ["Hip Hop; Deutschrap; Emo Rap; Cloud Rap"]
+        audio.save()
+
+        processor = make_processor_stub()  # Default: primary="Pop", secondary=[]
+
+        result = await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        after = MP4(tagged_m4a)
+        assert after["©gen"] == ["Hip Hop; Deutschrap; Emo Rap; Cloud Rap"], (
+            "Ein reichhaltigerer bestehender Genre-Tag darf nicht durch ein "
+            "schwaecheres frisches Einzel-Genre-Ergebnis ersetzt werden."
+        )
+        assert any("Genre" in u for u in result["unresolved"]), (
+            "Die unterlassene Genre-Aktualisierung muss als UNRESOLVED "
+            "protokolliert werden, nicht stillschweigend uebersprungen."
+        )
+
+    @pytest.mark.asyncio
+    async def test_legacy_slash_separator_is_also_recognized(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        """Vor der '; '-Separator-Umstellung (2026-09, tag_writer.py)
+        geschriebene Bestandsdateien nutzen ' / ' als Trenner - die
+        Downgrade-Erkennung muss auch diese aeltere Schreibweise als
+        Mehrfach-Genre zaehlen, nicht als einen einzelnen langen String."""
+        audio = MP4(tagged_m4a)
+        audio["©gen"] = ["Hip Hop / Deutschrap / Emo Rap"]
+        audio.save()
+
+        processor = make_processor_stub()  # Default: primary="Pop", secondary=[]
+
+        await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        after = MP4(tagged_m4a)
+        assert after["©gen"] == ["Hip Hop / Deutschrap / Emo Rap"]
+
+    @pytest.mark.asyncio
+    async def test_equal_or_richer_fresh_result_still_overwrites(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        """Gegenprobe: liefert die frische Bestimmung GLEICH viele oder mehr
+        Genre-Werte, greift der Schutz nicht - eine echte Verbesserung/
+        gleichwertige Neubestimmung wird weiterhin normal geschrieben."""
+        audio = MP4(tagged_m4a)
+        audio["©gen"] = ["Hip Hop; Deutschrap"]
+        audio.save()
+
+        processor = make_processor_stub()
+        processor.genre_processor.determine_genre_with_fallbacks = AsyncMock(
+            return_value=DummyMBIdsResult(
+                primary="Hip Hop", secondary=["Deutschrap", "Cloud Rap"],
+            )
+        )
+
+        await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        after = MP4(tagged_m4a)
+        assert after["©gen"] == ["Hip Hop; Deutschrap; Cloud Rap"]
+
+    @pytest.mark.asyncio
+    async def test_dry_run_prediction_matches_protected_live_outcome(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        """Dry-Run-Vorhersage muss identisch zum echten Schreibverhalten
+        sein - auch fuer den neuen Schutzpfad."""
+        audio = MP4(tagged_m4a)
+        audio["©gen"] = ["Hip Hop; Deutschrap; Emo Rap; Cloud Rap"]
+        audio.save()
+        before_hash = rpam.audio_essence_md5(tagged_m4a)
+
+        processor = make_processor_stub()  # Default: primary="Pop", secondary=[]
+
+        result = await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=True,
+        )
+
+        assert "genre_tag" not in result["changes"]
+        assert any("Genre" in u for u in result["unresolved"])
+        assert MP4(tagged_m4a)["©gen"] == ["Hip Hop; Deutschrap; Emo Rap; Cloud Rap"]
         assert rpam.audio_essence_md5(tagged_m4a) == before_hash
 
 
@@ -785,3 +965,186 @@ class TestDirectorySnapshot:
         (isolated_artist_dir / "Album").mkdir()
         after = rpam.snapshot_directory_tree(isolated_artist_dir)
         assert "Album" in after["dirs"] - before["dirs"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Cover-Reprocessing: Suche IMMER, auch bei bereits vorhandenem Cover
+# (Phase 1, 2026-09-02 - docs/METADATA_REPROCESSING.md Abschnitt 6 behauptet
+# dies bereits, war aber bisher nicht durch einen eigenen Test abgesichert)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestCoverAlwaysSearched:
+    @pytest.mark.asyncio
+    async def test_cover_search_runs_even_when_cover_already_embedded(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        audio = MP4(tagged_m4a)
+        from mutagen.mp4 import MP4Cover
+
+        audio["covr"] = [MP4Cover(b"existing-cover-bytes", imageformat=MP4Cover.FORMAT_JPEG)]
+        audio.save()
+
+        processor = make_processor_stub(cover_bytes=None, cover_source=None)
+
+        await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        processor.cover_processor.get_cover_art.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cover_search_runs_in_dry_run_too(self, tagged_m4a, isolated_artist_dir):
+        processor = make_processor_stub(cover_bytes=None, cover_source=None)
+
+        await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=True,
+        )
+
+        processor.cover_processor.get_cover_art.assert_called_once()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# MusicBrainz-IDs: bestehende korrekte IDs werden nicht unnoetig ueberschrieben
+# (Phase 1, 2026-09-02 - process_file() implementiert dies bereits korrekt,
+# war aber bisher nicht durch einen eigenen Test abgesichert)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestMusicBrainzIdsNotOverwritten:
+    @pytest.mark.asyncio
+    async def test_existing_recording_id_wins_over_differing_fresh_id(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        from mutagen.mp4 import MP4FreeForm
+
+        audio = MP4(tagged_m4a)
+        audio["----:com.apple.iTunes:MusicBrainz Recording Id"] = [
+            MP4FreeForm(b"existing-recording-id-0000")
+        ]
+        audio.save()
+
+        processor = make_processor_stub()
+        processor.genre_processor.determine_genre_with_fallbacks = AsyncMock(
+            return_value=DummyMBIdsResult(
+                primary="Pop", secondary=[],
+                mb_ids={"recording_id": "different-fresh-recording-id-1111"},
+            )
+        )
+
+        await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        after = MP4(tagged_m4a)
+        recording_id = bytes(
+            after["----:com.apple.iTunes:MusicBrainz Recording Id"][0]
+        ).decode("utf-8")
+        assert recording_id == "existing-recording-id-0000"
+
+    @pytest.mark.asyncio
+    async def test_missing_id_is_filled_from_fresh_result(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        """Gegenprobe: fehlt eine ID im Bestand, wird sie aus dem frischen
+        Ergebnis ergaenzt - der Schutz gilt nur fuer bereits VORHANDENE
+        Werte, nicht als generelle Sperre."""
+        processor = make_processor_stub()
+        processor.genre_processor.determine_genre_with_fallbacks = AsyncMock(
+            return_value=DummyMBIdsResult(
+                primary="Pop", secondary=[],
+                mb_ids={"recording_id": "fresh-recording-id-2222"},
+            )
+        )
+
+        await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        after = MP4(tagged_m4a)
+        recording_id = bytes(
+            after["----:com.apple.iTunes:MusicBrainz Recording Id"][0]
+        ).decode("utf-8")
+        assert recording_id == "fresh-recording-id-2222"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# main() - Integrationstests (Phase 1, 2026-09-02: bisher vollstaendig
+# ungetestet - CLI-Parsing, Post-Run-Safety-Check-Aggregation,
+# Fehlerisolierung auf Schleifenebene)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestMainIntegration:
+    @pytest.mark.asyncio
+    async def test_mixed_success_and_error_summary_and_overall_status(
+        self, isolated_artist_dir, tagged_m4a, monkeypatch
+    ):
+        corrupted = isolated_artist_dir / "Singles" / "2024 - Corrupted.m4a"
+        corrupted.write_bytes(b"not-a-valid-mp4-container")
+
+        stub_processor = make_processor_stub()
+        stub_processor.aclose = AsyncMock(return_value=None)
+        stub_processor.cleanup = Mock(return_value=None)
+
+        monkeypatch.setattr(rpam, "EnhancedMetadataProcessor", lambda config: stub_processor)
+        monkeypatch.setattr(rpam, "MusicBrainzClient", lambda: Mock())
+        monkeypatch.setattr(rpam, "LastFMClient", lambda: Mock())
+        monkeypatch.setattr(
+            sys, "argv",
+            [
+                "reprocess_artist_metadata.py",
+                "--input", str(isolated_artist_dir),
+                "--dry-run",
+                "--no-production-check",
+            ],
+        )
+
+        summary = await rpam.main()
+
+        assert summary["files_processed"] == 2
+        assert summary["errors"] == 1
+        assert summary["changed"] + summary["unchanged"] == 1
+        assert summary["directory_structure_changes"] == 0
+        assert summary["files_created"] == 0
+        assert summary["files_deleted"] == 0
+        assert summary["production_file_changes"] == 0
+        # Ein Fehler im Lauf darf den Gesamtstatus nicht als sauberes PASS
+        # ausweisen - auch wenn die uebrige Datei erfolgreich verarbeitet
+        # wurde.
+        assert summary["overall"] == "FAIL"
+
+    @pytest.mark.asyncio
+    async def test_no_production_check_flag_disables_production_comparison(
+        self, isolated_artist_dir, tagged_m4a, monkeypatch
+    ):
+        stub_processor = make_processor_stub()
+        stub_processor.aclose = AsyncMock(return_value=None)
+        stub_processor.cleanup = Mock(return_value=None)
+
+        monkeypatch.setattr(rpam, "EnhancedMetadataProcessor", lambda config: stub_processor)
+        monkeypatch.setattr(rpam, "MusicBrainzClient", lambda: Mock())
+        monkeypatch.setattr(rpam, "LastFMClient", lambda: Mock())
+        monkeypatch.setattr(
+            sys, "argv",
+            [
+                "reprocess_artist_metadata.py",
+                "--input", str(isolated_artist_dir),
+                "--dry-run",
+                "--no-production-check",
+            ],
+        )
+
+        summary = await rpam.main()
+
+        assert summary["errors"] == 0
+        assert summary["files_processed"] == 1
+        assert summary["directory_structure_changes"] == 0
