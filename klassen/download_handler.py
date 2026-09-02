@@ -218,6 +218,7 @@ class DownloadHandler:
             config=self.config,
             cookie_handler=self.cookie_handler,
             duplicate_detector=self.duplicate_detector,
+            status_callback=self._on_playlist_progress,
         )
 
         self.logger.info(
@@ -270,6 +271,76 @@ class DownloadHandler:
         except TelegramError as e:
             if "Message is not modified" not in str(e):
                 self.logger.warning(f"⚠️ Telegram-Status konnte nicht aktualisiert werden: {e}")
+
+    async def _on_playlist_progress(self, tracker) -> None:
+        """
+        Nutzer-Wunsch 2026-09-02 (Playlist-Progress-State): Callback für
+        `YoutubeDownloader`/`_process_playlist_download()`
+        (services/downloader/ - Telegram-frei). Erhält den `ProgressTracker`
+        selbst (reiner Zustand: current_item/completed_items/
+        processed_items/total_items, kein vorformatierter Text) und baut
+        daraus die reichhaltigere Playlist-Fortschrittsmeldung für Schritt 3
+        (Audio-Download):
+
+            3️⃣  █████░░░░░ 3/6  │ Audio-Download
+
+            ⬇️ Aktuell
+            03 - Trackname
+
+            ✅ Abgeschlossen
+            01 - Track 1
+            02 - Track 2
+
+            ⬇️  [YoutubeDownloader]
+
+        Bewusst NICHT über `_update_status()` (dessen einzeiliges
+        `detail`-Feld für diese mehrzeilige Darstellung nicht passt) -
+        nutzt aber dieselben Modul-Helfer (`_progress_bar`/`_STEP_EMOJI`/
+        `_MOD_EMOJI`) für ein konsistentes Erscheinungsbild. Die
+        throttling-Entscheidung (max. 1 Update pro `update_interval`,
+        siehe `ProgressTracker.compute_progress_message()`) liegt bereits
+        beim Aufrufer in services/ - hier wird bei jedem tatsächlichen
+        Aufruf direkt gesendet.
+        """
+        if not self.status_msg:
+            return
+
+        step, label = _YT.DOWNLOAD
+        step_emoji = _STEP_EMOJI[step - 1]
+        mod_emoji = _MOD_EMOJI.get("YoutubeDownloader", "⚙️")
+        bar = _progress_bar(step, _YT.TOTAL)
+
+        lines = [f"{step_emoji}  {bar}  │ {label}"]
+
+        if tracker.current_item:
+            lines += ["", "⬇️ Aktuell", tracker.current_item]
+
+        if tracker.completed_items:
+            # Nur die letzten paar zeigen, damit die Nachricht bei langen
+            # Playlists (z.B. 15+ Tracks) uebersichtlich bleibt.
+            max_shown = 8
+            shown = tracker.completed_items[-max_shown:]
+            lines += ["", "✅ Abgeschlossen"]
+            if len(tracker.completed_items) > max_shown:
+                lines.append(f"… ({len(tracker.completed_items) - max_shown} weitere)")
+            lines += shown
+
+        lines += ["", f"{mod_emoji}  [YoutubeDownloader]"]
+
+        self.logger.debug(
+            f"{mod_emoji} [STEP {step}/{_YT.TOTAL}] {label} — "
+            f"{tracker.processed_items}/{tracker.total_items} "
+            f"(aktuell: {tracker.current_item or '-'})"
+        )
+
+        try:
+            await self.status_msg.edit_text("\n".join(lines))
+        except TelegramError as e:
+            if "Message is not modified" not in str(e):
+                self.logger.warning(
+                    f"⚠️ Telegram-Status (Playlist-Fortschritt) konnte nicht "
+                    f"aktualisiert werden: {e}"
+                )
 
     # ──────────────────────────────────────────────────────────────────────────
     # DUPLIKAT-HANDLING

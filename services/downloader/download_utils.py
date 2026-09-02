@@ -604,6 +604,19 @@ async def _process_playlist_download(
     der Track danach normal (neu) heruntergeladen und korrekt im
     Album-Ordner einsortiert wird - das Playlist-/Album-Ergebnis hat damit
     bewusst Prioritaet vor der aelteren Einzel-Datei.
+
+    Playlist-Progress-State (Nutzer-Wunsch 2026-09-02, Folgeschritt zur
+    ProgressTracker-Erweiterung): status_callback (falls uebergeben) wird
+    jetzt pro Track mit dem ProgressTracker selbst aufgerufen (reiner
+    Zustand: current_item/completed_items/processed_items/total_items,
+    KEIN vorformatierter Text) - throttled ueber
+    tracker.compute_progress_message() (bestehende update_interval-
+    Drosselung, 5s). Die Telegram-spezifische Darstellung (Fortschritts-
+    balken, "⬇️ Aktuell"/"✅ Abgeschlossen"-Sektionen) bleibt bewusst
+    Aufgabe des Aufrufers (klassen/download_handler.py) - dieses Modul
+    importiert dafuer nichts Telegram-Spezifisches. Ersetzt die vorherige,
+    nie tatsaechlich verdrahtete status_callback-Signatur
+    (chat_id, step, total, message, module) - hatte 0 echte Aufrufer.
     """
     logger = logger or get_module_logger("download_utils")
 
@@ -684,25 +697,21 @@ async def _process_playlist_download(
     processed_tracks = processed_playlist["tracks"]
     cache_hits = 0
     total = len(processed_tracks)
+    tracker = ProgressTracker(total_items=total)
 
     for idx, track_info in enumerate(processed_tracks, 1):
         track_title = track_info.get("title", "?")
         track_artist = track_info.get("artist", "?")
+        display_name = f"{idx:02d} - {track_title}"
 
         logger.info(ProgressFormatter.track_header(idx, total, track_title, track_artist))
 
+        tracker.set_current_item(display_name)
+        if status_callback and tracker.compute_progress_message() is not None:
+            await status_callback(tracker)
+
         try:
             enhanced_processor.session_stats["total_processed"] += 1
-
-            # Status-Callback für Bot-UI
-            if status_callback and chat_id:
-                await status_callback(
-                    chat_id,
-                    idx + 3,
-                    total + 8,
-                    f"Track {idx}/{total}: {track_title[:40]}...",
-                    "EnhancedProcessor",
-                )
 
             # ── SINGLES-KONFLIKT AUFLOESEN (Playlist-Prioritaet) ────────────────
             # Nutzer-Wunsch 2026-09-02: siehe Docstring von
@@ -877,6 +886,16 @@ async def _process_playlist_download(
                     error=str(e),
                 ).to_dict()
             )
+
+        finally:
+            # Laeuft bei JEDEM Ausgang der Schleifen-Iteration (continue,
+            # normaler Durchlauf, Exception-Zweig) - siehe Docstring oben.
+            # CancelledError propagiert unveraendert weiter, finally laeuft
+            # trotzdem vorher (harmloses Bookkeeping, beeinflusst die
+            # Exception-Weitergabe nicht).
+            tracker.mark_completed(display_name)
+            if status_callback and tracker.compute_progress_message() is not None:
+                await status_callback(tracker)
 
     # ── PHASE 5: Finale Statistiken ───────────────────────────────────────────
     final_stats = (
