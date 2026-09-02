@@ -310,8 +310,19 @@ def _parse_artist_and_title(
             return f"{artist1}, {artist2_raw}", song, 0.95
 
     # Standard-Trennzeichen
+    # YTPARSE-01: Bindestrich-Trenner verlangt zwingend Leerzeichen auf
+    # beiden Seiten (\s+ statt \s*) - sonst matcht re.split() den erstbesten
+    # BAREN Bindestrich in einem Kuenstlernamen wie "t-low"/"K-Fly" statt des
+    # eigentlichen Artist/Titel-Trenners (Live-Fund 2026-09-02: "Miksu/
+    # Macloud, makko, t-low - Ich will" wurde faelschlich bei "t-low"
+    # gesplittet -> Artist "t" + Titel-Leak "low - Ich will"). Analog zum
+    # bereits bestehenden Schutz in
+    # artist_processor.py::clean_artist_before_normalization() ("Nur
+    # Separatoren MIT Leerzeichen"). En-/Em-Dash (–/—) sind davon mit
+    # betroffen, auch wenn sie in echten Kuenstlernamen selten bare
+    # vorkommen - fuer Konsistenz gleich mitgefixt.
     separator_patterns = [
-        (r"\s*[-–—]\s*", "artist_first", 1.0),
+        (r"\s+[-–—]\s+", "artist_first", 1.0),
         (r"\s*\|\s*", "artist_first", 0.9),
         (r"\s*•\s*", "artist_first", 0.9),
         (r"\s*:\s*", "artist_first", 0.85),
