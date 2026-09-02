@@ -22,6 +22,7 @@ Dieser Test deckt:
     Nachts wach) durch den Fix unverändert bleiben
 """
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -40,6 +41,18 @@ class FakeConfig:
     def __init__(self, tmp_path: Path):
         self.DUPLICATE_CACHE_DIR = str(tmp_path / "duplicate_cache")
         self.LIBRARY_DIR = str(tmp_path / "library")
+        # P1-Fix (docs/audits/P1_DUPLICATE_DETECTOR_ARTIST_NORMALIZER_WIRING_2026-09-02.md):
+        # DuplicateDetector konstruiert seit dem P1-Fix einen echten
+        # ArtistNormalizer/ArtistProcessor - ohne GENRE_MAPPING_DIR faellt
+        # ArtistNormalizer intern auf das echte, relative mapping/-Verzeichnis
+        # zurueck (ISOLATION-001-Muster, siehe conftest.py) und koennte echte
+        # Mapping-Dateien beschreiben (z.B. case_preserve.yaml Auto-Save).
+        mapping_dest = tmp_path / "mapping"
+        if not mapping_dest.exists():
+            shutil.copytree(
+                Path(__file__).resolve().parent.parent / "mapping", mapping_dest
+            )
+        self.GENRE_MAPPING_DIR = mapping_dest
 
 
 @pytest.fixture

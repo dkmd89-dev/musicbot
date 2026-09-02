@@ -39,10 +39,11 @@ from datetime import datetime
 from config import Config
 from logger import get_module_logger
 
-from utils.artist_map import ArtistNormalizer
+from utils.artist_map import ArtistConfig, ArtistNormalizer
 from utils.youtube_parser import parse_youtube_title
 from services.downloader.models import DuplicateEntry
 from services.duplicate.cache import DuplicateCache
+from services.metadata.artist_processor import ArtistProcessor
 
 # Phase 2.2: exakte Kopie von services/duplicate/classification.py::
 # _TITLE_QUOTE_PAIRS/_strip_wrapping_quote_pair() - siehe dortige
@@ -91,10 +92,59 @@ class DuplicateDetector:
             logger=self.logger_factory("DuplicateCache"),
         )
 
-        self.artist_normalizer = (
-            ArtistNormalizer(artist_config=getattr(self.config, "artist_config", None))
-            if hasattr(self.config, "artist_config")
-            else None
+        # P1 (docs/audits/P1_DUPLICATE_DETECTOR_ARTIST_NORMALIZER_WIRING_2026-09-02.md):
+        # vorher hasattr(config, "artist_config")-Gate, das ausschliesslich
+        # auf ein Attribut prueft, das die echte config.Config nirgends im
+        # Repo setzt - self.artist_normalizer blieb dadurch in der
+        # Produktion IMMER None (P0-E-Fund). ArtistNormalizer ist ein
+        # SingletonMixin - welcher Aufrufer ihn zuerst mit welchen Werten
+        # konstruiert, ist irrelevant fuer alle anderen Aufrufer im selben
+        # Prozess (sie bekommen dieselbe bereits initialisierte Instanz
+        # zurueck). Spiegelt deshalb unconditional denselben ArtistConfig-
+        # Aufbau wie EnhancedMetadataProcessor.__init__()
+        # (services/metadata/enhanced_metadata_processor.py) - dieselben
+        # Config-Werte, damit beide Aufrufer bei tatsaechlich erster
+        # Konstruktion identisches Verhalten ergeben wuerden. Path(...)-
+        # Wrapping hier zusaetzlich explizit (anders als im enhanced_
+        # metadata_processor.py-Vorbild) - konsistent zur bereits
+        # etablierten Konvention dieser Klasse (self.db_path/
+        # check_library_duplicate() wrappen Config-Pfadwerte ebenfalls
+        # defensiv), da ArtistNormalizer._load_library_artists() zwingend
+        # ein echtes Path-Objekt braucht (.exists()) - reine config.Config
+        # liefert bereits Path, einige Test-Fixtures dieser Klasse bisher
+        # bewusst Strings (nur ueber Path(library_dir) intern genutzt).
+        artist_config = ArtistConfig(
+            library_dir=Path(getattr(self.config, "LIBRARY_DIR", "library")),
+            override_file=Path(
+                getattr(
+                    self.config, "ARTIST_OVERRIDE_FILE", "./artist_overrides.json"
+                )
+            ),
+            mapping_dir=(
+                Path(mapping_dir)
+                if (mapping_dir := getattr(self.config, "GENRE_MAPPING_DIR", None))
+                else None
+            ),
+        )
+        self.artist_normalizer = ArtistNormalizer(artist_config)
+        # Extract-Korrektur (P1, siehe Kommentar oben): ArtistNormalizer.
+        # normalize() entfernt Channel-Suffixe wie "- Topic"/"VEVO"/
+        # "Official" NICHT selbststaendig - das uebernimmt erst
+        # ArtistProcessor.clean_artist_before_normalization() davor (der
+        # Leerzeichen-Separator-Split "Kygo - Topic" -> "Kygo", plus
+        # Komma-Split/Music/Records-Regex). Live waehrend der Extract-
+        # Phase entdeckt: ohne diesen vorgeschalteten Schritt haette das
+        # reine Verdrahten von ArtistNormalizer die urspruengliche P0-E-
+        # Luecke nur verschoben statt geschlossen (die kurze, in P0-E
+        # ergaenzte Fallback-Liste dieser Klasse waere durch den jetzt
+        # immer erfolgreichen artist_normalizer-Zweig unerreichbar
+        # geworden, OHNE dass "- Topic" tatsaechlich erkannt wird). Nutzt
+        # deshalb denselben ArtistProcessor wie die Metadaten-Pipeline
+        # (services/metadata/enhanced_metadata_processor.py) - identische
+        # Bereinigung fuer beide Aufrufer.
+        self.artist_processor = ArtistProcessor(
+            artist_normalizer=self.artist_normalizer,
+            logger=self.logger_factory("ArtistProcessor"),
         )
 
         self.stats = {
@@ -283,31 +333,33 @@ class DuplicateDetector:
     def _normalize_artist_for_comparison(self, artist: str) -> str:
         if not artist:
             return "Unknown"
-        if self.artist_normalizer:
+        # P1 (docs/audits/P1_DUPLICATE_DETECTOR_ARTIST_NORMALIZER_WIRING_2026-09-02.md):
+        # self.artist_processor ist seit dem P1-Fix immer gesetzt (kein
+        # hasattr(config, "artist_config")-Gate mehr, siehe __init__).
+        # clean_artist_before_normalization() MUSS vor normalize() laufen -
+        # ArtistNormalizer.normalize() entfernt Channel-Suffixe wie
+        # "- Topic"/"VEVO"/"Official" nicht selbststaendig, das ist
+        # exklusiv Aufgabe des vorgeschalteten Cleanings (identisch zum
+        # Pfad, den ArtistProcessor.determine_best_artist() fuer die
+        # Metadaten-Pipeline verwendet - beide Aufrufer nutzen jetzt
+        # dieselbe kanonische Bereinigung, nicht nur denselben Normalizer).
+        if self.artist_processor:
             try:
-                normalized = self.artist_normalizer.normalize(artist)
-                if normalized and normalized.lower() != "unknown":
-                    return normalized
+                cleaned_for_normalize = self.artist_processor.clean_artist_before_normalization(
+                    artist
+                )
+                if cleaned_for_normalize:
+                    normalized = self.artist_normalizer.normalize(cleaned_for_normalize)
+                    if normalized and normalized.lower() != "unknown":
+                        return normalized
             except Exception as e:
                 self.logger.debug(f"⚠️ Artist-Normalisierung fehlgeschlagen: {e}")
+        # Fallback (nur erreichbar, falls artist_processor fehlt oder die
+        # Normalisierung oben ausnahmsweise fehlschlaegt/leer bleibt) -
+        # bewusst dieselben Regeln wie clean_artist_before_normalization()
+        # nachgebildet (Komma-Split + Suffix-Liste), damit auch dieser
+        # Notfall-Pfad nicht hinter den P0-E-Stand zurueckfaellt.
         cleaned = artist.strip()
-        # P0-E-Fix (docs/audits/P0_DUPLICATE_DETECTOR_AUDIT_2026-09-02.md):
-        # self.artist_normalizer ist in der echten Produktion IMMER None
-        # (config.Config besitzt nirgends ein artist_config-Attribut) -
-        # dieser String-Fallback ist damit faktisch der einzige tatsaechlich
-        # wirksame Normalisierungspfad. Er war bisher unvollstaendig
-        # gegenueber ArtistProcessor.clean_artist_before_normalization()
-        # (demselben Rohwert in der Metadaten-Pipeline): fehlender Komma-
-        # Split fuer kommagetrennte Multi-Artist-Strings sowie die Suffixe
-        # "Music"/"Records". Live reproduzierter Fund: ein Re-Upload
-        # desselben Songs ueber einen Kanal wie "Artist Music" wurde beim
-        # Pre-Download-Check faelschlich NICHT als Duplikat erkannt (False
-        # Negative), weil der beim register_download() bereits pipeline-
-        # bereinigte Artist ("Artist") und der hier nur teil-bereinigte
-        # Rohwert ("Artist Music") zu unterschiedlichen Content-Hashes
-        # fuehrten. Komma-Split-Regel 1:1 aus clean_artist_before_
-        # normalization() uebernommen (erster Name vor ", " gewinnt, nur
-        # wenn er laenger als 2 Zeichen ist).
         if ", " in cleaned:
             main_artist = cleaned.split(", ")[0].strip()
             if len(main_artist) > 2:
