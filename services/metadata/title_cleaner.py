@@ -172,6 +172,28 @@ class TitleCleaner:
             r"\s*\(?\s*lyric\s*\bvideo\b\s*\)?\s*$", "", cleaned, flags=re.IGNORECASE
         ).strip()
 
+        # Live-Fund 2026-09-02 (Nutzer-Report, echter Testdownload):
+        # 'makko - "ADLIBS" prod. Safecall777' behielt den Produzenten-
+        # Credit unveraendert im finalen Titel-Tag - light_title_cleanup()
+        # ist der einzige tatsaechlich erreichbare Titel-Cleanup-Pfad
+        # (enhanced_metadata_processor.py Schritt 7 ruft ausschliesslich
+        # diese Methode auf; clean_track_title_enhanced()/
+        # apply_title_cleanup_rules() haben keine Produktionsaufrufer) und
+        # hatte bisher gar keine "prod."-Regel. Deckt sowohl die
+        # geklammerte Form ("(prod. by X)") als auch die klammerlose,
+        # trennerlose Form ("Titel prod. X", ohne Bindestrich) ab - Letztere
+        # wird auch von utils/youtube_parser.py::_clean_title_suffixes()
+        # nicht erkannt (nur geklammert oder Bindestrich-getrennt, siehe
+        # docs/FINDINGS_INDEX.md). \bprod\b mit zwingendem "."/Whitespace
+        # danach verhindert Fehltreffer in Woertern wie "Producer"/
+        # "Production".
+        cleaned = re.sub(
+            r"\s*\(\s*prod\.?\s*(?:by\s+)?[^)]*\)", "", cleaned, flags=re.IGNORECASE
+        ).strip()
+        cleaned = re.sub(
+            r"\s*[-–—]?\s*\bprod\.?\s+(?:by\s+)?\S.*$", "", cleaned, flags=re.IGNORECASE
+        ).strip()
+
         # Artist-Präfix entfernen (z.B. "Ariana Grande - ")
         if artist:
             escaped_artist = re.escape(artist)
