@@ -588,3 +588,68 @@ class TestProcessUrlRunsAsBackgroundTask:
             asyncio.run(handler._process_url(update, context, "https://youtu.be/x"))
 
         update.message.reply_text.assert_awaited_once()
+
+
+class TestGetTelegramHandlersRegistersDlPrefix:
+    """
+    Live-Fund 2026-09-02 ("Downloads lässt sich öffnen aber die restlichen
+    Buttons sind tot außer Hauptmenü"): CallbackQueryHandler werden PTB-
+    seitig über feste pattern=-Allowlists geroutet - das interne
+    dl:-Präfix-Routing in RichMenuSystem.handle_callback() lief komplett
+    ins Leere, solange hier kein eigener Handler für "^dl:" registriert
+    war (PTB fand für dl:*-Callback-Daten schlicht keinen passenden
+    Handler und tat gar nichts - kein Log, keine Exception). Andere
+    Präfixe (dup:/backup_/status_/...) hatten diesen Handler bereits.
+    """
+
+    def test_dl_prefixed_callback_query_handler_is_registered(self, tmp_path):
+        from telegram.ext import CallbackQueryHandler
+
+        handler, _ = _make_handler(tmp_path)
+
+        handlers = handler.get_telegram_handlers()
+
+        dl_handlers = [
+            h
+            for h in handlers
+            if isinstance(h, CallbackQueryHandler)
+            and h.pattern is not None
+            and h.pattern.match("dl:active")
+        ]
+        assert len(dl_handlers) == 1
+
+    def test_dl_handler_targets_menu_system_handle_callback(self, tmp_path):
+        from telegram.ext import CallbackQueryHandler
+
+        handler, _ = _make_handler(tmp_path)
+
+        handlers = handler.get_telegram_handlers()
+        dl_handler = next(
+            h
+            for h in handlers
+            if isinstance(h, CallbackQueryHandler)
+            and h.pattern is not None
+            and h.pattern.match("dl:new")
+        )
+
+        assert dl_handler.callback == handler.menu_system.handle_callback
+
+    def test_dl_pattern_does_not_accidentally_match_menu_prefix(self, tmp_path):
+        """Regressionsschutz: das neue Pattern darf ausschließlich
+        dl:-Callbacks abdecken, nicht versehentlich menu:/dup:/etc.
+        mit-matchen (Präfix-Kollision)."""
+        from telegram.ext import CallbackQueryHandler
+
+        handler, _ = _make_handler(tmp_path)
+
+        handlers = handler.get_telegram_handlers()
+        dl_handler = next(
+            h
+            for h in handlers
+            if isinstance(h, CallbackQueryHandler)
+            and h.pattern is not None
+            and h.pattern.match("dl:new")
+        )
+
+        assert not dl_handler.pattern.match("menu:download")
+        assert not dl_handler.pattern.match("dup:show_stats")

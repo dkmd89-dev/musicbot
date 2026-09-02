@@ -489,6 +489,19 @@ class RichMenuHandler:
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^status_"),
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^backup_"),
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^restart:"),
+            # Download-Control-Center 2026-09-02 (Live-Fund: "restliche
+            # Buttons sind tot außer Hauptmenü"): CallbackQueryHandler
+            # werden PTB-seitig über feste pattern=-Allowlists geroutet -
+            # das interne dl:-Präfix-Routing in
+            # RichMenuSystem.handle_callback() (siehe dort) wird nie
+            # erreicht, wenn hier kein eigener Handler für "^dl:"
+            # registriert ist. menu:download selbst funktionierte bereits
+            # (passt auf "^menu:" unten), nur die dl:*-Folge-Callbacks
+            # (Neuer Download/Aktive Downloads/Verlauf/Abbrechen/Details/
+            # Zurück) liefen dadurch ins Leere - PTB ignorierte sie
+            # komplett (kein Handler-Match), daher weder Log-Eintrag noch
+            # Exception.
+            CallbackQueryHandler(self.menu_system.handle_callback, pattern="^dl:"),
             # Allgemeines Menü zuletzt
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^menu:"),
             # URL Handler (YouTube-URLs)
