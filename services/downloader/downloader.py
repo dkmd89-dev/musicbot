@@ -68,7 +68,20 @@ class YoutubeDownloader:
                 "5️⃣ 📦 Download abgeschlossen – extrahiere Ergebnis und Statistiken"
             )
             if not download_result or not download_result.get("success"):
-                error_message = download_result.get("error", "Unbekannter Fehler.")
+                # docs/FINDINGS_INDEX.md: "if not download_result" faengt
+                # download_result=None zwar ab, das direkt folgende
+                # .get(...) im selben Zweig tat das vorher nicht -
+                # AttributeError statt eines sauberen Fehler-Dicts. In der
+                # Praxis liefert enhanced_download_with_retry() laut
+                # eigenem Vertrag (docs/audits/DL_RETRY_CLASSIFICATION_2026-09-01.md)
+                # nie None, daher kein akuter Produktionsfehler bisher -
+                # trotzdem ein sauberer Guard statt eines impliziten
+                # Vertrauens auf diese Garantie.
+                error_message = (
+                    download_result.get("error", "Unbekannter Fehler.")
+                    if download_result
+                    else "Unbekannter Fehler."
+                )
                 self.logger.error(f"❌ Download fehlgeschlagen: {error_message}")
                 return {"success": False, "error": error_message}
 

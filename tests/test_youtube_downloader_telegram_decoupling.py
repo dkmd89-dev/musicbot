@@ -171,24 +171,30 @@ class TestDownloadAudioFailureAndErrorPaths:
 
         assert result == {"success": False, "error": "boom"}
 
-    def test_empty_result_raises_attribute_error(self, deps):
+    def test_empty_result_returns_clean_error_dict(self, deps):
         """
-        Charakterisiert einen vorbestehenden, von der Telegram-Entkopplung
-        unabhaengigen Bug (docs/audits/SERVICES_TELEGRAM_COUPLING_2026-09-01.md,
-        Abschnitt "Remaining"): `if not download_result or ...` faengt
+        Regressionstest (docs/FINDINGS_INDEX.md, urspruenglich
+        docs/audits/SERVICES_TELEGRAM_COUPLING_2026-09-01.md, Abschnitt
+        "Remaining"): `if not download_result or ...` faengt
         download_result=None zwar korrekt ab, der direkt folgende
-        `download_result.get(...)`-Aufruf im selben Zweig tut es aber nicht
-        - AttributeError statt eines sauberen {"success": False, ...}.
-        In der Praxis liefert enhanced_download_with_retry() laut eigener
-        Vertrags-Analyse (docs/audits/DL_RETRY_CLASSIFICATION_2026-09-01.md)
-        nie None, daher kein akuter Produktionsfehler - hier nur
-        charakterisiert, NICHT gefixt (außerhalb des Scopes dieser Phase).
+        `download_result.get(...)`-Aufruf im selben Zweig tat es vorher
+        NICHT - AttributeError statt eines sauberen
+        {"success": False, ...}. Gefixt: ein sauberer Guard liefert jetzt
+        ein Fehler-Dict statt zu crashen, auch wenn
+        enhanced_download_with_retry() (laut eigenem Vertrag,
+        docs/audits/DL_RETRY_CLASSIFICATION_2026-09-01.md) in der Praxis
+        nie None liefert.
+
+        Pre-Fix-Diskriminierung: diese Assertion (kein Crash, sauberes
+        Dict) schlug am ungefixten Code nachweislich mit AttributeError
+        fehl.
         """
         deps["retry"].return_value = None
         downloader = make_downloader(deps)
 
-        with pytest.raises(AttributeError):
-            run_async(downloader.download_audio("https://youtube.com/watch?v=x"))
+        result = run_async(downloader.download_audio("https://youtube.com/watch?v=x"))
+
+        assert result == {"success": False, "error": "Unbekannter Fehler."}
 
     def test_exception_from_retry_propagates(self, deps):
         deps["retry"].side_effect = RuntimeError("kaputt")
