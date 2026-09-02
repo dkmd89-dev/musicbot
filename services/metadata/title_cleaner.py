@@ -233,6 +233,20 @@ class TitleCleaner:
                 rf"^{escaped_artist}\s*[-–—:|]\s*", "", cleaned, flags=re.IGNORECASE
             ).strip()
 
+        # Live-Fund 2026-09-02 (Nutzer-Report): 'MAKKO 7er STOCK (Dir.'
+        # blieb mit haengender, nie geschlossener Klammer stehen - z.B.
+        # ein abgeschnittener Regie-/Video-Credit ('(Dir. by X)'), dessen
+        # schliessende Klammer im YouTube-Titel fehlt oder abgeschnitten
+        # wurde. Bisher gab es hierfuer KEINE Regel in light_title_cleanup()
+        # - dasselbe Muster existiert bereits als Sicherheitsnetz (letzte
+        # Regel ueberhaupt) in apply_title_cleanup_rules(), das aber keine
+        # Produktionsaufrufer hat (siehe Kommentar zur Produzenten-Credit-
+        # Bereinigung oben). Entfernt eine nie geschlossene Klammer '(' oder
+        # '[' bis zum Titelende - bewusst als letzte Regel, faengt auf, was
+        # von allen vorherigen, spezifischeren Regeln uebrig bleibt.
+        cleaned = re.sub(r"\s*\([^)]*$", "", cleaned).strip()
+        cleaned = re.sub(r"\s*\[[^\]]*$", "", cleaned).strip()
+
         # Mehrfache Leerzeichen normalisieren
         cleaned = re.sub(r"\s+", " ", cleaned)
 
