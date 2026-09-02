@@ -46,6 +46,18 @@ class ArtistProcessor:
         einen urspruenglich zusammengesetzten Hauptartist (hier "GReeeN &
         1986zig") dann nicht mehr von echten Features unterscheiden und
         degradierte z.B. "1986zig" faelschlich zum Feature.
+
+        P0-G-Cleanup (docs/audits/P0_ARTIST_PROCESSOR_AUDIT_2026-09-02.md,
+        Abschnitt 1a): die Zweige raw_metadata/channel_fallback enthielten
+        bis hierher zusaetzlich einen Vergleich gegen bereits verworfene
+        hoeherpriore Kandidaten (z.B. "norm_raw != norm_parsed"). Live und
+        strukturell bewiesen tot: jeder erfolgreiche Zweig gibt sofort
+        zurueck, ein spaeterer Zweig wird also nur erreicht, wenn die
+        vorherigen Kandidaten bereits gescheitert (=None) sind - ein
+        Vergleich gegen None ist bei einem gueltigen neuen Kandidaten immer
+        wahr. Entfernt, keine Verhaltensaenderung (siehe Regressionstest
+        test_priority_chain_duplicate_guards_never_block_a_lower_priority_
+        fallback in tests/test_metadata_modules.py).
         """
         self.logger.debug("🎤 Artist-Bestimmung:")
         self.logger.debug(f"   Raw Artist: '{raw_artist}'")
@@ -80,10 +92,7 @@ class ArtistProcessor:
             return norm_parsed, "youtube_parsed", feat_parsed
 
         norm_raw, src_raw, feat_raw = _clean_and_normalize(raw_artist)
-        if (
-            src_raw in ["normalized", "cleaned_raw_fallback"]
-            and norm_raw != norm_parsed
-        ):
+        if src_raw in ["normalized", "cleaned_raw_fallback"]:
             self.logger.debug(f"🎤 Artist aus Raw-Metadaten: '{norm_raw}'")
             return norm_raw, "raw_metadata", feat_raw
 
@@ -93,67 +102,15 @@ class ArtistProcessor:
         )
 
         if src_channel in ["normalized", "cleaned_raw_fallback"]:
-            if norm_channel != norm_parsed and norm_channel != norm_raw:
-                self.logger.warning(
-                    f"🎤 Artist-Fallback auf Channel-Name: '{norm_channel}'"
-                )
-                return norm_channel, "channel_fallback", feat_channel
+            self.logger.warning(
+                f"🎤 Artist-Fallback auf Channel-Name: '{norm_channel}'"
+            )
+            return norm_channel, "channel_fallback", feat_channel
 
         self.logger.warning(
             "🎤❌ Keine gültigen Artist-Kandidaten gefunden, verwende Fallback"
         )
         return "Unbekannter Künstler", "fallback", []
-
-    def find_known_artist_from_list(self, all_artists: List[str]) -> Optional[str]:
-        """
-        Sucht in einer Liste von Artist-Kandidaten nach einem bereits bekannten
-        Artist (in der Library oder in den Overrides) und gibt ihn zurück.
-        """
-        if not all_artists or not self.artist_normalizer:
-            return None
-
-        for candidate in all_artists:
-            if not candidate or not candidate.strip():
-                continue
-
-            candidate_clean = candidate.strip()
-            candidate_clean_normalized = self.clean_artist_before_normalization(
-                candidate_clean
-            )
-            candidate_lower = (candidate_clean_normalized or candidate_clean).lower()
-
-            for lib_artist in self.artist_normalizer.library_artists:
-                if (
-                    lib_artist.lower() == candidate_lower
-                    or lib_artist.lower() == candidate_clean.lower()
-                ):
-                    self.logger.info(
-                        f"🎯 [KNOWN-ARTIST] '{candidate_clean}' in Library gefunden → "
-                        f"wird als Hauptartist gewählt"
-                    )
-                    return lib_artist
-
-            try:
-                lookup = candidate_clean_normalized or candidate_clean
-                normalized = self.artist_normalizer.normalize(lookup)
-                if normalized and normalized.lower() != "unknown":
-                    key = self.artist_normalizer._normalize_key(lookup)
-                    if key in self.artist_normalizer.overrides_normalized:
-                        self.logger.info(
-                            f"🎯 [KNOWN-ARTIST] '{candidate_clean}' in Overrides gefunden "
-                            f"→ normalisiert zu '{normalized}' → wird als Hauptartist gewählt"
-                        )
-                        return normalized
-            except Exception as e:
-                self.logger.debug(
-                    f"   [KNOWN-ARTIST] Normalisierung für '{candidate_clean}' fehlgeschlagen: {e}"
-                )
-                continue
-
-        self.logger.debug(
-            f"   [KNOWN-ARTIST] Kein bekannter Artist in Liste {all_artists} gefunden"
-        )
-        return None
 
     def clean_artist_before_normalization(self, artist: str) -> str:
         """
