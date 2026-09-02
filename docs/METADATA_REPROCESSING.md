@@ -22,7 +22,7 @@ die Produktions-Library direkt anzufassen.
 ## 2. Sicherheitsmodell
 
 ```text
-Produktions-Library (/mnt/4tb/library)   → READ-ONLY, niemals beschrieben
+Produktions-Library (/mnt/musik_bilder/library)   → READ-ONLY, niemals beschrieben
 Test-Input   (/tmp/musicbot_test/metadaten/<ARTIST>) → einzig erlaubter Input
 Test-Output  (dieselbe Stelle, in-place aktualisiert) → einzig erlaubter Output
 Test-Ziel nach manueller Pruefung (/tmp/musicbot_test/libary/<ARTIST>)
@@ -62,7 +62,7 @@ Optionen:
 | `--input` (Pflicht) | Vollstaendiger Pfad zum Artist-Testverzeichnis | — |
 | `--dry-run` | Nur analysieren, keine Datei veraendern | aus |
 | `--metadaten-root` | Erlaubte Wurzel fuer `--input` | `/tmp/musicbot_test/metadaten` |
-| `--production-root` | Nur-lesend fuer den automatischen Post-Run-Safety-Check | `/mnt/4tb/library` |
+| `--production-root` | Nur-lesend fuer den automatischen Post-Run-Safety-Check | `/mnt/musik_bilder/library` |
 | `--no-production-check` | Production-Protection-Vergleich auslassen | aus |
 
 ## 4. Dry-Run
@@ -273,7 +273,7 @@ Audio stream (codec/rate/channels/duration) changes
 Overall: PASS / PASS WITH UNRESOLVED CASES / FAIL
 ```
 
-Der Production-Vergleich (`--production-root`, Standard `/mnt/4tb/library`)
+Der Production-Vergleich (`--production-root`, Standard `/mnt/musik_bilder/library`)
 liest die zum verarbeiteten relativen Pfad korrespondierende
 Produktionsdatei rein lesend vor UND nach dem Lauf (mtime, Groesse, SHA256)
 und meldet `FAIL`, sobald sich irgendetwas daran aendert. Mit

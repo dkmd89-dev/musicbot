@@ -72,7 +72,7 @@ MB_ID_ATOM_MAP = {
 # davon darf jemals angefasst werden - siehe validate_input_path().
 ALLOWED_ROOT = Path("/tmp/musicbot_test")
 DEFAULT_METADATEN_ROOT = ALLOWED_ROOT / "metadaten"
-DEFAULT_PRODUCTION_ROOT = Path("/mnt/4tb/library")
+DEFAULT_PRODUCTION_ROOT = Path("/mnt/musik_bilder/library")
 
 
 class PathSafetyError(Exception):
@@ -1079,13 +1079,21 @@ async def main():
         else:
             skipped_unsafe.append(f)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = Path(
-        f"/tmp/musicbot_test/metadata_reprocessing_{artist_name}_{timestamp}.log"
-    )
+    # Nutzer-Wunsch (2026-09-02): feste, dauerhafte Log-Datei statt einer
+    # neuen Zeit-gestempelten Datei pro Lauf (analog zu logs/bot.log) -
+    # ReprocessLogger oeffnet ohnehin bereits im Append-Modus, jeder Lauf
+    # wird dadurch an die Historie vorheriger Laeufe angehaengt statt eine
+    # eigene, schnell verstreute Datei zu erzeugen. Config.LOG_DIR
+    # existiert beim allerersten Lauf ggf. noch nicht.
+    Config.LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = Config.LOG_DIR / "script.log"
     log = ReprocessLogger(log_path)
 
+    run_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log.line("")
+    log.line("═" * 70)
     log.line(f"🚀 MusicBot Metadata Reprocessing Tool - {artist_name}")
+    log.kv("🕐 Gestartet", run_timestamp, indent=0)
     log.kv("📦 Repository", "dkmd89-dev/musicbot", indent=0)
     log.kv("🧪 Test Environment", str(Config.BASE_DIR), indent=0)
     log.kv("🎵 Artist", artist_name, indent=0)
@@ -1225,6 +1233,7 @@ async def main():
         "PASS WITH UNRESOLVED CASES" if overall_pass else "FAIL"
     )
     log.kv("Overall", overall, indent=0)
+    log.line("═" * 70)
     log.close()
 
     summary = {

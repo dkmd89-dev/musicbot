@@ -169,7 +169,7 @@ class TestPathSafety:
         auf ein Elternverzeichnis einer simulierten Produktions-Library
         gesetzt, damit die Wurzel-Pruefung besteht und gezielt der
         Produktions-spezifische Guard greift - ohne von der echten
-        /mnt/4tb/library-Mount-Verfuegbarkeit abzuhaengen."""
+        /mnt/musik_bilder/library-Mount-Verfuegbarkeit abzuhaengen."""
         fake_prod = tmp_path / "library"
         fake_prod.mkdir()
         real_default = rpam.DEFAULT_PRODUCTION_ROOT
@@ -202,6 +202,16 @@ class TestPathSafety:
 
     def test_regular_file_within_root_accepted(self, tagged_m4a, isolated_artist_dir):
         assert rpam.validate_file_within_root(tagged_m4a, isolated_artist_dir) is True
+
+    def test_default_production_root_matches_current_production_library(self):
+        """Regressions-Tripwire (2026-09-02): DEFAULT_PRODUCTION_ROOT war
+        veraltet (/mnt/4tb/library, historischer Pfad - config.py::Config.
+        LIBRARY_DIR ist inzwischen /mnt/musik_bilder/library, /mnt/4tb/
+        wird nur noch fuer BACKUP_DEST_DIR verwendet). Ein veralteter Pfad
+        wuerde den automatischen Post-Run-Safety-Check stillschweigend
+        wirkungslos machen (production_root.exists() waere False, der
+        Vergleich liefe nie), ohne dass dies auffaellt."""
+        assert rpam.DEFAULT_PRODUCTION_ROOT == Path("/mnt/musik_bilder/library")
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1148,3 +1158,77 @@ class TestMainIntegration:
         assert summary["errors"] == 0
         assert summary["files_processed"] == 1
         assert summary["directory_structure_changes"] == 0
+
+    @pytest.mark.asyncio
+    async def test_log_written_to_fixed_persistent_path_under_log_dir(
+        self, isolated_artist_dir, tagged_m4a, monkeypatch
+    ):
+        """Nutzer-Wunsch (2026-09-02): eine feste Log-Datei
+        (Config.LOG_DIR/'script.log', analog zu logs/bot.log) statt einer
+        neuen zeit-gestempelten Datei pro Lauf - damit ein durchgehendes
+        tail -f moeglich ist, unabhaengig davon, welcher Artist gerade
+        verarbeitet wird."""
+        stub_processor = make_processor_stub()
+        stub_processor.aclose = AsyncMock(return_value=None)
+        stub_processor.cleanup = Mock(return_value=None)
+
+        monkeypatch.setattr(rpam, "EnhancedMetadataProcessor", lambda config: stub_processor)
+        monkeypatch.setattr(rpam, "MusicBrainzClient", lambda: Mock())
+        monkeypatch.setattr(rpam, "LastFMClient", lambda: Mock())
+        monkeypatch.setattr(
+            sys, "argv",
+            [
+                "reprocess_artist_metadata.py",
+                "--input", str(isolated_artist_dir),
+                "--dry-run",
+                "--no-production-check",
+            ],
+        )
+
+        expected_log_path = rpam.Config.LOG_DIR / "script.log"
+
+        summary = await rpam.main()
+
+        assert summary["log"] == str(expected_log_path)
+        assert expected_log_path.exists()
+        content = expected_log_path.read_text(encoding="utf-8")
+        assert isolated_artist_dir.name in content
+        assert "🚀 MusicBot Metadata Reprocessing Tool" in content
+
+    @pytest.mark.asyncio
+    async def test_second_run_appends_to_same_log_file_instead_of_new_file(
+        self, isolated_artist_dir, tagged_m4a, monkeypatch
+    ):
+        """Zwei aufeinanderfolgende Laeufe muessen dieselbe Datei anhaengen
+        (nicht ueberschreiben, nicht je eine eigene neue Datei erzeugen) -
+        das ist der eigentliche Zweck einer 'festen' Log-Datei."""
+        stub_processor = make_processor_stub()
+        stub_processor.aclose = AsyncMock(return_value=None)
+        stub_processor.cleanup = Mock(return_value=None)
+
+        monkeypatch.setattr(rpam, "EnhancedMetadataProcessor", lambda config: stub_processor)
+        monkeypatch.setattr(rpam, "MusicBrainzClient", lambda: Mock())
+        monkeypatch.setattr(rpam, "LastFMClient", lambda: Mock())
+        monkeypatch.setattr(
+            sys, "argv",
+            [
+                "reprocess_artist_metadata.py",
+                "--input", str(isolated_artist_dir),
+                "--dry-run",
+                "--no-production-check",
+            ],
+        )
+
+        log_path = rpam.Config.LOG_DIR / "script.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        marker = "MARKER-VON-VORHERIGEM-LAUF-BLEIBT-ERHALTEN"
+        with open(log_path, "a", encoding="utf-8") as fh:
+            fh.write(marker + "\n")
+
+        await rpam.main()
+
+        content = log_path.read_text(encoding="utf-8")
+        assert marker in content, (
+            "Ein neuer Lauf darf die bestehende Log-Historie nicht "
+            "ueberschreiben, sondern muss anhaengen."
+        )
