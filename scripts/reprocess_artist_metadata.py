@@ -374,6 +374,44 @@ def genre_would_downgrade(before_genre_tag: list, genres_result) -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Produzenten-Credit-Bereinigung (Phase 1, 2026-09-02, Nutzer-Fund)
+# ─────────────────────────────────────────────────────────────────────────
+
+# Geklammerte Form ("(prod. by X)", "(prod X)") - deckungsgleich zur
+# Produktions-Regel in utils/youtube_parser.py::_clean_title_suffixes().
+_PRODUCER_CREDIT_PAREN_PATTERN = re.compile(
+    r"\s*\(\s*prod\.?\s*(?:by\s+)?[^)]*\)", re.IGNORECASE
+)
+# Klammerlose, trennerlose Form am Titelende ("'ADLIBS' prod. Safecall777")
+# - Live-Fund 2026-09-02 (Nutzer-Report, Track "makko - \"ADLIBS\" prod.
+# Safecall777"): WEDER die geklammerte Form oben NOCH die in
+# _clean_title_suffixes() zusaetzlich vorhandene Bindestrich-Form
+# ("- prod...") erkennen dieses Muster - per echtem
+# utils.youtube_parser.parse_youtube_title()-Aufruf verifiziert, dass
+# selbst die volle Download-Pipeline diesen Titel unveraendert liesse
+# (kein Klammer-/Bindestrich-Trenner vor "prod." vorhanden). Eigenstaendiger
+# Fund, nicht in dieser Phase in der Produktionslogik behoben (siehe
+# docs/FINDINGS_INDEX.md) - hier nur fuer das Reprocessing-Tool selbst
+# ergaenzt. \bprod\b mit zwingendem "."/Whitespace danach verhindert
+# Fehltreffer in Woertern wie "Producer"/"Production".
+_PRODUCER_CREDIT_BARE_PATTERN = re.compile(
+    r"\s*[-–—]?\s*\bprod\.?\s+(?:by\s+)?\S.*$", re.IGNORECASE
+)
+
+
+def strip_producer_credit(title: str) -> str:
+    """Entfernt einen abschliessenden Produzenten-Credit aus dem TITEL
+    selbst (anders als strip_remix_suffix_for_album() unten, das nur den
+    Album-Fallback betrifft) - '\"ADLIBS\" prod. Safecall777' -> '\"ADLIBS\"'.
+    Deckt sowohl die geklammerte als auch die klammerlose/trennerlose Form
+    ab. Bleibt am Ende nichts Sinnvolles uebrig, wird der Original-Titel
+    unveraendert zurueckgegeben - kein leerer Titel."""
+    cleaned = _PRODUCER_CREDIT_PAREN_PATTERN.sub("", title)
+    cleaned = _PRODUCER_CREDIT_BARE_PATTERN.sub("", cleaned).strip()
+    return cleaned or title
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Album-Fallback ohne Remix-Zusatz (Phase 1, 2026-09-02, Nutzer-Fund)
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -543,6 +581,7 @@ async def process_file(
         clean_title = processor.title_cleaner.light_title_cleanup(
             existing_title, final_artist
         )
+        clean_title = strip_producer_credit(clean_title)
         search_title = processor.title_cleaner.build_search_title(
             parsed_title=None, original_title=clean_title, final_artist=final_artist
         )

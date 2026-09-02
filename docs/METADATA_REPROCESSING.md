@@ -206,6 +206,20 @@ Produktions-Library können je nach letztem Tagging-Zeitpunkt beides
 enthalten. Liefert die frische Bestimmung gleich viele oder mehr Werte,
 greift der Schutz nicht — eine echte Verbesserung wird normal geschrieben.
 
+## 8b. Produzenten-Credit-Bereinigung (Phase 1, 2026-09-02)
+
+`strip_producer_credit()` entfernt einen abschliessenden Produzenten-
+Credit direkt aus dem TITEL selbst (anders als der Album-Fallback in
+Abschnitt 8a, der nur den Album-Wert betrifft) —
+`'"ADLIBS" prod. Safecall777'` → `'"ADLIBS"'`. Deckt sowohl die
+geklammerte Form (`"(prod. by X)"`) als auch die klammerlose,
+trennerlose Form ab. Live-Fund: selbst `utils.youtube_parser.
+parse_youtube_title()` (die volle Download-Pipeline) erkennt die
+klammerlose Form nicht — ein eigenständiger, bestehender Fund in der
+Produktionslogik, der hier bewusst NUR für dieses Reprocessing-Tool
+behoben wurde (siehe `docs/FINDINGS_INDEX.md`). Bleibt nach dem Strip
+nichts Sinnvolles übrig, wird der Originaltitel unverändert verwendet.
+
 ## 9. Title Cleaning / Dateinamen-Sicherheit
 
 Ein Rename findet **ausschliesslich** innerhalb desselben

@@ -857,6 +857,132 @@ class TestGenreDowngradeProtection:
         assert rpam.audio_essence_md5(tagged_m4a) == before_hash
 
 
+class TestProducerCreditStrippedFromTitle:
+    """
+    Nutzer-Fund (2026-09-02, Live-Testlauf Artist 'makko', Track '\"ADLIBS\"
+    prod. Safecall777'): der Titel-Tag behielt den Produzenten-Credit
+    unveraendert. Verifiziert per echtem
+    utils.youtube_parser.parse_youtube_title()-Aufruf: selbst die volle
+    Download-Pipeline liesse diesen exakten Titel unveraendert (die dort
+    vorhandene _clean_title_suffixes()-Regel erkennt nur geklammerte
+    "(prod...)" oder Bindestrich-getrennte "- prod..."-Form, nicht die hier
+    vorliegende klammerlose, trennerlose Form) - eigenstaendiger,
+    bestehender Fund in der Produktionslogik, hier bewusst NUR fuer das
+    Reprocessing-Tool selbst behoben (siehe docs/FINDINGS_INDEX.md).
+    """
+
+    @pytest.mark.asyncio
+    async def test_bare_producer_credit_stripped_from_title_tag(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        audio = MP4(tagged_m4a)
+        audio["©nam"] = ['"ADLIBS" prod. Safecall777']
+        audio.save()
+
+        processor = make_processor_stub()
+
+        result = await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        after = MP4(tagged_m4a)
+        assert after["©nam"] == ['"ADLIBS"']
+        assert result["changes"]["title"] == {
+            "before": ['"ADLIBS" prod. Safecall777'], "after": ['"ADLIBS"'],
+        }
+
+    @pytest.mark.asyncio
+    async def test_parenthesized_producer_credit_stripped_from_title_tag(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        audio = MP4(tagged_m4a)
+        audio["©nam"] = ["Mama (prod. by Drumla)"]
+        audio.save()
+        # "Mama" enthaelt (anders als '"ADLIBS"') keine dateinamens-
+        # illegalen Zeichen - der Rename findet hier also tatsaechlich
+        # statt (bereits separat getestet). Dateiname vorab angleichen,
+        # damit dieser Test ausschliesslich den Titel-Tag prueft.
+        renamed = tagged_m4a.with_name("2024 - Mama.m4a")
+        tagged_m4a.rename(renamed)
+
+        processor = make_processor_stub()
+
+        await rpam.process_file(
+            renamed, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        after = MP4(renamed)
+        assert after["©nam"] == ["Mama"]
+
+    @pytest.mark.asyncio
+    async def test_title_without_producer_credit_unchanged(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        processor = make_processor_stub()
+
+        result = await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        assert "title" not in result["changes"]
+
+    def test_strip_producer_credit_helper_directly(self):
+        assert (
+            rpam.strip_producer_credit('"ADLIBS" prod. Safecall777')
+            == '"ADLIBS"'
+        )
+        assert (
+            rpam.strip_producer_credit("Mama (prod. by Drumla)") == "Mama"
+        )
+        assert (
+            rpam.strip_producer_credit("Mama (prod Drumla)") == "Mama"
+        )
+        assert rpam.strip_producer_credit("Blauer Tag") == "Blauer Tag"
+
+    def test_producer_word_boundary_does_not_false_positive(self):
+        """Sicherheitsfall: 'Producer'/'Production' als Teil eines echten
+        Wortes duerfen nicht als Produzenten-Credit fehlinterpretiert
+        werden (\\bprod\\b verlangt einen echten Wortabschluss direkt
+        gefolgt von '.' oder Whitespace)."""
+        assert (
+            rpam.strip_producer_credit("Producer's Dream")
+            == "Producer's Dream"
+        )
+        assert (
+            rpam.strip_producer_credit("Production Day")
+            == "Production Day"
+        )
+
+    @pytest.mark.asyncio
+    async def test_dry_run_prediction_matches_live_producer_credit_strip(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        audio = MP4(tagged_m4a)
+        audio["©nam"] = ['"ADLIBS" prod. Safecall777']
+        audio.save()
+        before_hash = rpam.audio_essence_md5(tagged_m4a)
+
+        processor = make_processor_stub()
+
+        result = await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=True,
+        )
+
+        assert result["changes"]["title"] == {
+            "before": ['"ADLIBS" prod. Safecall777'], "after": ['"ADLIBS"'],
+        }
+        assert MP4(tagged_m4a)["©nam"] == ['"ADLIBS" prod. Safecall777']
+        assert rpam.audio_essence_md5(tagged_m4a) == before_hash
+
+
 class TestAlbumFallbackStripsRemixSuffix:
     """
     Nutzer-Fund (2026-09-02, Live-Testlauf Artist 'Möwe'): fehlt ein
