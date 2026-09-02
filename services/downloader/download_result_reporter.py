@@ -305,7 +305,18 @@ class DownloadResultReporter:
             lyrics_line = f"📜 Lyrics   : {'✅ verfügbar' if lyrics_ok else '❌ fehlt'}"
             loud_line = f"🔊 Loudness : {'✅ normalisiert' if loud_ok else '❌ fehlt'}"
 
-        header = "🎉 Download erfolgreich abgeschlossen!"
+        # Download-Control-Center 2026-09-02: ein per ❌-Button abgebrochener
+        # Playlist-Download hat weiterhin result["success"] == True (die
+        # bereits VOR dem Abbruch fertig heruntergeladenen Tracks sind
+        # echte Erfolge, siehe _process_playlist_download()) - der Header/
+        # die Tracks-Zeile machen die Teil-Fertigstellung trotzdem sichtbar,
+        # statt einen vollen Erfolg vorzutaeuschen.
+        was_cancelled = bool(result.get("cancelled"))
+        header = (
+            "🛑 Download abgebrochen"
+            if was_cancelled
+            else "🎉 Download erfolgreich abgeschlossen!"
+        )
         meta = []
         if not is_pl:
             meta.append(f"🎵 Titel    : {title}")
@@ -316,7 +327,8 @@ class DownloadResultReporter:
         ]
         if is_pl:
             ok = sum(1 for t in tracks if t.get("success"))
-            meta.append(f"🎵 Tracks   : {ok}/{len(tracks)} erfolgreich")
+            tracks_label = "abgebrochen bei" if was_cancelled else "erfolgreich"
+            meta.append(f"🎵 Tracks   : {ok}/{len(tracks)} {tracks_label}")
         meta.append(f"📡 Quelle   : {src_label}")
         meta.append(f"⏱️ Dauer    : {duration}")
 

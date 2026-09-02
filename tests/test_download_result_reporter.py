@@ -199,6 +199,46 @@ class TestBuildPlaylistSummaryMessage:
         assert '"01 - x.mp3"' not in sent_text
 
 
+class TestBuildFinalSummaryMessageCancelled:
+    """Download-Control-Center 2026-09-02: ein per ❌-Button abgebrochener
+    Playlist-Download hat weiterhin result["success"] == True (die vor dem
+    Abbruch fertig heruntergeladenen Tracks sind echte Erfolge) - Header
+    und Tracks-Zeile machen die Teil-Fertigstellung trotzdem sichtbar."""
+
+    def test_cancelled_playlist_shows_abort_header(self, reporter):
+        result = {
+            "type": "playlist",
+            "tracks": [
+                {"success": True, "artist": "A", "album": "B", "library_path": "/lib/A/1.mp3"},
+                {"success": True, "artist": "A", "album": "B", "library_path": "/lib/A/2.mp3"},
+            ],
+            "source": "youtube",
+            "cancelled": True,
+        }
+
+        sent_text = reporter.build_final_summary_message(result, {}, {})
+
+        assert "🛑 Download abgebrochen" in sent_text
+        assert "🎉 Download erfolgreich abgeschlossen!" not in sent_text
+        assert "Tracks   : 2/2 abgebrochen bei" in sent_text
+
+    def test_non_cancelled_playlist_keeps_success_header(self, reporter):
+        result = {
+            "type": "playlist",
+            "tracks": [
+                {"success": True, "artist": "A", "album": "B", "library_path": "/lib/A/1.mp3"},
+            ],
+            "source": "youtube",
+            "cancelled": False,
+        }
+
+        sent_text = reporter.build_final_summary_message(result, {}, {})
+
+        assert "🎉 Download erfolgreich abgeschlossen!" in sent_text
+        assert "🛑 Download abgebrochen" not in sent_text
+        assert "Tracks   : 1/1 erfolgreich" in sent_text
+
+
 class TestBuildFinalSummaryMessage:
     def test_single_track_message_contains_core_fields(self, reporter):
         result = {
