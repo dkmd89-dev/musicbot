@@ -15,6 +15,7 @@ dass 2 oder 3 automatisch LEARNED bedeutet."
 """
 
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -63,11 +64,12 @@ def _run(coro):
 
 
 def _read_genre_entry(mapping_dir: Path, artist: str):
-    path = mapping_dir / "auto_learned_genre.yaml"
+    # ARCH-022: auto_learned_genre.yaml -> auto_learned_genre.json.
+    path = mapping_dir / "auto_learned_genre.json"
     if not path.exists():
         return None
     with open(path) as f:
-        data = yaml.safe_load(f) or {}
+        data = json.load(f) or {}
     return data.get("ARTIST_GENRE_MAP", {}).get(artist)
 
 
@@ -388,7 +390,7 @@ class TestNoahRegression:
                 )
             )
 
-        assert not (mapping_dir / "auto_learned_genre.yaml").exists(), (
-            "Reine Feature-Artist-Beobachtungen duerfen auto_learned_genre.yaml "
+        assert not (mapping_dir / "auto_learned_genre.json").exists(), (
+            "Reine Feature-Artist-Beobachtungen duerfen auto_learned_genre.json "
             "niemals anlegen"
         )
