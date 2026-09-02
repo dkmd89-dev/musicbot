@@ -787,6 +787,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
 
             # --- 15b. Loudness-Normalisierung ---
             self.logger.info("🔊 1️⃣5️⃣b Normalisiere Lautheit (FFmpeg loudnorm)...")
+            _loudness_ok = False
             try:
                 from utils.audio_enhancer import AudioEnhancer
 
@@ -921,6 +922,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 lyrics_source=lyrics_source,
                 cover_art=cover_art,
                 cover_embedded=bool(cover_art),
+                loudness_normalized=_loudness_ok,
                 genres=(
                     {
                         "primary": genres_result.primary,

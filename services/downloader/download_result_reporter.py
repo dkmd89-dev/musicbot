@@ -129,40 +129,60 @@ class DownloadResultReporter:
         """
         Abschluss-Meldung für eine "echte" Playlist (nicht der Single-Track-
         Wrapper-Fall, der stattdessen über build_final_summary_message läuft).
+
+        Nutzer-Redesign 2026-09-02: gleiches Format wie
+        build_final_summary_message() (siehe dortiger Docstring) -
+        "Lyrics gefunden"/"Loudness normalisiert" kommen bewusst direkt aus
+        `successful`, nicht aus einem geteilten, nie zurückgesetzten
+        Processor-Zähler.
         """
         first  = successful[0]
         artist = first.get("artist", "Unbekannt")
         album  = first.get("album", "Unbekannt")
         year   = str(first.get("year", "")) or "N/A"
         genres = self.collect_playlist_genres(successful)
-        stats  = self.extract_stats_from_result({"tracks": successful}, successful)
         lib    = successful[-1].get("library_path", "")
 
         n  = max(len(successful), 1)
-        an = stats.get("successful_normalizations", 0)
-        gm = stats.get("successful_genre_mappings", 0)
-        lf = stats.get("lyrics_found", 0)
-        ch = stats.get("cache_hits", 0)
-        ct = ch + stats.get("cache_misses", 0)
+        lf = sum(1 for t in successful if t.get("lyrics_available"))
+        ln = sum(1 for t in successful if t.get("loudness_normalized"))
+        cover_ok = any(t.get("cover_embedded") for t in successful)
+        lyrics_ok = lf > 0
+        loud_ok = ln > 0
 
-        def pct(p, w): return f"{int(p / max(w,1) * 100)}%"
+        def stat_pct(count: int, total: int) -> str:
+            return f"{int(count / max(total, 1) * 100)}%"
 
-        genre_str = "\n".join(f"   • {g}" for g in genres) if genres else "   • Keine"
-        folder    = str(Path(lib).parent) if lib else "N/A"
+        genre_lines = [f"• {g}" for g in genres] if genres else ["• Keine"]
+        genre_str   = "\n".join(genre_lines)
+
+        if lib:
+            lp = Path(lib)
+            fname = lp.name
+            fdir  = str(lp.parent)
+        else:
+            fname = "N/A"
+            fdir  = "N/A"
 
         msg = (
-            "✅ Playlist erfolgreich heruntergeladen!\n\n"
+            "🎉 Download erfolgreich abgeschlossen!\n\n"
             f"🎤 Künstler : {artist}\n"
             f"💿 Album    : {album}\n"
             f"📅 Jahr     : {year}\n"
-            f"🎵 Tracks   : {len(successful)}/{len(results)}\n\n"
-            f"🏷️ Genres:\n{genre_str}\n\n"
-            "🚀 Processing-Statistiken:\n"
-            f"   ✨ Normalisierungen : {an}/{n} ({pct(an,n)})\n"
-            f"   🏷️ Genre-Mappings   : {gm}/{n} ({pct(gm,n)})\n"
-            f"   📜 Lyrics gefunden  : {lf}/{n} ({pct(lf,n)})\n"
-            f"   💾 Cache-Treffer    : {ch}/{ct} ({pct(ch,ct)})\n\n"
-            f"📂 Bibliothek: {folder}"
+            f"🎵 Tracks   : {len(successful)}/{len(results)} erfolgreich\n"
+            "📡 Quelle   : 📺 YouTube\n\n"
+            f"🏷️ Genres\n{genre_str}\n\n"
+            "📊 Verarbeitung\n"
+            f"📜 Lyrics gefunden       : {lf}/{n} · {stat_pct(lf, n)}\n"
+            f"🔊 Loudness normalisiert : {ln}/{n} · {stat_pct(ln, n)}\n\n"
+            "✨ Ergebnis\n"
+            f"🖼️ Cover    : {'✅ eingebettet' if cover_ok else '❌ fehlt'}\n"
+            f"📜 Lyrics   : {'✅ verfügbar' if lyrics_ok else '❌ fehlt'}\n"
+            f"🔊 Loudness : {'✅ normalisiert' if loud_ok else '❌ fehlt'}\n\n"
+            "🎵 Beispiel-Track\n"
+            f'"{fname}"\n\n'
+            "📂 Speicherort\n"
+            f'"{fdir}"'
         )
         return msg
 
@@ -172,12 +192,24 @@ class DownloadResultReporter:
         processing_stats: Dict[str, Any],
         duplicate_stats: Dict[str, Any],
     ) -> str:
-        """Baut die vollständige Abschluss-Zusammenfassung."""
+        """
+        Baut die vollständige Abschluss-Zusammenfassung.
+
+        Nutzer-Redesign 2026-09-02: liest "Lyrics gefunden"/"Loudness
+        normalisiert" bewusst NICHT aus `processing_stats` (Parameter, aus
+        `EnhancedMetadataProcessor.processing_stats` - ein Instanzattribut,
+        das seit Bot-Start akkumuliert und nie zurückgesetzt wird,
+        `reset_statistics()` existiert, wird aber nirgends aufgerufen).
+        Stattdessen werden beide Werte direkt aus den Tracks/dem Ergebnis
+        DIESES Downloads berechnet - dadurch ist die Meldung immer nur für
+        den gerade abgeschlossenen Download aktuell, unabhängig vom
+        Lebenszyklus des geteilten Processors (der für andere Konsumenten,
+        z.B. eine künftige Bot-Statusanzeige, bewusst kumulativ bleiben
+        darf).
+        """
         self.logger.info("📝 [SUMMARY] Erstelle Abschluss-Zusammenfassung...")
 
         PLACEHOLDER = {None, "", "Unbekannt", "Unknown", "Unknown Artist", "Playlist"}
-
-        def pct(p, w): return f"{int(p / max(int(w), 1) * 100)}%"
 
         tracks = result.get("tracks", [])
         is_pl  = result.get("type") == "playlist"
@@ -200,24 +232,19 @@ class DownloadResultReporter:
         # Genres filtern
         raw_genres = self.collect_playlist_genres(tracks) if is_pl and tracks else self.extract_genres_from_data(result.get("genres"))
 
-        # Stats
-        eff = dict(processing_stats) if processing_stats else {}
-        if not any(eff.values()):
-            eff = self.extract_stats_from_result(result, tracks)
+        # "Verarbeitung"-Zeilen: ausschließlich aus den Tracks/dem Ergebnis
+        # DIESES Downloads, siehe Docstring oben.
+        if is_pl and tracks:
+            n  = len(tracks)
+            lf = sum(1 for t in tracks if t.get("lyrics_available"))
+            ln = sum(1 for t in tracks if t.get("loudness_normalized"))
+        else:
+            n  = 1
+            lf = 1 if result.get("lyrics_available") else 0
+            ln = 1 if result.get("loudness_normalized") else 0
 
-        n   = len(tracks) if (is_pl and tracks) else max(eff.get("total_processed", 1), 1)
-        an  = eff.get("successful_normalizations", 0)
-        gm  = eff.get("successful_genre_mappings", 0)
-        lf  = eff.get("lyrics_found", 0)
-        yp  = eff.get("youtube_parser_used", 0)
-        amf = eff.get("artist_map_parsing_fallback", 0)
-        ch  = eff.get("cache_hits", 0)
-        ct  = ch + eff.get("cache_misses", 0)
-
-        # Sinnvolle Minimal-Stats wenn alles 0
-        if an == 0 and gm == 0 and n == 1:
-            if artist and artist not in PLACEHOLDER: an = 1
-            if raw_genres: gm = 1
+        def stat_pct(count: int, total: int) -> str:
+            return f"{int(count / max(total, 1) * 100)}%"
 
         # Pfad
         lib_path = result.get("library_path") if not is_pl else (tracks[-1].get("library_path") if tracks else None)
@@ -230,64 +257,61 @@ class DownloadResultReporter:
             fname = "N/A"
             fdir  = "N/A"
 
-        # Lyrics / Cover
+        # Ergebnis-Flags (mind. ein Track hat's, wie bisher bei "any")
         if is_pl and tracks:
             lyrics_ok = any(t.get("lyrics_available") for t in tracks)
             cover_ok  = any(t.get("cover_embedded") for t in tracks)
+            loud_ok   = any(t.get("loudness_normalized") for t in tracks)
         else:
-            lyrics_ok = result.get("lyrics_available", False) or lf > 0
+            lyrics_ok = bool(result.get("lyrics_available")) or lf > 0
             cover_ok  = bool(result.get("cover_embedded"))
+            loud_ok   = bool(result.get("loudness_normalized"))
 
         src_label = "📺 YouTube"
 
-        genre_lines = [f"   • {g}" for g in raw_genres] if raw_genres else ["   • Keine"]
+        genre_lines = [f"• {g}" for g in raw_genres] if raw_genres else ["• Keine"]
 
-        # Nachricht
+        header = "🎉 Download erfolgreich abgeschlossen!"
+        meta = []
+        if not is_pl:
+            meta.append(f"🎵 Titel    : {title}")
+        meta += [
+            f"🎤 Künstler : {artist}",
+            f"💿 Album    : {album}",
+            f"📅 Jahr     : {year}",
+        ]
         if is_pl:
             ok = sum(1 for t in tracks if t.get("success"))
-            header = "✅ Playlist erfolgreich heruntergeladen!"
-            meta   = [
-                f"🎤 Künstler : {artist}",
-                f"💿 Album    : {album}",
-                f"📅 Jahr     : {year}",
-                f"🎵 Tracks   : {ok}/{len(tracks)}",
-                f"📡 Quelle   : {src_label}",
-            ]
-        else:
-            header = "✅ Download erfolgreich!"
-            meta   = [
-                f"🎵 Titel    : {title}",
-                f"🎤 Künstler : {artist}",
-                f"💿 Album    : {album}",
-                f"📅 Jahr     : {year}",
-                f"📡 Quelle   : {src_label}",
-            ]
+            meta.append(f"🎵 Tracks   : {ok}/{len(tracks)} erfolgreich")
+        meta.append(f"📡 Quelle   : {src_label}")
 
         stats_lines = [
             "",
-            "🚀 Processing-Statistiken:",
-            f"   ✨ Normalisierungen  : {an}/{n} ({pct(an,n)})",
-            f"   🏷️ Genre-Mappings    : {gm}/{n} ({pct(gm,n)})",
-            f"   📜 Lyrics gefunden   : {lf}/{n} ({pct(lf,n)})",
+            "📊 Verarbeitung",
+            f"📜 Lyrics gefunden       : {lf}/{n} · {stat_pct(lf, n)}",
+            f"🔊 Loudness normalisiert : {ln}/{n} · {stat_pct(ln, n)}",
         ]
-        stats_lines += [
-            f"   📺 YouTube-Parser    : {yp}/{n} ({pct(yp,n)})",
-            f"   🎯 Artist-Map-Fbk    : {amf}/{n} ({pct(amf,n)})",
-        ]
-        stats_lines.append(f"   💾 Cache-Trefferquote: {ch}/{ct} ({pct(ch,ct)})")
+
+        example_label = "🎵 Beispiel-Track" if is_pl else "🎵 Datei"
 
         lines = (
             [header, ""]
             + meta
-            + ["", "🏷️ Genres:"]
+            + ["", "🏷️ Genres"]
             + genre_lines
             + stats_lines
             + [
                 "",
-                f"🖼️ Cover eingebettet : {'✅ Ja' if cover_ok else '❌ Nein'}",
-                f"📜 Lyrics verfügbar  : {'✅ Ja' if lyrics_ok else '❌ Nein'}",
-                f"📄 Datei : {fname}",
-                f"📍 Pfad  : {fdir}",
+                "✨ Ergebnis",
+                f"🖼️ Cover    : {'✅ eingebettet' if cover_ok else '❌ fehlt'}",
+                f"📜 Lyrics   : {'✅ verfügbar' if lyrics_ok else '❌ fehlt'}",
+                f"🔊 Loudness : {'✅ normalisiert' if loud_ok else '❌ fehlt'}",
+                "",
+                example_label,
+                f'"{fname}"',
+                "",
+                "📂 Speicherort",
+                f'"{fdir}"',
             ]
         )
 

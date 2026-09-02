@@ -71,6 +71,9 @@ class DownloadResult:
     lyrics_available: bool = False
     lyrics_source: Optional[str] = None
     cover_embedded: bool = False
+    # Siehe services/metadata/models.py::MetadataResult.loudness_normalized
+    # fuer die Begruendung.
+    loudness_normalized: bool = False
 
     # Status-Flags
     is_duplicate: bool = False
@@ -113,6 +116,7 @@ class DownloadResult:
             "lyrics_available": self.lyrics_available,
             "lyrics_source": self.lyrics_source,
             "cover_embedded": self.cover_embedded,
+            "loudness_normalized": self.loudness_normalized,
             "is_duplicate": self.is_duplicate,
             "from_cache": self.from_cache,
             "renamed_due_to_conflict": self.renamed_due_to_conflict,

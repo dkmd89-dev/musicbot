@@ -189,11 +189,11 @@ class TestBuildFinalSummaryMessage:
 
         sent_text = reporter.build_final_summary_message(result, {}, {})
 
-        assert "Download erfolgreich!" in sent_text
+        assert "🎉 Download erfolgreich abgeschlossen!" in sent_text
         assert "Some Title" in sent_text
         assert "Some Artist" in sent_text
         assert "📺 YouTube" in sent_text
-        assert "Some Title.mp3" in sent_text
+        assert '"Some Title.mp3"' in sent_text
 
     def test_playlist_type_uses_playlist_header_and_track_counts(self, reporter):
         result = {
@@ -208,8 +208,49 @@ class TestBuildFinalSummaryMessage:
 
         sent_text = reporter.build_final_summary_message(result, {}, {})
 
-        assert "Playlist erfolgreich heruntergeladen!" in sent_text
-        assert "Tracks   : 2/3" in sent_text
+        assert "🎉 Download erfolgreich abgeschlossen!" in sent_text
+        assert "Tracks   : 2/3 erfolgreich" in sent_text
+
+    def test_loudness_and_lyrics_stats_come_from_current_tracks_not_shared_processor_stats(
+        self, reporter
+    ):
+        """Nutzer-Redesign 2026-09-02: processing_stats (der geteilte,
+        nie zurueckgesetzte EnhancedMetadataProcessor-Zaehler) darf die
+        "Lyrics gefunden"/"Loudness normalisiert"-Zeilen nicht beeinflussen
+        - nur die tatsaechlichen Tracks DIESES Downloads zaehlen."""
+        result = {
+            "type": "playlist",
+            "tracks": [
+                {
+                    "success": True,
+                    "artist": "A",
+                    "album": "B",
+                    "library_path": "/lib/A/1.mp3",
+                    "lyrics_available": True,
+                    "loudness_normalized": True,
+                },
+                {
+                    "success": True,
+                    "artist": "A",
+                    "album": "B",
+                    "library_path": "/lib/A/2.mp3",
+                    "lyrics_available": False,
+                    "loudness_normalized": True,
+                },
+            ],
+            "source": "youtube",
+        }
+        # Absichtlich stark veraltete/irrefuehrende Werte - duerfen NICHT
+        # in der Meldung landen.
+        stale_processing_stats = {"lyrics_found": 999, "total_processed": 999}
+
+        sent_text = reporter.build_final_summary_message(
+            result, stale_processing_stats, {}
+        )
+
+        assert "📜 Lyrics gefunden       : 1/2 · 50%" in sent_text
+        assert "🔊 Loudness normalisiert : 2/2 · 100%" in sent_text
+        assert "999" not in sent_text
 
     def test_missing_library_path_shows_na_without_crash(self, reporter):
         result = {"title": "T", "artist": "A", "source": "youtube"}
