@@ -189,3 +189,65 @@ class TestArtistnorm001FeatFtWordBoundaryFix:
         # abgedeckt, hier zusaetzlich ohne Punkt und in Grossschreibung.
         assert normalizer.normalize("Artist FT Other") == "Artist, Other"
         assert normalizer.normalize("Artist ft Other") == "Artist, Other"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# ARCH-022: atomares Schreiben in auto_learned_artist_aliases.yaml
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestSaveAutoLearnedEntryAtomicWrite:
+    """
+    _save_auto_learned_entry() schrieb vorher direkt mit open(mode="w")
+    (kein tmp+replace) - ein Absturz mitten im Schreiben haette die Datei
+    korrumpieren/halb schreiben koennen. Jetzt atomar, analog zu
+    services/metadata/auto_learn.py::AutoLearnManager._write_yaml_atomic().
+    """
+
+    def test_add_auto_learned_alias_writes_to_new_filename(self, normalizer, mapping_dir):
+        assert normalizer.add_auto_learned_alias("Raw Channel", "Canonical Artist")
+
+        aliases_file = mapping_dir / "auto_learned_artist_aliases.yaml"
+        assert aliases_file.exists()
+        import yaml
+
+        with open(aliases_file) as f:
+            data = yaml.safe_load(f)
+        assert data["auto_learned"]["Raw Channel"] == "Canonical Artist"
+
+    def test_interrupted_write_leaves_previous_valid_yaml_untouched(
+        self, normalizer, mapping_dir, monkeypatch
+    ):
+        aliases_file = mapping_dir / "auto_learned_artist_aliases.yaml"
+
+        # Erster, erfolgreicher Schreibvorgang - reale Datei auf Platte.
+        assert normalizer.add_auto_learned_alias("Stable Raw", "Stable Canonical")
+        original_content = aliases_file.read_text(encoding="utf-8")
+
+        # Zweiter Schreibvorgang wird simuliert unterbrochen (Absturz
+        # waehrend yaml.dump()) - analog zum etablierten Muster in
+        # tests/test_auto_learn_invariant_fix.py::TestAtomicWrite. yaml
+        # wird in artist_map.py LOKAL importiert (nicht auf Modulebene),
+        # daher hier direkt das globale yaml-Modul patchen statt
+        # "utils.artist_map.yaml.dump".
+        import yaml as yaml_module
+
+        monkeypatch.setattr(
+            yaml_module,
+            "dump",
+            lambda *a, **kw: (_ for _ in ()).throw(OSError("disk full")),
+        )
+
+        # _save_auto_learned_entry() faengt die Exception selbst ab (kein
+        # Crash) - der Rueckgabewert von add_auto_learned_alias() bleibt
+        # bestehendes, von diesem Fix unabhaengiges Verhalten (prueft nur
+        # den in-memory-Erfolg, nicht den Schreiberfolg) und wird hier
+        # bewusst nicht assertet. Relevant ist ausschliesslich der
+        # Dateizustand danach.
+        normalizer.add_auto_learned_alias("New During Crash", "Crash Canonical")
+
+        # Die Datei muss weiterhin ihren letzten GUELTIGEN Zustand haben.
+        assert aliases_file.read_text(encoding="utf-8") == original_content
+
+        leftover_tmp_files = list(mapping_dir.glob("*.tmp_*"))
+        assert leftover_tmp_files == []

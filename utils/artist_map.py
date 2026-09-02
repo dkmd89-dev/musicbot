@@ -202,7 +202,7 @@ class ArtistNormalizer(SingletonMixin):
 
         # 📚 Datenstrukturen
         self.overrides: Dict[str, str] = {}           # NUR manuell (artist_overrides.json)
-        self.auto_learned: Dict[str, str] = {}        # Automatisch gelernt (auto_learned_artists.yaml)
+        self.auto_learned: Dict[str, str] = {}        # Automatisch gelernt (auto_learned_artist_aliases.yaml)
         self.overrides_normalized: Dict[str, str] = {}
         self.library_artists: Set[str] = set()
         self.artist_trie: Dict = {}
@@ -331,40 +331,44 @@ class ArtistNormalizer(SingletonMixin):
 
     def _load_auto_learned(self) -> Dict[str, str]:
         """
-        Lädt automatisch gelernte Aliase aus auto_learned_artists.yaml
-        
+        Lädt automatisch gelernte Aliase aus auto_learned_artist_aliases.yaml
+
+        ARCH-022: vorher auto_learned_artists.yaml, umbenannt zur
+        Namespace-Trennung von AutoLearnManager.observe_featured_artists()'
+        "featured_artists"-Schluessel, der diese Klasse nie betrifft.
+
         Returns:
             Dict mit raw_name -> canonical_name Mappings
         """
         try:
             import yaml
-            
+
             # Mapping-Verzeichnis bestimmen
             mapping_dir = self.config.mapping_dir or Path("mapping")
-            auto_file = mapping_dir / "auto_learned_artists.yaml"
-            
+            auto_file = mapping_dir / "auto_learned_artist_aliases.yaml"
+
             if not auto_file.exists():
-                self.logger.debug(f"📂 Keine auto_learned_artists.yaml gefunden: {auto_file}")
+                self.logger.debug(f"📂 Keine auto_learned_artist_aliases.yaml gefunden: {auto_file}")
                 return {}
-            
+
             with open(auto_file, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
                 auto_learned = data.get("auto_learned", {})
-                
+
             self.logger.info(f"🧠 {len(auto_learned)} auto-gelernte Aliase geladen")
             return auto_learned
-            
+
         except ImportError:
             self.logger.warning("⚠️ PyYAML nicht installiert, Auto-Learning deaktiviert")
             return {}
         except Exception as e:
-            self.logger.warning(f"⚠️ Fehler beim Laden von auto_learned_artists.yaml: {e}")
+            self.logger.warning(f"⚠️ Fehler beim Laden von auto_learned_artist_aliases.yaml: {e}")
             return {}
 
     def reload_auto_learned(self) -> bool:
         """
-        Lädt die auto_learned_artists.yaml neu (für Runtime-Updates)
-        
+        Lädt die auto_learned_artist_aliases.yaml neu (für Runtime-Updates)
+
         Returns:
             True bei Erfolg, False bei Fehler
         """
@@ -1027,7 +1031,7 @@ class ArtistNormalizer(SingletonMixin):
         return stats
 
     def learn_from_feedback(self, original: str, corrected: Dict):
-        """🧠 Lernt aus manuellen Korrekturen (schreibt in auto_learned_artists.yaml)"""
+        """🧠 Lernt aus manuellen Korrekturen (schreibt in auto_learned_artist_aliases.yaml)"""
         with self._write_lock:
             # Nur in auto_learned speichern, NICHT in overrides!
             if corrected.get("main_artist"):
@@ -1040,27 +1044,59 @@ class ArtistNormalizer(SingletonMixin):
                     self.logger.info(f"🧠 Gelernt aus Feedback: '{raw_name}' → '{canonical_name}'")
 
     def _save_auto_learned_entry(self, raw_name: str, canonical_name: str):
-        """💾 Speichert einen einzelnen Auto-Learned Eintrag"""
+        """💾 Speichert einen einzelnen Auto-Learned Eintrag.
+
+        ARCH-022: schreibt jetzt atomar (write-tmp -> rename), analog zu
+        services/metadata/auto_learn.py::AutoLearnManager._write_yaml_atomic() -
+        vorher direktes open(mode="w"), das bei einem Absturz mitten im
+        Schreiben eine korrupte/halb geschriebene Datei haette hinterlassen
+        koennen. Ausserdem jetzt eigene Datei auto_learned_artist_aliases.yaml
+        statt des vorherigen "auto_learned"-Schluessels in der gemeinsam mit
+        AutoLearnManager.observe_featured_artists() genutzten
+        auto_learned_artists.yaml (Namespace-Trennung, siehe dortiger
+        "featured_artists"-Schluessel, der von dieser Klasse nie gelesen
+        wird).
+
+        WICHTIG: kein eigenes self._write_lock hier - beide Aufrufer
+        (learn_from_feedback(), add_auto_learned_alias()) halten den Lock
+        bereits, bevor sie diese Methode aufrufen (Lock ist ein
+        threading.Lock, nicht reentrant - ein zusaetzliches Lock hier
+        wuerde deadlocken)."""
         try:
             import yaml
-            
+
             mapping_dir = self.config.mapping_dir or Path("mapping")
-            auto_file = mapping_dir / "auto_learned_artists.yaml"
+            auto_file = mapping_dir / "auto_learned_artist_aliases.yaml"
             auto_file.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Bestehende Daten laden
             data = {"auto_learned": {}}
             if auto_file.exists():
                 with open(auto_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f) or {"auto_learned": {}}
-            
+
             # Neuen Eintrag hinzufügen
             data["auto_learned"][raw_name] = canonical_name
-            
-            # Speichern
-            with open(auto_file, "w", encoding="utf-8") as f:
-                yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=True)
-                
+
+            # Atomar speichern (write-tmp -> rename)
+            tmp_path = auto_file.with_suffix(f".tmp_{int(time.time() * 1000)}")
+            try:
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    yaml.dump(
+                        data,
+                        f,
+                        allow_unicode=True,
+                        default_flow_style=False,
+                        sort_keys=True,
+                    )
+                tmp_path.replace(auto_file)
+            except Exception:
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise
+
         except ImportError:
             self.logger.warning("⚠️ PyYAML nicht installiert, kann nicht speichern")
         except Exception as e:
