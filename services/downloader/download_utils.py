@@ -1255,8 +1255,18 @@ async def _process_single_download(
 
     def _capture_raw_downloaded_path(status: Dict[str, Any]) -> None:
         nonlocal raw_downloaded_path
-        if status.get("status") == "finished" and status.get("filename"):
-            raw_downloaded_path = status["filename"]
+        # P2-Fund (docs/FINDINGS_INDEX.md, "Hard-Cancel waehrend laufendem
+        # Download - .part-Datei bleibt liegen"): analog zur identischen
+        # Stelle in download_executor.py::download_single_track() - vorher
+        # nur bei status=="finished" erfasst, ein Abbruch/Fehler waehrend
+        # status=="downloading" liess raw_downloaded_path auf None stehen,
+        # obwohl yt-dlp dort bereits real eine ".part"-Datei
+        # (status["tmpfilename"]) geschrieben hat, die der 24h-Start-Sweep
+        # bewusst nie erfasst. Jetzt bei jedem Hook-Aufruf die aktuell
+        # tatsaechlich vorhandene Datei merken.
+        candidate = status.get("tmpfilename") or status.get("filename")
+        if candidate:
+            raw_downloaded_path = candidate
 
     hooked_ydl_opts = {
         **ydl_opts,
