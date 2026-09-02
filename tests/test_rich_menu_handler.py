@@ -221,6 +221,24 @@ class TestCreateDownloadHandler:
         _args, kwargs = mock_download_handler_cls.call_args
         assert kwargs["duplicate_detector"] is handler.duplicate_detector
 
+    def test_creates_handler_with_shared_active_downloads_registry(self, tmp_path):
+        """Download-Control-Center 2026-09-02: DownloadHandler bekommt
+        dieselbe, ueber die gesamte Bot-Laufzeit bestehende
+        ActiveDownloadRegistry-Instanz injiziert (RichMenuHandler baut
+        sie EINMAL in __init__(), nicht pro Download)."""
+        handler, _ = _make_handler(tmp_path)
+        handler.duplicate_detector = Mock()
+        handler.metadata_processor = Mock()
+
+        update = make_update(111)
+        with patch(
+            "handlers.menu.rich_menu_handler.DownloadHandler"
+        ) as mock_download_handler_cls:
+            handler._create_download_handler(update)
+
+        _args, kwargs = mock_download_handler_cls.call_args
+        assert kwargs["active_downloads"] is handler.active_downloads
+
 
 class TestHandleUrlMessage:
     def test_url_processed_immediately_without_active_state(self, tmp_path):

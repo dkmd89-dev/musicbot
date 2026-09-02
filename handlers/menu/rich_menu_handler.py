@@ -31,6 +31,7 @@ from handlers.menu.rich_menu_system import (
     MenuState,
 )
 from klassen.download_handler import DownloadHandler
+from services.downloader.active_downloads import ActiveDownloadRegistry
 from handlers.test_menu_handler import TestMenuHandler
 from handlers.enhanced_logger_menu_handler import EnhancedLoggerMenuHandler
 from handlers.navidrome_menu_handler import NavidromeMenuHandler
@@ -94,6 +95,14 @@ class RichMenuHandler:
         self.status_handler: Optional[EnhancedStatusHandler] = None
         self.backup_handler: Optional[BackupHandler] = None
         self.restart_handler: Optional[BotRestartHandler] = None
+
+        # Download-Control-Center 2026-09-02: EINE prozessweite Registry,
+        # ueber die gesamte Bot-Laufzeit auf diesem (im Gegensatz zu
+        # DownloadHandler pro Update neu erzeugten) Objekt gehalten - siehe
+        # services/downloader/active_downloads.py-Docstring.
+        self.active_downloads = ActiveDownloadRegistry(
+            logger_factory=self.logger_factory
+        )
 
         # State Management
         self.user_states: Dict[int, str] = {}
@@ -789,6 +798,7 @@ class RichMenuHandler:
             duplicate_detector=self.duplicate_detector,
             metadata_processor=self.metadata_processor,
             logger_factory=self.logger_factory,
+            active_downloads=self.active_downloads,
         )
 
     # ====== COMMAND HANDLER ======
