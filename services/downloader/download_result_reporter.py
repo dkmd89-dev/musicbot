@@ -205,9 +205,9 @@ class DownloadResultReporter:
             f"📜 Lyrics   : {'✅ verfügbar' if lyrics_ok else '❌ fehlt'} ({lf}/{n} · {stat_pct(lf, n)})\n"
             f"🔊 Loudness : {'✅ normalisiert' if loud_ok else '❌ fehlt'} ({ln}/{n} · {stat_pct(ln, n)})\n\n"
             "🎵 Beispiel-Track\n"
-            f'"{fname}"\n\n'
+            f"`{fname}`\n\n"
             "📂 Speicherort\n"
-            f'"{fdir_short}"'
+            f"`{fdir_short}`"
         )
         return msg
 
@@ -293,6 +293,18 @@ class DownloadResultReporter:
 
         genre_lines = [f"• {g}" for g in raw_genres] if raw_genres else ["• Keine"]
 
+        # Nutzer-Wunsch 2026-09-02: bei Einzeltiteln (n=1) ist der Zaehler/
+        # die Prozentangabe hinter Lyrics/Loudness (immer "1/1 · 100%" bzw.
+        # "0/1 · 0%") reine Redundanz zum bereits gezeigten ✅/❌-Status -
+        # nur bei Playlists (n > 1, echter Anteil) bleibt sie sinnvoll und
+        # wird weiterhin angezeigt.
+        if is_pl:
+            lyrics_line = f"📜 Lyrics   : {'✅ verfügbar' if lyrics_ok else '❌ fehlt'} ({lf}/{n} · {stat_pct(lf, n)})"
+            loud_line = f"🔊 Loudness : {'✅ normalisiert' if loud_ok else '❌ fehlt'} ({ln}/{n} · {stat_pct(ln, n)})"
+        else:
+            lyrics_line = f"📜 Lyrics   : {'✅ verfügbar' if lyrics_ok else '❌ fehlt'}"
+            loud_line = f"🔊 Loudness : {'✅ normalisiert' if loud_ok else '❌ fehlt'}"
+
         header = "🎉 Download erfolgreich abgeschlossen!"
         meta = []
         if not is_pl:
@@ -319,14 +331,14 @@ class DownloadResultReporter:
                 "",
                 "✨ Ergebnis",
                 f"🖼️ Cover    : {'✅ eingebettet' if cover_ok else '❌ fehlt'}",
-                f"📜 Lyrics   : {'✅ verfügbar' if lyrics_ok else '❌ fehlt'} ({lf}/{n} · {stat_pct(lf, n)})",
-                f"🔊 Loudness : {'✅ normalisiert' if loud_ok else '❌ fehlt'} ({ln}/{n} · {stat_pct(ln, n)})",
+                lyrics_line,
+                loud_line,
                 "",
                 example_label,
-                f'"{fname}"',
+                f"`{fname}`",
                 "",
                 "📂 Speicherort",
-                f'"{fdir_short}"',
+                f"`{fdir_short}`",
             ]
         )
 

@@ -179,6 +179,25 @@ class TestBuildPlaylistSummaryMessage:
         assert "Künstler : A" in sent_text
         assert "Album    : B" in sent_text
 
+    def test_filename_and_storage_location_use_inline_code_not_quotes(self, reporter):
+        """Nutzer-Wunsch 2026-09-02: Dateiname/Speicherort als Inline-Code
+        (Backticks) statt in Anführungszeichen - wirkt in Telegram sauberer."""
+        results = [
+            {
+                "success": True,
+                "artist": "A",
+                "album": "B",
+                "year": 2024,
+                "library_path": "/lib/A/2024 - B/01 - x.mp3",
+            }
+        ]
+
+        sent_text = reporter.build_playlist_summary_message(results, results)
+
+        assert "`01 - x.mp3`" in sent_text
+        assert "`A/2024 - B`" in sent_text
+        assert '"01 - x.mp3"' not in sent_text
+
 
 class TestBuildFinalSummaryMessage:
     def test_single_track_message_contains_core_fields(self, reporter):
@@ -197,7 +216,7 @@ class TestBuildFinalSummaryMessage:
         assert "Some Title" in sent_text
         assert "Some Artist" in sent_text
         assert "📺 YouTube" in sent_text
-        assert '"Some Title.mp3"' in sent_text
+        assert "`Some Title.mp3`" in sent_text
 
     def test_playlist_type_uses_playlist_header_and_track_counts(self, reporter):
         result = {
@@ -305,8 +324,30 @@ class TestBuildFinalSummaryMessage:
 
         sent_text = reporter.build_final_summary_message(result, {}, {})
 
-        assert '"Zartmann/2025 - schönhauser EP"' in sent_text
+        assert "`Zartmann/2025 - schönhauser EP`" in sent_text
         assert "/tmp/musicbot_test" not in sent_text
+
+    def test_single_track_lyrics_and_loudness_omit_redundant_count(self, reporter):
+        """Nutzer-Wunsch 2026-09-02: bei einem Einzeltitel (n=1) ist
+        "(1/1 · 100%)" hinter Lyrics/Loudness reine Redundanz zum bereits
+        gezeigten ✅/❌-Status - nur bei Playlists bleibt der Zaehler/die
+        Prozentangabe sinnvoll und wird gezeigt (siehe
+        test_loudness_and_lyrics_stats_come_from_current_tracks_not_shared_processor_stats)."""
+        result = {
+            "title": "T",
+            "artist": "A",
+            "library_path": "/library/A/Singles/T.m4a",
+            "source": "youtube",
+            "lyrics_available": True,
+            "loudness_normalized": True,
+        }
+
+        sent_text = reporter.build_final_summary_message(result, {}, {})
+
+        assert "📜 Lyrics   : ✅ verfügbar" in sent_text
+        assert "🔊 Loudness : ✅ normalisiert" in sent_text
+        assert "1/1" not in sent_text
+        assert "100%" not in sent_text
 
 
 class TestFormatDuration:
