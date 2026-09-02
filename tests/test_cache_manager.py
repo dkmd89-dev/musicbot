@@ -57,6 +57,64 @@ class TestLookupPlaylistTrackStage1:
         assert result["from_cache"] is True
         metadata_cache.get.assert_called_once_with("Cached Artist", "Cached Title")
 
+    def test_stage1_hit_carries_over_cover_and_loudness_flags(self, tmp_path):
+        """
+        Live-Fund 2026-09-02 (Nutzer-Report): _build_result() gab
+        cover_embedded/loudness_normalized bisher gar nicht zurueck - ein
+        Playlist-Cache-Treffer zeigte in der Telegram-Abschlussmeldung
+        dadurch faelschlich "Cover fehlt"/"Loudness fehlt" fuer genau
+        diesen Track, obwohl beides beim urspruenglichen Download (das
+        den Cache-Eintrag erzeugte) tatsaechlich vorhanden war.
+        """
+        cached_file = tmp_path / "song.mp3"
+        cached_file.write_bytes(b"x")
+        metadata_cache = Mock()
+        metadata_cache.get.return_value = {
+            "title": "Cached Title",
+            "artist": "Cached Artist",
+            "library_path": str(cached_file),
+            "genres": ["Hip Hop"],
+            "cover_embedded": True,
+            "loudness_normalized": True,
+        }
+        manager = make_cache_manager(metadata_cache=metadata_cache)
+
+        result = manager.lookup_playlist_track(
+            track_info={"artist": "Cached Artist", "title": "Cached Title"},
+            dominant_artist=None,
+            album_name="Album",
+            playlist_year=2024,
+            track_idx=1,
+        )
+
+        assert result["cover_embedded"] is True
+        assert result["loudness_normalized"] is True
+
+    def test_stage1_hit_missing_flags_in_old_cache_entry_default_to_false(self, tmp_path):
+        """Rueckwaertskompatibilitaet: ein aelterer Cache-Eintrag ohne diese
+        Felder (vor der Ergaenzung in services/metadata/cache.py) darf
+        nicht crashen, sondern liefert False."""
+        cached_file = tmp_path / "song.mp3"
+        cached_file.write_bytes(b"x")
+        metadata_cache = Mock()
+        metadata_cache.get.return_value = {
+            "title": "Cached Title",
+            "artist": "Cached Artist",
+            "library_path": str(cached_file),
+        }
+        manager = make_cache_manager(metadata_cache=metadata_cache)
+
+        result = manager.lookup_playlist_track(
+            track_info={"artist": "Cached Artist", "title": "Cached Title"},
+            dominant_artist=None,
+            album_name="Album",
+            playlist_year=2024,
+            track_idx=1,
+        )
+
+        assert result["cover_embedded"] is False
+        assert result["loudness_normalized"] is False
+
     def test_stage1_hit_but_file_missing_falls_through(self, tmp_path):
         metadata_cache = Mock()
         metadata_cache.get.return_value = {
