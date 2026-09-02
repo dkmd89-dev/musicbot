@@ -147,6 +147,53 @@ class TestUrlHashConsistencyCache001Fix:
         )
 
 
+class TestShortsUrlNormalization:
+    """
+    P0-F (docs/audits/P0_DUPLICATE_CACHE_AUDIT_2026-09-02.md): DuplicateCache.
+    _normalize_url_for_cache() erkennt youtu.be/<id>, watch?v=<id> (auch
+    ueber m.youtube.com/music.youtube.com, per Teilstring-Match bereits
+    korrekt abgedeckt) als dieselbe Video-ID - youtube.com/shorts/<id> war
+    davon bislang nicht erfasst und fiel in den generischen
+    netloc+path-Zweig, wodurch ein Short und sein aequivalenter
+    watch?v=-Link als ZWEI verschiedene URLs galten. Regressionstest fuer
+    den P0-F-Fix, der /shorts/<id> genauso wie /watch bzw. youtu.be auf
+    "youtube_video:<id>" abbildet.
+    """
+
+    def test_shorts_url_normalizes_to_same_key_as_watch_url(self, handler):
+        cache = handler.duplicate_cache
+        h_watch = cache.get_url_hash("https://www.youtube.com/watch?v=ABC123")
+        h_shorts = cache.get_url_hash("https://www.youtube.com/shorts/ABC123")
+        assert h_watch == h_shorts
+
+    def test_shorts_reupload_of_a_watch_url_is_detected_as_duplicate(self, handler):
+        handler.register_download(
+            "https://www.youtube.com/watch?v=ABC123", "Some Artist", "Some Song"
+        )
+
+        is_dup, entry, reason = handler.check_for_duplicates(
+            "https://www.youtube.com/shorts/ABC123"
+        )
+
+        assert is_dup is True
+        assert reason == "url"
+
+    def test_shorts_url_with_trailing_query_still_matches(self, handler):
+        """Shorts-Links tragen z.B. gelegentlich ?feature=share - der
+        Query-String darf die Video-ID-Erkennung nicht stoeren, analog zum
+        bestehenden Verhalten fuer watch?v=<id>&list=... ."""
+        handler.register_download(
+            "https://www.youtube.com/shorts/ABC123", "Some Artist", "Some Song"
+        )
+
+        is_dup, entry, reason = handler.check_for_duplicates(
+            "https://www.youtube.com/shorts/ABC123?feature=share"
+        )
+
+        assert is_dup is True
+        assert reason == "url"
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Layer 2: Content-Duplikat (Artist + Titel)
 # ─────────────────────────────────────────────────────────────────────────

@@ -257,6 +257,20 @@ class DuplicateCache:
                         if video_id
                         else f"youtube_video:{url}"
                     )
+            elif "youtube.com/shorts/" in url:
+                # P0-F-Fix (docs/audits/P0_DUPLICATE_CACHE_AUDIT_2026-09-02.md):
+                # ein Short und sein aequivalenter watch?v=<id>-Link
+                # verweisen auf dieselbe Video-ID, fielen vorher aber in
+                # den generischen netloc+path-Zweig unten und galten
+                # dadurch faelschlich als zwei verschiedene URLs. Video-ID
+                # ist der erste Pfad-Abschnitt nach "/shorts/" - ein
+                # eventueller Query-String (z.B. "?feature=share") spielt
+                # dabei keine Rolle, da urlparse ihn bereits von path
+                # trennt.
+                video_id = parsed_url.path.rsplit("/shorts/", 1)[-1].strip("/")
+                return (
+                    f"youtube_video:{video_id}" if video_id else f"youtube_video:{url}"
+                )
             else:
                 normalized = f"{parsed_url.netloc}{parsed_url.path}"
                 if parsed_url.query:

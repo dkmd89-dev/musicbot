@@ -291,7 +291,28 @@ class DuplicateDetector:
             except Exception as e:
                 self.logger.debug(f"⚠️ Artist-Normalisierung fehlgeschlagen: {e}")
         cleaned = artist.strip()
-        for suffix in [" - Topic", " VEVO", " Official"]:
+        # P0-E-Fix (docs/audits/P0_DUPLICATE_DETECTOR_AUDIT_2026-09-02.md):
+        # self.artist_normalizer ist in der echten Produktion IMMER None
+        # (config.Config besitzt nirgends ein artist_config-Attribut) -
+        # dieser String-Fallback ist damit faktisch der einzige tatsaechlich
+        # wirksame Normalisierungspfad. Er war bisher unvollstaendig
+        # gegenueber ArtistProcessor.clean_artist_before_normalization()
+        # (demselben Rohwert in der Metadaten-Pipeline): fehlender Komma-
+        # Split fuer kommagetrennte Multi-Artist-Strings sowie die Suffixe
+        # "Music"/"Records". Live reproduzierter Fund: ein Re-Upload
+        # desselben Songs ueber einen Kanal wie "Artist Music" wurde beim
+        # Pre-Download-Check faelschlich NICHT als Duplikat erkannt (False
+        # Negative), weil der beim register_download() bereits pipeline-
+        # bereinigte Artist ("Artist") und der hier nur teil-bereinigte
+        # Rohwert ("Artist Music") zu unterschiedlichen Content-Hashes
+        # fuehrten. Komma-Split-Regel 1:1 aus clean_artist_before_
+        # normalization() uebernommen (erster Name vor ", " gewinnt, nur
+        # wenn er laenger als 2 Zeichen ist).
+        if ", " in cleaned:
+            main_artist = cleaned.split(", ")[0].strip()
+            if len(main_artist) > 2:
+                cleaned = main_artist
+        for suffix in [" - Topic", " VEVO", " Official", " Music", " Records"]:
             if cleaned.endswith(suffix):
                 cleaned = cleaned[: -len(suffix)].strip()
         return cleaned if cleaned else "Unknown"

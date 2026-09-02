@@ -122,14 +122,27 @@ class TestSpecialChannelSkipsAutoLearn:
         in der hartcodierten _is_podcast_channel-Liste. Vor dem Fix haette
         process_single_track() hierfuer trotzdem learn_artist() aufgerufen.
 
-        Bewusst NICHT 'Hardenacke trifft' als Beispiel verwendet: beim
-        Schreiben dieses Tests aufgefallener, unabhaengiger Befund -
-        ArtistNormalizer.normalize() mangelt "Hardenacke trifft" zu
-        "Hardenacke Trif" (die Collaboration-Split-Logik scheint das "ft"
-        in "tri-ft-t" faelschlich als Featuring-Marker zu erkennen), wodurch
-        der Kanalname bereits VOR der hier getesteten Sonderkanal-Pruefung
-        veraendert wird. Eigenstaendiger, hier nicht behobener Befund -
-        siehe Baseline-Eintrag ARTISTNORM-001.
+        Bewusst NICHT 'Hardenacke trifft' als Beispiel verwendet - beim
+        urspruenglichen Schreiben dieses Tests (Commit aecdccb, AUTOLEARN-001)
+        war hier ein unabhaengiger Befund aufgefallen: ArtistNormalizer.
+        normalize() mangelte "Hardenacke trifft" angeblich zu "Hardenacke
+        Trif" (vermutete Ursache: die Collaboration-Split-Logik erkennt das
+        "ft" in "tri-ft-t" faelschlich als Featuring-Marker).
+
+        HISTORISCHER BEFUND - BEREITS BEHOBEN, DOKUMENTATION WAR VERALTET
+        (verifiziert 2026-09-02, P0-B-Phase): der Fix ARTISTNORM-002 landete
+        nur 20 Minuten nach obigem Commit (c47faed, "Fortsetzung von
+        ARTISTNORM-001: dieselbe fehlerhafte ft/feat-Teilstring-Matching-
+        Musterklasse existierte unabhaengig noch in zwei weiteren Dateien").
+        Live-Reproduktion gegen den aktuellen Code bestaetigt:
+        ArtistNormalizer.normalize("Hardenacke trifft") == "Hardenacke
+        Trifft" (korrekt, keine Mangelung) - der Bug existiert nicht mehr.
+        ARTISTNORM-001 ist damit vollstaendig geschlossen, kein offener P0/P1-
+        Fund. Dieser Absatz bleibt als Erklaerung stehen, warum dieser Test
+        weiterhin 'Gemischtes Hack'/'Mordlust' statt 'Hardenacke trifft' als
+        Beispiel nutzt (historisch gewachsen, keine funktionale Notwendigkeit
+        mehr) - siehe tests/test_metadata_processor_happy_path.py fuer den
+        neuen Regressions-Tripwire, der genau diesen Fall jetzt abdeckt.
         """
         result = _run(processor, filename_fixer, tmp_path, channel, "SPECIAL1")
 

@@ -686,100 +686,10 @@ ARTIST_GENRE_MAP:
     description: Aufstrebender House-Produzent mit Soul-Einflüssen
 
   # YouTube-Kanal-Varianten (für bessere Erkennung)
-  "calvin harris - topic":
-    primary: Electronic
-    secondary: [EDM, Dance-Pop, House]
-    description: YouTube Topic-Kanal von Calvin Harris
-
-  "kygo - topic":
-    primary: Electronic
-    secondary: [Tropical House, Deep House]
-    description: YouTube Topic-Kanal von Kygo
-
-  "lea - topic":
-    primary: Pop
-    secondary: [Deutschpop, Indie-Pop]
-    description: YouTube Topic-Kanal von LEA
-
-  "max giesinger - topic":
-    primary: Pop
-    secondary: [Deutschpop, Pop-Rock]
-    description: YouTube Topic-Kanal von Max Giesinger
-
-  "taylor swift - topic":
-    primary: Pop
-    secondary: [Country Pop, Singer-Songwriter]
-    description: YouTube Topic-Kanal von Taylor Swift
-
   "glasperlenspiel - topic":
     primary: Pop
     secondary: [Elektropop, Synthie-Pop]
     description: YouTube Topic-Kanal von Glasperlenspiel
-
-  "makko - topic":
-    primary: Hip Hop
-    secondary: [Deutschrap, Emo Rap]
-    description: YouTube Topic-Kanal von makko
-
-  "calvin harris official":
-    primary: Electronic
-    secondary: [EDM, Dance-Pop]
-    description: Offizieller YouTube-Kanal von Calvin Harris
-
-  "calvin harris vevo":
-    primary: Electronic
-    secondary: [EDM, Dance-Pop]
-    description: VEVO-Kanal von Calvin Harris
-
-  "eminem official":
-    primary: Hip Hop
-    secondary: [Rap, Hardcore Hip Hop]
-    description: Offizieller YouTube-Kanal von Eminem
-
-  "eminem vevo":
-    primary: Hip Hop
-    secondary: [Rap, Hardcore Hip Hop]
-    description: VEVO-Kanal von Eminem
-
-  "kygo official":
-    primary: Electronic
-    secondary: [Tropical House, Deep House]
-    description: Offizieller YouTube-Kanal von Kygo
-
-  "kygo vevo":
-    primary: Electronic
-    secondary: [Tropical House, Deep House]
-    description: VEVO-Kanal von Kygo
-
-  "lea official":
-    primary: Pop
-    secondary: [Deutschpop, Indie-Pop]
-    description: Offizieller YouTube-Kanal von LEA
-
-  "lea vevo":
-    primary: Pop
-    secondary: [Deutschpop, Indie-Pop]
-    description: VEVO-Kanal von LEA
-
-  "max giesinger official":
-    primary: Pop
-    secondary: [Deutschpop, Pop-Rock]
-    description: Offizieller YouTube-Kanal von Max Giesinger
-
-  "max giesinger vevo":
-    primary: Pop
-    secondary: [Deutschpop, Pop-Rock]
-    description: VEVO-Kanal von Max Giesinger
-
-  "taylor swift official":
-    primary: Pop
-    secondary: [Country Pop, Singer-Songwriter]
-    description: Offizieller YouTube-Kanal von Taylor Swift
-
-  "taylor swift vevo":
-    primary: Pop
-    secondary: [Country Pop, Singer-Songwriter]
-    description: VEVO-Kanal von Taylor Swift
 
   backstage boxengasse:
     primary: Podcast

@@ -222,6 +222,40 @@ class TestArtistProcessor(unittest.TestCase):
                 result = self.artist_processor.clean_artist_before_normalization(input_artist)
                 self.assertEqual(result, expected)
 
+    def test_priority_chain_duplicate_guards_never_block_a_lower_priority_fallback(self):
+        """
+        P0-D-Charakterisierung (docs/audits/): determine_best_artist() prueft
+        in den raw_metadata- und channel_fallback-Zweigen scheinbar, ob das
+        neu normalisierte Ergebnis vom bereits verworfenen hoeherprioren
+        Kandidaten abweicht (z.B. "norm_raw != norm_parsed"). Diese Pruefung
+        ist strukturell tot: jeder Zweig, der erfolgreich normalisiert,
+        gibt SOFORT zurueck (Zeilen 71-88 in artist_processor.py) - der
+        naechste Zweig wird also nur erreicht, wenn der vorherige Kandidat
+        bereits gescheitert ist (norm_* == None). Ein Vergleich gegen None
+        ist immer wahr, solange der neue Kandidat selbst gueltig ist - die
+        Pruefung kann also nie tatsaechlich einen Fallback blockieren, auch
+        nicht bei exakt identischem Namen wie ein bereits gescheiterter
+        Kandidat.
+
+        Live bewiesen statt nur gelesen: raw_artist und channel_name sind
+        hier bewusst identisch - waere die Pruefung lebendig UND wuerde sie
+        (fehlerhaft) einen bereits ERFOLGREICHEN Kandidaten blockieren
+        wollen, waere das ohnehin unerreichbar, weil raw_metadata schon vor
+        dem Channel-Vergleich zurueckgibt. Dieser Test haelt exakt dieses
+        Verhalten fest, damit ein kuenftiger Refactor der Prioritaetskette
+        (z.B. Entfernen der toten Vergleiche) nachweislich nichts am
+        Ergebnis aendert.
+        """
+        result, source, feat_artists = self.artist_processor.determine_best_artist(
+            raw_artist="Valid Raw Artist",
+            parsed_artist="",
+            dominant_artist="",
+            channel_name="Valid Raw Artist",  # identisch zu raw_artist
+        )
+        self.assertEqual(result, "Valid Raw Artist")
+        self.assertEqual(source, "raw_metadata")
+        self.assertEqual(feat_artists, [])
+
 
 class TestIntegration(unittest.TestCase):
     """Integrationstests zwischen Modulen"""
