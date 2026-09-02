@@ -284,6 +284,26 @@ class EnhancedMetadataProcessor(SingletonMixin):
             if cache_result:
                 self.processing_stats.cache_hits += 1
                 self.logger.info(f"💾✅ Cache-Treffer für: {cache_result.title}")
+                # P2-Fund (docs/FINDINGS_INDEX.md, "Metadata-Cache-Hit +
+                # Duplicate-Cache leer"): bei einem Cache-Hit wird
+                # move_to_library() (Schritt 16) gar nicht erst erreicht -
+                # eine zu DIESEM Aufruf ggf. bereits frisch heruntergeladene
+                # Rohdatei (typischerweise nach Leeren der Duplicate-Caches,
+                # wodurch ein an sich schon vorhandener Track erneut
+                # heruntergeladen wird) blieb dadurch bisher bis zum
+                # naechsten 24h-Start-Sweep
+                # (download_artifact_cleanup.cleanup_download_artifacts)
+                # verwaist in Config.DOWNLOAD_DIR liegen. Cleanup sofort statt
+                # erst beim naechsten Bot-Neustart; No-op, falls kein
+                # filepath vorhanden ist oder es (regulaerer Fall) bereits
+                # ausserhalb von DOWNLOAD_DIR liegt.
+                cleanup_single_download_artifact(
+                    Path(track_metadata.get("filepath"))
+                    if track_metadata.get("filepath")
+                    else None,
+                    getattr(self.config, "DOWNLOAD_DIR", None),
+                    self.logger,
+                )
                 return cache_result
             self.processing_stats.cache_misses += 1
             self.logger.info("💾❌ Kein Cache-Treffer. Starte volle Verarbeitung.")

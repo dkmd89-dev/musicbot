@@ -285,6 +285,87 @@ def test_second_call_with_same_video_id_is_a_cache_hit(
     assert mb_client.call_count == calls_after_first_run
 
 
+def test_cache_hit_after_redundant_redownload_cleans_up_orphaned_raw_file(
+    processor, filename_fixer, happy_path_config, tmp_path
+):
+    """
+    Live-Fund (docs/FINDINGS_INDEX.md, 'Metadata-Cache-Hit + Duplicate-Cache
+    leer'): werden die Duplicate-Caches (url_duplicates.json/
+    content_duplicates.json) fuer einen Track geleert, dessen Library-Datei
+    aber noch existiert UND dessen metadata_cache-Eintrag noch vorhanden
+    ist, verhindert nichts mehr einen erneuten Download derselben
+    YouTube-ID - die Duplicate-Detection-Ebene wurde ja gerade geleert.
+    process_single_track() liefert dann trotzdem einen Cache-Hit (Schritt 2
+    von 20, lange vor move_to_library() in Schritt 16). Die frisch
+    heruntergeladene zweite Rohdatei (track_metadata['filepath']) wurde
+    dadurch nie beruehrt - weder verschoben noch aufgeraeumt - und blieb
+    bisher bis zum naechsten 24h-Start-Sweep
+    (download_artifact_cleanup.cleanup_download_artifacts) verwaist in
+    Config.DOWNLOAD_DIR liegen, obwohl der Nutzer sofort "Download
+    erfolgreich" mit dem (alten, weiterhin korrekten) Library-Pfad gemeldet
+    bekommt.
+
+    Reproduziert das Szenario direkt: zwei Aufrufe mit identischer
+    track_metadata['id'], aber je einer eigenen physischen Rohdatei (wie
+    bei zwei echten, unabhaengigen Downloads derselben URL). Der zweite
+    Aufruf muss weiterhin ein Cache-Hit sein (Verhalten bleibt erhalten,
+    siehe test_second_call_with_same_video_id_is_a_cache_hit), die zweite
+    Rohdatei darf danach aber nicht mehr in DOWNLOAD_DIR liegen bleiben.
+    """
+    download_dir = happy_path_config.DOWNLOAD_DIR
+    download_dir.mkdir(parents=True, exist_ok=True)
+
+    source1 = download_dir / "erster_download.mp3"
+    source1.write_bytes(b"fake-audio-bytes-not-real-mp3-data")
+
+    track_metadata_1 = {
+        "title": "Redundant Artist - Redundant Song (Official Video)",
+        "artist": "Redundant Artist",
+        "uploader": "Redundant Artist",
+        "channel": "Redundant Artist",
+        "id": "REDUNDANT123",
+        "filepath": str(source1),
+        "cover_art": b"fake-cover-bytes",
+        "genre": "Hip Hop",
+    }
+
+    first_result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=track_metadata_1,
+            filename_fixer=filename_fixer,
+        )
+    )
+    assert first_result.success is True
+    assert first_result.from_cache is False
+    assert Path(first_result.library_path).exists()
+
+    # Simuliert den erneuten, redundanten Download derselben YouTube-ID
+    # (Duplicate-Caches wurden zwischenzeitlich geleert) - eigene, zweite
+    # physische Rohdatei in DOWNLOAD_DIR, wie es ein echter yt-dlp-Lauf
+    # erzeugen wuerde.
+    source2 = download_dir / "zweiter_redundanter_download.mp3"
+    source2.write_bytes(b"fake-audio-bytes-not-real-mp3-data-zweiter-lauf")
+    track_metadata_2 = dict(track_metadata_1, filepath=str(source2))
+
+    second_result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=track_metadata_2,
+            filename_fixer=filename_fixer,
+        )
+    )
+
+    assert second_result.success is True
+    assert second_result.from_cache is True
+    assert not source2.exists(), (
+        "Verwaiste, redundante Rohdatei nach Cache-Hit wurde nicht "
+        "aufgeraeumt - liegt bis zum naechsten 24h-Start-Sweep unnoetig "
+        "in DOWNLOAD_DIR."
+    )
+    # Die urspruengliche Library-Datei aus dem ersten Durchlauf bleibt
+    # unangetastet - der Cleanup darf nur die redundante Rohdatei treffen.
+    assert Path(first_result.library_path).exists()
+
+
 def test_missing_filepath_returns_graceful_failure(processor, filename_fixer):
     """
     Charakterisiert das globale try/except in process_single_track: ein
