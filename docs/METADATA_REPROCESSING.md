@@ -114,12 +114,19 @@ Album/Jahr werden **nicht** ueber `AlbumProcessor.determine_album_info()`
 neu bestimmt (diese Methode ist fuer Download-Zeit-Metadaten aus
 Playlist/yt-dlp gebaut und faellt bei fehlenden Kandidaten auf das aktuelle
 Kalenderjahr zurueck) — die bereits vorhandenen Album-/Jahr-Tags werden als
-Vertrauensbasis uebernommen. Fehlt ein Album-Tag komplett, fungiert der
-bereinigte Titel als Fallback — ein abschliessender `(...Remix...)`-Zusatz
-wird dabei entfernt (`strip_remix_suffix_for_album()`, Nutzer-Fund
-2026-09-02: „Blauer Tag (Robin Schulz Remix)" als Titel darf nicht 1:1 als
-Album uebernommen werden). Der Titel-Tag selbst bleibt davon unberuehrt.
-Ist bereits ein Album-Tag vorhanden, greift dieser Fallback gar nicht.
+Vertrauensbasis uebernommen, aber nicht mehr ungeprueft: ein vorhandenes
+Album-Tag durchlaeuft seit Phase 1 dieselbe Bereinigung wie der Titel
+(`TitleCleaner.light_title_cleanup()`, ohne Artist-Praefix-Entfernung) —
+Nutzer-Fund 2026-09-02 (Artist "makko"): reale Bestandsdateien haben so
+gut wie immer bereits ein Album-Tag (meist eine 1:1-Kopie des
+urspruenglich dirty Titels, z. B. `'"Bequem"'`), das ohne diese
+Bereinigung fuer immer dirty geblieben waere, waehrend der Titel zur
+selben Zeit korrekt bereinigt wurde. Fehlt ein Album-Tag komplett,
+fungiert der bereinigte Titel als Fallback — ein abschliessender
+`(...Remix...)`-Zusatz wird dabei zusaetzlich entfernt
+(`strip_remix_suffix_for_album()`, Nutzer-Fund 2026-09-02: „Blauer Tag
+(Robin Schulz Remix)" als Titel darf nicht 1:1 als Album uebernommen
+werden). Der Titel-Tag selbst bleibt von beiden Album-Regeln unberuehrt.
 
 ## 5a. Fehlerisolierung (Phase 1, 2026-09-02)
 

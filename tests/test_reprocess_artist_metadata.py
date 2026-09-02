@@ -24,6 +24,8 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from mutagen.mp4 import MP4, MP4FreeForm
 
+from services.metadata.title_cleaner import TitleCleaner
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MODULE_PATH = REPO_ROOT / "scripts" / "reprocess_artist_metadata.py"
 
@@ -1110,6 +1112,132 @@ class TestAlbumFallbackStripsRemixSuffix:
             "before": [], "after": ["Blauer Tag"],
         }
         assert MP4(tagged_m4a).get("©alb") is None
+        assert rpam.audio_essence_md5(tagged_m4a) == before_hash
+
+
+class TestExistingAlbumTagIsAlsoCleaned:
+    """
+    Nutzer-Fund (2026-09-02, echter Testlauf Artist 'makko' ueber main,
+    VOR diesem Branch): das bisherige 'existing_album or ...' nahm ein
+    vorhandenes Album-Tag IMMER unveraendert - reale Bestandsdateien haben
+    aber so gut wie immer bereits ein Album-Tag (meist eine 1:1-Kopie des
+    urspruenglich dirty Titels), wodurch der Album-Fallback-Schutz oben
+    (TestAlbumFallbackStripsRemixSuffix) in der Praxis kaum je griff.
+    '"Bequem"'/'"Zickzack"'/'"ADLIBS" prod. Safecall777' blieben als
+    Album-Wert unveraendert stehen, obwohl der Titel zur selben Zeit
+    korrekt bereinigt wurde. Nutzer-Entscheidung bei Rueckfrage: ein
+    VORHANDENES Album-Tag wird jetzt denselben Bereinigungsregeln
+    unterzogen wie der Titel (light_title_cleanup()) - keine zweite,
+    abweichende Bereinigungslogik.
+    """
+
+    @pytest.mark.asyncio
+    async def test_existing_quoted_album_is_cleaned(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        audio = MP4(tagged_m4a)
+        audio["©nam"] = ["Bequem"]
+        audio["©alb"] = ['"Bequem"']
+        audio.save()
+        # Dateiname passend zum neuen Titel vorab angleichen, damit die
+        # (bereits separat getestete) Rename-Logik hier nicht zusaetzlich
+        # zuschlaegt - dieser Test prueft ausschliesslich die Album-
+        # Bereinigung, nicht das Renaming.
+        renamed = tagged_m4a.with_name("2024 - Bequem.m4a")
+        tagged_m4a.rename(renamed)
+
+        processor = make_processor_stub()
+        # make_processor_stub() setzt light_title_cleanup als Identity-Mock
+        # (siehe Docstring dort - title_cleaner-Korrektheit selbst wird in
+        # test_title_cleaner_wrapping_quotes.py/test_title_cleaner_
+        # producer_credit_suffix.py charakterisiert). Fuer DIESEN Test
+        # (Album-Bereinigung durch echtes light_title_cleanup()) wird
+        # bewusst die echte Implementierung verdrahtet.
+        processor.title_cleaner.light_title_cleanup.side_effect = (
+            TitleCleaner().light_title_cleanup
+        )
+
+        result = await rpam.process_file(
+            renamed, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        after = MP4(renamed)
+        assert after["©alb"] == ["Bequem"]
+        assert result["changes"]["album"] == {
+            "before": ['"Bequem"'], "after": ["Bequem"],
+        }
+
+    @pytest.mark.asyncio
+    async def test_existing_album_with_producer_credit_is_cleaned(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        audio = MP4(tagged_m4a)
+        audio["©nam"] = ["ADLIBS"]
+        audio["©alb"] = ['"ADLIBS" prod. Safecall777']
+        audio.save()
+        renamed = tagged_m4a.with_name("2024 - ADLIBS.m4a")
+        tagged_m4a.rename(renamed)
+
+        processor = make_processor_stub()
+        processor.title_cleaner.light_title_cleanup.side_effect = (
+            TitleCleaner().light_title_cleanup
+        )
+
+        await rpam.process_file(
+            renamed, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        after = MP4(renamed)
+        assert after["©alb"] == ["ADLIBS"]
+
+    @pytest.mark.asyncio
+    async def test_clean_existing_album_is_never_reported_as_changed(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        """Gegenprobe: ein bereits sauberes Album-Tag bleibt unveraendert,
+        wird nicht faelschlich als 'geaendert' ausgewiesen."""
+        processor = make_processor_stub()
+        processor.title_cleaner.light_title_cleanup.side_effect = (
+            TitleCleaner().light_title_cleanup
+        )
+
+        result = await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        assert "album" not in result["changes"]
+
+    @pytest.mark.asyncio
+    async def test_dry_run_prediction_matches_live_album_cleaning(
+        self, tagged_m4a, isolated_artist_dir
+    ):
+        audio = MP4(tagged_m4a)
+        audio["©nam"] = ["Bequem"]
+        audio["©alb"] = ['"Bequem"']
+        audio.save()
+        before_hash = rpam.audio_essence_md5(tagged_m4a)
+
+        processor = make_processor_stub()
+        processor.title_cleaner.light_title_cleanup.side_effect = (
+            TitleCleaner().light_title_cleanup
+        )
+
+        result = await rpam.process_file(
+            tagged_m4a, isolated_artist_dir, processor, Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=True,
+        )
+
+        assert result["changes"]["album"] == {
+            "before": ['"Bequem"'], "after": ["Bequem"],
+        }
+        assert MP4(tagged_m4a)["©alb"] == ['"Bequem"']
         assert rpam.audio_essence_md5(tagged_m4a) == before_hash
 
 

@@ -771,6 +771,26 @@ async def process_file(
 
         # ── Album/Jahr: bestehende Werte als Vertrauensbasis uebernehmen ───
         existing_album = before["album"][0] if before["album"] else None
+        # Nutzer-Fund (2026-09-02, echter Testlauf Artist "makko" ueber
+        # main, VOR diesem Branch): das bisherige "existing_album or ..."
+        # nahm ein vorhandenes Album-Tag IMMER unveraendert - real
+        # heruntergeladene Bestandsdateien haben aber so gut wie immer
+        # bereits ein Album-Tag (meist eine 1:1-Kopie des urspruenglich
+        # dirty Titels), wodurch der Album-Fallback unten in der Praxis
+        # kaum je griff. '"Bequem"'/'"Zickzack"'/'"ADLIBS" prod.
+        # Safecall777' blieben als Album-Wert unveraendert stehen, obwohl
+        # der Titel zur selben Zeit korrekt bereinigt wurde. Nutzer-
+        # Entscheidung bei Rueckfrage: ein VORHANDENES Album-Tag wird jetzt
+        # denselben Bereinigungsregeln unterzogen wie der Titel
+        # (light_title_cleanup(), inkl. dessen Produzenten-Credit-/
+        # Anfuehrungszeichen-Fixes) - keine zweite, abweichende
+        # Bereinigungslogik, dieselbe bereits produktiv laufende Regelmenge.
+        # Bewusst OHNE Artist-Praefix-Entfernung (leerer Artist-Parameter) -
+        # ein Album-Wert hat kein Artist-Praefix-Muster wie ein Titel.
+        if existing_album:
+            existing_album = processor.title_cleaner.light_title_cleanup(
+                existing_album, ""
+            )
         existing_year_raw = before["year"][0] if before["year"] else None
         try:
             existing_year = int(existing_year_raw) if existing_year_raw else None
