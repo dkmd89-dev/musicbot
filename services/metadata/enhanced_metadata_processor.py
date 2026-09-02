@@ -1268,9 +1268,6 @@ class EnhancedMetadataProcessor(SingletonMixin):
             channel_name=channel_name,
         )
 
-    def _find_known_artist_from_list(self, all_artists: List[str]) -> Optional[str]:
-        return self.artist_processor.find_known_artist_from_list(all_artists)
-
     def _clean_artist_before_normalization(self, artist: str) -> str:
         return self.artist_processor.clean_artist_before_normalization(artist)
 
