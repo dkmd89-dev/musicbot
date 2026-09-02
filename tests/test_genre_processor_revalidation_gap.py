@@ -209,10 +209,11 @@ class TestEnhancedMetadataProcessorNeverCallsLearnGenreAgain:
     ARTIST = "TEST_E2E_REVALIDATION_ARTIST"
 
     def _read_observations(self, mapping_dir: Path) -> int:
-        import yaml
+        import json
 
-        path = mapping_dir / "auto_learned_genre.yaml"
-        data = yaml.safe_load(path.read_text()) or {}
+        # ARCH-022: auto_learned_genre.yaml -> auto_learned_genre.json.
+        path = mapping_dir / "auto_learned_genre.json"
+        data = json.loads(path.read_text()) or {}
         entry = data.get("ARTIST_GENRE_MAP", {}).get(self.ARTIST)
         assert entry is not None, "Erwarteter Bestandseintrag fehlt"
         return entry["observations"]

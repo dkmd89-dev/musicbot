@@ -40,6 +40,12 @@ Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/a
 | [archive/METADATA_REPROCESSING_TEST_CHAPO102.md](archive/METADATA_REPROCESSING_TEST_CHAPO102.md) | HISTORICAL (Validierungsprotokoll) | Erster Live-Validierungslauf des Tools gegen echten Artist-Bestand (CHAPO102), inkl. Post-Run Safety Check |
 | [archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md](archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md) | HISTORICAL (Validierungsprotokoll) | Zweiter Validierungslauf (Nina Chuba) + Final-Audit-Nachtrag zu Genre-Mapping-Konsistenz und UNRESOLVED-Praezisierung |
 
+## Genre-System
+
+| Datei | Status | Kurzthema |
+|---|---|---|
+| [GENRE_SYSTEM.md](GENRE_SYSTEM.md) | CURRENT | Genre-Fallback-Kette (Manuell → Lokal → MusicBrainz → Last.fm → Feature-Artist-Inferenz), Auto-Learn-Konfidenz-Stufen, Mapping-Dateien-Übersicht (inkl. ARCH-022 YAML→JSON-Migration der drei Auto-Learn-Dateien), bekannte Revalidierungs-Grenze |
+
 ## Download Pipeline Stability Phase
 
 | Datei | Status | Kurzthema |

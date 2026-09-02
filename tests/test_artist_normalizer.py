@@ -192,7 +192,7 @@ class TestArtistnorm001FeatFtWordBoundaryFix:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# ARCH-022: atomares Schreiben in auto_learned_artist_aliases.yaml
+# ARCH-022: atomares Schreiben in auto_learned_artist_aliases.json
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -201,39 +201,40 @@ class TestSaveAutoLearnedEntryAtomicWrite:
     _save_auto_learned_entry() schrieb vorher direkt mit open(mode="w")
     (kein tmp+replace) - ein Absturz mitten im Schreiben haette die Datei
     korrumpieren/halb schreiben koennen. Jetzt atomar, analog zu
-    services/metadata/auto_learn.py::AutoLearnManager._write_yaml_atomic().
+    services/metadata/auto_learn.py::AutoLearnManager._write_json_atomic().
+    Seit ARCH-022 ausserdem JSON statt YAML.
     """
 
     def test_add_auto_learned_alias_writes_to_new_filename(self, normalizer, mapping_dir):
         assert normalizer.add_auto_learned_alias("Raw Channel", "Canonical Artist")
 
-        aliases_file = mapping_dir / "auto_learned_artist_aliases.yaml"
+        aliases_file = mapping_dir / "auto_learned_artist_aliases.json"
         assert aliases_file.exists()
-        import yaml
+        import json
 
         with open(aliases_file) as f:
-            data = yaml.safe_load(f)
+            data = json.load(f)
         assert data["auto_learned"]["Raw Channel"] == "Canonical Artist"
 
-    def test_interrupted_write_leaves_previous_valid_yaml_untouched(
+    def test_interrupted_write_leaves_previous_valid_json_untouched(
         self, normalizer, mapping_dir, monkeypatch
     ):
-        aliases_file = mapping_dir / "auto_learned_artist_aliases.yaml"
+        aliases_file = mapping_dir / "auto_learned_artist_aliases.json"
 
         # Erster, erfolgreicher Schreibvorgang - reale Datei auf Platte.
         assert normalizer.add_auto_learned_alias("Stable Raw", "Stable Canonical")
         original_content = aliases_file.read_text(encoding="utf-8")
 
         # Zweiter Schreibvorgang wird simuliert unterbrochen (Absturz
-        # waehrend yaml.dump()) - analog zum etablierten Muster in
-        # tests/test_auto_learn_invariant_fix.py::TestAtomicWrite. yaml
+        # waehrend json.dump()) - analog zum etablierten Muster in
+        # tests/test_auto_learn_invariant_fix.py::TestAtomicWrite. json
         # wird in artist_map.py LOKAL importiert (nicht auf Modulebene),
-        # daher hier direkt das globale yaml-Modul patchen statt
-        # "utils.artist_map.yaml.dump".
-        import yaml as yaml_module
+        # daher hier direkt das globale json-Modul patchen statt
+        # "utils.artist_map.json.dump".
+        import json as json_module
 
         monkeypatch.setattr(
-            yaml_module,
+            json_module,
             "dump",
             lambda *a, **kw: (_ for _ in ()).throw(OSError("disk full")),
         )

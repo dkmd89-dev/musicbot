@@ -5,6 +5,7 @@ import sys
 import unittest
 import tempfile
 import yaml
+import json
 import asyncio
 from pathlib import Path
 from unittest.mock import Mock, patch, AsyncMock
@@ -75,16 +76,17 @@ class TestAutoLearnManager(unittest.TestCase):
         self.assertFalse(result)
     
     def test_is_artist_known_from_auto_learned(self):
-        """Artist aus auto_learned_artist_aliases.yaml erkennen
-        (ARCH-022: vorher auto_learned_artists.yaml)"""
-        auto_file = self.mapping_dir / "auto_learned_artist_aliases.yaml"
+        """Artist aus auto_learned_artist_aliases.json erkennen
+        (ARCH-022: vorher auto_learned_artists.yaml, dann
+        auto_learned_artist_aliases.yaml)"""
+        auto_file = self.mapping_dir / "auto_learned_artist_aliases.json"
         auto_data = {
             "auto_learned": {
                 "raw alias": "Canonical Artist"
             }
         }
         with open(auto_file, "w", encoding="utf-8") as f:
-            yaml.dump(auto_data, f)
+            json.dump(auto_data, f)
         
         self.assertTrue(self.auto_learn._is_artist_known("Canonical Artist"))
         self.assertTrue(self.auto_learn._is_artist_known("canonical artist"))
@@ -130,14 +132,14 @@ class TestAutoLearnManager(unittest.TestCase):
         self.assertTrue(self.auto_learn._is_genre_already_learned("MANUAL ARTIST"))
     
     def test_load_auto_learned_artists_empty(self):
-        """Leere auto_learned_artist_aliases.yaml"""
+        """Leere auto_learned_artist_aliases.json"""
         result = self.auto_learn._load_auto_learned_artists()
         self.assertEqual(result, {})
 
     def test_load_auto_learned_artists_with_data(self):
-        """auto_learned_artist_aliases.yaml mit Daten (ARCH-022: vorher
-        auto_learned_artists.yaml)"""
-        auto_file = self.mapping_dir / "auto_learned_artist_aliases.yaml"
+        """auto_learned_artist_aliases.json mit Daten (ARCH-022: vorher
+        auto_learned_artists.yaml, dann auto_learned_artist_aliases.yaml)"""
+        auto_file = self.mapping_dir / "auto_learned_artist_aliases.json"
         test_data = {
             "auto_learned": {
                 "alias1": "Artist1",
@@ -145,26 +147,26 @@ class TestAutoLearnManager(unittest.TestCase):
             }
         }
         with open(auto_file, "w", encoding="utf-8") as f:
-            yaml.dump(test_data, f)
-        
+            json.dump(test_data, f)
+
         result = self.auto_learn._load_auto_learned_artists()
         self.assertEqual(result, test_data["auto_learned"])
-    
+
     def test_load_auto_learned_genres_empty(self):
-        """Leere auto_learned_genre.yaml"""
+        """Leere auto_learned_genre.json"""
         result = self.auto_learn._load_auto_learned_genres()
         self.assertEqual(result, {})
-    
+
     def test_load_auto_learned_genres_with_data(self):
-        """auto_learned_genre.yaml mit Daten"""
-        genre_file = self.mapping_dir / "auto_learned_genre.yaml"
+        """auto_learned_genre.json mit Daten (ARCH-022: vorher .yaml)"""
+        genre_file = self.mapping_dir / "auto_learned_genre.json"
         test_data = {
             "ARTIST_GENRE_MAP": {
                 "Artist1": {"primary": "Rock", "secondary": []}
             }
         }
         with open(genre_file, "w", encoding="utf-8") as f:
-            yaml.dump(test_data, f)
+            json.dump(test_data, f)
         
         result = self.auto_learn._load_auto_learned_genres()
         self.assertEqual(result, test_data["ARTIST_GENRE_MAP"])
@@ -233,7 +235,7 @@ class TestAutoLearnAsync(unittest.TestCase):
         Identitaets-Mapping (raw_name == canonical_name) ist laut Docstring
         von learn_artist() KEIN Alias, sondern eine Bestaetigung eines
         bekannten Kuenstlers - das geht nach known_artists.yaml (nicht
-        auto_learned_artist_aliases.yaml) und liefert bei erfolgreichem Schreiben
+        auto_learned_artist_aliases.json) und liefert bei erfolgreichem Schreiben
         True, kein No-Op/False (STALE-TEST-Fix, vorher fehlerhafte Erwartung).
         """
         async def test():

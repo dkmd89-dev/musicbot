@@ -120,10 +120,11 @@ class TestLearnGenreRoutedThroughToThread:
 
 
 class TestAtomicWrite:
-    def test_interrupted_write_leaves_previous_valid_yaml_untouched(
+    def test_interrupted_write_leaves_previous_valid_json_untouched(
         self, auto_learn, mapping_dir, monkeypatch
     ):
-        auto_genre_path = mapping_dir / "auto_learned_genre.yaml"
+        # ARCH-022: auto_learned_genre.yaml -> auto_learned_genre.json.
+        auto_genre_path = mapping_dir / "auto_learned_genre.json"
 
         # Erster, erfolgreicher Schreibvorgang - reale Datei auf Platte.
         ok = asyncio.run(
@@ -137,9 +138,14 @@ class TestAtomicWrite:
         original_content = auto_genre_path.read_text(encoding="utf-8")
 
         # Zweiter Schreibvorgang wird simuliert unterbrochen (Absturz waehrend
-        # yaml.dump()).
+        # json.dump()). json wird in _write_json_atomic() LOKAL importiert
+        # (nicht auf Modulebene wie yaml), daher hier direkt das globale
+        # json-Modul patchen statt "services.metadata.auto_learn.json.dump".
+        import json as json_module
+
         monkeypatch.setattr(
-            "services.metadata.auto_learn.yaml.dump",
+            json_module,
+            "dump",
             lambda *a, **kw: (_ for _ in ()).throw(OSError("disk full")),
         )
 
@@ -225,8 +231,10 @@ class TestConcurrentWriteRace:
         results = asyncio.run(learn_many())
         assert all(results), "Nicht alle parallelen learn_genre()-Aufrufe waren erfolgreich"
 
-        auto_genre_path = auto_learn.config.GENRE_MAPPING_DIR / "auto_learned_genre.yaml"
-        data = yaml.safe_load(auto_genre_path.read_text(encoding="utf-8"))
+        import json
+
+        auto_genre_path = auto_learn.config.GENRE_MAPPING_DIR / "auto_learned_genre.json"
+        data = json.loads(auto_genre_path.read_text(encoding="utf-8"))
         genre_map = data.get("ARTIST_GENRE_MAP", {})
 
         for i in range(8):

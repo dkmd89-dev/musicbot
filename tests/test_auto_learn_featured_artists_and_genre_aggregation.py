@@ -26,6 +26,7 @@ GenreMapper) statt Nachbauten (CLAUDE.md Abschnitt 7).
 """
 
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -139,7 +140,7 @@ class TestFeaturedArtistObservation:
         assert d["predicted_observations"] == 1
         assert d["predicted_confidence"] == "OBSERVED"
 
-        auto_file = mapping_dir / "auto_learned_featured_artists.yaml"
+        auto_file = mapping_dir / "auto_learned_featured_artists.json"
         assert not auto_file.exists(), "Dry-Run darf NICHTS schreiben"
 
     def test_unknown_featured_artist_gets_learned_live(self, tmp_path):
@@ -156,10 +157,10 @@ class TestFeaturedArtistObservation:
         )
 
         assert decisions[0]["decision"] == "LEARNED"
-        auto_file = mapping_dir / "auto_learned_featured_artists.yaml"
+        auto_file = mapping_dir / "auto_learned_featured_artists.json"
         assert auto_file.exists()
         with open(auto_file) as f:
-            data = yaml.safe_load(f)
+            data = json.load(f)
         entry = data["featured_artists"]["Noah"]
         assert entry["role"] == "featured_artist"
         assert entry["observations"] == 1
@@ -180,8 +181,8 @@ class TestFeaturedArtistObservation:
         )
         assert len(decisions) == 2
         assert {d["decision"] for d in decisions} == {"LEARNED"}
-        with open(mapping_dir / "auto_learned_featured_artists.yaml") as f:
-            data = yaml.safe_load(f)
+        with open(mapping_dir / "auto_learned_featured_artists.json") as f:
+            data = json.load(f)
         assert set(data["featured_artists"].keys()) == {"1986zig", "Sido"}
 
     def test_observation_aggregation_across_multiple_calls(self, tmp_path):
@@ -198,8 +199,8 @@ class TestFeaturedArtistObservation:
         assert decisions[0]["predicted_observations"] == 3
         assert decisions[0]["predicted_confidence"] == "LEARNED"
 
-        with open(mapping_dir / "auto_learned_featured_artists.yaml") as f:
-            data = yaml.safe_load(f)
+        with open(mapping_dir / "auto_learned_featured_artists.json") as f:
+            data = json.load(f)
         entry = data["featured_artists"]["Noah"]
         assert entry["observations"] == 3
         assert entry["status"] == "LEARNED"
@@ -215,8 +216,8 @@ class TestFeaturedArtistObservation:
         decisions = _run(manager.observe_featured_artists("Gustav", ["Noah"], "Track 1 Remix"))
 
         assert decisions[0]["predicted_observations"] == 2
-        with open(mapping_dir / "auto_learned_featured_artists.yaml") as f:
-            data = yaml.safe_load(f)
+        with open(mapping_dir / "auto_learned_featured_artists.json") as f:
+            data = json.load(f)
         # Gustav darf trotz zweifacher Beobachtung nur EINMAL in primary_artists stehen
         assert data["featured_artists"]["Noah"]["primary_artists"] == ["Gustav"]
 
@@ -246,8 +247,8 @@ class TestFeaturedArtistObservation:
         )
         assert decisions[0]["canonical"] == "NOAH"
 
-        with open(mapping_dir_copy / "auto_learned_featured_artists.yaml") as f:
-            data = yaml.safe_load(f)
+        with open(mapping_dir_copy / "auto_learned_featured_artists.json") as f:
+            data = json.load(f)
         assert "NOAH" in data["featured_artists"]
         assert "Noah" not in data["featured_artists"]
 
@@ -264,10 +265,10 @@ class TestFeaturedArtistObservation:
         )
         assert decisions[0]["decision"] == "SKIPPED_KNOWN"
 
-        auto_file = mapping_dir_copy / "auto_learned_featured_artists.yaml"
+        auto_file = mapping_dir_copy / "auto_learned_featured_artists.json"
         if auto_file.exists():
             with open(auto_file) as f:
-                data = yaml.safe_load(f) or {}
+                data = json.load(f) or {}
             assert "Gustav" not in data.get("featured_artists", {})
 
     def test_auto_learn_does_not_overwrite_manual_mapping_added_later(
@@ -317,7 +318,7 @@ class TestFeaturedArtistObservation:
         """
         Abschnitt 16: ein Feature-Artist darf NIEMALS automatisch das Genre
         des Primary-Artists erben/lernen - observe_featured_artists() darf
-        auto_learned_genre.yaml gar nicht erst beruehren.
+        auto_learned_genre.json gar nicht erst beruehren.
         """
         mapping_dir = tmp_path / "mapping"
         mapping_dir.mkdir()
@@ -328,7 +329,7 @@ class TestFeaturedArtistObservation:
                 "Gustav", ["Noah"], "Gustav - Luftballon"
             )
         )
-        assert not (mapping_dir / "auto_learned_genre.yaml").exists()
+        assert not (mapping_dir / "auto_learned_genre.json").exists()
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -347,7 +348,7 @@ class TestGenreAutoLearnAggregation:
         )
         assert decision["decision"] == "WOULD_LEARN"
         assert decision["predicted_observations"] == 1
-        assert not (mapping_dir / "auto_learned_genre.yaml").exists()
+        assert not (mapping_dir / "auto_learned_genre.json").exists()
 
     def test_unknown_artist_genre_learned_live(self, tmp_path):
         mapping_dir = tmp_path / "mapping"
@@ -358,8 +359,8 @@ class TestGenreAutoLearnAggregation:
             manager.learn_genre("Neuer Artist", _genre_info("Pop", ["Electronic"]))
         )
         assert result is True
-        with open(mapping_dir / "auto_learned_genre.yaml") as f:
-            data = yaml.safe_load(f)
+        with open(mapping_dir / "auto_learned_genre.json") as f:
+            data = json.load(f)
         entry = data["ARTIST_GENRE_MAP"]["Neuer Artist"]
         assert entry["primary"] == "Pop"
         assert entry["observations"] == 1
@@ -377,10 +378,10 @@ class TestGenreAutoLearnAggregation:
         result = _run(manager.learn_genre("gustav", _genre_info("Voellig Anderes Genre")))
         assert result is False
 
-        auto_file = mapping_dir_copy / "auto_learned_genre.yaml"
+        auto_file = mapping_dir_copy / "auto_learned_genre.json"
         if auto_file.exists():
             with open(auto_file) as f:
-                data = yaml.safe_load(f) or {}
+                data = json.load(f) or {}
             assert "gustav" not in {k.lower() for k in data.get("ARTIST_GENRE_MAP", {})}
 
     def test_multiple_consistent_observations_reach_confirmed(self, tmp_path):
@@ -395,8 +396,8 @@ class TestGenreAutoLearnAggregation:
                 )
             )
         assert result is True
-        with open(mapping_dir / "auto_learned_genre.yaml") as f:
-            data = yaml.safe_load(f)
+        with open(mapping_dir / "auto_learned_genre.json") as f:
+            data = json.load(f)
         entry = data["ARTIST_GENRE_MAP"]["Nina Chuba"]
         assert entry["observations"] == 4
         assert entry["confidence"] == "CONFIRMED"
@@ -418,8 +419,8 @@ class TestGenreAutoLearnAggregation:
         _run(manager.learn_genre("Nina Chuba", _genre_info("Deutschpop", ["Hip Hop"])))
         _run(manager.learn_genre("Nina Chuba", _genre_info("Pop", ["Hip Hop"])))
 
-        with open(mapping_dir / "auto_learned_genre.yaml") as f:
-            data = yaml.safe_load(f)
+        with open(mapping_dir / "auto_learned_genre.json") as f:
+            data = json.load(f)
         entry = data["ARTIST_GENRE_MAP"]["Nina Chuba"]
         assert entry["primary"] == "Deutschpop", (
             "last value wins waere hier faelschlich 'Pop' - Mehrheitsvotum "
@@ -495,7 +496,7 @@ class TestGenreAutoLearnAggregation:
         # nicht - simuliert nur eine VOR dem manuellen Eintrag bereits
         # bestehende Auto-Learn-Historie).
         manager._write_genre_observation_sync(
-            mapping_dir / "auto_learned_genre.yaml", "Nina Chuba", "Pop", []
+            mapping_dir / "auto_learned_genre.json", "Nina Chuba", "Pop", []
         )
 
         from utils.singleton import SingletonMixin
@@ -520,12 +521,12 @@ class TestGustavLuftballonScenario:
 
     def test_gustav_primary_noah_featured_full_flow(self, mapping_dir_copy):
         # ARCH-022: auto_learned_artists.yaml wurde in zwei Dateien
-        # aufgeteilt - auto_learned_artist_aliases.yaml (Channel-Aliase)
-        # und auto_learned_featured_artists.yaml (Feature-Artist-
+        # aufgeteilt - auto_learned_artist_aliases.json (Channel-Aliase)
+        # und auto_learned_featured_artists.json (Feature-Artist-
         # Beobachtungen). mapping_dir_copy kopiert die echten mapping/-
         # Dateien 1:1, enthaelt also bereits beide neuen Dateien.
-        with open(mapping_dir_copy / "auto_learned_artist_aliases.yaml") as f:
-            original_channel_aliases = yaml.safe_load(f)["auto_learned"]
+        with open(mapping_dir_copy / "auto_learned_artist_aliases.json") as f:
+            original_channel_aliases = json.load(f)["auto_learned"]
 
         manager = _make_manager(mapping_dir_copy)
 
@@ -552,24 +553,24 @@ class TestGustavLuftballonScenario:
         assert d["predicted_observations"] == 1
         assert d["predicted_confidence"] == "OBSERVED"
 
-        with open(mapping_dir_copy / "auto_learned_featured_artists.yaml") as f:
-            data = yaml.safe_load(f)
+        with open(mapping_dir_copy / "auto_learned_featured_artists.json") as f:
+            data = json.load(f)
         noah_entry = data["featured_artists"]["NOAH"]
         assert noah_entry["primary_artists"] == ["Gustav"]
 
         # Kein Genre wurde fuer Noah gelernt (Abschnitt 16)
-        genre_file = mapping_dir_copy / "auto_learned_genre.yaml"
+        genre_file = mapping_dir_copy / "auto_learned_genre.json"
         if genre_file.exists():
             with open(genre_file) as f:
-                gdata = yaml.safe_load(f) or {}
+                gdata = json.load(f) or {}
             assert "NOAH" not in gdata.get("ARTIST_GENRE_MAP", {})
             assert "Noah" not in gdata.get("ARTIST_GENRE_MAP", {})
 
         # Bestehende Channel-Alias-Eintraege bleiben von der Feature-
         # Artist-Beobachtung unberuehrt - jetzt sogar physisch garantiert
         # (eigene Datei statt nur eigener Key in derselben Datei).
-        with open(mapping_dir_copy / "auto_learned_artist_aliases.yaml") as f:
-            aliases_after = yaml.safe_load(f)["auto_learned"]
+        with open(mapping_dir_copy / "auto_learned_artist_aliases.json") as f:
+            aliases_after = json.load(f)["auto_learned"]
         assert aliases_after == original_channel_aliases
 
 
@@ -591,8 +592,8 @@ class TestGustavLuftballonScenario:
 class TestAutoLearnedArtistsNamespaceSeparation:
     """
     ARCH-022: auto_learned_artists.yaml wurde in zwei physisch getrennte
-    Dateien aufgeteilt (auto_learned_artist_aliases.yaml fuer
-    Channel-Aliase, auto_learned_featured_artists.yaml fuer
+    Dateien aufgeteilt (auto_learned_artist_aliases.json fuer
+    Channel-Aliase, auto_learned_featured_artists.json fuer
     Feature-Artist-Beobachtungen) - vorher zwei Top-Level-Keys in
     derselben Datei. Diese Tests bleiben trotzdem sinnvoll: sie
     garantieren, dass ein Schreibvorgang in der einen Datei die andere
@@ -616,14 +617,14 @@ class TestAutoLearnedArtistsNamespaceSeparation:
                 track_context="Some Primary - Track",
             )
         )
-        featured_file = mapping_dir / "auto_learned_featured_artists.yaml"
+        featured_file = mapping_dir / "auto_learned_featured_artists.json"
         with open(featured_file) as f:
-            before = yaml.safe_load(f)
+            before = json.load(f)
         assert "SOME FEATURE" in before["featured_artists"] or any(
             k.lower() == "some feature" for k in before["featured_artists"]
         )
 
-        # Aktion: nur die auto_learned_artist_aliases.yaml wird beschrieben.
+        # Aktion: nur die auto_learned_artist_aliases.json wird beschrieben.
         result = _run(
             manager.learn_artist(
                 raw_name="Some Channel Name",
@@ -633,18 +634,18 @@ class TestAutoLearnedArtistsNamespaceSeparation:
         )
         assert result is True
 
-        aliases_file = mapping_dir / "auto_learned_artist_aliases.yaml"
+        aliases_file = mapping_dir / "auto_learned_artist_aliases.json"
         with open(aliases_file) as f:
-            aliases_data = yaml.safe_load(f)
+            aliases_data = json.load(f)
         assert (
             aliases_data["auto_learned"]["Some Channel Name"]
             == "Some Canonical Artist"
         )
 
         with open(featured_file) as f:
-            after = yaml.safe_load(f)
+            after = json.load(f)
         assert after == before, (
-            "Die auto_learned_featured_artists.yaml wurde durch das "
+            "Die auto_learned_featured_artists.json wurde durch das "
             "Schreiben eines Channel-Alias in auto_learned_artist_"
             "aliases.yaml veraendert - die beiden Dateien sind nicht "
             "sauber getrennt."

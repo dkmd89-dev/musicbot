@@ -139,13 +139,13 @@ class AutoLearnManager:
     Verwaltet das automatische Lernen von Artist- und Genre-Informationen.
 
     Schreibt ausschließlich in:
-      - auto_learned_artist_aliases.yaml    (Channel-Name-Aliase, ARCH-022:
-        vorher auto_learned_artists.yaml)
-      - auto_learned_featured_artists.yaml  (Feature-Artist-Beobachtungen,
+      - auto_learned_artist_aliases.json    (Channel-Name-Aliase, ARCH-022:
+        vorher auto_learned_artists.yaml, dann auto_learned_artist_aliases.yaml)
+      - auto_learned_featured_artists.json  (Feature-Artist-Beobachtungen,
         ARCH-022: vorher derselbe "featured_artists"-Schluessel in
-        auto_learned_artists.yaml)
-      - auto_learned_genre.yaml    (Genre-Zuordnungen)
-      - known_artists.yaml         (bestaetigte Identitaets-Mappings)
+        auto_learned_artists.yaml, dann eigene .yaml-Datei)
+      - auto_learned_genre.json    (Genre-Zuordnungen, ARCH-022: vorher .yaml)
+      - known_artists.yaml         (bestaetigte Identitaets-Mappings, bleibt YAML)
 
     Liest NIEMALS aus artist_overrides.yaml oder artist_genre.yaml heraus,
     aber prüft diese als Duplikat-Schutz.
@@ -180,10 +180,11 @@ class AutoLearnManager:
         self.genre_mapper = genre_mapper
         self.logger = logger or get_module_logger("AutoLearnManager")
         # INV-01/INV-02: ein gemeinsames Lock fuer alle vier Schreibpfade
-        # (auto_learned_genre.yaml, known_artists.yaml,
-        # auto_learned_artist_aliases.yaml, auto_learned_featured_artists.yaml,
-        # ARCH-022: letztere zwei vorher eine gemeinsame Datei
-        # auto_learned_artists.yaml) - bewusst EIN Lock statt vier
+        # (auto_learned_genre.json, known_artists.yaml,
+        # auto_learned_artist_aliases.json, auto_learned_featured_artists.json,
+        # ARCH-022: alle drei JSON-Dateien vorher YAML, die letzten beiden
+        # ausserdem vorher eine gemeinsame Datei auto_learned_artists.yaml)
+        # - bewusst EIN Lock statt vier
         # dateispezifischen Locks, da Schreibfrequenz niedrig ist und ein
         # einzelnes Lock die Komplexitaet/Deadlock-Flaeche minimiert
         # (CLAUDE.md §18: kleinste sinnvolle Aenderung).
@@ -199,6 +200,12 @@ class AutoLearnManager:
         Schreibt YAML atomar (write-tmp -> rename), analog zu
         MetadataCache.store() (utils/metadata_cache.py). Muss unter
         self._write_lock aufgerufen werden.
+
+        Nur noch fuer known_artists.yaml genutzt (manuell nachvollziehbare
+        Datei, bleibt YAML) - die drei Auto-Learn-Dateien
+        (auto_learned_genre.json, auto_learned_artist_aliases.json,
+        auto_learned_featured_artists.json) nutzen seit ARCH-022
+        _write_json_atomic() unten.
         """
         import yaml
 
@@ -221,6 +228,32 @@ class AutoLearnManager:
                 pass
             raise
 
+    @staticmethod
+    def _write_json_atomic(path: Path, data: dict) -> None:
+        """
+        Schreibt JSON atomar (write-tmp -> rename), analog zu
+        _write_yaml_atomic() oben. ARCH-022: die drei rein maschinell
+        geschriebenen/gelesenen Auto-Learn-Dateien (nie von Hand editiert,
+        kein Kommentar-Bedarf) wurden von YAML auf JSON umgestellt - u.a.
+        weil das bisherige _InlineListDumper-Konstrukt (oben) ein reiner
+        YAML-Formatierungs-Workaround war, den JSON nicht braucht (Arrays
+        sind dort immer "inline"). Muss unter self._write_lock aufgerufen
+        werden.
+        """
+        import json
+
+        tmp_path = path.with_suffix(f".tmp_{int(time.time() * 1000)}")
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False, sort_keys=True)
+            tmp_path.replace(path)
+        except Exception:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+
     # ─────────────────────────────────────────────────────────────────────────
     # Öffentliche API
     # ─────────────────────────────────────────────────────────────────────────
@@ -232,7 +265,7 @@ class AutoLearnManager:
         raw_name: str = "",
     ) -> bool:
         """
-        Schreibt/aggregiert Genre-Beobachtungen in auto_learned_genre.yaml.
+        Schreibt/aggregiert Genre-Beobachtungen in auto_learned_genre.json.
         Gibt True zurück wenn geschrieben wurde (neuer ODER aktualisierter
         Eintrag), sonst False.
 
@@ -285,7 +318,7 @@ class AutoLearnManager:
 
         try:
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
-            auto_genre_path = mapping_dir / "auto_learned_genre.yaml"
+            auto_genre_path = mapping_dir / "auto_learned_genre.json"
 
             written = await asyncio.to_thread(
                 self._write_genre_observation_sync,
@@ -400,12 +433,14 @@ class AutoLearnManager:
         Groß-/Kleinschreibung zu erzeugen.
         """
         try:
+            import json
+
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
-            auto_file = mapping_dir / "auto_learned_genre.yaml"
+            auto_file = mapping_dir / "auto_learned_genre.json"
             if not auto_file.exists():
                 return None, None
             with open(auto_file, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
+                data = json.load(f) or {}
             genre_map = data.get("ARTIST_GENRE_MAP", {})
             if artist_name in genre_map:
                 return artist_name, genre_map[artist_name]
@@ -433,10 +468,12 @@ class AutoLearnManager:
         OS-Threads hinweg (INV-01+INV-02, siehe Klassen-Docstring).
         """
         with self._write_lock:
+            import json
+
             data: dict = {}
             if auto_genre_path.exists():
                 with open(auto_genre_path, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or {}
+                    data = json.load(f) or {}
 
             genre_map = data.get("ARTIST_GENRE_MAP", {})
 
@@ -476,7 +513,7 @@ class AutoLearnManager:
             }
             data["ARTIST_GENRE_MAP"] = genre_map
 
-            self._write_yaml_atomic(auto_genre_path, data, inline_lists=True)
+            self._write_json_atomic(auto_genre_path, data)
             return True
 
     async def learn_artist(
@@ -487,8 +524,8 @@ class AutoLearnManager:
         channel_name: str = "",
     ) -> bool:
         """
-        Schreibt NUR Aliase in auto_learned_artist_aliases.yaml (ARCH-022:
-        vorher auto_learned_artists.yaml).
+        Schreibt NUR Aliase in auto_learned_artist_aliases.json (ARCH-022:
+        vorher auto_learned_artists.yaml, dann auto_learned_artist_aliases.yaml).
         Identitäts-Mappings (raw == canonical) gehen nach known_artists.yaml.
         """
         if source not in self.ALLOWED_ARTIST_SOURCES:
@@ -510,7 +547,7 @@ class AutoLearnManager:
         if raw_key.casefold() == canonical_value.casefold():
             return await self._save_known_artist(canonical_value)
 
-        # 3. Echter Alias → auto_learned_artist_aliases.yaml
+        # 3. Echter Alias → auto_learned_artist_aliases.json
         return await self._save_alias(raw_key, canonical_value)
 
     async def _save_known_artist(self, artist_name: str) -> bool:
@@ -553,13 +590,16 @@ class AutoLearnManager:
             return True
 
     async def _save_alias(self, raw_name: str, canonical_name: str) -> bool:
-        """Speichert einen Alias in auto_learned_artist_aliases.yaml
-        (ARCH-022: vorher auto_learned_artists.yaml, umbenannt zur
-        Namespace-Trennung vom "featured_artists"-Schluessel, siehe
-        _write_featured_observation_sync())."""
+        """Speichert einen Alias in auto_learned_artist_aliases.json
+        (ARCH-022: vorher auto_learned_artists.yaml, dann
+        auto_learned_artist_aliases.yaml - Namespace-Trennung vom
+        "featured_artists"-Schluessel siehe _write_featured_observation_sync(),
+        seitdem zusaetzlich JSON statt YAML - rein maschinell
+        geschriebene/gelesene Datei, kein Kommentar-/Formatierungs-
+        Bedarf)."""
         try:
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
-            alias_file = mapping_dir / "auto_learned_artist_aliases.yaml"
+            alias_file = mapping_dir / "auto_learned_artist_aliases.json"
 
             written = await asyncio.to_thread(
                 self._write_alias_sync, alias_file, raw_name, canonical_name
@@ -576,7 +616,7 @@ class AutoLearnManager:
 
         except Exception as e:
             self.logger.warning(
-                f"⚠️ [AUTO-LEARN] auto_learned_artist_aliases.yaml fehlgeschlagen: {e}"
+                f"⚠️ [AUTO-LEARN] auto_learned_artist_aliases.json fehlgeschlagen: {e}"
             )
         return False
 
@@ -585,17 +625,19 @@ class AutoLearnManager:
     ) -> bool:
         """Sync-Kern von _save_alias() - siehe Klassen-Docstring INV-01/INV-02."""
         with self._write_lock:
+            import json
+
             data = {"auto_learned": {}}
             if alias_file.exists():
                 with open(alias_file, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or {"auto_learned": {}}
+                    data = json.load(f) or {"auto_learned": {}}
 
             auto_learned = data.get("auto_learned", {})
             if raw_name.casefold() in (k.casefold() for k in auto_learned.keys()):
                 return False
 
             data["auto_learned"][raw_name] = canonical_name
-            self._write_yaml_atomic(alias_file, data)
+            self._write_json_atomic(alias_file, data)
             return True
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -619,10 +661,10 @@ class AutoLearnManager:
     ) -> List[Dict[str, Any]]:
         """
         Beobachtet Feature-Artists eines Tracks und aggregiert sie in
-        auto_learned_featured_artists.yaml unter dem Schlüssel
-        "featured_artists" (ARCH-022: eigene Datei, getrennt von
-        auto_learned_artist_aliases.yaml für Channel-Name-Aliase - vorher
-        beide Schlüssel in derselben Datei auto_learned_artists.yaml).
+        auto_learned_featured_artists.json unter dem Schlüssel
+        "featured_artists" (ARCH-022: eigene JSON-Datei, getrennt von
+        auto_learned_artist_aliases.json für Channel-Name-Aliase - vorher
+        beide Schlüssel in derselben YAML-Datei auto_learned_artists.yaml).
 
         Schreibt NIEMALS, wenn der (normalisierte) Name bereits anderweitig
         bekannt ist (Library/Overrides/known_artists/auto_learned - siehe
@@ -719,7 +761,7 @@ class AutoLearnManager:
         was_new = decision["decision"] == "WOULD_LEARN"
         try:
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
-            alias_file = mapping_dir / "auto_learned_featured_artists.yaml"
+            alias_file = mapping_dir / "auto_learned_featured_artists.json"
 
             await asyncio.to_thread(
                 self._write_featured_observation_sync,
@@ -747,12 +789,14 @@ class AutoLearnManager:
     ) -> Tuple[Optional[str], Optional[dict]]:
         """Liest (nur lesend) einen bestehenden Feature-Artist-Eintrag, case-insensitiv."""
         try:
+            import json
+
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
-            alias_file = mapping_dir / "auto_learned_featured_artists.yaml"
+            alias_file = mapping_dir / "auto_learned_featured_artists.json"
             if not alias_file.exists():
                 return None, None
             with open(alias_file, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
+                data = json.load(f) or {}
             featured = data.get("featured_artists", {})
             if canonical_name in featured:
                 return canonical_name, featured[canonical_name]
@@ -775,16 +819,18 @@ class AutoLearnManager:
         """
         Sync-Kern der Feature-Artist-Beobachtung (siehe Klassen-Docstring
         INV-01/INV-02). Schreibt in die eigene Datei
-        auto_learned_featured_artists.yaml (ARCH-022: vorher gemeinsam mit
-        dem "auto_learned"-Channel-Alias-Schluessel in derselben Datei -
+        auto_learned_featured_artists.json (ARCH-022: vorher gemeinsam mit
+        dem "auto_learned"-Channel-Alias-Schluessel in derselben YAML-Datei -
         seit der Namespace-Trennung braucht diese Datei keinen
-        "auto_learned"-Schluessel mehr).
+        "auto_learned"-Schluessel mehr; seitdem zusaetzlich JSON statt YAML).
         """
         with self._write_lock:
+            import json
+
             data: dict = {}
             if alias_file.exists():
                 with open(alias_file, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or {}
+                    data = json.load(f) or {}
             data.setdefault("featured_artists", {})
 
             featured = data["featured_artists"]
@@ -829,7 +875,7 @@ class AutoLearnManager:
             featured[existing_key] = entry
             data["featured_artists"] = featured
 
-            self._write_yaml_atomic(alias_file, data)
+            self._write_json_atomic(alias_file, data)
             return True
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -838,7 +884,7 @@ class AutoLearnManager:
 
     def _is_genre_already_learned(self, artist_name: str) -> bool:
         """
-        Prüft ob Genre bereits in artist_genre.yaml oder auto_learned_genre.yaml
+        Prüft ob Genre bereits in artist_genre.yaml oder auto_learned_genre.json
         existiert (case-insensitive).
         """
         try:
@@ -869,15 +915,17 @@ class AutoLearnManager:
                     )
                     return True
 
-            # Prüfe auto_learned_genre.yaml
-            auto_file = mapping_dir / "auto_learned_genre.yaml"
+            # Prüfe auto_learned_genre.json (ARCH-022: vorher .yaml)
+            import json
+
+            auto_file = mapping_dir / "auto_learned_genre.json"
             if auto_file.exists():
                 with open(auto_file, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or {}
+                    data = json.load(f) or {}
                 genre_map = data.get("ARTIST_GENRE_MAP", {})
                 if search_in_map(genre_map, artist_name):
                     self.logger.debug(
-                        f"🧠 [AUTO-LEARN] '{artist_name}' in auto_learned_genre.yaml gefunden → überspringe"
+                        f"🧠 [AUTO-LEARN] '{artist_name}' in auto_learned_genre.json gefunden → überspringe"
                     )
                     return True
 
@@ -888,7 +936,7 @@ class AutoLearnManager:
     def _is_genre_manually_defined(self, artist_name: str) -> bool:
         """
         Prüft NUR artist_genre.yaml (manuelle Konfiguration) - im Unterschied
-        zu _is_genre_already_learned() (das zusätzlich auto_learned_genre.yaml
+        zu _is_genre_already_learned() (das zusätzlich auto_learned_genre.json
         einschließt und daher für die Frage "darf weiter aggregiert werden"
         zu weit greift). Nur ein manueller Eintrag blockiert Auto-Learn
         dauerhaft (Auto-Learn-Auftrag Abschnitt 13/14) - ein bereits
@@ -914,7 +962,7 @@ class AutoLearnManager:
             return False
 
     def _is_artist_known(self, artist_name: str) -> bool:
-        """Prüft ob Artist bekannt ist (Library, Overrides, known_artists.yaml, auto_learned_artist_aliases.yaml)"""
+        """Prüft ob Artist bekannt ist (Library, Overrides, known_artists.yaml, auto_learned_artist_aliases.json)"""
         if not artist_name:
             return False
 
@@ -955,15 +1003,16 @@ class AutoLearnManager:
         except Exception:
             pass
 
-        # 4. auto_learned_artist_aliases.yaml (Alias-Quellen und -Ziele)
+        # 4. auto_learned_artist_aliases.json (Alias-Quellen und -Ziele,
+        #    ARCH-022: vorher .yaml)
         try:
-            import yaml
+            import json
 
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
-            alias_file = mapping_dir / "auto_learned_artist_aliases.yaml"
+            alias_file = mapping_dir / "auto_learned_artist_aliases.json"
             if alias_file.exists():
                 with open(alias_file, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or {}
+                    data = json.load(f) or {}
                 auto_learned = data.get("auto_learned", {})
                 for raw_alias, canonical in auto_learned.items():
                     if (
@@ -1023,18 +1072,18 @@ class AutoLearnManager:
         )
 
     def _load_auto_learned_artists(self) -> Dict[str, str]:
-        """Lädt auto_learned_artist_aliases.yaml (ARCH-022: vorher
-        auto_learned_artists.yaml)."""
+        """Lädt auto_learned_artist_aliases.json (ARCH-022: vorher
+        auto_learned_artists.yaml, dann auto_learned_artist_aliases.yaml)."""
         try:
-            import yaml
+            import json
 
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
-            auto_file = mapping_dir / "auto_learned_artist_aliases.yaml"
+            auto_file = mapping_dir / "auto_learned_artist_aliases.json"
             if not auto_file.exists():
                 return {}
 
             with open(auto_file, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
+                data = json.load(f) or {}
 
             return data.get("auto_learned", {})
         except Exception as e:
@@ -1043,17 +1092,17 @@ class AutoLearnManager:
             return {}
 
     def _load_auto_learned_genres(self) -> Dict[str, Any]:
-        """Lädt auto_learned_genre.yaml"""
+        """Lädt auto_learned_genre.json (ARCH-022: vorher .yaml)"""
         try:
-            import yaml
+            import json
 
             mapping_dir = Path(getattr(self.config, "GENRE_MAPPING_DIR", "mapping"))
-            auto_file = mapping_dir / "auto_learned_genre.yaml"
+            auto_file = mapping_dir / "auto_learned_genre.json"
             if not auto_file.exists():
                 return {}
 
             with open(auto_file, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
+                data = json.load(f) or {}
 
             return data.get("ARTIST_GENRE_MAP", {})
         except Exception as e:

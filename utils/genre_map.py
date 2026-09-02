@@ -232,9 +232,22 @@ class GenreMapper(SingletonMixin):
         logger.info(f"   🎤 {len(self.artist_map)} Artist-Mappings geladen (manuell)")
 
         # 2b. Auto-learned Artist-Mappings (werden nie überschrieben von manuellen)
-        auto_learned_path = mapping_path / "auto_learned_genre.yaml"
+        # ARCH-022: JSON statt YAML (rein maschinell geschriebene Datei,
+        # kein Kommentar-Bedarf) - bewusst NICHT ueber die gemeinsam
+        # genutzte load_yaml_data() oben, sondern lokal json.load(), da
+        # load_yaml_data() weiterhin fuer die manuell gepflegten
+        # YAML-Dateien (channel_genre.yaml, artist_genre.yaml, ...)
+        # unveraendert bleiben muss.
+        auto_learned_path = mapping_path / "auto_learned_genre.json"
         if auto_learned_path.exists():
-            auto_data = load_yaml_data(auto_learned_path)
+            import json
+
+            try:
+                with open(auto_learned_path, "r", encoding="utf-8") as f:
+                    auto_data = json.load(f) or {}
+            except (json.JSONDecodeError, OSError) as e:
+                logger.error(f"❌ Fehler beim Laden von {auto_learned_path}: {e}")
+                auto_data = {}
             raw_auto_map = auto_data.get("ARTIST_GENRE_MAP", auto_data) or {}
 
             # AUTOLEARN-GENRE-TRUST: eine einzelne Beobachtung (confidence
@@ -269,12 +282,12 @@ class GenreMapper(SingletonMixin):
                     added += 1
             logger.info(
                 f"   🧠 {added} Auto-Learned Artist-Mappings hinzugefügt "
-                f"({len(raw_auto_map)} gesamt in auto_learned_genre.yaml, "
+                f"({len(raw_auto_map)} gesamt in auto_learned_genre.json, "
                 f"{skipped_unverified} noch unbestaetigt/OBSERVED - nicht aktiv verwendet)"
             )
         else:
             logger.debug(
-                "   🧠 auto_learned_genre.yaml noch nicht vorhanden "
+                "   🧠 auto_learned_genre.json noch nicht vorhanden "
                 "(wird beim ersten Auto-Learn erstellt)"
             )
 

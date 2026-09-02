@@ -15,8 +15,9 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
+import json
+
 import pytest
-import yaml
 from mutagen.mp4 import MP4
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -155,7 +156,7 @@ class TestReprocessToolAutoLearnDryRun:
         assert len(feat) == 1
         assert feat[0]["canonical"] == "Noah"
         assert feat[0]["decision"] == "WOULD_LEARN"
-        assert not (mapping_dir / "auto_learned_featured_artists.yaml").exists(), (
+        assert not (mapping_dir / "auto_learned_featured_artists.json").exists(), (
             "Dry-Run darf keine Datei schreiben"
         )
 
@@ -175,7 +176,7 @@ class TestReprocessToolAutoLearnDryRun:
         predicted = dry_result["auto_learn"]["genre"]
         assert predicted["decision"] == "WOULD_LEARN"
         assert predicted["predicted_primary"] == "Indie Pop"
-        assert not (mapping_dir / "auto_learned_genre.yaml").exists()
+        assert not (mapping_dir / "auto_learned_genre.json").exists()
 
         # Zweiter, echter Lauf (gleicher, unveraenderter mapping_dir) muss
         # exakt das vom Dry-Run vorhergesagte Ergebnis erzeugen.
@@ -185,8 +186,8 @@ class TestReprocessToolAutoLearnDryRun:
             dry_run=False,
         )
         assert live_result["auto_learn"]["genre"]["decision"] == "WOULD_LEARN"
-        with open(mapping_dir / "auto_learned_genre.yaml") as f:
-            data = yaml.safe_load(f)
+        with open(mapping_dir / "auto_learned_genre.json") as f:
+            data = json.load(f)
         assert data["ARTIST_GENRE_MAP"]["Gustav"]["primary"] == "Indie Pop"
 
 
@@ -212,8 +213,8 @@ class TestReprocessToolAutoLearnLive:
         assert feat[0]["observations"] == 1
         assert feat[0]["confidence"] == "OBSERVED"
 
-        with open(mapping_dir / "auto_learned_featured_artists.yaml") as f:
-            data = yaml.safe_load(f)
+        with open(mapping_dir / "auto_learned_featured_artists.json") as f:
+            data = json.load(f)
         entry = data["featured_artists"]["Noah"]
         assert entry["role"] == "featured_artist"
         assert entry["primary_artists"] == ["Gustav"]
@@ -233,10 +234,10 @@ class TestReprocessToolAutoLearnLive:
             dry_run=False,
         )
 
-        genre_file = mapping_dir / "auto_learned_genre.yaml"
+        genre_file = mapping_dir / "auto_learned_genre.json"
         if genre_file.exists():
             with open(genre_file) as f:
-                data = yaml.safe_load(f) or {}
+                data = json.load(f) or {}
             genre_map = data.get("ARTIST_GENRE_MAP", {})
             assert "Noah" not in genre_map
 
