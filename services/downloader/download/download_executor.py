@@ -29,6 +29,7 @@ import yt_dlp
 
 from logger import get_module_logger
 from services.downloader.download_artifact_cleanup import cleanup_single_download_artifact
+from services.downloader.errors import DownloadCancelledError
 
 
 class DownloadExecutor:
@@ -290,6 +291,24 @@ class DownloadExecutor:
                     f"   Größe : {size_kb} KB"
                 )
                 return downloaded_file
+
+            except DownloadCancelledError:
+                # Download-Control-Center 2026-09-02: ein Nutzer-Abbruch
+                # (progress_hooks-Hook, siehe download_utils.py::
+                # _make_cancel_check_hook()) darf NICHT wie ein normaler
+                # Download-Fehler erneut versucht werden - sofort
+                # weiterreichen, ohne die Retry-Schleife unten zu
+                # durchlaufen. Der Aufrufer (_process_playlist_download())
+                # faengt diesen Typ separat ab und bricht die gesamte
+                # Playlist-Schleife ab statt zum naechsten Track zu gehen.
+                if raw_downloaded_path:
+                    cleanup_single_download_artifact(
+                        Path(raw_downloaded_path), download_dir, self.logger
+                    )
+                self.logger.info(
+                    f"🛑 [DL] Track {track_idx:02d}: Abgebrochen (Nutzeranfrage)"
+                )
+                raise
 
             except Exception as e:
                 last_error = e
