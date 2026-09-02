@@ -35,6 +35,20 @@ class StatistikHandler:
     - 🖼️ Automatische Diagramm-Erstellung
     - ⚡ Asynchrone Verarbeitung
     - 👤 NEU: Benutzerspezifisches Mapping (TelegramID -> NavidromeUser)
+
+    KEIN error_handler integriert (bewusste, geschlossene Entscheidung,
+    siehe docs/FINDINGS_INDEX.md) - anders als die übrigen Telegram-
+    Handler dieses Projekts. Grund: jeder except-Block hier editiert die
+    separat gesendete "läuft..."-Zwischennachricht (self.msg.edit_text(),
+    aus _send_processing_message()), NICHT die callback_query-Nachricht
+    selbst. Ein mechanisch verdrahteter error_handler (der wie bei den
+    übrigen Handlern die callback_query-Nachricht editieren würde) würde
+    hier die falsche Nachricht treffen und die "läuft..."-Nachricht
+    dauerhaft hängen lassen - eine echte UX-Regression, kein
+    kosmetisches Detail. Die bestehenden lokalen except-Blöcke sind
+    bereits funktional äquivalent zu dem, was ein error_handler leisten
+    würde (Nutzer bekommt die exakt richtige Nachricht editiert), nur
+    lokal statt über die geteilte Komponente - keine offene Lücke.
     """
 
     def __init__(self, user_mgmt_handler=None):
