@@ -6,6 +6,8 @@ Einstiegspunkt für die Dokumentation. Drei Ebenen (siehe README.md für Details
 - **ENGINEERING_BASELINE** – Wie ist der aktuelle technische Zustand? (für Wartung/Entwicklung)
 - **archive/arch/ARCH-xxx / archive/post-arch/POST-ARCH-xxx** – Warum wurde eine Architekturentscheidung getroffen? (Historie, unverändert)
 
+**Ist Finding X gerade offen oder geschlossen?** → [`FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — lebendes, fortlaufend gepflegtes Register aller aktuell offenen/zurückgestellten Punkte, statt durch Baseline-Dokumente blättern zu müssen. Die Tech-Debt-Tabelle in jeder Baseline bleibt ein eingefrorener Schnappschuss zum Freeze-Zeitpunkt.
+
 Status-Legende: **CURRENT** = aktuell gültig · **HISTORICAL** = abgeschlossenes Entscheidungsprotokoll, nicht mehr verändert · **SUPERSEDED** = durch neuere Version abgelöst
 
 Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/archive/`](archive/) — nur nicht mehr im direkten Sichtfeld von `docs/`, sodass dort ausschließlich die aktuell gültigen (CURRENT) Dokumente stehen. Die Pfade der Findings-Audits (Download Pipeline Stability, Metadata Quality, Einzelfund-Audits) werden aus Code-Kommentaren und Testdatei-Docstrings zur Traceability zitiert (z. B. `# DL-01 (docs/archive/MusicBot_..._AUDIT.md): ...`); beim Verschieben nach `docs/archive/` wurden alle ca. 30 betroffenen Referenzen in Code-Kommentaren, Test-Docstrings und Cross-References zwischen den Dokumenten selbst mit umgezogen.
