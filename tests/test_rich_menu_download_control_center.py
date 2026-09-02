@@ -254,6 +254,84 @@ class TestDlDetails:
         assert "Laufzeit" in text
 
 
+class TestDlMessagesAvoidMarkdownParseErrors:
+    """
+    Live-Fund 2026-09-02: eine echte YouTube-Playlist-URL
+    ("...list=OLAK5uy_nRANgdz-..." - enthält "_") führte bei dl:details
+    zu einem live beobachteten Telegram-BadRequest
+    ("Can't parse entities: can't find end of the entity starting at
+    byte offset 120"), weil active.url roh in eine mit
+    parse_mode="Markdown" gesendete Nachricht eingebettet wurde -
+    Telegrams Legacy-Markdown-Parser interpretiert ein einzelnes "_" als
+    unvollständig geschlossene Kursiv-Formatierung. Dieselbe Gefahr
+    besteht für Tracktitel/Artist-/Albumnamen (können "_"/"*" enthalten)
+    in _render_download_menu()/_handle_download_active(). Fix: kein
+    parse_mode mehr in der gesamten dl:-Sektion, sobald dynamische/
+    externe Inhalte vorkommen können - robuster als selektives Escapen
+    einzelner Felder.
+    """
+
+    def test_dl_menu_sends_no_parse_mode(self, menu_system, mock_update, mock_context):
+        mock_update.callback_query.data = "menu:download"
+
+        run_async(menu_system.handle_callback(mock_update, mock_context))
+
+        kwargs = mock_update.callback_query.edit_message_text.call_args.kwargs
+        assert "parse_mode" not in kwargs
+
+    def test_dl_active_sends_no_parse_mode(self, menu_system, mock_update, mock_context):
+        menu_system.active_downloads.register(
+            chat_id=999, url="https://youtu.be/x", download_type="single"
+        )
+        mock_update.callback_query.data = "dl:active"
+
+        run_async(menu_system.handle_callback(mock_update, mock_context))
+
+        kwargs = mock_update.callback_query.edit_message_text.call_args.kwargs
+        assert "parse_mode" not in kwargs
+
+    def test_dl_details_sends_no_parse_mode(self, menu_system, mock_update, mock_context):
+        menu_system.active_downloads.register(
+            chat_id=999, url="https://youtu.be/x", download_type="single"
+        )
+        mock_update.callback_query.data = "dl:details"
+
+        run_async(menu_system.handle_callback(mock_update, mock_context))
+
+        kwargs = mock_update.callback_query.edit_message_text.call_args.kwargs
+        assert "parse_mode" not in kwargs
+
+    def test_dl_details_survives_url_with_underscore(
+        self, menu_system, mock_update, mock_context
+    ):
+        """Reproduziert die live beobachtete URL-Form direkt."""
+        menu_system.active_downloads.register(
+            chat_id=999,
+            url="https://youtube.com/playlist?list=OLAK5uy_nRANgdz-XKrH5axQOcsfhJuCuZo414Z70",
+            download_type="playlist",
+        )
+        mock_update.callback_query.data = "dl:details"
+
+        run_async(menu_system.handle_callback(mock_update, mock_context))
+
+        text = last_text(mock_update)
+        assert "OLAK5uy_nRANgdz" in text
+
+    def test_dl_active_survives_track_title_with_underscore(
+        self, menu_system, mock_update, mock_context
+    ):
+        active = menu_system.active_downloads.register(
+            chat_id=999, url="https://youtu.be/x", download_type="playlist"
+        )
+        active.tracker.total_items = 2
+        active.tracker.set_current_item("01 - Track_mit_Unterstrichen")
+        mock_update.callback_query.data = "dl:active"
+
+        run_async(menu_system.handle_callback(mock_update, mock_context))
+
+        assert "Track_mit_Unterstrichen" in last_text(mock_update)
+
+
 class TestDlHistory:
     def test_shows_placeholder(self, menu_system, mock_update, mock_context):
         mock_update.callback_query.data = "dl:history"

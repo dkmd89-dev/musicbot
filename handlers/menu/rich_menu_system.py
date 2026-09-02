@@ -1959,7 +1959,16 @@ class RichMenuSystem:
         await self._render_download_menu(query, active)
 
     async def _render_download_menu(self, query, active) -> None:
-        lines = ["📥 *Downloads*", ""]
+        # Live-Fund 2026-09-02: active.title/tracker-Inhalte stammen aus
+        # echten YouTube-Titeln/Artist-/Albumnamen - koennen "_"/"*"
+        # enthalten, die Telegrams (Legacy-)Markdown-Parser als
+        # unvollstaendige Formatierung interpretiert
+        # ("Can't parse entities: can't find end of the entity", live
+        # reproduziert für eine URL mit "_"). Bewusst KEIN parse_mode in
+        # dieser gesamten dl:-Sektion, sobald dynamische/externe Inhalte
+        # vorkommen koennen - robuster als selektives Escapen einzelner
+        # Felder (das genau diesen Fund erst verursacht hat).
+        lines = ["📥 Downloads", ""]
         if active is not None:
             lines.append(f"🔄 Läuft gerade: {active.title or 'wird vorbereitet …'}")
         else:
@@ -1981,7 +1990,6 @@ class RichMenuSystem:
         await query.edit_message_text(
             "\n".join(lines),
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown",
         )
 
     async def _handle_download_control_callback(
@@ -2020,10 +2028,9 @@ class RichMenuSystem:
 
     async def _handle_download_new(self, query) -> None:
         await query.edit_message_text(
-            "🎵 *Neuer Download*\n\n"
+            "🎵 Neuer Download\n\n"
             "Sende mir einfach einen YouTube-Link (Song oder Playlist) - "
-            "ich erkenne automatisch, um welchen Typ es sich handelt.",
-            parse_mode="Markdown",
+            "ich erkenne automatisch, um welchen Typ es sich handelt."
         )
 
     async def _handle_download_active(self, query, chat_id: int) -> None:
@@ -2039,11 +2046,10 @@ class RichMenuSystem:
         active = self.active_downloads.get(chat_id) if self.active_downloads else None
         if active is None:
             await query.edit_message_text(
-                "🔄 *Aktive Downloads*\n\nAktuell läuft kein Download.",
+                "🔄 Aktive Downloads\n\nAktuell läuft kein Download.",
                 reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
                 ),
-                parse_mode="Markdown",
             )
             return
 
@@ -2051,8 +2057,11 @@ class RichMenuSystem:
         bar = _dl_progress_bar(tracker.processed_items, tracker.total_items)
         remaining = max(tracker.total_items - tracker.processed_items, 0)
 
+        # Live-Fund 2026-09-02: siehe _render_download_menu() - kein
+        # parse_mode, tracker.current_item/completed_items sind echte
+        # YouTube-Tracktitel (koennen "_"/"*" enthalten).
         lines = [
-            "📥 *Download läuft*",
+            "📥 Download läuft",
             "",
             f"🎵 {active.title or 'wird vorbereitet …'}",
             "",
@@ -2074,7 +2083,6 @@ class RichMenuSystem:
         await query.edit_message_text(
             "\n".join(lines),
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown",
         )
 
     async def _handle_download_cancel_request(self, query, chat_id: int) -> None:
@@ -2112,8 +2120,13 @@ class RichMenuSystem:
         elapsed = int(active.elapsed_seconds())
         minutes, seconds = divmod(elapsed, 60)
 
+        # Live-Fund 2026-09-02: siehe _render_download_menu() - kein
+        # parse_mode. Genau active.url hat den urspruenglichen Fehler
+        # ausgeloest ("Can't parse entities", "_" in der YouTube-URL von
+        # Telegrams Legacy-Markdown-Parser als unvollstaendige Kursiv-
+        # Formatierung interpretiert).
         lines = [
-            "ℹ️ *Download-Details*",
+            "ℹ️ Download-Details",
             "",
             f"🎵 Titel      : {active.title or '?'}",
             f"🔗 URL        : {active.url}",
@@ -2129,7 +2142,6 @@ class RichMenuSystem:
             reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:active")]]
             ),
-            parse_mode="Markdown",
         )
 
     async def _handle_download_history(self, query) -> None:
@@ -2139,11 +2151,10 @@ class RichMenuSystem:
         Persistenter JSON-Verlaufsspeicher folgt in einem eigenen Schritt.
         """
         await query.edit_message_text(
-            "📋 *Download-Verlauf*\n\nKommt in einem späteren Schritt.",
+            "📋 Download-Verlauf\n\nKommt in einem späteren Schritt.",
             reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
             ),
-            parse_mode="Markdown",
         )
 
     # ====== PLATZHALTER-HANDLER ======
