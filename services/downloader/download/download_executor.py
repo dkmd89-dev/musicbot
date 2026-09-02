@@ -331,6 +331,30 @@ class DownloadExecutor:
                 )
                 raise
 
+            except asyncio.CancelledError:
+                # P2-Fund (docs/FINDINGS_INDEX.md, "Verwaiste Teildatei bei
+                # Task-Cancellation"): eine ECHTE Task-Cancellation (z.B.
+                # Bot-Shutdown waehrend eines laufenden Downloads -
+                # asyncio.run() bricht beim Beenden alle noch offenen Tasks
+                # ab) ist NICHT dasselbe wie ein Nutzer-Hard-Cancel
+                # (DownloadCancelledError, siehe Zweig oben) und wurde
+                # bisher komplett unbehandelt durchgereicht: CancelledError
+                # erbt seit Python 3.8 von BaseException statt Exception -
+                # "except Exception" unten faengt sie nicht ab, das Cleanup
+                # darunter griff in diesem Fall nie. Analoge Bereinigung wie
+                # beim Nutzer-Abbruch (dank des tmpfilename-Fixes oben ist
+                # raw_downloaded_path auch waehrend eines laufenden
+                # Downloads bereits zuverlaessig gesetzt), aber ohne
+                # "Nutzeranfrage" zu behaupten - es ist keine.
+                if raw_downloaded_path:
+                    cleanup_single_download_artifact(
+                        Path(raw_downloaded_path), download_dir, self.logger
+                    )
+                self.logger.info(
+                    f"🛑 [DL] Track {track_idx:02d}: Abgebrochen (Task-Cancellation)"
+                )
+                raise
+
             except Exception as e:
                 last_error = e
                 if raw_downloaded_path:

@@ -1424,6 +1424,24 @@ async def _process_single_download(
             )
         raise _classify_ytdlp_error(e) from e
 
+    except asyncio.CancelledError:
+        # P2-Fund (docs/FINDINGS_INDEX.md, "Verwaiste Teildatei bei
+        # Task-Cancellation"): analog zur identischen Stelle in
+        # download_executor.py::download_single_track() - eine ECHTE Task-
+        # Cancellation (z.B. Bot-Shutdown waehrend eines laufenden
+        # Downloads) ist NICHT dasselbe wie ein Nutzer-Hard-Cancel
+        # (DownloadCancelledError, faellt oben bereits unter "except
+        # DownloadError") und wurde bisher unbehandelt durchgereicht -
+        # CancelledError erbt seit Python 3.8 von BaseException statt
+        # Exception, "except Exception" unten faengt sie nicht ab.
+        if raw_downloaded_path:
+            cleanup_single_download_artifact(
+                Path(raw_downloaded_path),
+                getattr(enhanced_processor.config, "DOWNLOAD_DIR", None),
+                logger,
+            )
+        raise
+
     except Exception as e:
         enhanced_processor.session_stats["failed_downloads"] += 1
         if raw_downloaded_path:
