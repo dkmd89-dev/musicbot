@@ -276,3 +276,31 @@ von `mapping/`). Der Freeze bleibt APPROVED.
 **Diese Datei ist damit abgeschlossen.** Neue Findings, Nachträge oder
 technische Schulden gehören ab jetzt in eine neue Datei
 `MusicBot_ENGINEERING_BASELINE_v9.md`, nicht mehr hierher.
+
+---
+
+## Nachtrag: ARCH-022 (2026-09-03)
+
+**Bewusster, minimaler Nachtrag** (Nutzer-Entscheidung: seit dem
+Freeze oben erst die erste ARCH-Phase, CLAUDE.md Abschnitt 30 erlaubt
+einen Nachtrag bis zu einer Drift von drei ARCH-Phasen — eine
+vollständige neue `v9` folgt erst bei größerer Drift oder auf
+gesonderten Auftrag). Alle vorherigen Abschnitte dieser Datei
+(insb. die Tech-Debt-Tabelle, Abschnitt 8) bleiben unverändert
+eingefroren.
+
+- **ARCH-022** (`chore/arch-022-auto-learn-genre-artist-reset`, 2 PRs):
+  Charakterisierung eines Live-Funds (Genre-Eintrag wird nach
+  `LEARNED`-Status nie wieder mit frischen Last.fm-Daten abgeglichen,
+  Nutzer-Entscheidung: bewusst won't-fix, nur manuell über
+  `scripts/reprocess_artist_metadata.py`), Namespace-Trennung von
+  `auto_learned_artists.yaml` in zwei Dateien, atomarer Schreibfix in
+  `ArtistNormalizer._save_auto_learned_entry()`, YAML→JSON-Migration
+  der drei rein maschinell geschriebenen Auto-Learn-Dateien, Reset von
+  als Migrations-Artefakt erkannten Bestandsdaten. Vollständige
+  Dokumentation: [`docs/GENRE_SYSTEM.md`](GENRE_SYSTEM.md), Finding:
+  [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md).
+- **Testergebnis nach ARCH-022:** 1982 passed, 1 skipped, 0 failed, 19
+  subtests passed (ggü. 1698 beim Freeze oben: +284, durch alle seither
+  gemergten Fixes dieser Session, nicht nur ARCH-022 — siehe
+  `docs/FINDINGS_INDEX.md` für den vollständigen Verlauf).
