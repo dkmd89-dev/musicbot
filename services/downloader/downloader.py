@@ -30,6 +30,7 @@ class YoutubeDownloader:
         cookie_handler: CookieHandler,
         duplicate_detector=None,
         status_callback=None,
+        active_download=None,
         # ... andere Parameter
     ):
         self.chat_id = chat_id
@@ -51,6 +52,12 @@ class YoutubeDownloader:
         # selbst gebundene Methode, die dort die Telegram-Formatierung und
         # den eigentlichen Versand uebernimmt.
         self.status_callback = status_callback
+        # Download-Control-Center 2026-09-02: optional ein
+        # services.downloader.active_downloads.ActiveDownload - liefert
+        # den geteilten ProgressTracker sowie das cancel_event fuer den
+        # ❌ Abbrechen-Button. Bleibt wie duplicate_detector/status_callback
+        # ein opakes Objekt ohne Telegram-Typ in dieser Schicht.
+        self.active_download = active_download
 
         self._logger_factory = get_module_logger
         self.logger = self._logger_factory("YoutubeDownloader")
@@ -81,6 +88,7 @@ class YoutubeDownloader:
                 logger_factory=self._logger_factory,
                 duplicate_detector=self.duplicate_detector,
                 status_callback=self.status_callback,
+                active_download=self.active_download,
             )
 
             self.logger.info(
@@ -101,8 +109,12 @@ class YoutubeDownloader:
                     if download_result
                     else "Unbekannter Fehler."
                 )
-                self.logger.error(f"❌ Download fehlgeschlagen: {error_message}")
-                return {"success": False, "error": error_message}
+                cancelled = bool(download_result.get("cancelled")) if download_result else False
+                if cancelled:
+                    self.logger.info("🛑 Download abgebrochen (Nutzeranfrage)")
+                else:
+                    self.logger.error(f"❌ Download fehlgeschlagen: {error_message}")
+                return {"success": False, "error": error_message, "cancelled": cancelled}
 
             processor = download_result.get("processor_instance")
             processing_stats = (
@@ -121,6 +133,7 @@ class YoutubeDownloader:
                 "type": download_result.get("type"),
                 "processing_stats": processing_stats,
                 "duration_seconds": download_result.get("duration_seconds"),
+                "cancelled": bool(download_result.get("cancelled")),
             }
 
             if download_result.get("type") == "playlist":
