@@ -27,6 +27,7 @@ und test_check_for_duplicates_end_to_end_library_fallback sind die
 Regressionstests dafuer.
 """
 
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -38,13 +39,25 @@ from services.downloader.models import DuplicateEntry
 
 class FakeConfig:
     """Minimale Config-Attribute, die DuplicateDetector/DuplicateCache
-    tatsaechlich lesen (getattr mit Fallback) - bewusst kein artist_config,
-    damit self.artist_normalizer None bleibt und die reine String-basierte
-    Normalisierung charakterisiert wird."""
+    tatsaechlich lesen (getattr mit Fallback). Seit dem P1-Fix (docs/audits/
+    P1_DUPLICATE_DETECTOR_ARTIST_NORMALIZER_WIRING_2026-09-02.md) wird
+    self.artist_normalizer/self.artist_processor unconditional konstruiert -
+    kein artist_config-Attribut mehr noetig (LIBRARY_DIR/ARTIST_OVERRIDE_FILE
+    reichen, mit denselben Fallbacks wie in EnhancedMetadataProcessor).
+    GENRE_MAPPING_DIR zeigt bewusst auf eine isolierte Kopie (nicht das
+    echte mapping/) - ohne sie faellt ArtistNormalizer intern auf das
+    echte, relative mapping/-Verzeichnis zurueck (ISOLATION-001-Muster,
+    siehe conftest.py) und koennte echte Mapping-Dateien beschreiben."""
 
     def __init__(self, tmp_path: Path):
         self.DUPLICATE_CACHE_DIR = str(tmp_path / "duplicate_cache")
         self.LIBRARY_DIR = str(tmp_path / "library")
+        mapping_dest = tmp_path / "mapping"
+        if not mapping_dest.exists():
+            shutil.copytree(
+                Path(__file__).resolve().parent.parent / "mapping", mapping_dest
+            )
+        self.GENRE_MAPPING_DIR = mapping_dest
 
 
 @pytest.fixture

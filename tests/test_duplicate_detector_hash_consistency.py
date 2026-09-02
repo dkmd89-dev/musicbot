@@ -14,10 +14,15 @@ Fix: register_download() wendet dieselbe Normalisierung wie
 check_for_duplicates() an, bevor der Eintrag gehasht/gespeichert wird.
 
 Nutzt dieselbe FakeConfig/handler-Fixture-Struktur wie
-tests/test_duplicate_handler.py (kein artist_config -> self.artist_normalizer
-bleibt None, reine String-basierte Normalisierung wird charakterisiert).
+tests/test_duplicate_handler.py. Stand P1 (docs/audits/
+P1_DUPLICATE_DETECTOR_ARTIST_NORMALIZER_WIRING_2026-09-02.md): self.
+artist_normalizer/self.artist_processor sind seit dem P1-Fix immer
+gesetzt (kein hasattr(config, "artist_config")-Gate mehr) - die hier
+gepruefte Hash-Konsistenz gilt unveraendert ueber den jetzt echten
+ArtistProcessor-Pfad.
 """
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -29,6 +34,16 @@ class FakeConfig:
     def __init__(self, tmp_path: Path):
         self.DUPLICATE_CACHE_DIR = str(tmp_path / "duplicate_cache")
         self.LIBRARY_DIR = str(tmp_path / "library")
+        # P1-Fix: ohne GENRE_MAPPING_DIR faellt ArtistNormalizer intern auf
+        # das echte, relative mapping/-Verzeichnis zurueck (ISOLATION-001-
+        # Muster, siehe conftest.py) und koennte echte Mapping-Dateien
+        # beschreiben (z.B. case_preserve.yaml Auto-Save).
+        mapping_dest = tmp_path / "mapping"
+        if not mapping_dest.exists():
+            shutil.copytree(
+                Path(__file__).resolve().parent.parent / "mapping", mapping_dest
+            )
+        self.GENRE_MAPPING_DIR = mapping_dest
 
 
 @pytest.fixture
