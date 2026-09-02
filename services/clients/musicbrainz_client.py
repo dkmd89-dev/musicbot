@@ -378,9 +378,27 @@ class MusicBrainzClient:
                 best_score = score
                 best_match = r
         if best_match and best_score >= min_score_threshold:
+            # Characterization fuer eine moegliche kuenftige Artist-Korrektur
+            # bei hochsicheren Matches (siehe docs/FINDINGS_INDEX.md/Diskussion
+            # 2026-09-02, Live-Fund "makko & The Chainsmokers" vs. "The
+            # Chainsmokers"): reine Log-Erweiterung, KEINE Verhaltensaenderung.
+            # clean_artist/pipeline_artist ist der bereits von der Pipeline
+            # bestimmte final_artist (Suchparameter dieser Methode) - bisher
+            # ging der eigentliche artist-credit-phrase der Aufnahme nach der
+            # Score-Berechnung verloren (_build_metadata() gibt "artist" als
+            # blossen Echo von original_artist zurueck, nie den MB-eigenen
+            # Wert). Damit lassen sich reale Diskrepanz-Faelle + Scores
+            # sammeln, bevor eine Korrektur-Schwelle kalibriert wird.
+            best_artist_phrase = best_match.get("artist-credit-phrase", "")
+            artist_match_note = (
+                "identisch"
+                if best_artist_phrase.strip().lower() == clean_artist.strip().lower()
+                else f"WEICHT AB von Pipeline-Artist '{clean_artist}'"
+            )
             self.logger.info(
                 f"[MusicBrainzMatch] ✅ Bestes Match mit Score {best_score:.2f} "
-                f"(über Schwelle {min_score_threshold:.2f})"
+                f"(über Schwelle {min_score_threshold:.2f}) — "
+                f"MB-Artist-Credit: '{best_artist_phrase}' ({artist_match_note})"
             )
             return best_match
         return None
