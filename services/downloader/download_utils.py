@@ -575,7 +575,7 @@ async def _process_playlist_download(
       [PL-ANALYSE]    PlaylistProcessor.process_playlist_metadata()
       [CHANNEL]       ChannelRouter.resolve_dominant_artist() (P1–P5)
       [YEAR]          YearResolver.resolve_playlist_year()
-      [TRACK XX/NN]   CacheManager → Duplicate-Check → DownloadExecutor → _process_track_metadata
+      [TRACK XX/NN]   Singles-Konflikt → CacheManager → Duplicate-Check → DownloadExecutor → _process_track_metadata
       [STATS]         ProgressFormatter.stats_table()
 
     Live-Fund 2026-09-02 (Nutzer-Report): _probe_artist_title_for_duplicate_check()
@@ -589,6 +589,21 @@ async def _process_playlist_download(
     ueberschrieben. duplicate_detector ist optional (None fuer Aufrufer, die
     keinen haben, z.B. isolierte Tests) - ohne ihn faellt dieser Schritt
     bewusst aus, exakt das bisherige Verhalten.
+
+    Playlist-Prioritaet (Nutzer-Wunsch 2026-09-02, Folge-Fund desselben
+    Reports): der obige Duplikat-Check allein loeste das Problem nicht
+    vollstaendig - er UEBERSPRINGT den Track nur, das Album blieb weiter
+    unvollstaendig. Zusaetzlich griff bereits VOR diesem Check der
+    Metadata-Cache-Kurzschluss (CacheManager.lookup_playlist_track()), der
+    einen Treffer als "Erfolg" meldet, ohne die Datei in den Album-Ordner
+    zu verschieben - live beobachtet fuer "wie du manchmal fehlst" (fehlte
+    im Album "dafuer bin ich frei EP", obwohl bereits als Single
+    vorhanden). Fix: DuplicateDetector.resolve_playlist_single_conflict()
+    laeuft jetzt VOR dem Cache-Check und loescht eine vorhandene
+    Singles-Datei physisch (inkl. Duplicate-Cache-Invalidierung), sodass
+    der Track danach normal (neu) heruntergeladen und korrekt im
+    Album-Ordner einsortiert wird - das Playlist-/Album-Ergebnis hat damit
+    bewusst Prioritaet vor der aelteren Einzel-Datei.
     """
     logger = logger or get_module_logger("download_utils")
 
@@ -687,6 +702,26 @@ async def _process_playlist_download(
                     total + 8,
                     f"Track {idx}/{total}: {track_title[:40]}...",
                     "EnhancedProcessor",
+                )
+
+            # ── SINGLES-KONFLIKT AUFLOESEN (Playlist-Prioritaet) ────────────────
+            # Nutzer-Wunsch 2026-09-02: siehe Docstring von
+            # DuplicateDetector.resolve_playlist_single_conflict() - MUSS vor
+            # dem CACHE-CHECK laufen, da genau dieser Cache-Kurzschritt bisher
+            # eine bereits als Single vorhandene Datei als "Erfolg" meldete,
+            # ohne sie in den Album-Ordner zu verschieben (Album blieb
+            # unvollstaendig). Nach dem Loeschen sieht sowohl der Cache- als
+            # auch der nachfolgende Duplikat-Check die Datei korrekt als
+            # nicht mehr vorhanden und laesst den Track normal herunterladen.
+            if (
+                duplicate_detector is not None
+                and track_artist
+                and track_artist != "?"
+                and track_title
+                and track_title != "?"
+            ):
+                duplicate_detector.resolve_playlist_single_conflict(
+                    track_artist, track_title
                 )
 
             # ── CACHE-CHECK ───────────────────────────────────────────────────
