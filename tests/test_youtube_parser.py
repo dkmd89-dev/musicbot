@@ -357,6 +357,71 @@ class TestCleanTitleSuffixesBareProdForm:
         assert _clean_title_suffixes("") == ""
 
 
+class TestCleanTitleSuffixesOfficialVersionSuffix:
+    """
+    Live-Fund 2026-09-03 (Nutzer-Report, echter Testdownload ueber den
+    Test-Bot): "SIDO - AUGEN AUF (OFFICIAL HD VERSION AGGROTV)" und
+    "SIDO - SCHLECHTES VORBILD (OFFICIAL HD VERSION AGGRO BERLIN)"
+    behielten den kompletten Klammer-Suffix bis in Datei-/Tag-Namen.
+
+    Ursache: keine bestehende Regel in _clean_title_suffixes() erfasste
+    eine Klammer, deren erstes Wort ein YouTube-Marketing-Schluesselwort
+    ist, gefolgt von einem reinen Kanalnamen ("AGGROTV"/"AGGRO BERLIN"
+    enthalten selbst weder "video" noch "audio" noch ein anderes bekanntes
+    Schluesselwort). Fix: neue Regel entfernt die komplette Klammer,
+    sobald das ERSTE Wort darin ein bekanntes Marketing-Schluesselwort
+    ist - unabhaengig von allen Folgewoertern (deckt damit auch beliebige
+    Kanalnamen ab). Nur am Titelende verankert, analog zu den uebrigen
+    Regeln dieser Funktion.
+    """
+
+    def test_official_hd_version_with_channel_name_is_removed(self):
+        """Kernfall 1, real via Live-Download reproduziert (SIDO - AUGEN AUF)."""
+        assert (
+            _clean_title_suffixes("AUGEN AUF (OFFICIAL HD VERSION AGGROTV)")
+            == "AUGEN AUF"
+        )
+
+    def test_official_hd_version_with_two_word_channel_name_is_removed(self):
+        """Kernfall 2, real via Live-Download reproduziert (SIDO - SCHLECHTES VORBILD)."""
+        assert (
+            _clean_title_suffixes(
+                "SCHLECHTES VORBILD (OFFICIAL HD VERSION AGGRO BERLIN)"
+            )
+            == "SCHLECHTES VORBILD"
+        )
+
+    def test_plain_official_version_without_extra_words_is_removed(self):
+        assert _clean_title_suffixes("Song Title (Official Version)") == "Song Title"
+
+    def test_lowercase_official_version_is_removed(self):
+        assert _clean_title_suffixes("Song Title (official version)") == "Song Title"
+
+    def test_unrelated_bracket_content_is_not_touched(self):
+        """Sicherheitsfall: eine Klammer, deren erstes Wort NICHT in der
+        Marketing-Schluesselwortliste steht, bleibt unangetastet."""
+        assert (
+            _clean_title_suffixes("Song Title (Extended Remix by DJ Someone)")
+            == "Song Title (Extended Remix by DJ Someone)"
+        )
+
+    def test_bracket_not_at_end_of_title_is_not_touched(self):
+        """Die Regel darf nur am Titelende greifen, nicht mitten im Titel."""
+        assert (
+            _clean_title_suffixes("Song (Official Version) Continued")
+            == "Song (Official Version) Continued"
+        )
+
+    def test_end_to_end_via_parse_youtube_title_real_reproduced_case(self):
+        """Der real reproduzierte Bug-Fall end-to-end ueber die volle
+        parse_youtube_title()-Pipeline, nicht nur die isolierte
+        Helper-Funktion."""
+        result = parse_youtube_title(
+            "SIDO - SCHLECHTES VORBILD (OFFICIAL HD VERSION AGGRO BERLIN)"
+        )
+        assert result["song_title"] == "SCHLECHTES VORBILD"
+
+
 class TestNormalizeString:
     def test_collapses_multiple_spaces(self):
         assert _normalize_string("A   B") == "A B"

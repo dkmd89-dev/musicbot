@@ -143,6 +143,27 @@ def _clean_title_suffixes(title: str) -> str:
     title = re.sub(r"\(feat\.[^)]*\)", "", title, flags=re.I)
     title = re.sub(r"\(ft\.[^)]*\)", "", title, flags=re.I)
 
+    # Live-Fund 2026-09-03 (Nutzer-Report, echter Testdownload ueber den
+    # Test-Bot): "SIDO - AUGEN AUF (OFFICIAL HD VERSION AGGROTV)" und
+    # "SIDO - SCHLECHTES VORBILD (OFFICIAL HD VERSION AGGRO BERLIN)"
+    # behielten den kompletten Klammer-Suffix bis in Datei-/Tag-Namen -
+    # keine der bestehenden Regeln erfasst eine Klammer, deren erstes Wort
+    # ein YouTube-Marketing-Schluesselwort ist, gefolgt von einem reinen
+    # Kanalnamen ("AGGROTV"/"AGGRO BERLIN" enthalten selbst weder "video"
+    # noch "audio" noch ein anderes bekanntes Schluesselwort). Entfernt die
+    # komplette Klammer, sobald das ERSTE Wort darin eines der bekannten
+    # Marketing-Schluesselwoerter ist - unabhaengig von allen Folgewoertern
+    # (deckt damit auch beliebige Kanalnamen ab). Nur am Titelende
+    # verankert (\s*$), analog zu den uebrigen Regeln dieser Funktion -
+    # eine Klammer mitten im Titel wird nicht angefasst.
+    title = re.sub(
+        r"\s*\(\s*(?:official|music|lyric|video|audio|live|version|remaster|hd|4k|vevo|explicit)"
+        r"(?:\s+\S+)*\s*\)\s*$",
+        "",
+        title,
+        flags=re.I,
+    )
+
     # Entferne auch ohne Klammern am Ende
     title = re.sub(r"\s*[-–—]\s*prod[^)]*$", "", title, flags=re.I)
 
