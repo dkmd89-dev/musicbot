@@ -122,6 +122,15 @@ handlers/
     → Benutzerinteraktion / Telegram-Präsentation
       (Nachrichtenversand, MarkdownV2-Formatierung, Callback-Handling)
 
+helfer/
+    → reine MarkdownV2-Formatierungs-Helfer für handlers/
+      (aktuell: markdown_helfer.py::escape_md_v2()/md_bold()/md_code(),
+      genutzt von handlers/navidrome_menu_handler.py,
+      handlers/mugge_statistik_handler.py,
+      handlers/menu/rich_menu_handler.py). Keine eigene Schicht mit
+      Fachlogik, sondern eine reine Utility-Auslagerung aus handlers/ —
+      Telegram-Objekte (Update, Message) gehören hier nicht hinein.
+
 klassen/
     → historisch gewachsene Orchestrierungsschicht zwischen handlers/ und
       services/ (aktuell: download_handler.py::DownloadHandler, von

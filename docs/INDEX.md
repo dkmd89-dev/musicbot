@@ -110,6 +110,7 @@ dokumentiert (Commit `14f40b3`).
 
 | Datei | Status | Kurzthema |
 |---|---|---|
+| [MusicBot_DUPLICATE_RESOLUTION_ARCHITECTURE.md](MusicBot_DUPLICATE_RESOLUTION_ARCHITECTURE.md) | CURRENT | Forensischer Architecture Decision Audit für eine zentrale Duplicate-Resolution-Komponente (Pre-Download-Prevention + Post-Download-/Library-Resolution, Album-vs-Single-Priorität) — ARCHITECTURE CONDITIONALLY APPROVED, Grundlage für `services/duplicate/resolution.py`/`classification.py`/`scripts/resolve_duplicates.py` |
 | [archive/MusicBot_MB01_ARTIST_MISMATCH_AUDIT.md](archive/MusicBot_MB01_ARTIST_MISMATCH_AUDIT.md) | HISTORICAL (committed) | MB-01 — MusicBrainz-Artist-Mismatch durch Titel-dominierte Gewichtung |
 | [archive/MusicBot_TAG01_MULTI_ARTIST_TAG_AUDIT.md](archive/MusicBot_TAG01_MULTI_ARTIST_TAG_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | TAG-01 — Multi-Artist-`ARTISTS`-Tag wird als separate Werte statt als String geschrieben |
 | [archive/MusicBot_TESTENV01_ISOLATION_AUDIT.md](archive/MusicBot_TESTENV01_ISOLATION_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | TESTENV-01 — `config_test.py` vollständig von Produktionspfaden isoliert |
