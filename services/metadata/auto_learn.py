@@ -530,15 +530,31 @@ class AutoLearnManager:
             return result
 
         observed_primary = genre_result.primary
-        secondary_genres: List[str] = []
-        if getattr(genre_result, "secondary", None):
-            secondary_genres = list(genre_result.secondary[:5])
-        elif getattr(genre_result, "raw_tags", None):
-            secondary_genres = [
-                t
-                for t in genre_result.raw_tags
-                if t.lower() != observed_primary.lower()
-            ][:5]
+        # BUGFIX 2026-09-03 (Oimara-Live-Fund): frueher gab es hier einen
+        # "elif raw_tags"-Fallback, der bei leerem genre_result.secondary
+        # ersatzweise die UNGEFILTERTEN raw_tags verwendete. genre_result.
+        # secondary stammt bei den einzigen beiden tatsaechlichen raw_tags-
+        # Quellen (MusicBrainz/Last.fm, siehe genre_processor.py::
+        # _fetch_genre_from_musicbrainz()/_fetch_genre_from_lastfm()) bereits
+        # aus prioritize_genres() - dort wurde IGNORE_SECONDARY (genre_filters.
+        # yaml) bereits angewendet. raw_tags ist an denselben Stellen bewusst
+        # die ROHE, ungefilterte Tag-Liste (fuer Nachvollziehbarkeit/Debugging
+        # gedacht, nicht als Ersatzwert). Der Fallback umging die Filterung
+        # dadurch systematisch: Last.fm lieferte fuer 'Oimara' nur
+        # ['german', 'deutschland'] - 'german' steht explizit in
+        # IGNORE_SECONDARY und wurde von prioritize_genres() korrekt zu
+        # secondary=[] gefiltert, landete durch diesen Fallback aber trotzdem
+        # in observed_secondary. Ein leeres secondary aus prioritize_genres()
+        # ist ein bewusstes, korrektes Ergebnis (kein zweiter valider Tag
+        # nach Filterung) - kein Mangel, der durch raw_tags kompensiert
+        # werden muesste. Keine der uebrigen GenreResult-Quellen (manuelles
+        # Genre, Feature-Artist-Inferenz) setzt raw_tags ueberhaupt, der
+        # Fallback hatte also keinen legitimen Anwendungsfall.
+        secondary_genres: List[str] = (
+            list(genre_result.secondary[:5])
+            if getattr(genre_result, "secondary", None)
+            else []
+        )
         result["observed_primary"] = observed_primary
         result["observed_secondary"] = secondary_genres
 
