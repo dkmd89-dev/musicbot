@@ -279,6 +279,22 @@ class DuplicateCache:
                 return (
                     f"youtube_video:{video_id}" if video_id else f"youtube_video:{url}"
                 )
+            elif "youtube.com/embed/" in url or "youtube.com/live/" in url:
+                # Charakterisierung 2026-09-03 (docs/FINDINGS_INDEX.md):
+                # analog zum P0-F-Shorts-Fix - youtube.com/embed/<id>
+                # (eingebettete Player-Links) und youtube.com/live/<id>
+                # (z.B. der spaeter verfuegbare VOD-Link eines beendeten
+                # Livestreams) verweisen auf dieselbe Video-ID wie
+                # watch?v=<id>, fielen vorher aber ebenfalls in den
+                # generischen netloc+path-Zweig unten und galten dadurch
+                # faelschlich als andere URL. Beide Pfad-Formen teilen
+                # sich denselben Zweig, da die Video-ID an derselben
+                # Position (letzter Pfad-Abschnitt) steht.
+                marker = "/embed/" if "youtube.com/embed/" in url else "/live/"
+                video_id = parsed_url.path.rsplit(marker, 1)[-1].strip("/")
+                return (
+                    f"youtube_video:{video_id}" if video_id else f"youtube_video:{url}"
+                )
             else:
                 normalized = f"{parsed_url.netloc}{parsed_url.path}"
                 if parsed_url.query:

@@ -207,6 +207,91 @@ class TestShortsUrlNormalization:
         assert reason == "url"
 
 
+class TestEmbedUrlNormalization:
+    """
+    Charakterisierung (docs/FINDINGS_INDEX.md, 2026-09-03): analog zum
+    P0-F-Shorts-Fund faellt youtube.com/embed/<id> bislang in den
+    generischen netloc+path-Zweig von _normalize_url_for_cache() und gilt
+    dadurch faelschlich als andere URL als der aequivalente
+    watch?v=<id>-Link fuer dieselbe Video-ID.
+    """
+
+    def test_embed_url_normalizes_to_same_key_as_watch_url(self, handler):
+        cache = handler.duplicate_cache
+        h_watch = cache.get_url_hash("https://www.youtube.com/watch?v=ABC123")
+        h_embed = cache.get_url_hash("https://www.youtube.com/embed/ABC123")
+        assert h_watch == h_embed
+
+    def test_embed_reupload_of_a_watch_url_is_detected_as_duplicate(self, handler):
+        handler.register_download(
+            "https://www.youtube.com/watch?v=ABC123", "Some Artist", "Some Song"
+        )
+
+        is_dup, entry, reason = handler.check_for_duplicates(
+            "https://www.youtube.com/embed/ABC123"
+        )
+
+        assert is_dup is True
+        assert reason == "url"
+
+    def test_embed_url_with_trailing_query_still_matches(self, handler):
+        """Embed-Links tragen z.B. gelegentlich ?start=30 - der
+        Query-String darf die Video-ID-Erkennung nicht stoeren."""
+        handler.register_download(
+            "https://www.youtube.com/embed/ABC123", "Some Artist", "Some Song"
+        )
+
+        is_dup, entry, reason = handler.check_for_duplicates(
+            "https://www.youtube.com/embed/ABC123?start=30"
+        )
+
+        assert is_dup is True
+        assert reason == "url"
+
+
+class TestLiveUrlNormalization:
+    """
+    Charakterisierung (docs/FINDINGS_INDEX.md, 2026-09-03): analog zum
+    P0-F-Shorts-Fund faellt youtube.com/live/<id> bislang ebenfalls in den
+    generischen netloc+path-Zweig von _normalize_url_for_cache() und gilt
+    dadurch faelschlich als andere URL als der aequivalente
+    watch?v=<id>-Link fuer dieselbe Video-ID (z.B. der spaeter verfuegbare
+    VOD-Link eines beendeten Livestreams).
+    """
+
+    def test_live_url_normalizes_to_same_key_as_watch_url(self, handler):
+        cache = handler.duplicate_cache
+        h_watch = cache.get_url_hash("https://www.youtube.com/watch?v=ABC123")
+        h_live = cache.get_url_hash("https://www.youtube.com/live/ABC123")
+        assert h_watch == h_live
+
+    def test_live_reupload_of_a_watch_url_is_detected_as_duplicate(self, handler):
+        handler.register_download(
+            "https://www.youtube.com/watch?v=ABC123", "Some Artist", "Some Song"
+        )
+
+        is_dup, entry, reason = handler.check_for_duplicates(
+            "https://www.youtube.com/live/ABC123"
+        )
+
+        assert is_dup is True
+        assert reason == "url"
+
+    def test_live_url_with_trailing_query_still_matches(self, handler):
+        """Live-Links tragen z.B. gelegentlich ?feature=share - der
+        Query-String darf die Video-ID-Erkennung nicht stoeren."""
+        handler.register_download(
+            "https://www.youtube.com/live/ABC123", "Some Artist", "Some Song"
+        )
+
+        is_dup, entry, reason = handler.check_for_duplicates(
+            "https://www.youtube.com/live/ABC123?feature=share"
+        )
+
+        assert is_dup is True
+        assert reason == "url"
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Layer 2: Content-Duplikat (Artist + Titel)
 # ─────────────────────────────────────────────────────────────────────────
