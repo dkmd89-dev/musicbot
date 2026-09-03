@@ -118,55 +118,69 @@ class ArtistProcessor:
         """
         Bestimmt den 'rohen' Namen fuer AutoLearnManager.learn_artist()
         (2026-09-03, Live-Fund: Repost-/Compilation-Kanal 'GermanHype'
-        lernte faelschlich einen Alias 'GermanHype' -> 'Peter Maffay',
-        obwohl der Titel-Parser 'Peter Maffay' korrekt AUS DEM TITEL
-        erkannt hatte - der Kanalname war an der eigentlichen Artist-
-        Bestimmung gar nicht beteiligt, artist_source war 'youtube_parsed').
+        lernte faelschlich Aliase 'GermanHype' -> 'Peter Maffay'/'Calvin
+        Harris' in auto_learned_artist_aliases.json, obwohl der
+        Titel-Parser den jeweiligen Kuenstler korrekt AUS DEM TITEL erkannt
+        hatte - der Kanalname war an der eigentlichen Artist-Bestimmung gar
+        nicht beteiligt, artist_source war 'youtube_parsed').
 
-        track_metadata['uploader'] (der Kanalname) bleibt bewusst die
-        BEVORZUGTE Quelle: im Normalfall (eigener Kuenstler-Kanal) IST der
-        Kanalname die authentische, rohe Schreibweise des Kuenstlernamens
-        (z.B. Kanal 'MAKKO' waehrend der normalisierte Name 'Makko' lautet)
-        - das automatische Lernen von Schreibvarianten funktioniert nur
-        deshalb. track_metadata['artist'] wird im restlichen Code NIRGENDS
-        gesetzt (repoweit verifiziert) und ist daher fast immer leer -
-        ein pauschaler Wechsel darauf haette das gesamte automatische
-        Alias-Learning fuer die haeufigste Quelle ('youtube_parsed')
-        faktisch stillgelegt (verworfener erster Loesungsansatz).
+        track_metadata['uploader'] (der Kanalname) bleibt bewusst ein
+        zulaessiger Kandidat: im Normalfall (eigener Kuenstler-Kanal) IST
+        der Kanalname die authentische, rohe Schreibweise des
+        Kuenstlernamens (z.B. Kanal 'MAKKO' waehrend der normalisierte Name
+        'Makko' lautet) - das automatische Lernen von Schreibvarianten
+        funktioniert nur deshalb.
 
-        Stattdessen: der Kanalname wird nur dann als roher Name geliefert,
-        wenn er dem bereits bestimmten canonical_name tatsaechlich
-        aehnelt (identisch oder Teilstring in eine der beiden Richtungen,
-        case-insensitiv) - deckt Case-/Zusatz-Varianten ab ('MAKKO' vs.
-        'Makko', 'Miksu' vs. 'Miksu & Macloud', 'Makko - Topic' vs.
-        'Makko'), verwirft aber offensichtlich unterschiedliche Kanal-/
-        Kuenstler-Namen-Paare (GermanHype vs. Peter Maffay/Oimara). Fehlt
+        WICHTIG (per Live-Debug-Log bewiesen, 2026-09-03, siehe
+        tests/test_artist_processor_raw_name_for_learning.py):
+        track_metadata['artist'] ist KEINE von uploader unabhaengige Quelle.
+        services/downloader/download_utils.py setzt es bereits BEIM
+        DOWNLOAD-SCHRITT auf 'video_info.get("artist") or
+        video_info.get("uploader")' (Single-Track- UND Playlist-Pfad) - bei
+        Videos ohne echtes yt-dlp-Artist-Tag (Normalfall bei Repost-
+        Kanaelen) ist es daher schlicht IDENTISCH mit dem Kanalnamen. Ein
+        erster Fix-Versuch pruefte nur uploader gegen canonical_name und
+        liess artist_field danach UNGEPRUEFT als Fallback durch - der
+        Kanalname kam dadurch ueber diesen Umweg trotzdem durch (live
+        reproduziert: Fall Calvin Harris/GermanHype).
+
+        Deshalb werden JETZT BEIDE Kandidaten (uploader und
+        track_metadata['artist']) gleichermassen gegen den bereits
+        bestimmten canonical_name geprueft - nur ein Kandidat, der ihm
+        tatsaechlich aehnelt (identisch oder Teilstring in eine der beiden
+        Richtungen, case-insensitiv), wird als roher Name geliefert. Deckt
+        weiterhin alle Normalfaelle ab ('MAKKO' vs. 'Makko', 'Miksu' vs.
+        'Miksu & Macloud', 'Makko - Topic' vs. 'Makko'), verwirft aber
+        beide Kandidaten, wenn keiner aehnelt (GermanHype vs. Peter
+        Maffay/Calvin Harris/Oimara - unabhaengig davon, dass artist_field
+        denselben kontaminierten Wert wie uploader trug). Fehlt
         canonical_name (kein bereits bestimmter Artist zum Vergleichen),
         wird konservativ das bisherige Verhalten beibehalten (uploader
         bevorzugt) - kein Overreach in einen nicht beobachteten Fall.
-
-        Faellt auf track_metadata['artist'] zurueck, wenn uploader fehlt
-        oder wegen fehlender Aehnlichkeit verworfen wurde.
         """
         uploader = (track_metadata.get("uploader") or "").strip()
         artist_field = (track_metadata.get("artist") or "").strip()
 
-        if not uploader:
-            return artist_field
-
         if not canonical_name:
-            return uploader
+            return uploader or artist_field
 
-        uploader_lower = uploader.lower()
         canonical_lower = canonical_name.strip().lower()
-        if (
-            uploader_lower == canonical_lower
-            or uploader_lower in canonical_lower
-            or canonical_lower in uploader_lower
-        ):
-            return uploader
 
-        return artist_field
+        def _resembles(candidate: str) -> bool:
+            if not candidate:
+                return False
+            candidate_lower = candidate.lower()
+            return (
+                candidate_lower == canonical_lower
+                or candidate_lower in canonical_lower
+                or canonical_lower in candidate_lower
+            )
+
+        if _resembles(uploader):
+            return uploader
+        if _resembles(artist_field):
+            return artist_field
+        return ""
 
     def clean_artist_before_normalization(self, artist: str) -> str:
         """

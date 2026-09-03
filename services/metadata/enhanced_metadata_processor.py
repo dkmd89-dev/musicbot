@@ -1087,17 +1087,32 @@ class EnhancedMetadataProcessor(SingletonMixin):
             )
             if artist_source in _learn_sources and not _is_special_channel_for_learning:
                 try:
-                    # 2026-09-03 (Live-Fund GermanHype -> Peter Maffay):
-                    # raw_name kommt jetzt ueber
-                    # ArtistProcessor.raw_name_for_learning() - verwirft den
-                    # Kanalnamen als rohen Namen, wenn er dem bereits
-                    # bestimmten Artist offensichtlich NICHT aehnelt (siehe
-                    # Docstring dort), statt ihn wie zuvor unbedingt zu
-                    # bevorzugen.
+                    # 2026-09-03 (Live-Fund GermanHype -> Peter Maffay/Calvin
+                    # Harris, siehe raw_name_for_learning()-Docstring fuer
+                    # den vollstaendigen Forensik-Befund): raw_name kommt
+                    # ueber ArtistProcessor.raw_name_for_learning() - prueft
+                    # sowohl uploader ALS AUCH track_metadata['artist']
+                    # gegen den bereits bestimmten Artist, statt einen davon
+                    # unbedingt zu bevorzugen (track_metadata['artist'] wird
+                    # von download_utils.py selbst schon mit dem Kanalnamen
+                    # kontaminiert, wenn yt-dlp kein echtes Artist-Tag
+                    # liefert - beide Kandidaten koennen also den blossen
+                    # Kanalnamen tragen).
+                    _learn_raw_name = self.artist_processor.raw_name_for_learning(
+                        track_metadata, artist_for_metadata
+                    )
+                    if not _learn_raw_name:
+                        self.logger.debug(
+                            f"🧠 [AUTO-LEARN] Artist-Learning BLOCKED: weder "
+                            f"uploader={track_metadata.get('uploader')!r} noch "
+                            f"artist_field={track_metadata.get('artist')!r} "
+                            f"aehneln dem bestimmten Artist "
+                            f"{artist_for_metadata!r} - kein roher Name fuer "
+                            f"das Lernen verfuegbar (verhindert Kanalname-als-"
+                            f"Artist-Alias, siehe raw_name_for_learning())."
+                        )
                     await self.auto_learn_manager.learn_artist(
-                        raw_name=self.artist_processor.raw_name_for_learning(
-                            track_metadata, artist_for_metadata
-                        ),
+                        raw_name=_learn_raw_name,
                         canonical_name=artist_for_metadata,
                         source=artist_source,
                         channel_name=track_metadata.get("channel", "")
