@@ -855,6 +855,12 @@ async def process_file(
         log.kv("→ action", cover_action, indent=2)
 
         # ── Album/Jahr: bestehende Werte als Vertrauensbasis uebernehmen ───
+        # Vorgezogen (war urspruenglich erst weiter unten bei der
+        # Dateinamensplanung berechnet) - wird jetzt bereits hier fuer die
+        # Album-Bestimmung gebraucht, siehe Nutzer-Entscheidung 2026-09-03
+        # unten.
+        is_singles = before["parent_dirname"] == "Singles"
+
         existing_album = before["album"][0] if before["album"] else None
         # Nutzer-Fund (2026-09-02, echter Testlauf Artist "makko" ueber
         # main, VOR diesem Branch): das bisherige "existing_album or ..."
@@ -881,11 +887,33 @@ async def process_file(
             existing_year = int(existing_year_raw) if existing_year_raw else None
         except (TypeError, ValueError):
             existing_year = None
+
+        # Nutzer-Fund/-Entscheidung 2026-09-03: light_title_cleanup() ist
+        # bewusst konservativ (siehe dessen eigener Docstring) und entfernt
+        # KEINEN Remix-Zusatz - ein bereits vorhandenes Album-Tag wie
+        # 'Blauer Tag (Robin Schulz Remix)' blieb dadurch trotz obiger
+        # Bereinigung mit Remix-Zusatz stehen, waehrend der TITEL zur
+        # selben Zeit bereits korrekt zu 'Blauer Tag' bereinigt wurde
+        # (strip_remix_suffix() oben im TitleCleaner-Schritt) - Titel und
+        # Album liefen dadurch auseinander. Nutzer-Regel: bei einer Single
+        # (Track liegt im Singles-Ordner, nicht in einem Album-Ordner mit
+        # Tracknummer) ist das Album per Definition IMMER identisch zum
+        # Titel - ein eigenstaendiger, davon abweichender Album-Name ergibt
+        # bei einer Einzelveroeffentlichung fachlich keinen Sinn. Fuer
+        # Singles wird das (ggf. bestehende, aber ggf. veraltete)
+        # Album-Tag deshalb bewusst NICHT als Wahrheit uebernommen, sondern
+        # immer durch den bereits bereinigten clean_title ersetzt. Fuer
+        # Album-Tracks (eigener Ordner mit Tracknummer) bleibt ein
+        # vorhandener, eigenstaendiger Album-Name weiterhin massgeblich -
+        # dort ist ein vom Titel abweichender Album-Name die Regel, nicht
+        # die Ausnahme.
+        if is_singles:
+            album_value = clean_title
+        else:
+            album_value = existing_album or clean_title
+
         album_info = {
-            # clean_title ist bereits remix-frei (siehe strip_remix_suffix()-
-            # Aufruf oben im TitleCleaner-Schritt) - kein zusaetzlicher
-            # Strip-Aufruf hier mehr noetig.
-            "album": existing_album or clean_title,
+            "album": album_value,
             "album_artist": final_artist,
             "year": existing_year,
         }
@@ -906,7 +934,6 @@ async def process_file(
         # mitsanitisiert (z.B. "...GESEHEN?.m4a"), bliebe ein durch "?"
         # erzeugtes Leerzeichen VOR der Endung stehen (waehrend Phase C real
         # aufgetreten und korrigiert, siehe docs/archive/METADATA_REPROCESSING_TEST_CHAPO102.md).
-        is_singles = before["parent_dirname"] == "Singles"
         existing_track_number = before["track_number"]
         rename_planned = False
         rename_target = None
