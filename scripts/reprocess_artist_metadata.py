@@ -464,8 +464,7 @@ _PRODUCER_CREDIT_BARE_PATTERN = re.compile(
 
 def strip_producer_credit(title: str) -> str:
     """Entfernt einen abschliessenden Produzenten-Credit aus dem TITEL
-    selbst (anders als strip_remix_suffix_for_album() unten, das nur den
-    Album-Fallback betrifft) - '\"ADLIBS\" prod. Safecall777' -> '\"ADLIBS\"'.
+    selbst - '\"ADLIBS\" prod. Safecall777' -> '\"ADLIBS\"'.
     Deckt sowohl die geklammerte als auch die klammerlose/trennerlose Form
     ab. Bleibt am Ende nichts Sinnvolles uebrig, wird der Original-Titel
     unveraendert zurueckgegeben - kein leerer Titel."""
@@ -475,25 +474,41 @@ def strip_producer_credit(title: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Album-Fallback ohne Remix-Zusatz (Phase 1, 2026-09-02, Nutzer-Fund)
+# Remix-Zusatz-Bereinigung (Phase 1, 2026-09-02, erweitert 2026-09-03)
 # ─────────────────────────────────────────────────────────────────────────
 
 _REMIX_SUFFIX_PATTERN = re.compile(r"\s*\([^()]*\bremix\b[^()]*\)\s*$", re.IGNORECASE)
 
 
-def strip_remix_suffix_for_album(title: str) -> str:
+def strip_remix_suffix(title: str) -> str:
     """Leitet aus einem Titel wie 'Blauer Tag (Robin Schulz Remix)' den
-    Basis-Song-Namen 'Blauer Tag' fuer den Album-FALLBACK ab, wenn kein
-    echter Album-Tag vorhanden ist (Nutzer-Fund/-Entscheidung 2026-09-02,
-    Live-Testlauf Artist 'Möwe': album fiel bisher blind auf den
-    kompletten clean_title zurueck, inkl. Remix-Zusatz - 'album:
-    [Blauer Tag (Robin Schulz Remix)]' identisch zu title). Der TITEL
-    selbst (Tag-Wert) bleibt davon unberuehrt - nur dieser Album-
-    FALLBACK-Wert wird bereinigt. Entfernt ausschliesslich ein
+    Basis-Song-Namen 'Blauer Tag' ab. Entfernt ausschliesslich ein
     abschliessendes '(...Remix...)'-Klammerpaar, keine sonstige
     Bereinigung. Bleibt am Ende nichts Sinnvolles uebrig (z.B. Titel
     bestand nur aus der Klammer), wird der Original-Titel unveraendert
-    zurueckgegeben - kein leeres Album raten."""
+    zurueckgegeben - kein leerer Titel/leeres Album raten.
+
+    Ursprünglich (2026-09-02, Live-Testlauf Artist 'Möwe') nur fuer den
+    Album-FALLBACK gedacht (der TITEL-Tag sollte laut damaliger
+    Nutzer-Entscheidung unveraendert mit Remix-Hinweis bleiben - 'album:
+    [Blauer Tag (Robin Schulz Remix)]' identisch zu title war der
+    urspruengliche Fund).
+
+    Nutzer-Entscheidung 2026-09-03 (Rueckfrage zum selben Fund, diesmal
+    ueber die neue Telegram-Integration reproduziert): diese Entscheidung
+    wird bewusst umgekehrt - der TITEL soll jetzt dieselbe Logik wie die
+    echte Download-Pipeline verwenden. Verifiziert in
+    utils/youtube_parser.py::parse_youtube_title() Schritt 7:
+    _clean_bracket_content(song_title, preserve_remix=False) entfernt den
+    Remix-Zusatz dort ebenfalls aus dem finalen Titel (nur die
+    Artist-/Titel-SPLITTING-Stufe in Schritt 1 behaelt ihn bewusst, um
+    Klammerinhalte nicht als Trenner misszuinterpretieren). Diese Funktion
+    bleibt eine eigene, lokale Nachbildung statt eines direkten Imports
+    von _clean_bracket_content() (private Funktion, arbeitet dort auf
+    rohen YouTube-Titeln vor dem Parsing - dieses Skript arbeitet auf
+    bereits vorhandenen Tag-Werten, ein anderer Eingabebereich), analog
+    zum bereits etablierten Muster von strip_producer_credit() oben
+    (eigene, dokumentiert deckungsgleiche Regel statt Cross-Import)."""
     stripped = _REMIX_SUFFIX_PATTERN.sub("", title).strip()
     return stripped or title
 
@@ -645,6 +660,13 @@ async def process_file(
             existing_title, final_artist
         )
         clean_title = strip_producer_credit(clean_title)
+        # Nutzer-Entscheidung 2026-09-03: Titel folgt jetzt derselben Regel
+        # wie die echte Download-Pipeline (siehe strip_remix_suffix()-
+        # Docstring) - betrifft dadurch automatisch auch den Dateinamen
+        # (unten, expected_stem) und den Album-Fallback (unten, kein
+        # zusaetzlicher Strip-Aufruf mehr noetig, da clean_title bereits
+        # remix-frei ist).
+        clean_title = strip_remix_suffix(clean_title)
         search_title = processor.title_cleaner.build_search_title(
             parsed_title=None, original_title=clean_title, final_artist=final_artist
         )
@@ -860,7 +882,10 @@ async def process_file(
         except (TypeError, ValueError):
             existing_year = None
         album_info = {
-            "album": existing_album or strip_remix_suffix_for_album(clean_title),
+            # clean_title ist bereits remix-frei (siehe strip_remix_suffix()-
+            # Aufruf oben im TitleCleaner-Schritt) - kein zusaetzlicher
+            # Strip-Aufruf hier mehr noetig.
+            "album": existing_album or clean_title,
             "album_artist": final_artist,
             "year": existing_year,
         }
