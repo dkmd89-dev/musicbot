@@ -40,6 +40,7 @@ from handlers.menu.activity_tracking import record_activity
 from handlers.test_menu_handler import TestMenuHandler
 from handlers.enhanced_logger_menu_handler import EnhancedLoggerMenuHandler
 from handlers.navidrome_menu_handler import NavidromeMenuHandler
+from handlers.menu.reprocessing_menu_handler import ReprocessingMenuHandler
 from handlers.mugge_statistik_handler import StatistikHandler
 from handlers.admin.user_management_handler import UserManagementHandler
 from handlers.admin.backup_handler import BackupHandler
@@ -98,6 +99,7 @@ class RichMenuHandler:
         self.status_handler: Optional[EnhancedStatusHandler] = None
         self.backup_handler: Optional[BackupHandler] = None
         self.restart_handler: Optional[BotRestartHandler] = None
+        self.reprocessing_handler: Optional[ReprocessingMenuHandler] = None
 
         # Download-Control-Center 2026-09-02: EINE prozessweite Registry,
         # ueber die gesamte Bot-Laufzeit auf diesem (im Gegensatz zu
@@ -314,6 +316,22 @@ class RichMenuHandler:
             self.logger.error(f"❌ Metadata-Processor Fehler: {e}", exc_info=True)
             self.metadata_processor = None
 
+        # 12. Reprocessing-Handler (ruft scripts/reprocess_artist_metadata.py
+        # ausschliesslich als eigenstaendigen Subprozess auf, siehe
+        # docs/METADATA_REPROCESSING.md Abschnitt 2a - genau deshalb
+        # unproblematisch, obwohl Schritt 11 oben bereits real beweist,
+        # dass EnhancedMetadataProcessor in diesem Bot-Prozess laengst mit
+        # der echten config.Config konstruiert ist)
+        try:
+            self.reprocessing_handler = ReprocessingMenuHandler(
+                self.config, self.logger_factory
+            )
+            self.reprocessing_handler.error_handler = self.error_handler
+            self.logger.info("✅ ReprocessingMenuHandler initialisiert")
+        except Exception as e:
+            self.logger.error(f"❌ Reprocessing-Handler Fehler: {e}", exc_info=True)
+            self.reprocessing_handler = None
+
         self._record_initial_handler_statuses()
 
         # ── Menüsystem initialisieren und Handler verknüpfen ──────────────────
@@ -341,6 +359,8 @@ class RichMenuHandler:
         self.menu_system.set_download_history(self.download_history)
         self.menu_system.set_url_retry_callback(self._process_url)
         self.menu_system.set_maintenance_store(self.maintenance_store)
+        if self.reprocessing_handler:
+            self.menu_system.set_reprocessing_handler(self.reprocessing_handler)
 
         # Handler registrieren
         self._register_download_handlers()
@@ -380,6 +400,7 @@ class RichMenuHandler:
             ("backup_handler", self.backup_handler),
             ("restart_handler", self.restart_handler),
             ("metadata_processor", self.metadata_processor),
+            ("reprocessing_handler", self.reprocessing_handler),
         ]:
             self.status_handler.bot_tracker.update_handler_status(
                 handler_name, "active" if handler_instance else "error"
@@ -570,6 +591,12 @@ class RichMenuHandler:
             # komplett (kein Handler-Match), daher weder Log-Eintrag noch
             # Exception.
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^dl:"),
+            # Metadata-Reprocessing 2026-09-03: derselbe "Bug B"-Fall wie
+            # bei maint:/dl: oben - ohne diesen Handler verpuffte jeder
+            # reprocess:-Callback stillschweigend, obwohl das interne
+            # reprocess:-Routing in RichMenuSystem.handle_callback()
+            # bereits korrekt ist.
+            CallbackQueryHandler(self.menu_system.handle_callback, pattern="^reprocess:"),
             # Allgemeines Menü zuletzt
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^menu:"),
             # URL Handler (YouTube-URLs)

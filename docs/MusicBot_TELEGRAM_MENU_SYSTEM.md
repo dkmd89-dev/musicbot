@@ -347,7 +347,79 @@ Volle Suite: 2146 passed, 1 skipped, 0 Regressionen.
 
 ---
 
-## 5. Muster für künftige Menü-Erweiterungen
+## 5. Metadata-Reprocessing (Telegram-Integration, 2026-09-03)
+
+Nutzer-Auftrag: `scripts/reprocess_artist_metadata.py` (bisher reines
+CLI-Werkzeug, siehe `docs/METADATA_REPROCESSING.md`) über Telegram-Inline-
+Buttons statt Terminal ausführbar machen — vorausgesetzt Härtung des
+Skripts vor genau dieser Integration (`docs/FINDINGS_INDEX.md`,
+„Härtung vor geplanter Telegram-Menü-Integration").
+
+### 5.1 Architektur-Entscheidung: Subprozess statt In-Process-Import
+
+`EnhancedMetadataProcessor`/`ArtistNormalizer`/`GenreMapper` sind
+`SingletonMixin` — würde der Bot das Skript in-process importieren/
+aufrufen, bekäme es unbemerkt die längst mit echter `config.Config`
+konstruierte Produktivinstanz zurück (Schreibzugriff auf echte
+`mapping/auto_learned_*.json` statt der isolierten Testumgebung; siehe
+`docs/METADATA_REPROCESSING.md` Abschnitt 2a für die volle Herleitung).
+Deshalb: `services/metadata/reprocessing_runner.py::run_reprocessing()`
+startet das Skript ausschließlich als eigenständigen Subprozess
+(`asyncio.create_subprocess_exec(sys.executable, ...)`), genau wie die
+bestehende CLI-Nutzung — nie ein direkter Import. Reine Orchestrierung,
+keine Telegram-Importe (Schichtgrenze `services/`, CLAUDE.md Abschnitt 4).
+
+### 5.2 Umsetzung
+
+**Zugriff:** nur Owner (`Config.OWNER_USER_ID`), nicht Owner+Admin wie
+beim Wartungsmodus — Nutzer-Entscheidung, da das Tool auf Metadata-/
+Auto-Learn-Dateien zugreift. `MenuItem.access_level=AccessLevel.OWNER`
+blendet den Button für alle anderen aus; `_handle_reprocessing_callback()`
+prüft zusätzlich selbst (Defense-in-Depth, bewusst nicht in
+`_ADMIN_ONLY_PREFIXES`, da OWNER strenger als ADMIN ist — analog
+`maint:`/`restart:`/`erradmin:`).
+
+**Ablauf:** „🔧 Reprocessing" im Admin-Menü (`reprocess:show`) → Buttons
+aus den vorhandenen Verzeichnissen unter `/tmp/musicbot_test/metadaten/`
+(`reprocess:pick:<idx>`, Index statt Artist-Name im `callback_data` —
+vermeidet Sonderzeichen-/Längenprobleme mit Telegrams 64-Byte-Limit,
+Liste wird bei jedem Schritt frisch geglobbt) → Dry-Run läuft, danach
+Zusammenfassung mit „🔴 Jetzt LIVE ausführen"-Button
+(`reprocess:live:<idx>`) → LIVE-Lauf, danach Abschluss-Zusammenfassung.
+Nutzer-Entscheidung: **kein** direkter Live-Einstieg ohne vorherigen
+Dry-Run (im Unterschied zum sofort wirksamen Wartungsmodus-Toggle) —
+dieses Tool schreibt echte Dateien.
+
+**Kein blockierender Lauf:** jeder Subprozess-Aufruf (kann mehrere Minuten
+dauern, externe API-Calls pro Track) läuft als eigenständiger
+Hintergrund-Task (`asyncio.create_task()` in
+`ReprocessingMenuHandler._start_run()`), identisches Muster zu
+`rich_menu_handler.py::_process_url()` (Bug A, Abschnitt 3.3) — ohne
+diesen Task würde ein laufendes Reprocessing jedes weitere Telegram-Update
+blockieren, da die `Application` ohne `concurrent_updates=True` läuft.
+
+**Neue Dateien:** `services/metadata/reprocessing_runner.py` (Subprozess-
+Start, stdout-Parsing des von `main()` ausgegebenen JSON-Summarys,
+Timeout-Schutz), `handlers/menu/reprocessing_menu_handler.py`
+(`ReprocessingMenuHandler` — Artist-Liste, Dry-Run/Live-Flow,
+HTML-escapte Ergebnis-Formatierung).
+
+### 5.3 Tests
+
+`tests/test_reprocessing_runner.py` (11 — reine Parsing-Helfer
+deterministisch, `asyncio.create_subprocess_exec`-Fehlerfälle gemockt,
+Happy-Path UND `PathSafetyError`-Fall als echter Subprozess gegen das
+echte Skript), `tests/test_reprocessing_menu_handler.py` (15 — Owner-
+Gating, Artist-Liste, Pick/Live-Flow, Ergebnis-Formatierung inkl.
+HTML-Escaping, Hintergrund-Task-Sicherheitsnetz),
+`tests/test_rich_menu_reprocessing.py` (8 — Dispatch-/Gating-Ebene in
+`RichMenuSystem`, Bug-B-Regressionstest für die `^reprocess:`-Pattern-
+Registrierung in `tests/test_rich_menu_handler.py`). Volle Suite: 2216
+passed, 1 skipped, 0 Regressionen.
+
+---
+
+## 6. Muster für künftige Menü-Erweiterungen
 
 Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
 
@@ -372,13 +444,16 @@ Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
 
 ---
 
-## 6. Verwandte Dokumente
+## 7. Verwandte Dokumente
 
 - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — Details zu allen vier
   live gefundenen Bugs dieser Phase sowie zum inzwischen geschlossenen
   Download-Verlauf-Punkt (Abschnitt 3.6).
 - [`MusicBot_ENGINEERING_BASELINE_v8.md`](MusicBot_ENGINEERING_BASELINE_v8.md)
   — Baseline-Stand vor dieser Phase.
+- [`docs/METADATA_REPROCESSING.md`](METADATA_REPROCESSING.md) — vollständige
+  Doku des Reprocessing-Tools selbst (Sicherheitsmodell, CLI, Abschnitt 2a
+  zum Subprozess-Aufrufmodell).
 
 ---
 

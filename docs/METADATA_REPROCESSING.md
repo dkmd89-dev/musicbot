@@ -66,10 +66,12 @@ konstruiert, und das Skript wuerde trotz importiertem `config_test.Config`
 unbemerkt die produktive Instanz zurueckbekommen (Schreibzugriff auf echte
 `mapping/auto_learned_*.json` statt der isolierten Testumgebung;
 `processor.aclose()`/`processor.cleanup()` am Skriptende wuerden zusaetzlich
-Ressourcen der noch laufenden Produktivinstanz abreissen). Eine geplante
-Telegram-Menue-Integration muss dieses Tool deshalb weiterhin als
-eigenstaendigen Subprozess starten (z. B. `asyncio.create_subprocess_exec`),
-genau wie die heutige CLI-Nutzung - nicht in-process importieren/aufrufen.
+Ressourcen der noch laufenden Produktivinstanz abreissen). Die Telegram-
+Menue-Integration (`services/metadata/reprocessing_runner.py::
+run_reprocessing()`, siehe `docs/MusicBot_TELEGRAM_MENU_SYSTEM.md`
+Abschnitt 5) startet dieses Tool deshalb ausschliesslich als
+eigenstaendigen Subprozess (`asyncio.create_subprocess_exec`), genau wie
+die CLI-Nutzung - nicht in-process importieren/aufrufen.
 
 Als zusaetzliches, aktives Sicherheitsnetz (nicht als Ersatz fuer die
 Subprozess-Regel oben) prueft `assert_processor_singletons_are_fresh()` in

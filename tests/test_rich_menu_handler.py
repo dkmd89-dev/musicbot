@@ -731,3 +731,70 @@ class TestGetTelegramHandlersRegistersMaintPrefix:
         assert not maint_handler.pattern.match("menu:admin")
         assert not maint_handler.pattern.match("dl:new")
         assert not maint_handler.pattern.match("restart:show")
+
+
+class TestGetTelegramHandlersRegistersReprocessPrefix:
+    """
+    Identisches "Bug B"-Muster wie bei dl:/maint: oben (siehe dortige
+    Docstrings) - ohne einen eigenen CallbackQueryHandler(pattern=
+    "^reprocess:") in get_telegram_handlers() faende PTB fuer
+    reprocess:show/reprocess:pick:.../reprocess:live:... schlicht keinen
+    passenden Handler und taete gar nichts, obwohl das interne
+    reprocess:-Praefix-Routing in RichMenuSystem.handle_callback() bereits
+    korrekt implementiert ist.
+    """
+
+    def test_reprocess_prefixed_callback_query_handler_is_registered(self, tmp_path):
+        from telegram.ext import CallbackQueryHandler
+
+        handler, _ = _make_handler(tmp_path)
+
+        handlers = handler.get_telegram_handlers()
+
+        reprocess_handlers = [
+            h
+            for h in handlers
+            if isinstance(h, CallbackQueryHandler)
+            and h.pattern is not None
+            and h.pattern.match("reprocess:show")
+        ]
+        assert len(reprocess_handlers) == 1
+
+    def test_reprocess_handler_targets_menu_system_handle_callback(self, tmp_path):
+        from telegram.ext import CallbackQueryHandler
+
+        handler, _ = _make_handler(tmp_path)
+
+        handlers = handler.get_telegram_handlers()
+        reprocess_handler = next(
+            h
+            for h in handlers
+            if isinstance(h, CallbackQueryHandler)
+            and h.pattern is not None
+            and h.pattern.match("reprocess:pick:0")
+        )
+
+        assert reprocess_handler.callback == handler.menu_system.handle_callback
+
+    def test_reprocess_pattern_does_not_accidentally_match_other_prefixes(
+        self, tmp_path
+    ):
+        """Regressionsschutz: das neue Pattern darf ausschließlich
+        reprocess:-Callbacks abdecken, nicht versehentlich menu:/dl:/
+        maint:/etc. mit-matchen (Präfix-Kollision)."""
+        from telegram.ext import CallbackQueryHandler
+
+        handler, _ = _make_handler(tmp_path)
+
+        handlers = handler.get_telegram_handlers()
+        reprocess_handler = next(
+            h
+            for h in handlers
+            if isinstance(h, CallbackQueryHandler)
+            and h.pattern is not None
+            and h.pattern.match("reprocess:show")
+        )
+
+        assert not reprocess_handler.pattern.match("menu:admin")
+        assert not reprocess_handler.pattern.match("dl:new")
+        assert not reprocess_handler.pattern.match("maint:show")
