@@ -112,6 +112,76 @@ class ArtistProcessor:
         )
         return "Unbekannter Künstler", "fallback", []
 
+    def raw_name_for_learning(
+        self, track_metadata: dict, canonical_name: str
+    ) -> str:
+        """
+        Bestimmt den 'rohen' Namen fuer AutoLearnManager.learn_artist()
+        (2026-09-03, Live-Fund: Repost-/Compilation-Kanal 'GermanHype'
+        lernte faelschlich Aliase 'GermanHype' -> 'Peter Maffay'/'Calvin
+        Harris' in auto_learned_artist_aliases.json, obwohl der
+        Titel-Parser den jeweiligen Kuenstler korrekt AUS DEM TITEL erkannt
+        hatte - der Kanalname war an der eigentlichen Artist-Bestimmung gar
+        nicht beteiligt, artist_source war 'youtube_parsed').
+
+        track_metadata['uploader'] (der Kanalname) bleibt bewusst ein
+        zulaessiger Kandidat: im Normalfall (eigener Kuenstler-Kanal) IST
+        der Kanalname die authentische, rohe Schreibweise des
+        Kuenstlernamens (z.B. Kanal 'MAKKO' waehrend der normalisierte Name
+        'Makko' lautet) - das automatische Lernen von Schreibvarianten
+        funktioniert nur deshalb.
+
+        WICHTIG (per Live-Debug-Log bewiesen, 2026-09-03, siehe
+        tests/test_artist_processor_raw_name_for_learning.py):
+        track_metadata['artist'] ist KEINE von uploader unabhaengige Quelle.
+        services/downloader/download_utils.py setzt es bereits BEIM
+        DOWNLOAD-SCHRITT auf 'video_info.get("artist") or
+        video_info.get("uploader")' (Single-Track- UND Playlist-Pfad) - bei
+        Videos ohne echtes yt-dlp-Artist-Tag (Normalfall bei Repost-
+        Kanaelen) ist es daher schlicht IDENTISCH mit dem Kanalnamen. Ein
+        erster Fix-Versuch pruefte nur uploader gegen canonical_name und
+        liess artist_field danach UNGEPRUEFT als Fallback durch - der
+        Kanalname kam dadurch ueber diesen Umweg trotzdem durch (live
+        reproduziert: Fall Calvin Harris/GermanHype).
+
+        Deshalb werden JETZT BEIDE Kandidaten (uploader und
+        track_metadata['artist']) gleichermassen gegen den bereits
+        bestimmten canonical_name geprueft - nur ein Kandidat, der ihm
+        tatsaechlich aehnelt (identisch oder Teilstring in eine der beiden
+        Richtungen, case-insensitiv), wird als roher Name geliefert. Deckt
+        weiterhin alle Normalfaelle ab ('MAKKO' vs. 'Makko', 'Miksu' vs.
+        'Miksu & Macloud', 'Makko - Topic' vs. 'Makko'), verwirft aber
+        beide Kandidaten, wenn keiner aehnelt (GermanHype vs. Peter
+        Maffay/Calvin Harris/Oimara - unabhaengig davon, dass artist_field
+        denselben kontaminierten Wert wie uploader trug). Fehlt
+        canonical_name (kein bereits bestimmter Artist zum Vergleichen),
+        wird konservativ das bisherige Verhalten beibehalten (uploader
+        bevorzugt) - kein Overreach in einen nicht beobachteten Fall.
+        """
+        uploader = (track_metadata.get("uploader") or "").strip()
+        artist_field = (track_metadata.get("artist") or "").strip()
+
+        if not canonical_name:
+            return uploader or artist_field
+
+        canonical_lower = canonical_name.strip().lower()
+
+        def _resembles(candidate: str) -> bool:
+            if not candidate:
+                return False
+            candidate_lower = candidate.lower()
+            return (
+                candidate_lower == canonical_lower
+                or candidate_lower in canonical_lower
+                or canonical_lower in candidate_lower
+            )
+
+        if _resembles(uploader):
+            return uploader
+        if _resembles(artist_field):
+            return artist_field
+        return ""
+
     def clean_artist_before_normalization(self, artist: str) -> str:
         """
         Bereinigt einen Roh-Artist-String vor der Normalisierung.

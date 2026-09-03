@@ -1041,10 +1041,21 @@ class EnhancedMetadataProcessor(SingletonMixin):
                             f"⚠️ Genre-Learning fehlgeschlagen: {_learn_err}"
                         )
 
+            # 2026-09-03 (Nutzer-Entscheidung, Live-Fund GermanHype):
+            # "channel_fallback" entfernt - diese Quelle bedeutet, dass der
+            # Kanalname mangels erkennbarem Titel-Artist SELBST als Artist
+            # verwendet wurde (siehe artist_processor.py::
+            # determine_best_artist()). Bei einem Repost-/Compilation-Kanal
+            # waere das kein echter Kuenstlername, und ein Identitaets-
+            # Mapping (raw_name==canonical_name, beides der Kanalname)
+            # wuerde den Kanal faelschlich in known_artists.yaml als
+            # "bekannter Kuenstler" registrieren. Zusaetzliche Absicherung
+            # neben dem eigentlichen Fix in raw_name_for_learning() unten
+            # (der den konkret beobachteten Bug behebt, der ueber
+            # 'youtube_parsed' lief, nicht 'channel_fallback').
             _learn_sources = {
                 "youtube_parsed",
                 "raw_metadata",
-                "channel_fallback",
                 "first_artist_from_title",
             }
             # AUTOLEARN-001: _is_podcast_channel prueft nur eine hartcodierte
@@ -1076,10 +1087,32 @@ class EnhancedMetadataProcessor(SingletonMixin):
             )
             if artist_source in _learn_sources and not _is_special_channel_for_learning:
                 try:
+                    # 2026-09-03 (Live-Fund GermanHype -> Peter Maffay/Calvin
+                    # Harris, siehe raw_name_for_learning()-Docstring fuer
+                    # den vollstaendigen Forensik-Befund): raw_name kommt
+                    # ueber ArtistProcessor.raw_name_for_learning() - prueft
+                    # sowohl uploader ALS AUCH track_metadata['artist']
+                    # gegen den bereits bestimmten Artist, statt einen davon
+                    # unbedingt zu bevorzugen (track_metadata['artist'] wird
+                    # von download_utils.py selbst schon mit dem Kanalnamen
+                    # kontaminiert, wenn yt-dlp kein echtes Artist-Tag
+                    # liefert - beide Kandidaten koennen also den blossen
+                    # Kanalnamen tragen).
+                    _learn_raw_name = self.artist_processor.raw_name_for_learning(
+                        track_metadata, artist_for_metadata
+                    )
+                    if not _learn_raw_name:
+                        self.logger.debug(
+                            f"🧠 [AUTO-LEARN] Artist-Learning BLOCKED: weder "
+                            f"uploader={track_metadata.get('uploader')!r} noch "
+                            f"artist_field={track_metadata.get('artist')!r} "
+                            f"aehneln dem bestimmten Artist "
+                            f"{artist_for_metadata!r} - kein roher Name fuer "
+                            f"das Lernen verfuegbar (verhindert Kanalname-als-"
+                            f"Artist-Alias, siehe raw_name_for_learning())."
+                        )
                     await self.auto_learn_manager.learn_artist(
-                        raw_name=track_metadata.get("uploader")
-                        or track_metadata.get("artist")
-                        or "",
+                        raw_name=_learn_raw_name,
                         canonical_name=artist_for_metadata,
                         source=artist_source,
                         channel_name=track_metadata.get("channel", "")
