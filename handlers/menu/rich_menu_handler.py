@@ -36,6 +36,7 @@ from services.downloader.active_downloads import ActiveDownloadRegistry
 from services.downloader.download_history import DownloadHistoryStore
 from services.bot_maintenance import MaintenanceModeStore
 from handlers.menu.maintenance_gate import is_blocked_by_maintenance
+from handlers.menu.activity_tracking import record_activity
 from handlers.test_menu_handler import TestMenuHandler
 from handlers.enhanced_logger_menu_handler import EnhancedLoggerMenuHandler
 from handlers.navidrome_menu_handler import NavidromeMenuHandler
@@ -315,6 +316,8 @@ class RichMenuHandler:
             self.logger.error(f"❌ Metadata-Processor Fehler: {e}", exc_info=True)
             self.metadata_processor = None
 
+        self._record_initial_handler_statuses()
+
         # ── Menüsystem initialisieren und Handler verknüpfen ──────────────────
         self.menu_system.initialize_menu_structure()
         self.menu_system.error_handler = self.error_handler
@@ -349,6 +352,40 @@ class RichMenuHandler:
         self._register_test_handlers()
 
         self.logger.info("✅ Handler-Integration abgeschlossen")
+
+    def _record_initial_handler_statuses(self) -> None:
+        """
+        Funktions-Fund (docs/audits/HANDLER_METHOD_LEVEL_SWEEP_2026-09-03.md):
+        der "🤖 Bot-Status"-Screen zeigt "Handler: Gesamt/Aktiv" aus
+        BotStatusTracker.get_handler_overview() an - aber
+        update_handler_status() wurde nirgends aufgerufen, die Anzeige
+        war dadurch dauerhaft 0/0. Zeichnet hier, an der einzigen Stelle
+        mit Kenntnis ALLER Konstruktionsergebnisse aus initialize(), den
+        tatsächlichen Erfolg/Fehlschlag jedes dort initialisierten
+        Handlers auf - "active" bei erfolgreicher Konstruktion, "error"
+        wenn der jeweilige try/except-Block dort fehlschlug (Instanz
+        blieb None). Eigene Methode statt Inline-Block in initialize()
+        (das selbst viele echte Handler konstruiert und daher nicht
+        end-to-end unit-testbar ist) - macht NUR diese neue Logik isoliert
+        testbar, ohne initialize() selbst zu verändern.
+        """
+        if not self.status_handler:
+            return
+        for handler_name, handler_instance in [
+            ("error_handler", self.error_handler),
+            ("test_handler", self.test_handler),
+            ("logger_handler", self.logger_handler),
+            ("stats_handler", self.stats_handler),
+            ("navidrome_handler", self.navidrome_handler),
+            ("user_mgmt_handler", self.user_mgmt_handler),
+            ("duplicate_handler", self.duplicate_handler),
+            ("backup_handler", self.backup_handler),
+            ("restart_handler", self.restart_handler),
+            ("metadata_processor", self.metadata_processor),
+        ]:
+            self.status_handler.bot_tracker.update_handler_status(
+                handler_name, "active" if handler_instance else "error"
+            )
 
     # ====== HANDLER-REGISTRIERUNG ======
 
@@ -872,6 +909,7 @@ class RichMenuHandler:
             logger=self.logger,
         ):
             return
+        record_activity(update, getattr(self, "status_handler", None), "command:start")
         try:
             user = update.effective_user
             user_id = user.id
@@ -977,6 +1015,7 @@ class RichMenuHandler:
             logger=self.logger,
         ):
             return
+        record_activity(update, getattr(self, "status_handler", None), "command:menu")
         self.logger.info(f"📱 /menu von User {update.effective_user.id}")
         await self.menu_system.show_menu(update, context, "main")
 
@@ -992,6 +1031,7 @@ class RichMenuHandler:
             logger=self.logger,
         ):
             return
+        record_activity(update, getattr(self, "status_handler", None), "command:help")
         try:
             user_id = update.effective_user.id
             user_role = self._get_user_role(user_id)
@@ -1064,6 +1104,7 @@ class RichMenuHandler:
             logger=self.logger,
         ):
             return
+        record_activity(update, getattr(self, "status_handler", None), "callback:help")
         try:
             query = update.callback_query
             topic = query.data.split(":", 1)[-1]
@@ -1202,6 +1243,7 @@ class RichMenuHandler:
             logger=self.logger,
         ):
             return
+        record_activity(update, getattr(self, "status_handler", None), "message:url")
         user_id = update.effective_user.id
         text = update.message.text
         state = self.user_states.get(user_id)
@@ -1319,6 +1361,7 @@ class RichMenuHandler:
             logger=self.logger,
         ):
             return
+        record_activity(update, getattr(self, "status_handler", None), "message:text")
         user_id = update.effective_user.id
         text = update.message.text
 
