@@ -221,6 +221,9 @@ class RichMenuSystem:
         # MaintenanceModeStore-Instanz (services/bot_maintenance.py), von
         # RichMenuHandler injiziert - siehe set_maintenance_store().
         self.maintenance_store = None
+        # Metadata-Reprocessing ("🔧 Reprocessing"): von RichMenuHandler
+        # injiziert - siehe set_reprocessing_handler().
+        self.reprocessing_handler = None
 
         # Konfiguration
         self.session_timeout = getattr(config, "SESSION_TIMEOUT", 300)
@@ -302,6 +305,11 @@ class RichMenuSystem:
         """Setzt den geteilten MaintenanceModeStore (Wartungsmodus-Feature)."""
         self.maintenance_store = store
         self.logger.info("✅ MaintenanceModeStore verknüpft")
+
+    def set_reprocessing_handler(self, handler) -> None:
+        """Setzt den ReprocessingMenuHandler (Metadata-Reprocessing-Feature)."""
+        self.reprocessing_handler = handler
+        self.logger.info("✅ Reprocessing-Handler verknüpft")
 
     # ====== MENÜ-STRUKTUR ======
 
@@ -690,6 +698,23 @@ class RichMenuSystem:
             )
         )
         # ====== ENDE WARTUNGSMODUS ======
+
+        # ====== NEU: METADATA-REPROCESSING ======
+        # Nutzer-Entscheidung: nur Owner (nicht Admin) - greift auf
+        # Metadata-/Auto-Learn-Dateien zu, siehe docs/FINDINGS_INDEX.md.
+        admin_menu.add_child(
+            MenuItem(
+                id="admin_reprocessing",
+                title="Reprocessing",
+                emoji="🔧",
+                access_level=AccessLevel.OWNER,
+                callback_data="reprocess:show",
+                handler=self._handle_reprocessing_show,
+                is_action=True,
+                description="Metadata eines Test-Artists erneut verarbeiten",
+            )
+        )
+        # ====== ENDE METADATA-REPROCESSING ======
 
         # Test-Menü
         test_menu = MenuItem(
@@ -1106,6 +1131,82 @@ class RichMenuSystem:
 
     # ====== ENDE WARTUNGSMODUS ======
 
+    # ====== METADATA-REPROCESSING ======
+
+    async def _handle_reprocessing_show(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Einstiegspunkt aus dem Menü-System - Wrapper analog zu den
+        _handle_navidrome_*-Methoden."""
+        if self.reprocessing_handler:
+            await self.reprocessing_handler.show_artist_list(update, context)
+        else:
+            await self._show_handler_not_available(update, "Reprocessing-Handler")
+
+    async def _handle_reprocessing_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        callback_data: str,
+    ) -> None:
+        """
+        Dispatcher für alle reprocess:* Callbacks.
+
+        Routing:
+          reprocess:show        → Artist-Liste anzeigen
+          reprocess:pick:<idx>  → Dry-Run für Artist <idx> starten
+          reprocess:live:<idx>  → LIVE-Lauf für Artist <idx> starten
+
+        Eigener Owner-Check hier (Defense-in-Depth, analog zu maint: -
+        bewusst NICHT in _ADMIN_ONLY_PREFIXES aufgenommen, da OWNER
+        strenger als ADMIN ist und dieser Dispatcher seinen eigenen,
+        passenden Check macht statt sich auf den ADMIN-Check zu verlassen).
+        """
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        if user_id != getattr(self.config, "OWNER_USER_ID", None):
+            self.logger.warning(
+                f"🚨 [SECURITY] Nicht-Owner {user_id} versuchte "
+                f"Reprocessing-Callback: {callback_data}"
+            )
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+
+        if not self.reprocessing_handler:
+            await query.answer(
+                "⚠️ Reprocessing-Handler nicht verfügbar", show_alert=True
+            )
+            return
+
+        if callback_data == "reprocess:show":
+            await self.reprocessing_handler.show_artist_list(update, context)
+            return
+
+        if callback_data.startswith("reprocess:pick:"):
+            idx_str = callback_data[len("reprocess:pick:") :]
+            try:
+                idx = int(idx_str)
+            except ValueError:
+                await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+                return
+            await self.reprocessing_handler.handle_pick(update, context, idx)
+            return
+
+        if callback_data.startswith("reprocess:live:"):
+            idx_str = callback_data[len("reprocess:live:") :]
+            try:
+                idx = int(idx_str)
+            except ValueError:
+                await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+                return
+            await self.reprocessing_handler.handle_live(update, context, idx)
+            return
+
+        await query.answer("⚠️ Unbekannter Reprocessing-Callback")
+
+    # ====== ENDE METADATA-REPROCESSING ======
+
     async def _show_handler_not_available(self, update: Update, handler_name: str):
         """Zeigt Fehlermeldung wenn Handler nicht verfügbar"""
         query = update.callback_query
@@ -1471,6 +1572,11 @@ class RichMenuSystem:
             # ── NEU: Wartungsmodus ────────────────────────────────────
             if callback_data.startswith("maint:"):
                 await self._handle_maintenance_callback(update, context, callback_data)
+                return
+
+            # ── NEU: Metadata-Reprocessing ────────────────────────────
+            if callback_data.startswith("reprocess:"):
+                await self._handle_reprocessing_callback(update, context, callback_data)
                 return
 
             # ── Standard Menü-Callback (menu:...) ────────────────────
