@@ -27,6 +27,12 @@ import json
 # am 2026-09-03) + testabgesichert: 'Miksu & Macloud' (6 Schreibvarianten,
 # siehe test_artist_overrides_miksu_macloud_duo.py) + 't-low' (siehe
 # test_artist_overrides_t_low_case_preserve.py).
+#
+# Nachtrag 2026-09-03 (Nutzer-Entscheidung): 'Toobrokeforfiji' wurde durch
+# echte Live-Testdownloads dieser Session (Genre-Lock-in-Testphase)
+# real vom Auto-Learn-System in artist_overrides.json geschrieben.
+# Bewusst als dauerhaft gewuenschter Override behalten, nicht entfernt -
+# hier in die Whitelist aufgenommen statt den Eintrag zu loeschen.
 WHITELIST_VALUES_LOWER = {
     "01099",
     "2pac",
@@ -42,6 +48,7 @@ WHITELIST_VALUES_LOWER = {
     "ravyn lenae",
     "miksu & macloud",
     "t-low",
+    "toobrokeforfiji",
 }
 
 
@@ -53,14 +60,14 @@ class TestArtistOverridesFreeOfOrphans:
         assert not orphans, f"verwaiste Overrides gefunden: {orphans}"
 
     def test_expected_key_count_after_cleanup(self):
-        """Dokumentiert den bereinigten Stand (2026-09-03): 19 Keys (12
+        """Dokumentiert den bereinigten Stand (2026-09-03): 20 Keys (12
         Library-Artists, davon 'makko' als 1, + 6 Miksu & Macloud-Varianten
-        + 't-low' = 19). Kein Anspruch auf ewige Gueltigkeit dieser exakten
-        Zahl - wird bei zukuenftigen legitimen Aenderungen bewusst
-        angepasst, nicht blind hochgezaehlt."""
+        + 't-low' + 'toobrokeforfiji' = 20). Kein Anspruch auf ewige
+        Gueltigkeit dieser exakten Zahl - wird bei zukuenftigen legitimen
+        Aenderungen bewusst angepasst, nicht blind hochgezaehlt."""
         with open("mapping/artist_overrides.json", encoding="utf-8") as f:
             data = json.load(f)
-        assert len(data) == 19
+        assert len(data) == 20
 
     def test_no_junk_entries_like_pycache(self):
         """Regressionsschutz: der vor der Bereinigung gefundene
