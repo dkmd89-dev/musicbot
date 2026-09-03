@@ -49,6 +49,41 @@ Das Tool importiert ausschliesslich `config_test.Config` (isolierte
 Testkonfiguration, siehe TESTENV-01), niemals `config.Config`. Ein Assert
 beim Start verifiziert `Config.BASE_DIR == "/tmp/musicbot_test"`.
 
+### 2a. Aufrufmodell: nur eigenstaendiger Subprozess (verbindlich)
+
+`EnhancedMetadataProcessor`, `ArtistNormalizer` und `GenreMapper` (alle drei
+von `SingletonMixin`, `utils/singleton.py`) sind prozessweite Singletons -
+"First Mover gewinnt", jede spaetere Konstruktion mit anderen Args wird
+stillschweigend ignoriert. Als eigenstaendiger CLI-Subprozess ist das
+harmlos: jeder Lauf bekommt einen frischen Python-Prozess, der
+`config_test.Config`-Assert oben gewinnt garantiert als First Mover.
+
+**Dieses Tool darf deshalb niemals in-process aus einem bereits laufenden
+Bot-Prozess heraus aufgerufen werden** (z. B. `await reprocess_artist_
+metadata.main()` direkt in einem Telegram-Handler) - der Bot haette diese
+Klassen zu diesem Zeitpunkt laengst mit der echten `config.Config`
+konstruiert, und das Skript wuerde trotz importiertem `config_test.Config`
+unbemerkt die produktive Instanz zurueckbekommen (Schreibzugriff auf echte
+`mapping/auto_learned_*.json` statt der isolierten Testumgebung;
+`processor.aclose()`/`processor.cleanup()` am Skriptende wuerden zusaetzlich
+Ressourcen der noch laufenden Produktivinstanz abreissen). Eine geplante
+Telegram-Menue-Integration muss dieses Tool deshalb weiterhin als
+eigenstaendigen Subprozess starten (z. B. `asyncio.create_subprocess_exec`),
+genau wie die heutige CLI-Nutzung - nicht in-process importieren/aufrufen.
+
+Als zusaetzliches, aktives Sicherheitsnetz (nicht als Ersatz fuer die
+Subprozess-Regel oben) prueft `assert_processor_singletons_are_fresh()` in
+`main()` unmittelbar vor der `EnhancedMetadataProcessor`-Konstruktion, ob
+eine dieser drei Klassen in diesem Prozess bereits initialisiert wurde, und
+bricht andernfalls sofort mit `SingletonSafetyError` ab, bevor irgendeine
+Datei angefasst wird.
+
+`sys.exit(1)` wird nur noch im CLI-Entry-Point (`if __name__ ==
+"__main__"`) verwendet - `main()` selbst wirft bei ungueltigem `--input`
+regulaer `PathSafetyError` (nicht mehr `sys.exit()`/`SystemExit`, das auch
+von einem `except Exception` in einem kuenftigen in-process-Aufrufer nicht
+gefangen wuerde und den gesamten Bot-Prozess beenden koennte).
+
 ## 3. CLI
 
 ```bash
@@ -306,6 +341,15 @@ und meldet `FAIL`, sobald sich irgendetwas daran aendert. Mit
 `--no-production-check` auslassbar (z. B. wenn `--production-root` nicht
 gemountet ist).
 
+Dieser Snapshot-Vergleich (inkl. Verzeichnis-/Audio-Essenz-Diff) laeuft
+komplett NACH dem eigentlichen Datei-Lauf und ist deshalb in `main()` in
+einen eigenen `try/except` eingefasst: crasht der Safety-Check selbst
+(z. B. I/O-Fehler beim rein-lesenden Produktionsvergleich), wird das
+bereits geschriebene Log trotzdem mit einer klaren Fehlerzeile
+abgeschlossen und die Exception normal weitergereicht - statt dass ein
+tatsaechlich erfolgreicher, sicherer Lauf wie ein unerklaerter Absturz
+aussieht und die Log-Datei unvollstaendig/offen zurueckbleibt.
+
 ## 12a. Bekannte Betriebs-Falle: stale isolierte Mapping-Kopie
 
 `config_test.py::_prepare_isolated_mapping_dir()` kopiert `mapping/`
@@ -356,7 +400,13 @@ Remix-Zusatz (Abschnitt 5), zeit-gestempelte Log-Datei pro Lauf,
 Regressions-Tripwire fuer `DEFAULT_PRODUCTION_ROOT`, vorhandenes Album-Tag
 wird ebenfalls bereinigt (Abschnitt 5), sowie Integrationstests gegen
 `main()` selbst (CLI-Parsing, Post-Run-Safety-Check-Aggregation, gemischte
-Erfolgs-/Fehler-Zusammenfassung). Externe Adapter (Genre/Lyrics/Cover-API-
+Erfolgs-/Fehler-Zusammenfassung), Singleton-Safety-Guard (Abschnitt 2a:
+erkennt eine bereits in diesem Prozess konstruierte
+`EnhancedMetadataProcessor`/`ArtistNormalizer`/`GenreMapper`-Instanz aktiv),
+`PathSafetyError` statt `SystemExit` bei ungueltigem `--input`, sowie
+Fehlerisolierung des Post-Run-Safety-Checks selbst (Abschnitt 12: ein
+Absturz dort nach erfolgreichem Lauf verschluckt den Fehler nicht und
+schliesst das Log trotzdem ab). Externe Adapter (Genre/Lyrics/Cover-API-
 Aufrufe) sind gemockt; `TagWriter` und alle Path-Safety-/Snapshot-/
 Multi-Artist-Funktionen sind die echten Produktionsimplementierungen.
 

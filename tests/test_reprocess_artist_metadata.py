@@ -1579,3 +1579,173 @@ class TestMainIntegration:
         assert log_path.exists()
         content = log_path.read_text(encoding="utf-8")
         assert "🚀 MusicBot Metadata Reprocessing Tool" in content
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Haertung vor der geplanten Telegram-Menue-Integration
+# (Audit 2026-09-03, siehe docs/FINDINGS_INDEX.md)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestSingletonSafetyGuard:
+    """EnhancedMetadataProcessor/ArtistNormalizer/GenreMapper sind
+    SingletonMixin ("First Mover gewinnt", jede spaetere Konstruktion mit
+    anderen Args wird stillschweigend ignoriert). Als eigenstaendiger
+    CLI-Subprozess ist das harmlos (frischer Prozess = frischer Singleton),
+    ist main() aber jemals in-process aus einem bereits laufenden Bot
+    aufgerufen worden, haette der Bot diese Klassen laengst mit der ECHTEN
+    config.Config konstruiert. assert_processor_singletons_are_fresh()
+    erkennt eine bereits vorhandene Instanz aktiv, statt sie unbemerkt
+    weiterzuverwenden (Konsequenz waere ein Schreibzugriff des Skripts auf
+    echte Produktions-Mapping-Dateien statt der isolierten Testumgebung -
+    siehe docs/FINDINGS_INDEX.md fuer den vollen Hintergrund).
+
+    conftest.py::reset_singletons() leert SingletonMixin._instances
+    autouse vor UND nach jedem Test - kein manuelles Aufraeumen noetig.
+    """
+
+    def test_passes_when_no_singleton_was_constructed_yet(self):
+        rpam.assert_processor_singletons_are_fresh()  # darf nicht werfen
+
+    def test_raises_when_enhanced_metadata_processor_already_exists(self):
+        fake_existing = Mock()
+        fake_existing._initialized = True
+        rpam.SingletonMixin._instances[rpam.EnhancedMetadataProcessor] = fake_existing
+
+        with pytest.raises(rpam.SingletonSafetyError, match="EnhancedMetadataProcessor"):
+            rpam.assert_processor_singletons_are_fresh()
+
+    def test_raises_when_artist_normalizer_already_exists(self):
+        fake_existing = Mock()
+        fake_existing._initialized = True
+        rpam.SingletonMixin._instances[rpam.ArtistNormalizer] = fake_existing
+
+        with pytest.raises(rpam.SingletonSafetyError, match="ArtistNormalizer"):
+            rpam.assert_processor_singletons_are_fresh()
+
+    def test_raises_when_genre_mapper_already_exists(self):
+        fake_existing = Mock()
+        fake_existing._initialized = True
+        rpam.SingletonMixin._instances[rpam.GenreMapper] = fake_existing
+
+        with pytest.raises(rpam.SingletonSafetyError, match="GenreMapper"):
+            rpam.assert_processor_singletons_are_fresh()
+
+    def test_does_not_raise_for_an_entry_that_was_never_actually_initialized(self):
+        """SingletonMixin.__new__() legt bereits VOR __init__() einen
+        Eintrag mit _initialized=False an (siehe utils/singleton.py) - das
+        darf nicht faelschlich als "schon fertig konstruiert" gelten."""
+        fake_uninitialized = Mock()
+        fake_uninitialized._initialized = False
+        rpam.SingletonMixin._instances[rpam.EnhancedMetadataProcessor] = fake_uninitialized
+
+        rpam.assert_processor_singletons_are_fresh()  # darf nicht werfen
+
+    @pytest.mark.asyncio
+    async def test_main_raises_singleton_safety_error_before_touching_any_file(
+        self, isolated_artist_dir, tagged_m4a, monkeypatch
+    ):
+        fake_existing = Mock()
+        fake_existing._initialized = True
+        rpam.SingletonMixin._instances[rpam.EnhancedMetadataProcessor] = fake_existing
+
+        monkeypatch.setattr(
+            sys, "argv",
+            [
+                "reprocess_artist_metadata.py",
+                "--input", str(isolated_artist_dir),
+                "--dry-run",
+                "--no-production-check",
+            ],
+        )
+
+        with pytest.raises(rpam.SingletonSafetyError):
+            await rpam.main()
+
+
+class TestMainNoLongerCallsSysExit:
+    """Bug-Fix: sys.exit(1) wirft SystemExit (erbt von BaseException, nicht
+    Exception) - main() muss bei einem ungueltigen --input stattdessen
+    normal PathSafetyError werfen, damit ein kuenftiger in-process-Aufrufer
+    (z.B. ein Telegram-Handler) das per normalem except abfangen kann,
+    statt dass der gesamte aufrufende Prozess beendet wird. Nur der
+    CLI-Entry-Point (if __name__ == "__main__") faengt das weiterhin per
+    sys.exit(1) ab - dort nicht direkt testbar (eigener Prozess), aber per
+    Code-Review verifiziert."""
+
+    @pytest.mark.asyncio
+    async def test_invalid_input_raises_path_safety_error_not_system_exit(
+        self, monkeypatch
+    ):
+        nonexistent = METADATEN_ROOT / "does_not_exist_pytest_reprocess"
+        monkeypatch.setattr(
+            sys, "argv",
+            [
+                "reprocess_artist_metadata.py",
+                "--input", str(nonexistent),
+                "--dry-run",
+            ],
+        )
+
+        with pytest.raises(rpam.PathSafetyError):
+            await rpam.main()
+
+
+class TestPostRunSafetyCheckExceptionIsolation:
+    """Ein Fehler im Post-Run-Safety-Check (NACH dem eigentlichen, bereits
+    erfolgreich abgeschlossenen Datei-Lauf) darf nicht stillschweigend
+    verschluckt werden und muss trotzdem eine vollstaendige, geschlossene
+    Log-Datei hinterlassen statt sie mitten im Schreiben abzureissen."""
+
+    @pytest.mark.asyncio
+    async def test_exception_after_successful_run_is_logged_and_propagates(
+        self, isolated_artist_dir, tagged_m4a, monkeypatch
+    ):
+        stub_processor = make_processor_stub()
+        stub_processor.aclose = AsyncMock(return_value=None)
+        stub_processor.cleanup = Mock(return_value=None)
+
+        monkeypatch.setattr(rpam, "EnhancedMetadataProcessor", lambda config: stub_processor)
+        monkeypatch.setattr(rpam, "MusicBrainzClient", lambda: Mock())
+        monkeypatch.setattr(rpam, "LastFMClient", lambda: Mock())
+
+        real_snapshot_directory_tree = rpam.snapshot_directory_tree
+        call_count = {"n": 0}
+
+        def flaky_snapshot_directory_tree(path):
+            call_count["n"] += 1
+            if call_count["n"] > 1:
+                # Der zweite Aufruf ist der Snapshot NACH dem Lauf (im
+                # Post-Run-Safety-Check) - der erste (VOR dem Lauf) muss
+                # weiterhin echt funktionieren, damit der Datei-Lauf selbst
+                # unveraendert erfolgreich ablaeuft.
+                raise RuntimeError("simulierter Absturz im Post-Run-Safety-Check")
+            return real_snapshot_directory_tree(path)
+
+        monkeypatch.setattr(rpam, "snapshot_directory_tree", flaky_snapshot_directory_tree)
+
+        monkeypatch.setattr(
+            sys, "argv",
+            [
+                "reprocess_artist_metadata.py",
+                "--input", str(isolated_artist_dir),
+                "--dry-run",
+                "--no-production-check",
+            ],
+        )
+
+        with pytest.raises(RuntimeError, match="simulierter Absturz"):
+            await rpam.main()
+
+        log_candidates = sorted(
+            Path("/tmp/musicbot_test").glob(
+                f"metadata_reprocessing_{isolated_artist_dir.name}_*.log"
+            )
+        )
+        assert len(log_candidates) == 1
+        content = log_candidates[0].read_text(encoding="utf-8")
+        assert "❌ POST-RUN SAFETY CHECK abgebrochen" in content
+        # Der eigentliche Datei-Lauf selbst (vor dem simulierten Absturz)
+        # ist im Log sichtbar erfolgreich durchgelaufen.
+        assert "🚀 MusicBot Metadata Reprocessing Tool" in content
+        log_candidates[0].unlink()
