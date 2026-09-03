@@ -220,6 +220,14 @@ class DuplicateCache:
             entry_key = self._normalize_url_for_cache(entry.url)
             if entry_key == cache_key:
                 entry.duplicate_count += 1
+                # duplicate_count-Konsistenz-Fix (2026-09-03, Nutzer-
+                # Charakterisierung): vorher wurde der erhoehte Zaehler NUR
+                # im In-Memory-State gehalten (kein _save_caches() danach) -
+                # ging bei einem Bot-Neustart verloren, ausser ein
+                # spaeterer add_entry()-Aufruf fuer einen ANDEREN Eintrag
+                # loeste zufaellig einen Save aus. Jetzt zuverlaessig
+                # persistiert, analog zu check_content_duplicate() unten.
+                self._save_caches()
                 self.logger.info(f"🔗 URL-Duplikat im Cache gefunden: {cache_key}")
                 return entry
 
@@ -286,6 +294,18 @@ class DuplicateCache:
         content_hash = self.get_content_hash(artist, title)
         result = self.content_cache.get(content_hash)
         if result:
+            # duplicate_count-Konsistenz-Fix (2026-09-03, Nutzer-
+            # Charakterisierung "Konsistent zaehlen"): vorher mutierte
+            # dieser Pfad NIE bei einem reinen Check - nur add_entry()
+            # erhoehte den Zaehler, was bei einem erkannten Content-
+            # Duplikat aber gerade NICHT passiert (der Download bricht ab,
+            # es wird kein neuer Eintrag registriert). check_url_duplicate()
+            # erhoehte dagegen bei JEDEM Lese-Treffer - eine echte
+            # Asymmetrie, live an Testdaten belegt (siehe
+            # tests/test_duplicate_cache_duplicate_count_consistency.py).
+            # Jetzt identisches Verhalten auf beiden Pfaden.
+            result.duplicate_count += 1
+            self._save_caches()
             self.logger.info(
                 f"🎵 Content-Duplikat im Cache gefunden: {artist} - {title}"
             )
