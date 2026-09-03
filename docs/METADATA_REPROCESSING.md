@@ -159,11 +159,23 @@ gut wie immer bereits ein Album-Tag (meist eine 1:1-Kopie des
 urspruenglich dirty Titels, z. B. `'"Bequem"'`), das ohne diese
 Bereinigung fuer immer dirty geblieben waere, waehrend der Titel zur
 selben Zeit korrekt bereinigt wurde. Fehlt ein Album-Tag komplett,
-fungiert der bereinigte Titel als Fallback — ein abschliessender
-`(...Remix...)`-Zusatz wird dabei zusaetzlich entfernt
-(`strip_remix_suffix_for_album()`, Nutzer-Fund 2026-09-02: „Blauer Tag
-(Robin Schulz Remix)" als Titel darf nicht 1:1 als Album uebernommen
-werden). Der Titel-Tag selbst bleibt von beiden Album-Regeln unberuehrt.
+fungiert der bereinigte Titel als Fallback.
+
+**Remix-Zusatz (`strip_remix_suffix()`):** ein abschliessendes
+`(...Remix...)`-Klammerpaar wird aus dem TITEL selbst entfernt (nicht nur
+aus dem Album-Fallback) — Nutzer-Entscheidung 2026-09-03, reproduziert
+ueber die Telegram-Reprocessing-Integration (Artist "Möwe", Track "Blauer
+Tag (Robin Schulz Remix)"): ursprünglich (2026-09-02) sollte nur das
+Album bereinigt werden, der Titel-Tag unveraendert bleiben. Bewusst
+umgekehrt, um dieselbe Regel wie die echte Download-Pipeline zu
+verwenden (`utils/youtube_parser.py::parse_youtube_title()` Schritt 7,
+`_clean_bracket_content(song_title, preserve_remix=False)`, entfernt den
+Remix-Zusatz dort ebenfalls aus dem finalen Titel). Da `clean_title`
+sowohl fuer den Titel-Tag als auch fuer den Dateinamen (Abschnitt 9) und
+den Album-Fallback verwendet wird, betrifft die Bereinigung automatisch
+alle drei — inklusive Umbenennung bestehender Dateien mit Remix-Zusatz im
+Namen (bewusste Nutzer-Entscheidung: "konsequent wie die
+Download-Pipeline").
 
 ## 5a. Fehlerisolierung (Phase 1, 2026-09-02)
 
