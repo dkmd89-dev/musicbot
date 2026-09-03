@@ -303,6 +303,56 @@ class TestCleanTitleSuffixes:
     def test_no_suffix_returns_unchanged(self):
         assert _clean_title_suffixes("Just A Title") == "Just A Title"
 
+    def test_removes_prod_with_hyphen_separator(self):
+        """Bereits vorher erkannte Form: Bindestrich vor 'prod'."""
+        assert _clean_title_suffixes("Title - prod. XY") == "Title"
+
+
+class TestCleanTitleSuffixesBareProdForm:
+    """
+    docs/FINDINGS_INDEX.md (P3, Nebenfund derselben Untersuchung wie der
+    bereits gefixte reprocess_artist_metadata.py/title_cleaner.py-Fund):
+    _clean_title_suffixes() deckte bisher nur die geklammerte
+    ("(prod...)") und die Bindestrich-getrennte ("- prod...") Form ab -
+    die klammerlose, TRENNERLOSE Form am Titelende ("Titel prod. X", ohne
+    Bindestrich) wurde nicht erkannt. Live reproduziert (Artist "makko",
+    Track '"ADLIBS" prod. Safecall777') - betraf auch die volle
+    parse_youtube_title()-Pipeline, per Direktaufruf verifiziert.
+
+    Analog zum bereits etablierten Fix in title_cleaner.py::
+    light_title_cleanup() (dort fuer den finalen Titel-Tag bereits geloest,
+    hier fuer die vorgelagerte Artist-/Titel-PARSING-Stufe) - \\bprod\\b
+    mit zwingendem "."/Whitespace danach verhindert Fehltreffer in
+    Woertern wie "Producer"/"Production".
+    """
+
+    def test_bare_prod_form_without_hyphen_is_removed(self):
+        assert (
+            _clean_title_suffixes('"ADLIBS" prod. Safecall777') == '"ADLIBS"'
+        )
+
+    def test_bare_prod_form_without_dot(self):
+        assert _clean_title_suffixes("Some Song prod Safecall777") == "Some Song"
+
+    def test_producer_word_is_not_falsely_matched(self):
+        """Sicherheitsfall: 'Producer'/'Production' duerfen nicht als
+        'prod'-Suffix fehlinterpretiert werden."""
+        assert (
+            _clean_title_suffixes("Music Producer Interview")
+            == "Music Producer Interview"
+        )
+        assert (
+            _clean_title_suffixes("Production Diary")
+            == "Production Diary"
+        )
+
+    def test_end_to_end_via_parse_youtube_title_real_reproduced_case(self):
+        """Der real reproduzierte Bug-Fall (docs/FINDINGS_INDEX.md) end-to-end
+        ueber die volle parse_youtube_title()-Pipeline, nicht nur die
+        isolierte Helper-Funktion."""
+        result = parse_youtube_title('makko - "ADLIBS" prod. Safecall777')
+        assert result["song_title"] == '"ADLIBS"'
+
     def test_empty_string_returns_empty(self):
         assert _clean_title_suffixes("") == ""
 

@@ -41,9 +41,14 @@ class TestParseYoutubeTitleDoubleSpaceMultiArtist:
         )
         assert result["artist"] == "toobrokeforfiji"
         assert result["all_artists"] == ["toobrokeforfiji", "Sin Davis", "makko"]
-        assert result["song_title"] == (
-            "40 Stunden Woche prod. overshiaat official video"
-        )
+        # 2026-09-03: "prod. overshiaat official video" wurde zum Zeitpunkt
+        # dieses Tests (PR #118) noch unveraendert im song_title
+        # mitdokumentiert, weil _clean_title_suffixes() die klammerlose,
+        # trennerlose "prod. X"-Form damals noch nicht erkannte (separater,
+        # spaeter behobener Fund, siehe docs/FINDINGS_INDEX.md). Der
+        # Multi-Artist-Comma-Prefix-Kern dieses Tests (artist/all_artists)
+        # ist davon unberuehrt - nur song_title wird jetzt korrekt bereinigt.
+        assert result["song_title"] == "40 Stunden Woche"
         assert result["confidence"] == 1.0
 
     def test_two_artists_comma_only(self):
