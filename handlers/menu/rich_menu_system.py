@@ -26,6 +26,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackQueryHandler
 
 from logger import get_module_logger
+from handlers.menu.maintenance_gate import is_blocked_by_maintenance
 
 
 def _dl_progress_bar(current: int, total: int, width: int = 10) -> str:
@@ -215,6 +216,10 @@ class RichMenuSystem:
         # und ruft dort _process_url(update, context, url) auf, exakt derselbe
         # Pfad wie ein normaler Text-Download.
         self._retry_url_callback: Optional[Callable] = None
+        # Wartungsmodus ("🛠️ Ein-/Ausschalten"): geteilte, prozessweite
+        # MaintenanceModeStore-Instanz (services/bot_maintenance.py), von
+        # RichMenuHandler injiziert - siehe set_maintenance_store().
+        self.maintenance_store = None
 
         # Konfiguration
         self.session_timeout = getattr(config, "SESSION_TIMEOUT", 300)
@@ -291,6 +296,11 @@ class RichMenuSystem:
         """Setzt den Callback für "🔁 Erneut versuchen" (siehe __init__)."""
         self._retry_url_callback = callback
         self.logger.info("✅ URL-Retry-Callback verknüpft")
+
+    def set_maintenance_store(self, store) -> None:
+        """Setzt den geteilten MaintenanceModeStore (Wartungsmodus-Feature)."""
+        self.maintenance_store = store
+        self.logger.info("✅ MaintenanceModeStore verknüpft")
 
     # ====== MENÜ-STRUKTUR ======
 
@@ -665,6 +675,21 @@ class RichMenuSystem:
         )
         # ====== ENDE BOT-NEUSTART ======
 
+        # ====== NEU: WARTUNGSMODUS ======
+        admin_menu.add_child(
+            MenuItem(
+                id="admin_maintenance",
+                title="Wartungsmodus",
+                emoji="🛠️",
+                access_level=AccessLevel.ADMIN,
+                callback_data="maint:show",
+                handler=self._handle_maintenance_show,
+                is_action=True,
+                description="Bot für alle außer Admins pausieren/fortsetzen",
+            )
+        )
+        # ====== ENDE WARTUNGSMODUS ======
+
         # Test-Menü
         test_menu = MenuItem(
             id="tests",
@@ -1003,6 +1028,101 @@ class RichMenuSystem:
 
     # ====== ENDE BOT-NEUSTART WRAPPER ======
 
+    # ====== NEU: WARTUNGSMODUS ======
+    #
+    # Anders als der Bot-Neustart bewusst OHNE eigene Handler-Klasse: die
+    # Logik beschraenkt sich auf Lesen/Schreiben des einen booleschen
+    # Zustands im geteilten MaintenanceModeStore (services/bot_maintenance.py)
+    # - kein Bestaetigungsdialog (anders als beim Neustart), da instant
+    # reversibel und ohne Datenverlust/Verbindungsabbruch.
+
+    async def _handle_maintenance_show(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Einstiegspunkt aus dem Menü-System - zeigt den aktuellen
+        Wartungsmodus-Status mit Toggle-Button.
+        """
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin_check(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        if not self.maintenance_store:
+            await query.edit_message_text("⚠️ Wartungsmodus-Speicher nicht verfügbar")
+            return
+
+        active = self.maintenance_store.is_active()
+        status_text = "🔴 AKTIV" if active else "🟢 Inaktiv"
+        toggle_label = (
+            "🟢 Wartungsmodus beenden" if active else "🔴 Wartungsmodus aktivieren"
+        )
+
+        text = (
+            "🛠️ <b>Wartungsmodus</b>\n\n"
+            f"Status: {status_text}\n\n"
+            "Im aktiven Wartungsmodus können nur Admins/Owner den Bot "
+            "normal nutzen - alle anderen Nutzer erhalten an jedem "
+            "Einstiegspunkt eine Wartungsmeldung statt der eigentlichen "
+            "Funktion."
+        )
+        keyboard = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton(toggle_label, callback_data="maint:toggle")],
+                [InlineKeyboardButton("◀️ Zurück", callback_data="menu:admin")],
+            ]
+        )
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+    async def _handle_maintenance_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        callback_data: str,
+    ) -> None:
+        """
+        Dispatcher für alle maint:* Callbacks.
+
+        Routing:
+          maint:show   → Status anzeigen
+          maint:toggle → Zustand umschalten, danach Status erneut anzeigen
+        """
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # Admin-Check (Defense-in-Depth, analog zu restart:/erradmin: -
+        # maint: ist bewusst NICHT in _ADMIN_ONLY_PREFIXES aufgenommen,
+        # da dieser Dispatcher seinen eigenen Check macht).
+        if not self._is_admin_check(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+
+        if not self.maintenance_store:
+            await query.answer(
+                "⚠️ Wartungsmodus-Speicher nicht verfügbar", show_alert=True
+            )
+            return
+
+        if callback_data == "maint:show":
+            await self._handle_maintenance_show(update, context)
+            return
+
+        if callback_data == "maint:toggle":
+            new_state = not self.maintenance_store.is_active()
+            self.maintenance_store.set_active(new_state, changed_by_user_id=user_id)
+            self.logger.warning(
+                f"🛠️ Wartungsmodus {'aktiviert' if new_state else 'deaktiviert'} "
+                f"von Admin {user_id}"
+            )
+            await self._handle_maintenance_show(update, context)
+            return
+
+        await query.answer("⚠️ Unbekannter Wartungsmodus-Callback")
+
+    # ====== ENDE WARTUNGSMODUS ======
+
     async def _show_handler_not_available(self, update: Update, handler_name: str):
         """Zeigt Fehlermeldung wenn Handler nicht verfügbar"""
         query = update.callback_query
@@ -1262,6 +1382,15 @@ class RichMenuSystem:
         user_id = update.effective_user.id
         callback_data = query.data
 
+        if await is_blocked_by_maintenance(
+            update,
+            context,
+            maintenance_store=getattr(self, "maintenance_store", None),
+            config=self.config,
+            logger=self.logger,
+        ):
+            return
+
         try:
             self.logger.debug(f"📞 Callback: {callback_data} von User {user_id}")
 
@@ -1352,6 +1481,11 @@ class RichMenuSystem:
             # ── NEU: Bot-Neustart ─────────────────────────────────────
             if callback_data.startswith("restart:"):
                 await self._handle_restart_callback(update, context, callback_data)
+                return
+
+            # ── NEU: Wartungsmodus ────────────────────────────────────
+            if callback_data.startswith("maint:"):
+                await self._handle_maintenance_callback(update, context, callback_data)
                 return
 
             # ── Standard Menü-Callback (menu:...) ────────────────────

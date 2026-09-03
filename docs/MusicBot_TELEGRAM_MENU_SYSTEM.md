@@ -26,7 +26,7 @@ MenuItem-Baum / Handler-Methoden (_handle_*)
 ```
 
 **Zwei getrennte Routing-Ebenen — beide müssen bei einem neuen
-Callback-Präfix aktualisiert werden (Bug B, siehe Abschnitt 4):**
+Callback-Präfix aktualisiert werden (Bug B, siehe Abschnitt 5):**
 
 1. **PTB-Ebene** (`RichMenuHandler.get_telegram_handlers()`): registriert pro
    Präfix einen eigenen `CallbackQueryHandler(..., pattern="^<präfix>:")`.
@@ -258,7 +258,96 @@ Regressionen.
 
 ---
 
-## 4. Muster für künftige Menü-Erweiterungen
+## 4. Bot-Wartungsmodus (Ein-/Ausschalten, 2026-09-03)
+
+Nutzer-Auftrag: "Ein-/Ausschalten" des Bots über Telegram-Inline-Buttons,
+analog zum bestehenden Bot-Neustart (`handlers/admin/bot_restart_handler.py`).
+
+### 4.1 Architektur-Grenze (Klärung vor der Umsetzung)
+
+`BotRestartHandler` funktioniert über `sudo systemctl restart bot` — der
+systemd-Service (`/etc/systemd/system/bot.service`, `Restart=always`,
+`RestartSec=10`) startet den Prozess automatisch neu, sobald er beendet
+wird. Ein echtes "Aus" (`systemctl stop`) würde den Bot-Prozess jedoch
+wirklich stoppen — niemand würde mehr auf Telegram-Nachrichten lauschen,
+es gäbe **keine Möglichkeit**, ihn per Inline-Button wieder
+"einzuschalten" (der Prozess, der den Klick empfangen müsste, liefe gar
+nicht mehr). Das ist keine Implementierungslücke, sondern eine harte
+technische Grenze.
+
+Nutzer-Entscheidung (nach Darstellung der Grenze): **Wartungsmodus**
+statt echtem Prozess-An/Aus — der Prozess läuft immer weiter (bleibt für
+Telegram erreichbar), ein persistiertes Feature-Flag schaltet die
+eigentliche Funktionalität ab/an. Voll rundum per Telegram-Button
+steuerbar, technisch einfach und robust.
+
+### 4.2 Umsetzung
+
+**Persistenz:** neuer `services/bot_maintenance.py::MaintenanceModeStore`
+— struktureller Zwilling zu `download_history.py`/`duplicate/cache.py`
+(atomares Schreiben, `data/maintenance_mode.json` — folgt derselben
+Konvention wie `data/module_logger_config.json`/`data/user_data.json`,
+kein eigenes Config-Attribut, da Anwendungszustand statt Cache). Default
+bei fehlender/korrupter Datei: **nicht aktiv** (verhindert, dass ein
+beschädigter Zustand versehentlich alle Nutzer aussperrt). Geteilte,
+prozessweite Instanz auf `RichMenuHandler` verankert (analog
+`ActiveDownloadRegistry`/`DownloadHistoryStore`), per `set_maintenance_store()`
+an `RichMenuSystem` durchgereicht.
+
+**Admin-Bypass (zentrale Design-Entscheidung):** Admins/Owner nutzen den
+Bot im Wartungsmodus **unverändert normal weiter** — sonst gäbe es
+keinen Weg zurück zum Ausschalten, da auch der Toggle-Button selbst
+hinter demselben Gate stünde. Alle anderen Nutzer bekommen an **jedem**
+Einstiegspunkt eine Wartungsmeldung statt der eigentlichen Funktion.
+
+**Durchsetzung an allen 7 Telegram-Einstiegspunkten** über einen
+gemeinsamen Helper (`handlers/menu/maintenance_gate.py::
+is_blocked_by_maintenance()`, freie Funktion statt Methode, da sowohl
+`RichMenuHandler` als auch `RichMenuSystem` sie unabhängig aufrufen):
+
+- `RichMenuSystem.handle_callback()` — deckt zentral ~9 Callback-Präfixe
+  auf einmal ab (menu:/dl:/restart:/backup_/status_/usermgmt_/dup:/
+  logger_/erradmin:)
+- `RichMenuHandler.handle_start_command()` (/start)
+- `RichMenuHandler.handle_menu_command()` (/menu)
+- `RichMenuHandler.handle_help()` (/help)
+- `RichMenuHandler.handle_help_callback()` (`^help:`-Callbacks)
+- `RichMenuHandler.handle_url_message()` (YouTube-URLs)
+- `RichMenuHandler.handle_text_message()` (sonstiger Freitext)
+
+`maintenance_store` darf `None` sein (bestehende Tests bypassen
+`__init__()` über `object.__new__()`, etabliertes Muster dieser Session)
+— liefert dann unauffällig "nicht blockiert", kein `AttributeError`.
+
+**UI:** neuer Menüpunkt "🛠️ Wartungsmodus" im Admin-Menü (neben "🔄 Bot
+neu starten"), `callback_data="maint:show"`/`"maint:toggle"`. Anders als
+beim Neustart bewusst **ohne** Bestätigungsdialog (instant reversibel,
+kein Datenverlust/Verbindungsabbruch) und **ohne** eigene Handler-Klasse
+(Logik beschränkt sich auf Lesen/Schreiben des einen booleschen
+Zustands, direkt auf `RichMenuSystem`). Eigener Admin-Check in
+`_handle_maintenance_callback()` (Defense-in-Depth, `maint:` bewusst
+nicht in `_ADMIN_ONLY_PREFIXES` aufgenommen — analog zu `restart:`/
+`erradmin:`, die aus demselben Grund ebenfalls einen eigenen Check
+haben statt den zentralen).
+
+### 4.3 Tests
+
+`tests/test_bot_maintenance_store.py` (9, reiner Store),
+`tests/test_maintenance_gate.py` (6, gemeinsamer Gate-Check isoliert),
+`tests/test_rich_menu_maintenance_mode.py` (11, Menü-/Toggle-Dispatch +
+Admin-Gating), `tests/test_rich_menu_handler_maintenance_gate.py` (9,
+end-to-end über alle 6 `RichMenuHandler`-Einstiegspunkte + Admin-Bypass).
+Test-Isolation: `MaintenanceModeStore`s `state_file` wird in
+`RichMenuHandler.__init__()` bewusst explizit über `Path(...)` **dieses**
+Moduls aufgelöst (statt den Default-String durchzureichen) — dasselbe,
+bereits etablierte Patching-Muster wie bei `user_data_file` in
+`_make_handler()` (`tests/test_rich_menu_handler.py`) greift dadurch
+auch hier, ohne ein neues Config-Attribut nur für Tests einzuführen.
+Volle Suite: 2146 passed, 1 skipped, 0 Regressionen.
+
+---
+
+## 5. Muster für künftige Menü-Erweiterungen
 
 Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
 
@@ -283,7 +372,7 @@ Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
 
 ---
 
-## 5. Verwandte Dokumente
+## 6. Verwandte Dokumente
 
 - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — Details zu allen vier
   live gefundenen Bugs dieser Phase sowie zum inzwischen geschlossenen

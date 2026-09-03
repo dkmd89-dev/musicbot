@@ -33,10 +33,13 @@ class MockConfig:
 
 def _make_handler(tmp_path):
     user_data_file = tmp_path / "user_data.json"
+    maintenance_state_file = tmp_path / "maintenance_mode.json"
 
     def _fake_path(p, *args, **kwargs):
         if p == "data/user_data.json":
             return user_data_file
+        if p == "data/maintenance_mode.json":
+            return maintenance_state_file
         return Path(p, *args, **kwargs)
 
     config = MockConfig()
