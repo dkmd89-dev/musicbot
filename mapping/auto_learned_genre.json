@@ -1,3 +1,25 @@
 {
-  "ARTIST_GENRE_MAP": {}
+  "ARTIST_GENRE_MAP": {
+    "Christina Stürmer": {
+      "confidence": "OBSERVED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Pop": 1
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Pop",
+          "secondary": [
+            "Rock"
+          ]
+        }
+      ],
+      "observations": 1,
+      "primary": "Pop",
+      "secondary": [
+        "Rock"
+      ]
+    }
+  }
 }
