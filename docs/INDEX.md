@@ -44,7 +44,7 @@ Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/a
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| [GENRE_SYSTEM.md](GENRE_SYSTEM.md) | CURRENT | Genre-Fallback-Kette (Manuell → Lokal → MusicBrainz → Last.fm → Feature-Artist-Inferenz), Auto-Learn-Konfidenz-Stufen, Mapping-Dateien-Übersicht (inkl. ARCH-022 YAML→JSON-Migration der drei Auto-Learn-Dateien), bekannte Revalidierungs-Grenze |
+| [GENRE_SYSTEM.md](GENRE_SYSTEM.md) | CURRENT | Genre-Fallback-Kette (Manuell → Lokal → MusicBrainz → Last.fm → Feature-Artist-Inferenz), Auto-Learn-Konfidenz-Stufen, Lock-in-Mechanismus ab 3 Beobachtungen, Mapping-Dateien-Übersicht (inkl. ARCH-022 YAML→JSON-Migration der drei Auto-Learn-Dateien), Genre-Learning unabhängig vom Artist-Namens-Override, bekannte Revalidierungs-Grenze |
 
 ## Download Pipeline Stability Phase
 
