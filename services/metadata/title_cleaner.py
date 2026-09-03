@@ -140,8 +140,19 @@ class TitleCleaner:
         # (analog zum bereits bewaehrten Muster in
         # apply_title_cleanup_rules(), META-03). Klammerlose Form bleibt
         # als separates, engeres Pattern bestehen (kein Klammer-Risiko).
+        #
+        # Live-Fund 2026-09-03 (Nutzer-Report, echter Testdownload
+        # 'GROSSSTADT (Offizieller Visualizer)'): "Visualizer" ist ein
+        # eigenstaendiges, gaengiges YouTube-Marketing-Suffix (Musikvideo
+        # mit statischem/animiertem Hintergrund statt echtem Video-Content)
+        # und enthaelt weder "video" noch "audio" als Wort - das
+        # urspruengliche Muster erfasste es daher nicht. Die
+        # genre_processor.py::_prepare_search_title()-Bereinigung fuer die
+        # externe Genre-API-Suche hatte bereits ein eigenes, explizites
+        # "(visualizer)"-Pattern - hier bisher gefehlt, obwohl dies der
+        # einzige Pfad fuer Title-/Album-Tag und Dateinamen ist.
         cleaned = re.sub(
-            r"\s*\([^()]*\b(?:video|audio)\b[^()]*\)\s*$",
+            r"\s*\([^()]*\b(?:video|audio|visualizer)\b[^()]*\)\s*$",
             "",
             cleaned,
             flags=re.IGNORECASE,
@@ -278,8 +289,14 @@ class TitleCleaner:
             # wie "HD" - "(Official HD Video)" wurde vorher nur zu
             # "(Official HD" statt vollstaendig entfernt, real via
             # Live-Test-Download reproduziert). Klammerlose Form bleibt als
-            # engeres Pattern bestehen.
-            r"\s*\([^()]*\b(?:video|audio)\b[^()]*\)\s*$",
+            # engeres Pattern bestehen. Live-Fund 2026-09-03: "visualizer"
+            # ergaenzt (siehe identischer Kommentar in
+            # light_title_cleanup()) - diese Suche wird direkt fuer die
+            # Album-MusicBrainz-Suche verwendet (enhanced_metadata_
+            # processor.py -> AlbumProcessor.fetch_album_from_musicbrainz()),
+            # ohne die zusaetzliche Absicherung durch genre_processor.py::
+            # _prepare_search_title().
+            r"\s*\([^()]*\b(?:video|audio|visualizer)\b[^()]*\)\s*$",
             r"\s*\(?\s*lyric\s*\bvideo\b\s*\)?\s*$",
             r"\s*(?:official\s+)?(?:music\s+)?\b(?:video|audio)\b\s*$",
             # Deutsches Kompositum "(Offizielles) Musikvideo" explizit als
