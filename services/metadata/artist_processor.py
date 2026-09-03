@@ -112,6 +112,62 @@ class ArtistProcessor:
         )
         return "Unbekannter Künstler", "fallback", []
 
+    def raw_name_for_learning(
+        self, track_metadata: dict, canonical_name: str
+    ) -> str:
+        """
+        Bestimmt den 'rohen' Namen fuer AutoLearnManager.learn_artist()
+        (2026-09-03, Live-Fund: Repost-/Compilation-Kanal 'GermanHype'
+        lernte faelschlich einen Alias 'GermanHype' -> 'Peter Maffay',
+        obwohl der Titel-Parser 'Peter Maffay' korrekt AUS DEM TITEL
+        erkannt hatte - der Kanalname war an der eigentlichen Artist-
+        Bestimmung gar nicht beteiligt, artist_source war 'youtube_parsed').
+
+        track_metadata['uploader'] (der Kanalname) bleibt bewusst die
+        BEVORZUGTE Quelle: im Normalfall (eigener Kuenstler-Kanal) IST der
+        Kanalname die authentische, rohe Schreibweise des Kuenstlernamens
+        (z.B. Kanal 'MAKKO' waehrend der normalisierte Name 'Makko' lautet)
+        - das automatische Lernen von Schreibvarianten funktioniert nur
+        deshalb. track_metadata['artist'] wird im restlichen Code NIRGENDS
+        gesetzt (repoweit verifiziert) und ist daher fast immer leer -
+        ein pauschaler Wechsel darauf haette das gesamte automatische
+        Alias-Learning fuer die haeufigste Quelle ('youtube_parsed')
+        faktisch stillgelegt (verworfener erster Loesungsansatz).
+
+        Stattdessen: der Kanalname wird nur dann als roher Name geliefert,
+        wenn er dem bereits bestimmten canonical_name tatsaechlich
+        aehnelt (identisch oder Teilstring in eine der beiden Richtungen,
+        case-insensitiv) - deckt Case-/Zusatz-Varianten ab ('MAKKO' vs.
+        'Makko', 'Miksu' vs. 'Miksu & Macloud', 'Makko - Topic' vs.
+        'Makko'), verwirft aber offensichtlich unterschiedliche Kanal-/
+        Kuenstler-Namen-Paare (GermanHype vs. Peter Maffay/Oimara). Fehlt
+        canonical_name (kein bereits bestimmter Artist zum Vergleichen),
+        wird konservativ das bisherige Verhalten beibehalten (uploader
+        bevorzugt) - kein Overreach in einen nicht beobachteten Fall.
+
+        Faellt auf track_metadata['artist'] zurueck, wenn uploader fehlt
+        oder wegen fehlender Aehnlichkeit verworfen wurde.
+        """
+        uploader = (track_metadata.get("uploader") or "").strip()
+        artist_field = (track_metadata.get("artist") or "").strip()
+
+        if not uploader:
+            return artist_field
+
+        if not canonical_name:
+            return uploader
+
+        uploader_lower = uploader.lower()
+        canonical_lower = canonical_name.strip().lower()
+        if (
+            uploader_lower == canonical_lower
+            or uploader_lower in canonical_lower
+            or canonical_lower in uploader_lower
+        ):
+            return uploader
+
+        return artist_field
+
     def clean_artist_before_normalization(self, artist: str) -> str:
         """
         Bereinigt einen Roh-Artist-String vor der Normalisierung.
