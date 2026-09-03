@@ -27,6 +27,7 @@ from telegram.ext import ContextTypes, CallbackQueryHandler
 
 from logger import get_module_logger
 from handlers.menu.maintenance_gate import is_blocked_by_maintenance
+from handlers.menu.activity_tracking import record_activity
 
 
 def _dl_progress_bar(current: int, total: int, width: int = 10) -> str:
@@ -1390,6 +1391,8 @@ class RichMenuSystem:
             logger=self.logger,
         ):
             return
+
+        record_activity(update, getattr(self, "status_handler", None), f"callback:{callback_data}")
 
         try:
             self.logger.debug(f"📞 Callback: {callback_data} von User {user_id}")
