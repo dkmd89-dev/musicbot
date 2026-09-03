@@ -96,7 +96,8 @@ Explizit **nicht** Teil dieser Ausbaustufe (Nutzer-Entscheidung):
   yt-dlp/Playlist-Orchestrierung, unnötige Komplexität)
 - „🔄 Reprocessing" (eigener, künftiger Bereich)
 - „📋 Download-Verlauf" / „🔁 Erneut versuchen" mit echtem persistentem
-  Speicher (siehe Abschnitt 3.5, zurückgestellt)
+  Speicher — damals zurückgestellt, in einer eigenen Folgephase
+  umgesetzt (siehe Abschnitt 3.6)
 
 ### 3.2 Fertig integriert
 
@@ -116,7 +117,8 @@ bleiben im Baum bestehen, sind aber über die UI nicht mehr erreichbar
 | `dl:active` | `_handle_download_active` | Live-Status: Titel, Fortschrittsbalken, „⬇️ Aktuell" (aktueller Track), „✅ Abgeschlossen" (letzte 5 fertige Tracks), „⏳ Noch N Tracks"; Buttons „❌ Download abbrechen" / „ℹ️ Details" / „◀️ Zurück" |
 | `dl:details` | `_handle_download_details` | URL, Typ (single/playlist), Laufzeit, Fortschritt, aktueller Track |
 | `dl:cancel` | `_handle_download_cancel_request` | Setzt `request_cancel()`, sendet Bestätigung |
-| `dl:history` | `_handle_download_history` | Platzhalter „kommt in einem späteren Schritt" (siehe 3.5) |
+| `dl:history` | `_handle_download_history` | Download-Verlauf, siehe Abschnitt 3.6 |
+| `dl:retry:<position>` | `_handle_download_retry` | „🔁 Erneut versuchen", siehe Abschnitt 3.6 |
 
 **Live-Status-Datenquelle:** derselbe geteilte `ProgressTracker`, den auch
 die automatischen Zwischen-Updates während des Downloads verwenden
@@ -192,18 +194,67 @@ Vollständige Suite zum Abschluss dieser Phase: **1908 passed, 1 skipped
 
 ### 3.5 Offen / zurückgestellt
 
-**„📋 Download-Verlauf" / „🔁 Erneut versuchen"** (OPEN, P2, siehe
-`docs/FINDINGS_INDEX.md`): brauchen einen persistenten Speicher der
-letzten N Downloads pro Chat (Titel, Status, Zeitpunkt). Nutzer-
-Entscheidung bei Rückfrage: JSON-persistiert nach etabliertem Muster
-(wie `duplicate_cache.py`), muss Bot-Neustarts überstehen. Aktuell zeigt
-„📋 Download-Verlauf" nur einen Platzhalter, „🔁 Erneut versuchen" ist noch
-nicht sichtbar (Prioritätsordnung des Nutzers: 1. ❌ Abbrechen — erledigt,
-2. ℹ️ Details — erledigt, 3. 📋 Verlauf — offen, 4. 🔁 Erneut versuchen —
-offen, nur für fehlgeschlagene Downloads).
-
 **„🔄 Reprocessing"**: bewusst separater, noch nicht begonnener Bereich
 (Nutzer-Entscheidung).
+
+### 3.6 Download-Verlauf / Erneut versuchen (Folgephase, 2026-09-03)
+
+Umsetzung des in Abschnitt 3.1/3.5 zurückgestellten Punkts (CLOSED,
+`docs/FINDINGS_INDEX.md`).
+
+**Persistenz:** neuer `services/downloader/download_history.py::
+DownloadHistoryStore` — struktureller Zwilling zu `duplicate/cache.py`
+(atomares Schreiben: write-tmp + `Path.replace()`, analog INV-02). Ein
+JSON-Dokument (`chat_id` → Liste von Einträgen), Verzeichnis über
+`Config.DOWNLOAD_HISTORY_DIR` (`cache/download_history/`). Deckelung auf
+`MAX_ENTRIES_PER_CHAT = 20`, älteste zuerst entfernt. Geteilte,
+prozessweite Instanz — auf `RichMenuHandler` verankert (analog
+`ActiveDownloadRegistry`, aus demselben Grund: `DownloadHandler` wird pro
+Update neu konstruiert), per `set_download_history()` an `RichMenuSystem`
+und per Konstruktor-Parameter an jeden neuen `DownloadHandler`
+durchgereicht.
+
+**Schreib-Hooks** in `klassen/download_handler.py` (`_record_history_entry()`,
+No-op-sicher falls kein Store injiziert):
+
+| Stelle | Status | Besonderheit |
+|---|---|---|
+| `handle_single_track_success()` | `success` | Nur für echte Einzel-Downloads (`result.get("type") != "playlist"`) — der Playlist-Wrapper delegiert ebenfalls hierher, trägt aber kein echtes `title`/`artist` |
+| `_register_playlist_track_duplicates()` | `success` | Ein Eintrag pro tatsächlich erfolgreichem Track, mit dessen eigener Identität — analog zur bereits bestehenden Duplikat-Registrierung dort (dieselben Guards: kein Eintrag bei Fehlschlag/`renamed_due_to_conflict`/Platzhalter-Artist) |
+| `handle_download_failure()` | `failed` | URL aus `update.message.text` (kein Track-Titel zu diesem Zeitpunkt bekannt) |
+| `_handle_download_cancelled()` | `cancelled` | Ebenso |
+
+**UI (`_handle_download_history()`):** letzte Einträge des Chats, neueste
+zuerst, mit Status-Icon (✅/❌/🛑) und Zeitstempel; leer → Hinweistext
+statt leerer Liste. Pro Eintrag ein „🔁"-Button
+(`callback_data=f"dl:retry:{position}"`, `position` = Index in
+`get_recent()`/`get_entry_by_position()`, damit Anzeige und Callback
+immer übereinstimmen).
+
+**„🔁 Erneut versuchen" (`_handle_download_retry()`):** `RichMenuSystem`
+kann selbst keinen `DownloadHandler` bauen (das kann nur
+`RichMenuHandler`, siehe `_create_download_handler()`/`_process_url()`).
+Bewusst **kein** Eingriff in `handle_youtube_links()` (in CLAUDE.md
+Abschnitt 19 als „große Klasse"/Risikobereich gelistet) — stattdessen
+injiziert `RichMenuHandler.initialize()` `self._process_url` als
+Callback (`set_url_retry_callback()`). Da PTB-`Update`-/`Message`-Objekte
+nach Auslieferung eingefroren sind (keine nachträgliche Mutation
+möglich), baut `_handle_download_retry()` ein minimales
+Duck-Typing-Objekt (`_RetryUpdateAdapter`/`_RetryMessageAdapter`,
+`handlers/menu/rich_menu_system.py`) anstelle eines echten `Update`:
+`effective_user`/`effective_chat`/`update_id` 1:1 vom auslösenden
+Callback-Query übernommen, `message.text` = gespeicherte URL,
+`message.reply_text` = `callback_query.message.reply_text` (sendet in
+denselben Chat). Läuft danach durch exakt denselben, bereits produktiv
+genutzten Pfad (`_process_url()` → `handler.handle_url()` →
+`handle_youtube_links()`) wie ein normaler Text-Download — keine
+Parallel-Implementierung der Pipeline.
+
+**Tests:** `tests/test_download_history_store.py` (16, reiner Store),
+`tests/test_download_handler_history_recording.py` (12, die vier
+Schreib-Hooks), `tests/test_rich_menu_download_history.py` (15,
+Menü-/Retry-Dispatch). Volle Suite: 2097 passed, 1 skipped, 0
+Regressionen.
 
 ---
 
@@ -235,7 +286,8 @@ Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
 ## 5. Verwandte Dokumente
 
 - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — Details zu allen vier
-  live gefundenen Bugs dieser Phase sowie zum offenen Download-Verlauf-Punkt.
+  live gefundenen Bugs dieser Phase sowie zum inzwischen geschlossenen
+  Download-Verlauf-Punkt (Abschnitt 3.6).
 - [`MusicBot_ENGINEERING_BASELINE_v8.md`](MusicBot_ENGINEERING_BASELINE_v8.md)
   — Baseline-Stand vor dieser Phase.
 

@@ -43,6 +43,7 @@ class Config(ProdConfig):
     METADATA_CACHE_DIR = BASE_DIR / "cache" / "metadata_cache"
     DUPLICATE_CACHE_DIR = BASE_DIR / "cache" / "duplicate_cache"
     LYRICS_CACHE_DIR = BASE_DIR / "cache" / "lyrics_cache"
+    DOWNLOAD_HISTORY_DIR = BASE_DIR / "cache" / "download_history"
     LOG_DIR = BASE_DIR / "logs"
     LOG_FILE = LOG_DIR / "bot.log"
     STATS_DIR = BASE_DIR / "stats"
