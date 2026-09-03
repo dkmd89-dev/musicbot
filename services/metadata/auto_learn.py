@@ -420,8 +420,19 @@ class AutoLearnManager:
         Wird NICHT geschrieben wenn:
           - Artist in artist_genre.yaml (manuell) vorhanden ist (dauerhafter
             Block, siehe Abschnitt 13/14 des Auto-Learn-Auftrags)
-          - Artist in artist_overrides.json existiert
           - genre_result ist None oder hat kein primary-Genre
+
+        Genre-Learning ist UNABHAENGIG vom Artist-Namens-Override in
+        artist_overrides.json (2026-09-03, Genre-Lock-in-Auftrag): frueher
+        blockierte ein dortiger Eintrag das Genre-Lernen vollstaendig, obwohl
+        artist_overrides.json ausschliesslich Artist-NAMENS-Normalisierung
+        betrifft (raw_name -> canonical_name), nicht Genre. Verifiziert
+        betraf das 78 von 174 Override-Artists ohne manuelles Genre in
+        artist_genre.yaml (u.a. Toobrokeforfiji) - diese konnten dadurch NIE
+        ein artist-weites Auto-Learn-Genre-Mapping erhalten. Der SEPARATE
+        Feature-Artist-Override-Check (_is_artist_known()/
+        _compute_featured_artist_decision()/observe_featured_artists())
+        bleibt davon unberuehrt und weiterhin unveraendert.
 
         Ein bereits vorhandener AUTO-Learn-Eintrag blockiert NICHT mehr
         weitere Beobachtungen (frueheres Verhalten: einmal geschrieben,
@@ -442,20 +453,6 @@ class AutoLearnManager:
             return False
         if decision["decision"] == "SKIPPED_NO_GENRE":
             return False
-
-        # Prüfe ob Artist in artist_overrides.json existiert (Abschnitt 10)
-        overrides_normalized = getattr(
-            self.artist_normalizer, "overrides_normalized", {}
-        )
-        for override_key, override_val in overrides_normalized.items():
-            if (
-                override_val.lower() == canonical_name.lower()
-                or override_key.lower() == canonical_name.lower()
-            ):
-                self.logger.info(
-                    f"🧠 [AUTO-LEARN] '{canonical_name}' in artist_overrides.json gefunden → kein Auto-Learning"
-                )
-                return False
 
         self.logger.info(
             f"🧠 [AUTO-LEARN] Verarbeite Genre-Beobachtung für '{canonical_name}': "
