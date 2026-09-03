@@ -146,6 +146,17 @@ def _clean_title_suffixes(title: str) -> str:
     # Entferne auch ohne Klammern am Ende
     title = re.sub(r"\s*[-–—]\s*prod[^)]*$", "", title, flags=re.I)
 
+    # docs/FINDINGS_INDEX.md (Nebenfund, live reproduziert: Artist "makko",
+    # Track '"ADLIBS" prod. Safecall777'): die obige Regel verlangt
+    # zwingend einen Bindestrich/Gedankenstrich vor "prod" - eine
+    # klammerlose, TRENNERLOSE Form am Titelende ("Titel prod. X", ohne
+    # Bindestrich) wurde dadurch nicht erkannt, auch nicht ueber die volle
+    # parse_youtube_title()-Pipeline. Analog zum bereits etablierten Fix
+    # in title_cleaner.py::light_title_cleanup() (dort fuer den finalen
+    # Titel-Tag geloest) - \bprod\b mit zwingendem "."/Whitespace danach
+    # verhindert Fehltreffer in Woertern wie "Producer"/"Production".
+    title = re.sub(r"\s*\bprod\.?\s+\S.*$", "", title, flags=re.I)
+
     # Entferne leere Klammern
     title = re.sub(r"\(\s*\)", "", title)
 
