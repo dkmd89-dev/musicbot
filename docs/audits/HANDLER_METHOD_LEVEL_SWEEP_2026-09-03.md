@@ -115,15 +115,19 @@ ausschließlich die gelöschte Funktion selbst testeten:
 `tests/test_test_menu_handler.py::test_create_test_handler_factory`,
 `tests/test_enhanced_status_handler.py::TestFormatBytes`.
 
-**Bewusst nicht mit entfernt:** `logger.py::setup_module_logging()` ist
-seit dieser Löschung doppelt verwaist (sein einziger Aufrufer
-`toggle_module()` in `handlers/enhanced_logger_menu_handler.py` hat ihn
-schon vorher real nie aufgerufen — ein pre-existing, vom Nutzer live
-gemeldeter Bug: Modul-Logger lassen sich über das Inline-Button-Menü
-aktivieren, schreiben dabei aber nicht in eine Log-Datei. Nicht durch
-diesen Sweep verursacht, bisher nicht gefixt, noch nicht in
-`docs/FINDINGS_INDEX.md` erfasst). `logger.py` liegt außerhalb des
-17-Datei-Scopes dieses Sweeps und wird hier nicht mitgeprüft.
+**Korrektur (2026-09-03, nachträglich):** an dieser Stelle stand
+ursprünglich die Behauptung, `logger.py::setup_module_logging()` sei nach
+diesem Cleanup doppelt verwaist. Das war **falsch** — separat verifiziert
+bei der Analyse des vom Nutzer live gemeldeten Bugs ("Modul-Logger lassen
+sich über das Inline-Button-Menü aktivieren, schreiben dabei aber nicht in
+eine Log-Datei"): `setup_module_logging()` hat zwei echte, aktive
+Aufrufer, `EnhancedLoggerMenuHandler.__init__()` und
+`EnhancedMetadataProcessor.__init__()` (beide produktiv instanziiert über
+`RichMenuHandler.initialize()`), und richtet dort real die eigene
+dedizierte Log-Datei der jeweiligen Klasse ein. Der tatsächliche Root
+Cause des gemeldeten Bugs lag stattdessen in `ModuleLoggerManager.
+toggle_module()` (derselbe Datei) — inzwischen gefixt, siehe
+`docs/FINDINGS_INDEX.md` (Zeile „ModuleLoggerManager.toggle_module()").
 
 Volle Testsuite nach dem Cleanup: 2165 passed, 1 skipped, 0 Regressionen.
 
@@ -164,6 +168,8 @@ nicht aus echtem dynamischem Dispatch. Alle haben reale interne Aufrufer.
    erledigt, siehe `docs/FINDINGS_INDEX.md` (Zeile „BotStatusTracker").
 3. ~~Cleanup-PR für die 22 bestätigten DEAD-Funde~~ — erledigt, siehe
    „Cleanup durchgeführt (2026-09-03)" oben.
-4. `logger.py::setup_module_logging()` (doppelt verwaist seit dem
-   Cleanup) und der zugrundeliegende Logger-Toggle-Bug — separater,
-   noch offener Fund, siehe „Cleanup durchgeführt" oben.
+4. ~~Logger-Toggle-Bug (`ModuleLoggerManager.toggle_module()`)~~ —
+   erledigt, siehe `docs/FINDINGS_INDEX.md` (Zeile „ModuleLoggerManager.
+   toggle_module()"). `logger.py::setup_module_logging()` selbst war
+   entgegen einer früheren, fehlerhaften Aussage nie verwaist — siehe
+   Korrektur oben.
