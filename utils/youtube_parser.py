@@ -153,12 +153,44 @@ def _clean_title_suffixes(title: str) -> str:
     # noch "audio" noch ein anderes bekanntes Schluesselwort). Entfernt die
     # komplette Klammer, sobald das ERSTE Wort darin eines der bekannten
     # Marketing-Schluesselwoerter ist - unabhaengig von allen Folgewoertern
-    # (deckt damit auch beliebige Kanalnamen ab). Nur am Titelende
-    # verankert (\s*$), analog zu den uebrigen Regeln dieser Funktion -
-    # eine Klammer mitten im Titel wird nicht angefasst.
+    # (deckt damit auch beliebige Kanalnamen ab).
+    #
+    # Nachtrag, selbiger Tag (Nutzer-Report, zweiter echter Testdownload:
+    # "Christina Stürmer - Ein Teil von mir (offical Video) - Lyric
+    # Video"): zwei weitere Luecken am selben Muster.
+    # 1) "offical" (Tippfehler, fehlendes zweites "i") matchte "official"
+    #    nicht - haeufiger YouTube-Tippfehler, nicht nur ein Einzelfall.
+    #    "offici?al" deckt beide Schreibweisen mit einem Muster ab.
+    # 2) Die urspruengliche Regel war zwingend an das Titelende verankert
+    #    (\s*$) - eine Marketing-Klammer, der noch ein weiterer Suffix
+    #    folgt ("(offical Video) - Lyric Video"), wurde dadurch NIE
+    #    erfasst, selbst bei korrekter Schreibweise. Anker entfernt -
+    #    passend zum urspruenglichen, unveraenkerten Vorbild in
+    #    title_cleaner.py::apply_title_cleanup_rules() und den bereits
+    #    bestehenden, ebenfalls unverankerten "(live)"/"(live in ...)"-
+    #    Mustern in _clean_bracket_content() (identische Risikoklasse,
+    #    bereits etabliert akzeptiert).
     title = re.sub(
-        r"\s*\(\s*(?:official|music|lyric|video|audio|live|version|remaster|hd|4k|vevo|explicit)"
-        r"(?:\s+\S+)*\s*\)\s*$",
+        r"\s*\(\s*(?:offici?al|music|lyric|video|audio|live|version|remaster|hd|4k|vevo|explicit)"
+        r"(?:\s+\S+)*\s*\)",
+        "",
+        title,
+        flags=re.I,
+    )
+
+    # Fortsetzung des Nachtrags oben: nach Entfernen der Klammer blieb im
+    # reproduzierten Fall noch "- Lyric Video" als eigener, NICHT
+    # geklammerter Bindestrich-Suffix am Titelende uebrig (die vorherige
+    # Titel-Bereinigung entfernte nur das letzte lose Wort "Video", "-
+    # Lyric" blieb haengen). Analoge Regel fuer die bindestrich-getrennte
+    # Form, bewusst weiterhin an das Titelende verankert (\s*$) - anders
+    # als bei einer Klammer gibt es hier kein eindeutiges Ende-Signal
+    # (kein schliessendes ")"), ein unverankertes Match koennte sonst
+    # mitten im Titel faelschlich einen echten Bindestrich-Songtitel-Teil
+    # erfassen.
+    title = re.sub(
+        r"\s*[-–—]\s*(?:offici?al|music|lyric|video|audio|live|version|remaster|hd|4k|vevo|explicit)"
+        r"(?:\s+\S+)*\s*$",
         "",
         title,
         flags=re.I,

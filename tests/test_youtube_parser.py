@@ -405,13 +405,6 @@ class TestCleanTitleSuffixesOfficialVersionSuffix:
             == "Song Title (Extended Remix by DJ Someone)"
         )
 
-    def test_bracket_not_at_end_of_title_is_not_touched(self):
-        """Die Regel darf nur am Titelende greifen, nicht mitten im Titel."""
-        assert (
-            _clean_title_suffixes("Song (Official Version) Continued")
-            == "Song (Official Version) Continued"
-        )
-
     def test_end_to_end_via_parse_youtube_title_real_reproduced_case(self):
         """Der real reproduzierte Bug-Fall end-to-end ueber die volle
         parse_youtube_title()-Pipeline, nicht nur die isolierte
@@ -420,6 +413,81 @@ class TestCleanTitleSuffixesOfficialVersionSuffix:
             "SIDO - SCHLECHTES VORBILD (OFFICIAL HD VERSION AGGRO BERLIN)"
         )
         assert result["song_title"] == "SCHLECHTES VORBILD"
+
+
+class TestCleanTitleSuffixesOfficialVersionSuffixNachtrag:
+    """
+    Nachtrag, selbiger Tag (Nutzer-Report, zweiter echter Testdownload
+    ueber den Test-Bot): "Christina Stürmer - Ein Teil von mir (offical
+    Video) - Lyric Video" behielt trotz des obigen Fixes einen Rest-Suffix
+    ("Ein Teil von mir (offical Video) - Lyric") - zwei weitere Luecken
+    am selben Muster:
+
+    1) "offical" (Tippfehler, fehlendes zweites "i") matchte "official"
+       nicht - haeufiger YouTube-Tippfehler. "offici?al" deckt beide
+       Schreibweisen mit einem Muster ab.
+    2) Die Klammer-Regel war zwingend an das Titelende verankert - eine
+       Marketing-Klammer, der noch ein weiterer Suffix folgt ("(offical
+       Video) - Lyric Video"), wurde dadurch NIE erfasst, selbst bei
+       korrekter Schreibweise. Anker entfernt (Klammer wird jetzt an
+       jeder Position erkannt, sofern sie mit einem Marketing-
+       Schluesselwort beginnt) + neue, weiterhin verankerte Regel fuer
+       einen zusaetzlichen, NICHT geklammerten Bindestrich-Suffix am
+       Titelende ("- Lyric Video").
+
+    Bewusster Trade-off (dokumentiert, nicht versehentlich): die
+    Klammer-Regel kann dadurch jetzt auch eine Marketing-Klammer MITTEN
+    im Titel entfernen (siehe test_bracket_mid_title_is_also_now_removed
+    unten) - identische Risikoklasse wie die bereits laenger bestehenden,
+    ebenfalls unverankerten "(live)"/"(live in ...)"-Muster in
+    _clean_bracket_content().
+    """
+
+    def test_real_reproduced_case_end_to_end(self):
+        """Kernfall, real via Live-Download reproduziert."""
+        result = parse_youtube_title(
+            "Christina Stürmer - Ein Teil von mir (offical Video) - Lyric Video"
+        )
+        assert result["song_title"] == "Ein Teil von mir"
+
+    def test_typo_offical_in_bracket_is_removed(self):
+        assert (
+            _clean_title_suffixes("Song Title (offical Video)") == "Song Title"
+        )
+
+    def test_correct_spelling_still_works(self):
+        """Direkte Regression: die korrekte Schreibweise darf durch die
+        Tippfehler-Toleranz nicht kaputtgehen."""
+        assert (
+            _clean_title_suffixes("Song Title (official Video)") == "Song Title"
+        )
+
+    def test_trailing_dash_lyric_video_suffix_is_removed(self):
+        assert (
+            _clean_title_suffixes("Song Title - Lyric Video") == "Song Title"
+        )
+
+    def test_trailing_dash_official_suffix_is_removed(self):
+        assert (
+            _clean_title_suffixes("Song Title - Official Audio") == "Song Title"
+        )
+
+    def test_bracket_mid_title_is_also_now_removed(self):
+        """Bewusster Trade-off (siehe Klassen-Docstring): die Klammer-
+        Regel ist nicht mehr an das Titelende verankert."""
+        assert (
+            _clean_title_suffixes("Song (Official Version) Continued")
+            == "Song Continued"
+        )
+
+    def test_dash_suffix_rule_stays_anchored_to_title_end(self):
+        """Die neue Bindestrich-Regel bleibt (anders als die Klammer-
+        Regel) an das Titelende verankert - ein Bindestrich-Songtitel-Teil
+        MITTEN im Titel darf nicht angefasst werden."""
+        assert (
+            _clean_title_suffixes("Official Statement - Song Title")
+            == "Official Statement - Song Title"
+        )
 
 
 class TestNormalizeString:
