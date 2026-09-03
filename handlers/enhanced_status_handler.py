@@ -668,7 +668,6 @@ class EnhancedStatusHandler:
                 "Downloads": self.config.DOWNLOAD_DIR,
                 "Cache": self.config.DATA_DIR,
                 "Logs": self.config.LOG_DIR,
-                "Temp": self.config.TEMP_DIR,
             }
 
             # INV-01 (docs/MusicBot_ARCHITECTURE_EVOLUTION.md, Abschnitt 27,
