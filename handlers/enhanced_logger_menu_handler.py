@@ -499,7 +499,7 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
                             callback_data=f"logger_module_level_{module_name}",
                         ),
                         InlineKeyboardButton(
-                            "🔄 Toggle Debug",
+                            "📁 Log-Datei umschalten",
                             callback_data=f"logger_module_toggle_{module_name}",
                         ),
                     ],
@@ -608,25 +608,43 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
     async def toggle_module(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, module_name: str
     ):
-        """Schaltet ein Modul ein/aus"""
+        """Schaltet die dedizierte Log-Datei eines Moduls ein/aus.
+
+        Bug-Fix (Live-Fund): togglete vorher faelschlich config["enabled"]
+        statt config["file_handler"]. Fuer jedes real aktive, aber noch nie
+        ueber dieses Menue konfigurierte Modul liefert get_module_config()
+        per Default enabled=True - der erste Klick invertierte das zu False,
+        und _apply_module_config() behandelt enabled=False als kompletten
+        Logger-Stopp (logger.disabled = True), bevor die FileHandler-Logik
+        ueberhaupt erreicht wird. Das Modul wurde dadurch stummgeschaltet
+        statt eine Log-Datei zu bekommen. Grundwahrheit ist jetzt der
+        tatsaechliche Handler-Zustand des echten Loggers (nicht der - unter
+        Umstaenden nie angewendete - Config-Default), enabled bleibt von
+        dieser Funktion unangetastet aktiv, damit das Modul unabhaengig vom
+        dedizierten File-Logging immer normal weiterloggt.
+        """
         try:
             config = self.module_manager.get_module_config(module_name)
-            current_state = config.get("enabled", True)
-            new_state = not current_state
+            real_logger = logging.getLogger(module_name)
+            has_file_handler = any(
+                isinstance(h, logging.FileHandler) for h in real_logger.handlers
+            )
+            new_state = not has_file_handler
 
             # Konfiguration aktualisieren
-            config["enabled"] = new_state
+            config["file_handler"] = new_state
+            config["enabled"] = True
             self.module_manager.set_module_config(module_name, config)
 
             action = "aktiviert" if new_state else "deaktiviert"
-            self.logger.info(f"🔧 Modul {module_name} wurde {action}")
+            self.logger.info(f"🔧 Log-Datei fuer {module_name} wurde {action}")
 
             # Erfolgs-Nachricht
             status_icon = "✅" if new_state else "❌"
             success_text = (
-                f"{status_icon} Modul {action}!\n\n"
+                f"{status_icon} Log-Datei {action}!\n\n"
                 f"Modul: {module_name}\n"
-                f"Neuer Status: {'Aktiv' if new_state else 'Inaktiv'}\n"
+                f"Log-Datei: {'Aktiv' if new_state else 'Inaktiv'}\n"
                 f"Zeitpunkt: {datetime.now().strftime('%H:%M:%S')}\n\n"
                 f"Die Änderung ist sofort wirksam!"
             )
@@ -645,7 +663,7 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
                 ]
             )
 
-            self.logger.info(f"🔁 Modul-Zustand geändert: {module_name} -> {action}")
+            self.logger.info(f"🔁 Log-Datei-Zustand geändert: {module_name} -> {action}")
             await self._safe_edit_message(update, success_text.strip(), keyboard)
 
         except Exception as e:
