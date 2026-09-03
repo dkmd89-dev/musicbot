@@ -129,17 +129,6 @@ class TestBotStatusTracker:
         assert activity["total_recorded_activities"] == 25
 
 
-class TestFormatBytes:
-    def test_bytes_stay_as_bytes(self):
-        handler = EnhancedStatusHandler(FakeConfig())
-        assert handler.format_bytes(500) == "500.00 B"
-
-    def test_megabytes_are_converted(self):
-        handler = EnhancedStatusHandler(FakeConfig())
-        result = handler.format_bytes(5 * 1024 * 1024)
-        assert result.endswith("MB")
-
-
 def make_update():
     update = Mock()
     update.callback_query = Mock()

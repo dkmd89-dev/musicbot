@@ -8,7 +8,6 @@ Integrierte Mediensuche und -verwaltung über Navidrome API
 import asyncio
 from typing import Dict, List, Optional, Any, Tuple
 from typing import TYPE_CHECKING
-from dataclasses import dataclass
 from pathlib import Path
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, Message
@@ -22,33 +21,6 @@ from services.clients.navidrome_api import NavidromeAPI
 
 if TYPE_CHECKING:
     from handlers.enhanced_error_handler import EnhancedErrorHandler
-
-
-@dataclass
-class MediaItem:
-    """Represents a media item from Navidrome"""
-
-    id: str
-    name: str
-    type: str  # "artist", "album", "song", "playlist"
-    extra_info: Dict[str, Any] = None
-
-    def get_display_text(self, max_length: int = 30) -> str:
-        """Formatiert für Anzeige"""
-        display_name = (
-            self.name[:max_length] + "..." if len(self.name) > max_length else self.name
-        )
-
-        type_emojis = {
-            "artist": "🎤",
-            "album": "💿",
-            "song": "🎵",
-            "playlist": "📋",
-            "genre": "🎭",
-        }
-
-        emoji = type_emojis.get(self.type, "📁")
-        return f"{emoji} {display_name}"
 
 
 class NavidromeMenuHandler:
@@ -76,7 +48,6 @@ class NavidromeMenuHandler:
 
         # Browse-State für jeden User
         self.browse_states: Dict[int, Dict] = {}
-        self.search_cache: Dict[str, List[MediaItem]] = {}
 
         # Wird von rich_menu_handler.py nach der Konstruktion zugewiesen
         # (self.navidrome_handler.error_handler = self.error_handler) -
@@ -843,65 +814,6 @@ Du hast {len(playlists)} Playlist(s) verfügbar:
                     "❌ Fehler beim Laden der Favoriten."
                 )
 
-    async def handle_recent(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Zeigt zuletzt gespielte Alben"""
-        if not self._check_connection():
-            await self._show_connection_error(update)
-            return
-
-        try:
-            self.logger.info("🕐 Lade zuletzt gespielte Alben...")
-            # 'getAlbumList' mit type 'recentlyPlayed'
-            params = {"type": "recentlyPlayed", "size": 10}
-            data = await asyncio.to_thread(
-                self.navidrome_api.make_request, "getAlbumList", params
-            )
-
-            subsonic_response = data.get("subsonic-response", {})
-            album_list = subsonic_response.get("albumList", {})
-            albums = album_list.get("album", [])
-
-            if not albums:
-                await update.callback_query.edit_message_text(
-                    "❌ Keine kürzlich gespielten Alben gefunden."
-                )
-                return
-
-            keyboard = []
-            for album in albums:
-                album_text = f"💿 {album['name']} - {album['artist']}"
-                keyboard.append(
-                    [
-                        InlineKeyboardButton(
-                            album_text[:40],
-                            callback_data=f"nav_album_{album['id']}",
-                        )
-                    ]
-                )
-
-            keyboard.append(
-                [InlineKeyboardButton("🔙 Zurück", callback_data="menu_navidrome")]
-            )
-
-            message_text = "🕐 **Zuletzt gespielte Alben**"
-
-            await update.callback_query.edit_message_text(
-                text=message_text,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="MarkdownV2",
-            )
-
-        except Exception as e:
-            self.logger.error(f"❌ Fehler beim Laden der 'Zuletzt gespielt'-Liste: {e}")
-            if self.error_handler:
-                await self.error_handler.handle_callback_error(
-                    update, context, "navidrome_recent", e
-                )
-            else:
-                await update.callback_query.edit_message_text(
-                    "❌ Fehler beim Laden der 'Zuletzt gespielt'-Liste."
-                )
-
     async def handle_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Zeigt allgemeine Bibliotheksstatistiken"""
         if not self._check_connection():
@@ -1200,10 +1112,3 @@ Kontaktiere den Administrator\\!
         except Exception as e:
             self.logger.error(f"❌ Reconnect fehlgeschlagen: {e}")
             await self._show_connection_error(update)
-
-
-def create_navidrome_handler(
-    config: Config, logger_factory=None
-) -> NavidromeMenuHandler:
-    """Factory-Funktion für den Navidrome-Handler"""
-    return NavidromeMenuHandler(config, logger_factory)

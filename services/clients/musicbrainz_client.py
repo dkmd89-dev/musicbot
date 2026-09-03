@@ -139,19 +139,6 @@ class MusicBrainzClient:
             self.logger.debug(f"⚠️ Fehler beim Holen der Release-Group ID: {e}")
         return None
 
-    def _extract_release_group_id(self, recording_data: dict) -> Optional[str]:
-        """Extrahiert die Release-Group ID aus Recording-Daten"""
-        try:
-            if "releases" in recording_data and recording_data["releases"]:
-                for release in recording_data["releases"]:
-                    if "release-group" in release and "id" in release["release-group"]:
-                        release_group_id = release["release-group"]["id"]
-                        self.logger.debug(f"🎵 Release-Group ID gefunden: {release_group_id}")
-                        return release_group_id
-        except Exception as e:
-            self.logger.debug(f"⚠️ Fehler beim Extrahieren der Release-Group ID: {e}")
-        return None
-
     def _extract_track_number(self, match: dict, release_list: list) -> Optional[int]:
         """
         Ermittelt die echte Position dieses Recordings innerhalb seines Mediums.
