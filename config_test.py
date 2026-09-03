@@ -33,7 +33,6 @@ class Config(ProdConfig):
     LIBRARY_DIR = BASE_DIR / "library"
     PODCAST_DIR = BASE_DIR / "podcast"
     DOWNLOAD_DIR = BASE_DIR / "downloads"
-    TEMP_DIR = BASE_DIR / "import" / "temp"
     PROCESSED_DIR = BASE_DIR / "import" / "prozess"
     FAIL_DIR = BASE_DIR / "import" / "fail"
     ARCHIVE_DIR = BASE_DIR / "import" / "archiv"

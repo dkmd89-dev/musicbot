@@ -41,7 +41,6 @@ class FakeConfig:
     DOWNLOAD_DIR = Path("/tmp/nonexistent_downloads")
     DATA_DIR = Path("/tmp/nonexistent_data")
     LOG_DIR = Path("/tmp/nonexistent_logs")
-    TEMP_DIR = Path("/tmp/nonexistent_temp")
 
 
 class TestSystemMonitor:

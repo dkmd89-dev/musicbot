@@ -249,9 +249,8 @@ class FilenameFixerTool(SingletonMixin):
         self.library_dir = Path(self.config.LIBRARY_DIR)
         self.fail_dir = Path(self.config.FAIL_DIR)
         self.processed_dir = Path(self.config.PROCESSED_DIR)
-        self.temp_dir = Path(self.config.TEMP_DIR)
 
-        for d in [self.library_dir, self.fail_dir, self.processed_dir, self.temp_dir]:
+        for d in [self.library_dir, self.fail_dir, self.processed_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
         # PODCAST_DIR

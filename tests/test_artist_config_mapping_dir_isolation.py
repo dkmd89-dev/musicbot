@@ -55,7 +55,6 @@ class _MinimalConfig:
         self.DOWNLOAD_DIR = tmp_path / "downloads"
         self.FAIL_DIR = tmp_path / "fail"
         self.PROCESSED_DIR = tmp_path / "processed"
-        self.TEMP_DIR = tmp_path / "temp"
         self.LOG_DIR = tmp_path / "logs"
         self.GENRE_MAPPING_DIR = mapping_dir
         self.ARTIST_OVERRIDE_FILE = tmp_path / "artist_overrides.json"

@@ -79,7 +79,6 @@ class Config:
     LIBRARY_DIR = Path("/mnt/musik_bilder/library")
     PODCAST_DIR = Path("/mnt/musik_bilder/Podcast")
     DOWNLOAD_DIR = BASE_DIR / "import" / "downloads"
-    TEMP_DIR = BASE_DIR / "import" / "temp"
     PROCESSED_DIR = BASE_DIR / "import" / "prozess"
     FAIL_DIR = BASE_DIR / "import" / "fail"
     ARCHIVE_DIR = BASE_DIR / "import" / "archiv"
@@ -524,7 +523,6 @@ class Config:
         required_dirs = [
             cls.LIBRARY_DIR,
             cls.DOWNLOAD_DIR,
-            cls.TEMP_DIR,
             cls.LOG_DIR,
             _inst.PODCAST_DIR_RESOLVED,  # ← Podcast-Root
             _inst.LYRICS_CACHE_DIR_RESOLVED,  # ← NEU: Lyrics-Cache
@@ -600,7 +598,6 @@ class Config:
             _inst.PODCAST_DIR_RESOLVED,
             _inst.LYRICS_CACHE_DIR_RESOLVED,  # ← NEU: Lyrics-Cache anlegen
             cls.DOWNLOAD_DIR,
-            cls.TEMP_DIR,
             cls.LOG_DIR,
             cls.METADATA_CACHE_DIR,
             cls.DUPLICATE_CACHE_DIR,

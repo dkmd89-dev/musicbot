@@ -42,7 +42,6 @@ PRODUCTION_BASE_DIR = str(config.Config.BASE_DIR)
 # hier nicht relevant.
 BASE_DIR_DERIVED_ATTRS = [
     "DOWNLOAD_DIR",
-    "TEMP_DIR",
     "PROCESSED_DIR",
     "FAIL_DIR",
     "ARCHIVE_DIR",

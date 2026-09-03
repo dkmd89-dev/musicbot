@@ -20,7 +20,6 @@ class FakeConfig:
         self.LIBRARY_DIR = tmp_path / "library"
         self.FAIL_DIR = tmp_path / "fail"
         self.PROCESSED_DIR = tmp_path / "processed"
-        self.TEMP_DIR = tmp_path / "temp"
         self.GENRE_MAPPING_DIR = mapping_dir or (tmp_path / "empty_mapping")
         # ARTIST_OVERRIDE_FILE bewusst NICHT immer gesetzt (fehlt bei den
         # meisten Tests hier ganz) - FilenameFixerTool liest es ueber
