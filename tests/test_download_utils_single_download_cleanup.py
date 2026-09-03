@@ -320,6 +320,66 @@ class TestAsyncioCancelledErrorDuringDownload:
         )
         assert not final_name.exists()
 
+    def test_cancelled_error_after_successful_download_during_metadata_processing_still_cleans_up(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        Closure-Audit (2026-09-03, Nutzer-Auftrag): _process_single_download()
+        umschliesst im Unterschied zu download_executor.py::
+        download_single_track() im try-Block NICHT nur den reinen yt-dlp-
+        Download, sondern zusaetzlich auch die nachfolgende Metadaten-
+        Verarbeitung (call_process_single_track()) - ein weiterer await-
+        Punkt, an dem ebenfalls eine echte asyncio.CancelledError auftreten
+        koennte (z.B. Bot-Shutdown WAEHREND des Tag-Writings/Library-Moves,
+        nicht nur waehrend des reinen Downloads). Bewusst als eigener,
+        beweisfuehrender Test verankert statt nur per Code-Lese-Audit
+        argumentiert - deckt exakt das vom Nutzer benannte Risiko ab: eine
+        eigene, bisher nicht getestete Variante der Cancellation-Luecke in
+        diesem Pfad, die download_single_track() (dort gibt es diesen
+        zweiten await-Punkt strukturell nicht) nicht besitzt.
+        """
+        processor = make_processor(tmp_path)
+        artifact = tmp_path / "Song4.webm"
+        artifact.write_bytes(b"raw-audio-bytes-fully-downloaded")
+
+        async def successful_extract_info_async(url, ydl_opts, download=True):
+            for hook in ydl_opts.get("progress_hooks", []):
+                hook({"status": "finished", "filename": str(artifact)})
+            return {"id": "abc123"}
+
+        processor.download_executor.extract_info_async = successful_extract_info_async
+        processor.download_executor.find_downloaded_file = Mock(
+            return_value=str(artifact)
+        )
+
+        async def cancelled_during_metadata_processing(*args, **kwargs):
+            raise asyncio.CancelledError()
+
+        monkeypatch.setattr(
+            "services.downloader.download_utils.call_process_single_track",
+            cancelled_during_metadata_processing,
+        )
+
+        with pytest.raises(asyncio.CancelledError):
+            run_async(
+                _process_single_download(
+                    url="https://youtube.com/watch?v=x",
+                    video_info=make_video_info(),
+                    ydl_opts={},
+                    enhanced_processor=processor,
+                    filename_fixer=Mock(),
+                )
+            )
+
+        assert not artifact.exists(), (
+            "eine Task-Cancellation NACH erfolgreichem Rohdownload, aber "
+            "WAEHREND der nachfolgenden Metadaten-Verarbeitung, muss "
+            "dieselbe Rohdatei-Bereinigung ausloesen - dieser Pfad hat "
+            "einen strukturell zusaetzlichen await-Punkt gegenueber "
+            "download_executor.py::download_single_track() und wurde "
+            "bisher durch keinen bestehenden Test explizit abgedeckt."
+        )
+
 
 class TestSuccessRegression:
     def test_successful_download_never_triggers_cleanup(self, tmp_path, monkeypatch):
