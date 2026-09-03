@@ -776,6 +776,11 @@ ARTIST_GENRE_MAP:
     primary: Pop
     secondary: [Pop Rock, Soft Rock, Indie Pop]
     description: Britischer Pop-Sänger mit Rock-Einflüssen
+    
+  oimara:
+    primary: Partyschlager
+    secondary: [Schlager, Electro, Mundart, Deutschpop]
+    description: Bayerischer Liedermacher (bürgerlich Beni Hafner), der mit "Wackelkontakt" 2025 einen viralen Hit landete. Sein Sound verbindet traditionelle Elemente mit modernen Party-Beats – eine Mischung aus Schlager, Techno und bayerischem Dialekt, die für ausgelassene Stimmung sorgt [citation:4][citation:6][citation:9].  
 
   "Lady Gaga":
     primary: Pop
