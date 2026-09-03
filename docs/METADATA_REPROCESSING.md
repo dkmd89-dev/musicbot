@@ -151,15 +151,26 @@ Album/Jahr werden **nicht** ueber `AlbumProcessor.determine_album_info()`
 neu bestimmt (diese Methode ist fuer Download-Zeit-Metadaten aus
 Playlist/yt-dlp gebaut und faellt bei fehlenden Kandidaten auf das aktuelle
 Kalenderjahr zurueck) — die bereits vorhandenen Album-/Jahr-Tags werden als
-Vertrauensbasis uebernommen, aber nicht mehr ungeprueft: ein vorhandenes
-Album-Tag durchlaeuft seit Phase 1 dieselbe Bereinigung wie der Titel
-(`TitleCleaner.light_title_cleanup()`, ohne Artist-Praefix-Entfernung) —
-Nutzer-Fund 2026-09-02 (Artist "makko"): reale Bestandsdateien haben so
-gut wie immer bereits ein Album-Tag (meist eine 1:1-Kopie des
-urspruenglich dirty Titels, z. B. `'"Bequem"'`), das ohne diese
-Bereinigung fuer immer dirty geblieben waere, waehrend der Titel zur
-selben Zeit korrekt bereinigt wurde. Fehlt ein Album-Tag komplett,
-fungiert der bereinigte Titel als Fallback.
+Vertrauensbasis uebernommen, aber nicht mehr ungeprueft. Die Album-Regel
+unterscheidet sich seit 2026-09-03 zwischen Singles- und Album-Tracks
+(`is_singles`, anhand des Parent-Ordnernamens bestimmt, siehe Abschnitt 9):
+
+- **Singles-Ordner:** das Album ist per Definition IMMER identisch zum
+  bereits bereinigten Titel (`clean_title`) — ein Nutzer-Fund 2026-09-03
+  (Artist "Möwe", ueber die Telegram-Reprocessing-Integration
+  reproduziert) zeigte, dass ein vorhandenes, davon abweichendes
+  Album-Tag sonst stehen bleibt, obwohl eine Einzelveroeffentlichung
+  fachlich kein eigenstaendiges Album hat. Ein vorhandenes Album-Tag wird
+  fuer Singles deshalb NICHT mehr gelesen/bereinigt, sondern immer durch
+  `clean_title` ersetzt.
+- **Album-Ordner (mit Tracknummer):** ein vorhandenes Album-Tag bleibt
+  weiterhin massgeblich und durchlaeuft dieselbe Bereinigung wie der Titel
+  (`TitleCleaner.light_title_cleanup()`, ohne Artist-Praefix-Entfernung) —
+  Nutzer-Fund 2026-09-02 (Artist "makko"): reale Bestandsdateien haben so
+  gut wie immer bereits ein Album-Tag (meist eine 1:1-Kopie des
+  urspruenglich dirty Titels, z. B. `'"Bequem"'`), das ohne diese
+  Bereinigung fuer immer dirty geblieben waere. Fehlt ein Album-Tag
+  komplett, fungiert der bereinigte Titel als Fallback.
 
 **Remix-Zusatz (`strip_remix_suffix()`):** ein abschliessendes
 `(...Remix...)`-Klammerpaar wird aus dem TITEL selbst entfernt (nicht nur
@@ -172,9 +183,9 @@ verwenden (`utils/youtube_parser.py::parse_youtube_title()` Schritt 7,
 `_clean_bracket_content(song_title, preserve_remix=False)`, entfernt den
 Remix-Zusatz dort ebenfalls aus dem finalen Titel). Da `clean_title`
 sowohl fuer den Titel-Tag als auch fuer den Dateinamen (Abschnitt 9) und
-den Album-Fallback verwendet wird, betrifft die Bereinigung automatisch
-alle drei — inklusive Umbenennung bestehender Dateien mit Remix-Zusatz im
-Namen (bewusste Nutzer-Entscheidung: "konsequent wie die
+den Singles-Album-Wert verwendet wird, betrifft die Bereinigung
+automatisch alle drei — inklusive Umbenennung bestehender Dateien mit
+Remix-Zusatz im Namen (bewusste Nutzer-Entscheidung: "konsequent wie die
 Download-Pipeline").
 
 ## 5a. Fehlerisolierung (Phase 1, 2026-09-02)

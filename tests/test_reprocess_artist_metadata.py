@@ -1046,13 +1046,19 @@ class TestAlbumFallbackStripsRemixSuffix:
         }
 
     @pytest.mark.asyncio
-    async def test_existing_album_tag_is_never_overwritten_by_fallback(
+    async def test_single_existing_album_tag_is_overridden_to_match_title(
         self, tagged_m4a, isolated_artist_dir
     ):
-        """Gegenprobe: ist bereits ein Album-Tag vorhanden, greift der
-        Album-Fallback gar nicht - bestehende Werte haben weiterhin
-        Vorrang (etabliertes Muster dieses Skripts). Der Titel selbst
-        wird davon unabhaengig trotzdem bereinigt."""
+        """Nutzer-Fund/-Entscheidung 2026-09-03 (live ueber die Telegram-
+        Reprocessing-Integration entdeckt, Artist 'Möwe'): bei einer
+        Single (Track liegt im Singles-Ordner - tagged_m4a/
+        isolated_artist_dir sind genau dafuer gebaut) ist das Album per
+        Definition IMMER identisch zum Titel. Ein vorhandenes, davon
+        abweichendes Album-Tag ('Existierendes Album') wird deshalb NICHT
+        uebernommen (anders als bei einem Album-Track, siehe
+        test_album_track_existing_album_tag_is_still_preserved unten) -
+        light_title_cleanup() allein haette hier nicht geholfen, da es
+        bewusst konservativ ist und z.B. keinen Remix-Zusatz entfernt."""
         audio = MP4(tagged_m4a)
         audio["©nam"] = ["Blauer Tag (Robin Schulz Remix)"]
         audio["©alb"] = ["Existierendes Album"]
@@ -1060,7 +1066,7 @@ class TestAlbumFallbackStripsRemixSuffix:
         renamed = tagged_m4a.with_name("2024 - Blauer Tag (Robin Schulz Remix).m4a")
         tagged_m4a.rename(renamed)
 
-        await rpam.process_file(
+        result = await rpam.process_file(
             renamed, isolated_artist_dir, make_processor_stub(), Mock(), Mock(),
             rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
             dry_run=False,
@@ -1068,8 +1074,53 @@ class TestAlbumFallbackStripsRemixSuffix:
 
         expected_path = renamed.parent / "2024 - Blauer Tag.m4a"
         after = MP4(expected_path)
-        assert after["©alb"] == ["Existierendes Album"]
         assert after["©nam"] == ["Blauer Tag"]
+        assert after["©alb"] == ["Blauer Tag"]
+        assert result["changes"]["album"] == {
+            "before": ["Existierendes Album"], "after": ["Blauer Tag"],
+        }
+
+    @pytest.mark.asyncio
+    async def test_album_track_existing_album_tag_is_still_preserved(
+        self, isolated_artist_dir
+    ):
+        """Gegenprobe: bei einem echten ALBUM-Track (eigener Ordner,
+        Tracknummer gesetzt - nicht im Singles-Ordner) bleibt ein
+        vorhandener, eigenstaendiger Album-Name weiterhin massgeblich -
+        dort ist ein vom Titel abweichender Album-Name die Regel, nicht
+        die Ausnahme. Die neue Singles-Regel (Test oben) gilt
+        ausschliesslich fuer den Singles-Ordner."""
+        album_dir = isolated_artist_dir / "2020 - Power EP"
+        album_dir.mkdir()
+        path = album_dir / "01 - Blauer Tag (Robin Schulz Remix).m4a"
+        _make_real_m4a(path)
+        audio = MP4(path)
+        audio["©nam"] = ["Blauer Tag (Robin Schulz Remix)"]
+        audio["©ART"] = ["Möwe"]
+        audio["aART"] = ["Möwe"]
+        audio["©alb"] = ["Power EP"]
+        audio["©day"] = ["2020"]
+        audio["trkn"] = [(1, 0)]
+        audio.save()
+
+        result = await rpam.process_file(
+            path, isolated_artist_dir, make_processor_stub(), Mock(), Mock(),
+            rpam.ReprocessLogger(isolated_artist_dir / "test.log"),
+            dry_run=False,
+        )
+
+        renamed = album_dir / "01 - Blauer Tag.m4a"
+        assert renamed.exists()
+        after = MP4(renamed)
+        assert after["©nam"] == ["Blauer Tag"]
+        assert after["©alb"] == ["Power EP"], (
+            "Ein Album-Track behaelt seinen eigenstaendigen Album-Namen - "
+            "die Singles-Regel darf hier nicht greifen."
+        )
+        assert result["changes"].get("album") is None, (
+            "Album-Tag darf bei einem unveraenderten, eigenstaendigen "
+            "Album-Namen nicht als geaendert gemeldet werden."
+        )
 
     def test_title_that_is_only_a_remix_parenthetical_keeps_full_title(self):
         """Sicherheitsfall: bliebe nach dem Strip nichts Sinnvolles uebrig,
