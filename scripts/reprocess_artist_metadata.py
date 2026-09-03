@@ -58,6 +58,9 @@ from services.metadata.models import split_main_and_featuring
 from services.clients.musicbrainz_client import MusicBrainzClient
 from services.clients.lastfm_client import LastFMClient
 from utils.helpers import sanitize_filename
+from utils.singleton import SingletonMixin
+from utils.artist_map import ArtistNormalizer
+from utils.genre_map import GenreMapper
 from utils.regex import ILLEGAL_CHARS_PATTERN
 from mutagen.mp4 import MP4
 
@@ -78,6 +81,66 @@ DEFAULT_PRODUCTION_ROOT = Path("/mnt/musik_bilder/library")
 
 class PathSafetyError(Exception):
     """Wird bei jeder Verletzung der Path-Safety-Guards ausgeloest."""
+
+
+class SingletonSafetyError(Exception):
+    """Wird ausgeloest, wenn EnhancedMetadataProcessor/ArtistNormalizer/
+    GenreMapper in diesem Python-Prozess bereits konstruiert wurden, BEVOR
+    dieses Skript sie mit config_test.Config konstruieren will."""
+
+
+class ReprocessingPostRunCheckError(Exception):
+    """Wird ausgeloest, wenn der Datei-Lauf selbst abgeschlossen wurde, der
+    nachgelagerte Struktur-/Production-Safety-Check aber crasht - siehe
+    assert_processor_singletons_are_fresh()-Kommentar fuer den Hintergrund
+    dieser Haertung (docs/FINDINGS_INDEX.md, Audit vor Telegram-Integration)."""
+
+
+def assert_processor_singletons_are_fresh() -> None:
+    """Verhindert das stillschweigende Wiederverwenden einer bereits in
+    diesem Prozess konstruierten Singleton-Instanz von
+    EnhancedMetadataProcessor/ArtistNormalizer/GenreMapper.
+
+    Hintergrund (Audit vor geplanter Telegram-Menue-Integration,
+    docs/FINDINGS_INDEX.md): alle drei Klassen sind SingletonMixin
+    (utils/singleton.py) - "First Mover gewinnt", jede spaetere
+    Konstruktion mit anderen Args wird bei bereits vorhandener Instanz
+    STILLSCHWEIGEND ignoriert (kein Fehler, kein Log). Als eigenstaendiger
+    CLI-Subprozess ist das harmlos, da jeder Lauf einen frischen
+    Python-Prozess bekommt. Wuerde main() aber jemals in-process aus einem
+    bereits laufenden Bot heraus aufgerufen (statt als Subprozess), haette
+    der Bot EnhancedMetadataProcessor laengst mit der ECHTEN config.Config
+    konstruiert - dieses Skript wuerde trotz importiertem config_test.Config
+    unbemerkt die produktive Instanz zurueckbekommen und ueber
+    auto_learn_manager.learn_genre()/observe_featured_artists() direkt in
+    die echten mapping/auto_learned_*.json schreiben. processor.aclose()/
+    processor.cleanup() am Ende von main() wuerden zusaetzlich Ressourcen
+    (genius_client-Session, Metadata-Cache) der noch laufenden
+    Produktivinstanz abreissen. Exakt dieses Singleton-Bleeding-Muster hat
+    in diesem Repo bereits real mapping/case_preserve.yaml und
+    mapping/artist_overrides.json verunreinigt (siehe
+    tests/conftest.py::reset_singletons()-Docstring) - nur bisher ueber
+    einen anderen Ausloeser (Tests) statt dieses Skripts.
+
+    Muss VOR jeder EnhancedMetadataProcessor(config=Config)-Konstruktion in
+    main() aufgerufen werden. Wirft SingletonSafetyError, sobald IRGENDEINE
+    der drei Klassen bereits eine initialisierte Instanz im
+    prozessweiten SingletonMixin._instances-Cache hat - unabhaengig davon,
+    mit welcher Config diese urspruenglich konstruiert wurde, da geteilte
+    Nutzung durch zwei unabhaengige Aufrufer (Bot + dieses Skript) auch bei
+    zufaellig identischer Config riskant waere (z.B. gleichzeitiges
+    aclose()/cleanup()).
+    """
+    for cls in (EnhancedMetadataProcessor, ArtistNormalizer, GenreMapper):
+        existing = SingletonMixin._instances.get(cls)
+        if existing is not None and getattr(existing, "_initialized", False):
+            raise SingletonSafetyError(
+                f"{cls.__name__} wurde in diesem Prozess bereits konstruiert "
+                f"(vermutlich durch einen parallel laufenden Bot-Prozess). "
+                f"reprocess_artist_metadata.py darf NICHT in-process in einem "
+                f"bereits laufenden Bot aufgerufen werden - nur als "
+                f"eigenstaendiger Subprozess (siehe docs/METADATA_REPROCESSING.md)."
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1143,11 +1206,15 @@ async def main():
 
     metadaten_root = Path(args.metadaten_root)
 
-    try:
-        resolved_input = validate_input_path(Path(args.input), metadaten_root)
-    except PathSafetyError as e:
-        print(f"❌ PATH SAFETY: {e}")
-        sys.exit(1)
+    # Bug-Fix (Audit vor Telegram-Integration, docs/FINDINGS_INDEX.md):
+    # sys.exit(1) wirft SystemExit (erbt von BaseException, nicht Exception)
+    # - wuerde main() jemals in-process statt per CLI aufgerufen, koennte
+    # das den gesamten aufrufenden Prozess beenden. PathSafetyError
+    # propagiert stattdessen normal an den Aufrufer; der CLI-Entry-Point
+    # (unten, if __name__ == "__main__") faengt sie weiterhin ab und
+    # verhaelt sich fuer die Kommandozeile exakt wie bisher (Fehlermeldung
+    # + Exit-Code 1).
+    resolved_input = validate_input_path(Path(args.input), metadaten_root)
 
     assert str(Config.BASE_DIR) == "/tmp/musicbot_test", (
         f"❌ config_test.Config.BASE_DIR ist nicht isoliert: {Config.BASE_DIR}"
@@ -1196,6 +1263,7 @@ async def main():
         if production_check_enabled else {}
     )
 
+    assert_processor_singletons_are_fresh()
     processor = EnhancedMetadataProcessor(config=Config)
     mb_client = MusicBrainzClient()
     lfm_client = LastFMClient()
@@ -1216,103 +1284,108 @@ async def main():
         processor.cleanup()
 
     # ── Struktur-/Production-Snapshot NACH dem Lauf ─────────────────────────
-    dir_snapshot_after = snapshot_directory_tree(resolved_input)
-    prod_snapshot_after = (
-        snapshot_production_files(production_root, artist_name, relative_paths)
-        if production_check_enabled else {}
-    )
+    try:
+        dir_snapshot_after = snapshot_directory_tree(resolved_input)
+        prod_snapshot_after = (
+            snapshot_production_files(production_root, artist_name, relative_paths)
+            if production_check_enabled else {}
+        )
 
-    dirs_changed = dir_snapshot_before["dirs"] != dir_snapshot_after["dirs"]
-    files_before = set(dir_snapshot_before["files"])
-    files_after = set(dir_snapshot_after["files"])
-    files_created = files_after - files_before
-    files_deleted = files_before - files_after
+        dirs_changed = dir_snapshot_before["dirs"] != dir_snapshot_after["dirs"]
+        files_before = set(dir_snapshot_before["files"])
+        files_after = set(dir_snapshot_after["files"])
+        files_created = files_after - files_before
+        files_deleted = files_before - files_after
 
-    # Ein erlaubter Rename (Title-Cleaning-Korrektur, siehe Abschnitt 9 der
-    # Doku) erscheint in einem rohen Verzeichnis-Snapshot-Diff zwangslaeufig
-    # als ein Create+Delete-Paar - das ist erwuenscht, solange beide
-    # Ereignisse im SELBEN Verzeichnis stattfinden (die Rename-Logik selbst
-    # garantiert bereits parent-Gleichheit, siehe rename_blocked_reason
-    # oben). Nur ein Ungleichgewicht PRO VERZEICHNIS zwischen Creates und
-    # Deletes waere ein echtes Struktur-Problem (Datei tatsaechlich
-    # verschoben/verschwunden statt nur umbenannt).
-    from collections import Counter
+        # Ein erlaubter Rename (Title-Cleaning-Korrektur, siehe Abschnitt 9 der
+        # Doku) erscheint in einem rohen Verzeichnis-Snapshot-Diff zwangslaeufig
+        # als ein Create+Delete-Paar - das ist erwuenscht, solange beide
+        # Ereignisse im SELBEN Verzeichnis stattfinden (die Rename-Logik selbst
+        # garantiert bereits parent-Gleichheit, siehe rename_blocked_reason
+        # oben). Nur ein Ungleichgewicht PRO VERZEICHNIS zwischen Creates und
+        # Deletes waere ein echtes Struktur-Problem (Datei tatsaechlich
+        # verschoben/verschwunden statt nur umbenannt).
+        from collections import Counter
 
-    created_dirs = Counter(str(Path(f).parent) for f in files_created)
-    deleted_dirs = Counter(str(Path(f).parent) for f in files_deleted)
-    unexplained_file_changes = created_dirs != deleted_dirs
+        created_dirs = Counter(str(Path(f).parent) for f in files_created)
+        deleted_dirs = Counter(str(Path(f).parent) for f in files_deleted)
+        unexplained_file_changes = created_dirs != deleted_dirs
 
-    production_changed = []
-    for rel, before_info in prod_snapshot_before.items():
-        after_info = prod_snapshot_after.get(rel)
-        if before_info is not None and before_info != after_info:
-            production_changed.append(rel)
+        production_changed = []
+        for rel, before_info in prod_snapshot_before.items():
+            after_info = prod_snapshot_after.get(rel)
+            if before_info is not None and before_info != after_info:
+                production_changed.append(rel)
 
-    # ── Abschlussbericht ─────────────────────────────────────────────────
-    changed = [r for r in results if r["status"] == "changed"]
-    unchanged = [r for r in results if r["status"] == "unchanged"]
-    unresolved = [r for r in results if r["unresolved"]]
-    errors = [r for r in results if r["status"] == "error"]
-    audio_stream_changed = [r for r in results if r["audio_stream_changed"]]
-    audio_essence_changed = [r for r in results if r["audio_essence_changed"]]
+        # ── Abschlussbericht ─────────────────────────────────────────────────
+        changed = [r for r in results if r["status"] == "changed"]
+        unchanged = [r for r in results if r["status"] == "unchanged"]
+        unresolved = [r for r in results if r["unresolved"]]
+        errors = [r for r in results if r["status"] == "error"]
+        audio_stream_changed = [r for r in results if r["audio_stream_changed"]]
+        audio_essence_changed = [r for r in results if r["audio_essence_changed"]]
 
-    _feat_learned_decisions = {"LEARNED", "UPDATED", "WOULD_LEARN", "WOULD_UPDATE"}
-    auto_learn_artists = {
-        d["canonical"]
-        for r in results
-        for d in r.get("auto_learn", {}).get("featured_artists", [])
-        if d["decision"] in _feat_learned_decisions
-    }
-    auto_learn_genres = {
-        r["auto_learn"]["genre"]["artist"]
-        for r in results
-        if r.get("auto_learn", {}).get("genre")
-        and r["auto_learn"]["genre"]["decision"] in _feat_learned_decisions
-    }
+        _feat_learned_decisions = {"LEARNED", "UPDATED", "WOULD_LEARN", "WOULD_UPDATE"}
+        auto_learn_artists = {
+            d["canonical"]
+            for r in results
+            for d in r.get("auto_learn", {}).get("featured_artists", [])
+            if d["decision"] in _feat_learned_decisions
+        }
+        auto_learn_genres = {
+            r["auto_learn"]["genre"]["artist"]
+            for r in results
+            if r.get("auto_learn", {}).get("genre")
+            and r["auto_learn"]["genre"]["decision"] in _feat_learned_decisions
+        }
 
-    log.section("FINAL SUMMARY", emoji="🏁")
-    log.kv("Files processed", len(results), indent=0)
-    log.kv("Changed", len(changed), indent=0)
-    log.kv("Unchanged", len(unchanged), indent=0)
-    log.kv("Unresolved", len(unresolved), indent=0)
-    log.kv("Errors", len(errors), indent=0)
-    log.kv("Auto-Learn Artists (Feature-Artists)", len(auto_learn_artists), indent=0)
-    if auto_learn_artists:
-        log.kv("  Artists", sorted(auto_learn_artists), indent=0)
-    log.kv("Auto-Learn Genres", len(auto_learn_genres), indent=0)
-    if auto_learn_genres:
-        log.kv("  Artists", sorted(auto_learn_genres), indent=0)
+        log.section("FINAL SUMMARY", emoji="🏁")
+        log.kv("Files processed", len(results), indent=0)
+        log.kv("Changed", len(changed), indent=0)
+        log.kv("Unchanged", len(unchanged), indent=0)
+        log.kv("Unresolved", len(unresolved), indent=0)
+        log.kv("Errors", len(errors), indent=0)
+        log.kv("Auto-Learn Artists (Feature-Artists)", len(auto_learn_artists), indent=0)
+        if auto_learn_artists:
+            log.kv("  Artists", sorted(auto_learn_artists), indent=0)
+        log.kv("Auto-Learn Genres", len(auto_learn_genres), indent=0)
+        if auto_learn_genres:
+            log.kv("  Artists", sorted(auto_learn_genres), indent=0)
 
-    log.section("POST-RUN SAFETY CHECK", emoji="🔎")
-    log.kv("Production files changed", f"{len(production_changed)}/{len(prod_snapshot_before)}", indent=0)
-    if production_changed:
-        for rel in production_changed:
-            log.kv("  !!! GEAENDERT", rel, indent=0)
-    log.kv("Production check enabled", production_check_enabled, indent=0)
-    log.kv("Directory structure changes", int(dirs_changed), indent=0)
-    log.kv("Files created", len(files_created), indent=0)
-    log.kv("Files deleted", len(files_deleted), indent=0)
-    log.kv(
-        "  davon durch Rename im selben Verzeichnis erklaerbar",
-        not unexplained_file_changes,
-        indent=0,
-    )
-    log.kv("Audio essence changes", f"{len(audio_essence_changed)}/{len(results)}", indent=0)
-    log.kv("Audio stream (codec/rate/channels/duration) changes", len(audio_stream_changed), indent=0)
+        log.section("POST-RUN SAFETY CHECK", emoji="🔎")
+        log.kv("Production files changed", f"{len(production_changed)}/{len(prod_snapshot_before)}", indent=0)
+        if production_changed:
+            for rel in production_changed:
+                log.kv("  !!! GEAENDERT", rel, indent=0)
+        log.kv("Production check enabled", production_check_enabled, indent=0)
+        log.kv("Directory structure changes", int(dirs_changed), indent=0)
+        log.kv("Files created", len(files_created), indent=0)
+        log.kv("Files deleted", len(files_deleted), indent=0)
+        log.kv(
+            "  davon durch Rename im selben Verzeichnis erklaerbar",
+            not unexplained_file_changes,
+            indent=0,
+        )
+        log.kv("Audio essence changes", f"{len(audio_essence_changed)}/{len(results)}", indent=0)
+        log.kv("Audio stream (codec/rate/channels/duration) changes", len(audio_stream_changed), indent=0)
 
-    overall_pass = (
-        not production_changed
-        and not dirs_changed
-        and not unexplained_file_changes
-        and not audio_essence_changed
-        and not audio_stream_changed
-        and not errors
-    )
-    overall = "PASS" if overall_pass and not unresolved else (
-        "PASS WITH UNRESOLVED CASES" if overall_pass else "FAIL"
-    )
-    log.kv("Overall", overall, indent=0)
-    log.close()
+        overall_pass = (
+            not production_changed
+            and not dirs_changed
+            and not unexplained_file_changes
+            and not audio_essence_changed
+            and not audio_stream_changed
+            and not errors
+        )
+        overall = "PASS" if overall_pass and not unresolved else (
+            "PASS WITH UNRESOLVED CASES" if overall_pass else "FAIL"
+        )
+        log.kv("Overall", overall, indent=0)
+        log.close()
+    except Exception:
+        log.line("❌ POST-RUN SAFETY CHECK abgebrochen (siehe Traceback im Aufrufer) - der eigentliche Datei-Lauf oben ist bereits abgeschlossen")
+        log.close()
+        raise
 
     summary = {
         "artist": artist_name,
@@ -1340,4 +1413,11 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except PathSafetyError as e:
+        print(f"❌ PATH SAFETY: {e}")
+        sys.exit(1)
+    except SingletonSafetyError as e:
+        print(f"❌ SINGLETON SAFETY: {e}")
+        sys.exit(1)
