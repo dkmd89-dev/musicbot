@@ -664,3 +664,70 @@ class TestGetTelegramHandlersRegistersDlPrefix:
 
         assert not dl_handler.pattern.match("menu:download")
         assert not dl_handler.pattern.match("dup:show_stats")
+
+
+class TestGetTelegramHandlersRegistersMaintPrefix:
+    """
+    Live-Fund 2026-09-03 (Nutzer-Report beim ersten Live-Test des
+    Wartungsmodus-Features: "bei drücken auf Wartungsmodus passiert
+    nichts") - identisches "Bug B"-Muster wie beim dl:-Praefix
+    (test_dl_prefixed_callback_query_handler_is_registered oben): das
+    interne maint:-Praefix-Routing in RichMenuSystem.handle_callback()
+    war bereits korrekt implementiert, aber ohne eigenen
+    CallbackQueryHandler(pattern="^maint:") in get_telegram_handlers()
+    fand PTB fuer maint:show/maint:toggle schlicht keinen passenden
+    Handler und tat gar nichts - weder Log-Eintrag noch Exception.
+    """
+
+    def test_maint_prefixed_callback_query_handler_is_registered(self, tmp_path):
+        from telegram.ext import CallbackQueryHandler
+
+        handler, _ = _make_handler(tmp_path)
+
+        handlers = handler.get_telegram_handlers()
+
+        maint_handlers = [
+            h
+            for h in handlers
+            if isinstance(h, CallbackQueryHandler)
+            and h.pattern is not None
+            and h.pattern.match("maint:show")
+        ]
+        assert len(maint_handlers) == 1
+
+    def test_maint_handler_targets_menu_system_handle_callback(self, tmp_path):
+        from telegram.ext import CallbackQueryHandler
+
+        handler, _ = _make_handler(tmp_path)
+
+        handlers = handler.get_telegram_handlers()
+        maint_handler = next(
+            h
+            for h in handlers
+            if isinstance(h, CallbackQueryHandler)
+            and h.pattern is not None
+            and h.pattern.match("maint:toggle")
+        )
+
+        assert maint_handler.callback == handler.menu_system.handle_callback
+
+    def test_maint_pattern_does_not_accidentally_match_other_prefixes(self, tmp_path):
+        """Regressionsschutz: das neue Pattern darf ausschließlich
+        maint:-Callbacks abdecken, nicht versehentlich menu:/dl:/etc.
+        mit-matchen (Präfix-Kollision)."""
+        from telegram.ext import CallbackQueryHandler
+
+        handler, _ = _make_handler(tmp_path)
+
+        handlers = handler.get_telegram_handlers()
+        maint_handler = next(
+            h
+            for h in handlers
+            if isinstance(h, CallbackQueryHandler)
+            and h.pattern is not None
+            and h.pattern.match("maint:show")
+        )
+
+        assert not maint_handler.pattern.match("menu:admin")
+        assert not maint_handler.pattern.match("dl:new")
+        assert not maint_handler.pattern.match("restart:show")

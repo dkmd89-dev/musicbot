@@ -522,6 +522,14 @@ class RichMenuHandler:
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^status_"),
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^backup_"),
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^restart:"),
+            # Wartungsmodus 2026-09-03: derselbe "Bug B"-Fall wie beim
+            # dl:-Präfix unten (Live-Fund direkt beim ersten Live-Test
+            # dieses Features, siehe docs/MusicBot_TELEGRAM_MENU_SYSTEM.md
+            # Abschnitt 5, Schritt 3) - ohne diesen Handler verpuffte
+            # jeder maint:-Callback (Menüpunkt UND Toggle-Button)
+            # stillschweigend, obwohl das interne maint:-Routing in
+            # RichMenuSystem.handle_callback() bereits korrekt war.
+            CallbackQueryHandler(self.menu_system.handle_callback, pattern="^maint:"),
             # Download-Control-Center 2026-09-02 (Live-Fund: "restliche
             # Buttons sind tot außer Hauptmenü"): CallbackQueryHandler
             # werden PTB-seitig über feste pattern=-Allowlists geroutet -
