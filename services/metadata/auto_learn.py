@@ -40,6 +40,20 @@ _MAX_PRIMARY_ARTISTS_SEEN = 10
 _LEARNED_THRESHOLD = 2  # ab dieser Beobachtungszahl: LEARNED
 _CONFIRMED_THRESHOLD = 4  # ab dieser Beobachtungszahl: CONFIRMED
 
+# Genre-Lock-in (2026-09-03): ab dieser Beobachtungszahl EINES Genre-Werts
+# wird dieser Wert als "locked_primary" dauerhaft festgeschrieben - weitere,
+# abweichende Beobachtungen aendern primary nicht mehr bei jeder einzelnen
+# neuen Beobachtung (frueheres Verhalten: reines Mehrheitsvotum ueber die
+# letzten _MAX_OBSERVATION_LOG Beobachtungen, siehe
+# _aggregate_genre_observations()). Ein Herausforderer-Genre uebernimmt den
+# Lock erst, wenn seine (unbegrenzte) Beobachtungszahl das
+# _GENRE_LOCK_OVERTURN_MULTIPLIER-fache der aktuellen (live, nicht
+# eingefrorenen) Beobachtungszahl des gelockten Werts erreicht oder
+# uebersteigt. Siehe _compute_genre_lock_decision()/
+# _derive_genre_primary_secondary() sowie docs/GENRE_SYSTEM.md Abschnitt 4.a.
+_GENRE_LOCK_THRESHOLD = 3
+_GENRE_LOCK_OVERTURN_MULTIPLIER = 3
+
 
 def _confidence_tier(observations: int) -> str:
     """
@@ -119,6 +133,140 @@ def _aggregate_genre_observations(
     ][:5]
 
     return primary, secondary
+
+
+def _compute_genre_lock_decision(
+    genre_counts: Dict[str, int],
+    locked_primary: Optional[str],
+    observed_primary: str,
+) -> Tuple[Optional[str], Dict[str, int]]:
+    """
+    Reine Lock-in-Entscheidung fuer EINE neue Genre-Beobachtung (2026-09-03,
+    Genre-Lock-in-Auftrag). Inkrementiert genre_counts[observed_primary] und
+    entscheidet, ob/welches Genre gelockt ist:
+
+    - Noch kein Lock (locked_primary is None): sobald
+      genre_counts[observed_primary] >= _GENRE_LOCK_THRESHOLD erreicht ist,
+      wird observed_primary gelockt (Rueckgabe: neuer locked_primary-Wert).
+      Vorher bleibt der Rueckgabewert None ("Vorlock-Phase") - der Aufrufer
+      (_derive_genre_primary_secondary()) verwendet in dieser Phase weiterhin
+      unveraendert _aggregate_genre_observations() fuer primary/secondary,
+      exakt wie vor Einfuehrung des Lock-in.
+    - Lock aktiv (locked_primary gesetzt): bleibt beim gelockten Wert, ausser
+      der (LIVE, nicht beim Lock-Zeitpunkt eingefrorene) Zaehler des
+      observed_primary erreicht/uebersteigt das
+      _GENRE_LOCK_OVERTURN_MULTIPLIER-fache des aktuellen Zaehlers des
+      gelockten Werts - dann wechselt der Lock auf observed_primary. Ist der
+      gelockte Wert selbst der beobachtete (Reconfirmation), bleibt der Lock
+      unveraendert bestehen, sein Zaehler steigt lediglich mit.
+
+    genre_counts ist bewusst UNGEDECKELT (im Unterschied zum auf
+    _MAX_OBSERVATION_LOG begrenzten observation_log) - nur so bleibt ein
+    einmal erreichter Lock nachvollziehbar, auch wenn die Rohbeobachtung
+    laengst aus dem gekappten Log herausgefallen ist (siehe
+    _derive_genre_primary_secondary()).
+    """
+    updated_counts = dict(genre_counts)
+    updated_counts[observed_primary] = updated_counts.get(observed_primary, 0) + 1
+
+    if locked_primary is None:
+        if updated_counts[observed_primary] >= _GENRE_LOCK_THRESHOLD:
+            return observed_primary, updated_counts
+        return None, updated_counts
+
+    if observed_primary == locked_primary:
+        return locked_primary, updated_counts
+
+    locked_count = updated_counts.get(locked_primary, 0)
+    challenger_count = updated_counts[observed_primary]
+    if challenger_count >= _GENRE_LOCK_OVERTURN_MULTIPLIER * locked_count:
+        return observed_primary, updated_counts
+    return locked_primary, updated_counts
+
+
+def _derive_genre_primary_secondary(
+    existing_entry: Optional[dict],
+    observation_log: List[Dict[str, Any]],
+    observed_primary: str,
+) -> Dict[str, Any]:
+    """
+    Orchestriert die Genre-Lock-in-Entscheidung fuer eine neue Beobachtung
+    und liefert das vollstaendige primary/secondary/locked_primary/
+    genre_counts-Ergebnis (2026-09-03, Genre-Lock-in-Auftrag). Ersetzt an
+    beiden Schreibpfaden (_compute_genre_decision() fuer Dry-Run,
+    _write_genre_observation_sync() fuer den echten Schreibpfad) den
+    vorherigen direkten Aufruf von _aggregate_genre_observations() - MUSS an
+    beiden Stellen identisch aufgerufen werden, sonst weicht die
+    Dry-Run-Vorschau vom echten Schreibergebnis ab
+    (test_dry_run_genre_prediction_matches_live_outcome).
+
+    Migrations-Backfill: existiert ein Alt-Eintrag OHNE 'genre_counts' (vor
+    Einfuehrung des Lock-in geschrieben), wird genre_counts aus
+    observation_log[:-1] rekonstruiert - die aktuelle Beobachtung ist zu
+    diesem Zeitpunkt bereits als letztes Element in observation_log
+    enthalten und darf nicht doppelt gezaehlt werden.
+
+    Rueckgabe-Dict: {"primary": str, "secondary": List[str],
+    "locked_primary": Optional[str], "genre_counts": Dict[str, int]}.
+    Solange kein Lock aktiv ist, ist "locked_primary" None und
+    primary/secondary entsprechen exakt dem bisherigen
+    _aggregate_genre_observations()-Ergebnis (keine Verhaltensaenderung in
+    der Vorlock-Phase).
+    """
+    existing_entry = existing_entry or {}
+    locked_primary = existing_entry.get("locked_primary")
+    genre_counts: Dict[str, int] = dict(existing_entry.get("genre_counts") or {})
+
+    if not genre_counts and observation_log:
+        # Legacy-Backfill: observation_log enthaelt die aktuelle Beobachtung
+        # bereits als letztes Element - beim Backfill ausschliessen, sie
+        # wird gleich unten regulaer ueber _compute_genre_lock_decision()
+        # gezaehlt.
+        backfill_counter: Counter = Counter(
+            obs["primary"] for obs in observation_log[:-1] if obs.get("primary")
+        )
+        genre_counts = dict(backfill_counter)
+
+    new_locked, updated_counts = _compute_genre_lock_decision(
+        genre_counts, locked_primary, observed_primary
+    )
+
+    if new_locked is None:
+        primary, secondary = _aggregate_genre_observations(observation_log)
+        return {
+            "primary": primary,
+            "secondary": secondary,
+            "locked_primary": None,
+            "genre_counts": updated_counts,
+        }
+
+    # Lock aktiv: primary ist der gelockte Wert. secondary enthaelt die
+    # bisherigen Sub-Genre-Tags (aus dem Mehrheitsvotum ueber observation_log)
+    # PLUS explizit alle anderen genre_counts-Werte ausser dem gelockten
+    # Wert selbst (2026-09-03, per Nutzerentscheidung: ein durch die
+    # Lock-Regel abgelehnter/ueberstimmter Wert erscheint sichtbar in
+    # secondary statt nur implizit ueber genre_counts) - nach Haeufigkeit
+    # sortiert, auf 5 gedeckelt, dedupliziert.
+    _, aggregated_secondary = _aggregate_genre_observations(observation_log)
+    challenger_ranking = sorted(
+        (g for g in updated_counts if g != new_locked),
+        key=lambda g: updated_counts[g],
+        reverse=True,
+    )
+    secondary = list(aggregated_secondary)
+    for genre in challenger_ranking:
+        if genre.lower() == new_locked.lower():
+            continue
+        if genre not in secondary:
+            secondary.append(genre)
+    secondary = secondary[:5]
+
+    return {
+        "primary": new_locked,
+        "secondary": secondary,
+        "locked_primary": new_locked,
+        "genre_counts": updated_counts,
+    }
 
 
 class _InlineListDumper(yaml.SafeDumper):
@@ -375,6 +523,8 @@ class AutoLearnManager:
             "existing": None,
             "predicted_primary": None,
             "predicted_secondary": [],
+            "predicted_locked_primary": None,
+            "predicted_genre_counts": {},
             "predicted_observations": 0,
             "predicted_confidence": None,
             "observation_log": [],
@@ -410,13 +560,15 @@ class AutoLearnManager:
         )
         observation_log = observation_log[-_MAX_OBSERVATION_LOG:]
 
-        predicted_primary, predicted_secondary = _aggregate_genre_observations(
-            observation_log
+        derived = _derive_genre_primary_secondary(
+            existing_entry, observation_log, observed_primary
         )
 
         result["decision"] = "WOULD_UPDATE" if existing_entry else "WOULD_LEARN"
-        result["predicted_primary"] = predicted_primary
-        result["predicted_secondary"] = predicted_secondary
+        result["predicted_primary"] = derived["primary"]
+        result["predicted_secondary"] = derived["secondary"]
+        result["predicted_locked_primary"] = derived["locked_primary"]
+        result["predicted_genre_counts"] = derived["genre_counts"]
         result["predicted_observations"] = len(observation_log)
         result["predicted_confidence"] = _confidence_tier(len(observation_log))
         result["observation_log"] = observation_log
@@ -499,17 +651,19 @@ class AutoLearnManager:
             )
             observation_log = observation_log[-_MAX_OBSERVATION_LOG:]
 
-            predicted_primary, predicted_secondary = _aggregate_genre_observations(
-                observation_log
+            derived = _derive_genre_primary_secondary(
+                existing_entry, observation_log, observed_primary
             )
 
             genre_map[existing_key] = {
-                "primary": predicted_primary,
-                "secondary": predicted_secondary,
+                "primary": derived["primary"],
+                "secondary": derived["secondary"],
                 "description": "Auto-learned via Last.fm (rule)",
                 "observations": len(observation_log),
                 "confidence": _confidence_tier(len(observation_log)),
                 "observation_log": observation_log,
+                "locked_primary": derived["locked_primary"],
+                "genre_counts": derived["genre_counts"],
             }
             data["ARTIST_GENRE_MAP"] = genre_map
 
