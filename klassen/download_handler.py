@@ -47,6 +47,7 @@ from services.downloader.models import DuplicateEntry
 from logger import get_module_logger
 from services.downloader.downloader import YoutubeDownloader
 from services.downloader.active_downloads import ActiveDownloadRegistry
+from services.downloader.download_history import DownloadHistoryStore
 from services.downloader.download_utils import is_youtube_mix_url
 from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
@@ -188,6 +189,7 @@ class DownloadHandler:
         metadata_processor: EnhancedMetadataProcessor,
         logger_factory: Optional[Callable] = None,
         active_downloads: Optional[ActiveDownloadRegistry] = None,
+        download_history: Optional[DownloadHistoryStore] = None,
     ):
         self.update = update
         self.config = config
@@ -224,6 +226,10 @@ class DownloadHandler:
         self.active_downloads = active_downloads
         self.active_download = None
         self.downloader: Optional[YoutubeDownloader] = None
+        # Download-Verlauf (Folgeschritt Download-Control-Center) - analog
+        # zu active_downloads: geteilte, langlebige Instanz von aussen
+        # injiziert, siehe services/downloader/download_history.py.
+        self.download_history = download_history
 
         self.logger.info(
             f"🚀 [INIT] DownloadHandler bereit — update_id={update.update_id}"
@@ -576,6 +582,36 @@ class DownloadHandler:
     # DUPLIKAT-REGISTRIERUNG & SUCCESS-HANDLING
     # ──────────────────────────────────────────────────────────────────────────
 
+    def _record_history_entry(
+        self, *, url: str, title: str, artist: str, status: str
+    ) -> None:
+        """Schreibt einen Download-Verlaufseintrag (Download-Control-Center-
+        Folgeschritt "📋 Download-Verlauf"/"🔁 Erneut versuchen", siehe
+        services/downloader/download_history.py). getattr()-Zugriff analog
+        zu active_downloads: bestehende Tests bypassen __init__() (siehe
+        Kommentar in handle_youtube_links()) und setzen dieses Attribut
+        nicht - No-op statt AttributeError, wenn kein Store injiziert
+        wurde. Fehler beim Schreiben werden geloggt, aber nie propagiert -
+        ein defekter Verlaufsspeicher darf niemals einen sonst
+        erfolgreichen/fehlgeschlagenen Download zusätzlich zum Absturz
+        bringen (gleiches Prinzip wie cleanup_single_download_artifact())."""
+        download_history = getattr(self, "download_history", None)
+        if download_history is None:
+            return
+        chat_id = getattr(getattr(self.update, "effective_chat", None), "id", None)
+        if chat_id is None:
+            return
+        try:
+            download_history.add_entry(
+                chat_id,
+                url=url or "",
+                title=title or "Unbekannt",
+                artist=artist or "Unbekannt",
+                status=status,
+            )
+        except Exception as e:
+            self.logger.warning(f"⚠️ [HISTORY] Verlaufseintrag fehlgeschlagen: {e}")
+
     async def handle_single_track_success(self, result: Dict[str, Any]) -> None:
         """Registriert Download im Duplikat-Cache und sendet Abschluss-Zusammenfassung."""
         title  = result.get("title", "?")
@@ -583,6 +619,20 @@ class DownloadHandler:
         self.logger.info(
             f"🏁 [SUCCESS] ── Single-Track abgeschlossen: '{artist} - {title}' ──"
         )
+
+        # Verlaufseintrag NUR fuer echte Einzel-Downloads - der Playlist-
+        # Wrapper (type == "playlist") delegiert ebenfalls hierher (siehe
+        # handle_playlist_success() unten), besitzt aber selbst kein
+        # title/artist-Feld ("?"-Platzhalter waeren sinnlos). Pro-Track-
+        # Eintraege fuer Playlists entstehen stattdessen in
+        # _register_playlist_track_duplicates().
+        if result.get("type") != "playlist":
+            self._record_history_entry(
+                url=result.get("original_url") or result.get("url") or "",
+                title=title,
+                artist=artist,
+                status="success",
+            )
 
         # Duplikat-Registrierung
         try:
@@ -690,6 +740,13 @@ class DownloadHandler:
                     f"('{artist} - {title}'): {e}",
                     exc_info=True,
                 )
+
+            self._record_history_entry(
+                url=track.get("url") or "",
+                title=title,
+                artist=artist,
+                status="success",
+            )
 
     async def handle_playlist_success(self, results: List[dict]) -> None:
         """Abschluss-Meldung für Playlists oder Playlist-Wrapper."""
@@ -993,6 +1050,12 @@ class DownloadHandler:
         sichtbar).
         """
         self.logger.info("🛑 [YT-PIPELINE] Download abgebrochen (Nutzeranfrage)")
+        self._record_history_entry(
+            url=(self.update.message.text.strip() if self.update.message else ""),
+            title="Unbekannt",
+            artist="Unbekannt",
+            status="cancelled",
+        )
         text = "🛑 Download abgebrochen"
         try:
             if self.status_msg:
@@ -1007,6 +1070,12 @@ class DownloadHandler:
         self.logger.error(
             f"❌ [FAILURE] Download fehlgeschlagen:\n"
             f"   Fehler: {error_message}"
+        )
+        self._record_history_entry(
+            url=(self.update.message.text.strip() if self.update.message else ""),
+            title="Unbekannt",
+            artist="Unbekannt",
+            status="failed",
         )
         text = (
             "❌ Download fehlgeschlagen\n\n"

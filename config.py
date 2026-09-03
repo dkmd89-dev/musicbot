@@ -89,6 +89,7 @@ class Config:
     METADATA_CACHE_DIR = BASE_DIR / "cache" / "metadata_cache"
     DUPLICATE_CACHE_DIR = BASE_DIR / "cache" / "duplicate_cache"
     LYRICS_CACHE_DIR = BASE_DIR / "cache" / "lyrics_cache"  # ← NEU: Lyrics-Cache
+    DOWNLOAD_HISTORY_DIR = BASE_DIR / "cache" / "download_history"  # ← NEU: Download-Verlauf
 
     # === LOG STRUCTURE ===
     LOG_DIR = BASE_DIR / "logs"
@@ -526,6 +527,7 @@ class Config:
             cls.LOG_DIR,
             _inst.PODCAST_DIR_RESOLVED,  # ← Podcast-Root
             _inst.LYRICS_CACHE_DIR_RESOLVED,  # ← NEU: Lyrics-Cache
+            cls.DOWNLOAD_HISTORY_DIR,  # ← NEU: Download-Verlauf
         ]
         for directory in required_dirs:
             if not directory.exists():
@@ -601,6 +603,7 @@ class Config:
             cls.LOG_DIR,
             cls.METADATA_CACHE_DIR,
             cls.DUPLICATE_CACHE_DIR,
+            cls.DOWNLOAD_HISTORY_DIR,
             cls.GENRE_MAPPING_DIR,
             cls.PROCESSED_DIR,
             cls.FAIL_DIR,

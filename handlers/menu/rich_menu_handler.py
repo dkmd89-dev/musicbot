@@ -33,6 +33,7 @@ from handlers.menu.rich_menu_system import (
 )
 from klassen.download_handler import DownloadHandler
 from services.downloader.active_downloads import ActiveDownloadRegistry
+from services.downloader.download_history import DownloadHistoryStore
 from handlers.test_menu_handler import TestMenuHandler
 from handlers.enhanced_logger_menu_handler import EnhancedLoggerMenuHandler
 from handlers.navidrome_menu_handler import NavidromeMenuHandler
@@ -103,6 +104,19 @@ class RichMenuHandler:
         # services/downloader/active_downloads.py-Docstring.
         self.active_downloads = ActiveDownloadRegistry(
             logger_factory=self.logger_factory
+        )
+
+        # Download-Verlauf ("📋 Download-Verlauf"/"🔁 Erneut versuchen",
+        # Folgeschritt des Download-Control-Centers): ebenfalls EINE
+        # prozessweite, langlebige Instanz (JSON-persistiert, siehe
+        # services/downloader/download_history.py-Docstring) - analog zu
+        # active_downloads oben, aus demselben Grund (DownloadHandler wird
+        # pro Update neu erzeugt, der Verlauf muss das überstehen).
+        self.download_history = DownloadHistoryStore(
+            cache_dir=str(
+                getattr(self.config, "DOWNLOAD_HISTORY_DIR", "cache/download_history")
+            ),
+            logger=(self.logger_factory or get_module_logger)("DownloadHistoryStore"),
         )
 
         # State Management
@@ -307,6 +321,8 @@ class RichMenuHandler:
         if self.restart_handler:
             self.menu_system.set_restart_handler(self.restart_handler)
         self.menu_system.set_active_downloads(self.active_downloads)
+        self.menu_system.set_download_history(self.download_history)
+        self.menu_system.set_url_retry_callback(self._process_url)
 
         # Handler registrieren
         self._register_download_handlers()
@@ -814,6 +830,7 @@ class RichMenuHandler:
             metadata_processor=self.metadata_processor,
             logger_factory=self.logger_factory,
             active_downloads=self.active_downloads,
+            download_history=self.download_history,
         )
 
     # ====== COMMAND HANDLER ======

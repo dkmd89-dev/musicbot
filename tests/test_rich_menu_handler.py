@@ -39,8 +39,16 @@ def _make_handler(tmp_path):
             return user_data_file
         return Path(p, *args, **kwargs)
 
+    config = MockConfig()
+    # DownloadHistoryStore (RichMenuHandler.__init__(), Download-Verlauf-
+    # Feature) legt sein Cache-Verzeichnis beim Konstruieren tatsaechlich
+    # an (mkdir) - ohne dieses Attribut griffe der Default-Fallback in
+    # RichMenuHandler ("cache/download_history", relativ) und wuerde ein
+    # echtes Verzeichnis im Projekt-Root anlegen statt in tmp_path
+    # (TESTENV-01-Analogon, siehe tests/test_config_test_isolation.py).
+    config.DOWNLOAD_HISTORY_DIR = tmp_path / "download_history"
     with patch("handlers.menu.rich_menu_handler.Path", side_effect=_fake_path):
-        handler = RichMenuHandler(MockConfig())
+        handler = RichMenuHandler(config)
     return handler, user_data_file
 
 

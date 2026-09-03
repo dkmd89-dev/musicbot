@@ -143,6 +143,37 @@ class MenuSession:
         return None
 
 
+class _RetryMessageAdapter:
+    """Duck-Typing-Stellvertreter für update.message, beschränkt auf genau
+    die zwei Attribute, die klassen/download_handler.py entlang des
+    handle_url()/handle_youtube_links()-Pfads tatsächlich liest (verifiziert
+    per grep: nur .text und .reply_text(...))."""
+
+    def __init__(self, text: str, reply_text: Callable):
+        self.text = text
+        self.reply_text = reply_text
+
+
+class _RetryUpdateAdapter:
+    """Duck-Typing-Stellvertreter für ein Update-Objekt, siehe
+    RichMenuSystem._handle_download_retry()-Docstring für die Begründung
+    (PTB-Update-/Message-Objekte sind eingefroren, dürfen nicht mutiert
+    werden). effective_user/effective_chat/update_id werden 1:1 vom echten,
+    auslösenden Callback-Query-Update übernommen (die sind bereits real und
+    gültig) - nur .message wird durch einen Stellvertreter mit der
+    gespeicherten Verlaufs-URL ersetzt, .reply_text sendet über die echte
+    Bot-Message des Callback-Queries (callback_query.message.reply_text)."""
+
+    def __init__(self, source_update: Update, url: str):
+        self.effective_user = source_update.effective_user
+        self.effective_chat = source_update.effective_chat
+        self.update_id = source_update.update_id
+        self.message = _RetryMessageAdapter(
+            text=url,
+            reply_text=source_update.callback_query.message.reply_text,
+        )
+
+
 class RichMenuSystem:
     """
     Haupt-Menüsystem mit vollständiger Funktionalität
@@ -173,6 +204,17 @@ class RichMenuSystem:
         # ActiveDownloadRegistry (services/downloader/active_downloads.py),
         # von RichMenuHandler injiziert - siehe set_active_downloads().
         self.active_downloads = None
+        # Download-Verlauf-Feature: geteilte, prozessweite
+        # DownloadHistoryStore (services/downloader/download_history.py),
+        # von RichMenuHandler injiziert - siehe set_download_history().
+        self.download_history = None
+        # "🔁 Erneut versuchen": RichMenuSystem kann selbst keinen
+        # DownloadHandler bauen (das kann nur RichMenuHandler, siehe dessen
+        # _create_download_handler()/_process_url()) - dieser Callback wird
+        # von RichMenuHandler.initialize() injiziert (set_url_retry_callback())
+        # und ruft dort _process_url(update, context, url) auf, exakt derselbe
+        # Pfad wie ein normaler Text-Download.
+        self._retry_url_callback: Optional[Callable] = None
 
         # Konfiguration
         self.session_timeout = getattr(config, "SESSION_TIMEOUT", 300)
@@ -239,6 +281,16 @@ class RichMenuSystem:
         """Setzt die geteilte ActiveDownloadRegistry (Download-Control-Center)."""
         self.active_downloads = registry
         self.logger.info("✅ ActiveDownloadRegistry verknüpft")
+
+    def set_download_history(self, store) -> None:
+        """Setzt den geteilten DownloadHistoryStore (Download-Verlauf-Feature)."""
+        self.download_history = store
+        self.logger.info("✅ DownloadHistoryStore verknüpft")
+
+    def set_url_retry_callback(self, callback: Callable) -> None:
+        """Setzt den Callback für "🔁 Erneut versuchen" (siehe __init__)."""
+        self._retry_url_callback = callback
+        self.logger.info("✅ URL-Retry-Callback verknüpft")
 
     # ====== MENÜ-STRUKTUR ======
 
@@ -2014,7 +2066,10 @@ class RichMenuSystem:
             await self._handle_download_details(query, chat_id)
             return
         if callback_data == "dl:history":
-            await self._handle_download_history(query)
+            await self._handle_download_history(query, chat_id)
+            return
+        if callback_data.startswith("dl:retry:"):
+            await self._handle_download_retry(update, context, query, chat_id, callback_data)
             return
         if callback_data == "dl:menu":
             active = (
@@ -2144,18 +2199,91 @@ class RichMenuSystem:
             ),
         )
 
-    async def _handle_download_history(self, query) -> None:
+    _HISTORY_STATUS_ICONS = {"success": "✅", "failed": "❌", "cancelled": "🛑"}
+
+    async def _handle_download_history(self, query, chat_id: int) -> None:
         """
-        Download-Verlauf (Nutzer-Priorität 3) - bewusst noch nicht Teil
-        dieser ersten Ausbaustufe (siehe Abschnitts-Kommentar oben).
-        Persistenter JSON-Verlaufsspeicher folgt in einem eigenen Schritt.
+        Download-Verlauf (Nutzer-Priorität 3) + "🔁 Erneut versuchen"
+        (Priorität 4) - Folgeschritt des Download-Control-Centers, siehe
+        docs/FINDINGS_INDEX.md ("Download-Verlauf/Erneut-versuchen").
+        Zeigt die letzten Einträge des Chats aus dem geteilten
+        DownloadHistoryStore (services/downloader/download_history.py),
+        neueste zuerst - jeweils mit einem eigenen "🔁"-Button
+        (callback_data=f"dl:retry:{position}", position bezieht sich auf
+        DownloadHistoryStore.get_recent()/get_entry_by_position(), damit
+        Index und Anzeige immer übereinstimmen).
         """
+        entries = self.download_history.get_recent(chat_id) if self.download_history else []
+        if not entries:
+            await query.edit_message_text(
+                "📋 Download-Verlauf\n\nNoch keine Downloads in dieser Chat-Historie.",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
+                ),
+            )
+            return
+
+        lines = ["📋 Download-Verlauf", ""]
+        keyboard = []
+        for position, entry in enumerate(entries):
+            icon = self._HISTORY_STATUS_ICONS.get(entry.status, "•")
+            # Nur Datum/Uhrzeit, kein Sekunden-Praezisions-Rauschen - die
+            # Reihenfolge (neueste zuerst) macht die genaue Sekunde ohnehin
+            # nicht aussagekraeftig.
+            try:
+                when = datetime.fromisoformat(entry.timestamp).strftime("%d.%m. %H:%M")
+            except ValueError:
+                when = "?"
+            lines.append(f"{icon} {entry.artist} - {entry.title}  ({when})")
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        f"🔁 {entry.title[:40]}",
+                        callback_data=f"dl:retry:{position}",
+                    )
+                ]
+            )
+        keyboard.append([InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")])
+
         await query.edit_message_text(
-            "📋 Download-Verlauf\n\nKommt in einem späteren Schritt.",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
-            ),
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
         )
+
+    async def _handle_download_retry(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, query, chat_id: int, callback_data: str
+    ) -> None:
+        """Handler für "🔁 Erneut versuchen" (callback_data=f"dl:retry:{position}").
+
+        RichMenuSystem kann selbst keinen DownloadHandler bauen (siehe
+        __init__-Kommentar zu _retry_url_callback) - baut stattdessen ein
+        minimales, schreibgeschütztes Duck-Typing-Objekt anstelle von
+        update.message (PTB-Update-/Message-Objekte sind nach Auslieferung
+        eingefroren, ein echtes Update darf nicht nachtraeglich mutiert
+        werden) und reicht es an genau denselben, bereits produktiv
+        genutzten Pfad weiter (_process_url() -> handler.handle_url() ->
+        handle_youtube_links()) wie ein normaler Text-Download - keine
+        Parallel-Implementierung der Download-Pipeline."""
+        try:
+            position = int(callback_data.split(":", 2)[2])
+        except (IndexError, ValueError):
+            await query.edit_message_text("⚠️ Ungültiger Verlaufseintrag.")
+            return
+
+        if not self.download_history:
+            await query.edit_message_text("⚠️ Download-Verlauf nicht verfügbar.")
+            return
+        entry = self.download_history.get_entry_by_position(chat_id, position)
+        if entry is None or not entry.url:
+            await query.edit_message_text("⚠️ Dieser Eintrag ist nicht mehr verfügbar.")
+            return
+        if not self._retry_url_callback:
+            await query.edit_message_text("⚠️ Erneuter Download aktuell nicht möglich.")
+            return
+
+        await query.edit_message_text(f"🔁 Starte erneuten Download:\n{entry.title}")
+        retry_update = _RetryUpdateAdapter(update, entry.url)
+        await self._retry_url_callback(retry_update, context, entry.url)
 
     # ====== PLATZHALTER-HANDLER ======
 
