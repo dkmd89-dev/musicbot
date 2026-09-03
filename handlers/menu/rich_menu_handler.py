@@ -86,9 +86,7 @@ class RichMenuHandler:
         self.menu_system = RichMenuSystem(config, self.logger_factory)
 
         # Handler-Referenzen
-        self.download_handler: Optional[DownloadHandler] = None
         self.stats_handler: Optional[StatistikHandler] = None
-        self.admin_handler: Optional[Any] = None
         self.test_handler: Optional[TestMenuHandler] = None
         self.logger_handler: Optional[EnhancedLoggerMenuHandler] = None
         self.navidrome_handler: Optional[NavidromeMenuHandler] = None
@@ -455,17 +453,9 @@ class RichMenuHandler:
 
     # ====== SETTER ======
 
-    def set_download_handler(self, handler: DownloadHandler) -> None:
-        self.download_handler = handler
-        self.logger.info("✅ DownloadHandler verbunden")
-
     def set_stats_handler(self, handler: StatistikHandler) -> None:
         self.stats_handler = handler
         self.logger.info("✅ StatsHandler verbunden")
-
-    def set_admin_handler(self, handler: Any) -> None:
-        self.admin_handler = handler
-        self.logger.info("✅ AdminHandler verbunden")
 
     def set_logger_handler(self, handler: EnhancedLoggerMenuHandler) -> None:
         self.logger_handler = handler

@@ -1,13 +1,16 @@
-# Handler-Methoden-Level-Sweep — 2026-09-03 (PAUSIERT)
+# Handler-Methoden-Level-Sweep — 2026-09-03
 
 **Typ:** Read-only Funktions-/Methoden-Level-Sweep der 17 bereits im
 `docs/audits/MAIN_CODEBASE_HEALTH_CHECK_2026-09-03.md` als "sauber"
 eingestuften Handler-/Adapter-Module (`handlers/` + `services/clients/`) —
 dort explizit als eigene, teurere nächste Stufe zurückgestellt.
-**Status:** Analyse für 213 von 365 Funktionen/Methoden abgeschlossen,
-**keine Löschung durchgeführt** — Nutzer-Entscheidung: zunächst pausiert,
-Download-Verlauf-Feature hat Vorrang. Bei Wiederaufnahme hier fortsetzen,
-nicht neu beginnen.
+**Status:** Analyse für 213 von 365 Funktionen/Methoden abgeschlossen. Die
+22 bestätigt DEAD-Kandidaten (+ 2 transitiv entdeckte) sind inzwischen
+entfernt (Cleanup-PR, 2026-09-03, siehe „Cleanup durchgeführt" unten) und
+die Funktionslücke `update_handler_status`/`record_user_activity` ist
+separat behoben (siehe `docs/FINDINGS_INDEX.md`, Zeile „BotStatusTracker").
+Die 182 `SELF_ONLY?`-Kandidaten sind weiterhin **nicht** einzeln geprüft —
+für eine Wiederaufnahme siehe „Offen für die Fortsetzung" unten.
 
 ## Methodik
 
@@ -93,6 +96,37 @@ konstruiert die Zielobjekte direkt, nie über diese Funktionen):
 - `MusicBrainzClient._extract_release_group_id` (Zeile 142) — keine
   Aufrufer.
 
+## Cleanup durchgeführt (2026-09-03)
+
+Vor der Löschung wurden alle 22 Kandidaten nochmals frisch repoweit
+gegrept (CLAUDE.md Abschnitt 20 — Wiederholungsnachweis unmittelbar vor
+der Löschung, nicht nur Verlass auf den obigen, etwas älteren Audit-
+Stand). Dabei 2 zusätzliche, transitiv tote Funde entdeckt und im selben
+Zug entfernt:
+- `create_enhanced_logger_handler` (`handlers/enhanced_logger_menu_handler.py`)
+  — einziger Aufrufer war das bereits oben gelistete
+  `integrate_enhanced_logger_handler`.
+- `EnhancedErrorHandler._menu_fallback_recovery` — einziger Aufrufer war
+  das oben gelistete `handle_menu_system_error`.
+
+Alle 24 (22 + 2) sind entfernt. Zwei Tests, die direkt auf gelöschte
+Symbole zeigten, wurden mitentfernt statt umgeschrieben, da sie
+ausschließlich die gelöschte Funktion selbst testeten:
+`tests/test_test_menu_handler.py::test_create_test_handler_factory`,
+`tests/test_enhanced_status_handler.py::TestFormatBytes`.
+
+**Bewusst nicht mit entfernt:** `logger.py::setup_module_logging()` ist
+seit dieser Löschung doppelt verwaist (sein einziger Aufrufer
+`toggle_module()` in `handlers/enhanced_logger_menu_handler.py` hat ihn
+schon vorher real nie aufgerufen — ein pre-existing, vom Nutzer live
+gemeldeter Bug: Modul-Logger lassen sich über das Inline-Button-Menü
+aktivieren, schreiben dabei aber nicht in eine Log-Datei. Nicht durch
+diesen Sweep verursacht, bisher nicht gefixt, noch nicht in
+`docs/FINDINGS_INDEX.md` erfasst). `logger.py` liegt außerhalb des
+17-Datei-Scopes dieses Sweeps und wird hier nicht mitgeprüft.
+
+Volle Testsuite nach dem Cleanup: 2165 passed, 1 skipped, 0 Regressionen.
+
 ## UNCERTAIN (2) — bewusst NICHT als DEAD eingestuft
 
 `RichMenuHandler._initiate_download`/`_handle_regular_url` (Zeilen
@@ -126,8 +160,10 @@ nicht aus echtem dynamischem Dispatch. Alle haben reale interne Aufrufer.
 
 1. Die 182 `SELF_ONLY?`-Kandidaten — Reachability-Graph ab den echten
    Einstiegspunkten (`bot.py`, Konstruktoraufrufe) statt Einzel-Grep.
-2. Entscheidung zu `update_handler_status`/`record_user_activity`
-   (Funktionslücke vs. Cleanup).
-3. Cleanup-PR für die 22 bestätigten DEAD-Funde (mit erneuter
-   Vor-Entfernung-Beweisprüfung je Kandidat, CLAUDE.md Abschnitt 20,
-   analog zum bereits etablierten Muster aus Commit `8965d87`).
+2. ~~Entscheidung zu `update_handler_status`/`record_user_activity`~~ —
+   erledigt, siehe `docs/FINDINGS_INDEX.md` (Zeile „BotStatusTracker").
+3. ~~Cleanup-PR für die 22 bestätigten DEAD-Funde~~ — erledigt, siehe
+   „Cleanup durchgeführt (2026-09-03)" oben.
+4. `logger.py::setup_module_logging()` (doppelt verwaist seit dem
+   Cleanup) und der zugrundeliegende Logger-Toggle-Bug — separater,
+   noch offener Fund, siehe „Cleanup durchgeführt" oben.

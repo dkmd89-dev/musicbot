@@ -767,14 +767,6 @@ class EnhancedStatusHandler:
         except:
             pass
 
-    def format_bytes(self, bytes_value: int) -> str:
-        """Formatiert Byte-Werte lesbar"""
-        for unit in ["B", "KB", "MB", "GB", "TB"]:
-            if bytes_value < 1024.0:
-                return f"{bytes_value:.2f} {unit}"
-            bytes_value /= 1024.0
-        return f"{bytes_value:.2f} PB"
-
     async def cleanup(self):
         """Cleanup beim Beenden"""
         self.logger.info("🧹 Enhanced Status Handler Cleanup durchgeführt")
@@ -790,25 +782,6 @@ def create_enhanced_status_handler(
     🏭 Factory-Funktion für Enhanced Status Handler
     """
     return EnhancedStatusHandler(config, logger_factory)
-
-
-def integrate_status_handler(
-    menu_system, status_handler: EnhancedStatusHandler
-) -> bool:
-    """
-    🔗 Integriert Status Handler in Menu System
-    """
-    try:
-        # Setze Status Handler im Menu System
-        if hasattr(menu_system, "set_status_handler"):
-            menu_system.set_status_handler(status_handler)
-
-        print("✅ Enhanced Status Handler erfolgreich integriert")
-        return True
-
-    except Exception as e:
-        print(f"❌ Fehler bei Integration des Status Handlers: {e}")
-        return False
 
 
 """

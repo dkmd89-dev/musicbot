@@ -577,21 +577,3 @@ class StatistikHandler:
                 f"{EMOJI['error']} ❌ Fehler in handle_last_played: {str(e)}",
                 exc_info=True,
             )
-
-
-def create_statistics_handler(
-    config: Config, logger_factory=None, user_mgmt_handler=None
-) -> StatistikHandler:
-    """
-    Factory-Funktion zur Erstellung des StatistikHandler mit User-Management
-
-    Args:
-        config: Config-Objekt
-        logger_factory: Logger-Factory
-        user_mgmt_handler: Optional UserManagementHandler-Instanz
-
-    Returns:
-        StatistikHandler: Initialisierte Instanz
-    """
-    handler = StatistikHandler(user_mgmt_handler=user_mgmt_handler)
-    return handler

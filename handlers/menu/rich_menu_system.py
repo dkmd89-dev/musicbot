@@ -976,24 +976,6 @@ class RichMenuSystem:
         else:
             await self._show_handler_not_available(update, "Backup-Handler")
 
-    async def _handle_backup_bot_start(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Wrapper: Bot-Backup starten"""
-        if self.backup_handler:
-            await self.backup_handler.start_bot_backup(update, context)
-        else:
-            await self._show_handler_not_available(update, "Backup-Handler")
-
-    async def _handle_backup_lib_start(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Wrapper: Library-Backup starten"""
-        if self.backup_handler:
-            await self.backup_handler.start_lib_backup(update, context)
-        else:
-            await self._show_handler_not_available(update, "Backup-Handler")
-
     async def _handle_backup_list_bot(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
@@ -2040,13 +2022,6 @@ class RichMenuSystem:
     def _find_menu_item_by_id(self, menu_id: str) -> Optional[MenuItem]:
         """Findet MenuItem anhand seiner ID"""
         return self.menu_registry.get(menu_id)
-
-    def _find_menu_by_callback(self, callback_data: str) -> Optional[MenuItem]:
-        """Findet MenuItem anhand Callback-Data"""
-        for item in self.menu_registry.values():
-            if item.callback_data == callback_data:
-                return item
-        return None
 
     def _get_user_access_level(self, user_id: int) -> AccessLevel:
         """Ermittelt Zugriffsebene des Users"""

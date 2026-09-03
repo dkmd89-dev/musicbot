@@ -764,8 +764,3 @@ class TestMenuHandler:
         self.logger.info(
             f"{self.module_emoji} [_run_test_type] '{test_type}'-Tests abgeschlossen und gecached."
         )
-
-
-def create_test_handler(config: Config, logger_factory=None) -> TestMenuHandler:
-    """Factory-Funktion für den Test-Handler"""
-    return TestMenuHandler(config, logger_factory)

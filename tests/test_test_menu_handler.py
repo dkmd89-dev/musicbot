@@ -35,7 +35,7 @@ import asyncio
 import subprocess
 from unittest.mock import AsyncMock, MagicMock, Mock
 
-from handlers.test_menu_handler import TestMenuHandler, create_test_handler
+from handlers.test_menu_handler import TestMenuHandler
 
 
 def run_async(coro):
@@ -95,11 +95,6 @@ class TestInit:
             ConfigWithoutBaseDir(), logger_factory=lambda name: Mock()
         )
         assert str(handler.project_root) == "."
-
-    def test_create_test_handler_factory(self, tmp_path):
-        config = FakeConfig(tmp_path)
-        handler = create_test_handler(config, logger_factory=lambda name: Mock())
-        assert isinstance(handler, TestMenuHandler)
 
 
 # ─────────────────────────────────────────────────────────────────────────

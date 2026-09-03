@@ -209,25 +209,6 @@ class ModuleLoggerManager:
 
         return active_modules
 
-    def get_module_log_file(self, module_name: str) -> Optional[Path]:
-        """Gibt den Log-Datei-Pfad fuer ein Modul zurueck"""
-        log_dir = Path(getattr(self.config, "LOG_DIR", "logs"))
-
-        # Suche nach modulspezifischen Log-Dateien
-        possible_files = [
-            log_dir / f"{module_name.lower()}.log",
-            log_dir / f"{module_name}.log",
-            log_dir / f"bot_{module_name.lower()}.log",
-        ]
-
-        for file_path in possible_files:
-            if file_path.exists():
-                return file_path
-
-        # Fallback zur Haupt-Log-Datei
-        main_log = log_dir / "bot.log"
-        return main_log if main_log.exists() else None
-
 
 class EnhancedLoggerMenuHandler:
     """
@@ -1598,14 +1579,6 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
                     update, f"Fehler bei Handler-Verwaltung: {str(e)}"
                 )
 
-    # === LEGACY-KOMPATIBILITÄT ===
-
-    async def handle_log_level_change(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Legacy-Funktion für globale Log-Level Änderung"""
-        return await self.show_global_level_menu(update, context)
-
     async def show_global_level_menu(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
@@ -1718,104 +1691,3 @@ Die Änderung ist sofort aktiv!"""
                 await update.callback_query.answer("❌ Fehler beim Setzen des Log-Levels")
 
 
-class LoggerModuleManager:
-    """Verwaltet Logger-Module dynamisch (ausgelagert aus der Hauptklasse für Klarheit)"""
-
-    def __init__(self, config: Config, logger_factory: Callable):
-        self.config = config
-        self.logger_factory = logger_factory
-        self.logger = get_module_logger("LoggerModuleManager")
-
-    def create_module_logger(self, module_name: str, log_level: str = "INFO") -> bool:
-        """Erstellt einen neuen Logger für ein Modul"""
-        try:
-            if module_name in _module_loggers:
-                self.logger.warning(f"⚠️ Modul {module_name} existiert bereits")
-                return False
-
-            # Separates Log-File für das Modul
-            log_path = (
-                Path(getattr(self.config, "LOG_DIR", "logs"))
-                / f"{module_name.lower()}.log"
-            )
-
-            setup_module_logging(
-                module_name, str(log_path), log_level, use_colors=True, use_emojis=True
-            )
-
-            self.logger.info(f"✅ Neuer Logger erstellt: {module_name}")
-            return True
-
-        except Exception as e:
-            self.logger.error(
-                f"❌ Fehler beim Erstellen des Loggers {module_name}: {e}"
-            )
-            return False
-
-
-class LoggerStatsTracker:
-    """Verfolgt Logger-Statistiken über Zeit"""
-
-    def __init__(self):
-        self.history = []
-        self.start_time = datetime.now()
-
-    def capture_snapshot(self) -> Dict[str, Any]:
-        """Erstellt einen Statistik-Snapshot"""
-        timestamp = datetime.now()
-        global_stats = get_logging_stats()
-
-        snapshot = {
-            "timestamp": timestamp.isoformat(),
-            "global_stats": global_stats,
-            "runtime_minutes": (timestamp - self.start_time).total_seconds() / 60,
-        }
-
-        self.history.append(snapshot)
-
-        # Behalte nur letzte 100 Snapshots
-        if len(self.history) > 100:
-            self.history = self.history[-100:]
-
-        return snapshot
-
-
-# === FACTORY FUNCTIONS ===
-
-
-def create_enhanced_logger_handler(
-    config: Config, logger_factory: Callable = None
-) -> EnhancedLoggerMenuHandler:
-    """Factory-Funktion für Enhanced Logger Handler"""
-    return EnhancedLoggerMenuHandler(config, logger_factory)
-
-
-# === INTEGRATION HELPER ===
-def integrate_enhanced_logger_handler(command_integration):
-    """
-    Integriert den erweiterten Logger-Handler in das bestehende System
-
-    Args:
-        command_integration: CommandIntegration Instanz
-    """
-    try:
-        # Ersetze den Standard Logger-Handler
-        enhanced_handler = create_enhanced_logger_handler(
-            command_integration.config, command_integration.logger_factory
-        )
-
-        # Registriere beim Menu-System
-        if hasattr(command_integration, "menu_system"):
-            command_integration.menu_system.set_handlers(
-                logger_handler=enhanced_handler
-            )
-
-        # Ersetze in Command Integration
-        command_integration.logger_handler = enhanced_handler
-
-        print("✅ Erweiterte Logger-Handler erfolgreich integriert")
-        return enhanced_handler
-
-    except Exception as e:
-        print(f"❌ Fehler bei Integration des erweiterten Logger-Handlers: {e}")
-        return None
