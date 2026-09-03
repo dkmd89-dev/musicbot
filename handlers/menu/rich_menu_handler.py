@@ -34,6 +34,8 @@ from handlers.menu.rich_menu_system import (
 from klassen.download_handler import DownloadHandler
 from services.downloader.active_downloads import ActiveDownloadRegistry
 from services.downloader.download_history import DownloadHistoryStore
+from services.bot_maintenance import MaintenanceModeStore
+from handlers.menu.maintenance_gate import is_blocked_by_maintenance
 from handlers.test_menu_handler import TestMenuHandler
 from handlers.enhanced_logger_menu_handler import EnhancedLoggerMenuHandler
 from handlers.navidrome_menu_handler import NavidromeMenuHandler
@@ -117,6 +119,20 @@ class RichMenuHandler:
                 getattr(self.config, "DOWNLOAD_HISTORY_DIR", "cache/download_history")
             ),
             logger=(self.logger_factory or get_module_logger)("DownloadHistoryStore"),
+        )
+
+        # Wartungsmodus ("🛠️ Ein-/Ausschalten" ueber Telegram-Inline-
+        # Buttons, Folgeschritt zu BotRestartHandler): ebenfalls EINE
+        # prozessweite, langlebige, JSON-persistierte Instanz - siehe
+        # services/bot_maintenance.py-Docstring fuer die Begruendung,
+        # warum das bewusst kein echtes Prozess-An/Aus ist. state_file
+        # bewusst explizit ueber das (in Tests via _make_handler()
+        # gepatchte) Path() DIESES Moduls aufgeloest, statt den Default-
+        # String an MaintenanceModeStore durchzureichen - identisches
+        # Test-Isolationsmuster wie bei user_data_file oben.
+        self.maintenance_store = MaintenanceModeStore(
+            state_file=str(Path("data/maintenance_mode.json")),
+            logger=(self.logger_factory or get_module_logger)("MaintenanceModeStore"),
         )
 
         # State Management
@@ -323,6 +339,7 @@ class RichMenuHandler:
         self.menu_system.set_active_downloads(self.active_downloads)
         self.menu_system.set_download_history(self.download_history)
         self.menu_system.set_url_retry_callback(self._process_url)
+        self.menu_system.set_maintenance_store(self.maintenance_store)
 
         # Handler registrieren
         self._register_download_handlers()
@@ -505,6 +522,14 @@ class RichMenuHandler:
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^status_"),
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^backup_"),
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^restart:"),
+            # Wartungsmodus 2026-09-03: derselbe "Bug B"-Fall wie beim
+            # dl:-Präfix unten (Live-Fund direkt beim ersten Live-Test
+            # dieses Features, siehe docs/MusicBot_TELEGRAM_MENU_SYSTEM.md
+            # Abschnitt 5, Schritt 3) - ohne diesen Handler verpuffte
+            # jeder maint:-Callback (Menüpunkt UND Toggle-Button)
+            # stillschweigend, obwohl das interne maint:-Routing in
+            # RichMenuSystem.handle_callback() bereits korrekt war.
+            CallbackQueryHandler(self.menu_system.handle_callback, pattern="^maint:"),
             # Download-Control-Center 2026-09-02 (Live-Fund: "restliche
             # Buttons sind tot außer Hauptmenü"): CallbackQueryHandler
             # werden PTB-seitig über feste pattern=-Allowlists geroutet -
@@ -839,6 +864,14 @@ class RichMenuHandler:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """Erweiterter /start Command Handler mit personalisierter Begrüßung."""
+        if await is_blocked_by_maintenance(
+            update,
+            context,
+            maintenance_store=getattr(self, "maintenance_store", None),
+            config=self.config,
+            logger=self.logger,
+        ):
+            return
         try:
             user = update.effective_user
             user_id = user.id
@@ -936,6 +969,14 @@ class RichMenuHandler:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """Zeigt Hauptmenü bei /menu."""
+        if await is_blocked_by_maintenance(
+            update,
+            context,
+            maintenance_store=getattr(self, "maintenance_store", None),
+            config=self.config,
+            logger=self.logger,
+        ):
+            return
         self.logger.info(f"📱 /menu von User {update.effective_user.id}")
         await self.menu_system.show_menu(update, context, "main")
 
@@ -943,6 +984,14 @@ class RichMenuHandler:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """Erweiterter /help Command Handler."""
+        if await is_blocked_by_maintenance(
+            update,
+            context,
+            maintenance_store=getattr(self, "maintenance_store", None),
+            config=self.config,
+            logger=self.logger,
+        ):
+            return
         try:
             user_id = update.effective_user.id
             user_role = self._get_user_role(user_id)
@@ -1007,6 +1056,14 @@ class RichMenuHandler:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """Callback-Handler für spezifische Hilfe-Themen (pattern='^help:')."""
+        if await is_blocked_by_maintenance(
+            update,
+            context,
+            maintenance_store=getattr(self, "maintenance_store", None),
+            config=self.config,
+            logger=self.logger,
+        ):
+            return
         try:
             query = update.callback_query
             topic = query.data.split(":", 1)[-1]
@@ -1137,6 +1194,14 @@ class RichMenuHandler:
 
         Die URL-Validierung erfolgt in DownloadHandler.handle_url().
         """
+        if await is_blocked_by_maintenance(
+            update,
+            context,
+            maintenance_store=getattr(self, "maintenance_store", None),
+            config=self.config,
+            logger=self.logger,
+        ):
+            return
         user_id = update.effective_user.id
         text = update.message.text
         state = self.user_states.get(user_id)
@@ -1246,6 +1311,14 @@ class RichMenuHandler:
         Verarbeitet Text-Nachrichten.
         Unterstützt Multi-Step Workflows für User-Management und Navidrome-Suche.
         """
+        if await is_blocked_by_maintenance(
+            update,
+            context,
+            maintenance_store=getattr(self, "maintenance_store", None),
+            config=self.config,
+            logger=self.logger,
+        ):
+            return
         user_id = update.effective_user.id
         text = update.message.text
 
