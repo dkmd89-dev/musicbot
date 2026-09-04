@@ -17,10 +17,11 @@ Jeder Registry-Eintrag benennt die BESTEHENDE Komponente, die die
 Reparatur spaeter ausfuehrt (Prompt Abschnitt 21 — keine Duplizierung):
   SAFE_AUTOMATIC        -> services/metadata/tag_writer.py::TagWriter (atomar)
                           + utils/artist_map.py::split_main_and_featuring
-  METADATA_REPROCESSING -> scripts/reprocess_artist_metadata.py (Subprozess)
+  METADATA_REPROCESSING -> services/metadata/track_reprocessor.py::process_file
   EXTERNAL_METADATA     -> services/metadata/* (GenreProcessor / MusicBrainzClient)
   COVER                 -> services/metadata/cover_processor.py::CoverProcessor
-  LOUDNESS              -> scripts/normalize_test_library_loudness.py
+  LOUDNESS              -> services/library_repair/replaygain_repairs.py
+                          (verlustfreier ReplayGain-Tag, kein Re-Encode)
   DUPLICATE             -> scripts/resolve_duplicates.py (+ services/duplicate/*)
 """
 
@@ -122,13 +123,17 @@ _SPECS: tuple[RepairSpec, ...] = (
           change="sehr kurz — Skit/Intro oder abgeschnitten? manuell pruefen"),
 
     # ── Loudness ────────────────────────────────────────────────────────
-    # LOUDNESS_OFF_TARGET (nur bei --measure-loudness): echte LUFS-Abweichung
-    # → verlustbehaftetes AAC-Re-Encode via AudioEnhancer.normalize_loudness(),
-    # Executor sichert/stellt alle Tags+Cover wieder her.
+    # LOUDNESS_OFF_TARGET (nur bei --measure-loudness): gemessene LUFS-
+    # Abweichung > 2 dB von -16, auch nach einem evtl. vorhandenen RG-Tag.
+    # Fix: VERLUSTFREI einen replaygain_track_gain-/_peak-Tag schreiben
+    # (Audio byte-identisch) — ein RG-faehiger Player (Navidrome) bringt die
+    # Datei damit auf -16. Kein Re-Encode (Nutzer-Entscheidung 2026-09-04:
+    # die Download-Pipeline normalisiert frische Downloads bereits per
+    # loudnorm; fuer den Altbestand reicht der Tag).
     _spec("LOUDNESS_OFF_TARGET", _A.LOUDNESS_NORMALIZE, _L.LOUDNESS,
-          "AudioEnhancer.normalize_loudness + track_reprocessor", external=True,
-          change="Audio auf -16 LUFS neu codieren (verlustbehaftet); Tags/Cover "
-                 "before==after, Backup + Rollback"),
+          "replaygain_repairs (verlustfreier RG-Tag)", external=True,
+          change="replaygain_track_gain-/_peak-Tag schreiben (Ziel -16 LUFS, "
+                 "Audio byte-identisch), Backup + Rollback"),
     # Die replaygain_track_*-Freeform-Tags sind Altlast — die AKTUELLE
     # Pipeline schreibt sie nirgends (tag_writer.py). Ein fehlender/kaputter
     # Legacy-Tag ist KEIN Grund fuer ein Audio-Re-Encode.

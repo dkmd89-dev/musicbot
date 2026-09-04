@@ -36,7 +36,7 @@ from typing import Optional
 
 from .journal import JournalEntry, RepairJournal
 from .models import RepairCandidate
-from . import cover_repairs, external_metadata, loudness_repairs, rename_repairs, tag_repairs
+from . import cover_repairs, external_metadata, rename_repairs, replaygain_repairs, tag_repairs
 
 _ARTISTS_FREEFORM_ATOM = "----:com.apple.iTunes:ARTISTS"
 _SUPPORTED = (".m4a", ".mp4", ".m4v")
@@ -1119,76 +1119,40 @@ def _l2_unresolved(result: dict) -> Optional[str]:
     return ("UNRESOLVED: " + " | ".join(items)) if items else None
 
 
-# ─────────────────────────────────────────────────────────────────────────
-# Level LOUDNESS — verlustbehaftetes Re-Encode (Prompt Abschnitt 6/17)
-# ─────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────
+# Level LOUDNESS — verlustfreier ReplayGain-Tag (kein Re-Encode)
+# ────────────────────────────────────────────────────────────────────────
 
-LOUDNESS_ISSUE_CODES = loudness_repairs.HANDLED_ISSUE_CODES
-
-
-def _snapshot_all_atoms(path: Path) -> dict:
-    """Vollstaendige, roh gelesene MP4-Tag-Momentaufnahme (alle Atome inkl.
-    covr). Dient dem Wiederherstellen NACH dem FFmpeg-Re-Encode, das ohne
-    `-map_metadata 0` nicht garantiert alle Freeform-Atome uebernimmt
-    (utils/audio_enhancer.py, dokumentierter Defekt)."""
-    from mutagen.mp4 import MP4
-
-    tags = MP4(path).tags
-    return {k: list(v) for k, v in (tags or {}).items()}
+LOUDNESS_ISSUE_CODES = replaygain_repairs.HANDLED_ISSUE_CODES
 
 
-def _restore_all_atoms(path: Path, snapshot: dict) -> None:
-    """Schreibt die Snapshot-Atome zurueck — Snapshot gewinnt fuer JEDES
-    Atom. Fremde Atome, die der Re-Encode zusaetzlich erzeugt hat, bleiben
-    unangetastet; die Original-Werte werden aber immer wiederhergestellt."""
-    from mutagen.mp4 import MP4
-
-    audio = MP4(path)
-    if audio.tags is None:
-        audio.add_tags()
-    for k, v in snapshot.items():
-        audio.tags[k] = v
-    audio.save()
-
-
-def _ffprobe_duration(path: Path) -> Optional[float]:
-    try:
-        r = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "default=nw=1:nk=1", str(path)],
-            capture_output=True, text=True, timeout=30,
-        )
-        return float(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else None
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return None
-
-
-def apply_loudness(
+def apply_replaygain(
     candidates: list[RepairCandidate],
     library_root: Path,
     journal: RepairJournal,
-    normalize_fn,
     measure_fn,
     *,
     dry_run: bool = True,
     backup_dir: Optional[Path] = None,
 ) -> list[ExecOutcome]:
-    """LOUDNESS_OFF_TARGET beheben — die **einzige** Reparatur mit
-    verlustbehaftetem Audio-Re-Encode (AAC).
+    """LOUDNESS_OFF_TARGET beheben, indem ein `replaygain_track_gain`- +
+    `replaygain_track_peak`-Freeform-Atom geschrieben wird — das Audio bleibt
+    **byte-identisch**. Ein ReplayGain-fähiger Player (Navidrome) bringt die
+    Datei damit auf die MusicBot-Ziel-Lautheit (−16 LUFS), ohne verlust-
+    behaftetes Re-Encode.
 
-    `normalize_fn(path) -> bool` (Aufrufer wraps `AudioEnhancer.
-    normalize_loudness`), `measure_fn(path) -> float | None` (LUFS-Messung,
-    Aufrufer wraps `tag_reader.measure_loudness`).
+    `measure_fn(path) -> (integrated_lufs | None, true_peak_dbtp | None)` —
+    der Aufrufer kapselt EINE `tag_reader.measure_loudness`. Der Gain-Wert
+    ergibt sich aus `Ziel − gemessen` (Referenz bewusst −16, nicht die
+    RG-2.0-Norm −18: so klingen getaggte Altbestände in Navidrome genauso
+    laut wie die frisch heruntergeladenen ungetaggten Dateien).
 
-    Weil das Re-Encode (utils/audio_enhancer.py) **kein `-map_metadata 0`**
-    setzt und dokumentiert Freeform-Atome (GENRE, teils MB-IDs) verliert,
-    sichert dieser Executor VOR dem Aufruf ALLE Tags + das Cover und
-    schreibt sie danach vollstaendig zurueck — die Metadaten sind damit
-    unabhaengig vom FFmpeg-Verhalten before==after. Zusaetzlich: Backup
-    ausserhalb der Library, LUFS-Ziel-Verifikation, Laufzeit-Check,
-    Dekodierbarkeits-Check; jede Abweichung → Rollback aus dem Backup.
+    Sicherheitsmodell wie L1: `safety_check`, Backup ausserhalb der Library,
+    Schreiben auf temp-Sibling + Verifikation (Ziel-Atome gesetzt **und**
+    Audio-Essenz-MD5 byte-identisch) + atomarer replace, Rollback bei Fehler,
+    Journal, Verification-Scan.
     """
-    from services.library_health.tag_reader import read_artwork, read_tags
+    from mutagen.mp4 import MP4
 
     library_root = Path(library_root)
     if backup_dir is None:
@@ -1214,84 +1178,57 @@ def apply_loudness(
             continue
 
         try:
-            lufs_before = measure_fn(path)
+            lufs, tp = measure_fn(path)
         except Exception as e:  # noqa: BLE001
             oc.status, oc.reason = "FAILED", f"LUFS-Messung: {e!r}"
             outcomes.append(oc)
             journal.record(_je_named(rel, oc, dry_run))
             continue
 
-        act, why = loudness_repairs.decide_loudness_action(lufs_before)
-        oc.before = {"integrated_lufs": round(lufs_before, 2) if lufs_before is not None else None}
-        if act == loudness_repairs.SKIP:
-            oc.reason = why
+        writes = replaygain_repairs.compute_replaygain(lufs, tp)
+        oc.before = {"integrated_lufs": round(lufs, 2) if lufs is not None else None}
+        if not writes:
+            oc.reason = (
+                f"bereits auf Ziel ({lufs:.1f} LUFS)" if lufs is not None
+                else "keine LUFS-Messung"
+            )
             outcomes.append(oc)
             journal.record(_je_named(rel, oc, dry_run))
             continue
+
+        oc.after = {
+            "replaygain_track_gain": writes[replaygain_repairs.GAIN_ATOM][0],
+            "replaygain_track_peak": writes[replaygain_repairs.PEAK_ATOM][0],
+            "target_lufs": replaygain_repairs.TARGET_LUFS,
+        }
 
         if dry_run:
-            oc.status, oc.reason = "DRY_RUN", why
-            oc.after = {"target_lufs": loudness_repairs.TARGET_LUFS, "note": "verlustbehaftetes AAC-Re-Encode"}
+            oc.status = "DRY_RUN"
             outcomes.append(oc)
             journal.record(_je_named(rel, oc, dry_run))
             continue
 
-        # ── EXECUTE ────────────────────────────────────────────────────────
         sha_before = _sha256(path)
-        dur_before = _ffprobe_duration(path)
-        try:
-            tag_snapshot = _snapshot_all_atoms(path)
-        except Exception as e:  # noqa: BLE001
-            oc.status, oc.reason = "FAILED", f"Tag-Snapshot: {e!r}"
-            outcomes.append(oc)
-            journal.record(_je_named(rel, oc, dry_run))
-            continue
-        tags_before = read_tags(path)
-        art_before = read_artwork(path)
-
+        audio_before = _audio_essence_md5(path)
         backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        tmp = None
         try:
             backup.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, backup)
-
-            ok = bool(normalize_fn(path))
-            if not ok:
-                raise RuntimeError("normalize_fn lieferte False")
-            if _sha256(path) == sha_before:
-                raise RuntimeError("Datei nach normalize_fn unveraendert — kein Re-Encode?")
-
-            # 1) Tags/Cover vollstaendig zuruecklegen (FFmpeg-Verlust ausgleichen)
-            _restore_all_atoms(path, tag_snapshot)
-
-            # 2) Verifikation
-            if not _audio_essence_md5(path).startswith("MD5="):
-                raise RuntimeError("Datei nach Re-Encode nicht als Audio dekodierbar")
-            lufs_after = measure_fn(path)
-            dur_after = _ffprobe_duration(path)
-            good, vwhy = loudness_repairs.verify_normalized(lufs_after, dur_before, dur_after)
-            if not good:
-                raise RuntimeError(vwhy)
-
-            _verify_tag_parity(tags_before, read_tags(path))
-            art_after = read_artwork(path)
-            if bool(art_before.present) != bool(art_after.present) or \
-                    art_before.sha256 != art_after.sha256:
-                raise RuntimeError(
-                    f"Cover nach Re-Encode veraendert "
-                    f"(present {art_before.present}->{art_after.present}, "
-                    f"sha {art_before.sha256}->{art_after.sha256})"
-                )
-
+            tmp = _write_freeform_atoms(path, writes)
+            v = MP4(tmp).tags or {}
+            for name, values in writes.items():
+                got = [x.decode("utf-8", "replace") if isinstance(x, bytes) else str(x)
+                       for x in v.get(name, [])]
+                if got != list(values):
+                    raise RuntimeError(f"Verifikation {name}: {got} != {values}")
+            at = _audio_essence_md5(tmp)
+            if at != audio_before or at.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {at})")
+            tmp.replace(path)
+            tmp = None
             oc.status = "SUCCESS"
             oc.backup_path = str(backup)
-            oc.after = {
-                "integrated_lufs": round(lufs_after, 2),
-                "target_lufs": loudness_repairs.TARGET_LUFS,
-                "duration_before": round(dur_before, 2) if dur_before else None,
-                "duration_after": round(dur_after, 2) if dur_after else None,
-                "audio_reencoded": True,
-                "tags_restored": True,
-            }
         except Exception as e:  # noqa: BLE001
             oc.status, oc.reason = "FAILED", repr(e)
             try:
@@ -1299,6 +1236,11 @@ def apply_loudness(
                     Path(backup).replace(path)
             except OSError:
                 pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
             try:
                 Path(backup).unlink(missing_ok=True)
             except OSError:
@@ -1307,33 +1249,14 @@ def apply_loudness(
 
         je = _je_named(rel, oc, dry_run)
         je.sha256_before, je.sha256_after = sha_before, _sha256(path)
-        # Audio-Essenz aendert sich hier BEWUSST (Re-Encode) — beide Werte
-        # trotzdem festhalten, damit der Journal-Leser den Umfang sieht.
-        je.audio_sha256_before = "n/a (Loudness-Re-Encode — Audio-Essenz aendert sich absichtlich)"
-        je.audio_sha256_after = _audio_essence_md5(path) if oc.status == "SUCCESS" else je.audio_sha256_before
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = _audio_essence_md5(path) if oc.status == "SUCCESS" else audio_before
         je.backup_path = oc.backup_path
         journal.record(je)
         outcomes.append(oc)
 
     return outcomes
 
-
-def _verify_tag_parity(before, after) -> None:
-    """Stellt sicher, dass der Re-Encode + Restore die inhaltlich relevanten
-    Tags nicht verloren/veraendert hat (read_tags-Sicht: Kernfelder + MB-IDs
-    + Genre + Cover-SHA)."""
-    fields = (
-        "artist", "album_artist", "title", "album", "year", "genre",
-        "track_number", "disc_number", "mb_recording_id", "mb_artist_id",
-        "mb_release_id", "mb_release_group_id", "isrc",
-    )
-    diffs = {
-        f: (getattr(before, f, None), getattr(after, f, None))
-        for f in fields
-        if getattr(before, f, None) != getattr(after, f, None)
-    }
-    if diffs:
-        raise RuntimeError(f"Tag-Verlust/-Aenderung nach Re-Encode: {diffs}")
 
 
 def _je_named(rel: str, oc: ExecOutcome, dry_run: bool) -> JournalEntry:

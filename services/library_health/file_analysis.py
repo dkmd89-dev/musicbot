@@ -63,8 +63,8 @@ _SKIT_TITLE_PATTERN = re.compile(
 # Ziel-Lautheit für Musik — deckungsgleich zu
 # utils/audio_enhancer.py::AudioEnhancer.TARGET_LUFS['music'] (bewusst nicht
 # importiert, s. tag_reader._LOUDNORM_ANALYSE_AF). LOUDNESS_OFF_TARGET_DB ist
-# die *Melde*-Schwelle (deutlich hörbar); der Loudness-Executor nutzt für
-# seine *Fix*-Entscheidung eine engere Toleranz.
+# die Melde-Schwelle (deutlich hörbar) und zugleich die Toleranz, mit der
+# replaygain_repairs.compute_replaygain() den RG-Tag schreibt.
 LOUDNESS_TARGET_LUFS = -16.0
 LOUDNESS_OFF_TARGET_DB = 2.0
 
@@ -542,31 +542,51 @@ def _analyze_audio(fh: FileHealth, stream: StreamData, p: str) -> AnalysisState:
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def _parse_gain_db(value) -> Optional[float]:
+    m = re.match(r"^\s*(-?\d+(?:\.\d+)?)", str(value).strip())
+    return float(m.group(1)) if m else None
+
+
 def _analyze_loudness_measurement(
     fh: FileHealth, loudness: Optional[LoudnessData], tags: TagData, p: str
 ) -> None:
-    """LOUDNESS_OFF_TARGET nur, wenn eine echte Messung vorliegt und der
-    Betrag der Abweichung von der Ziel-Lautheit die Melde-Schwelle
-    ueberschreitet. Ohne `--measure-loudness` ist `loudness` None → kein
-    Issue (nicht messbar ≠ auffaellig)."""
+    """LOUDNESS_OFF_TARGET nur, wenn eine echte Messung vorliegt UND die
+    Datei — auch nach Anwendung eines evtl. vorhandenen
+    `replaygain_track_gain` — mehr als die Melde-Schwelle von der Ziel-
+    Lautheit abweicht. Setzt damit einen ReplayGain-fähigen Player voraus
+    (Navidrome). Ohne `--measure-loudness` ist `loudness` None → kein Issue
+    (nicht messbar ≠ auffaellig)."""
     if loudness is None or loudness.state != AnalysisState.PRESENT:
         return
     lufs = loudness.integrated_lufs
     if lufs is None:
         return
-    delta = lufs - LOUDNESS_TARGET_LUFS
+
+    gain_db = _parse_gain_db(tags.replaygain.get("replaygain_track_gain")) \
+        if tags.replaygain else None
+    effective = lufs + (gain_db or 0.0)
+    delta = effective - LOUDNESS_TARGET_LUFS
     if abs(delta) <= LOUDNESS_OFF_TARGET_DB:
         return
+
+    details = {
+        "integrated_lufs": round(lufs, 2),
+        "target_lufs": LOUDNESS_TARGET_LUFS,
+        "delta_db": round(delta, 2),
+        "true_peak": round(loudness.true_peak, 2) if loudness.true_peak is not None else None,
+    }
+    if gain_db is not None:
+        details["replaygain_track_gain_db"] = gain_db
+        details["effective_lufs"] = round(effective, 2)
+        msg = (f"Auch mit replaygain_track_gain {gain_db:+.1f} dB noch "
+               f"{effective:.1f} LUFS ({delta:+.1f} dB gegen Ziel "
+               f"{LOUDNESS_TARGET_LUFS:.0f})")
+    else:
+        msg = (f"Integrierte Lautheit {lufs:.1f} LUFS, kein ReplayGain-Tag "
+               f"({delta:+.1f} dB gegen Ziel {LOUDNESS_TARGET_LUFS:.0f})")
     fh.issues.append(make_issue(
         "LOUDNESS_OFF_TARGET", path=p, artist=tags.artist, title=tags.title,
-        message=f"Integrierte Lautheit {lufs:.1f} LUFS "
-                f"({delta:+.1f} dB gegen Ziel {LOUDNESS_TARGET_LUFS:.0f})",
-        details={
-            "integrated_lufs": round(lufs, 2),
-            "target_lufs": LOUDNESS_TARGET_LUFS,
-            "delta_db": round(delta, 2),
-            "true_peak": round(loudness.true_peak, 2) if loudness.true_peak is not None else None,
-        },
+        message=msg, details=details,
     ))
 
 
