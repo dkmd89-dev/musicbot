@@ -40,6 +40,12 @@ Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/a
 | [archive/METADATA_REPROCESSING_TEST_CHAPO102.md](archive/METADATA_REPROCESSING_TEST_CHAPO102.md) | HISTORICAL (Validierungsprotokoll) | Erster Live-Validierungslauf des Tools gegen echten Artist-Bestand (CHAPO102), inkl. Post-Run Safety Check |
 | [archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md](archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md) | HISTORICAL (Validierungsprotokoll) | Zweiter Validierungslauf (Nina Chuba) + Final-Audit-Nachtrag zu Genre-Mapping-Konsistenz und UNRESOLVED-Praezisierung |
 
+## Library Health Scanner
+
+| Datei | Status | Kurzthema |
+|---|---|---|
+| [LIBRARY_HEALTH.md](LIBRARY_HEALTH.md) | CURRENT (Phase 1, PR 1) | `scripts/library_health_check.py` — analysiert die konfigurierte Music-Library **vollständig read-only** und erzeugt einen versionierten Health-Report (JSON + Text). Rein diagnostisch, keine Mutations-Flags. Domain in `services/library_health/` (Muster wie `services/duplicate/`). PR 1: Discovery + Per-Datei-Analyse (Metadata/Artwork/Lyrics/Audio/Loudness-Tag/Genre/Multi-Artist/Struktur) + stabiles Issue-Register. Group-Analyse (PR 2) + Health-Score (PR 3) offen, siehe FINDINGS_INDEX |
+
 ## Genre-System
 
 | Datei | Status | Kurzthema |
