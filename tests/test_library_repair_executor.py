@@ -16,7 +16,7 @@ from mutagen.mp4 import MP4, MP4FreeForm
 
 from services.library_repair.executor import (
     apply_album_cover_unify, apply_cover_repairs, apply_external_metadata,
-    apply_level1, apply_level1_rename, safety_check,
+    apply_level1, apply_level1_rename, apply_level2, safety_check,
 )
 from services.library_repair.journal import RepairJournal
 from services.library_repair.models import RepairAction, RepairCandidate, RepairLevel
@@ -401,3 +401,149 @@ def test_non_l1_codes_are_ignored(lib):
         lib, j, dry_run=False,
     )
     assert outcomes == []          # nichts aus L1_TAG_CODES
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Level 2 — METADATA_REPROCESSING (reprocess()-Pipeline injiziert)
+# ─────────────────────────────────────────────────────────────────────────
+
+def _l2_cand(rel, code="META_TITLE_NOT_CLEAN"):
+    return RepairCandidate(issue_code=code, action=RepairAction.METADATA_REPROCESS,
+                           level=RepairLevel.METADATA_REPROCESSING, severity="WARNING",
+                           scope="file", path=rel)
+
+
+def _fake_reprocess(*, status="changed", changes=None, error=None,
+                    audio_essence_changed=False, audio_stream_changed=False,
+                    unresolved=None, rewrite_title=None):
+    """Baut ein process_file-artiges Ergebnis. `rewrite_title` schreibt den
+    Titel-Tag tatsaechlich (simuliert den echten In-Place-Write der Pipeline,
+    ohne den Audio-Stream anzufassen)."""
+    def _fn(path, artist_root, dry_run):
+        if rewrite_title is not None and not dry_run:
+            a = MP4(path); a["©nam"] = [rewrite_title]; a.save()
+        return {
+            "file": str(path.name), "status": status, "error": error,
+            "changes": changes or {}, "unresolved": unresolved or [],
+            "audio_essence_changed": audio_essence_changed,
+            "audio_stream_changed": audio_stream_changed,
+            "auto_learn": {"featured_artists": [], "genre": None},
+        }
+    return _fn
+
+
+@requires_ffmpeg
+def test_l2_dry_run_writes_nothing(lib):
+    p = lib / "makko" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©nam"] = ['"x"']; a.save()
+    md5_before = _audio_md5(p)
+    j = RepairJournal(lib / "j.jsonl")
+    rp = _fake_reprocess(changes={"title": {"before": ['"x"'], "after": ["x"]}})
+    outcomes = apply_level2([_l2_cand("makko/Singles/2020 - x.m4a")], lib, j, rp,
+                            dry_run=True)
+    assert outcomes[0].status == "DRY_RUN"
+    assert outcomes[0].after == {"title": ["x"]}
+    assert MP4(p)["©nam"] == ['"x"']          # unveraendert
+    assert not (lib.parent / ".library_repair_backups").exists()
+    assert _audio_md5(p) == md5_before
+
+
+@requires_ffmpeg
+def test_l2_execute_applies_and_keeps_audio(lib):
+    p = lib / "makko" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©nam"] = ['"Ausreden"']; a.save()
+    md5_before = _audio_md5(p)
+    j = RepairJournal(lib / "j.jsonl")
+    rp = _fake_reprocess(changes={"title": {"before": ['"Ausreden"'], "after": ["Ausreden"]}},
+                         rewrite_title="Ausreden")
+    outcomes = apply_level2([_l2_cand("makko/Singles/2020 - x.m4a")], lib, j, rp,
+                            dry_run=False)
+    assert outcomes[0].status == "SUCCESS"
+    assert outcomes[0].backup_path
+    assert MP4(p)["©nam"] == ["Ausreden"]
+    assert _audio_md5(p) == md5_before
+
+
+@requires_ffmpeg
+def test_l2_rolls_back_on_reported_audio_change(lib):
+    p = lib / "makko" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©nam"] = ["orig"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    rp = _fake_reprocess(status="changed", audio_essence_changed=True,
+                         rewrite_title="neu")
+    outcomes = apply_level2([_l2_cand("makko/Singles/2020 - x.m4a")], lib, j, rp,
+                            dry_run=False)
+    assert outcomes[0].status == "FAILED"
+    assert MP4(p)["©nam"] == ["orig"]         # zurueckgerollt
+    bdir = lib.parent / ".library_repair_backups"
+    assert not list(bdir.rglob("*.bak"))     # Backup-Kopie nach Rollback entfernt
+
+
+@requires_ffmpeg
+def test_l2_rolls_back_on_pipeline_error(lib):
+    p = lib / "makko" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©nam"] = ["orig"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    rp = _fake_reprocess(status="error", error="boom", rewrite_title="neu")
+    outcomes = apply_level2([_l2_cand("makko/Singles/2020 - x.m4a")], lib, j, rp,
+                            dry_run=False)
+    assert outcomes[0].status == "FAILED"
+    assert MP4(p)["©nam"] == ["orig"]
+
+
+@requires_ffmpeg
+def test_l2_unchanged_is_skipped(lib):
+    p = lib / "makko" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©nam"] = ["schon sauber"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    rp = _fake_reprocess(status="unchanged", changes={})
+    outcomes = apply_level2([_l2_cand("makko/Singles/2020 - x.m4a")], lib, j, rp,
+                            dry_run=False)
+    assert outcomes[0].status == "SKIPPED"
+
+
+@requires_ffmpeg
+def test_l2_surfaces_unresolved(lib):
+    p = lib / "makko" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©nam"] = ["t"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    rp = _fake_reprocess(changes={"title": {"before": ["t"], "after": ["t2"]}},
+                         unresolved=["ReplayGain/Loudness fehlt"], rewrite_title="t2")
+    outcomes = apply_level2([_l2_cand("makko/Singles/2020 - x.m4a")], lib, j, rp,
+                            dry_run=False)
+    assert outcomes[0].status == "SUCCESS"
+    assert "UNRESOLVED" in outcomes[0].reason
+
+
+@requires_ffmpeg
+def test_l2_one_reprocess_call_per_file(lib):
+    p = lib / "makko" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©nam"] = ["t"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    calls = []
+    def rp(path, artist_root, dry_run):
+        calls.append(path)
+        assert artist_root == lib / "makko"
+        return {"file": "x", "status": "unchanged", "error": None, "changes": {},
+                "unresolved": [], "audio_essence_changed": False,
+                "audio_stream_changed": False}
+    apply_level2(
+        [_l2_cand("makko/Singles/2020 - x.m4a", "META_TITLE_NOT_CLEAN"),
+         _l2_cand("makko/Singles/2020 - x.m4a", "GENRE_INVALID")],
+        lib, j, rp, dry_run=False)
+    assert len(calls) == 1
+
+
+@requires_ffmpeg
+def test_l2_safety_blocks_symlink(lib):
+    p = lib / "makko" / "Singles" / "2020 - x.m4a"
+    _m4a(p)
+    link = lib / "makko" / "Singles" / "2020 - link.m4a"
+    link.symlink_to(p)
+    j = RepairJournal(lib / "j.jsonl")
+    calls = []
+    outcomes = apply_level2([_l2_cand("makko/Singles/2020 - link.m4a")], lib, j,
+                            lambda *a: calls.append(1), dry_run=False)
+    assert outcomes[0].status == "SKIPPED"
+    assert "Safety" in outcomes[0].reason
+    assert not calls

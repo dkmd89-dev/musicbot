@@ -78,6 +78,8 @@ def render_plan_text(plan: RepairPlan, *, max_per_level: int = 25) -> str:
             shown += 1
         add("")
 
-    add("Nichts wird veraendert. Ausfuehrung: 'library_repair.py --apply' "
-        "(Executor folgt in Phase 2 PR 2).")
+    add("Nichts wird veraendert (nur PLAN). Ausfuehrung: '--apply' (DRY-RUN) "
+        "bzw. '--apply' ohne '--dry-run' (EXECUTE). Cover / L3-MusicBrainz / "
+        "L2-Neuverarbeitung laufen nur auf ausdrueckliche Anforderung "
+        "(--level bzw. --issue).")
     return "\n".join(lines)

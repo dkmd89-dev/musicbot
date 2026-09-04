@@ -19,6 +19,18 @@ heruntergeladene Tracks gezielt gegen den *aktuellen* Stand dieser Pipeline
 zu validieren und zu aktualisieren, ohne sie neu herunterzuladen und ohne
 die Produktions-Library direkt anzufassen.
 
+> **Kern ausgelagert (2026-09-04):** Die eigentliche Pro-Datei-Pipeline-
+> Orchestrierung (`process_file()` + `snapshot()` + alle Helfer) liegt jetzt
+> in `services/metadata/track_reprocessor.py` — **verhaltensgleich**, dieses
+> Script re-importiert sie in seinen Namespace (die importlib-geladenen
+> Tests laufen unverändert). Grund: der Library-Repair-Executor
+> (`services/library_repair/executor.py::apply_level2`) nutzt denselben Kern
+> in-process mit der echten `config.Config` (Nutzer-Entscheidung „Option 2a",
+> `docs/LIBRARY_REPAIR.md` §6a). Dieses Script behält seine
+> `ALLOWED_ROOT = /tmp/musicbot_test`-Path-Safety, den `ReprocessLogger` und
+> die Post-Run-Snapshots; das Telegram-Aufrufmodell (§2a, nur Subprozess)
+> ist unberührt.
+
 ## 2. Sicherheitsmodell
 
 ```text
