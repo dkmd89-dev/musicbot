@@ -59,6 +59,24 @@ def _build_genre_validator(
     return _validate
 
 
+def _build_title_cleaner(logger) -> Optional[Callable[[str, str], str]]:
+    """Reine, read-only Titel-Bereinigung fuer den META_TITLE_NOT_CLEAN-Check.
+    `utils.title_cleanup.light_title_cleanup` ist zustandslos (nur Regex,
+    kein I/O, kein Logger, keine Config) und exakt der Pfad, den die reale
+    Download-Pipeline fuer den finalen Titel-Tag verwendet
+    (enhanced_metadata_processor.py Schritt 7 → TitleCleaner.light_title_cleanup
+    → dieselbe Funktion). Bewusst NICHT ueber services.metadata importiert —
+    dessen __init__ zieht TagWriter/EnhancedMetadataProcessor eager mit."""
+    try:
+        from utils.title_cleanup import light_title_cleanup
+    except Exception as e:  # noqa: BLE001
+        if logger:
+            logger.warning(f"title_cleanup nicht verfuegbar, META_TITLE_NOT_CLEAN uebersprungen: {e}")
+        return None
+
+    return light_title_cleanup
+
+
 def _sha256_file(path: Path) -> Optional[str]:
     try:
         h = hashlib.sha256()
@@ -130,6 +148,7 @@ def run_scan(
         logger.info(f"FILE DISCOVERY: {len(records)} Audio-Dateien")
 
     genre_validator = _build_genre_validator(genre_mapping_dir, logger)
+    title_cleaner = _build_title_cleaner(logger)
 
     file_healths: list[FileHealth] = []
     for idx, record in enumerate(records, start=1):
@@ -137,6 +156,7 @@ def run_scan(
         fh = analyze_file(
             record, tags, stream, artwork,
             genre_validator=genre_validator,
+            title_cleaner=title_cleaner,
             expected_extension=expected_extension,
         )
         file_healths.append(fh)

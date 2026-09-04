@@ -104,6 +104,7 @@ def analyze_file(
     artwork: ArtworkData,
     *,
     genre_validator: Optional[Callable[[str], bool]] = None,
+    title_cleaner: Optional[Callable[[str, str], str]] = None,
     expected_extension: Optional[str] = None,
     now_year: Optional[int] = None,
 ) -> FileHealth:
@@ -114,6 +115,7 @@ def analyze_file(
     _carry_raw_values(fh, tags, stream, artwork)
 
     fh.states["metadata"] = _analyze_metadata(fh, record, tags, now_year, p)
+    _analyze_title_cleanliness(fh, tags, title_cleaner, p)
     fh.states["genre"] = _analyze_genre(fh, tags, genre_validator, p)
     _analyze_multi_artist(fh, record, tags, p)
     fh.states["artwork"] = _analyze_artwork(fh, artwork, p)
@@ -237,6 +239,45 @@ def _analyze_metadata(
     if missing_core == 0:
         return AnalysisState.PRESENT
     return AnalysisState.PARTIAL
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Titel-Sauberkeit
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _analyze_title_cleanliness(
+    fh: FileHealth,
+    tags: TagData,
+    title_cleaner: Optional[Callable[[str, str], str]],
+    p: str,
+) -> None:
+    """Meldet Parsing-/Formatierungsreste im Titel-Tag (umschliessende
+    Anfuehrungszeichen, 'prod.'-Credit, haengende Klammer, Marketing-Suffix,
+    Artist-Praefix), indem der Titel durch dieselbe read-only-Bereinigung
+    geschickt wird, die die reale Download-Pipeline verwendet
+    (TitleCleaner.light_title_cleanup, siehe scanner._build_title_cleaner).
+
+    Read-only und rein diagnostisch: weicht das Ergebnis vom Ist-Titel ab,
+    ist der Ist-Titel „nicht sauber". Der Cleaner selbst darf die Analyse
+    nie kippen — jede Exception wird geschluckt (kein Issue)."""
+    if title_cleaner is None:
+        return
+    if tags.state == AnalysisState.NOT_ANALYZABLE or _blank(tags.title):
+        return
+    raw = tags.title.strip()
+    try:
+        cleaned = (title_cleaner(raw, tags.artist or "") or "").strip()
+    except Exception:  # noqa: BLE001 — Cleaner darf Analyse nicht kippen
+        return
+    if not cleaned or cleaned == raw:
+        return
+    fh.issues.append(make_issue(
+        "META_TITLE_NOT_CLEAN", path=p, artist=tags.artist, title=tags.title,
+        message=f"Titel-Tag {raw!r} enthaelt Reste, die die Download-Pipeline "
+                f"entfernt haette → {cleaned!r}",
+        details={"raw": raw, "cleaned": cleaned},
+    ))
 
 
 # ─────────────────────────────────────────────────────────────────────────
