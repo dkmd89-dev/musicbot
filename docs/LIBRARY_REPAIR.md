@@ -35,7 +35,7 @@ Verification-Scan; alle bereits gegen die Produktions-Library gelaufen.
 | **Level 3 — MusicBrainz-IDs / ISRC** | ✅ | DRY-RUN 01099: 6 Nachträge; Prod-Lauf: 0 sichere Treffer (MB-Abdeckung für Deutschrap/2Pac-Bootlegs gering) |
 | **Level 2 — volle Neuverarbeitung** (`track_reprocessor.process_file`) | ✅ | makko 19/19 SUCCESS (`META_TITLE_NOT_CLEAN 19→0`); Cover-Nebeneffekt via Album-Cover-Executor 4/4 |
 | **Loudness** (`apply_replaygain`, verlustfreier RG-Tag) | ✅ | 133/133 SUCCESS (99 SET + 34 CLEAR), `LOUDNESS_OFF_TARGET 133→0`, Health 98.0 |
-| Duplicate | ⏳ offen (`--allow-delete` abgelehnt) | — |
+| **Duplicate** (`resolve_duplicates.py`, andockt) | ✅ | Prod-Scan: 388 Dateien, 2 Gruppen, 0 auto-resolvable (beide korrekt MANUAL_REVIEW) |
 
 ---
 
@@ -66,7 +66,8 @@ Mit `--apply` führt der **Level-1-Executor** die deterministischen Tag-Fixes
 (`L1_TAG_CODES`) **und** die Dateinamen-Renames (`L1_RENAME_CODES`:
 `FILENAME_TITLE_MISMATCH`, `FILENAME_SUSPICIOUS`) aus — alle anderen
 Kandidaten werden übersprungen. `--apply --dry-run` zeigt die konkreten
-Before/After-Werte, ohne zu schreiben. `--allow-delete` wird abgelehnt.
+Before/After-Werte, ohne zu schreiben. `--allow-delete --artist <X>` ist ein
+eigener, von `--apply` unabhängiger Pfad für Duplicate-Auflösung (§6d).
 
 ---
 
@@ -106,7 +107,7 @@ später ausführt.
 | `EXTERNAL_METADATA` | fehlende MB-IDs / ISRC / Jahr / Genre | `MusicBrainzClient` / `GenreProcessor` | ja | ja | nein |
 | `COVER` | fehlendes / schlechtes / uneinheitliches Cover | `CoverProcessor` | ja | ja | nein |
 | `LOUDNESS` | gemessene Lautheit > 2 dB neben −16 LUFS (`LOUDNESS_OFF_TARGET`) | `replaygain_repairs` — verlustfreier `replaygain_track_gain`-Tag | ja | ja | nein (Audio byte-identisch) |
-| `DUPLICATE` | echte Duplikate | `scripts/resolve_duplicates.py` + `services/duplicate/*` | ja | nein | **ja** |
+| `DUPLICATE` | echte Duplikate | `scripts/resolve_duplicates.py` + `services/duplicate/*` (angedockt, Backup-vor-Delete) | ja | nein | **ja** |
 | `MANUAL_REVIEW` | kein sicherer automatischer Pfad | — | — | — | — |
 | `NOT_REPAIRABLE` | legitime Beobachtung, nichts zu tun | — | — | — | — |
 
@@ -145,7 +146,7 @@ Health-Issue-Code genau ein Mapping hat und kein Mapping veraltet ist.
 | `LOUDNESS_OFF_TARGET` | LOUDNESS | `replaygain_track_gain`-/`_peak`-Tag schreiben (Ziel −16 LUFS, **Audio byte-identisch**), Backup + Rollback |
 | `LOUDNESS_TAG_MISSING` | NOT_REPAIRABLE | Legacy-ReplayGain-Tag; aktuelle Pipeline schreibt ihn bewusst nicht |
 | `LOUDNESS_TAG_INVALID` / `_PARTIAL` | MANUAL_REVIEW | kaputter/unvollständiger Legacy-Tag — manuell prüfen |
-| `DUPLICATE_EXACT` / `DUPLICATE_RECORDING` | DUPLICATE | `resolve_duplicates.py` — nur mit `--allow-delete` + Freigabe |
+| `DUPLICATE_EXACT` / `DUPLICATE_RECORDING` | DUPLICATE | `library_repair.py --allow-delete --artist <X>` → `resolve_duplicates.py` (Backup-vor-Delete, TOCTOU-Revalidierung) |
 
 ---
 
@@ -228,7 +229,7 @@ ist extern/Netzwerk und langsam): `apply_cover_repairs()` für
 
 ## 6. Noch offen (Phase 2)
 
-- **Duplicate** (`resolve_duplicates.py` — destruktiv, `--allow-delete`).
+Keine offenen Executoren mehr — Phase 2 ist mit §6d (Duplicate) komplett.
 
 ## 6a. Level-2-Executor — volle Neuverarbeitung (implementiert)
 
@@ -335,6 +336,52 @@ True Peak > 0 dBFS), fast ausschließlich der makko-Katalog (89) + Levin Liam
 > Schritt 15b — prüfen, ob die Loudness-Normalisierung der Download-Pipeline
 > tatsächlich auf −16 LUFS schreibt (LUFS-Einstellungen /
 > `AudioEnhancer.get_target_lufs`).
+
+## 6d. Duplicate — `--allow-delete` (implementiert, dockt an)
+
+`--allow-delete --artist <Name> [--dry-run]` — **kein eigener Lösch-Code**:
+`library_repair.py` dockt als Subprozess an das bereits gehärtete
+`scripts/resolve_duplicates.py` an (Klassifikation/Resolution-Matrix/
+Zwei-Stufen-Execute-Sicherheit dort unverändert, siehe
+`docs/MusicBot_DUPLICATE_RESOLUTION_ARCHITECTURE.md`). Läuft **unabhängig**
+vom Health-Report/Planner — `resolve_duplicates.py` führt seine eigene
+Duplicate-Erkennung (normalisierter Artist+Titel, Album-vs-Single-Priorität
+über die Pfadstruktur) durch, nicht die des Health-Scanners.
+
+- **Erfordert `--artist`** — nie der gesamte Library-Root (spiegelt
+  `resolve_duplicates.py`s eigene `--confirm-production-execute`-Zusatzsperre,
+  die zwingend einen konkreten Unterordner verlangt).
+- `--dry-run` (Default) → reiner Scan-Subprozess (`resolve_duplicates.py
+  --path <root>/<Artist>`, read-only, kein `--execute`).
+- Ohne `--dry-run` → `--execute --confirm-production-execute`: **echte
+  Löschung** der revalidierten REMOVE-Kandidaten (Fingerprint-/TOCTOU-
+  Pre-Delete-Revalidierung, Gruppen-Atomarität — siehe Architektur-Dokument).
+
+**Neu — Backup-vor-Delete** (`services/duplicate/execution.py::
+execute_group(backup_fn=…)`, optionaler DI-Parameter wie
+`validate_file_within_root`/`build_candidate_from_path`): jede Datei wird
+UNMITTELBAR vor `unlink()` nach `--backup-dir` (Default
+`<root>/../.library_repair_backups`, identische Konvention zum übrigen
+`library_repair`) kopiert; schlägt das Backup fehl, wird **nicht** gelöscht
+(`FAILED` statt Delete ohne Sicherungskopie). Ohne `backup_fn` (Aufrufer, die
+den Parameter nicht setzen) bleibt das Verhalten exakt wie zuvor — die
+frühere, bewusste Architekturentscheidung „kein Rollback-Versprechen"
+(Auftrag Abschnitt 17 des Architektur-Dokuments) gilt dort unverändert.
+Audit-Log (`/tmp/musicbot_test/duplicate_execution_audit_log.jsonl`) trägt
+jetzt zusätzlich `backup_path`.
+
+**Read-only Dry-Run gegen Produktion (2026-09-04, `--path
+/mnt/musik_bilder/library`, ohne Code-Änderung — bereits vorher production-
+dry-run-fähig):** 388 Dateien gescannt, **2 Duplicate-Gruppen**, **0
+auto-resolvable**, beide korrekt `MANUAL_REVIEW`:
+- 2Pac „Changes" — Album-Version (2009 Immortal) vs. Single (2011), Δ11,3s
+  Laufzeit → vermutlich unterschiedlicher Edit, kein MusicBrainz-Match.
+- makko „Nachts wach" — zwei Tracks im selben `2022 - Nachts wach (Remix
+  EP)`-Ordner (Track 02 + 04) → `album_context_risk: HIGH`, vermutlich
+  Original + Remix, keine echten Duplikate.
+
+Ein echter `--execute`-Produktionslauf ist damit aktuell nicht angezeigt —
+die Library enthält keine sicher automatisch auflösbaren Duplikate.
 
 ## 7. Level-3 — MusicBrainz-IDs / ISRC nachtragen (implementiert)
 
