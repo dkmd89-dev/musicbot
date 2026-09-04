@@ -15,8 +15,8 @@ import pytest
 from mutagen.mp4 import MP4, MP4FreeForm
 
 from services.library_repair.executor import (
-    apply_album_cover_unify, apply_cover_repairs, apply_level1, apply_level1_rename,
-    safety_check,
+    apply_album_cover_unify, apply_cover_repairs, apply_external_metadata,
+    apply_level1, apply_level1_rename, safety_check,
 )
 from services.library_repair.journal import RepairJournal
 from services.library_repair.models import RepairAction, RepairCandidate, RepairLevel
@@ -335,6 +335,59 @@ def test_album_cover_unify_skips_when_no_usable_cover(lib):
     j = RepairJournal(lib / "j.jsonl")
     outcomes = apply_album_cover_unify([c], lib, j, dry_run=False)
     assert all(o.status == "SKIPPED" for o in outcomes)
+
+
+@requires_ffmpeg
+def test_external_metadata_adds_missing_ids_audio_untouched(lib):
+    p = lib / "A" / "Singles" / "2020 - Real Song.m4a"
+    _m4a(p); a = MP4(p); a["©ART"] = ["Real Artist"]; a["©nam"] = ["Real Song"]; a.save()
+    md5_before = _audio_md5(p)
+    mb = {"title": "Real Song", "artist": "Real Artist",
+          "recording_id": "12345678-1234-1234-1234-1234567890ab",
+          "artist_id": "12345678-1234-1234-1234-1234567890ab",
+          "release_id": "abcdef01-2345-6789-abcd-ef0123456789",
+          "release_group_id": "abcdef01-2345-6789-abcd-ef0123456789",
+          "isrc": "DEA123456789"}
+    j = RepairJournal(lib / "j.jsonl")
+    c = RepairCandidate(issue_code="META_MB_RECORDING_MISSING",
+                        action=RepairAction.EXTERNAL_ID_LOOKUP, level=RepairLevel.EXTERNAL_METADATA,
+                        severity="INFO", scope="file", path="A/Singles/2020 - Real Song.m4a")
+    outcomes = apply_external_metadata([c], lib, j, mb_lookup=lambda ar, ti: mb, dry_run=False)
+    assert outcomes[0].status == "SUCCESS"
+    from mutagen.mp4 import MP4 as _MP4
+    t = _MP4(p).tags
+    assert bytes(t["----:com.apple.iTunes:MusicBrainz Recording Id"][0]).decode() \
+        == "12345678-1234-1234-1234-1234567890ab"
+    assert bytes(t["----:com.apple.iTunes:ISRC"][0]).decode() == "DEA123456789"
+    assert _audio_md5(p) == md5_before
+
+
+@requires_ffmpeg
+def test_external_metadata_skips_dirty_title(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = ["Song prod. Xarbeats"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    c = RepairCandidate(issue_code="META_ISRC_MISSING",
+                        action=RepairAction.EXTERNAL_ID_LOOKUP, level=RepairLevel.EXTERNAL_METADATA,
+                        severity="INFO", scope="file", path="A/Singles/2020 - x.m4a")
+    called = []
+    outcomes = apply_external_metadata(
+        [c], lib, j, mb_lookup=lambda ar, ti: called.append(1) or {}, dry_run=False)
+    assert outcomes[0].status == "SKIPPED"
+    assert not called   # unsauberer Titel -> gar keine externe Suche
+
+
+@requires_ffmpeg
+def test_external_metadata_no_match_skips(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = ["Clean Title"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    c = RepairCandidate(issue_code="META_MB_RELEASE_MISSING",
+                        action=RepairAction.EXTERNAL_ID_LOOKUP, level=RepairLevel.EXTERNAL_METADATA,
+                        severity="INFO", scope="file", path="A/Singles/2020 - x.m4a")
+    outcomes = apply_external_metadata([c], lib, j, mb_lookup=lambda ar, ti: {}, dry_run=False)
+    assert outcomes[0].status == "SKIPPED"
+    assert not (lib.parent / ".library_repair_backups").exists()
 
 
 @requires_ffmpeg

@@ -36,10 +36,14 @@ from typing import Optional
 
 from .journal import JournalEntry, RepairJournal
 from .models import RepairCandidate
-from . import cover_repairs, rename_repairs, tag_repairs
+from . import cover_repairs, external_metadata, rename_repairs, tag_repairs
 
 _ARTISTS_FREEFORM_ATOM = "----:com.apple.iTunes:ARTISTS"
 _SUPPORTED = (".m4a", ".mp4", ".m4v")
+
+
+def _blank(v) -> bool:
+    return v is None or not str(v).strip()
 
 # Welche Issue-Codes dieser Executor bearbeitet (Rest wird übersprungen).
 L1_TAG_CODES = frozenset({
@@ -773,6 +777,160 @@ def _do_cover_write(path, rel, raw, fmt, backup_dir, oc, journal, cand):
     je.audio_sha256_after = _audio_essence_md5(path) if oc.status == "SUCCESS" else audio_before
     je.backup_path = oc.backup_path
     journal.record(je)
+
+
+EXTERNAL_MB_CODES = external_metadata.HANDLED_ISSUE_CODES
+
+
+def _write_freeform_atoms(src: Path, atoms: dict[str, list[str]]) -> Path:
+    from mutagen.mp4 import MP4, MP4FreeForm
+
+    tmp = src.with_name(f".{src.stem}.repairtmp_{int(time.time() * 1000)}{src.suffix}")
+    shutil.copy2(src, tmp)
+    audio = MP4(tmp)
+    for name, values in atoms.items():
+        audio[name] = [MP4FreeForm(str(v).encode("utf-8")) for v in values]
+    audio.save()
+    return tmp
+
+
+def apply_external_metadata(
+    candidates: list[RepairCandidate],
+    library_root: Path,
+    journal: RepairJournal,
+    mb_lookup,
+    *,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """Fehlende MusicBrainz Recording-/Artist-/Release-/Release-Group-IDs und
+    ISRC nachtragen. `mb_lookup(artist, title) -> dict` (leer = kein
+    eindeutiger Match). Ergaenzt NUR fehlende Felder, ueberschreibt nie."""
+    from services.library_health.tag_reader import read_tags
+
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+
+    # ein Kandidat pro Datei (die 3 Issue-Codes betreffen oft dieselbe Datei)
+    by_path: dict[str, RepairCandidate] = {}
+    for c in candidates:
+        if c.issue_code in EXTERNAL_MB_CODES and c.path:
+            by_path.setdefault(c.path, c)
+
+    for rel, c in sorted(by_path.items()):
+        path = library_root / rel
+        oc = ExecOutcome(file=rel, issue_code=c.issue_code, action="EXTERNAL_ID_LOOKUP",
+                         status="SKIPPED")
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            tags = read_tags(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Tag-Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        if _blank(tags.artist) or _blank(tags.title):
+            oc.reason = "Artist/Titel fehlt — keine externe Suche"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+        if not external_metadata.title_is_trustworthy(tags.title):
+            oc.reason = f"Titel {tags.title!r} zu unsauber fuer eine externe ID-Zuordnung"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            mb = mb_lookup(tags.artist, tags.title) or {}
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"MusicBrainz-Suche: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        current = {
+            "recording_id": tags.mb_recording_id, "artist_id": tags.mb_artist_id,
+            "release_id": tags.mb_release_id, "release_group_id": tags.mb_release_group_id,
+            "isrc": tags.isrc,
+        }
+        writes = external_metadata.plan_id_writes(current, mb, file_title=tags.title)
+        if not writes:
+            oc.reason = "kein eindeutiger MusicBrainz-Match / keine neuen IDs"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        oc.before = {"mb_recording_id": tags.mb_recording_id, "mb_release_id": tags.mb_release_id,
+                     "isrc": tags.isrc}
+        oc.after = {"added": {k.split(":")[-1]: v[0] for k, v in writes.items()},
+                    "mb_match": f"{mb.get('artist')} - {mb.get('title')}"}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _write_freeform_atoms(path, writes)
+            from mutagen.mp4 import MP4
+
+            v = MP4(tmp).tags or {}
+            for name, values in writes.items():
+                got = [x.decode("utf-8", "replace") if isinstance(x, bytes) else str(x)
+                       for x in v.get(name, [])]
+                if got != list(values):
+                    raise RuntimeError(f"Verifikation {name}: {got} != {values}")
+            at = _audio_essence_md5(tmp)
+            if at != audio_before or at.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {at})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if Path(backup).exists():
+                    Path(backup).replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            try:
+                Path(backup).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        je = _je_named(rel, oc, dry_run)
+        je.sha256_before, je.sha256_after = sha_before, _sha256(path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = _audio_essence_md5(path) if oc.status == "SUCCESS" else audio_before
+        je.backup_path = oc.backup_path
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
 
 
 def _je_named(rel: str, oc: ExecOutcome, dry_run: bool) -> JournalEntry:

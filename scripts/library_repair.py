@@ -137,8 +137,10 @@ def main(argv=None) -> int:
 
     # ── Ausfuehrung ─────────────────────────────────────────────────────
     from services.library_repair.executor import (
-        ALBUM_COVER_CODES, COVER_ISSUE_CODES, L1_RENAME_CODES, L1_TAG_CODES,
-        apply_album_cover_unify, apply_cover_repairs, apply_level1, apply_level1_rename,
+        ALBUM_COVER_CODES, COVER_ISSUE_CODES, EXTERNAL_MB_CODES,
+        L1_RENAME_CODES, L1_TAG_CODES,
+        apply_album_cover_unify, apply_cover_repairs, apply_external_metadata,
+        apply_level1, apply_level1_rename,
     )
     from services.library_repair.journal import RepairJournal
 
@@ -158,15 +160,19 @@ def main(argv=None) -> int:
         if cover_requested else []
     album_cover_cands = [c for c in plan.candidates if c.issue_code in ALBUM_COVER_CODES] \
         if album_cover_requested else []
+    # L3 MusicBrainz-IDs: extern/rate-limited -> nur auf ausdrueckliche Anforderung
+    mb_requested = _lvl == "EXTERNAL_METADATA" or args.issue_code in EXTERNAL_MB_CODES
+    mb_cands = [c for c in plan.candidates if c.issue_code in EXTERNAL_MB_CODES] \
+        if mb_requested else []
 
-    if not (l1_tags or l1_rename or cover_cands or album_cover_cands):
+    if not (l1_tags or l1_rename or cover_cands or album_cover_cands or mb_cands):
         print("\nKeine ausfuehrbaren Reparaturen im (gefilterten) Plan.")
         return 0
 
     mode = "DRY-RUN (keine Datei wird veraendert)" if execute_dry else "EXECUTE"
     print(f"\n{'=' * 70}\nREPAIR {mode} — {len(l1_tags)} Tag-Fixes + "
           f"{len(l1_rename)} Renames + {len(cover_cands)} Cover + "
-          f"{len(album_cover_cands)} Album-Cover\n{'=' * 70}")
+          f"{len(album_cover_cands)} Album-Cover + {len(mb_cands)} MB-IDs\n{'=' * 70}")
 
     outcomes = apply_level1(l1_tags, library_root, journal, dry_run=execute_dry,
                             backup_dir=backup_dir)
@@ -180,6 +186,11 @@ def main(argv=None) -> int:
     if album_cover_cands:
         outcomes += apply_album_cover_unify(
             album_cover_cands, library_root, journal,
+            dry_run=execute_dry, backup_dir=backup_dir,
+        )
+    if mb_cands:
+        outcomes += apply_external_metadata(
+            mb_cands, library_root, journal, _build_mb_lookup(logger),
             dry_run=execute_dry, backup_dir=backup_dir,
         )
     journal.flush()
@@ -198,8 +209,11 @@ def main(argv=None) -> int:
 
     if execute_dry:
         return 0
-    return _verification_scan(report, library_root, config, logger,
-                              {o.issue_code for o in outcomes if o.status == "SUCCESS"})
+    touched = {o.issue_code for o in outcomes if o.status == "SUCCESS"}
+    if mb_cands and any(o.status == "SUCCESS" for o in outcomes
+                        if o.issue_code in EXTERNAL_MB_CODES):
+        touched |= set(EXTERNAL_MB_CODES)
+    return _verification_scan(report, library_root, config, logger, touched)
 
 
 def _build_cover_fetcher(config, logger):
@@ -225,6 +239,25 @@ def _build_cover_fetcher(config, logger):
         )
 
     return _fetch
+
+
+def _build_mb_lookup(logger):
+    """Injiziert MusicBrainzClient als reinen Callable (artist, title) ->
+    fetch_metadata()-dict. Die Eindeutigkeit des Matches prueft der Client
+    selbst (Config.MUSICBRAINZ_MIN_SIMILARITY, MB-01)."""
+    import asyncio
+
+    from services.clients.musicbrainz_client import MusicBrainzClient
+
+    client = MusicBrainzClient(logger=get_module_logger("library_repair.mb"))
+
+    def _lookup(artist: str, title: str) -> dict:
+        try:
+            return asyncio.run(client.fetch_metadata(title=title, artist=artist)) or {}
+        except Exception:  # noqa: BLE001
+            return {}
+
+    return _lookup
 
 
 def _verification_scan(before_report, library_root, config, logger, touched_codes) -> int:

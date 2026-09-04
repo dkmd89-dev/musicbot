@@ -16,14 +16,20 @@ LIBRARY → Health Scanner → Health Report → Repair Planner
                                   Before / After Report
 ```
 
-**Status:**
-- **Repair Planner** — vollständig, read-only.
-- **Repair Executor — Level 1 (Tag-Fixes)** — vollständig, mit Per-Datei-Backup
-  (außerhalb der Library), Journal, Before/After, Audio-Essenz-Verifikation
-  und Verification-Scan. Bereits gegen die Produktions-Library gelaufen
-  (12 Tag-Fixes, 12/12 SUCCESS, Ton byte-identisch, 0 neue Issues).
-- **Level 2 / 3 / Cover / Loudness / Duplicate Executor** — noch offen,
-  `--allow-delete` wird abgelehnt.
+**Status** — alle Executors mit Per-Datei-Backup (außerhalb der Library),
+Append-Only-Journal, Before/After, **Audio-Essenz-Verifikation** und
+Verification-Scan; alle bereits gegen die Produktions-Library gelaufen:
+
+| Executor | Zustand | Produktionslauf |
+|---|---|---|
+| Repair Planner | ✅ read-only | — |
+| **Level 1 — Tag-Fixes** | ✅ | 12/12 SUCCESS |
+| **Level 1 — Renames** | ✅ | 7/7 SUCCESS (`FILENAME_TITLE_MISMATCH 14→7`) |
+| **Cover** (`CoverProcessor`, only-if-better) | ✅ | makko-Album 6× 300→3000px |
+| **`ALBUM_COVER_INCONSISTENT`** (offline, best-existing) | ✅ | 198 SUCCESS, `19→0`, Health 97.9→98.0 |
+| **Level 3 — MusicBrainz-IDs / ISRC** | ✅ | DRY-RUN 01099: 6 Nachträge, 10 kein Match |
+| Level 2 (`reprocess_artist_metadata.py`) | ⏳ blockiert (`ALLOWED_ROOT`) | — |
+| Loudness / Duplicate | ⏳ offen (`--allow-delete` abgelehnt) | — |
 
 ---
 
@@ -222,3 +228,29 @@ ist extern/Netzwerk und langsam): `apply_cover_repairs()` für
 - **Loudness** (`normalize_test_library_loudness.py`) — erst Produktions-
   Härtung/Test dieses Scripts nötig (`ALLOWED_ROOT`, kein Doppel-Encoding).
 - **Duplicate** (`resolve_duplicates.py` — destruktiv, `--allow-delete`).
+
+## 7. Level-3 — MusicBrainz-IDs / ISRC nachtragen (implementiert)
+
+`--level EXTERNAL_METADATA` bzw. `--issue META_MB_RECORDING_MISSING` /
+`META_MB_RELEASE_MISSING` / `META_ISRC_MISSING` (extern/rate-limited — nie
+im Default-`--apply`): `apply_external_metadata(mb_lookup)`.
+
+- Ein Kandidat pro Datei (die 3 Issue-Codes betreffen oft dieselbe Datei).
+- `mb_lookup(artist, title)` = `MusicBrainzClient.fetch_metadata()`. Die
+  **Eindeutigkeit** des Matches prüft der Client selbst
+  (`Config.MUSICBRAINZ_MIN_SIMILARITY` / `MIN_ARTIST_SIMILARITY`, MB-01) —
+  kein sicherer Treffer → leeres Ergebnis → `SKIPPED`.
+- Zusätzliche Leitplanken in `external_metadata.plan_id_writes()` (rein):
+  - **`title_is_trustworthy()`** — unsaubere/geparste Titel (Produzenten-
+    Credit, dateinamens-illegale Zeichen, absurde Länge) → gar keine
+    externe Suche (der Nutzerwunsch „nur korrekt geparste Dateien").
+  - MB-Titel muss zum Datei-Titel passen (Substring oder ≥ 60 % Token-Overlap).
+  - Formatvalidierung: MBID muss UUID sein, ISRC dem ISRC-Muster entsprechen.
+  - **Nur FEHLENDE** Felder werden ergänzt — vorhandene IDs nie überschrieben.
+- Schreibvorgang: Backup → freeform-Atome auf temp-Sibling → Verifikation
+  (Atome + Audio-Essenz byte-identisch) → atomarer `replace`, sonst Rollback.
+- Atom-Namen deckungsgleich zu `services/metadata/tag_writer.py`.
+
+**DRY-RUN gegen Produktion (`--artist 01099`):** 6 would-change (Recording-/
+Release-ID für die Weihnachtslied-Singles), 10 `SKIPPED` (MB kein sicherer
+Match für die Album-Tracks). Kein Raten.
