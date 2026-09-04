@@ -19,19 +19,28 @@ def _codes_referenced_in(module_file: str) -> set[str]:
     return set(re.findall(r'make_issue\(\s*["\']([A-Z0-9_]+)["\']', text))
 
 
+_EMITTING_MODULES = ("file_analysis.py", "group_analysis.py")
+
+
+def _all_referenced() -> set[str]:
+    out: set[str] = set()
+    for mod in _EMITTING_MODULES:
+        out |= _codes_referenced_in(mod)
+    return out
+
+
 def test_every_emitted_code_is_registered():
-    referenced = _codes_referenced_in("file_analysis.py")
+    referenced = _all_referenced()
     assert referenced, "Regex hat keine make_issue-Aufrufe gefunden"
     unregistered = referenced - ALL_CODES
     assert not unregistered, f"Nicht im Register: {sorted(unregistered)}"
 
 
 def test_registry_has_no_unused_dead_codes():
-    # Alle vier PENDING-Analysen (PR2/PR3) sind noch nicht verdrahtet — die
-    # zugehoerigen Codes gibt es in PR1 noch nicht im Register, daher muss
-    # hier jeder registrierte Code auch tatsaechlich erzeugt werden.
-    referenced = _codes_referenced_in("file_analysis.py")
-    dead = ALL_CODES - referenced
+    # Der Health-Score (PR 3) fuegt keine Issue-Codes hinzu — jeder
+    # registrierte Code muss von file_analysis.py oder group_analysis.py
+    # tatsaechlich erzeugt werden.
+    dead = ALL_CODES - _all_referenced()
     assert not dead, f"Registriert, aber nirgends erzeugt: {sorted(dead)}"
 
 

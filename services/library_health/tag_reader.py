@@ -27,6 +27,7 @@ KEIN mutagen .save(), KEIN Schreib-Modus, KEIN Anlegen von Dateien.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -102,6 +103,7 @@ class ArtworkData:
     height: Optional[int] = None
     size_bytes: Optional[int] = None
     is_square: Optional[bool] = None
+    sha256: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -288,6 +290,7 @@ def read_artwork(path: Path) -> ArtworkData:
         present=True,
         mime_type=mime,
         size_bytes=len(raw),
+        sha256=hashlib.sha256(raw).hexdigest(),
     )
     try:
         from PIL import Image

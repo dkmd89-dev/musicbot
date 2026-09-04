@@ -98,7 +98,7 @@ def analyze_file(
     fh = FileHealth(record=record)
     p = record.relative_path
 
-    _carry_raw_values(fh, tags)
+    _carry_raw_values(fh, tags, stream, artwork)
 
     fh.states["metadata"] = _analyze_metadata(fh, record, tags, now_year, p)
     fh.states["genre"] = _analyze_genre(fh, tags, genre_validator, p)
@@ -113,7 +113,9 @@ def analyze_file(
     return fh
 
 
-def _carry_raw_values(fh: FileHealth, tags: TagData) -> None:
+def _carry_raw_values(
+    fh: FileHealth, tags: TagData, stream: StreamData, artwork: ArtworkData
+) -> None:
     fh.artist = tags.artist
     fh.album_artist = tags.album_artist
     fh.title = tags.title
@@ -125,6 +127,9 @@ def _carry_raw_values(fh: FileHealth, tags: TagData) -> None:
     fh.mb_recording_id = tags.mb_recording_id
     fh.mb_release_id = tags.mb_release_id
     fh.isrc = tags.isrc
+    fh.cover_sha256 = artwork.sha256
+    fh.duration_seconds = stream.duration_seconds
+    fh.bitrate = stream.bitrate
 
 
 # ─────────────────────────────────────────────────────────────────────────

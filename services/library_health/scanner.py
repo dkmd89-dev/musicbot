@@ -20,13 +20,16 @@ scripts/reprocess_artist_metadata.py Abschnitt 2a.
 
 from __future__ import annotations
 
+import hashlib
 import time
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
 from .discovery import DEFAULT_SUPPORTED_EXTENSIONS, discover_files
 from .file_analysis import analyze_file
+from .group_analysis import analyze_groups
 from .models import AnalysisState, FileHealth
 from .report import build_report_dict
 from .tag_reader import ArtworkData, StreamData, TagData, probe_stream, read_artwork, read_tags
@@ -53,6 +56,37 @@ def _build_genre_validator(
             return True  # im Zweifel nicht als ungueltig melden
 
     return _validate
+
+
+def _sha256_file(path: Path) -> Optional[str]:
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def _hash_size_collisions(file_healths: list[FileHealth]) -> dict[str, str]:
+    """SHA-256 nur fuer Dateien mit identischer Groesse berechnen (Prompt
+    Abschnitt 27: Hashes nur, wenn fuer Duplicate Detection tatsaechlich
+    benoetigt). Byte-identische Dateien haben zwingend dieselbe Groesse —
+    der Groessen-Vorfilter ist vollstaendig und billig."""
+    by_size: dict[int, list[FileHealth]] = defaultdict(list)
+    for fh in file_healths:
+        if fh.record.file_size >= 0:
+            by_size[fh.record.file_size].append(fh)
+    hashes: dict[str, str] = {}
+    for size, members in by_size.items():
+        if len(members) < 2:
+            continue
+        for fh in members:
+            digest = _sha256_file(fh.record.absolute_path)
+            if digest:
+                hashes[fh.record.relative_path] = digest
+    return hashes
 
 
 def _read_all(path: Path) -> tuple[TagData, StreamData, ArtworkData]:
@@ -111,6 +145,11 @@ def run_scan(
         elif logger and idx % 500 == 0:
             logger.info(f"… {idx}/{len(records)} analysiert")
 
+    if logger:
+        logger.info("GROUP ANALYSIS: Album-/Artist-Konsistenz + Duplicate-Gruppen")
+    file_hashes = _hash_size_collisions(file_healths)
+    group_issues = analyze_groups(file_healths, file_sha256=file_hashes)
+
     completed = datetime.now(timezone.utc)
     report = build_report_dict(
         library_root=str(root),
@@ -118,6 +157,7 @@ def run_scan(
         completed_at=completed.isoformat(),
         duration_seconds=time.monotonic() - t0,
         file_healths=file_healths,
+        group_issues=group_issues,
     )
 
     if logger:

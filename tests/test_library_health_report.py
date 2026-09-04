@@ -52,9 +52,8 @@ def test_schema_shape(tmp_path):
     for key in ("scan", "library", "health", "statistics", "issues", "files"):
         assert key in r
     assert r["health"]["status"] == "UNSCORED"
-    assert "duplicate_groups" in r["scan"]["pending_analyses"] or \
-        "duplicate_groups" in r["scan"]["pending_analyses"]
-    assert r["statistics"]["duplicate_groups"] is None  # PR2
+    assert r["scan"]["pending_analyses"] == ["health_score"]
+    assert r["statistics"]["duplicate_groups"] == 0  # keine Dubletten im Fixture
 
 
 def test_files_sorted_by_relative_path(tmp_path):

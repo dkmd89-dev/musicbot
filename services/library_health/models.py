@@ -179,6 +179,10 @@ class FileHealth:
     mb_recording_id: Optional[str] = None
     mb_release_id: Optional[str] = None
     isrc: Optional[str] = None
+    cover_sha256: Optional[str] = None
+    # Audio-Stream-Evidenz fuer die Duplicate-Group-Analyse (PR 2).
+    duration_seconds: Optional[float] = None
+    bitrate: Optional[int] = None
 
     def to_dict(self) -> dict:
         return {

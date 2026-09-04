@@ -44,7 +44,7 @@ Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/a
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| [LIBRARY_HEALTH.md](LIBRARY_HEALTH.md) | CURRENT (Phase 1, PR 1) | `scripts/library_health_check.py` — analysiert die konfigurierte Music-Library **vollständig read-only** und erzeugt einen versionierten Health-Report (JSON + Text). Rein diagnostisch, keine Mutations-Flags. Domain in `services/library_health/` (Muster wie `services/duplicate/`). PR 1: Discovery + Per-Datei-Analyse (Metadata/Artwork/Lyrics/Audio/Loudness-Tag/Genre/Multi-Artist/Struktur) + stabiles Issue-Register. Group-Analyse (PR 2) + Health-Score (PR 3) offen, siehe FINDINGS_INDEX |
+| [LIBRARY_HEALTH.md](LIBRARY_HEALTH.md) | CURRENT (Phase 1, PR 2) | `scripts/library_health_check.py` — analysiert die konfigurierte Music-Library **vollständig read-only** und erzeugt einen versionierten Health-Report (JSON + Text). Rein diagnostisch, keine Mutations-Flags. Domain in `services/library_health/` (Muster wie `services/duplicate/`). PR 1: Discovery + Per-Datei-Analyse (Metadata/Artwork/Lyrics/Audio/Loudness-Tag/Genre/Multi-Artist/Struktur). PR 2: Group-Analyse (Album-/Artist-Konsistenz, Duplicate EXACT/RECORDING/SUSPECTED via `services/duplicate/classification.py`). Health-Score (PR 3) offen, siehe FINDINGS_INDEX |
 
 ## Genre-System
 

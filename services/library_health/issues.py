@@ -136,6 +136,45 @@ _SPECS: tuple[IssueSpec, ...] = (
               "Genre-Wert wird vom GenreMapper nicht als bekanntes Genre erkannt."),
     IssueSpec("GENRE_DELIMITER_INCONSISTENT", Severity.INFO, Scope.FILE,
               "Mehrfach-Genre nutzt einen anderen Separator als die aktuelle Konvention '; '."),
+
+    # ── Album-Konsistenz (Prompt Abschnitt 18) ─────────────────────────
+    IssueSpec("ALBUM_TRACK_GAP", Severity.WARNING, Scope.ALBUM,
+              "Luecke in der Tracknummern-Folge eines Albums (z. B. 1, 2, 4)."),
+    IssueSpec("ALBUM_DUPLICATE_TRACK_NUMBER", Severity.ERROR, Scope.ALBUM,
+              "Zwei Dateien eines Albums (gleiche Disc) tragen dieselbe Tracknummer."),
+    IssueSpec("ALBUM_NAME_INCONSISTENT", Severity.WARNING, Scope.ALBUM,
+              "Tracks desselben Album-Ordners haben unterschiedliche Album-Tags."),
+    IssueSpec("ALBUM_ARTIST_INCONSISTENT", Severity.WARNING, Scope.ALBUM,
+              "Tracks desselben Albums haben unterschiedliche Album-Artist-Tags "
+              "(bei einem regulaeren Artist-Album; Compilations sind ausgenommen)."),
+    IssueSpec("ALBUM_YEAR_INCONSISTENT", Severity.INFO, Scope.ALBUM,
+              "Tracks desselben Albums haben unterschiedliche Jahr-Tags."),
+    IssueSpec("ALBUM_GENRE_INCONSISTENT", Severity.INFO, Scope.ALBUM,
+              "Tracks desselben Albums haben unterschiedliche Genre-Tags "
+              "(kann legitim sein — reine Beobachtung, Prompt Abschnitt 22)."),
+    IssueSpec("ALBUM_RELEASE_ID_INCONSISTENT", Severity.INFO, Scope.ALBUM,
+              "Tracks desselben Albums verweisen auf unterschiedliche "
+              "MusicBrainz Release IDs."),
+    IssueSpec("ALBUM_COVER_INCONSISTENT", Severity.INFO, Scope.ALBUM,
+              "Tracks desselben Albums haben unterschiedliche eingebettete Cover."),
+
+    # ── Artist-Konsistenz (Prompt Abschnitt 19) ────────────────────────
+    IssueSpec("ARTIST_DIR_TAG_MISMATCH", Severity.INFO, Scope.ARTIST,
+              "Artist-Verzeichnisname weicht deutlich vom Artist-Tag der darin "
+              "liegenden Dateien ab."),
+    IssueSpec("ARTIST_NAME_VARIANTS", Severity.INFO, Scope.ARTIST,
+              "Mehrere Artist-Verzeichnisse normalisieren auf denselben Namen "
+              "(wahrscheinlich Schreibvarianten desselben Artists)."),
+
+    # ── Duplicate-Analyse (Prompt Abschnitt 17) ────────────────────────
+    # Der Scanner ERKENNT Kandidaten und loest sie NIE auf.
+    IssueSpec("DUPLICATE_EXACT", Severity.WARNING, Scope.LIBRARY,
+              "Byte-identische Dateien (gleicher SHA-256)."),
+    IssueSpec("DUPLICATE_RECORDING", Severity.WARNING, Scope.LIBRARY,
+              "Dateien mit identischer MusicBrainz Recording ID bzw. identischem ISRC."),
+    IssueSpec("DUPLICATE_SUSPECTED", Severity.INFO, Scope.LIBRARY,
+              "Dateien mit identischem normalisiertem Artist+Titel (Remix/Live/"
+              "Version bleiben getrennt — reine Beobachtung, kein Auflösungs-Vorschlag)."),
 )
 
 REGISTRY: dict[str, IssueSpec] = {spec.code: spec for spec in _SPECS}

@@ -30,9 +30,6 @@ from .models import (
 # im Report ausdruecklich als "noch nicht analysiert" ausgewiesen, statt
 # irrefuehrend 0 zu melden.
 PENDING_ANALYSES = (
-    "duplicate_groups",
-    "album_consistency",
-    "artist_consistency",
     "health_score",
 )
 
@@ -59,7 +56,12 @@ def _file_bucket(fh: FileHealth) -> str:
     return "healthy"  # keine Issues oder nur INFO
 
 
-def build_statistics(file_healths: list[FileHealth], all_issues: list[Issue]) -> dict:
+def build_statistics(
+    file_healths: list[FileHealth],
+    all_issues: list[Issue],
+    group_issues: list[Issue] | None = None,
+) -> dict:
+    group_issues = group_issues or []
     artists = {fh.record.artist_directory for fh in file_healths if fh.record.artist_directory}
     albums = {
         (fh.record.artist_directory, fh.record.album_directory)
@@ -96,8 +98,17 @@ def build_statistics(file_healths: list[FileHealth], all_issues: list[Issue]) ->
         "audio_problems": _count_code("AUDIO_NOT_ANALYZABLE")
         + _count_code("AUDIO_NO_STREAM")
         + _count_code("AUDIO_CORRUPT"),
-        "duplicate_groups": None,       # PENDING_ANALYSES
-        "album_inconsistencies": None,  # PENDING_ANALYSES
+        "duplicate_groups": sum(
+            1 for i in group_issues
+            if i.code in ("DUPLICATE_EXACT", "DUPLICATE_RECORDING", "DUPLICATE_SUSPECTED")
+        ),
+        "duplicate_groups_by_kind": {
+            "exact": sum(1 for i in group_issues if i.code == "DUPLICATE_EXACT"),
+            "recording": sum(1 for i in group_issues if i.code == "DUPLICATE_RECORDING"),
+            "suspected": sum(1 for i in group_issues if i.code == "DUPLICATE_SUSPECTED"),
+        },
+        "album_inconsistencies": sum(1 for i in group_issues if i.code.startswith("ALBUM_")),
+        "artist_inconsistencies": sum(1 for i in group_issues if i.code.startswith("ARTIST_")),
         "issues_by_code": dict(sorted(code_counter.items())),
         "issues_by_severity": {
             sev.value: sev_counter.get(sev.value, 0)
@@ -113,14 +124,16 @@ def build_report_dict(
     completed_at: str,
     duration_seconds: float,
     file_healths: list[FileHealth],
+    group_issues: list[Issue] | None = None,
 ) -> dict:
+    group_issues = sorted(group_issues or [], key=lambda i: i.sort_key())
     file_healths = sorted(file_healths, key=lambda fh: fh.record.relative_path)
-    all_issues: list[Issue] = []
+    all_issues: list[Issue] = list(group_issues)
     for fh in file_healths:
         all_issues.extend(fh.issues)
     all_issues.sort(key=lambda i: i.sort_key())
 
-    stats = build_statistics(file_healths, all_issues)
+    stats = build_statistics(file_healths, all_issues, group_issues)
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -181,6 +194,14 @@ def render_text(report: dict, *, max_issues: int = 200) -> str:
     add(f"  loudness tag missing: {s['missing_loudness']}")
     add(f"  structure problems  : {s['structure_problems']}")
     add(f"  audio problems      : {s['audio_problems']}")
+    add("")
+    add("Groups:")
+    add(f"  duplicate groups    : {s['duplicate_groups']}  "
+        f"(exact {s['duplicate_groups_by_kind']['exact']}, "
+        f"recording {s['duplicate_groups_by_kind']['recording']}, "
+        f"suspected {s['duplicate_groups_by_kind']['suspected']})")
+    add(f"  album inconsistencies : {s['album_inconsistencies']}")
+    add(f"  artist inconsistencies: {s['artist_inconsistencies']}")
     add("")
     add("Issues by severity:")
     for sev, count in s["issues_by_severity"].items():

@@ -10,10 +10,10 @@
 Der Scanner ist **ausschließlich diagnostisch**. Er repariert nichts, er
 schlägt keine Auflösung vor, er fasst keine Library-Datei schreibend an.
 
-Status: **Phase 1, PR 1** (Discovery + Per-Datei-Analyse + Issue-Report).
-Group-Analyse (Album-/Artist-/Duplicate-Konsistenz) und ein deterministischer
-Health-Score folgen in PR 2 / PR 3 desselben Zweigs — im Report unter
-`scan.pending_analyses` ausgewiesen.
+Status: **Phase 1, PR 2** (Discovery + Per-Datei-Analyse + **Group-Analyse**:
+Album-/Artist-Konsistenz + Duplicate-Gruppen). Ein deterministischer
+Health-Score folgt in PR 3 — im Report unter `scan.pending_analyses`
+(`["health_score"]`) ausgewiesen.
 
 ---
 
@@ -77,8 +77,9 @@ services/library_health/
     discovery.py      rekursives Auffinden + Pfad-/Struktur-Fakten (nutzt classification.classify_by_path)
     tag_reader.py     read-only I/O-Adapter: Tags (m4a/mp3), ffprobe-Stream, eingebettetes Artwork
     file_analysis.py  reine Funktion (FileRecord, TagData, StreamData, ArtworkData) -> FileHealth
+    group_analysis.py reine Funktion (list[FileHealth], file_sha256) -> list[Issue]  (Album/Artist/Duplicate)
     report.py         stabile, versionierte JSON-Struktur + Text-Report (deterministisch sortiert)
-    scanner.py        Orchestrierung DISCOVERY -> READ -> ANALYSE -> REPORT
+    scanner.py        Orchestrierung DISCOVERY -> READ -> ANALYSE -> GROUP-ANALYSE -> REPORT
 
 scripts/library_health_check.py   dünner CLI-Wrapper (CLI -> Config -> Scanner -> Report), keine Fachlogik
 ```
@@ -96,8 +97,13 @@ ohne Fixtures unit-testbar.
 | Library-Schema | `utils/filenamefixer.py::build_final_path()` (nur als Referenz gelesen) | REFERENCE |
 | MP4-Atom-Namen | deckungsgleich zu `services/metadata/tag_writer.py` (dokumentiert nachgebildet, nicht importiert) | MIRROR |
 | Genre-Konvention | `utils/genre_map.GenreMapper.validate_genre()` | REUSE (read-only) |
+| Duplicate-Identität | `services/duplicate/classification.py` (`build_candidate`, `group_candidates_by_identity`, MB-ID-/ISRC-Vergleich, `has_album_context_risk`) — dieselbe Normalisierung wie `DuplicateDetector`, inkl. DUP-03 (Remix/Live/Version nicht zusammengeworfen) | REUSE (Domain) |
 | Logger | `logger.get_module_logger("library_health")` | REUSE |
 | Pillow | bereits Projekt-Dependency (`CoverProcessor`) | REUSE |
+
+`resolution.py` / `execution.py` (KEEP/REMOVE-Entscheidung, Löschung)
+werden **nicht** importiert — der Scanner erkennt Duplicate-Kandidaten und
+löst sie nie auf (Prompt Abschnitt 17).
 
 ---
 
@@ -117,6 +123,19 @@ Pro Datei wird je Dimension ein `AnalysisState` bestimmt — **strikt getrennt**
 | `loudness` | **nur** ReplayGain-/Loudness-**Tag**-Existenz/-Format — **keine** Messung/Berechnung (Prompt Abschnitt 16) |
 | Struktur/Dateiname | in erwarteter `<Artist>/(Singles\|Jahr - Album)/`-Hierarchie? Dateiname-Stamm ↔ Titel-Tag, verdächtige Zeichen, Endung |
 | Multi-Artist | `';'` im Einzelwert, `feat.` im `©ART` statt separatem `ARTISTS`, Duplikate, `©ART` ↔ `ARTISTS`-Freeform ↔ Album-Artist |
+
+### Group-Analyse (PR 2, `group_analysis.py`)
+
+| Ebene | Prüft |
+|---|---|
+| **Album** (`<Artist>/<Jahr - Album>/`, ≥ 2 Tracks) | Tracknummern-Lücke, doppelte Tracknummer (pro Disc), abweichende Album-/Album-Artist-/Jahr-/Genre-/Release-ID-Tags, unterschiedliche eingebettete Cover |
+| **Artist** | Verzeichnisname ↔ dominanter Artist-Tag; mehrere Verzeichnisse, die auf denselben normalisierten Namen abbilden (Schreibvarianten) |
+| **Duplicate** | `DUPLICATE_EXACT` (SHA-256 byte-identisch, Größen-Vorfilter), `DUPLICATE_RECORDING` (gleiche MB Recording ID / ISRC), `DUPLICATE_SUSPECTED` (gleicher normalisierter Artist+Titel — Remix/Live/Version bleiben getrennt). Ein Kandidat wird nur in der stärksten Kategorie gemeldet. |
+
+`DUPLICATE_SUSPECTED` ist `INFO`/Observation und trägt `details.album_context_risk`
+(Remix-/Live-/Versions-Hinweis im Albumnamen). `ALBUM_GENRE_INCONSISTENT` /
+`ALBUM_YEAR_INCONSISTENT` / `ALBUM_RELEASE_ID_INCONSISTENT` sind `INFO`
+(können legitim sein). `ALBUM_DUPLICATE_TRACK_NUMBER` ist `ERROR`.
 
 ### Wichtig: Observation ≠ Defect (Prompt Abschnitt 22)
 
@@ -142,7 +161,7 @@ erzeugte Code registriert ist und kein registrierter Code tot ist.
 `INFO` / `WARNING` / `ERROR` / `CRITICAL` — `INFO` beeinflusst später den
 Health-Score **nicht** (PR 3).
 
-Aktuelle Codes (PR 1): `META_NOT_ANALYZABLE`, `META_ARTIST_MISSING`,
+**Datei-Ebene:** `META_NOT_ANALYZABLE`, `META_ARTIST_MISSING`,
 `META_TITLE_MISSING`, `META_ALBUM_MISSING`, `META_ALBUM_ARTIST_MISSING`,
 `META_YEAR_MISSING`, `META_YEAR_INVALID`, `META_GENRE_MISSING`,
 `META_TRACK_NUMBER_MISSING`, `META_MB_RECORDING_MISSING`,
@@ -157,6 +176,15 @@ Aktuelle Codes (PR 1): `META_NOT_ANALYZABLE`, `META_ARTIST_MISSING`,
 `MULTI_ARTIST_INCONSISTENT`, `MULTI_ARTIST_DUPLICATE`, `GENRE_EMPTY`,
 `GENRE_INVALID`, `GENRE_DELIMITER_INCONSISTENT`.
 
+**Album-Ebene:** `ALBUM_TRACK_GAP`, `ALBUM_DUPLICATE_TRACK_NUMBER`,
+`ALBUM_NAME_INCONSISTENT`, `ALBUM_ARTIST_INCONSISTENT`,
+`ALBUM_YEAR_INCONSISTENT`, `ALBUM_GENRE_INCONSISTENT`,
+`ALBUM_RELEASE_ID_INCONSISTENT`, `ALBUM_COVER_INCONSISTENT`.
+
+**Artist-Ebene:** `ARTIST_DIR_TAG_MISMATCH`, `ARTIST_NAME_VARIANTS`.
+
+**Library-Ebene:** `DUPLICATE_EXACT`, `DUPLICATE_RECORDING`, `DUPLICATE_SUSPECTED`.
+
 ---
 
 ## 6. JSON-Report-Schema (`schema_version` 1.0)
@@ -166,8 +194,7 @@ Aktuelle Codes (PR 1): `META_NOT_ANALYZABLE`, `META_ARTIST_MISSING`,
   "schema_version": "1.0",
   "scanner_version": "1.0",
   "scan":   { "started_at": "...", "completed_at": "...", "duration_seconds": 0,
-              "pending_analyses": ["duplicate_groups", "album_consistency",
-                                   "artist_consistency", "health_score"] },
+              "pending_analyses": ["health_score"] },
   "library":{ "root": "...", "files": 0, "artists": 0, "albums": 0 },
   "health": { "score": null, "status": "UNSCORED" },        // PR 3
   "statistics": {
@@ -176,10 +203,12 @@ Aktuelle Codes (PR 1): `META_NOT_ANALYZABLE`, `META_ARTIST_MISSING`,
      "files_not_analyzable": 0,
      "missing_metadata": 0, "missing_artwork": 0, "missing_lyrics": 0,
      "missing_loudness": 0, "structure_problems": 0, "audio_problems": 0,
-     "duplicate_groups": null, "album_inconsistencies": null,   // PR 2
+     "duplicate_groups": 0,
+     "duplicate_groups_by_kind": { "exact": 0, "recording": 0, "suspected": 0 },
+     "album_inconsistencies": 0, "artist_inconsistencies": 0,
      "issues_by_code": { "...": 0 }, "issues_by_severity": { "...": 0 }
   },
-  "issues": [ { "issue_code": "...", "severity": "...", "scope": "file",
+  "issues": [ { "issue_code": "...", "severity": "...", "scope": "file|album|artist|library",
                "path": "...", "artist": "...", "album": "...", "title": "...",
                "message": "...", "details": {}, "confidence": null,
                "related_files": [] } ],
@@ -197,8 +226,9 @@ Issues nach (Severity absteigend, Code, Pfad). Nur die Zeitstempel variieren.
 
 - **Kein Deep-Audio-Decode** im Standardlauf — `AUDIO_CORRUPT` wird nur bei
   eindeutigen ffprobe-Fehlermarkern gemeldet (Performance, Prompt Abschnitt 27).
-- **Keine Group-Analyse** (Album-Track-Lücken, Duplicate-Gruppen,
-  Artist-Schreibvarianten) — PR 2.
+- **SHA-256** wird nur für Dateien mit **identischer Größe** berechnet
+  (byte-identische Dateien haben zwingend dieselbe Größe — vollständiger,
+  billiger Vorfilter, Prompt Abschnitt 27).
 - **Kein Health-Score** — PR 3.
 - **Kein Navidrome-Abgleich** — nicht Teil dieser Phase (Prompt Abschnitt 30).
 - Nur `.m4a/.mp4` (voll) und `.mp3` (best-effort); `.ogg/.opus` werden
@@ -214,6 +244,7 @@ Issues nach (Severity absteigend, Code, Pfad). Nur die Zeitstempel variieren.
 | `tests/test_library_health_discovery.py` | Formate, Sortierung, Section/Single/Album, Symlink-Skip |
 | `tests/test_library_health_tag_reader.py` | echte m4a: Tags/Artwork/ffprobe, defekte Datei |
 | `tests/test_library_health_file_analysis.py` | jede Dimension als pure Unit (synthetische Eingaben) |
+| `tests/test_library_health_group_analysis.py` | Album-Gap/Dublette/Disc, Artist-Varianten, Duplicate EXACT/RECORDING/SUSPECTED, DUP-03 (Remix ≠ Duplikat) |
 | `tests/test_library_health_issues.py` | Register-Vollständigkeit/-Stabilität |
 | `tests/test_library_health_report.py` | Schema, Sortierung, Determinismus, Statistik-Buckets |
 | `tests/test_library_health_readonly_safety.py` | **SHA256/mtime/size/Pfade vorher==nachher**, CLI-Subprozess, Import-Graph, abgelehnte Mutations-Flags |
