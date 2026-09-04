@@ -65,6 +65,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Pro-Datei-Logging (DEBUG).",
     )
     parser.add_argument(
+        "--measure-loudness", action="store_true",
+        help="Zusaetzlich die integrierte Lautheit (LUFS) jeder Datei per "
+             "FFmpeg-loudnorm-Analyse messen und LOUDNESS_OFF_TARGET melden. "
+             "Rein lesend (kein Re-Encode), aber deutlich langsamer "
+             "(voller Decode pro Datei).",
+    )
+    parser.add_argument(
         "--max-issues", type=int, default=200,
         help="Maximale Anzahl Issues im Text-Report (JSON enthaelt immer alle).",
     )
@@ -117,6 +124,7 @@ def main(argv=None) -> int:
             supported_extensions=tuple(config.SUPPORTED_FORMATS),
             expected_extension=f".{config.AUDIO_FORMAT.lstrip('.')}",
             genre_mapping_dir=config.GENRE_MAPPING_DIR,
+            measure_loudness=args.measure_loudness,
             logger=logger,
             verbose=args.verbose,
         )

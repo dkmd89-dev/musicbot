@@ -25,7 +25,7 @@ from typing import Callable, Optional
 
 from .models import AnalysisState, FileHealth, FileRecord, Severity
 from .issues import make_issue
-from .tag_reader import ArtworkData, StreamData, TagData
+from .tag_reader import ArtworkData, LoudnessData, StreamData, TagData
 
 # ─────────────────────────────────────────────────────────────────────────
 # Schwellenwerte — zentral, dokumentiert (Prompt Abschnitt 23: keine
@@ -59,6 +59,14 @@ _SKIT_TITLE_PATTERN = re.compile(
     r"\b(intro|outro|skit|interlude|prelude|reprise|snippet|prologue|epilogue)\b",
     re.IGNORECASE,
 )
+
+# Ziel-Lautheit für Musik — deckungsgleich zu
+# utils/audio_enhancer.py::AudioEnhancer.TARGET_LUFS['music'] (bewusst nicht
+# importiert, s. tag_reader._LOUDNORM_ANALYSE_AF). LOUDNESS_OFF_TARGET_DB ist
+# die *Melde*-Schwelle (deutlich hörbar); der Loudness-Executor nutzt für
+# seine *Fix*-Entscheidung eine engere Toleranz.
+LOUDNESS_TARGET_LUFS = -16.0
+LOUDNESS_OFF_TARGET_DB = 2.0
 
 YEAR_MIN = 1900
 
@@ -105,6 +113,7 @@ def analyze_file(
     *,
     genre_validator: Optional[Callable[[str], bool]] = None,
     title_cleaner: Optional[Callable[[str, str], str]] = None,
+    loudness: Optional[LoudnessData] = None,
     expected_extension: Optional[str] = None,
     now_year: Optional[int] = None,
 ) -> FileHealth:
@@ -113,6 +122,8 @@ def analyze_file(
     p = record.relative_path
 
     _carry_raw_values(fh, tags, stream, artwork)
+    if loudness is not None and loudness.integrated_lufs is not None:
+        fh.integrated_lufs = loudness.integrated_lufs
 
     fh.states["metadata"] = _analyze_metadata(fh, record, tags, now_year, p)
     _analyze_title_cleanliness(fh, tags, title_cleaner, p)
@@ -122,6 +133,7 @@ def analyze_file(
     fh.states["lyrics"] = _analyze_lyrics(fh, tags, p)
     fh.states["audio"] = _analyze_audio(fh, stream, p)
     fh.states["loudness"] = _analyze_loudness(fh, tags, p)
+    _analyze_loudness_measurement(fh, loudness, tags, p)
     _analyze_structure_and_filename(fh, record, tags, expected_extension, p)
 
     fh.issues.sort(key=lambda i: i.sort_key())
@@ -525,9 +537,37 @@ def _analyze_audio(fh: FileHealth, stream: StreamData, p: str) -> AnalysisState:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Loudness / ReplayGain — nur Tag-Diagnose, NIE Messung/Berechnung
-# (Prompt Abschnitt 16).
+# Loudness / ReplayGain — Tag-Diagnose (immer) + optionale LUFS-Messung
+# (nur bei --measure-loudness, FFmpeg-loudnorm-Analyse, kein Re-Encode).
 # ─────────────────────────────────────────────────────────────────────────
+
+
+def _analyze_loudness_measurement(
+    fh: FileHealth, loudness: Optional[LoudnessData], tags: TagData, p: str
+) -> None:
+    """LOUDNESS_OFF_TARGET nur, wenn eine echte Messung vorliegt und der
+    Betrag der Abweichung von der Ziel-Lautheit die Melde-Schwelle
+    ueberschreitet. Ohne `--measure-loudness` ist `loudness` None → kein
+    Issue (nicht messbar ≠ auffaellig)."""
+    if loudness is None or loudness.state != AnalysisState.PRESENT:
+        return
+    lufs = loudness.integrated_lufs
+    if lufs is None:
+        return
+    delta = lufs - LOUDNESS_TARGET_LUFS
+    if abs(delta) <= LOUDNESS_OFF_TARGET_DB:
+        return
+    fh.issues.append(make_issue(
+        "LOUDNESS_OFF_TARGET", path=p, artist=tags.artist, title=tags.title,
+        message=f"Integrierte Lautheit {lufs:.1f} LUFS "
+                f"({delta:+.1f} dB gegen Ziel {LOUDNESS_TARGET_LUFS:.0f})",
+        details={
+            "integrated_lufs": round(lufs, 2),
+            "target_lufs": LOUDNESS_TARGET_LUFS,
+            "delta_db": round(delta, 2),
+            "true_peak": round(loudness.true_peak, 2) if loudness.true_peak is not None else None,
+        },
+    ))
 
 
 def _analyze_loudness(fh: FileHealth, tags: TagData, p: str) -> AnalysisState:

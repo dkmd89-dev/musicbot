@@ -33,7 +33,11 @@ from .group_analysis import analyze_groups
 from .models import AnalysisState, FileHealth
 from .report import build_report_dict
 from .scoring import build_health_section
-from .tag_reader import ArtworkData, StreamData, TagData, probe_stream, read_artwork, read_tags
+from .tag_reader import (
+    ArtworkData, LoudnessData, StreamData, TagData,
+    measure_loudness as _measure_loudness,
+    probe_stream, read_artwork, read_tags,
+)
 
 
 def _build_genre_validator(
@@ -108,10 +112,13 @@ def _hash_size_collisions(file_healths: list[FileHealth]) -> dict[str, str]:
     return hashes
 
 
-def _read_all(path: Path) -> tuple[TagData, StreamData, ArtworkData]:
-    """Alle drei read-only Lesevorgaenge fuer eine Datei — jeder faengt
-    seine eigenen Fehler ab und liefert einen NOT_ANALYZABLE-Container,
-    nie eine Exception (Prompt Abschnitt 34)."""
+def _read_all(
+    path: Path, *, with_loudness: bool = False
+) -> tuple[TagData, StreamData, ArtworkData, Optional[LoudnessData]]:
+    """Alle read-only Lesevorgaenge fuer eine Datei — jeder faengt seine
+    eigenen Fehler ab und liefert einen NOT_ANALYZABLE-Container, nie eine
+    Exception (Prompt Abschnitt 34). Die LUFS-Messung ist teuer (voller
+    Decode) und laeuft nur bei with_loudness=True."""
     try:
         tags = read_tags(path)
     except Exception as e:  # noqa: BLE001
@@ -124,7 +131,13 @@ def _read_all(path: Path) -> tuple[TagData, StreamData, ArtworkData]:
         artwork = read_artwork(path)
     except Exception as e:  # noqa: BLE001
         artwork = ArtworkData(state=AnalysisState.NOT_ANALYZABLE, error=repr(e))
-    return tags, stream, artwork
+    loudness = None
+    if with_loudness:
+        try:
+            loudness = _measure_loudness(path)
+        except Exception as e:  # noqa: BLE001
+            loudness = LoudnessData(state=AnalysisState.NOT_ANALYZABLE, error=repr(e))
+    return tags, stream, artwork, loudness
 
 
 def run_scan(
@@ -133,6 +146,7 @@ def run_scan(
     supported_extensions: tuple[str, ...] = DEFAULT_SUPPORTED_EXTENSIONS,
     expected_extension: Optional[str] = None,
     genre_mapping_dir: Optional[str | Path] = None,
+    measure_loudness: bool = False,
     logger=None,
     verbose: bool = False,
 ) -> dict:
@@ -141,7 +155,8 @@ def run_scan(
     t0 = time.monotonic()
 
     if logger:
-        logger.info(f"SCAN START: {root}")
+        logger.info(f"SCAN START: {root}"
+                    + ("  (+ LUFS-Messung, langsam)" if measure_loudness else ""))
 
     records = discover_files(root, supported_extensions)
     if logger:
@@ -152,11 +167,14 @@ def run_scan(
 
     file_healths: list[FileHealth] = []
     for idx, record in enumerate(records, start=1):
-        tags, stream, artwork = _read_all(record.absolute_path)
+        tags, stream, artwork, loudness = _read_all(
+            record.absolute_path, with_loudness=measure_loudness
+        )
         fh = analyze_file(
             record, tags, stream, artwork,
             genre_validator=genre_validator,
             title_cleaner=title_cleaner,
+            loudness=loudness,
             expected_extension=expected_extension,
         )
         file_healths.append(fh)

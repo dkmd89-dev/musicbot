@@ -13,7 +13,7 @@ import pytest
 from services.library_health.discovery import build_file_record
 from services.library_health.file_analysis import analyze_file
 from services.library_health.models import AnalysisState, Severity
-from services.library_health.tag_reader import ArtworkData, StreamData, TagData
+from services.library_health.tag_reader import ArtworkData, LoudnessData, StreamData, TagData
 
 
 def _record(tmp_path, rel="Artist/Singles/2021 - Song.m4a"):
@@ -169,6 +169,40 @@ def test_title_not_clean_skipped_for_missing_title(tmp_path):
     fh = analyze_file(_record(tmp_path), _healthy_tags(title=None),
                       _ok_stream(), _ok_artwork(), title_cleaner=_fake_cleaner)
     assert "META_TITLE_NOT_CLEAN" not in _codes(fh)
+
+
+# ── Loudness-Messung (LOUDNESS_OFF_TARGET, nur bei --measure-loudness) ───
+
+def _lufs(v):
+    return LoudnessData(state=AnalysisState.PRESENT, integrated_lufs=v, true_peak=-1.2)
+
+
+def test_loudness_off_target_flagged_when_measured(tmp_path):
+    fh = analyze_file(_record(tmp_path), _healthy_tags(), _ok_stream(), _ok_artwork(),
+                      loudness=_lufs(-9.4))
+    assert "LOUDNESS_OFF_TARGET" in _codes(fh)
+    assert _sev(fh, "LOUDNESS_OFF_TARGET") == Severity.INFO
+    d = next(i for i in fh.issues if i.code == "LOUDNESS_OFF_TARGET").details
+    assert d["integrated_lufs"] == -9.4 and d["delta_db"] == 6.6
+    assert fh.integrated_lufs == -9.4
+
+
+def test_loudness_on_target_not_flagged(tmp_path):
+    fh = analyze_file(_record(tmp_path), _healthy_tags(), _ok_stream(), _ok_artwork(),
+                      loudness=_lufs(-16.8))
+    assert "LOUDNESS_OFF_TARGET" not in _codes(fh)
+
+
+def test_loudness_not_flagged_without_measurement(tmp_path):
+    fh = analyze_file(_record(tmp_path), _healthy_tags(), _ok_stream(), _ok_artwork())
+    assert "LOUDNESS_OFF_TARGET" not in _codes(fh)
+    assert fh.integrated_lufs is None
+
+
+def test_loudness_measurement_failed_not_flagged(tmp_path):
+    fh = analyze_file(_record(tmp_path), _healthy_tags(), _ok_stream(), _ok_artwork(),
+                      loudness=LoudnessData(state=AnalysisState.NOT_ANALYZABLE, error="boom"))
+    assert "LOUDNESS_OFF_TARGET" not in _codes(fh)
 
 
 # ── Multi-Artist ────────────────────────────────────────────────────────
