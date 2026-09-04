@@ -34,7 +34,7 @@ Verification-Scan; alle bereits gegen die Produktions-Library gelaufen.
 | **`ALBUM_COVER_INCONSISTENT`** (offline, best-existing) | ✅ | 198 SUCCESS, `19→0`, Health 97.9→98.0 |
 | **Level 3 — MusicBrainz-IDs / ISRC** | ✅ | DRY-RUN 01099: 6 Nachträge; Prod-Lauf: 0 sichere Treffer (MB-Abdeckung für Deutschrap/2Pac-Bootlegs gering) |
 | **Level 2 — volle Neuverarbeitung** (`track_reprocessor.process_file`) | ✅ | makko 19/19 SUCCESS (`META_TITLE_NOT_CLEAN 19→0`); Cover-Nebeneffekt via Album-Cover-Executor 4/4 |
-| **Loudness** (`apply_replaygain`, verlustfreier RG-Tag) | ✅ Code + Tests | — (Prod-Lauf offen; 99/388 off-target) |
+| **Loudness** (`apply_replaygain`, verlustfreier RG-Tag) | ✅ | 133/133 SUCCESS (99 SET + 34 CLEAR), `LOUDNESS_OFF_TARGET 133→0`, Health 98.0 |
 | Duplicate | ⏳ offen (`--allow-delete` abgelehnt) | — |
 
 ---
