@@ -123,6 +123,54 @@ def test_current_genre_separator_is_accepted(tmp_path):
     assert "GENRE_DELIMITER_INCONSISTENT" not in _codes(fh)
 
 
+# ── Titel-Sauberkeit (META_TITLE_NOT_CLEAN) ─────────────────────────────
+
+# Der Scanner injiziert im Produktivbetrieb utils.title_cleanup.light_title_cleanup;
+# hier wird ein leichtgewichtiger Stub genutzt, damit der Unit-Test rein bleibt.
+def _fake_cleaner(title, artist):
+    t = title.strip().strip('"')
+    if artist and t.lower().startswith(artist.lower() + " - "):
+        t = t[len(artist) + 3:]
+    return t
+
+
+def test_title_not_clean_when_cleaner_changes_title(tmp_path):
+    fh = analyze_file(_record(tmp_path), _healthy_tags(title='"Ausreden"'),
+                      _ok_stream(), _ok_artwork(), title_cleaner=_fake_cleaner)
+    assert "META_TITLE_NOT_CLEAN" in _codes(fh)
+    assert _sev(fh, "META_TITLE_NOT_CLEAN") == Severity.WARNING
+    issue = next(i for i in fh.issues if i.code == "META_TITLE_NOT_CLEAN")
+    assert issue.details == {"raw": '"Ausreden"', "cleaned": "Ausreden"}
+
+
+def test_title_clean_title_is_not_flagged(tmp_path):
+    fh = analyze_file(_record(tmp_path), _healthy_tags(title="Ausreden"),
+                      _ok_stream(), _ok_artwork(), title_cleaner=_fake_cleaner)
+    assert "META_TITLE_NOT_CLEAN" not in _codes(fh)
+
+
+def test_title_not_clean_skipped_without_injected_cleaner(tmp_path):
+    # Kein title_cleaner -> Check ist komplett inaktiv (kein Default-Import).
+    fh = analyze_file(_record(tmp_path), _healthy_tags(title='"Ausreden"'),
+                      _ok_stream(), _ok_artwork())
+    assert "META_TITLE_NOT_CLEAN" not in _codes(fh)
+
+
+def test_title_not_clean_cleaner_exception_does_not_crash(tmp_path):
+    def _boom(title, artist):
+        raise RuntimeError("cleaner kaputt")
+
+    fh = analyze_file(_record(tmp_path), _healthy_tags(title='"x"'),
+                      _ok_stream(), _ok_artwork(), title_cleaner=_boom)
+    assert "META_TITLE_NOT_CLEAN" not in _codes(fh)
+
+
+def test_title_not_clean_skipped_for_missing_title(tmp_path):
+    fh = analyze_file(_record(tmp_path), _healthy_tags(title=None),
+                      _ok_stream(), _ok_artwork(), title_cleaner=_fake_cleaner)
+    assert "META_TITLE_NOT_CLEAN" not in _codes(fh)
+
+
 # ── Multi-Artist ────────────────────────────────────────────────────────
 
 def test_semicolon_in_single_artist_value_is_suspicious(tmp_path):

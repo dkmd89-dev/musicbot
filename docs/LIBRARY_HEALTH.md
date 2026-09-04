@@ -166,6 +166,21 @@ zusätzlich auf `INFO` herabgestuft:**
 - `ARTWORK_NON_SQUARE`: 5 %-Toleranz auf `|w−h| / max(w,h)` (1416×1407 = 0,6 %
   ist praktisch quadratisch; echte Fälle: 602×542 = 10 %, 16:9-Stills = 44 %).
 
+**`META_TITLE_NOT_CLEAN` → `WARNING`** (bewusst **nicht** `INFO` wie
+`GENRE_INVALID`): der Titel-Tag enthält Reste, die die reale Download-Pipeline
+entfernt hätte — umschließende Anführungszeichen (`"Ausreden"`), Produzenten-
+Credit (`"ADLIBS" prod. Safecall777`), hängende Klammer (`… (Dir.`),
+Marketing-Suffix (`… (Official Video)`), Artist-Präfix. Anders als ein
+nicht-konventionelles Genre ist das **falsche Daten im Tag**, nicht nur
+Nicht-Konformität: es zeigt sich im Player, im Dateinamen und blockiert die
+externe MusicBrainz-Zuordnung (`META_MB_*`). Erkannt **read-only** über
+dieselbe Funktion, die die Pipeline nutzt (`utils/title_cleanup.py::
+light_title_cleanup`, ausgelagert aus `TitleCleaner`, damit der Scanner
+`services/metadata/` nicht in den Import-Graph zieht) — weicht das Ergebnis
+vom Ist-Titel ab, ist der Ist-Titel „nicht sauber". Verlustfrei per L2
+(`METADATA_REPROCESSING`) behebbar. Realer Bestand 2026-09-04: 19 Fälle
+(alle echt), Score-Effekt 98,0 → 97,8 — proportional, nicht dominierend.
+
 ---
 
 ## 5. Issue-Codes
@@ -179,7 +194,7 @@ erzeugte Code registriert ist und kein registrierter Code tot ist.
 Health-Score **nicht** (PR 3).
 
 **Datei-Ebene:** `META_NOT_ANALYZABLE`, `META_ARTIST_MISSING`,
-`META_TITLE_MISSING`, `META_ALBUM_MISSING`, `META_ALBUM_ARTIST_MISSING`,
+`META_TITLE_MISSING`, `META_TITLE_NOT_CLEAN`, `META_ALBUM_MISSING`, `META_ALBUM_ARTIST_MISSING`,
 `META_YEAR_MISSING`, `META_YEAR_INVALID`, `META_GENRE_MISSING`,
 `META_TRACK_NUMBER_MISSING`, `META_MB_RECORDING_MISSING`,
 `META_MB_RELEASE_MISSING`, `META_ISRC_MISSING`, `ARTWORK_MISSING`,

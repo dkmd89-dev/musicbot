@@ -59,6 +59,11 @@ _SPECS: tuple[RepairSpec, ...] = (
     _spec("META_TITLE_MISSING", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
           "reprocess_artist_metadata.py", external=True,
           change="Titel-Tag aus Pipeline neu bestimmen"),
+    _spec("META_TITLE_NOT_CLEAN", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
+          "reprocess_artist_metadata.py", external=True,
+          change="Titel-Tag ueber die reale Pipeline bereinigen "
+                 "(Anfuehrungszeichen/prod.-Credit/Marketing-Suffix entfernen; "
+                 "Before/After-Diff, Audio unveraendert)"),
     _spec("META_ALBUM_MISSING", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
           "reprocess_artist_metadata.py", external=True,
           change="Album-Tag aus Pipeline neu bestimmen"),
