@@ -205,6 +205,25 @@ def test_loudness_measurement_failed_not_flagged(tmp_path):
     assert "LOUDNESS_OFF_TARGET" not in _codes(fh)
 
 
+def test_loudness_not_flagged_when_replaygain_tag_compensates(tmp_path):
+    # -9.4 LUFS, aber replaygain_track_gain -7.0 dB -> effektiv -16.4 -> ok
+    tags = _healthy_tags()
+    tags.replaygain = {"replaygain_track_gain": "-7.00 dB"}
+    fh = analyze_file(_record(tmp_path), tags, _ok_stream(), _ok_artwork(),
+                      loudness=_lufs(-9.4))
+    assert "LOUDNESS_OFF_TARGET" not in _codes(fh)
+
+
+def test_loudness_still_flagged_when_replaygain_tag_insufficient(tmp_path):
+    tags = _healthy_tags()
+    tags.replaygain = {"replaygain_track_gain": "-2.00 dB"}   # -9.4 -2 = -11.4 -> immer noch daneben
+    fh = analyze_file(_record(tmp_path), tags, _ok_stream(), _ok_artwork(),
+                      loudness=_lufs(-9.4))
+    i = next(x for x in fh.issues if x.code == "LOUDNESS_OFF_TARGET")
+    assert i.details["replaygain_track_gain_db"] == -2.0
+    assert i.details["effective_lufs"] == -11.4
+
+
 # ── Multi-Artist ────────────────────────────────────────────────────────
 
 def test_semicolon_in_single_artist_value_is_suspicious(tmp_path):

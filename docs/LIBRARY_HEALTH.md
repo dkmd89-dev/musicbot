@@ -151,12 +151,16 @@ Fehlende **optionale** Felder sind `INFO`, kein Qualitätsmangel:
   keinen ReplayGain-Tag — sie normalisiert die Lautheit vor dem Taggen per
   FFmpeg-loudnorm ohne Nachweis-Tag).
 - `LOUDNESS_OFF_TARGET` → **INFO** (**nur bei `--measure-loudness`**). Die
-  gemessene integrierte Lautheit weicht > 2 dB von −16 LUFS ab. Ein echter
-  Playback-Defekt (Track springt beim Shuffle in der Lautstärke), aber der
-  Fix ist **verlustbehaftet** (AAC-Neucodierung) → wie `AUDIO_VERY_SHORT`
-  Beobachtung, keine automatische Aktion. Realer Bestand 2026-09-04:
-  99/388 (26 %) betroffen, 97 zu laut (Median +5,2 dB, bis +7,9 dB; einige
-  mit True Peak > 0 dBFS = clippend), praktisch der gesamte makko-Katalog.
+  gemessene integrierte Lautheit weicht — **auch nach Anwendung eines evtl.
+  vorhandenen `replaygain_track_gain`** — > 2 dB von −16 LUFS ab. Setzt
+  damit einen ReplayGain-fähigen Player voraus (Navidrome). Ein echter
+  Playback-Defekt (Track springt beim Shuffle in der Lautstärke); der Fix
+  (`--level LOUDNESS`) schreibt **verlustfrei** einen RG-Tag → wie
+  `LOUDNESS_TAG_MISSING` Beobachtung, INFO. `details.effective_lufs` /
+  `replaygain_track_gain_db`, wenn ein Tag vorhanden ist. Realer Bestand
+  2026-09-04: 99/388 (26 %) betroffen, 97 zu laut (Median +5,2 dB, bis
+  +7,9 dB; einige mit True Peak > 0 dBFS = clippend), praktisch der gesamte
+  makko-Katalog + Levin Liam + 2Pac.
 - `META_MB_*_MISSING`, `META_ISRC_MISSING`, `LYRICS_MISSING` → **INFO**.
 - `META_TRACK_NUMBER_MISSING` → **INFO** bei einer Single, **WARNING** nur im
   Album-Kontext.

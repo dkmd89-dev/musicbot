@@ -34,7 +34,7 @@ Verification-Scan; alle bereits gegen die Produktions-Library gelaufen.
 | **`ALBUM_COVER_INCONSISTENT`** (offline, best-existing) | ✅ | 198 SUCCESS, `19→0`, Health 97.9→98.0 |
 | **Level 3 — MusicBrainz-IDs / ISRC** | ✅ | DRY-RUN 01099: 6 Nachträge; Prod-Lauf: 0 sichere Treffer (MB-Abdeckung für Deutschrap/2Pac-Bootlegs gering) |
 | **Level 2 — volle Neuverarbeitung** (`track_reprocessor.process_file`) | ✅ | makko 19/19 SUCCESS (`META_TITLE_NOT_CLEAN 19→0`); Cover-Nebeneffekt via Album-Cover-Executor 4/4 |
-| **Loudness** (`apply_loudness`, verlustbehaftetes Re-Encode + Tag-Restore) | ✅ Code + Tests | — (Prod-Lauf offen; 99/388 Dateien off-target) |
+| **Loudness** (`apply_replaygain`, verlustfreier RG-Tag) | ✅ Code + Tests | — (Prod-Lauf offen; 99/388 off-target) |
 | Duplicate | ⏳ offen (`--allow-delete` abgelehnt) | — |
 
 ---
@@ -105,7 +105,7 @@ später ausführt.
 | `METADATA_REPROCESSING` | volle Neuverarbeitung über die echte Pipeline | `services/metadata/track_reprocessor.py::process_file` (in-process, echte config.Config) | ja | ja | nein |
 | `EXTERNAL_METADATA` | fehlende MB-IDs / ISRC / Jahr / Genre | `MusicBrainzClient` / `GenreProcessor` | ja | ja | nein |
 | `COVER` | fehlendes / schlechtes / uneinheitliches Cover | `CoverProcessor` | ja | ja | nein |
-| `LOUDNESS` | gemessene Lautheit > 2 dB neben −16 LUFS (`LOUDNESS_OFF_TARGET`) | `AudioEnhancer.normalize_loudness` + voller Tag-/Cover-Restore | ja | ja | **ja (AAC-Re-Encode)** |
+| `LOUDNESS` | gemessene Lautheit > 2 dB neben −16 LUFS (`LOUDNESS_OFF_TARGET`) | `replaygain_repairs` — verlustfreier `replaygain_track_gain`-Tag | ja | ja | nein (Audio byte-identisch) |
 | `DUPLICATE` | echte Duplikate | `scripts/resolve_duplicates.py` + `services/duplicate/*` | ja | nein | **ja** |
 | `MANUAL_REVIEW` | kein sicherer automatischer Pfad | — | — | — | — |
 | `NOT_REPAIRABLE` | legitime Beobachtung, nichts zu tun | — | — | — | — |
@@ -142,9 +142,9 @@ Health-Issue-Code genau ein Mapping hat und kein Mapping veraltet ist.
 | `META_GENRE_MISSING` / `GENRE_EMPTY` | EXTERNAL_METADATA | GenreProcessor-Fallback-Kette |
 | `ALBUM_RELEASE_ID_INCONSISTENT` | EXTERNAL_METADATA | alle Tracks auf DIE Release-ID mappen |
 | `ARTWORK_MISSING` / `_INVALID` / `_LOW_RESOLUTION` / `_NON_SQUARE` / `ALBUM_COVER_INCONSISTENT` | COVER | `CoverProcessor` — nur ersetzen bei eindeutig besserem Cover |
-| `LOUDNESS_OFF_TARGET` | LOUDNESS | Audio auf −16 LUFS neu codieren (verlustbehaftet), Tags/Cover before==after, Backup + Rollback |
+| `LOUDNESS_OFF_TARGET` | LOUDNESS | `replaygain_track_gain`-/`_peak`-Tag schreiben (Ziel −16 LUFS, **Audio byte-identisch**), Backup + Rollback |
 | `LOUDNESS_TAG_MISSING` | NOT_REPAIRABLE | Legacy-ReplayGain-Tag; aktuelle Pipeline schreibt ihn bewusst nicht |
-| `LOUDNESS_TAG_INVALID` / `_PARTIAL` | MANUAL_REVIEW | kaputter/unvollständiger Legacy-Tag — kein Grund für ein Re-Encode |
+| `LOUDNESS_TAG_INVALID` / `_PARTIAL` | MANUAL_REVIEW | kaputter/unvollständiger Legacy-Tag — manuell prüfen |
 | `DUPLICATE_EXACT` / `DUPLICATE_RECORDING` | DUPLICATE | `resolve_duplicates.py` — nur mit `--allow-delete` + Freigabe |
 
 ---
@@ -286,44 +286,50 @@ mit `/` im Titel → unresolved), 7 Dateien MB-IDs ergänzt, 1× Lyrics,
 Anschließend `ALBUM_COVER_INCONSISTENT` (Cover-Nebeneffekt, s. o.) mit dem
 Album-Cover-Executor behoben: 4/4 SUCCESS, `2→0`, Verification grün.
 
-## 6b. Loudness-Executor — verlustbehaftetes Re-Encode (implementiert)
+## 6b. Loudness-Executor — verlustfreier ReplayGain-Tag (implementiert)
 
-`--level LOUDNESS` bzw. `--issue LOUDNESS_OFF_TARGET` (extern, langsam,
-**verlustbehaftet** — nie im Default-`--apply`): `apply_loudness(normalize_fn, measure_fn)`.
+`--level LOUDNESS` bzw. `--issue LOUDNESS_OFF_TARGET` (nie im
+Default-`--apply`): `apply_replaygain(measure_fn)`.
 
 Setzt `LOUDNESS_OFF_TARGET` aus dem Health-Report voraus, d. h. der Report
 muss mit `library_health_check.py --measure-loudness` erzeugt worden sein.
 
-**Warum ein eigener Executor statt `scripts/normalize_test_library_loudness.py`:**
-Das Test-Script bleibt test-only (`ALLOWED_ROOT=/tmp/musicbot_test/library`).
-`apply_loudness` nutzt dieselbe produktive Re-Encode-Funktion
-(`utils/audio_enhancer.py::AudioEnhancer.normalize_loudness`, −16 LUFS) und
-dieselbe read-only LUFS-Messung wie der Scanner
-(`tag_reader.measure_loudness`), aber mit dem `library_repair`-Sicherheitsmodell.
+**Nutzer-Entscheidung 2026-09-04: kein Re-Encode.** Die Download-Pipeline
+normalisiert frische Downloads bereits per FFmpeg-loudnorm (Schritt 15b,
+`enhanced_metadata_processor.py`) und läuft konstant. Für den Altbestand
+reicht ein **verlustfreier** ReplayGain-Tag — ein RG-fähiger Player
+(Navidrome) bringt die Datei damit auf die Ziel-Lautheit, das Audio bleibt
+**byte-identisch**. Der vollständige Re-Encode-Executor wurde bewusst nicht
+gebaut; `scripts/normalize_test_library_loudness.py` bleibt test-only.
 
-- **Loudness ist die EINZIGE Reparatur, die den Audio-Stream neu kodiert**
-  (AAC 192k). `journal`-Eintrag hält das ausdrücklich fest
-  (`audio_sha256_before = "n/a (Loudness-Re-Encode …)"`).
-- `AudioEnhancer.normalize_loudness()` setzt **kein `-map_metadata 0`** und
-  verliert dokumentiert Freeform-Atome (`----:…:GENRE`, teils MB-IDs, Cover-
-  Randfälle). Deshalb: **vor** dem Re-Encode werden **alle** MP4-Atome
-  (`_snapshot_all_atoms`) + `read_tags`/`read_artwork` gesichert, **nach**
-  dem Re-Encode vollständig zurückgeschrieben (`_restore_all_atoms`) und
-  verifiziert (`_verify_tag_parity` über Kernfelder + MB-IDs + Genre,
-  Cover-SHA before==after). Die Metadaten sind damit **unabhängig** vom
-  FFmpeg-Verhalten before==after.
-- Weitere Verifikation: Datei nach dem Re-Encode dekodierbar
-  (`ffmpeg -f md5`), neue LUFS-Messung innerhalb ±1,5 dB vom Ziel,
-  Laufzeit-Abweichung ≤ 1 s. Jede Abweichung / `normalize_fn` liefert `False`
-  / SHA unverändert (kein Re-Encode passiert) → **Rollback aus dem Backup**.
-- Per-Datei-Backup außerhalb der Library; Verification-Scan läuft danach
-  **mit** `--measure-loudness` (bestätigt, dass `LOUDNESS_OFF_TARGET` sinkt).
-- DRY-RUN: nur Messung + Entscheidung, kein Re-Encode.
+- **`replaygain_repairs.compute_replaygain()`** (rein) → zwei Atome:
+  - `----:com.apple.iTunes:replaygain_track_gain` = `"{−16 − gemessen:.2f} dB"`
+  - `----:com.apple.iTunes:replaygain_track_peak` = linearer Peak aus dem
+    True Peak (`10^(dBTP/20)`)
+  - `None`, wenn keine Messung vorliegt oder die Datei bereits ≤ 2 dB neben
+    −16 LUFS liegt.
+- **Referenz = −16 LUFS**, NICHT die RG-2.0-Norm −18: so klingen die
+  getaggten Altbestände in Navidrome genauso laut wie die frisch
+  heruntergeladenen (ungetaggten) Dateien, die Navidrome auf Dateilautstärke
+  (−16) spielt. Im Code + `_analyze_loudness_measurement` begründet.
+- Sicherheitsmodell wie L1: `safety_check`, Backup außerhalb der Library,
+  Schreiben auf temp-Sibling → Verifikation (Ziel-Atome gesetzt **und**
+  Audio-Essenz-MD5 byte-identisch) → atomarer `replace`, Rollback bei Fehler,
+  Journal. Verification-Scan läuft danach **mit** `--measure-loudness`.
+- Der Health-Check `LOUDNESS_OFF_TARGET` berücksichtigt einen vorhandenen
+  RG-Tag (`effective = gemessen + gain`) → nach `apply_replaygain` sinkt der
+  Code sauber, Verification-Scan bleibt grün.
+- DRY-RUN: nur Messung + berechneter Gain, kein Schreibvorgang.
 
 **Realer Bestand 2026-09-04 (`--measure-loudness`):** 99/388 Dateien (26 %)
 off-target, 97 zu laut (Median +5,2 dB, bis +7,9 dB; einige clippend mit
 True Peak > 0 dBFS), fast ausschließlich der makko-Katalog (89) + Levin Liam
 (8) + 2Pac (2). Produktionslauf ist ein eigener Freigabe-Schritt.
+
+> **Folge-Analyse (nach dieser Phase):** `enhanced_metadata_processor.py`
+> Schritt 15b — prüfen, ob die Loudness-Normalisierung der Download-Pipeline
+> tatsächlich auf −16 LUFS schreibt (LUFS-Einstellungen /
+> `AudioEnhancer.get_target_lufs`).
 
 ## 7. Level-3 — MusicBrainz-IDs / ISRC nachtragen (implementiert)
 

@@ -25,9 +25,10 @@ nichts und ruft keinen externen Dienst. Der Health-Scan selbst
     --level METADATA_REPROCESSING   zusaetzlich L2 volle Neuverarbeitung
                           ueber die echte Pipeline (extern, langsam,
                           aktualisiert Auto-Learn-Mappings)
-    --level LOUDNESS      zusaetzlich Loudness-Executor — verlustbehaftetes
-                          AAC-Re-Encode auf -16 LUFS (Tags/Cover before==after),
-                          setzt einen `--measure-loudness`-Report voraus
+    --level LOUDNESS      zusaetzlich Loudness-Executor — schreibt einen
+                          verlustfreien replaygain_track_gain-Tag (Ziel -16
+                          LUFS, Audio byte-identisch), setzt einen
+                          `--measure-loudness`-Report voraus
     --allow-delete        wird mit klarer Meldung abgelehnt (Exit 2)
 
 Cover / L3 / L2 / Loudness laufen NIE im Default-`--apply`, nur auf
@@ -153,7 +154,7 @@ def main(argv=None) -> int:
         ALBUM_COVER_CODES, COVER_ISSUE_CODES, EXTERNAL_MB_CODES,
         L1_RENAME_CODES, L1_TAG_CODES, L2_CODES, LOUDNESS_ISSUE_CODES,
         apply_album_cover_unify, apply_cover_repairs, apply_external_metadata,
-        apply_level1, apply_level1_rename, apply_level2, apply_loudness,
+        apply_level1, apply_level1_rename, apply_level2, apply_replaygain,
     )
     from services.library_repair.journal import RepairJournal
 
@@ -183,7 +184,8 @@ def main(argv=None) -> int:
     l2_requested = _lvl == "METADATA_REPROCESSING" or args.issue_code in L2_CODES
     l2_cands = [c for c in plan.candidates if c.issue_code in L2_CODES] \
         if l2_requested else []
-    # Loudness: verlustbehaftetes AAC-Re-Encode -> nur auf ausdrueckliche Anforderung
+    # Loudness: verlustfreier RG-Tag -> nur auf ausdrueckliche Anforderung
+    # (setzt einen --measure-loudness-Report voraus)
     loudness_requested = _lvl == "LOUDNESS" or args.issue_code in LOUDNESS_ISSUE_CODES
     loudness_cands = [c for c in plan.candidates if c.issue_code in LOUDNESS_ISSUE_CODES] \
         if loudness_requested else []
@@ -204,10 +206,10 @@ def main(argv=None) -> int:
               "Auto-Learn-Mappings (mapping/auto_learned_*) mit den beobachteten "
               "Feature-Artists/Genres der Tracks — wie bei einem frischen Download.")
     if loudness_cands and not execute_dry:
-        print("⚠️  LOUDNESS EXECUTE: verlustbehaftetes AAC-Re-Encode (die einzige "
-              "Reparatur, die den Audio-Stream neu kodiert). Tags + Cover werden "
-              "vor/nach dem Re-Encode gesichert und vollstaendig wiederhergestellt, "
-              "Per-Datei-Backup + Rollback bei jeder Abweichung.")
+        print("ℹ️  LOUDNESS EXECUTE: schreibt einen verlustfreien "
+              "replaygain_track_gain-/_peak-Tag (Ziel -16 LUFS) — Audio "
+              "byte-identisch. Wirksam nur in ReplayGain-fähigen Playern "
+              "(Navidrome). Per-Datei-Backup + Rollback.")
 
     outcomes = apply_level1(l1_tags, library_root, journal, dry_run=execute_dry,
                             backup_dir=backup_dir)
@@ -234,9 +236,8 @@ def main(argv=None) -> int:
             dry_run=execute_dry, backup_dir=backup_dir,
         )
     if loudness_cands:
-        _norm, _meas = _build_loudness_fns(logger)
-        outcomes += apply_loudness(
-            loudness_cands, library_root, journal, _norm, _meas,
+        outcomes += apply_replaygain(
+            loudness_cands, library_root, journal, _build_lufs_measure(),
             dry_run=execute_dry, backup_dir=backup_dir,
         )
     journal.flush()
@@ -342,23 +343,17 @@ def _build_reprocess(config, logger):
     return _reprocess
 
 
-def _build_loudness_fns(logger):
-    """(normalize_fn, measure_fn) fuer apply_loudness. normalize_fn wraps den
-    produktiv genutzten AudioEnhancer.normalize_loudness() (verlustbehaftetes
-    Re-Encode), measure_fn die read-only LUFS-Analyse des Health-Scanners."""
+def _build_lufs_measure():
+    """measure_fn (path -> (integrierte Lautheit | None, true_peak dBTP | None))
+    fuer apply_replaygain — EINE read-only FFmpeg-loudnorm-Analyse wie der
+    Health-Scanner, LUFS + True Peak in einem Durchlauf."""
     from services.library_health.tag_reader import measure_loudness
-    from utils.audio_enhancer import AudioEnhancer
-
-    target = AudioEnhancer.get_target_lufs("music")
-
-    def _normalize(path) -> bool:
-        return AudioEnhancer.normalize_loudness(str(path), target_lufs=target)
 
     def _measure(path):
         ld = measure_loudness(path)
-        return ld.integrated_lufs
+        return ld.integrated_lufs, ld.true_peak
 
-    return _normalize, _measure
+    return _measure
 
 
 def _verification_scan(before_report, library_root, config, logger, touched_codes,
