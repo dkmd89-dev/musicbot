@@ -1,3 +1,17 @@
 {
-  "featured_artists": {}
+  "featured_artists": {
+    "Beslik Meister": {
+      "canonical": "Beslik Meister",
+      "last_observed_track": "makko - ADLIBS",
+      "observations": 1,
+      "primary_artists": [
+        "makko"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    }
+  }
 }
