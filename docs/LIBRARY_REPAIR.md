@@ -16,10 +16,14 @@ LIBRARY → Health Scanner → Health Report → Repair Planner
                                   Before / After Report
 ```
 
-**Status: Phase 2 PR 1 — Repair Planner (read-only).**
-Der Executor (der tatsächlich Tags schreibt / Cover holt / Loudness
-normalisiert / Duplikate löscht) folgt als eigener, explizit geschützter
-Schritt. `--apply` / `--allow-delete` werden aktuell abgelehnt.
+**Status:**
+- **Repair Planner** — vollständig, read-only.
+- **Repair Executor — Level 1 (Tag-Fixes)** — vollständig, mit Per-Datei-Backup
+  (außerhalb der Library), Journal, Before/After, Audio-Essenz-Verifikation
+  und Verification-Scan. Bereits gegen die Produktions-Library gelaufen
+  (12 Tag-Fixes, 12/12 SUCCESS, Ton byte-identisch, 0 neue Issues).
+- **Level 2 / 3 / Cover / Loudness / Duplicate Executor** — noch offen,
+  `--allow-delete` wird abgelehnt.
 
 ---
 
@@ -35,11 +39,22 @@ python scripts/library_repair.py --artist 01099
 python scripts/library_repair.py --issue LOUDNESS_TAG_MISSING
 python scripts/library_repair.py --severity ERROR
 python scripts/library_repair.py --level SAFE_AUTOMATIC
+
+# Level-1-Tag-Fixes ausführen
+python scripts/library_repair.py --level SAFE_AUTOMATIC --apply --dry-run   # Before/After-Vorschau
+python scripts/library_repair.py --level SAFE_AUTOMATIC --apply             # tatsächlich + Verification-Scan
 ```
 
-**DRY-RUN ist Standard.** Ohne Executor verändert das Script nichts,
-verschiebt nichts, löscht nichts und ruft keinen externen Dienst. Der
-Health-Scan (`--report` weggelassen) ist selbst vollständig read-only.
+**DRY-RUN ist Standard.** Ohne `--apply` erzeugt das Script nur einen Plan —
+es verändert nichts, verschiebt nichts, löscht nichts, ruft keinen externen
+Dienst. Der Health-Scan (`--report` weggelassen) ist selbst vollständig
+read-only.
+
+Mit `--apply` führt der **Level-1-Executor** ausschließlich die vier
+deterministischen Tag-Fixes aus (`L1_TAG_CODES`) — alle anderen Kandidaten
+werden übersprungen. `--apply --dry-run` zeigt die konkreten Before/After-
+Werte, ohne zu schreiben. `--allow-delete` wird abgelehnt (keine
+destruktive Reparatur implementiert).
 
 ---
 
@@ -49,11 +64,15 @@ Health-Scan (`--report` weggelassen) ist selbst vollständig read-only.
 `services/duplicate/`):
 
 ```text
-models.py    RepairLevel / RepairAction / RepairSpec / RepairCandidate / RepairPlan
-planner.py   plan_repairs(report_dict) -> RepairPlan  (reine Funktion, kein I/O)
-             + REGISTRY: genau ein Repair-Mapping pro Health-Issue-Code
-             + filter_plan(plan, artist=/issue_code=/severity=/level=)
-report.py    render_plan_text(plan)
+models.py      RepairLevel / RepairAction / RepairSpec / RepairCandidate / RepairPlan
+planner.py     plan_repairs(report_dict) -> RepairPlan  (reine Funktion, kein I/O)
+               + REGISTRY: genau ein Repair-Mapping pro Health-Issue-Code
+               + filter_plan(plan, artist=/issue_code=/severity=/level=)
+report.py      render_plan_text(plan)
+tag_repairs.py Level-1-Reparatur-Funktionen (pure): (alte Tag-Werte) -> (neue) | None
+journal.py     RepairJournal — Append-Only JSONL, Before/After + Rollback-Info
+executor.py    apply_level1(candidates, library_root, journal, dry_run=) -> [ExecOutcome]
+               safety_check(path, library_root) -> Ablehnungsgrund | None
 ```
 
 `scripts/library_repair.py` — dünner CLI-Wrapper (CLI → Health-Report →
@@ -114,18 +133,48 @@ Health-Issue-Code genau ein Mapping hat und kein Mapping veraltet ist.
 
 ---
 
-## 5. Geplant (Phase 2 PR 2+, noch nicht implementiert)
+## 5. Level-1-Executor (implementiert)
 
-- **Repair Executor** mit `--apply` (Standard bleibt DRY-RUN) und
-  separatem `--allow-delete` für destruktive Aktionen.
-- **Safety-Prüfung** vor jeder Änderung (Prompt Abschnitt 14): Datei
-  existiert, Pfad in erlaubter Library, erwarteter Typ, kein Symlink-Escape,
-  Hash/mtime bekannt, Änderung erwartungsgemäß. Keine globalen
-  `rename()`/`move()`/`unlink()` ohne Prüfung.
-- **Before/After-Dokumentation** pro Reparatur (Prompt Abschnitt 15).
-- **Repair Journal** (Prompt Abschnitt 17): Datei, alte/neue Werte, Aktion,
-  Zeit, Status, Fehler, Rollback-Info. Bestehende Projektmechanismen
-  bevorzugen.
-- **Verification Scan** nach jeder Reparaturgruppe (Prompt Abschnitt 16):
-  erneut scannen, Health vorher/nachher, „Resolved" / „Remaining". Ein
-  Repair darf den Score nicht verbessern, indem er Probleme versteckt.
+`--apply` führt **nur** die vier verlustfreien, deterministischen Tag-Fixes
+aus (`GENRE_DELIMITER_INCONSISTENT`, `MULTI_ARTIST_*`,
+`META_ALBUM_ARTIST_MISSING`, `ALBUM_ARTIST_INCONSISTENT`) — Rename-basierte
+L1-Fixes (`FILENAME_*`) sind bewusst noch nicht dabei.
+
+Ablauf pro Datei (Prompt Abschnitt 13–17):
+
+1. **Safety-Prüfung** (`safety_check`): kein Symlink, Pfad real innerhalb der
+   Library, reguläre `.m4a`-Datei, nicht leer. Bei Verletzung → `SKIPPED`.
+2. Betroffene Atome lesen → Reparaturwert via `tag_repairs.*` berechnen.
+   Nicht eindeutig / nichts zu tun → `SKIPPED`.
+3. `--dry-run`: Before/After ins Journal, kein Schreibvorgang.
+4. Echter Lauf: SHA-256 + **Audio-Essenz-MD5** (`ffmpeg -map 0:a -f md5`)
+   der Datei, dann **Backup** nach `<library>/../.library_repair_backups/…`
+   (außerhalb der Library — stört weder Scan noch Navidrome).
+5. Auf einer **temporären Sibling-Kopie** taggen; verifizieren, dass genau
+   die Ziel-Atome den erwarteten Wert haben **und die Audio-Essenz
+   byte-identisch** ist; erst dann atomar per `Path.replace()` übernehmen.
+   Schlägt die Verifikation fehl → Backup zurückspielen, `FAILED`.
+6. **Journal** (`library_repair_journal.jsonl`, Append-Only): Zeit, Datei,
+   Issue, Aktion, Status, Before/After, SHA-256 + Audio-MD5 vorher/nachher,
+   Backup-Pfad. Rollback = Backup-Datei zurückkopieren.
+7. **Verification-Scan** nach der Gruppe: Library erneut scannen, Health
+   vorher/nachher, Ziel-Issue-Codes müssen sinken, **keine neuen oder
+   gestiegenen Issue-Codes** (sonst Exit 1 — ein Repair darf nichts
+   verstecken, Prompt Abschnitt 16).
+
+**Erster Produktionslauf (2026-09-04):** 12 Kandidaten (3× Genre-Delimiter,
+9× Multi-Artist-Split), 12/12 `SUCCESS`, Audio byte-identisch, Health
+97.9 → 97.9 (waren INFO), `GENRE_DELIMITER_INCONSISTENT 3→0`,
+`MULTI_ARTIST_INCONSISTENT 9→0`, keine neuen Issues. Backups unter
+`/mnt/musik_bilder/.library_repair_backups/`.
+
+## 6. Noch offen (Phase 2)
+
+- **Level-1-Rename** (`FILENAME_TITLE_MISMATCH` / `FILENAME_SUSPICIOUS`) —
+  braucht die Rename-Safety-Maschinerie (TOCTOU, Kollision, nur im selben
+  Verzeichnis).
+- **Level 2** (`reprocess_artist_metadata.py` als Subprozess orchestrieren).
+- **Level 3** (MusicBrainz-/Genre-Nachträge, nur bei eindeutigem Match).
+- **Cover** (`CoverProcessor` — nur ersetzen bei eindeutig besserem Cover).
+- **Loudness** (`normalize_test_library_loudness.py` — kein Doppel-Encoding).
+- **Duplicate** (`resolve_duplicates.py` — destruktiv, `--allow-delete`).

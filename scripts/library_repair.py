@@ -77,24 +77,35 @@ def main(argv=None) -> int:
     parser.add_argument("--level", default=None,
                         help="Nur diese Reparaturstufe (z. B. SAFE_AUTOMATIC).")
     parser.add_argument("--verbose", action="store_true")
-    parser.add_argument("--apply", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--apply", action="store_true",
+        help="Level-1-Tag-Reparaturen tatsaechlich ausfuehren (mit Per-Datei-"
+             "Backup, Journal, Before/After, Verification-Scan). Ohne dieses "
+             "Flag: nur Plan (DRY-RUN).",
+    )
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Explizit nur Plan/Vorschau (Default-Verhalten).")
+    parser.add_argument("--backup-dir", default=None,
+                        help="Verzeichnis fuer Rollback-Kopien "
+                             "(Default: <library>/../.library_repair_backups, "
+                             "ausserhalb der Library).")
     parser.add_argument("--allow-delete", dest="allow_delete", action="store_true",
                         help=argparse.SUPPRESS)
 
     args = parser.parse_args(argv)
 
-    if args.apply or args.allow_delete:
+    if args.allow_delete:
         print(
-            "ERROR: der Repair Executor ist noch nicht implementiert.\n"
-            "Aktuell erzeugt dieses Script AUSSCHLIESSLICH einen Reparaturplan "
-            "(read-only). --apply/--allow-delete folgen als eigener, explizit "
-            "geschuetzter Phase-2-Schritt.",
+            "ERROR: --allow-delete existiert noch nicht. Destruktive "
+            "Reparaturen (Duplicate-Loeschung) sind noch nicht implementiert "
+            "und werden ein eigenes, separat geschuetztes Flag bekommen.",
             file=sys.stderr,
         )
         return 2
 
     config = Config()
     logger = get_module_logger("library_repair")
+    library_root = Path(args.library) if args.library else Path(config.LIBRARY_DIR)
 
     try:
         report = _load_or_scan_report(args, config, logger)
@@ -112,8 +123,7 @@ def main(argv=None) -> int:
             severity=args.severity, level=args.level,
         )
 
-    text = render_plan_text(plan)
-    print(text)
+    print(render_plan_text(plan))
 
     if args.json_path:
         out = Path(args.json_path)
@@ -122,6 +132,75 @@ def main(argv=None) -> int:
                        encoding="utf-8")
         print(f"\n📄 Plan: {out}")
 
+    if not args.apply:
+        return 0
+
+    # ── Level-1-Ausfuehrung ──────────────────────────────────────────────
+    from services.library_repair.executor import L1_TAG_CODES, apply_level1
+    from services.library_repair.journal import RepairJournal
+
+    execute_dry = args.dry_run
+    journal_path = Path(config.DATA_DIR) / "library_repair_journal.jsonl"
+    journal = RepairJournal(journal_path)
+    l1 = [c for c in plan.candidates if c.issue_code in L1_TAG_CODES]
+    if not l1:
+        print("\nKeine Level-1-Tag-Reparaturen im (gefilterten) Plan — nichts auszufuehren.")
+        return 0
+
+    mode = "DRY-RUN (keine Datei wird veraendert)" if execute_dry else "EXECUTE"
+    print(f"\n{'=' * 70}\nLEVEL-1 {mode} — {len(l1)} Kandidaten\n{'=' * 70}")
+    outcomes = apply_level1(
+        l1, library_root, journal, dry_run=execute_dry,
+        backup_dir=Path(args.backup_dir) if args.backup_dir else None,
+    )
+    journal.flush()
+
+    for oc in outcomes:
+        print(f"\nFILE:   {oc.file}\nISSUE:  {oc.issue_code}\nACTION: {oc.action}")
+        if oc.before or oc.after:
+            print(f"BEFORE: {oc.before}\nAFTER:  {oc.after}")
+        print(f"STATUS: {oc.status}" + (f"  ({oc.reason})" if oc.reason else ""))
+
+    from collections import Counter
+    tally = Counter(o.status for o in outcomes)
+    print(f"\n{tally.get('SUCCESS', 0)} success · {tally.get('DRY_RUN', 0)} would-change · "
+          f"{tally.get('SKIPPED', 0)} skipped · {tally.get('FAILED', 0)} failed  "
+          f"→  Journal: {journal_path}")
+
+    if execute_dry:
+        return 0
+    return _verification_scan(report, library_root, config, logger,
+                              {o.issue_code for o in outcomes if o.status == "SUCCESS"})
+
+
+def _verification_scan(before_report, library_root, config, logger, touched_codes) -> int:
+    """Prompt Abschnitt 16: nach der Reparatur erneut scannen und Before/After
+    vergleichen. Ein Repair darf keine Probleme verstecken — die Ziel-Codes
+    muessen sinken, es duerfen keine NEUEN Issue-Codes auftauchen."""
+    from services.library_health.scanner import run_scan
+
+    after = run_scan(
+        library_root,
+        supported_extensions=tuple(config.SUPPORTED_FORMATS),
+        expected_extension=f".{config.AUDIO_FORMAT.lstrip('.')}",
+        genre_mapping_dir=config.GENRE_MAPPING_DIR,
+        logger=logger,
+    )
+    b = before_report["statistics"]["issues_by_code"]
+    a = after["statistics"]["issues_by_code"]
+    print(f"\n{'=' * 70}\nVERIFICATION SCAN\n{'=' * 70}")
+    print(f"Health:  {before_report['health']['score']}  ->  {after['health']['score']}")
+    for code in sorted(touched_codes):
+        print(f"  {code}: {b.get(code, 0)} -> {a.get(code, 0)}")
+    new_codes = set(a) - set(b)
+    if new_codes:
+        print(f"  ⚠️  NEUE Issue-Codes nach der Reparatur: {sorted(new_codes)}")
+        return 1
+    regressed = [c for c in a if c not in touched_codes and a[c] > b.get(c, 0)]
+    if regressed:
+        print(f"  ⚠️  gestiegene Issue-Codes: {regressed}")
+        return 1
+    print("  ✅ keine neuen/gestiegenen Issues — Reparatur hat nichts versteckt")
     return 0
 
 
