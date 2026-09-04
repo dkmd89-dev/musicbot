@@ -30,6 +30,8 @@ def _fh(tmp_path, rel, **over):
     fh.mb_release_id = over.get("mb_release_id")
     fh.isrc = over.get("isrc")
     fh.cover_sha256 = over.get("cover_sha256")
+    fh.cover_width = over.get("cover_width")
+    fh.cover_height = over.get("cover_height")
     fh.duration_seconds = over.get("duration_seconds", 180.0)
     fh.bitrate = over.get("bitrate", 192000)
     return fh
@@ -84,13 +86,50 @@ def test_album_inconsistent_year_and_release_id(tmp_path):
     assert {"ALBUM_YEAR_INCONSISTENT", "ALBUM_RELEASE_ID_INCONSISTENT"} <= set(_codes(issues))
 
 
-def test_album_cover_inconsistent(tmp_path):
+def test_album_cover_inconsistent_only_on_dimension_difference(tmp_path):
     base = "A/2020 - Rec"
-    fhs = [
-        _fh(tmp_path, f"{base}/01 - a.m4a", track_number=1, cover_sha256="aaa"),
-        _fh(tmp_path, f"{base}/02 - b.m4a", track_number=2, cover_sha256="bbb"),
+    # gleiche Abmessung, anderer Hash -> KEINE Inkonsistenz (per-Track-Abruf)
+    same_dim = [
+        _fh(tmp_path, f"{base}/01 - a.m4a", track_number=1, cover_sha256="aaa",
+            cover_width=1000, cover_height=1000),
+        _fh(tmp_path, f"{base}/02 - b.m4a", track_number=2, cover_sha256="bbb",
+            cover_width=1000, cover_height=1000),
     ]
-    assert "ALBUM_COVER_INCONSISTENT" in _codes(analyze_groups(fhs))
+    assert "ALBUM_COVER_INCONSISTENT" not in _codes(analyze_groups(same_dim))
+    # verschiedene Abmessungen -> Inkonsistenz
+    diff_dim = [
+        _fh(tmp_path, f"{base}/01 - a.m4a", track_number=1, cover_width=300, cover_height=300),
+        _fh(tmp_path, f"{base}/02 - b.m4a", track_number=2, cover_width=1400, cover_height=1400),
+    ]
+    assert "ALBUM_COVER_INCONSISTENT" in _codes(analyze_groups(diff_dim))
+
+
+def test_compilation_folder_downgrades_track_gap_and_suppresses_release_id(tmp_path):
+    base = "2Pac/2012 - The Best Of 2Pac"
+    fhs = [
+        _fh(tmp_path, f"{base}/01 - a.m4a", track_number=1, mb_release_id="r1"),
+        _fh(tmp_path, f"{base}/02 - b.m4a", track_number=2, mb_release_id="r2"),
+        _fh(tmp_path, f"{base}/04 - d.m4a", track_number=4, mb_release_id="r3"),
+    ]
+    issues = analyze_groups(fhs)
+    codes = _codes(issues)
+    assert "ALBUM_RELEASE_ID_INCONSISTENT" not in codes
+    gap = next(i for i in issues if i.code == "ALBUM_TRACK_GAP")
+    assert gap.severity.value == "INFO"
+
+
+def test_studio_album_keeps_track_gap_warning_and_release_id(tmp_path):
+    base = "Clueso/2021 - ALBUM"
+    fhs = [
+        _fh(tmp_path, f"{base}/01 - a.m4a", track_number=1, mb_release_id="r1"),
+        _fh(tmp_path, f"{base}/02 - b.m4a", track_number=2, mb_release_id="r2"),
+        _fh(tmp_path, f"{base}/04 - d.m4a", track_number=4, mb_release_id="r1"),
+    ]
+    issues = analyze_groups(fhs)
+    codes = _codes(issues)
+    assert "ALBUM_RELEASE_ID_INCONSISTENT" in codes
+    gap = next(i for i in issues if i.code == "ALBUM_TRACK_GAP")
+    assert gap.severity.value == "WARNING"
 
 
 def test_consistent_album_produces_no_album_issue(tmp_path):

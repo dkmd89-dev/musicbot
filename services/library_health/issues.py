@@ -69,10 +69,12 @@ _SPECS: tuple[IssueSpec, ...] = (
               "Kein eingebettetes Cover."),
     IssueSpec("ARTWORK_INVALID", Severity.ERROR, Scope.FILE,
               "Eingebettetes Cover vorhanden, aber nicht als Bild dekodierbar."),
-    IssueSpec("ARTWORK_LOW_RESOLUTION", Severity.WARNING, Scope.FILE,
-              "Eingebettetes Cover unter der empfohlenen Mindestkantenlaenge."),
+    IssueSpec("ARTWORK_LOW_RESOLUTION", Severity.INFO, Scope.FILE,
+              "Eingebettetes Cover unter der empfohlenen Mindestkantenlaenge "
+              "(zeigt sich in Playern noch, reiner Qualitaets-Verbesserungskandidat)."),
     IssueSpec("ARTWORK_NON_SQUARE", Severity.INFO, Scope.FILE,
-              "Eingebettetes Cover ist nicht quadratisch."),
+              "Eingebettetes Cover weicht sichtbar vom Seitenverhaeltnis 1:1 ab "
+              "(> ARTWORK_SQUARE_TOLERANCE)."),
 
     # ── Lyrics ──────────────────────────────────────────────────────────
     IssueSpec("LYRICS_MISSING", Severity.INFO, Scope.FILE,
@@ -91,8 +93,10 @@ _SPECS: tuple[IssueSpec, ...] = (
               "ffprobe meldet einen beschaedigten Container / Decode-Fehler."),
     IssueSpec("AUDIO_LOW_BITRATE", Severity.WARNING, Scope.FILE,
               "Audio-Bitrate unter der erwarteten Mindestqualitaet."),
-    IssueSpec("AUDIO_VERY_SHORT", Severity.WARNING, Scope.FILE,
-              "Audio-Dauer sehr kurz (moeglicherweise abgeschnitten / Platzhalter)."),
+    IssueSpec("AUDIO_VERY_SHORT", Severity.INFO, Scope.FILE,
+              "Audio-Dauer sehr kurz — moeglicherweise Skit/Intro/Interlude, "
+              "moeglicherweise abgeschnitten. Manuelle Pruefung (keine "
+              "automatische Aktion)."),
 
     # ── Loudness / ReplayGain ──────────────────────────────────────────
     # Die AKTUELLE Pipeline (tag_writer.py / enhanced_metadata_processor.py)
@@ -132,14 +136,18 @@ _SPECS: tuple[IssueSpec, ...] = (
     # ── Genre ──────────────────────────────────────────────────────────
     IssueSpec("GENRE_EMPTY", Severity.WARNING, Scope.FILE,
               "Genre-Tag vorhanden, aber leer / nur Trennzeichen."),
-    IssueSpec("GENRE_INVALID", Severity.WARNING, Scope.FILE,
-              "Genre-Wert wird vom GenreMapper nicht als bekanntes Genre erkannt."),
+    IssueSpec("GENRE_INVALID", Severity.INFO, Scope.FILE,
+              "Genre-Wert liegt (auch nach GenreMapper.normalize_genre_name) "
+              "ausserhalb der Genre-Konvention des Projekts — Tag-Hygiene, kein "
+              "Qualitaetsdefekt (Genre zeigt sich im Player weiterhin)."),
     IssueSpec("GENRE_DELIMITER_INCONSISTENT", Severity.INFO, Scope.FILE,
               "Mehrfach-Genre nutzt einen anderen Separator als die aktuelle Konvention '; '."),
 
     # ── Album-Konsistenz (Prompt Abschnitt 18) ─────────────────────────
     IssueSpec("ALBUM_TRACK_GAP", Severity.WARNING, Scope.ALBUM,
-              "Luecke in der Tracknummern-Folge eines Albums (z. B. 1, 2, 4)."),
+              "Luecke in der Tracknummern-Folge eines Albums (z. B. 1, 2, 4). "
+              "Nur INFO bei Compilation-/Best-Of-Ordnern (dort ist eine "
+              "kuratierte Auswahl der Normalfall)."),
     IssueSpec("ALBUM_DUPLICATE_TRACK_NUMBER", Severity.ERROR, Scope.ALBUM,
               "Zwei Dateien eines Albums (gleiche Disc) tragen dieselbe Tracknummer."),
     IssueSpec("ALBUM_NAME_INCONSISTENT", Severity.WARNING, Scope.ALBUM,
@@ -153,10 +161,13 @@ _SPECS: tuple[IssueSpec, ...] = (
               "Tracks desselben Albums haben unterschiedliche Genre-Tags "
               "(kann legitim sein — reine Beobachtung, Prompt Abschnitt 22)."),
     IssueSpec("ALBUM_RELEASE_ID_INCONSISTENT", Severity.INFO, Scope.ALBUM,
-              "Tracks desselben Albums verweisen auf unterschiedliche "
-              "MusicBrainz Release IDs."),
+              "Tracks desselben Studio-Albums verweisen auf unterschiedliche "
+              "MusicBrainz Release IDs (bei Compilation-/Best-Of-Ordnern NICHT "
+              "gemeldet — dort ist eine Release-ID pro Track erwartbar)."),
     IssueSpec("ALBUM_COVER_INCONSISTENT", Severity.INFO, Scope.ALBUM,
-              "Tracks desselben Albums haben unterschiedliche eingebettete Cover."),
+              "Tracks desselben Albums haben Cover mit unterschiedlichen "
+              "Abmessungen (starkes Signal fuer eine andere Quell-Bilddatei; "
+              "reine Hash-Unterschiede bei identischer Groesse zaehlen nicht)."),
 
     # ── Artist-Konsistenz (Prompt Abschnitt 19) ────────────────────────
     IssueSpec("ARTIST_DIR_TAG_MISMATCH", Severity.INFO, Scope.ARTIST,

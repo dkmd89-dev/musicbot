@@ -17,6 +17,7 @@ NIE auf — resolution.py/execution.py werden hier NICHT importiert.
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 from services.duplicate.classification import (
@@ -26,8 +27,33 @@ from services.duplicate.classification import (
     normalize_artist_for_identity,
 )
 
-from .models import AnalysisState, FileHealth, Issue, LibrarySection
+from .models import AnalysisState, FileHealth, Issue, LibrarySection, Severity
 from .issues import make_issue
+
+# Ordnernamen, bei denen eine kuratierte / release-uebergreifende
+# Track-Zusammenstellung der Normalfall ist — dort sind Tracknummern-
+# Luecken und abweichende MB-Release-IDs pro Track KEIN Defekt
+# (Phase-1-Finalaudit 2026-09-04, realer 2Pac-Bestand).
+_COMPILATION_FOLDER_PATTERN = re.compile(
+    r"\b(best of|greatest hits|greatest|hits|collection|compilation|anthology|"
+    r"essential|the very best|b-sides|rarities|mixtape|sampler)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_compilation_like(album_dir: str, members: list[FileHealth]) -> bool:
+    if _COMPILATION_FOLDER_PATTERN.search(album_dir or ""):
+        return True
+    album_artists = {
+        m.album_artist.strip().lower() for m in members if not _blank(m.album_artist)
+    }
+    if album_artists & {"various artists", "various", "va", "verschiedene interpreten"}:
+        return True
+    # Signatur einer Compilation: (fast) jeder Track eine eigene MB-Release-ID.
+    ids = [m.mb_release_id for m in members if not _blank(m.mb_release_id)]
+    if len(ids) >= 4 and len(set(ids)) == len(ids):
+        return True
+    return False
 
 
 def _blank(v) -> bool:
@@ -74,6 +100,7 @@ def _album_consistency(file_healths: list[FileHealth]) -> list[Issue]:
             continue
         rel = sorted(m.record.relative_path for m in members)
         ctx = {"artist": artist_dir, "album": album_dir, "related_files": rel}
+        is_comp = _is_compilation_like(album_dir, members)
 
         # Bewusst ausgeschrieben (jeder Issue-Code als Literal —
         # tests/test_library_health_issues.py verifiziert die Registrierung
@@ -102,25 +129,38 @@ def _album_consistency(file_healths: list[FileHealth]) -> list[Issue]:
                 "ALBUM_GENRE_INCONSISTENT",
                 message=f"Unterschiedliche Genre-Tags (kann legitim sein): {genres}",
                 details={"values": genres}, **ctx))
+        # Abweichende Release-IDs pro Track sind bei Compilations der
+        # Normalfall (Phase-1-Finalaudit) — dort NICHT melden.
         release_ids = _distinct_nonblank(m.mb_release_id for m in members)
-        if len(release_ids) > 1:
+        if len(release_ids) > 1 and not is_comp:
             issues.append(make_issue(
                 "ALBUM_RELEASE_ID_INCONSISTENT",
-                message=f"Unterschiedliche MusicBrainz Release IDs: {release_ids}",
+                message=f"Studio-Album mit {len(release_ids)} verschiedenen "
+                        f"MusicBrainz Release IDs: {release_ids}",
                 details={"values": release_ids}, **ctx))
 
-        covers = {m.cover_sha256 for m in members if m.cover_sha256}
-        if len(covers) > 1:
+        # Nur ABMESSUNGS-Unterschiede zaehlen als Cover-Inkonsistenz — reine
+        # Hash-Unterschiede entstehen schon durch per-Track-Cover-Abruf bei
+        # identischer Bilddatei (Phase-1-Finalaudit: 25/30 Alben betroffen).
+        dims = {
+            (m.cover_width, m.cover_height)
+            for m in members
+            if m.cover_width and m.cover_height
+        }
+        if len(dims) > 1:
             issues.append(make_issue(
                 "ALBUM_COVER_INCONSISTENT",
-                message=f"{len(covers)} unterschiedliche eingebettete Cover im Album",
-                details={"cover_hashes": sorted(covers)}, **ctx))
+                message=f"Cover mit {len(dims)} verschiedenen Abmessungen im Album: "
+                        f"{sorted(f'{w}x{h}' for w, h in dims)}",
+                details={"dimensions": sorted(f"{w}x{h}" for w, h in dims)}, **ctx))
 
-        issues.extend(_track_number_issues(members, ctx))
+        issues.extend(_track_number_issues(members, ctx, is_comp))
     return issues
 
 
-def _track_number_issues(members: list[FileHealth], ctx: dict) -> list[Issue]:
+def _track_number_issues(
+    members: list[FileHealth], ctx: dict, is_comp: bool = False
+) -> list[Issue]:
     by_disc: dict[int, list[tuple[int, str]]] = defaultdict(list)
     for m in members:
         if m.track_number is None:
@@ -146,9 +186,12 @@ def _track_number_issues(members: list[FileHealth], ctx: dict) -> list[Issue]:
             if missing:
                 out.append(make_issue(
                     "ALBUM_TRACK_GAP",
+                    severity=Severity.INFO if is_comp else None,
                     message=f"Disc {disc}: fehlende Tracknummer(n) {missing} "
-                            f"(vorhanden: {uniq[0]}–{uniq[-1]})",
-                    details={"disc": disc, "missing": missing, "present": uniq},
+                            f"(vorhanden: {uniq[0]}–{uniq[-1]})"
+                            + ("  [Compilation — kuratierte Auswahl erwartbar]" if is_comp else ""),
+                    details={"disc": disc, "missing": missing, "present": uniq,
+                             "compilation_like": is_comp},
                     **ctx))
     return out
 
@@ -225,6 +268,13 @@ def _duplicate_analysis(
 ) -> list[Issue]:
     issues: list[Issue] = []
 
+    by_rel: dict[str, FileHealth] = {fh.record.relative_path: fh for fh in file_healths}
+
+    def _label(rels) -> dict:
+        """Artist/Titel eines Repraesentanten fuer die Report-Anzeige."""
+        fh = by_rel.get(sorted(rels)[0])
+        return {"artist": fh.artist if fh else None, "title": fh.title if fh else None}
+
     # (1) EXACT — byte-identisch
     exact_sets: list[frozenset[str]] = []
     by_hash: dict[str, list[str]] = defaultdict(list)
@@ -237,7 +287,7 @@ def _duplicate_analysis(
             issues.append(make_issue(
                 "DUPLICATE_EXACT",
                 message=f"{len(rels)} byte-identische Dateien (SHA-256 {digest[:12]}…)",
-                details={"sha256": digest}, related_files=sorted(rels),
+                details={"sha256": digest}, related_files=sorted(rels), **_label(rels),
             ))
 
     # (2) RECORDING — gleiche MB Recording ID bzw. ISRC
@@ -259,7 +309,7 @@ def _duplicate_analysis(
                 issues.append(make_issue(
                     "DUPLICATE_RECORDING",
                     message=f"{len(rels)} Dateien mit identischer {key_kind}",
-                    details={key_kind: val}, related_files=sorted(rels),
+                    details={key_kind: val}, related_files=sorted(rels), **_label(rels),
                 ))
 
     # (3) SUSPECTED — identischer normalisierter Artist+Titel (DUP-03: Remix/

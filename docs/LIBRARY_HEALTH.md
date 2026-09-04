@@ -117,7 +117,7 @@ Pro Datei wird je Dimension ein `AnalysisState` bestimmt — **strikt getrennt**
 |---|---|
 | `metadata` | Artist, Titel, Album, Album-Artist, Jahr (+ Plausibilität), Tracknummer (Kontext!), MB-Recording-/Release-ID, ISRC |
 | `genre` | vorhanden / leer / Separator-Konvention (`"; "` vs. `" / "`) / vom `GenreMapper` erkannt |
-| `artwork` | eingebettet? dekodierbar? Auflösung ≥ 500 px Kante? quadratisch? |
+| `artwork` | eingebettet? dekodierbar? Auflösung ≥ 400 px Kante (`ARTWORK_MIN_EDGE_PX`)? Seitenverhältnis ≤ 5 % von 1:1 (`ARTWORK_SQUARE_TOLERANCE`)? |
 | `lyrics` | vorhanden / leer / Platzhalter-Text |
 | `audio` | ffprobe: Stream vorhanden? Codec/Bitrate/Dauer, Korruptions-Marker |
 | `loudness` | **nur** ReplayGain-/Loudness-**Tag**-Existenz/-Format — **keine** Messung/Berechnung (Prompt Abschnitt 16) |
@@ -128,14 +128,13 @@ Pro Datei wird je Dimension ein `AnalysisState` bestimmt — **strikt getrennt**
 
 | Ebene | Prüft |
 |---|---|
-| **Album** (`<Artist>/<Jahr - Album>/`, ≥ 2 Tracks) | Tracknummern-Lücke, doppelte Tracknummer (pro Disc), abweichende Album-/Album-Artist-/Jahr-/Genre-/Release-ID-Tags, unterschiedliche eingebettete Cover |
+| **Album** (`<Artist>/<Jahr - Album>/`, ≥ 2 Tracks) | Tracknummern-Lücke, doppelte Tracknummer (pro Disc), abweichende Album-/Album-Artist-/Jahr-/Genre-/Release-ID-Tags, Cover mit abweichenden **Abmessungen** |
 | **Artist** | Verzeichnisname ↔ dominanter Artist-Tag; mehrere Verzeichnisse, die auf denselben normalisierten Namen abbilden (Schreibvarianten) |
 | **Duplicate** | `DUPLICATE_EXACT` (SHA-256 byte-identisch, Größen-Vorfilter), `DUPLICATE_RECORDING` (gleiche MB Recording ID / ISRC), `DUPLICATE_SUSPECTED` (gleicher normalisierter Artist+Titel — Remix/Live/Version bleiben getrennt). Ein Kandidat wird nur in der stärksten Kategorie gemeldet. |
 
-`DUPLICATE_SUSPECTED` ist `INFO`/Observation und trägt `details.album_context_risk`
-(Remix-/Live-/Versions-Hinweis im Albumnamen). `ALBUM_GENRE_INCONSISTENT` /
-`ALBUM_YEAR_INCONSISTENT` / `ALBUM_RELEASE_ID_INCONSISTENT` sind `INFO`
-(können legitim sein). `ALBUM_DUPLICATE_TRACK_NUMBER` ist `ERROR`.
+**Compilation-Erkennung** (`_is_compilation_like`): Ordnername matcht `best of / hits / collection / …`, **oder** Album-Artist = „Various Artists", **oder** ≥ 4 Tracks mit je eigener MB-Release-ID. Bei Compilations wird `ALBUM_RELEASE_ID_INCONSISTENT` **nicht** gemeldet und `ALBUM_TRACK_GAP` auf `INFO` herabgestuft (kuratierte Auswahl ist dort der Normalfall).
+
+`ALBUM_COVER_INCONSISTENT` zählt nur **Abmessungs**-Unterschiede — reine Hash-Unterschiede bei gleicher Größe entstehen bereits durch den per-Track-Cover-Abruf und sind kein Signal. `DUPLICATE_SUSPECTED` ist `INFO`/Observation und trägt `details.album_context_risk`. `ALBUM_DUPLICATE_TRACK_NUMBER` ist `ERROR`.
 
 ### Wichtig: Observation ≠ Defect (Prompt Abschnitt 22)
 
@@ -148,6 +147,24 @@ Fehlende **optionale** Felder sind `INFO`, kein Qualitätsmangel:
 - `META_TRACK_NUMBER_MISSING` → **INFO** bei einer Single, **WARNING** nur im
   Album-Kontext.
 - Album-Artist ≠ Artist wird bei Compilation/Playlist **nicht** gemeldet.
+
+**Nach dem Phase-1-Finalaudit (2026-09-04, kalibriert am realen 388-Datei-Bestand)
+zusätzlich auf `INFO` herabgestuft:**
+
+- `GENRE_INVALID` → **INFO** — ein Genre-String außerhalb der Projekt-Konvention
+  (auch nach `GenreMapper.normalize_genre_name`, z. B. „Alternative Hip Hop",
+  „Indie-Pop") ist Tag-Hygiene, kein Qualitätsdefekt; das Genre zeigt sich im
+  Player weiterhin. Der Wert ist **korrekt** als nicht-konventionskonform
+  erkannt (kein False Positive) — nur die Severity war unverhältnismäßig
+  (85 Fälle aus 3 Genre-Strings).
+- `ARTWORK_LOW_RESOLUTION` → **INFO**, Schwelle 500 → **400 px** (450–500 px
+  Cover wirken noch akzeptabel).
+- `AUDIO_VERY_SHORT` → **INFO**, Schwelle 30 → **20 s**, zusätzlich unterdrückt
+  bei Titel/Dateiname mit `intro|outro|skit|interlude|…` (der Scanner kann
+  Skit ≠ abgeschnittene Datei nicht sicher unterscheiden — Observation, keine
+  automatische Aktion).
+- `ARTWORK_NON_SQUARE`: 5 %-Toleranz auf `|w−h| / max(w,h)` (1416×1407 = 0,6 %
+  ist praktisch quadratisch; echte Fälle: 602×542 = 10 %, 16:9-Stills = 44 %).
 
 ---
 
@@ -270,6 +287,12 @@ Issues nach (Severity absteigend, Code, Pfad). Nur die Zeitstempel variieren.
 - Nur `.m4a/.mp4` (voll) und `.mp3` (best-effort); `.ogg/.opus` werden
   gefunden, aber ohne Tag-/Artwork-Detailanalyse (die Produktions-Pipeline
   schreibt ausschließlich `.m4a`).
+- **Compilation-Erkennung** ist heuristisch: unbenannte Bootleg-/Posthum-
+  Compilations ohne „Best Of"/„Hits" im Ordnernamen, ohne „Various Artists"
+  und ohne die MB-Release-ID-Signatur bleiben `ALBUM_TRACK_GAP` = `WARNING`
+  (real beobachtet: 2Pac „Immortal", „One Nation", „2Pac Pac Is Back").
+- `ALBUM_TRACK_GAP` bei echten Studio-Alben kann auch schlicht „noch nicht
+  alle Tracks heruntergeladen" bedeuten — der Scanner unterscheidet das nicht.
 
 ---
 

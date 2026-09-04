@@ -180,6 +180,8 @@ class FileHealth:
     mb_release_id: Optional[str] = None
     isrc: Optional[str] = None
     cover_sha256: Optional[str] = None
+    cover_width: Optional[int] = None
+    cover_height: Optional[int] = None
     # Audio-Stream-Evidenz fuer die Duplicate-Group-Analyse (PR 2).
     duration_seconds: Optional[float] = None
     bitrate: Optional[int] = None

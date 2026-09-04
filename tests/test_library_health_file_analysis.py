@@ -106,6 +106,9 @@ def test_genre_invalid_via_validator(tmp_path):
                       _ok_stream(), _ok_artwork(),
                       genre_validator=lambda g: g == "Pop")
     assert "GENRE_INVALID" in _codes(fh)
+    # Tag-Hygiene, kein Qualitaetsdefekt (Finalaudit: 85 Faelle sollen den
+    # Score nicht unverhaeltnismaessig druecken)
+    assert _sev(fh, "GENRE_INVALID") == Severity.INFO
 
 
 def test_genre_delimiter_inconsistent(tmp_path):
@@ -180,6 +183,27 @@ def test_artwork_low_res_and_non_square(tmp_path):
     fh = analyze_file(_record(tmp_path), _healthy_tags(), _ok_stream(),
                       _ok_artwork(width=200, height=300, is_square=False))
     assert {"ARTWORK_LOW_RESOLUTION", "ARTWORK_NON_SQUARE"} <= _codes(fh)
+    # beide sind nach dem Finalaudit INFO / Observation
+    assert _sev(fh, "ARTWORK_LOW_RESOLUTION") == Severity.INFO
+
+
+def test_artwork_practically_square_is_not_flagged(tmp_path):
+    # 1416x1407 (0.6% Abweichung) darf nicht als non-square gelten
+    fh = analyze_file(_record(tmp_path), _healthy_tags(), _ok_stream(),
+                      _ok_artwork(width=1416, height=1407, is_square=False))
+    assert "ARTWORK_NON_SQUARE" not in _codes(fh)
+
+
+def test_artwork_16_9_is_non_square(tmp_path):
+    fh = analyze_file(_record(tmp_path), _healthy_tags(), _ok_stream(),
+                      _ok_artwork(width=1280, height=720, is_square=False))
+    assert "ARTWORK_NON_SQUARE" in _codes(fh)
+
+
+def test_artwork_450px_is_acceptable(tmp_path):
+    fh = analyze_file(_record(tmp_path), _healthy_tags(), _ok_stream(),
+                      _ok_artwork(width=450, height=450, is_square=True))
+    assert "ARTWORK_LOW_RESOLUTION" not in _codes(fh)
 
 
 def test_artwork_invalid(tmp_path):
@@ -234,6 +258,20 @@ def test_audio_low_bitrate_and_short(tmp_path):
     fh = analyze_file(_record(tmp_path), _healthy_tags(),
                       _ok_stream(bitrate=96000, duration_seconds=8.0), _ok_artwork())
     assert {"AUDIO_LOW_BITRATE", "AUDIO_VERY_SHORT"} <= _codes(fh)
+    assert _sev(fh, "AUDIO_VERY_SHORT") == Severity.INFO  # Observation, kein Defekt
+
+
+def test_audio_very_short_suppressed_for_intro_skit(tmp_path):
+    rec = _record(tmp_path, "A/2020 - Rec/01 - Intro.m4a")
+    fh = analyze_file(rec, _healthy_tags(title="Intro"),
+                      _ok_stream(duration_seconds=9.0), _ok_artwork())
+    assert "AUDIO_VERY_SHORT" not in _codes(fh)
+
+
+def test_audio_23s_intro_track_is_not_flagged(tmp_path):
+    fh = analyze_file(_record(tmp_path), _healthy_tags(title="Take Off"),
+                      _ok_stream(duration_seconds=23.7), _ok_artwork())
+    assert "AUDIO_VERY_SHORT" not in _codes(fh)
 
 
 # ── Loudness ────────────────────────────────────────────────────────────

@@ -32,20 +32,33 @@ from .tag_reader import ArtworkData, StreamData, TagData
 # versteckten/dynamischen Werte).
 # ─────────────────────────────────────────────────────────────────────────
 
-# Empfohlene Mindestkantenlaenge fuer eingebettetes Cover. 500 px ist der
-# im Umfeld (Navidrome-Grid, mobile Player) verbreitete Grenzwert, unter
-# dem ein Cover sichtbar unscharf wirkt. Reine Scanner-Konvention, keine
-# bestehende Projekt-Konstante gefunden (grep: 0 Treffer).
-ARTWORK_MIN_EDGE_PX = 500
+# Empfohlene Mindestkantenlaenge fuer eingebettetes Cover. Kalibriert am
+# realen Bestand (Phase-1-Finalaudit 2026-09-04): 450–500 px Cover wirken
+# in Playern noch akzeptabel, unter 400 px wird es sichtbar grob. 500 px
+# hatte 450x446-/496x500-Cover faelschlich mitgemeldet.
+ARTWORK_MIN_EDGE_PX = 400
+
+# Toleranz fuer "praktisch quadratisch" (Phase-1-Finalaudit): der reale
+# Bestand enthaelt viele Cover mit minimalem Encoder-/Resize-Rundungs-
+# Delta (z. B. 1416x1407 = 0,6 %, 3600x3601 = 0,03 %). Erst ab 5 %
+# Kantenabweichung ist das Seitenverhaeltnis sichtbar "falsch" (echte
+# Faelle im Bestand: 602x542 = 10 %, 16:9-Videostills = 44 %).
+ARTWORK_SQUARE_TOLERANCE = 0.05
 
 # Untergrenze fuer verlustbehaftete Audio-Bitrate. config.Config.AUDIO_QUALITY
 # ist "192" (kbps Zielwert der Download-Pipeline) — alles klar darunter
 # deutet auf eine schlechtere Quelle / aeltere Datei hin.
 AUDIO_MIN_BITRATE_BPS = 128_000
 
-# Unter dieser Dauer ist ein "Song" mit hoher Wahrscheinlichkeit
-# abgeschnitten / ein Platzhalter / ein Jingle.
-AUDIO_VERY_SHORT_SECONDS = 30.0
+# Unter dieser Dauer ist ein Track auffaellig kurz. Kalibriert am realen
+# Bestand (Phase-1-Finalaudit): 30 s meldete legitime Intro-Tracks wie
+# Clueso "Take Off" (23,7 s). Skits/Intros mit eindeutigem Titel-Hinweis
+# (_SKIT_TITLE_PATTERN) werden zusaetzlich ganz unterdrueckt.
+AUDIO_VERY_SHORT_SECONDS = 20.0
+_SKIT_TITLE_PATTERN = re.compile(
+    r"\b(intro|outro|skit|interlude|prelude|reprise|snippet|prologue|epilogue)\b",
+    re.IGNORECASE,
+)
 
 YEAR_MIN = 1900
 
@@ -128,6 +141,8 @@ def _carry_raw_values(
     fh.mb_release_id = tags.mb_release_id
     fh.isrc = tags.isrc
     fh.cover_sha256 = artwork.sha256
+    fh.cover_width = artwork.width
+    fh.cover_height = artwork.height
     fh.duration_seconds = stream.duration_seconds
     fh.bitrate = stream.bitrate
 
@@ -381,18 +396,20 @@ def _analyze_artwork(fh: FileHealth, artwork: ArtworkData, p: str) -> AnalysisSt
         return AnalysisState.INVALID
 
     if artwork.width and artwork.height:
-        if min(artwork.width, artwork.height) < ARTWORK_MIN_EDGE_PX:
+        w, h = artwork.width, artwork.height
+        if min(w, h) < ARTWORK_MIN_EDGE_PX:
             fh.issues.append(make_issue(
                 "ARTWORK_LOW_RESOLUTION", path=p,
-                message=f"Cover {artwork.width}x{artwork.height} unter "
-                        f"{ARTWORK_MIN_EDGE_PX}px Mindestkante",
-                details={"width": artwork.width, "height": artwork.height},
+                message=f"Cover {w}x{h} unter {ARTWORK_MIN_EDGE_PX}px Mindestkante",
+                details={"width": w, "height": h},
             ))
-        if artwork.is_square is False:
+        aspect_off = abs(w - h) / max(w, h)
+        if aspect_off > ARTWORK_SQUARE_TOLERANCE:
             fh.issues.append(make_issue(
                 "ARTWORK_NON_SQUARE", path=p,
-                message=f"Cover ist nicht quadratisch ({artwork.width}x{artwork.height})",
-                details={"width": artwork.width, "height": artwork.height},
+                message=f"Cover-Seitenverhaeltnis weicht {aspect_off:.1%} von 1:1 ab "
+                        f"({w}x{h})",
+                details={"width": w, "height": h, "aspect_off": round(aspect_off, 4)},
             ))
     return AnalysisState.PRESENT
 
@@ -454,12 +471,15 @@ def _analyze_audio(fh: FileHealth, stream: StreamData, p: str) -> AnalysisState:
             details={"bitrate": stream.bitrate, "codec": stream.codec},
         ))
     if stream.duration_seconds is not None and stream.duration_seconds < AUDIO_VERY_SHORT_SECONDS:
-        fh.issues.append(make_issue(
-            "AUDIO_VERY_SHORT", path=p,
-            message=f"Audio-Dauer {stream.duration_seconds:.1f}s unter "
-                    f"{AUDIO_VERY_SHORT_SECONDS:.0f}s",
-            details={"duration_seconds": stream.duration_seconds},
-        ))
+        stem_and_title = f"{fh.record.filename_stem} {fh.title or ''}"
+        if not _SKIT_TITLE_PATTERN.search(stem_and_title):
+            fh.issues.append(make_issue(
+                "AUDIO_VERY_SHORT", path=p,
+                message=f"Audio-Dauer {stream.duration_seconds:.1f}s unter "
+                        f"{AUDIO_VERY_SHORT_SECONDS:.0f}s — Skit/Intro oder "
+                        f"abgeschnitten?",
+                details={"duration_seconds": stream.duration_seconds},
+            ))
     return AnalysisState.PRESENT
 
 
