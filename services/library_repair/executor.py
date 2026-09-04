@@ -794,6 +794,20 @@ def _write_freeform_atoms(src: Path, atoms: dict[str, list[str]]) -> Path:
     return tmp
 
 
+def _delete_atoms(src: Path, atom_names) -> Path:
+    """Entfernt die genannten MP4-Atome auf einer temp-Sibling-Kopie."""
+    from mutagen.mp4 import MP4
+
+    tmp = src.with_name(f".{src.stem}.repairtmp_{int(time.time() * 1000)}{src.suffix}")
+    shutil.copy2(src, tmp)
+    audio = MP4(tmp)
+    if audio.tags is not None:
+        for name in atom_names:
+            audio.tags.pop(name, None)
+    audio.save()
+    return tmp
+
+
 def apply_external_metadata(
     candidates: list[RepairCandidate],
     library_root: Path,
@@ -1153,6 +1167,7 @@ def apply_replaygain(
     Journal, Verification-Scan.
     """
     from mutagen.mp4 import MP4
+    from services.library_health.tag_reader import read_tags
 
     library_root = Path(library_root)
     if backup_dir is None:
@@ -1185,22 +1200,33 @@ def apply_replaygain(
             journal.record(_je_named(rel, oc, dry_run))
             continue
 
-        writes = replaygain_repairs.compute_replaygain(lufs, tp)
-        oc.before = {"integrated_lufs": round(lufs, 2) if lufs is not None else None}
-        if not writes:
+        existing_gain = replaygain_repairs.parse_gain_db(
+            (read_tags(path).replaygain or {}).get("replaygain_track_gain")
+        )
+        act, writes = replaygain_repairs.compute_replaygain(
+            lufs, tp, existing_gain_db=existing_gain
+        )
+        oc.before = {
+            "integrated_lufs": round(lufs, 2) if lufs is not None else None,
+            "replaygain_track_gain": existing_gain,
+        }
+        if act is None:
             oc.reason = (
-                f"bereits auf Ziel ({lufs:.1f} LUFS)" if lufs is not None
-                else "keine LUFS-Messung"
+                f"bereits auf Ziel ({lufs:.1f} LUFS, RG-Tag {existing_gain})"
+                if lufs is not None else "keine LUFS-Messung"
             )
             outcomes.append(oc)
             journal.record(_je_named(rel, oc, dry_run))
             continue
 
-        oc.after = {
-            "replaygain_track_gain": writes[replaygain_repairs.GAIN_ATOM][0],
-            "replaygain_track_peak": writes[replaygain_repairs.PEAK_ATOM][0],
-            "target_lufs": replaygain_repairs.TARGET_LUFS,
-        }
+        if act == replaygain_repairs.CLEAR:
+            oc.after = {"replaygain": "entfernt (Datei liegt auf Ziel, Tag war irreführend)"}
+        else:
+            oc.after = {
+                "replaygain_track_gain": writes[replaygain_repairs.GAIN_ATOM][0],
+                "replaygain_track_peak": writes[replaygain_repairs.PEAK_ATOM][0],
+                "target_lufs": replaygain_repairs.TARGET_LUFS,
+            }
 
         if dry_run:
             oc.status = "DRY_RUN"
@@ -1215,13 +1241,20 @@ def apply_replaygain(
         try:
             backup.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, backup)
-            tmp = _write_freeform_atoms(path, writes)
-            v = MP4(tmp).tags or {}
-            for name, values in writes.items():
-                got = [x.decode("utf-8", "replace") if isinstance(x, bytes) else str(x)
-                       for x in v.get(name, [])]
-                if got != list(values):
-                    raise RuntimeError(f"Verifikation {name}: {got} != {values}")
+            if act == replaygain_repairs.CLEAR:
+                tmp = _delete_atoms(path, replaygain_repairs._RG_ATOMS_ALL)
+                leftover = [n for n in replaygain_repairs._RG_ATOMS_ALL
+                            if n in (MP4(tmp).tags or {})]
+                if leftover:
+                    raise RuntimeError(f"RG-Atome nach CLEAR noch da: {leftover}")
+            else:
+                tmp = _write_freeform_atoms(path, writes)
+                v = MP4(tmp).tags or {}
+                for name, values in writes.items():
+                    got = [x.decode("utf-8", "replace") if isinstance(x, bytes) else str(x)
+                           for x in v.get(name, [])]
+                    if got != list(values):
+                        raise RuntimeError(f"Verifikation {name}: {got} != {values}")
             at = _audio_essence_md5(tmp)
             if at != audio_before or at.startswith("ERROR"):
                 raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {at})")

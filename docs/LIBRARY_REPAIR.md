@@ -302,12 +302,17 @@ reicht ein **verlustfreier** ReplayGain-Tag — ein RG-fähiger Player
 **byte-identisch**. Der vollständige Re-Encode-Executor wurde bewusst nicht
 gebaut; `scripts/normalize_test_library_loudness.py` bleibt test-only.
 
-- **`replaygain_repairs.compute_replaygain()`** (rein) → zwei Atome:
+- **`replaygain_repairs.compute_replaygain(existing_gain_db=…)`** (rein) →
+  `(SET, {atome})` / `(CLEAR, None)` / `(None, None)`:
   - `----:com.apple.iTunes:replaygain_track_gain` = `"{−16 − gemessen:.2f} dB"`
   - `----:com.apple.iTunes:replaygain_track_peak` = linearer Peak aus dem
     True Peak (`10^(dBTP/20)`)
-  - `None`, wenn keine Messung vorliegt oder die Datei bereits ≤ 2 dB neben
-    −16 LUFS liegt.
+  - **CLEAR** entfernt vorhandene RG-Atome, wenn die Datei bereits auf Ziel
+    liegt, aber einen abweichenden Gain-Tag trägt (real: 34 Badchieff-/
+    2Pac-Dateien mit einem RG-Tag aus einer früheren Quelle, der einen
+    RG-Player auf ~−20 LUFS herunterregeln würde).
+  - `(None, None)`, wenn keine Messung vorliegt oder der aktuelle Zustand
+    (Datei-LUFS + evtl. Tag) bereits ≤ 2 dB neben −16 LUFS liegt.
 - **Referenz = −16 LUFS**, NICHT die RG-2.0-Norm −18: so klingen die
   getaggten Altbestände in Navidrome genauso laut wie die frisch
   heruntergeladenen (ungetaggten) Dateien, die Navidrome auf Dateilautstärke

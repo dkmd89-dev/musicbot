@@ -640,3 +640,51 @@ def test_replaygain_safety_blocks_symlink(lib):
     assert outcomes[0].status == "SKIPPED"
     assert "Safety" in outcomes[0].reason
     assert not called
+
+
+@requires_ffmpeg
+def test_replaygain_clears_stale_tag_when_file_on_target(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["----:com.apple.iTunes:replaygain_track_gain"] = [MP4FreeForm(b"-4.26 dB")]
+    a["----:com.apple.iTunes:replaygain_track_peak"] = [MP4FreeForm(b"0.812")]
+    a.save()
+    md5 = _audio_md5(p)
+    j = RepairJournal(lib / "j.jsonl")
+    # Datei liegt bereits auf -16.03 -> Tag ist irreführend -> CLEAR
+    outcomes = apply_replaygain([_rg_cand("A/Singles/2020 - x.m4a")], lib, j,
+                                measure_fn=lambda p: (-16.03, -4.0), dry_run=False)
+    assert outcomes[0].status == "SUCCESS", outcomes[0].reason
+    assert _rg(p) == (None, None)          # RG-Atome entfernt
+    assert _audio_md5(p) == md5
+
+
+@requires_ffmpeg
+def test_replaygain_overwrites_wrong_existing_tag(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["----:com.apple.iTunes:replaygain_track_gain"] = [MP4FreeForm(b"-2.00 dB")]
+    a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    # -9.4 LUFS, Tag -2 -> effektiv -11.4 -> daneben -> neuer Gain -6.60
+    outcomes = apply_replaygain([_rg_cand("A/Singles/2020 - x.m4a")], lib, j,
+                                measure_fn=lambda p: (-9.4, -1.0), dry_run=False)
+    assert outcomes[0].status == "SUCCESS"
+    assert _rg(p)[0] == "-6.60 dB"
+
+
+@requires_ffmpeg
+def test_replaygain_skips_when_existing_tag_already_correct(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["----:com.apple.iTunes:replaygain_track_gain"] = [MP4FreeForm(b"-5.00 dB")]
+    a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    # -11 LUFS + -5 dB = -16 -> passt schon
+    outcomes = apply_replaygain([_rg_cand("A/Singles/2020 - x.m4a")], lib, j,
+                                measure_fn=lambda p: (-11.0, -1.0), dry_run=False)
+    assert outcomes[0].status == "SKIPPED"
+    assert _rg(p)[0] == "-5.00 dB"          # unangetastet
