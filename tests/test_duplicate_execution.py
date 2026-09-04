@@ -413,3 +413,73 @@ class TestExecuteGroup:
         assert keep_result.status == FileDeleteStatus.FAILED
         assert "KEEP" in keep_result.error
         assert entry.keep.path.exists()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# execute_group() — backup_fn (optionales Backup-vor-Delete, DI-Parameter)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestExecuteGroupBackup:
+    def _resolved_plan_entry(self, tmp_path):
+        album = _write_and_candidate(tmp_path, "album/01.m4a", classification=Classification.ALBUM_LIKE)
+        single = _write_and_candidate(tmp_path, "singles/x.m4a", classification=Classification.SINGLE)
+        for c in (album, single):
+            c.title = "Song"
+            c.normalized_title = "Song"
+        decision = resolve_group([album, single])
+        plan = build_execution_plan([decision])
+        rebuild = _MatchingRebuild()
+        rebuild.register(album)
+        rebuild.register(single)
+        return plan[0], rebuild, album, single
+
+    def test_default_none_deletes_without_backup_unchanged(self, tmp_path):
+        """Charakterisierung: ohne backup_fn ist das Verhalten exakt wie
+        vor der Erweiterung - kein Backup, backup_path bleibt None."""
+        entry, rebuild, album, single = self._resolved_plan_entry(tmp_path)
+        result = execute_group(entry, _always_within_root, rebuild)
+        assert result.file_results[0].status == FileDeleteStatus.DELETED
+        assert result.file_results[0].backup_path is None
+        assert not single.path.exists()
+
+    def test_backup_fn_called_before_unlink_and_path_recorded(self, tmp_path):
+        backup_dir = tmp_path / "_backups"
+        backup_dir.mkdir()
+        calls = []
+
+        def backup_fn(path):
+            calls.append(path)
+            dest = backup_dir / path.name
+            dest.write_bytes(path.read_bytes())
+            return dest
+
+        entry, rebuild, album, single = self._resolved_plan_entry(tmp_path)
+        result = execute_group(entry, _always_within_root, rebuild, backup_fn=backup_fn)
+
+        assert calls == [single.path]
+        assert result.file_results[0].status == FileDeleteStatus.DELETED
+        assert result.file_results[0].backup_path == backup_dir / single.path.name
+        assert (backup_dir / single.path.name).exists()
+        assert not single.path.exists()
+
+    def test_backup_fn_returning_none_refuses_delete(self, tmp_path):
+        entry, rebuild, album, single = self._resolved_plan_entry(tmp_path)
+        result = execute_group(entry, _always_within_root, rebuild, backup_fn=lambda p: None)
+
+        assert result.group_ok is False
+        assert result.file_results[0].status == FileDeleteStatus.FAILED
+        assert "Backup" in result.file_results[0].error
+        assert single.path.exists()  # NICHT geloescht
+
+    def test_backup_fn_raising_refuses_delete(self, tmp_path):
+        def boom(path):
+            raise OSError("Platte voll (simuliert)")
+
+        entry, rebuild, album, single = self._resolved_plan_entry(tmp_path)
+        result = execute_group(entry, _always_within_root, rebuild, backup_fn=boom)
+
+        assert result.group_ok is False
+        assert result.file_results[0].status == FileDeleteStatus.FAILED
+        assert "Platte voll" in result.file_results[0].error
+        assert single.path.exists()  # NICHT geloescht

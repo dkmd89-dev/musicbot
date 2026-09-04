@@ -72,6 +72,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 import time
@@ -701,6 +702,7 @@ def _append_audit_log_entries(path: Path, group_results: list) -> None:
                             "isrc": entry.isrc,
                             "resolution_reason": entry.reason,
                             "safety_gate": entry.safety_gate,
+                            "backup_path": str(file_result.backup_path) if file_result.backup_path else None,
                         },
                         ensure_ascii=False,
                     )
@@ -713,15 +715,50 @@ def _append_audit_log_entries(path: Path, group_results: list) -> None:
 # ─────────────────────────────────────────────────────────────────────────
 
 
+DEFAULT_BACKUP_DIR_NAME = ".library_repair_backups"
+
+
+def _build_backup_fn(permitted_root: Path, backup_dir: Path):
+    """Liefert die `backup_fn`, die services/duplicate/execution.py::
+    execute_group() PRO Datei unmittelbar vor deren unlink() aufruft
+    (Auftrag "Backup-vor-Mutation, analog zum bereits etablierten
+    LUFS-Script-Muster" - siehe Modul-Docstring dort). Legt eine
+    vollstaendige Kopie unter `backup_dir` an (Pfad relativ zu
+    `permitted_root` gespiegelt, Zeitstempel-Suffix gegen Kollisionen)
+    und gibt deren Pfad zurueck; None/Exception -> execute_group()
+    verweigert das Delete."""
+    def _backup(path: Path) -> Optional[Path]:
+        try:
+            rel = path.relative_to(permitted_root)
+        except ValueError:
+            rel = Path(path.name)
+        dest = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, dest)
+        return dest
+    return _backup
+
+
 def _run_execute_phase(
-    scan_root: Path, decisions: list, scan_after_snapshot: dict, permitted_root: Path
+    scan_root: Path, decisions: list, scan_after_snapshot: dict, permitted_root: Path,
+    backup_dir: Optional[Path] = None,
 ) -> int:
     """Auftrag Phase 3 Abschnitt 3/4/15/16/20: baut den Execution Plan,
     revalidiert + löscht gruppenweise, schreibt Manifest/Report/Audit-Log
     und verifiziert danach, dass AUSSCHLIESSLICH die erwarteten Dateien
     verschwunden sind (kein Kollateralschaden an nicht beteiligten
     Dateien - Auftrag Abschnitt 20 "verify unrelated files"). Gibt den
-    finalen Exit-Code zurück."""
+    finalen Exit-Code zurück.
+
+    `backup_dir` (Default: `<permitted_root>/../.library_repair_backups`,
+    ausserhalb der Library, identische Konvention zu
+    services/library_repair/executor.py): JEDE Datei wird VOR dem Delete
+    dorthin kopiert (services/duplicate/execution.py::execute_group()
+    `backup_fn`-Parameter) - Backup-Fehler verweigert das Delete."""
+    if backup_dir is None:
+        backup_dir = permitted_root.parent / DEFAULT_BACKUP_DIR_NAME
+    backup_dir = Path(backup_dir)
+
     plan = build_execution_plan(decisions)
 
     EXECUTION_PLAN_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -735,8 +772,9 @@ def _run_execute_phase(
     )
 
     validate_file = _make_file_validator(permitted_root)
+    backup_fn = _build_backup_fn(permitted_root, backup_dir)
     group_results = [
-        execute_group(entry, validate_file, build_single_candidate)
+        execute_group(entry, validate_file, build_single_candidate, backup_fn=backup_fn)
         for entry in plan
     ]
 
@@ -927,6 +965,14 @@ def main(argv=None) -> int:
         help="Auf einen Artist-Ordner unterhalb des Roots einschränken.",
     )
     parser.add_argument(
+        "--backup-dir", type=str, default=None,
+        help=(
+            "Verzeichnis fuer Per-Datei-Backups vor jedem --execute-Delete "
+            f"(Default: <root>/../{DEFAULT_BACKUP_DIR_NAME}, ausserhalb der "
+            "Library). Backup-Fehler verweigert das jeweilige Delete."
+        ),
+    )
+    parser.add_argument(
         "--confirm-production-execute", action="store_true",
         help=(
             "Zusätzlich zu --execute erforderlich, wenn der Scan-Root "
@@ -1049,7 +1095,10 @@ def main(argv=None) -> int:
         return 3
 
     if args.execute:
-        return _run_execute_phase(scan_root, decisions, scan_after_snapshot, permitted_root)
+        return _run_execute_phase(
+            scan_root, decisions, scan_after_snapshot, permitted_root,
+            backup_dir=Path(args.backup_dir) if args.backup_dir else None,
+        )
 
     return 0
 

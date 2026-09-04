@@ -29,16 +29,23 @@ nichts und ruft keinen externen Dienst. Der Health-Scan selbst
                           verlustfreien replaygain_track_gain-Tag (Ziel -16
                           LUFS, Audio byte-identisch), setzt einen
                           `--measure-loudness`-Report voraus
-    --allow-delete        wird mit klarer Meldung abgelehnt (Exit 2)
+    --allow-delete --artist X [--dry-run]
+                          Duplicate-Aufloesung fuer EINEN Artist — dockt
+                          als Subprozess an scripts/resolve_duplicates.py
+                          an (kein eigener Loesch-Code, siehe dortiges
+                          --execute/--confirm-production-execute-Modell).
+                          Ohne --artist abgelehnt (nie der ganze Root).
 
 Cover / L3 / L2 / Loudness laufen NIE im Default-`--apply`, nur auf
-ausdrueckliche Anforderung per --level bzw. --issue.
+ausdrueckliche Anforderung per --level bzw. --issue. --allow-delete ist
+ein eigener, von --apply unabhaengiger Pfad (siehe oben).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -48,6 +55,56 @@ from config import Config  # noqa: E402
 from logger import get_module_logger  # noqa: E402
 from services.library_repair.planner import filter_plan, plan_repairs  # noqa: E402
 from services.library_repair.report import render_plan_text  # noqa: E402
+
+
+RESOLVE_DUPLICATES_SCRIPT = Path(__file__).resolve().parent / "resolve_duplicates.py"
+
+
+def _run_duplicate_resolution(args) -> int:
+    """`--allow-delete`-Pfad: dockt als eigenstaendiger Subprozess an das
+    bereits gehaertete scripts/resolve_duplicates.py an (Zwei-Stufen-
+    Sicherheit: Execution-Plan + Fingerprint-/TOCTOU-Pre-Delete-
+    Revalidierung, siehe dortiger Modul-Docstring) — kein eigener
+    Loesch-/Klassifikations-Code in diesem Script. Fuehrt DESHALB seine
+    EIGENE Duplicate-Erkennung (normalisierter Artist+Titel,
+    Album-vs-Single-Prioritaet) — unabhaengig vom Health-Scanner-Report,
+    der hier bewusst NICHT geladen wird.
+
+    Ohne `--dry-run` wird tatsaechlich gelöscht: `resolve_duplicates.py
+    --execute --confirm-production-execute` (dessen eigene Zusatzsperre —
+    verlangt zwingend einen konkreten Unterordner, niemals den gesamten
+    Produktions-Root). Mit `--dry-run`: reiner read-only Scan (auch ohne
+    --allow-delete bereits moeglich, siehe scripts/resolve_duplicates.py
+    ALLOWED_READONLY_ROOTS)."""
+    if not args.artist:
+        print(
+            "ERROR: --allow-delete erfordert --artist <Name> — nie der "
+            "gesamte Library-Root (siehe scripts/resolve_duplicates.py "
+            "--confirm-production-execute).",
+            file=sys.stderr,
+        )
+        return 2
+
+    config = Config()
+    library_root = Path(args.library) if args.library else Path(config.LIBRARY_DIR)
+    target = library_root / args.artist
+    if not target.is_dir():
+        print(f"ERROR: Artist-Verzeichnis nicht gefunden: {target}", file=sys.stderr)
+        return 2
+
+    cmd = [sys.executable, str(RESOLVE_DUPLICATES_SCRIPT), "--path", str(target)]
+    if args.backup_dir:
+        cmd += ["--backup-dir", str(args.backup_dir)]
+    if not args.dry_run:
+        cmd += ["--execute", "--confirm-production-execute"]
+        print(f"⚠️  DUPLICATE EXECUTE gegen Produktion: {target}\n"
+              f"    (Backup vor jedem Delete, Fingerprint-/TOCTOU-Revalidierung, "
+              f"Manifest + Audit-Log unter /tmp/musicbot_test/duplicate_execution_*)")
+    else:
+        print(f"🔍 DUPLICATE DRY-RUN (read-only): {target}")
+
+    result = subprocess.run(cmd)
+    return result.returncode
 
 
 def _load_or_scan_report(args, config, logger) -> dict:
@@ -103,19 +160,19 @@ def main(argv=None) -> int:
                         help="Verzeichnis fuer Rollback-Kopien "
                              "(Default: <library>/../.library_repair_backups, "
                              "ausserhalb der Library).")
-    parser.add_argument("--allow-delete", dest="allow_delete", action="store_true",
-                        help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--allow-delete", dest="allow_delete", action="store_true",
+        help="Duplicate-Aufloesung ausfuehren (destruktiv) - dockt an das "
+             "bestehende, bereits gehaertete scripts/resolve_duplicates.py "
+             "an (kein eigener Loesch-Code). Erfordert --artist (nie der "
+             "gesamte Library-Root). Ohne --dry-run wird tatsaechlich "
+             "gelöscht (mit Backup + Rollback), mit --dry-run nur Vorschau.",
+    )
 
     args = parser.parse_args(argv)
 
     if args.allow_delete:
-        print(
-            "ERROR: --allow-delete existiert noch nicht. Destruktive "
-            "Reparaturen (Duplicate-Loeschung) sind noch nicht implementiert "
-            "und werden ein eigenes, separat geschuetztes Flag bekommen.",
-            file=sys.stderr,
-        )
-        return 2
+        return _run_duplicate_resolution(args)
 
     config = Config()
     logger = get_module_logger("library_repair")

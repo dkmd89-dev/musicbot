@@ -308,6 +308,7 @@ class FileExecutionResult:
     path: Path
     status: FileDeleteStatus
     error: Optional[str] = None
+    backup_path: Optional[Path] = None
 
 
 @dataclass
@@ -324,6 +325,7 @@ def execute_group(
     entry: ExecutionPlanEntry,
     validate_file_within_root: Callable[[Path], bool],
     build_candidate_from_path: Callable[[Path], Candidate],
+    backup_fn: Optional[Callable[[Path], Optional[Path]]] = None,
 ) -> GroupExecutionResult:
     """Revalidiert die Gruppe (siehe revalidate_group()) und löscht NUR
     bei vollständigem PASS die REMOVE-Kandidaten - einzeln, per
@@ -334,6 +336,18 @@ def execute_group(
     strukturell nie Teil von `entry.remove` (garantiert durch
     resolve_group()/build_execution_plan()); zusätzlich verteidigt eine
     explizite Laufzeitprüfung pro Datei dagegen.
+
+    `backup_fn` (optional, per Dependency Injection wie
+    `validate_file_within_root`/`build_candidate_from_path` - dieses
+    Modul kennt keinen Library-Root und keine Backup-Konvention, siehe
+    Modul-Docstring "Architektur-Grenze"): wird PRO Datei unmittelbar VOR
+    deren `unlink()` aufgerufen und muss eine vollständige Kopie anlegen
+    und deren Pfad zurückgeben. Liefert `backup_fn` `None` oder wirft es,
+    wird NICHT gelöscht (FAILED statt eines Deletes ohne Sicherungskopie).
+    Bleibt `backup_fn` weg (Default `None`), ist das Verhalten exakt wie
+    zuvor - kein Backup, direktes `unlink()` (Auftrag Abschnitt 17: "kein
+    Rollback-Versprechen" bleibt für Aufrufer ohne `backup_fn` unverändert
+    in Kraft, z. B. der bestehende Test-CLI-Pfad `resolve_duplicates.py`).
     """
     revalidation = revalidate_group(entry, validate_file_within_root, build_candidate_from_path)
     if not revalidation.ok:
@@ -364,20 +378,46 @@ def execute_group(
                 )
             )
             continue
+
+        backup_path: Optional[Path] = None
+        if backup_fn is not None:
+            try:
+                backup_path = backup_fn(fp.path)
+            except Exception as e:  # noqa: BLE001 - Backup-Fehler darf nie zum Delete führen
+                backup_path = None
+                file_results.append(
+                    FileExecutionResult(
+                        path=fp.path, status=FileDeleteStatus.FAILED,
+                        error=f"Backup fehlgeschlagen, Delete verweigert: {e!r}",
+                    )
+                )
+                continue
+            if backup_path is None:
+                file_results.append(
+                    FileExecutionResult(
+                        path=fp.path, status=FileDeleteStatus.FAILED,
+                        error="Backup fehlgeschlagen (backup_fn lieferte None), Delete verweigert",
+                    )
+                )
+                continue
+
         try:
             fp.path.unlink()
             if fp.path.exists():
                 file_results.append(
                     FileExecutionResult(
                         path=fp.path, status=FileDeleteStatus.FAILED,
-                        error="Datei existiert nach unlink() weiterhin",
+                        error="Datei existiert nach unlink() weiterhin", backup_path=backup_path,
                     )
                 )
             else:
-                file_results.append(FileExecutionResult(path=fp.path, status=FileDeleteStatus.DELETED))
+                file_results.append(FileExecutionResult(
+                    path=fp.path, status=FileDeleteStatus.DELETED, backup_path=backup_path,
+                ))
         except OSError as e:
             file_results.append(
-                FileExecutionResult(path=fp.path, status=FileDeleteStatus.FAILED, error=str(e))
+                FileExecutionResult(path=fp.path, status=FileDeleteStatus.FAILED,
+                                    error=str(e), backup_path=backup_path)
             )
 
     keep_after = FileFingerprint.capture(entry.keep.path)

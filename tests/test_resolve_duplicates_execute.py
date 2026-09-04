@@ -248,6 +248,60 @@ class TestExecuteEndToEnd:
         assert "original_sha256" in audit_entry
 
 
+class TestExecuteBackup:
+    """--backup-dir: Per-Datei-Backup VOR jedem --execute-Delete (analog
+    zum library_repair-Sicherheitsmodell)."""
+
+    def test_deleted_file_is_backed_up_before_removal(self, isolated_test_dir, tmp_path):
+        single = isolated_test_dir / "Artist" / "Singles" / "2025 - Track.m4a"
+        _make_real_m4a(single, "Artist", "Track", duration=1, mb_recording_id="MB123")
+        album = isolated_test_dir / "Artist" / "2025 - Album" / "01 - Track.m4a"
+        _make_real_m4a(album, "Artist", "Track", album="Album", trkn=1, duration=1, mb_recording_id="MB123")
+        original_bytes = single.read_bytes()
+
+        backup_dir = tmp_path / "backups"
+        exit_code, exec_report = _run_execute(
+            isolated_test_dir, tmp_path, extra_args=["--backup-dir", str(backup_dir)],
+        )
+
+        assert exit_code == 0
+        assert not single.exists()
+        assert album.exists()
+        backups = list(backup_dir.rglob("*.bak"))
+        assert len(backups) == 1
+        assert backups[0].read_bytes() == original_bytes
+
+        audit_path = tmp_path / "audit_log.jsonl"
+        audit_entry = json.loads(audit_path.read_text().strip().splitlines()[0])
+        assert audit_entry["backup_path"] == str(backups[0])
+
+    def test_default_backup_dir_is_outside_scanned_root(self, isolated_test_dir, tmp_path):
+        single = isolated_test_dir / "Artist" / "Singles" / "2025 - Track.m4a"
+        _make_real_m4a(single, "Artist", "Track", duration=1, mb_recording_id="MB123")
+        album = isolated_test_dir / "Artist" / "2025 - Album" / "01 - Track.m4a"
+        _make_real_m4a(album, "Artist", "Track", album="Album", trkn=1, duration=1, mb_recording_id="MB123")
+        original_bytes = single.read_bytes()
+
+        default_backup_dir = ALLOWED_ROOT.parent / rd.DEFAULT_BACKUP_DIR_NAME
+        # eindeutiger Marker im Pfad (isolated_test_dir-Name) - robust
+        # gegen andere/parallele Nutzung derselben Default-Backup-Wurzel.
+        marker = isolated_test_dir.name
+        try:
+            exit_code, _ = _run_execute(isolated_test_dir, tmp_path)
+            assert exit_code == 0
+            assert not single.exists()
+            matches = [
+                p for p in default_backup_dir.rglob("*.bak")
+                if marker in str(p) and p.name.startswith(single.name)
+                and p.read_bytes() == original_bytes
+            ]
+            assert len(matches) == 1
+        finally:
+            for p in default_backup_dir.rglob("*.bak"):
+                if marker in str(p):
+                    p.unlink(missing_ok=True)
+
+
 @requires_ffmpeg
 class TestExecuteRegressionKnownCases:
     """Auftrag Phase 3 Abschnitt 19: alle bekannten Fälle müssen unter
