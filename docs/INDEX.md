@@ -40,6 +40,13 @@ Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/a
 | [archive/METADATA_REPROCESSING_TEST_CHAPO102.md](archive/METADATA_REPROCESSING_TEST_CHAPO102.md) | HISTORICAL (Validierungsprotokoll) | Erster Live-Validierungslauf des Tools gegen echten Artist-Bestand (CHAPO102), inkl. Post-Run Safety Check |
 | [archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md](archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md) | HISTORICAL (Validierungsprotokoll) | Zweiter Validierungslauf (Nina Chuba) + Final-Audit-Nachtrag zu Genre-Mapping-Konsistenz und UNRESOLVED-Praezisierung |
 
+## Library Health Scanner
+
+| Datei | Status | Kurzthema |
+|---|---|---|
+| [LIBRARY_REPAIR.md](LIBRARY_REPAIR.md) | CURRENT (Phase 2 PR 1 — Repair Planner) | `scripts/library_repair.py` / `services/library_repair/` — leitet aus dem Health-Report konkrete Reparaturaktionen ab (Issue-Code → Repair-Level/-Action, jede auf eine **bestehende** Komponente abgebildet). **Read-only**: erzeugt nur einen Plan, `--apply`/`--allow-delete` abgelehnt. Executor + Safety + Journal + Verification-Scan = Phase 2 PR 2+ |
+| [LIBRARY_HEALTH.md](LIBRARY_HEALTH.md) | CURRENT (Phase 1 vollständig) | `scripts/library_health_check.py` — analysiert die konfigurierte Music-Library **vollständig read-only** und erzeugt einen versionierten Health-Report (JSON + Text) mit deterministischem Health-Score. Rein diagnostisch, keine Mutations-Flags. Domain in `services/library_health/` (Muster wie `services/duplicate/`): Discovery + Per-Datei-Analyse (Metadata/Artwork/Lyrics/Audio/Loudness-Tag/Genre/Multi-Artist/Struktur) + Group-Analyse (Album-/Artist-Konsistenz, Duplicate EXACT/RECORDING/SUSPECTED via `services/duplicate/classification.py`) + Health-Score (feste, dokumentierte Severity-Gewichte, INFO ohne Wirkung). Read-only technisch nachgewiesen (SHA256/mtime/size/Pfade + Import-Graph). |
+
 ## Genre-System
 
 | Datei | Status | Kurzthema |
