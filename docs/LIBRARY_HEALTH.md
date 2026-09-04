@@ -10,10 +10,9 @@
 Der Scanner ist **ausschließlich diagnostisch**. Er repariert nichts, er
 schlägt keine Auflösung vor, er fasst keine Library-Datei schreibend an.
 
-Status: **Phase 1, PR 2** (Discovery + Per-Datei-Analyse + **Group-Analyse**:
-Album-/Artist-Konsistenz + Duplicate-Gruppen). Ein deterministischer
-Health-Score folgt in PR 3 — im Report unter `scan.pending_analyses`
-(`["health_score"]`) ausgewiesen.
+Status: **Phase 1 vollständig** (PR 1 Discovery + Per-Datei-Analyse, PR 2
+Group-Analyse, PR 3 deterministischer Health-Score). `scan.pending_analyses`
+ist jetzt `[]`.
 
 ---
 
@@ -78,8 +77,9 @@ services/library_health/
     tag_reader.py     read-only I/O-Adapter: Tags (m4a/mp3), ffprobe-Stream, eingebettetes Artwork
     file_analysis.py  reine Funktion (FileRecord, TagData, StreamData, ArtworkData) -> FileHealth
     group_analysis.py reine Funktion (list[FileHealth], file_sha256) -> list[Issue]  (Album/Artist/Duplicate)
+    scoring.py        reine Funktion (list[FileHealth], group_issues) -> Health-Section (file/album/artist/library-Score)
     report.py         stabile, versionierte JSON-Struktur + Text-Report (deterministisch sortiert)
-    scanner.py        Orchestrierung DISCOVERY -> READ -> ANALYSE -> GROUP-ANALYSE -> REPORT
+    scanner.py        Orchestrierung DISCOVERY -> READ -> ANALYSE -> GROUP-ANALYSE -> SCORING -> REPORT
 
 scripts/library_health_check.py   dünner CLI-Wrapper (CLI -> Config -> Scanner -> Report), keine Fachlogik
 ```
@@ -187,6 +187,37 @@ Health-Score **nicht** (PR 3).
 
 ---
 
+## 5a. Health-Score (PR 3, `scoring.py`)
+
+**Deterministisch, reproduzierbar, dokumentiert** — dieselbe Library im
+selben Zustand ergibt denselben Score. Keine versteckten/dynamischen
+Gewichte (Prompt Abschnitt 23).
+
+Jeder Score startet bei 100 und wird um eine **feste Strafe pro Issue**
+reduziert, ausschließlich nach dessen Severity:
+
+| Severity | Strafe |
+|---|---|
+| `CRITICAL` | −40 |
+| `ERROR` | −15 |
+| `WARNING` | −4 |
+| `INFO` | **0** (Beobachtung, kein Defekt) |
+
+```text
+file_health_score    = clamp(100 − Σ Strafe(Datei-Issues))
+album_health_score   = clamp(Ø file_health_score der Album-Tracks − Σ Strafe(Album-Issues))
+artist_health_score  = clamp(Ø file_health_score der Artist-Dateien − Σ Strafe(Artist-Issues))
+library_health_score = clamp(Ø aller file_health_scores − min(15, 0.5 · Σ Strafe(Library-Issues)))
+clamp(x) = auf [0, 100] begrenzt, 1 Nachkommastelle
+```
+
+Der Library-Issue-Abzug (Duplicate-Gruppen) ist bei −15 gedeckelt — viele
+`SUSPECTED`-Kandidaten (INFO, Strafe 0) oder einige `EXACT`-Dubletten sollen
+die Library nicht auf 0 ziehen (Aufräum-Kandidaten, kein Totalschaden).
+
+Status-Bänder (nur Darstellung): `≥ 90 EXCELLENT` · `≥ 75 GOOD` · `≥ 50 FAIR` · `≥ 25 POOR` · `< 25 CRITICAL`.
+Die exakte Gewichts-Tabelle steht zusätzlich im Report unter `health.weights`.
+
 ## 6. JSON-Report-Schema (`schema_version` 1.0)
 
 ```jsonc
@@ -194,9 +225,11 @@ Health-Score **nicht** (PR 3).
   "schema_version": "1.0",
   "scanner_version": "1.0",
   "scan":   { "started_at": "...", "completed_at": "...", "duration_seconds": 0,
-              "pending_analyses": ["health_score"] },
+              "pending_analyses": [] },
   "library":{ "root": "...", "files": 0, "artists": 0, "albums": 0 },
-  "health": { "score": null, "status": "UNSCORED" },        // PR 3
+  "health": { "score": 0.0, "status": "EXCELLENT|GOOD|FAIR|POOR|CRITICAL",
+              "weights": { "severity_penalty": {...}, "library_issue_factor": 0.5,
+                           "library_issue_max_deduction": 15.0, "status_bands": {...} } },
   "statistics": {
      "total_files": 0, "total_artists": 0, "total_albums": 0,
      "healthy_files": 0, "files_with_warnings": 0, "files_with_errors": 0,
@@ -212,8 +245,12 @@ Health-Score **nicht** (PR 3).
                "path": "...", "artist": "...", "album": "...", "title": "...",
                "message": "...", "details": {}, "confidence": null,
                "related_files": [] } ],
-  "files":  [ { "relative_path": "...", "states": {...}, "issue_codes": [...],
-               "artist": "...", "album": "...", "...": "..." } ]
+  "artists": [ { "artist": "...", "file_count": 0, "album_count": 0,
+                 "health_score": 0.0, "issue_codes": [...] } ],
+  "albums":  [ { "artist": "...", "album": "...", "file_count": 0,
+                 "health_score": 0.0, "issue_codes": [...] } ],
+  "files":   [ { "relative_path": "...", "states": {...}, "issue_codes": [...],
+                 "file_health_score": 0.0, "artist": "...", "album": "...", "...": "..." } ]
 }
 ```
 
@@ -229,7 +266,6 @@ Issues nach (Severity absteigend, Code, Pfad). Nur die Zeitstempel variieren.
 - **SHA-256** wird nur für Dateien mit **identischer Größe** berechnet
   (byte-identische Dateien haben zwingend dieselbe Größe — vollständiger,
   billiger Vorfilter, Prompt Abschnitt 27).
-- **Kein Health-Score** — PR 3.
 - **Kein Navidrome-Abgleich** — nicht Teil dieser Phase (Prompt Abschnitt 30).
 - Nur `.m4a/.mp4` (voll) und `.mp3` (best-effort); `.ogg/.opus` werden
   gefunden, aber ohne Tag-/Artwork-Detailanalyse (die Produktions-Pipeline
@@ -245,6 +281,7 @@ Issues nach (Severity absteigend, Code, Pfad). Nur die Zeitstempel variieren.
 | `tests/test_library_health_tag_reader.py` | echte m4a: Tags/Artwork/ffprobe, defekte Datei |
 | `tests/test_library_health_file_analysis.py` | jede Dimension als pure Unit (synthetische Eingaben) |
 | `tests/test_library_health_group_analysis.py` | Album-Gap/Dublette/Disc, Artist-Varianten, Duplicate EXACT/RECORDING/SUSPECTED, DUP-03 (Remix ≠ Duplikat) |
+| `tests/test_library_health_scoring.py` | feste Gewichts-Tabelle, INFO ohne Wirkung, Clamp, Determinismus, Album-/Artist-/Library-Aggregation, Deckelung, Status-Bänder |
 | `tests/test_library_health_issues.py` | Register-Vollständigkeit/-Stabilität |
 | `tests/test_library_health_report.py` | Schema, Sortierung, Determinismus, Statistik-Buckets |
 | `tests/test_library_health_readonly_safety.py` | **SHA256/mtime/size/Pfade vorher==nachher**, CLI-Subprozess, Import-Graph, abgelehnte Mutations-Flags |

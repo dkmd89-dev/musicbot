@@ -29,9 +29,7 @@ from .models import (
 # Analysen, die erst in spaeteren PRs dieses Phase-1-Zweigs dazukommen —
 # im Report ausdruecklich als "noch nicht analysiert" ausgewiesen, statt
 # irrefuehrend 0 zu melden.
-PENDING_ANALYSES = (
-    "health_score",
-)
+PENDING_ANALYSES: tuple[str, ...] = ()
 
 
 def _max_severity(issues: Iterable[Issue]) -> Severity | None:
@@ -125,6 +123,7 @@ def build_report_dict(
     duration_seconds: float,
     file_healths: list[FileHealth],
     group_issues: list[Issue] | None = None,
+    health_section: dict | None = None,
 ) -> dict:
     group_issues = sorted(group_issues or [], key=lambda i: i.sort_key())
     file_healths = sorted(file_healths, key=lambda fh: fh.record.relative_path)
@@ -134,6 +133,15 @@ def build_report_dict(
     all_issues.sort(key=lambda i: i.sort_key())
 
     stats = build_statistics(file_healths, all_issues, group_issues)
+
+    health_section = health_section or {}
+    file_scores: dict = health_section.get("file_scores", {})
+
+    files_out = []
+    for fh in file_healths:
+        entry = fh.to_dict()
+        entry["file_health_score"] = file_scores.get(fh.record.relative_path)
+        files_out.append(entry)
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -151,12 +159,15 @@ def build_report_dict(
             "albums": stats["total_albums"],
         },
         "health": {
-            "score": None,             # PENDING_ANALYSES (PR3)
-            "status": "UNSCORED",
+            "score": health_section.get("score"),
+            "status": health_section.get("status", "UNSCORED"),
+            "weights": health_section.get("weights"),
         },
         "statistics": stats,
         "issues": [i.to_dict() for i in all_issues],
-        "files": [fh.to_dict() for fh in file_healths],
+        "artists": health_section.get("artists", []),
+        "albums": health_section.get("albums", []),
+        "files": files_out,
     }
 
 
@@ -203,6 +214,26 @@ def render_text(report: dict, *, max_issues: int = 200) -> str:
     add(f"  album inconsistencies : {s['album_inconsistencies']}")
     add(f"  artist inconsistencies: {s['artist_inconsistencies']}")
     add("")
+    h = report["health"]
+    add(f"HEALTH SCORE: {h['score']}  ({h['status']})")
+    worst_artists = sorted(
+        (a for a in report.get("artists", []) if a["health_score"] is not None),
+        key=lambda a: a["health_score"],
+    )[:10]
+    if worst_artists:
+        add("  schwaechste Artists:")
+        for a in worst_artists:
+            add(f"    {a['health_score']:>5}  {a['artist']}  "
+                f"({a['file_count']} Dateien, {a['album_count']} Alben)")
+    worst_albums = sorted(
+        (al for al in report.get("albums", []) if al["health_score"] is not None),
+        key=lambda al: al["health_score"],
+    )[:10]
+    if worst_albums:
+        add("  schwaechste Alben:")
+        for al in worst_albums:
+            add(f"    {al['health_score']:>5}  {al['artist']} — {al['album']}")
+    add("")
     add("Issues by severity:")
     for sev, count in s["issues_by_severity"].items():
         add(f"  {sev:<9}: {count}")
@@ -210,9 +241,6 @@ def render_text(report: dict, *, max_issues: int = 200) -> str:
     add("Issues by code:")
     for code, count in s["issues_by_code"].items():
         add(f"  {code:<32}: {count}")
-    add("")
-    add(f"Health score: {report['health']['status']} "
-        f"(pending: {', '.join(report['scan']['pending_analyses'])})")
     add("")
     add("-" * 70)
     add(f"ISSUES (top {max_issues} of {len(report['issues'])}, most severe first)")

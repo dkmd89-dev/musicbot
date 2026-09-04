@@ -44,7 +44,7 @@ Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/a
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| [LIBRARY_HEALTH.md](LIBRARY_HEALTH.md) | CURRENT (Phase 1, PR 2) | `scripts/library_health_check.py` — analysiert die konfigurierte Music-Library **vollständig read-only** und erzeugt einen versionierten Health-Report (JSON + Text). Rein diagnostisch, keine Mutations-Flags. Domain in `services/library_health/` (Muster wie `services/duplicate/`). PR 1: Discovery + Per-Datei-Analyse (Metadata/Artwork/Lyrics/Audio/Loudness-Tag/Genre/Multi-Artist/Struktur). PR 2: Group-Analyse (Album-/Artist-Konsistenz, Duplicate EXACT/RECORDING/SUSPECTED via `services/duplicate/classification.py`). Health-Score (PR 3) offen, siehe FINDINGS_INDEX |
+| [LIBRARY_HEALTH.md](LIBRARY_HEALTH.md) | CURRENT (Phase 1 vollständig) | `scripts/library_health_check.py` — analysiert die konfigurierte Music-Library **vollständig read-only** und erzeugt einen versionierten Health-Report (JSON + Text) mit deterministischem Health-Score. Rein diagnostisch, keine Mutations-Flags. Domain in `services/library_health/` (Muster wie `services/duplicate/`): Discovery + Per-Datei-Analyse (Metadata/Artwork/Lyrics/Audio/Loudness-Tag/Genre/Multi-Artist/Struktur) + Group-Analyse (Album-/Artist-Konsistenz, Duplicate EXACT/RECORDING/SUSPECTED via `services/duplicate/classification.py`) + Health-Score (feste, dokumentierte Severity-Gewichte, INFO ohne Wirkung). Read-only technisch nachgewiesen (SHA256/mtime/size/Pfade + Import-Graph). |
 
 ## Genre-System
 

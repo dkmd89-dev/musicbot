@@ -32,6 +32,7 @@ from .file_analysis import analyze_file
 from .group_analysis import analyze_groups
 from .models import AnalysisState, FileHealth
 from .report import build_report_dict
+from .scoring import build_health_section
 from .tag_reader import ArtworkData, StreamData, TagData, probe_stream, read_artwork, read_tags
 
 
@@ -149,6 +150,7 @@ def run_scan(
         logger.info("GROUP ANALYSIS: Album-/Artist-Konsistenz + Duplicate-Gruppen")
     file_hashes = _hash_size_collisions(file_healths)
     group_issues = analyze_groups(file_healths, file_sha256=file_hashes)
+    health_section = build_health_section(file_healths, group_issues)
 
     completed = datetime.now(timezone.utc)
     report = build_report_dict(
@@ -158,12 +160,14 @@ def run_scan(
         duration_seconds=time.monotonic() - t0,
         file_healths=file_healths,
         group_issues=group_issues,
+        health_section=health_section,
     )
 
     if logger:
         s = report["statistics"]
         logger.info(
-            f"SCAN COMPLETE: {s['total_files']} Dateien, "
+            f"SCAN COMPLETE: Health {report['health']['score']} "
+            f"({report['health']['status']}) — {s['total_files']} Dateien, "
             f"{s['files_with_errors']} mit Fehlern, "
             f"{s['files_with_warnings']} mit Warnungen, "
             f"{len(report['issues'])} Issues gesamt"

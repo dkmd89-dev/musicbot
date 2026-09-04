@@ -51,9 +51,9 @@ def test_schema_shape(tmp_path):
     assert r["schema_version"] == SCHEMA_VERSION
     for key in ("scan", "library", "health", "statistics", "issues", "files"):
         assert key in r
-    assert r["health"]["status"] == "UNSCORED"
-    assert r["scan"]["pending_analyses"] == ["health_score"]
+    assert r["scan"]["pending_analyses"] == []
     assert r["statistics"]["duplicate_groups"] == 0  # keine Dubletten im Fixture
+    assert "artists" in r and "albums" in r
 
 
 def test_files_sorted_by_relative_path(tmp_path):
