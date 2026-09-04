@@ -26,6 +26,7 @@ dasselbe Muster wie services/metadata/tag_writer.py.
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import subprocess
 import time
@@ -35,10 +36,14 @@ from typing import Optional
 
 from .journal import JournalEntry, RepairJournal
 from .models import RepairCandidate
-from . import tag_repairs
+from . import cover_repairs, external_metadata, rename_repairs, tag_repairs
 
 _ARTISTS_FREEFORM_ATOM = "----:com.apple.iTunes:ARTISTS"
 _SUPPORTED = (".m4a", ".mp4", ".m4v")
+
+
+def _blank(v) -> bool:
+    return v is None or not str(v).strip()
 
 # Welche Issue-Codes dieser Executor bearbeitet (Rest wird übersprungen).
 L1_TAG_CODES = frozenset({
@@ -48,6 +53,11 @@ L1_TAG_CODES = frozenset({
     "MULTI_ARTIST_DUPLICATE",
     "META_ALBUM_ARTIST_MISSING",
     "ALBUM_ARTIST_INCONSISTENT",
+})
+
+L1_RENAME_CODES = frozenset({
+    "FILENAME_TITLE_MISMATCH",
+    "FILENAME_SUSPICIOUS",
 })
 
 
@@ -61,6 +71,8 @@ class ExecOutcome:
     after: dict = field(default_factory=dict)
     reason: Optional[str] = None
     backup_path: Optional[str] = None
+    artist: Optional[str] = None
+    album: Optional[str] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -175,7 +187,7 @@ def _write_atoms(src: Path, new_atoms: dict) -> Path:
     (noch NICHT übernommen)."""
     from mutagen.mp4 import MP4, MP4FreeForm
 
-    tmp = src.with_name(f".{src.name}.repairtmp_{int(time.time() * 1000)}")
+    tmp = src.with_name(f".{src.stem}.repairtmp_{int(time.time() * 1000)}{src.suffix}")
     shutil.copy2(src, tmp)
     audio = MP4(tmp)
     if "genre" in new_atoms:
@@ -313,6 +325,620 @@ def apply_level1(
         outcomes.append(oc)
 
     return outcomes
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Level 1 — Rename (nur im selben Verzeichnis, Prompt Abschnitt 7/14)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _plan_new_name(code: str, path: Path, library_root: Path) -> Optional[str]:
+    from services.library_health.discovery import build_file_record
+    from services.library_health.tag_reader import read_tags
+
+    rec = build_file_record(path, library_root)
+    if code == "FILENAME_SUSPICIOUS":
+        return rename_repairs.repair_suspicious_filename(rec.filename_stem, rec.extension)
+
+    tags = read_tags(path)
+    return rename_repairs.repair_filename_title_mismatch(
+        stem=rec.filename_stem,
+        extension=rec.extension,
+        title=tags.title,
+        year=tags.year,
+        track_number=tags.track_number,
+        is_singles=rec.is_singles,
+        library_section=rec.library_section.value,
+    )
+
+
+def apply_level1_rename(
+    candidates: list[RepairCandidate],
+    library_root: Path,
+    journal: RepairJournal,
+    *,
+    dry_run: bool = True,
+) -> list[ExecOutcome]:
+    library_root = Path(library_root)
+    outcomes: list[ExecOutcome] = []
+    todo = sorted(
+        (c for c in candidates if c.issue_code in L1_RENAME_CODES and c.path),
+        key=lambda c: (c.path, c.issue_code),
+    )
+    for c in todo:
+        path = library_root / c.path
+        oc = ExecOutcome(file=c.path, issue_code=c.issue_code, action=c.action.value,
+                         status="SKIPPED")
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        try:
+            new_name = _plan_new_name(c.issue_code, path, library_root)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Namensberechnung: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        if not new_name or "/" in new_name or "\\" in new_name:
+            oc.reason = "kein sicherer neuer Name / nicht eindeutig"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        target = path.with_name(new_name)
+        if target == path:
+            oc.reason = "Name bereits korrekt"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+        if target.exists():
+            oc.reason = f"Zielname existiert bereits: {new_name}"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        rel_target = str(target.relative_to(library_root))
+        oc.before = {"path": c.path}
+        oc.after = {"path": rel_target}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        sha_before = _sha256(path)
+        claim_fd = None
+        try:
+            # Zielnamen atomar auf OS-Ebene beanspruchen (TOCTOU, auch
+            # prozessuebergreifend) — dasselbe Muster wie
+            # utils/filenamefixer.py::move_to_library().
+            claim_fd = os.open(str(target), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(claim_fd)
+            claim_fd = None
+            os.replace(str(path), str(target))
+            # Verifikation
+            from mutagen.mp4 import MP4
+
+            MP4(target)  # muss lesbar bleiben
+            if _sha256(target) != sha_before:
+                raise RuntimeError("Byte-Inhalt nach Rename verändert")
+            oc.status = "SUCCESS"
+        except FileExistsError:
+            oc.reason = f"Zielname wurde parallel belegt: {new_name}"
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            if not path.exists() and target.exists():
+                try:
+                    os.replace(str(target), str(path))
+                except OSError:
+                    pass
+            else:
+                try:
+                    target.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        je = _je(c, oc, dry_run)
+        je.sha256_before = sha_before
+        je.sha256_after = _sha256(target if oc.status == "SUCCESS" else path)
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Cover — externe Suche (CoverProcessor) + only-if-better (Prompt Abschnitt 9)
+# ─────────────────────────────────────────────────────────────────────────
+
+COVER_ISSUE_CODES = cover_repairs.HANDLED_ISSUE_CODES
+
+
+def _image_dims(raw: bytes) -> tuple[Optional[int], Optional[int], Optional[str]]:
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(BytesIO(raw)) as img:
+            return img.width, img.height, (img.format or "").upper()
+    except Exception:  # noqa: BLE001
+        return None, None, None
+
+
+def _embed_cover(src: Path, raw: bytes, fmt: str) -> Path:
+    """covr-Atom auf einer temporaeren Sibling-Kopie setzen."""
+    from mutagen.mp4 import MP4, MP4Cover
+
+    image_format = MP4Cover.FORMAT_PNG if fmt == "PNG" else MP4Cover.FORMAT_JPEG
+    tmp = src.with_name(f".{src.stem}.repairtmp_{int(time.time() * 1000)}{src.suffix}")
+    shutil.copy2(src, tmp)
+    audio = MP4(tmp)
+    audio["covr"] = [MP4Cover(raw, imageformat=image_format)]
+    audio.save()
+    return tmp
+
+
+def apply_cover_repairs(
+    candidates: list[RepairCandidate],
+    library_root: Path,
+    journal: RepairJournal,
+    cover_fetcher,
+    *,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """`cover_fetcher(ctx: dict) -> (bytes | None, source | None)` — der
+    Aufrufer injiziert den echten CoverProcessor. `ctx` enthaelt artist/
+    title/album/mb_recording_id/mb_release_id/mb_artist_id/isrc."""
+    from services.library_health.tag_reader import read_artwork, read_tags
+
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+    todo = sorted(
+        (c for c in candidates if c.issue_code in COVER_ISSUE_CODES and c.path),
+        key=lambda c: (c.path, c.issue_code),
+    )
+    # Album-Cache: alle Tracks EINES Album-Ordners bekommen dasselbe Cover
+    # (verhindert, dass ein per-Track-Repair eine ALBUM_COVER_INCONSISTENT
+    # erst erzeugt). Key = (Artist-Ordner, Album-Ordner); Singles nicht gecacht.
+    album_cover_cache: dict[tuple, tuple] = {}
+
+    for c in todo:
+        path = library_root / c.path
+        oc = ExecOutcome(file=c.path, issue_code=c.issue_code, action=c.action.value,
+                         status="SKIPPED")
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        try:
+            art = read_artwork(path)
+            tags = read_tags(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        ctx = {
+            "artist": tags.artist, "title": tags.title, "album": tags.album,
+            "mb_recording_id": tags.mb_recording_id, "mb_release_id": tags.mb_release_id,
+            "mb_artist_id": tags.mb_artist_id, "mb_release_group_id": tags.mb_release_group_id,
+            "isrc": tags.isrc,
+        }
+        parts = Path(c.path).parts
+        album_key = (parts[0], parts[1]) if len(parts) >= 3 and parts[1].lower() != "singles" else None
+        try:
+            if album_key is not None and album_key in album_cover_cache:
+                new_raw, source = album_cover_cache[album_key]
+            else:
+                new_raw, source = cover_fetcher(ctx)
+                if album_key is not None:
+                    album_cover_cache[album_key] = (new_raw, source)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Cover-Suche: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        cand_w = cand_h = None
+        cand_fmt = "JPEG"
+        if new_raw:
+            cand_w, cand_h, cand_fmt = _image_dims(new_raw)
+
+        action, why = cover_repairs.decide_cover_action(
+            c.issue_code,
+            current_present=art.present,
+            current_state=art.state.value,
+            current_w=art.width, current_h=art.height,
+            candidate_w=cand_w, candidate_h=cand_h,
+        )
+        oc.before = {"cover": f"{art.width}x{art.height}" if art.present else "MISSING",
+                     "sha256": art.sha256}
+        oc.after = {"cover": f"{cand_w}x{cand_h}" if action != "SKIP" else None,
+                    "source": source, "decision": action}
+
+        if action == cover_repairs.SKIP:
+            oc.reason = why
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        backup = backup_dir / f"{c.path}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _embed_cover(path, new_raw, cand_fmt or "JPEG")
+            verify = read_artwork(tmp)
+            if not verify.present or verify.sha256 != hashlib.sha256(new_raw).hexdigest():
+                raise RuntimeError("Cover-Verifikation fehlgeschlagen")
+            audio_tmp = _audio_essence_md5(tmp)
+            if audio_tmp != audio_before or audio_tmp.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {audio_tmp})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if Path(backup).exists():
+                    Path(backup).replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            try:
+                Path(backup).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        je = _je(c, oc, dry_run)
+        je.sha256_before, je.sha256_after = sha_before, _sha256(path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = _audio_essence_md5(path) if oc.status == "SUCCESS" else audio_before
+        je.backup_path = oc.backup_path
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+ALBUM_COVER_CODES = cover_repairs.ALBUM_ISSUE_CODES
+
+
+def _cover_raw(path: Path) -> tuple[Optional[bytes], str]:
+    from services.library_health.tag_reader import _extract_mp4_cover
+
+    try:
+        raw, mime = _extract_mp4_cover(path)
+    except Exception:  # noqa: BLE001
+        return None, "JPEG"
+    return raw, ("PNG" if (mime or "").endswith("png") else "JPEG")
+
+
+def apply_album_cover_unify(
+    candidates: list[RepairCandidate],
+    library_root: Path,
+    journal: RepairJournal,
+    *,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """ALBUM_COVER_INCONSISTENT: alle Tracks eines Albums auf das BESTE
+    bereits vorhandene Cover vereinheitlichen (groesste quadratische,
+    dekodierbare Bilddatei im Album) — offline, deterministisch, nie
+    herunterskaliert. Findet sich kein brauchbares Cover -> SKIP."""
+    from services.library_health.tag_reader import read_artwork
+
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+
+    for c in sorted((c for c in candidates if c.issue_code in ALBUM_COVER_CODES),
+                    key=lambda c: (c.artist or "", c.album or "")):
+        rels = sorted(set(c.related_files or []))
+        if len(rels) < 2:
+            continue
+        arts: list[dict] = []
+        for rel in rels:
+            p = library_root / rel
+            if safety_check(p, library_root):
+                arts.append({"rel": rel, "path": p, "present": False, "decodable": False})
+                continue
+            a = read_artwork(p)
+            arts.append({
+                "rel": rel, "path": p,
+                "present": a.present, "decodable": a.state.value in ("PRESENT",),
+                "w": a.width, "h": a.height, "sha256": a.sha256,
+            })
+
+        best_idx = cover_repairs.pick_album_cover(arts)
+        if best_idx is None:
+            outcomes.append(ExecOutcome(
+                file=f"{c.artist}/{c.album}", issue_code=c.issue_code,
+                action=c.action.value, status="SKIPPED",
+                reason="kein brauchbares (quadratisches, dekodierbares) Cover im Album"))
+            journal.record(_je(c, outcomes[-1], dry_run))
+            continue
+
+        best = arts[best_idx]
+        best_raw, best_fmt = _cover_raw(best["path"])
+        if not best_raw:
+            outcomes.append(ExecOutcome(
+                file=f"{c.artist}/{c.album}", issue_code=c.issue_code,
+                action=c.action.value, status="SKIPPED",
+                reason="Album-Cover nicht lesbar"))
+            journal.record(_je(c, outcomes[-1], dry_run))
+            continue
+
+        for tr in arts:
+            if tr["rel"] == best["rel"]:
+                continue
+            oc = ExecOutcome(file=tr["rel"], issue_code=c.issue_code,
+                             action=c.action.value, status="SKIPPED",
+                             artist=c.artist, album=c.album)
+            if not tr.get("decodable") and tr.get("present"):
+                oc.reason = "Track-Cover nicht dekodierbar — manuell"
+                outcomes.append(oc)
+                journal.record(_je_named(tr["rel"], oc, dry_run))
+                continue
+            action, why = cover_repairs.should_unify_track(
+                tr, {"w": best.get("w"), "h": best.get("h"), "sha256": best.get("sha256")})
+            oc.before = {"cover": f"{tr.get('w')}x{tr.get('h')}" if tr.get("present") else "MISSING",
+                         "sha256": tr.get("sha256")}
+            oc.after = {"cover": f"{best.get('w')}x{best.get('h')}", "decision": action,
+                        "source": f"album:{best['rel']}"}
+            if action == cover_repairs.SKIP:
+                oc.reason = why
+                outcomes.append(oc)
+                journal.record(_je_named(tr["rel"], oc, dry_run))
+                continue
+            if dry_run:
+                oc.status = "DRY_RUN"
+                outcomes.append(oc)
+                journal.record(_je_named(tr["rel"], oc, dry_run))
+                continue
+            _do_cover_write(tr["path"], tr["rel"], best_raw, best_fmt, backup_dir, oc, journal, c)
+            outcomes.append(oc)
+
+    return outcomes
+
+
+def _do_cover_write(path, rel, raw, fmt, backup_dir, oc, journal, cand):
+    sha_before = _sha256(path)
+    audio_before = _audio_essence_md5(path)
+    from services.library_health.tag_reader import read_artwork
+
+    backup = Path(backup_dir) / f"{rel}.{int(time.time() * 1000)}.bak"
+    tmp = None
+    try:
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, backup)
+        tmp = _embed_cover(path, raw, fmt)
+        v = read_artwork(tmp)
+        if not v.present or v.sha256 != hashlib.sha256(raw).hexdigest():
+            raise RuntimeError("Cover-Verifikation fehlgeschlagen")
+        at = _audio_essence_md5(tmp)
+        if at != audio_before or at.startswith("ERROR"):
+            raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {at})")
+        tmp.replace(path)
+        tmp = None
+        oc.status = "SUCCESS"
+        oc.backup_path = str(backup)
+    except Exception as e:  # noqa: BLE001
+        oc.status, oc.reason = "FAILED", repr(e)
+        try:
+            if Path(backup).exists():
+                Path(backup).replace(path)
+        except OSError:
+            pass
+        if tmp is not None:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+        try:
+            Path(backup).unlink(missing_ok=True)
+        except OSError:
+            pass
+    je = _je_named(rel, oc, False)
+    je.sha256_before, je.sha256_after = sha_before, _sha256(path)
+    je.audio_sha256_before = audio_before
+    je.audio_sha256_after = _audio_essence_md5(path) if oc.status == "SUCCESS" else audio_before
+    je.backup_path = oc.backup_path
+    journal.record(je)
+
+
+EXTERNAL_MB_CODES = external_metadata.HANDLED_ISSUE_CODES
+
+
+def _write_freeform_atoms(src: Path, atoms: dict[str, list[str]]) -> Path:
+    from mutagen.mp4 import MP4, MP4FreeForm
+
+    tmp = src.with_name(f".{src.stem}.repairtmp_{int(time.time() * 1000)}{src.suffix}")
+    shutil.copy2(src, tmp)
+    audio = MP4(tmp)
+    for name, values in atoms.items():
+        audio[name] = [MP4FreeForm(str(v).encode("utf-8")) for v in values]
+    audio.save()
+    return tmp
+
+
+def apply_external_metadata(
+    candidates: list[RepairCandidate],
+    library_root: Path,
+    journal: RepairJournal,
+    mb_lookup,
+    *,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """Fehlende MusicBrainz Recording-/Artist-/Release-/Release-Group-IDs und
+    ISRC nachtragen. `mb_lookup(artist, title) -> dict` (leer = kein
+    eindeutiger Match). Ergaenzt NUR fehlende Felder, ueberschreibt nie."""
+    from services.library_health.tag_reader import read_tags
+
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+
+    # ein Kandidat pro Datei (die 3 Issue-Codes betreffen oft dieselbe Datei)
+    by_path: dict[str, RepairCandidate] = {}
+    for c in candidates:
+        if c.issue_code in EXTERNAL_MB_CODES and c.path:
+            by_path.setdefault(c.path, c)
+
+    for rel, c in sorted(by_path.items()):
+        path = library_root / rel
+        oc = ExecOutcome(file=rel, issue_code=c.issue_code, action="EXTERNAL_ID_LOOKUP",
+                         status="SKIPPED")
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            tags = read_tags(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Tag-Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        if _blank(tags.artist) or _blank(tags.title):
+            oc.reason = "Artist/Titel fehlt — keine externe Suche"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+        if not external_metadata.title_is_trustworthy(tags.title):
+            oc.reason = f"Titel {tags.title!r} zu unsauber fuer eine externe ID-Zuordnung"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            mb = mb_lookup(tags.artist, tags.title) or {}
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"MusicBrainz-Suche: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        current = {
+            "recording_id": tags.mb_recording_id, "artist_id": tags.mb_artist_id,
+            "release_id": tags.mb_release_id, "release_group_id": tags.mb_release_group_id,
+            "isrc": tags.isrc,
+        }
+        writes = external_metadata.plan_id_writes(current, mb, file_title=tags.title)
+        if not writes:
+            oc.reason = "kein eindeutiger MusicBrainz-Match / keine neuen IDs"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        oc.before = {"mb_recording_id": tags.mb_recording_id, "mb_release_id": tags.mb_release_id,
+                     "isrc": tags.isrc}
+        oc.after = {"added": {k.split(":")[-1]: v[0] for k, v in writes.items()},
+                    "mb_match": f"{mb.get('artist')} - {mb.get('title')}"}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _write_freeform_atoms(path, writes)
+            from mutagen.mp4 import MP4
+
+            v = MP4(tmp).tags or {}
+            for name, values in writes.items():
+                got = [x.decode("utf-8", "replace") if isinstance(x, bytes) else str(x)
+                       for x in v.get(name, [])]
+                if got != list(values):
+                    raise RuntimeError(f"Verifikation {name}: {got} != {values}")
+            at = _audio_essence_md5(tmp)
+            if at != audio_before or at.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {at})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if Path(backup).exists():
+                    Path(backup).replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            try:
+                Path(backup).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        je = _je_named(rel, oc, dry_run)
+        je.sha256_before, je.sha256_after = sha_before, _sha256(path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = _audio_essence_md5(path) if oc.status == "SUCCESS" else audio_before
+        je.backup_path = oc.backup_path
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+def _je_named(rel: str, oc: ExecOutcome, dry_run: bool) -> JournalEntry:
+    return JournalEntry(
+        timestamp=RepairJournal.now(), file=rel, issue_code=oc.issue_code,
+        action=oc.action, status=oc.status, before=oc.before, after=oc.after,
+        error=oc.reason, backup_path=oc.backup_path, dry_run=dry_run,
+    )
 
 
 def _je(c: RepairCandidate, oc: ExecOutcome, dry_run: bool) -> JournalEntry:

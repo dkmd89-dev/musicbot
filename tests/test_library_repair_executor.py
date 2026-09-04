@@ -14,7 +14,10 @@ from pathlib import Path
 import pytest
 from mutagen.mp4 import MP4, MP4FreeForm
 
-from services.library_repair.executor import apply_level1, safety_check
+from services.library_repair.executor import (
+    apply_album_cover_unify, apply_cover_repairs, apply_external_metadata,
+    apply_level1, apply_level1_rename, safety_check,
+)
 from services.library_repair.journal import RepairJournal
 from services.library_repair.models import RepairAction, RepairCandidate, RepairLevel
 
@@ -158,6 +161,233 @@ def test_safety_blocks_unsupported_extension(tmp_path):
     f = lib / "A" / "x.flac"
     f.write_bytes(b"x" * 10)
     assert "nicht unterstütztes Format" in (safety_check(f, lib) or "")
+
+
+@requires_ffmpeg
+def test_rename_removes_producer_cruft_content_unchanged(lib):
+    p = lib / "makko" / "Singles" / "2020 - Gelb prod. Xarbeats.m4a"
+    _m4a(p)
+    a = MP4(p); a["©nam"] = ["Gelb"]; a["©day"] = ["2020"]; a.save()
+    md5_before = _audio_md5(p)
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1_rename(
+        [_cand("makko/Singles/2020 - Gelb prod. Xarbeats.m4a", "FILENAME_TITLE_MISMATCH")],
+        lib, j, dry_run=False)
+    assert outcomes[0].status == "SUCCESS"
+    new = lib / "makko" / "Singles" / "2020 - Gelb.m4a"
+    assert new.exists() and not p.exists()
+    assert _audio_md5(new) == md5_before
+    assert outcomes[0].after == {"path": "makko/Singles/2020 - Gelb.m4a"}
+
+
+@requires_ffmpeg
+def test_rename_dry_run_does_not_move(lib):
+    p = lib / "A" / "Singles" / "2021 -  Song.m4a"
+    _m4a(p)
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1_rename(
+        [_cand("A/Singles/2021 -  Song.m4a", "FILENAME_SUSPICIOUS")], lib, j, dry_run=True)
+    assert outcomes[0].status == "DRY_RUN"
+    assert p.exists()
+
+
+@requires_ffmpeg
+def test_rename_skips_when_target_exists(lib):
+    p = lib / "A" / "Singles" / "2020 - Song prod. X.m4a"
+    _m4a(p); a = MP4(p); a["©nam"] = ["Song"]; a["©day"] = ["2020"]; a.save()
+    _m4a(lib / "A" / "Singles" / "2020 - Song.m4a")     # Zielname existiert schon
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1_rename(
+        [_cand("A/Singles/2020 - Song prod. X.m4a", "FILENAME_TITLE_MISMATCH")],
+        lib, j, dry_run=False)
+    assert outcomes[0].status == "SKIPPED"
+    assert p.exists()
+
+
+@requires_ffmpeg
+def test_rename_stays_in_same_directory(lib):
+    p = lib / "A" / "Singles" / "2021 -  Song.m4a"
+    _m4a(p)
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1_rename(
+        [_cand("A/Singles/2021 -  Song.m4a", "FILENAME_SUSPICIOUS")], lib, j, dry_run=False)
+    assert outcomes[0].status == "SUCCESS"
+    moved = list((lib / "A" / "Singles").glob("*.m4a"))
+    assert len(moved) == 1 and moved[0].parent == p.parent
+
+
+def _png_bytes(px):
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (px, px), (5, 6, 7)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+@requires_ffmpeg
+def test_cover_added_when_missing_audio_untouched(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = ["x"]; a.save()
+    md5_before = _audio_md5(p)
+    big = _png_bytes(1000)
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_cover_repairs(
+        [_cand("A/Singles/2020 - x.m4a", "ARTWORK_MISSING")],
+        lib, j, cover_fetcher=lambda ctx: (big, "test-source"), dry_run=False)
+    assert outcomes[0].status == "SUCCESS"
+    assert bool(MP4(p).tags.get("covr"))
+    assert _audio_md5(p) == md5_before
+    assert list((lib.parent / ".library_repair_backups").rglob("*.bak"))
+
+
+@requires_ffmpeg
+def test_cover_not_replaced_when_candidate_not_better(lib):
+    import io
+    from PIL import Image
+    from mutagen.mp4 import MP4Cover
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p)
+    buf = io.BytesIO(); Image.new("RGB", (900, 900), (1, 2, 3)).save(buf, "JPEG")
+    a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = ["x"]
+    a["covr"] = [MP4Cover(buf.getvalue(), imageformat=MP4Cover.FORMAT_JPEG)]; a.save()
+    before_sha = _read(p)  # sanity
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_cover_repairs(
+        [_cand("A/Singles/2020 - x.m4a", "ARTWORK_LOW_RESOLUTION")],
+        lib, j, cover_fetcher=lambda ctx: (_png_bytes(950), "s"), dry_run=False)
+    assert outcomes[0].status == "SKIPPED"      # 900 -> 950 zu wenig Zugewinn
+    assert not (lib.parent / ".library_repair_backups").exists()
+
+
+@requires_ffmpeg
+def test_cover_dry_run_writes_nothing(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = ["x"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_cover_repairs(
+        [_cand("A/Singles/2020 - x.m4a", "ARTWORK_MISSING")],
+        lib, j, cover_fetcher=lambda ctx: (_png_bytes(1200), "s"), dry_run=True)
+    assert outcomes[0].status == "DRY_RUN"
+    assert not bool(MP4(p).tags.get("covr"))
+
+
+@requires_ffmpeg
+def test_cover_skips_when_fetcher_returns_none(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = ["x"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_cover_repairs(
+        [_cand("A/Singles/2020 - x.m4a", "ARTWORK_MISSING")],
+        lib, j, cover_fetcher=lambda ctx: (None, None), dry_run=False)
+    assert outcomes[0].status == "SKIPPED"
+
+
+def _m4a_with_cover(p, px, colour):
+    import io
+    from PIL import Image
+    from mutagen.mp4 import MP4Cover
+    _m4a(p)
+    buf = io.BytesIO()
+    Image.new("RGB", (px, px), colour).save(buf, "JPEG")
+    a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = [p.stem]
+    a["covr"] = [MP4Cover(buf.getvalue(), imageformat=MP4Cover.FORMAT_JPEG)]
+    a.save()
+
+
+@requires_ffmpeg
+def test_album_cover_unify_lifts_small_to_biggest(lib):
+    base = "A/2020 - Rec"
+    p1 = lib / "A" / "2020 - Rec" / "01 - a.m4a"
+    p2 = lib / "A" / "2020 - Rec" / "02 - b.m4a"
+    p3 = lib / "A" / "2020 - Rec" / "03 - c.m4a"
+    _m4a_with_cover(p1, 300, (1, 1, 1))
+    _m4a_with_cover(p2, 1400, (2, 2, 2))     # bestes
+    _m4a_with_cover(p3, 300, (3, 3, 3))
+    md5_before = {p: _audio_md5(p) for p in (p1, p2, p3)}
+    c = RepairCandidate(
+        issue_code="ALBUM_COVER_INCONSISTENT", action=RepairAction.COVER_FETCH,
+        level=RepairLevel.COVER, severity="INFO", scope="album", artist="A", album="2020 - Rec",
+        related_files=[f"{base}/01 - a.m4a", f"{base}/02 - b.m4a", f"{base}/03 - c.m4a"])
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_album_cover_unify([c], lib, j, dry_run=False)
+    ok = [o for o in outcomes if o.status == "SUCCESS"]
+    assert len(ok) == 2                       # p1 + p3 angehoben, p2 unberuehrt
+    from mutagen.mp4 import MP4
+    def dim(p):
+        import io
+        from PIL import Image
+        return Image.open(io.BytesIO(bytes(MP4(p).tags["covr"][0]))).size
+    assert dim(p1) == dim(p2) == dim(p3) == (1400, 1400)
+    for p in (p1, p2, p3):
+        assert _audio_md5(p) == md5_before[p]
+
+
+@requires_ffmpeg
+def test_album_cover_unify_skips_when_no_usable_cover(lib):
+    base = "A/2020 - Rec"
+    p1 = lib / "A" / "2020 - Rec" / "01 - a.m4a"
+    p2 = lib / "A" / "2020 - Rec" / "02 - b.m4a"
+    _m4a(p1); _m4a(p2)                        # gar keine Cover
+    c = RepairCandidate(
+        issue_code="ALBUM_COVER_INCONSISTENT", action=RepairAction.COVER_FETCH,
+        level=RepairLevel.COVER, severity="INFO", scope="album", artist="A", album="2020 - Rec",
+        related_files=[f"{base}/01 - a.m4a", f"{base}/02 - b.m4a"])
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_album_cover_unify([c], lib, j, dry_run=False)
+    assert all(o.status == "SKIPPED" for o in outcomes)
+
+
+@requires_ffmpeg
+def test_external_metadata_adds_missing_ids_audio_untouched(lib):
+    p = lib / "A" / "Singles" / "2020 - Real Song.m4a"
+    _m4a(p); a = MP4(p); a["©ART"] = ["Real Artist"]; a["©nam"] = ["Real Song"]; a.save()
+    md5_before = _audio_md5(p)
+    mb = {"title": "Real Song", "artist": "Real Artist",
+          "recording_id": "12345678-1234-1234-1234-1234567890ab",
+          "artist_id": "12345678-1234-1234-1234-1234567890ab",
+          "release_id": "abcdef01-2345-6789-abcd-ef0123456789",
+          "release_group_id": "abcdef01-2345-6789-abcd-ef0123456789",
+          "isrc": "DEA123456789"}
+    j = RepairJournal(lib / "j.jsonl")
+    c = RepairCandidate(issue_code="META_MB_RECORDING_MISSING",
+                        action=RepairAction.EXTERNAL_ID_LOOKUP, level=RepairLevel.EXTERNAL_METADATA,
+                        severity="INFO", scope="file", path="A/Singles/2020 - Real Song.m4a")
+    outcomes = apply_external_metadata([c], lib, j, mb_lookup=lambda ar, ti: mb, dry_run=False)
+    assert outcomes[0].status == "SUCCESS"
+    from mutagen.mp4 import MP4 as _MP4
+    t = _MP4(p).tags
+    assert bytes(t["----:com.apple.iTunes:MusicBrainz Recording Id"][0]).decode() \
+        == "12345678-1234-1234-1234-1234567890ab"
+    assert bytes(t["----:com.apple.iTunes:ISRC"][0]).decode() == "DEA123456789"
+    assert _audio_md5(p) == md5_before
+
+
+@requires_ffmpeg
+def test_external_metadata_skips_dirty_title(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = ["Song prod. Xarbeats"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    c = RepairCandidate(issue_code="META_ISRC_MISSING",
+                        action=RepairAction.EXTERNAL_ID_LOOKUP, level=RepairLevel.EXTERNAL_METADATA,
+                        severity="INFO", scope="file", path="A/Singles/2020 - x.m4a")
+    called = []
+    outcomes = apply_external_metadata(
+        [c], lib, j, mb_lookup=lambda ar, ti: called.append(1) or {}, dry_run=False)
+    assert outcomes[0].status == "SKIPPED"
+    assert not called   # unsauberer Titel -> gar keine externe Suche
+
+
+@requires_ffmpeg
+def test_external_metadata_no_match_skips(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = ["Clean Title"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    c = RepairCandidate(issue_code="META_MB_RELEASE_MISSING",
+                        action=RepairAction.EXTERNAL_ID_LOOKUP, level=RepairLevel.EXTERNAL_METADATA,
+                        severity="INFO", scope="file", path="A/Singles/2020 - x.m4a")
+    outcomes = apply_external_metadata([c], lib, j, mb_lookup=lambda ar, ti: {}, dry_run=False)
+    assert outcomes[0].status == "SKIPPED"
+    assert not (lib.parent / ".library_repair_backups").exists()
 
 
 @requires_ffmpeg

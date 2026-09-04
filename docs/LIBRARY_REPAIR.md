@@ -16,14 +16,25 @@ LIBRARY → Health Scanner → Health Report → Repair Planner
                                   Before / After Report
 ```
 
-**Status:**
-- **Repair Planner** — vollständig, read-only.
-- **Repair Executor — Level 1 (Tag-Fixes)** — vollständig, mit Per-Datei-Backup
-  (außerhalb der Library), Journal, Before/After, Audio-Essenz-Verifikation
-  und Verification-Scan. Bereits gegen die Produktions-Library gelaufen
-  (12 Tag-Fixes, 12/12 SUCCESS, Ton byte-identisch, 0 neue Issues).
-- **Level 2 / 3 / Cover / Loudness / Duplicate Executor** — noch offen,
-  `--allow-delete` wird abgelehnt.
+**Status** — alle Executors mit Per-Datei-Backup (außerhalb der Library),
+Append-Only-Journal, Before/After, **Audio-Essenz-Verifikation** und
+Verification-Scan; alle bereits gegen die Produktions-Library gelaufen.
+
+> **Merge-Historie:** PR #145 hat per Squash nur Repair Planner + Level-1-
+> Tag-Fixes auf `main` gebracht. Level-1-Renames, Cover, ALBUM_COVER_INCONSISTENT
+> und Level 3 kamen per **PR #146** nach (dieselben Commits, die bereits gegen
+> Produktion liefen — `main` war vorübergehend hinter dem realen Library-Stand).
+
+| Executor | Zustand | Produktionslauf |
+|---|---|---|
+| Repair Planner | ✅ read-only | — |
+| **Level 1 — Tag-Fixes** | ✅ | 12/12 SUCCESS |
+| **Level 1 — Renames** | ✅ | 7/7 SUCCESS (`FILENAME_TITLE_MISMATCH 14→7`) |
+| **Cover** (`CoverProcessor`, only-if-better) | ✅ | makko-Album 6× 300→3000px |
+| **`ALBUM_COVER_INCONSISTENT`** (offline, best-existing) | ✅ | 198 SUCCESS, `19→0`, Health 97.9→98.0 |
+| **Level 3 — MusicBrainz-IDs / ISRC** | ✅ | DRY-RUN 01099: 6 Nachträge; Prod-Lauf: 0 sichere Treffer (MB-Abdeckung für Deutschrap/2Pac-Bootlegs gering) |
+| Level 2 (`reprocess_artist_metadata.py`-Kern) | ⏳ Option 2a (Kern nach `services/metadata/` extrahieren) | — |
+| Loudness / Duplicate | ⏳ offen (`--allow-delete` abgelehnt) | — |
 
 ---
 
@@ -50,11 +61,11 @@ es verändert nichts, verschiebt nichts, löscht nichts, ruft keinen externen
 Dienst. Der Health-Scan (`--report` weggelassen) ist selbst vollständig
 read-only.
 
-Mit `--apply` führt der **Level-1-Executor** ausschließlich die vier
-deterministischen Tag-Fixes aus (`L1_TAG_CODES`) — alle anderen Kandidaten
-werden übersprungen. `--apply --dry-run` zeigt die konkreten Before/After-
-Werte, ohne zu schreiben. `--allow-delete` wird abgelehnt (keine
-destruktive Reparatur implementiert).
+Mit `--apply` führt der **Level-1-Executor** die deterministischen Tag-Fixes
+(`L1_TAG_CODES`) **und** die Dateinamen-Renames (`L1_RENAME_CODES`:
+`FILENAME_TITLE_MISMATCH`, `FILENAME_SUSPICIOUS`) aus — alle anderen
+Kandidaten werden übersprungen. `--apply --dry-run` zeigt die konkreten
+Before/After-Werte, ohne zu schreiben. `--allow-delete` wird abgelehnt.
 
 ---
 
@@ -69,10 +80,11 @@ planner.py     plan_repairs(report_dict) -> RepairPlan  (reine Funktion, kein I/
                + REGISTRY: genau ein Repair-Mapping pro Health-Issue-Code
                + filter_plan(plan, artist=/issue_code=/severity=/level=)
 report.py      render_plan_text(plan)
-tag_repairs.py Level-1-Reparatur-Funktionen (pure): (alte Tag-Werte) -> (neue) | None
-journal.py     RepairJournal — Append-Only JSONL, Before/After + Rollback-Info
-executor.py    apply_level1(candidates, library_root, journal, dry_run=) -> [ExecOutcome]
-               safety_check(path, library_root) -> Ablehnungsgrund | None
+tag_repairs.py    Level-1-Tag-Reparatur-Funktionen (pure): (alte Werte) -> (neue) | None
+rename_repairs.py Level-1-Dateinamen-Funktionen (pure): (Name + Kontext) -> neuer Name | None
+journal.py       RepairJournal — Append-Only JSONL, Before/After + Rollback-Info
+executor.py      apply_level1() / apply_level1_rename() -> [ExecOutcome]
+                 safety_check(path, library_root) -> Ablehnungsgrund | None
 ```
 
 `scripts/library_repair.py` — dünner CLI-Wrapper (CLI → Health-Report →
@@ -135,12 +147,21 @@ Health-Issue-Code genau ein Mapping hat und kein Mapping veraltet ist.
 
 ## 5. Level-1-Executor (implementiert)
 
-`--apply` führt **nur** die vier verlustfreien, deterministischen Tag-Fixes
-aus (`GENRE_DELIMITER_INCONSISTENT`, `MULTI_ARTIST_*`,
-`META_ALBUM_ARTIST_MISSING`, `ALBUM_ARTIST_INCONSISTENT`) — Rename-basierte
-L1-Fixes (`FILENAME_*`) sind bewusst noch nicht dabei.
+`--apply` führt aus:
+- **Tag-Fixes** (`GENRE_DELIMITER_INCONSISTENT`, `MULTI_ARTIST_*`,
+  `META_ALBUM_ARTIST_MISSING`, `ALBUM_ARTIST_INCONSISTENT`)
+- **Renames** (`FILENAME_TITLE_MISMATCH`, `FILENAME_SUSPICIOUS`) — nur im
+  selben Verzeichnis, ersetzt **nur den Titel-Teil** und lässt den
+  vorhandenen `NN - ` / `YYYY - `-Präfix unverändert (keine geratene
+  Ordner-Konvention — realer Finalaudit-Fehler: `2025 - …` wäre sonst zu
+  `01 - …` geworden). Nur wenn der Titel-Teil den Titel-Tag als Präfix
+  enthält und sich nur durch abschließenden Zusatz (`prod./feat./(…)`)
+  unterscheidet — schützt vor Tag-Tippfehlern; nicht-triviale Abweichung
+  → `SKIPPED`. Zielname atomar per `O_EXCL` beansprucht (TOCTOU),
+  Byte-Inhalt vorher==nachher verifiziert, kein Content-Backup
+  (Rename ändert keine Bytes; Rollback = zurück-benennen via Journal).
 
-Ablauf pro Datei (Prompt Abschnitt 13–17):
+Ablauf pro Tag-Fix-Datei (Prompt Abschnitt 13–17):
 
 1. **Safety-Prüfung** (`safety_check`): kein Symlink, Pfad real innerhalb der
    Library, reguläre `.m4a`-Datei, nicht leer. Bei Verletzung → `SKIPPED`.
@@ -168,13 +189,76 @@ Ablauf pro Datei (Prompt Abschnitt 13–17):
 `MULTI_ARTIST_INCONSISTENT 9→0`, keine neuen Issues. Backups unter
 `/mnt/musik_bilder/.library_repair_backups/`.
 
+## 5a. Cover-Executor (implementiert)
+
+`--level COVER` bzw. `--issue ARTWORK_*` (NIE im Default-`--apply` — Cover
+ist extern/Netzwerk und langsam): `apply_cover_repairs()` für
+`ARTWORK_MISSING` / `ARTWORK_INVALID` / `ARTWORK_LOW_RESOLUTION` /
+`ARTWORK_NON_SQUARE`.
+
+- Die Cover-Suche (`CoverProcessor.get_cover_art()`) wird **immer**
+  ausgeführt, auch bei vorhandenem Cover (bestehende Projektregel).
+- `cover_repairs.decide_cover_action()` (rein) entscheidet only-if-better
+  (Prompt Abschnitt 9): Kandidat muss ≥ 400 px, quadratisch (5 %-Toleranz)
+  sein; bei `LOW_RESOLUTION` mind. +200 px Kantenzuwachs; bei `NON_SQUARE`
+  quadratisch **und** kein Auflösungsverlust. Sonst `SKIPPED` — **das
+  vorhandene Cover wird nie durch ein gleich gutes/schlechteres ersetzt.**
+- Schreibvorgang wie beim Tag-Executor: Backup außerhalb der Library →
+  `covr`-Atom auf temp-Sibling → verifizieren (Cover-SHA + Audio-Essenz
+  byte-identisch) → atomarer `replace`, sonst Rollback.
+- **Album-Cache:** alle Tracks eines Album-Ordners bekommen dasselbe Cover
+  (eine Suche pro Album) — verhindert, dass ein per-Track-Repair eine
+  `ALBUM_COVER_INCONSISTENT` erst erzeugt. Singles werden per Track gesucht.
+- `ALBUM_COVER_INCONSISTENT` (Vereinheitlichung eines bereits uneinheitlichen
+  Albums) ist **nicht** dabei — folgt separat.
+
+**Produktionsläufe (2026-09-04):**
+- `--issue ARTWORK_MISSING`: 5/5 `SKIPPED` — `CoverProcessor` fand kein Cover
+  (2Pac-Bonus/Visualizer, makko-Remix, alle ohne MB-IDs). Kein Overwrite.
+- `--artist makko --issue ARTWORK_LOW_RESOLUTION --apply`: **6/6 `SUCCESS`** —
+  `makko/2020 - Poesie gemischt mit Bier/` alle 6 Tracks 300×300 → **3000×3000**
+  (Apple Music, dasselbe Cover via Album-Cache). Audio byte-identisch,
+  Verification-Scan grün (`ARTWORK_LOW_RESOLUTION 19→13`, keine neuen Issues).
+- Die übrigen 13 `LOW_RESOLUTION` (2Pac / Toobrokeforfiji): `SKIPPED` —
+  `CoverProcessor` fand nur ≤300px, kein Downgrade.
+
 ## 6. Noch offen (Phase 2)
 
-- **Level-1-Rename** (`FILENAME_TITLE_MISMATCH` / `FILENAME_SUSPICIOUS`) —
-  braucht die Rename-Safety-Maschinerie (TOCTOU, Kollision, nur im selben
-  Verzeichnis).
-- **Level 2** (`reprocess_artist_metadata.py` als Subprozess orchestrieren).
-- **Level 3** (MusicBrainz-/Genre-Nachträge, nur bei eindeutigem Match).
-- **Cover** (`CoverProcessor` — nur ersetzen bei eindeutig besserem Cover).
-- **Loudness** (`normalize_test_library_loudness.py` — kein Doppel-Encoding).
+- **Level 2** (`reprocess_artist_metadata.py`-Pipeline für die Library
+  nutzbar machen) — Nutzer-Entscheidung **Option 2a**: das Script behält
+  `ALLOWED_ROOT = /tmp/musicbot_test` (test-only, tragend für CLI +
+  Telegram-Menü); `process_file()` + `snapshot()` + Helfer werden nach
+  `services/metadata/` extrahiert (config-injiziert), ein neuer
+  `apply_level2()` nutzt denselben Kern + Backup-außerhalb-Library/Journal/
+  Audio-Essenz-Verifikation/Verification-Scan wie L1. Ziel-Issue:
+  `META_TITLE_NOT_CLEAN` (neuer read-only-Health-Check über
+  `TitleCleaner.light_title_cleanup()`).
+- **Loudness** (`normalize_test_library_loudness.py`) — erst Produktions-
+  Härtung/Test dieses Scripts nötig (`ALLOWED_ROOT`, kein Doppel-Encoding).
 - **Duplicate** (`resolve_duplicates.py` — destruktiv, `--allow-delete`).
+
+## 7. Level-3 — MusicBrainz-IDs / ISRC nachtragen (implementiert)
+
+`--level EXTERNAL_METADATA` bzw. `--issue META_MB_RECORDING_MISSING` /
+`META_MB_RELEASE_MISSING` / `META_ISRC_MISSING` (extern/rate-limited — nie
+im Default-`--apply`): `apply_external_metadata(mb_lookup)`.
+
+- Ein Kandidat pro Datei (die 3 Issue-Codes betreffen oft dieselbe Datei).
+- `mb_lookup(artist, title)` = `MusicBrainzClient.fetch_metadata()`. Die
+  **Eindeutigkeit** des Matches prüft der Client selbst
+  (`Config.MUSICBRAINZ_MIN_SIMILARITY` / `MIN_ARTIST_SIMILARITY`, MB-01) —
+  kein sicherer Treffer → leeres Ergebnis → `SKIPPED`.
+- Zusätzliche Leitplanken in `external_metadata.plan_id_writes()` (rein):
+  - **`title_is_trustworthy()`** — unsaubere/geparste Titel (Produzenten-
+    Credit, dateinamens-illegale Zeichen, absurde Länge) → gar keine
+    externe Suche (der Nutzerwunsch „nur korrekt geparste Dateien").
+  - MB-Titel muss zum Datei-Titel passen (Substring oder ≥ 60 % Token-Overlap).
+  - Formatvalidierung: MBID muss UUID sein, ISRC dem ISRC-Muster entsprechen.
+  - **Nur FEHLENDE** Felder werden ergänzt — vorhandene IDs nie überschrieben.
+- Schreibvorgang: Backup → freeform-Atome auf temp-Sibling → Verifikation
+  (Atome + Audio-Essenz byte-identisch) → atomarer `replace`, sonst Rollback.
+- Atom-Namen deckungsgleich zu `services/metadata/tag_writer.py`.
+
+**DRY-RUN gegen Produktion (`--artist 01099`):** 6 would-change (Recording-/
+Release-ID für die Weihnachtslied-Singles), 10 `SKIPPED` (MB kein sicherer
+Match für die Album-Tracks). Kein Raten.
