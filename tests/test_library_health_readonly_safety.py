@@ -87,6 +87,21 @@ def test_run_scan_does_not_mutate_library(test_library):
 
 
 @requires_ffmpeg
+def test_run_scan_with_loudness_measurement_does_not_mutate_library(test_library):
+    """--measure-loudness dekodiert jede Datei per ffmpeg-loudnorm, schreibt
+    aber nach `null` — die Library muss byte-identisch bleiben, keine
+    temp-Datei zuruecklassen."""
+    from services.library_health.scanner import run_scan
+
+    before = _snapshot(test_library)
+    run_scan(test_library, genre_mapping_dir=None, measure_loudness=True)
+    after = _snapshot(test_library)
+
+    assert before == after, "LUFS-Messung hat Library-Dateien veraendert!"
+    assert set(before) == set(after), "Pfade/temp-Dateien haben sich geaendert"
+
+
+@requires_ffmpeg
 def test_cli_subprocess_does_not_mutate_library(test_library, tmp_path):
     before = _snapshot(test_library)
     out_json = tmp_path / "out" / "report.json"

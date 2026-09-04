@@ -100,7 +100,7 @@ def test_plan_counts_and_determinism():
         _issue("GENRE_DELIMITER_INCONSISTENT"),
         _issue("META_ISRC_MISSING"),
         _issue("DUPLICATE_SUSPECTED", scope="library", path=None),
-        _issue("LOUDNESS_TAG_MISSING", path="A/Singles/2020 - y.m4a"),
+        _issue("LOUDNESS_OFF_TARGET", path="A/Singles/2020 - y.m4a"),
     )
     a = plan_repairs(r).to_dict()
     b = plan_repairs(r).to_dict()

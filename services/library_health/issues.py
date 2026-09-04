@@ -116,6 +116,13 @@ _SPECS: tuple[IssueSpec, ...] = (
     # kein Defect (Prompt Abschnitt 16/22).
     IssueSpec("LOUDNESS_TAG_MISSING", Severity.INFO, Scope.FILE,
               "Kein ReplayGain-/Loudness-Tag (bei aktueller Pipeline normal)."),
+    IssueSpec("LOUDNESS_OFF_TARGET", Severity.INFO, Scope.FILE,
+              "Gemessene integrierte Lautheit weicht deutlich von der "
+              "MusicBot-Ziel-Lautheit fuer Musik ab (-16 LUFS, "
+              "AudioEnhancer.TARGET_LUFS). Nur bei `--measure-loudness` "
+              "ermittelt (FFmpeg-loudnorm-Analyse, kein Re-Encode). "
+              "Reparatur ist verlustbehaftet (AAC-Neucodierung) — daher "
+              "Beobachtung, keine automatische Aktion."),
     IssueSpec("LOUDNESS_TAG_INVALID", Severity.WARNING, Scope.FILE,
               "ReplayGain-/Loudness-Tag vorhanden, aber nicht als dB-Wert parsebar."),
     IssueSpec("LOUDNESS_TAG_PARTIAL", Severity.INFO, Scope.FILE,

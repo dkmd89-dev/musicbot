@@ -13,7 +13,9 @@ from mutagen.mp4 import MP4, MP4Cover
 from PIL import Image
 
 from services.library_health.models import AnalysisState
-from services.library_health.tag_reader import probe_stream, read_artwork, read_tags
+from services.library_health.tag_reader import (
+    measure_loudness, probe_stream, read_artwork, read_tags,
+)
 
 FFMPEG = shutil.which("ffmpeg")
 requires_ffmpeg = pytest.mark.skipif(not FFMPEG, reason="ffmpeg nicht auf PATH")
@@ -124,3 +126,25 @@ def test_read_artwork_missing(tmp_path):
     art = read_artwork(p)
     assert art.state == AnalysisState.MISSING
     assert art.present is False
+
+
+@requires_ffmpeg
+def test_measure_loudness_returns_lufs_and_touches_nothing(tmp_path):
+    p = tmp_path / "s.m4a"
+    _make_m4a(p, seconds=3, tags=True, cover_px=200)
+    before = (p.stat().st_size, p.stat().st_mtime_ns)
+    ld = measure_loudness(p)
+    assert ld.state == AnalysisState.PRESENT
+    assert isinstance(ld.integrated_lufs, float)
+    assert -70.0 < ld.integrated_lufs < 0.0
+    assert ld.true_peak is not None
+    # rein lesend: keine temp-Datei, Datei unveraendert
+    assert (p.stat().st_size, p.stat().st_mtime_ns) == before
+    assert list(tmp_path.iterdir()) == [p]
+
+
+@requires_ffmpeg
+def test_measure_loudness_missing_file_is_not_analyzable(tmp_path):
+    ld = measure_loudness(tmp_path / "does-not-exist.m4a")
+    assert ld.state == AnalysisState.NOT_ANALYZABLE
+    assert ld.integrated_lufs is None

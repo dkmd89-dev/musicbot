@@ -7,7 +7,7 @@ Smart Library Repair — CLI (Phase 2, Prompt Abschnitt 5/12/13/18/19).
     python scripts/library_repair.py                 # nur PLAN (read-only)
     python scripts/library_repair.py --report r.json # Plan aus vorhandenem Health-Report
     python scripts/library_repair.py --artist 01099
-    python scripts/library_repair.py --issue LOUDNESS_TAG_MISSING
+    python scripts/library_repair.py --issue LOUDNESS_OFF_TARGET
     python scripts/library_repair.py --severity ERROR
     python scripts/library_repair.py --level SAFE_AUTOMATIC
     python scripts/library_repair.py --json plan.json
@@ -25,10 +25,13 @@ nichts und ruft keinen externen Dienst. Der Health-Scan selbst
     --level METADATA_REPROCESSING   zusaetzlich L2 volle Neuverarbeitung
                           ueber die echte Pipeline (extern, langsam,
                           aktualisiert Auto-Learn-Mappings)
+    --level LOUDNESS      zusaetzlich Loudness-Executor — verlustbehaftetes
+                          AAC-Re-Encode auf -16 LUFS (Tags/Cover before==after),
+                          setzt einen `--measure-loudness`-Report voraus
     --allow-delete        wird mit klarer Meldung abgelehnt (Exit 2)
 
-Cover / L3 / L2 laufen NIE im Default-`--apply`, nur auf ausdrueckliche
-Anforderung per --level bzw. --issue.
+Cover / L3 / L2 / Loudness laufen NIE im Default-`--apply`, nur auf
+ausdrueckliche Anforderung per --level bzw. --issue.
 """
 
 from __future__ import annotations
@@ -81,7 +84,7 @@ def main(argv=None) -> int:
                         help="Reparaturplan als JSON schreiben.")
     parser.add_argument("--artist", default=None, help="Nur diesen Artist.")
     parser.add_argument("--issue", dest="issue_code", default=None,
-                        help="Nur diesen Issue-Code (z. B. LOUDNESS_TAG_MISSING).")
+                        help="Nur diesen Issue-Code (z. B. LOUDNESS_OFF_TARGET).")
     parser.add_argument("--severity", default=None,
                         help="Nur diese Severity (INFO/WARNING/ERROR/CRITICAL).")
     parser.add_argument("--level", default=None,
@@ -148,9 +151,9 @@ def main(argv=None) -> int:
     # ── Ausfuehrung ─────────────────────────────────────────────────────
     from services.library_repair.executor import (
         ALBUM_COVER_CODES, COVER_ISSUE_CODES, EXTERNAL_MB_CODES,
-        L1_RENAME_CODES, L1_TAG_CODES, L2_CODES,
+        L1_RENAME_CODES, L1_TAG_CODES, L2_CODES, LOUDNESS_ISSUE_CODES,
         apply_album_cover_unify, apply_cover_repairs, apply_external_metadata,
-        apply_level1, apply_level1_rename, apply_level2,
+        apply_level1, apply_level1_rename, apply_level2, apply_loudness,
     )
     from services.library_repair.journal import RepairJournal
 
@@ -180,8 +183,13 @@ def main(argv=None) -> int:
     l2_requested = _lvl == "METADATA_REPROCESSING" or args.issue_code in L2_CODES
     l2_cands = [c for c in plan.candidates if c.issue_code in L2_CODES] \
         if l2_requested else []
+    # Loudness: verlustbehaftetes AAC-Re-Encode -> nur auf ausdrueckliche Anforderung
+    loudness_requested = _lvl == "LOUDNESS" or args.issue_code in LOUDNESS_ISSUE_CODES
+    loudness_cands = [c for c in plan.candidates if c.issue_code in LOUDNESS_ISSUE_CODES] \
+        if loudness_requested else []
 
-    if not (l1_tags or l1_rename or cover_cands or album_cover_cands or mb_cands or l2_cands):
+    if not (l1_tags or l1_rename or cover_cands or album_cover_cands or mb_cands
+            or l2_cands or loudness_cands):
         print("\nKeine ausfuehrbaren Reparaturen im (gefilterten) Plan.")
         return 0
 
@@ -189,11 +197,17 @@ def main(argv=None) -> int:
     print(f"\n{'=' * 70}\nREPAIR {mode} — {len(l1_tags)} Tag-Fixes + "
           f"{len(l1_rename)} Renames + {len(cover_cands)} Cover + "
           f"{len(album_cover_cands)} Album-Cover + {len(mb_cands)} MB-IDs + "
-          f"{len({c.path for c in l2_cands})} L2-Neuverarbeitung\n{'=' * 70}")
+          f"{len({c.path for c in l2_cands})} L2-Neuverarbeitung + "
+          f"{len(loudness_cands)} Loudness\n{'=' * 70}")
     if l2_cands and not execute_dry:
         print("⚠️  L2 EXECUTE: die volle Pipeline aktualisiert dabei auch die "
               "Auto-Learn-Mappings (mapping/auto_learned_*) mit den beobachteten "
               "Feature-Artists/Genres der Tracks — wie bei einem frischen Download.")
+    if loudness_cands and not execute_dry:
+        print("⚠️  LOUDNESS EXECUTE: verlustbehaftetes AAC-Re-Encode (die einzige "
+              "Reparatur, die den Audio-Stream neu kodiert). Tags + Cover werden "
+              "vor/nach dem Re-Encode gesichert und vollstaendig wiederhergestellt, "
+              "Per-Datei-Backup + Rollback bei jeder Abweichung.")
 
     outcomes = apply_level1(l1_tags, library_root, journal, dry_run=execute_dry,
                             backup_dir=backup_dir)
@@ -217,6 +231,12 @@ def main(argv=None) -> int:
     if l2_cands:
         outcomes += apply_level2(
             l2_cands, library_root, journal, _build_reprocess(config, logger),
+            dry_run=execute_dry, backup_dir=backup_dir,
+        )
+    if loudness_cands:
+        _norm, _meas = _build_loudness_fns(logger)
+        outcomes += apply_loudness(
+            loudness_cands, library_root, journal, _norm, _meas,
             dry_run=execute_dry, backup_dir=backup_dir,
         )
     journal.flush()
@@ -243,7 +263,11 @@ def main(argv=None) -> int:
                         if o.action == "METADATA_REPROCESS"):
         # eine L2-Neuverarbeitung berührt potenziell jeden METADATA_REPROCESSING-Code
         touched |= set(L2_CODES)
-    return _verification_scan(report, library_root, config, logger, touched)
+    if loudness_cands and any(o.status == "SUCCESS" for o in outcomes
+                              if o.action == "LOUDNESS_NORMALIZE"):
+        touched |= set(LOUDNESS_ISSUE_CODES)
+    return _verification_scan(report, library_root, config, logger, touched,
+                              measure_loudness=bool(loudness_cands))
 
 
 def _build_cover_fetcher(config, logger):
@@ -318,7 +342,27 @@ def _build_reprocess(config, logger):
     return _reprocess
 
 
-def _verification_scan(before_report, library_root, config, logger, touched_codes) -> int:
+def _build_loudness_fns(logger):
+    """(normalize_fn, measure_fn) fuer apply_loudness. normalize_fn wraps den
+    produktiv genutzten AudioEnhancer.normalize_loudness() (verlustbehaftetes
+    Re-Encode), measure_fn die read-only LUFS-Analyse des Health-Scanners."""
+    from services.library_health.tag_reader import measure_loudness
+    from utils.audio_enhancer import AudioEnhancer
+
+    target = AudioEnhancer.get_target_lufs("music")
+
+    def _normalize(path) -> bool:
+        return AudioEnhancer.normalize_loudness(str(path), target_lufs=target)
+
+    def _measure(path):
+        ld = measure_loudness(path)
+        return ld.integrated_lufs
+
+    return _normalize, _measure
+
+
+def _verification_scan(before_report, library_root, config, logger, touched_codes,
+                       *, measure_loudness=False) -> int:
     """Prompt Abschnitt 16: nach der Reparatur erneut scannen und Before/After
     vergleichen. Ein Repair darf keine Probleme verstecken — die Ziel-Codes
     muessen sinken, es duerfen keine NEUEN Issue-Codes auftauchen."""
@@ -329,6 +373,7 @@ def _verification_scan(before_report, library_root, config, logger, touched_code
         supported_extensions=tuple(config.SUPPORTED_FORMATS),
         expected_extension=f".{config.AUDIO_FORMAT.lstrip('.')}",
         genre_mapping_dir=config.GENRE_MAPPING_DIR,
+        measure_loudness=measure_loudness,
         logger=logger,
     )
     b = before_report["statistics"]["issues_by_code"]

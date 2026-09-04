@@ -185,6 +185,8 @@ class FileHealth:
     # Audio-Stream-Evidenz fuer die Duplicate-Group-Analyse (PR 2).
     duration_seconds: Optional[float] = None
     bitrate: Optional[int] = None
+    # Gemessene integrierte Lautheit (LUFS) — nur gesetzt bei --measure-loudness.
+    integrated_lufs: Optional[float] = None
 
     def to_dict(self) -> dict:
         return {
@@ -201,5 +203,6 @@ class FileHealth:
             "mb_recording_id": self.mb_recording_id,
             "mb_release_id": self.mb_release_id,
             "isrc": self.isrc,
+            "integrated_lufs": self.integrated_lufs,
             "issue_codes": sorted({i.code for i in self.issues}),
         }

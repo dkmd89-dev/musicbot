@@ -120,6 +120,18 @@ class StreamData:
     error: Optional[str] = None
 
 
+@dataclass
+class LoudnessData:
+    """Ergebnis einer FFmpeg-loudnorm-*Analyse* (kein Re-Encode, kein
+    Output-File). NOT_ANALYZABLE, wenn ffmpeg fehlt / scheitert / keine
+    Analyse-Ausgabe liefert."""
+    state: AnalysisState
+    integrated_lufs: Optional[float] = None
+    true_peak: Optional[float] = None
+    lra: Optional[float] = None
+    error: Optional[str] = None
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Helfer
 # ─────────────────────────────────────────────────────────────────────────
@@ -401,6 +413,68 @@ def probe_stream(path: Path, timeout: int = 30) -> StreamData:
         channels=_int_or_none(audio_stream.get("channels")),
         duration_seconds=_float_or_none(fmt.get("duration") or audio_stream.get("duration")),
         bitrate=_int_or_none(fmt.get("bit_rate") or audio_stream.get("bit_rate")),
+    )
+
+
+# FFmpeg-loudnorm-Analyse-Parameter — deckungsgleich zu
+# utils/audio_enhancer.py::normalize_loudness() (erster Analyse-Durchlauf)
+# und scripts/normalize_test_library_loudness.py::measure_loudness().
+# I=-16 entspricht AudioEnhancer.TARGET_LUFS['music'] (bewusst NICHT aus
+# utils.audio_enhancer importiert — das Modul enthaelt den Re-Encode-
+# Schreibpfad und ist im Import-Graph des read-only Scanners verboten,
+# siehe tests/test_library_health_readonly_safety.py).
+_LOUDNORM_ANALYSE_AF = "loudnorm=I=-16:LRA=11:TP=-1.5:print_format=json"
+_LOUDNORM_JSON_RE = re.compile(r'\{[^{}]*"input_i"[^{}]*\}')
+
+
+def measure_loudness(path: Path, timeout: int = 90) -> LoudnessData:
+    """Rein lesende integrierte-Lautheit-Messung (LUFS) + True Peak via
+    `ffmpeg -af loudnorm=…:print_format=json -f null -`. Schreibt NICHTS
+    (Ziel ist `null`). Gibt bei jedem Fehler NOT_ANALYZABLE zurueck, nie
+    eine Exception (Prompt Abschnitt 34).
+
+    Deutlich langsamer als probe_stream (dekodiert den kompletten Stream) —
+    der Scanner ruft das nur bei ausdruecklicher Anforderung auf
+    (`run_scan(measure_loudness=True)` / `--measure-loudness`)."""
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-nostdin", "-hide_banner", "-i", str(path),
+                "-af", _LOUDNORM_ANALYSE_AF, "-f", "null", "-",
+            ],
+            capture_output=True, timeout=timeout, stdin=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        return LoudnessData(state=AnalysisState.NOT_ANALYZABLE, error="ffmpeg nicht auf PATH")
+    except subprocess.TimeoutExpired:
+        return LoudnessData(state=AnalysisState.NOT_ANALYZABLE, error="ffmpeg Timeout")
+    except Exception as e:  # noqa: BLE001
+        return LoudnessData(state=AnalysisState.NOT_ANALYZABLE, error=repr(e))
+
+    stderr_text = result.stderr.decode("utf-8", errors="replace")
+    match = _LOUDNORM_JSON_RE.search(stderr_text)
+    if not match:
+        return LoudnessData(
+            state=AnalysisState.NOT_ANALYZABLE,
+            error=(stderr_text.strip()[-300:] or "keine loudnorm-Analyse-Ausgabe"),
+        )
+    try:
+        data = json.loads(match.group())
+        lufs = float(data["input_i"])
+        tp = float(data["input_tp"])
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+        return LoudnessData(state=AnalysisState.NOT_ANALYZABLE, error=f"loudnorm-JSON: {e!r}")
+
+    # FFmpeg meldet -inf/-70 fuer echte Stille — kein sinnvoller LUFS-Wert.
+    if lufs <= -70.0:
+        return LoudnessData(state=AnalysisState.NOT_ANALYZABLE,
+                            error=f"loudnorm meldet Stille (input_i={lufs})")
+
+    return LoudnessData(
+        state=AnalysisState.PRESENT,
+        integrated_lufs=lufs,
+        true_peak=tp,
+        lra=_float_or_none(data.get("input_lra")),
     )
 
 

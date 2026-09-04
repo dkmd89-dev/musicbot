@@ -32,7 +32,14 @@ python scripts/library_health_check.py \
 
 python scripts/library_health_check.py --verbose        # Pro-Datei-DEBUG-Log
 python scripts/library_health_check.py --fail-on-error   # Exit 1 bei ERROR/CRITICAL
+python scripts/library_health_check.py --measure-loudness  # + LUFS-Messung (langsam)
 ```
+
+`--measure-loudness` misst zusätzlich die integrierte Lautheit jeder Datei
+per FFmpeg-loudnorm-**Analyse** (`-f null -`, kein Re-Encode, kein
+Output-File — weiterhin vollständig read-only) und meldet
+`LOUDNESS_OFF_TARGET`. Dekodiert dafür jede Datei komplett → deutlich
+langsamer (Größenordnung Minuten für einige hundert Dateien).
 
 **Default-Report-Pfade:** `<BASE_DIR>/cache/data/library_health_report.json`
 und `…/library_health_report.txt` (beide außerhalb der Library, `cache/` ist
@@ -120,7 +127,7 @@ Pro Datei wird je Dimension ein `AnalysisState` bestimmt — **strikt getrennt**
 | `artwork` | eingebettet? dekodierbar? Auflösung ≥ 400 px Kante (`ARTWORK_MIN_EDGE_PX`)? Seitenverhältnis ≤ 5 % von 1:1 (`ARTWORK_SQUARE_TOLERANCE`)? |
 | `lyrics` | vorhanden / leer / Platzhalter-Text |
 | `audio` | ffprobe: Stream vorhanden? Codec/Bitrate/Dauer, Korruptions-Marker |
-| `loudness` | **nur** ReplayGain-/Loudness-**Tag**-Existenz/-Format — **keine** Messung/Berechnung (Prompt Abschnitt 16) |
+| `loudness` | ReplayGain-/Loudness-**Tag**-Existenz/-Format (immer); **zusätzlich** integrierte Lautheit per FFmpeg-loudnorm-Analyse **nur bei `--measure-loudness`** (`LOUDNESS_OFF_TARGET`, read-only, kein Output-File) |
 | Struktur/Dateiname | in erwarteter `<Artist>/(Singles\|Jahr - Album)/`-Hierarchie? Dateiname-Stamm ↔ Titel-Tag, verdächtige Zeichen, Endung |
 | Multi-Artist | `';'` im Einzelwert, `feat.` im `©ART` statt separatem `ARTISTS`, Duplikate, `©ART` ↔ `ARTISTS`-Freeform ↔ Album-Artist |
 
@@ -143,6 +150,13 @@ Fehlende **optionale** Felder sind `INFO`, kein Qualitätsmangel:
 - `LOUDNESS_TAG_MISSING` → **INFO** (die aktuelle Pipeline schreibt bewusst
   keinen ReplayGain-Tag — sie normalisiert die Lautheit vor dem Taggen per
   FFmpeg-loudnorm ohne Nachweis-Tag).
+- `LOUDNESS_OFF_TARGET` → **INFO** (**nur bei `--measure-loudness`**). Die
+  gemessene integrierte Lautheit weicht > 2 dB von −16 LUFS ab. Ein echter
+  Playback-Defekt (Track springt beim Shuffle in der Lautstärke), aber der
+  Fix ist **verlustbehaftet** (AAC-Neucodierung) → wie `AUDIO_VERY_SHORT`
+  Beobachtung, keine automatische Aktion. Realer Bestand 2026-09-04:
+  99/388 (26 %) betroffen, 97 zu laut (Median +5,2 dB, bis +7,9 dB; einige
+  mit True Peak > 0 dBFS = clippend), praktisch der gesamte makko-Katalog.
 - `META_MB_*_MISSING`, `META_ISRC_MISSING`, `LYRICS_MISSING` → **INFO**.
 - `META_TRACK_NUMBER_MISSING` → **INFO** bei einer Single, **WARNING** nur im
   Album-Kontext.
@@ -202,6 +216,7 @@ Health-Score **nicht** (PR 3).
 `LYRICS_MISSING`, `LYRICS_EMPTY`, `LYRICS_INVALID`, `AUDIO_NOT_ANALYZABLE`,
 `AUDIO_NO_STREAM`, `AUDIO_CORRUPT`, `AUDIO_LOW_BITRATE`, `AUDIO_VERY_SHORT`,
 `LOUDNESS_TAG_MISSING`, `LOUDNESS_TAG_INVALID`, `LOUDNESS_TAG_PARTIAL`,
+`LOUDNESS_OFF_TARGET`,
 `STRUCTURE_INVALID_PATH`, `STRUCTURE_FILE_OUTSIDE_HIERARCHY`,
 `FILENAME_TITLE_MISMATCH`, `FILENAME_SUSPICIOUS`,
 `FILENAME_EXTENSION_UNEXPECTED`, `MULTI_ARTIST_SUSPICIOUS`,

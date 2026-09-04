@@ -16,7 +16,7 @@ from mutagen.mp4 import MP4, MP4FreeForm
 
 from services.library_repair.executor import (
     apply_album_cover_unify, apply_cover_repairs, apply_external_metadata,
-    apply_level1, apply_level1_rename, apply_level2, safety_check,
+    apply_level1, apply_level1_rename, apply_level2, apply_loudness, safety_check,
 )
 from services.library_repair.journal import RepairJournal
 from services.library_repair.models import RepairAction, RepairCandidate, RepairLevel
@@ -547,3 +547,158 @@ def test_l2_safety_blocks_symlink(lib):
     assert outcomes[0].status == "SKIPPED"
     assert "Safety" in outcomes[0].reason
     assert not calls
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Level LOUDNESS — verlustbehaftetes Re-Encode (normalize_fn/measure_fn injiziert)
+# ─────────────────────────────────────────────────────────────────────────
+
+def _loud_cand(rel):
+    return RepairCandidate(issue_code="LOUDNESS_OFF_TARGET",
+                           action=RepairAction.LOUDNESS_NORMALIZE,
+                           level=RepairLevel.LOUDNESS, severity="INFO",
+                           scope="file", path=rel)
+
+
+def _reencode_drop_freeform(path: Path):
+    """Simuliert AudioEnhancer.normalize_loudness(): re-encodet den Audio-
+    Stream (ändert Essenz + Lautheit) und verliert dabei das freeform-GENRE-
+    Atom + Cover — genau das dokumentierte FFmpeg-Verhalten ohne -map_metadata."""
+    tmp = path.with_suffix(".tmp.m4a")
+    subprocess.run(
+        ["ffmpeg", "-i", str(path), "-map", "0:a", "-af", "volume=-6dB",
+         "-c:a", "aac", "-b:a", "192k", str(tmp), "-y", "-loglevel", "error"],
+        check=True,
+    )
+    # Standard-©-Tags übernimmt ffmpeg, freeform + covr fallen weg
+    src = MP4(path)
+    dst = MP4(tmp)
+    for k in ("©nam", "©ART", "©alb"):
+        if k in src:
+            dst[k] = src[k]
+    dst.save()
+    tmp.replace(path)
+    return True
+
+
+@requires_ffmpeg
+def test_loudness_dry_run_writes_nothing(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p, genre="Pop")
+    md5 = _audio_md5(p)
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_loudness([_loud_cand("A/Singles/2020 - x.m4a")], lib, j,
+                              normalize_fn=lambda p: True,
+                              measure_fn=lambda p: -9.0, dry_run=True)
+    assert outcomes[0].status == "DRY_RUN"
+    assert _audio_md5(p) == md5
+    assert not (lib.parent / ".library_repair_backups").exists()
+
+
+@requires_ffmpeg
+def test_loudness_on_target_is_skipped(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p)
+    j = RepairJournal(lib / "j.jsonl")
+    called = []
+    outcomes = apply_loudness([_loud_cand("A/Singles/2020 - x.m4a")], lib, j,
+                              normalize_fn=lambda p: called.append(1) or True,
+                              measure_fn=lambda p: -16.3, dry_run=False)
+    assert outcomes[0].status == "SKIPPED"
+    assert not called
+
+
+@requires_ffmpeg
+def test_loudness_execute_restores_all_tags_and_cover(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p, genre="Pop", artist="A", artists_ff=["A", "Feat B"])
+    a = MP4(p)
+    a["----:com.apple.iTunes:GENRE"] = [MP4FreeForm(b"Deutschrap, Cloud Rap")]
+    a["----:com.apple.iTunes:MusicBrainz Recording Id"] = [MP4FreeForm(b"rec-xyz")]
+    a.save()
+    md5_before = _audio_md5(p)
+
+    lufs_state = {"v": -9.0}
+
+    def measure(_p):
+        return lufs_state["v"]
+
+    def normalize(pp):
+        _reencode_drop_freeform(Path(pp))
+        lufs_state["v"] = -16.1     # nach dem Re-Encode auf Ziel
+        return True
+
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_loudness([_loud_cand("A/Singles/2020 - x.m4a")], lib, j,
+                              normalize_fn=normalize, measure_fn=measure, dry_run=False)
+    assert outcomes[0].status == "SUCCESS", outcomes[0].reason
+    assert _audio_md5(p) != md5_before          # Audio BEWUSST verändert
+    t = MP4(p).tags
+    # freeform-Atome + Standard-Tags wiederhergestellt
+    assert bytes(t["----:com.apple.iTunes:GENRE"][0]).decode() == "Deutschrap, Cloud Rap"
+    assert bytes(t["----:com.apple.iTunes:MusicBrainz Recording Id"][0]).decode() == "rec-xyz"
+    assert t["©nam"] == ["T"]
+    assert outcomes[0].after["audio_reencoded"] is True
+
+
+@requires_ffmpeg
+def test_loudness_rolls_back_when_normalize_returns_false(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p, genre="Pop")
+    md5 = _audio_md5(p)
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_loudness([_loud_cand("A/Singles/2020 - x.m4a")], lib, j,
+                              normalize_fn=lambda p: False,
+                              measure_fn=lambda p: -9.0, dry_run=False)
+    assert outcomes[0].status == "FAILED"
+    assert _audio_md5(p) == md5
+    assert not list((lib.parent / ".library_repair_backups").rglob("*.bak"))
+
+
+@requires_ffmpeg
+def test_loudness_rolls_back_when_still_off_target(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p, genre="Pop")
+    md5 = _audio_md5(p)
+
+    def normalize(pp):
+        _reencode_drop_freeform(Path(pp))
+        return True
+
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_loudness([_loud_cand("A/Singles/2020 - x.m4a")], lib, j,
+                              normalize_fn=normalize,
+                              measure_fn=lambda p: -9.0,   # bleibt daneben
+                              dry_run=False)
+    assert outcomes[0].status == "FAILED"
+    assert _audio_md5(p) == md5                 # zurückgerollt (Audio wieder original)
+    assert MP4(p).tags["©gen"] == ["Pop"]
+
+
+@requires_ffmpeg
+def test_loudness_rolls_back_when_file_unchanged(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p)
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_loudness([_loud_cand("A/Singles/2020 - x.m4a")], lib, j,
+                              normalize_fn=lambda p: True,   # tut in Wahrheit nichts
+                              measure_fn=lambda p: -9.0, dry_run=False)
+    assert outcomes[0].status == "FAILED"
+    assert "unveraendert" in outcomes[0].reason
+
+
+@requires_ffmpeg
+def test_loudness_safety_blocks_symlink(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p)
+    link = lib / "A" / "Singles" / "2020 - l.m4a"
+    link.symlink_to(p)
+    j = RepairJournal(lib / "j.jsonl")
+    called = []
+    outcomes = apply_loudness([_loud_cand("A/Singles/2020 - l.m4a")], lib, j,
+                              normalize_fn=lambda p: called.append(1) or True,
+                              measure_fn=lambda p: called.append(1) or -9.0,
+                              dry_run=False)
+    assert outcomes[0].status == "SKIPPED"
+    assert "Safety" in outcomes[0].reason
+    assert not called

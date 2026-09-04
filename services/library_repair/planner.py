@@ -122,15 +122,23 @@ _SPECS: tuple[RepairSpec, ...] = (
           change="sehr kurz — Skit/Intro oder abgeschnitten? manuell pruefen"),
 
     # ── Loudness ────────────────────────────────────────────────────────
-    _spec("LOUDNESS_TAG_MISSING", _A.LOUDNESS_NORMALIZE, _L.LOUDNESS,
-          "normalize_test_library_loudness.py", approval=False,
-          change="LUFS pruefen; nur normalisieren, wenn ausserhalb Toleranz (kein Doppel-Encoding)"),
-    _spec("LOUDNESS_TAG_INVALID", _A.LOUDNESS_NORMALIZE, _L.LOUDNESS,
-          "normalize_test_library_loudness.py", approval=False,
-          change="LUFS pruefen und ReplayGain-Tag korrigieren"),
-    _spec("LOUDNESS_TAG_PARTIAL", _A.LOUDNESS_NORMALIZE, _L.LOUDNESS,
-          "normalize_test_library_loudness.py", approval=False,
-          change="fehlende ReplayGain-Familienwerte ergaenzen"),
+    # LOUDNESS_OFF_TARGET (nur bei --measure-loudness): echte LUFS-Abweichung
+    # → verlustbehaftetes AAC-Re-Encode via AudioEnhancer.normalize_loudness(),
+    # Executor sichert/stellt alle Tags+Cover wieder her.
+    _spec("LOUDNESS_OFF_TARGET", _A.LOUDNESS_NORMALIZE, _L.LOUDNESS,
+          "AudioEnhancer.normalize_loudness + track_reprocessor", external=True,
+          change="Audio auf -16 LUFS neu codieren (verlustbehaftet); Tags/Cover "
+                 "before==after, Backup + Rollback"),
+    # Die replaygain_track_*-Freeform-Tags sind Altlast — die AKTUELLE
+    # Pipeline schreibt sie nirgends (tag_writer.py). Ein fehlender/kaputter
+    # Legacy-Tag ist KEIN Grund fuer ein Audio-Re-Encode.
+    _spec("LOUDNESS_TAG_MISSING", _A.MANUAL_REVIEW, _L.NOT_REPAIRABLE,
+          "-", change="Legacy-ReplayGain-Tag; aktuelle Pipeline schreibt ihn "
+                      "bewusst nicht — nichts zu tun"),
+    _spec("LOUDNESS_TAG_INVALID", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW,
+          "-", change="kaputter Legacy-ReplayGain-Tag — manuell entfernen/pruefen"),
+    _spec("LOUDNESS_TAG_PARTIAL", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW,
+          "-", change="unvollstaendige Legacy-ReplayGain-Tag-Familie — manuell pruefen"),
 
     # ── Struktur / Dateiname ───────────────────────────────────────────
     _spec("STRUCTURE_INVALID_PATH", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
