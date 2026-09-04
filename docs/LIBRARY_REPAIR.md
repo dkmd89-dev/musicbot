@@ -18,7 +18,12 @@ LIBRARY → Health Scanner → Health Report → Repair Planner
 
 **Status** — alle Executors mit Per-Datei-Backup (außerhalb der Library),
 Append-Only-Journal, Before/After, **Audio-Essenz-Verifikation** und
-Verification-Scan; alle bereits gegen die Produktions-Library gelaufen:
+Verification-Scan; alle bereits gegen die Produktions-Library gelaufen.
+
+> **Merge-Historie:** PR #145 hat per Squash nur Repair Planner + Level-1-
+> Tag-Fixes auf `main` gebracht. Level-1-Renames, Cover, ALBUM_COVER_INCONSISTENT
+> und Level 3 kamen per **PR #146** nach (dieselben Commits, die bereits gegen
+> Produktion liefen — `main` war vorübergehend hinter dem realen Library-Stand).
 
 | Executor | Zustand | Produktionslauf |
 |---|---|---|
@@ -27,8 +32,8 @@ Verification-Scan; alle bereits gegen die Produktions-Library gelaufen:
 | **Level 1 — Renames** | ✅ | 7/7 SUCCESS (`FILENAME_TITLE_MISMATCH 14→7`) |
 | **Cover** (`CoverProcessor`, only-if-better) | ✅ | makko-Album 6× 300→3000px |
 | **`ALBUM_COVER_INCONSISTENT`** (offline, best-existing) | ✅ | 198 SUCCESS, `19→0`, Health 97.9→98.0 |
-| **Level 3 — MusicBrainz-IDs / ISRC** | ✅ | DRY-RUN 01099: 6 Nachträge, 10 kein Match |
-| Level 2 (`reprocess_artist_metadata.py`) | ⏳ blockiert (`ALLOWED_ROOT`) | — |
+| **Level 3 — MusicBrainz-IDs / ISRC** | ✅ | DRY-RUN 01099: 6 Nachträge; Prod-Lauf: 0 sichere Treffer (MB-Abdeckung für Deutschrap/2Pac-Bootlegs gering) |
+| Level 2 (`reprocess_artist_metadata.py`-Kern) | ⏳ Option 2a (Kern nach `services/metadata/` extrahieren) | — |
 | Loudness / Duplicate | ⏳ offen (`--allow-delete` abgelehnt) | — |
 
 ---
@@ -219,12 +224,15 @@ ist extern/Netzwerk und langsam): `apply_cover_repairs()` für
 
 ## 6. Noch offen (Phase 2)
 
-- **Album-Cover-Vereinheitlichung** (`ALBUM_COVER_INCONSISTENT`).
-- **Level 2** (`reprocess_artist_metadata.py` als Subprozess orchestrieren) —
-  **blockiert**: das Script hat `ALLOWED_ROOT = /tmp/musicbot_test` und lehnt
-  Produktionspfade ab; Production-Write-Enablement ist eine eigene
-  Sicherheitsentscheidung.
-- **Level 3** (MusicBrainz-/Genre-Nachträge, nur bei eindeutigem Match).
+- **Level 2** (`reprocess_artist_metadata.py`-Pipeline für die Library
+  nutzbar machen) — Nutzer-Entscheidung **Option 2a**: das Script behält
+  `ALLOWED_ROOT = /tmp/musicbot_test` (test-only, tragend für CLI +
+  Telegram-Menü); `process_file()` + `snapshot()` + Helfer werden nach
+  `services/metadata/` extrahiert (config-injiziert), ein neuer
+  `apply_level2()` nutzt denselben Kern + Backup-außerhalb-Library/Journal/
+  Audio-Essenz-Verifikation/Verification-Scan wie L1. Ziel-Issue:
+  `META_TITLE_NOT_CLEAN` (neuer read-only-Health-Check über
+  `TitleCleaner.light_title_cleanup()`).
 - **Loudness** (`normalize_test_library_loudness.py`) — erst Produktions-
   Härtung/Test dieses Scripts nötig (`ALLOWED_ROOT`, kein Doppel-Encoding).
 - **Duplicate** (`resolve_duplicates.py` — destruktiv, `--allow-delete`).
