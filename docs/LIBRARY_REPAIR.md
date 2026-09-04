@@ -33,7 +33,7 @@ Verification-Scan; alle bereits gegen die Produktions-Library gelaufen.
 | **Cover** (`CoverProcessor`, only-if-better) | ✅ | makko-Album 6× 300→3000px |
 | **`ALBUM_COVER_INCONSISTENT`** (offline, best-existing) | ✅ | 198 SUCCESS, `19→0`, Health 97.9→98.0 |
 | **Level 3 — MusicBrainz-IDs / ISRC** | ✅ | DRY-RUN 01099: 6 Nachträge; Prod-Lauf: 0 sichere Treffer (MB-Abdeckung für Deutschrap/2Pac-Bootlegs gering) |
-| **Level 2 — volle Neuverarbeitung** (`track_reprocessor.process_file`) | ✅ Code + Tests | — (Prod-Lauf = eigener Freigabe-Schritt) |
+| **Level 2 — volle Neuverarbeitung** (`track_reprocessor.process_file`) | ✅ | makko 19/19 SUCCESS (`META_TITLE_NOT_CLEAN 19→0`); Cover-Nebeneffekt via Album-Cover-Executor 4/4 |
 | Loudness / Duplicate | ⏳ offen (`--allow-delete` abgelehnt) | — |
 
 ---
@@ -266,9 +266,24 @@ unberührt.
   Vorhersage; `ExecOutcome` = `DRY_RUN` mit Before/After aus dieser
   Vorhersage.
 
-**Plan gegen Produktion (`--report … --artist makko --issue META_TITLE_NOT_CLEAN`):**
-19 Dateien (makko-Alben + Singles mit `"Titel"`-Anführungszeichen bzw.
-`prod.`-Credit) → Level 2. Produktionslauf ist ein eigener Freigabe-Schritt.
+> **Betriebs-Hinweis — Cover + Teil-Album-Läufe:** `process_file()` ersetzt
+> das eingebettete Cover, **sobald** die Pipeline ein abweichendes Cover
+> liefert — nicht „nur wenn besser" wie der Cover-Executor (§5a). Betrifft
+> ein L2-Lauf nur *einen Teil* der Tracks eines Albums (z. B. `--issue
+> META_TITLE_NOT_CLEAN` traf nur 5 von 20 Tracks), können danach im Album
+> unterschiedliche Cover-Abmessungen stehen → neuer `ALBUM_COVER_INCONSISTENT`
+> (INFO). Der Verification-Scan meldet das (Exit 1). **Nacharbeit:** direkt
+> `library_repair.py --artist <A> --issue ALBUM_COVER_INCONSISTENT --apply`
+> — der Album-Cover-Executor hebt alle Tracks offline auf das je vorhandene
+> beste Cover (nie Downscale).
+
+**Produktionslauf 2026-09-04 (`--artist makko --issue META_TITLE_NOT_CLEAN`):**
+19/19 SUCCESS, Audio byte-identisch. Titel `"X"` / `"X" prod. Y` → `X` (alle
+19), 2 Renames (`ADLIBS`, `WEIN`), 1 Rename korrekt blockiert (`Echt/Nie…`
+mit `/` im Titel → unresolved), 7 Dateien MB-IDs ergänzt, 1× Lyrics,
+`META_TITLE_NOT_CLEAN 19→0`, `LYRICS_MISSING 12→11`, Health 97,8→98,0.
+Anschließend `ALBUM_COVER_INCONSISTENT` (Cover-Nebeneffekt, s. o.) mit dem
+Album-Cover-Executor behoben: 4/4 SUCCESS, `2→0`, Verification grün.
 
 ## 7. Level-3 — MusicBrainz-IDs / ISRC nachtragen (implementiert)
 
