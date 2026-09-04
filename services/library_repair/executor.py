@@ -503,6 +503,10 @@ def apply_cover_repairs(
         (c for c in candidates if c.issue_code in COVER_ISSUE_CODES and c.path),
         key=lambda c: (c.path, c.issue_code),
     )
+    # Album-Cache: alle Tracks EINES Album-Ordners bekommen dasselbe Cover
+    # (verhindert, dass ein per-Track-Repair eine ALBUM_COVER_INCONSISTENT
+    # erst erzeugt). Key = (Artist-Ordner, Album-Ordner); Singles nicht gecacht.
+    album_cover_cache: dict[tuple, tuple] = {}
 
     for c in todo:
         path = library_root / c.path
@@ -531,8 +535,15 @@ def apply_cover_repairs(
             "mb_artist_id": tags.mb_artist_id, "mb_release_group_id": tags.mb_release_group_id,
             "isrc": tags.isrc,
         }
+        parts = Path(c.path).parts
+        album_key = (parts[0], parts[1]) if len(parts) >= 3 and parts[1].lower() != "singles" else None
         try:
-            new_raw, source = cover_fetcher(ctx)
+            if album_key is not None and album_key in album_cover_cache:
+                new_raw, source = album_cover_cache[album_key]
+            else:
+                new_raw, source = cover_fetcher(ctx)
+                if album_key is not None:
+                    album_cover_cache[album_key] = (new_raw, source)
         except Exception as e:  # noqa: BLE001
             oc.status, oc.reason = "FAILED", f"Cover-Suche: {e!r}"
             outcomes.append(oc)

@@ -195,13 +195,21 @@ ist extern/Netzwerk und langsam): `apply_cover_repairs()` für
 - Schreibvorgang wie beim Tag-Executor: Backup außerhalb der Library →
   `covr`-Atom auf temp-Sibling → verifizieren (Cover-SHA + Audio-Essenz
   byte-identisch) → atomarer `replace`, sonst Rollback.
-- `ALBUM_COVER_INCONSISTENT` (Album-weite Vereinheitlichung) ist **nicht**
-  dabei — komplexer, folgt separat.
+- **Album-Cache:** alle Tracks eines Album-Ordners bekommen dasselbe Cover
+  (eine Suche pro Album) — verhindert, dass ein per-Track-Repair eine
+  `ALBUM_COVER_INCONSISTENT` erst erzeugt. Singles werden per Track gesucht.
+- `ALBUM_COVER_INCONSISTENT` (Vereinheitlichung eines bereits uneinheitlichen
+  Albums) ist **nicht** dabei — folgt separat.
 
-**Erster Produktionslauf (`--issue ARTWORK_MISSING --apply --dry-run`):**
-5/5 `SKIPPED` — für diese Tracks (2Pac-Bonus/Visualizer, makko-Remix, alle
-ohne MB-IDs) fand `CoverProcessor` kein Cover. Kein Overwrite, korrektes
-konservatives Verhalten.
+**Produktionsläufe (2026-09-04):**
+- `--issue ARTWORK_MISSING`: 5/5 `SKIPPED` — `CoverProcessor` fand kein Cover
+  (2Pac-Bonus/Visualizer, makko-Remix, alle ohne MB-IDs). Kein Overwrite.
+- `--artist makko --issue ARTWORK_LOW_RESOLUTION --apply`: **6/6 `SUCCESS`** —
+  `makko/2020 - Poesie gemischt mit Bier/` alle 6 Tracks 300×300 → **3000×3000**
+  (Apple Music, dasselbe Cover via Album-Cache). Audio byte-identisch,
+  Verification-Scan grün (`ARTWORK_LOW_RESOLUTION 19→13`, keine neuen Issues).
+- Die übrigen 13 `LOW_RESOLUTION` (2Pac / Toobrokeforfiji): `SKIPPED` —
+  `CoverProcessor` fand nur ≤300px, kein Downgrade.
 
 ## 6. Noch offen (Phase 2)
 
