@@ -14,7 +14,9 @@ from pathlib import Path
 import pytest
 from mutagen.mp4 import MP4, MP4FreeForm
 
-from services.library_repair.executor import apply_level1, apply_level1_rename, safety_check
+from services.library_repair.executor import (
+    apply_cover_repairs, apply_level1, apply_level1_rename, safety_check,
+)
 from services.library_repair.journal import RepairJournal
 from services.library_repair.models import RepairAction, RepairCandidate, RepairLevel
 
@@ -211,6 +213,72 @@ def test_rename_stays_in_same_directory(lib):
     assert outcomes[0].status == "SUCCESS"
     moved = list((lib / "A" / "Singles").glob("*.m4a"))
     assert len(moved) == 1 and moved[0].parent == p.parent
+
+
+def _png_bytes(px):
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (px, px), (5, 6, 7)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+@requires_ffmpeg
+def test_cover_added_when_missing_audio_untouched(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = ["x"]; a.save()
+    md5_before = _audio_md5(p)
+    big = _png_bytes(1000)
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_cover_repairs(
+        [_cand("A/Singles/2020 - x.m4a", "ARTWORK_MISSING")],
+        lib, j, cover_fetcher=lambda ctx: (big, "test-source"), dry_run=False)
+    assert outcomes[0].status == "SUCCESS"
+    assert bool(MP4(p).tags.get("covr"))
+    assert _audio_md5(p) == md5_before
+    assert list((lib.parent / ".library_repair_backups").rglob("*.bak"))
+
+
+@requires_ffmpeg
+def test_cover_not_replaced_when_candidate_not_better(lib):
+    import io
+    from PIL import Image
+    from mutagen.mp4 import MP4Cover
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p)
+    buf = io.BytesIO(); Image.new("RGB", (900, 900), (1, 2, 3)).save(buf, "JPEG")
+    a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = ["x"]
+    a["covr"] = [MP4Cover(buf.getvalue(), imageformat=MP4Cover.FORMAT_JPEG)]; a.save()
+    before_sha = _read(p)  # sanity
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_cover_repairs(
+        [_cand("A/Singles/2020 - x.m4a", "ARTWORK_LOW_RESOLUTION")],
+        lib, j, cover_fetcher=lambda ctx: (_png_bytes(950), "s"), dry_run=False)
+    assert outcomes[0].status == "SKIPPED"      # 900 -> 950 zu wenig Zugewinn
+    assert not (lib.parent / ".library_repair_backups").exists()
+
+
+@requires_ffmpeg
+def test_cover_dry_run_writes_nothing(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = ["x"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_cover_repairs(
+        [_cand("A/Singles/2020 - x.m4a", "ARTWORK_MISSING")],
+        lib, j, cover_fetcher=lambda ctx: (_png_bytes(1200), "s"), dry_run=True)
+    assert outcomes[0].status == "DRY_RUN"
+    assert not bool(MP4(p).tags.get("covr"))
+
+
+@requires_ffmpeg
+def test_cover_skips_when_fetcher_returns_none(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = ["x"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_cover_repairs(
+        [_cand("A/Singles/2020 - x.m4a", "ARTWORK_MISSING")],
+        lib, j, cover_fetcher=lambda ctx: (None, None), dry_run=False)
+    assert outcomes[0].status == "SKIPPED"
 
 
 @requires_ffmpeg

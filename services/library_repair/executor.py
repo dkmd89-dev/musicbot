@@ -36,7 +36,7 @@ from typing import Optional
 
 from .journal import JournalEntry, RepairJournal
 from .models import RepairCandidate
-from . import rename_repairs, tag_repairs
+from . import cover_repairs, rename_repairs, tag_repairs
 
 _ARTISTS_FREEFORM_ATOM = "----:com.apple.iTunes:ARTISTS"
 _SUPPORTED = (".m4a", ".mp4", ".m4v")
@@ -181,7 +181,7 @@ def _write_atoms(src: Path, new_atoms: dict) -> Path:
     (noch NICHT übernommen)."""
     from mutagen.mp4 import MP4, MP4FreeForm
 
-    tmp = src.with_name(f".{src.name}.repairtmp_{int(time.time() * 1000)}")
+    tmp = src.with_name(f".{src.stem}.repairtmp_{int(time.time() * 1000)}{src.suffix}")
     shutil.copy2(src, tmp)
     audio = MP4(tmp)
     if "genre" in new_atoms:
@@ -442,6 +442,172 @@ def apply_level1_rename(
         je = _je(c, oc, dry_run)
         je.sha256_before = sha_before
         je.sha256_after = _sha256(target if oc.status == "SUCCESS" else path)
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Cover — externe Suche (CoverProcessor) + only-if-better (Prompt Abschnitt 9)
+# ─────────────────────────────────────────────────────────────────────────
+
+COVER_ISSUE_CODES = cover_repairs.HANDLED_ISSUE_CODES
+
+
+def _image_dims(raw: bytes) -> tuple[Optional[int], Optional[int], Optional[str]]:
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(BytesIO(raw)) as img:
+            return img.width, img.height, (img.format or "").upper()
+    except Exception:  # noqa: BLE001
+        return None, None, None
+
+
+def _embed_cover(src: Path, raw: bytes, fmt: str) -> Path:
+    """covr-Atom auf einer temporaeren Sibling-Kopie setzen."""
+    from mutagen.mp4 import MP4, MP4Cover
+
+    image_format = MP4Cover.FORMAT_PNG if fmt == "PNG" else MP4Cover.FORMAT_JPEG
+    tmp = src.with_name(f".{src.stem}.repairtmp_{int(time.time() * 1000)}{src.suffix}")
+    shutil.copy2(src, tmp)
+    audio = MP4(tmp)
+    audio["covr"] = [MP4Cover(raw, imageformat=image_format)]
+    audio.save()
+    return tmp
+
+
+def apply_cover_repairs(
+    candidates: list[RepairCandidate],
+    library_root: Path,
+    journal: RepairJournal,
+    cover_fetcher,
+    *,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """`cover_fetcher(ctx: dict) -> (bytes | None, source | None)` — der
+    Aufrufer injiziert den echten CoverProcessor. `ctx` enthaelt artist/
+    title/album/mb_recording_id/mb_release_id/mb_artist_id/isrc."""
+    from services.library_health.tag_reader import read_artwork, read_tags
+
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+    todo = sorted(
+        (c for c in candidates if c.issue_code in COVER_ISSUE_CODES and c.path),
+        key=lambda c: (c.path, c.issue_code),
+    )
+
+    for c in todo:
+        path = library_root / c.path
+        oc = ExecOutcome(file=c.path, issue_code=c.issue_code, action=c.action.value,
+                         status="SKIPPED")
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        try:
+            art = read_artwork(path)
+            tags = read_tags(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        ctx = {
+            "artist": tags.artist, "title": tags.title, "album": tags.album,
+            "mb_recording_id": tags.mb_recording_id, "mb_release_id": tags.mb_release_id,
+            "mb_artist_id": tags.mb_artist_id, "mb_release_group_id": tags.mb_release_group_id,
+            "isrc": tags.isrc,
+        }
+        try:
+            new_raw, source = cover_fetcher(ctx)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Cover-Suche: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        cand_w = cand_h = None
+        cand_fmt = "JPEG"
+        if new_raw:
+            cand_w, cand_h, cand_fmt = _image_dims(new_raw)
+
+        action, why = cover_repairs.decide_cover_action(
+            c.issue_code,
+            current_present=art.present,
+            current_state=art.state.value,
+            current_w=art.width, current_h=art.height,
+            candidate_w=cand_w, candidate_h=cand_h,
+        )
+        oc.before = {"cover": f"{art.width}x{art.height}" if art.present else "MISSING",
+                     "sha256": art.sha256}
+        oc.after = {"cover": f"{cand_w}x{cand_h}" if action != "SKIP" else None,
+                    "source": source, "decision": action}
+
+        if action == cover_repairs.SKIP:
+            oc.reason = why
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        backup = backup_dir / f"{c.path}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _embed_cover(path, new_raw, cand_fmt or "JPEG")
+            verify = read_artwork(tmp)
+            if not verify.present or verify.sha256 != hashlib.sha256(new_raw).hexdigest():
+                raise RuntimeError("Cover-Verifikation fehlgeschlagen")
+            audio_tmp = _audio_essence_md5(tmp)
+            if audio_tmp != audio_before or audio_tmp.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {audio_tmp})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if Path(backup).exists():
+                    Path(backup).replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            try:
+                Path(backup).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        je = _je(c, oc, dry_run)
+        je.sha256_before, je.sha256_after = sha_before, _sha256(path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = _audio_essence_md5(path) if oc.status == "SUCCESS" else audio_before
+        je.backup_path = oc.backup_path
         journal.record(je)
         outcomes.append(oc)
 

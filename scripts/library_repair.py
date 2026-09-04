@@ -135,29 +135,44 @@ def main(argv=None) -> int:
     if not args.apply:
         return 0
 
-    # ── Level-1-Ausfuehrung ──────────────────────────────────────────────
+    # ── Ausfuehrung ─────────────────────────────────────────────────────
     from services.library_repair.executor import (
-        L1_RENAME_CODES, L1_TAG_CODES, apply_level1, apply_level1_rename,
+        COVER_ISSUE_CODES, L1_RENAME_CODES, L1_TAG_CODES,
+        apply_cover_repairs, apply_level1, apply_level1_rename,
     )
     from services.library_repair.journal import RepairJournal
 
     execute_dry = args.dry_run
+    backup_dir = Path(args.backup_dir) if args.backup_dir else None
     journal_path = Path(config.DATA_DIR) / "library_repair_journal.jsonl"
     journal = RepairJournal(journal_path)
+
     l1_tags = [c for c in plan.candidates if c.issue_code in L1_TAG_CODES]
     l1_rename = [c for c in plan.candidates if c.issue_code in L1_RENAME_CODES]
-    if not l1_tags and not l1_rename:
-        print("\nKeine Level-1-Reparaturen im (gefilterten) Plan — nichts auszufuehren.")
+    # Cover ist EXTERN (Netzwerk) und langsam -> nur auf ausdrueckliche
+    # Anforderung (--level COVER oder --issue ARTWORK_*), nie im Default-Lauf.
+    cover_requested = (args.level and args.level.upper() == "COVER") or \
+        (args.issue_code in COVER_ISSUE_CODES)
+    cover_cands = [c for c in plan.candidates if c.issue_code in COVER_ISSUE_CODES] \
+        if cover_requested else []
+
+    if not l1_tags and not l1_rename and not cover_cands:
+        print("\nKeine ausfuehrbaren Reparaturen im (gefilterten) Plan.")
         return 0
 
     mode = "DRY-RUN (keine Datei wird veraendert)" if execute_dry else "EXECUTE"
-    print(f"\n{'=' * 70}\nLEVEL-1 {mode} — {len(l1_tags)} Tag-Fixes + "
-          f"{len(l1_rename)} Renames\n{'=' * 70}")
-    outcomes = apply_level1(
-        l1_tags, library_root, journal, dry_run=execute_dry,
-        backup_dir=Path(args.backup_dir) if args.backup_dir else None,
-    )
+    print(f"\n{'=' * 70}\nREPAIR {mode} — {len(l1_tags)} Tag-Fixes + "
+          f"{len(l1_rename)} Renames + {len(cover_cands)} Cover\n{'=' * 70}")
+
+    outcomes = apply_level1(l1_tags, library_root, journal, dry_run=execute_dry,
+                            backup_dir=backup_dir)
     outcomes += apply_level1_rename(l1_rename, library_root, journal, dry_run=execute_dry)
+
+    if cover_cands:
+        outcomes += apply_cover_repairs(
+            cover_cands, library_root, journal, _build_cover_fetcher(config, logger),
+            dry_run=execute_dry, backup_dir=backup_dir,
+        )
     journal.flush()
 
     for oc in outcomes:
@@ -176,6 +191,31 @@ def main(argv=None) -> int:
         return 0
     return _verification_scan(report, library_root, config, logger,
                               {o.issue_code for o in outcomes if o.status == "SUCCESS"})
+
+
+def _build_cover_fetcher(config, logger):
+    """Injiziert den bestehenden CoverProcessor als reinen Callable
+    ctx-dict -> (bytes | None, source | None). Cover-Suche wird IMMER
+    ausgefuehrt (auch bei vorhandenem Cover) — die only-if-better-
+    Entscheidung trifft cover_repairs.decide_cover_action()."""
+    from services.metadata.cover_processor import CoverProcessor
+
+    fanart_key = getattr(config, "FANART_API_KEY", None)
+    cp = CoverProcessor(fanart_api_key=fanart_key,
+                        logger=get_module_logger("library_repair.cover"))
+
+    def _fetch(ctx: dict):
+        return cp.get_cover_art(
+            artist_name=ctx.get("artist"),
+            track_title=ctx.get("title"),
+            release_id=ctx.get("mb_release_id"),
+            release_group_mbid=ctx.get("mb_release_group_id"),
+            artist_mbid=ctx.get("mb_artist_id"),
+            recording_id=ctx.get("mb_recording_id"),
+            isrc=ctx.get("isrc"),
+        )
+
+    return _fetch
 
 
 def _verification_scan(before_report, library_root, config, logger, touched_codes) -> int:

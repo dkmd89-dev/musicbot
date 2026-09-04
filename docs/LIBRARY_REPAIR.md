@@ -178,10 +178,39 @@ Ablauf pro Tag-Fix-Datei (Prompt Abschnitt 13–17):
 `MULTI_ARTIST_INCONSISTENT 9→0`, keine neuen Issues. Backups unter
 `/mnt/musik_bilder/.library_repair_backups/`.
 
+## 5a. Cover-Executor (implementiert)
+
+`--level COVER` bzw. `--issue ARTWORK_*` (NIE im Default-`--apply` — Cover
+ist extern/Netzwerk und langsam): `apply_cover_repairs()` für
+`ARTWORK_MISSING` / `ARTWORK_INVALID` / `ARTWORK_LOW_RESOLUTION` /
+`ARTWORK_NON_SQUARE`.
+
+- Die Cover-Suche (`CoverProcessor.get_cover_art()`) wird **immer**
+  ausgeführt, auch bei vorhandenem Cover (bestehende Projektregel).
+- `cover_repairs.decide_cover_action()` (rein) entscheidet only-if-better
+  (Prompt Abschnitt 9): Kandidat muss ≥ 400 px, quadratisch (5 %-Toleranz)
+  sein; bei `LOW_RESOLUTION` mind. +200 px Kantenzuwachs; bei `NON_SQUARE`
+  quadratisch **und** kein Auflösungsverlust. Sonst `SKIPPED` — **das
+  vorhandene Cover wird nie durch ein gleich gutes/schlechteres ersetzt.**
+- Schreibvorgang wie beim Tag-Executor: Backup außerhalb der Library →
+  `covr`-Atom auf temp-Sibling → verifizieren (Cover-SHA + Audio-Essenz
+  byte-identisch) → atomarer `replace`, sonst Rollback.
+- `ALBUM_COVER_INCONSISTENT` (Album-weite Vereinheitlichung) ist **nicht**
+  dabei — komplexer, folgt separat.
+
+**Erster Produktionslauf (`--issue ARTWORK_MISSING --apply --dry-run`):**
+5/5 `SKIPPED` — für diese Tracks (2Pac-Bonus/Visualizer, makko-Remix, alle
+ohne MB-IDs) fand `CoverProcessor` kein Cover. Kein Overwrite, korrektes
+konservatives Verhalten.
+
 ## 6. Noch offen (Phase 2)
 
-- **Level 2** (`reprocess_artist_metadata.py` als Subprozess orchestrieren).
+- **Album-Cover-Vereinheitlichung** (`ALBUM_COVER_INCONSISTENT`).
+- **Level 2** (`reprocess_artist_metadata.py` als Subprozess orchestrieren) —
+  **blockiert**: das Script hat `ALLOWED_ROOT = /tmp/musicbot_test` und lehnt
+  Produktionspfade ab; Production-Write-Enablement ist eine eigene
+  Sicherheitsentscheidung.
 - **Level 3** (MusicBrainz-/Genre-Nachträge, nur bei eindeutigem Match).
-- **Cover** (`CoverProcessor` — nur ersetzen bei eindeutig besserem Cover).
-- **Loudness** (`normalize_test_library_loudness.py` — kein Doppel-Encoding).
+- **Loudness** (`normalize_test_library_loudness.py`) — erst Produktions-
+  Härtung/Test dieses Scripts nötig (`ALLOWED_ROOT`, kein Doppel-Encoding).
 - **Duplicate** (`resolve_duplicates.py` — destruktiv, `--allow-delete`).
