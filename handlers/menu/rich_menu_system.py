@@ -403,6 +403,15 @@ class RichMenuSystem:
                 is_action=True,
             )
         )
+        stats_menu.add_child(
+            MenuItem(
+                id="stats_timeline",
+                title="Music Timeline",
+                emoji="📅",
+                handler=self._handle_stats_timeline,
+                is_action=True,
+            )
+        )
 
         # Admin-Menü
         admin_menu = MenuItem(
@@ -2560,3 +2569,13 @@ class RichMenuSystem:
             await self.stats_handler.handle_top_artists(update, context, period="month")
         else:
             await query.edit_message_text("🎤 Lade Top Künstler...")
+
+    async def _handle_stats_timeline(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+        if self.stats_handler and hasattr(self.stats_handler, "handle_music_timeline"):
+            await self.stats_handler.handle_music_timeline(update, context)
+        else:
+            await query.edit_message_text("📅 Lade Music Timeline...")

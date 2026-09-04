@@ -123,6 +123,12 @@ class StatistikService:
     ) -> Optional[Dict[str, Any]]:
         return self._calculator.get_last_played_song(navidrome_username)
 
+    def generate_timeline_stats(
+        self, navidrome_username: str = None
+    ) -> Optional[Dict[str, Any]]:
+        """Music-Timeline (Heute/Woche/Monat). Siehe StatisticsCalculator."""
+        return self._calculator.generate_timeline_stats(navidrome_username)
+
     def get_play_count_by_artist(
         self, artist_name: str, navidrome_username: str = None, period: str = "month"
     ) -> int:

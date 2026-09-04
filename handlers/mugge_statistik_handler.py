@@ -577,3 +577,98 @@ class StatistikHandler:
                 f"{EMOJI['error']} ❌ Fehler in handle_last_played: {str(e)}",
                 exc_info=True,
             )
+
+    def _format_duration(self, seconds: Any) -> str:
+        """Formatiert Sekunden als 'Xh Ym' (bzw. nur 'Ym' unter einer Stunde)."""
+        try:
+            total_minutes = int(float(seconds or 0)) // 60
+        except (TypeError, ValueError):
+            total_minutes = 0
+        hours, minutes = divmod(total_minutes, 60)
+        return f"{hours}h {minutes}m" if hours else f"{minutes}m"
+
+    async def handle_music_timeline(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """
+        Behandelt die Anfrage für die Music-Timeline-Übersicht
+        (Heute / Diese Woche / Diesen Monat).
+
+        Feature-Basis: History.txt ("Music Timeline"). Der dort skizzierte
+        Genre-Zeitverlauf ist NICHT enthalten, da das Datenmodell aktuell
+        kein "genre"-Feld im Wiedergabeverlauf erfasst (siehe
+        StatisticsCalculator.generate_timeline_stats).
+        """
+        self.logger.info(f"{EMOJI['chart']} 📅 Music Timeline angefragt")
+
+        # 🔑 Gleiche User-Mapping-Logik wie alle übrigen Handler-Methoden
+        nav_user = self._get_navidrome_user_for_request(update)
+        reply_target, msg = await self._send_processing_message(
+            update, "Erstelle Music Timeline", nav_user
+        )
+
+        if not reply_target or not msg:
+            return
+
+        try:
+            timeline = self.statistik_service.generate_timeline_stats(
+                navidrome_username=nav_user
+            )
+
+            if not timeline:
+                await msg.edit_text(
+                    f"{EMOJI['warning']} ⚠️ Keine Daten für '{self._escape_text(nav_user)}' verfügbar."
+                )
+                self.logger.warning(
+                    f"{EMOJI['warning']} ⚠️ Keine Timeline-Daten (User: {nav_user})"
+                )
+                return
+
+            esc = self._escape_text
+            periods = timeline["periods"]
+
+            def render_period(label: str, data: Dict[str, Any]) -> List[str]:
+                block = [
+                    label,
+                    "──────────────",
+                    f"{esc(data['track_count'])} Tracks",
+                    self._format_duration(data["listening_seconds"]),
+                ]
+                if data["top_artist"]:
+                    block.append(
+                        f"🎤 Top Artist: {esc(data['top_artist'][0])} "
+                        f"({esc(data['top_artist'][1])} Plays)"
+                    )
+                if data["top_album"]:
+                    block.append(
+                        f"💿 Top Album: {esc(data['top_album'][0])} "
+                        f"({esc(data['top_album'][1])} Plays)"
+                    )
+                if data["most_replayed_track"]:
+                    block.append(
+                        f"🔁 Meistgehört: {esc(data['most_replayed_track'][0])} "
+                        f"({esc(data['most_replayed_track'][1])}x)"
+                    )
+                block.append(f"🆕 Neue Tracks: {esc(data['new_track_count'])}")
+                return block
+
+            lines = [f"{EMOJI['calendar']} Deine Musik ({esc(nav_user)})", ""]
+            lines += render_period("Heute", periods["today"])
+            lines.append("")
+            lines += render_period("Diese Woche", periods["week"])
+            lines.append("")
+            lines += render_period("Diesen Monat", periods["month"])
+
+            await msg.edit_text("\n".join(lines))
+            self.logger.info(
+                f"{EMOJI['success']} ✅ Music Timeline erstellt (User: {nav_user})"
+            )
+
+        except Exception as e:
+            await msg.edit_text(
+                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}"
+            )
+            self.logger.error(
+                f"{EMOJI['error']} ❌ Fehler in handle_music_timeline: {str(e)}",
+                exc_info=True,
+            )

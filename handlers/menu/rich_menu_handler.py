@@ -432,6 +432,9 @@ class RichMenuHandler:
         self.menu_system.register_handler(
             "stats_top_artists", self._handle_top_artists_wrapper
         )
+        self.menu_system.register_handler(
+            "stats_timeline", self._handle_timeline_stats_wrapper
+        )
         self.logger.debug("📊 Statistik-Handler registriert")
 
     def _register_admin_handlers(self) -> None:
@@ -715,6 +718,24 @@ class RichMenuHandler:
                 )
         except Exception as e:
             self.logger.error(f"❌ Fehler bei Top Künstler Statistik: {e}")
+            await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
+
+    async def _handle_timeline_stats_wrapper(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        await query.answer("Lade Music Timeline ...")
+        try:
+            if self.stats_handler and hasattr(
+                self.stats_handler, "handle_music_timeline"
+            ):
+                await self.stats_handler.handle_music_timeline(update, context)
+            else:
+                await query.edit_message_text(
+                    "📅 **Music Timeline**\n\nStatistik-Handler nicht gefunden."
+                )
+        except Exception as e:
+            self.logger.error(f"❌ Fehler bei Music Timeline: {e}")
             await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
 
     # ====== ADMIN WRAPPER ======

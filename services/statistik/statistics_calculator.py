@@ -121,6 +121,142 @@ class StatisticsCalculator:
 
         return stats_result
 
+    def generate_timeline_stats(
+        self, navidrome_username: str = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Erstellt eine Music-Timeline-Übersicht (Heute / Diese Woche /
+        Diesen Monat) mit Track-Anzahl, Hörzeit, Top-Artist, Top-Album,
+        meistgespieltem Track und Anzahl neuer Tracks je Zeitraum.
+
+        Im Gegensatz zu `generate_stats()` sind die Zeiträume hier
+        KALENDERBASIERT (nicht rollierend):
+          - "today": ab lokaler Mitternacht des aktuellen Tages
+          - "week":  ab Montag 00:00 der aktuellen Kalenderwoche
+          - "month": ab dem 1. des aktuellen Kalendermonats
+
+        Feature-Hinweis (History.txt, "Music Timeline"): Der dort
+        skizzierte Genre-Zeitverlauf ("Jan Hip-Hop, Feb Pop, ...") ist
+        mit dem aktuellen Datenmodell NICHT umsetzbar, da weder
+        PlayHistoryPoller noch NavidromeAPI ein "genre"-Feld im
+        Wiedergabeverlauf erfassen. Bewusst ausgeklammert statt mit
+        Platzhalter-/Fake-Daten zu füllen. TODO: bei Bedarf Genre-Erfassung
+        separat ergänzen (Poller + Datenmodell), dann hier nachziehen.
+
+        Returns:
+            Optional[Dict[str, Any]]: {
+                "navidrome_username": str,
+                "periods": {
+                    "today": {...}, "week": {...}, "month": {...}
+                }
+            } oder None, wenn keine (gültige) Historie vorhanden ist.
+        """
+        if not navidrome_username:
+            self.logger.error(
+                "❌ generate_timeline_stats ohne navidrome_username aufgerufen. Abbruch."
+            )
+            return None
+
+        history = self.repository.load(navidrome_username)
+        if not history:
+            self.logger.warning(
+                f"⚠️ Keine Verlaufsdaten für '{navidrome_username}' verfügbar (Timeline)."
+            )
+            return None
+
+        now = datetime.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = today_start - timedelta(days=today_start.weekday())  # Montag
+        month_start = today_start.replace(day=1)
+
+        period_bounds = {
+            "today": today_start,
+            "week": week_start,
+            "month": month_start,
+        }
+
+        # Einmalig parsen (gültige Timestamps + vorhandener erster Track)
+        parsed_entries = []
+        for entry in history:
+            try:
+                entry_time = datetime.fromisoformat(entry.get("timestamp"))
+            except (ValueError, TypeError):
+                self.logger.warning(
+                    f"Ungültiger Timestamp im Verlauf von '{navidrome_username}': "
+                    f"{entry.get('timestamp')}"
+                )
+                continue
+            if "tracks" in entry and entry["tracks"]:
+                parsed_entries.append((entry_time, entry["tracks"][0]))
+
+        if not parsed_entries:
+            self.logger.info(
+                f"ℹ️ Keine gültigen Verlaufseinträge für '{navidrome_username}' (Timeline)."
+            )
+            return None
+
+        parsed_entries.sort(key=lambda pair: pair[0])
+
+        # Erstes Auftreten je Track-Titel über die GESAMTE Historie
+        # (Grundlage für "neue Musik" je Zeitraum).
+        first_seen: Dict[str, datetime] = {}
+        for entry_time, track in parsed_entries:
+            title = track.get("title", "Unbekannt")
+            if title not in first_seen:
+                first_seen[title] = entry_time
+
+        periods_result: Dict[str, Any] = {}
+
+        for period_name, start_bound in period_bounds.items():
+            track_count = 0
+            listening_seconds = 0
+            artist_counts: Dict[str, int] = defaultdict(int)
+            album_counts: Dict[str, int] = defaultdict(int)
+            song_counts: Dict[str, int] = defaultdict(int)
+            new_track_titles: set = set()
+
+            for entry_time, track in parsed_entries:
+                if entry_time < start_bound:
+                    continue
+
+                track_count += 1
+                duration = track.get("duration")
+                if isinstance(duration, (int, float)):
+                    listening_seconds += duration
+
+                title = track.get("title", "Unbekannt")
+                artist_counts[track.get("artist", "Unbekannt")] += 1
+                album_counts[track.get("album", "Unbekannt")] += 1
+                song_counts[title] += 1
+
+                if first_seen.get(title, start_bound) >= start_bound:
+                    new_track_titles.add(title)
+
+            top_artist = max(artist_counts.items(), key=lambda x: x[1], default=None)
+            top_album = max(album_counts.items(), key=lambda x: x[1], default=None)
+            most_replayed = max(song_counts.items(), key=lambda x: x[1], default=None)
+
+            periods_result[period_name] = {
+                "track_count": track_count,
+                "listening_seconds": listening_seconds,
+                "top_artist": top_artist,
+                "top_album": top_album,
+                "most_replayed_track": most_replayed,
+                "new_track_count": len(new_track_titles),
+            }
+
+        self.logger.info(
+            f"✅ Timeline-Statistik für '{navidrome_username}' erstellt "
+            f"(heute: {periods_result['today']['track_count']}, "
+            f"woche: {periods_result['week']['track_count']}, "
+            f"monat: {periods_result['month']['track_count']})"
+        )
+
+        return {
+            "navidrome_username": navidrome_username,
+            "periods": periods_result,
+        }
+
     def get_last_played_song(
         self, navidrome_username: str = None
     ) -> Optional[Dict[str, Any]]:
