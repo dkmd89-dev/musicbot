@@ -136,23 +136,28 @@ def main(argv=None) -> int:
         return 0
 
     # ── Level-1-Ausfuehrung ──────────────────────────────────────────────
-    from services.library_repair.executor import L1_TAG_CODES, apply_level1
+    from services.library_repair.executor import (
+        L1_RENAME_CODES, L1_TAG_CODES, apply_level1, apply_level1_rename,
+    )
     from services.library_repair.journal import RepairJournal
 
     execute_dry = args.dry_run
     journal_path = Path(config.DATA_DIR) / "library_repair_journal.jsonl"
     journal = RepairJournal(journal_path)
-    l1 = [c for c in plan.candidates if c.issue_code in L1_TAG_CODES]
-    if not l1:
-        print("\nKeine Level-1-Tag-Reparaturen im (gefilterten) Plan — nichts auszufuehren.")
+    l1_tags = [c for c in plan.candidates if c.issue_code in L1_TAG_CODES]
+    l1_rename = [c for c in plan.candidates if c.issue_code in L1_RENAME_CODES]
+    if not l1_tags and not l1_rename:
+        print("\nKeine Level-1-Reparaturen im (gefilterten) Plan — nichts auszufuehren.")
         return 0
 
     mode = "DRY-RUN (keine Datei wird veraendert)" if execute_dry else "EXECUTE"
-    print(f"\n{'=' * 70}\nLEVEL-1 {mode} — {len(l1)} Kandidaten\n{'=' * 70}")
+    print(f"\n{'=' * 70}\nLEVEL-1 {mode} — {len(l1_tags)} Tag-Fixes + "
+          f"{len(l1_rename)} Renames\n{'=' * 70}")
     outcomes = apply_level1(
-        l1, library_root, journal, dry_run=execute_dry,
+        l1_tags, library_root, journal, dry_run=execute_dry,
         backup_dir=Path(args.backup_dir) if args.backup_dir else None,
     )
+    outcomes += apply_level1_rename(l1_rename, library_root, journal, dry_run=execute_dry)
     journal.flush()
 
     for oc in outcomes:

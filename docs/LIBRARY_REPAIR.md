@@ -50,11 +50,11 @@ es verändert nichts, verschiebt nichts, löscht nichts, ruft keinen externen
 Dienst. Der Health-Scan (`--report` weggelassen) ist selbst vollständig
 read-only.
 
-Mit `--apply` führt der **Level-1-Executor** ausschließlich die vier
-deterministischen Tag-Fixes aus (`L1_TAG_CODES`) — alle anderen Kandidaten
-werden übersprungen. `--apply --dry-run` zeigt die konkreten Before/After-
-Werte, ohne zu schreiben. `--allow-delete` wird abgelehnt (keine
-destruktive Reparatur implementiert).
+Mit `--apply` führt der **Level-1-Executor** die deterministischen Tag-Fixes
+(`L1_TAG_CODES`) **und** die Dateinamen-Renames (`L1_RENAME_CODES`:
+`FILENAME_TITLE_MISMATCH`, `FILENAME_SUSPICIOUS`) aus — alle anderen
+Kandidaten werden übersprungen. `--apply --dry-run` zeigt die konkreten
+Before/After-Werte, ohne zu schreiben. `--allow-delete` wird abgelehnt.
 
 ---
 
@@ -69,10 +69,11 @@ planner.py     plan_repairs(report_dict) -> RepairPlan  (reine Funktion, kein I/
                + REGISTRY: genau ein Repair-Mapping pro Health-Issue-Code
                + filter_plan(plan, artist=/issue_code=/severity=/level=)
 report.py      render_plan_text(plan)
-tag_repairs.py Level-1-Reparatur-Funktionen (pure): (alte Tag-Werte) -> (neue) | None
-journal.py     RepairJournal — Append-Only JSONL, Before/After + Rollback-Info
-executor.py    apply_level1(candidates, library_root, journal, dry_run=) -> [ExecOutcome]
-               safety_check(path, library_root) -> Ablehnungsgrund | None
+tag_repairs.py    Level-1-Tag-Reparatur-Funktionen (pure): (alte Werte) -> (neue) | None
+rename_repairs.py Level-1-Dateinamen-Funktionen (pure): (Name + Kontext) -> neuer Name | None
+journal.py       RepairJournal — Append-Only JSONL, Before/After + Rollback-Info
+executor.py      apply_level1() / apply_level1_rename() -> [ExecOutcome]
+                 safety_check(path, library_root) -> Ablehnungsgrund | None
 ```
 
 `scripts/library_repair.py` — dünner CLI-Wrapper (CLI → Health-Report →
@@ -135,12 +136,21 @@ Health-Issue-Code genau ein Mapping hat und kein Mapping veraltet ist.
 
 ## 5. Level-1-Executor (implementiert)
 
-`--apply` führt **nur** die vier verlustfreien, deterministischen Tag-Fixes
-aus (`GENRE_DELIMITER_INCONSISTENT`, `MULTI_ARTIST_*`,
-`META_ALBUM_ARTIST_MISSING`, `ALBUM_ARTIST_INCONSISTENT`) — Rename-basierte
-L1-Fixes (`FILENAME_*`) sind bewusst noch nicht dabei.
+`--apply` führt aus:
+- **Tag-Fixes** (`GENRE_DELIMITER_INCONSISTENT`, `MULTI_ARTIST_*`,
+  `META_ALBUM_ARTIST_MISSING`, `ALBUM_ARTIST_INCONSISTENT`)
+- **Renames** (`FILENAME_TITLE_MISMATCH`, `FILENAME_SUSPICIOUS`) — nur im
+  selben Verzeichnis, ersetzt **nur den Titel-Teil** und lässt den
+  vorhandenen `NN - ` / `YYYY - `-Präfix unverändert (keine geratene
+  Ordner-Konvention — realer Finalaudit-Fehler: `2025 - …` wäre sonst zu
+  `01 - …` geworden). Nur wenn der Titel-Teil den Titel-Tag als Präfix
+  enthält und sich nur durch abschließenden Zusatz (`prod./feat./(…)`)
+  unterscheidet — schützt vor Tag-Tippfehlern; nicht-triviale Abweichung
+  → `SKIPPED`. Zielname atomar per `O_EXCL` beansprucht (TOCTOU),
+  Byte-Inhalt vorher==nachher verifiziert, kein Content-Backup
+  (Rename ändert keine Bytes; Rollback = zurück-benennen via Journal).
 
-Ablauf pro Datei (Prompt Abschnitt 13–17):
+Ablauf pro Tag-Fix-Datei (Prompt Abschnitt 13–17):
 
 1. **Safety-Prüfung** (`safety_check`): kein Symlink, Pfad real innerhalb der
    Library, reguläre `.m4a`-Datei, nicht leer. Bei Verletzung → `SKIPPED`.
@@ -170,9 +180,6 @@ Ablauf pro Datei (Prompt Abschnitt 13–17):
 
 ## 6. Noch offen (Phase 2)
 
-- **Level-1-Rename** (`FILENAME_TITLE_MISMATCH` / `FILENAME_SUSPICIOUS`) —
-  braucht die Rename-Safety-Maschinerie (TOCTOU, Kollision, nur im selben
-  Verzeichnis).
 - **Level 2** (`reprocess_artist_metadata.py` als Subprozess orchestrieren).
 - **Level 3** (MusicBrainz-/Genre-Nachträge, nur bei eindeutigem Match).
 - **Cover** (`CoverProcessor` — nur ersetzen bei eindeutig besserem Cover).

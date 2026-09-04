@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from mutagen.mp4 import MP4, MP4FreeForm
 
-from services.library_repair.executor import apply_level1, safety_check
+from services.library_repair.executor import apply_level1, apply_level1_rename, safety_check
 from services.library_repair.journal import RepairJournal
 from services.library_repair.models import RepairAction, RepairCandidate, RepairLevel
 
@@ -158,6 +158,59 @@ def test_safety_blocks_unsupported_extension(tmp_path):
     f = lib / "A" / "x.flac"
     f.write_bytes(b"x" * 10)
     assert "nicht unterstütztes Format" in (safety_check(f, lib) or "")
+
+
+@requires_ffmpeg
+def test_rename_removes_producer_cruft_content_unchanged(lib):
+    p = lib / "makko" / "Singles" / "2020 - Gelb prod. Xarbeats.m4a"
+    _m4a(p)
+    a = MP4(p); a["©nam"] = ["Gelb"]; a["©day"] = ["2020"]; a.save()
+    md5_before = _audio_md5(p)
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1_rename(
+        [_cand("makko/Singles/2020 - Gelb prod. Xarbeats.m4a", "FILENAME_TITLE_MISMATCH")],
+        lib, j, dry_run=False)
+    assert outcomes[0].status == "SUCCESS"
+    new = lib / "makko" / "Singles" / "2020 - Gelb.m4a"
+    assert new.exists() and not p.exists()
+    assert _audio_md5(new) == md5_before
+    assert outcomes[0].after == {"path": "makko/Singles/2020 - Gelb.m4a"}
+
+
+@requires_ffmpeg
+def test_rename_dry_run_does_not_move(lib):
+    p = lib / "A" / "Singles" / "2021 -  Song.m4a"
+    _m4a(p)
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1_rename(
+        [_cand("A/Singles/2021 -  Song.m4a", "FILENAME_SUSPICIOUS")], lib, j, dry_run=True)
+    assert outcomes[0].status == "DRY_RUN"
+    assert p.exists()
+
+
+@requires_ffmpeg
+def test_rename_skips_when_target_exists(lib):
+    p = lib / "A" / "Singles" / "2020 - Song prod. X.m4a"
+    _m4a(p); a = MP4(p); a["©nam"] = ["Song"]; a["©day"] = ["2020"]; a.save()
+    _m4a(lib / "A" / "Singles" / "2020 - Song.m4a")     # Zielname existiert schon
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1_rename(
+        [_cand("A/Singles/2020 - Song prod. X.m4a", "FILENAME_TITLE_MISMATCH")],
+        lib, j, dry_run=False)
+    assert outcomes[0].status == "SKIPPED"
+    assert p.exists()
+
+
+@requires_ffmpeg
+def test_rename_stays_in_same_directory(lib):
+    p = lib / "A" / "Singles" / "2021 -  Song.m4a"
+    _m4a(p)
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1_rename(
+        [_cand("A/Singles/2021 -  Song.m4a", "FILENAME_SUSPICIOUS")], lib, j, dry_run=False)
+    assert outcomes[0].status == "SUCCESS"
+    moved = list((lib / "A" / "Singles").glob("*.m4a"))
+    assert len(moved) == 1 and moved[0].parent == p.parent
 
 
 @requires_ffmpeg

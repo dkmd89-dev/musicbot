@@ -26,6 +26,7 @@ dasselbe Muster wie services/metadata/tag_writer.py.
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import subprocess
 import time
@@ -35,7 +36,7 @@ from typing import Optional
 
 from .journal import JournalEntry, RepairJournal
 from .models import RepairCandidate
-from . import tag_repairs
+from . import rename_repairs, tag_repairs
 
 _ARTISTS_FREEFORM_ATOM = "----:com.apple.iTunes:ARTISTS"
 _SUPPORTED = (".m4a", ".mp4", ".m4v")
@@ -48,6 +49,11 @@ L1_TAG_CODES = frozenset({
     "MULTI_ARTIST_DUPLICATE",
     "META_ALBUM_ARTIST_MISSING",
     "ALBUM_ARTIST_INCONSISTENT",
+})
+
+L1_RENAME_CODES = frozenset({
+    "FILENAME_TITLE_MISMATCH",
+    "FILENAME_SUSPICIOUS",
 })
 
 
@@ -309,6 +315,133 @@ def apply_level1(
         je.audio_sha256_before = audio_before
         je.audio_sha256_after = _audio_essence_md5(path) if oc.status == "SUCCESS" else audio_before
         je.backup_path = oc.backup_path
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Level 1 — Rename (nur im selben Verzeichnis, Prompt Abschnitt 7/14)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _plan_new_name(code: str, path: Path, library_root: Path) -> Optional[str]:
+    from services.library_health.discovery import build_file_record
+    from services.library_health.tag_reader import read_tags
+
+    rec = build_file_record(path, library_root)
+    if code == "FILENAME_SUSPICIOUS":
+        return rename_repairs.repair_suspicious_filename(rec.filename_stem, rec.extension)
+
+    tags = read_tags(path)
+    return rename_repairs.repair_filename_title_mismatch(
+        stem=rec.filename_stem,
+        extension=rec.extension,
+        title=tags.title,
+        year=tags.year,
+        track_number=tags.track_number,
+        is_singles=rec.is_singles,
+        library_section=rec.library_section.value,
+    )
+
+
+def apply_level1_rename(
+    candidates: list[RepairCandidate],
+    library_root: Path,
+    journal: RepairJournal,
+    *,
+    dry_run: bool = True,
+) -> list[ExecOutcome]:
+    library_root = Path(library_root)
+    outcomes: list[ExecOutcome] = []
+    todo = sorted(
+        (c for c in candidates if c.issue_code in L1_RENAME_CODES and c.path),
+        key=lambda c: (c.path, c.issue_code),
+    )
+    for c in todo:
+        path = library_root / c.path
+        oc = ExecOutcome(file=c.path, issue_code=c.issue_code, action=c.action.value,
+                         status="SKIPPED")
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        try:
+            new_name = _plan_new_name(c.issue_code, path, library_root)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Namensberechnung: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        if not new_name or "/" in new_name or "\\" in new_name:
+            oc.reason = "kein sicherer neuer Name / nicht eindeutig"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        target = path.with_name(new_name)
+        if target == path:
+            oc.reason = "Name bereits korrekt"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+        if target.exists():
+            oc.reason = f"Zielname existiert bereits: {new_name}"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        rel_target = str(target.relative_to(library_root))
+        oc.before = {"path": c.path}
+        oc.after = {"path": rel_target}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je(c, oc, dry_run))
+            continue
+
+        sha_before = _sha256(path)
+        claim_fd = None
+        try:
+            # Zielnamen atomar auf OS-Ebene beanspruchen (TOCTOU, auch
+            # prozessuebergreifend) — dasselbe Muster wie
+            # utils/filenamefixer.py::move_to_library().
+            claim_fd = os.open(str(target), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(claim_fd)
+            claim_fd = None
+            os.replace(str(path), str(target))
+            # Verifikation
+            from mutagen.mp4 import MP4
+
+            MP4(target)  # muss lesbar bleiben
+            if _sha256(target) != sha_before:
+                raise RuntimeError("Byte-Inhalt nach Rename verändert")
+            oc.status = "SUCCESS"
+        except FileExistsError:
+            oc.reason = f"Zielname wurde parallel belegt: {new_name}"
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            if not path.exists() and target.exists():
+                try:
+                    os.replace(str(target), str(path))
+                except OSError:
+                    pass
+            else:
+                try:
+                    target.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        je = _je(c, oc, dry_run)
+        je.sha256_before = sha_before
+        je.sha256_after = _sha256(target if oc.status == "SUCCESS" else path)
         journal.record(je)
         outcomes.append(oc)
 
