@@ -15,7 +15,8 @@ import pytest
 from mutagen.mp4 import MP4, MP4FreeForm
 
 from services.library_repair.executor import (
-    apply_cover_repairs, apply_level1, apply_level1_rename, safety_check,
+    apply_album_cover_unify, apply_cover_repairs, apply_level1, apply_level1_rename,
+    safety_check,
 )
 from services.library_repair.journal import RepairJournal
 from services.library_repair.models import RepairAction, RepairCandidate, RepairLevel
@@ -279,6 +280,61 @@ def test_cover_skips_when_fetcher_returns_none(lib):
         [_cand("A/Singles/2020 - x.m4a", "ARTWORK_MISSING")],
         lib, j, cover_fetcher=lambda ctx: (None, None), dry_run=False)
     assert outcomes[0].status == "SKIPPED"
+
+
+def _m4a_with_cover(p, px, colour):
+    import io
+    from PIL import Image
+    from mutagen.mp4 import MP4Cover
+    _m4a(p)
+    buf = io.BytesIO()
+    Image.new("RGB", (px, px), colour).save(buf, "JPEG")
+    a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = [p.stem]
+    a["covr"] = [MP4Cover(buf.getvalue(), imageformat=MP4Cover.FORMAT_JPEG)]
+    a.save()
+
+
+@requires_ffmpeg
+def test_album_cover_unify_lifts_small_to_biggest(lib):
+    base = "A/2020 - Rec"
+    p1 = lib / "A" / "2020 - Rec" / "01 - a.m4a"
+    p2 = lib / "A" / "2020 - Rec" / "02 - b.m4a"
+    p3 = lib / "A" / "2020 - Rec" / "03 - c.m4a"
+    _m4a_with_cover(p1, 300, (1, 1, 1))
+    _m4a_with_cover(p2, 1400, (2, 2, 2))     # bestes
+    _m4a_with_cover(p3, 300, (3, 3, 3))
+    md5_before = {p: _audio_md5(p) for p in (p1, p2, p3)}
+    c = RepairCandidate(
+        issue_code="ALBUM_COVER_INCONSISTENT", action=RepairAction.COVER_FETCH,
+        level=RepairLevel.COVER, severity="INFO", scope="album", artist="A", album="2020 - Rec",
+        related_files=[f"{base}/01 - a.m4a", f"{base}/02 - b.m4a", f"{base}/03 - c.m4a"])
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_album_cover_unify([c], lib, j, dry_run=False)
+    ok = [o for o in outcomes if o.status == "SUCCESS"]
+    assert len(ok) == 2                       # p1 + p3 angehoben, p2 unberuehrt
+    from mutagen.mp4 import MP4
+    def dim(p):
+        import io
+        from PIL import Image
+        return Image.open(io.BytesIO(bytes(MP4(p).tags["covr"][0]))).size
+    assert dim(p1) == dim(p2) == dim(p3) == (1400, 1400)
+    for p in (p1, p2, p3):
+        assert _audio_md5(p) == md5_before[p]
+
+
+@requires_ffmpeg
+def test_album_cover_unify_skips_when_no_usable_cover(lib):
+    base = "A/2020 - Rec"
+    p1 = lib / "A" / "2020 - Rec" / "01 - a.m4a"
+    p2 = lib / "A" / "2020 - Rec" / "02 - b.m4a"
+    _m4a(p1); _m4a(p2)                        # gar keine Cover
+    c = RepairCandidate(
+        issue_code="ALBUM_COVER_INCONSISTENT", action=RepairAction.COVER_FETCH,
+        level=RepairLevel.COVER, severity="INFO", scope="album", artist="A", album="2020 - Rec",
+        related_files=[f"{base}/01 - a.m4a", f"{base}/02 - b.m4a"])
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_album_cover_unify([c], lib, j, dry_run=False)
+    assert all(o.status == "SKIPPED" for o in outcomes)
 
 
 @requires_ffmpeg

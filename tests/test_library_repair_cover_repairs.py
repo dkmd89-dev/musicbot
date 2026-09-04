@@ -75,3 +75,45 @@ def test_non_square_replaced_by_square_without_res_loss():
 def test_handled_codes_frozenset():
     assert "ARTWORK_MISSING" in cr.HANDLED_ISSUE_CODES
     assert "ALBUM_COVER_INCONSISTENT" not in cr.HANDLED_ISSUE_CODES
+    assert "ALBUM_COVER_INCONSISTENT" in cr.ALBUM_ISSUE_CODES
+
+
+# ── ALBUM_COVER_INCONSISTENT ───────────────────────────────────────────
+
+def _cv(present=True, w=1000, h=1000, sha="x", decodable=True):
+    return {"present": present, "w": w, "h": h, "sha256": sha, "decodable": decodable}
+
+
+def test_pick_album_cover_largest_square():
+    covers = [_cv(w=300, h=300, sha="a"), _cv(w=1400, h=1400, sha="b"),
+              _cv(w=1200, h=800, sha="c")]  # c non-square
+    assert cr.pick_album_cover(covers) == 1
+
+
+def test_pick_album_cover_none_when_no_usable():
+    covers = [_cv(present=False), _cv(w=1200, h=675, sha="wide"),
+              _cv(present=True, decodable=False)]
+    assert cr.pick_album_cover(covers) is None
+
+
+def test_pick_album_cover_deterministic_tiebreak():
+    covers = [_cv(w=1000, h=1000, sha="zzz"), _cv(w=1000, h=1000, sha="aaa")]
+    # gleiche Groesse/Flaeche -> hoeherer sha256 gewinnt (stabil)
+    assert cr.pick_album_cover(covers) == 0
+
+
+def test_should_unify_replaces_smaller_track():
+    action, _ = cr.should_unify_track(_cv(w=300, h=300, sha="small"),
+                                      {"w": 1400, "h": 1400, "sha256": "big"})
+    assert action == cr.REPLACE
+
+
+def test_should_unify_skips_already_matching():
+    action, _ = cr.should_unify_track(_cv(sha="big"), {"w": 1400, "h": 1400, "sha256": "big"})
+    assert action == cr.SKIP
+
+
+def test_should_unify_never_downscales():
+    action, _ = cr.should_unify_track(_cv(w=3000, h=3000, sha="huge"),
+                                      {"w": 1000, "h": 1000, "sha256": "album"})
+    assert action == cr.SKIP

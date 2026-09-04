@@ -30,6 +30,8 @@ HANDLED_ISSUE_CODES = frozenset({
     "ARTWORK_NON_SQUARE",
 })
 
+ALBUM_ISSUE_CODES = frozenset({"ALBUM_COVER_INCONSISTENT"})
+
 # ADD / REPLACE / SKIP
 ADD = "ADD"
 REPLACE = "REPLACE"
@@ -87,3 +89,46 @@ def decide_cover_action(
         return SKIP, f"quadratischer Kandidat {candidate_w}x{candidate_h} kleiner als aktuell"
 
     return SKIP, f"kein Cover-Repair fuer {issue_code}"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# ALBUM_COVER_INCONSISTENT — Vereinheitlichung auf das beste vorhandene Cover
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def pick_album_cover(covers: list[dict]) -> Optional[int]:
+    """`covers`: je Track {"present","w","h","sha256","decodable"}.
+
+    Rueckgabe: Index des BESTEN vorhandenen Covers (groesste kurze Kante,
+    quadratisch, dekodierbar), oder None wenn kein brauchbares vorhanden
+    ist. Deterministisch: Tie-Break nach Flaeche, dann sha256.
+    """
+    ranked = []
+    for i, cv in enumerate(covers):
+        if not cv.get("present") or not cv.get("decodable"):
+            continue
+        w, h = cv.get("w"), cv.get("h")
+        if not w or not h:
+            continue
+        if _aspect_off(w, h) > SQUARE_TOLERANCE:
+            continue
+        ranked.append((min(w, h), w * h, cv.get("sha256") or "", i))
+    if not ranked:
+        return None
+    ranked.sort(reverse=True)
+    return ranked[0][3]
+
+
+def should_unify_track(track: dict, best: dict) -> tuple[str, str]:
+    """(action, reason) fuer EINEN Album-Track gegen das gewaehlte
+    Album-Cover. REPLACE nur, wenn der Track ein anderes und KEIN
+    besseres Cover hat (nie herunterskalieren)."""
+    if track.get("sha256") and track.get("sha256") == best.get("sha256"):
+        return SKIP, "hat bereits das Album-Cover"
+    tw, th = track.get("w"), track.get("h")
+    bw, bh = best.get("w"), best.get("h")
+    if not track.get("present"):
+        return REPLACE, "Album-Cover ergaenzt"
+    if tw and th and bw and bh and min(tw, th) > min(bw, bh):
+        return SKIP, f"Track-Cover {tw}x{th} groesser als Album-Cover {bw}x{bh}"
+    return REPLACE, f"auf Album-Cover {bw}x{bh} vereinheitlicht"

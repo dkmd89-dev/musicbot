@@ -137,8 +137,8 @@ def main(argv=None) -> int:
 
     # ── Ausfuehrung ─────────────────────────────────────────────────────
     from services.library_repair.executor import (
-        COVER_ISSUE_CODES, L1_RENAME_CODES, L1_TAG_CODES,
-        apply_cover_repairs, apply_level1, apply_level1_rename,
+        ALBUM_COVER_CODES, COVER_ISSUE_CODES, L1_RENAME_CODES, L1_TAG_CODES,
+        apply_album_cover_unify, apply_cover_repairs, apply_level1, apply_level1_rename,
     )
     from services.library_repair.journal import RepairJournal
 
@@ -151,18 +151,22 @@ def main(argv=None) -> int:
     l1_rename = [c for c in plan.candidates if c.issue_code in L1_RENAME_CODES]
     # Cover ist EXTERN (Netzwerk) und langsam -> nur auf ausdrueckliche
     # Anforderung (--level COVER oder --issue ARTWORK_*), nie im Default-Lauf.
-    cover_requested = (args.level and args.level.upper() == "COVER") or \
-        (args.issue_code in COVER_ISSUE_CODES)
+    _lvl = (args.level or "").upper()
+    cover_requested = _lvl == "COVER" or args.issue_code in COVER_ISSUE_CODES
+    album_cover_requested = _lvl == "COVER" or args.issue_code in ALBUM_COVER_CODES
     cover_cands = [c for c in plan.candidates if c.issue_code in COVER_ISSUE_CODES] \
         if cover_requested else []
+    album_cover_cands = [c for c in plan.candidates if c.issue_code in ALBUM_COVER_CODES] \
+        if album_cover_requested else []
 
-    if not l1_tags and not l1_rename and not cover_cands:
+    if not (l1_tags or l1_rename or cover_cands or album_cover_cands):
         print("\nKeine ausfuehrbaren Reparaturen im (gefilterten) Plan.")
         return 0
 
     mode = "DRY-RUN (keine Datei wird veraendert)" if execute_dry else "EXECUTE"
     print(f"\n{'=' * 70}\nREPAIR {mode} — {len(l1_tags)} Tag-Fixes + "
-          f"{len(l1_rename)} Renames + {len(cover_cands)} Cover\n{'=' * 70}")
+          f"{len(l1_rename)} Renames + {len(cover_cands)} Cover + "
+          f"{len(album_cover_cands)} Album-Cover\n{'=' * 70}")
 
     outcomes = apply_level1(l1_tags, library_root, journal, dry_run=execute_dry,
                             backup_dir=backup_dir)
@@ -171,6 +175,11 @@ def main(argv=None) -> int:
     if cover_cands:
         outcomes += apply_cover_repairs(
             cover_cands, library_root, journal, _build_cover_fetcher(config, logger),
+            dry_run=execute_dry, backup_dir=backup_dir,
+        )
+    if album_cover_cands:
+        outcomes += apply_album_cover_unify(
+            album_cover_cands, library_root, journal,
             dry_run=execute_dry, backup_dir=backup_dir,
         )
     journal.flush()
