@@ -29,8 +29,18 @@ TOLERANCE_DB = 2.0
 
 GAIN_ATOM = "----:com.apple.iTunes:replaygain_track_gain"
 PEAK_ATOM = "----:com.apple.iTunes:replaygain_track_peak"
+# Weitere RG-Atome, die beim CLEAR mit entfernt werden (falls vorhanden).
+_RG_ATOMS_ALL = (
+    GAIN_ATOM, PEAK_ATOM,
+    "----:com.apple.iTunes:replaygain_album_gain",
+    "----:com.apple.iTunes:replaygain_album_peak",
+    "----:com.apple.iTunes:replaygain_reference_loudness",
+)
 
 HANDLED_ISSUE_CODES = frozenset({"LOUDNESS_OFF_TARGET"})
+
+SET = "SET"
+CLEAR = "CLEAR"
 
 _GAIN_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*(?:dB)?\s*$", re.IGNORECASE)
 
@@ -63,17 +73,38 @@ def compute_replaygain(
     measured_lufs: Optional[float],
     true_peak_dbtp: Optional[float] = None,
     *,
+    existing_gain_db: Optional[float] = None,
     target: float = TARGET_LUFS,
     tolerance: float = TOLERANCE_DB,
-) -> Optional[dict[str, list[str]]]:
-    """Gibt die zu schreibenden Atome zurück — oder None, wenn nichts zu tun
-    ist (keine Messung, oder bereits innerhalb der Toleranz)."""
+) -> tuple[Optional[str], Optional[dict[str, list[str]]]]:
+    """Entscheidet, was mit dem ReplayGain-Tag zu tun ist. Rückgabe:
+
+      (SET, {atome})  — den berechneten Track-Gain-/Peak-Tag schreiben
+      (CLEAR, None)   — vorhandene RG-Atome entfernen (die Datei liegt bereits
+                        auf Ziel, trägt aber einen abweichenden Gain-Tag, der
+                        einen RG-Player fehlleiten würde)
+      (None, None)    — nichts zu tun
+
+    `existing_gain_db` = aktuell im Tag stehender `replaygain_track_gain`
+    (None = kein Tag). Ein RG-fähiger Player spielt die Datei bei
+    `measured_lufs + (existing_gain_db oder 0)`; Ziel ist `target`."""
     if measured_lufs is None:
-        return None
-    gain = target - measured_lufs
-    if abs(gain) <= tolerance:
-        return None
-    return {
-        GAIN_ATOM: [f"{gain:.2f} dB"],
+        return None, None
+
+    target_gain = target - measured_lufs
+    current_gain = existing_gain_db if existing_gain_db is not None else 0.0
+
+    # Zustand ist bereits gut genug?
+    if abs(target_gain - current_gain) <= tolerance:
+        return None, None
+
+    # Die Datei selbst liegt auf Ziel (target_gain ~ 0), trägt aber einen
+    # anderslautenden Gain-Tag → Tag muss weg statt „auf 0" geschrieben zu
+    # werden (ungetaggt = so laut wie die Neu-Downloads).
+    if abs(target_gain) <= tolerance and existing_gain_db is not None:
+        return CLEAR, None
+
+    return SET, {
+        GAIN_ATOM: [f"{target_gain:.2f} dB"],
         PEAK_ATOM: [f"{_peak_linear_from_dbtp(true_peak_dbtp):.6f}"],
     }
