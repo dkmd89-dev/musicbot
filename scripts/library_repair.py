@@ -12,13 +12,23 @@ Smart Library Repair — CLI (Phase 2, Prompt Abschnitt 5/12/13/18/19).
     python scripts/library_repair.py --level SAFE_AUTOMATIC
     python scripts/library_repair.py --json plan.json
 
-DRY-RUN ist Standard (Prompt Abschnitt 13). Ohne Executor macht dieses
+DRY-RUN ist Standard (Prompt Abschnitt 13). Ohne `--apply` macht dieses
 Script AUSSCHLIESSLICH einen Plan — es veraendert, verschiebt, loescht
 nichts und ruft keinen externen Dienst. Der Health-Scan selbst
 (`--report` weggelassen) ist ebenfalls vollstaendig read-only.
 
-`--apply` / `--allow-delete` werden aktuell mit klarer Meldung abgelehnt —
-der Repair Executor folgt als eigener, explizit geschuetzter Phase-2-Schritt.
+    --apply               L1-Tag-Fixes + L1-Renames ausfuehren (DRY-RUN,
+                          solange --dry-run gesetzt ist)
+    --apply --dry-run     Vorschau aller ausfuehrbaren Reparaturen
+    --level COVER         zusaetzlich Cover-Executor (extern, langsam)
+    --level EXTERNAL_METADATA   zusaetzlich L3 MusicBrainz-IDs (extern)
+    --level METADATA_REPROCESSING   zusaetzlich L2 volle Neuverarbeitung
+                          ueber die echte Pipeline (extern, langsam,
+                          aktualisiert Auto-Learn-Mappings)
+    --allow-delete        wird mit klarer Meldung abgelehnt (Exit 2)
+
+Cover / L3 / L2 laufen NIE im Default-`--apply`, nur auf ausdrueckliche
+Anforderung per --level bzw. --issue.
 """
 
 from __future__ import annotations
@@ -138,9 +148,9 @@ def main(argv=None) -> int:
     # ── Ausfuehrung ─────────────────────────────────────────────────────
     from services.library_repair.executor import (
         ALBUM_COVER_CODES, COVER_ISSUE_CODES, EXTERNAL_MB_CODES,
-        L1_RENAME_CODES, L1_TAG_CODES,
+        L1_RENAME_CODES, L1_TAG_CODES, L2_CODES,
         apply_album_cover_unify, apply_cover_repairs, apply_external_metadata,
-        apply_level1, apply_level1_rename,
+        apply_level1, apply_level1_rename, apply_level2,
     )
     from services.library_repair.journal import RepairJournal
 
@@ -164,15 +174,26 @@ def main(argv=None) -> int:
     mb_requested = _lvl == "EXTERNAL_METADATA" or args.issue_code in EXTERNAL_MB_CODES
     mb_cands = [c for c in plan.candidates if c.issue_code in EXTERNAL_MB_CODES] \
         if mb_requested else []
+    # L2 volle Neuverarbeitung: langsam (Genius/MusicBrainz/Cover pro Datei) und
+    # mit breitem Effekt (Titel/Album/Genre/Lyrics/Cover/MB-IDs/Rename +
+    # Auto-Learn-Mapping-Update) -> nur auf ausdrueckliche Anforderung.
+    l2_requested = _lvl == "METADATA_REPROCESSING" or args.issue_code in L2_CODES
+    l2_cands = [c for c in plan.candidates if c.issue_code in L2_CODES] \
+        if l2_requested else []
 
-    if not (l1_tags or l1_rename or cover_cands or album_cover_cands or mb_cands):
+    if not (l1_tags or l1_rename or cover_cands or album_cover_cands or mb_cands or l2_cands):
         print("\nKeine ausfuehrbaren Reparaturen im (gefilterten) Plan.")
         return 0
 
     mode = "DRY-RUN (keine Datei wird veraendert)" if execute_dry else "EXECUTE"
     print(f"\n{'=' * 70}\nREPAIR {mode} — {len(l1_tags)} Tag-Fixes + "
           f"{len(l1_rename)} Renames + {len(cover_cands)} Cover + "
-          f"{len(album_cover_cands)} Album-Cover + {len(mb_cands)} MB-IDs\n{'=' * 70}")
+          f"{len(album_cover_cands)} Album-Cover + {len(mb_cands)} MB-IDs + "
+          f"{len({c.path for c in l2_cands})} L2-Neuverarbeitung\n{'=' * 70}")
+    if l2_cands and not execute_dry:
+        print("⚠️  L2 EXECUTE: die volle Pipeline aktualisiert dabei auch die "
+              "Auto-Learn-Mappings (mapping/auto_learned_*) mit den beobachteten "
+              "Feature-Artists/Genres der Tracks — wie bei einem frischen Download.")
 
     outcomes = apply_level1(l1_tags, library_root, journal, dry_run=execute_dry,
                             backup_dir=backup_dir)
@@ -191,6 +212,11 @@ def main(argv=None) -> int:
     if mb_cands:
         outcomes += apply_external_metadata(
             mb_cands, library_root, journal, _build_mb_lookup(logger),
+            dry_run=execute_dry, backup_dir=backup_dir,
+        )
+    if l2_cands:
+        outcomes += apply_level2(
+            l2_cands, library_root, journal, _build_reprocess(config, logger),
             dry_run=execute_dry, backup_dir=backup_dir,
         )
     journal.flush()
@@ -213,6 +239,10 @@ def main(argv=None) -> int:
     if mb_cands and any(o.status == "SUCCESS" for o in outcomes
                         if o.issue_code in EXTERNAL_MB_CODES):
         touched |= set(EXTERNAL_MB_CODES)
+    if l2_cands and any(o.status == "SUCCESS" for o in outcomes
+                        if o.action == "METADATA_REPROCESS"):
+        # eine L2-Neuverarbeitung berührt potenziell jeden METADATA_REPROCESSING-Code
+        touched |= set(L2_CODES)
     return _verification_scan(report, library_root, config, logger, touched)
 
 
@@ -258,6 +288,34 @@ def _build_mb_lookup(logger):
             return {}
 
     return _lookup
+
+
+def _build_reprocess(config, logger):
+    """Injiziert die echte Pro-Datei-Pipeline (track_reprocessor.process_file)
+    als Callable (path, artist_root, dry_run) -> result-dict. Konstruiert
+    EnhancedMetadataProcessor + MB-/LastFM-Client EINMAL mit der echten
+    config.Config (dieses CLI ist ein eigener Prozess — First-Mover-Singleton
+    ist damit die reale Instanz, identisch zum Health-Scan in derselben
+    Ausführung)."""
+    import asyncio
+
+    from services.clients.lastfm_client import LastFMClient
+    from services.clients.musicbrainz_client import MusicBrainzClient
+    from services.metadata.enhanced_metadata_processor import EnhancedMetadataProcessor
+    from services.metadata.track_reprocessor import NullReprocessLog, process_file
+
+    processor = EnhancedMetadataProcessor(config=config)
+    mb_client = MusicBrainzClient(logger=get_module_logger("library_repair.l2.mb"))
+    lfm_client = LastFMClient(logger=get_module_logger("library_repair.l2.lfm"))
+    log = NullReprocessLog()
+
+    def _reprocess(path, artist_root, dry_run):
+        return asyncio.run(
+            process_file(path, artist_root, processor, mb_client, lfm_client, log,
+                         dry_run=dry_run)
+        )
+
+    return _reprocess
 
 
 def _verification_scan(before_report, library_root, config, logger, touched_codes) -> int:

@@ -33,7 +33,7 @@ Verification-Scan; alle bereits gegen die Produktions-Library gelaufen.
 | **Cover** (`CoverProcessor`, only-if-better) | ✅ | makko-Album 6× 300→3000px |
 | **`ALBUM_COVER_INCONSISTENT`** (offline, best-existing) | ✅ | 198 SUCCESS, `19→0`, Health 97.9→98.0 |
 | **Level 3 — MusicBrainz-IDs / ISRC** | ✅ | DRY-RUN 01099: 6 Nachträge; Prod-Lauf: 0 sichere Treffer (MB-Abdeckung für Deutschrap/2Pac-Bootlegs gering) |
-| Level 2 (`reprocess_artist_metadata.py`-Kern) | ⏳ Option 2a (Kern nach `services/metadata/` extrahieren) | — |
+| **Level 2 — volle Neuverarbeitung** (`track_reprocessor.process_file`) | ✅ Code + Tests | — (Prod-Lauf = eigener Freigabe-Schritt) |
 | Loudness / Duplicate | ⏳ offen (`--allow-delete` abgelehnt) | — |
 
 ---
@@ -101,7 +101,7 @@ später ausführt.
 | Level | Bedeutung | Ausführende Komponente | Freigabe | Extern | Destruktiv |
 |---|---|---|---|---|---|
 | `SAFE_AUTOMATIC` | Ergebnis deterministisch aus vorhandenen Daten | `TagWriter` (atomar) + `split_main_and_featuring` + `sanitize_filename` | nein (nur `--apply`) | nein | nein |
-| `METADATA_REPROCESSING` | komplexere Tag-Neubestimmung | `scripts/reprocess_artist_metadata.py` (Subprozess) | ja | ja | nein |
+| `METADATA_REPROCESSING` | volle Neuverarbeitung über die echte Pipeline | `services/metadata/track_reprocessor.py::process_file` (in-process, echte config.Config) | ja | ja | nein |
 | `EXTERNAL_METADATA` | fehlende MB-IDs / ISRC / Jahr / Genre | `MusicBrainzClient` / `GenreProcessor` | ja | ja | nein |
 | `COVER` | fehlendes / schlechtes / uneinheitliches Cover | `CoverProcessor` | ja | ja | nein |
 | `LOUDNESS` | fehlende / falsche ReplayGain-Tags | `scripts/normalize_test_library_loudness.py` | nein | nein | (Re-Encode) |
@@ -225,18 +225,50 @@ ist extern/Netzwerk und langsam): `apply_cover_repairs()` für
 
 ## 6. Noch offen (Phase 2)
 
-- **Level 2** (`reprocess_artist_metadata.py`-Pipeline für die Library
-  nutzbar machen) — Nutzer-Entscheidung **Option 2a**: das Script behält
-  `ALLOWED_ROOT = /tmp/musicbot_test` (test-only, tragend für CLI +
-  Telegram-Menü); `process_file()` + `snapshot()` + Helfer werden nach
-  `services/metadata/` extrahiert (config-injiziert), ein neuer
-  `apply_level2()` nutzt denselben Kern + Backup-außerhalb-Library/Journal/
-  Audio-Essenz-Verifikation/Verification-Scan wie L1. Ziel-Issue:
-  `META_TITLE_NOT_CLEAN` (neuer read-only-Health-Check über
-  `TitleCleaner.light_title_cleanup()`).
 - **Loudness** (`normalize_test_library_loudness.py`) — erst Produktions-
   Härtung/Test dieses Scripts nötig (`ALLOWED_ROOT`, kein Doppel-Encoding).
 - **Duplicate** (`resolve_duplicates.py` — destruktiv, `--allow-delete`).
+
+## 6a. Level-2-Executor — volle Neuverarbeitung (implementiert)
+
+`--level METADATA_REPROCESSING` bzw. `--issue META_TITLE_NOT_CLEAN` /
+`GENRE_INVALID` / `LYRICS_*` / `META_{ARTIST,TITLE,ALBUM}_MISSING` (extern,
+langsam — **nie** im Default-`--apply`): `apply_level2(reprocess)`.
+
+**Option 2a (Nutzer-Entscheidung 2026-09-04):** Der Kern von
+`scripts/reprocess_artist_metadata.py` (`process_file()` + `snapshot()` +
+alle Helfer, ~925 Zeilen) liegt jetzt in
+`services/metadata/track_reprocessor.py` — **verhaltensgleich**, die
+importlib-geladenen `tests/test_reprocess_artist_metadata*.py` (87) sind
+die Charakterisierung. Das Script behält `ALLOWED_ROOT = /tmp/musicbot_test`,
+seine Path-Safety, den `ReprocessLogger` und die Post-Run-Snapshots und
+importiert den Kern nur noch. Das Telegram-Menü
+(`services/metadata/reprocessing_runner.py`, Subprozess, test-only) ist
+unberührt.
+
+- Ein `reprocess()`-Lauf pro Datei (die L2-Codes treffen oft dieselbe
+  Datei). `_build_reprocess()` im CLI konstruiert `EnhancedMetadataProcessor`
+  + MB-/LastFM-Client **einmal** mit der echten `config.Config`.
+- `process_file()` schreibt **in-place ohne eigenes Backup** → der Executor
+  legt VOR dem Aufruf eine Per-Datei-Kopie außerhalb der Library an und
+  prüft danach verbindlich, dass die **Audio-Essenz** (dekodierter Stream,
+  container-unabhängig) byte-identisch ist. Jede Abweichung, ein
+  Pipeline-`status == "error"` oder ein von der Pipeline selbst gemeldetes
+  `audio_essence_changed` / `audio_stream_changed` → **Rollback** (inkl.
+  Rücknahme eines evtl. schon erfolgten Renames).
+- `unresolved`-Hinweise der Pipeline (z. B. „ReplayGain fehlt") werden in
+  `ExecOutcome.reason` **durchgereicht**, nicht verschluckt.
+- **Nebeneffekt, bewusst = echtes Pipeline-Verhalten:** im EXECUTE-Modus
+  aktualisiert `process_file()` die Auto-Learn-Mappings
+  (`mapping/auto_learned_*`) mit den beobachteten Feature-Artists/Genres —
+  wie bei einem frischen Download. Das CLI weist im EXECUTE-Modus darauf hin.
+- DRY-RUN: `process_file(dry_run=True)` schreibt nichts, liefert eine
+  Vorhersage; `ExecOutcome` = `DRY_RUN` mit Before/After aus dieser
+  Vorhersage.
+
+**Plan gegen Produktion (`--report … --artist makko --issue META_TITLE_NOT_CLEAN`):**
+19 Dateien (makko-Alben + Singles mit `"Titel"`-Anführungszeichen bzw.
+`prod.`-Credit) → Level 2. Produktionslauf ist ein eigener Freigabe-Schritt.
 
 ## 7. Level-3 — MusicBrainz-IDs / ISRC nachtragen (implementiert)
 

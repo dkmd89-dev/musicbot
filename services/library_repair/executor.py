@@ -933,6 +933,192 @@ def apply_external_metadata(
     return outcomes
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Level 2 — METADATA_REPROCESSING (die echte Pipeline, Prompt Abschnitt 6/10)
+# ─────────────────────────────────────────────────────────────────────────
+
+# Issue-Codes, die per voller Neuverarbeitung durch die Produktions-Pipeline
+# behoben werden — deckungsgleich zu den METADATA_REPROCESSING-Einträgen in
+# planner.REGISTRY. Mehrere dieser Codes treffen oft dieselbe Datei; ein
+# reprocess()-Lauf pro Datei behebt sie gemeinsam.
+L2_CODES = frozenset({
+    "META_TITLE_NOT_CLEAN",
+    "META_ARTIST_MISSING",
+    "META_TITLE_MISSING",
+    "META_ALBUM_MISSING",
+    "GENRE_INVALID",
+    "LYRICS_MISSING",
+    "LYRICS_EMPTY",
+    "LYRICS_INVALID",
+})
+
+# Snapshot-Felder, die als Before/After ins Journal übernommen werden
+# (stream_info/audio_essence_md5 sind separat als Integritätsmarker geprüft).
+_L2_REPORTED_FIELDS = (
+    "filename", "relative_path", "title", "album", "album_artist", "artist",
+    "artists_freeform", "year", "genre_tag", "genre_freeform", "mb_ids",
+    "lyrics_present", "cover_present", "cover_sha256",
+)
+
+
+def apply_level2(
+    candidates: list[RepairCandidate],
+    library_root: Path,
+    journal: RepairJournal,
+    reprocess,
+    *,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """Volle Metadaten-Neuverarbeitung über die ECHTE Produktions-Pipeline
+    (`services/metadata/track_reprocessor.process_file`, wie sie auch
+    `scripts/reprocess_artist_metadata.py` fährt).
+
+    `reprocess(path, artist_root, dry_run) -> result-dict` wird injiziert
+    (der Aufrufer konstruiert `EnhancedMetadataProcessor` + MB-/LastFM-Client
+    mit der echten Config und kapselt den `asyncio.run`).
+
+    Sicherheitsmodell wie L1, aber um die Pipeline gelegt: `process_file`
+    schreibt IN-PLACE ohne eigenes Backup — deshalb hier VOR dem Aufruf eine
+    Per-Datei-Sicherung ausserhalb der Library, danach die verbindliche
+    Prüfung, dass die Audio-Essenz (dekodierter Stream, container-unabhängig)
+    unverändert ist. Jede Abweichung / jeder Pipeline-Fehler → Rollback.
+
+    Nebeneffekt (bewusst, = echtes Pipeline-Verhalten): im Nicht-Dry-Run
+    aktualisiert `process_file` die Auto-Learn-Mappings
+    (`mapping/auto_learned_*`) mit den beobachteten Feature-Artists/Genres
+    des Tracks — identisch dazu, als wäre der Track frisch heruntergeladen
+    worden. Der Aufrufer weist im EXECUTE-Modus darauf hin.
+    """
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+
+    by_path: dict[str, RepairCandidate] = {}
+    codes_per_path: dict[str, set[str]] = {}
+    for c in candidates:
+        if c.issue_code in L2_CODES and c.path:
+            by_path.setdefault(c.path, c)
+            codes_per_path.setdefault(c.path, set()).add(c.issue_code)
+
+    for rel, c in sorted(by_path.items()):
+        path = library_root / rel
+        codes = ", ".join(sorted(codes_per_path[rel]))
+        oc = ExecOutcome(file=rel, issue_code=c.issue_code,
+                         action="METADATA_REPROCESS", status="SKIPPED")
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        artist_parts = Path(rel).parts
+        if len(artist_parts) < 2:
+            oc.reason = "Datei nicht in einer <Artist>/…-Hierarchie"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+        artist_root = library_root / artist_parts[0]
+
+        # ── DRY-RUN: process_file schreibt nichts, liefert eine Vorhersage ──
+        if dry_run:
+            try:
+                result = reprocess(path, artist_root, True)
+            except Exception as e:  # noqa: BLE001
+                oc.status, oc.reason = "FAILED", f"Pipeline (dry-run): {e!r}"
+                outcomes.append(oc)
+                journal.record(_je_named(rel, oc, dry_run))
+                continue
+            oc.before, oc.after = _l2_before_after(result)
+            oc.reason = _l2_unresolved(result) or f"betrifft: {codes}"
+            oc.status = "DRY_RUN" if result.get("changes") else "SKIPPED"
+            if result.get("status") == "error":
+                oc.status, oc.reason = "FAILED", f"Pipeline: {result.get('error')}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        # ── EXECUTE ────────────────────────────────────────────────────────
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        final_path = path
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+
+            result = reprocess(path, artist_root, False)
+
+            ch = result.get("changes") or {}
+            rel_change = ch.get("relative_path")
+            if rel_change and rel_change.get("after"):
+                final_path = library_root / rel_change["after"]
+
+            if result.get("status") == "error":
+                raise RuntimeError(f"Pipeline: {result.get('error')}")
+            if result.get("audio_essence_changed") or result.get("audio_stream_changed"):
+                raise RuntimeError(
+                    "Pipeline meldet Audio-Änderung "
+                    f"(essence={result.get('audio_essence_changed')}, "
+                    f"stream={result.get('audio_stream_changed')})"
+                )
+            audio_after = _audio_essence_md5(final_path)
+            if audio_after != audio_before or audio_after.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz verändert ({audio_before} -> {audio_after})")
+
+            oc.before, oc.after = _l2_before_after(result)
+            oc.status = "SUCCESS" if result.get("status") == "changed" else "SKIPPED"
+            if oc.status == "SKIPPED":
+                oc.reason = "Pipeline ließ die Datei unverändert"
+            oc.backup_path = str(backup)
+            unresolved = _l2_unresolved(result)
+            if unresolved:
+                oc.reason = (f"{oc.reason}; " if oc.reason else "") + unresolved
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if final_path != path and Path(final_path).exists():
+                    Path(final_path).unlink()
+                if Path(backup).exists():
+                    Path(backup).replace(path)
+                final_path = path
+            except OSError:
+                pass
+            try:
+                Path(backup).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        je = _je_named(rel, oc, dry_run)
+        je.sha256_before = sha_before
+        je.sha256_after = _sha256(final_path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = (
+            _audio_essence_md5(final_path) if oc.status == "SUCCESS" else audio_before
+        )
+        je.backup_path = oc.backup_path
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+def _l2_before_after(result: dict) -> tuple[dict, dict]:
+    ch = result.get("changes") or {}
+    before = {k: v.get("before") for k, v in ch.items() if k in _L2_REPORTED_FIELDS}
+    after = {k: v.get("after") for k, v in ch.items() if k in _L2_REPORTED_FIELDS}
+    return before, after
+
+
+def _l2_unresolved(result: dict) -> Optional[str]:
+    items = result.get("unresolved") or []
+    return ("UNRESOLVED: " + " | ".join(items)) if items else None
+
+
 def _je_named(rel: str, oc: ExecOutcome, dry_run: bool) -> JournalEntry:
     return JournalEntry(
         timestamp=RepairJournal.now(), file=rel, issue_code=oc.issue_code,
