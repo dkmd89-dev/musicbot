@@ -9,7 +9,7 @@ LIBRARY → Health Scanner → Health Report → Repair Planner
                                        ┌──────┴──────┐
                                      SAFE FIX   MANUAL REVIEW
                                        │
-                                  Repair Executor   ← (Phase 2 PR 2+, noch nicht implementiert)
+                                  Repair Executor   ← alle 8 Executoren implementiert, gegen Produktion gelaufen
                                        │
                                   Verification Scan
                                        │
@@ -85,8 +85,11 @@ report.py      render_plan_text(plan)
 tag_repairs.py    Level-1-Tag-Reparatur-Funktionen (pure): (alte Werte) -> (neue) | None
 rename_repairs.py Level-1-Dateinamen-Funktionen (pure): (Name + Kontext) -> neuer Name | None
 journal.py       RepairJournal — Append-Only JSONL, Before/After + Rollback-Info
-executor.py      apply_level1() / apply_level1_rename() -> [ExecOutcome]
+executor.py      apply_level1() / apply_level1_rename() / apply_cover_repairs() /
+                 apply_level2() / apply_replaygain() -> [ExecOutcome]
                  safety_check(path, library_root) -> Ablehnungsgrund | None
+                 (Duplicate-Auflösung läuft NICHT über executor.py, sondern über
+                 den eigenständigen Andock-Pfad `--allow-delete` → §6d)
 ```
 
 `scripts/library_repair.py` — dünner CLI-Wrapper (CLI → Health-Report →
