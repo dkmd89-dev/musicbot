@@ -308,19 +308,31 @@ def _analyze_multi_artist(fh: FileHealth, record: FileRecord, tags: TagData, p: 
             details={"value": primary_values[0]},
         ))
 
-    # (c) Duplikate innerhalb der Multi-Artist-Felder
+    # (c) Derselbe Artist-Name mehrfach INNERHALB eines Feldes.
+    # NICHT ueber ©ART + ARTISTS-Freeform hinweg pruefen: tag_writer.py
+    # schreibt dieselbe Artist-Liste bewusst in BEIDE Felder (©ART und das
+    # ----:com.apple.iTunes:ARTISTS-Atom) — die Ueberlappung ist der
+    # Normalfall, kein Duplikat (Live-Fund gegen die echte Library:
+    # 54 False Positives bei Solo-Artists wie "01099").
     combined = [a.strip() for a in list(primary_values) + list(freeform) if a.strip()]
-    seen: set[str] = set()
-    dupes: set[str] = set()
-    for a in combined:
-        k = a.lower()
-        if k in seen:
-            dupes.add(a)
-        seen.add(k)
+
+    def _internal_dupes(values: list[str]) -> set[str]:
+        seen: set[str] = set()
+        dupes: set[str] = set()
+        for a in values:
+            k = a.strip().lower()
+            if not k:
+                continue
+            if k in seen:
+                dupes.add(a.strip())
+            seen.add(k)
+        return dupes
+
+    dupes = _internal_dupes(primary_values) | _internal_dupes(freeform)
     if dupes:
         fh.issues.append(make_issue(
             "MULTI_ARTIST_DUPLICATE", path=p, artist=tags.artist, title=tags.title,
-            message=f"Artist-Name(n) mehrfach im Multi-Artist-Feld: {sorted(dupes)}",
+            message=f"Artist-Name(n) mehrfach im selben Multi-Artist-Feld: {sorted(dupes)}",
             details={"duplicates": sorted(dupes)},
         ))
 

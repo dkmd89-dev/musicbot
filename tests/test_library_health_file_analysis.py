@@ -137,11 +137,27 @@ def test_feat_in_artist_tag_without_freeform_is_suspicious(tmp_path):
     assert "MULTI_ARTIST_SUSPICIOUS" in _codes(fh)
 
 
-def test_duplicate_artist_names(tmp_path):
+def test_duplicate_artist_names_within_one_field(tmp_path):
     fh = analyze_file(_record(tmp_path),
-                      _healthy_tags(artists_primary_tag=["A"], artists_freeform=["A", "a"]),
+                      _healthy_tags(artists_primary_tag=["A", "a"], artists_freeform=[]),
                       _ok_stream(), _ok_artwork())
     assert "MULTI_ARTIST_DUPLICATE" in _codes(fh)
+
+
+def test_primary_and_freeform_overlap_is_not_a_duplicate(tmp_path):
+    # tag_writer.py schreibt dieselbe Artist-Liste in ©ART UND das
+    # ARTISTS-Freeform-Atom — die Ueberlappung ist by design (Live-Fund:
+    # 54 False Positives bei Solo-Artists gegen die echte Library).
+    fh = analyze_file(_record(tmp_path),
+                      _healthy_tags(artist="01099", artists_primary_tag=["01099"],
+                                    artists_freeform=["01099"]),
+                      _ok_stream(), _ok_artwork())
+    assert "MULTI_ARTIST_DUPLICATE" not in _codes(fh)
+    fh2 = analyze_file(_record(tmp_path),
+                       _healthy_tags(artist="01099", artists_primary_tag=["01099", "Trettmann"],
+                                     artists_freeform=["01099", "Trettmann"]),
+                       _ok_stream(), _ok_artwork())
+    assert "MULTI_ARTIST_DUPLICATE" not in _codes(fh2)
 
 
 def test_album_artist_mismatch_not_flagged_for_compilation(tmp_path):
