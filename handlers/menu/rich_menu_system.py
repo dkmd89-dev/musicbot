@@ -224,6 +224,9 @@ class RichMenuSystem:
         # Metadata-Reprocessing ("🔧 Reprocessing"): von RichMenuHandler
         # injiziert - siehe set_reprocessing_handler().
         self.reprocessing_handler = None
+        # MusicBot Doctor ("🩺 Doctor", Phase 3 P1.3): von RichMenuHandler
+        # injiziert - siehe set_doctor_handler().
+        self.doctor_handler = None
 
         # Konfiguration
         self.session_timeout = getattr(config, "SESSION_TIMEOUT", 300)
@@ -310,6 +313,11 @@ class RichMenuSystem:
         """Setzt den ReprocessingMenuHandler (Metadata-Reprocessing-Feature)."""
         self.reprocessing_handler = handler
         self.logger.info("✅ Reprocessing-Handler verknüpft")
+
+    def set_doctor_handler(self, handler) -> None:
+        """Setzt den LibraryDoctorHandler (MusicBot-Doctor-Feature, Phase 3 P1.3)."""
+        self.doctor_handler = handler
+        self.logger.info("✅ Doctor-Handler verknüpft")
 
     # ====== MENÜ-STRUKTUR ======
 
@@ -733,6 +741,21 @@ class RichMenuSystem:
             )
         )
         # ====== ENDE METADATA-REPROCESSING ======
+
+        # ====== NEU: MUSICBOT DOCTOR (Phase 3, P1.3) ======
+        admin_menu.add_child(
+            MenuItem(
+                id="admin_library_doctor",
+                title="MusicBot Doctor",
+                emoji="🩺",
+                access_level=AccessLevel.ADMIN,
+                callback_data="doctor:scan",
+                handler=self._handle_doctor_scan,
+                is_action=True,
+                description="Library Health-Scan + sichere Tag-/Namens-Reparaturen",
+            )
+        )
+        # ====== ENDE MUSICBOT DOCTOR ======
 
         # Test-Menü
         test_menu = MenuItem(
@@ -1225,6 +1248,69 @@ class RichMenuSystem:
 
     # ====== ENDE METADATA-REPROCESSING ======
 
+    # ====== MUSICBOT DOCTOR (Phase 3, P1.3) ======
+
+    async def _handle_doctor_scan(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Einstiegspunkt aus dem Menü-System - Wrapper analog zu
+        _handle_reprocessing_show()."""
+        if self.doctor_handler:
+            await self.doctor_handler.handle_scan(update, context)
+        else:
+            await self._show_handler_not_available(update, "Doctor-Handler")
+
+    async def _handle_doctor_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        callback_data: str,
+    ) -> None:
+        """
+        Dispatcher für alle doctor:* Callbacks.
+
+        Routing:
+          doctor:scan                 → Health-Scan starten (auch über
+                                         den Menüpunkt direkt erreichbar)
+          doctor:apply_safe           → Bestätigung vor SAFE_AUTOMATIC-Apply
+          doctor:apply_safe_confirm   → SAFE_AUTOMATIC-Apply tatsächlich starten
+
+        Eigener Admin-Check hier (Defense-in-Depth, analog zu maint:/
+        reprocess: - callback_data ist frei sendbar, siehe SEC-003).
+        """
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        is_admin = user_id == getattr(self.config, "OWNER_USER_ID", None) or \
+            user_id in getattr(self.config, "ADMIN_USER_IDS", [])
+        if not is_admin:
+            self.logger.warning(
+                f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte "
+                f"Doctor-Callback: {callback_data}"
+            )
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+
+        if not self.doctor_handler:
+            await query.answer("⚠️ Doctor-Handler nicht verfügbar", show_alert=True)
+            return
+
+        if callback_data == "doctor:scan":
+            await self.doctor_handler.handle_scan(update, context)
+            return
+
+        if callback_data == "doctor:apply_safe":
+            await self.doctor_handler.handle_apply_safe_confirm_prompt(update, context)
+            return
+
+        if callback_data == "doctor:apply_safe_confirm":
+            await self.doctor_handler.handle_apply_safe_confirmed(update, context)
+            return
+
+        await query.answer("⚠️ Unbekannter Doctor-Callback")
+
+    # ====== ENDE MUSICBOT DOCTOR ======
+
     async def _show_handler_not_available(self, update: Update, handler_name: str):
         """Zeigt Fehlermeldung wenn Handler nicht verfügbar"""
         query = update.callback_query
@@ -1595,6 +1681,11 @@ class RichMenuSystem:
             # ── NEU: Metadata-Reprocessing ────────────────────────────
             if callback_data.startswith("reprocess:"):
                 await self._handle_reprocessing_callback(update, context, callback_data)
+                return
+
+            # ── NEU: MusicBot Doctor (Phase 3, P1.3) ──────────────────
+            if callback_data.startswith("doctor:"):
+                await self._handle_doctor_callback(update, context, callback_data)
                 return
 
             # ── Standard Menü-Callback (menu:...) ────────────────────

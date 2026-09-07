@@ -438,6 +438,43 @@ ausfuehrbaren Reparaturen..."`) erreicht diesen Codepfad gar nicht erst.
 `--allow-delete` (Duplicate-Auflösung, §6d) ist ein eigener, unabhängiger
 CLI-Pfad und **nicht** an diese Automatik angeschlossen.
 
+## 9. MusicBot Doctor — Telegram-Integration (Phase 3, P1.3, implementiert)
+
+Macht Health-Scan (`docs/LIBRARY_HEALTH.md`) und den `SAFE_AUTOMATIC`-Level
+dieses Dokuments über einen Admin-only Telegram-Menüpunkt
+(„🩺 MusicBot Doctor" unter „⚙️ Administration") nutzbar, statt nur per CLI.
+
+```text
+handlers/library_doctor_handler.py       Telegram-Handler (Admin-Gating,
+                                          Nachrichten-Formatierung)
+services/library_repair/doctor_runner.py reine Subprozess-Orchestrierung
+                                          (kein Telegram-Import)
+```
+
+Ruft `scripts/library_health_check.py` bzw. `scripts/library_repair.py
+--level SAFE_AUTOMATIC --apply` ausschließlich als eigenständige
+Subprozesse auf (`asyncio.create_subprocess_exec`) — importiert sie nie,
+exakt dasselbe Muster wie `services/metadata/reprocessing_runner.py` für
+`scripts/reprocess_artist_metadata.py`. Jeder Lauf läuft als
+Hintergrund-Task (`asyncio.create_task`), damit ein mehrminütiger Scan
+nicht die gesamte Telegram-Application blockiert (die läuft ohne
+`concurrent_updates=True`).
+
+**Ablauf:** Scan-Button → Health-Zusammenfassung (Tracks/Albums/Artists/
+Health-Score/häufigste Issues) + „🔧 SAFE_AUTOMATIC anwenden"-Button →
+Bestätigung → Apply-Lauf → Ergebnis.
+
+**Bewusst nur `SAFE_AUTOMATIC` über diesen Weg erreichbar** — alle
+externen/destruktiven Level (`COVER`/`EXTERNAL_METADATA`/
+`METADATA_REPROCESSING`/`LOUDNESS`/`DUPLICATE`) bleiben CLI-only, exakt
+dieselbe Grenze wie beim Default-`--apply` auf der Kommandozeile (§3).
+Profitiert automatisch von der Navidrome-Auto-Scan-Automatik aus §8, da
+beide denselben `scripts/library_repair.py`-Subprozess aufrufen.
+
+**Berechtigung:** Admin-Level (`Config.OWNER_USER_ID`/`ADMIN_USER_IDS`),
+eigener Check sowohl im Handler als auch im Callback-Dispatcher
+(Defense-in-Depth gegen manuell konstruierte `callback_data`, SEC-003-Muster).
+
 **DRY-RUN gegen Produktion (`--artist 01099`):** 6 would-change (Recording-/
 Release-ID für die Weihnachtslied-Singles), 10 `SKIPPED` (MB kein sicherer
 Match für die Album-Tracks). Kein Raten.

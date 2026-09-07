@@ -172,6 +172,7 @@ class TestRecordInitialHandlerStatuses:
         handler.restart_handler = None  # simuliert fehlgeschlagene Konstruktion
         handler.metadata_processor = Mock()
         handler.reprocessing_handler = Mock()
+        handler.doctor_handler = None  # simuliert fehlgeschlagene Konstruktion
 
         handler._record_initial_handler_statuses()
 
@@ -184,7 +185,8 @@ class TestRecordInitialHandlerStatuses:
         assert calls["restart_handler"] == "error"
         assert calls["metadata_processor"] == "active"
         assert calls["reprocessing_handler"] == "active"
-        assert len(calls) == 11
+        assert calls["doctor_handler"] == "error"
+        assert len(calls) == 12
 
     def test_missing_status_handler_is_noop(self, tmp_path):
         handler = _make_handler(tmp_path)
