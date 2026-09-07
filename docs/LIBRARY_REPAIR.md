@@ -69,6 +69,10 @@ Kandidaten werden übersprungen. `--apply --dry-run` zeigt die konkreten
 Before/After-Werte, ohne zu schreiben. `--allow-delete --artist <X>` ist ein
 eigener, von `--apply` unabhängiger Pfad für Duplicate-Auflösung (§6d).
 
+Ein `--apply`-Lauf mit mindestens einem echten `SUCCESS`-Outcome löst danach
+automatisch einen Navidrome-Scan aus (`--no-navidrome-scan` unterdrückt das,
+siehe §8).
+
 ---
 
 ## 2. Architektur
@@ -407,6 +411,32 @@ im Default-`--apply`): `apply_external_metadata(mb_lookup)`.
 - Schreibvorgang: Backup → freeform-Atome auf temp-Sibling → Verifikation
   (Atome + Audio-Essenz byte-identisch) → atomarer `replace`, sonst Rollback.
 - Atom-Namen deckungsgleich zu `services/metadata/tag_writer.py`.
+
+## 8. Navidrome-Scan-Automation (Phase 3, P1.2, implementiert)
+
+Nach einem `--apply`-Lauf löst `scripts/library_repair.py` automatisch
+`NavidromeScanTrigger.run_scan()` aus (`utils/navidrome_scan_trigger.py`,
+derselbe Subprozess-Pfad wie der manuelle „🔄 Scan"-Button im
+Telegram-Menü) — **aber nur, wenn tatsächlich etwas geändert wurde.**
+
+**Änderungs-Erkennung:** wiederverwendet exakt den bereits vorhandenen,
+ungefilterten `tally = Counter(o.status for o in outcomes)`-Wert (Ausgabe
+der `N success · M would-change · ...`-Zeile) — `tally.get("SUCCESS", 0) > 0`.
+Keine neue/eigene Definition von „es gab eine Änderung"; `DRY_RUN` zählt
+nicht als Änderung, ein Lauf ohne ausführbare Kandidaten (`"Keine
+ausfuehrbaren Reparaturen..."`) erreicht diesen Codepfad gar nicht erst.
+
+**Steuerung:**
+- `--dry-run` (mit oder ohne `--apply`): nie ein Scan.
+- `--no-navidrome-scan`: unterdrückt den Auto-Scan explizit, auch bei
+  echten `SUCCESS`-Outcomes (z. B. für Testläufe gegen eine isolierte
+  Test-Library ohne Seiteneffekt auf die echte Navidrome-Instanz).
+- Ein fehlschlagender/nicht konfigurierter Scanversuch wird geloggt und
+  ausgegeben, ändert aber **nie** den Exit-Code des Repair-Laufs — der
+  Repair-Erfolg selbst ist davon unabhängig.
+
+`--allow-delete` (Duplicate-Auflösung, §6d) ist ein eigener, unabhängiger
+CLI-Pfad und **nicht** an diese Automatik angeschlossen.
 
 **DRY-RUN gegen Produktion (`--artist 01099`):** 6 would-change (Recording-/
 Release-ID für die Weihnachtslied-Singles), 10 `SKIPPED` (MB kein sicherer
