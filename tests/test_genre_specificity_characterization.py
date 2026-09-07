@@ -136,9 +136,14 @@ class TestSpecificAliasNowOutranksGenericAlias:
         zielen auf ein anderes kanonisches Genre - sie erfuellen damit
         exakt die Definition eines Spezifitaets-Paares und werden von
         der ARCH-014-Longest-Match-Regel korrekt aufgeloest.
+
+        Mapping-Update 2026-09-07 (Commit a67c17b, neuer Alias
+        "indie-pop": "Indie" in mapping/genre_aliases.yaml): macht daraus
+        58 Paare (siehe Docstring von
+        TestSpecificityPairCountRegressionGuard fuer die Herleitung).
         """
         pairs = _all_specificity_pairs(genre_processor)
-        assert len(pairs) == 57
+        assert len(pairs) == 58
 
         still_generic = []
         for specific_key, generic_key in pairs:
@@ -299,14 +304,29 @@ class TestSpecificityPairCountRegressionGuard:
     selbst die Definition eines Spezifitaets-Paares (kuerzerer
     generischer Alias "drill"/"deutschrap" als Wortgrenzen-Teilstring
     enthalten, anderes Zielgenre) und werden korrekt aufgeloest.
+
+    Mapping-Update 2026-09-07 (Commit a67c17b, "Update genre aliases -
+    Add aliases zu Indie"): `mapping/genre_aliases.yaml` erhielt den
+    neuen Eintrag `"indie-pop": "Indie"`. "indie-pop" enthaelt den
+    kuerzeren, bereits bestehenden Alias "pop" (normalisiert zu "Pop")
+    als gueltigen Wortgrenzen-Teilstring (Bindestrich zaehlt als
+    Wortgrenze) und zielt selbst auf ein anderes kanonisches Genre
+    ("Indie") - erfuellt damit exakt die Definition eines weiteren
+    Spezifitaets-Paares, macht 58 statt 57. Der begleitende
+    `mapping/genre_hierarchy.yaml`-Commit ea986fd ("Add Alternative Hip
+    Hop as subgenre of Hip Hop") erzeugt dagegen KEIN neues Paar - reine
+    Hierarchie-Eintraege ohne eigenen Alias-Eintrag tauchen nicht als Key
+    in `GENRE_NORMALIZATION` auf (verifiziert: "alternative hip hop" ist
+    kein Key), anders als die gezielt self-aliasten ARCH-015-Faelle oben.
     """
 
     def test_known_pair_count(self, genre_processor):
         pairs = _all_specificity_pairs(genre_processor)
-        assert len(pairs) == 57, (
-            f"Erwartete 57 bekannte Spezifitaets-Paare (55 aus ARCH-014 + "
-            f"2 aus ARCH-015 Phase 2), gefunden: {len(pairs)}. Wenn dies "
-            f"durch eine bewusste YAML-Aenderung verursacht wurde, ist das "
-            f"kein Fehler - die ARCH-014/015-Dokumentation und diese Zahl "
-            f"sollten dann gemeinsam aktualisiert werden."
+        assert len(pairs) == 58, (
+            f"Erwartete 58 bekannte Spezifitaets-Paare (55 aus ARCH-014 + "
+            f"2 aus ARCH-015 Phase 2 + 1 aus dem 'indie-pop'-Mapping-Update "
+            f"vom 2026-09-07), gefunden: {len(pairs)}. Wenn dies durch eine "
+            f"bewusste YAML-Aenderung verursacht wurde, ist das kein Fehler "
+            f"- die ARCH-014/015-Dokumentation und diese Zahl sollten dann "
+            f"gemeinsam aktualisiert werden."
         )
