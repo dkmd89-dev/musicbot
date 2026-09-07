@@ -348,7 +348,7 @@ class EnhancedStatusHandler:
                             "📈 Trends", callback_data="status_trends"
                         ),
                     ],
-                    [InlineKeyboardButton("🔙 Zurück", callback_data="menu:admin")],
+                    [InlineKeyboardButton("🔙 Zurück", callback_data="menu:admin_group_diagnostics")],
                 ]
             )
 
@@ -756,7 +756,7 @@ class EnhancedStatusHandler:
                         InlineKeyboardButton(
                             "🔄 Erneut versuchen", callback_data="status_menu"
                         ),
-                        InlineKeyboardButton("🔙 Zurück", callback_data="menu:admin"),
+                        InlineKeyboardButton("🔙 Zurück", callback_data="menu:admin_group_diagnostics"),
                     ]
                 ]
             )

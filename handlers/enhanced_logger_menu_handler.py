@@ -318,7 +318,7 @@ class EnhancedLoggerMenuHandler:
                             "🧹 Bereinigung", callback_data="logger_cleanup_menu"
                         ),
                     ],
-                    [InlineKeyboardButton("🔙 Zurück", callback_data="menu:admin")],
+                    [InlineKeyboardButton("🔙 Zurück", callback_data="menu:admin_group_diagnostics")],
                 ]
             )
 
@@ -1497,7 +1497,7 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
                         InlineKeyboardButton(
                             "Erneut versuchen", callback_data="logger_main_menu"
                         ),
-                        InlineKeyboardButton("Zurück", callback_data="menu:admin"),
+                        InlineKeyboardButton("Zurück", callback_data="menu:admin_group_diagnostics"),
                     ]
                 ]
             )

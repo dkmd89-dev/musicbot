@@ -76,11 +76,14 @@ def last_text(update):
 
 
 class TestMenuItemRegistration:
-    def test_admin_library_doctor_is_child_of_admin_menu(self, menu_system):
+    def test_admin_library_doctor_is_child_of_library_group(self, menu_system):
+        """Admin-Menü-Reorg (UX/Navigation): Doctor haengt jetzt unter der
+        Gruppe "Bibliothek & Navidrome" (admin_group_library), nicht mehr
+        direkt unter "admin" - siehe Analyse-Bericht Abschnitt F/H."""
         item = menu_system.menu_registry["admin_library_doctor"]
-        admin_menu = menu_system.menu_registry["admin"]
+        library_group = menu_system.menu_registry["admin_group_library"]
 
-        assert item in admin_menu.children
+        assert item in library_group.children
         assert item.callback_data == "doctor:scan"
 
 

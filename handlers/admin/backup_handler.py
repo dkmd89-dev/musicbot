@@ -143,7 +143,11 @@ class BackupHandler:
                     "🎵 Library-Backups", callback_data="backup_list_lib"
                 ),
             ],
-            [InlineKeyboardButton("🔙 Zurück", callback_data="menu:admin")],
+            [
+                InlineKeyboardButton(
+                    "🔙 Zurück", callback_data="menu:admin_group_operations"
+                )
+            ],
         ]
 
         await query.edit_message_text(

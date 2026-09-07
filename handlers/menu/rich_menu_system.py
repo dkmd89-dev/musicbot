@@ -439,8 +439,40 @@ class RichMenuSystem:
             description="System-Verwaltung",
         )
 
+        # Admin-Menü-Reorg (UX/Navigation, siehe Analyse-Bericht): drei
+        # thematische Gruppen-Container - reine Navigationsknoten (kein
+        # handler=, kein eigenes callback_data noetig, automatisch
+        # "menu:<id>", bereits durch das generische "^menu:"-Pattern in
+        # RichMenuHandler.get_telegram_handlers() abgedeckt, siehe
+        # docs/MusicBot_TELEGRAM_MENU_SYSTEM.md Abschnitt 6 - kein neuer
+        # CallbackQueryHandler noetig). Duplikat-Verwaltung und
+        # Benutzerverwaltung bleiben bewusst direkte Administration-Kinder
+        # (CLAUDE.md Abschnitt 5/15: Duplicate Detection ist eine eigene
+        # P0-Domaene, nicht Teil von "Bibliothek").
+        admin_group_library = MenuItem(
+            id="admin_group_library",
+            title="Bibliothek & Navidrome",
+            emoji="🎵",
+            access_level=AccessLevel.ADMIN,
+            description="Library-Diagnose, Reprocessing und Navidrome-Scan",
+        )
+        admin_group_operations = MenuItem(
+            id="admin_group_operations",
+            title="Bot & Betrieb",
+            emoji="🤖",
+            access_level=AccessLevel.ADMIN,
+            description="Bot-Neustart, Wartungsmodus und Backups",
+        )
+        admin_group_diagnostics = MenuItem(
+            id="admin_group_diagnostics",
+            title="Diagnose & Monitoring",
+            emoji="🩺",
+            access_level=AccessLevel.ADMIN,
+            description="System-Status, Logs, Fehler und Logger-Steuerung",
+        )
+
         # System-Status
-        admin_menu.add_child(
+        admin_group_diagnostics.add_child(
             MenuItem(
                 id="admin_status",
                 title="System-Status",
@@ -453,18 +485,16 @@ class RichMenuSystem:
         )
 
         # Benutzerverwaltung
-        admin_menu.add_child(
-            MenuItem(
-                id="admin_users",
-                title="Benutzerverwaltung",
-                emoji="👥",
-                access_level=AccessLevel.ADMIN,
-                is_action=True,
-            )
+        admin_users_item = MenuItem(
+            id="admin_users",
+            title="Benutzerverwaltung",
+            emoji="👥",
+            access_level=AccessLevel.ADMIN,
+            is_action=True,
         )
 
         # System-Logs
-        admin_menu.add_child(
+        admin_group_diagnostics.add_child(
             MenuItem(
                 id="admin_logs",
                 title="System-Logs",
@@ -502,7 +532,6 @@ class RichMenuSystem:
                 handler=None,
             )
         )
-        admin_menu.add_child(duplicate_menu)
 
         # Error-Verwaltung
         error_menu = MenuItem(
@@ -548,13 +577,13 @@ class RichMenuSystem:
                 is_action=True,
             )
         )
-        admin_menu.add_child(error_menu)
+        admin_group_diagnostics.add_child(error_menu)
 
         # Logger-Management
         logger_menu = MenuItem(
             id="logger",
             title="Logger-Verwaltung",
-            emoji="📊",
+            emoji="📈",
             access_level=AccessLevel.ADMIN,
             description="Erweiterte Logger-Steuerung und -Überwachung",
         )
@@ -628,7 +657,7 @@ class RichMenuSystem:
                 is_action=True,
             )
         )
-        admin_menu.add_child(logger_menu)
+        admin_group_diagnostics.add_child(logger_menu)
 
         # Backup-Verwaltung
         backup_menu = MenuItem(
@@ -693,10 +722,10 @@ class RichMenuSystem:
                 is_action=True,
             )
         )
-        admin_menu.add_child(backup_menu)
+        admin_group_operations.add_child(backup_menu)
 
         # ====== NEU: BOT-NEUSTART ======
-        admin_menu.add_child(
+        admin_group_operations.add_child(
             MenuItem(
                 id="admin_restart",
                 title="Bot neu starten",
@@ -711,7 +740,7 @@ class RichMenuSystem:
         # ====== ENDE BOT-NEUSTART ======
 
         # ====== NEU: WARTUNGSMODUS ======
-        admin_menu.add_child(
+        admin_group_operations.add_child(
             MenuItem(
                 id="admin_maintenance",
                 title="Wartungsmodus",
@@ -728,7 +757,7 @@ class RichMenuSystem:
         # ====== NEU: METADATA-REPROCESSING ======
         # Nutzer-Entscheidung: nur Owner (nicht Admin) - greift auf
         # Metadata-/Auto-Learn-Dateien zu, siehe docs/FINDINGS_INDEX.md.
-        admin_menu.add_child(
+        admin_group_library.add_child(
             MenuItem(
                 id="admin_reprocessing",
                 title="Reprocessing",
@@ -743,7 +772,7 @@ class RichMenuSystem:
         # ====== ENDE METADATA-REPROCESSING ======
 
         # ====== NEU: MUSICBOT DOCTOR (Phase 3, P1.3) ======
-        admin_menu.add_child(
+        admin_group_library.add_child(
             MenuItem(
                 id="admin_library_doctor",
                 title="MusicBot Doctor",
@@ -756,6 +785,15 @@ class RichMenuSystem:
             )
         )
         # ====== ENDE MUSICBOT DOCTOR ======
+
+        # Admin-Menü-Reorg: Gruppen-Container an Administration haengen -
+        # Reihenfolge hier = Anzeige-Reihenfolge im Menü (siehe
+        # Analyse-Bericht, Abschnitt F/H).
+        admin_menu.add_child(admin_group_library)
+        admin_menu.add_child(admin_group_operations)
+        admin_menu.add_child(admin_group_diagnostics)
+        admin_menu.add_child(duplicate_menu)
+        admin_menu.add_child(admin_users_item)
 
         # Test-Menü
         test_menu = MenuItem(
@@ -1120,7 +1158,11 @@ class RichMenuSystem:
         keyboard = InlineKeyboardMarkup(
             [
                 [InlineKeyboardButton(toggle_label, callback_data="maint:toggle")],
-                [InlineKeyboardButton("◀️ Zurück", callback_data="menu:admin")],
+                [
+                    InlineKeyboardButton(
+                        "◀️ Zurück", callback_data="menu:admin_group_operations"
+                    )
+                ],
             ]
         )
         await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)

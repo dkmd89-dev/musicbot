@@ -56,28 +56,48 @@ Nur zur Orientierung — Detailverhalten der einzelnen Admin-/Statistik-/
 Navidrome-Bereiche ist nicht Gegenstand dieses Dokuments, da sie nicht in
 dieser Phase entstanden sind.
 
+**Admin-Menü-Reorg (UX/Navigation):** Administration wurde von 12
+gleichrangigen Einzelpunkten auf 5 Top-Level-Punkte (3 thematische
+Gruppen + Duplikate + Benutzerverwaltung) umgebaut, um die
+Informationsdichte auf dem Smartphone zu reduzieren. Alle bestehenden
+Callback-Daten (`dup:`, `erradmin:`, `backup_`, `logger_`, `status_`,
+`restart:`, `maint:`, `reprocess:`, `doctor:`) blieben dabei unverändert
+— nur die übergeordneten Menüknoten sind neu. Zuvor war dieser Abschnitt
+bereits veraltet (kannte Wartungsmodus/Reprocessing/Doctor/Navidrome-Scan
+nicht und listete Test-System fälschlich als Admin-Kind) und wurde hier
+zusätzlich korrigiert.
+
 ```text
 Hauptmenü
 ├── 📥 Downloads                    → siehe Abschnitt 3 (diese Phase)
 ├── 📊 Statistiken
 │   ├── Monatsrückblick / Jahresrückblick
-│   └── Top Songs / Top Künstler
-├── 🛠️ Administration
-│   ├── System-Status
-│   ├── Benutzerverwaltung
-│   ├── System-Logs
-│   ├── Duplikat-Verwaltung (Statistiken, Cache leeren)
-│   ├── Error-Verwaltung (Statistiken, Gesundheitsbericht, Letzte Fehler, Reset)
-│   ├── Logger-Verwaltung (Übersicht, Module, Level, Dateien, Statistiken,
-│   │   Handler, Bereinigung)
-│   ├── Backup-Verwaltung (Bot/Library sichern, Backup-Listen)
-│   ├── Bot neu starten
-│   └── Test-System (Unit/Integration/Performance)
-└── 🎵 Navidrome Mediathek
-    ├── Durchsuchen (Künstler/Alben/Genres/Playlists)
-    ├── Suchen (Überall/Künstler/Alben/Songs)
-    ├── Meine Playlists / Favoriten / Zuletzt gespielt
-    └── Statistiken
+│   ├── Top Songs / Top Künstler
+│   └── Library Übersicht           (USER-Level, kein Admin-Gate)
+├── ⚙️ Administration                (ADMIN-Level)
+│   ├── 🎵 Bibliothek & Navidrome
+│   │   ├── MusicBot Doctor (Health-Scan + SAFE_AUTOMATIC-Repair)
+│   │   ├── Reprocessing (OWNER-only)
+│   │   └── Navidrome Scan
+│   ├── 🤖 Bot & Betrieb
+│   │   ├── Bot neu starten
+│   │   ├── Wartungsmodus
+│   │   └── Backup-Verwaltung (Bot/Library sichern, Backup-Listen)
+│   ├── 🩺 Diagnose & Monitoring
+│   │   ├── System-Status
+│   │   ├── System-Logs
+│   │   ├── Error-Verwaltung (Statistiken, Gesundheitsbericht, Letzte Fehler, Reset)
+│   │   └── Logger-Verwaltung (Übersicht, Module, Level, Dateien, Statistiken,
+│   │       Handler, Bereinigung)
+│   ├── ♻️ Duplikate (Statistiken, Cache leeren)
+│   └── 👥 Benutzerverwaltung
+├── 🎵 Navidrome Mediathek
+│   ├── Durchsuchen (Künstler/Alben/Genres/Playlists)
+│   ├── Suchen (Überall/Künstler/Alben/Songs)
+│   ├── Meine Playlists / Favoriten / Zuletzt gespielt
+│   └── Statistiken
+└── 🧪 Test-System (Unit/Integration/Performance)  → eigenständiges
+    Root-Menü, ADMIN-gated, KEIN Kind von Administration
 ```
 
 ---

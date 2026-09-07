@@ -90,7 +90,7 @@ class LibraryDoctorHandler:
 
     def _back_to_admin_keyboard(self) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
-            [[InlineKeyboardButton("◀️ Zurück", callback_data="menu:admin")]]
+            [[InlineKeyboardButton("◀️ Zurück", callback_data="menu:admin_group_library")]]
         )
 
     async def handle_scan(
@@ -205,7 +205,7 @@ class LibraryDoctorHandler:
             [InlineKeyboardButton(
                 "🔧 SAFE_AUTOMATIC anwenden", callback_data="doctor:apply_safe"
             )],
-            [InlineKeyboardButton("◀️ Zurück", callback_data="menu:admin")],
+            [InlineKeyboardButton("◀️ Zurück", callback_data="menu:admin_group_library")],
         ])
         return text, keyboard
 
@@ -233,7 +233,7 @@ class LibraryDoctorHandler:
                 [InlineKeyboardButton(
                     "✅ Ja, anwenden", callback_data="doctor:apply_safe_confirm"
                 )],
-                [InlineKeyboardButton("❌ Abbrechen", callback_data="menu:admin")],
+                [InlineKeyboardButton("❌ Abbrechen", callback_data="menu:admin_group_library")],
             ]),
         )
 

@@ -474,7 +474,10 @@ class RichMenuHandler:
             access_level=AccessLevel.ADMIN,
             handler=self._handle_navidrome_scan,
         )
-        self.menu_system.add_child_menu_item("admin", navidrome_menu)
+        # Admin-Menü-Reorg: Navidrome Scan gehört fachlich zur Gruppe
+        # "Bibliothek & Navidrome" (admin_group_library), nicht mehr direkt
+        # unter "admin" (siehe Analyse-Bericht, Abschnitt F/H).
+        self.menu_system.add_child_menu_item("admin_group_library", navidrome_menu)
         self.logger.debug("🔧 System-Handler registriert")
 
     def _register_test_handlers(self) -> None:
