@@ -20,11 +20,11 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from config import Config
 from logger import get_module_logger
 
 logger = get_module_logger("LibraryDoctorRunner")
@@ -107,41 +107,74 @@ async def _run_subprocess(
 
 
 async def run_health_scan(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> DoctorScanResult:
-    """Startet scripts/library_health_check.py --json <tmp-Datei> als
-    Subprozess (read-only, siehe docs/LIBRARY_HEALTH.md) und liest den
-    erzeugten JSON-Report zurueck."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        json_path = Path(tmp_dir) / "doctor_report.json"
-        cmd = [sys.executable, str(HEALTH_CHECK_SCRIPT), "--json", str(json_path)]
+    """Startet scripts/library_health_check.py als Subprozess (read-only,
+    siehe docs/LIBRARY_HEALTH.md) und persistiert den vollstaendigen,
+    bestehenden JSON-Report am selben, bereits etablierten Pfad wie die
+    CLI selbst und die Library-Statistics-Ansicht
+    (handlers/mugge_statistik_handler.py::handle_library_overview()):
+    `Config.DATA_DIR / "library_health_report.json"`. Kein zweiter
+    Report-Mechanismus, keine eigene Pfadlogik - derselbe Ausdruck wie an
+    den beiden anderen Stellen, explizit statt implizit an den Subprozess
+    uebergeben, damit dieser Aufrufer denselben Pfad kennt, an dem er
+    danach liest.
 
-        logger.info("🩺 Starte Library-Health-Scan (Doctor)")
-        returncode, stdout_text, stderr_text, error_message, timed_out = (
-            await _run_subprocess(cmd, timeout)
+    Loggt den vollstaendigen Ablauf unter dem Praefix "🏥 [DOCTOR]"
+    (START -> SCAN -> REPORT -> SAVE -> SUMMARY), damit ein per Telegram
+    gestarteter Scan in bot.log eindeutig nachvollziehbar ist - bei einem
+    Fehler ist an der Log-Stelle erkennbar, an welchem Schritt der Ablauf
+    abgebrochen ist. Kein Schritt wird als erfolgreich geloggt, der nicht
+    tatsaechlich stattgefunden hat."""
+    json_path = Path(Config.DATA_DIR) / "library_health_report.json"
+    cmd = [sys.executable, str(HEALTH_CHECK_SCRIPT), "--json", str(json_path)]
+
+    logger.info("🏥 [DOCTOR] Health-Scan gestartet")
+    returncode, stdout_text, stderr_text, error_message, timed_out = (
+        await _run_subprocess(cmd, timeout)
+    )
+
+    if error_message:
+        logger.error(f"🏥 [DOCTOR] Health-Scan fehlgeschlagen (Subprozess-Start/Timeout): {error_message}")
+        return DoctorScanResult(
+            exit_code=None, report=None, timed_out=timed_out,
+            error_message=error_message,
         )
 
-        if error_message:
-            logger.error(f"❌ Health-Scan-Subprozess-Fehler: {error_message}")
-            return DoctorScanResult(
-                exit_code=None, report=None, timed_out=timed_out,
-                error_message=error_message,
-            )
-
-        report: Optional[Dict[str, Any]] = None
-        if json_path.exists():
-            try:
-                report = json.loads(json_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError) as e:
-                logger.error(f"❌ Health-Report unlesbar nach Scan: {e}")
-
-        if returncode == 0:
-            logger.info("✅ Health-Scan erfolgreich beendet")
-        else:
-            logger.warning(f"⚠️ Health-Scan beendet mit Exit-Code {returncode}")
-
+    if returncode != 0:
+        logger.error(
+            f"🏥 [DOCTOR] Health-Scan fehlgeschlagen (Exit-Code {returncode}): "
+            f"{stderr_text[-500:] or 'kein stderr'}"
+        )
         return DoctorScanResult(
-            exit_code=returncode, report=report,
+            exit_code=returncode, report=None,
             stdout_tail=stdout_text[-2000:], stderr_tail=stderr_text[-2000:],
         )
+
+    logger.info("🏥 [DOCTOR] Health-Scan abgeschlossen")
+
+    report: Optional[Dict[str, Any]] = None
+    if json_path.exists():
+        try:
+            report = json.loads(json_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error(f"🏥 [DOCTOR] Report-Datei unlesbar nach Scan: {e}")
+    else:
+        logger.error(f"🏥 [DOCTOR] Report-Datei fehlt nach Scan (Exit-Code 0): {json_path}")
+
+    if report is not None:
+        logger.info(f"🏥 [DOCTOR] Report gespeichert: {json_path}")
+        stats = report.get("statistics", {})
+        health = report.get("health", {})
+        sev = stats.get("issues_by_severity", {})
+        issues_count = sev.get("ERROR", 0) + sev.get("WARNING", 0) + sev.get("CRITICAL", 0)
+        logger.info(
+            f"🏥 [DOCTOR] Score: {health.get('score')} | "
+            f"Files: {stats.get('total_files')} | Issues: {issues_count}"
+        )
+
+    return DoctorScanResult(
+        exit_code=returncode, report=report,
+        stdout_tail=stdout_text[-2000:], stderr_tail=stderr_text[-2000:],
+    )
 
 
 async def run_safe_automatic_repair(

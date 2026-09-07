@@ -11,6 +11,7 @@ wiederholen, aber mindestens einmal real verifizieren).
 """
 
 import json
+import logging
 import shutil
 import subprocess
 from pathlib import Path
@@ -142,6 +143,99 @@ class TestCheckDownloadQualityMocked:
         with patch("subprocess.run", side_effect=OSError("ffprobe missing")):
             obs = check_download_quality(Path("/fake/song.m4a"))  # darf nicht raisen
         assert not obs.suspicious
+
+
+class TestCheckDownloadQualityLogging:
+    """Aufgabe 2 (Bad-Download-Detector-Logging): ein normaler/OK-Download
+    muss im Log von 'Detector nie gelaufen' unterscheidbar sein - dafuer
+    IMMER ein Start- und ein Abschluss-Log mit explizitem Status, egal ob
+    OK/SUSPICIOUS/PROBE_FAILED. Die bestehende ⚠️ [QUALITY-OBSERVE]-Zeile
+    bleibt fuer den SUSPICIOUS-Fall unveraendert bestehen."""
+
+    def test_started_log_is_always_emitted(self, caplog):
+        caplog.set_level(logging.INFO, logger="DownloadQualityGuard")
+        with patch(
+            "subprocess.run",
+            return_value=_fake_ffprobe_result(duration=200.0, bitrate=192000),
+        ):
+            check_download_quality(Path("/fake/song.m4a"))
+
+        assert "[QUALITY-CHECK] Bad Download Detector gestartet" in caplog.text
+
+    def test_ok_result_logs_status_ok_with_values(self, caplog):
+        caplog.set_level(logging.INFO, logger="DownloadQualityGuard")
+        with patch(
+            "subprocess.run",
+            return_value=_fake_ffprobe_result(duration=200.0, bitrate=192000),
+        ):
+            check_download_quality(Path("/fake/song.m4a"), expected_duration=205.0)
+
+        assert "[QUALITY-CHECK] Analyse abgeschlossen → OK" in caplog.text
+        assert "file=/fake/song.m4a" in caplog.text
+        assert "duration=200.0s" in caplog.text
+        assert "bitrate=192000bps" in caplog.text
+        assert "expected_duration=205.0s" in caplog.text
+
+    def test_suspicious_result_logs_status_suspicious_and_keeps_observe_warning(
+        self, caplog
+    ):
+        caplog.set_level(logging.INFO, logger="DownloadQualityGuard")
+        with patch(
+            "subprocess.run",
+            return_value=_fake_ffprobe_result(duration=5.0, bitrate=192000),
+        ):
+            check_download_quality(Path("/fake/song.m4a"))
+
+        assert "[QUALITY-CHECK] Analyse abgeschlossen → SUSPICIOUS" in caplog.text
+        assert any(
+            "⚠️ [QUALITY-OBSERVE] Auffälliger Download" in rec.message
+            for rec in caplog.records
+        )
+
+    def test_probe_failed_result_logs_status_probe_failed_with_na_values(self, caplog):
+        caplog.set_level(logging.INFO, logger="DownloadQualityGuard")
+        with patch("subprocess.run", return_value=_fake_ffprobe_result(returncode=1)):
+            check_download_quality(Path("/fake/broken.m4a"))
+
+        assert "[QUALITY-CHECK] Analyse abgeschlossen → PROBE_FAILED" in caplog.text
+        assert "duration=N/A" in caplog.text
+        assert "bitrate=N/A" in caplog.text
+        assert "expected_duration=N/A" in caplog.text
+
+    def test_ok_result_does_not_log_observe_warning(self, caplog):
+        caplog.set_level(logging.INFO, logger="DownloadQualityGuard")
+        with patch(
+            "subprocess.run",
+            return_value=_fake_ffprobe_result(duration=200.0, bitrate=192000),
+        ):
+            check_download_quality(Path("/fake/song.m4a"))
+
+        assert "[QUALITY-OBSERVE]" not in caplog.text
+
+    def test_no_expected_duration_logs_na_for_expected(self, caplog):
+        caplog.set_level(logging.INFO, logger="DownloadQualityGuard")
+        with patch(
+            "subprocess.run",
+            return_value=_fake_ffprobe_result(duration=200.0, bitrate=192000),
+        ):
+            check_download_quality(Path("/fake/song.m4a"), expected_duration=None)
+
+        assert "expected_duration=N/A" in caplog.text
+
+    def test_return_value_and_no_pipeline_side_effects_unchanged_for_suspicious(self):
+        """Observe-Only-Vertrag: das Logging ist rein additiv - der
+        Rueckgabewert (einziger Kontaktpunkt zu den Aufrufstellen in
+        download_utils.py) ist fuer denselben Input identisch zu vorher,
+        unabhaengig vom Status."""
+        with patch(
+            "subprocess.run",
+            return_value=_fake_ffprobe_result(duration=5.0, bitrate=192000),
+        ):
+            obs = check_download_quality(Path("/fake/song.m4a"))
+
+        assert obs.suspicious
+        assert obs.duration_seconds == 5.0
+        assert obs.bitrate == 192000
 
 
 @requires_ffmpeg

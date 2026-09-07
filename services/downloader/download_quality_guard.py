@@ -98,13 +98,33 @@ def _probe_duration_and_bitrate(
         return None, None
 
 
+def _fmt(value, unit: str = "", decimals: Optional[int] = None) -> str:
+    """Einheitliche 'N/A'-Konvention fuer fehlende Analysewerte im Log
+    (etabliertes Muster, siehe docs/FINDINGS_INDEX.md zu
+    download_result_reporter.py::build_final_summary_message())."""
+    if value is None:
+        return "N/A"
+    if decimals is not None:
+        return f"{value:.{decimals}f}{unit}"
+    return f"{value}{unit}"
+
+
 def check_download_quality(
     path: Path, expected_duration: Optional[float] = None
 ) -> QualityObservation:
     """Reine Beobachtung (Stufe A) — liest Dauer/Bitrate der fertigen
     Download-Datei per ffprobe und markiert Auffälligkeiten per Log.
     Greift NICHT in die Pipeline ein: der Rückgabewert wird von den
-    Aufrufstellen bewusst nur geloggt, nie zur Ablehnung verwendet."""
+    Aufrufstellen bewusst nur geloggt, nie zur Ablehnung verwendet.
+
+    Loggt IMMER einen Start- und einen Abschluss-Log (Status OK/
+    SUSPICIOUS/PROBE_FAILED) - unabhängig vom Ergebnis. Vorher war bei
+    einem unauffälligen Download (keine Flags) im Log nicht erkennbar,
+    ob der Detector überhaupt gelaufen ist oder ob er nie aufgerufen
+    wurde. Reine Logging-Ergänzung - die Bewertungslogik selbst
+    (Schwellenwerte, Flags) ist unverändert."""
+    logger.info(f"[QUALITY-CHECK] Bad Download Detector gestartet: {path}")
+
     duration, bitrate = _probe_duration_and_bitrate(Path(path))
     flags: List[str] = []
 
@@ -132,6 +152,25 @@ def check_download_quality(
     observation = QualityObservation(
         path=str(path), duration_seconds=duration, bitrate=bitrate,
         expected_duration_seconds=expected_duration, flags=flags,
+    )
+
+    # PROBE_FAILED nur, wenn ffprobe GAR KEIN Signal liefern konnte (beide
+    # Werte None) - liegt mindestens ein Wert vor, wird ganz normal anhand
+    # der vorhandenen Daten OK/SUSPICIOUS bewertet (unveraendert gegenueber
+    # vorher: dieselben drei Flag-Bedingungen wie zuvor).
+    if duration is None and bitrate is None:
+        status = "PROBE_FAILED"
+    elif observation.suspicious:
+        status = "SUSPICIOUS"
+    else:
+        status = "OK"
+
+    logger.info(
+        f"[QUALITY-CHECK] Analyse abgeschlossen → {status} | "
+        f"file={observation.path} | "
+        f"duration={_fmt(duration, 's', 1)} | "
+        f"bitrate={_fmt(bitrate, 'bps')} | "
+        f"expected_duration={_fmt(expected_duration, 's', 1)}"
     )
 
     if observation.suspicious:
