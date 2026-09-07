@@ -298,8 +298,8 @@ eingefroren.
   `ArtistNormalizer._save_auto_learned_entry()`, YAML→JSON-Migration
   der drei rein maschinell geschriebenen Auto-Learn-Dateien, Reset von
   als Migrations-Artefakt erkannten Bestandsdaten. Vollständige
-  Dokumentation: [`docs/GENRE_SYSTEM.md`](GENRE_SYSTEM.md), Finding:
-  [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md).
+  Dokumentation: [`docs/GENRE_SYSTEM.md`](../GENRE_SYSTEM.md), Finding:
+  [`docs/FINDINGS_INDEX.md`](../FINDINGS_INDEX.md).
 - **Testergebnis nach ARCH-022:** 1982 passed, 1 skipped, 0 failed, 19
   subtests passed (ggü. 1698 beim Freeze oben: +284, durch alle seither
   gemergten Fixes dieser Session, nicht nur ARCH-022 — siehe

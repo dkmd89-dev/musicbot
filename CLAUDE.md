@@ -1101,9 +1101,11 @@ Nicht jede einzelne triviale Funktion braucht eine seitenlange Beschreibung.
 
 ## Baseline-Pflege
 
-Aktuelle Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v8.md` (Freeze
-2026-09-02, 1698 passed / 0 failed, 1 umgebungsbedingt skipped).
-Referenziert von `README.md` und `docs/INDEX.md`.
+Aktuelle Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze
+2026-09-07, 2580 passed / 0 failed, 1 umgebungsbedingt skipped).
+Referenziert von `README.md` und `docs/INDEX.md`. Vorgänger
+`docs/MusicBot_ENGINEERING_BASELINE_v8.md` (Freeze 2026-09-02, 1698
+passed) liegt unverändert unter `docs/archive/`.
 
 Der aktuelle Stand aller offenen/zurückgestellten Punkte steht ab sofort
 in `docs/FINDINGS_INDEX.md`, nicht in der Tech-Debt-Tabelle der jeweils
