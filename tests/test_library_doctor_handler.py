@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from handlers.library_doctor_handler import LibraryDoctorHandler
+from handlers.library_doctor_handler import LibraryDoctorHandler, _short_issue_label
 from services.library_repair.doctor_runner import DoctorRepairResult, DoctorScanResult
 
 
@@ -68,13 +68,15 @@ def last_edit_keyboard_texts(update):
     return [btn.text for row in markup.inline_keyboard for btn in row]
 
 
-def _sample_report():
+def _sample_report(extra_issues=None):
+    issues_by_code = {"GENRE_DELIMITER_INCONSISTENT": 3, "LYRICS_MISSING": 19}
+    issues_by_code.update(extra_issues or {})
     return {
         "statistics": {
             "total_files": 388,
             "total_artists": 12,
             "total_albums": 34,
-            "issues_by_code": {"GENRE_DELIMITER_INCONSISTENT": 3, "META_LYRICS_MISSING": 19},
+            "issues_by_code": issues_by_code,
         },
         "health": {"score": 98.0, "status": "EXCELLENT"},
     }
@@ -124,9 +126,48 @@ class TestFormatScanResult:
         assert "34" in text
         assert "12" in text
         assert "98.0" in text
-        assert "GENRE_DELIMITER_INCONSISTENT" in text
         buttons = [btn.text for row in keyboard.inline_keyboard for btn in row]
         assert any("SAFE_AUTOMATIC" in b for b in buttons)
+
+    def test_info_severity_codes_use_human_description_not_raw_code(self, handler):
+        """GENRE_DELIMITER_INCONSISTENT/LYRICS_MISSING sind beides INFO -
+        keine rohen SNAKE_CASE-Codes mehr im Text, sondern die Beschreibung
+        aus services/library_health/issues.py (Single Source of Truth)."""
+        result = DoctorScanResult(exit_code=0, report=_sample_report())
+
+        text, _ = handler._format_scan_result(result)
+
+        assert "GENRE_DELIMITER_INCONSISTENT" not in text
+        assert "LYRICS_MISSING" not in text
+        assert "Nur Beobachtung, kein Mangel" in text
+        assert "Keine Befunde, die den Score senken" in text
+
+    def test_warning_or_error_codes_appear_in_problem_section(self, handler):
+        """META_ARTIST_MISSING ist ERROR-Severity - muss im 'wirkt sich auf
+        den Score aus'-Abschnitt landen, nicht bei den Beobachtungen."""
+        result = DoctorScanResult(
+            exit_code=0,
+            report=_sample_report(extra_issues={"META_ARTIST_MISSING": 2}),
+        )
+
+        text, _ = handler._format_scan_result(result)
+
+        assert "Wirkt sich auf den Score aus" in text
+        assert "Nur Beobachtung, kein Mangel" in text  # die INFO-Codes bleiben daneben bestehen
+        assert "Keine Befunde, die den Score senken" not in text
+
+    def test_unregistered_code_falls_back_to_raw_code_as_problem(self, handler):
+        """Ein (theoretisch) unbekannter Code darf nicht stillschweigend als
+        harmlose Beobachtung verschwinden - Fail-safe: als Problem anzeigen."""
+        result = DoctorScanResult(
+            exit_code=0,
+            report=_sample_report(extra_issues={"SOME_UNKNOWN_CODE": 1}),
+        )
+
+        text, _ = handler._format_scan_result(result)
+
+        assert "SOME_UNKNOWN_CODE" in text
+        assert "Wirkt sich auf den Score aus" in text
 
     def test_failure_shows_error_without_apply_button(self, handler):
         result = DoctorScanResult(
@@ -267,3 +308,27 @@ class TestLogBackgroundTaskException:
         handler._log_background_task_exception(task)
 
         handler.logger.error.assert_not_called()
+
+
+class TestShortIssueLabel:
+    def test_short_description_is_returned_unchanged(self):
+        assert _short_issue_label("Kein ISRC.") == "Kein ISRC."
+
+    def test_cuts_at_em_dash(self):
+        text = (
+            "Genre-Wert liegt ausserhalb der Konvention — Tag-Hygiene, "
+            "kein Qualitaetsdefekt (Genre zeigt sich im Player weiterhin)."
+        )
+        result = _short_issue_label(text)
+        assert result == "Genre-Wert liegt ausserhalb der Konvention"
+
+    def test_cuts_at_first_sentence(self):
+        text = "Erster Satz ist die Kernaussage. Zweiter Satz ist nur Zusatzkontext."
+        assert _short_issue_label(text) == "Erster Satz ist die Kernaussage"
+
+    def test_hard_cap_truncates_at_word_boundary_with_ellipsis(self):
+        text = "Wort " * 40  # weit ueber jedem sinnvollen max_len, kein Satzende
+        result = _short_issue_label(text, max_len=20)
+        assert result.endswith("…")
+        assert len(result) <= 21
+        assert not result[:-1].endswith(" ")
