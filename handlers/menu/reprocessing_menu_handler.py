@@ -54,7 +54,7 @@ class ReprocessingMenuHandler:
 
     def _back_to_admin_keyboard(self) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
-            [[InlineKeyboardButton("◀️ Zurück", callback_data="menu:admin")]]
+            [[InlineKeyboardButton("◀️ Zurück", callback_data="menu:admin_group_library")]]
         )
 
     async def show_artist_list(
@@ -96,7 +96,7 @@ class ReprocessingMenuHandler:
             for idx, name in enumerate(artists)
         ]
         buttons.append(
-            [InlineKeyboardButton("◀️ Zurück", callback_data="menu:admin")]
+            [InlineKeyboardButton("◀️ Zurück", callback_data="menu:admin_group_library")]
         )
 
         await query.edit_message_text(
@@ -281,7 +281,7 @@ class ReprocessingMenuHandler:
                 [
                     [
                         InlineKeyboardButton(
-                            "◀️ Zurück zum Menü", callback_data="menu:admin"
+                            "◀️ Zurück zum Menü", callback_data="menu:admin_group_library"
                         )
                     ]
                 ]

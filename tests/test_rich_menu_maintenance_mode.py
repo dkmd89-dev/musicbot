@@ -213,9 +213,21 @@ class TestMaintenanceNoStoreConfigured:
 
 
 class TestMaintenanceMenuItemRegistered:
-    def test_admin_menu_lists_maintenance_item(self, menu_system, mock_context):
+    def test_admin_menu_lists_operations_group(self, menu_system, mock_context):
+        """Admin-Menü-Reorg (UX/Navigation): Wartungsmodus haengt jetzt
+        unter der Gruppe "Bot & Betrieb" (admin_group_operations), nicht
+        mehr direkt auf der Administration-Ebene - siehe Analyse-Bericht
+        Abschnitt F/H."""
         update = _mock_update(ADMIN_ID)
         update.callback_query.data = "menu:admin"
+
+        run_async(menu_system.handle_callback(update, mock_context))
+
+        assert any("Bot & Betrieb" in t for t in last_keyboard_texts(update))
+
+    def test_operations_group_lists_maintenance_item(self, menu_system, mock_context):
+        update = _mock_update(ADMIN_ID)
+        update.callback_query.data = "menu:admin_group_operations"
 
         run_async(menu_system.handle_callback(update, mock_context))
 
