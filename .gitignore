@@ -40,6 +40,14 @@ backups/
 .DS_Store
 Thumbs.db
 
+# Claude Code — lokale, projektfremde Tooling-Erweiterungen
+# (.claude/config.json und .claude/settings.local.json bleiben bewusst
+# getrackt, das sind projektbezogene Einstellungen)
+# .claude/agents ist selbst ein Symlink (kein Verzeichnis) - deshalb ohne
+# abschließenden Slash, sonst matcht das Gitignore-Muster nicht.
+.claude/agents
+.claude/skills/
+
 # Secrets
 .env
 *.key
