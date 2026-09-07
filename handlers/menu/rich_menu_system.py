@@ -412,6 +412,15 @@ class RichMenuSystem:
                 is_action=True,
             )
         )
+        stats_menu.add_child(
+            MenuItem(
+                id="stats_library_overview",
+                title="Library Übersicht",
+                emoji="📚",
+                handler=self._handle_stats_library_overview,
+                is_action=True,
+            )
+        )
 
         # Admin-Menü
         admin_menu = MenuItem(
@@ -2559,6 +2568,18 @@ class RichMenuSystem:
             await self.stats_handler.handle_top_songs(update, context, period="month")
         else:
             await query.edit_message_text("🎵 Lade Top Songs...")
+
+    async def _handle_stats_library_overview(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Phase 3, P1.1 — Library-Zusammensetzung aus dem Health-Report,
+        anders als die übrigen stats_*-Handler keine Play-History."""
+        query = update.callback_query
+        await query.answer()
+        if self.stats_handler:
+            await self.stats_handler.handle_library_overview(update, context)
+        else:
+            await query.edit_message_text("📚 Lade Library-Übersicht...")
 
     async def _handle_stats_top_artists(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE

@@ -248,3 +248,101 @@ class TestHandleLastPlayed:
         assert "Some Title" in sent_text
         assert "Some Artist" in sent_text
         assert "15.01.2026" in sent_text
+
+
+class TestHandleLibraryOverview:
+    """Phase 3, P1.1 — Library-Statistics-Ansicht aus dem Health-Report."""
+
+    def _fake_report(self, **overrides):
+        report = {
+            "scan": {"completed_at": "2026-01-01T00:00:00+00:00"},
+            "statistics": {
+                "total_files": 388,
+                "total_artists": 12,
+                "total_albums": 34,
+                "genre_distribution": {"Pop": 5, "Hip-Hop": 15},
+            },
+            "health": {"score": 98.0, "status": "EXCELLENT"},
+        }
+        report.update(overrides)
+        return report
+
+    def test_missing_report_shows_hint_to_run_scan(self, tmp_path):
+        handler = _make_handler()
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch(
+            "handlers.mugge_statistik_handler.Config.DATA_DIR", tmp_path
+        ):
+            asyncio.run(handler.handle_library_overview(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "kein Library-Health-Report" in sent_text
+        assert "library_health_check.py" in sent_text
+
+    def test_valid_report_shows_counts_genres_and_age(self, tmp_path):
+        handler = _make_handler()
+        report_path = tmp_path / "library_health_report.json"
+        report_path.write_text(
+            json.dumps(self._fake_report()), encoding="utf-8"
+        )
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch(
+            "handlers.mugge_statistik_handler.Config.DATA_DIR", tmp_path
+        ):
+            asyncio.run(handler.handle_library_overview(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "388" in sent_text
+        assert "34" in sent_text
+        assert "12" in sent_text
+        assert "Hip-Hop" in sent_text
+        assert "98.0" in sent_text
+        assert "2026-01-01T00:00:00+00:00" in sent_text  # Report-Alter sichtbar
+
+    def test_corrupt_report_shows_warning_not_crash(self, tmp_path):
+        handler = _make_handler()
+        report_path = tmp_path / "library_health_report.json"
+        report_path.write_text("{not valid json", encoding="utf-8")
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch(
+            "handlers.mugge_statistik_handler.Config.DATA_DIR", tmp_path
+        ):
+            asyncio.run(handler.handle_library_overview(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "unlesbar" in sent_text or "unvollständig" in sent_text
+
+    def test_missing_genre_distribution_key_does_not_crash(self, tmp_path):
+        """Aeltere Reports (vor P1.1) haben noch kein genre_distribution."""
+        handler = _make_handler()
+        report = self._fake_report()
+        del report["statistics"]["genre_distribution"]
+        report_path = tmp_path / "library_health_report.json"
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch(
+            "handlers.mugge_statistik_handler.Config.DATA_DIR", tmp_path
+        ):
+            asyncio.run(handler.handle_library_overview(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "keine Daten" in sent_text

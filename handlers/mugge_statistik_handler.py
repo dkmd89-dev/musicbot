@@ -156,6 +156,34 @@ class StatistikHandler:
         """Hilfsfunktion zum Escapen von Text"""
         return str(text) if text else ""
 
+    def _format_report_age(self, completed_at_iso: str) -> str:
+        """
+        Formatiert das Alter eines Library-Health-Reports relativ zu jetzt
+        (Phase 3, P1.1) — der Report ist eine Momentaufnahme vom letzten
+        Scan, kein Live-Wert; ohne diesen Hinweis könnte eine veraltete
+        Zahl für aktuell gehalten werden.
+        """
+        try:
+            scanned_at = datetime.fromisoformat(completed_at_iso)
+            now = (
+                datetime.now(scanned_at.tzinfo)
+                if scanned_at.tzinfo
+                else datetime.now()
+            )
+            age = now - scanned_at
+            seconds = age.total_seconds()
+            if seconds < 0:
+                relative = "gerade eben"
+            elif seconds < 3600:
+                relative = f"vor {int(seconds // 60)} Min."
+            elif seconds < 86400:
+                relative = f"vor {int(seconds // 3600)} Std."
+            else:
+                relative = f"vor {int(seconds // 86400)} Tagen"
+            return f"{self._escape_text(completed_at_iso)} ({relative})"
+        except (ValueError, TypeError):
+            return self._escape_text(completed_at_iso)
+
     async def _send_processing_message(
         self, update: Update, action: str, nav_user: str
     ):
@@ -270,6 +298,91 @@ class StatistikHandler:
             )
             self.logger.error(
                 f"❌ Fehler in handle_month_review: {str(e)}", exc_info=True
+            )
+
+    async def handle_library_overview(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """
+        Zeigt die Library-Zusammensetzung (Tracks/Albums/Artists/Genre-
+        Verteilung/Health-Score) aus dem zuletzt erzeugten Library-Health-
+        Report (Phase 3, P1.1). Anders als die übrigen Methoden dieser
+        Klasse: keine Play-History, kein Navidrome-User-Bezug — der
+        Health-Report ist library-weit, nicht pro Benutzer.
+        """
+        self.logger.info(f"{EMOJI['statistics']} 📚 Library-Übersicht angefragt")
+
+        reply_target = (
+            update.callback_query.message if update.callback_query else update.message
+        )
+        if not reply_target:
+            self.logger.error("❌ Keine Nachricht zum Antworten für Library-Übersicht")
+            return
+
+        msg = await reply_target.reply_text(
+            f"{EMOJI['processing']} 🔄 Lade Library-Übersicht..."
+        )
+
+        report_path = Config.DATA_DIR / "library_health_report.json"
+
+        try:
+            if not report_path.exists():
+                await msg.edit_text(
+                    f"{EMOJI['warning']} ⚠️ Noch kein Library-Health-Report vorhanden.\n"
+                    f"Zuerst einen Scan starten (scripts/library_health_check.py)."
+                )
+                return
+
+            with open(report_path, "r", encoding="utf-8") as f:
+                report = json.load(f)
+
+            stats = report["statistics"]
+            health = report["health"]
+            esc = self._escape_text
+
+            genre_dist = stats.get("genre_distribution", {})
+            total_genre_hits = sum(genre_dist.values())
+            top_genres = sorted(
+                genre_dist.items(), key=lambda kv: kv[1], reverse=True
+            )[:8]
+            genre_lines = [
+                f"  {esc(name)}: {esc(count)} "
+                f"({(count / total_genre_hits * 100) if total_genre_hits else 0:.0f}%)"
+                for name, count in top_genres
+            ]
+
+            lines = [
+                f"{EMOJI['statistics']} Music Library Übersicht",
+                f"Stand: {self._format_report_age(report['scan']['completed_at'])}",
+                "",
+                f"Tracks:  {esc(stats['total_files'])}",
+                f"Albums:  {esc(stats['total_albums'])}",
+                f"Artists: {esc(stats['total_artists'])}",
+                "",
+                f"Health-Score: {esc(health.get('score'))} ({esc(health.get('status'))})",
+                "",
+                "Genres:" if genre_lines else "Genres: keine Daten",
+                *genre_lines,
+            ]
+
+            await msg.edit_text("\n".join(lines))
+            self.logger.info("✅ Library-Übersicht erfolgreich gesendet")
+
+        except (json.JSONDecodeError, KeyError, OSError) as e:
+            await msg.edit_text(
+                f"{EMOJI['warning']} ⚠️ Health-Report ist unlesbar/unvollständig "
+                f"({self._escape_text(str(e))}). Neuen Scan starten."
+            )
+            self.logger.error(
+                f"❌ Health-Report unlesbar in handle_library_overview: {e}",
+                exc_info=True,
+            )
+        except Exception as e:
+            await msg.edit_text(
+                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}"
+            )
+            self.logger.error(
+                f"❌ Fehler in handle_library_overview: {str(e)}", exc_info=True
             )
 
     async def handle_year_review(

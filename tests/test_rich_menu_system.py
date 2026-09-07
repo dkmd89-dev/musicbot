@@ -357,3 +357,39 @@ class TestAddChildMenuItem:
 
         assert result is False
         assert "orphan" not in menu_system.menu_registry
+
+
+class TestStatsLibraryOverviewMenuItem:
+    """Phase 3, P1.1 — neuer Menüpunkt unter 'stats'."""
+
+    def test_registered_as_child_of_stats_menu(self, menu_system):
+        item = menu_system.menu_registry["stats_library_overview"]
+        stats_menu = menu_system.menu_registry["stats"]
+
+        assert item in stats_menu.children
+        assert item.callback_data == "menu:stats_library_overview"
+
+    def test_delegates_to_stats_handler_when_present(self, menu_system):
+        fake_stats_handler = Mock()
+        fake_stats_handler.handle_library_overview = AsyncMock()
+        menu_system.set_stats_handler(fake_stats_handler)
+
+        update = make_update(12345)
+        context = make_context()
+        asyncio.run(menu_system._handle_stats_library_overview(update, context))
+
+        fake_stats_handler.handle_library_overview.assert_awaited_once_with(
+            update, context
+        )
+
+    def test_shows_placeholder_when_no_stats_handler(self, menu_system):
+        menu_system.stats_handler = None
+        update = make_update(12345)
+
+        asyncio.run(
+            menu_system._handle_stats_library_overview(update, make_context())
+        )
+
+        update.callback_query.edit_message_text.assert_awaited_once()
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Library" in text

@@ -92,3 +92,31 @@ def test_render_text_is_str_and_mentions_counts(tmp_path):
     text = render_text(_report(tmp_path))
     assert "MUSIC LIBRARY HEALTH REPORT" in text
     assert "Files:      2" in text
+
+
+def test_genre_distribution_counts_split_genres(tmp_path):
+    healths = [
+        _fh(tmp_path, "A Artist/Singles/2020 - One.m4a", genre="Pop; Rock"),
+        _fh(tmp_path, "A Artist/Singles/2020 - Two.m4a", genre="Pop"),
+        _fh(tmp_path, "B Artist/Singles/2020 - Three.m4a", genre=""),
+    ]
+    r = build_report_dict(
+        library_root=str(tmp_path),
+        started_at="2026-01-01T00:00:00+00:00",
+        completed_at="2026-01-01T00:00:05+00:00",
+        duration_seconds=5.0,
+        file_healths=healths,
+    )
+    assert r["statistics"]["genre_distribution"] == {"Pop": 2, "Rock": 1}
+
+
+def test_genre_distribution_empty_when_no_genres(tmp_path):
+    healths = [_fh(tmp_path, "A Artist/Singles/2020 - One.m4a", genre="")]
+    r = build_report_dict(
+        library_root=str(tmp_path),
+        started_at="2026-01-01T00:00:00+00:00",
+        completed_at="2026-01-01T00:00:05+00:00",
+        duration_seconds=5.0,
+        file_healths=healths,
+    )
+    assert r["statistics"]["genre_distribution"] == {}
