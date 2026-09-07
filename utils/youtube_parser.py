@@ -210,6 +210,24 @@ def _clean_title_suffixes(title: str) -> str:
     # verhindert Fehltreffer in Woertern wie "Producer"/"Production".
     title = re.sub(r"\s*\bprod\.?\s+\S.*$", "", title, flags=re.I)
 
+    # Live-Fund (Nutzer-Report, echter Testdownload ueber den Test-Bot):
+    # "Die Firma - Die Eine 2005 (Official Video)" ergab nach Bereinigung
+    # des Marketing-Suffix den Titel "Die Eine 2005" statt "Die Eine" -
+    # YouTube-Uploader haengen bei Reuploads aelterer Songs haeufig das
+    # urspruengliche Erscheinungsjahr als freistehendes Suffix an den
+    # Titel an, ohne Klammern. Nur HIER (nach erfolgreichem Artist/Titel-
+    # Split, also nur im Erfolgspfad dieser Funktion - siehe Docstring)
+    # entfernt, NICHT in einer allgemein genutzten Titel-Bereinigung wie
+    # utils/title_cleanup.py::light_title_cleanup() - dort wuerde
+    # dieselbe Regel den bestehenden Charakterisierungsfall
+    # "LOLLAPALOOZA 2026" (tests/test_title_cleanup_pure.py, Jahr ist dort
+    # Bestandteil des eigentlichen Titels, kein Upload-Suffix) faelschlich
+    # kappen. Das Lookbehind "(?<=\S)" verlangt zwingend echten Titelinhalt
+    # VOR der Jahreszahl - ein Titel, der ausschliesslich aus der
+    # Jahreszahl besteht (z.B. "Prince - 1999"), bleibt dadurch
+    # unangetastet.
+    title = re.sub(r"(?<=\S)\s*\(?\s*(?:19|20)\d{2}\s*\)?\s*$", "", title)
+
     # Entferne leere Klammern
     title = re.sub(r"\(\s*\)", "", title)
 
