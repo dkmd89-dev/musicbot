@@ -488,3 +488,19 @@ eigener Check sowohl im Handler als auch im Callback-Dispatcher
 **DRY-RUN gegen Produktion (`--artist 01099`):** 6 would-change (Recording-/
 Release-ID für die Weihnachtslied-Singles), 10 `SKIPPED` (MB kein sicherer
 Match für die Album-Tracks). Kein Raten.
+
+**Report-Persistenz (Phase 3, Doctor-Report-Persistence, implementiert):**
+`doctor_runner.py::run_health_scan()` übergibt dem Subprozess denselben
+`--json`-Pfad, den auch die CLI selbst standardmäßig verwendet und den
+`handlers/mugge_statistik_handler.py::handle_library_overview()` bereits
+liest: `Config.DATA_DIR / "library_health_report.json"`. Kein zweiter
+Report-Mechanismus — Telegram bekommt weiterhin nur die gekürzte
+Zusammenfassung, die vollständige JSON-Datei bleibt danach unter diesem
+Pfad für Statistics-Ansicht/forensische Auswertung erhalten (vorher wurde
+sie in ein sich selbst löschendes Temp-Verzeichnis geschrieben und ging
+nach jedem Lauf verloren). Der gesamte Ablauf (START → SCAN → REPORT →
+SAVE → SUMMARY) wird unter dem Log-Präfix `🏥 [DOCTOR]` in `bot.log`
+protokolliert — u. a. „Health-Scan gestartet", „Health-Scan abgeschlossen",
+„Report gespeichert: <Pfad>", „Score: X | Files: Y | Issues: Z". Bei einem
+Fehler (Exit-Code ≠ 0, Timeout, fehlende/kaputte JSON-Datei) wird
+ausschließlich der jeweilige Fehler geloggt, nie eine der Erfolgsmeldungen.
