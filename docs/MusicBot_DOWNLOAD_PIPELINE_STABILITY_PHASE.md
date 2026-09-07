@@ -3,12 +3,47 @@
 **Dokument:** `MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE.md`  
 **Phase:** Stability Hardening  
 **Scope:** Download Pipeline + Duplicate Detection  
-**Status:** PLANNED  
+**Status:** CLOSED (nachträglich dokumentiert, siehe Abschluss-Hinweis unten)  
 **Architecture Freeze:** APPROVED  
 **Basis:** `MusicBot_ENGINEERING_BASELINE_v6.md` (ursprünglich v5, seither per
 Post-Baseline-v5 Health & Risk Audit auf v6 aktualisiert; die für diese
 Phase relevanten Punkte — DL-03/DL-05/DUP-05 — sind dort unverändert als
 zurückgestellt/akzeptiert bestätigt)
+
+> **ℹ️ Abschluss-Hinweis (Dokumentations-Konsolidierung, 2026-09-07):** Dieses
+> Umbrella-Dokument selbst wurde nie formal auf `COMPLETED`/`CLOSED` umgestellt
+> (siehe eigener Abschnitt 38 „Dokumentation nach Abschluss" unten), obwohl die
+> darin beauftragten Untersuchungen über mehrere Folgedokumente hinweg
+> tatsächlich abgeschlossen wurden. Nachträglich anhand des Repository-Standes
+> festgestellt:
+>
+> - **Alle im Scope benannten Bereiche wurden auditiert und mit dediziertem
+>   Abschlussdokument geschlossen:** `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md`
+>   (Read-Only Deep Audit, Ursprung DL-01/02/04/06, PL-01, RES-01/02) über
+>   `PHASE1_PLAN.md` (Priorisierung) bis zu den Einzel-Finding-Audits
+>   `PHASE2C_DL02`, `PHASE2D_DL01`, `PHASE2G_DL06`, `PHASE2I_TEST_ENVIRONMENT`,
+>   `PHASE2J_DUP03`, `PHASE2K_DL08`, `PHASE2L_DUP04`, `PHASE2M_DUP06`,
+>   `PHASE2N_RES01` (alle `docs/archive/`, siehe `docs/INDEX.md` Abschnitt
+>   „Download Pipeline Stability Phase"). Weitere, zeitlich spätere
+>   Cancellation-/Cleanup-Findings zu diesem Scope (Hard-Cancel-`.part`-Datei,
+>   `asyncio.CancelledError`-Handling, Downloader-Fehlertaxonomie) wurden
+>   danach im laufenden `docs/FINDINGS_INDEX.md` weitergeführt und dort
+>   ebenfalls CLOSED dokumentiert.
+> - **Ein Punkt aus diesem Scope bleibt bewusst offen, aber explizit als
+>   akzeptiertes Risiko klassifiziert** (erfüllt damit die in Abschnitt 39
+>   selbst formulierte Bedingung „bekannte P2-Risiken verifiziert" statt
+>   „behoben"): Hard-Cancel während FFmpeg-Postprocessing wird nicht erkannt
+>   — `OPEN (akzeptiert)`, P3, siehe `docs/FINDINGS_INDEX.md`. Kein weiterer
+>   Untersuchungsbedarf geplant.
+> - **Effektives Abschlussdatum** (letzte thematisch zugehörige
+>   Finding-Schließung): 2026-09-03. Formal in diesem Dokument nachgezogen:
+>   2026-09-07.
+> - Die historischen `PLANNED`/Zwischenstand-Angaben **innerhalb** der oben
+>   genannten Audit-/Snapshot-Dokumente in `docs/archive/` bleiben unverändert
+>   — nur dieses Umbrella-Dokument wird hier aktualisiert.
+> - Aktueller Teststand: siehe `docs/FINDINGS_INDEX.md` / `README.md`, nicht
+>   die im Fließtext unten zitierten historischen Zahlen (z. B. „1123 Tests")
+>   — die bleiben als Stand zum Zeitpunkt der Phasenplanung erhalten.
 
 ---
 
