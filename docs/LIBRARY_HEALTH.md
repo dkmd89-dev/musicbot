@@ -2,7 +2,8 @@
 
 `scripts/library_health_check.py` analysiert die konfigurierte Music-Library
 **vollständig read-only** und erzeugt einen strukturierten Health-Report
-(JSON + human-readable Text).
+(JSON + human-readable Text + Markdown-Zusammenfassung), abgeglichen mit
+einer persistenten Findings-Review-Registry (Abschnitt 1a).
 
 > Frage, die der Scanner beantwortet: *„Wie gesund ist meine Musikbibliothek
 > und welche Dateien/Alben/Artists brauchen Aufmerksamkeit?"*
@@ -28,7 +29,8 @@ python scripts/library_health_check.py --library /pfad/zur/library
 # Report-Ziele explizit
 python scripts/library_health_check.py \
     --json  /pfad/report.json \
-    --output /pfad/report.txt
+    --output /pfad/report.txt \
+    --summary /pfad/summary.md
 
 python scripts/library_health_check.py --verbose        # Pro-Datei-DEBUG-Log
 python scripts/library_health_check.py --fail-on-error   # Exit 1 bei ERROR/CRITICAL
@@ -41,9 +43,25 @@ Output-File — weiterhin vollständig read-only) und meldet
 `LOUDNESS_OFF_TARGET`. Dekodiert dafür jede Datei komplett → deutlich
 langsamer (Größenordnung Minuten für einige hundert Dateien).
 
-**Default-Report-Pfade:** `<BASE_DIR>/cache/data/library_health_report.json`
-und `…/library_health_report.txt` (beide außerhalb der Library, `cache/` ist
-git-ignoriert).
+**Default-Report-Pfade:** `<BASE_DIR>/cache/data/library_health_report.json`,
+`…/library_health_report.txt`, `…/library_health_summary.md` und
+`…/library_health_findings.json` (alle vier außerhalb der Library, `cache/`
+ist git-ignoriert).
+
+**Markdown-Zusammenfassung (`--summary`):** dritter, menschlich gut
+lesbarer Output neben JSON/Text — für schnellen Überblick ohne den
+kompletten Text-Report lesen zu müssen (Score, Gesamtbild, alle
+CRITICAL/ERROR-Befunde im Detail, WARNINGs nach Issue-Code gruppiert,
+Verdachtsfälle/Confidence-Befunde separat ausgewiesen, INFO-Codes als
+aggregierte Tabelle, Top-5-Genres, priorisierte Handlungsempfehlung).
+Wird von `render_summary_markdown(report: dict)` in
+`services/library_health/report.py` **rein aus dem bereits fertigen
+Report-Dict gerendert** — keine eigene Scan-Logik, keine zusätzlichen
+Library-Zugriffe, identische Read-only-Garantie wie JSON/Text-Report
+(siehe Abschnitt 2). Enthält niemals hartkodierte Library-Daten — jede
+Zahl/jeder Name kommt ausschließlich aus dem übergebenen Report, daher bei
+jeder Library automatisch korrekt (siehe `tests/test_library_health_report.py`,
+Testklassen `TestRenderSummaryMarkdown*`).
 
 Es gibt **keine** Mutations-Optionen. `--fix` / `--repair` / `--delete` /
 `--execute` / `--apply` werden mit Fehler und Exit-Code 2 abgelehnt.
@@ -59,6 +77,70 @@ Es gibt **keine** Mutations-Optionen. `--fix` / `--repair` / `--delete` /
 
 ---
 
+## 1a. Findings-Review-System (persistent, `services/library_health/findings.py`)
+
+Ein **Finding** ist ein konkreter, wiedererkennbarer Befund eines Scans
+(z. B. "ALBUM_TRACK_GAP bei 2Pac / 1997 - R U Still Down") — nicht zu
+verwechseln mit einem Issue-Code allein, der pro Scan beliebig oft mit
+unterschiedlicher Identität auftreten kann.
+
+**Lifecycle-Status:**
+
+| Status | Bedeutung |
+|---|---|
+| `OPEN` | aktuell offen, noch nicht abschließend bewertet |
+| `RESOLVED` | der Nutzer hat die Behebung bestätigt (z. B. Cover ergänzt) |
+| `FALSE_POSITIVE` | korrekt erkannt, aber für diese Library kein zu behebendes Problem |
+| `RESOLVED_BY_SCAN` | technischer Zwischenzustand: der Scanner erkennt das Finding nicht mehr, aber niemand hat das je bestätigt — zählt NICHT als "offen", ist aber auch kein bestätigtes `RESOLVED` |
+
+**Review-CLI:**
+
+```bash
+python scripts/library_health_review.py
+python scripts/library_health_review.py --registry /pfad/findings.json --reviewer "robin"
+```
+
+Zeigt alle offenen Findings nacheinander, pro Finding:
+`[R]esolve` / `[F]alse Positive` / `[S]kip` / `[Q]uit` (mit optionaler
+Notiz bei R/F). Jede Entscheidung wird sofort atomar gespeichert — ein
+Abbruch mitten in der Sitzung verliert keine bereits getroffenen
+Bewertungen.
+
+**Persistenz:** `<BASE_DIR>/cache/data/library_health_findings.json`
+(Default, override via `--findings-registry` bzw. `--registry`), außerhalb
+der Library. Bei kaputtem JSON/unerwartetem Schema bricht der Zugriff
+**laut** mit `FindingsRegistryError` ab statt die Datei still zu
+überschreiben — die Review-Historie ist nicht neu generierbar und wird
+deshalb nie stillschweigend verworfen.
+
+**Stabile Finding-ID:** deterministischer SHA-256 über normalisierte
+Identitätsfelder (Issue-Code, Scope, Artist/Titel bzw. Artist/Album je nach
+Scope), NICHT über Reihenfolge/Zeitstempel/Health-Score/Pfad allein — eine
+reine Umbenennung durch eine spätere Reparatur ändert die Identität eines
+Datei-Findings mit vorhandenem Artist+Titel nicht (Details:
+`generate_finding_id()`-Docstring).
+
+**Reopening:** verschwindet ein `RESOLVED`- oder `RESOLVED_BY_SCAN`-Finding
+nicht dauerhaft, sondern taucht bei einem späteren Scan mit identischer
+Finding-ID erneut auf, wird es automatisch wieder auf `OPEN` gesetzt
+(Regression) — ein `FALSE_POSITIVE`-Finding dagegen bleibt bei
+Wiedererkennung bewusst `FALSE_POSITIVE` (identischer, bereits akzeptierter
+Sachverhalt). Ändert sich die fachliche Identität wirklich (z. B. Album
+umbenannt in einer Weise, die Artist+Album/Titel betrifft), entsteht ein
+neues, eigenständiges Finding.
+
+**Health Score bleibt unberührt:** Review/Acknowledge verändert
+ausschließlich die Findings-Registry, niemals `report["health"]["score"]`.
+Score und Findings-Status beantworten bewusst unterschiedliche Fragen ("wie
+gesund ist die Library tatsächlich?" vs. "welche Befunde wurden bereits
+geprüft?") und dürfen nicht vermischt werden.
+
+**Zukunftssicherheit:** ein künftiger Telegram-Review-Handler würde
+dieselbe `FindingsRegistry`-API aufrufen wie `scripts/library_health_review.py`
+— niemals die JSON-Datei direkt manipulieren.
+
+---
+
 ## 2. Read-only-Garantie (Prompt Abschnitt 2/33)
 
 | Schutz | Umsetzung |
@@ -69,6 +151,7 @@ Es gibt **keine** Mutations-Optionen. `--fix` / `--repair` / `--delete` /
 | Reine Reader | `mutagen.MP4(path)` ohne `.save()`, `ffprobe` (kein Output-File), `PIL.Image.open(BytesIO(...))`. |
 | Symlinks | Discovery folgt keinem Symlink (Datei oder Zwischenverzeichnis). |
 | Technischer Nachweis | `test_run_scan_does_not_mutate_library` / `test_cli_subprocess_does_not_mutate_library`: SHA256 + `mtime_ns` + Größe + relative Pfade **vorher == nachher**, inkl. einer bewusst defekten Datei. |
+| Findings-Registry/-Review | `services/library_health/findings.py` schreibt ausschließlich die Registry-Datei außerhalb der Library (kein Rename/Move/Delete/Tag-/Cover-Schreiben/Re-Encode) — `test_real_review_action_does_not_touch_library_files` weist das auch für einen echten Review-Vorgang technisch nach. |
 
 ---
 
@@ -347,5 +430,7 @@ fließen nicht ein. Grundlage für die Library-Statistics-Ansicht (Phase 3, P1.1
 | `tests/test_library_health_group_analysis.py` | Album-Gap/Dublette/Disc, Artist-Varianten, Duplicate EXACT/RECORDING/SUSPECTED, DUP-03 (Remix ≠ Duplikat) |
 | `tests/test_library_health_scoring.py` | feste Gewichts-Tabelle, INFO ohne Wirkung, Clamp, Determinismus, Album-/Artist-/Library-Aggregation, Deckelung, Status-Bänder |
 | `tests/test_library_health_issues.py` | Register-Vollständigkeit/-Stabilität |
-| `tests/test_library_health_report.py` | Schema, Sortierung, Determinismus, Statistik-Buckets |
-| `tests/test_library_health_readonly_safety.py` | **SHA256/mtime/size/Pfade vorher==nachher**, CLI-Subprozess, Import-Graph, abgelehnte Mutations-Flags |
+| `tests/test_library_health_report.py` | Schema, Sortierung, Determinismus, Statistik-Buckets, `render_summary_markdown()` (Grundstruktur, ERROR/WARNING/INFO-Darstellung, Confidence-Trennung, Top-5-Genres, leerer Report, Determinismus, keine Hardcodes, Findings-Statusabschnitte + Rückwärtskompatibilität ohne Findings) |
+| `tests/test_library_health_findings.py` | Finding-ID (stabil/reihenfolgeunabhängig/Unicode), Lifecycle (OPEN/RESOLVED/FALSE_POSITIVE/RESOLVED_BY_SCAN), Merge über mehrere Scans (Reopen, FALSE_POSITIVE-Stabilität, Identitätswechsel), Persistenz/Korruptions-Recovery, Score-Unabhängigkeit, Determinismus |
+| `tests/test_library_health_review_cli.py` | Interaktive Review-CLI (Resolve/False-Positive/Skip/Quit, Notizen, Default-Reviewer, korrupte Registry) |
+| `tests/test_library_health_readonly_safety.py` | **SHA256/mtime/size/Pfade vorher==nachher**, CLI-Subprozess (inkl. Findings-Registry), Import-Graph, abgelehnte Mutations-Flags, echter Review-Vorgang ohne Library-Mutation |

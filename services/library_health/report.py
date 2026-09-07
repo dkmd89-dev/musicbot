@@ -17,6 +17,7 @@ from collections import Counter
 from typing import Iterable
 
 from .file_analysis import _split_genres
+from .issues import REGISTRY
 from .models import (
     SCANNER_VERSION,
     SCHEMA_VERSION,
@@ -259,4 +260,509 @@ def render_text(report: dict, *, max_issues: int = 200) -> str:
     if len(report["issues"]) > max_issues:
         add(f"... {len(report['issues']) - max_issues} weitere Issues (siehe JSON-Report)")
     add("")
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Markdown-Zusammenfassung (library_health_summary.md)
+# ─────────────────────────────────────────────────────────────────────────
+#
+# Reines Rendering eines bereits fertigen `report`-Dicts (kein Scan, keine
+# I/O, keine Fachlogik) - identisches Prinzip wie render_text() oben.
+# Enthaelt bewusst KEINE aktuellen Library-Werte (Kuenstlernamen, Pfade,
+# Zahlen) - alles wird ausschliesslich aus dem uebergebenen `report`
+# gelesen, damit dieselbe Funktion bei jeder beliebigen Library ein
+# korrektes Ergebnis liefert (siehe Tests: Determinismus + "keine
+# Hardcodes").
+
+_SEVERITY_RECOMMENDATION: dict[str, str] = {
+    "CRITICAL": "sofort prüfen",
+    "ERROR": "zeitnah korrigieren",
+    "WARNING": "prüfen / validieren",
+    "INFO": "optionale Datenanreicherung",
+}
+
+# Kurze, stabile Zusatz-Hinweise fuer einzelne, bereits im Registry
+# etablierte Issue-Codes (services/library_health/issues.py) - keine
+# aktuellen Befunde, nur generische Handlungsempfehlung pro Code-Klasse.
+# Ein Code ohne Eintrag hier faellt auf die reine Severity-Empfehlung
+# zurueck (_SEVERITY_RECOMMENDATION) - kein Crash, keine Sonderbehandlung
+# noetig.
+_CODE_RECOMMENDATION: dict[str, str] = {
+    "ALBUM_TRACK_GAP": (
+        "Review erforderlich - fehlende Tracknummern können auch "
+        "beabsichtigt sein (z. B. kuratierte Auswahl, Vinyl-Rip)."
+    ),
+    "ALBUM_DUPLICATE_TRACK_NUMBER": (
+        "Handlungsbedarf - Tracknummern-Konflikt im Album prüfen und "
+        "korrigieren."
+    ),
+    "ARTWORK_MISSING": "Cover-Reparatur prüfen (z. B. über Library Repair).",
+    "ARTWORK_INVALID": (
+        "Handlungsbedarf - eingebettetes Cover ist beschädigt/nicht "
+        "dekodierbar."
+    ),
+    "DUPLICATE_EXACT": (
+        "Handlungsbedarf - byte-identische Datei, Duplikat-Bereinigung "
+        "prüfen."
+    ),
+    "DUPLICATE_RECORDING": (
+        "Review erforderlich - keine automatische Löschung empfehlen, "
+        "manuell prüfen."
+    ),
+    "DUPLICATE_SUSPECTED": (
+        "Verdachtsfall - reine Beobachtung, keine automatische Aktion."
+    ),
+}
+
+_MD_ESCAPE_CHARS = ("\\", "*", "_", "`", "[", "]", "|")
+
+
+def _md_escape(text: object) -> str:
+    """Neutralisiert Markdown-Sonderzeichen in freiem Text (Artist/Album/
+    Titel/Message) - verhindert, dass z.B. ein '*' im Artist-Namen als
+    Formatierung interpretiert wird. Unicode bleibt unveraendert."""
+    if text is None:
+        return ""
+    s = str(text)
+    for ch in _MD_ESCAPE_CHARS:
+        s = s.replace(ch, "\\" + ch)
+    return s.replace("\n", " ").replace("\r", " ")
+
+
+def _md_code(text: object) -> str:
+    """Wrappt Pfade/Dateinamen als Inline-Code - nutzt einen breiteren
+    Backtick-Zaun, falls der Text selbst ein Backtick enthaelt."""
+    if text is None:
+        return "`-`"
+    s = str(text).replace("\n", " ").replace("\r", " ")
+    fence = "``" if "`" in s else "`"
+    return f"{fence}{s}{fence}"
+
+
+def _format_duration(seconds: object) -> str:
+    if seconds is None:
+        return "-"
+    try:
+        seconds = float(seconds)
+    except (TypeError, ValueError):
+        return "-"
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, rest = divmod(int(round(seconds)), 60)
+    return f"{minutes}m {rest}s"
+
+
+def _format_score(score: object) -> str:
+    if score is None:
+        return "–"
+    try:
+        return f"{float(score):.1f}"
+    except (TypeError, ValueError):
+        return "–"
+
+
+def _issue_recommendation(code: str, severity: str) -> str:
+    return _CODE_RECOMMENDATION.get(code) or _SEVERITY_RECOMMENDATION.get(
+        severity, "prüfen"
+    )
+
+
+def _issue_description(code: str) -> str:
+    """Bedeutungstext fuer INFO-Aggregation - kommt aus der bestehenden
+    Issue-Registry (Single Source of Truth), niemals neu erfunden. Nur
+    fuer der Registry unbekannte Codes ein stabiler, generischer
+    Fallback-Text (kein Rate-Text, keine aktuellen Befunde)."""
+    spec = REGISTRY.get(code)
+    if spec is not None:
+        return spec.description
+    return "Keine Beschreibung in der Issue-Registry hinterlegt."
+
+
+def _group_issues_by_code(issues: list[dict]) -> "dict[str, list[dict]]":
+    """Erhaelt die bereits im Report etablierte Reihenfolge (Severity
+    absteigend, dann Code, dann Pfad) - da alle Issues eines Codes durch
+    diese Sortierung bereits zusammenhaengend sind, ergibt ein einfacher
+    Insertion-Order-Dict automatisch stabil sortierte Gruppen."""
+    grouped: "dict[str, list[dict]]" = {}
+    for issue in issues:
+        grouped.setdefault(issue.get("issue_code", "UNKNOWN"), []).append(issue)
+    return grouped
+
+
+def _render_issue_detail(issue: dict) -> list[str]:
+    """Rendert einen einzelnen Issue-Fund als Detail-Block (Abschnitt 5
+    der Aufgabe: Artist/Album/Titel/Pfad/Message/Details/Related Files/
+    Confidence) - robust gegenueber fehlenden optionalen Feldern."""
+    out: list[str] = []
+    if issue.get("artist"):
+        out.append(f"**Artist:** {_md_escape(issue['artist'])}")
+    if issue.get("album"):
+        out.append(f"**Album:** {_md_escape(issue['album'])}")
+    if issue.get("title"):
+        out.append(f"**Titel:** {_md_escape(issue['title'])}")
+    if issue.get("path"):
+        out.append(f"**Datei:** {_md_code(issue['path'])}")
+    related = issue.get("related_files") or []
+    if related:
+        out.append("")
+        out.append("Betroffene Dateien:")
+        out.append("")
+        for rel in related:
+            out.append(f"- {_md_code(rel)}")
+    out.append("")
+    if issue.get("message"):
+        out.append(f"**Problem:** {_md_escape(issue['message'])}")
+    details = issue.get("details") or {}
+    if details:
+        rendered_details = ", ".join(
+            f"{_md_escape(k)}: {_md_escape(v)}" for k, v in sorted(details.items())
+        )
+        out.append(f"**Details:** {rendered_details}")
+    if issue.get("confidence"):
+        out.append(f"**Confidence-Hinweis:** {_md_escape(issue['confidence'])}")
+    out.append(
+        f"**Bewertung:** {_issue_recommendation(issue.get('issue_code', ''), issue.get('severity', ''))}"
+    )
+    return out
+
+
+def _render_code_groups(
+    grouped: "dict[str, list[dict]]", *, max_examples_per_code: int
+) -> list[str]:
+    out: list[str] = []
+    for code, code_issues in grouped.items():
+        out.append(f"### {code} ({len(code_issues)} Befund(e))")
+        out.append("")
+        shown = code_issues[:max_examples_per_code]
+        for idx, issue in enumerate(shown):
+            out.extend(_render_issue_detail(issue))
+            if idx < len(shown) - 1:
+                out.append("")
+                out.append("---")
+                out.append("")
+        remaining = len(code_issues) - len(shown)
+        if remaining > 0:
+            out.append("")
+            out.append(
+                f"... {remaining} weitere {code}-Befund(e) (siehe JSON-Report)."
+            )
+        out.append("")
+    return out
+
+
+# Statuswerte, die ein annotiertes Issue tragen kann (siehe
+# services/library_health/findings.py::annotate_issues_with_findings()).
+# Hier bewusst nicht aus findings.py importiert, um report.py frei von
+# einer Abhaengigkeit auf das Findings-Schema zu halten (report.py bleibt
+# reines Rendering, kennt nur die additiven String-Felder auf dem Issue-
+# Dict) - beide Module muessen bei einer kuenftigen Statuswert-Aenderung
+# gemeinsam aktualisiert werden.
+_FINDING_STATUS_RESOLVED = "RESOLVED"
+_FINDING_STATUS_FALSE_POSITIVE = "FALSE_POSITIVE"
+
+
+def _split_issues_by_finding_status(
+    issues: list[dict],
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Trennt Issues nach `finding_status` in (offen, behoben, false_positive).
+
+    Ein Issue OHNE `finding_status`-Feld gilt als offen - das ist der
+    Normalfall fuer jeden Report, der (noch) keine Findings-Registry-
+    Integration durchlaufen hat (siehe CLI), und macht render_summary_markdown()
+    dadurch byte-kompatibel zum Verhalten vor Einfuehrung des
+    Findings-Systems."""
+    open_: list[dict] = []
+    resolved: list[dict] = []
+    false_positive: list[dict] = []
+    for issue in issues:
+        status = issue.get("finding_status")
+        if status == _FINDING_STATUS_RESOLVED:
+            resolved.append(issue)
+        elif status == _FINDING_STATUS_FALSE_POSITIVE:
+            false_positive.append(issue)
+        else:
+            open_.append(issue)
+    return open_, resolved, false_positive
+
+
+def render_summary_markdown(report: dict, *, max_examples_per_code: int = 20) -> str:
+    """Rendert eine menschlich lesbare Markdown-Zusammenfassung aus einem
+    bereits fertigen Health-Report-Dict (siehe build_report_dict()).
+
+    Reines Rendering, keine Scan-Logik, keine I/O - identisches Prinzip
+    wie render_text(). Alle Werte kommen ausschliesslich aus `report`,
+    keine aktuellen Library-Werte sind hier hardcodiert (siehe Modul-
+    Docstring dieses Abschnitts).
+    """
+    scan = report.get("scan") or {}
+    health = report.get("health") or {}
+    library = report.get("library") or {}
+    stats = report.get("statistics") or {}
+    issues = report.get("issues") or []
+    sev_counts = stats.get("issues_by_severity") or {}
+
+    # Findings-Review-Integration (siehe services/library_health/findings.py):
+    # report["findings"] existiert nur, wenn der Aufrufer (CLI) die Issues
+    # zuvor per annotate_issues_with_findings() mit "finding_status"
+    # anreichert hat. Fehlt dieses Feld komplett (z.B. alle bisherigen
+    # Tests/Aufrufer dieser Funktion, oder ein Report ohne Findings-
+    # Integration), verhaelt sich diese Funktion BYTE-IDENTISCH zum
+    # bisherigen Stand: open_issues == issues, keine der neuen
+    # Status-Sektionen wird gerendert (siehe _split_issues_by_finding_status()).
+    findings_meta = report.get("findings")
+    open_issues, resolved_issues, false_positive_issues = (
+        _split_issues_by_finding_status(issues)
+    )
+
+    lines: list[str] = []
+    add = lines.append
+
+    add("# Library Health – Zusammenfassung")
+    add("")
+    add(f"**Scan:** {scan.get('started_at', '-')} → {scan.get('completed_at', '-')}")
+    add(f"**Dauer:** {_format_duration(scan.get('duration_seconds'))}")
+    add("")
+    add(
+        f"**Score:** {_format_score(health.get('score'))} / 100 — "
+        f"{health.get('status', 'UNSCORED')}"
+    )
+    add("")
+    add(f"**Dateien:** {library.get('files', stats.get('total_files', 0))}")
+    add(f"**Artists:** {library.get('artists', stats.get('total_artists', 0))}")
+    add(f"**Alben:** {library.get('albums', stats.get('total_albums', 0))}")
+    add("")
+
+    add("## Gesamtbild")
+    add("")
+    add(f"- {stats.get('healthy_files', 0)} healthy")
+    add(f"- {sev_counts.get('CRITICAL', 0)} critical")
+    add(f"- {sev_counts.get('ERROR', 0)} error")
+    add(f"- {sev_counts.get('WARNING', 0)} warnings")
+    add(f"- {sev_counts.get('INFO', 0)} info")
+    dup_kinds = stats.get("duplicate_groups_by_kind") or {}
+    if stats.get("duplicate_groups"):
+        add(
+            f"- {stats.get('duplicate_groups', 0)} Duplikat-Gruppen "
+            f"(exact {dup_kinds.get('exact', 0)}, "
+            f"recording {dup_kinds.get('recording', 0)}, "
+            f"suspected {dup_kinds.get('suspected', 0)})"
+        )
+    add("")
+
+    if findings_meta:
+        add("## 📋 Befundstatus")
+        add("")
+        add("| Status | Anzahl |")
+        add("|---|---:|")
+        add(f"| 🔴 Offen | {len(open_issues)} |")
+        add(f"| 🟢 Behoben | {len(resolved_issues)} |")
+        add(f"| ⚪ False Positive | {len(false_positive_issues)} |")
+        add("")
+
+    # ── Buckets bestimmen (Abschnitt 6/7 der Aufgabe: dynamisch, nicht
+    # per "if issue_code == ..."). Ein Code landet in "confidence", sobald
+    # MINDESTENS ein OFFENES Issue dieses Codes ein confidence-Feld
+    # traegt - verhindert, dass derselbe Code je nach Einzelinstanz in
+    # zwei verschiedenen Abschnitten auftaucht. Ab hier wird bewusst nur
+    # noch mit `open_issues` gearbeitet (Abschnitt 15/17 der Aufgabe:
+    # bereits bewertete Befunde bekommen eigene, kompakte Abschnitte
+    # weiter unten statt hier erneut als "zu bearbeiten" aufzutauchen) -
+    # ohne Findings-Integration ist open_issues == issues, also identisch
+    # zum bisherigen Verhalten.
+    codes_with_confidence = {
+        i.get("issue_code") for i in open_issues if i.get("confidence")
+    }
+
+    errors: list[dict] = []
+    confidence_issues: list[dict] = []
+    warnings: list[dict] = []
+    info_issues: list[dict] = []
+    for issue in open_issues:
+        sev = issue.get("severity")
+        code = issue.get("issue_code")
+        if sev in ("CRITICAL", "ERROR"):
+            errors.append(issue)
+        elif code in codes_with_confidence:
+            confidence_issues.append(issue)
+        elif sev == "WARNING":
+            warnings.append(issue)
+        else:
+            info_issues.append(issue)
+
+    if errors:
+        add("## 🔴 Offene Fehler" if findings_meta else "## 🔴 Fehler")
+        add("")
+        lines.extend(
+            _render_code_groups(
+                _group_issues_by_code(errors),
+                max_examples_per_code=max_examples_per_code,
+            )
+        )
+
+    if warnings:
+        add("## 🟠 Offene Warnungen" if findings_meta else "## 🟠 Warnungen")
+        add("")
+        lines.extend(
+            _render_code_groups(
+                _group_issues_by_code(warnings),
+                max_examples_per_code=max_examples_per_code,
+            )
+        )
+
+    if confidence_issues:
+        add(
+            "## 🔎 Offene Vermutete / Confidence-Befunde"
+            if findings_meta
+            else "## 🔎 Vermutete / Confidence-Befunde"
+        )
+        add("")
+        add(
+            "Keine gesicherten Fehler - reine Beobachtungen mit "
+            "Unsicherheit, keine automatische Aktion empfohlen."
+        )
+        add("")
+        lines.extend(
+            _render_code_groups(
+                _group_issues_by_code(confidence_issues),
+                max_examples_per_code=max_examples_per_code,
+            )
+        )
+
+    if info_issues:
+        add("## ℹ️ INFO / Datenanreicherung")
+        add("")
+        add("| Issue | Anzahl | Bedeutung |")
+        add("|---|---:|---|")
+        info_grouped = _group_issues_by_code(info_issues)
+        for code, code_issues in sorted(
+            info_grouped.items(), key=lambda kv: (-len(kv[1]), kv[0])
+        ):
+            add(
+                f"| {_md_code(code)} | {len(code_issues)} | "
+                f"{_md_escape(_issue_description(code))} |"
+            )
+        add("")
+
+    if resolved_issues:
+        add("## 🟢 Behobene Befunde")
+        add("")
+        add("| Issue | Anzahl | Zuletzt geprüft |")
+        add("|---|---:|---|")
+        for code, code_issues in sorted(
+            _group_issues_by_code(resolved_issues).items(),
+            key=lambda kv: (-len(kv[1]), kv[0]),
+        ):
+            reviewed_at = next(
+                (i.get("finding_reviewed_at") for i in code_issues if i.get("finding_reviewed_at")),
+                None,
+            )
+            add(f"| {_md_code(code)} | {len(code_issues)} | {_md_escape(reviewed_at or '-')} |")
+        add("")
+
+    if false_positive_issues:
+        add("## ⚪ False Positives")
+        add("")
+        add("| Issue | Anzahl | Notiz |")
+        add("|---|---:|---|")
+        for code, code_issues in sorted(
+            _group_issues_by_code(false_positive_issues).items(),
+            key=lambda kv: (-len(kv[1]), kv[0]),
+        ):
+            note = next(
+                (i.get("finding_review_note") for i in code_issues if i.get("finding_review_note")),
+                None,
+            )
+            add(f"| {_md_code(code)} | {len(code_issues)} | {_md_escape(note or '-')} |")
+        add("")
+
+    genre_distribution = stats.get("genre_distribution") or {}
+    if genre_distribution:
+        top_genres = sorted(
+            genre_distribution.items(), key=lambda kv: (-kv[1], kv[0])
+        )[:5]
+        add("## 🎵 Top 5 Genres")
+        add("")
+        for idx, (genre, count) in enumerate(top_genres, start=1):
+            add(f"{idx}. {_md_escape(genre)} — {count}")
+        add("")
+
+    add("## 📋 Priorität / Empfehlung")
+    add("")
+    priority_tiers = [
+        (
+            "CRITICAL",
+            [i for i in errors if i.get("severity") == "CRITICAL"],
+            "sofort prüfen",
+        ),
+        (
+            "ERROR",
+            [i for i in errors if i.get("severity") == "ERROR"],
+            "zeitnah korrigieren",
+        ),
+        ("WARNING", warnings, "prüfen / validieren"),
+        (
+            "VERDACHTSFALL",
+            confidence_issues,
+            "manuelle Prüfung, keine automatische Aktion",
+        ),
+        ("INFO", info_issues, "optionale Datenanreicherung"),
+    ]
+    priority_lines = []
+    for label, tier_issues, hint in priority_tiers:
+        if not tier_issues:
+            continue
+        codes = sorted({i.get("issue_code", "?") for i in tier_issues})
+        priority_lines.append(
+            f"{label}: {hint} ({len(tier_issues)} Befund(e): {', '.join(codes)})"
+        )
+    if priority_lines:
+        for idx, line in enumerate(priority_lines, start=1):
+            add(f"{idx}. {line}")
+    else:
+        add("Keine dringenden Maßnahmen erforderlich.")
+    add("")
+
+    add("## Fazit")
+    add("")
+    total_critical = sev_counts.get("CRITICAL", 0)
+    total_error = sev_counts.get("ERROR", 0)
+    total_warning = sev_counts.get("WARNING", 0)
+    total_info = sev_counts.get("INFO", 0)
+    status = health.get("status", "UNSCORED")
+    score_text = _format_score(health.get("score"))
+    if total_critical or total_error:
+        fazit = (
+            f"Die Library befindet sich in einem {status}-Zustand "
+            f"(Score {score_text}/100) mit {total_critical} kritischen und "
+            f"{total_error} Fehler-Befunden, die Handlungsbedarf anzeigen."
+        )
+    elif total_warning or confidence_issues:
+        fazit = (
+            f"Die Library befindet sich in einem {status}-Zustand "
+            f"(Score {score_text}/100). Keine kritischen Fehler, aber "
+            f"{total_warning} Warnungen"
+            + (f" und {len(confidence_issues)} Verdachtsfälle" if confidence_issues else "")
+            + " sollten geprüft werden."
+        )
+    else:
+        fazit = (
+            f"Die Library befindet sich in einem {status}-Zustand "
+            f"(Score {score_text}/100). Keine Fehler oder Warnungen "
+            f"gefunden."
+        )
+    if total_info:
+        fazit += f" {total_info} INFO-Hinweise sind optionale Datenanreicherung."
+    if findings_meta:
+        reviewed_count = len(resolved_issues) + len(false_positive_issues)
+        if reviewed_count:
+            fazit += (
+                f" Von {len(issues)} erkannten Befunden sind {reviewed_count} "
+                f"bereits bewertet ({len(resolved_issues)} behoben, "
+                f"{len(false_positive_issues)} False Positive) und "
+                f"{len(open_issues)} weiterhin offen."
+            )
+    add(fazit)
+    add("")
+
     return "\n".join(lines)

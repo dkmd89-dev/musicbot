@@ -164,3 +164,91 @@ def test_scanner_import_graph_has_no_writer_modules():
         [sys.executable, "-c", code], capture_output=True, text=True, cwd=str(REPO_ROOT),
     )
     assert result.returncode == 0, f"Schreib-Module im Import-Graph: {result.stdout.strip()}"
+
+
+@requires_ffmpeg
+def test_cli_subprocess_writes_findings_registry_without_mutating_library(test_library, tmp_path):
+    """Aufgabe 'Persistentes Findings-Review-System', Abschnitt 31 Phase 3/4:
+    ein echter CLI-Lauf inkl. Findings-Merge darf die Library nicht
+    veraendern, und die Registry landet ausserhalb der Library."""
+    before = _snapshot(test_library)
+    out_dir = tmp_path / "out"
+    findings_path = out_dir / "findings.json"
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "library_health_check.py"),
+         "--library", str(test_library),
+         "--json", str(out_dir / "report.json"),
+         "--findings-registry", str(findings_path)],
+        capture_output=True, text=True, cwd=str(REPO_ROOT),
+    )
+    assert result.returncode == 0, result.stderr
+    after = _snapshot(test_library)
+    assert before == after, "Findings-Merge hat Library-Dateien veraendert!"
+    assert findings_path.exists()
+    assert not str(findings_path).startswith(str(test_library))
+
+    registry_data = json.loads(findings_path.read_text(encoding="utf-8"))
+    assert "findings" in registry_data
+    assert len(registry_data["findings"]) > 0  # die defekte/tag-lose Datei erzeugt Issues
+
+    report = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    assert "findings" in report
+    assert report["findings"]["total_detected"] == len(report["issues"])
+
+
+@requires_ffmpeg
+def test_real_review_action_does_not_touch_library_files(test_library, tmp_path):
+    """Aufgabe Abschnitt 31 Phase 4: mindestens ein echter Review-Test mit
+    einem ungefaehrlichen Befund - Library bleibt dabei unangetastet."""
+    sys.path.insert(0, str(REPO_ROOT))
+    from services.library_health.findings import (
+        STATUS_FALSE_POSITIVE,
+        FindingsRegistry,
+    )
+
+    before = _snapshot(test_library)
+    out_dir = tmp_path / "out"
+    findings_path = out_dir / "findings.json"
+
+    scan_result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "library_health_check.py"),
+         "--library", str(test_library),
+         "--json", str(out_dir / "report.json"),
+         "--findings-registry", str(findings_path)],
+        capture_output=True, text=True, cwd=str(REPO_ROOT),
+    )
+    assert scan_result.returncode == 0, scan_result.stderr
+
+    registry = FindingsRegistry(findings_path)
+    open_findings = registry.get_open_findings()
+    assert open_findings, "Test-Library muss mindestens einen offenen Befund erzeugen"
+
+    harmless_finding = open_findings[0]
+    registry.review_finding(
+        harmless_finding.finding_id, STATUS_FALSE_POSITIVE,
+        note="Testzwecke - ungefaehrlicher Befund", reviewed_by="pytest",
+    )
+    registry.save()
+
+    after = _snapshot(test_library)
+    assert before == after, "Ein reiner Review-Vorgang hat Library-Dateien veraendert!"
+
+    reloaded = FindingsRegistry(findings_path)
+    assert reloaded.get(harmless_finding.finding_id).status == STATUS_FALSE_POSITIVE
+
+    # Zweiter Scan: dasselbe Finding darf NICHT erneut als offen erscheinen.
+    scan_result2 = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "library_health_check.py"),
+         "--library", str(test_library),
+         "--json", str(out_dir / "report.json"),
+         "--findings-registry", str(findings_path)],
+        capture_output=True, text=True, cwd=str(REPO_ROOT),
+    )
+    assert scan_result2.returncode == 0, scan_result2.stderr
+    after_second_scan = _snapshot(test_library)
+    assert before == after_second_scan
+
+    reloaded2 = FindingsRegistry(findings_path)
+    assert reloaded2.get(harmless_finding.finding_id).status == STATUS_FALSE_POSITIVE
+    open_ids_after = {f.finding_id for f in reloaded2.get_open_findings()}
+    assert harmless_finding.finding_id not in open_ids_after
