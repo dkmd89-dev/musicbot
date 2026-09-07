@@ -583,7 +583,17 @@ class DownloadHandler:
     # ──────────────────────────────────────────────────────────────────────────
 
     def _record_history_entry(
-        self, *, url: str, title: str, artist: str, status: str
+        self,
+        *,
+        url: str,
+        title: str,
+        artist: str,
+        status: str,
+        genre_ok: Optional[bool] = None,
+        lyrics_ok: Optional[bool] = None,
+        cover_ok: Optional[bool] = None,
+        mb_ok: Optional[bool] = None,
+        loudness_ok: Optional[bool] = None,
     ) -> None:
         """Schreibt einen Download-Verlaufseintrag (Download-Control-Center-
         Folgeschritt "📋 Download-Verlauf"/"🔁 Erneut versuchen", siehe
@@ -594,7 +604,11 @@ class DownloadHandler:
         wurde. Fehler beim Schreiben werden geloggt, aber nie propagiert -
         ein defekter Verlaufsspeicher darf niemals einen sonst
         erfolgreichen/fehlgeschlagenen Download zusätzlich zum Absturz
-        bringen (gleiches Prinzip wie cleanup_single_download_artifact())."""
+        bringen (gleiches Prinzip wie cleanup_single_download_artifact()).
+
+        Die fünf *_ok-Parameter (Phase 3, P2.2, Metadata-Checkliste) bleiben
+        bewusst `None` ("keine Aussage möglich"), wenn der Aufrufer kein
+        DownloadResult hat (status 'cancelled'/'failed') - niemals `False`."""
         download_history = getattr(self, "download_history", None)
         if download_history is None:
             return
@@ -608,6 +622,11 @@ class DownloadHandler:
                 title=title or "Unbekannt",
                 artist=artist or "Unbekannt",
                 status=status,
+                genre_ok=genre_ok,
+                lyrics_ok=lyrics_ok,
+                cover_ok=cover_ok,
+                mb_ok=mb_ok,
+                loudness_ok=loudness_ok,
             )
         except Exception as e:
             self.logger.warning(f"⚠️ [HISTORY] Verlaufseintrag fehlgeschlagen: {e}")
@@ -632,6 +651,11 @@ class DownloadHandler:
                 title=title,
                 artist=artist,
                 status="success",
+                genre_ok=bool(result.get("genres")),
+                lyrics_ok=bool(result.get("lyrics_available")),
+                cover_ok=bool(result.get("cover_embedded")),
+                mb_ok=bool(result.get("mb_ids_present")),
+                loudness_ok=bool(result.get("loudness_normalized")),
             )
 
         # Duplikat-Registrierung
@@ -746,6 +770,11 @@ class DownloadHandler:
                 title=title,
                 artist=artist,
                 status="success",
+                genre_ok=bool(track.get("genres")),
+                lyrics_ok=bool(track.get("lyrics_available")),
+                cover_ok=bool(track.get("cover_embedded")),
+                mb_ok=bool(track.get("mb_ids_present")),
+                loudness_ok=bool(track.get("loudness_normalized")),
             )
 
     async def handle_playlist_success(self, results: List[dict]) -> None:

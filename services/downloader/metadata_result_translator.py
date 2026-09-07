@@ -119,6 +119,9 @@ def build_playlist_track_result(
         lyrics_source=metadata_result.lyrics_source,
         cover_embedded=metadata_result.cover_embedded,
         loudness_normalized=metadata_result.loudness_normalized,
+        mb_ids_present=bool(
+            metadata_result.mb_recording_id or metadata_result.mb_release_id
+        ),
         is_duplicate=metadata_result.is_duplicate,
         from_cache=metadata_result.from_cache,
         renamed_due_to_conflict=metadata_result.renamed_due_to_conflict,
@@ -188,6 +191,9 @@ def build_single_track_result(
         lyrics_source=metadata_result.lyrics_source,
         cover_embedded=metadata_result.cover_embedded,
         loudness_normalized=metadata_result.loudness_normalized,
+        mb_ids_present=bool(
+            metadata_result.mb_recording_id or metadata_result.mb_release_id
+        ),
         is_duplicate=metadata_result.is_duplicate,
         from_cache=metadata_result.from_cache,
         renamed_due_to_conflict=metadata_result.renamed_due_to_conflict,

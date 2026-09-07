@@ -193,6 +193,94 @@ class TestDownloadCancelledRecordsHistoryEntry:
         run_async(handler._handle_download_cancelled())
 
 
+class TestMetadataChecklistPopulation:
+    """Phase 3, P2.2 - die fuenf *_ok-Felder werden aus dem echten
+    DownloadResult.to_dict()-Format (result/track-Dict) befuellt."""
+
+    def test_single_success_populates_checklist_from_result_dict(self, tmp_path):
+        handler = make_handler(tmp_path)
+        result = {
+            "title": "Mein Song", "artist": "Mein Artist",
+            "original_url": "https://youtu.be/ABC",
+            "genres": {"primary": "Pop"},
+            "lyrics_available": True,
+            "cover_embedded": False,
+            "mb_ids_present": True,
+            "loudness_normalized": False,
+        }
+
+        run_async(handler.handle_single_track_success(result))
+
+        entry = handler.download_history.get_recent(999)[0]
+        assert entry.genre_ok is True
+        assert entry.lyrics_ok is True
+        assert entry.cover_ok is False
+        assert entry.mb_ok is True
+        assert entry.loudness_ok is False
+
+    def test_single_success_without_result_fields_is_false_not_none(self, tmp_path):
+        """Ein reales DownloadResult.to_dict() setzt diese Felder immer
+        (Default False/None-als-fehlend-Genre) - kein 'unbekannt' innerhalb
+        eines erfolgreichen Laufs. Fehlen die Schluessel komplett (wie in
+        diesem bewusst minimalen Test-Dict), ist das Ergebnis identisch zu
+        einem echten expliziten False/None-Wert."""
+        handler = make_handler(tmp_path)
+        result = {"title": "T", "artist": "A", "url": "https://youtu.be/X"}
+
+        run_async(handler.handle_single_track_success(result))
+
+        entry = handler.download_history.get_recent(999)[0]
+        assert entry.genre_ok is False
+        assert entry.lyrics_ok is False
+        assert entry.cover_ok is False
+        assert entry.mb_ok is False
+        assert entry.loudness_ok is False
+
+    def test_playlist_track_success_populates_checklist(self, tmp_path):
+        handler = make_handler(tmp_path)
+        track = {
+            "success": True, "title": "Track 1", "artist": "Artist 1",
+            "url": "https://youtu.be/1", "library_path": None,
+            "renamed_due_to_conflict": False,
+            "genres": {"primary": "Hip-Hop"}, "lyrics_available": False,
+            "cover_embedded": True, "mb_ids_present": False,
+            "loudness_normalized": True,
+        }
+
+        handler._register_playlist_track_duplicates([track])
+
+        entry = handler.download_history.get_recent(999)[0]
+        assert entry.genre_ok is True
+        assert entry.lyrics_ok is False
+        assert entry.cover_ok is True
+        assert entry.mb_ok is False
+        assert entry.loudness_ok is True
+
+    def test_cancelled_entry_has_all_five_fields_none(self, tmp_path):
+        handler = make_handler(tmp_path)
+
+        run_async(handler._handle_download_cancelled())
+
+        entry = handler.download_history.get_recent(999)[0]
+        assert entry.genre_ok is None
+        assert entry.lyrics_ok is None
+        assert entry.cover_ok is None
+        assert entry.mb_ok is None
+        assert entry.loudness_ok is None
+
+    def test_failed_entry_has_all_five_fields_none(self, tmp_path):
+        handler = make_handler(tmp_path)
+
+        run_async(handler.handle_download_failure("Netzwerkfehler"))
+
+        entry = handler.download_history.get_recent(999)[0]
+        assert entry.genre_ok is None
+        assert entry.lyrics_ok is None
+        assert entry.cover_ok is None
+        assert entry.mb_ok is None
+        assert entry.loudness_ok is None
+
+
 class TestHistoryWriteFailureDoesNotBreakDownloadFlow:
     def test_broken_history_store_logs_warning_but_does_not_raise(self, tmp_path):
         handler = make_handler(tmp_path)
