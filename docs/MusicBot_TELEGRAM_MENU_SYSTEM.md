@@ -449,8 +449,10 @@ Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
 - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — Details zu allen vier
   live gefundenen Bugs dieser Phase sowie zum inzwischen geschlossenen
   Download-Verlauf-Punkt (Abschnitt 3.6).
-- [`MusicBot_ENGINEERING_BASELINE_v8.md`](MusicBot_ENGINEERING_BASELINE_v8.md)
-  — Baseline-Stand vor dieser Phase.
+- [`archive/MusicBot_ENGINEERING_BASELINE_v8.md`](archive/MusicBot_ENGINEERING_BASELINE_v8.md)
+  — Baseline-Stand vor dieser Phase (mittlerweile durch
+  [`MusicBot_ENGINEERING_BASELINE_v9.md`](MusicBot_ENGINEERING_BASELINE_v9.md)
+  als aktuelle Baseline abgelöst).
 - [`docs/METADATA_REPROCESSING.md`](METADATA_REPROCESSING.md) — vollständige
   Doku des Reprocessing-Tools selbst (Sicherheitsmodell, CLI, Abschnitt 2a
   zum Subprozess-Aufrufmodell).

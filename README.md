@@ -2,7 +2,7 @@
 
 Privat entwickelter Telegram-Bot für Musik-Download (YouTube), automatische Metadaten-Anreicherung (Artist, Genre, Cover, Lyrics), Library-Organisation und Steuerung eines [Navidrome](https://www.navidrome.org/)-Servers.
 
-Historisch organisch gewachsenes Hobbyprojekt — siehe [`CLAUDE.md`](CLAUDE.md) für die Engineering-Leitlinien und [`docs/MusicBot_ENGINEERING_BASELINE_v8.md`](docs/MusicBot_ENGINEERING_BASELINE_v8.md) für den aktuellen technischen Status (Architektur, Testabdeckung, Security, Technical Debt).
+Historisch organisch gewachsenes Hobbyprojekt — siehe [`CLAUDE.md`](CLAUDE.md) für die Engineering-Leitlinien und [`docs/MusicBot_ENGINEERING_BASELINE_v9.md`](docs/MusicBot_ENGINEERING_BASELINE_v9.md) für den aktuellen technischen Status (Architektur, Testabdeckung, Security, Technical Debt).
 
 ---
 
@@ -63,8 +63,8 @@ Ausführlicher, mit Datenfluss/Fehlerbehandlung pro Bereich: [`CLAUDE.md`](CLAUD
 | `utils/` | Wiederverwendbare Bausteine: `genre_map.py`, `artist_map.py`, `filenamefixer.py`, `helpers.py`, Caches (`lyrics_cache.py` u. a.), Singleton-Basisklasse, sowie lokale technische Runner ohne Telegram-/API-Kopplung (`navidrome_scan_trigger.py`, `audio_enhancer.py`) |
 | `mapping/` | YAML-/JSON-Dateien mit Fachlogik (Genre-/Artist-Regeln) — **keine belanglose Konfiguration**, siehe unten |
 | `scripts/` | Eigenständige Wartungs-Tools, die außerhalb des Bot-Laufzeitbetriebs auf isolierten Testdaten bzw. (mit expliziten Sicherheitsgates) gegen die Produktions-Library arbeiten, z. B. `reprocess_artist_metadata.py` — bestehende Library-Tracks erneut durch die Metadaten-Pipeline laufen lassen (Tags/Cover/Lyrics/Genre/Multi-Artist/MusicBrainz), ohne Download, ohne Audio-Reencoding (Details: [`docs/METADATA_REPROCESSING.md`](docs/METADATA_REPROCESSING.md)); sowie `library_health_check.py` (read-only Health-Report) und `library_repair.py` (Reparatur-Plan/-Ausführung aus dem Health-Report, Details: [`docs/LIBRARY_REPAIR.md`](docs/LIBRARY_REPAIR.md)) |
-| `tests/` | 2580 Tests (pytest), 0 bekannte Fehlschläge, 1 umgebungsbedingt übersprungen (Stand 2026-09-07, nach Abschluss von Phase 3 „Music Quality & Library Intelligence" — Details: [`docs/MusicBot_PHASE3_MUSIC_QUALITY_LIBRARY_INTELLIGENCE.md`](docs/MusicBot_PHASE3_MUSIC_QUALITY_LIBRARY_INTELLIGENCE.md). Baseline v8 selbst bleibt bei ihrem Freeze-Stand 1698/0, aktueller Stand siehe [`docs/FINDINGS_INDEX.md`](docs/FINDINGS_INDEX.md)) — Characterization-Tests für die Produktionsklassen, siehe [`docs/MusicBot_ENGINEERING_BASELINE_v8.md`](docs/MusicBot_ENGINEERING_BASELINE_v8.md) |
-| `docs/` | Engineering-Baseline v8 (eingefrorener Referenzpunkt) + [`FINDINGS_INDEX.md`](docs/FINDINGS_INDEX.md) (lebender aktueller Stand) + [`MusicBot_PHASE3_MUSIC_QUALITY_LIBRARY_INTELLIGENCE.md`](docs/MusicBot_PHASE3_MUSIC_QUALITY_LIBRARY_INTELLIGENCE.md) (Phase 3, CLOSED) + Findings-Audits (P0-Metadata/Duplicate-Detection, Download Pipeline Stability, Metadata Quality, Einzelfunde) + Telegram-Menü-System-Doku + Reprocessing-Tool-Doku + ARCH-Characterization-Dokumente (historisch), siehe [`docs/INDEX.md`](docs/INDEX.md) |
+| `tests/` | 2580 Tests (pytest), 0 bekannte Fehlschläge, 1 umgebungsbedingt übersprungen (Stand 2026-09-07, nach Abschluss von Phase 3 „Music Quality & Library Intelligence" — Details: [`docs/MusicBot_PHASE3_MUSIC_QUALITY_LIBRARY_INTELLIGENCE.md`](docs/MusicBot_PHASE3_MUSIC_QUALITY_LIBRARY_INTELLIGENCE.md)) — Characterization-Tests für die Produktionsklassen, siehe [`docs/MusicBot_ENGINEERING_BASELINE_v9.md`](docs/MusicBot_ENGINEERING_BASELINE_v9.md) |
+| `docs/` | Engineering-Baseline v9 (eingefrorener Referenzpunkt, löst [`archive/MusicBot_ENGINEERING_BASELINE_v8.md`](docs/archive/MusicBot_ENGINEERING_BASELINE_v8.md) ab) + [`FINDINGS_INDEX.md`](docs/FINDINGS_INDEX.md) (lebender aktueller Stand) + [`MusicBot_PHASE3_MUSIC_QUALITY_LIBRARY_INTELLIGENCE.md`](docs/MusicBot_PHASE3_MUSIC_QUALITY_LIBRARY_INTELLIGENCE.md) (Phase 3, CLOSED) + Findings-Audits (P0-Metadata/Duplicate-Detection, Download Pipeline Stability, Metadata Quality, Einzelfunde) + Telegram-Menü-System-Doku + Reprocessing-Tool-Doku + ARCH-Characterization-Dokumente (historisch), siehe [`docs/INDEX.md`](docs/INDEX.md) |
 
 ## Setup
 
@@ -116,7 +116,7 @@ python3 bot.py
 python -m pytest tests/ -q
 ```
 
-`pytest-asyncio` (siehe `requirements-dev.txt`) wird für die `@pytest.mark.asyncio`-Tests in `tests/test_suite.py` benötigt. Aktueller Teststand siehe [`docs/MusicBot_ENGINEERING_BASELINE_v8.md`](docs/MusicBot_ENGINEERING_BASELINE_v8.md).
+`pytest-asyncio` (siehe `requirements-dev.txt`) wird für die `@pytest.mark.asyncio`-Tests in `tests/test_suite.py` benötigt. Aktueller Teststand siehe [`docs/MusicBot_ENGINEERING_BASELINE_v9.md`](docs/MusicBot_ENGINEERING_BASELINE_v9.md).
 
 ## Mapping-Dateien
 
@@ -124,4 +124,4 @@ Die YAML-/JSON-Dateien in `mapping/` (Genre-Aliase, Genre-Hierarchie, Genre-Over
 
 ## Entwicklung
 
-Dieses Projekt wird nicht neu geschrieben, sondern kontrolliert weiterentwickelt: bestehendes Verhalten zuerst verstehen und mit Characterization-Tests absichern, dann verbessern. Die verbindlichen Arbeitsregeln stehen in [`CLAUDE.md`](CLAUDE.md). [`docs/MusicBot_ENGINEERING_BASELINE_v8.md`](docs/MusicBot_ENGINEERING_BASELINE_v8.md) ist der eingefrorene technische Referenzpunkt zum Freeze-Zeitpunkt 2026-09-02 (löst [`docs/archive/MusicBot_ENGINEERING_BASELINE_v7.md`](docs/archive/MusicBot_ENGINEERING_BASELINE_v7.md), eingefrorener Stand vom 2026-09-01 mit 1673 passed/0 failed, ab; ältere Baselines bleiben unter [`docs/archive/`](docs/archive/) unverändert bestehen) — der tatsächlich *aktuelle* Stand aller offenen/zurückgestellten Punkte steht dagegen laufend gepflegt in [`docs/FINDINGS_INDEX.md`](docs/FINDINGS_INDEX.md). Ältere Architektur-Analysen (ARCH-xxx/POST-ARCH-xxx) liegen vollständig erhalten unter [`docs/archive/`](docs/archive/), siehe [`docs/INDEX.md`](docs/INDEX.md).
+Dieses Projekt wird nicht neu geschrieben, sondern kontrolliert weiterentwickelt: bestehendes Verhalten zuerst verstehen und mit Characterization-Tests absichern, dann verbessern. Die verbindlichen Arbeitsregeln stehen in [`CLAUDE.md`](CLAUDE.md). [`docs/MusicBot_ENGINEERING_BASELINE_v9.md`](docs/MusicBot_ENGINEERING_BASELINE_v9.md) ist der eingefrorene technische Referenzpunkt zum Freeze-Zeitpunkt 2026-09-07 (löst [`docs/archive/MusicBot_ENGINEERING_BASELINE_v8.md`](docs/archive/MusicBot_ENGINEERING_BASELINE_v8.md), eingefrorener Stand vom 2026-09-02 mit 1698 passed/0 failed, ab; ältere Baselines bleiben unter [`docs/archive/`](docs/archive/) unverändert bestehen) — der tatsächlich *aktuelle* Stand aller offenen/zurückgestellten Punkte steht dagegen laufend gepflegt in [`docs/FINDINGS_INDEX.md`](docs/FINDINGS_INDEX.md). Ältere Architektur-Analysen (ARCH-xxx/POST-ARCH-xxx) liegen vollständig erhalten unter [`docs/archive/`](docs/archive/), siehe [`docs/INDEX.md`](docs/INDEX.md).

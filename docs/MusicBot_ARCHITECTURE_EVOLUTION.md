@@ -23,7 +23,7 @@ Keine Implementierung. Kein Refactoring. Keine Baseline v4.
 > Projektstatus siehe:
 > - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — lebendes Register aller
 >   aktuell offenen/zurückgestellten Punkte
-> - [`docs/MusicBot_ENGINEERING_BASELINE_v8.md`](MusicBot_ENGINEERING_BASELINE_v8.md) — aktuelle Baseline
+> - [`docs/MusicBot_ENGINEERING_BASELINE_v9.md`](MusicBot_ENGINEERING_BASELINE_v9.md) — aktuelle Baseline
 > - [`README.md`](../README.md)
 
 ---

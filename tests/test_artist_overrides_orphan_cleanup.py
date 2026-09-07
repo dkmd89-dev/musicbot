@@ -33,11 +33,18 @@ import json
 # real vom Auto-Learn-System in artist_overrides.json geschrieben.
 # Bewusst als dauerhaft gewuenschter Override behalten, nicht entfernt -
 # hier in die Whitelist aufgenommen statt den Eintrag zu loeschen.
+#
+# Nachtrag 2026-09-07: 'Christina Stürmer' wurde durch einen echten,
+# regulaeren Download waehrend laufender Entwicklungsarbeit vom
+# Auto-Learn-System in artist_overrides.json geschrieben - echter neuer
+# Library-Artist, kein Datenmuell. Analog zu Toobrokeforfiji in die
+# Whitelist aufgenommen statt entfernt.
 WHITELIST_VALUES_LOWER = {
     "01099",
     "2pac",
     "badchieff",
     "chapo102",
+    "christina stürmer",
     "clueso",
     "florian künstler",
     "gustav",
@@ -60,14 +67,15 @@ class TestArtistOverridesFreeOfOrphans:
         assert not orphans, f"verwaiste Overrides gefunden: {orphans}"
 
     def test_expected_key_count_after_cleanup(self):
-        """Dokumentiert den bereinigten Stand (2026-09-03): 20 Keys (12
-        Library-Artists, davon 'makko' als 1, + 6 Miksu & Macloud-Varianten
-        + 't-low' + 'toobrokeforfiji' = 20). Kein Anspruch auf ewige
-        Gueltigkeit dieser exakten Zahl - wird bei zukuenftigen legitimen
-        Aenderungen bewusst angepasst, nicht blind hochgezaehlt."""
+        """Dokumentiert den bereinigten Stand (zuletzt 2026-09-07): 21 Keys
+        (12 Library-Artists, davon 'makko' als 1, + 6 Miksu & Macloud-
+        Varianten + 't-low' + 'toobrokeforfiji' + 'christina sturmer' = 21).
+        Kein Anspruch auf ewige Gueltigkeit dieser exakten Zahl - wird bei
+        zukuenftigen legitimen Aenderungen bewusst angepasst, nicht blind
+        hochgezaehlt."""
         with open("mapping/artist_overrides.json", encoding="utf-8") as f:
             data = json.load(f)
-        assert len(data) == 20
+        assert len(data) == 21
 
     def test_no_junk_entries_like_pycache(self):
         """Regressionsschutz: der vor der Bereinigung gefundene
