@@ -168,6 +168,14 @@ def main(argv=None) -> int:
              "gesamte Library-Root). Ohne --dry-run wird tatsaechlich "
              "gelöscht (mit Backup + Rollback), mit --dry-run nur Vorschau.",
     )
+    parser.add_argument(
+        "--no-navidrome-scan", dest="no_navidrome_scan", action="store_true",
+        help="Automatischen Navidrome-Scan nach einem --apply-Lauf mit "
+             "echten Aenderungen unterdruecken (Phase 3, P1.2). Ohne dieses "
+             "Flag wird nach mindestens einem SUCCESS-Outcome automatisch "
+             "NavidromeScanTrigger.run_scan() aufgerufen; bei --dry-run "
+             "(bzw. ohne --apply) nie.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -313,6 +321,15 @@ def main(argv=None) -> int:
 
     if execute_dry:
         return 0
+
+    # Phase 3, P1.2: Navidrome-Auto-Scan nach echter Aenderung. Wiederverwendet
+    # bewusst exakt den bereits oben berechneten, ungefilterten `tally`-Wert
+    # (Z. "tally = Counter(o.status for o in outcomes)") statt einer neuen,
+    # eigenen SUCCESS-Definition - keine abweichende/breitere Interpretation
+    # von "es gab eine Aenderung" gegenueber dem Rest dieses Scripts.
+    if tally.get("SUCCESS", 0) > 0 and not args.no_navidrome_scan:
+        _trigger_navidrome_scan(logger)
+
     touched = {o.issue_code for o in outcomes if o.status == "SUCCESS"}
     if mb_cands and any(o.status == "SUCCESS" for o in outcomes
                         if o.issue_code in EXTERNAL_MB_CODES):
@@ -326,6 +343,32 @@ def main(argv=None) -> int:
         touched |= set(LOUDNESS_ISSUE_CODES)
     return _verification_scan(report, library_root, config, logger, touched,
                               measure_loudness=bool(loudness_cands))
+
+
+def _trigger_navidrome_scan(logger) -> None:
+    """Phase 3, P1.2: loest nach einem --apply-Lauf mit echten Aenderungen
+    (mind. ein SUCCESS-Outcome) automatisch einen Navidrome-Scan aus.
+
+    Ein fehlschlagender/nicht konfigurierter Scan darf den Exit-Code dieses
+    Repair-Laufs NICHT beeinflussen - der Repair-Erfolg selbst ist davon
+    unabhaengig. Deshalb wird hier jede Exception abgefangen und nur
+    geloggt, nicht weitergereicht."""
+    import asyncio
+
+    from utils.navidrome_scan_trigger import NavidromeScanTrigger
+
+    try:
+        result = asyncio.run(NavidromeScanTrigger.run_scan())
+        if result.success:
+            print(f"\n🔄 Navidrome-Scan automatisch ausgeloest (Erfolg).")
+        else:
+            print(f"\n⚠️  Navidrome-Scan automatisch ausgeloest, aber "
+                  f"fehlgeschlagen (Return Code {result.returncode}) - "
+                  f"Repair-Ergebnis davon unberuehrt.")
+    except Exception as e:  # noqa: BLE001 - Scan-Fehler duerfen den Repair-Exit-Code nicht aendern
+        logger.warning(f"Automatischer Navidrome-Scan nach Repair fehlgeschlagen: {e}")
+        print(f"\n⚠️  Automatischer Navidrome-Scan fehlgeschlagen ({e}) - "
+              f"Repair-Ergebnis davon unberuehrt.")
 
 
 def _build_cover_fetcher(config, logger):
