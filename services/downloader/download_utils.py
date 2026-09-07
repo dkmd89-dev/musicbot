@@ -83,6 +83,7 @@ from services.downloader.download.cache_manager import CacheManager
 from services.downloader.download.year_resolver import YearResolver
 from services.downloader.download.channel_router import ChannelRouter
 from services.downloader.download.download_executor import DownloadExecutor
+from services.downloader.download_quality_guard import check_download_quality
 from services.downloader.download.formatters import ProgressFormatter
 
 
@@ -940,6 +941,13 @@ async def _process_playlist_download(
                 )
                 continue
 
+            # Phase 3, P2.3 (Bad Download Detector, Stufe A: Observe-Only) -
+            # rein beobachtend, kein Reject - siehe
+            # services/downloader/download_quality_guard.py.
+            check_download_quality(
+                Path(downloaded_file), expected_duration=track_info.get("duration")
+            )
+
             # ── METADATEN ─────────────────────────────────────────────────────
             track_result = await _process_track_metadata(
                 track_info=track_info,
@@ -1286,6 +1294,15 @@ async def _process_single_download(
         )
         if not downloaded_file or not Path(downloaded_file).exists():
             raise DownloadError("Heruntergeladene Datei nach Download nicht gefunden")
+
+        # Phase 3, P2.3 (Bad Download Detector, Stufe A: Observe-Only) -
+        # rein beobachtend, VOR der Metadaten-Pipeline (spart bei
+        # auffaelligen Dateien keine externen Aufrufe, aendert aber nichts
+        # an der Pipeline selbst - kein Reject, siehe
+        # services/downloader/download_quality_guard.py).
+        check_download_quality(
+            Path(downloaded_file), expected_duration=video_info.get("duration")
+        )
 
         size_kb = Path(downloaded_file).stat().st_size // 1024
         logger.info(
