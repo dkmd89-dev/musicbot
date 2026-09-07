@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Iterable
 
+from .file_analysis import _split_genres
 from .models import (
     SCANNER_VERSION,
     SCHEMA_VERSION,
@@ -71,6 +72,11 @@ def build_statistics(
     code_counter = Counter(i.code for i in all_issues)
     sev_counter = Counter(i.severity.value for i in all_issues)
 
+    genre_counter: Counter = Counter()
+    for fh in file_healths:
+        if fh.genre:
+            genre_counter.update(_split_genres(fh.genre))
+
     def _count_state(dimension: str, *states: AnalysisState) -> int:
         return sum(1 for fh in file_healths if fh.states.get(dimension) in states)
 
@@ -112,6 +118,7 @@ def build_statistics(
             sev.value: sev_counter.get(sev.value, 0)
             for sev in (Severity.CRITICAL, Severity.ERROR, Severity.WARNING, Severity.INFO)
         },
+        "genre_distribution": dict(sorted(genre_counter.items())),
     }
 
 

@@ -290,7 +290,8 @@ Die exakte Gewichts-Tabelle steht zusätzlich im Report unter `health.weights`.
      "duplicate_groups": 0,
      "duplicate_groups_by_kind": { "exact": 0, "recording": 0, "suspected": 0 },
      "album_inconsistencies": 0, "artist_inconsistencies": 0,
-     "issues_by_code": { "...": 0 }, "issues_by_severity": { "...": 0 }
+     "issues_by_code": { "...": 0 }, "issues_by_severity": { "...": 0 },
+     "genre_distribution": { "...": 0 }
   },
   "issues": [ { "issue_code": "...", "severity": "...", "scope": "file|album|artist|library",
                "path": "...", "artist": "...", "album": "...", "title": "...",
@@ -307,6 +308,12 @@ Die exakte Gewichts-Tabelle steht zusätzlich im Report unter `health.weights`.
 
 **Determinismus (Prompt Abschnitt 35):** Dateien nach `relative_path`,
 Issues nach (Severity absteigend, Code, Pfad). Nur die Zeitstempel variieren.
+
+`statistics.genre_distribution` zählt Genres über alle Dateien, aufgeteilt
+per Mehrfach-Genre-Konvention (`_split_genres()` in `file_analysis.py`,
+dieselbe Separator-Erkennung wie bei `GENRE_DELIMITER_INCONSISTENT`) — ein
+Track mit `"Pop; Rock"` zählt für beide Genres. Leere/fehlende Genre-Werte
+fließen nicht ein. Grundlage für die Library-Statistics-Ansicht (Phase 3, P1.1).
 
 ---
 
