@@ -490,6 +490,59 @@ class TestCleanTitleSuffixesOfficialVersionSuffixNachtrag:
         )
 
 
+class TestCleanTitleSuffixesTrailingYear:
+    """
+    Nutzer-Report (echter Testdownload ueber den Test-Bot): "Die Firma -
+    Die Eine 2005 (Official Video)" ergab den Titel "Die Eine 2005" statt
+    "Die Eine" - YouTube-Uploader haengen bei Reuploads aelterer Songs
+    haeufig das urspruengliche Erscheinungsjahr als freistehendes Suffix
+    an, ohne Klammern.
+
+    Bewusst NUR in _clean_title_suffixes() (Erfolgspfad von
+    parse_youtube_title() nach Artist/Titel-Split) und NICHT in
+    utils/title_cleanup.py::light_title_cleanup() - dort wuerde dieselbe
+    Regel den bestehenden Charakterisierungsfall "LOLLAPALOOZA 2026"
+    (tests/test_title_cleanup_pure.py) faelschlich kappen, weil dort das
+    Jahr Bestandteil des eigentlichen Titels ist, kein Upload-Suffix.
+    """
+
+    def test_real_reproduced_case_end_to_end(self):
+        result = parse_youtube_title(
+            "Die Firma - Die Eine 2005 (Official Video)"
+        )
+        assert result["artist"] == "Die Firma"
+        assert result["song_title"] == "Die Eine"
+
+    def test_bare_trailing_year_is_removed(self):
+        assert _clean_title_suffixes("Song Title 2005") == "Song Title"
+
+    def test_parenthesized_trailing_year_is_removed(self):
+        assert _clean_title_suffixes("Song Title (2005)") == "Song Title"
+
+    def test_title_consisting_only_of_a_year_is_not_touched(self):
+        """Ein Titel, der ausschliesslich aus einer Jahreszahl besteht
+        (z.B. Prince - 1999), darf nicht zu einem leeren String werden."""
+        assert _clean_title_suffixes("1999") == "1999"
+
+    def test_end_to_end_title_that_is_only_a_year_stays_intact(self):
+        result = parse_youtube_title("Prince - 1999 (Official Video)")
+        assert result["artist"] == "Prince"
+        assert result["song_title"] == "1999"
+
+    def test_year_mid_title_is_not_touched(self):
+        """Nur am Titelende relevant - eine Jahreszahl mitten im Titel
+        ist Teil des Songtitels."""
+        assert (
+            _clean_title_suffixes("2005 Was A Good Year")
+            == "2005 Was A Good Year"
+        )
+
+    def test_number_outside_year_range_is_not_touched(self):
+        """Nur plausible Jahreszahlen (19xx/20xx) - eine andere
+        vierstellige Zahl am Titelende ist kein Upload-Jahres-Suffix."""
+        assert _clean_title_suffixes("Track 3000") == "Track 3000"
+
+
 class TestNormalizeString:
     def test_collapses_multiple_spaces(self):
         assert _normalize_string("A   B") == "A B"
