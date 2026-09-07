@@ -13,6 +13,19 @@ Keine Implementierung. Kein Refactoring. Keine Baseline v4.
 > erhalten; Korrekturen sind inline markiert und in Abschnitt 26 vollständig
 > zusammengefasst.
 
+> **ℹ️ Hinweis (Dokumentations-Konsolidierung, 2026-09-07):** Dieses Dokument ist
+> ein historisches Architecture-Evolution-Protokoll. Statusangaben wie „🔴 NOT
+> READY" oben und in Abschnitt 26 beziehen sich auf den jeweiligen historischen
+> Audit-/Freeze-Zeitpunkt (2026-08-25) und stellen **nicht** den aktuellen
+> Repository-Status dar. Die drei daraus resultierenden Folgefunde AE-10/AE-11/
+> AE-12 sind seither vollständig geschlossen (siehe Abschnitt 29, dort auch der
+> finale Freeze-Status dieses Dokuments selbst). Für den tatsächlich aktuellen
+> Projektstatus siehe:
+> - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — lebendes Register aller
+>   aktuell offenen/zurückgestellten Punkte
+> - [`docs/MusicBot_ENGINEERING_BASELINE_v8.md`](MusicBot_ENGINEERING_BASELINE_v8.md) — aktuelle Baseline
+> - [`README.md`](../README.md)
+
 ---
 
 ## 1. Purpose

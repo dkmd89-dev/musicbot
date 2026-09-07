@@ -1,4 +1,12 @@
 # Claude-Code-Production-Prompt v2
+
+> **Status: HISTORICAL — PHASE 1.** Dies ist der ursprüngliche, phasenspezifische
+> Produktionsprompt für die Umsetzung des Library Health Scanners (Phase 1,
+> abgeschlossen — siehe `docs/LIBRARY_HEALTH.md`). Der Inhalt bleibt unverändert
+> als historisches Auftragsdokument erhalten; er ist kein aktueller/genereller
+> Arbeitsauftrag für neue Aufgaben. Für den aktuellen Projektstand siehe
+> `docs/FINDINGS_INDEX.md` und `README.md`.
+
 ## Phase 1 — Music Library Health Scanner
 
 ### 0. Rolle und Arbeitsmodus
