@@ -74,6 +74,11 @@ class DownloadResult:
     # Siehe services/metadata/models.py::MetadataResult.loudness_normalized
     # fuer die Begruendung.
     loudness_normalized: bool = False
+    # Phase 3, P2.2 (Import History): nur das Vorhanden-Sein einer
+    # MusicBrainz-Recording-/Release-ID als Boolean - die IDs selbst
+    # werden hier bewusst NICHT durchgereicht (kein Konsument braucht sie
+    # auf dieser Ebene, unnoetige Datenhaltung vermeiden).
+    mb_ids_present: bool = False
 
     # Status-Flags
     is_duplicate: bool = False
@@ -117,6 +122,7 @@ class DownloadResult:
             "lyrics_source": self.lyrics_source,
             "cover_embedded": self.cover_embedded,
             "loudness_normalized": self.loudness_normalized,
+            "mb_ids_present": self.mb_ids_present,
             "is_duplicate": self.is_duplicate,
             "from_cache": self.from_cache,
             "renamed_due_to_conflict": self.renamed_due_to_conflict,

@@ -31,13 +31,26 @@ MAX_ENTRIES_PER_CHAT = 20
 
 @dataclass
 class DownloadHistoryEntry:
-    """Ein einzelner Verlaufseintrag. status: 'success' | 'failed' | 'cancelled'."""
+    """Ein einzelner Verlaufseintrag. status: 'success' | 'failed' | 'cancelled'.
+
+    Phase 3, P2.2 (Import History): die fuenf *_ok-Felder bilden eine
+    dreiwertige Metadata-Checkliste ab - `True`/`False` bedeuten, dass die
+    Pipeline den jeweiligen Schritt aktiv durchlaufen und mit diesem
+    Ergebnis abgeschlossen hat; `None` bedeutet "keine Aussage moeglich"
+    (kein DownloadResult vorhanden, z. B. bei status 'cancelled'/'failed').
+    "Unbekannt" darf NIE stillschweigend als `False` gespeichert werden -
+    siehe klassen/download_handler.py::_record_history_entry()."""
 
     url: str
     title: str
     artist: str
     status: str
     timestamp: str  # ISO-Format, datetime.now().isoformat()
+    genre_ok: Optional[bool] = None
+    lyrics_ok: Optional[bool] = None
+    cover_ok: Optional[bool] = None
+    mb_ok: Optional[bool] = None
+    loudness_ok: Optional[bool] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -50,6 +63,15 @@ class DownloadHistoryEntry:
             artist=data.get("artist", "Unbekannt"),
             status=data.get("status", "success"),
             timestamp=data.get("timestamp", ""),
+            # .get(..., None) statt .get(...) ist hier bewusst explizit:
+            # aeltere, vor P2.2 geschriebene Eintraege haben diese Schluessel
+            # gar nicht - fehlend MUSS zu None (unbekannt) werden, nicht zu
+            # False.
+            genre_ok=data.get("genre_ok", None),
+            lyrics_ok=data.get("lyrics_ok", None),
+            cover_ok=data.get("cover_ok", None),
+            mb_ok=data.get("mb_ok", None),
+            loudness_ok=data.get("loudness_ok", None),
         )
 
 
@@ -110,10 +132,19 @@ class DownloadHistoryStore:
         title: str,
         artist: str,
         status: str,
+        genre_ok: Optional[bool] = None,
+        lyrics_ok: Optional[bool] = None,
+        cover_ok: Optional[bool] = None,
+        mb_ok: Optional[bool] = None,
+        loudness_ok: Optional[bool] = None,
     ) -> None:
         """Fügt einen neuen Verlaufseintrag an (jüngste zuletzt in der
         internen Liste). Deckelt auf MAX_ENTRIES_PER_CHAT, älteste zuerst
-        entfernt. Speichert sofort (analog zu DuplicateCache.add_entry())."""
+        entfernt. Speichert sofort (analog zu DuplicateCache.add_entry()).
+
+        Die fünf *_ok-Parameter sind dreiwertig (Phase 3, P2.2) - Default
+        `None` ("keine Aussage möglich"), NICHT `False`. Aufrufer ohne
+        DownloadResult (cancelled/failed) lassen sie bewusst weg."""
         key = str(chat_id)
         entry = DownloadHistoryEntry(
             url=url,
@@ -121,6 +152,11 @@ class DownloadHistoryStore:
             artist=artist or "Unbekannt",
             status=status,
             timestamp=datetime.now().isoformat(),
+            genre_ok=genre_ok,
+            lyrics_ok=lyrics_ok,
+            cover_ok=cover_ok,
+            mb_ok=mb_ok,
+            loudness_ok=loudness_ok,
         )
         entries = self._data.setdefault(key, [])
         entries.append(entry.to_dict())

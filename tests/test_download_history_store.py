@@ -146,3 +146,73 @@ class TestDownloadHistoryEntryRoundtrip:
         )
         restored = DownloadHistoryEntry.from_dict(entry.to_dict())
         assert restored == entry
+
+
+class TestMetadataChecklistFields:
+    """Phase 3, P2.2 - dreiwertige True/False/None-Semantik der fünf
+    *_ok-Felder. 'Unbekannt' darf nie zu False werden."""
+
+    def test_add_entry_stores_true_false_values(self, store):
+        store.add_entry(
+            123, url="u", title="T", artist="A", status="success",
+            genre_ok=True, lyrics_ok=False, cover_ok=True,
+            mb_ok=False, loudness_ok=True,
+        )
+        entry = store.get_recent(123)[0]
+        assert entry.genre_ok is True
+        assert entry.lyrics_ok is False
+        assert entry.cover_ok is True
+        assert entry.mb_ok is False
+        assert entry.loudness_ok is True
+
+    def test_add_entry_without_checklist_defaults_to_none_not_false(self, store):
+        """Simuliert die 'cancelled'/'failed'-Aufrufstellen in
+        klassen/download_handler.py, die die Checklisten-Parameter gar
+        nicht setzen."""
+        store.add_entry(123, url="u", title="T", artist="A", status="failed")
+
+        entry = store.get_recent(123)[0]
+        assert entry.genre_ok is None
+        assert entry.lyrics_ok is None
+        assert entry.cover_ok is None
+        assert entry.mb_ok is None
+        assert entry.loudness_ok is None
+
+    def test_to_dict_from_dict_roundtrip_preserves_all_three_states(self):
+        entry = DownloadHistoryEntry(
+            url="u", title="T", artist="A", status="success",
+            timestamp="2026-09-03T12:00:00",
+            genre_ok=True, lyrics_ok=False, cover_ok=None,
+            mb_ok=True, loudness_ok=None,
+        )
+        restored = DownloadHistoryEntry.from_dict(entry.to_dict())
+        assert restored == entry
+
+    def test_loading_legacy_entry_without_checklist_keys_yields_none(self, tmp_path):
+        """Bereits vor P2.2 persistierte Eintraege haben diese Schluessel
+        gar nicht im JSON - from_dict() darf hier weder crashen noch
+        faelschlich False annehmen."""
+        cache_dir = tmp_path / "download_history"
+        cache_dir.mkdir()
+        legacy_data = {
+            "123": [
+                {
+                    "url": "u", "title": "Alt-Eintrag", "artist": "A",
+                    "status": "success", "timestamp": "2026-01-01T00:00:00",
+                    # bewusst KEINE *_ok-Schluessel - Zustand vor P2.2.
+                }
+            ]
+        }
+        (cache_dir / "download_history.json").write_text(
+            json.dumps(legacy_data), encoding="utf-8"
+        )
+
+        reloaded = DownloadHistoryStore(cache_dir=str(cache_dir))
+        entry = reloaded.get_recent(123)[0]
+
+        assert entry.title == "Alt-Eintrag"
+        assert entry.genre_ok is None
+        assert entry.lyrics_ok is None
+        assert entry.cover_ok is None
+        assert entry.mb_ok is None
+        assert entry.loudness_ok is None
