@@ -41,6 +41,7 @@ from handlers.test_menu_handler import TestMenuHandler
 from handlers.enhanced_logger_menu_handler import EnhancedLoggerMenuHandler
 from handlers.navidrome_menu_handler import NavidromeMenuHandler
 from handlers.menu.reprocessing_menu_handler import ReprocessingMenuHandler
+from handlers.library_doctor_handler import LibraryDoctorHandler
 from handlers.mugge_statistik_handler import StatistikHandler
 from handlers.admin.user_management_handler import UserManagementHandler
 from handlers.admin.backup_handler import BackupHandler
@@ -100,6 +101,7 @@ class RichMenuHandler:
         self.backup_handler: Optional[BackupHandler] = None
         self.restart_handler: Optional[BotRestartHandler] = None
         self.reprocessing_handler: Optional[ReprocessingMenuHandler] = None
+        self.doctor_handler: Optional[LibraryDoctorHandler] = None
 
         # Download-Control-Center 2026-09-02: EINE prozessweite Registry,
         # ueber die gesamte Bot-Laufzeit auf diesem (im Gegensatz zu
@@ -332,6 +334,21 @@ class RichMenuHandler:
             self.logger.error(f"❌ Reprocessing-Handler Fehler: {e}", exc_info=True)
             self.reprocessing_handler = None
 
+        # 13. MusicBot-Doctor-Handler (Phase 3, P1.3) - ruft
+        # scripts/library_health_check.py und scripts/library_repair.py
+        # ausschliesslich als eigenstaendige Subprozesse auf (services/
+        # library_repair/doctor_runner.py), analog zum Reprocessing-Handler
+        # oben.
+        try:
+            self.doctor_handler = LibraryDoctorHandler(
+                self.config, self.logger_factory
+            )
+            self.doctor_handler.error_handler = self.error_handler
+            self.logger.info("✅ LibraryDoctorHandler initialisiert")
+        except Exception as e:
+            self.logger.error(f"❌ Doctor-Handler Fehler: {e}", exc_info=True)
+            self.doctor_handler = None
+
         self._record_initial_handler_statuses()
 
         # ── Menüsystem initialisieren und Handler verknüpfen ──────────────────
@@ -361,6 +378,8 @@ class RichMenuHandler:
         self.menu_system.set_maintenance_store(self.maintenance_store)
         if self.reprocessing_handler:
             self.menu_system.set_reprocessing_handler(self.reprocessing_handler)
+        if self.doctor_handler:
+            self.menu_system.set_doctor_handler(self.doctor_handler)
 
         # Handler registrieren
         self._register_download_handlers()
@@ -401,6 +420,7 @@ class RichMenuHandler:
             ("restart_handler", self.restart_handler),
             ("metadata_processor", self.metadata_processor),
             ("reprocessing_handler", self.reprocessing_handler),
+            ("doctor_handler", self.doctor_handler),
         ]:
             self.status_handler.bot_tracker.update_handler_status(
                 handler_name, "active" if handler_instance else "error"
@@ -600,6 +620,12 @@ class RichMenuHandler:
             # reprocess:-Routing in RichMenuSystem.handle_callback()
             # bereits korrekt ist.
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^reprocess:"),
+            # MusicBot Doctor (Phase 3, P1.3): derselbe "Bug B"-Fall wie bei
+            # maint:/dl:/reprocess: oben - ohne diesen Handler verpuffte
+            # jeder doctor:-Callback stillschweigend, obwohl das interne
+            # doctor:-Routing in RichMenuSystem.handle_callback() bereits
+            # korrekt ist.
+            CallbackQueryHandler(self.menu_system.handle_callback, pattern="^doctor:"),
             # Allgemeines Menü zuletzt
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^menu:"),
             # URL Handler (YouTube-URLs)
