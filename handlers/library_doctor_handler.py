@@ -36,12 +36,39 @@ from telegram.ext import ContextTypes
 
 from config import Config
 from logger import get_module_logger
+from services.library_health.issues import REGISTRY as ISSUE_REGISTRY
+from services.library_health.models import Severity
 from services.library_repair.doctor_runner import (
     DoctorRepairResult,
     DoctorScanResult,
     run_health_scan,
     run_safe_automatic_repair,
 )
+
+# Reine Anzeige-Zuordnung Health-Status -> Ampel-Emoji (Statusbänder selbst
+# kommen unveraendert aus services/library_health/scoring.py - hier wird
+# nur der bereits im Report vorhandene Status-String eingefaerbt, keine
+# eigene Schwellenwert-Logik).
+_STATUS_EMOJI = {
+    "EXCELLENT": "🟢", "GOOD": "🟢", "FAIR": "🟡",
+    "POOR": "🟠", "CRITICAL": "🔴", "UNSCORED": "⚪",
+}
+
+
+def _short_issue_label(description: str, max_len: int = 110) -> str:
+    """Kuerzt eine Issue-Beschreibung aus services/library_health/issues.py
+    fuer die Chat-Anzeige. Die Registry-Texte sind bewusst engineering-
+    ausfuehrlich (Begruendung, Regex-Referenzen, Folgeverhalten) - das ist
+    fuer die technische Doku richtig, aber zu lang fuer eine Telegram-
+    Zeile. Nimmt nur den ersten Satz/Halbsatz (bis ". " bzw. " — ") und
+    deckelt zusaetzlich hart auf max_len, an einer Wortgrenze."""
+    for sep in (" — ", ". "):
+        if sep in description:
+            description = description.split(sep, 1)[0]
+            break
+    if len(description) <= max_len:
+        return description
+    return description[:max_len].rsplit(" ", 1)[0].rstrip(",;: ") + "…"
 
 if TYPE_CHECKING:
     from handlers.enhanced_error_handler import EnhancedErrorHandler
@@ -117,25 +144,62 @@ class LibraryDoctorHandler:
         report = result.report
         stats = report.get("statistics", {})
         health = report.get("health", {})
-        top_codes = sorted(
-            stats.get("issues_by_code", {}).items(), key=lambda kv: kv[1], reverse=True
-        )[:5]
-        issue_lines = "\n".join(
-            f"  {html.escape(code)}: {count}" for code, count in top_codes
-        ) or "  keine"
+        total_files = stats.get("total_files") or 0
+
+        # Nach Severity trennen (REGISTRY = Single Source of Truth aus
+        # services/library_health/issues.py, dieselbe Quelle wie der
+        # Health-Score selbst) - INFO ist laut Projektkonvention kein
+        # Mangel und beeinflusst den Score nicht (LIBRARY_HEALTH.md §4),
+        # sollte deshalb auch hier nicht wie ein Problem aussehen.
+        problem_codes: list = []
+        info_codes: list = []
+        for code, count in stats.get("issues_by_code", {}).items():
+            spec = ISSUE_REGISTRY.get(code)
+            bucket = info_codes if spec and spec.default_severity == Severity.INFO else problem_codes
+            bucket.append((code, count, spec))
+
+        def _render(entries, limit=5):
+            lines = []
+            for code, count, spec in sorted(entries, key=lambda e: e[1], reverse=True)[:limit]:
+                label = html.escape(_short_issue_label(spec.description)) if spec else html.escape(code)
+                pct = (
+                    f" ({count / total_files * 100:.0f} % der Tracks)"
+                    if spec and spec.scope.value == "file" and total_files
+                    else ""
+                )
+                lines.append(f"  • <b>{count}×</b> {label}{pct}")
+            return lines
+
+        section_lines = []
+        problem_lines = _render(problem_codes)
+        if problem_lines:
+            section_lines.append("⚠️ <b>Wirkt sich auf den Score aus:</b>")
+            section_lines.extend(problem_lines)
+        else:
+            section_lines.append("✅ Keine Befunde, die den Score senken.")
+
+        info_lines = _render(info_codes)
+        if info_lines:
+            section_lines.append("")
+            section_lines.append(
+                "ℹ️ <b>Nur Beobachtung, kein Mangel</b> (zählt nicht in den Score):"
+            )
+            section_lines.extend(info_lines)
+
+        status = health.get("status", "UNSCORED")
+        status_emoji = _STATUS_EMOJI.get(status, "⚪")
 
         text = (
             f"🩺 <b>MusicBot Doctor — Health-Scan</b>\n\n"
-            f"Tracks: {stats.get('total_files')}  "
-            f"Albums: {stats.get('total_albums')}  "
-            f"Artists: {stats.get('total_artists')}\n"
-            f"Health-Score: {html.escape(str(health.get('score')))} "
-            f"({html.escape(str(health.get('status')))})\n\n"
-            f"Häufigste Issues:\n{issue_lines}\n\n"
-            "Sichere, verlustfreie Tag-/Dateinamen-Reparaturen "
-            "(SAFE_AUTOMATIC) können direkt angewendet werden. Alle "
-            "anderen Reparatur-Stufen (Cover/MusicBrainz/Lyrics/"
-            "Loudness/Duplikate) bleiben bewusst CLI-only."
+            f"🎵 {html.escape(str(stats.get('total_files')))} Tracks  ·  "
+            f"💿 {html.escape(str(stats.get('total_albums')))} Alben  ·  "
+            f"🎤 {html.escape(str(stats.get('total_artists')))} Artists\n"
+            f"{status_emoji} <b>Health-Score: {html.escape(str(health.get('score')))}"
+            f" ({html.escape(str(status))})</b>\n\n"
+            + "\n".join(section_lines) +
+            "\n\n🔧 Sichere, verlustfreie Tag-/Dateinamen-Reparaturen können "
+            "direkt angewendet werden. Cover/MusicBrainz/Lyrics/Loudness/"
+            "Duplikate bleiben bewusst CLI-only (siehe docs/LIBRARY_REPAIR.md)."
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(

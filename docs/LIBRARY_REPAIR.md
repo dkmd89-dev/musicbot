@@ -464,6 +464,16 @@ nicht die gesamte Telegram-Application blockiert (die läuft ohne
 Health-Score/häufigste Issues) + „🔧 SAFE_AUTOMATIC anwenden"-Button →
 Bestätigung → Apply-Lauf → Ergebnis.
 
+Die Zusammenfassung trennt Issues nach Score-Relevanz statt sie als rohe
+Issue-Codes aufzulisten: ein „⚠️ Wirkt sich auf den Score aus"-Block
+(WARNING/ERROR/CRITICAL) und ein separater „ℹ️ Nur Beobachtung, kein
+Mangel"-Block (INFO — beeinflusst den Score laut `LIBRARY_HEALTH.md` §4
+nicht). Labels kommen aus der Beschreibung in
+`services/library_health/issues.py::REGISTRY` (Single Source of Truth,
+dieselbe Quelle wie der Health-Score selbst), gekürzt auf den ersten
+Satz/110 Zeichen für die Chat-Anzeige (`_short_issue_label()`), plus
+Prozentanteil an der Library bei datei-bezogenen Codes.
+
 **Bewusst nur `SAFE_AUTOMATIC` über diesen Weg erreichbar** — alle
 externen/destruktiven Level (`COVER`/`EXTERNAL_METADATA`/
 `METADATA_REPROCESSING`/`LOUDNESS`/`DUPLICATE`) bleiben CLI-only, exakt
