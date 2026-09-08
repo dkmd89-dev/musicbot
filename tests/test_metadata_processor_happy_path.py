@@ -509,3 +509,99 @@ def test_missing_filepath_error_does_not_crash_cleanup(processor, filename_fixer
 
     assert result.success is False
     assert result.error
+
+
+def _capture_tag_write(processor):
+    """Ersetzt tag_writer.write_tags durch einen Spion, der die
+    tatsaechlich uebergebenen kwargs festhaelt (das ist der einzige Ort,
+    an dem feat_artists die EnhancedMetadataProcessor-Pipeline verlaesst -
+    MetadataResult hat kein feat_artists-Feld)."""
+    captured = {}
+    original = processor.tag_writer.write_tags
+
+    def _spy(**kwargs):
+        captured.update(kwargs)
+        return original(**kwargs)
+
+    processor.tag_writer.write_tags = _spy
+    return captured
+
+
+def test_feat_from_title_reaches_feat_artists_in_tag_write(
+    processor, filename_fixer, tmp_path
+):
+    """Finding A (Download-Pipeline-Testlauf 2026-09-09): ein
+    Feature-Artist, der NUR ueber ein "feat."/"ft." IM TITEL erscheint
+    ("Akon - Smack That ft. Eminem"), landet vom YouTube-Parser korrekt in
+    youtube_parsed["featuring"] - diese Liste wurde im
+    EnhancedMetadataProcessor bisher NIE gelesen. Foglich fiel Eminem
+    komplett aus den Tags (©ART = ['Akon'], ARTISTS-Freeform leer).
+
+    Kontrast: Co-Primary-Artists ueber "x"/"&"/"," ("Mia Julia x DJ Mico -
+    Song") landen ueber den all_artists-Rest-Zweig korrekt in feat_artists
+    - siehe test_cofeat_from_artist_part_still_reaches_feat_artists unten.
+    """
+    captured = _capture_tag_write(processor)
+    source = tmp_path / "smackthat.mp3"
+    source.write_bytes(b"fake-audio-bytes-not-real-mp3-data")
+
+    track_metadata = {
+        "title": "Akon - Smack That (Official Music Video) ft. Eminem",
+        "artist": "Akon",
+        "uploader": "AkonVEVO",
+        "channel": "AkonVEVO",
+        "id": "SMACKTH1",
+        "filepath": str(source),
+        "cover_art": b"fake-cover-bytes",
+        "genre": "Hip Hop",
+    }
+
+    result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=track_metadata,
+            filename_fixer=filename_fixer,
+        )
+    )
+
+    assert result.success is True
+    assert result.artist == "Akon"
+    feat = captured.get("feat_artists") or []
+    assert any(
+        f.lower() == "eminem" for f in feat
+    ), f"Feature-Artist 'Eminem' aus dem Titel-feat. fehlt in feat_artists: {feat!r}"
+
+
+def test_cofeat_from_artist_part_still_reaches_feat_artists(
+    processor, filename_fixer, tmp_path
+):
+    """Regressions-Guard fuer den bereits funktionierenden Pfad: ein
+    zweiter Artist im ARTIST-Teil des Titels (vor dem Trennzeichen) muss
+    weiterhin ueber den all_artists-Rest-Zweig als feat_artist erscheinen -
+    der Fix fuer Finding A darf diesen Zweig nicht verdraengen."""
+    captured = _capture_tag_write(processor)
+    source = tmp_path / "cofeat.mp3"
+    source.write_bytes(b"fake-audio-bytes-not-real-mp3-data")
+
+    track_metadata = {
+        "title": "Mia Julia x DJ Mico - Party Song (Official Video)",
+        "artist": "Mia Julia",
+        "uploader": "Summerfield Records",
+        "channel": "Summerfield Records",
+        "id": "COFEAT01",
+        "filepath": str(source),
+        "cover_art": b"fake-cover-bytes",
+        "genre": "Dance",
+    }
+
+    result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=track_metadata,
+            filename_fixer=filename_fixer,
+        )
+    )
+
+    assert result.success is True
+    feat = captured.get("feat_artists") or []
+    assert any(
+        "mico" in f.lower() for f in feat
+    ), f"Co-Artist 'DJ Mico' fehlt in feat_artists: {feat!r}"
