@@ -56,7 +56,6 @@ from logger import get_module_logger  # noqa: E402
 from services.library_repair.planner import filter_plan, plan_repairs  # noqa: E402
 from services.library_repair.report import render_plan_text  # noqa: E402
 
-
 RESOLVE_DUPLICATES_SCRIPT = Path(__file__).resolve().parent / "resolve_duplicates.py"
 
 
@@ -97,9 +96,11 @@ def _run_duplicate_resolution(args) -> int:
         cmd += ["--backup-dir", str(args.backup_dir)]
     if not args.dry_run:
         cmd += ["--execute", "--confirm-production-execute"]
-        print(f"⚠️  DUPLICATE EXECUTE gegen Produktion: {target}\n"
-              f"    (Backup vor jedem Delete, Fingerprint-/TOCTOU-Revalidierung, "
-              f"Manifest + Audit-Log unter /tmp/musicbot_test/duplicate_execution_*)")
+        print(
+            f"⚠️  DUPLICATE EXECUTE gegen Produktion: {target}\n"
+            f"    (Backup vor jedem Delete, Fingerprint-/TOCTOU-Revalidierung, "
+            f"Manifest + Audit-Log unter /tmp/musicbot_test/duplicate_execution_*)"
+        )
     else:
         print(f"🔍 DUPLICATE DRY-RUN (read-only): {target}")
 
@@ -134,47 +135,76 @@ def main(argv=None) -> int:
         prog="library_repair.py",
         description="Smart Library Repair — erzeugt einen Reparaturplan (read-only).",
     )
-    parser.add_argument("--library", default=None,
-                        help="Library-Wurzel fuer den Scan (Default: config.Config.LIBRARY_DIR).")
-    parser.add_argument("--report", default=None,
-                        help="Vorhandenen Health-Report (JSON) verwenden statt neu zu scannen.")
-    parser.add_argument("--json", dest="json_path", default=None,
-                        help="Reparaturplan als JSON schreiben.")
+    parser.add_argument(
+        "--library",
+        default=None,
+        help="Library-Wurzel fuer den Scan (Default: config.Config.LIBRARY_DIR).",
+    )
+    parser.add_argument(
+        "--report",
+        default=None,
+        help="Vorhandenen Health-Report (JSON) verwenden statt neu zu scannen.",
+    )
+    parser.add_argument(
+        "--json",
+        dest="json_path",
+        default=None,
+        help="Reparaturplan als JSON schreiben.",
+    )
     parser.add_argument("--artist", default=None, help="Nur diesen Artist.")
-    parser.add_argument("--issue", dest="issue_code", default=None,
-                        help="Nur diesen Issue-Code (z. B. LOUDNESS_OFF_TARGET).")
-    parser.add_argument("--severity", default=None,
-                        help="Nur diese Severity (INFO/WARNING/ERROR/CRITICAL).")
-    parser.add_argument("--level", default=None,
-                        help="Nur diese Reparaturstufe (z. B. SAFE_AUTOMATIC).")
+    parser.add_argument(
+        "--issue",
+        dest="issue_code",
+        default=None,
+        help="Nur diesen Issue-Code (z. B. LOUDNESS_OFF_TARGET).",
+    )
+    parser.add_argument(
+        "--severity",
+        default=None,
+        help="Nur diese Severity (INFO/WARNING/ERROR/CRITICAL).",
+    )
+    parser.add_argument(
+        "--level", default=None, help="Nur diese Reparaturstufe (z. B. SAFE_AUTOMATIC)."
+    )
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument(
-        "--apply", action="store_true",
+        "--apply",
+        action="store_true",
         help="Level-1-Tag-Reparaturen tatsaechlich ausfuehren (mit Per-Datei-"
-             "Backup, Journal, Before/After, Verification-Scan). Ohne dieses "
-             "Flag: nur Plan (DRY-RUN).",
+        "Backup, Journal, Before/After, Verification-Scan). Ohne dieses "
+        "Flag: nur Plan (DRY-RUN).",
     )
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Explizit nur Plan/Vorschau (Default-Verhalten).")
-    parser.add_argument("--backup-dir", default=None,
-                        help="Verzeichnis fuer Rollback-Kopien "
-                             "(Default: <library>/../.library_repair_backups, "
-                             "ausserhalb der Library).")
     parser.add_argument(
-        "--allow-delete", dest="allow_delete", action="store_true",
+        "--dry-run",
+        action="store_true",
+        help="Explizit nur Plan/Vorschau (Default-Verhalten).",
+    )
+    parser.add_argument(
+        "--backup-dir",
+        default=None,
+        help="Verzeichnis fuer Rollback-Kopien "
+        "(Default: <library>/../.library_repair_backups, "
+        "ausserhalb der Library).",
+    )
+    parser.add_argument(
+        "--allow-delete",
+        dest="allow_delete",
+        action="store_true",
         help="Duplicate-Aufloesung ausfuehren (destruktiv) - dockt an das "
-             "bestehende, bereits gehaertete scripts/resolve_duplicates.py "
-             "an (kein eigener Loesch-Code). Erfordert --artist (nie der "
-             "gesamte Library-Root). Ohne --dry-run wird tatsaechlich "
-             "gelöscht (mit Backup + Rollback), mit --dry-run nur Vorschau.",
+        "bestehende, bereits gehaertete scripts/resolve_duplicates.py "
+        "an (kein eigener Loesch-Code). Erfordert --artist (nie der "
+        "gesamte Library-Root). Ohne --dry-run wird tatsaechlich "
+        "gelöscht (mit Backup + Rollback), mit --dry-run nur Vorschau.",
     )
     parser.add_argument(
-        "--no-navidrome-scan", dest="no_navidrome_scan", action="store_true",
+        "--no-navidrome-scan",
+        dest="no_navidrome_scan",
+        action="store_true",
         help="Automatischen Navidrome-Scan nach einem --apply-Lauf mit "
-             "echten Aenderungen unterdruecken (Phase 3, P1.2). Ohne dieses "
-             "Flag wird nach mindestens einem SUCCESS-Outcome automatisch "
-             "NavidromeScanTrigger.run_scan() aufgerufen; bei --dry-run "
-             "(bzw. ohne --apply) nie.",
+        "echten Aenderungen unterdruecken (Phase 3, P1.2). Ohne dieses "
+        "Flag wird nach mindestens einem SUCCESS-Outcome automatisch "
+        "NavidromeScanTrigger.run_scan() aufgerufen; bei --dry-run "
+        "(bzw. ohne --apply) nie.",
     )
 
     args = parser.parse_args(argv)
@@ -198,8 +228,11 @@ def main(argv=None) -> int:
     plan = plan_repairs(report)
     if any((args.artist, args.issue_code, args.severity, args.level)):
         plan = filter_plan(
-            plan, artist=args.artist, issue_code=args.issue_code,
-            severity=args.severity, level=args.level,
+            plan,
+            artist=args.artist,
+            issue_code=args.issue_code,
+            severity=args.severity,
+            level=args.level,
         )
 
     print(render_plan_text(plan))
@@ -207,8 +240,9 @@ def main(argv=None) -> int:
     if args.json_path:
         out = Path(args.json_path)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(plan.to_dict(), indent=2, ensure_ascii=False),
-                       encoding="utf-8")
+        out.write_text(
+            json.dumps(plan.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8"
+        )
         print(f"\n📄 Plan: {out}")
 
     if not args.apply:
@@ -216,10 +250,20 @@ def main(argv=None) -> int:
 
     # ── Ausfuehrung ─────────────────────────────────────────────────────
     from services.library_repair.executor import (
-        ALBUM_COVER_CODES, COVER_ISSUE_CODES, EXTERNAL_MB_CODES,
-        L1_RENAME_CODES, L1_TAG_CODES, L2_CODES, LOUDNESS_ISSUE_CODES,
-        apply_album_cover_unify, apply_cover_repairs, apply_external_metadata,
-        apply_level1, apply_level1_rename, apply_level2, apply_replaygain,
+        ALBUM_COVER_CODES,
+        COVER_ISSUE_CODES,
+        EXTERNAL_MB_CODES,
+        L1_RENAME_CODES,
+        L1_TAG_CODES,
+        L2_CODES,
+        LOUDNESS_ISSUE_CODES,
+        apply_album_cover_unify,
+        apply_cover_repairs,
+        apply_external_metadata,
+        apply_level1,
+        apply_level1_rename,
+        apply_level2,
+        apply_replaygain,
     )
     from services.library_repair.journal import RepairJournal
 
@@ -235,75 +279,123 @@ def main(argv=None) -> int:
     _lvl = (args.level or "").upper()
     cover_requested = _lvl == "COVER" or args.issue_code in COVER_ISSUE_CODES
     album_cover_requested = _lvl == "COVER" or args.issue_code in ALBUM_COVER_CODES
-    cover_cands = [c for c in plan.candidates if c.issue_code in COVER_ISSUE_CODES] \
-        if cover_requested else []
-    album_cover_cands = [c for c in plan.candidates if c.issue_code in ALBUM_COVER_CODES] \
-        if album_cover_requested else []
+    cover_cands = (
+        [c for c in plan.candidates if c.issue_code in COVER_ISSUE_CODES]
+        if cover_requested
+        else []
+    )
+    album_cover_cands = (
+        [c for c in plan.candidates if c.issue_code in ALBUM_COVER_CODES]
+        if album_cover_requested
+        else []
+    )
     # L3 MusicBrainz-IDs: extern/rate-limited -> nur auf ausdrueckliche Anforderung
     mb_requested = _lvl == "EXTERNAL_METADATA" or args.issue_code in EXTERNAL_MB_CODES
-    mb_cands = [c for c in plan.candidates if c.issue_code in EXTERNAL_MB_CODES] \
-        if mb_requested else []
+    mb_cands = (
+        [c for c in plan.candidates if c.issue_code in EXTERNAL_MB_CODES]
+        if mb_requested
+        else []
+    )
     # L2 volle Neuverarbeitung: langsam (Genius/MusicBrainz/Cover pro Datei) und
     # mit breitem Effekt (Titel/Album/Genre/Lyrics/Cover/MB-IDs/Rename +
     # Auto-Learn-Mapping-Update) -> nur auf ausdrueckliche Anforderung.
     l2_requested = _lvl == "METADATA_REPROCESSING" or args.issue_code in L2_CODES
-    l2_cands = [c for c in plan.candidates if c.issue_code in L2_CODES] \
-        if l2_requested else []
+    l2_cands = (
+        [c for c in plan.candidates if c.issue_code in L2_CODES] if l2_requested else []
+    )
     # Loudness: verlustfreier RG-Tag -> nur auf ausdrueckliche Anforderung
     # (setzt einen --measure-loudness-Report voraus)
     loudness_requested = _lvl == "LOUDNESS" or args.issue_code in LOUDNESS_ISSUE_CODES
-    loudness_cands = [c for c in plan.candidates if c.issue_code in LOUDNESS_ISSUE_CODES] \
-        if loudness_requested else []
+    loudness_cands = (
+        [c for c in plan.candidates if c.issue_code in LOUDNESS_ISSUE_CODES]
+        if loudness_requested
+        else []
+    )
 
-    if not (l1_tags or l1_rename or cover_cands or album_cover_cands or mb_cands
-            or l2_cands or loudness_cands):
+    if not (
+        l1_tags
+        or l1_rename
+        or cover_cands
+        or album_cover_cands
+        or mb_cands
+        or l2_cands
+        or loudness_cands
+    ):
         print("\nKeine ausfuehrbaren Reparaturen im (gefilterten) Plan.")
         return 0
 
     mode = "DRY-RUN (keine Datei wird veraendert)" if execute_dry else "EXECUTE"
-    print(f"\n{'=' * 70}\nREPAIR {mode} — {len(l1_tags)} Tag-Fixes + "
-          f"{len(l1_rename)} Renames + {len(cover_cands)} Cover + "
-          f"{len(album_cover_cands)} Album-Cover + {len(mb_cands)} MB-IDs + "
-          f"{len({c.path for c in l2_cands})} L2-Neuverarbeitung + "
-          f"{len(loudness_cands)} Loudness\n{'=' * 70}")
+    print(
+        f"\n{'=' * 70}\nREPAIR {mode} — {len(l1_tags)} Tag-Fixes + "
+        f"{len(l1_rename)} Renames + {len(cover_cands)} Cover + "
+        f"{len(album_cover_cands)} Album-Cover + {len(mb_cands)} MB-IDs + "
+        f"{len({c.path for c in l2_cands})} L2-Neuverarbeitung + "
+        f"{len(loudness_cands)} Loudness\n{'=' * 70}"
+    )
     if l2_cands and not execute_dry:
-        print("⚠️  L2 EXECUTE: die volle Pipeline aktualisiert dabei auch die "
-              "Auto-Learn-Mappings (mapping/auto_learned_*) mit den beobachteten "
-              "Feature-Artists/Genres der Tracks — wie bei einem frischen Download.")
+        print(
+            "⚠️  L2 EXECUTE: die volle Pipeline aktualisiert dabei auch die "
+            "Auto-Learn-Mappings (mapping/auto_learned_*) mit den beobachteten "
+            "Feature-Artists/Genres der Tracks — wie bei einem frischen Download."
+        )
     if loudness_cands and not execute_dry:
-        print("ℹ️  LOUDNESS EXECUTE: schreibt einen verlustfreien "
-              "replaygain_track_gain-/_peak-Tag (Ziel -16 LUFS) — Audio "
-              "byte-identisch. Wirksam nur in ReplayGain-fähigen Playern "
-              "(Navidrome). Per-Datei-Backup + Rollback.")
+        print(
+            "ℹ️  LOUDNESS EXECUTE: schreibt einen verlustfreien "
+            "replaygain_track_gain-/_peak-Tag (Ziel -16 LUFS) — Audio "
+            "byte-identisch. Wirksam nur in ReplayGain-fähigen Playern "
+            "(Navidrome). Per-Datei-Backup + Rollback."
+        )
 
-    outcomes = apply_level1(l1_tags, library_root, journal, dry_run=execute_dry,
-                            backup_dir=backup_dir)
-    outcomes += apply_level1_rename(l1_rename, library_root, journal, dry_run=execute_dry)
+    outcomes = apply_level1(
+        l1_tags, library_root, journal, dry_run=execute_dry, backup_dir=backup_dir
+    )
+    outcomes += apply_level1_rename(
+        l1_rename, library_root, journal, dry_run=execute_dry
+    )
 
     if cover_cands:
         outcomes += apply_cover_repairs(
-            cover_cands, library_root, journal, _build_cover_fetcher(config, logger),
-            dry_run=execute_dry, backup_dir=backup_dir,
+            cover_cands,
+            library_root,
+            journal,
+            _build_cover_fetcher(config, logger),
+            dry_run=execute_dry,
+            backup_dir=backup_dir,
         )
     if album_cover_cands:
         outcomes += apply_album_cover_unify(
-            album_cover_cands, library_root, journal,
-            dry_run=execute_dry, backup_dir=backup_dir,
+            album_cover_cands,
+            library_root,
+            journal,
+            dry_run=execute_dry,
+            backup_dir=backup_dir,
         )
     if mb_cands:
         outcomes += apply_external_metadata(
-            mb_cands, library_root, journal, _build_mb_lookup(logger),
-            dry_run=execute_dry, backup_dir=backup_dir,
+            mb_cands,
+            library_root,
+            journal,
+            _build_mb_lookup(logger),
+            dry_run=execute_dry,
+            backup_dir=backup_dir,
         )
     if l2_cands:
         outcomes += apply_level2(
-            l2_cands, library_root, journal, _build_reprocess(config, logger),
-            dry_run=execute_dry, backup_dir=backup_dir,
+            l2_cands,
+            library_root,
+            journal,
+            _build_reprocess(config, logger),
+            dry_run=execute_dry,
+            backup_dir=backup_dir,
         )
     if loudness_cands:
         outcomes += apply_replaygain(
-            loudness_cands, library_root, journal, _build_lufs_measure(),
-            dry_run=execute_dry, backup_dir=backup_dir,
+            loudness_cands,
+            library_root,
+            journal,
+            _build_lufs_measure(),
+            dry_run=execute_dry,
+            backup_dir=backup_dir,
         )
     journal.flush()
 
@@ -314,10 +406,13 @@ def main(argv=None) -> int:
         print(f"STATUS: {oc.status}" + (f"  ({oc.reason})" if oc.reason else ""))
 
     from collections import Counter
+
     tally = Counter(o.status for o in outcomes)
-    print(f"\n{tally.get('SUCCESS', 0)} success · {tally.get('DRY_RUN', 0)} would-change · "
-          f"{tally.get('SKIPPED', 0)} skipped · {tally.get('FAILED', 0)} failed  "
-          f"→  Journal: {journal_path}")
+    print(
+        f"\n{tally.get('SUCCESS', 0)} success · {tally.get('DRY_RUN', 0)} would-change · "
+        f"{tally.get('SKIPPED', 0)} skipped · {tally.get('FAILED', 0)} failed  "
+        f"→  Journal: {journal_path}"
+    )
 
     if execute_dry:
         return 0
@@ -331,18 +426,27 @@ def main(argv=None) -> int:
         _trigger_navidrome_scan(logger)
 
     touched = {o.issue_code for o in outcomes if o.status == "SUCCESS"}
-    if mb_cands and any(o.status == "SUCCESS" for o in outcomes
-                        if o.issue_code in EXTERNAL_MB_CODES):
+    if mb_cands and any(
+        o.status == "SUCCESS" for o in outcomes if o.issue_code in EXTERNAL_MB_CODES
+    ):
         touched |= set(EXTERNAL_MB_CODES)
-    if l2_cands and any(o.status == "SUCCESS" for o in outcomes
-                        if o.action == "METADATA_REPROCESS"):
+    if l2_cands and any(
+        o.status == "SUCCESS" for o in outcomes if o.action == "METADATA_REPROCESS"
+    ):
         # eine L2-Neuverarbeitung berührt potenziell jeden METADATA_REPROCESSING-Code
         touched |= set(L2_CODES)
-    if loudness_cands and any(o.status == "SUCCESS" for o in outcomes
-                              if o.action == "LOUDNESS_NORMALIZE"):
+    if loudness_cands and any(
+        o.status == "SUCCESS" for o in outcomes if o.action == "LOUDNESS_NORMALIZE"
+    ):
         touched |= set(LOUDNESS_ISSUE_CODES)
-    return _verification_scan(report, library_root, config, logger, touched,
-                              measure_loudness=bool(loudness_cands))
+    return _verification_scan(
+        report,
+        library_root,
+        config,
+        logger,
+        touched,
+        measure_loudness=bool(loudness_cands),
+    )
 
 
 def _trigger_navidrome_scan(logger) -> None:
@@ -362,13 +466,17 @@ def _trigger_navidrome_scan(logger) -> None:
         if result.success:
             print(f"\n🔄 Navidrome-Scan automatisch ausgeloest (Erfolg).")
         else:
-            print(f"\n⚠️  Navidrome-Scan automatisch ausgeloest, aber "
-                  f"fehlgeschlagen (Return Code {result.returncode}) - "
-                  f"Repair-Ergebnis davon unberuehrt.")
+            print(
+                f"\n⚠️  Navidrome-Scan automatisch ausgeloest, aber "
+                f"fehlgeschlagen (Return Code {result.returncode}) - "
+                f"Repair-Ergebnis davon unberuehrt."
+            )
     except Exception as e:  # noqa: BLE001 - Scan-Fehler duerfen den Repair-Exit-Code nicht aendern
         logger.warning(f"Automatischer Navidrome-Scan nach Repair fehlgeschlagen: {e}")
-        print(f"\n⚠️  Automatischer Navidrome-Scan fehlgeschlagen ({e}) - "
-              f"Repair-Ergebnis davon unberuehrt.")
+        print(
+            f"\n⚠️  Automatischer Navidrome-Scan fehlgeschlagen ({e}) - "
+            f"Repair-Ergebnis davon unberuehrt."
+        )
 
 
 def _build_cover_fetcher(config, logger):
@@ -379,8 +487,9 @@ def _build_cover_fetcher(config, logger):
     from services.metadata.cover_processor import CoverProcessor
 
     fanart_key = getattr(config, "FANART_API_KEY", None)
-    cp = CoverProcessor(fanart_api_key=fanart_key,
-                        logger=get_module_logger("library_repair.cover"))
+    cp = CoverProcessor(
+        fanart_api_key=fanart_key, logger=get_module_logger("library_repair.cover")
+    )
 
     def _fetch(ctx: dict):
         return cp.get_cover_art(
@@ -434,10 +543,18 @@ def _build_reprocess(config, logger):
     lfm_client = LastFMClient(logger=get_module_logger("library_repair.l2.lfm"))
     log = NullReprocessLog()
 
-    def _reprocess(path, artist_root, dry_run):
+    def _reprocess(path, artist_root, dry_run, requested_issue=None):
         return asyncio.run(
-            process_file(path, artist_root, processor, mb_client, lfm_client, log,
-                         dry_run=dry_run)
+            process_file(
+                path,
+                artist_root,
+                processor,
+                mb_client,
+                lfm_client,
+                log,
+                dry_run=dry_run,
+                requested_issue=requested_issue,
+            )
         )
 
     return _reprocess
@@ -456,8 +573,15 @@ def _build_lufs_measure():
     return _measure
 
 
-def _verification_scan(before_report, library_root, config, logger, touched_codes,
-                       *, measure_loudness=False) -> int:
+def _verification_scan(
+    before_report,
+    library_root,
+    config,
+    logger,
+    touched_codes,
+    *,
+    measure_loudness=False,
+) -> int:
     """Prompt Abschnitt 16: nach der Reparatur erneut scannen und Before/After
     vergleichen. Ein Repair darf keine Probleme verstecken — die Ziel-Codes
     muessen sinken, es duerfen keine NEUEN Issue-Codes auftauchen."""
@@ -474,7 +598,9 @@ def _verification_scan(before_report, library_root, config, logger, touched_code
     b = before_report["statistics"]["issues_by_code"]
     a = after["statistics"]["issues_by_code"]
     print(f"\n{'=' * 70}\nVERIFICATION SCAN\n{'=' * 70}")
-    print(f"Health:  {before_report['health']['score']}  ->  {after['health']['score']}")
+    print(
+        f"Health:  {before_report['health']['score']}  ->  {after['health']['score']}"
+    )
     for code in sorted(touched_codes):
         print(f"  {code}: {b.get(code, 0)} -> {a.get(code, 0)}")
     new_codes = set(a) - set(b)

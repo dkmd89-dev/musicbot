@@ -39,15 +39,16 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from mutagen.mp4 import MP4
+
 from services.metadata.models import split_main_and_featuring
 from utils.helpers import sanitize_filename
 from utils.regex import ILLEGAL_CHARS_PATTERN
-from mutagen.mp4 import MP4
 
 if TYPE_CHECKING:  # nur fuer Typannotationen — kein Laufzeit-Import
-    from services.metadata.enhanced_metadata_processor import EnhancedMetadataProcessor
-    from services.clients.musicbrainz_client import MusicBrainzClient
     from services.clients.lastfm_client import LastFMClient
+    from services.clients.musicbrainz_client import MusicBrainzClient
+    from services.metadata.enhanced_metadata_processor import EnhancedMetadataProcessor
 
 
 class ReprocessLog(Protocol):
@@ -82,7 +83,6 @@ MB_ID_ATOM_MAP = {
 }
 
 
-
 def _freeform_str(values):
     out = []
     for v in values or []:
@@ -103,10 +103,19 @@ def _ffprobe_stream_info(path: Path) -> dict:
     try:
         result = subprocess.run(
             [
-                "ffprobe", "-v", "quiet", "-print_format", "json",
-                "-show_format", "-show_streams", str(path),
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
+                str(path),
             ],
-            capture_output=True, text=True, timeout=30, check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
         )
         data = json.loads(result.stdout)
         audio_stream = next(
@@ -134,7 +143,10 @@ def audio_essence_md5(path: Path) -> str:
     try:
         result = subprocess.run(
             ["ffmpeg", "-v", "error", "-i", str(path), "-map", "0:a", "-f", "md5", "-"],
-            capture_output=True, text=True, timeout=60, check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
         )
         return result.stdout.strip() or result.stderr.strip()
     except Exception as e:
@@ -405,7 +417,10 @@ async def process_file(
     lfm_client: LastFMClient,
     log: ReprocessLog,
     dry_run: bool = False,
+    requested_issue: str | None = None,
 ) -> dict:
+    requested_issue = requested_issue.upper() if requested_issue else None
+
     rel = path.relative_to(artist_root.parent)
     log.section(f"🎵 FILE START: {rel}", emoji="🎵")
     log.kv("📂 Input", path)
@@ -454,33 +469,27 @@ async def process_file(
 
         # ── ArtistNormalizer + Multi-Artist-Split ────────────────────────
         existing_artist_values = before["artist"] or before["album_artist"]
-        # TAG-01-Altlast (real bei Nina Chuba "Verlaufen feat. SIDO"
-        # entdeckt): das Freeform-Feld "ARTISTS" kann VOLLSTAENDIGERE
-        # Informationen enthalten als das Standard-©ART-Tag - hier war
-        # ©ART nur ['Nina Chuba'], das Freeform-Feld aber
-        # ['Nina Chuba; SIDO'] (ein zusammengeklebter Wert, SIDO fehlte im
-        # Standard-Tag komplett). Beide Quellen werden deshalb gemeinsam an
-        # flatten_existing_artists() uebergeben - dieselbe bestehende
-        # Split-/Dedupe-Logik, nur auf eine vollstaendigere Eingabemenge
-        # angewendet, keine neue Heuristik.
+
         combined_artist_sources = list(existing_artist_values) + [
             v for v in before["artists_freeform"] if v not in existing_artist_values
         ]
-        flat_artists = flatten_existing_artists(combined_artist_sources)
-        if not flat_artists:
-            raise ValueError("Kein Artist-Tag vorhanden - kann nicht verarbeitet werden")
 
-        # ARCH Artist-Identity Phase D (Schritt 15): normalize() ist seit
-        # Phase D reine String-Normalisierung (Casing/Kollaboration). Beim
-        # Reprocessing bestehender Library-Dateien ist der ©ART-Tag bereits
-        # ein von einem frueheren Pipeline-Lauf geschriebener kanonischer
-        # Wert - eine erneute Override-/Alias-Aufloesung ueber den
-        # ArtistIdentityResolver ist hier bewusst NICHT eingebaut (kein
-        # identitaetskritischer Pfad; ggf. Phase E). String-Normalisierung
-        # genuegt.
-        normalized_artists = [
-            processor.artist_normalizer.normalize(a) or a for a in flat_artists
-        ]
+        flat_artists = flatten_existing_artists(combined_artist_sources)
+
+        if not flat_artists:
+            raise ValueError(
+                "Kein Artist-Tag vorhanden - kann nicht verarbeitet werden"
+            )
+
+        if requested_issue in {"LYRICS_MISSING", "GENRE_INVALID"}:
+            # Issue-spezifisches L2-Reprocessing darf bestehende
+            # Artist-Tags nicht nebenbei normalisieren.
+            normalized_artists = flat_artists
+        else:
+            normalized_artists = [
+                processor.artist_normalizer.normalize(a) or a for a in flat_artists
+            ]
+
         final_artist = normalized_artists[0]
         feat_artists = normalized_artists[1:]
 
@@ -489,7 +498,9 @@ async def process_file(
         log.kv("→ input (+ARTISTS-Freeform)", combined_artist_sources, indent=2)
         log.kv("→ flattened", flat_artists, indent=2)
         log.kv("→ output", normalized_artists, indent=2)
-        if len(flat_artists) > 1 or any(";" in (v or "") for v in combined_artist_sources):
+        if len(flat_artists) > 1 or any(
+            ";" in (v or "") for v in combined_artist_sources
+        ):
             log.line("🎤 Multi-Artist")
             log.kv("→ input", combined_artist_sources, indent=2)
             log.kv("→ main", final_artist, indent=2)
@@ -529,7 +540,9 @@ async def process_file(
             mb_client=mb_client,
             lfm_client=lfm_client,
         )
-        fresh_mb_ids = (getattr(genres_result, "mb_ids", None) or {}) if genres_result else {}
+        fresh_mb_ids = (
+            (getattr(genres_result, "mb_ids", None) or {}) if genres_result else {}
+        )
         final_mb_ids = {}
         for key in MB_ID_ATOM_MAP:
             final_mb_ids[key] = before["mb_ids"].get(key) or fresh_mb_ids.get(key)
@@ -553,9 +566,12 @@ async def process_file(
         )
         log.kv(
             "→ result",
-            f"primary={getattr(genres_result, 'primary', None)!r} "
-            f"secondary={getattr(genres_result, 'secondary', None)!r}"
-            if genres_result else None,
+            (
+                f"primary={getattr(genres_result, 'primary', None)!r} "
+                f"secondary={getattr(genres_result, 'secondary', None)!r}"
+                if genres_result
+                else None
+            ),
             indent=2,
         )
         if genre_downgrade:
@@ -592,26 +608,43 @@ async def process_file(
                     track_context=track_context,
                 )
             else:
-                feat_decisions = await processor.auto_learn_manager.observe_featured_artists(
-                    primary_artist=final_artist,
-                    feat_artists=feat_artists,
-                    track_context=track_context,
+                feat_decisions = (
+                    await processor.auto_learn_manager.observe_featured_artists(
+                        primary_artist=final_artist,
+                        feat_artists=feat_artists,
+                        track_context=track_context,
+                    )
                 )
             for d in feat_decisions:
                 log.kv("→ Feature-Artist", d["canonical"] or d["raw"], indent=2)
                 log.kv("  Role", d["role"], indent=2)
-                log.kv("  Current mapping", "FOUND" if d["existing"] else "NOT FOUND", indent=2)
+                log.kv(
+                    "  Current mapping",
+                    "FOUND" if d["existing"] else "NOT FOUND",
+                    indent=2,
+                )
                 log.kv("  Observation", track_context, indent=2)
                 log.kv("  Decision", d["decision"], indent=2)
-                if d["decision"] in ("WOULD_LEARN", "WOULD_UPDATE", "LEARNED", "UPDATED"):
+                if d["decision"] in (
+                    "WOULD_LEARN",
+                    "WOULD_UPDATE",
+                    "LEARNED",
+                    "UPDATED",
+                ):
                     log.kv("  Observations", d["predicted_observations"], indent=2)
                     log.kv("  Confidence", d["predicted_confidence"], indent=2)
                 elif d.get("reason"):
                     log.kv("  Reason", d["reason"], indent=2)
                 log.kv(
                     "  Action",
-                    "NO FILE WRITE" if dry_run else (
-                        "FILE WRITE" if d["decision"] in ("LEARNED", "UPDATED") else "NO FILE WRITE"
+                    (
+                        "NO FILE WRITE"
+                        if dry_run
+                        else (
+                            "FILE WRITE"
+                            if d["decision"] in ("LEARNED", "UPDATED")
+                            else "NO FILE WRITE"
+                        )
                     ),
                     indent=2,
                 )
@@ -620,12 +653,17 @@ async def process_file(
 
         log.line("🎼 GENRE AUTO-LEARN")
         genre_source = getattr(genres_result, "source", None) if genres_result else None
-        if genres_result and genres_result.primary and genre_source not in ("none", "unknown", None):
+        if (
+            genres_result
+            and genres_result.primary
+            and genre_source not in ("none", "unknown", None)
+        ):
             genre_decision = processor.auto_learn_manager.preview_genre_learning(
                 final_artist, genres_result
             )
-            genre_action_will_write = (
-                not dry_run and genre_decision["decision"] in ("WOULD_LEARN", "WOULD_UPDATE")
+            genre_action_will_write = not dry_run and genre_decision["decision"] in (
+                "WOULD_LEARN",
+                "WOULD_UPDATE",
             )
             if genre_action_will_write:
                 await processor.auto_learn_manager.learn_genre(
@@ -634,10 +672,12 @@ async def process_file(
             log.kv("→ Artist", final_artist, indent=2)
             log.kv(
                 "  Observed",
-                f"{genre_decision['observed_primary']} / "
-                f"{', '.join(genre_decision['observed_secondary'])}"
-                if genre_decision["observed_secondary"]
-                else genre_decision["observed_primary"],
+                (
+                    f"{genre_decision['observed_primary']} / "
+                    f"{', '.join(genre_decision['observed_secondary'])}"
+                    if genre_decision["observed_secondary"]
+                    else genre_decision["observed_primary"]
+                ),
                 indent=2,
             )
             if genre_decision["existing"]:
@@ -649,16 +689,39 @@ async def process_file(
                 )
             log.kv("  Decision", genre_decision["decision"], indent=2)
             if genre_decision["decision"] in ("WOULD_LEARN", "WOULD_UPDATE"):
-                log.kv("  Predicted primary", genre_decision["predicted_primary"], indent=2)
-                log.kv("  Predicted observations", genre_decision["predicted_observations"], indent=2)
-                log.kv("  Predicted confidence", genre_decision["predicted_confidence"], indent=2)
-            log.kv("  Action", "NO FILE WRITE" if not genre_action_will_write else "FILE WRITE", indent=2)
+                log.kv(
+                    "  Predicted primary", genre_decision["predicted_primary"], indent=2
+                )
+                log.kv(
+                    "  Predicted observations",
+                    genre_decision["predicted_observations"],
+                    indent=2,
+                )
+                log.kv(
+                    "  Predicted confidence",
+                    genre_decision["predicted_confidence"],
+                    indent=2,
+                )
+            log.kv(
+                "  Action",
+                "NO FILE WRITE" if not genre_action_will_write else "FILE WRITE",
+                indent=2,
+            )
         else:
-            log.kv("→ Genre-Auto-Learn", "uebersprungen (kein verwertbares Genre)", indent=2)
+            log.kv(
+                "→ Genre-Auto-Learn",
+                "uebersprungen (kein verwertbares Genre)",
+                indent=2,
+            )
 
         # ── LyricsProcessor (immer neu, bestehende Fallback-Logik) ─────────
-        lyrics, lyrics_source = await processor.lyrics_processor.fetch_lyrics_with_fallback(
-            artist=final_artist, title=clean_title, fallback_artists=feat_artists,
+        (
+            lyrics,
+            lyrics_source,
+        ) = await processor.lyrics_processor.fetch_lyrics_with_fallback(
+            artist=final_artist,
+            title=clean_title,
+            fallback_artists=feat_artists,
         )
         log.line("📝 LyricsProcessor")
         log.kv("→ lookup", "genius (+ feat.-Fallback)", indent=2)
@@ -812,7 +875,9 @@ async def process_file(
                     f"({path.parent} -> {rename_target.parent})"
                 )
             elif rename_target.exists() and rename_target != path:
-                rename_blocked_reason = f"Zieldatei existiert bereits ({rename_target.name})"
+                rename_blocked_reason = (
+                    f"Zieldatei existiert bereits ({rename_target.name})"
+                )
             elif ILLEGAL_CHARS_PATTERN.search(clean_title):
                 # BUGFIX (waehrend Nina-Chuba-Validierungslauf entdeckt,
                 # siehe docs/archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md):
@@ -862,8 +927,12 @@ async def process_file(
                 log.line(f"✏️ FILENAME CHANGE: {path.name} -> {rename_target.name}")
                 result["status"] = "changed"
             elif rename_planned and rename_blocked_reason:
-                result["unresolved"].append(f"Rename abgelehnt: {rename_blocked_reason}")
-                log.line(f"⚪ FILENAME NO CHANGE (⚠️ UNRESOLVED: {rename_blocked_reason})")
+                result["unresolved"].append(
+                    f"Rename abgelehnt: {rename_blocked_reason}"
+                )
+                log.line(
+                    f"⚪ FILENAME NO CHANGE (⚠️ UNRESOLVED: {rename_blocked_reason})"
+                )
             else:
                 log.line(f"⚪ FILENAME NO CHANGE: {path.name}")
 
@@ -872,10 +941,17 @@ async def process_file(
             # Objekt wiederverwendet) ───────────────────────────────────────
             after = snapshot(final_path, artist_root)
         else:
-            log.line("🔒 DRY-RUN: TagWriter NICHT aufgerufen, kein Rename durchgefuehrt")
+            log.line(
+                "🔒 DRY-RUN: TagWriter NICHT aufgerufen, kein Rename durchgefuehrt"
+            )
             if rename_planned:
                 note = rename_blocked_reason or "wuerde durchgefuehrt (dry-run)"
-                log.kv("→ geplanter Rename", f"{path.name} -> {expected_filename} ({note})", indent=2)
+                log.kv(
+                    "→ geplanter Rename",
+                    f"{path.name} -> {expected_filename} ({note})",
+                    indent=2,
+                )
+
             final_path = path
             # In DRY-RUN wird NICHTS geschrieben - "after" ist deshalb eine
             # VORHERSAGE, konstruiert aus denselben Werten, die TagWriter
@@ -889,11 +965,13 @@ async def process_file(
             all_artists_planned = [final_artist] + feat_artists
             primary = (
                 getattr(genres_result_for_write, "primary", None)
-                if genres_result_for_write else None
+                if genres_result_for_write
+                else None
             )
             secondary = (
                 getattr(genres_result_for_write, "secondary", None)
-                if genres_result_for_write else None
+                if genres_result_for_write
+                else None
             )
             if primary and secondary:
                 combined = [primary] + list(secondary)[:3]
@@ -909,11 +987,17 @@ async def process_file(
             after = dict(before)
             after["filename"] = expected_filename
             after["artist"] = all_artists_planned
-            after["artists_freeform"] = all_artists_planned if feat_artists else before["artists_freeform"]
+            after["artists_freeform"] = (
+                all_artists_planned if feat_artists else before["artists_freeform"]
+            )
             after["album_artist"] = [album_info["album_artist"]]
             after["title"] = [clean_title]
-            after["album"] = [album_info["album"]] if album_info.get("album") else before["album"]
-            after["year"] = [str(album_info["year"])] if album_info.get("year") else before["year"]
+            after["album"] = (
+                [album_info["album"]] if album_info.get("album") else before["album"]
+            )
+            after["year"] = (
+                [str(album_info["year"])] if album_info.get("year") else before["year"]
+            )
             after["genre_tag"] = genre_tag_planned
             after["genre_freeform"] = genre_freeform_planned
             after["mb_ids"] = final_mb_ids
@@ -924,9 +1008,15 @@ async def process_file(
             # audio_essence_md5/stream_info/replaygain/loudness bleiben wie
             # in before (bereits per dict(before) uebernommen) - dieses Tool
             # beruehrt den Audio-Stream in keinem Modus.
-            log.line("🔮 DRY-RUN VORHERSAGE (kein echter Read, keine Datei geschrieben)")
+            log.line(
+                "🔮 DRY-RUN VORHERSAGE (kein echter Read, keine Datei geschrieben)"
+            )
 
-        log.line("🔍 AFTER SNAPSHOT" if not dry_run else "🔍 AFTER SNAPSHOT (Vorhersage, dry-run)")
+        log.line(
+            "🔍 AFTER SNAPSHOT"
+            if not dry_run
+            else "🔍 AFTER SNAPSHOT (Vorhersage, dry-run)"
+        )
         for k, v in after.items():
             log.kv(k, v)
 
@@ -962,9 +1052,18 @@ async def process_file(
             )
 
         # ── UNRESOLVED-Erkennung (bewusst nicht geaenderte Faelle) ──────────
-        for reason in check_unresolved(before, after, clean_title):
+        unresolved_reasons = check_unresolved(before, after, clean_title)
+
+        for reason in unresolved_reasons:
+            if (
+                requested_issue in {"LYRICS_MISSING", "GENRE_INVALID"}
+                and "ReplayGain/Loudness fehlt" in reason
+            ):
+                continue
+
             if reason not in result["unresolved"]:
                 result["unresolved"].append(reason)
+
         if genre_downgrade:
             result["unresolved"].append(
                 f"Genre-Downgrade-Schutz: bestehender Genre-Tag "
