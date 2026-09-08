@@ -79,9 +79,7 @@ class TestOverrides:
     def test_override_file_entry_is_used_case_insensitively(
         self, library_dir, override_file, mapping_dir
     ):
-        override_file.write_text(
-            json.dumps({"lil kex": "Lil Kex"}), encoding="utf-8"
-        )
+        override_file.write_text(json.dumps({"lil kex": "Lil Kex"}), encoding="utf-8")
         normalizer = make_normalizer(library_dir, override_file, mapping_dir)
         assert normalizer.normalize("lil kex") == "Lil Kex"
         assert normalizer.normalize("LIL KEX") == "Lil Kex"
@@ -123,6 +121,46 @@ class TestStandardNormalizationRules:
     def test_all_caps_short_name_is_kept_unchanged(self, normalizer):
         assert normalizer.normalize("UFO361") == "UFO361"
 
+    def test_long_all_caps_word_is_title_cased_not_treated_as_acronym(
+        self, normalizer, mapping_dir
+    ):
+        """Finding C (Download-Pipeline-Testlauf 2026-09-09): der YouTube-
+        Kanal von Marteria heisst 'MARTERIA' (8 Zeichen, All-Caps). RULE 2
+        klassifizierte alles <= 8 All-Caps-Zeichen als Akronym (SDP/SSIO/
+        UFO361), erhielt 'MARTERIA' unveraendert UND schrieb
+        'marteria -> MARTERIA' dauerhaft in case_preserve.yaml. Danach
+        wurde jedes 'Marteria' (auch aus dem Titel) zu 'MARTERIA'
+        normalisiert - falscher Library-Ordner, falscher ©ART-Tag.
+
+        Ein 7-8-Zeichen-Wort ist praktisch nie ein Akronym. Schwelle auf
+        <= 6 gesenkt (UFO361 bleibt, MARTERIA wird 'Marteria')."""
+        assert normalizer.normalize("MARTERIA") == "Marteria"
+        assert normalizer.normalize("Marteria") == "Marteria"
+        assert normalizer.normalize("marteria") == "Marteria"
+
+    def test_long_all_caps_word_does_not_pollute_case_preserve(
+        self, normalizer, mapping_dir
+    ):
+        """Kein Auto-Save eines 7-8-Zeichen-All-Caps-Namens nach
+        case_preserve.yaml (die Persistenz war die eigentliche Falle -
+        siehe conftest.py-Docstring: zweimal real verunreinigt)."""
+        normalizer.normalize("MARTERIA")
+        assert "marteria" not in {k.lower() for k in normalizer.case_preserve}
+        case_file = mapping_dir / "case_preserve.yaml"
+        if case_file.exists():
+            import yaml
+
+            data = yaml.safe_load(case_file.read_text("utf-8")) or {}
+            assert "marteria" not in {k.lower() for k in data.get("case_preserve", {})}
+
+    def test_short_all_caps_acronym_is_still_preserved_and_learned(
+        self, normalizer, mapping_dir
+    ):
+        """Regressions-Guard: echte kurze Akronyme (<= 6) werden weiterhin
+        erhalten und gelernt."""
+        assert normalizer.normalize("SSIO") == "SSIO"
+        assert normalizer.normalize("SDP") == "SDP"
+
     def test_prefix_rule_capitalizes_rest_after_short_uppercase_prefix(
         self, normalizer
     ):
@@ -151,9 +189,7 @@ class TestCollaborationArchitectureCharacterization:
         result = normalizer.normalize("1986zig feat. GReeeN")
         assert result == "1986zig, Greeen"
 
-    def test_mixed_ampersand_and_feat_flattens_main_artist_to_peer(
-        self, normalizer
-    ):
+    def test_mixed_ampersand_and_feat_flattens_main_artist_to_peer(self, normalizer):
         # "GReeeN & 1986zig feat. Bausa": split_main_and_featuring wuerde
         # main="GReeeN & 1986zig", feat=["Bausa"] liefern (Haupt-Artist bleibt
         # zusammengesetzt). normalize() behandelt stattdessen ALLE drei Teile

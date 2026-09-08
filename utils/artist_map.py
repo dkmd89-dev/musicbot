@@ -201,8 +201,10 @@ class ArtistNormalizer(SingletonMixin):
         self._parse_cache = LRUCache(maxsize=config.cache_size // 2, ttl=1800)
 
         # 📚 Datenstrukturen
-        self.overrides: Dict[str, str] = {}           # NUR manuell (artist_overrides.json)
-        self.auto_learned: Dict[str, str] = {}        # Automatisch gelernt (auto_learned_artist_aliases.json)
+        self.overrides: Dict[str, str] = {}  # NUR manuell (artist_overrides.json)
+        self.auto_learned: Dict[str, str] = (
+            {}
+        )  # Automatisch gelernt (auto_learned_artist_aliases.json)
         self.overrides_normalized: Dict[str, str] = {}
         self.library_artists: Set[str] = set()
         # ARCH Artist-Identity (Phase C): normalisierter Library-Index
@@ -274,27 +276,27 @@ class ArtistNormalizer(SingletonMixin):
     def _load_case_preserve(self) -> Dict[str, str]:
         """
         Lädt Case-Preserve Mapping aus case_preserve.yaml
-        
+
         Returns:
             Dict mit lowercase -> preserved_case Mappings
         """
         try:
             import yaml
-            
+
             mapping_dir = self.config.mapping_dir or Path("mapping")
             case_file = mapping_dir / "case_preserve.yaml"
-            
+
             if not case_file.exists():
                 self.logger.debug(f"📂 Keine case_preserve.yaml gefunden: {case_file}")
                 return {}
-            
+
             with open(case_file, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
                 case_preserve = data.get("case_preserve", {})
-                
+
             self.logger.info(f"✨ {len(case_preserve)} Case-Preserve Einträge geladen")
             return case_preserve
-            
+
         except ImportError:
             self.logger.debug("⚠️ PyYAML nicht installiert, Case-Preserve deaktiviert")
             return {}
@@ -306,30 +308,38 @@ class ArtistNormalizer(SingletonMixin):
         """💾 Speichert einen Case-Preserve Eintrag"""
         try:
             import yaml
-            
+
             mapping_dir = self.config.mapping_dir or Path("mapping")
             case_file = mapping_dir / "case_preserve.yaml"
             case_file.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Bestehende Daten laden
             data = {"case_preserve": {}}
             if case_file.exists():
                 with open(case_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f) or {"case_preserve": {}}
-            
+
             # Neuen Eintrag hinzufügen
             data["case_preserve"][raw_name.lower()] = preserved
-            
+
             # Speichern
             with open(case_file, "w", encoding="utf-8") as f:
-                yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=True)
-            
+                yaml.dump(
+                    data,
+                    f,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=True,
+                )
+
             # In-Memory Cache aktualisieren
             self.case_preserve[raw_name.lower()] = preserved
-            
-            self.logger.debug(f"✨ Case-Preserve gespeichert: '{raw_name.lower()}' → '{preserved}'")
+
+            self.logger.debug(
+                f"✨ Case-Preserve gespeichert: '{raw_name.lower()}' → '{preserved}'"
+            )
             return True
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Fehler beim Speichern von case_preserve.yaml: {e}")
             return False
@@ -359,7 +369,9 @@ class ArtistNormalizer(SingletonMixin):
             auto_file = mapping_dir / "auto_learned_artist_aliases.json"
 
             if not auto_file.exists():
-                self.logger.debug(f"📂 Keine auto_learned_artist_aliases.json gefunden: {auto_file}")
+                self.logger.debug(
+                    f"📂 Keine auto_learned_artist_aliases.json gefunden: {auto_file}"
+                )
                 return {}
 
             with open(auto_file, "r", encoding="utf-8") as f:
@@ -370,7 +382,9 @@ class ArtistNormalizer(SingletonMixin):
             return auto_learned
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Fehler beim Laden von auto_learned_artist_aliases.json: {e}")
+            self.logger.warning(
+                f"⚠️ Fehler beim Laden von auto_learned_artist_aliases.json: {e}"
+            )
             return {}
 
     def reload_auto_learned(self) -> bool:
@@ -384,7 +398,9 @@ class ArtistNormalizer(SingletonMixin):
             new_auto_learned = self._load_auto_learned()
             with self._lock:
                 self.auto_learned = new_auto_learned
-            self.logger.info(f"🔄 Auto-learned Aliase neu geladen: {len(self.auto_learned)} Einträge")
+            self.logger.info(
+                f"🔄 Auto-learned Aliase neu geladen: {len(self.auto_learned)} Einträge"
+            )
             return True
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Neuladen der auto-learned Aliase: {e}")
@@ -404,7 +420,7 @@ class ArtistNormalizer(SingletonMixin):
         for key, canonical in self.overrides.items():
             self._add_to_trie(key.lower(), canonical)
             self._add_to_trie(canonical.lower(), canonical)
-        
+
         # Auch auto-gelernte Aliase in den Trie aufnehmen
         for raw_name, canonical in self.auto_learned.items():
             self._add_to_trie(raw_name.lower(), canonical)
@@ -430,9 +446,11 @@ class ArtistNormalizer(SingletonMixin):
 
         # Manuelle Overrides mit höchster Gewichtung
         for key, canonical in self.overrides.items():
-            patterns.append((key.lower(), canonical, 100.0))  # Overrides haben Priorität
+            patterns.append(
+                (key.lower(), canonical, 100.0)
+            )  # Overrides haben Priorität
             patterns.append((canonical.lower(), canonical, 90.0))
-        
+
         # Auto-gelernte Aliase mit mittlerer Gewichtung
         for raw_name, canonical in self.auto_learned.items():
             patterns.append((raw_name.lower(), canonical, 80.0))
@@ -489,7 +507,7 @@ class ArtistNormalizer(SingletonMixin):
             # optionalen Punkt, da zwischen "." und einem folgenden Leerzeichen
             # (beides Nicht-Wortzeichen) keine Wortgrenze existiert.
             (r"\s*\b(?:feat|ft)\b\.?\s*", ", ", re.IGNORECASE, "Featuring"),
-            #(r"\s*x\s*(?=[A-Za-z])", ", ", re.IGNORECASE, "x-Kollaboration"),
+            # (r"\s*x\s*(?=[A-Za-z])", ", ", re.IGNORECASE, "x-Kollaboration"),
             (r"\s*&\s*", ", ", re.IGNORECASE, "&-Kollaboration"),
             (r"\s*vs\.?\s*", ", ", re.IGNORECASE, "vs-Kollaboration"),
             (r"\s*/\s*", ", ", "Slash-Kollaboration"),
@@ -553,54 +571,54 @@ class ArtistNormalizer(SingletonMixin):
         return result
 
     def _normalize_internal(self, name: str) -> str:
-	    """🔧 Interne Normalisierungslogik"""
-	    self.logger.debug(f"🔍 [DEBUG] Input: '{name}'")
-	    
-	    # ARCH Artist-Identity Phase D (Schritt 6): normalize() ist jetzt
-	    # REINE String-Normalisierung. Der frühere Override-/Alias-Lookup
-	    # (_check_overrides) wurde entfernt - Identitäts-/Mapping-Auflösung
-	    # (artist_overrides.json / auto_learned_artist_aliases.json /
-	    # known_artists.yaml / Library) liegt ausschließlich im
-	    # ArtistIdentityResolver.
+        """🔧 Interne Normalisierungslogik"""
+        self.logger.debug(f"🔍 [DEBUG] Input: '{name}'")
 
-	    # 1. Patterns anwenden
-	    current = name
-	    for i, (pattern, repl) in enumerate(ArtistNormalizer._compiled_patterns):
-	        old = current
-	        current = pattern.sub(repl, current)
-	        if old != current:
-	            self.logger.debug(f"🔍 [DEBUG] Pattern {i}: '{old}' → '{current}'")
-	    
-	    self.logger.debug(f"🔍 [DEBUG] Nach Patterns: '{current}'")
-	
-	    # 2. Kollaborations-Check
-	    if self._is_collaboration(current):
-	        self.logger.debug(f"🔍 [DEBUG] Kollaboration erkannt: '{current}'")
-	        result = self._normalize_collaboration(current)
-	        self.logger.debug(f"🔍 [DEBUG] Nach Kollab: '{result}'")
-	        return result
-	
-	    # 3. Standard-Normalisierung
-	    result = self._standard_normalization(current)
-	    self.logger.debug(f"🔍 [DEBUG] Final: '{result}'")
-	    return result
+        # ARCH Artist-Identity Phase D (Schritt 6): normalize() ist jetzt
+        # REINE String-Normalisierung. Der frühere Override-/Alias-Lookup
+        # (_check_overrides) wurde entfernt - Identitäts-/Mapping-Auflösung
+        # (artist_overrides.json / auto_learned_artist_aliases.json /
+        # known_artists.yaml / Library) liegt ausschließlich im
+        # ArtistIdentityResolver.
+
+        # 1. Patterns anwenden
+        current = name
+        for i, (pattern, repl) in enumerate(ArtistNormalizer._compiled_patterns):
+            old = current
+            current = pattern.sub(repl, current)
+            if old != current:
+                self.logger.debug(f"🔍 [DEBUG] Pattern {i}: '{old}' → '{current}'")
+
+        self.logger.debug(f"🔍 [DEBUG] Nach Patterns: '{current}'")
+
+        # 2. Kollaborations-Check
+        if self._is_collaboration(current):
+            self.logger.debug(f"🔍 [DEBUG] Kollaboration erkannt: '{current}'")
+            result = self._normalize_collaboration(current)
+            self.logger.debug(f"🔍 [DEBUG] Nach Kollab: '{result}'")
+            return result
+
+        # 3. Standard-Normalisierung
+        result = self._standard_normalization(current)
+        self.logger.debug(f"🔍 [DEBUG] Final: '{result}'")
+        return result
 
     def _is_collaboration(self, name: str) -> bool:
-	    """🤝 Schneller Kollaborations-Check"""
-	    # 🔥 Künstler, die fälschlicherweise als Kollaboration erkannt werden
-	    FALSE_POSITIVES = {"alex warren", "alex warren topic"}
-	    if name.lower() in FALSE_POSITIVES:
-	        return False
-	    
-	    if "," in name:
-	        return True
-	
-	    name_lower = name.lower()
-	    for sep in self.config.collab_separators:
-	        if sep in name_lower:
-	            return True
-	
-	    return False
+        """🤝 Schneller Kollaborations-Check"""
+        # 🔥 Künstler, die fälschlicherweise als Kollaboration erkannt werden
+        FALSE_POSITIVES = {"alex warren", "alex warren topic"}
+        if name.lower() in FALSE_POSITIVES:
+            return False
+
+        if "," in name:
+            return True
+
+        name_lower = name.lower()
+        for sep in self.config.collab_separators:
+            if sep in name_lower:
+                return True
+
+        return False
 
     def _normalize_collaboration(self, artist_string: str) -> str:
         """🤝 Optimierte Kollaborations-Normalisierung"""
@@ -648,10 +666,20 @@ class ArtistNormalizer(SingletonMixin):
             self.logger.debug(f"✨ Case-Preserve: '{original_name}' → '{preserved}'")
             return preserved
 
-        # 🔥 RULE 2: Kompletter Artist ist ALL CAPS (max 8 Zeichen, kein Leerzeichen)
+        # 🔥 RULE 2: Kompletter Artist ist ALL CAPS (max 6 Zeichen, kein Leerzeichen)
+        # Finding C (Download-Pipeline-Testlauf 2026-09-09): die Schwelle lag
+        # bei <= 8. Der All-Caps-YouTube-Kanalname "MARTERIA" (8 Zeichen) wurde
+        # dadurch als Akronym behandelt, unveraendert erhalten UND per
+        # _save_case_preserve_entry() dauerhaft als "marteria -> MARTERIA"
+        # gelernt - danach normalisierte JEDES "Marteria" (auch aus dem Titel)
+        # zu "MARTERIA" (falscher Library-Ordner/©ART-Tag). Ein 7-8-Zeichen-
+        # Wort ist praktisch nie ein Akronym; echte Akronyme sind kurz
+        # (SDP/RAF/SSIO/UFO361). Laengere All-Caps-Kuenstlernamen werden
+        # title-cased (reversibel) und muessen bei Bedarf ueber
+        # add_case_preserve() kuratiert werden.
         if (
             original_name.isupper()
-            and len(original_name) <= 8
+            and len(original_name) <= 6
             and " " not in original_name
         ):
             self.logger.debug(f"✨ Erhalte All-Caps Künstlernamen: '{original_name}'")
@@ -669,12 +697,12 @@ class ArtistNormalizer(SingletonMixin):
             # Rest normalisieren
             rest_normalized = self._normalize_rest(rest)
             result = f"{prefix} {rest_normalized}"
-            
+
             # Optional: Gesamten Namen zu Case-Preserve hinzufügen
             full_lower = original_name.lower()
             if full_lower not in self.case_preserve:
                 self._save_case_preserve_entry(original_name, result)
-            
+
             self.logger.debug(f"✨ Erhalte Präfix: '{original_name}' → '{result}'")
             return result
 
@@ -956,9 +984,7 @@ class ArtistNormalizer(SingletonMixin):
         ArtistIdentityResolver-Tier "library_identity". Rein in-memory.
         """
         self.library_index = {
-            self._normalize_key(name): name
-            for name in self.library_artists
-            if name
+            self._normalize_key(name): name for name in self.library_artists if name
         }
 
     def refresh_library_index(self) -> int:
@@ -1023,22 +1049,22 @@ class ArtistNormalizer(SingletonMixin):
     def add_case_preserve(self, raw_name: str, preserved: str) -> bool:
         """
         Fügt einen Case-Preserve Eintrag hinzu (erhält Großschreibung)
-        
+
         Args:
             raw_name: Der rohe Name (z.B. "sdp")
             preserved: Die zu erhaltende Schreibweise (z.B. "SDP")
-            
+
         Returns:
             True bei Erfolg, False bei Fehler
         """
         if not raw_name or not preserved:
             return False
-            
+
         with self._write_lock:
             key = raw_name.strip().lower()
             self.case_preserve[key] = preserved.strip()
             self._save_case_preserve_entry(raw_name, preserved)
-            
+
             self.logger.info(f"✨ Case-Preserve hinzugefügt: '{key}' → '{preserved}'")
             return True
 
@@ -1062,7 +1088,7 @@ def create_artist_normalizer(
         library_dir=Path(library_path),
         override_file=Path(override_path),
         mapping_dir=Path(mapping_dir) if mapping_dir else Path("mapping"),
-        **kwargs
+        **kwargs,
     )
     return ArtistNormalizer(config)
 
@@ -1123,7 +1149,7 @@ if __name__ == "__main__":
                 print(f"   ⏱️  Min: {data['min']:.2f}ms")
                 print(f"   ⏱️  Max: {data['max']:.2f}ms")
                 print(f"   📊 Count: {data['count']}")
-    
+
     # 🧠 Auto-Learning Test
     print("\n" + "=" * 60)
     print("🧠 AUTO-LEARNING TEST")
@@ -1132,12 +1158,21 @@ if __name__ == "__main__":
     # Test: Case-Preserve hinzufügen
     normalizer.add_case_preserve("sdp", "SDP")
     normalizer.add_case_preserve("raf", "RAF")
-    
+
     # Test: Normalisierung mit gelerntem Alias
-    test_aliases = ["bausashaus", "BAUSASHAUS", "Bausashaus", "Apache207", "sdp", "SDP", "raf", "RAF Camora"]
+    test_aliases = [
+        "bausashaus",
+        "BAUSASHAUS",
+        "Bausashaus",
+        "Apache207",
+        "sdp",
+        "SDP",
+        "raf",
+        "RAF Camora",
+    ]
     for alias in test_aliases:
         normalized = normalizer.normalize(alias)
         print(f"📝 '{alias}' → '{normalized}'")
-    
+
     # Statistiken nach Auto-Learning
     print(f"\n📊 Final Stats: {normalizer.get_stats()}")
