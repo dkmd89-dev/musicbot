@@ -1322,7 +1322,16 @@ def apply_level2(
             backup.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, backup)
 
-            result = reprocess(path, artist_root, False)
+            # Denselben issue-spezifischen Hint wie im DRY-RUN durchreichen —
+            # sonst wuerde die Vorschau (kein Artist-Renormalisieren /
+            # kein Loudness-UNRESOLVED bei LYRICS_MISSING/GENRE_INVALID)
+            # nicht zum tatsaechlich geschriebenen Ergebnis passen.
+            result = reprocess(
+                path,
+                artist_root,
+                False,
+                requested_issue=codes[0] if len(codes) == 1 else None,
+            )
 
             ch = result.get("changes") or {}
             rel_change = ch.get("relative_path")
