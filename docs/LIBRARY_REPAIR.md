@@ -277,6 +277,19 @@ UNRESOLVED (für einen reinen Lyrics-/Genre-Fix nicht relevant). Bei
 mehreren Codes pro Datei bleibt `requested_issue=None` → volles
 Pipeline-Verhalten.
 
+> **Reichweite (Nachprüf-Durchgang 2026-09-09):** `apply_level2()` und
+> damit `requested_issue` sind **CLI-only** (`library_repair.py
+> --level METADATA_REPROCESSING` bzw. `--issue <L2-Code>`). Die
+> Telegram-Pfade — „MusicBot Doctor" (`doctor_runner.py`) und „Repair
+> MusicBot" (`repair_service.py`) — rufen ausschliesslich
+> `--level SAFE_AUTOMATIC --apply` auf; L2-Kandidaten werden dort doppelt
+> ausgeschlossen (Planner-Level-Filter `filter_plan(level="SAFE_AUTOMATIC")`
+> **und** das `l2_requested`-Gate in `main()`). Auch die Telegram-
+> „Reprocessing"-Ansicht erreicht `requested_issue` nicht — sie ruft
+> `process_file()` über `scripts/reprocess_artist_metadata.py` ohne den
+> Parameter (immer `None` → volles Pipeline-Verhalten). Gepinnt in
+> `tests/test_library_repair_cli_safe_automatic_scope.py`.
+
 **Option 2a (Nutzer-Entscheidung 2026-09-04):** Der Kern von
 `scripts/reprocess_artist_metadata.py` (`process_file()` + `snapshot()` +
 alle Helfer, ~925 Zeilen) liegt jetzt in
