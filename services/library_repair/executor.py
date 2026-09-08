@@ -988,6 +988,15 @@ _L2_REPORTED_FIELDS = (
     "artists_freeform", "year", "genre_tag", "genre_freeform", "mb_ids",
     "lyrics_present", "cover_present", "cover_sha256",
 )
+# Production-Audit 2026-09-08, bewusste Entscheidung (kein Fix): Lyrics und
+# Cover landen absichtlich NICHT im Klartext/Binaerformat im Journal —
+# "lyrics_present" (bool) und "cover_sha256" (Hash) genuegen, um zu
+# erkennen, DASS sich etwas geaendert hat. Ein dauerhaft in einer
+# Append-Only-JSONL-Datei gespeicherter Lyrics-Volltext waere ein
+# Urheberrechts-/Speicherplatz-Risiko ohne entsprechenden Nutzen (die
+# inhaltliche Korrektheit von Lyrics/Cover ist ohnehin nicht automatisiert
+# pruefbar - nur ihre Anwesenheit). Alle anderen Felder (Titel/Artist/
+# Album/Genre-Wortlaut) sind bereits vollstaendig im Klartext enthalten.
 
 # Welches `changes`-Feld (track_reprocessor.diff_snapshots()) tatsächlich
 # belegt, dass GENAU DIESER Issue-Code behoben wurde — nicht nur, dass die
