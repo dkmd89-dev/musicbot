@@ -45,6 +45,7 @@ from utils.youtube_parser import parse_youtube_title
 from services.downloader.models import DuplicateEntry
 from services.duplicate.cache import DuplicateCache
 from services.metadata.artist_processor import ArtistProcessor
+from services.metadata.artist_identity_resolver import ArtistIdentityResolver
 
 # Phase 2.2: exakte Kopie von services/duplicate/classification.py::
 # _TITLE_QUOTE_PAIRS/_strip_wrapping_quote_pair() - siehe dortige
@@ -146,6 +147,18 @@ class DuplicateDetector:
         self.artist_processor = ArtistProcessor(
             artist_normalizer=self.artist_normalizer,
             logger=self.logger_factory("ArtistProcessor"),
+        )
+        # ARCH Artist-Identity Phase D (Schritt 15): seit Phase D ist
+        # ArtistNormalizer.normalize() reine String-Normalisierung - der
+        # Override-/Alias-/Library-Lookup (z.B. "Miksu" -> "Miksu & Macloud")
+        # liegt im ArtistIdentityResolver. Damit die Content-Hash-Bildung
+        # denselben kanonischen Artist verwendet wie die Metadaten-Pipeline
+        # (sonst False-Negatives bei Alias-Schreibweisen), nutzt
+        # _normalize_artist_for_comparison() jetzt den Resolver.
+        self.artist_identity_resolver = ArtistIdentityResolver(
+            artist_normalizer=self.artist_normalizer,
+            mapping_dir=getattr(self.config, "GENRE_MAPPING_DIR", None),
+            logger=self.logger_factory("ArtistIdentityResolver"),
         )
 
         self.stats = {
@@ -524,7 +537,15 @@ class DuplicateDetector:
                     artist
                 )
                 if cleaned_for_normalize:
-                    normalized = self.artist_normalizer.normalize(cleaned_for_normalize)
+                    # ARCH Artist-Identity Phase D (Schritt 15): kanonische
+                    # Artist-Identität über den Resolver (Override/Alias/
+                    # known_artists/Library) - normalize() allein wäre seit
+                    # Phase D reine String-Normalisierung und würde z.B.
+                    # "Miksu" nicht mehr zu "Miksu & Macloud" auflösen.
+                    identity = self.artist_identity_resolver.resolve(
+                        cleaned_for_normalize
+                    )
+                    normalized = identity.canonical
                     if normalized and normalized.lower() != "unknown":
                         return normalized
             except Exception as e:

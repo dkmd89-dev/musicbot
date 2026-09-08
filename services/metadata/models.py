@@ -125,6 +125,13 @@ class MetadataResult:
 
     # Verarbeitungsdetails
     artist_source: Optional[str] = None
+    # ARCH Artist-Identity (Phase B): True, wenn die Artist-Identitaet aus
+    # einer autoritativen Quelle bestaetigt wurde (artist_override /
+    # known_artist / auto_learned_alias / library_identity / musicbrainz_mbid).
+    # False, wenn nur der Parser-Kandidat uebernommen wurde (dann darf
+    # AutoLearn eine neue Beziehung lernen). None = nicht aufgeloest
+    # (Podcast/Fallback bzw. Alt-Aufrufer, die das Feld nicht setzen).
+    artist_known: Optional[bool] = None
     genre_source: Optional[str] = None
     title_cleaned: bool = False
     is_duplicate: bool = False
@@ -138,3 +145,62 @@ class MetadataResult:
     mb_release_id: Optional[str] = None
     mb_release_group_id: Optional[str] = None
     mb_isrc: Optional[str] = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Artist-Identity-Auflösung (ARCH — Artist Identity Resolution & Mapping
+# Separation, Phase B)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Erlaubte Herkunftsquellen einer Artist-Identity-Entscheidung, in fachlicher
+# Prioritätsreihenfolge (höchste zuerst). Ein niedriger priorisiertes Signal
+# darf niemals einen höher priorisierten autoritativen Eintrag überschreiben
+# (siehe ArtistIdentityResolver).
+ARTIST_IDENTITY_SOURCES: Tuple[str, ...] = (
+    "artist_override",     # mapping/artist_overrides.json (manuell, autoritativ)
+    "known_artist",        # mapping/known_artists.yaml (bestätigte Identität)
+    "auto_learned_alias",  # mapping/auto_learned_artist_aliases.json (Alias→Canonical)
+    "library_identity",    # vorhandener Library-Artist-Ordner
+    "musicbrainz_mbid",    # MusicBrainz-Artist-MBID-Abgleich (optional, Phase F)
+    "parser",              # kein autoritatives Signal – Parser-Kandidat übernommen
+)
+
+
+@dataclass(frozen=True)
+class ArtistIdentity:
+    """Ergebnis der Artist-Identity-Auflösung.
+
+    canonical:
+        Endgültiger kanonischer Artistname.
+    source:
+        Tatsächliche Herkunft der Identitätsentscheidung – einer der Werte aus
+        ARTIST_IDENTITY_SOURCES. Keine anderen (insbesondere keine künstlichen)
+        Quellen.
+    known:
+        True  → die Identität wurde aus einer autoritativen Quelle bestätigt
+                (artist_override / known_artist / auto_learned_alias /
+                library_identity / musicbrainz_mbid). AutoLearn für den
+                Artist wird dann NICHT ausgelöst.
+        False → der Resolver übernimmt lediglich den (normalisierten)
+                Parser-Kandidaten (source == "parser"). AutoLearn darf
+                versuchen, eine neue Beziehung zu lernen.
+
+    Bewusst frozen: eine einmal getroffene Identitätsentscheidung wird
+    weitergereicht, nicht nachträglich mutiert.
+    """
+
+    canonical: str
+    source: str
+    known: bool
+
+    def __post_init__(self) -> None:
+        if self.source not in ARTIST_IDENTITY_SOURCES:
+            raise ValueError(
+                f"Ungültige ArtistIdentity.source: {self.source!r} "
+                f"(erlaubt: {', '.join(ARTIST_IDENTITY_SOURCES)})"
+            )
+        if self.source == "parser" and self.known:
+            raise ValueError(
+                "ArtistIdentity(source='parser', known=True) ist unzulässig – "
+                "der Parser-Kandidat ist per Definition keine bestätigte Identität."
+            )

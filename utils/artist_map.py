@@ -205,6 +205,12 @@ class ArtistNormalizer(SingletonMixin):
         self.auto_learned: Dict[str, str] = {}        # Automatisch gelernt (auto_learned_artist_aliases.json)
         self.overrides_normalized: Dict[str, str] = {}
         self.library_artists: Set[str] = set()
+        # ARCH Artist-Identity (Phase C): normalisierter Library-Index
+        # (normalize_key(ordnername) -> ordnername) fuer den
+        # ArtistIdentityResolver (Tier "library_identity"). In-memory,
+        # per refresh_library_index() aktualisierbar - NICHT mehr nach
+        # mapping/artist_overrides.json persistiert (Finding F-05).
+        self.library_index: Dict[str, str] = {}
         self.artist_trie: Dict = {}
         self.artist_patterns: List[Tuple[str, str, float]] = []
 
@@ -240,12 +246,15 @@ class ArtistNormalizer(SingletonMixin):
             if ArtistNormalizer._compiled_patterns is None:
                 ArtistNormalizer._compiled_patterns = self._compile_patterns()
 
-        # Optimierte Datenstrukturen aufbauen
+        # Normalisierter Library-Index (ARCH Artist-Identity Phase C) -
+        # Datenquelle fuer den ArtistIdentityResolver-Tier "library_identity".
+        self._rebuild_library_index()
+
+        # Optimierte Datenstrukturen fuer parse_youtube_title() aufbauen
+        # (Trie/Patterns nutzen overrides/auto_learned/library_artists rein
+        # zur Titel-Kandidatenerkennung, NICHT zur Identitaets-Aufloesung).
         self._build_artist_trie()
         self._build_weighted_patterns()
-
-        # Overrides aktualisieren (asynchron)
-        self._update_overrides_from_library_async()
 
         duration = (time.perf_counter() - start_time) * 1000
         self.logger.info(
@@ -547,13 +556,14 @@ class ArtistNormalizer(SingletonMixin):
 	    """🔧 Interne Normalisierungslogik"""
 	    self.logger.debug(f"🔍 [DEBUG] Input: '{name}'")
 	    
-	    # 1. Override-Check (schnellster Pfad)
-	    override = self._check_overrides(name)
-	    if override:
-	        self.logger.debug(f"🔍 [DEBUG] Override: '{override}'")
-	        return override
-	
-	    # 2. Patterns anwenden
+	    # ARCH Artist-Identity Phase D (Schritt 6): normalize() ist jetzt
+	    # REINE String-Normalisierung. Der frühere Override-/Alias-Lookup
+	    # (_check_overrides) wurde entfernt - Identitäts-/Mapping-Auflösung
+	    # (artist_overrides.json / auto_learned_artist_aliases.json /
+	    # known_artists.yaml / Library) liegt ausschließlich im
+	    # ArtistIdentityResolver.
+
+	    # 1. Patterns anwenden
 	    current = name
 	    for i, (pattern, repl) in enumerate(ArtistNormalizer._compiled_patterns):
 	        old = current
@@ -563,46 +573,17 @@ class ArtistNormalizer(SingletonMixin):
 	    
 	    self.logger.debug(f"🔍 [DEBUG] Nach Patterns: '{current}'")
 	
-	    # 3. Kollaborations-Check
+	    # 2. Kollaborations-Check
 	    if self._is_collaboration(current):
 	        self.logger.debug(f"🔍 [DEBUG] Kollaboration erkannt: '{current}'")
 	        result = self._normalize_collaboration(current)
 	        self.logger.debug(f"🔍 [DEBUG] Nach Kollab: '{result}'")
 	        return result
 	
-	    # 4. Standard-Normalisierung
+	    # 3. Standard-Normalisierung
 	    result = self._standard_normalization(current)
 	    self.logger.debug(f"🔍 [DEBUG] Final: '{result}'")
 	    return result
-
-    def _check_overrides(self, name: str) -> Optional[str]:
-        """
-        📋 Optimierter Override-Check mit mehrstufiger Priorität:
-        1. Manuelle Overrides (höchste Priorität)
-        2. Automatisch gelernte Aliase (niedrigere Priorität)
-        """
-        # 1. Manuelle Overrides (schnellster Pfad)
-        if name in self.overrides:
-            return self.overrides[name]
-
-        # Normalisierter Match gegen vorberechnete normalized-Lookup-Tabelle
-        key = self._normalize_key(name)
-        if key in self.overrides_normalized:
-            return self.overrides_normalized[key]
-
-        # 2. Automatisch gelernte Aliase (niedrigere Priorität)
-        if name in self.auto_learned:
-            self.logger.debug(f"🧠 Auto-learned Match: '{name}' → '{self.auto_learned[name]}'")
-            return self.auto_learned[name]
-        
-        # Case-insensitiver Check für auto_learned
-        if key in {self._normalize_key(k) for k in self.auto_learned.keys()}:
-            for raw, canonical in self.auto_learned.items():
-                if self._normalize_key(raw) == key:
-                    self.logger.debug(f"🧠 Auto-learned Match (normalized): '{name}' → '{canonical}'")
-                    return canonical
-
-        return None
 
     def _is_collaboration(self, name: str) -> bool:
 	    """🤝 Schneller Kollaborations-Check"""
@@ -968,40 +949,43 @@ class ArtistNormalizer(SingletonMixin):
             self.logger.error(f"❌ Fehler beim Laden der Overrides: {e}")
             return {}
 
-    def _update_overrides_from_library_async(self):
-        """🔄 Asynchrones Update der Overrides"""
+    def _rebuild_library_index(self) -> None:
+        """🗂️ Baut den normalisierten Library-Index neu aus self.library_artists.
+
+        ARCH Artist-Identity Phase C: Datenquelle fuer den
+        ArtistIdentityResolver-Tier "library_identity". Rein in-memory.
+        """
+        self.library_index = {
+            self._normalize_key(name): name
+            for name in self.library_artists
+            if name
+        }
+
+    def refresh_library_index(self) -> int:
+        """🔄 Scannt das Library-Verzeichnis neu und aktualisiert
+        library_artists + library_index (z.B. nachdem ein Download einen
+        neuen Kuenstler-Ordner erzeugt hat). Gibt die Anzahl der Library-
+        Kuenstler zurueck.
+
+        Aktualisiert bewusst NICHT trie/weighted_patterns/overrides-Spiegel -
+        diese sind Bootstrap-Datenstrukturen fuer parse_youtube_title()/
+        normalize() und werden nur beim Start aufgebaut; der Resolver ist
+        der Laufzeit-Pfad fuer neu erkannte Library-Identitaeten.
+        """
         with self._write_lock:
-            new_entries = {}
+            self.library_artists = self._load_library_artists()
+            self._rebuild_library_index()
+        return len(self.library_artists)
 
-            for artist in self.library_artists:
-                key = self._normalize_key(artist)
-                if key not in self.overrides:
-                    new_entries[key] = artist
-
-            if new_entries:
-                self.overrides.update(new_entries)
-                self._save_overrides()
-                self.logger.info(f"➕ {len(new_entries)} neue Artists gelernt")
-
-    def _save_overrides(self):
-        """💾 Optimiertes Speichern der Overrides"""
-        try:
-            self.config.override_file.parent.mkdir(parents=True, exist_ok=True)
-
-            with open(self.config.override_file, "w", encoding="utf-8") as f:
-                json.dump(
-                    dict(sorted(self.overrides.items())),
-                    f,
-                    indent=2,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                )
-            # Normalisierte Lookup-Tabelle synchron halten
-            self.overrides_normalized = {
-                self._normalize_key(k): v for k, v in self.overrides.items()
-            }
-        except Exception as e:
-            self.logger.error(f"❌ Fehler beim Speichern der Overrides: {e}")
+    # ARCH Artist-Identity Phase E (Schritt 19): _mirror_library_artists_in_overrides()
+    # und _save_overrides() wurden entfernt. Historie: bis Phase C schrieb
+    # _update_overrides_from_library_async() jeden Library-Ordner persistent
+    # nach mapping/artist_overrides.json (Finding F-05); Phase C: nur noch
+    # in-memory-Spiegel; Phase D: _check_overrides() wird von normalize() nicht
+    # mehr aufgerufen -> beide Methoden ohne Zweck. Library-Identität läuft
+    # über self.library_index + ArtistIdentityResolver, artist_overrides.json
+    # wird ausschließlich manuell gepflegt (kein Schreib-Pfad mehr in dieser
+    # Klasse).
 
     # =========================================================================
     # PUBLIC API
@@ -1029,18 +1013,11 @@ class ArtistNormalizer(SingletonMixin):
 
         return stats
 
-    def learn_from_feedback(self, original: str, corrected: Dict):
-        """🧠 Lernt aus manuellen Korrekturen (schreibt in auto_learned_artist_aliases.json)"""
-        with self._write_lock:
-            # Nur in auto_learned speichern, NICHT in overrides!
-            if corrected.get("main_artist"):
-                raw_name = original.strip()
-                canonical_name = corrected["main_artist"].strip()
-                
-                if raw_name.lower() != canonical_name.lower():
-                    self.auto_learned[raw_name] = canonical_name
-                    self._save_auto_learned_entry(raw_name, canonical_name)
-                    self.logger.info(f"🧠 Gelernt aus Feedback: '{raw_name}' → '{canonical_name}'")
+    # ARCH Artist-Identity Phase E (Schritt 19): learn_from_feedback() entfernt
+    # (0 Aufrufer repoweit, auch keine Tests - repo-eigene Doku:
+    # tests/test_artist_config_mapping_dir_isolation.py "unbenutzter toter
+    # Code"). Der produktive Alias-Lernpfad ist AutoLearnManager._save_alias()
+    # -> auto_learned_artist_aliases.json.
 
     def _save_auto_learned_entry(self, raw_name: str, canonical_name: str):
         """💾 Speichert einen einzelnen Auto-Learned Eintrag.
@@ -1057,11 +1034,10 @@ class ArtistNormalizer(SingletonMixin):
         wird) - seitdem zusaetzlich JSON statt YAML (rein maschinell
         geschriebene/gelesene Datei, kein Kommentar-Bedarf).
 
-        WICHTIG: kein eigenes self._write_lock hier - beide Aufrufer
-        (learn_from_feedback(), add_auto_learned_alias()) halten den Lock
-        bereits, bevor sie diese Methode aufrufen (Lock ist ein
-        threading.Lock, nicht reentrant - ein zusaetzliches Lock hier
-        wuerde deadlocken)."""
+        WICHTIG: kein eigenes self._write_lock hier - der Aufrufer
+        (add_auto_learned_alias(), DEPRECATED) hält den Lock bereits, bevor er
+        diese Methode aufruft (Lock ist ein threading.Lock, nicht reentrant -
+        ein zusaetzliches Lock hier wuerde deadlocken)."""
         try:
             import json
 
@@ -1096,12 +1072,19 @@ class ArtistNormalizer(SingletonMixin):
 
     def add_auto_learned_alias(self, raw_name: str, canonical_name: str) -> bool:
         """
-        Fügt manuell einen Auto-Learned Alias hinzu (für externe Aufrufe)
-        
+        Fügt manuell einen Auto-Learned Alias hinzu (für externe Aufrufe).
+
+        DEPRECATED (ARCH Artist-Identity Phase E): kein Produktions-Aufrufer.
+        Der produktive Alias-Lernpfad ist
+        AutoLearnManager._save_alias() -> auto_learned_artist_aliases.json;
+        die Alias-Auflösung liest der ArtistIdentityResolver. Diese Methode
+        (+ _save_auto_learned_entry) bleibt vorerst mitsamt Tests bestehen -
+        eine vollständige Entfernung ist eine eigene, explizite Entscheidung.
+
         Args:
             raw_name: Der rohe Künstlername (z.B. "bausashaus")
             canonical_name: Der kanonische Name (z.B. "Bausa")
-            
+
         Returns:
             True bei Erfolg, False bei Fehler
         """

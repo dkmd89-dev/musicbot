@@ -1,5 +1,18 @@
 # P1: DuplicateDetector ↔ ArtistNormalizer-Verdrahtung
 
+> **Nachtrag 2026-09-08 (Artist-Identity-Resolution-Migration Phase D,
+> `docs/audits/ARTIST_IDENTITY_RESOLUTION_MIGRATION_2026-09-08.md`):**
+> `ArtistNormalizer.normalize()` ist seit Phase D reine String-
+> Normalisierung (der Override-/Alias-Lookup wurde in den neuen
+> `ArtistIdentityResolver` verlagert). `DuplicateDetector` hält seitdem
+> zusätzlich eine `ArtistIdentityResolver`-Instanz und
+> `_normalize_artist_for_comparison()` löst die kanonische Identität über
+> `resolver.resolve(cleaned).canonical` auf — sonst würden Alias-
+> Schreibweisen (z. B. „Miksu" vs. „Miksu & Macloud") im Content-Hash
+> auseinanderlaufen. Die hier beschriebene „geteilter Pfad statt paralleler
+> Logik"-Zielsetzung bleibt gültig, nur die geteilte Komponente ist jetzt
+> der Resolver (der intern denselben `ArtistNormalizer` nutzt).
+
 **Datum:** 2026-09-02
 **Branch:** `p1/duplicate-detector-artist-normalizer-wiring`
 **Vorgeschichte:** P0-E (`docs/audits/P0_DUPLICATE_DETECTOR_AUDIT_2026-09-02.md`)

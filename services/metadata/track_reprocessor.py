@@ -470,6 +470,14 @@ async def process_file(
         if not flat_artists:
             raise ValueError("Kein Artist-Tag vorhanden - kann nicht verarbeitet werden")
 
+        # ARCH Artist-Identity Phase D (Schritt 15): normalize() ist seit
+        # Phase D reine String-Normalisierung (Casing/Kollaboration). Beim
+        # Reprocessing bestehender Library-Dateien ist der ©ART-Tag bereits
+        # ein von einem frueheren Pipeline-Lauf geschriebener kanonischer
+        # Wert - eine erneute Override-/Alias-Aufloesung ueber den
+        # ArtistIdentityResolver ist hier bewusst NICHT eingebaut (kein
+        # identitaetskritischer Pfad; ggf. Phase E). String-Normalisierung
+        # genuegt.
         normalized_artists = [
             processor.artist_normalizer.normalize(a) or a for a in flat_artists
         ]

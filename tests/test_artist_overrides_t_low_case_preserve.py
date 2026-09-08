@@ -55,20 +55,30 @@ def normalizer(library_dir, override_file, mapping_dir):
     )
 
 
+@pytest.fixture
+def resolver(normalizer, mapping_dir):
+    from services.metadata.artist_identity_resolver import ArtistIdentityResolver
+
+    return ArtistIdentityResolver(normalizer, mapping_dir)
+
+
 class TestTLowCasePreserveOverrideMechanism:
-    def test_lowercase_input_stays_lowercase(self, normalizer):
-        assert normalizer.normalize("t-low") == "t-low"
+    """ARCH Artist-Identity Phase D: Override-Aufloesung im
+    ArtistIdentityResolver (normalize() = reine String-Normalisierung)."""
+
+    def test_lowercase_input_stays_lowercase(self, resolver):
+        assert resolver.resolve("t-low").canonical == "t-low"
 
     def test_mixed_case_input_is_still_normalized_to_lowercase_override(
-        self, normalizer
+        self, resolver
     ):
-        assert normalizer.normalize("t-Low") == "t-low"
-        assert normalizer.normalize("T-Low") == "t-low"
+        assert resolver.resolve("t-Low").canonical == "t-low"
+        assert resolver.resolve("T-Low").canonical == "t-low"
 
     def test_all_caps_input_is_still_normalized_to_lowercase_override(
-        self, normalizer
+        self, resolver
     ):
-        assert normalizer.normalize("T-LOW") == "t-low"
+        assert resolver.resolve("T-LOW").canonical == "t-low"
 
 
 class TestRealArtistOverridesFileHasCorrectTLowCasing:

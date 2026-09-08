@@ -85,28 +85,44 @@ def normalizer(library_dir, override_file, mapping_dir):
     )
 
 
+@pytest.fixture
+def resolver(normalizer, mapping_dir):
+    from services.metadata.artist_identity_resolver import ArtistIdentityResolver
+
+    return ArtistIdentityResolver(normalizer, mapping_dir)
+
+
 class TestMiksuMacloudOverrideMechanism:
-    def test_bare_miksu_resolves_to_full_duo_name(self, normalizer):
-        assert normalizer.normalize("Miksu") == "Miksu & Macloud"
+    """ARCH Artist-Identity Phase D: die Duo-Namens-Auflösung ("Miksu" →
+    "Miksu & Macloud") liegt seit Phase D im ArtistIdentityResolver
+    (normalize() ist reine String-Normalisierung)."""
 
-    def test_slash_variant_with_spaces_resolves_to_full_duo_name(self, normalizer):
-        assert normalizer.normalize("Miksu / Macloud") == "Miksu & Macloud"
+    def test_bare_miksu_resolves_to_full_duo_name(self, resolver):
+        ident = resolver.resolve("Miksu")
+        assert ident.canonical == "Miksu & Macloud"
+        assert ident.source == "artist_override"
 
-    def test_slash_variant_without_spaces_resolves_to_full_duo_name(self, normalizer):
-        assert normalizer.normalize("Miksu/Macloud") == "Miksu & Macloud"
+    def test_slash_variant_with_spaces_resolves_to_full_duo_name(self, resolver):
+        assert resolver.resolve("Miksu / Macloud").canonical == "Miksu & Macloud"
 
-    def test_x_variant_resolves_to_full_duo_name(self, normalizer):
-        assert normalizer.normalize("Miksu x Macloud") == "Miksu & Macloud"
+    def test_slash_variant_without_spaces_resolves_to_full_duo_name(self, resolver):
+        assert resolver.resolve("Miksu/Macloud").canonical == "Miksu & Macloud"
+
+    def test_x_variant_resolves_to_full_duo_name(self, resolver):
+        assert resolver.resolve("Miksu x Macloud").canonical == "Miksu & Macloud"
 
 
-class TestDetermineBestArtistPriorityChainRegression:
-    """Reproduziert den echten Live-Fund end-to-end ueber
-    ArtistProcessor.determine_best_artist() - nicht nur ueber
-    ArtistNormalizer.normalize() isoliert, da der eigentliche Bug erst
-    im Zusammenspiel mit der Prioritaetskette (parsed_artist gewinnt vs.
-    dem korrekten raw_artist/channel_name) sichtbar wird."""
+class TestDetermineBestArtistPlusResolverRegression:
+    """Reproduziert den echten Live-Fund end-to-end: der YT-Parser liefert
+    das bereits zerlegte "Miksu" als parsed_artist (gewinnt in der
+    Prioritaetskette gegen raw_artist/channel_name). ArtistProcessor liefert
+    "Miksu"; der nachgelagerte ArtistIdentityResolver korrigiert das zum
+    vollen Duo-Namen (ARCH Artist-Identity Phase D - die Korrektur liegt
+    nicht mehr in determine_best_artist()/normalize() selbst)."""
 
-    def test_broken_parsed_artist_is_corrected_via_override(self, normalizer):
+    def test_broken_parsed_artist_is_corrected_via_resolver(
+        self, normalizer, resolver
+    ):
         proc = ArtistProcessor(normalizer)
 
         artist, source, feat_artists = proc.determine_best_artist(
@@ -115,9 +131,13 @@ class TestDetermineBestArtistPriorityChainRegression:
             dominant_artist="",
             channel_name="Miksu / Macloud",
         )
-
-        assert artist == "Miksu & Macloud"
+        assert artist == "Miksu"
         assert source == "youtube_parsed"
+
+        ident = resolver.resolve(artist)
+        assert ident.canonical == "Miksu & Macloud"
+        assert ident.source == "artist_override"
+        assert ident.known is True
 
 
 class TestRealArtistOverridesFileHasMiksuMacloudEntries:
