@@ -316,6 +316,27 @@ class TestHandleExecute:
         text = message.edit_text.call_args.args[0]
         assert "Fehlgeschlagen: 1" in text
 
+    def test_regressed_issue_codes_are_surfaced_as_warning(self, handler):
+        """Production-Audit 2026-09-08 (Verification-Asymmetrie): eine
+        erkannte Nebenwirkung (neue offene Findings bei nicht beruehrten
+        Issue-Codes) muss dem Nutzer sichtbar gemacht werden."""
+        result = RepairRunResult(
+            repair_id="abc", status="SUCCESS", started_at="t0", finished_at="t1",
+            candidates_total=1, resolved_count=1,
+            status_counts={"SUCCESS": 1}, affected_files=["a.m4a"],
+            regressed_issue_codes=["ARTWORK_NON_SQUARE"],
+        )
+        message = Mock()
+        message.edit_text = AsyncMock()
+        with patch.object(
+            repair_handler_module, "execute_safe_automatic_repair",
+            new=AsyncMock(return_value=result),
+        ):
+            run(handler._run_execute_and_report(message, ADMIN_ID))
+        text = message.edit_text.call_args.args[0]
+        assert "ARTWORK_NON_SQUARE" in text
+        assert "Nebenwirkung" in text
+
     def test_skipped_empty_plan_reported(self, handler):
         result = RepairRunResult(
             repair_id="abc", status="SKIPPED", started_at="t0", finished_at="t1",

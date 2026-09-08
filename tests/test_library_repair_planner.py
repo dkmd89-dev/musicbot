@@ -95,6 +95,18 @@ def test_structure_and_audio_route_to_manual_review():
 
 # ── Production-Audit 2026-09-08: vormals tote EXTERNAL_METADATA-Codes ──
 
+def test_no_registry_entry_claims_reprocess_artist_metadata_script():
+    """Production-Audit 2026-09-08: der automatisierte Repair-Pfad ruft
+    NIE scripts/reprocess_artist_metadata.py auf (weder als Subprozess
+    noch sonst), sondern track_reprocessor.process_file() in-process.
+    Kein Registry-Eintrag darf das Skript als reuses_component behaupten -
+    das waere ein irrefuehrendes Signal ueber den tatsaechlichen
+    Ausfuehrungspfad."""
+    misleading = [s.issue_code for s in REGISTRY.values()
+                  if "reprocess_artist_metadata.py" in s.reuses_component]
+    assert misleading == []
+
+
 def test_year_missing_and_album_release_id_inconsistent_are_manual_review():
     """Production-Audit 2026-09-08: beide standen vorher auf
     EXTERNAL_METADATA, obwohl kein Executor sie je behandelt hat (kein

@@ -48,6 +48,14 @@ def _spec(code, action, level, component, *, approval=True, external=False,
 # Registry — genau ein Eintrag pro Health-Issue-Code.
 # tests/test_library_repair_planner.py verifiziert die Vollstaendigkeit
 # gegen services.library_health.issues.ALL_CODES.
+#
+# Production-Audit 2026-09-08: METADATA_REPROCESSING-Eintraege nennen als
+# reuses_component durchgehend "track_reprocessor.process_file()" (nicht
+# "reprocess_artist_metadata.py") — der automatisierte Repair-Pfad
+# (executor.py::apply_level2) ruft ausschliesslich diese Funktion direkt
+# in-process auf. scripts/reprocess_artist_metadata.py ist ein davon
+# unabhaengiges, auf /tmp/musicbot_test beschraenktes CLI-Testwerkzeug fuer
+# denselben Kern, kein Bestandteil dieses Pfades (siehe LIBRARY_REPAIR.md).
 # ─────────────────────────────────────────────────────────────────────────
 
 _SPECS: tuple[RepairSpec, ...] = (
@@ -55,18 +63,18 @@ _SPECS: tuple[RepairSpec, ...] = (
     _spec("META_NOT_ANALYZABLE", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW,
           "-", approval=True, change="Tag-Container defekt — manuell pruefen / neu laden"),
     _spec("META_ARTIST_MISSING", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "reprocess_artist_metadata.py", external=True,
+          "track_reprocessor.process_file()", external=True,
           change="Artist-Tag aus Pipeline neu bestimmen (Before/After-Diff)"),
     _spec("META_TITLE_MISSING", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "reprocess_artist_metadata.py", external=True,
+          "track_reprocessor.process_file()", external=True,
           change="Titel-Tag aus Pipeline neu bestimmen"),
     _spec("META_TITLE_NOT_CLEAN", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "reprocess_artist_metadata.py", external=True,
+          "track_reprocessor.process_file()", external=True,
           change="Titel-Tag ueber die reale Pipeline bereinigen "
                  "(Anfuehrungszeichen/prod.-Credit/Marketing-Suffix entfernen; "
                  "Before/After-Diff, Audio unveraendert)"),
     _spec("META_ALBUM_MISSING", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "reprocess_artist_metadata.py", external=True,
+          "track_reprocessor.process_file()", external=True,
           change="Album-Tag aus Pipeline neu bestimmen"),
     _spec("META_ALBUM_ARTIST_MISSING", _A.MULTI_ARTIST_SPLIT, _L.SAFE_AUTOMATIC,
           "TagWriter", approval=False,
@@ -117,12 +125,12 @@ _SPECS: tuple[RepairSpec, ...] = (
 
     # ── Lyrics ──────────────────────────────────────────────────────────
     _spec("LYRICS_MISSING", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "reprocess_artist_metadata.py", external=True,
+          "track_reprocessor.process_file()", external=True,
           change="Lyrics ueber LyricsProcessor-Fallback nachtragen"),
     _spec("LYRICS_EMPTY", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "reprocess_artist_metadata.py", external=True, change="Lyrics neu holen"),
+          "track_reprocessor.process_file()", external=True, change="Lyrics neu holen"),
     _spec("LYRICS_INVALID", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "reprocess_artist_metadata.py", external=True, change="Lyrics neu holen"),
+          "track_reprocessor.process_file()", external=True, change="Lyrics neu holen"),
 
     # ── Audio ───────────────────────────────────────────────────────────
     _spec("AUDIO_NOT_ANALYZABLE", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
@@ -200,7 +208,7 @@ _SPECS: tuple[RepairSpec, ...] = (
           "track_reprocessor.process_file() (GenreProcessor)", external=True,
           change="Genre per GenreProcessor ueber die volle Pipeline bestimmen"),
     _spec("GENRE_INVALID", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "reprocess_artist_metadata.py", external=True,
+          "track_reprocessor.process_file()", external=True,
           change="Genre neu bestimmen / durch GenreMapper normalisieren"),
     _spec("GENRE_DELIMITER_INCONSISTENT", _A.GENRE_DELIMITER_NORMALIZE, _L.SAFE_AUTOMATIC,
           "TagWriter", approval=False,

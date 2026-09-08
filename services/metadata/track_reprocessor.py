@@ -795,6 +795,10 @@ async def process_file(
         if rename_planned:
             rename_target = path.with_name(expected_filename)
             if rename_target.parent != path.parent:
+                # Production-Audit 2026-09-08: dieselbe Invariante existiert
+                # unabhaengig auch in services/library_repair/executor.py
+                # ("/" in new_name-Check) - bewusst nicht zu einer
+                # gemeinsamen Funktion extrahiert, siehe Kommentar dort.
                 rename_blocked_reason = (
                     f"Parent-Verzeichnis wuerde sich aendern "
                     f"({path.parent} -> {rename_target.parent})"
