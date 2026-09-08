@@ -751,6 +751,37 @@ Abschnitt 21 (Regel 1) ein eigenes Sicherheitsnetz (Characterization
 Tests für die aktuelle synchrone Serialisierung), bevor irgendeine Option
 umgesetzt wird.
 
+### Entscheidung (2026-09-08) — INV-01 als akzeptiertes Risiko geschlossen
+
+Analog zu **DUP-05** (dort über die Baselines v6–v8 als „P1 (akzeptiert)“
+geführt, bevor es am 2026-09-02 tatsächlich behoben wurde, siehe
+`docs/audits/DUP05_IN_FLIGHT_RACE_FIX_2026-09-02.md`) wird INV-01 hiermit
+**formal als akzeptiertes Restrisiko geschlossen** — nicht durch eine
+Code-Änderung, sondern durch bewusste Entscheidung gegen die Umsetzung von
+Option A/B/C zum jetzigen Zeitpunkt:
+
+- **Option A** (vollständig async) bleibt durch die bestehende
+  Projektentscheidung (`MusicBot_ARCHITECTURE_EVOLUTION.md` P0-B,
+  „mass conversion to async“ verboten) ausgeschlossen.
+- **Option B** (kontrolliertes Offloading an den Call-Sites) und
+  **Option C** (Persistenz entkoppeln) sind technisch möglich, würden
+  aber jeweils ein eigenes Sicherheitsnetz (Characterization Tests für
+  die aktuelle synchrone Serialisierung, CLAUDE.md Regel 1) *vor* der
+  Umsetzung erfordern und führen neue Risikoklassen ein (neues
+  Race-Fenster bzw. neues Datenverlust-Fenster) — der Aufwand steht in
+  keinem Verhältnis zur tatsächlich gemessenen Problemgröße (kleine
+  Cache-Dateien, seltene gleichzeitige Schreibvorgänge relativ zur
+  Telegram-Interaktionsrate, siehe auch Option D-Einschätzung oben).
+- Es ist **kein aktiver Datenverlust oder Fehlverhalten** bekannt — INV-01
+  ist ein strukturelles Risiko bei künftigem Wachstum, kein
+  reproduzierter Bug.
+
+Damit bleibt der aktuelle Ist-Zustand (synchrone Filesystem-Persistenz im
+Event-Loop-Thread) unverändert bestehen. Sollte sich die Problemgröße
+künftig ändern (deutlich größere Cache-Dateien, höhere Nebenläufigkeit),
+ist dies ein neuer Befund mit eigener Analyse, keine automatische
+Wiedereröffnung von INV-01.
+
 ## 23. Recommended Migration Order
 
 ```

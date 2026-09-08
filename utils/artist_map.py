@@ -1013,97 +1013,12 @@ class ArtistNormalizer(SingletonMixin):
 
         return stats
 
-    # ARCH Artist-Identity Phase E (Schritt 19): learn_from_feedback() entfernt
-    # (0 Aufrufer repoweit, auch keine Tests - repo-eigene Doku:
-    # tests/test_artist_config_mapping_dir_isolation.py "unbenutzter toter
-    # Code"). Der produktive Alias-Lernpfad ist AutoLearnManager._save_alias()
-    # -> auto_learned_artist_aliases.json.
-
-    def _save_auto_learned_entry(self, raw_name: str, canonical_name: str):
-        """💾 Speichert einen einzelnen Auto-Learned Eintrag.
-
-        ARCH-022: schreibt atomar (write-tmp -> rename), analog zu
-        services/metadata/auto_learn.py::AutoLearnManager._write_json_atomic() -
-        vorher direktes open(mode="w"), das bei einem Absturz mitten im
-        Schreiben eine korrupte/halb geschriebene Datei haette hinterlassen
-        koennen. Eigene Datei auto_learned_artist_aliases.json statt des
-        vorherigen "auto_learned"-Schluessels in der gemeinsam mit
-        AutoLearnManager.observe_featured_artists() genutzten
-        auto_learned_artists.yaml (Namespace-Trennung, siehe dortiger
-        "featured_artists"-Schluessel, der von dieser Klasse nie gelesen
-        wird) - seitdem zusaetzlich JSON statt YAML (rein maschinell
-        geschriebene/gelesene Datei, kein Kommentar-Bedarf).
-
-        WICHTIG: kein eigenes self._write_lock hier - der Aufrufer
-        (add_auto_learned_alias(), DEPRECATED) hält den Lock bereits, bevor er
-        diese Methode aufruft (Lock ist ein threading.Lock, nicht reentrant -
-        ein zusaetzliches Lock hier wuerde deadlocken)."""
-        try:
-            import json
-
-            mapping_dir = self.config.mapping_dir or Path("mapping")
-            auto_file = mapping_dir / "auto_learned_artist_aliases.json"
-            auto_file.parent.mkdir(parents=True, exist_ok=True)
-
-            # Bestehende Daten laden
-            data = {"auto_learned": {}}
-            if auto_file.exists():
-                with open(auto_file, "r", encoding="utf-8") as f:
-                    data = json.load(f) or {"auto_learned": {}}
-
-            # Neuen Eintrag hinzufügen
-            data["auto_learned"][raw_name] = canonical_name
-
-            # Atomar speichern (write-tmp -> rename)
-            tmp_path = auto_file.with_suffix(f".tmp_{int(time.time() * 1000)}")
-            try:
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False, sort_keys=True)
-                tmp_path.replace(auto_file)
-            except Exception:
-                try:
-                    tmp_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
-                raise
-
-        except Exception as e:
-            self.logger.error(f"❌ Fehler beim Speichern des Auto-Learned Eintrags: {e}")
-
-    def add_auto_learned_alias(self, raw_name: str, canonical_name: str) -> bool:
-        """
-        Fügt manuell einen Auto-Learned Alias hinzu (für externe Aufrufe).
-
-        DEPRECATED (ARCH Artist-Identity Phase E): kein Produktions-Aufrufer.
-        Der produktive Alias-Lernpfad ist
-        AutoLearnManager._save_alias() -> auto_learned_artist_aliases.json;
-        die Alias-Auflösung liest der ArtistIdentityResolver. Diese Methode
-        (+ _save_auto_learned_entry) bleibt vorerst mitsamt Tests bestehen -
-        eine vollständige Entfernung ist eine eigene, explizite Entscheidung.
-
-        Args:
-            raw_name: Der rohe Künstlername (z.B. "bausashaus")
-            canonical_name: Der kanonische Name (z.B. "Bausa")
-
-        Returns:
-            True bei Erfolg, False bei Fehler
-        """
-        if not raw_name or not canonical_name:
-            return False
-            
-        with self._write_lock:
-            if raw_name.strip().lower() == canonical_name.strip().lower():
-                return False
-                
-            self.auto_learned[raw_name.strip()] = canonical_name.strip()
-            self._save_auto_learned_entry(raw_name.strip(), canonical_name.strip())
-            
-            # Datenstrukturen aktualisieren
-            self._add_to_trie(raw_name.strip().lower(), canonical_name.strip())
-            self._build_weighted_patterns()
-            
-            self.logger.info(f"🧠 Manueller Auto-Learned Alias: '{raw_name}' → '{canonical_name}'")
-            return True
+    # ARCH Artist-Identity Phase E (Schritt 19) / F-08 (Migration Phase E,
+    # 2026-09-08): learn_from_feedback(), _save_auto_learned_entry() und
+    # add_auto_learned_alias() entfernt (0 Aufrufer repoweit, siehe
+    # tests/test_artist_config_mapping_dir_isolation.py). Der produktive
+    # Alias-Lernpfad ist AutoLearnManager._save_alias() ->
+    # auto_learned_artist_aliases.json.
 
     def add_case_preserve(self, raw_name: str, preserved: str) -> bool:
         """
@@ -1213,10 +1128,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("🧠 AUTO-LEARNING TEST")
     print("=" * 60)
-    
-    # Test: Alias hinzufügen
-    normalizer.add_auto_learned_alias("bausashaus", "Bausa")
-    
+
     # Test: Case-Preserve hinzufügen
     normalizer.add_case_preserve("sdp", "SDP")
     normalizer.add_case_preserve("raf", "RAF")

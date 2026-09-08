@@ -52,24 +52,13 @@ class TestAutoLearnManager(unittest.TestCase):
         """Räume Test-Umgebung auf"""
         self.temp_dir.cleanup()
     
-    def test_is_non_artist_channel(self):
-        """Erkennung von Non-Artist Channels"""
-        test_cases = [
-            ("Artist Name - Topic", True),
-            ("Artist Name VEVO", True),
-            ("Various Artists", True),
-            ("Music Channel", True),
-            ("Real Artist Name", False),
-            ("Official Music", True),
-            ("John Doe", False),
-            ("Topic Channel", True),
-        ]
-        
-        for channel, expected in test_cases:
-            with self.subTest(channel=channel):
-                result = self.auto_learn._is_non_artist_channel(channel)
-                self.assertEqual(result, expected, f"Failed for {channel}")
-    
+    # F-08 (Migration Phase E, 2026-09-08): test_is_non_artist_channel
+    # entfernt - testete ausschliesslich _is_non_artist_channel(), die als
+    # toter Code (0 Aufrufer) entfernt wurde. Der Schutz gegen
+    # Kanalname-als-Artist laeuft ueber
+    # ArtistProcessor.raw_name_for_learning() + das known-Flag des
+    # ArtistIdentityResolvers.
+
     def test_is_artist_known_empty(self):
         """Keine bekannten Artists initial"""
         result = self.auto_learn._is_artist_known("Unknown Artist")
