@@ -1101,11 +1101,20 @@ Nicht jede einzelne triviale Funktion braucht eine seitenlange Beschreibung.
 
 ## Baseline-Pflege
 
-Aktuelle Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze
-2026-09-07, 2580 passed / 0 failed, 1 umgebungsbedingt skipped).
+Aktuelle **eingefrorene** Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v9.md`
+(Freeze 2026-09-07, 2580 passed / 0 failed, 1 umgebungsbedingt skipped).
 Referenziert von `README.md` und `docs/INDEX.md`. Vorgänger
 `docs/MusicBot_ENGINEERING_BASELINE_v8.md` (Freeze 2026-09-02, 1698
 passed) liegt unverändert unter `docs/archive/`.
+
+Laufender Zwischenstand seit dem v9-Freeze:
+`docs/MusicBot_ENGINEERING_BASELINE_v10.md` — **DRAFT, noch nicht
+eingefroren**. Hier werden pro ARCH-Phase / PR *ARCH Status*, *Recent
+Major Changes* und *Testzahlen* mitgeschrieben (siehe Absatz weiter
+unten); die Tech-Debt-/Security-/Freeze-Abschnitte bleiben Platzhalter
+bis zum v10-Freeze. v9 bleibt bis dahin der zitierbare eingefrorene
+Referenzpunkt, `docs/FINDINGS_INDEX.md` die lebende Findings-Quelle. v10
+dupliziert keine Findings.
 
 Der aktuelle Stand aller offenen/zurückgestellten Punkte steht ab sofort
 in `docs/FINDINGS_INDEX.md`, nicht in der Tech-Debt-Tabelle der jeweils
@@ -1117,10 +1126,14 @@ Abschnitt „Baseline-Pflege" oben), ersetzt aber nicht die Pflege von
 `docs/FINDINGS_INDEX.md` als lebende Quelle.
 
 Nach Abschluss jeder ARCH-Phase mit Code-/YAML-Änderung wird die
-aktuelle ENGINEERING_BASELINE_vN.md im selben PR aktualisiert
+laufende `ENGINEERING_BASELINE_v10.md` (DRAFT) im selben PR aktualisiert
 (mindestens: Abschnitt „ARCH Status", „Recent Major Changes",
-Testzahlen). Bei größerer Drift (>3 ARCH-Phasen seit letztem Sync)
-wird eine neue vN+1 statt eines Nachtrags erstellt.
+Testzahlen). Solange eine DRAFT-vN+1 existiert, geht der Zwischenstand
+dorthin — die eingefrorene vN wird nicht mehr angefasst. Existiert keine
+DRAFT-vN+1 (Normalfall direkt nach einem Freeze), wird sie beim
+nächsten solchen Abschluss angelegt. Bei größerer Drift (>3 ARCH-Phasen
+seit letztem Sync) ohne DRAFT-vN+1 wird eine neue vN+1 statt eines
+Nachtrags erstellt.
 
 **Freeze-Abschluss ist selbsttätig, nicht die Freeze-Entscheidung
 selbst:** Schließt ein Freeze-Gate-Audit explizit mit 🟢 APPROVED ab

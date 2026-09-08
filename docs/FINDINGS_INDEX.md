@@ -24,7 +24,7 @@ Freeze-Zeitpunkt (wird nach dem Freeze nicht mehr editiert) — dieser
 Index ist ab sofort die einzige Stelle für den *aktuellen* Stand.
 
 **Baseline-Freeze:** 2026-09-02 (Baseline v8 — eingefrorener Schnappschuss,
-Tech-Debt-Tabelle dort unverändert, siehe z. B. `docs/archive/MusicBot_ENGINEERING_BASELINE_v8.md` — die jeweils aktuelle Baseline ist `docs/MusicBot_ENGINEERING_BASELINE_v9.md`).
+Tech-Debt-Tabelle dort unverändert, siehe z. B. `docs/archive/MusicBot_ENGINEERING_BASELINE_v8.md`). Aktuell eingefrorener Referenzpunkt: `docs/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze 2026-09-07); laufender Zwischenstand seit dem v9-Freeze: `docs/MusicBot_ENGINEERING_BASELINE_v10.md` (DRAFT — nur ARCH-Historie/Testzahlen, keine Findings; die stehen hier).
 **Aktueller Finding-Stand (dieses Dokument):** 2026-09-08 (zuletzt aktualisiert:
 Artist-Identity-Resolution-Migration Phase A–F — F-01…F-06 CLOSED, F-07/F-08
 DEFERRED, siehe `docs/audits/ARTIST_IDENTITY_RESOLUTION_MIGRATION_2026-09-08.md`.
