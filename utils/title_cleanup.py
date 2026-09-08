@@ -24,8 +24,13 @@ import re
 # Umschliessende Anfuehrungszeichen-Paare (gerade + gaengige typografische
 # Varianten deutsch/franzoesisch/englisch).
 _QUOTE_PAIRS = (
-    ('"', '"'), ("'", "'"), ("„", "“"), ("«", "»"),
-    ("‹", "›"), ("‘", "’"), ("“", "”"),
+    ('"', '"'),
+    ("'", "'"),
+    ("„", "“"),
+    ("«", "»"),
+    ("‹", "›"),
+    ("‘", "’"),
+    ("“", "”"),
 )
 
 
@@ -129,6 +134,17 @@ def light_title_cleanup(title: str, artist: str) -> str:
         r"\s*[-–—]?\s*\bprod\.?\s+(?:by\s+)?\S.*$", "", cleaned, flags=re.IGNORECASE
     ).strip()
 
+    # Titelende-Credit im deutschen Format entfernen, z. B.
+    # "IMMER (MIT MAKKO)" → "IMMER".
+    # Nur ein abschließender Parenthesen-Block wird entfernt;
+    # normale "mit"-Vorkommen im Titel bleiben unangetastet.
+    cleaned = re.sub(
+        r"\s*\(\s*mit\s+[^()]+\s*\)\s*$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+
     # Live-Fund 2026-09-02 (Nutzer-Report, Bibliotheks-Scan von
     # /tmp/musicbot_test/metadaten): Artist "makko" stylisiert seine
     # YouTube-Titel systematisch mit umschliessenden Anfuehrungszeichen
@@ -152,7 +168,7 @@ def light_title_cleanup(title: str, artist: str) -> str:
             and cleaned.startswith(_open_q)
             and cleaned.endswith(_close_q)
         ):
-            _inner = cleaned[len(_open_q):-len(_close_q)].strip()
+            _inner = cleaned[len(_open_q) : -len(_close_q)].strip()
             if _inner:
                 cleaned = _inner
             break
