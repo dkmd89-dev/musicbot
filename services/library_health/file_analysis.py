@@ -22,6 +22,7 @@ from __future__ import annotations
 import datetime as _dt
 import re
 from typing import Callable, Optional
+import unicodedata
 
 from .models import AnalysisState, FileHealth, FileRecord, Severity
 from .issues import make_issue
@@ -89,8 +90,42 @@ def _blank(value: Optional[str]) -> bool:
 
 
 def _normalize_for_compare(text: str) -> str:
+    text = unicodedata.normalize("NFC", text)
     text = _ILLEGAL_FILENAME_CHARS.sub("", text)
-    return re.sub(r"\s+", " ", text).strip().lower()
+    text = re.sub(r"\s+", " ", text).strip().casefold()
+
+    # Harmlose Schreibvarianten angleichen:
+    # "More Love feat. Okfella" == "More Love (feat. Okfella)"
+    text = re.sub(r"\s*\(\s*(feat\.? .+?)\s*\)", r" \1", text)
+
+    # Reine Klammer-Formatierung angleichen:
+    # "Souvenir Industrie" == "Souvenir (Industrie)"
+    # Nur Klammern entfernen, wenn sie keinen eigenständigen
+    # semantischen Zusatz wie "Remix", "Live", "Version" etc. darstellen.
+    def _normalize_parenthetical(match: re.Match[str]) -> str:
+        content = match.group(1).strip()
+
+        semantic_markers = (
+            "remix",
+            "version",
+            "edit",
+            "mix",
+            "live",
+            "acoustic",
+            "instrumental",
+            "extended",
+            "radio",
+            "demo",
+        )
+
+        if content.casefold() in semantic_markers:
+            return match.group(0)
+
+        return f" {content} "
+
+    text = re.sub(r"\(\s*([^()]+?)\s*\)", _normalize_parenthetical, text)
+
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _split_genres(genre: str) -> list[str]:
@@ -170,11 +205,14 @@ def _analyze_metadata(
     fh: FileHealth, record: FileRecord, tags: TagData, now_year: int, p: str
 ) -> AnalysisState:
     if tags.state == AnalysisState.NOT_ANALYZABLE:
-        fh.issues.append(make_issue(
-            "META_NOT_ANALYZABLE", path=p,
-            message=f"Tag-Container nicht lesbar: {tags.error}",
-            details={"error": tags.error},
-        ))
+        fh.issues.append(
+            make_issue(
+                "META_NOT_ANALYZABLE",
+                path=p,
+                message=f"Tag-Container nicht lesbar: {tags.error}",
+                details={"error": tags.error},
+            )
+        )
         return AnalysisState.NOT_ANALYZABLE
 
     artist_ctx = tags.artist
@@ -216,12 +254,17 @@ def _analyze_metadata(
     if not _blank(tags.year):
         y = re.sub(r"[^\d]", "", tags.year)[:4]
         if not (y.isdigit() and YEAR_MIN <= int(y) <= now_year + 1):
-            fh.issues.append(make_issue(
-                "META_YEAR_INVALID", path=p, artist=artist_ctx, title=title_ctx,
-                message=f"Jahr-Tag {tags.year!r} ist keine plausible Jahreszahl "
-                        f"({YEAR_MIN}–{now_year + 1})",
-                details={"value": tags.year},
-            ))
+            fh.issues.append(
+                make_issue(
+                    "META_YEAR_INVALID",
+                    path=p,
+                    artist=artist_ctx,
+                    title=title_ctx,
+                    message=f"Jahr-Tag {tags.year!r} ist keine plausible Jahreszahl "
+                    f"({YEAR_MIN}–{now_year + 1})",
+                    details={"value": tags.year},
+                )
+            )
 
     # Tracknummer: im Album-Kontext ein echter Mangel, bei einer Single nur
     # Beobachtung (Prompt Abschnitt 22).
@@ -230,21 +273,33 @@ def _analyze_metadata(
             record.path_classification == "ALBUM_LIKE"
             or record.album_directory is not None
         )
-        fh.issues.append(make_issue(
-            "META_TRACK_NUMBER_MISSING", path=p, artist=artist_ctx, title=title_ctx,
-            severity=Severity.WARNING if album_context else Severity.INFO,
-            details={"album_context": album_context},
-        ))
+        fh.issues.append(
+            make_issue(
+                "META_TRACK_NUMBER_MISSING",
+                path=p,
+                artist=artist_ctx,
+                title=title_ctx,
+                severity=Severity.WARNING if album_context else Severity.INFO,
+                details={"album_context": album_context},
+            )
+        )
 
     if _blank(tags.mb_recording_id):
-        fh.issues.append(make_issue("META_MB_RECORDING_MISSING", path=p,
-                                    artist=artist_ctx, title=title_ctx))
+        fh.issues.append(
+            make_issue(
+                "META_MB_RECORDING_MISSING", path=p, artist=artist_ctx, title=title_ctx
+            )
+        )
     if _blank(tags.mb_release_id):
-        fh.issues.append(make_issue("META_MB_RELEASE_MISSING", path=p,
-                                    artist=artist_ctx, title=title_ctx))
+        fh.issues.append(
+            make_issue(
+                "META_MB_RELEASE_MISSING", path=p, artist=artist_ctx, title=title_ctx
+            )
+        )
     if _blank(tags.isrc):
-        fh.issues.append(make_issue("META_ISRC_MISSING", path=p,
-                                    artist=artist_ctx, title=title_ctx))
+        fh.issues.append(
+            make_issue("META_ISRC_MISSING", path=p, artist=artist_ctx, title=title_ctx)
+        )
 
     if present_core == 0:
         return AnalysisState.MISSING
@@ -284,12 +339,17 @@ def _analyze_title_cleanliness(
         return
     if not cleaned or cleaned == raw:
         return
-    fh.issues.append(make_issue(
-        "META_TITLE_NOT_CLEAN", path=p, artist=tags.artist, title=tags.title,
-        message=f"Titel-Tag {raw!r} enthaelt Reste, die die Download-Pipeline "
-                f"entfernt haette → {cleaned!r}",
-        details={"raw": raw, "cleaned": cleaned},
-    ))
+    fh.issues.append(
+        make_issue(
+            "META_TITLE_NOT_CLEAN",
+            path=p,
+            artist=tags.artist,
+            title=tags.title,
+            message=f"Titel-Tag {raw!r} enthaelt Reste, die die Download-Pipeline "
+            f"entfernt haette → {cleaned!r}",
+            details={"raw": raw, "cleaned": cleaned},
+        )
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -298,30 +358,46 @@ def _analyze_title_cleanliness(
 
 
 def _analyze_genre(
-    fh: FileHealth, tags: TagData,
-    genre_validator: Optional[Callable[[str], bool]], p: str,
+    fh: FileHealth,
+    tags: TagData,
+    genre_validator: Optional[Callable[[str], bool]],
+    p: str,
 ) -> AnalysisState:
     if tags.state == AnalysisState.NOT_ANALYZABLE:
         return AnalysisState.NOT_ANALYZABLE
     if tags.genre is None:
-        fh.issues.append(make_issue("META_GENRE_MISSING", path=p,
-                                    artist=tags.artist, title=tags.title))
+        fh.issues.append(
+            make_issue(
+                "META_GENRE_MISSING", path=p, artist=tags.artist, title=tags.title
+            )
+        )
         return AnalysisState.MISSING
 
     parts = _split_genres(tags.genre)
     if not parts:
-        fh.issues.append(make_issue("GENRE_EMPTY", path=p, artist=tags.artist,
-                                    title=tags.title,
-                                    details={"raw": tags.genre}))
+        fh.issues.append(
+            make_issue(
+                "GENRE_EMPTY",
+                path=p,
+                artist=tags.artist,
+                title=tags.title,
+                details={"raw": tags.genre},
+            )
+        )
         return AnalysisState.INVALID
 
     # Separator-Konvention: aktuell "; " (tag_writer.py). " / " ist Altbestand.
     if " / " in tags.genre and "; " not in tags.genre:
-        fh.issues.append(make_issue(
-            "GENRE_DELIMITER_INCONSISTENT", path=p, artist=tags.artist, title=tags.title,
-            message="Mehrfach-Genre nutzt ' / ' statt der aktuellen Konvention '; '",
-            details={"raw": tags.genre},
-        ))
+        fh.issues.append(
+            make_issue(
+                "GENRE_DELIMITER_INCONSISTENT",
+                path=p,
+                artist=tags.artist,
+                title=tags.title,
+                message="Mehrfach-Genre nutzt ' / ' statt der aktuellen Konvention '; '",
+                details={"raw": tags.genre},
+            )
+        )
 
     state = AnalysisState.PRESENT
     if genre_validator is not None:
@@ -334,12 +410,21 @@ def _analyze_genre(
             if not ok:
                 invalid.append(part)
         if invalid:
-            fh.issues.append(make_issue(
-                "GENRE_INVALID", path=p, artist=tags.artist, title=tags.title,
-                message=f"Genre-Wert(e) vom GenreMapper nicht erkannt: {invalid}",
-                details={"invalid": invalid, "raw": tags.genre},
-            ))
-            state = AnalysisState.PARTIAL if len(invalid) < len(parts) else AnalysisState.INVALID
+            fh.issues.append(
+                make_issue(
+                    "GENRE_INVALID",
+                    path=p,
+                    artist=tags.artist,
+                    title=tags.title,
+                    message=f"Genre-Wert(e) vom GenreMapper nicht erkannt: {invalid}",
+                    details={"invalid": invalid, "raw": tags.genre},
+                )
+            )
+            state = (
+                AnalysisState.PARTIAL
+                if len(invalid) < len(parts)
+                else AnalysisState.INVALID
+            )
     return state
 
 
@@ -350,7 +435,9 @@ def _analyze_genre(
 _FEAT_IN_ARTIST = re.compile(r"\b(feat\.?|ft\.?|featuring)\b", re.IGNORECASE)
 
 
-def _analyze_multi_artist(fh: FileHealth, record: FileRecord, tags: TagData, p: str) -> None:
+def _analyze_multi_artist(
+    fh: FileHealth, record: FileRecord, tags: TagData, p: str
+) -> None:
     if tags.state == AnalysisState.NOT_ANALYZABLE or _blank(tags.artist):
         return
 
@@ -360,21 +447,35 @@ def _analyze_multi_artist(fh: FileHealth, record: FileRecord, tags: TagData, p: 
     # (a) unsaubere Konkatenation in EINEM ©ART-Wert
     for value in primary_values:
         if ";" in value:
-            fh.issues.append(make_issue(
-                "MULTI_ARTIST_SUSPICIOUS", path=p, artist=tags.artist, title=tags.title,
-                message=f"Artist-Einzelwert enthaelt ';': {value!r}",
-                details={"value": value},
-            ))
+            fh.issues.append(
+                make_issue(
+                    "MULTI_ARTIST_SUSPICIOUS",
+                    path=p,
+                    artist=tags.artist,
+                    title=tags.title,
+                    message=f"Artist-Einzelwert enthaelt ';': {value!r}",
+                    details={"value": value},
+                )
+            )
             break
 
     # (b) feat. im ©ART statt separater ARTISTS-Werte
-    if len(primary_values) == 1 and _FEAT_IN_ARTIST.search(primary_values[0]) and not freeform:
-        fh.issues.append(make_issue(
-            "MULTI_ARTIST_SUSPICIOUS", path=p, artist=tags.artist, title=tags.title,
-            message=f"'feat.'/'ft.' steht im ©ART-Tag statt in separaten "
-                    f"ARTISTS-Werten: {primary_values[0]!r}",
-            details={"value": primary_values[0]},
-        ))
+    if (
+        len(primary_values) == 1
+        and _FEAT_IN_ARTIST.search(primary_values[0])
+        and not freeform
+    ):
+        fh.issues.append(
+            make_issue(
+                "MULTI_ARTIST_SUSPICIOUS",
+                path=p,
+                artist=tags.artist,
+                title=tags.title,
+                message=f"'feat.'/'ft.' steht im ©ART-Tag statt in separaten "
+                f"ARTISTS-Werten: {primary_values[0]!r}",
+                details={"value": primary_values[0]},
+            )
+        )
 
     # (c) Derselbe Artist-Name mehrfach INNERHALB eines Feldes.
     # NICHT ueber ©ART + ARTISTS-Freeform hinweg pruefen: tag_writer.py
@@ -398,19 +499,31 @@ def _analyze_multi_artist(fh: FileHealth, record: FileRecord, tags: TagData, p: 
 
     dupes = _internal_dupes(primary_values) | _internal_dupes(freeform)
     if dupes:
-        fh.issues.append(make_issue(
-            "MULTI_ARTIST_DUPLICATE", path=p, artist=tags.artist, title=tags.title,
-            message=f"Artist-Name(n) mehrfach im selben Multi-Artist-Feld: {sorted(dupes)}",
-            details={"duplicates": sorted(dupes)},
-        ))
+        fh.issues.append(
+            make_issue(
+                "MULTI_ARTIST_DUPLICATE",
+                path=p,
+                artist=tags.artist,
+                title=tags.title,
+                message=f"Artist-Name(n) mehrfach im selben Multi-Artist-Feld: {sorted(dupes)}",
+                details={"duplicates": sorted(dupes)},
+            )
+        )
 
     # (d) ©ART vs. ARTISTS-Freeform widersprechen sich
-    if freeform and {a.lower() for a in freeform} != {a.lower() for a in primary_values}:
-        fh.issues.append(make_issue(
-            "MULTI_ARTIST_INCONSISTENT", path=p, artist=tags.artist, title=tags.title,
-            message="©ART und ARTISTS-Freeform stimmen nicht ueberein",
-            details={"primary": primary_values, "freeform": freeform},
-        ))
+    if freeform and {a.lower() for a in freeform} != {
+        a.lower() for a in primary_values
+    }:
+        fh.issues.append(
+            make_issue(
+                "MULTI_ARTIST_INCONSISTENT",
+                path=p,
+                artist=tags.artist,
+                title=tags.title,
+                message="©ART und ARTISTS-Freeform stimmen nicht ueberein",
+                details={"primary": primary_values, "freeform": freeform},
+            )
+        )
 
     # (e) Album-Artist gehoert nicht zur Artist-Menge — nur im normalen
     # Musikpfad relevant. Bei Compilation/Playlist/Feature ist das legitim
@@ -421,12 +534,17 @@ def _analyze_multi_artist(fh: FileHealth, record: FileRecord, tags: TagData, p: 
         and primary_values
         and tags.album_artist.lower() not in {a.lower() for a in combined}
     ):
-        fh.issues.append(make_issue(
-            "MULTI_ARTIST_INCONSISTENT", path=p, artist=tags.artist, title=tags.title,
-            message=f"Album-Artist {tags.album_artist!r} kommt in der Artist-Liste "
-                    f"nicht vor",
-            details={"album_artist": tags.album_artist, "artists": combined},
-        ))
+        fh.issues.append(
+            make_issue(
+                "MULTI_ARTIST_INCONSISTENT",
+                path=p,
+                artist=tags.artist,
+                title=tags.title,
+                message=f"Album-Artist {tags.album_artist!r} kommt in der Artist-Liste "
+                f"nicht vor",
+                details={"album_artist": tags.album_artist, "artists": combined},
+            )
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -441,29 +559,42 @@ def _analyze_artwork(fh: FileHealth, artwork: ArtworkData, p: str) -> AnalysisSt
         fh.issues.append(make_issue("ARTWORK_MISSING", path=p))
         return AnalysisState.MISSING
     if artwork.state == AnalysisState.INVALID:
-        fh.issues.append(make_issue(
-            "ARTWORK_INVALID", path=p,
-            message=f"Eingebettetes Cover nicht als Bild dekodierbar: {artwork.error}",
-            details={"error": artwork.error, "size_bytes": artwork.size_bytes},
-        ))
+        fh.issues.append(
+            make_issue(
+                "ARTWORK_INVALID",
+                path=p,
+                message=f"Eingebettetes Cover nicht als Bild dekodierbar: {artwork.error}",
+                details={"error": artwork.error, "size_bytes": artwork.size_bytes},
+            )
+        )
         return AnalysisState.INVALID
 
     if artwork.width and artwork.height:
         w, h = artwork.width, artwork.height
         if min(w, h) < ARTWORK_MIN_EDGE_PX:
-            fh.issues.append(make_issue(
-                "ARTWORK_LOW_RESOLUTION", path=p,
-                message=f"Cover {w}x{h} unter {ARTWORK_MIN_EDGE_PX}px Mindestkante",
-                details={"width": w, "height": h},
-            ))
+            fh.issues.append(
+                make_issue(
+                    "ARTWORK_LOW_RESOLUTION",
+                    path=p,
+                    message=f"Cover {w}x{h} unter {ARTWORK_MIN_EDGE_PX}px Mindestkante",
+                    details={"width": w, "height": h},
+                )
+            )
         aspect_off = abs(w - h) / max(w, h)
         if aspect_off > ARTWORK_SQUARE_TOLERANCE:
-            fh.issues.append(make_issue(
-                "ARTWORK_NON_SQUARE", path=p,
-                message=f"Cover-Seitenverhaeltnis weicht {aspect_off:.1%} von 1:1 ab "
-                        f"({w}x{h})",
-                details={"width": w, "height": h, "aspect_off": round(aspect_off, 4)},
-            ))
+            fh.issues.append(
+                make_issue(
+                    "ARTWORK_NON_SQUARE",
+                    path=p,
+                    message=f"Cover-Seitenverhaeltnis weicht {aspect_off:.1%} von 1:1 ab "
+                    f"({w}x{h})",
+                    details={
+                        "width": w,
+                        "height": h,
+                        "aspect_off": round(aspect_off, 4),
+                    },
+                )
+            )
     return AnalysisState.PRESENT
 
 
@@ -476,19 +607,26 @@ def _analyze_lyrics(fh: FileHealth, tags: TagData, p: str) -> AnalysisState:
     if tags.state == AnalysisState.NOT_ANALYZABLE:
         return AnalysisState.NOT_ANALYZABLE
     if tags.lyrics is None:
-        fh.issues.append(make_issue("LYRICS_MISSING", path=p,
-                                    artist=tags.artist, title=tags.title))
+        fh.issues.append(
+            make_issue("LYRICS_MISSING", path=p, artist=tags.artist, title=tags.title)
+        )
         return AnalysisState.MISSING
     if not tags.lyrics.strip():
-        fh.issues.append(make_issue("LYRICS_EMPTY", path=p,
-                                    artist=tags.artist, title=tags.title))
+        fh.issues.append(
+            make_issue("LYRICS_EMPTY", path=p, artist=tags.artist, title=tags.title)
+        )
         return AnalysisState.INVALID
     if _LYRICS_JUNK_PATTERN.match(tags.lyrics.strip()):
-        fh.issues.append(make_issue(
-            "LYRICS_INVALID", path=p, artist=tags.artist, title=tags.title,
-            message=f"Lyrics-Inhalt sieht nach Platzhalter/Fehlermeldung aus: "
-                    f"{tags.lyrics.strip()[:60]!r}",
-        ))
+        fh.issues.append(
+            make_issue(
+                "LYRICS_INVALID",
+                path=p,
+                artist=tags.artist,
+                title=tags.title,
+                message=f"Lyrics-Inhalt sieht nach Platzhalter/Fehlermeldung aus: "
+                f"{tags.lyrics.strip()[:60]!r}",
+            )
+        )
         return AnalysisState.INVALID
     return AnalysisState.PRESENT
 
@@ -500,39 +638,54 @@ def _analyze_lyrics(fh: FileHealth, tags: TagData, p: str) -> AnalysisState:
 
 def _analyze_audio(fh: FileHealth, stream: StreamData, p: str) -> AnalysisState:
     if stream.corrupt or stream.state == AnalysisState.INVALID:
-        fh.issues.append(make_issue(
-            "AUDIO_CORRUPT", path=p,
-            message=f"ffprobe meldet Container-/Decode-Fehler: {stream.error}",
-            details={"error": stream.error},
-        ))
+        fh.issues.append(
+            make_issue(
+                "AUDIO_CORRUPT",
+                path=p,
+                message=f"ffprobe meldet Container-/Decode-Fehler: {stream.error}",
+                details={"error": stream.error},
+            )
+        )
         return AnalysisState.INVALID
     if stream.state == AnalysisState.NOT_ANALYZABLE:
-        fh.issues.append(make_issue(
-            "AUDIO_NOT_ANALYZABLE", path=p,
-            message=f"ffprobe-Analyse fehlgeschlagen: {stream.error}",
-            details={"error": stream.error},
-        ))
+        fh.issues.append(
+            make_issue(
+                "AUDIO_NOT_ANALYZABLE",
+                path=p,
+                message=f"ffprobe-Analyse fehlgeschlagen: {stream.error}",
+                details={"error": stream.error},
+            )
+        )
         return AnalysisState.NOT_ANALYZABLE
     if not stream.has_audio_stream:
         fh.issues.append(make_issue("AUDIO_NO_STREAM", path=p))
         return AnalysisState.INVALID
 
     if stream.bitrate is not None and stream.bitrate < AUDIO_MIN_BITRATE_BPS:
-        fh.issues.append(make_issue(
-            "AUDIO_LOW_BITRATE", path=p,
-            message=f"Bitrate {stream.bitrate} bps unter {AUDIO_MIN_BITRATE_BPS} bps",
-            details={"bitrate": stream.bitrate, "codec": stream.codec},
-        ))
-    if stream.duration_seconds is not None and stream.duration_seconds < AUDIO_VERY_SHORT_SECONDS:
+        fh.issues.append(
+            make_issue(
+                "AUDIO_LOW_BITRATE",
+                path=p,
+                message=f"Bitrate {stream.bitrate} bps unter {AUDIO_MIN_BITRATE_BPS} bps",
+                details={"bitrate": stream.bitrate, "codec": stream.codec},
+            )
+        )
+    if (
+        stream.duration_seconds is not None
+        and stream.duration_seconds < AUDIO_VERY_SHORT_SECONDS
+    ):
         stem_and_title = f"{fh.record.filename_stem} {fh.title or ''}"
         if not _SKIT_TITLE_PATTERN.search(stem_and_title):
-            fh.issues.append(make_issue(
-                "AUDIO_VERY_SHORT", path=p,
-                message=f"Audio-Dauer {stream.duration_seconds:.1f}s unter "
-                        f"{AUDIO_VERY_SHORT_SECONDS:.0f}s — Skit/Intro oder "
-                        f"abgeschnitten?",
-                details={"duration_seconds": stream.duration_seconds},
-            ))
+            fh.issues.append(
+                make_issue(
+                    "AUDIO_VERY_SHORT",
+                    path=p,
+                    message=f"Audio-Dauer {stream.duration_seconds:.1f}s unter "
+                    f"{AUDIO_VERY_SHORT_SECONDS:.0f}s — Skit/Intro oder "
+                    f"abgeschnitten?",
+                    details={"duration_seconds": stream.duration_seconds},
+                )
+            )
     return AnalysisState.PRESENT
 
 
@@ -562,8 +715,11 @@ def _analyze_loudness_measurement(
     if lufs is None:
         return
 
-    gain_db = _parse_gain_db(tags.replaygain.get("replaygain_track_gain")) \
-        if tags.replaygain else None
+    gain_db = (
+        _parse_gain_db(tags.replaygain.get("replaygain_track_gain"))
+        if tags.replaygain
+        else None
+    )
     effective = lufs + (gain_db or 0.0)
     delta = effective - LOUDNESS_TARGET_LUFS
     if abs(delta) <= LOUDNESS_OFF_TARGET_DB:
@@ -573,21 +729,33 @@ def _analyze_loudness_measurement(
         "integrated_lufs": round(lufs, 2),
         "target_lufs": LOUDNESS_TARGET_LUFS,
         "delta_db": round(delta, 2),
-        "true_peak": round(loudness.true_peak, 2) if loudness.true_peak is not None else None,
+        "true_peak": (
+            round(loudness.true_peak, 2) if loudness.true_peak is not None else None
+        ),
     }
     if gain_db is not None:
         details["replaygain_track_gain_db"] = gain_db
         details["effective_lufs"] = round(effective, 2)
-        msg = (f"Auch mit replaygain_track_gain {gain_db:+.1f} dB noch "
-               f"{effective:.1f} LUFS ({delta:+.1f} dB gegen Ziel "
-               f"{LOUDNESS_TARGET_LUFS:.0f})")
+        msg = (
+            f"Auch mit replaygain_track_gain {gain_db:+.1f} dB noch "
+            f"{effective:.1f} LUFS ({delta:+.1f} dB gegen Ziel "
+            f"{LOUDNESS_TARGET_LUFS:.0f})"
+        )
     else:
-        msg = (f"Integrierte Lautheit {lufs:.1f} LUFS, kein ReplayGain-Tag "
-               f"({delta:+.1f} dB gegen Ziel {LOUDNESS_TARGET_LUFS:.0f})")
-    fh.issues.append(make_issue(
-        "LOUDNESS_OFF_TARGET", path=p, artist=tags.artist, title=tags.title,
-        message=msg, details=details,
-    ))
+        msg = (
+            f"Integrierte Lautheit {lufs:.1f} LUFS, kein ReplayGain-Tag "
+            f"({delta:+.1f} dB gegen Ziel {LOUDNESS_TARGET_LUFS:.0f})"
+        )
+    fh.issues.append(
+        make_issue(
+            "LOUDNESS_OFF_TARGET",
+            path=p,
+            artist=tags.artist,
+            title=tags.title,
+            message=msg,
+            details=details,
+        )
+    )
 
 
 def _analyze_loudness(fh: FileHealth, tags: TagData, p: str) -> AnalysisState:
@@ -595,25 +763,38 @@ def _analyze_loudness(fh: FileHealth, tags: TagData, p: str) -> AnalysisState:
         return AnalysisState.NOT_ANALYZABLE
     rg = tags.replaygain
     if not rg:
-        fh.issues.append(make_issue("LOUDNESS_TAG_MISSING", path=p,
-                                    artist=tags.artist, title=tags.title))
+        fh.issues.append(
+            make_issue(
+                "LOUDNESS_TAG_MISSING", path=p, artist=tags.artist, title=tags.title
+            )
+        )
         return AnalysisState.MISSING
 
     track_gain = rg.get("replaygain_track_gain")
     if track_gain is not None and not _GAIN_DB_PATTERN.match(str(track_gain).strip()):
-        fh.issues.append(make_issue(
-            "LOUDNESS_TAG_INVALID", path=p, artist=tags.artist, title=tags.title,
-            message=f"replaygain_track_gain {track_gain!r} nicht als dB-Wert parsebar",
-            details={"value": track_gain},
-        ))
+        fh.issues.append(
+            make_issue(
+                "LOUDNESS_TAG_INVALID",
+                path=p,
+                artist=tags.artist,
+                title=tags.title,
+                message=f"replaygain_track_gain {track_gain!r} nicht als dB-Wert parsebar",
+                details={"value": track_gain},
+            )
+        )
         return AnalysisState.INVALID
 
     if "replaygain_track_gain" in rg and "replaygain_track_peak" not in rg:
-        fh.issues.append(make_issue(
-            "LOUDNESS_TAG_PARTIAL", path=p, artist=tags.artist, title=tags.title,
-            message="replaygain_track_gain ohne zugehoeriges replaygain_track_peak",
-            details={"present": sorted(rg)},
-        ))
+        fh.issues.append(
+            make_issue(
+                "LOUDNESS_TAG_PARTIAL",
+                path=p,
+                artist=tags.artist,
+                title=tags.title,
+                message="replaygain_track_gain ohne zugehoeriges replaygain_track_peak",
+                details={"present": sorted(rg)},
+            )
+        )
         return AnalysisState.PARTIAL
     return AnalysisState.PRESENT
 
@@ -624,53 +805,73 @@ def _analyze_loudness(fh: FileHealth, tags: TagData, p: str) -> AnalysisState:
 
 
 def _analyze_structure_and_filename(
-    fh: FileHealth, record: FileRecord, tags: TagData,
-    expected_extension: Optional[str], p: str,
+    fh: FileHealth,
+    record: FileRecord,
+    tags: TagData,
+    expected_extension: Optional[str],
+    p: str,
 ) -> None:
     section = record.library_section.value
 
     if section == "unknown":
-        fh.issues.append(make_issue(
-            "STRUCTURE_INVALID_PATH", path=p,
-            message="Datei liegt ausserhalb jeder bekannten Library-Struktur "
-                    "(erwartet: <Artist>/(Singles|Jahr - Album)/ bzw. "
-                    "Compilations/ bzw. Playlist/)",
-        ))
+        fh.issues.append(
+            make_issue(
+                "STRUCTURE_INVALID_PATH",
+                path=p,
+                message="Datei liegt ausserhalb jeder bekannten Library-Struktur "
+                "(erwartet: <Artist>/(Singles|Jahr - Album)/ bzw. "
+                "Compilations/ bzw. Playlist/)",
+            )
+        )
     elif (
         section == "music"
         and not record.is_singles
         and record.album_directory is None
         and record.artist_directory is not None
     ):
-        fh.issues.append(make_issue(
-            "STRUCTURE_FILE_OUTSIDE_HIERARCHY", path=p,
-            message=f"Audio-Datei direkt im Artist-Ordner {record.artist_directory!r} "
-                    f"(erwartet: Singles/ oder <Jahr - Album>/ Unterordner)",
-        ))
+        fh.issues.append(
+            make_issue(
+                "STRUCTURE_FILE_OUTSIDE_HIERARCHY",
+                path=p,
+                message=f"Audio-Datei direkt im Artist-Ordner {record.artist_directory!r} "
+                f"(erwartet: Singles/ oder <Jahr - Album>/ Unterordner)",
+            )
+        )
 
     if expected_extension and record.extension != expected_extension.lower():
-        fh.issues.append(make_issue(
-            "FILENAME_EXTENSION_UNEXPECTED", path=p,
-            message=f"Dateiendung {record.extension} weicht vom konfigurierten "
-                    f"Format {expected_extension} ab",
-            details={"extension": record.extension, "expected": expected_extension},
-        ))
+        fh.issues.append(
+            make_issue(
+                "FILENAME_EXTENSION_UNEXPECTED",
+                path=p,
+                message=f"Dateiendung {record.extension} weicht vom konfigurierten "
+                f"Format {expected_extension} ab",
+                details={"extension": record.extension, "expected": expected_extension},
+            )
+        )
 
     stem = record.filename_stem
     if "  " in stem or stem != stem.strip() or _ILLEGAL_FILENAME_CHARS.search(stem):
-        fh.issues.append(make_issue(
-            "FILENAME_SUSPICIOUS", path=p,
-            message=f"Dateiname-Stamm auffaellig: {stem!r}",
-            details={"stem": stem},
-        ))
+        fh.issues.append(
+            make_issue(
+                "FILENAME_SUSPICIOUS",
+                path=p,
+                message=f"Dateiname-Stamm auffaellig: {stem!r}",
+                details={"stem": stem},
+            )
+        )
 
     # Titel-Abgleich nur, wenn ein Titel-Tag existiert.
     if not _blank(tags.title):
         remainder = _FILENAME_PREFIX_PATTERN.sub("", stem, count=1)
         if _normalize_for_compare(remainder) != _normalize_for_compare(tags.title):
-            fh.issues.append(make_issue(
-                "FILENAME_TITLE_MISMATCH", path=p, artist=tags.artist, title=tags.title,
-                message=f"Dateiname-Stamm {stem!r} passt nicht zum Titel-Tag "
-                        f"{tags.title!r}",
-                details={"stem": stem, "title": tags.title, "compared": remainder},
-            ))
+            fh.issues.append(
+                make_issue(
+                    "FILENAME_TITLE_MISMATCH",
+                    path=p,
+                    artist=tags.artist,
+                    title=tags.title,
+                    message=f"Dateiname-Stamm {stem!r} passt nicht zum Titel-Tag "
+                    f"{tags.title!r}",
+                    details={"stem": stem, "title": tags.title, "compared": remainder},
+                )
+            )
