@@ -18,7 +18,7 @@ Reparatur spaeter ausfuehrt (Prompt Abschnitt 21 — keine Duplizierung):
   SAFE_AUTOMATIC        -> services/metadata/tag_writer.py::TagWriter (atomar)
                           + utils/artist_map.py::split_main_and_featuring
   METADATA_REPROCESSING -> services/metadata/track_reprocessor.py::process_file
-  EXTERNAL_METADATA     -> services/metadata/* (GenreProcessor / MusicBrainzClient)
+  EXTERNAL_METADATA     -> services/clients/musicbrainz_client.py::MusicBrainzClient
   COVER                 -> services/metadata/cover_processor.py::CoverProcessor
   LOUDNESS              -> services/library_repair/replaygain_repairs.py
                           (verlustfreier ReplayGain-Tag, kein Re-Encode)
@@ -71,14 +71,28 @@ _SPECS: tuple[RepairSpec, ...] = (
     _spec("META_ALBUM_ARTIST_MISSING", _A.MULTI_ARTIST_SPLIT, _L.SAFE_AUTOMATIC,
           "TagWriter", approval=False,
           change="Album-Artist = Haupt-Artist des Tracks (deterministisch)"),
-    _spec("META_YEAR_MISSING", _A.EXTERNAL_ID_LOOKUP, _L.EXTERNAL_METADATA,
-          "MusicBrainzClient", external=True,
-          change="Jahr per MusicBrainz-Release nachtragen (nur bei eindeutigem Match)"),
+    # Production-Audit 2026-09-08: hier stand vorher EXTERNAL_METADATA /
+    # "MusicBrainzClient" — es existiert aber in keinem Modul ein
+    # Jahr-Fetch (services/metadata/track_reprocessor.py::process_file
+    # uebernimmt "year" nachweislich nur als Passthrough des bereits
+    # vorhandenen Tags, ruft dafuer nie MusicBrainz auf). Der Planner
+    # kuendigte damit eine Reparatur an, die kein Executor je ausfuehren
+    # konnte (0 reale Kandidaten seit Einfuehrung). MANUAL_REVIEW ist
+    # ausserdem konsistent zum direkten Nachbarn META_YEAR_INVALID.
+    _spec("META_YEAR_MISSING", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
+          change="Jahr fehlt — keine Fetch-Implementierung vorhanden, manuell nachtragen"),
     _spec("META_YEAR_INVALID", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
           change="Jahr-Tag ist unplausibel — manuell korrigieren"),
-    _spec("META_GENRE_MISSING", _A.EXTERNAL_ID_LOOKUP, _L.EXTERNAL_METADATA,
-          "GenreProcessor", external=True,
-          change="Genre per GenreProcessor-Fallback-Kette bestimmen"),
+    # Production-Audit 2026-09-08: von EXTERNAL_METADATA nach
+    # METADATA_REPROCESSING verschoben — GenreProcessor laeuft bereits
+    # unveraendert als Teil von track_reprocessor.process_file() (identisch
+    # zum Nachbarn GENRE_INVALID unten), eine gesonderte EXTERNAL_METADATA-
+    # Ausfuehrung dafuer existierte nie (external_metadata.py deckt nur
+    # MusicBrainz-ID-/ISRC-Codes ab, HANDLED_ISSUE_CODES enthielt diesen
+    # Code nie).
+    _spec("META_GENRE_MISSING", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
+          "track_reprocessor.process_file() (GenreProcessor)", external=True,
+          change="Genre per GenreProcessor-Fallback-Kette ueber die volle Pipeline bestimmen"),
     _spec("META_TRACK_NUMBER_MISSING", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
           change="Tracknummer nicht sicher ableitbar — manuell / aus Album-Kontext"),
     _spec("META_MB_RECORDING_MISSING", _A.EXTERNAL_ID_LOOKUP, _L.EXTERNAL_METADATA,
@@ -150,9 +164,18 @@ _SPECS: tuple[RepairSpec, ...] = (
           change="ausserhalb der Library-Struktur — manuell einordnen (kein Auto-Move)"),
     _spec("STRUCTURE_FILE_OUTSIDE_HIERARCHY", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
           change="Datei im falschen Ordner — manuell einordnen (kein Auto-Move)"),
+    # Production-Audit 2026-09-08: expected_change praezisiert — real >85%
+    # Skip-Rate, weil rename_repairs.py bewusst NUR rein additive
+    # Abweichungen (Klammerzusatz/prod.-Credit) sicher umbenennt. Der Plan
+    # ist weiterhin korrekt SAFE_AUTOMATIC (kein Risiko fuer Audio/Library
+    # bei Ausfuehrung), aber "actionable" bedeutete bisher irrefuehrend
+    # "wird ausgefuehrt" statt "wird sicher geprueft, ggf. SKIPPED".
     _spec("FILENAME_TITLE_MISMATCH", _A.FILENAME_RENAME_IN_PLACE, _L.SAFE_AUTOMATIC,
-          "reprocess_artist_metadata.py (Rename im selben Verzeichnis)", approval=False,
-          change="Dateiname aus Titel-Tag + Konvention neu bilden (nur im selben Verzeichnis)"),
+          "rename_repairs.repair_filename_title_mismatch()", approval=False,
+          change="Dateiname aus Titel-Tag neu bilden (nur im selben Verzeichnis) — "
+                 "wird NUR bei rein additiven Abweichungen (Klammerzusatz/prod.-Credit) "
+                 "tatsaechlich umbenannt; bei abweichendem Titeltext bleibt es "
+                 "sicherheitshalber bei SKIPPED (kein sicherer neuer Name)"),
     _spec("FILENAME_SUSPICIOUS", _A.FILENAME_RENAME_IN_PLACE, _L.SAFE_AUTOMATIC,
           "utils/helpers.py::sanitize_filename", approval=False,
           change="doppelte Leerzeichen / illegale Zeichen im Dateinamen bereinigen"),
@@ -171,8 +194,11 @@ _SPECS: tuple[RepairSpec, ...] = (
           change="doppelten Artist-Namen aus dem Multi-Artist-Feld entfernen"),
 
     # ── Genre ──────────────────────────────────────────────────────────
-    _spec("GENRE_EMPTY", _A.EXTERNAL_ID_LOOKUP, _L.EXTERNAL_METADATA, "GenreProcessor",
-          external=True, change="Genre per GenreProcessor bestimmen"),
+    # Production-Audit 2026-09-08: dieselbe Umstufung wie META_GENRE_MISSING
+    # oben (gleicher Grund) — GENRE_EMPTY war identisch betroffen.
+    _spec("GENRE_EMPTY", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
+          "track_reprocessor.process_file() (GenreProcessor)", external=True,
+          change="Genre per GenreProcessor ueber die volle Pipeline bestimmen"),
     _spec("GENRE_INVALID", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
           "reprocess_artist_metadata.py", external=True,
           change="Genre neu bestimmen / durch GenreMapper normalisieren"),
@@ -194,9 +220,21 @@ _SPECS: tuple[RepairSpec, ...] = (
           change="uneinheitliches Jahr — korrektes Jahr ist nicht eindeutig"),
     _spec("ALBUM_GENRE_INCONSISTENT", _A.NONE, _L.NOT_REPAIRABLE, "-", approval=False,
           change="unterschiedliche Genres koennen legitim sein — reine Beobachtung"),
-    _spec("ALBUM_RELEASE_ID_INCONSISTENT", _A.EXTERNAL_ID_LOOKUP, _L.EXTERNAL_METADATA,
-          "MusicBrainzClient", external=True,
-          change="alle Tracks auf DIE eine Release-ID des Studio-Albums mappen (bei eindeutigem Match)"),
+    # Production-Audit 2026-09-08: hier stand vorher EXTERNAL_METADATA. Anders
+    # als bei den MB_*_MISSING-Codes stehen hier bereits MEHRERE, jeweils
+    # NICHT-leere Release-IDs im Album (kein Fall von "Feld ist leer,
+    # ergaenze es"). external_metadata.py::plan_id_writes() hat als
+    # Grundregel bewusst "kein blindes Ueberschreiben, nur fehlende Felder" —
+    # eine album-weite Vereinheitlichung muesste dagegen bereits vorhandene
+    # Werte GEZIELT ueberschreiben und selbst entscheiden, welche der N
+    # vorhandenen IDs die kanonische ist. Das ist keine kleine Erweiterung
+    # der bestehenden Fill-Logik, sondern eine neue Entscheidungsregel mit
+    # eigenem Sicherheitsmodell — analog zu den bereits MANUAL_REVIEW
+    # eingestuften Nachbarn ALBUM_YEAR_INCONSISTENT/ALBUM_NAME_INCONSISTENT
+    # (identisches Muster: "welcher von mehreren bereits vorhandenen Werten
+    # ist korrekt?" ist nicht sicher automatisierbar).
+    _spec("ALBUM_RELEASE_ID_INCONSISTENT", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
+          change="mehrere Release-IDs im Album — welche kanonisch ist, manuell entscheiden"),
     _spec("ALBUM_COVER_INCONSISTENT", _A.COVER_FETCH, _L.COVER, "CoverProcessor",
           external=True, change="ein einheitliches Album-Cover fuer alle Tracks setzen"),
 

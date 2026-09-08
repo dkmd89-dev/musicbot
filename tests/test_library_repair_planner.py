@@ -93,6 +93,44 @@ def test_structure_and_audio_route_to_manual_review():
         assert plan.candidates[0].level is RepairLevel.MANUAL_REVIEW, code
 
 
+# ── Production-Audit 2026-09-08: vormals tote EXTERNAL_METADATA-Codes ──
+
+def test_year_missing_and_album_release_id_inconsistent_are_manual_review():
+    """Production-Audit 2026-09-08: beide standen vorher auf
+    EXTERNAL_METADATA, obwohl kein Executor sie je behandelt hat (kein
+    Jahr-Fetch im Code; Release-ID-Vereinheitlichung wuerde bereits
+    vorhandene Werte ueberschreiben muessen)."""
+    for code in ("META_YEAR_MISSING", "ALBUM_RELEASE_ID_INCONSISTENT"):
+        plan = plan_repairs(_report(_issue(code)))
+        assert plan.candidates[0].level is RepairLevel.MANUAL_REVIEW, code
+        assert plan.candidates[0] not in plan.actionable()
+
+
+def test_filename_title_mismatch_signal_warns_about_skip_rate():
+    """Production-Audit 2026-09-08: SAFE_AUTOMATIC/requires_approval=False
+    fuer FILENAME_TITLE_MISMATCH bleibt korrekt (kein Audio-/Library-Risiko),
+    aber die Plan-Vorschau muss transparent machen, dass die tatsaechliche
+    Rename-Logik nur additive Abweichungen sicher aufloest (real >85%
+    Skip-Rate) - sonst wirkt jedes SKIPPED wie ein Fehler statt wie
+    erwartetes, konservatives Verhalten."""
+    plan = plan_repairs(_report(_issue("FILENAME_TITLE_MISMATCH")))
+    c = plan.candidates[0]
+    assert c.level is RepairLevel.SAFE_AUTOMATIC
+    assert c.requires_approval is False
+    assert "SKIPPED" in c.expected_change
+
+
+def test_genre_missing_and_genre_empty_are_metadata_reprocessing():
+    """Production-Audit 2026-09-08: von EXTERNAL_METADATA nach
+    METADATA_REPROCESSING verschoben — GenreProcessor laeuft bereits
+    identisch zu GENRE_INVALID als Teil der vollen Pipeline."""
+    for code in ("META_GENRE_MISSING", "GENRE_EMPTY"):
+        plan = plan_repairs(_report(_issue(code)))
+        c = plan.candidates[0]
+        assert c.level is RepairLevel.METADATA_REPROCESSING, code
+        assert c in plan.actionable()
+
+
 # ── Plan-Aggregation ────────────────────────────────────────────────────
 
 def test_plan_counts_and_determinism():

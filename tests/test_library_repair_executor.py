@@ -516,6 +516,89 @@ def test_l2_surfaces_unresolved(lib):
 
 
 @requires_ffmpeg
+def test_l2_skipped_when_triggering_field_untouched(lib):
+    """Production-Audit 2026-09-08: SUCCESS darf nur gelten, wenn das fuer
+    den jeweiligen Issue-Code relevante Zielfeld sich tatsaechlich
+    geaendert hat - nicht schon, wenn irgendein ANDERES Feld sich aendert.
+    Realer Fund: LYRICS_MISSING wurde 11/11x als SUCCESS gemeldet, obwohl
+    die Lyrics-Suche nur bei 6/11 Dateien tatsaechlich etwas fand (die
+    Pipeline aenderte parallel andere Felder wie Cover/Genre)."""
+    p = lib / "makko" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©nam"] = ["Alt"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    # Titel aendert sich (Pipeline-Nebenwirkung), Lyrics-Suche blieb aber
+    # erfolglos -> "lyrics_present" taucht NICHT im changes-Dict auf.
+    rp = _fake_reprocess(
+        changes={"title": {"before": ["Alt"], "after": ["Neu"]}},
+        rewrite_title="Neu",
+    )
+    outcomes = apply_level2(
+        [_l2_cand("makko/Singles/2020 - x.m4a", "LYRICS_MISSING")],
+        lib, j, rp, dry_run=False,
+    )
+    assert outcomes[0].issue_code == "LYRICS_MISSING"
+    assert outcomes[0].status == "SKIPPED"
+
+
+@requires_ffmpeg
+def test_l2_success_when_triggering_field_actually_changed(lib):
+    """Gegenprobe: aendert sich das fuer den Issue-Code relevante
+    Zielfeld tatsaechlich, bleibt SUCCESS korrekt erhalten."""
+    p = lib / "makko" / "Singles" / "2020 - x.m4a"
+    _m4a(p)
+    j = RepairJournal(lib / "j.jsonl")
+    rp = _fake_reprocess(
+        changes={"lyrics_present": {"before": False, "after": True},
+                 "title": {"before": ["Alt"], "after": ["Neu"]}},
+        rewrite_title="Neu",
+    )
+    outcomes = apply_level2(
+        [_l2_cand("makko/Singles/2020 - x.m4a", "LYRICS_MISSING")],
+        lib, j, rp, dry_run=False,
+    )
+    assert outcomes[0].issue_code == "LYRICS_MISSING"
+    assert outcomes[0].status == "SUCCESS"
+
+
+@requires_ffmpeg
+def test_l2_multiple_codes_get_independent_status(lib):
+    """Zwei L2-Issue-Codes derselben Datei duerfen nicht mehr in einem
+    einzigen Outcome verschmelzen (Root Cause: vorher wurde nur der
+    alphabetisch erste Code als issue_code des Outcomes verwendet, der
+    zweite Code ging fuer Journal/Verification komplett verloren)."""
+    p = lib / "makko" / "Singles" / "2020 - x.m4a"
+    _m4a(p)
+    j = RepairJournal(lib / "j.jsonl")
+    rp = _fake_reprocess(
+        changes={"title": {"before": ["Alt"], "after": ["Neu"]}},
+        rewrite_title="Neu",
+    )
+    outcomes = apply_level2(
+        [_l2_cand("makko/Singles/2020 - x.m4a", "META_TITLE_NOT_CLEAN"),
+         _l2_cand("makko/Singles/2020 - x.m4a", "LYRICS_MISSING")],
+        lib, j, rp, dry_run=False,
+    )
+    by_code = {oc.issue_code: oc.status for oc in outcomes}
+    assert by_code == {"META_TITLE_NOT_CLEAN": "SUCCESS", "LYRICS_MISSING": "SKIPPED"}
+
+
+@requires_ffmpeg
+def test_l2_handles_reclassified_genre_codes(lib):
+    """Production-Audit 2026-09-08: META_GENRE_MISSING/GENRE_EMPTY wurden
+    von EXTERNAL_METADATA (kein Executor) nach METADATA_REPROCESSING
+    verschoben - apply_level2() muss beide wie GENRE_INVALID behandeln."""
+    p = lib / "makko" / "Singles" / "2020 - x.m4a"
+    _m4a(p)
+    j = RepairJournal(lib / "j.jsonl")
+    rp = _fake_reprocess(changes={"genre_tag": {"before": [], "after": ["Pop"]}})
+    for code in ("META_GENRE_MISSING", "GENRE_EMPTY"):
+        outcomes = apply_level2([_l2_cand("makko/Singles/2020 - x.m4a", code)],
+                                lib, j, rp, dry_run=False)
+        assert outcomes[0].issue_code == code
+        assert outcomes[0].status == "SUCCESS"
+
+
+@requires_ffmpeg
 def test_l2_one_reprocess_call_per_file(lib):
     p = lib / "makko" / "Singles" / "2020 - x.m4a"
     _m4a(p); a = MP4(p); a["©nam"] = ["t"]; a.save()
