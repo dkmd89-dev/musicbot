@@ -964,6 +964,11 @@ L2_CODES = frozenset({
     "LYRICS_MISSING",
     "LYRICS_EMPTY",
     "LYRICS_INVALID",
+    # Production-Audit 2026-09-08: von EXTERNAL_METADATA hierher verschoben
+    # (planner.py) — GenreProcessor laeuft bereits identisch zu GENRE_INVALID
+    # als Teil von process_file(), kein separater Executor noetig.
+    "META_GENRE_MISSING",
+    "GENRE_EMPTY",
 })
 
 # Snapshot-Felder, die als Before/After ins Journal übernommen werden
@@ -973,6 +978,53 @@ _L2_REPORTED_FIELDS = (
     "artists_freeform", "year", "genre_tag", "genre_freeform", "mb_ids",
     "lyrics_present", "cover_present", "cover_sha256",
 )
+
+# Welches `changes`-Feld (track_reprocessor.diff_snapshots()) tatsächlich
+# belegt, dass GENAU DIESER Issue-Code behoben wurde — nicht nur, dass die
+# Pipeline irgendein beliebiges Feld der Datei verändert hat.
+#
+# Production-Audit 2026-09-08 (Root Cause des realen LYRICS_MISSING-Fundes):
+# `process_file()` läuft immer als volle Pipeline (Artist/Genre/Lyrics/Cover
+# gemeinsam) — ohne diese Bindung wurde SUCCESS bereits gesetzt, sobald
+# IRGENDEIN Feld sich änderte, unabhängig vom auslösenden Issue. Real waren
+# 11/11 LYRICS_MISSING-Repairs als SUCCESS markiert, aber nur 6/11 hatten
+# tatsächlich Lyrics gefunden (die übrigen 5 blieben nach Re-Scan offen).
+_L2_ISSUE_TARGET_FIELDS: dict[str, tuple[str, ...]] = {
+    "META_ARTIST_MISSING": ("artist",),
+    "META_TITLE_MISSING": ("title",),
+    "META_TITLE_NOT_CLEAN": ("title",),
+    "META_ALBUM_MISSING": ("album",),
+    "GENRE_INVALID": ("genre_tag", "genre_freeform"),
+    "LYRICS_MISSING": ("lyrics_present",),
+    "LYRICS_EMPTY": ("lyrics_present",),
+    "LYRICS_INVALID": ("lyrics_present",),
+    "META_GENRE_MISSING": ("genre_tag", "genre_freeform"),
+    "GENRE_EMPTY": ("genre_tag", "genre_freeform"),
+}
+
+
+def _l2_issue_resolved(issue_code: str, changes: dict) -> bool:
+    """Ob das für DIESEN Issue-Code relevante Zielfeld laut `changes`
+    tatsächlich verändert wurde."""
+    fields = _L2_ISSUE_TARGET_FIELDS.get(issue_code, ())
+    return any(f in changes for f in fields)
+
+
+def _l2_fanout_outcomes(rel: str, codes: list[str], status: str, *,
+                         reason: Optional[str] = None,
+                         before: Optional[dict] = None,
+                         after: Optional[dict] = None,
+                         backup_path: Optional[str] = None) -> list[ExecOutcome]:
+    """Ein `reprocess()`-Lauf kann mehrere Issue-Codes derselben Datei
+    gleichzeitig betreffen — je EIN ExecOutcome pro betroffenem Code, damit
+    keiner für Journal/Verification verloren geht (vorher: nur der
+    alphabetisch erste Code wurde zum `issue_code` des einzigen Outcomes)."""
+    return [
+        ExecOutcome(file=rel, issue_code=code, action="METADATA_REPROCESS",
+                    status=status, reason=reason, before=dict(before or {}),
+                    after=dict(after or {}), backup_path=backup_path)
+        for code in codes
+    ]
 
 
 def apply_level2(
@@ -1010,31 +1062,30 @@ def apply_level2(
     backup_dir = Path(backup_dir)
     outcomes: list[ExecOutcome] = []
 
-    by_path: dict[str, RepairCandidate] = {}
-    codes_per_path: dict[str, set[str]] = {}
+    candidates_per_path: dict[str, list[RepairCandidate]] = {}
     for c in candidates:
         if c.issue_code in L2_CODES and c.path:
-            by_path.setdefault(c.path, c)
-            codes_per_path.setdefault(c.path, set()).add(c.issue_code)
+            candidates_per_path.setdefault(c.path, []).append(c)
 
-    for rel, c in sorted(by_path.items()):
+    for rel, cs in sorted(candidates_per_path.items()):
         path = library_root / rel
-        codes = ", ".join(sorted(codes_per_path[rel]))
-        oc = ExecOutcome(file=rel, issue_code=c.issue_code,
-                         action="METADATA_REPROCESS", status="SKIPPED")
+        codes = sorted({c.issue_code for c in cs})
+        codes_str = ", ".join(codes)
 
         reason = safety_check(path, library_root)
         if reason:
-            oc.reason = f"Safety: {reason}"
-            outcomes.append(oc)
-            journal.record(_je_named(rel, oc, dry_run))
+            for oc in _l2_fanout_outcomes(rel, codes, "SKIPPED", reason=f"Safety: {reason}"):
+                outcomes.append(oc)
+                journal.record(_je_named(rel, oc, dry_run))
             continue
 
         artist_parts = Path(rel).parts
         if len(artist_parts) < 2:
-            oc.reason = "Datei nicht in einer <Artist>/…-Hierarchie"
-            outcomes.append(oc)
-            journal.record(_je_named(rel, oc, dry_run))
+            for oc in _l2_fanout_outcomes(
+                rel, codes, "SKIPPED", reason="Datei nicht in einer <Artist>/…-Hierarchie"
+            ):
+                outcomes.append(oc)
+                journal.record(_je_named(rel, oc, dry_run))
             continue
         artist_root = library_root / artist_parts[0]
 
@@ -1043,17 +1094,37 @@ def apply_level2(
             try:
                 result = reprocess(path, artist_root, True)
             except Exception as e:  # noqa: BLE001
-                oc.status, oc.reason = "FAILED", f"Pipeline (dry-run): {e!r}"
+                for oc in _l2_fanout_outcomes(rel, codes, "FAILED",
+                                              reason=f"Pipeline (dry-run): {e!r}"):
+                    outcomes.append(oc)
+                    journal.record(_je_named(rel, oc, dry_run))
+                continue
+
+            before, after = _l2_before_after(result)
+            if result.get("status") == "error":
+                for oc in _l2_fanout_outcomes(
+                    rel, codes, "FAILED", reason=f"Pipeline: {result.get('error')}",
+                    before=before, after=after,
+                ):
+                    outcomes.append(oc)
+                    journal.record(_je_named(rel, oc, dry_run))
+                continue
+
+            ch = result.get("changes") or {}
+            unresolved_reason = _l2_unresolved(result)
+            for code in codes:
+                resolved = _l2_issue_resolved(code, ch)
+                status = "DRY_RUN" if resolved else "SKIPPED"
+                if unresolved_reason:
+                    code_reason = unresolved_reason
+                elif resolved:
+                    code_reason = f"betrifft: {codes_str}"
+                else:
+                    code_reason = "Zielfeld dieses Issues bliebe unverändert (Pipeline ändert andere Felder)"
+                oc = ExecOutcome(file=rel, issue_code=code, action="METADATA_REPROCESS",
+                                 status=status, reason=code_reason, before=before, after=after)
                 outcomes.append(oc)
                 journal.record(_je_named(rel, oc, dry_run))
-                continue
-            oc.before, oc.after = _l2_before_after(result)
-            oc.reason = _l2_unresolved(result) or f"betrifft: {codes}"
-            oc.status = "DRY_RUN" if result.get("changes") else "SKIPPED"
-            if result.get("status") == "error":
-                oc.status, oc.reason = "FAILED", f"Pipeline: {result.get('error')}"
-            outcomes.append(oc)
-            journal.record(_je_named(rel, oc, dry_run))
             continue
 
         # ── EXECUTE ────────────────────────────────────────────────────────
@@ -1061,6 +1132,7 @@ def apply_level2(
         audio_before = _audio_essence_md5(path)
         backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
         final_path = path
+        per_code_outcomes: list[ExecOutcome] = []
         try:
             backup.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, backup)
@@ -1084,16 +1156,26 @@ def apply_level2(
             if audio_after != audio_before or audio_after.startswith("ERROR"):
                 raise RuntimeError(f"Audio-Essenz verändert ({audio_before} -> {audio_after})")
 
-            oc.before, oc.after = _l2_before_after(result)
-            oc.status = "SUCCESS" if result.get("status") == "changed" else "SKIPPED"
-            if oc.status == "SKIPPED":
-                oc.reason = "Pipeline ließ die Datei unverändert"
-            oc.backup_path = str(backup)
-            unresolved = _l2_unresolved(result)
-            if unresolved:
-                oc.reason = (f"{oc.reason}; " if oc.reason else "") + unresolved
+            before, after = _l2_before_after(result)
+            unresolved_reason = _l2_unresolved(result)
+            for code in codes:
+                resolved = _l2_issue_resolved(code, ch)
+                status = "SUCCESS" if resolved else "SKIPPED"
+                if resolved:
+                    code_reason = unresolved_reason
+                else:
+                    base_reason = ("Pipeline ließ die Datei unverändert" if not ch
+                                   else "Zielfeld dieses Issues blieb unverändert "
+                                        "(Pipeline änderte andere Felder)")
+                    code_reason = (f"{base_reason}; {unresolved_reason}"
+                                   if unresolved_reason else base_reason)
+                per_code_outcomes.append(ExecOutcome(
+                    file=rel, issue_code=code, action="METADATA_REPROCESS",
+                    status=status, reason=code_reason, before=before, after=after,
+                    backup_path=str(backup),
+                ))
         except Exception as e:  # noqa: BLE001
-            oc.status, oc.reason = "FAILED", repr(e)
+            per_code_outcomes = _l2_fanout_outcomes(rel, codes, "FAILED", reason=repr(e))
             try:
                 if final_path != path and Path(final_path).exists():
                     Path(final_path).unlink()
@@ -1107,16 +1189,18 @@ def apply_level2(
             except OSError:
                 pass
 
-        je = _je_named(rel, oc, dry_run)
-        je.sha256_before = sha_before
-        je.sha256_after = _sha256(final_path)
-        je.audio_sha256_before = audio_before
-        je.audio_sha256_after = (
-            _audio_essence_md5(final_path) if oc.status == "SUCCESS" else audio_before
-        )
-        je.backup_path = oc.backup_path
-        journal.record(je)
-        outcomes.append(oc)
+        any_success = any(oc.status == "SUCCESS" for oc in per_code_outcomes)
+        for oc in per_code_outcomes:
+            je = _je_named(rel, oc, dry_run)
+            je.sha256_before = sha_before
+            je.sha256_after = _sha256(final_path)
+            je.audio_sha256_before = audio_before
+            je.audio_sha256_after = (
+                _audio_essence_md5(final_path) if any_success else audio_before
+            )
+            je.backup_path = oc.backup_path
+            journal.record(je)
+            outcomes.append(oc)
 
     return outcomes
 
