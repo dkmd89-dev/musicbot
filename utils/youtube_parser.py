@@ -319,7 +319,13 @@ def _extract_features(song_title: str, logger) -> Tuple[str, List[str]]:
         match = re.search(pattern, cleaned_title, flags=re.IGNORECASE)
         if match:
             feat_raw = match.group(1).strip()
-            # Bereinige feat_raw von Klammern und anderen Tags
+            # Finding F (Download-Pipeline-Testlauf 2026-09-09): das
+            # klammerlose Feature-Pattern faengt `(.+?)$` bis Stringende -
+            # inkl. eines nachfolgenden Video-/Marketing-Marker-Blocks
+            # ("feat. Yasha (Offizielles Musikvideo)"). Alles ab der ersten
+            # oeffnenden Klammer gehoert nicht zum Artist-Namen.
+            feat_raw = re.sub(r"\s*[\(\[].*$", "", feat_raw).strip()
+            # Bereinige feat_raw von verbleibenden Klammern und anderen Tags
             feat_raw = re.sub(r"[\(\)\[\]]", "", feat_raw).strip()
 
             # Extrahiere Feature-Artists
