@@ -186,7 +186,9 @@ class TestRecordInitialHandlerStatuses:
         assert calls["metadata_processor"] == "active"
         assert calls["reprocessing_handler"] == "active"
         assert calls["doctor_handler"] == "error"
-        assert len(calls) == 12
+        assert calls["review_handler"] == "error"  # nicht explizit gesetzt -> Default None
+        assert calls["repair_handler"] == "error"  # nicht explizit gesetzt -> Default None
+        assert len(calls) == 14
 
     def test_missing_status_handler_is_noop(self, tmp_path):
         handler = _make_handler(tmp_path)

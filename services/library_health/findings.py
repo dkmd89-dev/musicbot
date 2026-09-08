@@ -176,6 +176,17 @@ class Finding:
     title: Optional[str] = None
     path: Optional[str] = None
     message: str = ""
+    # severity/confidence sind reine, bei jedem Merge aufgefrischte ANZEIGE-
+    # /Gruppierungsdaten aus dem zuletzt gesehenen Issue (Aufgabe "Library
+    # Health Review", Abschnitt 5/19 Anhang: Kategorien werden nach
+    # Severity inkl. eigener SUSPECTED/CONFIDENCE-Stufe sortiert). Bewusst
+    # NICHT Teil der Finding-Identitaet (siehe generate_finding_id()) -
+    # eine spaetere Kontext-Neubewertung derselben Datei/Situation aendert
+    # weder Confidence noch Severity die Kategorie-Zuordnung rueckwirkend
+    # falsch, da beide Werte hier nur den zuletzt beobachteten Zustand
+    # spiegeln, nicht die Identitaet selbst.
+    severity: Optional[str] = None
+    confidence: Optional[str] = None
     first_seen: str = ""
     last_seen: str = ""
     occurrences: int = 1
@@ -199,6 +210,8 @@ class Finding:
             "title": self.title,
             "path": self.path,
             "message": self.message,
+            "severity": self.severity,
+            "confidence": self.confidence,
             "first_seen": self.first_seen,
             "last_seen": self.last_seen,
             "occurrences": self.occurrences,
@@ -224,6 +237,8 @@ class Finding:
             title=data.get("title"),
             path=data.get("path"),
             message=data.get("message", ""),
+            severity=data.get("severity"),
+            confidence=data.get("confidence"),
             first_seen=data.get("first_seen", ""),
             last_seen=data.get("last_seen", ""),
             occurrences=int(data.get("occurrences", 1)),
@@ -442,6 +457,8 @@ class FindingsRegistry:
                     title=issue.get("title"),
                     path=issue.get("path"),
                     message=issue.get("message", ""),
+                    severity=issue.get("severity"),
+                    confidence=issue.get("confidence"),
                     first_seen=scanned_at,
                     last_seen=scanned_at,
                     occurrences=1,
@@ -458,6 +475,8 @@ class FindingsRegistry:
             # steckt ausschliesslich in der Finding-ID selbst).
             existing.message = issue.get("message", existing.message)
             existing.path = issue.get("path", existing.path)
+            existing.severity = issue.get("severity", existing.severity)
+            existing.confidence = issue.get("confidence", existing.confidence)
 
             if existing.status in (STATUS_RESOLVED, STATUS_RESOLVED_BY_SCAN):
                 existing.status = STATUS_OPEN
@@ -501,6 +520,98 @@ class FindingsRegistry:
             "resolved_by_scan": resolved_by_scan,
             "total_in_registry": len(self._findings),
         }
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Kategorie-Gruppierung + Batch-Review (Aufgabe "Library Health Review")
+# ─────────────────────────────────────────────────────────────────────────
+
+# Rangfolge fuer die Kategorie-Sortierung (Aufgabe Abschnitt 5): SUSPECTED
+# ist keine echte Severity aus services/library_health/models.py::Severity,
+# sondern eine reine Anzeige-Stufe fuer Findings mit gesetztem
+# `confidence`-Feld - identischer, bereits etablierter Mechanismus wie in
+# report.py::render_summary_markdown() (dort "codes_with_confidence").
+_SEVERITY_TIER_RANK: dict[str, int] = {
+    "CRITICAL": 4, "ERROR": 3, "WARNING": 2, "SUSPECTED": 1, "INFO": 0,
+}
+
+
+def _finding_tier(finding: "Finding") -> str:
+    if finding.confidence:
+        return "SUSPECTED"
+    return finding.severity or "INFO"
+
+
+@dataclass
+class CategoryGroup:
+    """Eine nach `issue_code` gruppierte Menge aktuell OFFENER Findings
+    (Aufgabe Abschnitt 4) - reiner Anzeige-/Navigations-Container, keine
+    eigene Persistenz."""
+
+    code: str
+    tier: str
+    findings: list
+
+    @property
+    def open_count(self) -> int:
+        return len(self.findings)
+
+
+def group_open_findings_by_category(registry: "FindingsRegistry") -> list[CategoryGroup]:
+    """Gruppiert alle aktuell OFFENEN Findings nach `issue_code` (Aufgabe
+    Abschnitt 4/5). Kategorien absteigend nach Severity-Stufe
+    (CRITICAL>ERROR>WARNING>SUSPECTED>INFO), innerhalb derselben Stufe
+    alphabetisch nach Code - bei gleicher Datenlage deterministisch
+    reproduzierbar. Nur tatsaechlich vorhandene, offene Kategorien werden
+    zurueckgegeben (keine leeren/bereits vollstaendig bearbeiteten)."""
+    by_code: dict[str, list[Finding]] = {}
+    for finding in registry.get_open_findings():
+        by_code.setdefault(finding.code, []).append(finding)
+
+    groups: list[CategoryGroup] = []
+    for code, findings in by_code.items():
+        findings.sort(
+            key=lambda f: (f.artist or "", f.album or "", f.title or "",
+                           f.path or "", f.finding_id)
+        )
+        tier = max(
+            (_finding_tier(f) for f in findings),
+            key=lambda t: _SEVERITY_TIER_RANK.get(t, 0),
+        )
+        groups.append(CategoryGroup(code=code, tier=tier, findings=findings))
+
+    groups.sort(key=lambda g: (-_SEVERITY_TIER_RANK.get(g.tier, 0), g.code))
+    return groups
+
+
+def batch_review_category(
+    registry: FindingsRegistry,
+    code: str,
+    status: str,
+    *,
+    note: Optional[str] = None,
+    reviewed_by: Optional[str] = None,
+    reviewed_at: Optional[str] = None,
+) -> list[Finding]:
+    """Batch-Statusänderung für ALLE aktuell OFFENEN Findings einer
+    Kategorie (Aufgabe Abschnitt 8/10) - ausschließlich über den zentralen
+    Review-Service (review_finding() pro Finding), aber als EINE logische
+    Operation: der Aufrufer speichert einmal (`registry.save()`) statt
+    einer Einzel-Persistenzoperation pro Finding. Bereits RESOLVED/
+    FALSE_POSITIVE Findings dieser Kategorie werden NICHT erneut
+    einbezogen (die Iteration läuft ausschließlich über
+    `get_open_findings()`, das per Definition nur `OPEN` liefert)."""
+    ts = reviewed_at or _now_iso()
+    changed: list[Finding] = []
+    for finding in list(registry.get_open_findings()):
+        if finding.code != code:
+            continue
+        registry.review_finding(
+            finding.finding_id, status, note=note, reviewed_by=reviewed_by,
+            reviewed_at=ts,
+        )
+        changed.append(finding)
+    return changed
 
 
 # ─────────────────────────────────────────────────────────────────────────

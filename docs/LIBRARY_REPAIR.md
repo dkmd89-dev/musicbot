@@ -504,3 +504,100 @@ protokolliert — u. a. „Health-Scan gestartet", „Health-Scan abgeschlossen"
 „Report gespeichert: <Pfad>", „Score: X | Files: Y | Issues: Z". Bei einem
 Fehler (Exit-Code ≠ 0, Timeout, fehlende/kaputte JSON-Datei) wird
 ausschließlich der jeweilige Fehler geloggt, nie eine der Erfolgsmeldungen.
+
+---
+
+## 10. Repair MusicBot — Telegram-Integration (implementiert)
+
+**Abgrenzung der drei Verantwortlichkeiten** (bewusst getrennt gehalten,
+siehe auch `docs/LIBRARY_HEALTH.md` §1a):
+
+```text
+Library Health           = erkennt und bewertet Probleme
+                            (Detect → Analyze → Score → Report → Findings)
+Library Health Review    = beurteilt Findings
+                            (OPEN → RESOLVED / FALSE_POSITIVE, nie Repair)
+Repair MusicBot           = führt zulässige Reparaturen aus
+                            (Plan → Preview → Confirm → Execute → Verify → Resolve)
+```
+
+`services/library_repair/repair_service.py` orchestriert dabei
+ausschließlich BEREITS BESTEHENDE Komponenten — keine zweite Repair-
+Engine, kein zweiter Safety-/Rollback-Mechanismus:
+
+```text
+Findings (services/library_health/findings.py, nur OPEN)
+   ↓
+plan_repairs() / filter_plan()      (services/library_repair/planner.py,
+                                      unverändert)
+   ↓
+Repair Plan → SAFE_AUTOMATIC-Kandidaten (get_safe_automatic_candidates())
+   ↓
+Preview (build_preview(), rein lesend)
+   ↓
+[Telegram: explizite Bestätigung "JA, REPARIEREN"]
+   ↓
+run_safe_automatic_repair()          (services/library_repair/doctor_runner.py,
+                                       identischer Subprozess-Pfad wie
+                                       MusicBot Doctor §9 - apply_level1 +
+                                       apply_level1_rename, Backup +
+                                       Verification + Rollback bereits
+                                       darin enthalten)
+   ↓
+Verification: erneuter run_health_scan()
+   ↓
+Finding → RESOLVED   NUR für tatsächlich nicht mehr erkannte Findings
+                      (niemals automatisch FALSE_POSITIVE)
+   ↓
+Repair History (library_repair_runs.json + bestehendes Journal)
+```
+
+**Bewusst identische Sicherheitsgrenze wie MusicBot Doctor:** nur
+`SAFE_AUTOMATIC` ist über Telegram tatsächlich ausführbar (verlustfrei,
+kein Netzwerk, kein Re-Encode). Alle externen/destruktiven Level
+(`COVER`/`EXTERNAL_METADATA`/`METADATA_REPROCESSING`/`LOUDNESS`/
+`DUPLICATE`) werden im Plan/in den Reparaturvorschlägen zwar angezeigt
+(🟡 REVIEW, zur Transparenz), bleiben aber CLI-only. Repair MusicBot ist
+keine Ausweitung dieser Grenze, sondern eine reichhaltigere Oberfläche
+(Plan/Preview/Historie/Statistik) für denselben, bereits etablierten
+Ausführungspfad.
+
+**Stale-Plan-Schutz:** `execute_safe_automatic_repair()` baut IMMER
+unmittelbar vor der Ausführung einen komplett frischen Plan (neuer
+Health-Scan) — ein an anderer Stelle (z. B. in der Preview) zuvor
+erzeugter Plan wird nie wiederverwendet und kann daher strukturell nicht
+veraltet sein.
+
+**Concurrency-Schutz:** eine atomare Lock-Datei
+(`<DATA_DIR>/library_repair.lock`, `O_CREAT|O_EXCL`) verhindert, dass ein
+zweiter Telegram-Tap oder ein parallel von der Kommandozeile gestarteter
+`scripts/library_repair.py --apply`-Lauf gleichzeitig dieselbe Library
+verändert — zuvor gab es dafür keinen Schutz.
+
+**Repair History:** das bestehende Journal
+(`<DATA_DIR>/library_repair_journal.jsonl`, siehe §5) bleibt die einzige
+Quelle für Datei-Fakten. Da es keine Lauf-Gruppierung kennt (welche
+Einträge zu einem Telegram-Tap gehören), ergänzt ein kleiner
+Zusatzindex (`<DATA_DIR>/library_repair_runs.json`) genau diese fehlende
+Gruppierung per Byte-Offset-Fenster in das Journal — ohne dessen Inhalt
+zu duplizieren. Repair-Statistiken werden ausschließlich aus diesem
+Index berechnet (keine hartkodierten Werte).
+
+**Navigation:** `Hauptmenü → Administration → Bibliothek & Navidrome →
+🛠️ Repair MusicBot` — Startseite (Reparaturen analysieren, Offene
+Reparaturen, Reparaturvorschläge, Reparaturhistorie, Repair-Statistik),
+danach Reparaturvorschläge → Preview → explizite Bestätigung → Ausführung
+→ Ergebnis. Öffnen des Menüs oder der Reparaturvorschläge startet
+niemals automatisch eine Reparatur. Berechtigung (Admin) wird am
+tatsächlichen Ausführungs-Handler erneut geprüft, nicht nur beim
+Navigieren.
+
+**Tests:**
+
+| Datei | Deckt ab |
+|---|---|
+| `tests/test_repair_service.py` | Plan-Filterung auf OPEN-Findings, SAFE_AUTOMATIC-Auswahl, read-only Preview, Concurrency-Lock, Execute (SUCCESS/FAILED/SKIPPED), Verification-gate für RESOLVED, niemals FALSE_POSITIVE, stale-Plan-Schutz, Journal-Fenster-Lesen, History/Statistik, Unicode |
+| `tests/test_repair_musicbot_handler.py` | Telegram-Repair-Handler (Start/Analyze/Proposals/Preview/Confirm/Execute/History/Statistik), Berechtigungs-Re-Check bei Execute, kein Auto-Start |
+| `tests/test_rich_menu_repair.py` | Menüpunkt-Registrierung + Admin-Gating/Dispatch-Ebene für `repair:*` |
+| `tests/test_repair_integration.py` | Vollständiger End-to-End-Fluss (Scan → Finding → Plan → Preview → Executor → Verification → Resolve → Re-Scan) mit dem echten `apply_level1()`-Executor gegen eine isolierte Test-Library |
+| `tests/test_review_repair_readonly_safety.py` | Repair-Preview gegen eine isolierte Test-Library, SHA-256-Vergleich vorher==nachher |

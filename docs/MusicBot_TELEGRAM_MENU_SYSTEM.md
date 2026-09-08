@@ -78,7 +78,9 @@ Hauptmenü
 │   ├── 🎵 Bibliothek & Navidrome
 │   │   ├── MusicBot Doctor (Health-Scan + SAFE_AUTOMATIC-Repair)
 │   │   ├── Reprocessing (OWNER-only)
-│   │   └── Navidrome Scan
+│   │   ├── Navidrome Scan
+│   │   ├── 🔎 Library Health Review (Findings nach Kategorie prüfen)
+│   │   └── 🛠️ Repair MusicBot (Plan/Preview/Ausführung/Historie/Statistik)
 │   ├── 🤖 Bot & Betrieb
 │   │   ├── Bot neu starten
 │   │   ├── Wartungsmodus

@@ -5,24 +5,35 @@
 Interaktive Review-CLI für die persistente Library-Health-Findings-Registry
 (services/library_health/findings.py).
 
-Zeigt alle aktuell OFFENEN Findings nacheinander an und fragt pro Finding
-eine Aktion ab:
+Offene Findings werden zunächst nach `issue_code` gruppiert (Kategorien),
+absteigend nach Severity-Stufe (CRITICAL > ERROR > WARNING > SUSPECTED/
+CONFIDENCE > INFO). Pro Kategorie stehen drei Aktionen zur Verfügung:
 
     python scripts/library_health_review.py
 
-    [R] Resolve         -> Status RESOLVED  (+ optionale Notiz)
-    [F] False Positive  -> Status FALSE_POSITIVE  (+ optionale Notiz)
-    [S] Skip            -> unverändert, nächstes Finding
-    [Q] Quit            -> Abbruch, bereits getroffene Entscheidungen bleiben
-                           gespeichert (Registry wird nach jeder einzelnen
-                           Review-Aktion sofort atomar gespeichert - kein
-                           Verlust bei Abbruch mitten in der Sitzung)
+    [Y] Kategorie einzeln bearbeiten   -> Einzelreview jedes offenen Findings
+    [F] Kategorie -> FALSE_POSITIVE    -> Batch-Aktion, verlangt Bestätigung
+    [S] Kategorie überspringen         -> keine Änderung, nächste Kategorie
+
+Während der Einzelbearbeitung (Y):
+
+    [R] Resolve          -> Status RESOLVED  (+ optionale Notiz)
+    [F] False Positive   -> Status FALSE_POSITIVE  (+ optionale Notiz)
+    [S] Skip             -> keine Änderung, nächstes Finding
+    [Q] Quit             -> beendet den GESAMTEN Review sofort
+
+Jede Statusänderung wird sofort atomar über die zentrale
+FindingsRegistry gespeichert - kein Verlust bei Abbruch mitten in der
+Sitzung. Nur Findings mit Status OPEN werden zur Bearbeitung angeboten;
+bereits RESOLVED/FALSE_POSITIVE Findings werden nie erneut vorgeschlagen.
 
 Dieses Script ist bewusst dünn (CLAUDE.md §4 Schichtgrenzen, Aufgabe
-Abschnitt 1/28): die gesamte Fachlogik (Finding-Identität, Merge, Review-
-Status, Persistenz) liegt in services/library_health/findings.py. Ein
-künftiger Telegram-Handler würde dieselbe FindingsRegistry-API aufrufen -
-niemals die JSON-Datei direkt.
+"Library Health Review" Abschnitt 1/28): die gesamte Fachlogik (Finding-
+Identität, Merge, Kategorie-Gruppierung, Batch-/Einzel-Review-Status,
+Persistenz) liegt in services/library_health/findings.py. Ein künftiger
+Telegram-Handler verwendet dieselbe FindingsRegistry-/Review-Service-API
+(group_open_findings_by_category(), batch_review_category(),
+review_finding()) - niemals die JSON-Datei direkt.
 
 Führt selbst KEINEN Scan durch (das macht weiterhin ausschließlich
 scripts/library_health_check.py) und modifiziert NIEMALS eine Datei in
@@ -47,16 +58,22 @@ from services.library_health.findings import (  # noqa: E402
     DEFAULT_FILENAME,
     STATUS_FALSE_POSITIVE,
     STATUS_RESOLVED,
+    CategoryGroup,
     Finding,
     FindingsRegistry,
     FindingsRegistryError,
+    batch_review_category,
+    group_open_findings_by_category,
 )
+
+_POSITIVE_CONFIRM = {"y", "yes", "j", "ja"}
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="library_health_review.py",
-        description="Interaktive Prüfung offener Library-Health-Findings.",
+        description="Interaktive, nach Kategorie gruppierte Prüfung offener "
+                     "Library-Health-Findings.",
     )
     parser.add_argument(
         "--registry", dest="registry_path", type=str, default=None,
@@ -84,6 +101,79 @@ def _prompt_note() -> Optional[str]:
     return note or None
 
 
+def _print_finding(finding: Finding, index: int, total: int) -> None:
+    print(f"[{index}/{total}] {finding.code}\n")
+    print(f"    {_finding_location(finding)}")
+    if finding.path:
+        print(f"    Datei: {finding.path}")
+    if finding.message:
+        print(f"    {finding.message}")
+    if finding.occurrences > 1:
+        print(f"    Bereits {finding.occurrences}x erkannt")
+        print(f"    Erstmals: {finding.first_seen}")
+    print()
+
+
+def _run_single_review(
+    registry: FindingsRegistry, findings: list[Finding], tally: dict, reviewer: str,
+) -> bool:
+    """Arbeitet die übergebenen (bereits als OPEN bekannten) Findings einer
+    Kategorie einzeln ab. Gibt True zurück, wenn der Nutzer [Q]uit gewählt
+    hat (beendet den GESAMTEN Review, nicht nur diese Kategorie)."""
+    total = len(findings)
+    for idx, finding in enumerate(findings, start=1):
+        _print_finding(finding, idx, total)
+        action = input(
+            "Aktion [R]esolve / [F]alse Positive / [S]kip / [Q]uit: "
+        ).strip().lower()
+
+        if action == "q":
+            print("\nReview beendet - bisherige Bewertungen bleiben gespeichert.")
+            return True
+
+        if action == "r":
+            note = _prompt_note()
+            registry.review_finding(
+                finding.finding_id, STATUS_RESOLVED, note=note, reviewed_by=reviewer
+            )
+            registry.save()
+            tally["bearbeitet"] += 1
+            tally["resolved"] += 1
+            print("    → RESOLVED gespeichert.\n")
+        elif action == "f":
+            note = _prompt_note()
+            registry.review_finding(
+                finding.finding_id, STATUS_FALSE_POSITIVE, note=note, reviewed_by=reviewer
+            )
+            registry.save()
+            tally["bearbeitet"] += 1
+            tally["false_positive"] += 1
+            print("    → FALSE_POSITIVE gespeichert.\n")
+        else:
+            tally["skipped"] += 1
+            print("    → übersprungen.\n")
+
+    return False
+
+
+def _prompt_category_action(group: CategoryGroup) -> str:
+    print(f"{group.code} ({group.open_count} Befund(e))\n")
+    print("Bearbeiten [Y]")
+    print("[F]alse Positive – komplette Kategorie")
+    print("[S]kip\n")
+    return input("Auswahl: ").strip().lower()
+
+
+def _confirm_batch_false_positive(group: CategoryGroup) -> bool:
+    print("\n⚠️ ACHTUNG\n")
+    print(f"{group.open_count} Findings werden als FALSE_POSITIVE markiert.\n")
+    print("Kategorie:")
+    print(f"{group.code}\n")
+    print("Diese Aktion betrifft die komplette Kategorie.\n")
+    answer = input("Fortfahren? [Y/N]: ").strip().lower()
+    return answer in _POSITIVE_CONFIRM
+
+
 def main(argv=None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -104,64 +194,53 @@ def main(argv=None) -> int:
         print(f"❌ {e}", file=sys.stderr)
         return 2
 
-    open_findings = sorted(
-        registry.get_open_findings(),
-        key=lambda f: (
-            f.code,
-            f.artist or "",
-            f.album or "",
-            f.title or "",
-            f.path or "",
-        ),
-    )
+    groups = group_open_findings_by_category(registry)
 
-    if not open_findings:
+    if not groups:
         print("✅ Keine offenen Befunde - nichts zu prüfen.")
         return 0
 
-    print(f"Library Health – {len(open_findings)} offene(r) Befund(e)\n")
+    total_open = sum(g.open_count for g in groups)
+    print(f"Library Health Review – {total_open} offene(r) Befund(e) in "
+          f"{len(groups)} Kategorie(n)\n")
 
-    reviewed = 0
-    for idx, finding in enumerate(open_findings, start=1):
-        print(f"[{idx}/{len(open_findings)}] {finding.code}")
-        print(f"    {_finding_location(finding)}")
-        if finding.path:
-            print(f"    Datei: {finding.path}")
-        if finding.message:
-            print(f"    {finding.message}")
-        if finding.occurrences > 1:
-            print(
-                f"    (bereits {finding.occurrences}x erkannt, "
-                f"zuerst am {finding.first_seen})"
-            )
-        print()
+    tally = {"bearbeitet": 0, "resolved": 0, "false_positive": 0, "skipped": 0}
 
-        action = input("Aktion [R]esolve / [F]alse Positive / [S]kip / [Q]uit: ").strip().lower()
+    for group in groups:
+        action = _prompt_category_action(group)
 
-        if action == "q":
-            print("\nAbgebrochen - bisherige Bewertungen bleiben gespeichert.")
-            break
-
-        if action == "r":
-            note = _prompt_note()
-            registry.review_finding(
-                finding.finding_id, STATUS_RESOLVED, note=note, reviewed_by=reviewer
-            )
-            registry.save()
-            reviewed += 1
-            print("    → RESOLVED gespeichert.\n")
+        if action == "y":
+            quit_requested = _run_single_review(registry, group.findings, tally, reviewer)
+            if quit_requested:
+                break
         elif action == "f":
-            note = _prompt_note()
-            registry.review_finding(
-                finding.finding_id, STATUS_FALSE_POSITIVE, note=note, reviewed_by=reviewer
-            )
-            registry.save()
-            reviewed += 1
-            print("    → FALSE_POSITIVE gespeichert.\n")
+            if _confirm_batch_false_positive(group):
+                count = group.open_count
+                batch_review_category(
+                    registry, group.code, STATUS_FALSE_POSITIVE, reviewed_by=reviewer,
+                )
+                registry.save()
+                tally["bearbeitet"] += count
+                tally["false_positive"] += count
+                print(f"\n✅ {count} Findings als FALSE_POSITIVE markiert.\n")
+            else:
+                print("\nAbgebrochen - keine Änderung.\n")
         else:
-            print("    → übersprungen.\n")
+            print("→ Kategorie übersprungen.\n")
 
-    print(f"Fertig. {reviewed} von {len(open_findings)} Befund(en) bewertet.")
+    remaining_open = len(registry.get_open_findings())
+
+    print("═" * 38)
+    print("Library Health Review abgeschlossen")
+    print("═" * 38)
+    print()
+    print(f"Bearbeitet:      {tally['bearbeitet']}")
+    print(f"Resolved:        {tally['resolved']}")
+    print(f"False Positive:  {tally['false_positive']}")
+    print(f"Skipped:         {tally['skipped']}")
+    print()
+    print(f"Offene Findings: {remaining_open}")
+
     return 0
 
 
