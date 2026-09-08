@@ -30,6 +30,7 @@ from .models import (
 )
 from .cache import MetadataCacheHandler
 from .artist_processor import ArtistProcessor
+from .artist_identity_resolver import ArtistIdentityResolver
 from .title_cleaner import TitleCleaner
 from .genre_processor import GenreProcessor
 from .album_processor import AlbumProcessor
@@ -108,6 +109,18 @@ class EnhancedMetadataProcessor(SingletonMixin):
             artist_normalizer=self.artist_normalizer,
             logger=self.logger_factory("ArtistProcessor"),
         )
+        # ARCH Artist-Identity (Phase B): dedizierte Identitäts-Auflösung
+        # NACH der Kandidatenwahl. ArtistProcessor waehlt/bereinigt den
+        # Kandidaten, ArtistNormalizer normalisiert den String, der Resolver
+        # bestimmt die kanonische Identitaet + Quelle + known-Flag aus
+        # artist_overrides.json > known_artists.yaml > auto_learned_artist_
+        # aliases.json > Library. Siehe services/metadata/
+        # artist_identity_resolver.py.
+        self.artist_identity_resolver = ArtistIdentityResolver(
+            artist_normalizer=self.artist_normalizer,
+            mapping_dir=getattr(self.config, "GENRE_MAPPING_DIR", None),
+            logger=self.logger_factory("ArtistIdentityResolver"),
+        )
 
         self.genre_mapper = GenreMapper(
             mapping_dir=getattr(self.config, "GENRE_MAPPING_DIR", "mapping")
@@ -148,6 +161,11 @@ class EnhancedMetadataProcessor(SingletonMixin):
             artist_normalizer=self.artist_normalizer,
             genre_mapper=self.genre_mapper,
             logger=self.logger_factory("AutoLearnManager"),
+            # ARCH Artist-Identity Phase E (Schritt 11): Feature-Artist-
+            # Kanonikalisierung + Known-Check laufen über den Resolver
+            # (Override/Alias/known_artists/Library), nicht mehr nur über die
+            # reine String-Normalisierung + _is_artist_known()-Dateiscan.
+            artist_identity_resolver=self.artist_identity_resolver,
         )
 
         self.tag_writer = TagWriter(
@@ -298,9 +316,11 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 # filepath vorhanden ist oder es (regulaerer Fall) bereits
                 # ausserhalb von DOWNLOAD_DIR liegt.
                 cleanup_single_download_artifact(
-                    Path(track_metadata.get("filepath"))
-                    if track_metadata.get("filepath")
-                    else None,
+                    (
+                        Path(track_metadata.get("filepath"))
+                        if track_metadata.get("filepath")
+                        else None
+                    ),
                     getattr(self.config, "DOWNLOAD_DIR", None),
                     self.logger,
                 )
@@ -459,7 +479,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
             if not _is_podcast_channel and _all_parsed_artists:
                 _first_artist = _all_parsed_artists[0].strip()
 
-            final_artist, artist_source, feat_artists_from_determination = (
+            final_artist, _candidate_source, feat_artists_from_determination = (
                 self.artist_processor.determine_best_artist(
                     raw_artist=_effective_raw_artist,
                     parsed_artist=_first_artist or youtube_parsed.get("artist"),
@@ -467,16 +487,50 @@ class EnhancedMetadataProcessor(SingletonMixin):
                     channel_name=channel_name,
                 )
             )
-            if _first_artist:
-                artist_source = "first_artist_from_title"
+
+            # ── 6b. Artist-Identity-Auflösung (ARCH Artist-Identity, Phase B) ─
+            # determine_best_artist() hat den Kandidaten gewaehlt, bereinigt
+            # und string-normalisiert; _candidate_source ist die ROHNAMEN-
+            # Herkunft (youtube_parsed / playlist_dominant / raw_metadata /
+            # channel_fallback / fallback). Der ArtistIdentityResolver leitet
+            # daraus die kanonische IDENTITAET ab und liefert die tatsaechliche
+            # Entscheidungsquelle (artist_override / known_artist /
+            # auto_learned_alias / library_identity / parser) plus known-Flag.
+            #
+            # Finding F-02: vorher wurde artist_source hier bedingungslos mit
+            # "first_artist_from_title" ueberschrieben - dadurch war nicht
+            # erkennbar, ob ein Mapping gegriffen hat. Diese Ueberschreibung
+            # entfaellt ersatzlos.
+            if _candidate_source == "playlist_dominant":
+                self.processing_stats.dominant_artist_used += 1
+
+            if _is_podcast_channel or _candidate_source == "fallback":
+                # Podcast bzw. kein gueltiger Kandidat: keine Identity-
+                # Aufloesung, Rohwert unveraendert. known=False -> Artist-
+                # AutoLearn-Gate bleibt zu (Podcast/Fallback lernen ohnehin
+                # nie).
+                artist_source = _candidate_source
+                artist_known = False
+            else:
+                _identity = self.artist_identity_resolver.resolve(
+                    final_artist,
+                    ctx={
+                        "channel": channel_name,
+                        "uploader": track_metadata.get("uploader", ""),
+                        # Phase F: MBID hier (Schritt 6) noch nicht ermittelt.
+                        "artist_mbid": None,
+                    },
+                )
+                final_artist = _identity.canonical or final_artist
+                artist_source = _identity.source
+                artist_known = _identity.known
 
             self.logger.info(
-                f"🎤✅ Finaler Künstler: '{final_artist}' (Quelle: {artist_source})"
+                f"🎤✅ Finaler Künstler: '{final_artist}' "
+                f"(Quelle: {artist_source}, bekannt: {artist_known})"
             )
-            if artist_source in ("normalized", "playlist_dominant"):
+            if artist_known or _candidate_source == "playlist_dominant":
                 self.processing_stats.successful_normalizations += 1
-            if artist_source == "playlist_dominant":
-                self.processing_stats.dominant_artist_used += 1
 
             # Feature-Split (ARTIST-001-Fix: Haupt-/Feature-Trennung kommt
             # jetzt bereits korrekt aus determine_best_artist() - VOR der
@@ -973,6 +1027,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 url=track_metadata.get("webpage_url"),
                 original_metadata=track_metadata,
                 artist_source=artist_source,
+                artist_known=artist_known,
                 title_cleaned=clean_title != raw_title,
                 is_duplicate=is_duplicate,
                 from_cache=False,
@@ -1041,22 +1096,17 @@ class EnhancedMetadataProcessor(SingletonMixin):
                             f"⚠️ Genre-Learning fehlgeschlagen: {_learn_err}"
                         )
 
-            # 2026-09-03 (Nutzer-Entscheidung, Live-Fund GermanHype):
-            # "channel_fallback" entfernt - diese Quelle bedeutet, dass der
-            # Kanalname mangels erkennbarem Titel-Artist SELBST als Artist
-            # verwendet wurde (siehe artist_processor.py::
-            # determine_best_artist()). Bei einem Repost-/Compilation-Kanal
-            # waere das kein echter Kuenstlername, und ein Identitaets-
-            # Mapping (raw_name==canonical_name, beides der Kanalname)
-            # wuerde den Kanal faelschlich in known_artists.yaml als
-            # "bekannter Kuenstler" registrieren. Zusaetzliche Absicherung
-            # neben dem eigentlichen Fix in raw_name_for_learning() unten
-            # (der den konkret beobachteten Bug behebt, der ueber
-            # 'youtube_parsed' lief, nicht 'channel_fallback').
+            # Zusatzfilter für Artist-AutoLearn auf _candidate_source (die
+            # Rohnamen-Herkunft aus determine_best_artist()): nur titel-/
+            # rohmetadaten-basierte Kandidaten lernen, NIE "channel_fallback"
+            # (bei einem Repost-/Compilation-Kanal waere das kein echter
+            # Kuenstlername). ARCH Artist-Identity Phase E: das frühere
+            # "first_artist_from_title" (nur ein EMP-internes Relabel von
+            # "youtube_parsed") entfällt - der ArtistIdentityResolver liefert
+            # die echte Quelle, das known-Flag ist das primäre Gate.
             _learn_sources = {
                 "youtube_parsed",
                 "raw_metadata",
-                "first_artist_from_title",
             }
             # AUTOLEARN-001: _is_podcast_channel prueft nur eine hartcodierte
             # 2-Kanal-Liste. download_utils.py hatte zusaetzlich einen externen,
@@ -1085,39 +1135,53 @@ class EnhancedMetadataProcessor(SingletonMixin):
                     _special_channels_cfg,
                 )
             )
-            if artist_source in _learn_sources and not _is_special_channel_for_learning:
+            # ARCH Artist-Identity (Phase B, Schritt 10/12): das Gate ist jetzt
+            # das known-Flag des ArtistIdentityResolvers, NICHT mehr die
+            # Rohnamen-Quelle. Bekannte Identitaet (artist_override /
+            # known_artist / auto_learned_alias / library_identity) -> KEIN
+            # Artist-AutoLearn. Nur bei known=False (der Resolver hat lediglich
+            # den Parser-Kandidaten uebernommen) darf AutoLearn eine neue
+            # Beziehung lernen. _candidate_source bleibt als zusaetzlicher
+            # Filter (nur titel-/rohmetadaten-basierte Kandidaten, nie
+            # channel_fallback) und wird an learn_artist() als source
+            # durchgereicht (ALLOWED_ARTIST_SOURCES).
+            if (
+                not artist_known
+                and _candidate_source in _learn_sources
+                and not _is_special_channel_for_learning
+            ):
                 try:
-                    # 2026-09-03 (Live-Fund GermanHype -> Peter Maffay/Calvin
-                    # Harris, siehe raw_name_for_learning()-Docstring fuer
-                    # den vollstaendigen Forensik-Befund): raw_name kommt
-                    # ueber ArtistProcessor.raw_name_for_learning() - prueft
-                    # sowohl uploader ALS AUCH track_metadata['artist']
-                    # gegen den bereits bestimmten Artist, statt einen davon
-                    # unbedingt zu bevorzugen (track_metadata['artist'] wird
-                    # von download_utils.py selbst schon mit dem Kanalnamen
-                    # kontaminiert, wenn yt-dlp kein echtes Artist-Tag
-                    # liefert - beide Kandidaten koennen also den blossen
-                    # Kanalnamen tragen).
+                    # raw_name kommt ueber ArtistProcessor.raw_name_for_learning()
+                    # - prueft uploader UND track_metadata['artist'] gegen den
+                    # bestimmten Artist (beide koennen vom Kanalnamen
+                    # kontaminiert sein, wenn yt-dlp kein echtes Artist-Tag
+                    # liefert; Live-Fund GermanHype, siehe
+                    # raw_name_for_learning()-Docstring).
                     _learn_raw_name = self.artist_processor.raw_name_for_learning(
                         track_metadata, artist_for_metadata
                     )
-                    if not _learn_raw_name:
+                    if _learn_raw_name:
+                        await self.auto_learn_manager.learn_artist(
+                            raw_name=_learn_raw_name,
+                            canonical_name=artist_for_metadata,
+                            source=_candidate_source,
+                            channel_name=track_metadata.get("channel", "")
+                            or track_metadata.get("uploader", ""),
+                        )
+                    else:
+                        # Kein roher Name aehnelt dem bestimmten Artist -> kein
+                        # Alias lernbar, KEIN Kanalname-als-Alias. Die Identitaet
+                        # wird hier NICHT mehr registriert (Finding F-04): ab
+                        # Phase B sind ArtistIdentityResolver + known_artists.yaml
+                        # allein fuer Identitaets-Auflösung/-Registrierung
+                        # zustaendig.
                         self.logger.debug(
-                            f"🧠 [AUTO-LEARN] Artist-Learning BLOCKED: weder "
+                            f"🧠 [AUTO-LEARN] Kein Alias lernbar: weder "
                             f"uploader={track_metadata.get('uploader')!r} noch "
                             f"artist_field={track_metadata.get('artist')!r} "
                             f"aehneln dem bestimmten Artist "
-                            f"{artist_for_metadata!r} - kein roher Name fuer "
-                            f"das Lernen verfuegbar (verhindert Kanalname-als-"
-                            f"Artist-Alias, siehe raw_name_for_learning())."
+                            f"{artist_for_metadata!r} - kein Artist-Learning."
                         )
-                    await self.auto_learn_manager.learn_artist(
-                        raw_name=_learn_raw_name,
-                        canonical_name=artist_for_metadata,
-                        source=artist_source,
-                        channel_name=track_metadata.get("channel", "")
-                        or track_metadata.get("uploader", ""),
-                    )
                 except Exception as _learn_err:
                     self.logger.warning(
                         f"⚠️ Artist-Learning fehlgeschlagen: {_learn_err}"
@@ -1144,6 +1208,22 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 except Exception as _learn_err:
                     self.logger.warning(
                         f"⚠️ Feature-Artist-Beobachtung fehlgeschlagen: {_learn_err}"
+                    )
+
+            # ── 19d. Identity-Index auffrischen (ARCH Artist-Identity Phase C)
+            # War die Identitaet unbekannt (known=False), kann dieser Download
+            # gerade einen neuen Library-Ordner erzeugt und/oder AutoLearn in
+            # known_artists.yaml / auto_learned_artist_aliases.json geschrieben
+            # haben. Den Resolver einmalig neu laden, damit ein Folge-Track
+            # derselben Session (z.B. Playlist) den Artist als bekannt erkennt.
+            # Nur bei known=False -> kein Disk-Scan pro Track fuer bereits
+            # bekannte Artists.
+            if not artist_known:
+                try:
+                    self.artist_identity_resolver.refresh()
+                except Exception as _idr_err:
+                    self.logger.debug(
+                        f"ArtistIdentityResolver.refresh() fehlgeschlagen: {_idr_err}"
                     )
 
             # --- 20. Abschluss ---

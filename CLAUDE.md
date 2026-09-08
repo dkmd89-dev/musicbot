@@ -336,48 +336,48 @@ Echte externe Aufrufe gehören in gezielte Integrationstests.
 
 # 8.A Testausführungsstrategie
 
-Für **jede einzelne Änderung** gilt diese verbindliche Reihenfolge bei der
-Testausführung:
+Für **jede Änderung** gilt diese Reihenfolge:
 
 ```text
 1. Gezielte Tests
-   → nur die Tests für das aktuell bearbeitete Finding
+   → nur Tests für das aktuell bearbeitete Finding bzw. die konkrete Funktion
    → Beispiel: python3 -m pytest tests/test_<aktuelles_finding>.py -q
 
 2. Direkt relevante Regressionstests
-   → nur Tests, die unmittelbar von der geänderten Funktionalität betroffen sind
-   → Beispiel (DUP-03): python3 -m pytest tests/test_duplicate_detector_hash_consistency.py -q
+   → nur Tests, die unmittelbar von der Änderung betroffen sind
 
 3. Thematische Testsuite
-   → die zum Bereich gehörende Testgruppe
+   → die zum geänderten Bereich gehörende Testgruppe, wenn dies für die
+     Änderung sinnvoll ist
    → Beispiel: python3 -m pytest tests/test_duplicate*.py -q
-   → Für eine einzelne kleine Änderung (ein Fix, ein Finding, ein
-     eng umrissenes Skript/Modul) sind Schritte 1-3 der Standard-
-     Abschluss. Die vollständige Suite (Schritt 4) ist NICHT der
-     Normalfall nach jeder Änderung.
 
-4. Vollständige Suite
+4. Vollständige Testsuite
    → python3 -m pytest tests/ -q
-   → NICHT nach jedem einzelnen Finding/Fix - nur bei einer
-     "größeren Veränderung":
-       - mehrere Findings/Fixes einer gemeinsam bearbeiteten
-         Arbeitsphase sind ALLE abgeschlossen (Abschluss der Phase,
-         nicht jeder einzelne Schritt darin)
-       - eine ARCH-Phase wird abgeschlossen
-       - unmittelbar vor PR/Merge einer Änderung, die vorher noch
-         nicht vollständig gegengeprüft wurde
-       - Änderung an gemeinsam genutzter Produktionslogik mit
-         breitem, nicht klar eingrenzbarem Blast-Radius (z.B.
-         tag_writer.py, download_utils.py - nicht ein isoliertes
-         scripts/-Tool)
-       - der Nutzer fragt ausdrücklich danach
-   → Bei Unsicherheit, ob eine Änderung schon "größer" genug ist:
-     lieber bei Schritt 3 (thematische Suite) bleiben und im Bericht
-     transparent machen, dass die volle Suite bewusst ausgelassen
-     wurde - nicht im Zweifel automatisch die volle Suite anhängen
 ```
 
-Als Zyklus über mehrere Findings hinweg einer Arbeitsphase:
+**Die vollständige Testsuite wird NICHT durch den Implementierungsprozess
+(Claude / GitHub / CI dieses Repos) ausgeführt** — weder nach einem
+einzelnen Fix, noch beim Abschluss einer ARCH-Phase oder einer größeren
+Arbeitsphase, noch unmittelbar vor PR/Merge.
+
+**Die vollständige Testsuite (Schritt 4) führt IMMER ausschließlich der
+Nutzer selbst aus.**
+
+Der Implementierungsprozess führt ausschließlich die für die jeweilige
+Änderung relevanten Tests aus (Schritte 1–3). Erscheint eine vollständige
+Suite für die abschließende Verifikation erforderlich, wird sie dem Nutzer
+**empfohlen** — die Ausführung bleibt dem Nutzer vorbehalten. Bei
+Unsicherheit über den Testumfang: bei Schritt 3 bleiben und im Bericht
+transparent machen, dass die volle Suite bewusst ausgelassen wurde.
+
+**Beispiel — Artist Identity Resolution & Mapping Separation:**
+→ Characterization-/Identity-Tests
+→ Resolver-/Mapping-Regressionstests
+→ thematische Artist-/Metadata-Tests
+→ KEINE vollständige Testsuite durch Claude/GitHub
+→ vollständige Testsuite anschließend durch den Nutzer.
+
+Als Zyklus über mehrere Findings einer Arbeitsphase:
 
 ```text
 Finding → gezielte Tests → direkte Regressionstests → thematische Suite
@@ -386,14 +386,14 @@ nächstes Finding → gezielte Tests → direkte Regressionstests → thematisch
    ↓
    ...
    ↓
-erst am Ende der Arbeitsphase (nicht nach jedem einzelnen Finding
-darin): vollständige Testsuite
+am Phasenende: dem Nutzer die vollständige Suite empfehlen
+              (nicht selbst ausführen)
 ```
 
-Diese Reihenfolge gilt für **jedes** Finding, auch für zukünftige, nicht nur
-für die zum Zeitpunkt der Formulierung dieser Regel aktuell bearbeiteten.
+Diese Reihenfolge gilt für **jedes** Finding, auch für zukünftige.
 
-**Nach dem Abschlusslauf (Punkt 4):** Ergebnisse unterscheiden zwischen
+**Wenn der Nutzer Full-Suite-Ergebnisse zurückmeldet**, die Fehler
+unterscheiden zwischen:
 
 - durch die aktuelle Arbeitsphase verursachten Fehlern
 - bereits vorher bestehenden Fehlern
@@ -1101,11 +1101,20 @@ Nicht jede einzelne triviale Funktion braucht eine seitenlange Beschreibung.
 
 ## Baseline-Pflege
 
-Aktuelle Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze
-2026-09-07, 2580 passed / 0 failed, 1 umgebungsbedingt skipped).
+Aktuelle **eingefrorene** Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v9.md`
+(Freeze 2026-09-07, 2580 passed / 0 failed, 1 umgebungsbedingt skipped).
 Referenziert von `README.md` und `docs/INDEX.md`. Vorgänger
 `docs/MusicBot_ENGINEERING_BASELINE_v8.md` (Freeze 2026-09-02, 1698
 passed) liegt unverändert unter `docs/archive/`.
+
+Laufender Zwischenstand seit dem v9-Freeze:
+`docs/MusicBot_ENGINEERING_BASELINE_v10.md` — **DRAFT, noch nicht
+eingefroren**. Hier werden pro ARCH-Phase / PR *ARCH Status*, *Recent
+Major Changes* und *Testzahlen* mitgeschrieben (siehe Absatz weiter
+unten); die Tech-Debt-/Security-/Freeze-Abschnitte bleiben Platzhalter
+bis zum v10-Freeze. v9 bleibt bis dahin der zitierbare eingefrorene
+Referenzpunkt, `docs/FINDINGS_INDEX.md` die lebende Findings-Quelle. v10
+dupliziert keine Findings.
 
 Der aktuelle Stand aller offenen/zurückgestellten Punkte steht ab sofort
 in `docs/FINDINGS_INDEX.md`, nicht in der Tech-Debt-Tabelle der jeweils
@@ -1117,10 +1126,16 @@ Abschnitt „Baseline-Pflege" oben), ersetzt aber nicht die Pflege von
 `docs/FINDINGS_INDEX.md` als lebende Quelle.
 
 Nach Abschluss jeder ARCH-Phase mit Code-/YAML-Änderung wird die
-aktuelle ENGINEERING_BASELINE_vN.md im selben PR aktualisiert
+laufende `ENGINEERING_BASELINE_v10.md` (DRAFT) im selben PR aktualisiert
 (mindestens: Abschnitt „ARCH Status", „Recent Major Changes",
-Testzahlen). Bei größerer Drift (>3 ARCH-Phasen seit letztem Sync)
-wird eine neue vN+1 statt eines Nachtrags erstellt.
+Testzahlen — die Testzahl stammt aus dem zuletzt vom Nutzer gemeldeten
+Full-Suite-Lauf, siehe §8.A; der Implementierungsprozess führt die volle
+Suite nicht selbst aus). Solange eine DRAFT-vN+1 existiert, geht der Zwischenstand
+dorthin — die eingefrorene vN wird nicht mehr angefasst. Existiert keine
+DRAFT-vN+1 (Normalfall direkt nach einem Freeze), wird sie beim
+nächsten solchen Abschluss angelegt. Bei größerer Drift (>3 ARCH-Phasen
+seit letztem Sync) ohne DRAFT-vN+1 wird eine neue vN+1 statt eines
+Nachtrags erstellt.
 
 **Freeze-Abschluss ist selbsttätig, nicht die Freeze-Entscheidung
 selbst:** Schließt ein Freeze-Gate-Audit explizit mit 🟢 APPROVED ab

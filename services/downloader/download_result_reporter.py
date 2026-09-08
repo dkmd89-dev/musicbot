@@ -118,6 +118,14 @@ class DownloadResultReporter:
 
         if tracks:
             ch = sum(1 for t in tracks if t.get("from_cache"))
+            # Hinweis (ARCH Artist-Identity Migration, 2026-09-08): seit der
+            # Migration liefert `artist_source` die ArtistIdentityResolver-
+            # Quelle (artist_override / known_artist / auto_learned_alias /
+            # library_identity / parser), nicht mehr "youtube_parsed" /
+            # "first_artist_from_title". Die beiden `== "..."`-Zähler unten
+            # zählen dadurch anders (meist 0) - rein kosmetische Telegram-
+            # Zusammenfassung, keine Fachlogik. Bewusst nicht mitmigriert
+            # (F-07-Nachbarpunkt, siehe FINDINGS_INDEX / Migrations-Doc §6).
             return {
                 "successful_normalizations": sum(1 for t in tracks if t.get("artist_source") not in (None, "unknown")),
                 "successful_genre_mappings": sum(1 for t in tracks if self.extract_genres_from_data(t.get("genres"))),

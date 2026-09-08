@@ -314,7 +314,11 @@ class AutoLearnManager:
     fuer INV-02 (Vorbild utils/metadata_cache.py::store()).
     """
 
-    ALLOWED_ARTIST_SOURCES = {"youtube_parsed", "first_artist_from_title"}
+    # ARCH Artist-Identity Phase E: "first_artist_from_title" entfernt - das
+    # war nur ein EMP-internes Relabel von "youtube_parsed" (Finding F-02,
+    # inzwischen ersatzlos gestrichen). learn_artist() erhält jetzt die
+    # _candidate_source aus determine_best_artist().
+    ALLOWED_ARTIST_SOURCES = {"youtube_parsed"}
 
     def __init__(
         self,
@@ -322,11 +326,19 @@ class AutoLearnManager:
         artist_normalizer: "ArtistNormalizer",
         genre_mapper: "GenreMapper",
         logger=None,
+        artist_identity_resolver=None,
     ):
         self.config = config
         self.artist_normalizer = artist_normalizer
         self.genre_mapper = genre_mapper
         self.logger = logger or get_module_logger("AutoLearnManager")
+        # ARCH Artist-Identity Phase E (Schritt 11): optionaler
+        # ArtistIdentityResolver. Wenn gesetzt, wird er für die
+        # Feature-Artist-Kanonikalisierung + den Known-Check verwendet
+        # (Override/Alias/known_artists/Library, mit Quelle/known-Flag).
+        # None (z.B. in isolierten Unit-Tests) -> bisheriges Verhalten:
+        # ArtistNormalizer.normalize() + _is_artist_known()-Dateiscan.
+        self.artist_identity_resolver = artist_identity_resolver
         # INV-01/INV-02: ein gemeinsames Lock fuer alle vier Schreibpfade
         # (auto_learned_genre.json, known_artists.yaml,
         # auto_learned_artist_aliases.json, auto_learned_featured_artists.json,
@@ -871,13 +883,21 @@ class AutoLearnManager:
     ) -> Dict[str, Any]:
         """
         Reine Entscheidungsberechnung (kein Schreiben) für einen einzelnen
-        Feature-Artist. Wendet vor der Beobachtung die bestehende zentrale
-        Artist-Normalisierung an (ArtistNormalizer.normalize() -
-        case_preserve.yaml/artist_overrides.json/Kollaborations-Logik,
-        Abschnitt 9 - keine eigene Normalisierung).
+        Feature-Artist.
+
+        ARCH Artist-Identity Phase E (Schritt 11): Kanonikalisierung +
+        Known-Check laufen über den ArtistIdentityResolver, wenn einer gesetzt
+        ist (Override/Alias/known_artists/Library, mit known-Flag). Ohne
+        Resolver (isolierte Unit-Tests): Fallback auf
+        ArtistNormalizer.normalize() + _is_artist_known()-Dateiscan.
         """
         canonical = None
-        if raw_feat and self.artist_normalizer is not None:
+        resolver_known = False
+        if raw_feat and self.artist_identity_resolver is not None:
+            _identity = self.artist_identity_resolver.resolve(raw_feat)
+            canonical = _identity.canonical
+            resolver_known = _identity.known
+        elif raw_feat and self.artist_normalizer is not None:
             canonical = self.artist_normalizer.normalize(raw_feat)
 
         decision: Dict[str, Any] = {
@@ -899,10 +919,10 @@ class AutoLearnManager:
             decision["reason"] = "identisch mit Primary Artist"
             return decision
 
-        if self._is_artist_known(canonical):
+        if resolver_known or self._is_artist_known(canonical):
             decision["decision"] = "SKIPPED_KNOWN"
             decision["reason"] = (
-                "bereits bekannt (Library/Overrides/known_artists/auto_learned) "
+                "bereits bekannt (Override/known_artists/Alias/Library) "
                 "→ manuelle/bestehende Information hat Vorrang"
             )
             return decision
@@ -1194,6 +1214,14 @@ class AutoLearnManager:
 
     def _is_non_artist_channel(self, channel: str) -> bool:
         """
+        DEPRECATED (ARCH Artist-Identity Phase E): kein Produktions-Aufrufer
+        (repo-verifiziert). Der Schutz gegen Kanalname-als-Artist läuft über
+        ArtistProcessor.raw_name_for_learning() (Ähnlichkeitsprüfung gegen den
+        bestimmten Artist) + das known-Flag des ArtistIdentityResolvers.
+        Bleibt vorerst mitsamt Test (test_auto_learn.py::
+        test_is_non_artist_channel) bestehen; vollständige Entfernung ist eine
+        eigene Entscheidung.
+
         Prüft ob ein Channel-Name auf einen Nicht-Artist-Channel hindeutet
         (Label, Compilation, Playlist, etc.).
         """

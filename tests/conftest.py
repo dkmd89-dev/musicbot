@@ -22,10 +22,15 @@ def _safe_config_defaults(tmp_path_factory):
     MusicBrainzClient._get_artist_normalizer(),
     EnhancedDownloadProcessor.__init__). ArtistNormalizer ist ein
     SingletonMixin und scannt bei der ERSTEN Konstruktion automatisch
-    Config.LIBRARY_DIR und schreibt neu gefundene Artists synchron in
-    Config.ARTIST_OVERRIDE_FILE (utils/artist_map.py::
-    _update_overrides_from_library_async()) - unabhaengig davon, ob der
-    aufrufende Test das ueberhaupt beabsichtigt hat.
+    Config.LIBRARY_DIR. Bis ARCH Artist-Identity Phase C schrieb
+    utils/artist_map.py neu gefundene Library-Artists dabei synchron in
+    Config.ARTIST_OVERRIDE_FILE (damals _update_overrides_from_library_async())
+    - unabhaengig davon, ob der aufrufende Test das beabsichtigt hat. Phase C:
+    nur noch in-memory-Spiegel; Phase D/E: dieser Spiegel und der zugehoerige
+    Schreib-Pfad sind komplett entfernt - artist_map.py schreibt
+    artist_overrides.json ueberhaupt nicht mehr. Der Schutz hier bleibt fuer
+    das case_preserve.yaml-Auto-Save + Fallback-Pfade auf die echte Config
+    sinnvoll.
 
     Dieser Mechanismus hat bereits zweimal real mapping/case_preserve.yaml
     verunreinigt (siehe ISOLATION-001-Kommentar in

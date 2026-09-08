@@ -112,6 +112,7 @@ class MetadataCacheHandler:
                 library_path=Path(library_path_str) if library_path_str else None,
                 original_metadata=track_metadata,
                 artist_source=cached.get("artist_source"),
+                artist_known=cached.get("artist_known"),
                 genre_source=cached.get("genre_source"),
                 title_cleaned=cached.get("title_cleaned", False),
                 is_duplicate=cached.get("is_duplicate", False),
@@ -161,6 +162,7 @@ class MetadataCacheHandler:
                     str(result.library_path) if result.library_path else None
                 ),
                 "artist_source": result.artist_source,
+                "artist_known": result.artist_known,
                 "genre_source": result.genre_source,
                 "title_cleaned": result.title_cleaned,
                 "is_duplicate": result.is_duplicate,

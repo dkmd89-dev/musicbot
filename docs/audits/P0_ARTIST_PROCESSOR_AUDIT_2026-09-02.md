@@ -1,5 +1,19 @@
 # P0-D: Artist fachlich vollständig auditieren (`services/metadata/artist_processor.py`)
 
+> **Nachtrag 2026-09-08 (Artist-Identity-Resolution-Migration Phase A–F,
+> `docs/audits/ARTIST_IDENTITY_RESOLUTION_MIGRATION_2026-09-08.md`):**
+> - Abschnitt 2 (`find_known_artist_from_list()` = totes Public-API): die
+>   Methode ist inzwischen aus `artist_processor.py` entfernt — der aktuelle
+>   Code hat nur noch `determine_best_artist()`, `raw_name_for_learning()`,
+>   `clean_artist_before_normalization()`, `split_feature_artists()`.
+> - Abschnitt 1 (Prioritätskette): unverändert gültig. `determine_best_artist()`
+>   liefert weiterhin `(artist, source, feat)` — die **Identitäts**-Auflösung
+>   (Override/known_artists/Alias/Library) findet jetzt in einem
+>   nachgelagerten `ArtistIdentityResolver` statt (EMP Schritt 6b), nicht in
+>   `ArtistProcessor` oder `ArtistNormalizer.normalize()`.
+> - Der in Abschnitt 1a genannte tote Redundanz-Vergleich in den
+>   Fallback-Zweigen ist bereits (vor dieser Migration) entfernt.
+
 **Datum:** 2026-09-02
 **Phase:** P0-D der laufenden P0-Metadata/Genre/Artist-Mapping/Duplicate-Detection-Reihe
 (Branch `audit/p0-metadata-duplicate-detection`).

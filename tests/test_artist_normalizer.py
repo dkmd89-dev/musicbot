@@ -86,15 +86,23 @@ class TestOverrides:
         assert normalizer.normalize("lil kex") == "Lil Kex"
         assert normalizer.normalize("LIL KEX") == "Lil Kex"
 
-    def test_construction_writes_override_file_from_library_dir(
+    def test_construction_does_not_write_override_file_from_library_dir(
         self, library_dir, override_file, mapping_dir
     ):
+        # ARCH Artist-Identity Phase C (Finding F-05): Library-Ordner werden
+        # NICHT mehr persistent nach artist_overrides.json gespiegelt - die
+        # Datei bleibt eine reine manuelle Override-Quelle. Der In-Memory-
+        # Spiegel (normalize()-Casing) bleibt erhalten, die Identitaets-
+        # Aufloesung laeuft ueber ArtistIdentityResolver + library_index.
         (library_dir / "Bausa").mkdir()
         assert not override_file.exists()
 
-        make_normalizer(library_dir, override_file, mapping_dir)
+        n = make_normalizer(library_dir, override_file, mapping_dir)
 
-        assert override_file.exists()
+        assert not override_file.exists()
+        # In-memory weiterhin wirksam:
+        assert n.normalize("bausa") == "Bausa"
+        assert n.library_index.get(n._normalize_key("Bausa")) == "Bausa"
 
     def test_missing_override_file_does_not_crash(self, normalizer):
         # override_file existierte beim Konstruieren nicht (nur die

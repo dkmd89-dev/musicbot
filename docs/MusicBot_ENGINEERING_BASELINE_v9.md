@@ -331,5 +331,11 @@ Freeze bleibt APPROVED.
 ## Baseline Frozen (2026-09-07)
 
 **Diese Datei ist damit abgeschlossen.** Neue Findings, Nachträge oder
-technische Schulden gehören ab jetzt in eine neue Datei
-`MusicBot_ENGINEERING_BASELINE_v10.md`, nicht mehr hierher.
+technische Schulden gehören ab jetzt in
+[`MusicBot_ENGINEERING_BASELINE_v10.md`](MusicBot_ENGINEERING_BASELINE_v10.md),
+nicht mehr hierher.
+
+> Nachtrag 2026-09-08: `v10.md` ist als **DRAFT** angelegt (laufender
+> Zwischenstand seit diesem Freeze; erster Eintrag: Artist-Identity-
+> Resolution-Migration, PR #176). Findings weiterhin in
+> [`FINDINGS_INDEX.md`](FINDINGS_INDEX.md).

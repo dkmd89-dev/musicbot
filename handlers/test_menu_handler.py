@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
 class TestMenuHandler:
     """Handler für Test-System im Menü"""
+    __test__ = False
 
     def __init__(self, config: Config, logger_factory=None):
         self.config = config

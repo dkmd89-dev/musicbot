@@ -64,24 +64,41 @@ def normalizer(library_dir, override_file, mapping_dir):
     )
 
 
+@pytest.fixture
+def resolver(normalizer, mapping_dir):
+    from services.metadata.artist_identity_resolver import ArtistIdentityResolver
+
+    return ArtistIdentityResolver(normalizer, mapping_dir)
+
+
 class TestMakkoCasePreserveOverrideMechanism:
     """Mechanismus-Test (isoliert, echtes mapping/ unberuehrt): ein
     Override mit kleingeschriebenem Zielwert wird case-insensitiv
     gegenueber dem Input respektiert, statt vom .capitalize()-Fallback
-    ueberschrieben zu werden."""
+    ueberschrieben zu werden.
 
-    def test_lowercase_input_stays_lowercase(self, normalizer):
-        assert normalizer.normalize("makko") == "makko"
+    ARCH Artist-Identity Phase D: die Override-Aufloesung liegt seit Phase D
+    im ArtistIdentityResolver (normalize() ist reine String-Normalisierung).
+    Geprüft wird daher resolver.resolve(...).canonical / .source."""
+
+    def test_lowercase_input_stays_lowercase(self, resolver):
+        ident = resolver.resolve("makko")
+        assert ident.canonical == "makko"
+        assert ident.source == "artist_override"
 
     def test_capitalized_input_is_still_normalized_to_lowercase_override(
-        self, normalizer
+        self, resolver
     ):
-        assert normalizer.normalize("Makko") == "makko"
+        assert resolver.resolve("Makko").canonical == "makko"
 
     def test_all_caps_input_is_still_normalized_to_lowercase_override(
-        self, normalizer
+        self, resolver
     ):
-        assert normalizer.normalize("MAKKO") == "makko"
+        assert resolver.resolve("MAKKO").canonical == "makko"
+
+    def test_normalize_itself_is_pure_string_normalisation(self, normalizer):
+        # Phase D: normalize() löst den Override NICHT mehr auf.
+        assert normalizer.normalize("MAKKO") == "MAKKO"
 
 
 class TestRealArtistOverridesFileHasCorrectMakkoCasing:
