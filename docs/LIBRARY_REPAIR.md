@@ -110,8 +110,8 @@ später ausführt.
 | Level | Bedeutung | Ausführende Komponente | Freigabe | Extern | Destruktiv |
 |---|---|---|---|---|---|
 | `SAFE_AUTOMATIC` | Ergebnis deterministisch aus vorhandenen Daten | `TagWriter` (atomar) + `split_main_and_featuring` + `sanitize_filename` | nein (nur `--apply`) | nein | nein |
-| `METADATA_REPROCESSING` | volle Neuverarbeitung über die echte Pipeline | `services/metadata/track_reprocessor.py::process_file` (in-process, echte config.Config) | ja | ja | nein |
-| `EXTERNAL_METADATA` | fehlende MB-IDs / ISRC / Jahr / Genre | `MusicBrainzClient` / `GenreProcessor` | ja | ja | nein |
+| `METADATA_REPROCESSING` | volle Neuverarbeitung über die echte Pipeline | `services/metadata/track_reprocessor.py::process_file` (in-process, echte config.Config — **nicht** `scripts/reprocess_artist_metadata.py`, siehe Kasten unten) | ja | ja | nein |
+| `EXTERNAL_METADATA` | fehlende MB-IDs / ISRC | `MusicBrainzClient` | ja | ja | nein |
 | `COVER` | fehlendes / schlechtes / uneinheitliches Cover | `CoverProcessor` | ja | ja | nein |
 | `LOUDNESS` | gemessene Lautheit > 2 dB neben −16 LUFS (`LOUDNESS_OFF_TARGET`) | `replaygain_repairs` — verlustfreier `replaygain_track_gain`-Tag | ja | ja | nein (Audio byte-identisch) |
 | `DUPLICATE` | echte Duplikate | `scripts/resolve_duplicates.py` + `services/duplicate/*` (angedockt, Backup-vor-Delete) | ja | nein | **ja** |
@@ -143,12 +143,13 @@ Health-Issue-Code genau ein Mapping hat und kein Mapping veraltet ist.
 | `META_ALBUM_ARTIST_MISSING` | SAFE_AUTOMATIC | Album-Artist = Haupt-Artist |
 | `ALBUM_ARTIST_INCONSISTENT` | SAFE_AUTOMATIC | Album-Artist aller Tracks vereinheitlichen |
 | `FILENAME_TITLE_MISMATCH` / `FILENAME_SUSPICIOUS` | SAFE_AUTOMATIC | Dateiname im selben Verzeichnis neu bilden |
-| `META_ARTIST_MISSING` / `_TITLE_MISSING` / `_ALBUM_MISSING` | METADATA_REPROCESSING | `reprocess_artist_metadata.py` |
+| `META_ARTIST_MISSING` / `_TITLE_MISSING` / `_ALBUM_MISSING` | METADATA_REPROCESSING | `track_reprocessor.process_file()` |
 | `META_TITLE_NOT_CLEAN` | METADATA_REPROCESSING | Titel über die reale Pipeline bereinigen (Anführungszeichen/`prod.`/Marketing-Suffix raus), Audio unverändert |
 | `GENRE_INVALID` / `LYRICS_*` | METADATA_REPROCESSING | Genre/Lyrics neu bestimmen |
-| `META_MB_*_MISSING` / `META_ISRC_MISSING` / `META_YEAR_MISSING` | EXTERNAL_METADATA | MusicBrainz-Match (nur bei Eindeutigkeit) |
-| `META_GENRE_MISSING` / `GENRE_EMPTY` | EXTERNAL_METADATA | GenreProcessor-Fallback-Kette |
-| `ALBUM_RELEASE_ID_INCONSISTENT` | EXTERNAL_METADATA | alle Tracks auf DIE Release-ID mappen |
+| `META_GENRE_MISSING` / `GENRE_EMPTY` | METADATA_REPROCESSING | GenreProcessor läuft bereits identisch zu `GENRE_INVALID` als Teil der vollen Pipeline (Production-Audit 2026-09-08: vorher fälschlich `EXTERNAL_METADATA` ohne Executor) |
+| `META_MB_*_MISSING` / `META_ISRC_MISSING` | EXTERNAL_METADATA | MusicBrainz-Match (nur bei Eindeutigkeit) |
+| `META_YEAR_MISSING` | MANUAL_REVIEW | keine Jahr-Fetch-Implementierung vorhanden (Production-Audit 2026-09-08: vorher fälschlich `EXTERNAL_METADATA` ohne Executor) |
+| `ALBUM_RELEASE_ID_INCONSISTENT` | MANUAL_REVIEW | mehrere Release-IDs im Album — welche kanonisch ist, manuell entscheiden (würde bestehende Werte überschreiben müssen statt nur fehlende zu ergänzen; Production-Audit 2026-09-08: vorher fälschlich `EXTERNAL_METADATA` ohne Executor) |
 | `ARTWORK_MISSING` / `_INVALID` / `_LOW_RESOLUTION` / `_NON_SQUARE` / `ALBUM_COVER_INCONSISTENT` | COVER | `CoverProcessor` — nur ersetzen bei eindeutig besserem Cover |
 | `LOUDNESS_OFF_TARGET` | LOUDNESS | `replaygain_track_gain`-/`_peak`-Tag schreiben (Ziel −16 LUFS, **Audio byte-identisch**), Backup + Rollback |
 | `LOUDNESS_TAG_MISSING` | NOT_REPAIRABLE | Legacy-ReplayGain-Tag; aktuelle Pipeline schreibt ihn bewusst nicht |
@@ -241,8 +242,28 @@ Keine offenen Executoren mehr — Phase 2 ist mit §6d (Duplicate) komplett.
 ## 6a. Level-2-Executor — volle Neuverarbeitung (implementiert)
 
 `--level METADATA_REPROCESSING` bzw. `--issue META_TITLE_NOT_CLEAN` /
-`GENRE_INVALID` / `LYRICS_*` / `META_{ARTIST,TITLE,ALBUM}_MISSING` (extern,
-langsam — **nie** im Default-`--apply`): `apply_level2(reprocess)`.
+`GENRE_INVALID` / `LYRICS_*` / `META_{ARTIST,TITLE,ALBUM}_MISSING` /
+`META_GENRE_MISSING` / `GENRE_EMPTY` (extern, langsam — **nie** im
+Default-`--apply`): `apply_level2(reprocess)`.
+
+> **Klarstellung (Production-Audit 2026-09-08):** `apply_level2()` ruft
+> `services/metadata/track_reprocessor.py::process_file()` **direkt
+> in-process** auf — **nie** `scripts/reprocess_artist_metadata.py` als
+> Subprozess oder sonst wie. Das Skript ist ein davon unabhängiges,
+> eigenständiges CLI-Testwerkzeug mit eigenem `ALLOWED_ROOT =
+> /tmp/musicbot_test`-Guard, das denselben Kern importiert, aber
+> strukturell nicht gegen die Produktionslibrary laufen kann (siehe unten)
+> und ausschließlich manuell/per Telegram-„Reprocessing"-Menü
+> (`reprocessing_runner.py`, §6a unten) ausgelöst wird — unabhängig vom
+> Finding→Repair-Flow dieses Dokuments.
+
+`apply_level2()` behandelt **je Issue-Code** einer Datei ein eigenes
+`ExecOutcome` (Production-Audit 2026-09-08, Fix 2026-09-08): `SUCCESS`
+gilt nur, wenn das für den jeweiligen Code relevante Zielfeld (z. B.
+`lyrics_present` für `LYRICS_MISSING`) sich laut Pipeline-Diff tatsächlich
+geändert hat — nicht schon, wenn irgendein anderes Feld der Datei sich
+änderte (`process_file()` läuft immer als volle Pipeline, ändert daher oft
+mehrere Felder gleichzeitig).
 
 **Option 2a (Nutzer-Entscheidung 2026-09-04):** Der Kern von
 `scripts/reprocess_artist_metadata.py` (`process_file()` + `snapshot()` +
