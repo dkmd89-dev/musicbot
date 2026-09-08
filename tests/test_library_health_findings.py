@@ -489,3 +489,164 @@ class TestDeterminism:
         reg2.save()
 
         assert path1.read_text(encoding="utf-8") == path2.read_text(encoding="utf-8")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Kategorie-Gruppierung + Batch-Review ("Library Health Review", Abschnitt 4/5/8/10)
+# ─────────────────────────────────────────────────────────────────────────
+
+from services.library_health.findings import (  # noqa: E402
+    batch_review_category,
+    group_open_findings_by_category,
+)
+
+
+class TestGroupOpenFindingsByCategory:
+    def test_groups_by_issue_code(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        issues = [
+            _issue("ARTWORK_MISSING", path="a.m4a"),
+            _issue("ARTWORK_MISSING", path="b.m4a"),
+            _issue("ARTWORK_MISSING", path="c.m4a"),
+        ]
+        registry.merge_scan_issues(issues, scanned_at="2026-01-01T00:00:00Z")
+        groups = group_open_findings_by_category(registry)
+        assert len(groups) == 1
+        assert groups[0].code == "ARTWORK_MISSING"
+        assert groups[0].open_count == 3
+
+    def test_severity_order_critical_error_warning_suspected_info(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        issues = [
+            _issue("META_ISRC_MISSING", "INFO", path="i.m4a"),
+            _issue(
+                "DUPLICATE_SUSPECTED", "INFO", scope="library",
+                artist="X", title="Y", confidence="album_context_risk",
+            ),
+            _issue("ARTWORK_MISSING", "WARNING", path="w.m4a"),
+            _issue("META_ARTIST_MISSING", "ERROR", path="e.m4a"),
+            _issue("AUDIO_NO_STREAM", "CRITICAL", path="c.m4a"),
+        ]
+        registry.merge_scan_issues(issues, scanned_at="2026-01-01T00:00:00Z")
+        groups = group_open_findings_by_category(registry)
+        tiers = [g.tier for g in groups]
+        assert tiers == ["CRITICAL", "ERROR", "WARNING", "SUSPECTED", "INFO"]
+
+    def test_same_tier_sorted_alphabetically_by_code(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        issues = [
+            _issue("LYRICS_EMPTY", "WARNING", path="a.m4a"),
+            _issue("ARTWORK_MISSING", "WARNING", path="b.m4a"),
+            _issue("GENRE_EMPTY", "WARNING", path="c.m4a"),
+        ]
+        registry.merge_scan_issues(issues, scanned_at="2026-01-01T00:00:00Z")
+        groups = group_open_findings_by_category(registry)
+        codes = [g.code for g in groups]
+        assert codes == sorted(codes)
+
+    def test_deterministic_repeated_grouping(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        issues = [
+            _issue("ARTWORK_MISSING", "WARNING", path="a.m4a"),
+            _issue("LYRICS_EMPTY", "WARNING", path="b.m4a"),
+        ]
+        registry.merge_scan_issues(issues, scanned_at="2026-01-01T00:00:00Z")
+        first = [(g.code, g.open_count) for g in group_open_findings_by_category(registry)]
+        second = [(g.code, g.open_count) for g in group_open_findings_by_category(registry)]
+        assert first == second
+
+    def test_resolved_and_false_positive_excluded_from_categories(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        issue_a = _issue("ARTWORK_MISSING", path="a.m4a")
+        issue_b = _issue("ARTWORK_MISSING", path="b.m4a")
+        registry.merge_scan_issues([issue_a, issue_b], scanned_at="2026-01-01T00:00:00Z")
+        fid_a = generate_finding_id(issue_a)
+        registry.review_finding(fid_a, STATUS_RESOLVED)
+
+        groups = group_open_findings_by_category(registry)
+        assert groups[0].open_count == 1
+
+    def test_no_open_findings_returns_empty_list(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        assert group_open_findings_by_category(registry) == []
+
+    def test_dynamic_counts_not_hardcoded(self, tmp_path):
+        """Abschnitt 4: Counts MUESSEN dynamisch aus dem Registry-Zustand
+        stammen - unterschiedliche Datenlagen ergeben unterschiedliche,
+        korrekte Counts (kein fest verdrahteter Wert)."""
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        issues = [_issue("ARTWORK_MISSING", path=f"f{i}.m4a") for i in range(37)]
+        registry.merge_scan_issues(issues, scanned_at="2026-01-01T00:00:00Z")
+        groups = group_open_findings_by_category(registry)
+        assert groups[0].open_count == 37
+
+
+class TestBatchReviewCategory:
+    def test_batch_marks_only_open_findings_of_category_as_false_positive(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        issues = [_issue("ARTWORK_MISSING", path=f"f{i}.m4a") for i in range(5)]
+        registry.merge_scan_issues(issues, scanned_at="2026-01-01T00:00:00Z")
+
+        changed = batch_review_category(
+            registry, "ARTWORK_MISSING", STATUS_FALSE_POSITIVE, note="Batch-Notiz",
+            reviewed_by="tester",
+        )
+        assert len(changed) == 5
+        for issue in issues:
+            fid = generate_finding_id(issue)
+            finding = registry.get(fid)
+            assert finding.status == STATUS_FALSE_POSITIVE
+            assert finding.review_note == "Batch-Notiz"
+            assert finding.reviewed_by == "tester"
+
+    def test_batch_does_not_touch_other_categories(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        artwork_issue = _issue("ARTWORK_MISSING", path="a.m4a")
+        lyrics_issue = _issue("LYRICS_EMPTY", "WARNING", path="b.m4a")
+        registry.merge_scan_issues([artwork_issue, lyrics_issue], scanned_at="2026-01-01T00:00:00Z")
+
+        batch_review_category(registry, "ARTWORK_MISSING", STATUS_FALSE_POSITIVE)
+
+        fid_lyrics = generate_finding_id(lyrics_issue)
+        assert registry.get(fid_lyrics).status == STATUS_OPEN
+
+    def test_batch_does_not_touch_already_resolved_or_false_positive(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        already_resolved = _issue("ARTWORK_MISSING", path="a.m4a")
+        already_fp = _issue("ARTWORK_MISSING", path="b.m4a")
+        still_open = _issue("ARTWORK_MISSING", path="c.m4a")
+        registry.merge_scan_issues(
+            [already_resolved, already_fp, still_open], scanned_at="2026-01-01T00:00:00Z"
+        )
+        registry.review_finding(generate_finding_id(already_resolved), STATUS_RESOLVED)
+        registry.review_finding(generate_finding_id(already_fp), STATUS_FALSE_POSITIVE)
+
+        changed = batch_review_category(registry, "ARTWORK_MISSING", STATUS_FALSE_POSITIVE)
+
+        assert len(changed) == 1
+        assert registry.get(generate_finding_id(already_resolved)).status == STATUS_RESOLVED
+        assert registry.get(generate_finding_id(already_fp)).status == STATUS_FALSE_POSITIVE
+
+    def test_batch_large_category_hundreds_of_findings(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        issues = [_issue("META_ISRC_MISSING", "INFO", path=f"f{i}.m4a") for i in range(400)]
+        registry.merge_scan_issues(issues, scanned_at="2026-01-01T00:00:00Z")
+
+        changed = batch_review_category(registry, "META_ISRC_MISSING", STATUS_FALSE_POSITIVE)
+        assert len(changed) == 400
+        assert group_open_findings_by_category(registry) == []
+
+    def test_batch_single_save_call_is_enough_for_persistence(self, tmp_path):
+        """Abschnitt 10: EINE Persistenzoperation fuer die gesamte
+        Kategorie statt einer pro Finding."""
+        path = tmp_path / "findings.json"
+        registry = FindingsRegistry(path)
+        issues = [_issue("ARTWORK_MISSING", path=f"f{i}.m4a") for i in range(10)]
+        registry.merge_scan_issues(issues, scanned_at="2026-01-01T00:00:00Z")
+
+        batch_review_category(registry, "ARTWORK_MISSING", STATUS_FALSE_POSITIVE)
+        registry.save()
+
+        reloaded = FindingsRegistry(path)
+        for issue in issues:
+            assert reloaded.get(generate_finding_id(issue)).status == STATUS_FALSE_POSITIVE

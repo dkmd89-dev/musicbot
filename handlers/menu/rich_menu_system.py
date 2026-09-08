@@ -227,6 +227,12 @@ class RichMenuSystem:
         # MusicBot Doctor ("🩺 Doctor", Phase 3 P1.3): von RichMenuHandler
         # injiziert - siehe set_doctor_handler().
         self.doctor_handler = None
+        # Library Health Review ("🔎 Library Health Review"): von
+        # RichMenuHandler injiziert - siehe set_review_handler().
+        self.review_handler = None
+        # Repair MusicBot ("🛠️ Repair MusicBot"): von RichMenuHandler
+        # injiziert - siehe set_repair_handler().
+        self.repair_handler = None
 
         # Konfiguration
         self.session_timeout = getattr(config, "SESSION_TIMEOUT", 300)
@@ -318,6 +324,16 @@ class RichMenuSystem:
         """Setzt den LibraryDoctorHandler (MusicBot-Doctor-Feature, Phase 3 P1.3)."""
         self.doctor_handler = handler
         self.logger.info("✅ Doctor-Handler verknüpft")
+
+    def set_review_handler(self, handler) -> None:
+        """Setzt den LibraryHealthReviewHandler ("Library Health Review")."""
+        self.review_handler = handler
+        self.logger.info("✅ Review-Handler verknüpft")
+
+    def set_repair_handler(self, handler) -> None:
+        """Setzt den RepairMusicBotHandler ("Repair MusicBot")."""
+        self.repair_handler = handler
+        self.logger.info("✅ Repair-Handler verknüpft")
 
     # ====== MENÜ-STRUKTUR ======
 
@@ -785,6 +801,38 @@ class RichMenuSystem:
             )
         )
         # ====== ENDE MUSICBOT DOCTOR ======
+
+        # ====== NEU: LIBRARY HEALTH REVIEW ======
+        admin_group_library.add_child(
+            MenuItem(
+                id="admin_library_health_review",
+                title="Library Health Review",
+                emoji="🔎",
+                access_level=AccessLevel.ADMIN,
+                callback_data="review:start",
+                handler=self._handle_review_start,
+                is_action=True,
+                description="Offene Health-Findings nach Kategorie prüfen "
+                            "(Resolve/False Positive)",
+            )
+        )
+        # ====== ENDE LIBRARY HEALTH REVIEW ======
+
+        # ====== NEU: REPAIR MUSICBOT ======
+        admin_group_library.add_child(
+            MenuItem(
+                id="admin_repair_musicbot",
+                title="Repair MusicBot",
+                emoji="🛠️",
+                access_level=AccessLevel.ADMIN,
+                callback_data="repair:start",
+                handler=self._handle_repair_start,
+                is_action=True,
+                description="Reparaturplan/-vorschläge, SAFE_AUTOMATIC-Ausführung, "
+                            "Historie & Statistik",
+            )
+        )
+        # ====== ENDE REPAIR MUSICBOT ======
 
         # Admin-Menü-Reorg: Gruppen-Container an Administration haengen -
         # Reihenfolge hier = Anzeige-Reihenfolge im Menü (siehe
@@ -1353,6 +1401,156 @@ class RichMenuSystem:
 
     # ====== ENDE MUSICBOT DOCTOR ======
 
+    # ====== LIBRARY HEALTH REVIEW ======
+
+    async def _handle_review_start(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Einstiegspunkt aus dem Menü-System - Wrapper analog zu
+        _handle_doctor_scan()."""
+        if self.review_handler:
+            await self.review_handler.handle_start(update, context)
+        else:
+            await self._show_handler_not_available(update, "Review-Handler")
+
+    async def _handle_review_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        callback_data: str,
+    ) -> None:
+        """
+        Dispatcher für alle review:* Callbacks.
+
+        Routing (siehe handlers/library_health_review_handler.py):
+          review:start                    → Übersicht (Severity-Verteilung)
+          review:severity:<TIER>          → Kategorien dieser Severity-Stufe
+          review:category:<CODE>          → Kategorie-Aktionen
+          review:edit:<CODE>              → Einzelreview starten
+          review:resolve:<finding_id>     → Resolve im Einzelreview
+          review:fp:<finding_id>          → False Positive im Einzelreview
+          review:skip:<finding_id>        → Skip im Einzelreview
+          review:quit:<finding_id>        → Review beenden
+          review:batchconfirm:<CODE>      → Bestätigung vor Batch-False-Positive
+          review:batchyes:<CODE>          → Batch-False-Positive ausführen
+
+        Eigener Admin-Check hier (Defense-in-Depth, analog zu doctor:/
+        maint:/reprocess: - callback_data ist frei sendbar, siehe SEC-003).
+        """
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        is_admin = user_id == getattr(self.config, "OWNER_USER_ID", None) or \
+            user_id in getattr(self.config, "ADMIN_USER_IDS", [])
+        if not is_admin:
+            self.logger.warning(
+                f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte "
+                f"Review-Callback: {callback_data}"
+            )
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+
+        if not self.review_handler:
+            await query.answer("⚠️ Review-Handler nicht verfügbar", show_alert=True)
+            return
+
+        if callback_data == "review:start":
+            await self.review_handler.handle_start(update, context)
+            return
+
+        parts = callback_data.split(":", 2)
+        if len(parts) < 3:
+            await query.answer("⚠️ Unbekannter Review-Callback")
+            return
+        action, payload = parts[1], parts[2]
+
+        if action == "severity":
+            await self.review_handler.handle_severity(update, context, payload)
+        elif action == "category":
+            await self.review_handler.handle_category(update, context, payload)
+        elif action == "edit":
+            await self.review_handler.handle_edit_start(update, context, payload)
+        elif action == "batchconfirm":
+            await self.review_handler.handle_batch_confirm_prompt(update, context, payload)
+        elif action == "batchyes":
+            await self.review_handler.handle_batch_confirmed(update, context, payload)
+        elif action in ("resolve", "fp", "skip", "quit"):
+            await self.review_handler.handle_single_action(update, context, action, payload)
+        else:
+            await query.answer("⚠️ Unbekannter Review-Callback")
+
+    # ====== ENDE LIBRARY HEALTH REVIEW ======
+
+    # ====== REPAIR MUSICBOT ======
+
+    async def _handle_repair_start(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Einstiegspunkt aus dem Menü-System - Wrapper analog zu
+        _handle_doctor_scan()/_handle_review_start()."""
+        if self.repair_handler:
+            await self.repair_handler.handle_start(update, context)
+        else:
+            await self._show_handler_not_available(update, "Repair-Handler")
+
+    async def _handle_repair_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        callback_data: str,
+    ) -> None:
+        """
+        Dispatcher für alle repair:* Callbacks.
+
+        Routing (siehe handlers/repair_musicbot_handler.py):
+          repair:start      → Startseite
+          repair:analyze    → Reparaturen analysieren / Offene Reparaturen
+          repair:proposals  → Reparaturvorschläge (SAFE_AUTOMATIC)
+          repair:preview    → Read-only Vorschau
+          repair:confirm    → explizite Bestätigung vor Ausführung
+          repair:execute    → tatsächliche Ausführung (Berechtigung erneut geprüft)
+          repair:history    → Reparaturhistorie
+          repair:stats      → Repair-Statistik
+
+        Eigener Admin-Check hier (Defense-in-Depth, analog zu doctor:/
+        review:/maint:/reprocess: - callback_data ist frei sendbar, siehe
+        SEC-003).
+        """
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        is_admin = user_id == getattr(self.config, "OWNER_USER_ID", None) or \
+            user_id in getattr(self.config, "ADMIN_USER_IDS", [])
+        if not is_admin:
+            self.logger.warning(
+                f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte "
+                f"Repair-Callback: {callback_data}"
+            )
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+
+        if not self.repair_handler:
+            await query.answer("⚠️ Repair-Handler nicht verfügbar", show_alert=True)
+            return
+
+        routing = {
+            "repair:start": self.repair_handler.handle_start,
+            "repair:analyze": self.repair_handler.handle_analyze,
+            "repair:proposals": self.repair_handler.handle_proposals,
+            "repair:preview": self.repair_handler.handle_preview,
+            "repair:confirm": self.repair_handler.handle_confirm_prompt,
+            "repair:execute": self.repair_handler.handle_execute,
+            "repair:history": self.repair_handler.handle_history,
+            "repair:stats": self.repair_handler.handle_statistics,
+        }
+        handler_fn = routing.get(callback_data)
+        if handler_fn is None:
+            await query.answer("⚠️ Unbekannter Repair-Callback")
+            return
+        await handler_fn(update, context)
+
+    # ====== ENDE REPAIR MUSICBOT ======
+
     async def _show_handler_not_available(self, update: Update, handler_name: str):
         """Zeigt Fehlermeldung wenn Handler nicht verfügbar"""
         query = update.callback_query
@@ -1728,6 +1926,16 @@ class RichMenuSystem:
             # ── NEU: MusicBot Doctor (Phase 3, P1.3) ──────────────────
             if callback_data.startswith("doctor:"):
                 await self._handle_doctor_callback(update, context, callback_data)
+                return
+
+            # ── NEU: Library Health Review ────────────────────────────
+            if callback_data.startswith("review:"):
+                await self._handle_review_callback(update, context, callback_data)
+                return
+
+            # ── NEU: Repair MusicBot ───────────────────────────────────
+            if callback_data.startswith("repair:"):
+                await self._handle_repair_callback(update, context, callback_data)
                 return
 
             # ── Standard Menü-Callback (menu:...) ────────────────────

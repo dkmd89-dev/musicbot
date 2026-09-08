@@ -93,18 +93,49 @@ unterschiedlicher Identität auftreten kann.
 | `FALSE_POSITIVE` | korrekt erkannt, aber für diese Library kein zu behebendes Problem |
 | `RESOLVED_BY_SCAN` | technischer Zwischenzustand: der Scanner erkennt das Finding nicht mehr, aber niemand hat das je bestätigt — zählt NICHT als "offen", ist aber auch kein bestätigtes `RESOLVED` |
 
-**Review-CLI:**
+**Review-CLI (kategoriebasiert):**
 
 ```bash
 python scripts/library_health_review.py
 python scripts/library_health_review.py --registry /pfad/findings.json --reviewer "robin"
 ```
 
-Zeigt alle offenen Findings nacheinander, pro Finding:
+Offene Findings werden zunächst nach `issue_code` **gruppiert** (eine
+Kategorie = ein Issue-Code), absteigend nach Severity-Stufe
+(`CRITICAL > ERROR > WARNING > SUSPECTED/CONFIDENCE > INFO` — SUSPECTED
+ist keine echte Severity, sondern eine reine Anzeige-Stufe für Findings
+mit gesetztem `confidence`-Feld, z. B. `DUPLICATE_SUSPECTED`). Pro
+Kategorie stehen drei Aktionen bereit:
+
+```text
+[Y] Kategorie einzeln bearbeiten   -> Einzelreview jedes offenen Findings
+[F] Kategorie -> FALSE_POSITIVE    -> Batch-Aktion, verlangt Bestätigung
+[S] Kategorie überspringen         -> keine Änderung, nächste Kategorie
+```
+
+Innerhalb der Einzelbearbeitung (`Y`) wie zuvor
 `[R]esolve` / `[F]alse Positive` / `[S]kip` / `[Q]uit` (mit optionaler
-Notiz bei R/F). Jede Entscheidung wird sofort atomar gespeichert — ein
-Abbruch mitten in der Sitzung verliert keine bereits getroffenen
-Bewertungen.
+Notiz bei R/F, `Q` beendet den GESAMTEN Review sofort). Jede Entscheidung
+wird sofort atomar gespeichert — ein Abbruch mitten in der Sitzung
+verliert keine bereits getroffenen Bewertungen. Die Batch-Aktion (`F`)
+ändert ausschließlich die AKTUELL offenen Findings der gewählten
+Kategorie über eine einzige Persistenzoperation
+(`services.library_health.findings.batch_review_category()` +
+ein `save()`), nicht eine Einzeloperation pro Finding — auch bei
+mehreren hundert Findings in einer Kategorie.
+
+**Telegram (`🔎 Library Health Review`, `Hauptmenü → Administration →
+Bibliothek & Navidrome`):** dieselbe Kategorie-Gruppierung und dieselbe
+`FindingsRegistry`-API wie die CLI
+(`handlers/library_health_review_handler.py`) — Severity-Auswahl →
+Kategorie-Auswahl → Einzelreview/Batch-False-Positive, mit expliziter
+Bestätigung vor jeder Batch-Aktion. Vor jeder tatsächlichen
+Statusänderung wird das Finding erneut geladen und validiert (noch
+vorhanden, noch `OPEN`) — ein veralteter Button (z. B. nach einem
+parallelen Review durch einen zweiten Admin) löst keine Änderung aus,
+sondern eine "🔄 Aktualisieren"-Aufforderung. Öffnen des Menüs ändert
+niemals einen Status. Es wird ausschließlich die Findings-Registry
+geschrieben — nie eine Datei der Music Library.
 
 **Persistenz:** `<BASE_DIR>/cache/data/library_health_findings.json`
 (Default, override via `--findings-registry` bzw. `--registry`), außerhalb
@@ -135,9 +166,11 @@ Score und Findings-Status beantworten bewusst unterschiedliche Fragen ("wie
 gesund ist die Library tatsächlich?" vs. "welche Befunde wurden bereits
 geprüft?") und dürfen nicht vermischt werden.
 
-**Zukunftssicherheit:** ein künftiger Telegram-Review-Handler würde
-dieselbe `FindingsRegistry`-API aufrufen wie `scripts/library_health_review.py`
-— niemals die JSON-Datei direkt manipulieren.
+**Zukunftssicherheit:** sowohl die CLI als auch der Telegram-Handler
+rufen dieselbe zentrale `FindingsRegistry`-/Review-Service-API auf
+(`group_open_findings_by_category()`, `batch_review_category()`,
+`review_finding()`) — keiner der beiden Aufrufer manipuliert die JSON-
+Datei direkt.
 
 ---
 
@@ -431,6 +464,9 @@ fließen nicht ein. Grundlage für die Library-Statistics-Ansicht (Phase 3, P1.1
 | `tests/test_library_health_scoring.py` | feste Gewichts-Tabelle, INFO ohne Wirkung, Clamp, Determinismus, Album-/Artist-/Library-Aggregation, Deckelung, Status-Bänder |
 | `tests/test_library_health_issues.py` | Register-Vollständigkeit/-Stabilität |
 | `tests/test_library_health_report.py` | Schema, Sortierung, Determinismus, Statistik-Buckets, `render_summary_markdown()` (Grundstruktur, ERROR/WARNING/INFO-Darstellung, Confidence-Trennung, Top-5-Genres, leerer Report, Determinismus, keine Hardcodes, Findings-Statusabschnitte + Rückwärtskompatibilität ohne Findings) |
-| `tests/test_library_health_findings.py` | Finding-ID (stabil/reihenfolgeunabhängig/Unicode), Lifecycle (OPEN/RESOLVED/FALSE_POSITIVE/RESOLVED_BY_SCAN), Merge über mehrere Scans (Reopen, FALSE_POSITIVE-Stabilität, Identitätswechsel), Persistenz/Korruptions-Recovery, Score-Unabhängigkeit, Determinismus |
-| `tests/test_library_health_review_cli.py` | Interaktive Review-CLI (Resolve/False-Positive/Skip/Quit, Notizen, Default-Reviewer, korrupte Registry) |
+| `tests/test_library_health_findings.py` | Finding-ID (stabil/reihenfolgeunabhängig/Unicode), Lifecycle (OPEN/RESOLVED/FALSE_POSITIVE/RESOLVED_BY_SCAN), Merge über mehrere Scans (Reopen, FALSE_POSITIVE-Stabilität, Identitätswechsel), Persistenz/Korruptions-Recovery, Score-Unabhängigkeit, Determinismus, Kategorie-Gruppierung (Severity-Reihenfolge inkl. SUSPECTED) + Batch-Review |
+| `tests/test_library_health_review_cli.py` | Kategoriebasierte Review-CLI (Y/F/S je Kategorie, Einzelreview R/F/S/Q, Batch-Bestätigung positiv/negativ, große Kategorien, Mixed-Status, Summary, Unicode, Wiederholung) |
+| `tests/test_library_health_review_handler.py` | Telegram-Review-Handler (Severity-/Kategorie-Auswahl, Einzelreview, Batch-False-Positive, Stale-Callback-Absicherung, korrupte Registry) |
+| `tests/test_rich_menu_review.py` | Menüpunkt-Registrierung + Admin-Gating/Dispatch-Ebene für `review:*` |
 | `tests/test_library_health_readonly_safety.py` | **SHA256/mtime/size/Pfade vorher==nachher**, CLI-Subprozess (inkl. Findings-Registry), Import-Graph, abgelehnte Mutations-Flags, echter Review-Vorgang ohne Library-Mutation |
+| `tests/test_review_repair_readonly_safety.py` | Vollständige Review-Session + Repair-Preview gegen eine isolierte Test-Library, SHA-256-Vergleich vorher==nachher (Struktur/Metadaten/Audio/Cover in einem Wert) |
