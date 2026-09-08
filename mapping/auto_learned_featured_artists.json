@@ -1,11 +1,37 @@
 {
   "featured_artists": {
+    "Beslik": {
+      "canonical": "Beslik",
+      "last_observed_track": "Boloboys - fr fr",
+      "observations": 1,
+      "primary_artists": [
+        "Boloboys"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
     "Beslik Meister": {
       "canonical": "Beslik Meister",
       "last_observed_track": "makko - ADLIBS",
       "observations": 1,
       "primary_artists": [
         "makko"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Luvre47": {
+      "canonical": "Luvre47",
+      "last_observed_track": "LEA - Pass auf mich auf",
+      "observations": 1,
+      "primary_artists": [
+        "LEA"
       ],
       "role": "featured_artist",
       "sources": [

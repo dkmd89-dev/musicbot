@@ -1,5 +1,22 @@
 {
   "ARTIST_GENRE_MAP": {
+    "Boloboys": {
+      "confidence": "OBSERVED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Hip Hop": 1
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Hip Hop",
+          "secondary": []
+        }
+      ],
+      "observations": 1,
+      "primary": "Hip Hop",
+      "secondary": []
+    },
     "Christina Stürmer": {
       "confidence": "OBSERVED",
       "description": "Auto-learned via Last.fm (rule)",
@@ -20,6 +37,48 @@
       "secondary": [
         "Rock"
       ]
+    },
+    "Unheilig": {
+      "confidence": "OBSERVED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Metal": 1
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Metal",
+          "secondary": [
+            "Rock"
+          ]
+        }
+      ],
+      "observations": 1,
+      "primary": "Metal",
+      "secondary": [
+        "Rock"
+      ]
+    },
+    "Xavier Naidoo": {
+      "confidence": "LEARNED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "R&B": 2
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "R&B",
+          "secondary": []
+        },
+        {
+          "primary": "R&B",
+          "secondary": []
+        }
+      ],
+      "observations": 2,
+      "primary": "R&B",
+      "secondary": []
     }
   }
 }

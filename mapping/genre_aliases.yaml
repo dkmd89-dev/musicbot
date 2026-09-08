@@ -78,6 +78,11 @@ GENRE_ALIASES:
   "dream pop": "Pop"
   "hyperpop": "Pop"
   
+  # New Wave
+  "new wave": "Pop"
+  "new-wave": "Pop"
+  "neue welle": "Pop"
+  
   # Rock
   "rock": "Rock"
   "deutschrock": "Rock"
