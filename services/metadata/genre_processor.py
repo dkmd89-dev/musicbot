@@ -49,9 +49,13 @@ class GenreProcessor:
         self.logger = logger or get_module_logger("GenreProcessor")
 
         # Hierarchie-basierte Prioritäten (aus genre_hierarchy.yaml berechnet)
-        self.GENRE_PRIORITY: Dict[str, int] = self._calculate_genre_priority_from_hierarchy()
+        self.GENRE_PRIORITY: Dict[str, int] = (
+            self._calculate_genre_priority_from_hierarchy()
+        )
         self.IGNORE_SECONDARY: Set[str] = self._load_ignore_secondary_from_yaml()
-        self.GENRE_NORMALIZATION: Dict[str, str] = self._load_genre_normalization_from_yaml()
+        self.GENRE_NORMALIZATION: Dict[str, str] = (
+            self._load_genre_normalization_from_yaml()
+        )
 
         self.logger.info(
             f"✅ GenreProcessor initialisiert: "
@@ -233,12 +237,22 @@ class GenreProcessor:
 
         # Tags filtern
         valid_tags = []
+        # Finding H (Download-Pipeline-Testlauf 2026-09-09): "pop"/"rock"/
+        # "indie" stehen bewusst in IGNORE_SECONDARY (zu unspezifisch als
+        # Sekundaergenre), sind aber echte Genres. Als Notnagel merken -
+        # falls sonst nur Nicht-Genre-Tags uebrig bleiben (Last.fm-User-Tags
+        # wie "laut mitsing"/"eingedeutscht"/"radio"), ist das generische
+        # Genre besser als ein erfundenes.
+        generic_genre_tags: List[str] = []
         for tag in tags:
             if not tag:
                 continue
             tag_lower = tag.lower().strip()
             if tag_lower in self.IGNORE_SECONDARY:
-                self.logger.debug(f"🏷️ [PRIO] Ignoriere Tag: {tag_lower!r}")
+                if self._is_recognized_genre(tag_lower):
+                    generic_genre_tags.append(tag_lower)
+                else:
+                    self.logger.debug(f"🏷️ [PRIO] Ignoriere Tag: {tag_lower!r}")
                 continue
             if artist_name and tag_lower == artist_name.lower():
                 self.logger.debug(
@@ -248,6 +262,8 @@ class GenreProcessor:
             valid_tags.append(normalize_for_matching(tag_lower))
 
         if not valid_tags:
+            if generic_genre_tags:
+                return self._fallback_from_generic_genres(generic_genre_tags)
             self.logger.debug("🏷️ [PRIO] Keine validen Tags nach Filterung")
             return "Unknown", []
 
@@ -267,18 +283,31 @@ class GenreProcessor:
                     f"→ Priorität {priority}"
                 )
             else:
-                self.logger.debug(
-                    f"🏷️ [PRIO] Tag '{tag}' nicht in Hierarchie gefunden"
-                )
+                self.logger.debug(f"🏷️ [PRIO] Tag '{tag}' nicht in Hierarchie gefunden")
 
         if not tag_priorities:
-            primary = self.normalize_genre_name(valid_tags[0])
-            secondary = [
-                self.normalize_genre_name(t)
-                for t in valid_tags[1:6]
-                if self.normalize_genre_name(t) != primary
-            ]
-            return primary, secondary
+            # Finding H: keiner der spezifischen Tags ist in der Genre-
+            # Hierarchie. Frueher wurde blind valid_tags[0] als primary
+            # genommen - bei Last.fm-User-Tags ("laut mitsing"/"radio")
+            # ergab das ein Nicht-Genre im ©gen-Tag. Nur Tags nehmen, die
+            # als echtes Genre erkennbar sind (Hierarchie ODER Alias-Treffer).
+            recognized = list(
+                dict.fromkeys(
+                    self.normalize_genre_name(t)
+                    for t in valid_tags
+                    if self._is_recognized_genre(t)
+                )
+            )
+            if recognized:
+                primary = recognized[0]
+                secondary = [g for g in recognized[1:6] if g != primary]
+                return primary, secondary
+            if generic_genre_tags:
+                return self._fallback_from_generic_genres(generic_genre_tags)
+            self.logger.debug(
+                "🏷️ [PRIO] Keine erkennbaren Genres in den Tags → Unknown"
+            )
+            return "Unknown", []
 
         # Absteigend sortieren (höhere Priorität = spezifischer = gewinnt)
         tag_priorities.sort(key=lambda x: (-x[1], x[0]))
@@ -316,6 +345,37 @@ class GenreProcessor:
 
         self.logger.debug(
             f"🏷️ [PRIO] Ergebnis: primary={primary!r}, secondary={secondary!r}"
+        )
+        return primary, secondary
+
+    def _is_recognized_genre(self, tag: str) -> bool:
+        """True, wenn `tag` als echtes Genre erkennbar ist - entweder direkt
+        in der Genre-Hierarchie (GENRE_PRIORITY) oder von
+        normalize_genre_name() ueber einen Alias auf einen anderen String
+        abgebildet ("deutschpop" -> "Deutscher Pop"). Ein blosser
+        Title-Case-Fallback ("laut mitsing" -> "Laut Mitsing") zaehlt NICHT
+        (Finding H)."""
+        tl = (tag or "").lower().strip()
+        if not tl:
+            return False
+        normalized = self.normalize_genre_name(tl)
+        return normalized.lower() in self.GENRE_PRIORITY or normalized.lower() != tl
+
+    def _fallback_from_generic_genres(
+        self, generic_genre_tags: List[str]
+    ) -> Tuple[str, List[str]]:
+        """Finding H: kein spezifischer Genre-Tag verwertbar, aber Last.fm
+        lieferte generische Genres ("pop"/"rock"/"indie"), die oben ueber
+        IGNORE_SECONDARY herausgefiltert wurden. Besser ein korrektes
+        breites Genre als ein erfundenes ("Laut Mitsing")."""
+        ordered = list(
+            dict.fromkeys(self.normalize_genre_name(t) for t in generic_genre_tags)
+        )
+        primary = ordered[0]
+        secondary = [g for g in ordered[1:4] if g != primary]
+        self.logger.debug(
+            f"🏷️ [PRIO] Fallback auf generisches Genre: {primary!r} (aus "
+            f"{generic_genre_tags!r})"
         )
         return primary, secondary
 
@@ -382,6 +442,7 @@ class GenreProcessor:
             if self._contains_alias_as_whole_word(genre_lower, key)
         ]
         if candidate_keys:
+
             def _specificity(key: str):
                 value = self.GENRE_NORMALIZATION[key]
                 depth = self.GENRE_PRIORITY.get(value.lower(), -1)
@@ -392,10 +453,22 @@ class GenreProcessor:
 
         # Fallback: Kapitalisierung
         words = genre.split()
-        small_words = {"and", "of", "the", "a", "an", "in", "to", "for", "with", "on", "at", "by"}
+        small_words = {
+            "and",
+            "of",
+            "the",
+            "a",
+            "an",
+            "in",
+            "to",
+            "for",
+            "with",
+            "on",
+            "at",
+            "by",
+        }
         capitalized = " ".join(
-            w if w.lower() in small_words else w.capitalize()
-            for w in words
+            w if w.lower() in small_words else w.capitalize() for w in words
         )
         return capitalized
 
@@ -473,14 +546,18 @@ class GenreProcessor:
                     children_map[parent] = []
                 children_map[parent].append(child)
 
-            def calculate_depth(genre: str, current_depth: int = 0, visited: set = None):
+            def calculate_depth(
+                genre: str, current_depth: int = 0, visited: set = None
+            ):
                 if visited is None:
                     visited = set()
                 if genre in visited:
                     return
                 visited.add(genre)
 
-                if genre not in genre_depth or current_depth < genre_depth.get(genre, 999):
+                if genre not in genre_depth or current_depth < genre_depth.get(
+                    genre, 999
+                ):
                     genre_depth[genre] = current_depth
 
                 if genre in children_map:
@@ -490,7 +567,14 @@ class GenreProcessor:
             # Top-Level: Alle mit parent == None
             top_level = [genre for genre, parent in hierarchy.items() if parent is None]
             if not top_level:
-                top_level = ["Deutschrap", "Hip Hop", "Pop", "Rock", "Electronic", "R&B"]
+                top_level = [
+                    "Deutschrap",
+                    "Hip Hop",
+                    "Pop",
+                    "Rock",
+                    "Electronic",
+                    "R&B",
+                ]
 
             self.logger.info(
                 f"🏷️ {len(top_level)} Top-Level-Genres in Hierarchie gefunden"
@@ -612,16 +696,14 @@ class GenreProcessor:
                     or mb_data.get("musicbrainz_recording_id")
                 ),
                 "release_id": (
-                    mb_data.get("release_id")
-                    or mb_data.get("musicbrainz_release_id")
+                    mb_data.get("release_id") or mb_data.get("musicbrainz_release_id")
                 ),
                 "release_group_id": (
                     mb_data.get("release_group_id")
                     or mb_data.get("musicbrainz_release_group_id")
                 ),
                 "artist_id": (
-                    mb_data.get("artist_id")
-                    or mb_data.get("musicbrainz_artist_id")
+                    mb_data.get("artist_id") or mb_data.get("musicbrainz_artist_id")
                 ),
                 "isrc": mb_data.get("isrc"),
             }
@@ -675,9 +757,7 @@ class GenreProcessor:
         if lfm_client is None:
             return None
         try:
-            self.logger.debug(
-                f"🎵 Last.fm Suche für: {artist_name} - {search_title}"
-            )
+            self.logger.debug(f"🎵 Last.fm Suche für: {artist_name} - {search_title}")
             lfm_data = await lfm_client.fetch_metadata(
                 search_title, artist_name, include_genre=True
             )
@@ -690,9 +770,7 @@ class GenreProcessor:
 
             if raw_lfm_genre and "," in raw_lfm_genre and not tags:
                 tags = [
-                    t.strip().lower()
-                    for t in raw_lfm_genre.split(",")
-                    if t.strip()
+                    t.strip().lower() for t in raw_lfm_genre.split(",") if t.strip()
                 ]
 
             if not tags:
@@ -775,15 +853,47 @@ class GenreProcessor:
 
     def _get_default_ignore_secondary(self) -> Set[str]:
         return {
-            "electronic", "united states", "seen live", "female vocalists",
-            "male vocalists", "indie", "alternative", "pop", "rock",
-            "2020s", "2010s", "2000s", "american", "british", "german",
-            "english", "instrumental", "acoustic", "cover", "live", "remix",
-            "explicit", "clean", "edit", "radio edit", "extended mix",
-            "club mix", "dub mix", "instrumental version", "karaoke",
-            "soundtrack", "background music", "atmospheric", "chill",
-            "relaxing", "calm", "upbeat", "energetic", "catchy",
-            "melodic", "rhythmic",
+            "electronic",
+            "united states",
+            "seen live",
+            "female vocalists",
+            "male vocalists",
+            "indie",
+            "alternative",
+            "pop",
+            "rock",
+            "2020s",
+            "2010s",
+            "2000s",
+            "american",
+            "british",
+            "german",
+            "english",
+            "instrumental",
+            "acoustic",
+            "cover",
+            "live",
+            "remix",
+            "explicit",
+            "clean",
+            "edit",
+            "radio edit",
+            "extended mix",
+            "club mix",
+            "dub mix",
+            "instrumental version",
+            "karaoke",
+            "soundtrack",
+            "background music",
+            "atmospheric",
+            "chill",
+            "relaxing",
+            "calm",
+            "upbeat",
+            "energetic",
+            "catchy",
+            "melodic",
+            "rhythmic",
         }
 
     def _load_genre_normalization_from_yaml(self) -> Dict[str, str]:
