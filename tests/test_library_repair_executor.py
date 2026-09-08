@@ -618,7 +618,7 @@ def test_l2_reprocess_exception_rolls_back_without_crash(lib):
     md5_before = _audio_md5(p)
     j = RepairJournal(lib / "j.jsonl")
 
-    def _boom(path, artist_root, dry_run):
+    def _boom(path, artist_root, dry_run, requested_issue=None):
         raise ConnectionError("Genius nicht erreichbar")
 
     outcomes = apply_level2(
@@ -674,7 +674,7 @@ def test_l2_batch_yields_independent_mixed_outcomes(lib):
     _m4a(p_missing)
     j = RepairJournal(lib / "j.jsonl")
 
-    def rp(path, artist_root, dry_run):
+    def rp(path, artist_root, dry_run, requested_issue=None):
         if "found" in path.name:
             return {
                 "file": path.name,
@@ -1005,7 +1005,7 @@ def test_l2_one_reprocess_call_per_file(lib):
     j = RepairJournal(lib / "j.jsonl")
     calls = []
 
-    def rp(path, artist_root, dry_run):
+    def rp(path, artist_root, dry_run, requested_issue=None):
         calls.append(path)
         assert artist_root == lib / "makko"
         return {

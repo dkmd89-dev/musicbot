@@ -217,3 +217,74 @@ def test_lyrics_missing_succeeds_when_real_pipeline_finds_lyrics(lib):
     assert outcomes[0].issue_code == "LYRICS_MISSING"
     assert outcomes[0].status == "SUCCESS"
     assert MP4(p)["©lyr"] == ["Echte Lyrics"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# PR #177 (Commit 8248441), bisher nur indirekt getestet:
+# process_file(requested_issue=...) — ein issue-spezifischer L2-Repair
+# (LYRICS_MISSING / GENRE_INVALID) darf bestehende Artist-Tags NICHT
+# nebenbei ueber den ArtistNormalizer umschreiben. apply_level2() reicht
+# den Issue-Code durch, sobald genau EIN Code die Datei betrifft
+# (executor.py: `requested_issue=codes[0] if len(codes) == 1 else None`).
+# ─────────────────────────────────────────────────────────────────────────
+@requires_ffmpeg
+def test_lyrics_repair_does_not_renormalize_existing_artist_tag(lib):
+    """requested_issue='LYRICS_MISSING' -> normalize() wird uebersprungen,
+    der bestehende ©ART-Wert bleibt unveraendert, obwohl der (hier
+    absichtlich grossschreibende) Normalizer ihn sonst aendern wuerde."""
+    p = lib / "makko" / "Singles" / "2020 - Titel.m4a"
+    _make_m4a(
+        p,
+        artist="makko",
+        title="Titel",
+        album="Titel",
+        album_artist="makko",
+        year="2020",
+    )
+    j = RepairJournal(lib / "j.jsonl")
+    processor = _make_stub_processor(lyrics="Echte Lyrics")
+    processor.artist_normalizer.normalize.side_effect = lambda a: a.upper()
+
+    outcomes = apply_level2(
+        [_cand("makko/Singles/2020 - Titel.m4a", "LYRICS_MISSING")],
+        lib,
+        j,
+        _reprocess_fn(processor),
+        dry_run=False,
+    )
+
+    assert outcomes[0].status == "SUCCESS"
+    assert MP4(p)["©lyr"] == ["Echte Lyrics"]
+    # ©ART unveraendert — kein Normalisierungs-Nebeneffekt.
+    assert MP4(p)["©ART"] == ["makko"]
+    processor.artist_normalizer.normalize.assert_not_called()
+
+
+@requires_ffmpeg
+def test_broad_reprocess_still_normalizes_artist_tag(lib):
+    """Gegenprobe: ein nicht issue-spezifischer L2-Code (META_TITLE_NOT_CLEAN)
+    reicht requested_issue durch, der aber NICHT in der Ausnahmemenge liegt
+    — der ArtistNormalizer laeuft wie bisher."""
+    p = lib / "makko" / "Singles" / "2020 - Titel.m4a"
+    _make_m4a(
+        p,
+        artist="makko",
+        title='"Titel"',
+        album="Titel",
+        album_artist="makko",
+        year="2020",
+    )
+    j = RepairJournal(lib / "j.jsonl")
+    processor = _make_stub_processor(lyrics="Echte Lyrics")
+    processor.artist_normalizer.normalize.side_effect = lambda a: a.upper()
+
+    apply_level2(
+        [_cand("makko/Singles/2020 - Titel.m4a", "META_TITLE_NOT_CLEAN")],
+        lib,
+        j,
+        _reprocess_fn(processor),
+        dry_run=False,
+    )
+
+    processor.artist_normalizer.normalize.assert_called()
+    assert MP4(p)["©ART"] == ["MAKKO"]

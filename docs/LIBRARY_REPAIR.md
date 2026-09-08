@@ -265,6 +265,18 @@ geändert hat — nicht schon, wenn irgendein anderes Feld der Datei sich
 änderte (`process_file()` läuft immer als volle Pipeline, ändert daher oft
 mehrere Felder gleichzeitig).
 
+**Issue-spezifischer Hint (PR #177/#178):** betrifft genau **ein**
+Issue-Code eine Datei, reicht `apply_level2()` diesen als
+`process_file(requested_issue=…)` durch — in **beiden** Zweigen (DRY-RUN
+*und* EXECUTE; die Execute-Durchreichung fehlte in PR #177 und wurde in
+PR #178 nachgezogen, sonst wich die Vorschau vom `--apply`-Ergebnis ab).
+Für `LYRICS_MISSING` / `GENRE_INVALID` unterdrückt `process_file()` dann
+den Artist-`normalize()`-Nebeneffekt (bestehende, bereits kanonische
+©ART-Tags bleiben unangetastet) und das „ReplayGain/Loudness fehlt"-
+UNRESOLVED (für einen reinen Lyrics-/Genre-Fix nicht relevant). Bei
+mehreren Codes pro Datei bleibt `requested_issue=None` → volles
+Pipeline-Verhalten.
+
 **Option 2a (Nutzer-Entscheidung 2026-09-04):** Der Kern von
 `scripts/reprocess_artist_metadata.py` (`process_file()` + `snapshot()` +
 alle Helfer, ~925 Zeilen) liegt jetzt in
