@@ -126,14 +126,17 @@ class TestPrioritizeGenres:
         for genre in [primary] + secondary:
             assert genre_processor.normalize_genre_name(genre.lower()) != "Unknown"
 
-    def test_only_unknown_tags_falls_back_to_first_tag_as_primary(
-        self, genre_processor
-    ):
+    def test_only_unrecognized_tags_return_unknown_not_first_tag(self, genre_processor):
         """
-        ARCH-022 — deckt genre_processor.py:274-280 (Fallback-Zweig,
-        wenn KEIN einziger Tag in GENRE_PRIORITY bekannt ist) direkt
-        ab - bisher nur zufaellig ueber test_secondary_max_five
-        mitgetestet, nie als eigener, benannter Fall.
+        Finding H (Download-Pipeline-Testlauf 2026-09-09): der Fallback-Zweig
+        (kein Tag in GENRE_PRIORITY) nahm frueher BLIND valid_tags[0] als
+        primary — bei Last.fm-User-Tags ("laut mitsing", "eingedeutscht",
+        "radio") ergab das ein Nicht-Genre im ©gen-Tag. Jetzt: sind KEINE
+        der Tags als echtes Genre erkennbar (weder in der Hierarchie noch
+        ueber einen Alias), wird "Unknown" zurueckgegeben.
+
+        (Vorher: test_only_unknown_tags_falls_back_to_first_tag_as_primary,
+        ARCH-022 — fror das jetzt als fehlerhaft erkannte Verhalten ein.)
         """
         tags = [
             "zzz-unmapped-tag-one",
@@ -142,8 +145,38 @@ class TestPrioritizeGenres:
         ]
         primary, secondary = genre_processor.prioritize_genres(tags)
 
-        assert primary == "Zzz-unmapped-tag-one"
-        assert secondary == ["Zzz-unmapped-tag-two", "Zzz-unmapped-tag-three"]
+        assert primary == "Unknown"
+        assert secondary == []
+
+    def test_lastfm_user_tags_do_not_become_genre(self, genre_processor):
+        """Finding H, exakt der reale Bourani-Fall: Last.fm liefert
+        Stimmungs-/Sammlungs-Tags. Ohne einen echten Genre-Tag darf daraus
+        kein '©gen: Laut Mitsing' werden."""
+        primary, secondary = genre_processor.prioritize_genres(
+            ["laut mitsing", "eingedeutscht", "radio"]
+        )
+        assert primary == "Unknown"
+        assert secondary == []
+
+    def test_generic_genre_is_used_when_only_user_tags_remain(self, genre_processor):
+        """Finding H: 'pop'/'indie' stehen bewusst in IGNORE_SECONDARY (zu
+        unspezifisch als Sekundaergenre), sind aber echte Genres. Bleiben
+        sonst nur Nicht-Genre-Tags uebrig, ist das generische Genre besser
+        als 'Unknown' - und allemal besser als 'Laut Mitsing'."""
+        primary, secondary = genre_processor.prioritize_genres(
+            ["pop", "german", "indie", "laut mitsing", "eingedeutscht", "radio"]
+        )
+        assert primary == "Pop"
+        assert "Laut Mitsing" not in [primary, *secondary]
+
+    def test_recognized_alias_tag_still_wins_over_user_tags(self, genre_processor):
+        """Ein Tag, den normalize_genre_name() ueber einen Alias aufloest
+        ('deutschpop' -> 'Deutscher Pop'), zaehlt als echtes Genre - auch
+        wenn er nicht direkt in GENRE_PRIORITY steht."""
+        primary, _ = genre_processor.prioritize_genres(
+            ["laut mitsing", "deutschpop", "radio"]
+        )
+        assert primary == "Deutscher Pop"
 
     def test_secondary_has_no_duplicates(self, genre_processor):
         _, secondary = genre_processor.prioritize_genres(
@@ -249,9 +282,7 @@ class TestDetermineGenreWithFallbacksExternalSteps:
                 "recording_id": "abc-123",
             }
         )
-        result = asyncio.run(
-            self._run(genre_processor, mb_client=mb_client)
-        )
+        result = asyncio.run(self._run(genre_processor, mb_client=mb_client))
 
         assert result is not None
         assert result.primary == "Deutschrap"
@@ -260,17 +291,13 @@ class TestDetermineGenreWithFallbacksExternalSteps:
 
     def test_musicbrainz_ids_only_sentinel_when_no_genre(self, genre_processor):
         mb_client = FakeMusicBrainzClient({"recording_id": "abc-123"})
-        result = asyncio.run(
-            self._run(genre_processor, mb_client=mb_client)
-        )
+        result = asyncio.run(self._run(genre_processor, mb_client=mb_client))
 
         assert result is not None
         assert result.source == "musicbrainz_ids_only"
         assert result.mb_ids["recording_id"] == "abc-123"
 
-    def test_lastfm_fallback_used_when_musicbrainz_has_no_client(
-        self, genre_processor
-    ):
+    def test_lastfm_fallback_used_when_musicbrainz_has_no_client(self, genre_processor):
         lfm_client = FakeLastFmClient({"tags": ["hip hop", "deutschrap"]})
         result = asyncio.run(
             self._run(genre_processor, mb_client=None, lfm_client=lfm_client)
@@ -280,9 +307,7 @@ class TestDetermineGenreWithFallbacksExternalSteps:
         assert result.primary == "Deutschrap"
         assert result.source == "lastfm_prioritized"
 
-    def test_feature_artist_inference_when_no_external_clients(
-        self, genre_processor
-    ):
+    def test_feature_artist_inference_when_no_external_clients(self, genre_processor):
         result = asyncio.run(
             self._run(
                 genre_processor,
@@ -331,9 +356,7 @@ class TestLastFmGenreFieldIsIgnored:
             lfm_client=lfm_client,
         )
 
-    def test_genre_field_value_does_not_affect_effective_result(
-        self, genre_processor
-    ):
+    def test_genre_field_value_does_not_affect_effective_result(self, genre_processor):
         tags = ["hip hop", "deutschrap"]
 
         with_bogus_genre = FakeLastFmClient(
@@ -342,9 +365,7 @@ class TestLastFmGenreFieldIsIgnored:
         without_genre_field = FakeLastFmClient({"tags": tags})
 
         result_with = asyncio.run(self._run(genre_processor, with_bogus_genre))
-        result_without = asyncio.run(
-            self._run(genre_processor, without_genre_field)
-        )
+        result_without = asyncio.run(self._run(genre_processor, without_genre_field))
 
         assert result_with is not None
         assert result_without is not None
@@ -495,14 +516,18 @@ class TestMusicBrainzGenrePrioritizationCharacterization:
             "recording_id": "abc-123",
         }
         result = asyncio.run(
-            self._run_musicbrainz_path(genre_processor, mb_response, artist=known_artist)
+            self._run_musicbrainz_path(
+                genre_processor, mb_response, artist=known_artist
+            )
         )
 
         assert result.primary == expected_primary
         assert result.source == "artist_exact_manual"
 
 
-class TestDetermineGenreWithFallbacksLocalChannelPath(TestDetermineGenreWithFallbacksExternalSteps):
+class TestDetermineGenreWithFallbacksLocalChannelPath(
+    TestDetermineGenreWithFallbacksExternalSteps
+):
     """
     P0-C (docs/audits/, Genre-Charakterisierung): Schritt 2 der
     Gesamt-Pipeline (lokales Genre ueber GenreMapper.determine_genre() -
