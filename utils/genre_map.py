@@ -268,7 +268,9 @@ class GenreMapper(SingletonMixin):
             trusted_raw_map = {
                 key: value
                 for key, value in raw_auto_map.items()
-                if not (isinstance(value, dict) and value.get("confidence") == "OBSERVED")
+                if not (
+                    isinstance(value, dict) and value.get("confidence") == "OBSERVED"
+                )
             }
             skipped_unverified = len(raw_auto_map) - len(trusted_raw_map)
 
@@ -316,9 +318,7 @@ class GenreMapper(SingletonMixin):
         # erreichbar (ARCH-013 Phase 3). "Hip-Hop" kollabiert beim Lowercasen
         # mit dem bereits vorhandenen Key "hip-hop" (identischer Zielwert
         # "Hip Hop", verifiziert - kein Datenverlust).
-        self.genre_aliases = {
-            str(k).lower(): v for k, v in raw_genre_aliases.items()
-        }
+        self.genre_aliases = {str(k).lower(): v for k, v in raw_genre_aliases.items()}
         logger.info(f"   🔄 {len(self.genre_aliases)} Aliases geladen")
 
         # 6. Regex-Regeln
@@ -706,9 +706,15 @@ class GenreMapper(SingletonMixin):
                     matched_key=channel_name,
                 )
 
-            # Fuzzy-Match
+            # Fuzzy-Match — Schwelle 90 (Finding B, 2026-09-09): WRatio 75
+            # war zu locker. `partial_ratio` auf kurzen Queries ("akon" ->
+            # "kontor.tv" = 77) und das gemeinsame Wort "music" ("Digster
+            # Pop Music" -> "vibe music" = 85) erzeugten falsche
+            # channel_fuzzy-Genres, die die restliche Fallback-Kette
+            # kurzschliessen. Echte Namensvarianten (Kontor.TV/kontortv/
+            # "<name> official") liegen >= 90.
             if fuzzy_match := self._find_best_match(
-                channel_clean, self.channel_map, 75, "channel"
+                channel_clean, self.channel_map, 90, "channel"
             ):
                 logger.info(
                     f"⭐ Spezialkanal (fuzzy): {channel_name} → {fuzzy_match.primary}"
@@ -776,9 +782,10 @@ class GenreMapper(SingletonMixin):
                     matched_key=channel_name,
                 )
 
-            # Fuzzy-Match
+            # Fuzzy-Match — Schwelle 90, siehe Begründung beim
+            # Spezialkanal-Fuzzy-Match oben (Finding B, 2026-09-09).
             if fuzzy_match := self._find_best_match(
-                channel_clean, self.channel_map, 75, "channel"
+                channel_clean, self.channel_map, 90, "channel"
             ):
                 logger.info(
                     f"📺 Channel-Match (fuzzy): {channel_name} → {fuzzy_match.primary}"
