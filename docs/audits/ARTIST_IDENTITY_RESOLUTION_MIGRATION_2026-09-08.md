@@ -152,9 +152,17 @@ unzulässig.
   (Pipeline-Zeitpunkt, Match-Zuverlässigkeit, Verhalten bei abweichendem
   MusicBrainz-Artist; MB-01-Kontext + `WEICHT AB`-Characterization im
   `MusicBrainzClient`).
-- **F-08 (deprecated Code):** DEFERRED/P3 — `add_auto_learned_alias`,
-  `_save_auto_learned_entry`, `_is_non_artist_channel` samt Tests bleiben;
-  Entfernung = separater Cleanup nach erneuter Referenzprüfung.
+- **F-08 (deprecated Code):** war DEFERRED/P3 — `add_auto_learned_alias`,
+  `_save_auto_learned_entry`, `_is_non_artist_channel` samt Tests blieben
+  zunächst bestehen. **CLOSED (2026-09-08, separater Cleanup-Schritt
+  noch am selben Tag):** erneute Referenzprüfung bestätigte weiterhin
+  0 Produktions-Aufrufer, alle drei Funktionen entfernt (inkl.
+  `__main__`-Demo-Aufruf in `artist_map.py` und dadurch ungenutztem
+  `import re` in `auto_learn.py`); ausschließlich dadurch obsolete Tests
+  (`TestSaveAutoLearnedEntryAtomicWrite`, `test_is_non_artist_channel`)
+  entfernt, übrige AutoLearn-/Identity-Tests unverändert. Gezielte Tests
+  (49) + thematische Suite `-k "artist or auto_learn"` (532) grün. Details
+  siehe `docs/FINDINGS_INDEX.md` (F-08).
 - **Review der bestehenden auto-generierten `artist_overrides.json`-Einträge**
   (manuell vs. Library-Altlast) — separate inhaltliche Entscheidung, kein
   Code-Thema.
@@ -182,4 +190,4 @@ AutoLearn/Genre/Happy-Path/Cache/Translator/FilenameFixer/Playlist).
 | F-05 Library → `artist_overrides.json` | P2 OPEN | **CLOSED** (Phase C/E) |
 | F-06 leere Aliases-Datei + toter Alias-Code | P3 OPEN | **CLOSED** (Phase E) |
 | F-07 MBID nicht als Identitätssignal | P3 OPEN | **DEFERRED** (Phase F, Entscheidung B) |
-| F-08 deprecated Artist-Code | — | **DEFERRED/P3** (neuer offener Cleanup-Punkt) |
+| F-08 deprecated Artist-Code | — | **CLOSED** (Cleanup noch am 2026-09-08 nachgezogen, s. Abschnitt 6) |

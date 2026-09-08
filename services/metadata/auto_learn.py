@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import asyncio
-import re
 import time
 import yaml
 from collections import Counter
@@ -1212,45 +1211,10 @@ class AutoLearnManager:
 
         return False
 
-    def _is_non_artist_channel(self, channel: str) -> bool:
-        """
-        DEPRECATED (ARCH Artist-Identity Phase E): kein Produktions-Aufrufer
-        (repo-verifiziert). Der Schutz gegen Kanalname-als-Artist läuft über
-        ArtistProcessor.raw_name_for_learning() (Ähnlichkeitsprüfung gegen den
-        bestimmten Artist) + das known-Flag des ArtistIdentityResolvers.
-        Bleibt vorerst mitsamt Test (test_auto_learn.py::
-        test_is_non_artist_channel) bestehen; vollständige Entfernung ist eine
-        eigene Entscheidung.
-
-        Prüft ob ein Channel-Name auf einen Nicht-Artist-Channel hindeutet
-        (Label, Compilation, Playlist, etc.).
-        """
-        if not channel:
-            return False
-        channel_lower = channel.strip().lower()
-        non_artist_patterns = [
-            r" - topic$",
-            r"topic$",
-            r"channel$",
-            r"vevo$",
-            r"music$",
-            r"official$",
-            r"records$",
-            r"entertainment$",
-            r"^various artists",
-            r"compilation",
-            r"playlist",
-            r"mix$",
-            r"hd$",
-            r"lyrics$",
-            r"beatz$",
-            r"type beat",
-        ]
-        for pattern in non_artist_patterns:
-            if re.search(pattern, channel_lower, re.IGNORECASE):
-                self.logger.debug(f"🧠 [AUTO-LEARN] Non-Artist-Channel: '{channel}'")
-                return True
-        return False
+    # F-08 (Migration Phase E, 2026-09-08): _is_non_artist_channel() entfernt
+    # (0 Aufrufer repoweit). Der Schutz gegen Kanalname-als-Artist läuft über
+    # ArtistProcessor.raw_name_for_learning() (Ähnlichkeitsprüfung gegen den
+    # bestimmten Artist) + das known-Flag des ArtistIdentityResolvers.
 
     def create_genre_info_from_result(
         self, genres_result, raw_tags=None
