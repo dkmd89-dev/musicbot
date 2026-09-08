@@ -572,6 +572,30 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 if _remaining:
                     feat_artists = _remaining
 
+            # Feature-Artists, die der YouTube-Parser aus einem
+            # "feat."/"ft."/"featuring" IM TITEL extrahiert hat, stehen in
+            # youtube_parsed["featuring"] - eine eigene Liste, die weder
+            # determine_best_artist() (sieht nur den Artist-Teil) noch der
+            # all_artists-Rest-Zweig oben abdeckt. Ohne diese Zusammenfuehrung
+            # ging z. B. "Akon - Smack That ft. Eminem" -> Eminem komplett aus
+            # den Tags verloren (Download-Pipeline-Testlauf 2026-09-09,
+            # Finding A). Dedupe case-insensitiv gegen die bereits ermittelten
+            # feat_artists und gegen final_artist.
+            if not _is_podcast_channel and youtube_parsed.get("featuring"):
+                _title_feats = list(
+                    dict.fromkeys(
+                        fa_clean.strip()
+                        for fa in youtube_parsed["featuring"]
+                        for fa_clean, _ in [split_main_and_featuring(fa)]
+                        if fa_clean
+                        and fa_clean.strip().lower() != final_artist.strip().lower()
+                    )
+                )
+                _seen = {f.strip().lower() for f in feat_artists}
+                feat_artists = feat_artists + [
+                    f for f in _title_feats if f.strip().lower() not in _seen
+                ]
+
             # ── 7. Titel-Bereinigung ─────────────────────────────────────────
             self.logger.info(f"🎵 7️⃣ Bestimme finalen Titel...")
             if _is_podcast_channel:
