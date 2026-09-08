@@ -391,6 +391,109 @@ def test_external_metadata_no_match_skips(lib):
 
 
 @requires_ffmpeg
+def test_external_metadata_lookup_exception_is_failed_not_crash(lib):
+    """Production-Audit 2026-09-08, Test-Gap: externe Service-Fehler
+    (Timeout/Verbindungsfehler) im Repair-Kontext waren ungetestet. Eine
+    Exception aus mb_lookup() (z.B. MusicBrainz-Timeout) darf die
+    Ausfuehrung nicht crashen, sondern muss als FAILED landen - ohne
+    Datei-/Backup-Aenderung."""
+    p = lib / "A" / "Singles" / "2020 - Clean Title.m4a"
+    _m4a(p); a = MP4(p); a["©ART"] = ["A"]; a["©nam"] = ["Clean Title"]; a.save()
+    j = RepairJournal(lib / "j.jsonl")
+    c = RepairCandidate(issue_code="META_ISRC_MISSING",
+                        action=RepairAction.EXTERNAL_ID_LOOKUP, level=RepairLevel.EXTERNAL_METADATA,
+                        severity="INFO", scope="file", path="A/Singles/2020 - Clean Title.m4a")
+
+    def _boom(artist, title):
+        raise TimeoutError("MusicBrainz nicht erreichbar")
+
+    outcomes = apply_external_metadata([c], lib, j, mb_lookup=_boom, dry_run=False)
+    assert outcomes[0].status == "FAILED"
+    assert "MusicBrainz-Suche" in outcomes[0].reason
+    assert not (lib.parent / ".library_repair_backups").exists()
+
+
+@requires_ffmpeg
+def test_l2_reprocess_exception_rolls_back_without_crash(lib):
+    """Production-Audit 2026-09-08, Test-Gap: eine unbehandelte Exception
+    aus der injizierten reprocess()-Callable (z.B. ein durchschlagender
+    Genius-/MusicBrainz-Verbindungsfehler innerhalb der echten Pipeline)
+    muss FAILED + vollstaendigen Rollback ergeben statt den Repair-Lauf
+    abzubrechen."""
+    p = lib / "makko" / "Singles" / "2020 - x.m4a"
+    _m4a(p); a = MP4(p); a["©nam"] = ["orig"]; a.save()
+    md5_before = _audio_md5(p)
+    j = RepairJournal(lib / "j.jsonl")
+
+    def _boom(path, artist_root, dry_run):
+        raise ConnectionError("Genius nicht erreichbar")
+
+    outcomes = apply_level2([_l2_cand("makko/Singles/2020 - x.m4a", "LYRICS_MISSING")],
+                            lib, j, _boom, dry_run=False)
+    assert outcomes[0].status == "FAILED"
+    assert "ConnectionError" in outcomes[0].reason
+    assert MP4(p)["©nam"] == ["orig"]
+    assert _audio_md5(p) == md5_before
+    assert not list((lib.parent / ".library_repair_backups").rglob("*.bak"))
+
+
+@requires_ffmpeg
+def test_l1_batch_yields_independent_mixed_outcomes(lib):
+    """Production-Audit 2026-09-08, Test-Gap: mehrere Kandidaten in EINEM
+    apply_level1()-Aufruf mit gemischten Ergebnissen (SUCCESS + SKIPPED)
+    waren ungetestet - jeder Executor-Test uebergab bisher nur einen
+    einzelnen Kandidaten."""
+    p_dirty = lib / "A" / "Singles" / "2020 - dirty.m4a"
+    p_clean = lib / "A" / "Singles" / "2020 - clean.m4a"
+    _m4a(p_dirty, genre="Pop / Rock")
+    _m4a(p_clean, genre="Pop; Rock")   # bereits korrekt -> nichts zu tun
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1(
+        [_cand("A/Singles/2020 - dirty.m4a", "GENRE_DELIMITER_INCONSISTENT"),
+         _cand("A/Singles/2020 - clean.m4a", "GENRE_DELIMITER_INCONSISTENT")],
+        lib, j, dry_run=False,
+    )
+    by_file = {o.file: o.status for o in outcomes}
+    assert by_file == {
+        "A/Singles/2020 - dirty.m4a": "SUCCESS",
+        "A/Singles/2020 - clean.m4a": "SKIPPED",
+    }
+
+
+@requires_ffmpeg
+def test_l2_batch_yields_independent_mixed_outcomes(lib):
+    """Analog zu test_l1_batch_yields_independent_mixed_outcomes fuer
+    apply_level2(): zwei Dateien in einem Aufruf, eine mit gefundenen
+    Lyrics (SUCCESS), eine ohne (SKIPPED) - ein Fehlschlag bei einer Datei
+    darf das Ergebnis der anderen nicht beeinflussen."""
+    p_found = lib / "makko" / "Singles" / "2020 - found.m4a"
+    p_missing = lib / "makko" / "Singles" / "2020 - missing.m4a"
+    _m4a(p_found); _m4a(p_missing)
+    j = RepairJournal(lib / "j.jsonl")
+
+    def rp(path, artist_root, dry_run):
+        if "found" in path.name:
+            return {"file": path.name, "status": "changed", "error": None,
+                    "changes": {"lyrics_present": {"before": False, "after": True}},
+                    "unresolved": [], "audio_essence_changed": False,
+                    "audio_stream_changed": False}
+        return {"file": path.name, "status": "unchanged", "error": None,
+                "changes": {}, "unresolved": [], "audio_essence_changed": False,
+                "audio_stream_changed": False}
+
+    outcomes = apply_level2(
+        [_l2_cand("makko/Singles/2020 - found.m4a", "LYRICS_MISSING"),
+         _l2_cand("makko/Singles/2020 - missing.m4a", "LYRICS_MISSING")],
+        lib, j, rp, dry_run=False,
+    )
+    by_file = {o.file: o.status for o in outcomes}
+    assert by_file == {
+        "makko/Singles/2020 - found.m4a": "SUCCESS",
+        "makko/Singles/2020 - missing.m4a": "SKIPPED",
+    }
+
+
+@requires_ffmpeg
 def test_non_l1_codes_are_ignored(lib):
     p = lib / "A" / "Singles" / "2020 - x.m4a"
     _m4a(p, genre="Pop / Rock")

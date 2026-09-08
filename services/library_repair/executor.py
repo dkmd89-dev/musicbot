@@ -385,6 +385,16 @@ def apply_level1_rename(
             journal.record(_je(c, oc, dry_run))
             continue
 
+        # Production-Audit 2026-09-08: dieselbe Invariante ("kein
+        # Verzeichniswechsel") existiert unabhaengig auch in
+        # services/metadata/track_reprocessor.py::process_file()
+        # (dortiger Vergleich: rename_target.parent != path.parent).
+        # Bewusst NICHT zu einer gemeinsamen Funktion extrahiert - beide
+        # Pruefungen sind bereits so trivial (ein Vergleich), dass eine
+        # Extraktion mehr Kopplung zwischen den unabhaengigen Paketen
+        # services/library_repair/ und services/metadata/ einfuehren wuerde,
+        # als sie an Divergenzrisiko beseitigt. Bei einer inhaltlichen
+        # Aenderung dieser Regel: die jeweils andere Stelle mitpruefen.
         if not new_name or "/" in new_name or "\\" in new_name:
             oc.reason = "kein sicherer neuer Name / nicht eindeutig"
             outcomes.append(oc)

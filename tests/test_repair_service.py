@@ -279,6 +279,78 @@ class TestExecuteSafeAutomaticRepair:
         registry = FindingsRegistry(rs._findings_registry_path())
         assert registry.get(fid).status == STATUS_OPEN
 
+    def test_regression_detected_when_untouched_code_increases(self, tmp_path):
+        """Production-Audit 2026-09-08 (Verification-Asymmetrie CLI vs.
+        Telegram): ein Issue-Code, den diese Reparatur NICHT beruehrt hat,
+        aber der laut Registry-Zustand nach dem Scan mehr offene Findings
+        zeigt als im Pre-Scan-Report, muss als regressed_issue_codes
+        sichtbar werden - analog zur bereits vorhandenen CLI-
+        Regressionserkennung, hier zusaetzlich Finding-genau moeglich."""
+        issue = _issue("META_ALBUM_ARTIST_MISSING", scope="file", path="a.m4a", artist="X")
+        other_issue = _issue("ARTWORK_NON_SQUARE", scope="file", path="b.m4a", artist="Y")
+        registry = FindingsRegistry(rs._findings_registry_path())
+        registry.merge_scan_issues([issue, other_issue], scanned_at="2026-01-01T00:00:00Z")
+        registry.save()
+        fid = generate_finding_id(issue)
+
+        # Pre-Scan-Report (Plan-Baseline) kennt NUR das Ziel-Issue - der
+        # zweite Fund existiert zu diesem Zeitpunkt in der Registry bereits
+        # (im echten Betrieb durch einen frueheren Scan gemergt), taucht
+        # aber bewusst nicht in diesem Snapshot auf.
+        pre_scan = DoctorScanResult(exit_code=0, report=_report([issue]))
+        repair_result = DoctorRepairResult(exit_code=0)
+        annotated_issue = {**issue, "finding_id": fid, "finding_status": STATUS_OPEN}
+        post_scan = DoctorScanResult(exit_code=0, report=_report([annotated_issue]))
+
+        journal_path = rs._journal_path()
+        journal_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def _fake_apply(*_a, **_kw):
+            with open(journal_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "timestamp": "t", "file": "a.m4a",
+                    "issue_code": "META_ALBUM_ARTIST_MISSING", "action": "MULTI_ARTIST_SPLIT",
+                    "status": "SKIPPED", "reason": "nichts zu tun",
+                }) + "\n")
+            return repair_result
+
+        with patch.object(rs, "run_health_scan", new=AsyncMock(side_effect=[pre_scan, post_scan])), \
+             patch.object(rs, "run_safe_automatic_repair", new=AsyncMock(side_effect=_fake_apply)):
+            result = run(rs.execute_safe_automatic_repair(triggered_by="telegram:1"))
+
+        assert result.regressed_issue_codes == ["ARTWORK_NON_SQUARE"]
+
+    def test_no_regression_when_only_touched_codes_change(self, tmp_path):
+        """Gegenprobe: aendert sich nur der beruehrte Issue-Code, wird
+        keine Regression gemeldet (touched-codes werden ausgeschlossen,
+        sonst wuerde jede erfolgreiche Reparatur sich selbst faelschlich
+        als Nebenwirkung melden)."""
+        issue = _issue("META_ALBUM_ARTIST_MISSING", scope="file", path="a.m4a", artist="X")
+        fid = self._seed_registry_and_scan(tmp_path, issue)
+
+        pre_scan = DoctorScanResult(exit_code=0, report=_report([issue]))
+        repair_result = DoctorRepairResult(exit_code=0)
+        post_scan = DoctorScanResult(exit_code=0, report=_report([]))
+
+        journal_path = rs._journal_path()
+        journal_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def _fake_apply(*_a, **_kw):
+            with open(journal_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "timestamp": "t", "file": "a.m4a",
+                    "issue_code": "META_ALBUM_ARTIST_MISSING", "action": "MULTI_ARTIST_SPLIT",
+                    "status": "SUCCESS",
+                }) + "\n")
+            return repair_result
+
+        with patch.object(rs, "run_health_scan", new=AsyncMock(side_effect=[pre_scan, post_scan])), \
+             patch.object(rs, "run_safe_automatic_repair", new=AsyncMock(side_effect=_fake_apply)):
+            result = run(rs.execute_safe_automatic_repair(triggered_by="telegram:1"))
+
+        assert result.regressed_issue_codes == []
+        assert result.resolved_count == 1
+
     def test_health_scan_failure_before_execution_returns_failed(self, tmp_path):
         scan_result = DoctorScanResult(exit_code=3, report=None, error_message="boom")
         with patch.object(rs, "run_health_scan", new=AsyncMock(return_value=scan_result)):

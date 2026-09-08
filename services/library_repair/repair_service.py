@@ -370,6 +370,13 @@ class RepairRunResult:
     affected_files: list = field(default_factory=list)
     entries: list = field(default_factory=list)
     error_message: Optional[str] = None
+    # Production-Audit 2026-09-08 (Verification-Asymmetrie CLI vs. Telegram):
+    # Issue-Codes, die NICHT von dieser Reparatur berührt wurden, aber nach
+    # dem Verification-Scan MEHR offene Findings zeigen als davor - Signal
+    # für eine unerwartete Nebenwirkung, analog zu scripts/library_repair.py
+    # ::_verification_scan()'s regressed-Erkennung, hier zusätzlich pro
+    # Issue-Code statt nur aggregiert über die ganze Library.
+    regressed_issue_codes: list = field(default_factory=list)
 
 
 async def execute_safe_automatic_repair(
@@ -412,6 +419,10 @@ async def execute_safe_automatic_repair(
             generate_finding_id(_candidate_to_issue_dict(c)) for c in safe_candidates
         }
         issue_codes = sorted({c.issue_code for c in safe_candidates})
+        # Baseline für die Regressionserkennung unten - kostenlos aus dem
+        # bereits vorhandenen Plan abgeleitet (build_repair_plan() hat den
+        # Scan bereits durchgeführt, kein zusätzlicher I/O nötig).
+        pre_open_counts = Counter(c.issue_code for c in plan.candidates)
 
         journal_path = _journal_path()
         offset_before = journal_path.stat().st_size if journal_path.exists() else 0
@@ -425,6 +436,7 @@ async def execute_safe_automatic_repair(
 
         # ── Verification (Abschnitt 38/40): erneuter Health-Scan ─────────
         resolved_ids: list[str] = []
+        regressed_issue_codes: list[str] = []
         try:
             post_scan = await run_health_scan(timeout=scan_timeout)
         except Exception as e:  # noqa: BLE001
@@ -443,6 +455,17 @@ async def execute_safe_automatic_repair(
                 registry = None
 
             if registry is not None:
+                # Regressionserkennung (Production-Audit 2026-09-08): ein
+                # Issue-Code, den diese Reparatur nicht berührt hat, aber
+                # der nach dem Scan MEHR offene Findings zeigt als vorher,
+                # ist ein Hinweis auf eine unerwartete Nebenwirkung. Vor dem
+                # Resolve-Loop unten berechnet, damit das eigene Setzen von
+                # RESOLVED die Zählung nicht verfälscht.
+                post_open_counts = Counter(f.code for f in registry.get_open_findings())
+                regressed_issue_codes.extend(sorted(
+                    code for code, n in post_open_counts.items()
+                    if code not in issue_codes and n > pre_open_counts.get(code, 0)
+                ))
                 for fid in pre_finding_ids:
                     finding = registry.get(fid)
                     if finding is None or finding.status != STATUS_OPEN:
@@ -482,6 +505,7 @@ async def execute_safe_automatic_repair(
             "issue_codes": issue_codes,
             "status_counts": status_counts,
             "affected_files": affected_files,
+            "regressed_issue_codes": regressed_issue_codes,
         })
 
         return RepairRunResult(
@@ -490,6 +514,7 @@ async def execute_safe_automatic_repair(
             candidates_total=len(pre_finding_ids), resolved_count=len(resolved_ids),
             status_counts=status_counts, affected_files=affected_files, entries=entries,
             error_message=repair_result.error_message,
+            regressed_issue_codes=regressed_issue_codes,
         )
     finally:
         release_repair_lock()

@@ -399,6 +399,13 @@ class RepairMusicBotHandler:
             f"Geänderte Dateien: {len(result.affected_files)}",
             f"Verifiziert behoben: {result.resolved_count}",
         ]
+        regressed = getattr(result, "regressed_issue_codes", None) or []
+        if regressed:
+            lines.append("")
+            lines.append(
+                "⚠️ Mögliche Nebenwirkung: neue offene Findings bei nicht "
+                f"betroffenen Issue-Codes: {html.escape(', '.join(regressed))}"
+            )
         return "\n".join(lines)
 
     # ── Repair History (Abschnitt 44/45) ─────────────────────────────────
