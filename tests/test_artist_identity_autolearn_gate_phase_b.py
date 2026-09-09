@@ -45,7 +45,8 @@ def _cfg(tmp_path, mapping_dir):
 @pytest.fixture
 def processor(tmp_path, mapping_dir_copy, monkeypatch):
     monkeypatch.setattr(
-        AudioEnhancer, "normalize_loudness", staticmethod(lambda *a, **kw: True)
+        "services.metadata.loudness_replaygain.apply_replaygain_tags",
+        lambda *a, **kw: (True, -5.0),
     )
     proc = EnhancedMetadataProcessor(_cfg(tmp_path, mapping_dir_copy))
 

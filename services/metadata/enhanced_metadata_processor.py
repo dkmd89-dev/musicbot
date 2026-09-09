@@ -898,11 +898,23 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 album_info["album_artist"] = final_artist
                 self.logger.info(f"🎯 [SINGLE-MODE] Album: {album_info['album']!r}")
 
-            # --- 15b. Loudness-Normalisierung ---
-            self.logger.info("🔊 1️⃣5️⃣b Normalisiere Lautheit (FFmpeg loudnorm)...")
+            # --- 15b. Loudness → verlustfreier ReplayGain-Tag ───────────────
+            # PERF (Download-Pipeline-Optimierung 2026-09-09): früher lief hier
+            # AudioEnhancer.normalize_loudness() — zwei volle FFmpeg-Passes mit
+            # `-c:a aac -b:a 192k`, d.h. ein kompletter verlustbehafteter
+            # AAC→AAC-Re-Encode pro Track (~22 s im Log, ~49 % der gesamten
+            # Pipeline, gemessen). Ersetzt durch einen EBU-R128-Scan, der einen
+            # ReplayGain-2.0-Tag schreibt (rsgain ~1,5 s, Fallback FFmpeg-
+            # Analyse ~9 s) — der Audio-Stream bleibt byte-identisch, Navidrome
+            # bringt die Datei über den RG-Tag auf Ziel-Lautheit. Deckt sich
+            # mit der Nutzer-Entscheidung 2026-09-04 für den Repair-Pfad
+            # (docs/LIBRARY_REPAIR.md §6b) und schließt das offene DEFER-
+            # Finding "Schritt 15b LUFS-Ziel verifizieren".
+            self.logger.info("🔊 1️⃣5️⃣b ReplayGain-Analyse + Tag (kein Re-Encode)...")
             _loudness_ok = False
             try:
                 from utils.audio_enhancer import AudioEnhancer
+                from services.metadata.loudness_replaygain import apply_replaygain_tags
 
                 _content_type = (
                     "podcast"
@@ -911,35 +923,32 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 )
                 _target_lufs = AudioEnhancer.get_target_lufs(_content_type)
 
-                # FINDING-7 (docs/archive/MusicBot_PHASE5_PERFORMANCE_BASELINE.md):
-                # normalize_loudness() fuehrt zwei volle FFmpeg-subprocess.run()-
-                # Passes aus (~14,5s fuer einen 3-Minuten-Track, gemessen). Ohne
-                # asyncio.to_thread() blockierte dieser Aufruf den gesamten
-                # Event-Loop fuer alle Telegram-Nutzer, bei jedem Track -
-                # strukturell identisch zum bereits behobenen FINDING-1
-                # (COVER-BLOCKING, siehe get_cover_art()-Aufruf oben).
-                _loudness_ok = await asyncio.to_thread(
-                    AudioEnhancer.normalize_loudness,
+                # asyncio.to_thread: der Scan ist ein blockierender
+                # subprocess.run() (FINDING-1/7-Muster) - nie direkt im
+                # Event-Loop-Thread.
+                _loudness_ok, _rg_gain = await asyncio.to_thread(
+                    apply_replaygain_tags,
                     str(original_path),
-                    target_lufs=_target_lufs,
+                    _target_lufs,
                 )
                 if _loudness_ok:
                     self.logger.info(
-                        f"🔊✅ Loudness normalisiert auf {_target_lufs} LUFS "
-                        f"({_content_type}): {original_path.name}"
+                        f"🔊✅ ReplayGain gesetzt (Ziel {_target_lufs} LUFS, "
+                        f"{_content_type}, gain={_rg_gain if _rg_gain is not None else '?'} dB): "
+                        f"{original_path.name}"
                     )
                 else:
                     self.logger.warning(
-                        f"🔊⚠️ Loudness-Normalisierung fehlgeschlagen (nicht kritisch): "
+                        f"🔊⚠️ ReplayGain-Analyse fehlgeschlagen (nicht kritisch): "
                         f"{original_path.name}"
                     )
             except ImportError:
                 self.logger.debug(
-                    "🔊 AudioEnhancer nicht verfügbar – Loudness-Normalisierung übersprungen"
+                    "🔊 ReplayGain-Modul nicht verfügbar – Schritt übersprungen"
                 )
             except Exception as _loud_err:
                 self.logger.warning(
-                    f"🔊⚠️ Loudness-Normalisierung Fehler (nicht kritisch): {_loud_err}"
+                    f"🔊⚠️ ReplayGain-Analyse Fehler (nicht kritisch): {_loud_err}"
                 )
 
             # ── 16. Datei verschieben ────────────────────────────────────────
