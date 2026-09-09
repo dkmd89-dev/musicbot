@@ -81,12 +81,10 @@ Hauptmenü
 │   │   ├── Navidrome Scan
 │   │   ├── 🔎 Library Health Review (Findings nach Kategorie prüfen)
 │   │   │      Vokabular seit 2026-09-09: 🔴 Offen / 🟢 Repariert / ⚪ Akzeptiert
-│   │   │      (⚪ == Lifecycle-Status FALSE_POSITIVE). Eine dedizierte
-│   │   │      „⚪ Accepted Findings"-Ansicht + Unaccept-Button ist als Core-API
-│   │   │      (`services/library_health/findings.py`: `get_accepted_findings` /
-│   │   │      `unaccept_finding` / `get_review_summary`) vorbereitet, die
-│   │   │      Telegram-Oberfläche dafür folgt in einer späteren Phase
-│   │   │      (siehe `docs/audits/LIBRARY_CLOSURE_AUDIT_2026-09-09.md` G7).
+│   │   │      (⚪ == Lifecycle-Status FALSE_POSITIVE). Die Übersicht hat einen
+│   │   │      „⚪ Akzeptierte Findings"-Einstieg (nur wenn vorhanden) →
+│   │   │      Liste nach Code → Detail mit Grund → „↩️ Reaktivieren" (unaccept
+│   │   │      → OPEN, Stale-Revalidierung). Rein lesend bis zum Reaktivieren-Tap.
 │   │   └── 🛠️ Repair MusicBot (Plan/Preview/Ausführung/Historie/Statistik)
 │   ├── 🤖 Bot & Betrieb
 │   │   ├── Bot neu starten

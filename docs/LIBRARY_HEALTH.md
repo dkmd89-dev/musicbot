@@ -150,7 +150,7 @@ Finding manuell zu reaktivieren — der Scan-Merge lässt ein `FALSE_POSITIVE`
 bei Wiedererkennung bewusst unangetastet.
 
 **Programmatische API (`services/library_health/findings.py`, gleiche
-Quelle für CLI und künftige Telegram-Anbindung):**
+Quelle für CLI und Telegram-Handler):**
 
 | Funktion | Zweck |
 |---|---|
@@ -173,6 +173,13 @@ parallelen Review durch einen zweiten Admin) löst keine Änderung aus,
 sondern eine "🔄 Aktualisieren"-Aufforderung. Öffnen des Menüs ändert
 niemals einen Status. Es wird ausschließlich die Findings-Registry
 geschrieben — nie eine Datei der Music Library.
+
+Die Übersicht zeigt zusätzlich einen **⚪ Akzeptierte Findings**-Einstieg
+(nur wenn welche vorhanden sind) → Liste nach Issue-Code → einzelnes
+akzeptiertes Finding mit Grund + Scan-Status → **↩️ Reaktivieren**
+(`unaccept_finding()` → `OPEN`, mit derselben Stale-Revalidierung). Rein
+lesend bis zum expliziten „Reaktivieren"-Tap. „Stale" akzeptierte
+Findings (vom Scanner nicht mehr erkannt) sind mit ⚠️ markiert.
 
 **Persistenz:** `<BASE_DIR>/cache/data/library_health_findings.json`
 (Default, override via `--findings-registry` bzw. `--registry`), außerhalb

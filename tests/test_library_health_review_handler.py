@@ -417,3 +417,138 @@ class TestCorruptRegistry:
         assert registry_path.read_text(encoding="utf-8") == "{not valid json"
         text = update.callback_query.edit_message_text.call_args.args[0]
         assert "ungültig" in text
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Akzeptierte Findings + Unaccept (Library-Closure-Phase)
+# ─────────────────────────────────────────────────────────────────────────
+
+from services.library_health.findings import (  # noqa: E402
+    accept_finding,
+    get_accepted_findings,
+)
+
+
+class TestAcceptedFindings:
+    def _seed_with_accepted(self, registry_path):
+        a = _issue("ARTWORK_MISSING", scope="file", path="A/Alb/01.m4a")
+        b = _issue("LYRICS_MISSING", scope="file", path="A/Alb/02.m4a")
+        c = _issue("ALBUM_TRACK_GAP", scope="album", artist="X", album="Y")
+        registry = _seed(registry_path, [a, b, c])
+        accept_finding(registry, generate_finding_id(a), reason="kein Cover verfügbar")
+        accept_finding(registry, generate_finding_id(c), reason="kuratierte Auswahl")
+        registry.save()
+        return registry, generate_finding_id(a), generate_finding_id(b), generate_finding_id(c)
+
+    def test_overview_shows_accepted_entry_point(self, handler, registry_path, context):
+        self._seed_with_accepted(registry_path)
+        update = _mock_update(ADMIN_ID)
+        run(handler.handle_start(update, context))
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        keyboard = update.callback_query.edit_message_text.call_args.kwargs["reply_markup"]
+        assert "Akzeptiert (2)" in text
+        cbs = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+        assert "review:accepted" in cbs
+
+    def test_overview_hides_accepted_entry_point_when_none(
+        self, handler, registry_path, context
+    ):
+        _seed(registry_path, [_issue("ARTWORK_MISSING", scope="file", path="a.m4a")])
+        update = _mock_update(ADMIN_ID)
+        run(handler.handle_start(update, context))
+        keyboard = update.callback_query.edit_message_text.call_args.kwargs["reply_markup"]
+        cbs = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+        assert "review:accepted" not in cbs
+
+    def test_accepted_list_groups_by_code(self, handler, registry_path, context):
+        self._seed_with_accepted(registry_path)
+        update = _mock_update(ADMIN_ID)
+        run(handler.handle_accepted_list(update, context))
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        keyboard = update.callback_query.edit_message_text.call_args.kwargs["reply_markup"]
+        assert "2 gesamt · 2 Kategorie(n)" in text
+        cbs = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+        assert "review:acccode:ARTWORK_MISSING" in cbs
+        assert "review:acccode:ALBUM_TRACK_GAP" in cbs
+
+    def test_accepted_list_empty(self, handler, registry_path, context):
+        _seed(registry_path, [_issue("ARTWORK_MISSING", scope="file", path="a.m4a")])
+        update = _mock_update(ADMIN_ID)
+        run(handler.handle_accepted_list(update, context))
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        assert "Keine akzeptierten Befunde" in text
+
+    def test_accepted_category_lists_findings_with_show_callback(
+        self, handler, registry_path, context
+    ):
+        _, fid_a, _, _ = self._seed_with_accepted(registry_path)
+        update = _mock_update(ADMIN_ID)
+        run(handler.handle_accepted_category(update, context, "ARTWORK_MISSING"))
+        keyboard = update.callback_query.edit_message_text.call_args.kwargs["reply_markup"]
+        cbs = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+        assert f"review:accshow:{fid_a}" in cbs
+
+    def test_accepted_show_has_unaccept_button_and_reason(
+        self, handler, registry_path, context
+    ):
+        _, fid_a, _, _ = self._seed_with_accepted(registry_path)
+        update = _mock_update(ADMIN_ID)
+        run(handler.handle_accepted_show(update, context, fid_a))
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        keyboard = update.callback_query.edit_message_text.call_args.kwargs["reply_markup"]
+        assert "kein Cover verfügbar" in text
+        cbs = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+        assert f"review:unaccept:{fid_a}" in cbs
+
+    def test_show_rejects_non_accepted_finding(self, handler, registry_path, context):
+        _, _, fid_b, _ = self._seed_with_accepted(registry_path)  # b ist OPEN
+        update = _mock_update(ADMIN_ID)
+        run(handler.handle_accepted_show(update, context, fid_b))
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        assert "nicht mehr akzeptiert" in text
+
+    def test_unaccept_reactivates_and_persists(self, handler, registry_path, context):
+        _, fid_a, _, _ = self._seed_with_accepted(registry_path)
+        update = _mock_update(ADMIN_ID)
+        run(handler.handle_unaccept(update, context, fid_a))
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        assert "reaktiviert" in text
+        assert FindingsRegistry(registry_path).get(fid_a).status == STATUS_OPEN
+
+    def test_unaccept_stale_finding_is_a_noop(self, handler, registry_path, context):
+        _, _, fid_b, _ = self._seed_with_accepted(registry_path)  # b ist OPEN, nie akzeptiert
+        update = _mock_update(ADMIN_ID)
+        run(handler.handle_unaccept(update, context, fid_b))
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        assert "nicht mehr akzeptiert" in text
+        assert FindingsRegistry(registry_path).get(fid_b).status == STATUS_OPEN
+
+    def test_all_accepted_endpoints_reject_non_admin(self, handler, registry_path, context):
+        _, fid_a, _, _ = self._seed_with_accepted(registry_path)
+        for coro in (
+            handler.handle_accepted_list(_mock_update(OTHER_ID), context),
+            handler.handle_accepted_category(_mock_update(OTHER_ID), context, "ARTWORK_MISSING"),
+            handler.handle_accepted_show(_mock_update(OTHER_ID), context, fid_a),
+            handler.handle_unaccept(_mock_update(OTHER_ID), context, fid_a),
+        ):
+            u = _mock_update(OTHER_ID)
+            run(coro)
+        # der akzeptierte Befund bleibt akzeptiert
+        assert FindingsRegistry(registry_path).get(fid_a).status == STATUS_FALSE_POSITIVE
+
+    def test_stale_accepted_finding_marked_in_category_list(
+        self, handler, registry_path, context
+    ):
+        a = _issue("ARTWORK_MISSING", scope="file", path="A/Alb/01.m4a")
+        registry = _seed(registry_path, [a])
+        accept_finding(registry, generate_finding_id(a), reason="x")
+        registry.save()
+        # naechster Scan sieht das Issue nicht mehr -> present_in_latest_scan=False
+        registry.merge_scan_issues([], scanned_at="2026-02-01T00:00:00Z")
+        registry.save()
+
+        update = _mock_update(ADMIN_ID)
+        run(handler.handle_accepted_category(update, context, "ARTWORK_MISSING"))
+        keyboard = update.callback_query.edit_message_text.call_args.kwargs["reply_markup"]
+        labels = [b.text for row in keyboard.inline_keyboard for b in row]
+        assert any("⚠️" in lbl for lbl in labels)

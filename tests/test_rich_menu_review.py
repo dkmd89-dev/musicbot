@@ -132,3 +132,32 @@ class TestReviewDispatchGating:
         update.callback_query.data = "review:totally_unknown_action:x"
         run_async(menu_system.handle_callback(update, mock_context))
         update.callback_query.answer.assert_any_call("⚠️ Unbekannter Review-Callback")
+
+
+class TestAcceptedFindingsDispatch:
+    @pytest.mark.parametrize("data", [
+        "review:accepted",
+        "review:acccode:ARTWORK_MISSING",
+        "review:accshow:abcdef1234567890",
+        "review:unaccept:abcdef1234567890",
+    ])
+    def test_admin_routes_to_handler(self, menu_system, mock_context, data):
+        update = _mock_update(ADMIN_ID)
+        update.callback_query.data = data
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.edit_message_text.assert_called()
+
+    @pytest.mark.parametrize("data", [
+        "review:accepted",
+        "review:acccode:ARTWORK_MISSING",
+        "review:accshow:abcdef1234567890",
+        "review:unaccept:abcdef1234567890",
+    ])
+    def test_non_admin_rejected(self, menu_system, mock_context, data):
+        update = _mock_update(OTHER_ID)
+        update.callback_query.data = data
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_called_with(
+            "⛔ Keine Berechtigung", show_alert=True
+        )
+        update.callback_query.edit_message_text.assert_not_called()
