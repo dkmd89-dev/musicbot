@@ -36,6 +36,7 @@ from logger import get_module_logger
 
 try:
     from PIL import Image as PILImage
+
     _PIL_AVAILABLE = True
 except ImportError:
     _PIL_AVAILABLE = False
@@ -45,9 +46,10 @@ except ImportError:
 # Konstanten
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class ScoreThreshold(IntEnum):
-    EXCELLENT = 115   # Score-Schwelle für "gutes Cover" (weiter suchen nach Besserem)
-    GOOD = 100        # Score-Schwelle für Niedrigprio-Quellen überspringen
+    EXCELLENT = 115  # Score-Schwelle für "gutes Cover" (weiter suchen nach Besserem)
+    GOOD = 100  # Score-Schwelle für Niedrigprio-Quellen überspringen
     # Score UND Mindestauflösung erforderlich für sofortigen Abbruch.
     # BUG-003-Fix: _calculate_score() deckelt den Score auf max. 150
     # (min(150, ...)) - der vorherige Wert 170 war strukturell unerreichbar,
@@ -57,6 +59,7 @@ class ScoreThreshold(IntEnum):
     # (≥1400px, quadratisch) erreicht, von schwächeren Quellen
     # (fanart_artist/youtube) nur bei deutlich höherer Auflösung.
     EARLY_EXIT = 140
+
 
 # Mindestauflösung für den Early Exit (kürzere Seite muss ≥ diesen Wert haben)
 _EARLY_EXIT_MIN_DIM = 1400
@@ -77,6 +80,7 @@ def _scrub_credentials(text: str) -> str:
         return text
     return _CREDENTIAL_QUERY_PARAM_RE.sub(r"\1***", text)
 
+
 _BASE_SCORES = {
     "coverartarchive": 120,
     "fanart_album": 118,
@@ -89,7 +93,13 @@ _BASE_SCORES = {
     "youtube_mq": 25,
 }
 
-_FANART_IMAGE_TYPES = ["albumcover", "hdmusiclogo", "cdart", "musicbanner", "artistthumb"]
+_FANART_IMAGE_TYPES = [
+    "albumcover",
+    "hdmusiclogo",
+    "cdart",
+    "musicbanner",
+    "artistthumb",
+]
 _YT_VARIANTS = [
     ("maxresdefault", 1280, 720),
     ("sddefault", 640, 480),
@@ -115,6 +125,7 @@ _SEPARATOR = "─" * 65
 # ─────────────────────────────────────────────────────────────────────────────
 # Datenklassen
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class CoverCandidate:
@@ -148,6 +159,7 @@ class CoverCandidate:
 # Haupt-Klasse
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class CoverProcessor:
     def __init__(
         self,
@@ -163,7 +175,9 @@ class CoverProcessor:
         if self.cache_enabled:
             os.makedirs(_CACHE_DIR, exist_ok=True)
 
-        self.logger.info("🖼️ [COVER] ✅ Multi-Source Cover Processor initialisiert (Pipeline-Logging aktiv)")
+        self.logger.info(
+            "🖼️ [COVER] ✅ Multi-Source Cover Processor initialisiert (Pipeline-Logging aktiv)"
+        )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Öffentliche API
@@ -207,8 +221,12 @@ class CoverProcessor:
 
         # ── Task-Liste aufbauen ────────────────────────────────────────────
         tasks = self._build_priority_task_list(
-            video_id, release_id, release_group_mbid, artist_mbid,
-            artist_name, track_title
+            video_id,
+            release_id,
+            release_group_mbid,
+            artist_mbid,
+            artist_name,
+            track_title,
         )
         tasks.sort(key=lambda x: x[2], reverse=True)
         self.logger.debug(
@@ -226,78 +244,112 @@ class CoverProcessor:
             f"{_SEPARATOR}"
         )
 
-        for fn, label, priority in tasks:
-            # Early Exit: Score ≥ 170 UND beide Seiten ≥ 1400 px
-            # (verhindert, dass ein kleines 599×533 die Suche nach 3000×3000 abwürgt)
-            if candidates:
-                _best_so_far = max(candidates, key=lambda c: c.total_score)
-                _early_ok = (
-                    _best_so_far.total_score >= ScoreThreshold.EARLY_EXIT
-                    and _best_so_far.width >= _EARLY_EXIT_MIN_DIM
-                    and _best_so_far.height >= _EARLY_EXIT_MIN_DIM
-                )
-                if _early_ok:
-                    self.logger.info(
-                        f"🖼️ [COVER] ⏹️ Early Exit – Score {_best_so_far.total_score} "
-                        f"bei {_best_so_far.width}×{_best_so_far.height} px "
-                        f"(Schwelle: ≥{ScoreThreshold.EARLY_EXIT} Score & ≥{_EARLY_EXIT_MIN_DIM} px) "
-                        f"– Überspringe verbleibende Quellen"
-                    )
-                    for _, remaining_label, _ in tasks[tasks.index((fn, label, priority)):]:
-                        source_results.append({
-                            "label": remaining_label,
-                            "status": "skipped_early_exit",
-                            "score": None,
-                        })
-                    break
+        def _early_exit_met() -> bool:
+            if not candidates:
+                return False
+            b = max(candidates, key=lambda c: c.total_score)
+            return (
+                b.total_score >= ScoreThreshold.EARLY_EXIT
+                and b.width >= _EARLY_EXIT_MIN_DIM
+                and b.height >= _EARLY_EXIT_MIN_DIM
+            )
 
-            # Bei gutem Cover nur noch Quellen mit höherer Priorität als 50 prüfen
-            if best_score >= ScoreThreshold.GOOD and priority < 50:
-                self.logger.info(
-                    f"🖼️ [COVER] ⏸️  [{label:<22}] ÜBERSPRUNGEN "
-                    f"(gutes Cover vorhanden, Priorität {priority} < 50)"
-                )
-                source_results.append({
-                    "label": label,
-                    "status": "skipped_good_enough",
-                    "score": None,
-                })
-                continue
-
-            self.logger.info(f"🖼️ [COVER] 🔍 [{label:<22}] Suche läuft... (Priorität {priority})")
-
+        def _run_source(fn, label):
+            """Eine Quelle abrufen + scoren + protokollieren. Rückgabe:
+            CoverCandidate | None (auch bei Exception → None)."""
             try:
-                candidate = fn()
-                if candidate:
-                    candidates.append(candidate)
-                    if candidate.total_score > best_score:
-                        best_score = candidate.total_score
-
-                    # ── Schritt 3: Score-Berechnung dieser Quelle ─────────
-                    self._log_step_3_score(label, candidate)
-
-                    source_results.append({
-                        "label": label,
-                        "status": "success",
-                        "score": candidate.total_score,
-                        "resolution": candidate.resolution_label,
-                        "size_kb": candidate.file_size_kb,
-                    })
-                else:
-                    self.logger.info(f"🖼️ [COVER] ❌ [{label:<22}] Kein Bild gefunden")
-                    source_results.append({
-                        "label": label,
-                        "status": "no_result",
-                        "score": None,
-                    })
-            except Exception as exc:
+                cand = fn()
+            except Exception as exc:  # noqa: BLE001
                 self.logger.info(f"🖼️ [COVER] ❌ [{label:<22}] Fehler: {exc}")
-                source_results.append({
+                source_results.append(
+                    {
+                        "label": label,
+                        "status": "error",
+                        "error": str(exc),
+                        "score": None,
+                    }
+                )
+                return None
+            if not cand:
+                self.logger.info(f"🖼️ [COVER] ❌ [{label:<22}] Kein Bild gefunden")
+                source_results.append(
+                    {"label": label, "status": "no_result", "score": None}
+                )
+                return None
+            self._log_step_3_score(label, cand)
+            source_results.append(
+                {
                     "label": label,
-                    "status": "error",
-                    "error": str(exc),
-                    "score": None,
-                })
+                    "status": "success",
+                    "score": cand.total_score,
+                    "resolution": cand.resolution_label,
+                    "size_kb": cand.file_size_kb,
+                }
+            )
+            return cand
+
+        # PERF (Download-Pipeline-Optimierung 2026-09-09, H3): die
+        # Quellen-Suche lief bisher streng SEQUENZIELL - die erste Quelle
+        # (Cover Art Archive, Prio 100) allein brauchte ~6 s im Log, dann
+        # Early Exit. Die "Primär-Tier"-Quellen (Prio ≥ 50: CAA, Fanart
+        # Album, Apple, Deezer, Fanart Artist) sind voneinander unabhängige
+        # Netzwerk-Roundtrips → parallel abrufen, danach EINMAL Early-Exit
+        # prüfen. Die YouTube-Thumbnail-Fallbacks (Prio 30) laufen nur, wenn
+        # kein "gutes" Cover herauskam - dann sequenziell (billig, lokale
+        # yt-Thumbs), mit Early-Exit pro Schritt wie bisher.
+        primary = [t for t in tasks if t[2] >= 50]
+        fallback = [t for t in tasks if t[2] < 50]
+
+        for _, label, priority in primary:
+            self.logger.info(
+                f"🖼️ [COVER] 🔍 [{label:<22}] Suche läuft... (Priorität {priority})"
+            )
+        if len(primary) > 1:
+            with ThreadPoolExecutor(max_workers=len(primary)) as pool:
+                futures = {
+                    pool.submit(_run_source, fn, label): label
+                    for fn, label, _ in primary
+                }
+                for fut in as_completed(futures):
+                    cand = fut.result()
+                    if cand:
+                        candidates.append(cand)
+                        best_score = max(best_score, cand.total_score)
+        elif primary:
+            cand = _run_source(primary[0][0], primary[0][1])
+            if cand:
+                candidates.append(cand)
+                best_score = max(best_score, cand.total_score)
+
+        if _early_exit_met() or (best_score >= ScoreThreshold.GOOD and fallback):
+            _b = max(candidates, key=lambda c: c.total_score)
+            self.logger.info(
+                f"🖼️ [COVER] ⏹️ Early Exit / gutes Cover – Score {_b.total_score} "
+                f"bei {_b.width}×{_b.height} px – überspringe {len(fallback)} "
+                f"Fallback-Quelle(n)"
+            )
+            for _, remaining_label, _ in fallback:
+                source_results.append(
+                    {
+                        "label": remaining_label,
+                        "status": "skipped_early_exit",
+                        "score": None,
+                    }
+                )
+        else:
+            for fn, label, priority in fallback:
+                if _early_exit_met():
+                    source_results.append(
+                        {"label": label, "status": "skipped_early_exit", "score": None}
+                    )
+                    continue
+                self.logger.info(
+                    f"🖼️ [COVER] 🔍 [{label:<22}] Suche läuft... (Priorität {priority})"
+                )
+                cand = _run_source(fn, label)
+                if cand:
+                    candidates.append(cand)
+                    best_score = max(best_score, cand.total_score)
 
         # ── Schritt 4: Ranking ─────────────────────────────────────────────
         self._log_step_4_ranking(candidates)
@@ -358,10 +410,15 @@ class CoverProcessor:
         ]
 
         # Verfügbarkeits-Zusammenfassung
-        available_ids = sum([
-            bool(recording_id), bool(release_id),
-            bool(release_group_mbid), bool(artist_mbid), bool(isrc),
-        ])
+        available_ids = sum(
+            [
+                bool(recording_id),
+                bool(release_id),
+                bool(release_group_mbid),
+                bool(artist_mbid),
+                bool(isrc),
+            ]
+        )
         lines.append(f"   📊 MB-IDs verfügbar: {available_ids}/5")
 
         if available_ids == 0:
@@ -380,28 +437,47 @@ class CoverProcessor:
         base_score = _BASE_SCORES.get(candidate.source, 50)
 
         # Aufschlüsselung berechnen
-        max_dim = max(candidate.width, candidate.height) if candidate.width and candidate.height else 0
+        max_dim = (
+            max(candidate.width, candidate.height)
+            if candidate.width and candidate.height
+            else 0
+        )
         res_bonus = 0
-        if max_dim >= 5000: res_bonus = 55
-        elif max_dim >= 4000: res_bonus = 50
-        elif max_dim >= 3000: res_bonus = 45
-        elif max_dim >= 2000: res_bonus = 35
-        elif max_dim >= 1400: res_bonus = 25
-        elif max_dim >= 1000: res_bonus = 15
-        elif max_dim >= 500: res_bonus = 5
+        if max_dim >= 5000:
+            res_bonus = 55
+        elif max_dim >= 4000:
+            res_bonus = 50
+        elif max_dim >= 3000:
+            res_bonus = 45
+        elif max_dim >= 2000:
+            res_bonus = 35
+        elif max_dim >= 1400:
+            res_bonus = 25
+        elif max_dim >= 1000:
+            res_bonus = 15
+        elif max_dim >= 500:
+            res_bonus = 5
 
         size_kb = candidate.file_size_kb
         size_bonus = 0
-        if size_kb > 1000: size_bonus = 25
-        elif size_kb > 500: size_bonus = 20
-        elif size_kb > 250: size_bonus = 15
-        elif size_kb > 100: size_bonus = 10
-        elif size_kb > 50: size_bonus = 5
+        if size_kb > 1000:
+            size_bonus = 25
+        elif size_kb > 500:
+            size_bonus = 20
+        elif size_kb > 250:
+            size_bonus = 15
+        elif size_kb > 100:
+            size_bonus = 10
+        elif size_kb > 50:
+            size_bonus = 5
 
         quality_bonus = 0
-        if candidate.jpeg_quality >= 95: quality_bonus = 15
-        elif candidate.jpeg_quality >= 85: quality_bonus = 10
-        elif candidate.jpeg_quality >= 75: quality_bonus = 5
+        if candidate.jpeg_quality >= 95:
+            quality_bonus = 15
+        elif candidate.jpeg_quality >= 85:
+            quality_bonus = 10
+        elif candidate.jpeg_quality >= 75:
+            quality_bonus = 5
 
         square_bonus = 15 if candidate.is_square else 0
         yt_penalty = -10 if "youtube" in candidate.source else 0
@@ -430,7 +506,9 @@ class CoverProcessor:
             )
             return
 
-        sorted_candidates = sorted(candidates, key=lambda c: c.total_score, reverse=True)
+        sorted_candidates = sorted(
+            candidates, key=lambda c: c.total_score, reverse=True
+        )
         lines = [
             f"\n🖼️ [COVER] 🏆 SCHRITT 4: Ranking ({len(sorted_candidates)} Kandidaten)",
             _SEPARATOR,
@@ -482,9 +560,13 @@ class CoverProcessor:
                 f"– alle Quellen durchsucht"
             )
         elif best.total_score >= ScoreThreshold.GOOD:
-            lines.append(f"   ✅ Begründung     : Gute Qualität (Score ≥ {ScoreThreshold.GOOD})")
+            lines.append(
+                f"   ✅ Begründung     : Gute Qualität (Score ≥ {ScoreThreshold.GOOD})"
+            )
         else:
-            lines.append(f"   ⚠️  Begründung     : Bestes verfügbares Cover (Score {best.total_score})")
+            lines.append(
+                f"   ⚠️  Begründung     : Bestes verfügbares Cover (Score {best.total_score})"
+            )
 
         if len(runner_up) > 1:
             second = runner_up[1]
@@ -514,52 +596,111 @@ class CoverProcessor:
     # Task-Liste mit Prioritäten
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _build_priority_task_list(self, video_id, release_id, release_group_mbid,
-                                   artist_mbid, artist_name, track_title) -> list:
+    def _build_priority_task_list(
+        self,
+        video_id,
+        release_id,
+        release_group_mbid,
+        artist_mbid,
+        artist_name,
+        track_title,
+    ) -> list:
         tasks = []
 
         # 1. Cover Art Archive (benötigt release_id)
         if release_id:
             self.logger.debug(f"🖼️ [COVER] ✅ Aktiviere CAA (release_id={release_id})")
-            tasks.append((lambda rid=release_id: self._fetch_coverartarchive(rid), "Cover Art Archive", 100))
+            tasks.append(
+                (
+                    lambda rid=release_id: self._fetch_coverartarchive(rid),
+                    "Cover Art Archive",
+                    100,
+                )
+            )
         else:
             self.logger.debug("🖼️ [COVER] ⚠️ CAA übersprungen: keine release_id")
 
         # 2. Fanart.tv Album (benötigt release_group_mbid + API-Key)
         if self.fanart_api_key and release_group_mbid:
-            self.logger.debug(f"🖼️ [COVER] ✅ Aktiviere Fanart.tv Album (release_group_mbid={release_group_mbid})")
-            tasks.append((lambda rg=release_group_mbid: self._fetch_fanart_album(rg), "Fanart.tv Album", 99))
+            self.logger.debug(
+                f"🖼️ [COVER] ✅ Aktiviere Fanart.tv Album (release_group_mbid={release_group_mbid})"
+            )
+            tasks.append(
+                (
+                    lambda rg=release_group_mbid: self._fetch_fanart_album(rg),
+                    "Fanart.tv Album",
+                    99,
+                )
+            )
         else:
-            reason = "kein API-Key" if not self.fanart_api_key else "keine release_group_mbid"
+            reason = (
+                "kein API-Key"
+                if not self.fanart_api_key
+                else "keine release_group_mbid"
+            )
             self.logger.debug(f"🖼️ [COVER] ⚠️ Fanart.tv Album übersprungen: {reason}")
 
         # 3. Apple Music (benötigt artist_name + track_title)
         if artist_name and track_title:
-            self.logger.debug(f"🖼️ [COVER] ✅ Aktiviere Apple Music (artist={artist_name}, title={track_title})")
-            tasks.append((lambda a=artist_name, t=track_title: self._fetch_apple_music(a, t), "Apple Music", 90))
+            self.logger.debug(
+                f"🖼️ [COVER] ✅ Aktiviere Apple Music (artist={artist_name}, title={track_title})"
+            )
+            tasks.append(
+                (
+                    lambda a=artist_name, t=track_title: self._fetch_apple_music(a, t),
+                    "Apple Music",
+                    90,
+                )
+            )
         else:
-            self.logger.debug(f"🖼️ [COVER] ⚠️ Apple Music übersprungen: fehlende artist/title")
+            self.logger.debug(
+                f"🖼️ [COVER] ⚠️ Apple Music übersprungen: fehlende artist/title"
+            )
 
         # 4. Deezer (benötigt artist_name + track_title)
         if artist_name and track_title:
             self.logger.debug(f"🖼️ [COVER] ✅ Aktiviere Deezer")
-            tasks.append((lambda a=artist_name, t=track_title: self._fetch_deezer(a, t), "Deezer", 85))
+            tasks.append(
+                (
+                    lambda a=artist_name, t=track_title: self._fetch_deezer(a, t),
+                    "Deezer",
+                    85,
+                )
+            )
         else:
-            self.logger.debug("🖼️ [COVER] ⚠️ Deezer übersprungen: fehlende artist/title")
+            self.logger.debug(
+                "🖼️ [COVER] ⚠️ Deezer übersprungen: fehlende artist/title"
+            )
 
         # 5. Fanart.tv Artist (benötigt artist_mbid + API-Key)
         if self.fanart_api_key and artist_mbid:
-            self.logger.debug(f"🖼️ [COVER] ✅ Aktiviere Fanart.tv Artist (artist_mbid={artist_mbid})")
-            tasks.append((lambda am=artist_mbid: self._fetch_fanart_artist(am), "Fanart.tv Artist", 80))
+            self.logger.debug(
+                f"🖼️ [COVER] ✅ Aktiviere Fanart.tv Artist (artist_mbid={artist_mbid})"
+            )
+            tasks.append(
+                (
+                    lambda am=artist_mbid: self._fetch_fanart_artist(am),
+                    "Fanart.tv Artist",
+                    80,
+                )
+            )
         else:
             reason = "kein API-Key" if not self.fanart_api_key else "keine artist_mbid"
             self.logger.debug(f"🖼️ [COVER] ⚠️ Fanart.tv Artist übersprungen: {reason}")
 
         # 7. YouTube (niedrigste Priorität, aber immer verfügbar, wenn video_id existiert)
         if video_id:
-            self.logger.debug(f"🖼️ [COVER] ✅ Aktiviere YouTube Fallback (video_id={video_id})")
+            self.logger.debug(
+                f"🖼️ [COVER] ✅ Aktiviere YouTube Fallback (video_id={video_id})"
+            )
             for variant, w, h in _YT_VARIANTS:
-                tasks.append((lambda vid=video_id, var=variant: self._fetch_youtube(vid, var), f"YouTube {variant}", 30))
+                tasks.append(
+                    (
+                        lambda vid=video_id, var=variant: self._fetch_youtube(vid, var),
+                        f"YouTube {variant}",
+                        30,
+                    )
+                )
         else:
             self.logger.debug("🖼️ [COVER] ⚠️ YouTube übersprungen: keine video_id")
 
@@ -569,35 +710,63 @@ class CoverProcessor:
     # Scoring System
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _calculate_score(self, source: str, width: int, height: int, file_size: int,
-                         jpeg_quality: int = 0, color_count: int = 0,
-                         sharpness: float = 0.0, is_square: bool = True) -> int:
+    def _calculate_score(
+        self,
+        source: str,
+        width: int,
+        height: int,
+        file_size: int,
+        jpeg_quality: int = 0,
+        color_count: int = 0,
+        sharpness: float = 0.0,
+        is_square: bool = True,
+    ) -> int:
         score = _BASE_SCORES.get(source, 50)
         max_dim = max(width, height)
-        if max_dim >= 5000: score += 55
-        elif max_dim >= 4000: score += 50
-        elif max_dim >= 3000: score += 45
-        elif max_dim >= 2000: score += 35
-        elif max_dim >= 1400: score += 25
-        elif max_dim >= 1000: score += 15
-        elif max_dim >= 500: score += 5
+        if max_dim >= 5000:
+            score += 55
+        elif max_dim >= 4000:
+            score += 50
+        elif max_dim >= 3000:
+            score += 45
+        elif max_dim >= 2000:
+            score += 35
+        elif max_dim >= 1400:
+            score += 25
+        elif max_dim >= 1000:
+            score += 15
+        elif max_dim >= 500:
+            score += 5
 
         size_kb = file_size / 1024
-        if size_kb > 1000: score += 25
-        elif size_kb > 500: score += 20
-        elif size_kb > 250: score += 15
-        elif size_kb > 100: score += 10
-        elif size_kb > 50: score += 5
+        if size_kb > 1000:
+            score += 25
+        elif size_kb > 500:
+            score += 20
+        elif size_kb > 250:
+            score += 15
+        elif size_kb > 100:
+            score += 10
+        elif size_kb > 50:
+            score += 5
 
-        if jpeg_quality >= 95: score += 15
-        elif jpeg_quality >= 85: score += 10
-        elif jpeg_quality >= 75: score += 5
+        if jpeg_quality >= 95:
+            score += 15
+        elif jpeg_quality >= 85:
+            score += 10
+        elif jpeg_quality >= 75:
+            score += 5
 
-        if color_count > 100000: score += 10
-        elif color_count > 50000: score += 5
-        if sharpness > 0.5: score += 5
-        if is_square: score += 15
-        if "youtube" in source: score -= 10
+        if color_count > 100000:
+            score += 10
+        elif color_count > 50000:
+            score += 5
+        if sharpness > 0.5:
+            score += 5
+        if is_square:
+            score += 15
+        if "youtube" in source:
+            score -= 10
 
         return min(150, max(0, score))
 
@@ -607,11 +776,12 @@ class CoverProcessor:
             try:
                 img = PILImage.open(io.BytesIO(data))
                 width, height = img.size
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
                 colors = img.getcolors(maxcolors=256)
                 color_count = len(colors) if colors else 256
                 import numpy as np
+
                 img_array = np.array(img)
                 gray = np.dot(img_array[..., :3], [0.2989, 0.5870, 0.1140])
                 laplacian = np.abs(np.gradient(np.gradient(gray)))
@@ -619,17 +789,23 @@ class CoverProcessor:
                 pixels = width * height
                 if pixels > 0:
                     bytes_per_pixel = len(data) / pixels
-                    if bytes_per_pixel > 0.5: jpeg_quality = 95
-                    elif bytes_per_pixel > 0.3: jpeg_quality = 85
-                    elif bytes_per_pixel > 0.15: jpeg_quality = 75
-                    else: jpeg_quality = 60
+                    if bytes_per_pixel > 0.5:
+                        jpeg_quality = 95
+                    elif bytes_per_pixel > 0.3:
+                        jpeg_quality = 85
+                    elif bytes_per_pixel > 0.15:
+                        jpeg_quality = 75
+                    else:
+                        jpeg_quality = 60
             except Exception as e:
                 self.logger.debug(f"🖼️ [QUALITY] Analyse fehlgeschlagen: {e}")
         return width, height, sharpness, jpeg_quality, color_count
 
     def _validate_and_score(self, source: str, data: bytes) -> Optional[CoverCandidate]:
         if len(data) < _MIN_IMAGE_BYTES:
-            self.logger.debug(f"🖼️ [SCORE] {source} zu klein ({len(data)} bytes) – ignoriert")
+            self.logger.debug(
+                f"🖼️ [SCORE] {source} zu klein ({len(data)} bytes) – ignoriert"
+            )
             return None
         w, h, sharp, jpeg, colors = self._analyze_image_quality(data)
         # _analyze_image_quality() faengt Parse-Fehler ab und liefert dann
@@ -644,17 +820,31 @@ class CoverProcessor:
             )
             return None
         if w < 100 or h < 100:
-            self.logger.debug(f"🖼️ [SCORE] {source} zu kleine Auflösung ({w}×{h}) – ignoriert")
+            self.logger.debug(
+                f"🖼️ [SCORE] {source} zu kleine Auflösung ({w}×{h}) – ignoriert"
+            )
             return None
         is_square = w > 0 and h > 0 and abs(w - h) < (max(w, h) * 0.1)
         file_size_kb = len(data) // 1024
         image_hash = hashlib.md5(data).hexdigest()
-        total_score = self._calculate_score(source, w, h, len(data), jpeg, colors, sharp, is_square)
-        self.logger.debug(f"🖼️ [SCORE] {source}: {w}×{h}, {file_size_kb}KB, Score {total_score}")
+        total_score = self._calculate_score(
+            source, w, h, len(data), jpeg, colors, sharp, is_square
+        )
+        self.logger.debug(
+            f"🖼️ [SCORE] {source}: {w}×{h}, {file_size_kb}KB, Score {total_score}"
+        )
         return CoverCandidate(
-            source=source, data=data, width=w, height=h, file_size_kb=file_size_kb,
-            total_score=total_score, is_square=is_square, jpeg_quality=jpeg,
-            color_count=colors, sharpness=sharp, image_hash=image_hash,
+            source=source,
+            data=data,
+            width=w,
+            height=h,
+            file_size_kb=file_size_kb,
+            total_score=total_score,
+            is_square=is_square,
+            jpeg_quality=jpeg,
+            color_count=colors,
+            sharpness=sharp,
+            image_hash=image_hash,
         )
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -684,7 +874,9 @@ class CoverProcessor:
         return None
 
     def _fetch_fanart_album(self, release_group_mbid: str) -> Optional[CoverCandidate]:
-        self.logger.debug(f"🖼️ [FANART] Album-Anfrage: release_group_mbid={release_group_mbid}")
+        self.logger.debug(
+            f"🖼️ [FANART] Album-Anfrage: release_group_mbid={release_group_mbid}"
+        )
         if not self.fanart_api_key:
             self.logger.debug("🖼️ [FANART] Kein API-Key – überspringe")
             return None
@@ -698,16 +890,25 @@ class CoverProcessor:
         try:
             resp = self._get(url, params={"api_key": self.fanart_api_key})
             if not resp or resp.status_code != 200:
-                self.logger.debug(f"🖼️ [FANART] Kein Album-Cover (HTTP {resp.status_code if resp else 'None'})")
+                self.logger.debug(
+                    f"🖼️ [FANART] Kein Album-Cover (HTTP {resp.status_code if resp else 'None'})"
+                )
                 return None
             data = resp.json()
             for img_type in _FANART_IMAGE_TYPES:
                 images = data.get(img_type, [])
                 if images:
-                    best_img = max(images, key=lambda x: x.get("url", "").count("fans") if "url" in x else 0)
+                    best_img = max(
+                        images,
+                        key=lambda x: (
+                            x.get("url", "").count("fans") if "url" in x else 0
+                        ),
+                    )
                     img_url = best_img.get("url")
                     if img_url:
-                        self.logger.debug(f"🖼️ [FANART] Bild gefunden: {img_type} → {img_url}")
+                        self.logger.debug(
+                            f"🖼️ [FANART] Bild gefunden: {img_type} → {img_url}"
+                        )
                         img_data = self._fetch_raw(img_url)
                         if img_data:
                             self._cache_set(cache_key, img_data)
@@ -729,7 +930,9 @@ class CoverProcessor:
         try:
             resp = self._get(url, params={"api_key": self.fanart_api_key})
             if not resp or resp.status_code != 200:
-                self.logger.debug(f"🖼️ [FANART] Kein Artist-Bild (HTTP {resp.status_code if resp else 'None'})")
+                self.logger.debug(
+                    f"🖼️ [FANART] Kein Artist-Bild (HTTP {resp.status_code if resp else 'None'})"
+                )
                 return None
             data = resp.json()
             for img_type in ("artistthumb", "artistbackground", "hdmusiclogo"):
@@ -752,9 +955,14 @@ class CoverProcessor:
         if cached:
             return self._validate_and_score("apple_music", cached)
         try:
-            resp = self._get(_APPLE_SEARCH, params={"term": f"{artist} {title}", "media": "music", "limit": 1})
+            resp = self._get(
+                _APPLE_SEARCH,
+                params={"term": f"{artist} {title}", "media": "music", "limit": 1},
+            )
             if not resp or resp.status_code != 200:
-                self.logger.debug(f"🖼️ [APPLE] Keine Ergebnisse, HTTP {resp.status_code if resp else 'None'}")
+                self.logger.debug(
+                    f"🖼️ [APPLE] Keine Ergebnisse, HTTP {resp.status_code if resp else 'None'}"
+                )
                 return None
             results = resp.json().get("results", [])
             if not results:
@@ -768,7 +976,9 @@ class CoverProcessor:
                 test_url = artwork_url.replace("100x100bb", resolution)
                 img_data = self._fetch_raw(test_url)
                 if img_data and len(img_data) > _MIN_IMAGE_BYTES:
-                    self.logger.debug(f"🖼️ [APPLE] Erfolg: Auflösung {resolution}, {len(img_data)} bytes")
+                    self.logger.debug(
+                        f"🖼️ [APPLE] Erfolg: Auflösung {resolution}, {len(img_data)} bytes"
+                    )
                     self._cache_set(cache_key, img_data)
                     return self._validate_and_score("apple_music", img_data)
             self.logger.debug("🖼️ [APPLE] Keine ausreichend große Auflösung gefunden")
@@ -783,16 +993,23 @@ class CoverProcessor:
         if cached:
             return self._validate_and_score("deezer", cached)
         try:
-            resp = self._get(_DEEZER_SEARCH, params={"q": f'artist:"{artist}" track:"{title}"', "limit": 1})
+            resp = self._get(
+                _DEEZER_SEARCH,
+                params={"q": f'artist:"{artist}" track:"{title}"', "limit": 1},
+            )
             if not resp or resp.status_code != 200:
-                self.logger.debug(f"🖼️ [DEEZER] Keine Ergebnisse, HTTP {resp.status_code if resp else 'None'}")
+                self.logger.debug(
+                    f"🖼️ [DEEZER] Keine Ergebnisse, HTTP {resp.status_code if resp else 'None'}"
+                )
                 return None
             items = resp.json().get("data", [])
             if not items:
                 self.logger.debug("🖼️ [DEEZER] Keine Daten")
                 return None
             album = items[0].get("album", {})
-            cover_url = album.get("cover_xl") or album.get("cover_big") or album.get("cover")
+            cover_url = (
+                album.get("cover_xl") or album.get("cover_big") or album.get("cover")
+            )
             if not cover_url:
                 self.logger.debug("🖼️ [DEEZER] Keine Cover-URL")
                 return None
@@ -818,14 +1035,18 @@ class CoverProcessor:
             if resp and resp.status_code == 200 and resp.content:
                 size = len(resp.content)
                 if variant == "maxresdefault" and size < 10000:
-                    self.logger.debug(f"🖼️ [YT] {variant} zu klein ({size} bytes) – Placeholder")
+                    self.logger.debug(
+                        f"🖼️ [YT] {variant} zu klein ({size} bytes) – Placeholder"
+                    )
                     return None
                 if size < 5000:
                     self.logger.debug(f"🖼️ [YT] {variant} zu klein ({size} bytes)")
                     return None
                 self.logger.debug(f"🖼️ [YT] {variant} erfolgreich: {size} bytes")
                 self._cache_set(cache_key, resp.content)
-                source = f"youtube_{variant[:3] if variant != 'maxresdefault' else 'max'}"
+                source = (
+                    f"youtube_{variant[:3] if variant != 'maxresdefault' else 'max'}"
+                )
                 return self._validate_and_score(source, resp.content)
         except Exception as e:
             self.logger.debug(f"🖼️ [YT] {variant} Exception: {e}")
@@ -880,11 +1101,18 @@ class CoverProcessor:
     def _cache_best_cover(self, artist: str, title: str, best: CoverCandidate) -> None:
         cache_key = f"best_{hashlib.md5(f'{artist}|{title}'.encode()).hexdigest()}"
         meta = {
-            "source": best.source, "resolution": f"{best.width}×{best.height}",
-            "bytes": len(best.data), "size_kb": best.file_size_kb, "score": best.total_score,
-            "artist": artist, "title": title, "image_hash": best.image_hash,
-            "jpeg_quality": best.jpeg_quality, "color_count": best.color_count,
-            "sharpness": best.sharpness, "timestamp": datetime.now().isoformat(),
+            "source": best.source,
+            "resolution": f"{best.width}×{best.height}",
+            "bytes": len(best.data),
+            "size_kb": best.file_size_kb,
+            "score": best.total_score,
+            "artist": artist,
+            "title": title,
+            "image_hash": best.image_hash,
+            "jpeg_quality": best.jpeg_quality,
+            "color_count": best.color_count,
+            "sharpness": best.sharpness,
+            "timestamp": datetime.now().isoformat(),
         }
         meta_path = self._meta_path(cache_key)
         # AE-03 (docs/MusicBot_ARCHITECTURE_EVOLUTION.md): vorher direktes
@@ -907,13 +1135,17 @@ class CoverProcessor:
     def _build_session(self) -> requests.Session:
         session = requests.Session()
         session.headers.update({"User-Agent": "MusicLibraryBot/2.0"})
-        retry = Retry(total=2, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
+        retry = Retry(
+            total=2, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504]
+        )
         adapter = HTTPAdapter(max_retries=retry)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
         return session
 
-    def _get(self, url: str, params: Optional[dict] = None) -> Optional[requests.Response]:
+    def _get(
+        self, url: str, params: Optional[dict] = None
+    ) -> Optional[requests.Response]:
         try:
             return self.session.get(url, params=params, timeout=8, allow_redirects=True)
         except requests.RequestException as e:
@@ -929,7 +1161,9 @@ class CoverProcessor:
     # NEU: _log_available_ids und _log_ranking bleiben als Hilfsmethoden erhalten
     # (werden intern von den neuen Schritt-Methoden aufgerufen oder für Rückwärtskompatibilität)
 
-    def _log_available_ids(self, release_id, release_group_mbid, artist_mbid, recording_id, isrc):
+    def _log_available_ids(
+        self, release_id, release_group_mbid, artist_mbid, recording_id, isrc
+    ):
         """Legacy-Hilfsmethode – Funktionalität jetzt in _log_step_1_inputs."""
         ids = []
         if release_id:

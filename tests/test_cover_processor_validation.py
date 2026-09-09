@@ -45,7 +45,9 @@ class TestNonImageBlobIsRejected:
     def test_html_error_page_is_rejected_despite_meeting_size_minimum(self):
         processor = make_processor()
         # Groesser als _MIN_IMAGE_BYTES, aber kein gueltiges Bild.
-        fake_html_error_page = b"<html><body>Not Found</body></html>" + b" " * _MIN_IMAGE_BYTES
+        fake_html_error_page = (
+            b"<html><body>Not Found</body></html>" + b" " * _MIN_IMAGE_BYTES
+        )
 
         result = processor._validate_and_score("test_source", fake_html_error_page)
 
@@ -119,12 +121,17 @@ class TestBug003EarlyExitThresholdWasUnreachable:
         )
         assert score >= ScoreThreshold.EARLY_EXIT
 
-    def test_get_cover_art_actually_stops_after_early_exit_candidate(self):
+    def test_early_exit_candidate_wins_and_skips_fallback_tier(self):
         """
-        Orchestrierungs-Beweis: sobald die hoechstpriorisierte Quelle
-        (Cover Art Archive) ein Ergebnis liefert, das die Early-Exit-
-        Schwelle erreicht, duerfen NIEDRIGER priorisierte Quellen gar
-        nicht erst aufgerufen werden.
+        Orchestrierungs-Beweis: liefert die Primär-Tier-Suche (Prio ≥ 50)
+        ein Ergebnis, das die Early-Exit-Schwelle erreicht, gewinnt dieses
+        und die YouTube-Fallback-Quellen (Prio 30) werden NICHT mehr
+        aufgerufen.
+
+        PERF/H3 (2026-09-09): die Primär-Tier-Quellen laufen jetzt PARALLEL -
+        sie werden also alle abgerufen (unabhängige Netzwerk-Roundtrips,
+        gleichzeitig), aber der Early-Exit-Kandidat gewinnt trotzdem und die
+        Fallback-Quellen bleiben ungenutzt.
         """
         processor = CoverProcessor(
             fanart_api_key="fake-key",
@@ -140,11 +147,11 @@ class TestBug003EarlyExitThresholdWasUnreachable:
             is_square=True,
         )
         processor._fetch_coverartarchive = MagicMock(return_value=excellent_candidate)
-        processor._fetch_fanart_album = MagicMock()
-        processor._fetch_apple_music = MagicMock()
-        processor._fetch_deezer = MagicMock()
-        processor._fetch_fanart_artist = MagicMock()
-        processor._fetch_youtube = MagicMock()
+        processor._fetch_fanart_album = MagicMock(return_value=None)
+        processor._fetch_apple_music = MagicMock(return_value=None)
+        processor._fetch_deezer = MagicMock(return_value=None)
+        processor._fetch_fanart_artist = MagicMock(return_value=None)
+        processor._fetch_youtube = MagicMock(return_value=None)
 
         data, source = processor.get_cover_art(
             video_id="abc123",
@@ -157,11 +164,47 @@ class TestBug003EarlyExitThresholdWasUnreachable:
 
         assert source == "coverartarchive"
         assert data == b"fake-image-bytes"
-        processor._fetch_fanart_album.assert_not_called()
-        processor._fetch_apple_music.assert_not_called()
-        processor._fetch_deezer.assert_not_called()
-        processor._fetch_fanart_artist.assert_not_called()
+        # Fallback-Tier (YouTube-Thumbs, Prio 30) bleibt ungenutzt.
         processor._fetch_youtube.assert_not_called()
+
+    def test_primary_tier_runs_concurrently_not_serially(self):
+        """PERF/H3: die Primär-Tier-Quellen laufen PARALLEL - eine langsame
+        Quelle (CAA) darf die anderen nicht ausbremsen. Beweis: bei je 0,3 s
+        pro Quelle liegt die Gesamtdauer nahe 0,3 s, nicht bei 5 × 0,3 s."""
+        import time as _t
+
+        processor = CoverProcessor(fanart_api_key="fake-key", cache_enabled=False)
+
+        def _slow_none(*a, **kw):
+            _t.sleep(0.3)
+            return None
+
+        for name in (
+            "_fetch_coverartarchive",
+            "_fetch_fanart_album",
+            "_fetch_apple_music",
+            "_fetch_deezer",
+            "_fetch_fanart_artist",
+        ):
+            setattr(processor, name, MagicMock(side_effect=_slow_none))
+        processor._fetch_youtube = MagicMock(return_value=None)
+
+        t0 = _t.perf_counter()
+        processor.get_cover_art(
+            video_id="v",
+            release_id="rel-1",
+            release_group_mbid="rg-1",
+            artist_mbid="a-1",
+            artist_name="A",
+            track_title="T",
+        )
+        elapsed = _t.perf_counter() - t0
+
+        # 5 Quellen × 0,3 s seriell = 1,5 s; parallel ≈ 0,3 s. Großzügige
+        # Obergrenze für CI-Jitter.
+        assert elapsed < 0.9, f"Primär-Tier lief seriell ({elapsed:.2f}s)"
+        for name in ("_fetch_fanart_album", "_fetch_apple_music", "_fetch_deezer"):
+            getattr(processor, name).assert_called_once()
 
 
 class TestBuildPriorityTaskList:
@@ -173,16 +216,24 @@ class TestBuildPriorityTaskList:
     def test_no_ids_available_yields_no_tasks(self):
         processor = make_processor()
         tasks = processor._build_priority_task_list(
-            video_id=None, release_id=None, release_group_mbid=None,
-            artist_mbid=None, artist_name=None, track_title=None,
+            video_id=None,
+            release_id=None,
+            release_group_mbid=None,
+            artist_mbid=None,
+            artist_name=None,
+            track_title=None,
         )
         assert tasks == []
 
     def test_fanart_sources_require_api_key_even_with_ids_present(self):
         processor = CoverProcessor(fanart_api_key=None, cache_enabled=False)
         tasks = processor._build_priority_task_list(
-            video_id=None, release_id=None, release_group_mbid="rg-1",
-            artist_mbid="artist-1", artist_name=None, track_title=None,
+            video_id=None,
+            release_id=None,
+            release_group_mbid="rg-1",
+            artist_mbid="artist-1",
+            artist_name=None,
+            track_title=None,
         )
         labels = [label for _, label, _ in tasks]
         assert "Fanart.tv Album" not in labels
@@ -191,8 +242,12 @@ class TestBuildPriorityTaskList:
     def test_fanart_sources_activate_with_api_key_and_ids(self):
         processor = CoverProcessor(fanart_api_key="fake-key", cache_enabled=False)
         tasks = processor._build_priority_task_list(
-            video_id=None, release_id=None, release_group_mbid="rg-1",
-            artist_mbid="artist-1", artist_name=None, track_title=None,
+            video_id=None,
+            release_id=None,
+            release_group_mbid="rg-1",
+            artist_mbid="artist-1",
+            artist_name=None,
+            track_title=None,
         )
         labels = [label for _, label, _ in tasks]
         assert "Fanart.tv Album" in labels
@@ -201,8 +256,12 @@ class TestBuildPriorityTaskList:
     def test_apple_music_and_deezer_require_both_artist_and_title(self):
         processor = make_processor()
         tasks = processor._build_priority_task_list(
-            video_id=None, release_id=None, release_group_mbid=None,
-            artist_mbid=None, artist_name="Some Artist", track_title=None,
+            video_id=None,
+            release_id=None,
+            release_group_mbid=None,
+            artist_mbid=None,
+            artist_name="Some Artist",
+            track_title=None,
         )
         labels = [label for _, label, _ in tasks]
         assert "Apple Music" not in labels
@@ -213,8 +272,12 @@ class TestBuildPriorityTaskList:
 
         processor = make_processor()
         tasks = processor._build_priority_task_list(
-            video_id="abc123", release_id=None, release_group_mbid=None,
-            artist_mbid=None, artist_name=None, track_title=None,
+            video_id="abc123",
+            release_id=None,
+            release_group_mbid=None,
+            artist_mbid=None,
+            artist_name=None,
+            track_title=None,
         )
         youtube_labels = [label for _, label, _ in tasks if label.startswith("YouTube")]
         assert len(youtube_labels) == len(_YT_VARIANTS)
@@ -222,8 +285,12 @@ class TestBuildPriorityTaskList:
     def test_coverartarchive_only_needs_release_id(self):
         processor = make_processor()
         tasks = processor._build_priority_task_list(
-            video_id=None, release_id="rel-1", release_group_mbid=None,
-            artist_mbid=None, artist_name=None, track_title=None,
+            video_id=None,
+            release_id="rel-1",
+            release_group_mbid=None,
+            artist_mbid=None,
+            artist_name=None,
+            track_title=None,
         )
         labels = [label for _, label, _ in tasks]
         assert labels == ["Cover Art Archive"]
