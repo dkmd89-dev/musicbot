@@ -210,6 +210,20 @@ def _clean_title_suffixes(title: str) -> str:
     # verhindert Fehltreffer in Woertern wie "Producer"/"Production".
     title = re.sub(r"\s*\bprod\.?\s+\S.*$", "", title, flags=re.I)
 
+    # Live-Fund 2026-09-09 (Nutzer-Report, echter Testdownload ueber den
+    # Test-Bot): "Leony - Remedy @ Deluxe Music Session 2022" ergab den
+    # Titel "Remedy @ Deluxe Music Session". YouTube-Uploads von TV-/
+    # Radio-/Live-Session-Auftritten haengen den Session-/Sendungsnamen mit
+    # " @ " an den Songtitel an ("@ Deluxe Music Session", "@ MTV
+    # Unplugged", "@ Rock am Ring") - das ist nicht Teil des Songnamens.
+    # Am Titelende verankert; " @ " (Leerzeichen auf beiden Seiten) wird in
+    # echten Songtiteln praktisch nicht gebraucht. Bewusst nur HIER
+    # (Erfolgspfad nach Artist/Titel-Split), analog zum Upload-Jahr-Suffix
+    # unten - NICHT in einer allgemein genutzten Titel-Bereinigung. Laeuft
+    # vor der Jahres-Regel, damit ein nachgestelltes Jahr ("... Session
+    # 2022") gleich mit abgeschnitten wird.
+    title = re.sub(r"\s+@\s+.+$", "", title).strip()
+
     # Live-Fund (Nutzer-Report, echter Testdownload ueber den Test-Bot):
     # "Die Firma - Die Eine 2005 (Official Video)" ergab nach Bereinigung
     # des Marketing-Suffix den Titel "Die Eine 2005" statt "Die Eine" -
