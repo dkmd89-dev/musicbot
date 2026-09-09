@@ -1237,3 +1237,198 @@ def test_replaygain_skips_when_existing_tag_already_correct(lib):
     )
     assert outcomes[0].status == "SKIPPED"
     assert _rg(p)[0] == "-5.00 dB"  # unangetastet
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Post-Repair-Verification je Datei (Library-Closure-Phase, Auftrag §9/§16)
+# ─────────────────────────────────────────────────────────────────────────
+
+from services.library_repair import executor as _exec  # noqa: E402
+
+
+@requires_ffmpeg
+def test_verification_keeps_success_when_issue_is_actually_gone(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p, genre="Pop / Rock")
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1(
+        [_cand("A/Singles/2020 - x.m4a", "GENRE_DELIMITER_INCONSISTENT")],
+        lib, j, dry_run=False,
+    )
+    assert outcomes[0].status == "SUCCESS"
+    assert j.entries[-1].status == "SUCCESS"
+
+
+@requires_ffmpeg
+def test_verification_downgrades_to_unresolved_when_issue_persists(lib, monkeypatch):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p, genre="Pop / Rock / Indie")
+    monkeypatch.setattr(
+        _exec, "_single_file_issue_codes",
+        lambda *a, **k: {"GENRE_DELIMITER_INCONSISTENT", "GENRE_INVALID"},
+    )
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1(
+        [_cand("A/Singles/2020 - x.m4a", "GENRE_DELIMITER_INCONSISTENT")],
+        lib, j, dry_run=False,
+    )
+    assert outcomes[0].status == "UNRESOLVED"
+    assert "Verification" in (outcomes[0].reason or "")
+    assert j.entries[-1].status == "UNRESOLVED"
+    # der Tag wurde trotzdem geschrieben (nur nicht als behoben gewertet)
+    assert _read(p)["gen"] == ["Pop; Rock; Indie"]
+    # Backup bleibt für Rollback erhalten
+    assert len(list((lib.parent / ".library_repair_backups").rglob("*.bak"))) == 1
+
+
+@requires_ffmpeg
+def test_verification_none_result_keeps_success(lib, monkeypatch):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p, genre="Pop / Rock")
+    monkeypatch.setattr(_exec, "_single_file_issue_codes", lambda *a, **k: None)
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1(
+        [_cand("A/Singles/2020 - x.m4a", "GENRE_DELIMITER_INCONSISTENT")],
+        lib, j, dry_run=False,
+    )
+    assert outcomes[0].status == "SUCCESS"
+
+
+@requires_ffmpeg
+def test_verification_ignores_album_scope_code(lib, monkeypatch):
+    p = lib / "A" / "2020 - Alb" / "01 - x.m4a"
+    _m4a(p, artist="A")
+    monkeypatch.setattr(
+        _exec, "_single_file_issue_codes",
+        lambda *a, **k: {"ALBUM_ARTIST_INCONSISTENT"},
+    )
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1(
+        [_cand("A/2020 - Alb/01 - x.m4a", "ALBUM_ARTIST_INCONSISTENT")],
+        lib, j, dry_run=False,
+    )
+    # album-scope wird bewusst NICHT per Einzeldatei-Recheck herabgestuft
+    assert outcomes[0].status == "SUCCESS"
+
+
+@requires_ffmpeg
+def test_rename_verification_downgrades_but_file_stays_moved(lib, monkeypatch):
+    p = lib / "A" / "Singles" / "2020 - Song prod. X.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["©nam"] = ["Song"]
+    a.save()
+    monkeypatch.setattr(
+        _exec, "_single_file_issue_codes", lambda *a, **k: {"FILENAME_TITLE_MISMATCH"},
+    )
+    j = RepairJournal(lib / "j.jsonl")
+    outcomes = apply_level1_rename(
+        [_cand("A/Singles/2020 - Song prod. X.m4a", "FILENAME_TITLE_MISMATCH")],
+        lib, j, dry_run=False,
+    )
+    assert outcomes[0].status == "UNRESOLVED"
+    # Rename hat trotzdem stattgefunden -> Datei liegt am neuen Namen
+    assert not p.exists()
+    assert (lib / "A" / "Singles" / "2020 - Song.m4a").exists()
+    assert j.entries[-1].status == "UNRESOLVED"
+
+
+def test_verify_issue_resolved_unit(monkeypatch, tmp_path):
+    from services.library_repair.executor import ExecOutcome, _verify_issue_resolved
+
+    monkeypatch.setattr(
+        _exec, "_single_file_issue_codes", lambda *a, **k: {"FILENAME_SUSPICIOUS"}
+    )
+    oc = ExecOutcome(
+        file="A/x.m4a", issue_code="FILENAME_SUSPICIOUS",
+        action="FILENAME_RENAME_IN_PLACE", status="SUCCESS",
+    )
+    _verify_issue_resolved(oc, tmp_path / "x.m4a", tmp_path)
+    assert oc.status == "UNRESOLVED"
+
+    monkeypatch.setattr(_exec, "_single_file_issue_codes", lambda *a, **k: set())
+    oc2 = ExecOutcome(
+        file="A/x.m4a", issue_code="FILENAME_SUSPICIOUS",
+        action="FILENAME_RENAME_IN_PLACE", status="SUCCESS",
+    )
+    _verify_issue_resolved(oc2, tmp_path / "x.m4a", tmp_path)
+    assert oc2.status == "SUCCESS"
+
+
+def test_verify_issue_resolved_skips_non_success():
+    from services.library_repair.executor import ExecOutcome, _verify_issue_resolved
+
+    for status in ("SKIPPED", "FAILED", "DRY_RUN"):
+        oc = ExecOutcome(
+            file="x", issue_code="FILENAME_SUSPICIOUS", action="a", status=status
+        )
+        _verify_issue_resolved(oc, "/nonexistent", "/lib")
+        assert oc.status == status
+
+
+def test_file_scope_verifiable_codes_excludes_album_and_loudness():
+    from services.library_repair.executor import (
+        _file_scope_verifiable_codes,
+        LOUDNESS_ISSUE_CODES,
+    )
+
+    codes = _file_scope_verifiable_codes()
+    assert "ALBUM_ARTIST_INCONSISTENT" not in codes
+    assert "ALBUM_COVER_INCONSISTENT" not in codes
+    assert not (codes & LOUDNESS_ISSUE_CODES)
+    assert "GENRE_DELIMITER_INCONSISTENT" in codes
+    assert "FILENAME_TITLE_MISMATCH" in codes
+    assert "META_MB_RECORDING_MISSING" in codes
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Idempotenz (Library-Closure-Phase, Auftrag §35): repair -> repair -> keine
+# unnoetige zweite Aenderung, kein Schaden.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@requires_ffmpeg
+def test_level1_tag_repair_is_idempotent(lib):
+    p = lib / "A" / "Singles" / "2020 - x.m4a"
+    _m4a(p, genre="Pop / Rock / Indie")
+    j = RepairJournal(lib / "j.jsonl")
+    cand = [_cand("A/Singles/2020 - x.m4a", "GENRE_DELIMITER_INCONSISTENT")]
+
+    o1 = apply_level1(cand, lib, j, dry_run=False)
+    assert o1[0].status == "SUCCESS"
+    tag_after = _read(p)["gen"]
+    md5_after = _audio_md5(p)
+
+    o2 = apply_level1(cand, lib, j, dry_run=False)
+    assert o2[0].status == "SKIPPED"
+    assert _read(p)["gen"] == tag_after  # keine zweite Aenderung
+    assert _audio_md5(p) == md5_after
+    # nur EIN Backup (der erste, erfolgreiche Lauf)
+    assert len(list((lib.parent / ".library_repair_backups").rglob("*.bak"))) == 1
+
+
+@requires_ffmpeg
+def test_level1_rename_is_idempotent(lib):
+    p = lib / "A" / "Singles" / "2020 - Song prod. X.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["©nam"] = ["Song"]
+    a.save()
+    j = RepairJournal(lib / "j.jsonl")
+
+    o1 = apply_level1_rename(
+        [_cand("A/Singles/2020 - Song prod. X.m4a", "FILENAME_TITLE_MISMATCH")],
+        lib, j, dry_run=False,
+    )
+    assert o1[0].status == "SUCCESS"
+    new = lib / "A" / "Singles" / "2020 - Song.m4a"
+    assert new.exists()
+    md5_after = _audio_md5(new)
+
+    o2 = apply_level1_rename(
+        [_cand("A/Singles/2020 - Song.m4a", "FILENAME_TITLE_MISMATCH")],
+        lib, j, dry_run=False,
+    )
+    assert o2[0].status == "SKIPPED"
+    assert new.exists()
+    assert _audio_md5(new) == md5_after
