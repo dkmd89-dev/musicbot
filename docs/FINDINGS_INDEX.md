@@ -26,9 +26,11 @@ Index ist ab sofort die einzige Stelle für den *aktuellen* Stand.
 **Baseline-Freeze:** 2026-09-02 (Baseline v8 — eingefrorener Schnappschuss,
 Tech-Debt-Tabelle dort unverändert, siehe z. B. `docs/archive/MusicBot_ENGINEERING_BASELINE_v8.md`). Aktuell eingefrorener Referenzpunkt: `docs/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze 2026-09-07); laufender Zwischenstand seit dem v9-Freeze: `docs/MusicBot_ENGINEERING_BASELINE_v10.md` (DRAFT — nur ARCH-Historie/Testzahlen, keine Findings; die stehen hier).
 **Aktueller Finding-Stand (dieses Dokument):** 2026-09-09 (zuletzt aktualisiert:
-Download-Pipeline-Optimierung K1 — Schritt 15b vom Loudness-Re-Encode (~22 s) auf
-einen verlustfreien ReplayGain-Tag umgestellt; schließt das DEFER-Finding
-„Schritt 15b LUFS-Ziel verifizieren" (PR #188). Davor:
+Download-Pipeline-Optimierung K1/H1/H2/H3/M1 (PR #188–#192) — Schritt 15b vom
+Loudness-Re-Encode auf verlustfreien ReplayGain-Tag (schließt das DEFER-Finding
+„Schritt 15b LUFS-Ziel verifizieren"), yt-dlp-/MB-Detail-Doppelabrufe gecacht,
+Cover-Quellen parallel, Resolver-Refresh bedingt. Details siehe
+`docs/MusicBot_ENGINEERING_BASELINE_v10.md` §3. Davor:
 Finding H aus dem Download-Pipeline-Testlauf 2026-09-09 CLOSED — Last.fm-User-Tags
 („Laut Mitsing"/„Radio") wurden zu Genres, `prioritize_genres()` verlangt jetzt
 ein erkennbares Genre (PR #187). Davor:
