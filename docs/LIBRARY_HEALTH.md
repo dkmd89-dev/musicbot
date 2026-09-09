@@ -86,14 +86,21 @@ unterschiedlicher Identität auftreten kann.
 
 **Lifecycle-Status:**
 
-| Status | Bedeutung |
-|---|---|
-| `OPEN` | aktuell offen, noch nicht abschließend bewertet |
-| `RESOLVED` | der Nutzer hat die Behebung bestätigt (z. B. Cover ergänzt) |
-| `FALSE_POSITIVE` | korrekt erkannt, aber für diese Library kein zu behebendes Problem |
-| `RESOLVED_BY_SCAN` | technischer Zwischenzustand: der Scanner erkennt das Finding nicht mehr, aber niemand hat das je bestätigt — zählt NICHT als "offen", ist aber auch kein bestätigtes `RESOLVED` |
+| Status | Closure-Vokabular | Bedeutung |
+|---|---|---|
+| `OPEN` | 🔴 **Offen** | aktuell offen, noch nicht abschließend bewertet |
+| `RESOLVED` | 🟢 **Repariert** | der Nutzer hat die Behebung bestätigt (z. B. Cover ergänzt); von `repair_service` auch nach verifizierter SAFE_AUTOMATIC-Reparatur gesetzt |
+| `FALSE_POSITIVE` | ⚪ **Akzeptiert** | bewusst akzeptiert — technisch weiterhin ein wahres Finding, aber für diese Library kein zu behebendes Problem. `library_health` löscht es nie (die technische Wahrheit bleibt erhalten) |
+| `RESOLVED_BY_SCAN` | — | technischer Zwischenzustand: der Scanner erkennt das Finding nicht mehr, aber niemand hat das je bestätigt — zählt NICHT als "offen", ist aber auch kein bestätigtes `RESOLVED` |
 
-**Review-CLI (kategoriebasiert):**
+> **Vokabular (Library-Closure-Phase):** der Report und die CLI zeigen
+> 🔴 Offen / 🟢 Repariert / ⚪ Akzeptiert. „Akzeptiert" ist bewusst
+> derselbe Lifecycle-Status wie `FALSE_POSITIVE` (kein neuer Status,
+> Entscheidung 2026-09-09) — ein akzeptiertes Finding bleibt in der
+> Registry, verschwindet aber aus der normalen OPEN-Anzeige und kann
+> jederzeit wieder aktiviert werden.
+
+**Review-CLI (kategoriebasiert, interaktiv — Default):**
 
 ```bash
 python scripts/library_health_review.py
@@ -123,6 +130,36 @@ Kategorie über eine einzige Persistenzoperation
 (`services.library_health.findings.batch_review_category()` +
 ein `save()`), nicht eine Einzeloperation pro Finding — auch bei
 mehreren hundert Findings in einer Kategorie.
+
+**Review-CLI (nicht-interaktiv, gezielt — Library-Closure-Phase):** je
+genau eine Direktaktion pro Aufruf; ohne eines dieser Flags läuft der
+interaktive Modus oben.
+
+```bash
+python scripts/library_health_review.py --summary                 # 🔴 Offen / 🟢 Repariert / ⚪ Akzeptiert
+python scripts/library_health_review.py --accepted [ISSUE_CODE]    # akzeptierte Findings auflisten (opt. gefiltert; „stale" markiert)
+python scripts/library_health_review.py --show <finding-id>        # ein Finding + volle Review-Historie
+python scripts/library_health_review.py --accept <finding-id> --reason "<Grund>"   # ⚪ akzeptieren
+python scripts/library_health_review.py --unaccept <finding-id>    # Acceptance zurücknehmen → wieder 🔴 Offen
+```
+
+Exit-Codes: `0` ok · `1` unbekannte Finding-ID bzw. `--unaccept` auf einem
+bereits offenen Finding · `2` `--accept` ohne `--reason` / mehr als eine
+Direktaktion. `--unaccept` ist die einzige Möglichkeit, ein akzeptiertes
+Finding manuell zu reaktivieren — der Scan-Merge lässt ein `FALSE_POSITIVE`
+bei Wiedererkennung bewusst unangetastet.
+
+**Programmatische API (`services/library_health/findings.py`, gleiche
+Quelle für CLI und künftige Telegram-Anbindung):**
+
+| Funktion | Zweck |
+|---|---|
+| `accept_finding(registry, id, *, reason, reviewed_by=None)` | Finding akzeptieren (Pflicht-Grund) |
+| `unaccept_finding(registry, id, *, reviewed_by=None)` | Acceptance/Review zurücknehmen → `OPEN` |
+| `get_accepted_findings(registry, *, issue_code=None)` | akzeptierte Findings, deterministisch sortiert; `present_in_latest_scan == False` = stale |
+| `get_review_summary(registry) -> ReviewSummary` | `open` / `repaired` / `accepted` / `accepted_stale` / `resolved_by_scan` / `total` + `to_dict()` |
+
+Der Aufrufer speichert nach einer Änderung explizit (`registry.save()`).
 
 **Telegram (`🔎 Library Health Review`, `Hauptmenü → Administration →
 Bibliothek & Navidrome`):** dieselbe Kategorie-Gruppierung und dieselbe
