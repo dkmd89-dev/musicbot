@@ -39,6 +39,14 @@ import json
 # Auto-Learn-System in artist_overrides.json geschrieben - echter neuer
 # Library-Artist, kein Datenmuell. Analog zu Toobrokeforfiji in die
 # Whitelist aufgenommen statt entfernt.
+#
+# Nachtrag 2026-09-09: PR #194 ('fix(artist): Kollab mit gemeinsamem
+# Nachnamen', Commit a7efab6) hat 8 Keys fuer den Deutschrap-/Techno-
+# Kollab-Fall 'Fritz & Paul Kalkbrenner' -> Wert 'Fritz Kalkbrenner'
+# ergaenzt (7 Kollab-Schreibvarianten + der Self-Eintrag), diesen
+# Integritaetstest dabei aber nicht mitgezogen. 'Fritz Kalkbrenner' ist
+# ein realer Artist (Fix per test_collab_artist_shared_surname_kalkbrenner.py
+# abgesichert) - in die Whitelist aufgenommen, Key-Count 21 -> 29.
 WHITELIST_VALUES_LOWER = {
     "01099",
     "2pac",
@@ -47,6 +55,7 @@ WHITELIST_VALUES_LOWER = {
     "christina stürmer",
     "clueso",
     "florian künstler",
+    "fritz kalkbrenner",
     "gustav",
     "kings of leon",
     "levin liam",
@@ -67,15 +76,17 @@ class TestArtistOverridesFreeOfOrphans:
         assert not orphans, f"verwaiste Overrides gefunden: {orphans}"
 
     def test_expected_key_count_after_cleanup(self):
-        """Dokumentiert den bereinigten Stand (zuletzt 2026-09-07): 21 Keys
-        (12 Library-Artists, davon 'makko' als 1, + 6 Miksu & Macloud-
-        Varianten + 't-low' + 'toobrokeforfiji' + 'christina sturmer' = 21).
+        """Dokumentiert den bereinigten Stand (zuletzt 2026-09-09): 29 Keys
+        - 21 wie beim 2026-09-07-Stand (12 Library-Artists, davon 'makko'
+        als 1, + 6 Miksu & Macloud-Varianten + 't-low' + 'toobrokeforfiji'
+        + 'christina sturmer') + 8 aus PR #194 fuer den
+        'Fritz & Paul Kalkbrenner'-Kollab-Fall (7 Schreibvarianten + Self).
         Kein Anspruch auf ewige Gueltigkeit dieser exakten Zahl - wird bei
         zukuenftigen legitimen Aenderungen bewusst angepasst, nicht blind
         hochgezaehlt."""
         with open("mapping/artist_overrides.json", encoding="utf-8") as f:
             data = json.load(f)
-        assert len(data) == 21
+        assert len(data) == 29
 
     def test_no_junk_entries_like_pycache(self):
         """Regressionsschutz: der vor der Bereinigung gefundene
