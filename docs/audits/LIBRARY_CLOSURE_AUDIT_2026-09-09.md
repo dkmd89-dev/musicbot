@@ -175,10 +175,14 @@ TESTS (diese Phase, gezielt/thematisch)
       Key-Count-Erwartung 21 vs. `mapping/artist_overrides.json` inzwischen 29)
       reproduzieren identisch auf `main` HEAD `7f76c51` (`git stash`-verifiziert)
       → vorbestehend, unabhängig von dieser Phase, 0 Regressionen.
-      Nicht ungefragt behoben (CLAUDE.md §8.A).
+      Nachtrag: nach Nutzer-Freigabe im Folge-PR behoben (die 8 Keys aus
+      PR #194 in die Test-Whitelist aufgenommen) → Vollsuite dann
+      3081 passed / 1 skipped / 0 failed.
 
 OFFENE RISIKEN / ZURÜCKGESTELLT
-    - Telegram-UI für Accepted/Unaccept: bewusst spätere Phase (Core-API steht).
+    - Telegram-UI für Accepted/Unaccept: in dieser Phase Core-API-only;
+      im direkten Folge-PR #200 (0ba9138) doch umgesetzt, nachdem der
+      Nutzer die CLI gegen die echte Registry getestet hatte.
     - LOUDNESS_OFF_TARGET & album-scope-Codes: kein Einzeldatei-Recheck
       (bewusst, im Code + Coverage-Matrix begründet) — durch den
       aggregierten --measure-loudness- bzw. Gruppen-Scan abgedeckt.
