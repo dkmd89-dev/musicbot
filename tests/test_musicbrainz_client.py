@@ -531,3 +531,141 @@ class TestBuildMetadataFieldExtraction:
 
         assert result["genre"] == "unknown"
         assert result["tags"] == []
+
+
+class TestSelectPrimaryReleaseFindingE:
+    """Finding E (Download-Pipeline-Log-Analyse 2026-09-09): MusicBrainz
+    liefert die release-list einer Aufnahme UNSORTIERT. `release_list[0]` war
+    real regelmäßig eine Compilation / ein DJ-Mix ("Bravo Hits 00's" 2021,
+    "Casino Royale, Volume 2" 2007) statt der Original-Veröffentlichung
+    ("Smack That" Single, 2006) → falsches Album UND falsches Jahr
+    (live: Akon „Smack That" → 2009 statt 2006, Avicii „Levels" → 2022).
+    Die Fixture-Formen (`release-group.secondary-type-list` / `.type` /
+    `release.date`) entsprechen der echten search_recordings()-Antwort von
+    musicbrainz.org (2026-09-09 verifiziert).
+    """
+
+    def _smack_that_match(self):
+        return {
+            "id": "rec-smack",
+            "title": "Smack That",
+            "artist-credit": [{"artist": {"id": "artist-akon"}}],
+            "release-list": [
+                {
+                    "id": "rel-casino",
+                    "title": "Casino Royale, Volume 2: For the Gangsters",
+                    "date": "2007-01-12",
+                    "release-group": {
+                        "id": "rg-casino",
+                        "title": "Casino Royale, Volume 2: For the Gangsters",
+                        "type": "Album",
+                        "secondary-type-list": ["DJ-mix"],
+                        "tags": [],
+                    },
+                },
+                {
+                    "id": "rel-bravo",
+                    "title": "Bravo Hits 00’s",
+                    "date": "2021",
+                    "release-group": {
+                        "id": "rg-bravo",
+                        "title": "Bravo Hits 00’s",
+                        "type": "Compilation",
+                        "secondary-type-list": ["Compilation"],
+                        "tags": [],
+                    },
+                },
+                {
+                    "id": "rel-single",
+                    "title": "Smack That",
+                    "date": "2006-11-13",
+                    "release-group": {
+                        "id": "rg-single",
+                        "title": "Smack That",
+                        "type": "Single",
+                        "tags": [],
+                    },
+                },
+            ],
+        }
+
+    def test_year_and_album_come_from_original_single_not_compilation(self):
+        client = _make_client()
+        match = self._smack_that_match()
+        with patch("musicbrainzngs.get_recording_by_id", return_value={}):
+            result = asyncio.run(client._build_metadata(match, "Akon"))
+
+        assert result["year"] == "2006"
+        assert result["release_date"] == "2006-11-13"
+        assert result["release_id"] == "rel-single"
+        assert result["release_group_id"] == "rg-single"
+        assert result["album"] == "Smack That"
+
+    def test_unit_select_primary_release_skips_compilation_and_djmix(self):
+        client = _make_client()
+        rl = self._smack_that_match()["release-list"]
+        assert client._select_primary_release(rl)["id"] == "rel-single"
+
+    def test_only_compilations_available_falls_back_to_earliest(self):
+        client = _make_client()
+        match = {
+            "id": "rec-levels",
+            "title": "Levels",
+            "release-list": [
+                {
+                    "id": "r-2017",
+                    "title": "Topradio - De Blijvers",
+                    "date": "2017-11-25",
+                    "release-group": {
+                        "id": "rg-2017",
+                        "type": "Compilation",
+                        "secondary-type-list": ["Compilation"],
+                        "tags": [],
+                    },
+                },
+                {
+                    "id": "r-2012",
+                    "title": "DJ KAORI’S Party Mix 3",
+                    "date": "2012-04-18",
+                    "release-group": {
+                        "id": "rg-2012",
+                        "type": "Compilation",
+                        "secondary-type-list": ["Compilation", "DJ-mix"],
+                        "tags": [],
+                    },
+                },
+            ],
+        }
+        with patch("musicbrainzngs.get_recording_by_id", return_value={}):
+            result = asyncio.run(client._build_metadata(match, "Avicii"))
+
+        assert result["year"] == "2012"
+        assert result["release_id"] == "r-2012"
+
+    def test_recording_first_release_date_still_wins_when_present(self):
+        """Regressions-Guard: liegt am Recording bzw. an der Release-Group
+        eine echte `first-release-date` vor, bleibt SIE maßgeblich - die
+        Release-Datums-Fallback ist nur der letzte Zweig."""
+        client = _make_client()
+        match = {
+            "id": "rec-1",
+            "title": "Track",
+            "first-release-date": "2001-05-05",
+            "release-list": [
+                {
+                    "id": "rel-x",
+                    "title": "Some Comp",
+                    "date": "2019",
+                    "release-group": {
+                        "id": "rg-x",
+                        "type": "Compilation",
+                        "secondary-type-list": ["Compilation"],
+                        "tags": [],
+                    },
+                }
+            ],
+        }
+        with patch("musicbrainzngs.get_recording_by_id", return_value={}):
+            result = asyncio.run(client._build_metadata(match, "Artist"))
+
+        assert result["year"] == "2001"

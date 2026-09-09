@@ -153,6 +153,50 @@ class MusicBrainzClient:
             self.logger.debug(f"⚠️ Fehler beim Holen der Release-Group ID: {e}")
         return None
 
+    @staticmethod
+    def _release_is_compilation(release: dict) -> bool:
+        """True, wenn das Release (bzw. seine Release-Group) eine Compilation
+        oder ein DJ-Mix ist - solche Veröffentlichungen tragen bei
+        Katalog-Metadaten (Album/Jahr) fast nie das gewünschte Original."""
+        rg = release.get("release-group", {}) or {}
+        secondary = {
+            str(s).strip().lower() for s in (rg.get("secondary-type-list") or [])
+        }
+        if "compilation" in secondary or "dj-mix" in secondary:
+            return True
+        rg_type = str(rg.get("type") or rg.get("primary-type") or "").strip().lower()
+        return rg_type == "compilation"
+
+    def _select_primary_release(self, release_list: list) -> dict:
+        """Finding E (Download-Pipeline-Log-Analyse 2026-09-09): MusicBrainz
+        liefert die release-list einer Aufnahme UNSORTIERT. `release_list[0]`
+        war real regelmäßig eine Compilation / ein DJ-Mix ("Bravo Hits 00's"
+        2021, "Casino Royale, Volume 2" 2007) statt der Original-
+        Veröffentlichung ("Smack That" Single, 2006) → falsches Album UND
+        falsches Jahr (Akon „Smack That" → 2009 statt 2006, Avicii „Levels"
+        → 2022).
+
+        Auswahl: Compilations/DJ-Mixe zurückstellen; unter den verbleibenden
+        (bzw. der ganzen Liste, falls es nur Compilations gibt) die früheste
+        datierte Veröffentlichung. ISO-Datumsstrings sortieren lexikografisch
+        korrekt; undatierte Releases landen hinten."""
+        if not release_list:
+            return {}
+
+        def _date_key(rel: dict) -> str:
+            rg = rel.get("release-group", {}) or {}
+            return (
+                rel.get("date")
+                or rg.get("first-release-date")
+                or "9999-99-99"
+            )
+
+        non_comp = [
+            r for r in release_list if not self._release_is_compilation(r)
+        ]
+        pool = non_comp or list(release_list)
+        return min(pool, key=_date_key)
+
     def _extract_track_number(self, match: dict, release_list: list) -> Optional[int]:
         """
         Ermittelt die echte Position dieses Recordings innerhalb seines Mediums.
@@ -480,7 +524,7 @@ class MusicBrainzClient:
         release_list = match.get("release-list") or recording_info.get(
             "release-list", []
         )
-        first_release = release_list[0] if release_list else {}
+        first_release = self._select_primary_release(release_list)
 
         source_release = match.get("_source_release")
         if source_release:
@@ -500,6 +544,7 @@ class MusicBrainzClient:
             match.get("first-release-date")
             or recording_info.get("first-release-date")
             or release_group.get("first-release-date")
+            or first_release.get("date")
         )
         release_year = (
             release_date[:4] if release_date and len(release_date) >= 4 else None
