@@ -492,8 +492,8 @@ class TestRenderSummaryMarkdownFindingsBackwardCompatibility:
         issue = _issue("ARTWORK_MISSING", "WARNING", path="a.m4a")
         md = render_summary_markdown(_summary_report([issue]))
         assert "📋 Befundstatus" not in md
-        assert "Behobene Befunde" not in md
-        assert "False Positives" not in md
+        assert "Reparierte Befunde" not in md
+        assert "Akzeptierte Befunde" not in md
         assert "## 🟠 Warnungen" in md  # alte, unpräfixierte Überschrift
 
 
@@ -512,8 +512,8 @@ class TestRenderSummaryMarkdownFindingsStatusTable:
         md = render_summary_markdown(report)
         assert "📋 Befundstatus" in md
         assert "| 🔴 Offen | 1 |" in md
-        assert "| 🟢 Behoben | 2 |" in md
-        assert "| ⚪ False Positive | 1 |" in md
+        assert "| 🟢 Repariert | 2 |" in md
+        assert "| ⚪ Akzeptiert | 1 |" in md
 
 
 class TestRenderSummaryMarkdownOpenFindingsOnly:
@@ -564,7 +564,7 @@ class TestRenderSummaryMarkdownResolvedAndFalsePositiveSections:
             issues, findings={"total_detected": 1, "open": 0, "resolved": 1, "false_positive": 0}
         )
         md = render_summary_markdown(report)
-        assert "## 🟢 Behobene Befunde" in md
+        assert "## 🟢 Reparierte Befunde" in md
         assert "ARTWORK_MISSING" in md
         assert "2026-03-01T10:00:00+00:00" in md
 
@@ -579,7 +579,7 @@ class TestRenderSummaryMarkdownResolvedAndFalsePositiveSections:
             issues, findings={"total_detected": 1, "open": 0, "resolved": 0, "false_positive": 1}
         )
         md = render_summary_markdown(report)
-        assert "## ⚪ False Positives" in md
+        assert "## ⚪ Akzeptierte Befunde" in md
         assert "Album enthält absichtlich keinen Track 7." in md
 
     def test_empty_resolved_and_false_positive_produce_no_sections(self):
@@ -590,8 +590,8 @@ class TestRenderSummaryMarkdownResolvedAndFalsePositiveSections:
             issues, findings={"total_detected": 1, "open": 1, "resolved": 0, "false_positive": 0}
         )
         md = render_summary_markdown(report)
-        assert "Behobene Befunde" not in md
-        assert "False Positives" not in md
+        assert "Reparierte Befunde" not in md
+        assert "Akzeptierte Befunde" not in md
 
 
 class TestRenderSummaryMarkdownFindingsFazit:

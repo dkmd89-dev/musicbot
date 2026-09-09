@@ -62,8 +62,12 @@ from services.library_health.findings import (  # noqa: E402
     Finding,
     FindingsRegistry,
     FindingsRegistryError,
+    accept_finding,
     batch_review_category,
+    get_accepted_findings,
+    get_review_summary,
     group_open_findings_by_category,
+    unaccept_finding,
 )
 
 _POSITIVE_CONFIRM = {"y", "yes", "j", "ja"}
@@ -85,6 +89,40 @@ def _build_parser() -> argparse.ArgumentParser:
         "--reviewer", type=str, default=None,
         help="Kennung des Prüfenden für 'reviewed_by' "
              "(Default: 'cli:<OS-Benutzername>').",
+    )
+
+    # ── Nicht-interaktive Direktaktionen (Library-Closure-Phase,
+    #    Auftrag §15-22). Ohne eines dieser Flags läuft der bisherige
+    #    interaktive, kategoriebasierte Review (Default, unverändert). ──
+    direct = parser.add_argument_group(
+        "Direktaktionen (nicht-interaktiv, je genau eine pro Aufruf)"
+    )
+    direct.add_argument(
+        "--accept", metavar="FINDING_ID", default=None,
+        help="Finding bewusst akzeptieren (== FALSE_POSITIVE). "
+             "Erfordert --reason.",
+    )
+    direct.add_argument(
+        "--reason", type=str, default=None,
+        help="Grund für --accept (Pflicht bei --accept, wird gespeichert).",
+    )
+    direct.add_argument(
+        "--unaccept", metavar="FINDING_ID", default=None,
+        help="Acceptance zurücknehmen — Finding wird wieder OPEN.",
+    )
+    direct.add_argument(
+        "--accepted", metavar="ISSUE_CODE", nargs="?", const="", default=None,
+        help="Akzeptierte Findings auflisten; optional auf einen Issue-Code "
+             "gefiltert (z. B. --accepted ALBUM_TRACK_GAP).",
+    )
+    direct.add_argument(
+        "--show", metavar="FINDING_ID", default=None,
+        help="Ein Finding mit voller Review-Historie anzeigen.",
+    )
+    direct.add_argument(
+        "--summary", action="store_true",
+        help="Tri-State-Zusammenfassung (🔴 Offen / 🟢 Repariert / "
+             "⚪ Akzeptiert) ausgeben und beenden.",
     )
     return parser
 
@@ -174,6 +212,142 @@ def _confirm_batch_false_positive(group: CategoryGroup) -> bool:
     return answer in _POSITIVE_CONFIRM
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Nicht-interaktive Direktaktionen (Auftrag §15-22). Jede ruft ausschliesslich
+# die zentrale findings.py-API — kein Direktzugriff auf die JSON-Datei.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _render_finding_detail(finding: Finding) -> None:
+    print(f"Finding-ID:  {finding.finding_id}")
+    print(f"Code:        {finding.code}  "
+          f"(Scope {finding.scope}, Severity {finding.severity or '-'})")
+    print(f"Status:      {finding.status}")
+    print(f"Ort:         {_finding_location(finding)}")
+    if finding.path:
+        print(f"Datei:       {finding.path}")
+    if finding.message:
+        print(f"Meldung:     {finding.message}")
+    print(f"Erstmals:    {finding.first_seen}")
+    print(f"Zuletzt:     {finding.last_seen}  ({finding.occurrences}x erkannt)")
+    print(f"Im letzten Scan erkannt: {'ja' if finding.present_in_latest_scan else 'nein'}")
+    if finding.reviewed_at:
+        print(f"Bewertet:    {finding.reviewed_at} von {finding.reviewed_by or '-'}")
+    if finding.review_note:
+        print(f"Notiz:       {finding.review_note}")
+    if finding.history:
+        print("\nHistorie:")
+        for h in finding.history:
+            print(f"  {h.timestamp}  {h.status}"
+                  + (f"  – {h.note}" if h.note else ""))
+
+
+def _cmd_summary(registry: FindingsRegistry) -> int:
+    s = get_review_summary(registry)
+    print("Library Health Review – Zusammenfassung\n")
+    print(f"🔴 Offen:      {s.open}")
+    print(f"🟢 Repariert:  {s.repaired}")
+    stale = f"  (davon {s.accepted_stale} nicht mehr erkannt)" if s.accepted_stale else ""
+    print(f"⚪ Akzeptiert: {s.accepted}{stale}")
+    if s.resolved_by_scan:
+        print(f"   vom Scanner nicht mehr erkannt (unbestätigt): {s.resolved_by_scan}")
+    print(f"\nGesamt in Registry: {s.total}")
+    return 0
+
+
+def _cmd_show(registry: FindingsRegistry, finding_id: str) -> int:
+    finding = registry.get(finding_id)
+    if finding is None:
+        print(f"❌ Kein Finding mit ID {finding_id!r}.", file=sys.stderr)
+        return 1
+    _render_finding_detail(finding)
+    return 0
+
+
+def _cmd_accepted(registry: FindingsRegistry, issue_code: Optional[str]) -> int:
+    findings = get_accepted_findings(registry, issue_code=issue_code)
+    if not findings:
+        scope = f" für {issue_code}" if issue_code else ""
+        print(f"Keine akzeptierten Findings{scope}.")
+        return 0
+    title = f"⚪ Akzeptierte Findings ({len(findings)})"
+    if issue_code:
+        title += f" – gefiltert auf {issue_code}"
+    print(title + "\n")
+    current_code = None
+    for f in findings:
+        if f.code != current_code:
+            current_code = f.code
+            print(f.code)
+        stale = "  ⚠️ nicht mehr erkannt" if not f.present_in_latest_scan else ""
+        print(f"  {f.finding_id}  {_finding_location(f)}{stale}")
+        if f.review_note:
+            print(f"      Grund: {f.review_note}")
+    return 0
+
+
+def _cmd_accept(
+    registry: FindingsRegistry, finding_id: str, reason: Optional[str], reviewer: str
+) -> int:
+    if not reason or not reason.strip():
+        print("❌ --accept erfordert --reason \"<Grund>\".", file=sys.stderr)
+        return 2
+    try:
+        finding = accept_finding(
+            registry, finding_id, reason=reason, reviewed_by=reviewer
+        )
+    except KeyError:
+        print(f"❌ Kein Finding mit ID {finding_id!r}.", file=sys.stderr)
+        return 1
+    registry.save()
+    print(f"✅ {finding_id} akzeptiert ({finding.code}).")
+    print(f"   Grund: {finding.review_note}")
+    return 0
+
+
+def _cmd_unaccept(registry: FindingsRegistry, finding_id: str, reviewer: str) -> int:
+    try:
+        finding = unaccept_finding(registry, finding_id, reviewed_by=reviewer)
+    except KeyError:
+        print(f"❌ Kein Finding mit ID {finding_id!r}.", file=sys.stderr)
+        return 1
+    except ValueError as e:
+        print(f"❌ {e}", file=sys.stderr)
+        return 1
+    registry.save()
+    print(f"↩️  {finding_id} reaktiviert – Status wieder OPEN ({finding.code}).")
+    return 0
+
+
+def _run_direct_action(args, registry: FindingsRegistry, reviewer: str) -> Optional[int]:
+    """Gibt einen Exit-Code zurück, wenn eine Direktaktion angefordert wurde,
+    sonst None (→ interaktiver Review)."""
+    selected = [
+        name for name, active in (
+            ("--summary", args.summary),
+            ("--show", args.show is not None),
+            ("--accepted", args.accepted is not None),
+            ("--accept", args.accept is not None),
+            ("--unaccept", args.unaccept is not None),
+        ) if active
+    ]
+    if not selected:
+        return None
+    if len(selected) > 1:
+        print(f"❌ Nur eine Direktaktion pro Aufruf ({', '.join(selected)}).",
+              file=sys.stderr)
+        return 2
+    if args.summary:
+        return _cmd_summary(registry)
+    if args.show is not None:
+        return _cmd_show(registry, args.show)
+    if args.accepted is not None:
+        return _cmd_accepted(registry, args.accepted or None)
+    if args.accept is not None:
+        return _cmd_accept(registry, args.accept, args.reason, reviewer)
+    return _cmd_unaccept(registry, args.unaccept, reviewer)
+
+
 def main(argv=None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -193,6 +367,10 @@ def main(argv=None) -> int:
     except FindingsRegistryError as e:
         print(f"❌ {e}", file=sys.stderr)
         return 2
+
+    direct_exit = _run_direct_action(args, registry, reviewer)
+    if direct_exit is not None:
+        return direct_exit
 
     groups = group_open_findings_by_category(registry)
 
