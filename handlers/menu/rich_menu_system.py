@@ -1433,6 +1433,10 @@ class RichMenuSystem:
           review:quit:<finding_id>        → Review beenden
           review:batchconfirm:<CODE>      → Bestätigung vor Batch-False-Positive
           review:batchyes:<CODE>          → Batch-False-Positive ausführen
+          review:accepted                 → Liste der akzeptierten Findings (nach Code)
+          review:acccode:<CODE>           → akzeptierte Findings dieser Kategorie
+          review:accshow:<finding_id>     → ein akzeptiertes Finding (Detail)
+          review:unaccept:<finding_id>    → Acceptance zurücknehmen (→ OPEN)
 
         Eigener Admin-Check hier (Defense-in-Depth, analog zu doctor:/
         maint:/reprocess: - callback_data ist frei sendbar, siehe SEC-003).
@@ -1457,6 +1461,9 @@ class RichMenuSystem:
         if callback_data == "review:start":
             await self.review_handler.handle_start(update, context)
             return
+        if callback_data == "review:accepted":
+            await self.review_handler.handle_accepted_list(update, context)
+            return
 
         parts = callback_data.split(":", 2)
         if len(parts) < 3:
@@ -1476,6 +1483,12 @@ class RichMenuSystem:
             await self.review_handler.handle_batch_confirmed(update, context, payload)
         elif action in ("resolve", "fp", "skip", "quit"):
             await self.review_handler.handle_single_action(update, context, action, payload)
+        elif action == "acccode":
+            await self.review_handler.handle_accepted_category(update, context, payload)
+        elif action == "accshow":
+            await self.review_handler.handle_accepted_show(update, context, payload)
+        elif action == "unaccept":
+            await self.review_handler.handle_unaccept(update, context, payload)
         else:
             await query.answer("⚠️ Unbekannter Review-Callback")
 

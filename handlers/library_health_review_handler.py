@@ -46,7 +46,9 @@ from services.library_health.findings import (
     FindingsRegistry,
     FindingsRegistryError,
     batch_review_category,
+    get_accepted_findings,
     group_open_findings_by_category,
+    unaccept_finding,
 )
 
 if TYPE_CHECKING:
@@ -132,10 +134,11 @@ class LibraryHealthReviewHandler:
             return
 
         groups = group_open_findings_by_category(registry)
-        text, keyboard = self._render_overview(groups)
+        accepted_count = len(get_accepted_findings(registry))
+        text, keyboard = self._render_overview(groups, accepted_count)
         await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
 
-    def _render_overview(self, groups: list[CategoryGroup]):
+    def _render_overview(self, groups: list[CategoryGroup], accepted_count: int = 0):
         total_open = sum(g.open_count for g in groups)
         tier_counts: dict[str, int] = {t: 0 for t in _TIER_ORDER}
         tier_categories: dict[str, int] = {t: 0 for t in _TIER_ORDER}
@@ -153,6 +156,10 @@ class LibraryHealthReviewHandler:
         for tier in _TIER_ORDER:
             lines.append(f"{_TIER_EMOJI[tier]} {tier} ({tier_counts[tier]})")
 
+        if accepted_count:
+            lines.append("")
+            lines.append(f"⚪ Akzeptiert ({accepted_count})")
+
         buttons = []
         for tier in _TIER_ORDER:
             if tier_counts[tier] > 0:
@@ -160,6 +167,11 @@ class LibraryHealthReviewHandler:
                     f"{_TIER_EMOJI[tier]} {_TIER_LABEL[tier]}",
                     callback_data=f"review:severity:{tier}",
                 )])
+        if accepted_count:
+            buttons.append([InlineKeyboardButton(
+                f"⚪ Akzeptierte Findings ({accepted_count})",
+                callback_data="review:accepted",
+            )])
         buttons.append([InlineKeyboardButton("🔄 Aktualisieren", callback_data="review:start")])
         buttons.append([InlineKeyboardButton("◀️ Zurück", callback_data=_BACK_TO_ADMIN)])
 
@@ -455,3 +467,207 @@ class LibraryHealthReviewHandler:
             return
 
         await self._render_current_finding(query, context)
+
+    # ── Akzeptierte Findings (Library-Closure-Phase) ─────────────────────
+    #
+    # "⚪ Akzeptiert" == Lifecycle-Status FALSE_POSITIVE (kein neuer Status,
+    # siehe docs/LIBRARY_HEALTH.md §1a). Diese Ansicht ist rein lesend, bis
+    # der Nutzer explizit "↩️ Reaktivieren" tippt — dann unaccept_finding()
+    # (→ OPEN), mit Stale-Revalidierung wie überall sonst in diesem Handler.
+
+    _ACC_PER_PAGE = 20
+
+    async def handle_accepted_list(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        registry = self._load_registry()
+        if registry is None:
+            text, keyboard = self._registry_error_message()
+            await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+            return
+
+        accepted = get_accepted_findings(registry)
+        if not accepted:
+            await query.edit_message_text(
+                "⚪ <b>Akzeptierte Findings</b>\n\nKeine akzeptierten Befunde.",
+                parse_mode="HTML",
+                reply_markup=self._back_keyboard("review:start", "◀️ Zur Übersicht"),
+            )
+            return
+
+        by_code: dict[str, list[Finding]] = {}
+        for f in accepted:
+            by_code.setdefault(f.code, []).append(f)
+        stale = sum(1 for f in accepted if not f.present_in_latest_scan)
+
+        lines = [
+            "⚪ <b>Akzeptierte Findings</b>",
+            "",
+            f"{len(accepted)} gesamt · {len(by_code)} Kategorie(n)",
+        ]
+        if stale:
+            lines.append(f"⚠️ {stale} davon vom Scanner nicht mehr erkannt")
+
+        buttons = [
+            [InlineKeyboardButton(
+                f"{code} · {len(fs)}", callback_data=f"review:acccode:{code}",
+            )]
+            for code, fs in sorted(by_code.items())
+        ]
+        buttons.append([InlineKeyboardButton("◀️ Zurück", callback_data="review:start")])
+        await query.edit_message_text(
+            "\n".join(lines), parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+
+    async def handle_accepted_category(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, code: str
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        registry = self._load_registry()
+        if registry is None:
+            text, keyboard = self._registry_error_message()
+            await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+            return
+
+        accepted = get_accepted_findings(registry, issue_code=code)
+        if not accepted:
+            await query.edit_message_text(
+                f"⚪ <b>{html.escape(code)}</b>\n\n"
+                "Keine akzeptierten Befunde mehr in dieser Kategorie.",
+                parse_mode="HTML",
+                reply_markup=self._back_keyboard("review:accepted", "🔄 Aktualisieren"),
+            )
+            return
+
+        lines = [f"⚪ <b>{html.escape(code)}</b>", "", f"{len(accepted)} akzeptiert"]
+        buttons = []
+        for f in accepted[: self._ACC_PER_PAGE]:
+            mark = "" if f.present_in_latest_scan else " ⚠️"
+            label = f"{_finding_location(f)}{mark}"
+            buttons.append([InlineKeyboardButton(
+                label[:60], callback_data=f"review:accshow:{f.finding_id}",
+            )])
+        if len(accepted) > self._ACC_PER_PAGE:
+            lines.append("")
+            lines.append(
+                f"(weitere {len(accepted) - self._ACC_PER_PAGE} — "
+                f"CLI: <code>library_health_review.py --accepted {html.escape(code)}</code>)"
+            )
+        buttons.append([InlineKeyboardButton("◀️ Zurück", callback_data="review:accepted")])
+        await query.edit_message_text(
+            "\n".join(lines), parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+
+    async def handle_accepted_show(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, finding_id: str
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        registry = self._load_registry()
+        if registry is None:
+            text, keyboard = self._registry_error_message()
+            await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+            return
+
+        finding = registry.get(finding_id)
+        if finding is None or finding.status != STATUS_FALSE_POSITIVE:
+            await query.edit_message_text(
+                "⚠️ Dieser Befund ist nicht mehr akzeptiert.\n\n"
+                "Die Findings wurden zwischenzeitlich aktualisiert.",
+                reply_markup=self._back_keyboard("review:accepted", "🔄 Aktualisieren"),
+            )
+            return
+
+        lines = [
+            f"⚪ <b>{html.escape(finding.code)}</b>",
+            "",
+            html.escape(_finding_location(finding)),
+        ]
+        if finding.path:
+            lines.append(html.escape(finding.path))
+        if finding.message:
+            lines += ["", html.escape(finding.message)]
+        if finding.review_note:
+            lines += ["", f"<b>Grund:</b> {html.escape(finding.review_note)}"]
+        lines.append("")
+        lines.append(
+            "Im letzten Scan erkannt: "
+            + ("ja" if finding.present_in_latest_scan else "nein ⚠️")
+        )
+        if finding.reviewed_at:
+            lines.append(
+                f"Akzeptiert: {html.escape(finding.reviewed_at)} "
+                f"({html.escape(finding.reviewed_by or '-')})"
+            )
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "↩️ Reaktivieren (wieder OPEN)",
+                callback_data=f"review:unaccept:{finding_id}",
+            )],
+            [InlineKeyboardButton(
+                "◀️ Zurück", callback_data=f"review:acccode:{finding.code}",
+            )],
+        ])
+        await query.edit_message_text(
+            "\n".join(lines), parse_mode="HTML", reply_markup=keyboard
+        )
+
+    async def handle_unaccept(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, finding_id: str
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        registry = self._load_registry()
+        if registry is None:
+            text, keyboard = self._registry_error_message()
+            await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+            return
+
+        # Stale-Revalidierung vor der tatsaechlichen Aenderung (Abschnitt 24):
+        # das Finding muss noch existieren UND noch akzeptiert sein.
+        finding = registry.get(finding_id)
+        if finding is None or finding.status != STATUS_FALSE_POSITIVE:
+            await query.edit_message_text(
+                "⚠️ Dieser Befund ist nicht mehr akzeptiert — nichts zu tun.\n\n"
+                "Die Findings wurden zwischenzeitlich aktualisiert.",
+                reply_markup=self._back_keyboard("review:accepted", "🔄 Aktualisieren"),
+            )
+            return
+
+        code = finding.code
+        unaccept_finding(registry, finding_id, reviewed_by=f"telegram:{user_id}")
+        registry.save()
+        self.logger.info(
+            f"📋 [REVIEW] {finding_id} -> OPEN (unaccept, User {user_id})"
+        )
+        await query.edit_message_text(
+            f"↩️ Befund <b>{html.escape(code)}</b> reaktiviert — Status wieder OPEN.",
+            parse_mode="HTML",
+            reply_markup=self._back_keyboard("review:accepted", "◀️ Zu den Akzeptierten"),
+        )
