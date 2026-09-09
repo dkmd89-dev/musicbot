@@ -54,7 +54,9 @@ async def cached_musicbrainz_search(query: str, search_type: str) -> dict:
         return _musicbrainz_result_cache[query]
 
     try:
-        metadata_logger.debug(f"[{context_str}] 🌐 [API Request] MusicBrainz: '{query}'")
+        metadata_logger.debug(
+            f"[{context_str}] 🌐 [API Request] MusicBrainz: '{query}'"
+        )
         if search_type == "recording":
             result = await asyncio.to_thread(
                 musicbrainzngs.search_recordings, query=query, limit=10
@@ -64,16 +66,22 @@ async def cached_musicbrainz_search(query: str, search_type: str) -> dict:
                 musicbrainzngs.search_releases, query=query, limit=10
             )
         else:
-            metadata_logger.error(f"[{context_str}] ❌ Ungültiger Suchtyp: {search_type}")
+            metadata_logger.error(
+                f"[{context_str}] ❌ Ungültiger Suchtyp: {search_type}"
+            )
             return {}
 
         _musicbrainz_result_cache[query] = result
         return result
     except musicbrainzngs.NetworkError as e:
-        metadata_logger.error(f"[{context_str}] 📡 MusicBrainz network error: {e}", exc_info=True)
+        metadata_logger.error(
+            f"[{context_str}] 📡 MusicBrainz network error: {e}", exc_info=True
+        )
         return {}
     except Exception as e:
-        metadata_logger.error(f"[{context_str}] ❌ MusicBrainz cache/API error: {e}", exc_info=True)
+        metadata_logger.error(
+            f"[{context_str}] ❌ MusicBrainz cache/API error: {e}", exc_info=True
+        )
         return {}
 
 
@@ -87,10 +95,12 @@ def _get_artist_normalizer():
     """
     try:
         from utils.artist_map import get_artist_normalizer
+
         return get_artist_normalizer()
     except (ImportError, AttributeError):
         # Fallback: eigene Instanz (wie bisher) wenn kein Singleton exportiert
         from utils.artist_map import ArtistNormalizer, ArtistConfig
+
         _cfg = ArtistConfig(
             library_dir=Path(Config.LIBRARY_DIR),
             override_file=Path(Config.ARTIST_OVERRIDE_FILE),
@@ -124,16 +134,20 @@ class MusicBrainzClient:
             if not release_id:
                 return None
 
-            self.logger.debug(f"🔍 Hole Release-Group ID für Release: {release_id[:8]}...")
+            self.logger.debug(
+                f"🔍 Hole Release-Group ID für Release: {release_id[:8]}..."
+            )
             release_data = await asyncio.to_thread(
                 musicbrainzngs.get_release_by_id,
                 release_id,
-                includes=["release-groups"]
+                includes=["release-groups"],
             )
 
             if "release" in release_data and "release-group" in release_data["release"]:
                 release_group_id = release_data["release"]["release-group"]["id"]
-                self.logger.info(f"🎨 Release-Group ID gefunden: {release_group_id[:8]}...")
+                self.logger.info(
+                    f"🎨 Release-Group ID gefunden: {release_group_id[:8]}..."
+                )
                 return release_group_id
         except Exception as e:
             self.logger.debug(f"⚠️ Fehler beim Holen der Release-Group ID: {e}")
@@ -223,8 +237,12 @@ class MusicBrainzClient:
                         f"'{artist}' - '{title}' → '{clean_artist}' - '{clean_title}'"
                     )
 
-                query_combined = f'recording:"{clean_title}" AND artist:"{clean_artist}"'
-                result_combined = await cached_musicbrainz_search(query_combined, "recording")
+                query_combined = (
+                    f'recording:"{clean_title}" AND artist:"{clean_artist}"'
+                )
+                result_combined = await cached_musicbrainz_search(
+                    query_combined, "recording"
+                )
                 recordings = result_combined.get("recording-list", [])
 
                 if not recordings:
@@ -232,7 +250,9 @@ class MusicBrainzClient:
                         f"[{context_str}] ❓ Keine Ergebnisse, Fallback auf Titelsuche."
                     )
                     query_title = f'recording:"{clean_title}"'
-                    result_title = await cached_musicbrainz_search(query_title, "recording")
+                    result_title = await cached_musicbrainz_search(
+                        query_title, "recording"
+                    )
                     recordings = result_title.get("recording-list", [])
 
                     if not recordings:
@@ -305,7 +325,9 @@ class MusicBrainzClient:
                             recording["_source_release"] = {
                                 "id": release_id,
                                 "title": release.get("title"),
-                                "artist-credit-phrase": release.get("artist-credit-phrase"),
+                                "artist-credit-phrase": release.get(
+                                    "artist-credit-phrase"
+                                ),
                             }
                             recording["_source_track_number"] = track.get(
                                 "number"
@@ -335,7 +357,9 @@ class MusicBrainzClient:
 
             normalized_artist_match = False
             if hasattr(self, "artist_normalizer"):
-                normalized_rec_artist = self.artist_normalizer.normalize(rec_artist_phrase)
+                normalized_rec_artist = self.artist_normalizer.normalize(
+                    rec_artist_phrase
+                )
                 normalized_clean_artist = self.artist_normalizer.normalize(clean_artist)
                 normalized_artist_match = (
                     normalized_rec_artist == normalized_clean_artist
@@ -395,19 +419,35 @@ class MusicBrainzClient:
         recording_mbid = match.get("id")
         recording_detail = {}
         if recording_mbid:
-            try:
+            # PERF (Download-Pipeline-Optimierung 2026-09-09, H2): fetch_metadata()
+            # wird pro Track ~2x aufgerufen (GenreProcessor + AlbumProcessor). Die
+            # SUCHE ist über cached_musicbrainz_search() gecacht, der teure
+            # get_recording_by_id()-Detail-Call (eigener HTTP-Roundtrip inkl.
+            # includes) lief aber jedes Mal — ~1 s + MB rate-limitet auf 1 req/s
+            # (bei Playlists der Flaschenhals + Ursache der TimeoutError-Häufung).
+            # Ergebnis unter demselben Modul-TTLCache ablegen (Key ist eine
+            # UUID → kein Kollisionsrisiko mit den Query-Keys der Suche).
+            _detail_key = f"recording_detail:{recording_mbid}"
+            if _detail_key in _musicbrainz_result_cache:
+                recording_detail = _musicbrainz_result_cache[_detail_key]
                 self.logger.debug(
-                    f"[{context_str}] 🔍 Lade Recording-Details: {recording_mbid}"
+                    f"[{context_str}] 🎯 Recording-Details aus Cache: {recording_mbid}"
                 )
-                recording_detail = await asyncio.to_thread(
-                    musicbrainzngs.get_recording_by_id,
-                    recording_mbid,
-                    includes=["artists", "releases", "isrcs"],
-                )
-            except Exception as e:
-                self.logger.warning(
-                    f"[{context_str}] ⚠️ Konnte Recording-Details nicht laden: {e}"
-                )
+            else:
+                try:
+                    self.logger.debug(
+                        f"[{context_str}] 🔍 Lade Recording-Details: {recording_mbid}"
+                    )
+                    recording_detail = await asyncio.to_thread(
+                        musicbrainzngs.get_recording_by_id,
+                        recording_mbid,
+                        includes=["artists", "releases", "isrcs"],
+                    )
+                    _musicbrainz_result_cache[_detail_key] = recording_detail
+                except Exception as e:
+                    self.logger.warning(
+                        f"[{context_str}] ⚠️ Konnte Recording-Details nicht laden: {e}"
+                    )
 
         recording_info = recording_detail.get("recording", match)
 
@@ -484,21 +524,21 @@ class MusicBrainzClient:
         )
 
         return {
-            "title":          match.get("title"),
-            "artist":         original_artist,
-            "album":          release_group.get("title") or first_release.get("title"),
-            "track_number":   self._extract_track_number(match, release_list),
-            "release_date":   release_date,
-            "year":           release_year,
-            "album_artist":   album_artist,
-            "tags":           mb_tags,
-            "genre":          genre_value,
+            "title": match.get("title"),
+            "artist": original_artist,
+            "album": release_group.get("title") or first_release.get("title"),
+            "track_number": self._extract_track_number(match, release_list),
+            "release_date": release_date,
+            "year": release_year,
+            "album_artist": album_artist,
+            "tags": mb_tags,
+            "genre": genre_value,
             # MBIDs – werden von GenreProcessor in GenreResult.mb_ids geschrieben
             # und von enhanced_metadata_processor in track_metadata übernommen
-            "mbid":               recording_mbid,
-            "recording_id":       recording_mbid,
-            "artist_id":          artist_id,
-            "release_id":         release_id,
-            "release_group_id":   release_group_id,
-            "isrc":               isrc,
+            "mbid": recording_mbid,
+            "recording_id": recording_mbid,
+            "artist_id": artist_id,
+            "release_id": release_id,
+            "release_group_id": release_group_id,
+            "isrc": isrc,
         }
