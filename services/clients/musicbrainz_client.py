@@ -540,11 +540,30 @@ class MusicBrainzClient:
         if not release_group_id and release_id:
             release_group_id = await self._fetch_release_group_id(release_id)
 
+        # Finding E, Folge-Fund (Download-Pipeline-Testlauf 2026-09-09,
+        # Fritz Kalkbrenner – „Sky and Sand"): existiert die gewählte
+        # Aufnahme in MusicBrainz AUSSCHLIESSLICH auf Compilations / DJ-Mixen
+        # (kein einziges Single-/Album-Release), ist deren Datum als
+        # Original-Erscheinungsjahr wertlos – real: eine 2018er
+        # DJ-Mix-Compilation als „ältestes" Release, obwohl der Song von
+        # 2009/2010 ist. Ein aus `_build_metadata()` selbst produziertes,
+        # verlässlicheres Signal gibt es dann nicht. Statt ein irreführendes
+        # Jahr weiterzureichen: kein `release_date` → die Pipeline
+        # (`AlbumProcessor.determine_album_info`) fällt auf das
+        # YouTube-/Upload-Jahr zurück.
+        _comp_only_source = bool(first_release) and self._release_is_compilation(
+            first_release
+        )
+        _release_level_date = None
+        if not _comp_only_source:
+            _release_level_date = release_group.get(
+                "first-release-date"
+            ) or first_release.get("date")
+
         release_date = (
             match.get("first-release-date")
             or recording_info.get("first-release-date")
-            or release_group.get("first-release-date")
-            or first_release.get("date")
+            or _release_level_date
         )
         release_year = (
             release_date[:4] if release_date and len(release_date) >= 4 else None
