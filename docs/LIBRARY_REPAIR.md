@@ -202,6 +202,34 @@ Ablauf pro Tag-Fix-Datei (Prompt Abschnitt 13–17):
 `MULTI_ARTIST_INCONSISTENT 9→0`, keine neuen Issues. Backups unter
 `/mnt/musik_bilder/.library_repair_backups/`.
 
+### Per-Repair-Verification je Datei (Library-Closure-Phase, 2026-09-09)
+
+Zusätzlich zum aggregierten Verification-Scan (Schritt 7) prüft der
+Executor nach **jedem echten `SUCCESS`** die betroffene Datei einzeln
+erneut (`_verify_issue_resolved()` → frische
+`services/library_health`-Einzeldatei-Analyse). Ist der auslösende
+Issue-Code danach weiterhin da → `ExecOutcome.status = "UNRESOLVED"` statt
+`SUCCESS` (im Journal ebenso). Rein additiv: `SUCCESS` wird nur
+herabgestuft, nie etwas hochgestuft; ein strukturell unmöglicher Recheck
+lässt `SUCCESS` unangetastet.
+
+- Beteiligt: `apply_level1` (Tag), `apply_level1_rename`,
+  `apply_cover_repairs`, `apply_external_metadata` — jeweils file-scope-Codes.
+- **Nicht** beteiligt (im Code begründet): album-scope
+  (`ALBUM_ARTIST_INCONSISTENT`, `ALBUM_COVER_INCONSISTENT` → Gruppen-Analyse
+  des aggregierten Scans), `LOUDNESS_OFF_TARGET` (RG-Tag bringt die
+  effektive Lautheit per Konstruktion aufs Ziel; Atom-/Audio-Verifikation
+  deckt den Rest; LUFS-Ebene = `--measure-loudness`-Scan), `apply_level2`
+  (hat die feinere `_l2_issue_resolved()`-Zielfeldbindung).
+- `UNRESOLVED` zählt wie `SUCCESS` als „auf der Platte geändert" (Navidrome-
+  Auto-Scan, `touched`-Set), aber **nie** als behoben —
+  `repair_service.execute_safe_automatic_repair()` markiert ein solches
+  Finding über sein eigenes Rescan-Gate weiterhin **nicht** als `RESOLVED`.
+
+Die vollständige Code→Disposition→Executor→Verifikations-Abdeckung:
+[`docs/audits/LIBRARY_CLOSURE_COVERAGE_MATRIX_2026-09-09.md`](audits/LIBRARY_CLOSURE_COVERAGE_MATRIX_2026-09-09.md)
+(maschinell gepinnt in `tests/test_library_repair_disposition_matrix.py`).
+
 ## 5a. Cover-Executor (implementiert)
 
 `--level COVER` bzw. `--issue ARTWORK_*` (NIE im Default-`--apply` — Cover

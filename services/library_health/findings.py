@@ -615,6 +615,162 @@ def batch_review_category(
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Accept / Unaccept / Review-Summary (Library-Closure-Phase, Auftrag
+# Abschnitt 15-22)
+#
+# Vokabular des Closure-Auftrags <-> bestehendes Lifecycle-Modell (bewusste
+# Entscheidung, kein neuer Status — siehe docs/LIBRARY_HEALTH.md §1a):
+#
+#   🔴 OPEN      == STATUS_OPEN
+#   🟢 REPARIERT == STATUS_RESOLVED           (Behebung bestaetigt)
+#   ⚪ AKZEPTIERT == STATUS_FALSE_POSITIVE     (bewusst akzeptiert, technisch
+#                                              weiterhin wahr — Auftrag §19)
+#
+# accept_finding() ist damit ein duenner, benannter Alias auf
+# review_finding(..., STATUS_FALSE_POSITIVE, ...). unaccept_finding() ist
+# die einzige NEUE Faehigkeit: eine manuelle Reaktivierung zurueck auf OPEN
+# (Auftrag §18). Sie ist bewusst vom Scan-Merge getrennt — merge_scan_issues()
+# laesst ein FALSE_POSITIVE bei Wiedererkennung weiterhin unangetastet;
+# nur diese explizite Nutzeraktion hebt eine Acceptance auf.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def accept_finding(
+    registry: "FindingsRegistry",
+    finding_id: str,
+    *,
+    reason: str,
+    reviewed_by: Optional[str] = None,
+    reviewed_at: Optional[str] = None,
+) -> Finding:
+    """Markiert ein Finding als bewusst akzeptiert (== STATUS_FALSE_POSITIVE)
+    mit einem Pflicht-Grund (Auftrag §15). Der Aufrufer speichert danach
+    explizit (`registry.save()`) — analog review_finding()."""
+    if not reason or not reason.strip():
+        raise ValueError("accept_finding() verlangt einen nicht-leeren Grund (Auftrag §15).")
+    return registry.review_finding(
+        finding_id,
+        STATUS_FALSE_POSITIVE,
+        note=reason.strip(),
+        reviewed_by=reviewed_by,
+        reviewed_at=reviewed_at,
+    )
+
+
+def unaccept_finding(
+    registry: "FindingsRegistry",
+    finding_id: str,
+    *,
+    reviewed_by: Optional[str] = None,
+    note: Optional[str] = None,
+    reopened_at: Optional[str] = None,
+) -> Finding:
+    """Hebt eine Acceptance / einen Review-Abschluss manuell auf: Status
+    zurueck auf OPEN (Auftrag §18). Gueltig fuer jedes nicht bereits offene
+    Finding (FALSE_POSITIVE / RESOLVED / RESOLVED_BY_SCAN) — der Hauptfall
+    ist die Ruecknahme eines FALSE_POSITIVE.
+
+    Bewusst NICHT ueber review_finding() (das lehnt OPEN als Ziel ab) —
+    dieselbe direkte Feld-Mutation + History-Eintragung wie der
+    Reopen-Zweig in merge_scan_issues(). Die bisherigen reviewed_*/
+    review_note-Felder bleiben als Audit-Spur erhalten (identisch zum
+    Scan-Reopen).
+    """
+    finding = registry.get(finding_id)
+    if finding is None:
+        raise KeyError(f"Unbekannte Finding-ID: {finding_id!r}")
+    if finding.status == STATUS_OPEN:
+        raise ValueError(
+            f"Finding {finding_id!r} ist bereits OPEN — nichts zu reaktivieren."
+        )
+    ts = reopened_at or _now_iso()
+    default_note = "Reaktiviert (manuell)"
+    if reviewed_by:
+        default_note = f"Reaktiviert (manuell, {reviewed_by})"
+    finding.status = STATUS_OPEN
+    finding.reopened_at = ts
+    finding.history.append(
+        FindingHistoryEntry(status=STATUS_OPEN, timestamp=ts, note=note or default_note)
+    )
+    return finding
+
+
+def get_accepted_findings(
+    registry: "FindingsRegistry", *, issue_code: Optional[str] = None
+) -> list[Finding]:
+    """Alle aktuell akzeptierten (== FALSE_POSITIVE) Findings, deterministisch
+    sortiert (Auftrag §17). Optional auf einen Issue-Code gefiltert.
+
+    Ein Eintrag mit `present_in_latest_scan == False` ist „stale" (Auftrag
+    §20): akzeptiert, aber vom Scanner nicht mehr erkannt — z. B. weil er
+    zwischenzeitlich repariert wurde. Der Aufrufer (CLI/Telegram) weist
+    das getrennt aus; der Status bleibt bewusst FALSE_POSITIVE (keine
+    stille Datenaenderung)."""
+    out = [
+        f
+        for f in registry.all()
+        if f.status == STATUS_FALSE_POSITIVE
+        and (issue_code is None or f.code == issue_code)
+    ]
+    out.sort(
+        key=lambda f: (
+            f.code,
+            f.artist or "",
+            f.album or "",
+            f.title or "",
+            f.path or "",
+            f.finding_id,
+        )
+    )
+    return out
+
+
+@dataclass
+class ReviewSummary:
+    """Strukturierte Tri-State-Zusammenfassung fuer CLI/Telegram (Auftrag
+    §22/§30). `accepted` ist die Gesamtzahl akzeptierter Findings,
+    `accepted_stale` die Teilmenge davon, die der Scanner nicht mehr
+    erkennt (Auftrag §20)."""
+
+    open: int
+    repaired: int
+    accepted: int
+    accepted_stale: int
+    resolved_by_scan: int
+    total: int
+
+    def to_dict(self) -> dict:
+        return {
+            "open": self.open,
+            "repaired": self.repaired,
+            "accepted": self.accepted,
+            "accepted_stale": self.accepted_stale,
+            "resolved_by_scan": self.resolved_by_scan,
+            "total": self.total,
+        }
+
+
+def get_review_summary(registry: "FindingsRegistry") -> ReviewSummary:
+    """Aggregiert die gesamte Registry (nicht nur die aktuell erkannten
+    Issues) in die Tri-State-Sicht 🔴 OPEN / 🟢 REPARIERT / ⚪ AKZEPTIERT
+    plus den technischen RESOLVED_BY_SCAN-Zwischenzustand."""
+    counts = Counter(f.status for f in registry.all())
+    accepted_stale = sum(
+        1
+        for f in registry.all()
+        if f.status == STATUS_FALSE_POSITIVE and not f.present_in_latest_scan
+    )
+    return ReviewSummary(
+        open=counts.get(STATUS_OPEN, 0),
+        repaired=counts.get(STATUS_RESOLVED, 0),
+        accepted=counts.get(STATUS_FALSE_POSITIVE, 0),
+        accepted_stale=accepted_stale,
+        resolved_by_scan=counts.get(STATUS_RESOLVED_BY_SCAN, 0),
+        total=len(registry.all()),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Report-Integration (additiv, siehe report.py::render_summary_markdown())
 # ─────────────────────────────────────────────────────────────────────────
 

@@ -465,7 +465,9 @@ _FINDING_STATUS_FALSE_POSITIVE = "FALSE_POSITIVE"
 def _split_issues_by_finding_status(
     issues: list[dict],
 ) -> tuple[list[dict], list[dict], list[dict]]:
-    """Trennt Issues nach `finding_status` in (offen, behoben, false_positive).
+    """Trennt Issues nach `finding_status` in (offen, repariert, akzeptiert)
+    — im Report gerendert als 🔴 Offen / 🟢 Repariert / ⚪ Akzeptiert
+    (`RESOLVED` bzw. `FALSE_POSITIVE`, siehe docs/LIBRARY_HEALTH.md §1a).
 
     Ein Issue OHNE `finding_status`-Feld gilt als offen - das ist der
     Normalfall fuer jeden Report, der (noch) keine Findings-Registry-
@@ -556,8 +558,8 @@ def render_summary_markdown(report: dict, *, max_examples_per_code: int = 20) ->
         add("| Status | Anzahl |")
         add("|---|---:|")
         add(f"| 🔴 Offen | {len(open_issues)} |")
-        add(f"| 🟢 Behoben | {len(resolved_issues)} |")
-        add(f"| ⚪ False Positive | {len(false_positive_issues)} |")
+        add(f"| 🟢 Repariert | {len(resolved_issues)} |")
+        add(f"| ⚪ Akzeptiert | {len(false_positive_issues)} |")
         add("")
 
     # ── Buckets bestimmen (Abschnitt 6/7 der Aufgabe: dynamisch, nicht
@@ -645,7 +647,7 @@ def render_summary_markdown(report: dict, *, max_examples_per_code: int = 20) ->
         add("")
 
     if resolved_issues:
-        add("## 🟢 Behobene Befunde")
+        add("## 🟢 Reparierte Befunde")
         add("")
         add("| Issue | Anzahl | Zuletzt geprüft |")
         add("|---|---:|---|")
@@ -661,7 +663,7 @@ def render_summary_markdown(report: dict, *, max_examples_per_code: int = 20) ->
         add("")
 
     if false_positive_issues:
-        add("## ⚪ False Positives")
+        add("## ⚪ Akzeptierte Befunde")
         add("")
         add("| Issue | Anzahl | Notiz |")
         add("|---|---:|---|")
@@ -758,8 +760,8 @@ def render_summary_markdown(report: dict, *, max_examples_per_code: int = 20) ->
         if reviewed_count:
             fazit += (
                 f" Von {len(issues)} erkannten Befunden sind {reviewed_count} "
-                f"bereits bewertet ({len(resolved_issues)} behoben, "
-                f"{len(false_positive_issues)} False Positive) und "
+                f"bereits bewertet ({len(resolved_issues)} repariert, "
+                f"{len(false_positive_issues)} akzeptiert) und "
                 f"{len(open_issues)} weiterhin offen."
             )
     add(fazit)

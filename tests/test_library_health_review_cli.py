@@ -384,3 +384,150 @@ class TestReviewCliRepetition:
         exit_code = review_cli.main(["--registry", str(path)])
         assert exit_code == 0
         assert "Keine offenen Befunde" in capsys.readouterr().out
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Nicht-interaktive Direktaktionen (Library-Closure-Phase, Auftrag §15-22)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestDirectActions:
+    def _no_input(self, monkeypatch):
+        def _fail(*_):
+            raise AssertionError("Direktaktion darf keine Eingabe verlangen")
+
+        monkeypatch.setattr("builtins.input", _fail)
+
+    def test_accept_then_accepted_and_show(
+        self, registry_with_two_categories, monkeypatch, capsys
+    ):
+        self._no_input(monkeypatch)
+        path, issue_a, _ = registry_with_two_categories
+        fid = generate_finding_id(issue_a)
+
+        rc = review_cli.main(
+            ["--registry", str(path), "--accept", fid, "--reason", "kuratierte Auswahl"]
+        )
+        assert rc == 0
+        assert "akzeptiert" in capsys.readouterr().out
+
+        # persistiert?
+        reloaded = FindingsRegistry(path)
+        assert reloaded.get(fid).status == STATUS_FALSE_POSITIVE
+
+        rc = review_cli.main(["--registry", str(path), "--accepted"])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert fid in out and "kuratierte Auswahl" in out
+
+        rc = review_cli.main(["--registry", str(path), "--show", fid])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "FALSE_POSITIVE" in out and "Historie:" in out
+
+    def test_accept_without_reason_fails(
+        self, registry_with_two_categories, monkeypatch, capsys
+    ):
+        self._no_input(monkeypatch)
+        path, issue_a, _ = registry_with_two_categories
+        rc = review_cli.main(
+            ["--registry", str(path), "--accept", generate_finding_id(issue_a)]
+        )
+        assert rc == 2
+        assert "--reason" in capsys.readouterr().err
+
+    def test_accept_unknown_id_fails(
+        self, registry_with_two_categories, monkeypatch, capsys
+    ):
+        self._no_input(monkeypatch)
+        path, _, _ = registry_with_two_categories
+        rc = review_cli.main(
+            ["--registry", str(path), "--accept", "0" * 16, "--reason", "x"]
+        )
+        assert rc == 1
+        assert "Kein Finding" in capsys.readouterr().err
+
+    def test_unaccept_reactivates(
+        self, registry_with_two_categories, monkeypatch, capsys
+    ):
+        self._no_input(monkeypatch)
+        path, issue_a, _ = registry_with_two_categories
+        fid = generate_finding_id(issue_a)
+        review_cli.main(
+            ["--registry", str(path), "--accept", fid, "--reason", "erst"]
+        )
+        capsys.readouterr()
+
+        rc = review_cli.main(["--registry", str(path), "--unaccept", fid])
+        assert rc == 0
+        assert "reaktiviert" in capsys.readouterr().out
+        assert FindingsRegistry(path).get(fid).status == STATUS_OPEN
+
+    def test_unaccept_on_open_finding_fails(
+        self, registry_with_two_categories, monkeypatch, capsys
+    ):
+        self._no_input(monkeypatch)
+        path, issue_a, _ = registry_with_two_categories
+        rc = review_cli.main(
+            ["--registry", str(path), "--unaccept", generate_finding_id(issue_a)]
+        )
+        assert rc == 1
+
+    def test_accepted_filter_by_issue_code(
+        self, registry_with_two_categories, monkeypatch, capsys
+    ):
+        self._no_input(monkeypatch)
+        path, issue_a, issue_b = registry_with_two_categories
+        review_cli.main(
+            ["--registry", str(path), "--accept", generate_finding_id(issue_a),
+             "--reason", "a"]
+        )
+        review_cli.main(
+            ["--registry", str(path), "--accept", generate_finding_id(issue_b),
+             "--reason", "b"]
+        )
+        capsys.readouterr()
+
+        rc = review_cli.main(
+            ["--registry", str(path), "--accepted", "ARTWORK_MISSING"]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "ARTWORK_MISSING" in out
+        assert "ALBUM_TRACK_GAP" not in out
+
+    def test_summary_tri_state(
+        self, registry_with_two_categories, monkeypatch, capsys
+    ):
+        self._no_input(monkeypatch)
+        path, issue_a, issue_b = registry_with_two_categories
+        review_cli.main(
+            ["--registry", str(path), "--accept", generate_finding_id(issue_a),
+             "--reason", "a"]
+        )
+        capsys.readouterr()
+
+        rc = review_cli.main(["--registry", str(path), "--summary"])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "🔴 Offen:      1" in out
+        assert "⚪ Akzeptiert: 1" in out
+
+    def test_show_unknown_id_fails(
+        self, registry_with_two_categories, monkeypatch, capsys
+    ):
+        self._no_input(monkeypatch)
+        path, _, _ = registry_with_two_categories
+        rc = review_cli.main(["--registry", str(path), "--show", "beef" * 4])
+        assert rc == 1
+
+    def test_two_direct_actions_rejected(
+        self, registry_with_two_categories, monkeypatch, capsys
+    ):
+        self._no_input(monkeypatch)
+        path, issue_a, _ = registry_with_two_categories
+        rc = review_cli.main(
+            ["--registry", str(path), "--summary", "--show", generate_finding_id(issue_a)]
+        )
+        assert rc == 2
+        assert "Nur eine Direktaktion" in capsys.readouterr().err

@@ -408,11 +408,19 @@ def main(argv=None) -> int:
     from collections import Counter
 
     tally = Counter(o.status for o in outcomes)
+    unresolved_line = (
+        f" · {tally['UNRESOLVED']} unresolved" if tally.get("UNRESOLVED") else ""
+    )
     print(
         f"\n{tally.get('SUCCESS', 0)} success · {tally.get('DRY_RUN', 0)} would-change · "
-        f"{tally.get('SKIPPED', 0)} skipped · {tally.get('FAILED', 0)} failed  "
-        f"→  Journal: {journal_path}"
+        f"{tally.get('SKIPPED', 0)} skipped · {tally.get('FAILED', 0)} failed"
+        f"{unresolved_line}  →  Journal: {journal_path}"
     )
+    if tally.get("UNRESOLVED"):
+        print(
+            "⚠️  UNRESOLVED: geschrieben, aber der Health-Check erkennt den Befund "
+            "weiterhin (siehe Datei-Ausgabe oben) — nicht als behoben gewertet."
+        )
 
     if execute_dry:
         return 0
@@ -422,12 +430,19 @@ def main(argv=None) -> int:
     # (Z. "tally = Counter(o.status for o in outcomes)") statt einer neuen,
     # eigenen SUCCESS-Definition - keine abweichende/breitere Interpretation
     # von "es gab eine Aenderung" gegenueber dem Rest dieses Scripts.
-    if tally.get("SUCCESS", 0) > 0 and not args.no_navidrome_scan:
+    # "geschrieben" = SUCCESS ODER UNRESOLVED (beide haben die Datei auf der
+    # Platte veraendert; nur die Verifikation unterscheidet sie) — Navidrome
+    # soll die geaenderte Datei so oder so erneut einlesen.
+    wrote_to_disk = tally.get("SUCCESS", 0) + tally.get("UNRESOLVED", 0)
+    if wrote_to_disk > 0 and not args.no_navidrome_scan:
         _trigger_navidrome_scan(logger)
 
-    touched = {o.issue_code for o in outcomes if o.status == "SUCCESS"}
+    touched = {
+        o.issue_code for o in outcomes if o.status in ("SUCCESS", "UNRESOLVED")
+    }
+    _wrote = ("SUCCESS", "UNRESOLVED")
     if mb_cands and any(
-        o.status == "SUCCESS" for o in outcomes if o.issue_code in EXTERNAL_MB_CODES
+        o.status in _wrote for o in outcomes if o.issue_code in EXTERNAL_MB_CODES
     ):
         touched |= set(EXTERNAL_MB_CODES)
     if l2_cands and any(
@@ -436,7 +451,7 @@ def main(argv=None) -> int:
         # eine L2-Neuverarbeitung berührt potenziell jeden METADATA_REPROCESSING-Code
         touched |= set(L2_CODES)
     if loudness_cands and any(
-        o.status == "SUCCESS" for o in outcomes if o.action == "LOUDNESS_NORMALIZE"
+        o.status in _wrote for o in outcomes if o.action == "LOUDNESS_NORMALIZE"
     ):
         touched |= set(LOUDNESS_ISSUE_CODES)
     return _verification_scan(

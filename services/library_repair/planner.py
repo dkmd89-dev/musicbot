@@ -266,6 +266,52 @@ _SPECS: tuple[RepairSpec, ...] = (
 REGISTRY: dict[str, RepairSpec] = {s.issue_code: s for s in _SPECS}
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Disposition (Library-Closure-Phase, Auftrag Abschnitt 4/5): die acht
+# internen RepairLevel-Stufen rollen auf genau EINE von drei Grob-
+# Dispositionen hoch. Der Planner bleibt die Single Source of Truth — die
+# Disposition wird ausschliesslich aus dem bereits vorhandenen
+# RepairSpec.level abgeleitet, nicht separat gepflegt.
+#
+#   AUTO_REPAIR   — es existiert ein Executor (verlustfrei ODER extern/
+#                   destruktiv mit Freigabe). Ob der Weg ueber Telegram
+#                   erreichbar ist, sagt erst filter_plan(level=...)/
+#                   get_safe_automatic_candidates() — nicht die Disposition.
+#   MANUAL_REVIEW  — kein sicherer automatischer Pfad, Nutzer entscheidet.
+#   UNREPAIRABLE   — legitime Beobachtung, es gibt bewusst nichts zu tun.
+# ─────────────────────────────────────────────────────────────────────────
+
+DISPOSITION_AUTO_REPAIR = "AUTO_REPAIR"
+DISPOSITION_MANUAL_REVIEW = "MANUAL_REVIEW"
+DISPOSITION_UNREPAIRABLE = "UNREPAIRABLE"
+
+_LEVEL_DISPOSITION: dict[RepairLevel, str] = {
+    RepairLevel.SAFE_AUTOMATIC: DISPOSITION_AUTO_REPAIR,
+    RepairLevel.METADATA_REPROCESSING: DISPOSITION_AUTO_REPAIR,
+    RepairLevel.EXTERNAL_METADATA: DISPOSITION_AUTO_REPAIR,
+    RepairLevel.COVER: DISPOSITION_AUTO_REPAIR,
+    RepairLevel.LOUDNESS: DISPOSITION_AUTO_REPAIR,
+    RepairLevel.DUPLICATE: DISPOSITION_AUTO_REPAIR,
+    RepairLevel.MANUAL_REVIEW: DISPOSITION_MANUAL_REVIEW,
+    RepairLevel.NOT_REPAIRABLE: DISPOSITION_UNREPAIRABLE,
+}
+
+
+def disposition_for_level(level: RepairLevel) -> str:
+    """RepairLevel -> Grob-Disposition. Wirft KeyError bei einem neuen,
+    hier nicht eingeordneten Level (bewusst kein stiller Default — ein
+    neues Level muss hier explizit klassifiziert werden)."""
+    return _LEVEL_DISPOSITION[level]
+
+
+def disposition_for_code(issue_code: str) -> str | None:
+    """Health-Issue-Code -> Grob-Disposition, oder None fuer einen Code
+    ohne Registry-Eintrag (den es laut registry_covers_all_health_codes()
+    nicht geben darf)."""
+    spec = REGISTRY.get(issue_code)
+    return disposition_for_level(spec.level) if spec is not None else None
+
+
 def plan_repairs(report: dict) -> RepairPlan:
     """Baut den Reparaturplan aus einem Health-Report-dict (unveraendert)."""
     plan = RepairPlan(

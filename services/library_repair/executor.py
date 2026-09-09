@@ -345,12 +345,14 @@ def apply_level1(
                 except OSError:
                     pass
 
+        _verify_issue_resolved(oc, path, library_root)
+
         je = _je(c, oc, dry_run)
         je.sha256_before = sha_before
         je.sha256_after = _sha256(path)
         je.audio_sha256_before = audio_before
         je.audio_sha256_after = (
-            _audio_essence_md5(path) if oc.status == "SUCCESS" else audio_before
+            _audio_essence_md5(path) if oc.status in _WROTE_TO_DISK else audio_before
         )
         je.backup_path = oc.backup_path
         journal.record(je)
@@ -493,9 +495,13 @@ def apply_level1_rename(
                 except OSError:
                     pass
 
+        renamed_ok = oc.status == "SUCCESS"
+        if renamed_ok:
+            _verify_issue_resolved(oc, target, library_root)
+
         je = _je(c, oc, dry_run)
         je.sha256_before = sha_before
-        je.sha256_after = _sha256(target if oc.status == "SUCCESS" else path)
+        je.sha256_after = _sha256(target if renamed_ok else path)
         journal.record(je)
         outcomes.append(oc)
 
@@ -692,11 +698,13 @@ def apply_cover_repairs(
             except OSError:
                 pass
 
+        _verify_issue_resolved(oc, path, library_root)
+
         je = _je(c, oc, dry_run)
         je.sha256_before, je.sha256_after = sha_before, _sha256(path)
         je.audio_sha256_before = audio_before
         je.audio_sha256_after = (
-            _audio_essence_md5(path) if oc.status == "SUCCESS" else audio_before
+            _audio_essence_md5(path) if oc.status in _WROTE_TO_DISK else audio_before
         )
         je.backup_path = oc.backup_path
         journal.record(je)
@@ -1063,11 +1071,13 @@ def apply_external_metadata(
             except OSError:
                 pass
 
+        _verify_issue_resolved(oc, path, library_root)
+
         je = _je_named(rel, oc, dry_run)
         je.sha256_before, je.sha256_after = sha_before, _sha256(path)
         je.audio_sha256_before = audio_before
         je.audio_sha256_after = (
-            _audio_essence_md5(path) if oc.status == "SUCCESS" else audio_before
+            _audio_essence_md5(path) if oc.status in _WROTE_TO_DISK else audio_before
         )
         je.backup_path = oc.backup_path
         journal.record(je)
@@ -1590,17 +1600,122 @@ def apply_replaygain(
                 pass
             oc.backup_path = None
 
+        # LOUDNESS_OFF_TARGET ist bewusst NICHT Teil der Per-Datei-Recheck
+        # (_verify_issue_resolved): der geschriebene RG-Tag bringt die
+        # effektive Lautheit per Konstruktion (compute_replaygain:
+        # target_gain = target - measured) exakt auf das Ziel, und die
+        # Atom-Werte + Audio-Essenz sind oben bereits verifiziert. Die
+        # LUFS-Ebene prueft der aggregierte Verification-Scan mit
+        # --measure-loudness.
         je = _je_named(rel, oc, dry_run)
         je.sha256_before, je.sha256_after = sha_before, _sha256(path)
         je.audio_sha256_before = audio_before
         je.audio_sha256_after = (
-            _audio_essence_md5(path) if oc.status == "SUCCESS" else audio_before
+            _audio_essence_md5(path) if oc.status in _WROTE_TO_DISK else audio_before
         )
         je.backup_path = oc.backup_path
         journal.record(je)
         outcomes.append(oc)
 
     return outcomes
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Post-Repair-Verification je Datei (Library-Closure-Phase, Auftrag §9/§16)
+#
+# Nach einem echten SUCCESS denselben Health-Check NUR fuer diese eine Datei
+# erneut fahren. Ist der ausloesende Issue-Code weiterhin da -> Status
+# UNRESOLVED statt SUCCESS. Rein additiv: SUCCESS wird ausschliesslich
+# herabgestuft, nie etwas hochgestuft, und ein strukturell nicht moeglicher
+# Recheck laesst SUCCESS unangetastet (kein falscher UNRESOLVED).
+#
+# NUR file-scope-Codes, die sich aus einer reinen Einzeldatei-Analyse
+# eindeutig verifizieren lassen:
+#   - Album-scope (ALBUM_ARTIST_INCONSISTENT, ALBUM_COVER_INCONSISTENT)
+#     braucht die Gruppen-Analyse -> aggregierter Verification-Scan.
+#   - LOUDNESS_OFF_TARGET: der RG-Tag bringt die effektive Lautheit per
+#     Konstruktion aufs Ziel, die Atom-/Audio-Verifikation im Executor
+#     deckt den Rest; die LUFS-Ebene prueft der --measure-loudness-Scan.
+#   - apply_level2() hat seine eigene, feinere Zielfeld-Bindung
+#     (_l2_issue_resolved).
+# ─────────────────────────────────────────────────────────────────────────
+
+STATUS_UNRESOLVED = "UNRESOLVED"
+_WROTE_TO_DISK = frozenset({"SUCCESS", STATUS_UNRESOLVED})
+_ALBUM_SCOPE_AUTO_CODES = frozenset(
+    {"ALBUM_ARTIST_INCONSISTENT", "ALBUM_COVER_INCONSISTENT"}
+)
+
+_verify_ctx_cache: dict = {}
+
+
+def _verify_context():
+    """(genre_validator, title_cleaner) — einmal pro Prozess gebaut
+    (GenreMapper-Konstruktion nicht pro Datei), identische read-only
+    Bausteine wie der Scanner (services/library_health/scanner.py)."""
+    if "built" not in _verify_ctx_cache:
+        genre_dir = None
+        try:
+            from config import Config
+
+            genre_dir = Config().GENRE_MAPPING_DIR
+        except Exception:  # noqa: BLE001
+            genre_dir = None
+        try:
+            from services.library_health.scanner import (
+                _build_genre_validator,
+                _build_title_cleaner,
+            )
+
+            _verify_ctx_cache["genre"] = _build_genre_validator(genre_dir, None)
+            _verify_ctx_cache["title"] = _build_title_cleaner(None)
+        except Exception:  # noqa: BLE001
+            _verify_ctx_cache["genre"] = None
+            _verify_ctx_cache["title"] = None
+        _verify_ctx_cache["built"] = True
+    return _verify_ctx_cache["genre"], _verify_ctx_cache["title"]
+
+
+def _file_scope_verifiable_codes() -> frozenset:
+    return (
+        L1_TAG_CODES | L1_RENAME_CODES | COVER_ISSUE_CODES | EXTERNAL_MB_CODES
+    ) - _ALBUM_SCOPE_AUTO_CODES
+
+
+def _single_file_issue_codes(path: Path, library_root: Path) -> Optional[set]:
+    """Frische Einzeldatei-Health-Analyse -> Menge der Issue-Codes, oder
+    None, wenn der Recheck strukturell nicht moeglich war."""
+    try:
+        from services.library_health.discovery import build_file_record
+        from services.library_health.file_analysis import analyze_file
+        from services.library_health.scanner import _read_all
+
+        record = build_file_record(Path(path), Path(library_root))
+        genre_validator, title_cleaner = _verify_context()
+        tags, stream, artwork, _loudness = _read_all(Path(path), with_loudness=False)
+        fh = analyze_file(
+            record,
+            tags,
+            stream,
+            artwork,
+            genre_validator=genre_validator,
+            title_cleaner=title_cleaner,
+        )
+        return {i.code for i in fh.issues}
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _verify_issue_resolved(oc: ExecOutcome, path, library_root) -> None:
+    if oc.status != "SUCCESS" or oc.issue_code not in _file_scope_verifiable_codes():
+        return
+    codes = _single_file_issue_codes(Path(path), Path(library_root))
+    if codes is None:
+        return
+    if oc.issue_code in codes:
+        oc.status = STATUS_UNRESOLVED
+        note = "Verification: Befund nach der Reparatur weiterhin erkannt"
+        oc.reason = f"{oc.reason}; {note}" if oc.reason else note
 
 
 def _je_named(rel: str, oc: ExecOutcome, dry_run: bool) -> JournalEntry:

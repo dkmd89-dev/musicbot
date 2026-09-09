@@ -650,3 +650,184 @@ class TestBatchReviewCategory:
         reloaded = FindingsRegistry(path)
         for issue in issues:
             assert reloaded.get(generate_finding_id(issue)).status == STATUS_FALSE_POSITIVE
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Accept / Unaccept / Review-Summary (Library-Closure-Phase, Auftrag §15-22)
+# ─────────────────────────────────────────────────────────────────────────
+
+from services.library_health.findings import (  # noqa: E402
+    ReviewSummary,
+    accept_finding,
+    get_accepted_findings,
+    get_review_summary,
+    unaccept_finding,
+)
+
+
+class TestAcceptUnaccept:
+    def _one(self, tmp_path, code="ALBUM_TRACK_GAP", **over):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        issue = _issue(code, scope="album", artist="A", album="Alb", **over)
+        registry.merge_scan_issues([issue], scanned_at="2026-01-01T00:00:00Z")
+        return registry, generate_finding_id(issue)
+
+    def test_accept_sets_false_positive_with_reason(self, tmp_path):
+        registry, fid = self._one(tmp_path)
+        f = accept_finding(registry, fid, reason="Bootleg-Compilation, Auswahl gewollt")
+        assert f.status == STATUS_FALSE_POSITIVE
+        assert f.review_note == "Bootleg-Compilation, Auswahl gewollt"
+
+    def test_accept_requires_non_empty_reason(self, tmp_path):
+        registry, fid = self._one(tmp_path)
+        with pytest.raises(ValueError):
+            accept_finding(registry, fid, reason="   ")
+
+    def test_accepted_finding_disappears_from_open(self, tmp_path):
+        registry, fid = self._one(tmp_path)
+        accept_finding(registry, fid, reason="ok")
+        assert registry.get_open_findings() == []
+
+    def test_accepted_finding_survives_reload(self, tmp_path):
+        path = tmp_path / "findings.json"
+        registry = FindingsRegistry(path)
+        issue = _issue("ARTWORK_MISSING", path="A/Alb/01.m4a")
+        registry.merge_scan_issues([issue], scanned_at="2026-01-01T00:00:00Z")
+        fid = generate_finding_id(issue)
+        accept_finding(registry, fid, reason="Visualizer ohne echtes Cover")
+        registry.save()
+
+        reloaded = FindingsRegistry(path)
+        assert reloaded.get(fid).status == STATUS_FALSE_POSITIVE
+        assert reloaded.get(fid).review_note == "Visualizer ohne echtes Cover"
+
+    def test_get_accepted_findings_lists_and_filters_by_code(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        a = _issue("ARTWORK_MISSING", path="A/Alb/01.m4a")
+        b = _issue("LYRICS_MISSING", path="A/Alb/02.m4a")
+        registry.merge_scan_issues([a, b], scanned_at="2026-01-01T00:00:00Z")
+        accept_finding(registry, generate_finding_id(a), reason="x")
+        accept_finding(registry, generate_finding_id(b), reason="y")
+
+        assert {f.code for f in get_accepted_findings(registry)} == {
+            "ARTWORK_MISSING",
+            "LYRICS_MISSING",
+        }
+        only = get_accepted_findings(registry, issue_code="LYRICS_MISSING")
+        assert [f.code for f in only] == ["LYRICS_MISSING"]
+
+    def test_double_accept_without_unaccept_creates_no_duplicate_row(self, tmp_path):
+        """Auftrag §34.8: doppelte Acceptance erzeugt keinen zweiten
+        Finding-Eintrag in der Registry."""
+        registry, fid = self._one(tmp_path)
+        accept_finding(registry, fid, reason="erst")
+        accept_finding(registry, fid, reason="nochmal")
+        rows = [f for f in registry.all() if f.finding_id == fid]
+        assert len(rows) == 1
+        assert rows[0].status == STATUS_FALSE_POSITIVE
+        assert rows[0].review_note == "nochmal"
+
+    def test_unaccept_reactivates_to_open(self, tmp_path):
+        registry, fid = self._one(tmp_path)
+        accept_finding(registry, fid, reason="ok")
+        f = unaccept_finding(registry, fid, reviewed_by="cli:robin")
+        assert f.status == STATUS_OPEN
+        assert registry.get_open_findings()[0].finding_id == fid
+        assert f.history[-1].note == "Reaktiviert (manuell, cli:robin)"
+
+    def test_unaccept_without_reviewer_uses_plain_note(self, tmp_path):
+        registry, fid = self._one(tmp_path)
+        accept_finding(registry, fid, reason="ok")
+        f = unaccept_finding(registry, fid)
+        assert f.history[-1].note == "Reaktiviert (manuell)"
+
+    def test_unaccept_on_already_open_raises(self, tmp_path):
+        registry, fid = self._one(tmp_path)
+        with pytest.raises(ValueError):
+            unaccept_finding(registry, fid)
+
+    def test_unaccept_unknown_id_raises(self, tmp_path):
+        registry, _ = self._one(tmp_path)
+        with pytest.raises(KeyError):
+            unaccept_finding(registry, "deadbeefdeadbeef")
+
+    def test_reaccept_after_unaccept_is_not_a_duplicate(self, tmp_path):
+        registry, fid = self._one(tmp_path)
+        accept_finding(registry, fid, reason="erst")
+        unaccept_finding(registry, fid)
+        accept_finding(registry, fid, reason="wieder")
+        # weiterhin genau EIN Finding-Eintrag mit dieser ID
+        assert len([f for f in registry.all() if f.finding_id == fid]) == 1
+        assert registry.get(fid).status == STATUS_FALSE_POSITIVE
+        assert registry.get(fid).review_note == "wieder"
+
+    def test_two_findings_same_file_handled_independently(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        a = _issue("ARTWORK_MISSING", artist="A", title="Song", path="A/Alb/01.m4a")
+        b = _issue("LYRICS_MISSING", artist="A", title="Song", path="A/Alb/01.m4a")
+        registry.merge_scan_issues([a, b], scanned_at="2026-01-01T00:00:00Z")
+        accept_finding(registry, generate_finding_id(a), reason="kein Cover verfügbar")
+
+        assert registry.get(generate_finding_id(a)).status == STATUS_FALSE_POSITIVE
+        assert registry.get(generate_finding_id(b)).status == STATUS_OPEN
+
+    def test_new_finding_same_file_shows_despite_prior_acceptance(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        a = _issue("ARTWORK_MISSING", artist="A", title="Song", path="A/Alb/01.m4a")
+        registry.merge_scan_issues([a], scanned_at="2026-01-01T00:00:00Z")
+        accept_finding(registry, generate_finding_id(a), reason="ok")
+
+        b = _issue("LYRICS_MISSING", artist="A", title="Song", path="A/Alb/01.m4a")
+        registry.merge_scan_issues([a, b], scanned_at="2026-02-01T00:00:00Z")
+
+        open_codes = {f.code for f in registry.get_open_findings()}
+        assert open_codes == {"LYRICS_MISSING"}
+
+
+class TestReviewSummary:
+    def test_tri_state_counts(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        issues = [
+            _issue("ARTWORK_MISSING", path="A/Alb/01.m4a"),
+            _issue("LYRICS_MISSING", path="A/Alb/02.m4a"),
+            _issue("ALBUM_TRACK_GAP", scope="album", artist="A", album="Alb"),
+        ]
+        registry.merge_scan_issues(issues, scanned_at="2026-01-01T00:00:00Z")
+        registry.review_finding(generate_finding_id(issues[0]), STATUS_RESOLVED)
+        accept_finding(registry, generate_finding_id(issues[1]), reason="ok")
+
+        summary = get_review_summary(registry)
+        assert isinstance(summary, ReviewSummary)
+        assert summary.open == 1
+        assert summary.repaired == 1
+        assert summary.accepted == 1
+        assert summary.accepted_stale == 0
+        assert summary.total == 3
+
+    def test_accepted_stale_counts_findings_no_longer_detected(self, tmp_path):
+        """Auftrag §20: akzeptiert, dann vom Scanner nicht mehr erkannt
+        (z. B. repariert) — bleibt FALSE_POSITIVE, wird aber als stale
+        ausgewiesen."""
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        issue = _issue("ARTWORK_MISSING", path="A/Alb/01.m4a")
+        registry.merge_scan_issues([issue], scanned_at="2026-01-01T00:00:00Z")
+        accept_finding(registry, generate_finding_id(issue), reason="ok")
+        # naechster Scan sieht das Issue nicht mehr
+        registry.merge_scan_issues([], scanned_at="2026-02-01T00:00:00Z")
+
+        summary = get_review_summary(registry)
+        assert summary.accepted == 1
+        assert summary.accepted_stale == 1
+        assert registry.get(generate_finding_id(issue)).status == STATUS_FALSE_POSITIVE
+
+    def test_to_dict_roundtrip(self, tmp_path):
+        registry = FindingsRegistry(tmp_path / "findings.json")
+        d = get_review_summary(registry).to_dict()
+        assert set(d) == {
+            "open",
+            "repaired",
+            "accepted",
+            "accepted_stale",
+            "resolved_by_scan",
+            "total",
+        }
