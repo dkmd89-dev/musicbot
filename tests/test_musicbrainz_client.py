@@ -309,6 +309,41 @@ class TestFetchMetadata:
         result = asyncio.run(client.fetch_metadata("A - B", "Some Artist"))
         assert result == {}
 
+    def test_timeout_is_logged_as_warning_not_error_and_returns_empty_dict(
+        self, caplog
+    ):
+        """Finding G (Download-Pipeline-Testlauf 2026-09-09): ein
+        MusicBrainz-Timeout ist der Normalfall (langsame API / 1-req/s-Limit
+        bei Playlists) - der Aufrufer fällt sauber auf Last.fm zurück. Er darf
+        NICHT als '💥 Unerwarteter Fehler' mit vollem Stacktrace auf ERROR
+        geloggt werden, sondern als WARNING ohne exc_info.
+        """
+        normalizer = MagicMock()
+        normalizer.normalize.side_effect = lambda x: x
+        client = _make_client(artist_normalizer=normalizer)
+
+        async def _raise_timeout(*args, **kwargs):
+            raise asyncio.TimeoutError()
+
+        with patch.object(
+            mb_module, "cached_musicbrainz_search", new=_raise_timeout
+        ):
+            with caplog.at_level("WARNING"):
+                result = asyncio.run(
+                    client.fetch_metadata("Bohemian Rhapsody", "Queen")
+                )
+
+        assert result == {}
+        timeout_records = [
+            r for r in caplog.records if "Timeout" in r.getMessage()
+        ]
+        assert timeout_records, "kein Timeout-Log gefunden"
+        assert all(r.levelname == "WARNING" for r in timeout_records)
+        assert all(r.exc_info is None for r in timeout_records)
+        assert not any(
+            "Unerwarteter Fehler" in r.getMessage() for r in caplog.records
+        )
+
 
 class TestBuildMetadataFieldExtraction:
     def test_extracts_isrc_release_and_ids(self):
