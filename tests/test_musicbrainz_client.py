@@ -606,7 +606,14 @@ class TestSelectPrimaryReleaseFindingE:
         rl = self._smack_that_match()["release-list"]
         assert client._select_primary_release(rl)["id"] == "rel-single"
 
-    def test_only_compilations_available_falls_back_to_earliest(self):
+    def test_only_compilations_available_yields_no_year_but_earliest_release_id(self):
+        """Finding E, Folge-Fund (Fritz Kalkbrenner – „Sky and Sand",
+        2026-09-09): existiert die Aufnahme in MB NUR auf Compilations /
+        DJ-Mixen, ist deren Datum als Original-Jahr wertlos (real: 2018er
+        DJ-Mix-Compilation für einen Song von 2009/2010). `release_date`/
+        `year` bleiben dann None → die Pipeline fällt auf das YouTube-/
+        Upload-Jahr zurück. `release_id`/`album` kommen weiterhin vom
+        frühesten (Compilation-)Release."""
         client = _make_client()
         match = {
             "id": "rec-levels",
@@ -639,8 +646,37 @@ class TestSelectPrimaryReleaseFindingE:
         with patch("musicbrainzngs.get_recording_by_id", return_value={}):
             result = asyncio.run(client._build_metadata(match, "Avicii"))
 
-        assert result["year"] == "2012"
+        assert result["year"] is None
+        assert result["release_date"] is None
         assert result["release_id"] == "r-2012"
+
+    def test_compilation_only_still_keeps_recording_level_first_release_date(self):
+        """Regressions-Guard: trägt die Aufnahme selbst eine echte
+        `first-release-date`, bleibt SIE maßgeblich – auch wenn alle
+        Releases Compilations sind."""
+        client = _make_client()
+        match = {
+            "id": "rec-x",
+            "title": "Song",
+            "first-release-date": "2009-08-01",
+            "release-list": [
+                {
+                    "id": "r-comp",
+                    "title": "Some Compilation",
+                    "date": "2018",
+                    "release-group": {
+                        "id": "rg-comp",
+                        "type": "Compilation",
+                        "secondary-type-list": ["Compilation"],
+                        "tags": [],
+                    },
+                }
+            ],
+        }
+        with patch("musicbrainzngs.get_recording_by_id", return_value={}):
+            result = asyncio.run(client._build_metadata(match, "Artist"))
+
+        assert result["year"] == "2009"
 
     def test_recording_first_release_date_still_wins_when_present(self):
         """Regressions-Guard: liegt am Recording bzw. an der Release-Group
