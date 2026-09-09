@@ -56,7 +56,9 @@ def clear_musicbrainz_cache():
 
 def _make_client(artist_normalizer=None):
     with patch.object(
-        mb_module, "_get_artist_normalizer", return_value=artist_normalizer or MagicMock()
+        mb_module,
+        "_get_artist_normalizer",
+        return_value=artist_normalizer or MagicMock(),
     ), patch("musicbrainzngs.set_useragent"):
         return MusicBrainzClient()
 
@@ -192,7 +194,9 @@ class TestGetBestMatch:
         normalizer.normalize.side_effect = lambda x: x
         client = _make_client(artist_normalizer=normalizer)
 
-        recordings = [{"title": "Nothing Alike", "artist-credit-phrase": "Someone Else"}]
+        recordings = [
+            {"title": "Nothing Alike", "artist-credit-phrase": "Someone Else"}
+        ]
         best = client._get_best_match(recordings, "Bohemian Rhapsody", "Queen")
         assert best is None
 
@@ -215,8 +219,12 @@ class TestFetchMetadata:
         combined_response = {"recording-list": [recording]}
 
         with patch.object(
-            mb_module, "cached_musicbrainz_search", new=AsyncMock(return_value=combined_response)
-        ), patch("musicbrainzngs.get_recording_by_id", return_value={"recording": recording}):
+            mb_module,
+            "cached_musicbrainz_search",
+            new=AsyncMock(return_value=combined_response),
+        ), patch(
+            "musicbrainzngs.get_recording_by_id", return_value={"recording": recording}
+        ):
             result = asyncio.run(client.fetch_metadata("Bohemian Rhapsody", "Queen"))
 
         assert result["title"] == "Bohemian Rhapsody"
@@ -228,15 +236,56 @@ class TestFetchMetadata:
         normalizer.normalize.side_effect = lambda x: x
         client = _make_client(artist_normalizer=normalizer)
 
-        recording = {"id": "rec-2", "title": "Some Song", "artist-credit-phrase": "Some Artist"}
+        recording = {
+            "id": "rec-2",
+            "title": "Some Song",
+            "artist-credit-phrase": "Some Artist",
+        }
         responses = [{"recording-list": []}, {"recording-list": [recording]}]
 
         with patch.object(
             mb_module, "cached_musicbrainz_search", new=AsyncMock(side_effect=responses)
-        ), patch("musicbrainzngs.get_recording_by_id", return_value={"recording": recording}):
+        ), patch(
+            "musicbrainzngs.get_recording_by_id", return_value={"recording": recording}
+        ):
             result = asyncio.run(client.fetch_metadata("Some Song", "Some Artist"))
 
         assert result["mbid"] == "rec-2"
+
+    def test_recording_detail_call_is_cached_across_two_fetch_metadata_calls(self):
+        """PERF/H2 (2026-09-09): der GenreProcessor und der AlbumProcessor
+        rufen fetch_metadata() pro Track je einmal auf. Der teure
+        get_recording_by_id()-Detail-Call (eigener HTTP-Roundtrip, MB
+        rate-limitet auf 1 req/s) darf beim zweiten Aufruf für dieselbe
+        Recording-MBID NICHT erneut laufen."""
+        normalizer = MagicMock()
+        normalizer.normalize.side_effect = lambda x: x
+        client = _make_client(artist_normalizer=normalizer)
+
+        recording = {
+            "id": "rec-h2",
+            "title": "Auf uns",
+            "artist-credit-phrase": "Andreas Bourani",
+        }
+        combined = {"recording-list": [recording]}
+
+        with patch.object(
+            mb_module,
+            "cached_musicbrainz_search",
+            new=AsyncMock(return_value=combined),
+        ), patch(
+            "musicbrainzngs.get_recording_by_id",
+            return_value={"recording": recording},
+        ) as mock_detail:
+            r1 = asyncio.run(client.fetch_metadata("Auf uns", "Andreas Bourani"))
+            r2 = asyncio.run(client.fetch_metadata("Auf uns", "Andreas Bourani"))
+
+        assert r1["mbid"] == "rec-h2" and r2["mbid"] == "rec-h2"
+        assert mock_detail.call_count == 1, (
+            f"get_recording_by_id lief {mock_detail.call_count}x — der "
+            f"Detail-Call ist nicht gecacht."
+        )
+        assert "recording_detail:rec-h2" in _musicbrainz_result_cache
 
     def test_no_results_anywhere_returns_empty_dict(self):
         normalizer = MagicMock()
@@ -245,7 +294,9 @@ class TestFetchMetadata:
 
         empty_response = {"recording-list": [], "release-list": []}
         with patch.object(
-            mb_module, "cached_musicbrainz_search", new=AsyncMock(return_value=empty_response)
+            mb_module,
+            "cached_musicbrainz_search",
+            new=AsyncMock(return_value=empty_response),
         ):
             result = asyncio.run(client.fetch_metadata("Nothing", "Nobody"))
         assert result == {}
@@ -269,7 +320,11 @@ class TestBuildMetadataFieldExtraction:
                 {
                     "id": "rel-456",
                     "title": "Album Title",
-                    "release-group": {"id": "rg-789", "title": "Album Title", "tags": []},
+                    "release-group": {
+                        "id": "rg-789",
+                        "title": "Album Title",
+                        "tags": [],
+                    },
                 }
             ],
             "artist-credit": [{"artist": {"id": "artist-999"}}],
@@ -314,7 +369,11 @@ class TestBuildMetadataFieldExtraction:
                             "position": "1",
                             "track-count": 17,
                             "track-list": [
-                                {"id": "trk-1", "number": "8", "title": "Bohemian Rhapsody"}
+                                {
+                                    "id": "trk-1",
+                                    "number": "8",
+                                    "title": "Bohemian Rhapsody",
+                                }
                             ],
                         }
                     ],
