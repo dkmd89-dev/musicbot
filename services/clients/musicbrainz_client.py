@@ -289,6 +289,19 @@ class MusicBrainzClient:
                 )
                 return {}
 
+        except asyncio.TimeoutError:
+            # Finding G (Download-Pipeline-Testlauf 2026-09-09): das
+            # async_timeout.timeout(Config.MUSICBRAINZ_TIMEOUT) oben feuert bei
+            # langsamen MB-Antworten (v. a. bei Playlists mit dem 1-req/s-Limit)
+            # regelmäßig - MusicBrainz ist eine optionale Anreicherungsquelle,
+            # der Aufrufer (genre_processor / album_processor) fällt sauber auf
+            # Last.fm zurück. Das ist KEIN unerwarteter Fehler: WARNING ohne
+            # Stacktrace statt ERROR + exc_info (das blähte die Logs bei jedem
+            # größeren Download mit vollen Tracebacks auf).
+            self.logger.warning(
+                f"[{original_context}] ⏱️ MusicBrainz-Timeout nach "
+                f"{Config.MUSICBRAINZ_TIMEOUT}s – Fallback auf Last.fm"
+            )
         except Exception as e:
             self.logger.error(
                 f"[{original_context}] 💥 Unerwarteter Fehler: {e}", exc_info=True
