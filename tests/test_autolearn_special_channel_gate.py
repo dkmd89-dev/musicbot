@@ -60,7 +60,8 @@ def gate_config(tmp_path, mapping_dir_copy):
 @pytest.fixture
 def processor(gate_config, monkeypatch):
     monkeypatch.setattr(
-        AudioEnhancer, "normalize_loudness", staticmethod(lambda *a, **kw: True)
+        "services.metadata.loudness_replaygain.apply_replaygain_tags",
+        lambda *a, **kw: (True, -5.0),
     )
 
     proc = EnhancedMetadataProcessor(gate_config)

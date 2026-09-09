@@ -66,7 +66,8 @@ def happy_path_config(tmp_path, mapping_dir_copy):
 @pytest.fixture
 def processor(happy_path_config, monkeypatch):
     monkeypatch.setattr(
-        AudioEnhancer, "normalize_loudness", staticmethod(lambda *a, **kw: True)
+        "services.metadata.loudness_replaygain.apply_replaygain_tags",
+        lambda *a, **kw: (True, -5.0),
     )
 
     proc = EnhancedMetadataProcessor(happy_path_config)
@@ -147,15 +148,14 @@ class TestCancellationBeforeMoveToLibrary:
         started = threading.Event()
         proceed = threading.Event()
 
-        def controlled_normalize_loudness(*a, **kw):
+        def controlled_replaygain(*a, **kw):
             started.set()
             assert proceed.wait(timeout=5), "Test haengt: proceed nie gesetzt"
-            return True
+            return (True, -5.0)
 
         monkeypatch.setattr(
-            AudioEnhancer,
-            "normalize_loudness",
-            staticmethod(controlled_normalize_loudness),
+            "services.metadata.loudness_replaygain.apply_replaygain_tags",
+            controlled_replaygain,
         )
 
         track_metadata = _make_track_metadata(source, "CANCELA1")

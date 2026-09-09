@@ -1,6 +1,15 @@
 """
 Audio Enhancer Service für den Bot
-Loudness-Normalisierung (FFmpeg loudnorm) für den Download-Workflow.
+Loudness-Normalisierung (FFmpeg loudnorm) — historischer Download-Workflow.
+
+⚠️ Seit der Download-Pipeline-Optimierung 2026-09-09 (PR #188) ruft
+`enhanced_metadata_processor.py` Schritt 15b diese Klasse NICHT mehr auf.
+Der frühere volle AAC→AAC-Re-Encode (~22 s/Track) wurde durch
+`services/metadata/loudness_replaygain.py::apply_replaygain_tags()` ersetzt
+(EBU-R128-Scan + verlustfreier ReplayGain-Tag, Audio byte-identisch).
+`get_target_lufs()` wird weiterhin von Schritt 15b genutzt.
+`normalize_loudness()` bleibt für `scripts/normalize_test_library_loudness.py`
+(test-only) erhalten — nicht löschen ohne eigene Migrationsentscheidung.
 
 ARCH-017 Phase 2 (docs/archive/arch/MusicBot_ARCH-017_Download_Audio_Enhancement_Characterization.md):
 die zuvor hier enthaltenen ReplayGain-, Künstlerbild- und MusicBrainz-ID-
