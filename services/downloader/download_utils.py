@@ -86,7 +86,6 @@ from services.downloader.download.download_executor import DownloadExecutor
 from services.downloader.download_quality_guard import check_download_quality
 from services.downloader.download.formatters import ProgressFormatter
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # URL-ERKENNUNG: YouTube-Mix-/Radio-Pseudo-Playlists
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -173,6 +172,7 @@ def _make_cancel_check_hook(cancel_event):
             raise DownloadCancelledError()
 
     return _check
+
 
 # Bekannte, aus dem echten yt-dlp-Quellcode belegte Marker fuer permanente
 # (nicht-transiente) Fehlermeldungen. Quelle: yt_dlp/extractor/youtube/
@@ -480,7 +480,11 @@ async def enhanced_download_with_retry(
                 f"🛑 [RETRY {attempt + 1}] Abbruch bereits vor Versuchsstart angefordert"
             )
             active_download.cancelled = True
-            return {"success": False, "error": "Download abgebrochen", "cancelled": True}
+            return {
+                "success": False,
+                "error": "Download abgebrochen",
+                "cancelled": True,
+            }
 
         logger.info(
             f"\n🔄 [RETRY {attempt + 1}/{max_retries}] Starte Download-Versuch..."
@@ -488,8 +492,14 @@ async def enhanced_download_with_retry(
 
         try:
             logger.info("🔍 [DL] yt-dlp: Extrahiere Metadaten (download=False)...")
+            # H1: teilt sich den yt-dlp-Roundtrip mit der Duplicate-Vorab-
+            # Probe (klassen/download_handler.py). `progress_hooks` in
+            # ydl_opts beeinflussen extract_info(download=False) nicht (sie
+            # feuern nur beim Download) → sicher cachebar; nur beim ERSTEN
+            # Retry-Versuch, damit ein Neuversuch nach einem echten yt-dlp-
+            # Fehler frische Daten holt.
             info = await enhanced_processor.download_executor.extract_info_async(
-                url, ydl_opts, download=False
+                url, ydl_opts, download=False, use_cache=(attempt == 0)
             )
 
             if not info:
@@ -541,9 +551,7 @@ async def enhanced_download_with_retry(
                     "tracks": tracks,
                     "processor_instance": enhanced_processor,
                     "total_tracks": len(tracks),
-                    "successful_tracks": len(
-                        [t for t in tracks if t.get("success")]
-                    ),
+                    "successful_tracks": len([t for t in tracks if t.get("success")]),
                     "duration_seconds": time.monotonic() - _dl_start,
                     "cancelled": was_cancelled,
                 }
@@ -773,10 +781,12 @@ async def _process_playlist_download(
     )
 
     # ── PHASE 2: Channel-Routing ──────────────────────────────────────────────
-    _channel_raw, dominant_artist = enhanced_processor.channel_router.resolve_dominant_artist(
-        dominant_artist=dominant_artist,
-        playlist_info=playlist_info,
-        entries=entries,
+    _channel_raw, dominant_artist = (
+        enhanced_processor.channel_router.resolve_dominant_artist(
+            dominant_artist=dominant_artist,
+            playlist_info=playlist_info,
+            entries=entries,
+        )
     )
 
     # ── PHASE 3: Dominantes Jahr ──────────────────────────────────────────────
@@ -822,7 +832,9 @@ async def _process_playlist_download(
         track_artist = track_info.get("artist", "?")
         display_name = f"{idx:02d} - {track_title}"
 
-        logger.info(ProgressFormatter.track_header(idx, total, track_title, track_artist))
+        logger.info(
+            ProgressFormatter.track_header(idx, total, track_title, track_artist)
+        )
 
         tracker.set_current_item(display_name)
         if status_callback and tracker.compute_progress_message() is not None:
@@ -919,12 +931,14 @@ async def _process_playlist_download(
             # Downloads bereits 3 Versuche ueber enhanced_download_with_retry()
             # erhalten. Explizit freigegebene fachliche Entscheidung: Playlist-
             # Tracks erhalten denselben festen Wert wie der Single-Pfad.
-            downloaded_file = await enhanced_processor.download_executor.download_single_track(
-                track_info=track_info,
-                ydl_opts=ydl_opts,
-                track_idx=idx,
-                download_dir=enhanced_processor.config.DOWNLOAD_DIR,
-                max_retries=3,
+            downloaded_file = (
+                await enhanced_processor.download_executor.download_single_track(
+                    track_info=track_info,
+                    ydl_opts=ydl_opts,
+                    track_idx=idx,
+                    download_dir=enhanced_processor.config.DOWNLOAD_DIR,
+                    max_retries=3,
+                )
             )
 
             if not downloaded_file:
@@ -1050,7 +1064,9 @@ async def _process_playlist_download(
     )
     session_stats = enhanced_processor.session_stats
 
-    logger.info(ProgressFormatter.stats_table(session_stats, final_stats, cache_hits, total))
+    logger.info(
+        ProgressFormatter.stats_table(session_stats, final_stats, cache_hits, total)
+    )
 
     return results
 

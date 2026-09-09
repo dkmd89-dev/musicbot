@@ -22,14 +22,49 @@ Log-Marker bleiben unverändert: [YDL-OPTS], [DL], [FILE].
 """
 
 import asyncio
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yt_dlp
 
 from logger import get_module_logger
-from services.downloader.download_artifact_cleanup import cleanup_single_download_artifact
+from services.downloader.download_artifact_cleanup import (
+    cleanup_single_download_artifact,
+)
 from services.downloader.errors import DownloadCancelledError
+
+# PERF (Download-Pipeline-Optimierung 2026-09-09, H1): pro Download extrahiert
+# yt-dlp die Metadaten ZWEIMAL mit download=False - einmal in der
+# Duplicate-Vorab-Probe (klassen/download_handler.py::
+# _probe_artist_title_for_duplicate_check), einmal im eigentlichen
+# Download-Pfad (download_utils.py) - je ein voller Netzwerk-Roundtrip
+# (~3-4 s im Log). Prozessweiter Kurzzeit-Cache (nur download=False), damit
+# der zweite Aufruf denselben `info`-Dict wiederverwendet. Kein Cache für
+# download=True (das lädt tatsächlich). Kein Import von cachetools nötig -
+# ein simples dict mit Zeitstempel-Ablauf.
+_EXTRACT_INFO_TTL = 120.0
+_EXTRACT_INFO_MAX = 8
+_extract_info_cache: Dict[str, tuple] = {}  # url -> (timestamp, info)
+
+
+def _cache_get(url: str) -> Optional[Dict[str, Any]]:
+    entry = _extract_info_cache.get(url)
+    if entry is None:
+        return None
+    ts, info = entry
+    if time.monotonic() - ts > _EXTRACT_INFO_TTL:
+        _extract_info_cache.pop(url, None)
+        return None
+    return info
+
+
+def _cache_put(url: str, info: Dict[str, Any]) -> None:
+    if len(_extract_info_cache) >= _EXTRACT_INFO_MAX:
+        # ältesten Eintrag verwerfen
+        oldest = min(_extract_info_cache, key=lambda k: _extract_info_cache[k][0])
+        _extract_info_cache.pop(oldest, None)
+    _extract_info_cache[url] = (time.monotonic(), info)
 
 
 class DownloadExecutor:
@@ -39,7 +74,9 @@ class DownloadExecutor:
     """
 
     def __init__(self, logger=None, logger_factory=None):
-        self.logger = logger or (logger_factory or get_module_logger)("DownloadExecutor")
+        self.logger = logger or (logger_factory or get_module_logger)(
+            "DownloadExecutor"
+        )
 
     # ─────────────────────────────────────────────────────────────────────────
     # yt-dlp OPTIONEN
@@ -170,7 +207,12 @@ class DownloadExecutor:
             return ydl.extract_info(url, download=download)
 
     async def extract_info_async(
-        self, url: str, ydl_opts: Dict[str, Any], download: bool = False
+        self,
+        url: str,
+        ydl_opts: Dict[str, Any],
+        download: bool = False,
+        *,
+        use_cache: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """
         Async-Wrapper um extract_info(): fuehrt den blockierenden yt-dlp-
@@ -182,11 +224,26 @@ class DownloadExecutor:
         das blockierte den kompletten Event-Loop fuer die gesamte Dauer
         jedes Downloads, wodurch der Bot fuer ALLE Nutzer (nicht nur den
         gerade downloadenden) unresponsive wurde, bis der Aufruf fertig war.
+
+        `use_cache=True` (nur bei download=False sinnvoll, H1): das Ergebnis
+        wird ~120 s prozessweit unter der exakten URL zwischengespeichert -
+        die Duplicate-Vorab-Probe und der eigentliche Download teilen sich
+        dann EINEN yt-dlp-Roundtrip. Aufrufer mit abweichenden `ydl_opts`
+        (z. B. Mix-URL + `noplaylist`) setzen `use_cache=False`.
         """
+        if use_cache and not download:
+            cached = _cache_get(url)
+            if cached is not None:
+                self.logger.debug(f"🎯 [DL] extract_info aus Cache: {url[:80]}")
+                return cached
+
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
+        info = await loop.run_in_executor(
             None, lambda: self.extract_info(url, ydl_opts, download)
         )
+        if use_cache and not download and info is not None:
+            _cache_put(url, info)
+        return info
 
     # ─────────────────────────────────────────────────────────────────────────
     # EINZEL-TRACK-DOWNLOAD (Playlist-Kontext, mit einfacher Retry-Logik)
@@ -223,7 +280,8 @@ class DownloadExecutor:
 
         track_ydl_opts = ydl_opts.copy()
         outtmpl = str(
-            download_dir / f"Track_{track_idx:02d}_{track_info.get('id', 'temp')}.%(ext)s"
+            download_dir
+            / f"Track_{track_idx:02d}_{track_info.get('id', 'temp')}.%(ext)s"
         )
         track_ydl_opts["outtmpl"] = outtmpl
 
@@ -287,6 +345,7 @@ class DownloadExecutor:
             }
 
             try:
+
                 def _do_download() -> Optional[Dict[str, Any]]:
                     with yt_dlp.YoutubeDL(hooked_track_ydl_opts) as ydl:
                         return ydl.extract_info(track_url, download=True)
@@ -298,7 +357,9 @@ class DownloadExecutor:
                     None, _do_download
                 )
 
-                downloaded_file = self.find_downloaded_file(download_info, track_ydl_opts)
+                downloaded_file = self.find_downloaded_file(
+                    download_info, track_ydl_opts
+                )
 
                 if not downloaded_file or not Path(downloaded_file).exists():
                     raise FileNotFoundError(

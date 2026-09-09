@@ -31,8 +31,19 @@ def executor():
     return DownloadExecutor()
 
 
+@pytest.fixture(autouse=True)
+def _clear_extract_info_cache():
+    from services.downloader.download.download_executor import _extract_info_cache
+
+    _extract_info_cache.clear()
+    yield
+    _extract_info_cache.clear()
+
+
 class FakeConfig:
-    def __init__(self, tmp_path, max_duration=None, mapping_dir=None, cookies_file=None):
+    def __init__(
+        self, tmp_path, max_duration=None, mapping_dir=None, cookies_file=None
+    ):
         self.DOWNLOAD_DIR = tmp_path
         self.MAX_DURATION = max_duration
         self.GENRE_MAPPING_DIR = mapping_dir or (tmp_path / "empty_mapping")
@@ -45,7 +56,9 @@ class TestExtractInfoAsyncDoesNotBlockEventLoop:
         self, executor, monkeypatch
     ):
         monkeypatch.setattr(
-            executor, "extract_info", lambda url, opts, download=False: {"title": "Test"}
+            executor,
+            "extract_info",
+            lambda url, opts, download=False: {"title": "Test"},
         )
         result = asyncio.run(
             executor.extract_info_async("http://example.com", {}, download=False)
@@ -89,6 +102,97 @@ class TestExtractInfoAsyncDoesNotBlockEventLoop:
         assert len(progress) == 3
 
 
+class TestExtractInfoCache:
+    """PERF/H1 (2026-09-09): die Duplicate-Vorab-Probe und der eigentliche
+    Download extrahieren yt-dlp-Metadaten je einmal (download=False, gleiche
+    URL). Mit use_cache=True teilen sie sich EINEN Roundtrip."""
+
+    def _count_calls(self, executor, monkeypatch):
+        calls = []
+
+        def fake_extract(url, opts, download=False):
+            calls.append((url, download))
+            return {"title": "Cached Song", "id": "vid1"}
+
+        monkeypatch.setattr(executor, "extract_info", fake_extract)
+        return calls
+
+    def test_second_call_same_url_hits_cache(self, executor, monkeypatch):
+        calls = self._count_calls(executor, monkeypatch)
+        r1 = asyncio.run(
+            executor.extract_info_async(
+                "https://youtu.be/vid1?is=x", {}, use_cache=True
+            )
+        )
+        r2 = asyncio.run(
+            executor.extract_info_async(
+                "https://youtu.be/vid1?is=x", {}, use_cache=True
+            )
+        )
+        assert r1 == r2 == {"title": "Cached Song", "id": "vid1"}
+        assert len(calls) == 1, f"yt-dlp lief {len(calls)}x statt 1x"
+
+    def test_cache_disabled_by_default(self, executor, monkeypatch):
+        calls = self._count_calls(executor, monkeypatch)
+        asyncio.run(executor.extract_info_async("https://youtu.be/vid1", {}))
+        asyncio.run(executor.extract_info_async("https://youtu.be/vid1", {}))
+        assert len(calls) == 2
+
+    def test_download_true_is_never_cached(self, executor, monkeypatch):
+        calls = self._count_calls(executor, monkeypatch)
+        asyncio.run(
+            executor.extract_info_async(
+                "https://youtu.be/vid1", {}, download=True, use_cache=True
+            )
+        )
+        asyncio.run(
+            executor.extract_info_async(
+                "https://youtu.be/vid1", {}, download=True, use_cache=True
+            )
+        )
+        assert len(calls) == 2
+
+    def test_different_urls_do_not_share_cache(self, executor, monkeypatch):
+        calls = self._count_calls(executor, monkeypatch)
+        asyncio.run(
+            executor.extract_info_async("https://youtu.be/a", {}, use_cache=True)
+        )
+        asyncio.run(
+            executor.extract_info_async("https://youtu.be/b", {}, use_cache=True)
+        )
+        assert len(calls) == 2
+
+    def test_none_result_is_not_cached(self, executor, monkeypatch):
+        calls = []
+
+        def fake_extract(url, opts, download=False):
+            calls.append(url)
+            return None
+
+        monkeypatch.setattr(executor, "extract_info", fake_extract)
+        asyncio.run(
+            executor.extract_info_async("https://youtu.be/x", {}, use_cache=True)
+        )
+        asyncio.run(
+            executor.extract_info_async("https://youtu.be/x", {}, use_cache=True)
+        )
+        assert len(calls) == 2
+
+    def test_expired_entry_is_re_extracted(self, executor, monkeypatch):
+        import services.downloader.download.download_executor as mod
+
+        calls = self._count_calls(executor, monkeypatch)
+        asyncio.run(
+            executor.extract_info_async("https://youtu.be/x", {}, use_cache=True)
+        )
+        # TTL künstlich überschreiten
+        monkeypatch.setattr(mod, "_EXTRACT_INFO_TTL", -1.0)
+        asyncio.run(
+            executor.extract_info_async("https://youtu.be/x", {}, use_cache=True)
+        )
+        assert len(calls) == 2
+
+
 class TestDurationMatchFilter:
     def test_video_within_limit_is_not_rejected(self, executor, tmp_path):
         config = FakeConfig(tmp_path, max_duration=600)
@@ -122,9 +226,7 @@ SPECIAL_CHANNELS:
         opts = executor.build_ydl_opts(config)
         match_filter = opts["match_filter"]
 
-        result = match_filter(
-            {"duration": 5400, "uploader": "Test Podcast Channel"}
-        )
+        result = match_filter({"duration": 5400, "uploader": "Test Podcast Channel"})
         assert result is None
 
     def test_no_match_filter_when_max_duration_not_configured(self, executor, tmp_path):
