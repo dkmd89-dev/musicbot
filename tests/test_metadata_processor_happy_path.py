@@ -609,3 +609,88 @@ def test_cofeat_from_artist_part_still_reaches_feat_artists(
     assert any(
         "mico" in f.lower() for f in feat
     ), f"Co-Artist 'DJ Mico' fehlt in feat_artists: {feat!r}"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# PERF/M1: ArtistIdentityResolver.refresh() nur noch bei tatsächlicher
+# Änderung an den Identitätsquellen (neuer Ordner ODER AutoLearn-Write),
+# nicht mehr pauschal bei jedem known=False-Track.
+# ─────────────────────────────────────────────────────────────────────────
+def _track(source, vid, title, artist, uploader):
+    return {
+        "title": title,
+        "artist": artist,
+        "uploader": uploader,
+        "channel": uploader,
+        "id": vid,
+        "filepath": str(source),
+        "cover_art": b"fake-cover-bytes",
+        "genre": "Hip Hop",
+    }
+
+
+def test_new_artist_folder_triggers_resolver_refresh(
+    processor, filename_fixer, tmp_path, monkeypatch
+):
+    calls = []
+    monkeypatch.setattr(
+        processor.artist_identity_resolver,
+        "refresh",
+        lambda: calls.append(1),
+    )
+    src = tmp_path / "a.mp3"
+    src.write_bytes(b"fake-audio-bytes-not-real-mp3-data")
+
+    result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=_track(
+                src,
+                "NEWART01",
+                "Brandneu Artist - Song",
+                "Brandneu Artist",
+                "Brandneu Artist",
+            ),
+            filename_fixer=filename_fixer,
+        )
+    )
+
+    assert result.success is True
+    assert result.artist_known is False
+    assert calls, "refresh() lief nicht, obwohl ein neuer Artist-Ordner entstand"
+
+
+def test_no_refresh_when_folder_preexists_and_nothing_learned(
+    processor, filename_fixer, tmp_path, happy_path_config, monkeypatch
+):
+    """PERF/M1 diskriminierend: known=False, aber der Artist-Ordner
+    existierte schon (nach der Processor-Konstruktion angelegt, also NICHT
+    im Resolver-Index) UND es wurde nichts Neues gelernt (Repost-Kanal,
+    uploader ähnelt dem Artist nicht → kein Alias-Learning). Der frühere
+    Code frischte den Resolver hier pauschal auf (Disk-Walk + 3 YAML-
+    Reloads); jetzt: übersprungen."""
+    (happy_path_config.LIBRARY_DIR / "Reposted Artist").mkdir(parents=True)
+
+    calls = []
+    monkeypatch.setattr(
+        processor.artist_identity_resolver, "refresh", lambda: calls.append(1)
+    )
+    src = tmp_path / "r.mp3"
+    src.write_bytes(b"fake-audio-bytes-not-real-mp3-data")
+
+    md = _track(
+        src,
+        "REPOST01",
+        "Reposted Artist - Some Song",
+        "Music Reupload Hub",  # weder artist-Feld …
+        "Music Reupload Hub",  # … noch uploader ähneln 'Reposted Artist'
+    )
+    result = asyncio.run(
+        processor.process_single_track(
+            track_metadata=md,
+            filename_fixer=filename_fixer,
+        )
+    )
+
+    assert result.success is True
+    assert result.artist_known is False
+    assert not calls, f"refresh() lief trotz unveränderter Identitätsquellen ({calls})"

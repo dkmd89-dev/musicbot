@@ -952,6 +952,29 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 )
 
             # ── 16. Datei verschieben ────────────────────────────────────────
+            # PERF (Download-Pipeline-Optimierung 2026-09-09, M1): merken, ob
+            # der Zielordner des Artists schon existierte - Schritt 19d frischt
+            # den ArtistIdentityResolver (Library-Disk-Scan + 3 YAML-Reloads)
+            # nur noch auf, wenn dieser Download tatsaechlich etwas an den
+            # Identitaetsquellen geaendert hat (neuer Ordner ODER AutoLearn-
+            # Schreibvorgang), statt pauschal bei jedem known=False-Track (bei
+            # Playlists pro Track ein voller Disk-Walk).
+            _artist_dir_existed_before_move = False
+            try:
+                _lib_root = Path(getattr(self.config, "LIBRARY_DIR", "library"))
+                _artist_dir_existed_before_move = (
+                    any(
+                        p.is_dir()
+                        and p.name.strip().lower()
+                        == artist_for_filename.strip().lower()
+                        for p in _lib_root.iterdir()
+                    )
+                    if _lib_root.is_dir()
+                    else False
+                )
+            except Exception:  # noqa: BLE001
+                _artist_dir_existed_before_move = False
+
             self.logger.info("📂 1️⃣6️⃣ Verschiebe Datei in die Bibliothek...")
             library_path, renamed_due_to_conflict = filename_fixer.move_to_library(
                 source_path=original_path,
@@ -1137,6 +1160,10 @@ class EnhancedMetadataProcessor(SingletonMixin):
             # "first_artist_from_title" (nur ein EMP-internes Relabel von
             # "youtube_parsed") entfällt - der ArtistIdentityResolver liefert
             # die echte Quelle, das known-Flag ist das primäre Gate.
+            # M1: sammelt, ob AutoLearn in diesem Track wirklich etwas
+            # persistiert hat (Alias/known_artist bzw. Feature-Artist) -
+            # Steuer-Input für den bedingten Resolver-Refresh in Schritt 19d.
+            _autolearn_wrote = False
             _learn_sources = {
                 "youtube_parsed",
                 "raw_metadata",
@@ -1194,12 +1221,14 @@ class EnhancedMetadataProcessor(SingletonMixin):
                         track_metadata, artist_for_metadata
                     )
                     if _learn_raw_name:
-                        await self.auto_learn_manager.learn_artist(
-                            raw_name=_learn_raw_name,
-                            canonical_name=artist_for_metadata,
-                            source=_candidate_source,
-                            channel_name=track_metadata.get("channel", "")
-                            or track_metadata.get("uploader", ""),
+                        _autolearn_wrote = bool(
+                            await self.auto_learn_manager.learn_artist(
+                                raw_name=_learn_raw_name,
+                                canonical_name=artist_for_metadata,
+                                source=_candidate_source,
+                                channel_name=track_metadata.get("channel", "")
+                                or track_metadata.get("uploader", ""),
+                            )
                         )
                     else:
                         # Kein roher Name aehnelt dem bestimmten Artist -> kein
@@ -1233,11 +1262,18 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 and not _is_special_channel_for_learning
             ):
                 try:
-                    await self.auto_learn_manager.observe_featured_artists(
-                        primary_artist=artist_for_metadata,
-                        feat_artists=feat_artists,
-                        track_context=f"{artist_for_metadata} - {clean_title}",
+                    _feat_decisions = (
+                        await self.auto_learn_manager.observe_featured_artists(
+                            primary_artist=artist_for_metadata,
+                            feat_artists=feat_artists,
+                            track_context=f"{artist_for_metadata} - {clean_title}",
+                        )
                     )
+                    if any(
+                        (d or {}).get("decision") in ("LEARNED", "UPDATED")
+                        for d in (_feat_decisions or [])
+                    ):
+                        _autolearn_wrote = True
                 except Exception as _learn_err:
                     self.logger.warning(
                         f"⚠️ Feature-Artist-Beobachtung fehlgeschlagen: {_learn_err}"
@@ -1249,9 +1285,18 @@ class EnhancedMetadataProcessor(SingletonMixin):
             # known_artists.yaml / auto_learned_artist_aliases.json geschrieben
             # haben. Den Resolver einmalig neu laden, damit ein Folge-Track
             # derselben Session (z.B. Playlist) den Artist als bekannt erkennt.
-            # Nur bei known=False -> kein Disk-Scan pro Track fuer bereits
-            # bekannte Artists.
-            if not artist_known:
+            #
+            # PERF/M1 (2026-09-09): refresh() = Library-Disk-Walk +
+            # 3 YAML-Reloads. Vorher pauschal bei JEDEM known=False-Track (bei
+            # Playlists pro Track). Jetzt nur, wenn dieser Track tatsaechlich
+            # etwas an den Identitaetsquellen geaendert hat: ein NEUER
+            # Artist-Ordner (Schritt 16) ODER ein AutoLearn-Schreibvorgang
+            # (Schritt 19b/19c). Aendert sich nichts, wuerde ein Reload nur
+            # denselben Zustand neu einlesen.
+            _needs_resolver_refresh = not artist_known and (
+                not _artist_dir_existed_before_move or _autolearn_wrote
+            )
+            if _needs_resolver_refresh:
                 try:
                     self.artist_identity_resolver.refresh()
                 except Exception as _idr_err:
