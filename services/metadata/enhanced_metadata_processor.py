@@ -479,6 +479,60 @@ class EnhancedMetadataProcessor(SingletonMixin):
             if not _is_podcast_channel and _all_parsed_artists:
                 _first_artist = _all_parsed_artists[0].strip()
 
+            # ── 6a. Kollaborations-Override auf dem UNGESPLITTETEN Roh-String ──
+            # Der YouTube-Parser zerlegt Mehrfach-Künstler ("A & B", "A x B",
+            # "A / B", …) in all_artists. Bei Kollaborationen mit gemeinsamem
+            # Nachnamen ("Fritz & Paul Kalkbrenner") entsteht dabei ein
+            # abgeschnittener Primär-Künstler ("Fritz" statt "Fritz
+            # Kalkbrenner") – ein anderer, realer Künstler (australische Band
+            # "Fritz"), der zu falschem Genre und falschem Library-Ordner
+            # führt (Download-Pipeline-Testlauf 2026-09-09). Ein generischer
+            # Split-Heuristik-Ansatz ist NICHT sicher (Macklemore & Ryan
+            # Lewis, Jay-Z & Kanye West, Tyler & Kali Uchis sind echte
+            # Doppel-Primär-Acts). Deshalb: der VOLLE ungesplittete Roh-String
+            # (youtube_parsed["raw_artist_string"]) wird gegen die
+            # Override-Stufe des ArtistIdentityResolver geprüft. Greift dort
+            # ein manueller mapping/artist_overrides.json-Eintrag UND ist der
+            # Override eine Erweiterung des abgeschnittenen ersten Künstlers
+            # ("fritz kalkbrenner" beginnt mit "fritz "), wird all_artists[0]
+            # durch den Override ersetzt – der Zweit-Künstler bleibt als
+            # Feature/Zweit-Artist erhalten (all_artists-Rest-Zweig, Schritt 6).
+            # Geprüft werden zwei Formen: der rohe Artist-String des Parsers
+            # (raw_artist_string – Separator je nach Parser-Pfad teils schon
+            # normalisiert) UND die stabile Komma-Form ", ".join(all_artists),
+            # die für jede Ausgangs-Schreibweise ("&"/"x"/"/"/"und") identisch
+            # ist.
+            if (
+                not _is_podcast_channel
+                and _first_artist
+                and len(_all_parsed_artists) > 1
+            ):
+                _collab_forms = [
+                    youtube_parsed.get("raw_artist_string"),
+                    ", ".join(a.strip() for a in _all_parsed_artists if a.strip()),
+                ]
+                for _raw_collab in _collab_forms:
+                    if not _raw_collab:
+                        continue
+                    _collab_ident = self.artist_identity_resolver.resolve(
+                        _raw_collab
+                    )
+                    if _collab_ident.source != "artist_override":
+                        continue
+                    _ov = (_collab_ident.canonical or "").strip()
+                    if _ov and _ov.lower().startswith(
+                        _first_artist.lower() + " "
+                    ):
+                        self.logger.info(
+                            f"🎤 6️⃣a Kollab-Override: '{_raw_collab}' → "
+                            f"Primär-Künstler '{_first_artist}' → '{_ov}' "
+                            f"(artist_overrides.json)"
+                        )
+                        _all_parsed_artists = [_ov] + _all_parsed_artists[1:]
+                        youtube_parsed["all_artists"] = _all_parsed_artists
+                        _first_artist = _ov
+                        break
+
             final_artist, _candidate_source, feat_artists_from_determination = (
                 self.artist_processor.determine_best_artist(
                     raw_artist=_effective_raw_artist,
