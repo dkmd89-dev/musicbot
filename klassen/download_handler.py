@@ -56,7 +56,6 @@ from services.downloader.download_result_reporter import DownloadResultReporter
 from services.downloader.progress_tracker import ProgressTracker
 from utils.filenamefixer import FilenameFixerTool
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # URL-VALIDIERUNG (SEC: Domain-Allowlist vor yt-dlp)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -111,36 +110,39 @@ def _get_download_semaphore(config) -> asyncio.Semaphore:
 # PIPELINE-KONSTANTEN
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class _YT:
     """YouTube-Pipeline Schritt-Definitionen"""
+
     TOTAL = 6
-    URL_CHECK    = (1, "URL & Format prüfen")
-    DUPE_CHECK   = (2, "Duplikat-Check")
-    DOWNLOAD     = (3, "Audio-Download")
-    METADATA     = (4, "Metadaten anreichern")
-    LIBRARY      = (5, "Bibliothek organisieren")
-    SUMMARY      = (6, "Zusammenfassung")
+    URL_CHECK = (1, "URL & Format prüfen")
+    DUPE_CHECK = (2, "Duplikat-Check")
+    DOWNLOAD = (3, "Audio-Download")
+    METADATA = (4, "Metadaten anreichern")
+    LIBRARY = (5, "Bibliothek organisieren")
+    SUMMARY = (6, "Zusammenfassung")
 
 
 # Emojis pro Modul für schnelle visuelle Orientierung in Logs
 _MOD_EMOJI = {
-    "DownloadHandler":          "📤",
-    "YoutubeDownloader":        "⬇️",
-    "EnhancedMetadataProcessor":"🚀",
-    "DuplicateHandler":         "🔍",
-    "FilenameFixerTool":        "🛠️",
-    "ArtistNormalizer":         "👤",
-    "GenreMapper":              "🏷️",
-    "GeniusClient":             "📜",
+    "DownloadHandler": "📤",
+    "YoutubeDownloader": "⬇️",
+    "EnhancedMetadataProcessor": "🚀",
+    "DuplicateHandler": "🔍",
+    "FilenameFixerTool": "🛠️",
+    "ArtistNormalizer": "👤",
+    "GenreMapper": "🏷️",
+    "GeniusClient": "📜",
 }
 
 # Schritt-Emojis 1–10
-_STEP_EMOJI = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
+_STEP_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # HILFS-FUNKTION: LOG-FORMATIERUNG
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def _fmt_result(result: Dict[str, Any]) -> str:
     """Formatiert Download-Ergebnis kompakt für den Log."""
@@ -172,6 +174,7 @@ def _progress_bar(current: int, total: int, width: int = 10) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 # HAUPT-KLASSE
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class DownloadHandler:
     """
@@ -213,9 +216,7 @@ class DownloadHandler:
 
         # ── Status / Progress ─────────────────────────────────────────────────
         self.status_msg: Optional[Message] = None
-        self.progress_tracker = ProgressTracker(
-            logger_factory=self.logger_factory
-        )
+        self.progress_tracker = ProgressTracker(logger_factory=self.logger_factory)
         # Download-Control-Center 2026-09-02: geteilte, prozessweite
         # Registry (auf RichMenuHandler, langlebig - im Gegensatz zu
         # DownloadHandler selbst, das pro Update neu instanziiert wird,
@@ -256,8 +257,8 @@ class DownloadHandler:
             detail (optional)
         """
         step_emoji = _STEP_EMOJI[step - 1] if 0 < step <= len(_STEP_EMOJI) else "➡️"
-        mod_emoji  = _MOD_EMOJI.get(module, "⚙️")
-        bar        = _progress_bar(step, total)
+        mod_emoji = _MOD_EMOJI.get(module, "⚙️")
+        bar = _progress_bar(step, total)
 
         # Python-Log
         log_line = f"[STEP {step}/{total}] {text}"
@@ -280,7 +281,9 @@ class DownloadHandler:
             await self.status_msg.edit_text("\n".join(lines))
         except TelegramError as e:
             if "Message is not modified" not in str(e):
-                self.logger.warning(f"⚠️ Telegram-Status konnte nicht aktualisiert werden: {e}")
+                self.logger.warning(
+                    f"⚠️ Telegram-Status konnte nicht aktualisiert werden: {e}"
+                )
 
     async def _on_playlist_progress(self, tracker) -> None:
         """
@@ -382,14 +385,18 @@ class DownloadHandler:
                 self.downloader.enhanced_download_processor.download_executor
             )
             ydl_opts = download_executor.build_ydl_opts(self.config)
-            if is_youtube_mix_url(url):
+            _is_mix = is_youtube_mix_url(url)
+            if _is_mix:
                 # DUP-06: siehe services/downloader/download_utils.py -
                 # verhindert, dass diese Vorab-Probe fuer eine Mix-/Radio-
                 # Liste (list=RD...) faelschlich ein entries-Ergebnis erhaelt
                 # und dadurch die Content-/Parser-Duplicate-Ebene ueberspringt.
                 ydl_opts = {**ydl_opts, "noplaylist": True}
+            # H1: für Nicht-Mix-URLs teilt sich diese Probe den yt-dlp-
+            # Roundtrip mit dem gleich folgenden Download (use_cache). Bei
+            # Mix-URLs weichen die `ydl_opts` ab (noplaylist) → kein Cache.
             info = await download_executor.extract_info_async(
-                url, ydl_opts, download=False
+                url, ydl_opts, download=False, use_cache=not _is_mix
             )
             if not info or info.get("entries"):
                 return None, None
@@ -451,7 +458,9 @@ class DownloadHandler:
         except TelegramError as e:
             self.logger.error(f"{error_log_msg}{e}")
 
-    async def _handle_duplicate_found(self, entry: DuplicateEntry, dup_type: str) -> None:
+    async def _handle_duplicate_found(
+        self, entry: DuplicateEntry, dup_type: str
+    ) -> None:
         """Baut Duplikat-Nachricht und sendet sie an den Benutzer."""
         self.logger.info(f"🔍 [DUPE] Sende Duplikat-Meldung (Typ: {dup_type})")
         msg = self.result_reporter.build_duplicate_message(entry, dup_type)
@@ -499,7 +508,9 @@ class DownloadHandler:
                 return result
 
             # ── B: Doppelverarbeitungs-Schutz ─────────────────────────────────
-            already_processed = result.get("library_path") and not result.get("filepath")
+            already_processed = result.get("library_path") and not result.get(
+                "filepath"
+            )
             if already_processed:
                 self.logger.debug(
                     f"✅ [PROCESS-B] '{title}' bereits fertig verarbeitet "
@@ -509,7 +520,9 @@ class DownloadHandler:
 
             # ── C: filepath-Fallback ──────────────────────────────────────────
             if not result.get("filepath"):
-                self.logger.debug(f"📂 [PROCESS-C] 'filepath' fehlt — suche Fallback...")
+                self.logger.debug(
+                    f"📂 [PROCESS-C] 'filepath' fehlt — suche Fallback..."
+                )
                 fallback = (
                     result.get("filename")
                     or result.get("file_path")
@@ -554,9 +567,7 @@ class DownloadHandler:
                     f"({len(cover_bytes):,} Bytes)"
                 )
             else:
-                self.logger.debug(
-                    "🖼️ [PROCESS-F] Kein eingebettetes Cover im Ergebnis"
-                )
+                self.logger.debug("🖼️ [PROCESS-F] Kein eingebettetes Cover im Ergebnis")
 
             return result
 
@@ -633,7 +644,7 @@ class DownloadHandler:
 
     async def handle_single_track_success(self, result: Dict[str, Any]) -> None:
         """Registriert Download im Duplikat-Cache und sendet Abschluss-Zusammenfassung."""
-        title  = result.get("title", "?")
+        title = result.get("title", "?")
         artist = result.get("artist", "?")
         self.logger.info(
             f"🏁 [SUCCESS] ── Single-Track abgeschlossen: '{artist} - {title}' ──"
@@ -660,15 +671,20 @@ class DownloadHandler:
 
         # Duplikat-Registrierung
         try:
-            url   = result.get("original_url") or result.get("url") or ""
-            path  = result.get("library_path") or result.get("filepath") or ""
+            url = result.get("original_url") or result.get("url") or ""
+            path = result.get("library_path") or result.get("filepath") or ""
             if artist and title and artist not in ("?", "Unbekannt", "Unknown Artist"):
                 self.duplicate_detector.register_download(
                     url=url,
                     artist=artist,
                     title=title,
                     file_path=Path(path) if path else None,
-                    metadata={"artist": artist, "title": title, "album": result.get("album"), "year": result.get("year")},
+                    metadata={
+                        "artist": artist,
+                        "title": title,
+                        "album": result.get("album"),
+                        "year": result.get("year"),
+                    },
                 )
                 self.logger.info(
                     f"📝 [SUCCESS] Im Duplikat-Cache registriert: '{artist} - {title}'"
@@ -679,9 +695,12 @@ class DownloadHandler:
                     f"(artist='{artist}', title='{title}')"
                 )
         except Exception as e:
-            self.logger.error(f"❌ [SUCCESS] Duplikat-Registrierung fehlgeschlagen: {e}", exc_info=True)
+            self.logger.error(
+                f"❌ [SUCCESS] Duplikat-Registrierung fehlgeschlagen: {e}",
+                exc_info=True,
+            )
 
-        stats     = self.result_reporter.extract_stats_from_result(result, [])
+        stats = self.result_reporter.extract_stats_from_result(result, [])
         dup_stats = getattr(self.duplicate_detector, "get_statistics", lambda: {})()
         msg = self.result_reporter.build_final_summary_message(result, stats, dup_stats)
         await self._send_report_message(
@@ -735,7 +754,9 @@ class DownloadHandler:
                 # Registrierung nötig, andere Tracks bleiben unberührt.
                 continue
 
-            if not (artist and title and artist not in ("?", "Unbekannt", "Unknown Artist")):
+            if not (
+                artist and title and artist not in ("?", "Unbekannt", "Unknown Artist")
+            ):
                 self.logger.warning(
                     f"⚠️ [PLAYLIST] Duplikat-Registrierung übersprungen "
                     f"(artist='{artist}', title='{title}')"
@@ -804,7 +825,9 @@ class DownloadHandler:
 
         successful = [r for r in results if r.get("success")]
         if not successful:
-            self.logger.warning("🤷 [SUCCESS] Keine erfolgreichen Tracks — keine Zusammenfassung")
+            self.logger.warning(
+                "🤷 [SUCCESS] Keine erfolgreichen Tracks — keine Zusammenfassung"
+            )
             return
 
         self.logger.info(
@@ -813,22 +836,24 @@ class DownloadHandler:
         )
 
         msg = self.result_reporter.build_playlist_summary_message(results, successful)
-        await self._send_report_message(msg, "❌ Playlist-Zusammenfassung nicht gesendet: ")
+        await self._send_report_message(
+            msg, "❌ Playlist-Zusammenfassung nicht gesendet: "
+        )
 
     # ═══════════════════════════════════════════════════════════════════════════
     # UNIFIED URL-DISPATCHER
     # ═══════════════════════════════════════════════════════════════════════════
 
-    async def handle_url(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def handle_url(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         """
         Einstiegspunkt.
         Prüft die URL gegen die unterstützten YouTube-Domains und startet
         die YouTube-Pipeline.
         """
         url = update.message.text.strip()
-        self.logger.info(
-            f"📤 [DISPATCH] Neue URL empfangen: {url[:100]}"
-        )
+        self.logger.info(f"📤 [DISPATCH] Neue URL empfangen: {url[:100]}")
 
         if not _is_supported_download_url(url):
             self.logger.warning(
@@ -868,7 +893,9 @@ class DownloadHandler:
             f"{'═'*60}"
         )
 
-        self.status_msg = await update.message.reply_text("▶️ Anfrage wird gestartet...")
+        self.status_msg = await update.message.reply_text(
+            "▶️ Anfrage wird gestartet..."
+        )
         TOTAL = _YT.TOTAL
 
         # Download-Control-Center 2026-09-02: Registrierung VOR dem
@@ -921,7 +948,9 @@ class DownloadHandler:
             download_result = await self.downloader.download_audio(url)
 
             if not download_result:
-                self.logger.error("❌ [YT-PIPELINE] download_audio() lieferte leeres Ergebnis")
+                self.logger.error(
+                    "❌ [YT-PIPELINE] download_audio() lieferte leeres Ergebnis"
+                )
                 raise ValueError("Download-Ergebnis war leer oder ungültig")
 
             # Download-Control-Center 2026-09-02: ein per ❌-Button
@@ -960,7 +989,11 @@ class DownloadHandler:
             step, label = _YT.METADATA
             await self._update_status(step, TOTAL, label, "EnhancedMetadataProcessor")
 
-            results_list = download_result if isinstance(download_result, list) else [download_result]
+            results_list = (
+                download_result
+                if isinstance(download_result, list)
+                else [download_result]
+            )
             self.logger.info(
                 f"🔢 [YT-PIPELINE] {len(results_list)} Ergebnis(se) zur Verarbeitung"
             )
@@ -986,9 +1019,13 @@ class DownloadHandler:
                     try:
                         if final_path and Path(final_path).exists():
                             os.remove(final_path)
-                            self.logger.info(f"✅ [YT-PIPELINE] Duplikat-Datei gelöscht: {final_path}")
+                            self.logger.info(
+                                f"✅ [YT-PIPELINE] Duplikat-Datei gelöscht: {final_path}"
+                            )
                     except OSError as oe:
-                        self.logger.error(f"❌ [YT-PIPELINE] Löschen fehlgeschlagen: {oe}")
+                        self.logger.error(
+                            f"❌ [YT-PIPELINE] Löschen fehlgeschlagen: {oe}"
+                        )
 
                     conflict_entry = DuplicateEntry(
                         title=res.get("title", "Unbekannt"),
@@ -1015,7 +1052,10 @@ class DownloadHandler:
                 self.logger.warning("🤷 [YT-PIPELINE] Keine erfolgreichen Ergebnisse")
                 return
 
-            if len(processed_results) == 1 and processed_results[0].get("type") == "playlist":
+            if (
+                len(processed_results) == 1
+                and processed_results[0].get("type") == "playlist"
+            ):
                 await self.handle_playlist_success(processed_results)
             elif len(processed_results) == 1:
                 await self.handle_single_track_success(processed_results[0])
@@ -1097,8 +1137,7 @@ class DownloadHandler:
     async def handle_download_failure(self, error_message: str) -> None:
         """Loggt den Fehler und sendet eine verständliche Fehlermeldung an den User."""
         self.logger.error(
-            f"❌ [FAILURE] Download fehlgeschlagen:\n"
-            f"   Fehler: {error_message}"
+            f"❌ [FAILURE] Download fehlgeschlagen:\n" f"   Fehler: {error_message}"
         )
         self._record_history_entry(
             url=(self.update.message.text.strip() if self.update.message else ""),
