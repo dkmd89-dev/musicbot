@@ -25,7 +25,17 @@ Index ist ab sofort die einzige Stelle für den *aktuellen* Stand.
 
 **Baseline-Freeze:** 2026-09-02 (Baseline v8 — eingefrorener Schnappschuss,
 Tech-Debt-Tabelle dort unverändert, siehe z. B. `docs/archive/MusicBot_ENGINEERING_BASELINE_v8.md`). Aktuell eingefrorener Referenzpunkt: `docs/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze 2026-09-07); laufender Zwischenstand seit dem v9-Freeze: `docs/MusicBot_ENGINEERING_BASELINE_v10.md` (DRAFT — nur ARCH-Historie/Testzahlen, keine Findings; die stehen hier).
-**Aktueller Finding-Stand (dieses Dokument):** 2026-09-09 (zuletzt aktualisiert:
+**Aktueller Finding-Stand (dieses Dokument):** 2026-09-13 (zuletzt aktualisiert:
+Family Hub (Phase F1–F5) umgesetzt — private Familienstruktur (explizit
+konfiguriert, keine erfundenen IDs), Familien-Statistik (wiederverwendet die
+bestehende Play-History-Infrastruktur unverändert), bot-interner Familien-Chat,
+tägliche Familien-Musik-Challenge mit Scheduler (nach dem bestehenden
+`PlayHistoryPoller`-Muster). Von den 5 im Master-Prompt skizzierten
+Challenge-Typen wurden nur 3 zuverlässig aus Play-History-Daten umsetzbare
+implementiert — „Rate den Song" (bräuchte Audio-/Lyrics-Snippets) und
+„Playlist für Stimmung erstellen" (keine automatisch prüfbare Antwort) sind
+neue OPEN (DEFER)-Zeilen unten. Vollständige Doku:
+`docs/MusicBot_TELEGRAM_MENU_SYSTEM.md` Abschnitt 6. Davor:
 Telegram-UI für ⚪ akzeptierte Findings + Unaccept CLOSED — direkt im Anschluss
 an die Library Closure Phase (nach CLI-Test des Nutzers gegen die echte
 Registry): `handlers/library_health_review_handler.py` +
@@ -97,6 +107,8 @@ Library Repair Production Audit P1–P3 CLOSED, siehe
 
 | ID | Status | Prio | Kurzfassung | Quelle |
 |---|---|---|---|---|
+| — (Family Hub, Challenge-Typ „Rate den Song") | OPEN (DEFER) | P3 | Master-Prompt nennt „Rate den Song!" als Beispiel-Challenge; nicht umgesetzt — bräuchte eine Audio-/Lyrics-Snippet-Auslieferung über Telegram, kein bestehender Baustein dafür vorhanden. `FamilyChallengeService` unterstützt aktuell nur 3 Play-History-basierte Typen. | `docs/MusicBot_TELEGRAM_MENU_SYSTEM.md` Abschnitt 6.12 |
+| — (Family Hub, Challenge-Typ „Playlist für Stimmung erstellen") | OPEN (DEFER) | P3 | Master-Prompt-Beispiel „Erstelle eine Playlist mit 5 Songs für [Stimmung]" nicht umgesetzt — keine automatisch prüfbare korrekte Antwort, würde manuelle Bewertung erfordern. | `docs/MusicBot_TELEGRAM_MENU_SYSTEM.md` Abschnitt 6.12 |
 | F-01 (Artist Identity Resolution) | CLOSED (2026-09-08, Migration Phase B/D) | war P1 | Keine dedizierte Identity Resolution nach der Kandidatenwahl — `normalize()` war String-Normalizer + opportunistischer Override-Lookup ohne Signal. Behoben: neue Komponente `services/metadata/artist_identity_resolver.py` (`ArtistIdentity{canonical, source, known}`), in `EnhancedMetadataProcessor` Schritt 6b nach `determine_best_artist()` verdrahtet; `normalize()` seit Phase D reine String-Normalisierung. Priorität `artist_override > known_artist > auto_learned_alias > library_identity > musicbrainz_mbid > parser`. | `docs/audits/ARTIST_IDENTITY_RESOLUTION_MIGRATION_2026-09-08.md` |
 | F-02 (`artist_source`-Überschreibung) | CLOSED (2026-09-08, Migration Phase B) | war P1 | `EnhancedMetadataProcessor` überschrieb `artist_source` bedingungslos mit `"first_artist_from_title"` → Mapping-Wirkung nicht nachweisbar. Überschreibung ersatzlos entfernt; `artist_source`/`artist_known` stammen jetzt aus dem Resolver, `MetadataResult.artist_known` neu (+ Cache-Roundtrip). | `docs/audits/ARTIST_IDENTITY_RESOLUTION_MIGRATION_2026-09-08.md` |
 | F-03 (`known_artists.yaml` nicht im Entscheidungspfad) | CLOSED (2026-09-08, Migration Phase B) | war P2 | Datei wurde nur von `AutoLearnManager._is_artist_known()` als Post-Decision-Dedup gelesen, nie in der Namensbestimmung. Jetzt Resolver-Tier 2 (`source="known_artist"`, `known=True`). | `docs/audits/ARTIST_IDENTITY_RESOLUTION_MIGRATION_2026-09-08.md` |

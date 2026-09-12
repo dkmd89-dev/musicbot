@@ -95,7 +95,7 @@ historischen Dokument.
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| [MusicBot_TELEGRAM_MENU_SYSTEM.md](MusicBot_TELEGRAM_MENU_SYSTEM.md) | CURRENT (lebendes Dokument) | Zentrale Referenz für das Telegram-Inline-Menü-System: Zwei-Ebenen-Routing (PTB-`CallbackQueryHandler`-Pattern + interner `handle_callback()`-Dispatch), bestehender Menübaum, Download-Control-Center (Live-Status, Hard-Cancel, Details) inkl. vier live gefundener/gefixter Bugs, Download-Verlauf/Erneut-versuchen (persistenter `DownloadHistoryStore`), Bot-Wartungsmodus (Ein-/Ausschalten über Admin-Bypass statt echtem Prozess-Stop, Folgephase 2026-09-03), Metadata-Reprocessing (Owner-only Telegram-Anbindung von `scripts/reprocess_artist_metadata.py` als Subprozess, Folgephase 2026-09-03), Muster für künftige Menü-Erweiterungen |
+| [MusicBot_TELEGRAM_MENU_SYSTEM.md](MusicBot_TELEGRAM_MENU_SYSTEM.md) | CURRENT (lebendes Dokument) | Zentrale Referenz für das Telegram-Inline-Menü-System: Zwei-Ebenen-Routing (PTB-`CallbackQueryHandler`-Pattern + interner `handle_callback()`-Dispatch), bestehender Menübaum, Download-Control-Center (Live-Status, Hard-Cancel, Details) inkl. vier live gefundener/gefixter Bugs, Download-Verlauf/Erneut-versuchen (persistenter `DownloadHistoryStore`), Bot-Wartungsmodus (Ein-/Ausschalten über Admin-Bypass statt echtem Prozess-Stop, Folgephase 2026-09-03), Metadata-Reprocessing (Owner-only Telegram-Anbindung von `scripts/reprocess_artist_metadata.py` als Subprozess, Folgephase 2026-09-03), Family Hub (Abschnitt 6: Familien-Statistik/-Chat/-Challenge, Phase F1–F5, 2026-09-12/13 — neue `services/family/`-Schicht, wiederverwendet die bestehende Statistik-Infrastruktur unverändert), Muster für künftige Menü-Erweiterungen |
 
 ## Metadata Quality Phase
 
