@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 import json
 from pathlib import Path
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackQueryHandler
 
 from logger import get_module_logger
@@ -34,47 +34,22 @@ from handlers.menu.models import (
 )
 from handlers.menu.permissions import is_admin_or_owner, get_user_access_level
 from handlers.menu.session import SessionManager
+from handlers.menu import definitions
+from handlers.menu import rendering
+from handlers.menu.actions import family as family_actions
+from handlers.menu.actions import duplicates as duplicates_actions
+from handlers.menu.actions import _common as actions_common
+from handlers.menu.actions import navidrome as navidrome_actions
+from handlers.menu.actions import stats as stats_actions
+from handlers.menu.actions import admin_diagnostics as admin_diagnostics_actions
+from handlers.menu.actions import usermgmt as usermgmt_actions
+from handlers.menu.actions import library as library_actions
+from handlers.menu.actions import admin_operations as admin_operations_actions
+from handlers.menu.actions import download as download_actions
 
 
-def _dl_progress_bar(current: int, total: int, width: int = 10) -> str:
-    """Track-Fortschrittsbalken für "🔄 Aktive Downloads" (Download-
-    Control-Center 2026-09-02) - eigener, kleiner Helfer für die
-    Track-Anzahl innerhalb EINES Downloads, nicht zu verwechseln mit dem
-    6-Schritte-Pipelinebalken in klassen/download_handler.py."""
-    filled = round(width * current / max(total, 1))
-    bar = "█" * filled + "░" * (width - filled)
-    return f"{bar} {current}/{total}"
-
-
-class _RetryMessageAdapter:
-    """Duck-Typing-Stellvertreter für update.message, beschränkt auf genau
-    die zwei Attribute, die klassen/download_handler.py entlang des
-    handle_url()/handle_youtube_links()-Pfads tatsächlich liest (verifiziert
-    per grep: nur .text und .reply_text(...))."""
-
-    def __init__(self, text: str, reply_text: Callable):
-        self.text = text
-        self.reply_text = reply_text
-
-
-class _RetryUpdateAdapter:
-    """Duck-Typing-Stellvertreter für ein Update-Objekt, siehe
-    RichMenuSystem._handle_download_retry()-Docstring für die Begründung
-    (PTB-Update-/Message-Objekte sind eingefroren, dürfen nicht mutiert
-    werden). effective_user/effective_chat/update_id werden 1:1 vom echten,
-    auslösenden Callback-Query-Update übernommen (die sind bereits real und
-    gültig) - nur .message wird durch einen Stellvertreter mit der
-    gespeicherten Verlaufs-URL ersetzt, .reply_text sendet über die echte
-    Bot-Message des Callback-Queries (callback_query.message.reply_text)."""
-
-    def __init__(self, source_update: Update, url: str):
-        self.effective_user = source_update.effective_user
-        self.effective_chat = source_update.effective_chat
-        self.update_id = source_update.update_id
-        self.message = _RetryMessageAdapter(
-            text=url,
-            reply_text=source_update.callback_query.message.reply_text,
-        )
+# ARCH-024/P-2: _dl_progress_bar/_RetryMessageAdapter/_RetryUpdateAdapter
+# leben jetzt in handlers/menu/actions/download.py (siehe dort).
 
 
 class RichMenuSystem:
@@ -269,857 +244,17 @@ class RichMenuSystem:
     # ====== MENÜ-STRUKTUR ======
 
     def initialize_menu_structure(self) -> None:
-        """Erstellt die Menü-Hierarchie"""
+        """Erstellt die Menü-Hierarchie (ARCH-024/P-3: delegiert an
+        definitions.build_menu_tree()/definitions.populate_registry())."""
         self.logger.info("🗂️ Erstelle Menü-Struktur...")
-
-        # Hauptmenü
-        self.root_menu = MenuItem(
-            id="main",
-            title="Hauptmenü",
-            emoji="🏠",
-            description="Willkommen beim Musik-Bot",
-        )
-
-        # Download-Menü
-        # Download-Control-Center 2026-09-02 (Nutzer-Vorgabe): handler=
-        # macht "download" zu einem eigenen Aktions-Menüpunkt statt der
-        # generischen render_menu()-Darstellung seiner Kinder (analog zu
-        # dup:/status_/backup_/restart: - siehe _handle_download_menu()
-        # weiter unten). Die beiden statischen Kinder darunter bleiben in
-        # der Registry bestehen (harmlos, ungenutzt) - _handle_download_menu()
-        # baut die Tastatur komplett selbst.
-        download_menu = MenuItem(
-            id="download",
-            title="Downloads",
-            emoji="📥",
-            description="Musik herunterladen",
-            handler=self._handle_download_menu,
-            is_action=True,
-        )
-        download_menu.add_child(
-            MenuItem(
-                id="download_single",
-                title="Einzelner Track",
-                emoji="🎵",
-                handler=self._handle_download_single,
-                is_action=True,
-            )
-        )
-        download_menu.add_child(
-            MenuItem(
-                id="download_playlist",
-                title="Playlist",
-                emoji="📋",
-                handler=self._handle_download_playlist,
-                is_action=True,
-            )
-        )
-
-        # Statistik-Menü
-        stats_menu = MenuItem(
-            id="stats",
-            title="Statistiken",
-            emoji="📊",
-            description="Übersichten und Analysen",
-        )
-        stats_menu.add_child(
-            MenuItem(
-                id="stats_monthly",
-                title="Monatsrückblick",
-                emoji="📅",
-                handler=self._handle_stats_monthly,
-                is_action=True,
-            )
-        )
-        stats_menu.add_child(
-            MenuItem(
-                id="stats_yearly",
-                title="Jahresrückblick",
-                emoji="🎆",
-                handler=self._handle_stats_yearly,
-                is_action=True,
-            )
-        )
-        stats_menu.add_child(
-            MenuItem(
-                id="stats_top_songs",
-                title="Top Songs",
-                emoji="🎵",
-                handler=self._handle_stats_top_songs,
-                is_action=True,
-            )
-        )
-        stats_menu.add_child(
-            MenuItem(
-                id="stats_top_artists",
-                title="Top Künstler",
-                emoji="🎤",
-                handler=self._handle_stats_top_artists,
-                is_action=True,
-            )
-        )
-        stats_menu.add_child(
-            MenuItem(
-                id="stats_timeline",
-                title="Music Timeline",
-                emoji="📅",
-                handler=self._handle_stats_timeline,
-                is_action=True,
-            )
-        )
-        stats_menu.add_child(
-            MenuItem(
-                id="stats_library_overview",
-                title="Library Übersicht",
-                emoji="📚",
-                handler=self._handle_stats_library_overview,
-                is_action=True,
-            )
-        )
-
-        # Familien-Statistik (Phase F2, Family Hub) - neuer Zweig NEBEN den
-        # bestehenden persönlichen Statistik-Punkten (stats_monthly/...),
-        # die unverändert bleiben (Master-Prompt: "Bestehende Callback-Namen
-        # und Navigation nicht unnötig brechen"). Zugriff wird serverseitig
-        # in FamilyStatsHandler geprüft (Family-Membership), nicht hier.
-        family_stats_menu = MenuItem(
-            id="family_stats",
-            title="Familien-Statistik",
-            emoji="👨‍👩‍👧‍👦",
-            description="Statistiken für alle Familienmitglieder",
-        )
-        family_stats_menu.add_child(
-            MenuItem(
-                id="family_stats_top_songs",
-                title="Top Songs Familie",
-                emoji="🎵",
-                handler=self._handle_family_stats_top_songs,
-                is_action=True,
-            )
-        )
-        family_stats_menu.add_child(
-            MenuItem(
-                id="family_stats_top_artists",
-                title="Top Künstler Familie",
-                emoji="🎤",
-                handler=self._handle_family_stats_top_artists,
-                is_action=True,
-            )
-        )
-        family_stats_menu.add_child(
-            MenuItem(
-                id="family_stats_member",
-                title="Statistik pro Person",
-                emoji="👥",
-                handler=self._handle_family_stats_member,
-                is_action=True,
-            )
-        )
-        family_stats_menu.add_child(
-            MenuItem(
-                id="family_stats_champion",
-                title="Musik-Champion",
-                emoji="🏆",
-                handler=self._handle_family_stats_champion,
-                is_action=True,
-            )
-        )
-        family_stats_menu.add_child(
-            MenuItem(
-                id="family_stats_listening_times",
-                title="Hörzeiten",
-                emoji="⏰",
-                handler=self._handle_family_stats_listening_times,
-                is_action=True,
-            )
-        )
-        family_stats_menu.add_child(
-            MenuItem(
-                id="family_stats_monthly_trend",
-                title="Monatsentwicklung",
-                emoji="📈",
-                handler=self._handle_family_stats_monthly_trend,
-                is_action=True,
-            )
-        )
-        stats_menu.add_child(family_stats_menu)
-
-        # Familien-Chat (Phase F3, Family Hub) - eigenes Top-Level-Menü
-        # (Geschwister von "stats", nicht darunter verschachtelt), analog
-        # zur Master-Prompt-Zielstruktur. Zugriff wird serverseitig in
-        # FamilyChatHandler geprüft (Family-Membership), nicht hier.
-        family_chat_menu = MenuItem(
-            id="family_chat",
-            title="Familien-Chat",
-            emoji="💬",
-            description="Privater Chat für Familienmitglieder",
-        )
-        family_chat_menu.add_child(
-            MenuItem(
-                id="family_chat_send",
-                title="Nachricht senden",
-                emoji="📝",
-                handler=self._handle_family_chat_send,
-                is_action=True,
-            )
-        )
-        family_chat_menu.add_child(
-            MenuItem(
-                id="family_chat_recent",
-                title="Letzte Nachrichten",
-                emoji="📋",
-                handler=self._handle_family_chat_recent,
-                is_action=True,
-            )
-        )
-        family_chat_menu.add_child(
-            MenuItem(
-                id="family_chat_notifications",
-                title="Benachrichtigungen",
-                emoji="🔔",
-                handler=self._handle_family_chat_notifications,
-                is_action=True,
-            )
-        )
-
-        # Familien-Challenge (Phase F4, Family Hub) - eigenes Top-Level-
-        # Menü, analog zu family_chat. Zugriff wird serverseitig in
-        # FamilyChallengeHandler geprüft (Family-Membership), nicht hier.
-        family_challenge_menu = MenuItem(
-            id="family_challenge",
-            title="Familien-Challenge",
-            emoji="🎯",
-            description="Tägliche Musik-Challenge für die Familie",
-        )
-        family_challenge_menu.add_child(
-            MenuItem(
-                id="family_challenge_today",
-                title="Heutige Challenge",
-                emoji="❓",
-                handler=self._handle_family_challenge_today,
-                is_action=True,
-            )
-        )
-        family_challenge_menu.add_child(
-            MenuItem(
-                id="family_challenge_answer",
-                title="Antworten",
-                emoji="✅",
-                handler=self._handle_family_challenge_answer,
-                is_action=True,
-            )
-        )
-        family_challenge_menu.add_child(
-            MenuItem(
-                id="family_challenge_leaderboard",
-                title="Punktestand",
-                emoji="🏆",
-                handler=self._handle_family_challenge_leaderboard,
-                is_action=True,
-            )
-        )
-
-        # Admin-Menü
-        admin_menu = MenuItem(
-            id="admin",
-            title="Administration",
-            emoji="⚙️",
-            access_level=AccessLevel.ADMIN,
-            description="System-Verwaltung",
-        )
-
-        # Admin-Menü-Reorg (UX/Navigation, siehe Analyse-Bericht): drei
-        # thematische Gruppen-Container - reine Navigationsknoten (kein
-        # handler=, kein eigenes callback_data noetig, automatisch
-        # "menu:<id>", bereits durch das generische "^menu:"-Pattern in
-        # RichMenuHandler.get_telegram_handlers() abgedeckt, siehe
-        # docs/MusicBot_TELEGRAM_MENU_SYSTEM.md Abschnitt 6 - kein neuer
-        # CallbackQueryHandler noetig). Duplikat-Verwaltung und
-        # Benutzerverwaltung bleiben bewusst direkte Administration-Kinder
-        # (CLAUDE.md Abschnitt 5/15: Duplicate Detection ist eine eigene
-        # P0-Domaene, nicht Teil von "Bibliothek").
-        admin_group_library = MenuItem(
-            id="admin_group_library",
-            title="Bibliothek & Navidrome",
-            emoji="🎵",
-            access_level=AccessLevel.ADMIN,
-            description="Library-Diagnose, Reprocessing und Navidrome-Scan",
-        )
-        admin_group_operations = MenuItem(
-            id="admin_group_operations",
-            title="Bot & Betrieb",
-            emoji="🤖",
-            access_level=AccessLevel.ADMIN,
-            description="Bot-Neustart, Wartungsmodus und Backups",
-        )
-        admin_group_diagnostics = MenuItem(
-            id="admin_group_diagnostics",
-            title="Diagnose & Monitoring",
-            emoji="🩺",
-            access_level=AccessLevel.ADMIN,
-            description="System-Status, Logs, Fehler und Logger-Steuerung",
-        )
-
-        # System-Status
-        admin_group_diagnostics.add_child(
-            MenuItem(
-                id="admin_status",
-                title="System-Status",
-                emoji="📊",
-                access_level=AccessLevel.ADMIN,
-                callback_data="status_menu",
-                handler=self._handle_status_menu,
-                is_action=True,
-            )
-        )
-
-        # Benutzerverwaltung
-        admin_users_item = MenuItem(
-            id="admin_users",
-            title="Benutzerverwaltung",
-            emoji="👥",
-            access_level=AccessLevel.ADMIN,
-            is_action=True,
-        )
-
-        # System-Logs
-        admin_group_diagnostics.add_child(
-            MenuItem(
-                id="admin_logs",
-                title="System-Logs",
-                emoji="📄",
-                access_level=AccessLevel.ADMIN,
-                is_action=True,
-            )
-        )
-
-        # Duplikat-Verwaltung
-        duplicate_menu = MenuItem(
-            id="admin_duplicates",
-            title="Duplikat-Verwaltung",
-            emoji="♻️",
-            access_level=AccessLevel.ADMIN,
-            description="Verwaltung des Download-Duplikat-Cache",
-        )
-        duplicate_menu.add_child(
-            MenuItem(
-                id="dup_show_stats",
-                title="Statistiken anzeigen",
-                emoji="📊",
-                callback_data="dup:show_stats",
-                is_action=True,
-                handler=None,
-            )
-        )
-        duplicate_menu.add_child(
-            MenuItem(
-                id="dup_clear_cache_confirm",
-                title="Cache leeren",
-                emoji="🗑️",
-                callback_data="dup:clear_cache_confirm",
-                is_action=True,
-                handler=None,
-            )
-        )
-
-        # Error-Verwaltung
-        error_menu = MenuItem(
-            id="admin_errors",
-            title="Error-Verwaltung",
-            emoji="🚨",
-            access_level=AccessLevel.ADMIN,
-            description="Überwachung und Verwaltung des Error Handlers",
-        )
-        error_menu.add_child(
-            MenuItem(
-                id="erradmin_stats",
-                title="Statistiken",
-                emoji="📊",
-                callback_data="erradmin:show_stats",
-                is_action=True,
-            )
-        )
-        error_menu.add_child(
-            MenuItem(
-                id="erradmin_report",
-                title="Gesundheitsbericht",
-                emoji="🏥",
-                callback_data="erradmin:show_report",
-                is_action=True,
-            )
-        )
-        error_menu.add_child(
-            MenuItem(
-                id="erradmin_recent",
-                title="Letzte Fehler",
-                emoji="🕐",
-                callback_data="erradmin:show_recent",
-                is_action=True,
-            )
-        )
-        error_menu.add_child(
-            MenuItem(
-                id="erradmin_reset_confirm",
-                title="Statistiken zurücksetzen",
-                emoji="🔄",
-                callback_data="erradmin:reset_confirm",
-                is_action=True,
-            )
-        )
-        admin_group_diagnostics.add_child(error_menu)
-
-        # Logger-Management
-        logger_menu = MenuItem(
-            id="logger",
-            title="Logger-Verwaltung",
-            emoji="📈",
-            access_level=AccessLevel.ADMIN,
-            description="Erweiterte Logger-Steuerung und -Überwachung",
-        )
-        # TGPERM-001-Fix (siehe docs/audits/FULL_PROJECT_ARCHITECTURE_AUDIT_
-        # 2026-09-12.md): callback_data wird hier bewusst explizit auf die
-        # ID gesetzt statt der automatischen "menu:<id>"-Generierung
-        # (MenuItem.__post_init__) zu ueberlassen. Ohne dieses Override
-        # dispatchte handle_callback() diese ADMIN-Items ueber den
-        # generischen "menu:"-Fallback (Ende von handle_callback(), ruft
-        # menu_item.handler() OHNE jede Berechtigungspruefung auf) statt
-        # ueber den bereits vorhandenen, in _ADMIN_ONLY_PREFIXES gegateten
-        # "logger_"-Praefixpfad (_handle_logger_callback()'s routing_map,
-        # die exakt dieselben IDs bereits kennt). Die vormaligen
-        # `handler=self._handle_logger_*`-Wrapper sind dadurch obsolet und
-        # wurden entfernt (siehe frueher "LOGGER-HANDLER WRAPPER").
-        logger_menu.add_child(
-            MenuItem(
-                id="logger_main_menu",
-                title="Logger-Übersicht",
-                emoji="🏠",
-                access_level=AccessLevel.ADMIN,
-                callback_data="logger_main_menu",
-                is_action=True,
-            )
-        )
-        logger_menu.add_child(
-            MenuItem(
-                id="logger_modules_list",
-                title="Module verwalten",
-                emoji="📦",
-                access_level=AccessLevel.ADMIN,
-                callback_data="logger_modules_list",
-                is_action=True,
-            )
-        )
-        logger_menu.add_child(
-            MenuItem(
-                id="logger_global_level",
-                title="Globales Level",
-                emoji="🌍",
-                access_level=AccessLevel.ADMIN,
-                callback_data="logger_global_level",
-                is_action=True,
-            )
-        )
-        logger_menu.add_child(
-            MenuItem(
-                id="logger_files_list",
-                title="Log-Dateien",
-                emoji="📁",
-                access_level=AccessLevel.ADMIN,
-                callback_data="logger_files_list",
-                is_action=True,
-            )
-        )
-        logger_menu.add_child(
-            MenuItem(
-                id="logger_global_stats",
-                title="Statistiken",
-                emoji="📈",
-                access_level=AccessLevel.ADMIN,
-                callback_data="logger_global_stats",
-                is_action=True,
-            )
-        )
-        logger_menu.add_child(
-            MenuItem(
-                id="logger_handlers_list",
-                title="Handler-Verwaltung",
-                emoji="⚡",
-                access_level=AccessLevel.ADMIN,
-                callback_data="logger_handlers_list",
-                is_action=True,
-            )
-        )
-        logger_menu.add_child(
-            MenuItem(
-                id="logger_cleanup_menu",
-                title="Bereinigung",
-                emoji="🧹",
-                access_level=AccessLevel.ADMIN,
-                callback_data="logger_cleanup_menu",
-                is_action=True,
-            )
-        )
-        admin_group_diagnostics.add_child(logger_menu)
-
-        # Backup-Verwaltung
-        backup_menu = MenuItem(
-            id="admin_backup",
-            title="Backup-Verwaltung",
-            emoji="💾",
-            access_level=AccessLevel.ADMIN,
-            description="Sicherung von Bot-Verzeichnis und Musikbibliothek",
-        )
-        backup_menu.add_child(
-            MenuItem(
-                id="backup_main",
-                title="Backup-Übersicht",
-                emoji="🏠",
-                access_level=AccessLevel.ADMIN,
-                callback_data="backup_main",
-                handler=self._handle_backup_main,
-                is_action=True,
-            )
-        )
-        backup_menu.add_child(
-            MenuItem(
-                id="backup_bot_confirm",
-                title="Bot sichern",
-                emoji="🤖",
-                access_level=AccessLevel.ADMIN,
-                callback_data="backup_bot_confirm",
-                handler=self._handle_backup_bot_confirm,
-                is_action=True,
-            )
-        )
-        backup_menu.add_child(
-            MenuItem(
-                id="backup_lib_confirm",
-                title="Library sichern",
-                emoji="🎵",
-                access_level=AccessLevel.ADMIN,
-                callback_data="backup_lib_confirm",
-                handler=self._handle_backup_lib_confirm,
-                is_action=True,
-            )
-        )
-        backup_menu.add_child(
-            MenuItem(
-                id="backup_list_bot",
-                title="Bot-Backups",
-                emoji="📋",
-                access_level=AccessLevel.ADMIN,
-                callback_data="backup_list_bot",
-                handler=self._handle_backup_list_bot,
-                is_action=True,
-            )
-        )
-        backup_menu.add_child(
-            MenuItem(
-                id="backup_list_lib",
-                title="Library-Backups",
-                emoji="📋",
-                access_level=AccessLevel.ADMIN,
-                callback_data="backup_list_lib",
-                handler=self._handle_backup_list_lib,
-                is_action=True,
-            )
-        )
-        admin_group_operations.add_child(backup_menu)
-
-        # ====== NEU: BOT-NEUSTART ======
-        admin_group_operations.add_child(
-            MenuItem(
-                id="admin_restart",
-                title="Bot neu starten",
-                emoji="🔄",
-                access_level=AccessLevel.ADMIN,
-                callback_data="restart:show",
-                handler=self._handle_restart_show,
-                is_action=True,
-                description="Bot-Service via systemctl neu starten",
-            )
-        )
-        # ====== ENDE BOT-NEUSTART ======
-
-        # ====== NEU: WARTUNGSMODUS ======
-        admin_group_operations.add_child(
-            MenuItem(
-                id="admin_maintenance",
-                title="Wartungsmodus",
-                emoji="🛠️",
-                access_level=AccessLevel.ADMIN,
-                callback_data="maint:show",
-                handler=self._handle_maintenance_show,
-                is_action=True,
-                description="Bot für alle außer Admins pausieren/fortsetzen",
-            )
-        )
-        # ====== ENDE WARTUNGSMODUS ======
-
-        # ====== NEU: METADATA-REPROCESSING ======
-        # Nutzer-Entscheidung: nur Owner (nicht Admin) - greift auf
-        # Metadata-/Auto-Learn-Dateien zu, siehe docs/FINDINGS_INDEX.md.
-        admin_group_library.add_child(
-            MenuItem(
-                id="admin_reprocessing",
-                title="Reprocessing",
-                emoji="🔧",
-                access_level=AccessLevel.OWNER,
-                callback_data="reprocess:show",
-                handler=self._handle_reprocessing_show,
-                is_action=True,
-                description="Metadata eines Test-Artists erneut verarbeiten",
-            )
-        )
-        # ====== ENDE METADATA-REPROCESSING ======
-
-        # ====== NEU: MUSICBOT DOCTOR (Phase 3, P1.3) ======
-        admin_group_library.add_child(
-            MenuItem(
-                id="admin_library_doctor",
-                title="MusicBot Doctor",
-                emoji="🩺",
-                access_level=AccessLevel.ADMIN,
-                callback_data="doctor:scan",
-                handler=self._handle_doctor_scan,
-                is_action=True,
-                description="Library Health-Scan + sichere Tag-/Namens-Reparaturen",
-            )
-        )
-        # ====== ENDE MUSICBOT DOCTOR ======
-
-        # ====== NEU: LIBRARY HEALTH REVIEW ======
-        admin_group_library.add_child(
-            MenuItem(
-                id="admin_library_health_review",
-                title="Library Health Review",
-                emoji="🔎",
-                access_level=AccessLevel.ADMIN,
-                callback_data="review:start",
-                handler=self._handle_review_start,
-                is_action=True,
-                description="Offene Health-Findings nach Kategorie prüfen "
-                            "(Resolve/False Positive)",
-            )
-        )
-        # ====== ENDE LIBRARY HEALTH REVIEW ======
-
-        # ====== NEU: REPAIR MUSICBOT ======
-        admin_group_library.add_child(
-            MenuItem(
-                id="admin_repair_musicbot",
-                title="Repair MusicBot",
-                emoji="🛠️",
-                access_level=AccessLevel.ADMIN,
-                callback_data="repair:start",
-                handler=self._handle_repair_start,
-                is_action=True,
-                description="Reparaturplan/-vorschläge, SAFE_AUTOMATIC-Ausführung, "
-                            "Historie & Statistik",
-            )
-        )
-        # ====== ENDE REPAIR MUSICBOT ======
-
-        # Admin-Menü-Reorg: Gruppen-Container an Administration haengen -
-        # Reihenfolge hier = Anzeige-Reihenfolge im Menü (siehe
-        # Analyse-Bericht, Abschnitt F/H).
-        admin_menu.add_child(admin_group_library)
-        admin_menu.add_child(admin_group_operations)
-        admin_menu.add_child(admin_group_diagnostics)
-        admin_menu.add_child(duplicate_menu)
-        admin_menu.add_child(admin_users_item)
-
-        # Test-Menü
-        test_menu = MenuItem(
-            id="tests",
-            title="Test-System",
-            emoji="🧪",
-            access_level=AccessLevel.ADMIN,
-            description="Unit-, Integrations- und Performance-Tests ausführen",
-        )
-        test_menu.add_child(
-            MenuItem(
-                id="test_unit",
-                title="Unit Tests ausführen",
-                emoji="🔬",
-                access_level=AccessLevel.ADMIN,
-                is_action=True,
-            )
-        )
-        test_menu.add_child(
-            MenuItem(
-                id="test_integration",
-                title="Integration Tests ausführen",
-                emoji="🔗",
-                access_level=AccessLevel.ADMIN,
-                is_action=True,
-            )
-        )
-        test_menu.add_child(
-            MenuItem(
-                id="test_performance",
-                title="Performance Tests ausführen",
-                emoji="⚡",
-                access_level=AccessLevel.ADMIN,
-                is_action=True,
-            )
-        )
-
-        # Navidrome-Menü
-        navidrome_menu = MenuItem(
-            id="navidrome",
-            title="Navidrome Mediathek",
-            emoji="🎵",
-            access_level=AccessLevel.USER,
-            description="Durchsuche und verwalte deine Musikbibliothek",
-        )
-
-        # Browse-Untermenüs
-        browse_menu = MenuItem(
-            id="navidrome_browse",
-            title="Durchsuchen",
-            emoji="🔍",
-            description="Musikbibliothek nach Kategorien durchsuchen",
-        )
-        browse_menu.add_child(
-            MenuItem(
-                id="nav_browse_artists",
-                title="Künstler",
-                emoji="🎤",
-                handler=self._handle_navidrome_browse_artists,
-                is_action=True,
-            )
-        )
-        browse_menu.add_child(
-            MenuItem(
-                id="nav_browse_albums",
-                title="Alben",
-                emoji="💿",
-                handler=self._handle_navidrome_browse_albums,
-                is_action=True,
-            )
-        )
-        browse_menu.add_child(
-            MenuItem(
-                id="nav_browse_genres",
-                title="Genres",
-                emoji="🎭",
-                handler=self._handle_navidrome_browse_genres,
-                is_action=True,
-            )
-        )
-        browse_menu.add_child(
-            MenuItem(
-                id="nav_browse_playlists",
-                title="Playlists",
-                emoji="📋",
-                handler=self._handle_navidrome_browse_playlists,
-                is_action=True,
-            )
-        )
-
-        # Suche-Menü
-        search_menu = MenuItem(
-            id="navidrome_search",
-            title="Suchen",
-            emoji="🔎",
-            description="Musikbibliothek durchsuchen",
-        )
-        search_menu.add_child(
-            MenuItem(
-                id="nav_search",
-                title="Überall suchen",
-                emoji="🔍",
-                handler=self._handle_navidrome_search_all,
-                is_action=True,
-            )
-        )
-        search_menu.add_child(
-            MenuItem(
-                id="nav_search_artists",
-                title="Künstler suchen",
-                emoji="🎤",
-                handler=self._handle_navidrome_search_artists,
-                is_action=True,
-            )
-        )
-        search_menu.add_child(
-            MenuItem(
-                id="nav_search_albums",
-                title="Alben suchen",
-                emoji="💿",
-                handler=self._handle_navidrome_search_albums,
-                is_action=True,
-            )
-        )
-        search_menu.add_child(
-            MenuItem(
-                id="nav_search_songs",
-                title="Songs suchen",
-                emoji="🎵",
-                handler=self._handle_navidrome_search_songs,
-                is_action=True,
-            )
-        )
-
-        navidrome_menu.add_child(browse_menu)
-        navidrome_menu.add_child(search_menu)
-        navidrome_menu.add_child(
-            MenuItem(
-                id="nav_playlists",
-                title="Meine Playlists",
-                emoji="📋",
-                handler=self._handle_navidrome_my_playlists,
-                is_action=True,
-            )
-        )
-        navidrome_menu.add_child(
-            MenuItem(
-                id="nav_favorites",
-                title="Favoriten",
-                emoji="⭐",
-                handler=self._handle_navidrome_favorites,
-                is_action=True,
-            )
-        )
-        navidrome_menu.add_child(
-            MenuItem(
-                id="nav_recent",
-                title="Zuletzt gespielt",
-                emoji="🕐",
-                handler=self._handle_navidrome_recent,
-                is_action=True,
-            )
-        )
-        navidrome_menu.add_child(
-            MenuItem(
-                id="nav_link_stats",
-                title="Statistiken",
-                emoji="📊",
-                callback_data="menu:stats",
-                handler=None,
-                is_action=False,
-            )
-        )
-
-        # Menüs zum Root hinzufügen
-        self.root_menu.add_child(download_menu)
-        self.root_menu.add_child(stats_menu)
-        self.root_menu.add_child(family_chat_menu)
-        self.root_menu.add_child(family_challenge_menu)
-        self.root_menu.add_child(admin_menu)
-        self.root_menu.add_child(test_menu)
-        self.root_menu.add_child(navidrome_menu)
-
-        # Registry aufbauen
+        self.root_menu = definitions.build_menu_tree(self)
         self._build_registry(self.root_menu)
-
         self.logger.info(f"✅ Menü-Struktur erstellt: {len(self.menu_registry)} Items")
 
     def _build_registry(self, menu: MenuItem) -> None:
-        """Baut flache Registry für schnellen Zugriff"""
-        self.menu_registry[menu.id] = menu
-        for child in menu.children:
-            self._build_registry(child)
+        """Baut flache Registry für schnellen Zugriff (ARCH-024/P-3:
+        delegiert an definitions.populate_registry())."""
+        definitions.populate_registry(self.menu_registry, menu)
 
     # Die vormaligen LOGGER-HANDLER WRAPPER (_handle_logger_main_menu,
     # _handle_logger_modules, _handle_logger_global_level,
@@ -1137,46 +272,31 @@ class RichMenuSystem:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper: Backup-Hauptmenü"""
-        if self.backup_handler:
-            await self.backup_handler.show_main_menu(update, context)
-        else:
-            await self._show_handler_not_available(update, "Backup-Handler")
+        await admin_operations_actions.handle_backup_main(update, context, self.backup_handler)
 
     async def _handle_backup_bot_confirm(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper: Bot-Backup Bestätigung"""
-        if self.backup_handler:
-            await self.backup_handler.confirm_bot_backup(update, context)
-        else:
-            await self._show_handler_not_available(update, "Backup-Handler")
+        await admin_operations_actions.handle_backup_bot_confirm(update, context, self.backup_handler)
 
     async def _handle_backup_lib_confirm(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper: Library-Backup Bestätigung"""
-        if self.backup_handler:
-            await self.backup_handler.confirm_lib_backup(update, context)
-        else:
-            await self._show_handler_not_available(update, "Backup-Handler")
+        await admin_operations_actions.handle_backup_lib_confirm(update, context, self.backup_handler)
 
     async def _handle_backup_list_bot(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper: Bot-Backup-Liste anzeigen"""
-        if self.backup_handler:
-            await self.backup_handler.show_list_bot(update, context)
-        else:
-            await self._show_handler_not_available(update, "Backup-Handler")
+        await admin_operations_actions.handle_backup_list_bot(update, context, self.backup_handler)
 
     async def _handle_backup_list_lib(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper: Library-Backup-Liste anzeigen"""
-        if self.backup_handler:
-            await self.backup_handler.show_list_lib(update, context)
-        else:
-            await self._show_handler_not_available(update, "Backup-Handler")
+        await admin_operations_actions.handle_backup_list_lib(update, context, self.backup_handler)
 
     # ====== NEU: BOT-NEUSTART WRAPPER ======
 
@@ -1187,21 +307,14 @@ class RichMenuSystem:
         Einstiegspunkt aus dem Menü-System für den Bot-Neustart.
         Leitet an BotRestartHandler.show_restart_confirm() weiter.
         """
-        if not self.restart_handler:
-            query = update.callback_query
-            await query.answer("⚠️ Restart-Handler nicht verfügbar", show_alert=True)
-            return
-        await self.restart_handler.show_restart_confirm(update, context)
+        await admin_operations_actions.handle_restart_show(update, context, self.restart_handler)
 
     # ====== ENDE BOT-NEUSTART WRAPPER ======
 
     # ====== NEU: WARTUNGSMODUS ======
     #
-    # Anders als der Bot-Neustart bewusst OHNE eigene Handler-Klasse: die
-    # Logik beschraenkt sich auf Lesen/Schreiben des einen booleschen
-    # Zustands im geteilten MaintenanceModeStore (services/bot_maintenance.py)
-    # - kein Bestaetigungsdialog (anders als beim Neustart), da instant
-    # reversibel und ohne Datenverlust/Verbindungsabbruch.
+    # Anders als der Bot-Neustart bewusst OHNE eigene Handler-Klasse -
+    # siehe handlers/menu/actions/admin_operations.py.
 
     async def _handle_maintenance_show(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -1210,42 +323,9 @@ class RichMenuSystem:
         Einstiegspunkt aus dem Menü-System - zeigt den aktuellen
         Wartungsmodus-Status mit Toggle-Button.
         """
-        query = update.callback_query
-        user_id = update.effective_user.id
-        if not self._is_admin_check(user_id):
-            await query.answer("⛔ Keine Berechtigung", show_alert=True)
-            return
-        await query.answer()
-
-        if not self.maintenance_store:
-            await query.edit_message_text("⚠️ Wartungsmodus-Speicher nicht verfügbar")
-            return
-
-        active = self.maintenance_store.is_active()
-        status_text = "🔴 AKTIV" if active else "🟢 Inaktiv"
-        toggle_label = (
-            "🟢 Wartungsmodus beenden" if active else "🔴 Wartungsmodus aktivieren"
+        await admin_operations_actions.handle_maintenance_show(
+            update, context, self._is_admin_check, self.maintenance_store
         )
-
-        text = (
-            "🛠️ <b>Wartungsmodus</b>\n\n"
-            f"Status: {status_text}\n\n"
-            "Im aktiven Wartungsmodus können nur Admins/Owner den Bot "
-            "normal nutzen - alle anderen Nutzer erhalten an jedem "
-            "Einstiegspunkt eine Wartungsmeldung statt der eigentlichen "
-            "Funktion."
-        )
-        keyboard = InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton(toggle_label, callback_data="maint:toggle")],
-                [
-                    InlineKeyboardButton(
-                        "◀️ Zurück", callback_data="menu:admin_group_operations"
-                    )
-                ],
-            ]
-        )
-        await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
 
     async def _handle_maintenance_callback(
         self,
@@ -1254,43 +334,12 @@ class RichMenuSystem:
         callback_data: str,
     ) -> None:
         """
-        Dispatcher für alle maint:* Callbacks.
-
-        Routing:
-          maint:show   → Status anzeigen
-          maint:toggle → Zustand umschalten, danach Status erneut anzeigen
+        Dispatcher für alle maint:* Callbacks - siehe
+        handlers/menu/actions/admin_operations.py::handle_maintenance_callback().
         """
-        query = update.callback_query
-        user_id = update.effective_user.id
-
-        # Admin-Check (Defense-in-Depth, analog zu restart:/erradmin: -
-        # maint: ist bewusst NICHT in _ADMIN_ONLY_PREFIXES aufgenommen,
-        # da dieser Dispatcher seinen eigenen Check macht).
-        if not self._is_admin_check(user_id):
-            await query.answer("⛔ Keine Berechtigung", show_alert=True)
-            return
-
-        if not self.maintenance_store:
-            await query.answer(
-                "⚠️ Wartungsmodus-Speicher nicht verfügbar", show_alert=True
-            )
-            return
-
-        if callback_data == "maint:show":
-            await self._handle_maintenance_show(update, context)
-            return
-
-        if callback_data == "maint:toggle":
-            new_state = not self.maintenance_store.is_active()
-            self.maintenance_store.set_active(new_state, changed_by_user_id=user_id)
-            self.logger.warning(
-                f"🛠️ Wartungsmodus {'aktiviert' if new_state else 'deaktiviert'} "
-                f"von Admin {user_id}"
-            )
-            await self._handle_maintenance_show(update, context)
-            return
-
-        await query.answer("⚠️ Unbekannter Wartungsmodus-Callback")
+        await admin_operations_actions.handle_maintenance_callback(
+            update, context, callback_data, self._is_admin_check, self.maintenance_store, self.logger
+        )
 
     # ====== ENDE WARTUNGSMODUS ======
 
@@ -1301,10 +350,9 @@ class RichMenuSystem:
     ) -> None:
         """Einstiegspunkt aus dem Menü-System - Wrapper analog zu den
         _handle_navidrome_*-Methoden."""
-        if self.reprocessing_handler:
-            await self.reprocessing_handler.show_artist_list(update, context)
-        else:
-            await self._show_handler_not_available(update, "Reprocessing-Handler")
+        await library_actions.handle_reprocessing_show(
+            update, context, self.reprocessing_handler
+        )
 
     async def _handle_reprocessing_callback(
         self,
@@ -1312,61 +360,11 @@ class RichMenuSystem:
         context: ContextTypes.DEFAULT_TYPE,
         callback_data: str,
     ) -> None:
-        """
-        Dispatcher für alle reprocess:* Callbacks.
-
-        Routing:
-          reprocess:show        → Artist-Liste anzeigen
-          reprocess:pick:<idx>  → Dry-Run für Artist <idx> starten
-          reprocess:live:<idx>  → LIVE-Lauf für Artist <idx> starten
-
-        Eigener Owner-Check hier (Defense-in-Depth, analog zu maint: -
-        bewusst NICHT in _ADMIN_ONLY_PREFIXES aufgenommen, da OWNER
-        strenger als ADMIN ist und dieser Dispatcher seinen eigenen,
-        passenden Check macht statt sich auf den ADMIN-Check zu verlassen).
-        """
-        query = update.callback_query
-        user_id = update.effective_user.id
-
-        if user_id != getattr(self.config, "OWNER_USER_ID", None):
-            self.logger.warning(
-                f"🚨 [SECURITY] Nicht-Owner {user_id} versuchte "
-                f"Reprocessing-Callback: {callback_data}"
-            )
-            await query.answer("⛔ Keine Berechtigung", show_alert=True)
-            return
-
-        if not self.reprocessing_handler:
-            await query.answer(
-                "⚠️ Reprocessing-Handler nicht verfügbar", show_alert=True
-            )
-            return
-
-        if callback_data == "reprocess:show":
-            await self.reprocessing_handler.show_artist_list(update, context)
-            return
-
-        if callback_data.startswith("reprocess:pick:"):
-            idx_str = callback_data[len("reprocess:pick:") :]
-            try:
-                idx = int(idx_str)
-            except ValueError:
-                await query.answer("⚠️ Ungültiger Callback", show_alert=True)
-                return
-            await self.reprocessing_handler.handle_pick(update, context, idx)
-            return
-
-        if callback_data.startswith("reprocess:live:"):
-            idx_str = callback_data[len("reprocess:live:") :]
-            try:
-                idx = int(idx_str)
-            except ValueError:
-                await query.answer("⚠️ Ungültiger Callback", show_alert=True)
-                return
-            await self.reprocessing_handler.handle_live(update, context, idx)
-            return
-
-        await query.answer("⚠️ Unbekannter Reprocessing-Callback")
+        """Dispatcher für alle reprocess:* Callbacks - siehe
+        handlers/menu/actions/library.py::handle_reprocessing_callback()."""
+        await library_actions.handle_reprocessing_callback(
+            update, context, callback_data, self.reprocessing_handler, self.config, self.logger
+        )
 
     # ====== ENDE METADATA-REPROCESSING ======
 
@@ -1377,10 +375,7 @@ class RichMenuSystem:
     ) -> None:
         """Einstiegspunkt aus dem Menü-System - Wrapper analog zu
         _handle_reprocessing_show()."""
-        if self.doctor_handler:
-            await self.doctor_handler.handle_scan(update, context)
-        else:
-            await self._show_handler_not_available(update, "Doctor-Handler")
+        await library_actions.handle_doctor_scan(update, context, self.doctor_handler)
 
     async def _handle_doctor_callback(
         self,
@@ -1388,52 +383,11 @@ class RichMenuSystem:
         context: ContextTypes.DEFAULT_TYPE,
         callback_data: str,
     ) -> None:
-        """
-        Dispatcher für alle doctor:* Callbacks.
-
-        Routing:
-          doctor:scan                 → Health-Scan starten (auch über
-                                         den Menüpunkt direkt erreichbar)
-          doctor:apply_safe           → Bestätigung vor SAFE_AUTOMATIC-Apply
-          doctor:apply_safe_confirm   → SAFE_AUTOMATIC-Apply tatsächlich starten
-
-        Eigener Admin-Check hier (Defense-in-Depth, analog zu maint:/
-        reprocess: - callback_data ist frei sendbar, siehe SEC-003).
-        """
-        query = update.callback_query
-        user_id = update.effective_user.id
-
-        # ARCH-023/P-3 Phase 3: vormals inline duplizierte Pruefung durch
-        # die gemeinsame, bereits getestete self._is_admin_check()
-        # ersetzt (funktional aequivalent, siehe
-        # tests/test_menu_router_characterization.py::
-        # TestDoctorReviewRepairEquivalentToIsAdminCheck) - keine
-        # Verhaltensaenderung.
-        if not self._is_admin_check(user_id):
-            self.logger.warning(
-                f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte "
-                f"Doctor-Callback: {callback_data}"
-            )
-            await query.answer("⛔ Keine Berechtigung", show_alert=True)
-            return
-
-        if not self.doctor_handler:
-            await query.answer("⚠️ Doctor-Handler nicht verfügbar", show_alert=True)
-            return
-
-        if callback_data == "doctor:scan":
-            await self.doctor_handler.handle_scan(update, context)
-            return
-
-        if callback_data == "doctor:apply_safe":
-            await self.doctor_handler.handle_apply_safe_confirm_prompt(update, context)
-            return
-
-        if callback_data == "doctor:apply_safe_confirm":
-            await self.doctor_handler.handle_apply_safe_confirmed(update, context)
-            return
-
-        await query.answer("⚠️ Unbekannter Doctor-Callback")
+        """Dispatcher für alle doctor:* Callbacks - siehe
+        handlers/menu/actions/library.py::handle_doctor_callback()."""
+        await library_actions.handle_doctor_callback(
+            update, context, callback_data, self.doctor_handler, self._is_admin_check, self.logger
+        )
 
     # ====== ENDE MUSICBOT DOCTOR ======
 
@@ -1444,10 +398,7 @@ class RichMenuSystem:
     ) -> None:
         """Einstiegspunkt aus dem Menü-System - Wrapper analog zu
         _handle_doctor_scan()."""
-        if self.review_handler:
-            await self.review_handler.handle_start(update, context)
-        else:
-            await self._show_handler_not_available(update, "Review-Handler")
+        await library_actions.handle_review_start(update, context, self.review_handler)
 
     async def _handle_review_callback(
         self,
@@ -1455,78 +406,11 @@ class RichMenuSystem:
         context: ContextTypes.DEFAULT_TYPE,
         callback_data: str,
     ) -> None:
-        """
-        Dispatcher für alle review:* Callbacks.
-
-        Routing (siehe handlers/library_health_review_handler.py):
-          review:start                    → Übersicht (Severity-Verteilung)
-          review:severity:<TIER>          → Kategorien dieser Severity-Stufe
-          review:category:<CODE>          → Kategorie-Aktionen
-          review:edit:<CODE>              → Einzelreview starten
-          review:resolve:<finding_id>     → Resolve im Einzelreview
-          review:fp:<finding_id>          → False Positive im Einzelreview
-          review:skip:<finding_id>        → Skip im Einzelreview
-          review:quit:<finding_id>        → Review beenden
-          review:batchconfirm:<CODE>      → Bestätigung vor Batch-False-Positive
-          review:batchyes:<CODE>          → Batch-False-Positive ausführen
-          review:accepted                 → Liste der akzeptierten Findings (nach Code)
-          review:acccode:<CODE>           → akzeptierte Findings dieser Kategorie
-          review:accshow:<finding_id>     → ein akzeptiertes Finding (Detail)
-          review:unaccept:<finding_id>    → Acceptance zurücknehmen (→ OPEN)
-
-        Eigener Admin-Check hier (Defense-in-Depth, analog zu doctor:/
-        maint:/reprocess: - callback_data ist frei sendbar, siehe SEC-003).
-        """
-        query = update.callback_query
-        user_id = update.effective_user.id
-
-        # ARCH-023/P-3 Phase 3: siehe Kommentar in _handle_doctor_callback()
-        # - identische Konsolidierung, keine Verhaltensaenderung.
-        if not self._is_admin_check(user_id):
-            self.logger.warning(
-                f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte "
-                f"Review-Callback: {callback_data}"
-            )
-            await query.answer("⛔ Keine Berechtigung", show_alert=True)
-            return
-
-        if not self.review_handler:
-            await query.answer("⚠️ Review-Handler nicht verfügbar", show_alert=True)
-            return
-
-        if callback_data == "review:start":
-            await self.review_handler.handle_start(update, context)
-            return
-        if callback_data == "review:accepted":
-            await self.review_handler.handle_accepted_list(update, context)
-            return
-
-        parts = callback_data.split(":", 2)
-        if len(parts) < 3:
-            await query.answer("⚠️ Unbekannter Review-Callback")
-            return
-        action, payload = parts[1], parts[2]
-
-        if action == "severity":
-            await self.review_handler.handle_severity(update, context, payload)
-        elif action == "category":
-            await self.review_handler.handle_category(update, context, payload)
-        elif action == "edit":
-            await self.review_handler.handle_edit_start(update, context, payload)
-        elif action == "batchconfirm":
-            await self.review_handler.handle_batch_confirm_prompt(update, context, payload)
-        elif action == "batchyes":
-            await self.review_handler.handle_batch_confirmed(update, context, payload)
-        elif action in ("resolve", "fp", "skip", "quit"):
-            await self.review_handler.handle_single_action(update, context, action, payload)
-        elif action == "acccode":
-            await self.review_handler.handle_accepted_category(update, context, payload)
-        elif action == "accshow":
-            await self.review_handler.handle_accepted_show(update, context, payload)
-        elif action == "unaccept":
-            await self.review_handler.handle_unaccept(update, context, payload)
-        else:
-            await query.answer("⚠️ Unbekannter Review-Callback")
+        """Dispatcher für alle review:* Callbacks - siehe
+        handlers/menu/actions/library.py::handle_review_callback()."""
+        await library_actions.handle_review_callback(
+            update, context, callback_data, self.review_handler, self._is_admin_check, self.logger
+        )
 
     # ====== ENDE LIBRARY HEALTH REVIEW ======
 
@@ -1537,10 +421,7 @@ class RichMenuSystem:
     ) -> None:
         """Einstiegspunkt aus dem Menü-System - Wrapper analog zu
         _handle_doctor_scan()/_handle_review_start()."""
-        if self.repair_handler:
-            await self.repair_handler.handle_start(update, context)
-        else:
-            await self._show_handler_not_available(update, "Repair-Handler")
+        await library_actions.handle_repair_start(update, context, self.repair_handler)
 
     async def _handle_repair_callback(
         self,
@@ -1548,66 +429,17 @@ class RichMenuSystem:
         context: ContextTypes.DEFAULT_TYPE,
         callback_data: str,
     ) -> None:
-        """
-        Dispatcher für alle repair:* Callbacks.
-
-        Routing (siehe handlers/repair_musicbot_handler.py):
-          repair:start      → Startseite
-          repair:analyze    → Reparaturen analysieren / Offene Reparaturen
-          repair:proposals  → Reparaturvorschläge (SAFE_AUTOMATIC)
-          repair:preview    → Read-only Vorschau
-          repair:confirm    → explizite Bestätigung vor Ausführung
-          repair:execute    → tatsächliche Ausführung (Berechtigung erneut geprüft)
-          repair:history    → Reparaturhistorie
-          repair:stats      → Repair-Statistik
-
-        Eigener Admin-Check hier (Defense-in-Depth, analog zu doctor:/
-        review:/maint:/reprocess: - callback_data ist frei sendbar, siehe
-        SEC-003).
-        """
-        query = update.callback_query
-        user_id = update.effective_user.id
-
-        # ARCH-023/P-3 Phase 3: siehe Kommentar in _handle_doctor_callback()
-        # - identische Konsolidierung, keine Verhaltensaenderung.
-        if not self._is_admin_check(user_id):
-            self.logger.warning(
-                f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte "
-                f"Repair-Callback: {callback_data}"
-            )
-            await query.answer("⛔ Keine Berechtigung", show_alert=True)
-            return
-
-        if not self.repair_handler:
-            await query.answer("⚠️ Repair-Handler nicht verfügbar", show_alert=True)
-            return
-
-        routing = {
-            "repair:start": self.repair_handler.handle_start,
-            "repair:analyze": self.repair_handler.handle_analyze,
-            "repair:proposals": self.repair_handler.handle_proposals,
-            "repair:preview": self.repair_handler.handle_preview,
-            "repair:confirm": self.repair_handler.handle_confirm_prompt,
-            "repair:execute": self.repair_handler.handle_execute,
-            "repair:history": self.repair_handler.handle_history,
-            "repair:stats": self.repair_handler.handle_statistics,
-        }
-        handler_fn = routing.get(callback_data)
-        if handler_fn is None:
-            await query.answer("⚠️ Unbekannter Repair-Callback")
-            return
-        await handler_fn(update, context)
+        """Dispatcher für alle repair:* Callbacks - siehe
+        handlers/menu/actions/library.py::handle_repair_callback()."""
+        await library_actions.handle_repair_callback(
+            update, context, callback_data, self.repair_handler, self._is_admin_check, self.logger
+        )
 
     # ====== ENDE REPAIR MUSICBOT ======
 
     async def _show_handler_not_available(self, update: Update, handler_name: str):
         """Zeigt Fehlermeldung wenn Handler nicht verfügbar"""
-        query = update.callback_query
-        await query.answer()
-        await query.edit_message_text(
-            f"⚠️ {handler_name} nicht verfügbar\n\n"
-            f"Bitte warte bis das System vollständig geladen ist."
-        )
+        await actions_common.show_handler_not_available(update, handler_name)
 
     # ====== NAVIDROME WRAPPER ======
 
@@ -1615,103 +447,67 @@ class RichMenuSystem:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper für Künstler-Browse"""
-        if self.navidrome_handler:
-            await self.navidrome_handler.handle_browse_artists(update, context)
-        else:
-            await self._show_handler_not_available(update, "Navidrome-Handler")
+        await navidrome_actions.handle_browse_artists(update, context, self.navidrome_handler)
 
     async def _handle_navidrome_browse_albums(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper für Album-Browse"""
-        if self.navidrome_handler:
-            await self.navidrome_handler.handle_browse_albums(update, context)
-        else:
-            await self._show_handler_not_available(update, "Navidrome-Handler")
+        await navidrome_actions.handle_browse_albums(update, context, self.navidrome_handler)
 
     async def _handle_navidrome_browse_genres(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper für Genre-Browse"""
-        if self.navidrome_handler:
-            await self.navidrome_handler.handle_browse_genres(update, context)
-        else:
-            await self._show_handler_not_available(update, "Navidrome-Handler")
+        await navidrome_actions.handle_browse_genres(update, context, self.navidrome_handler)
 
     async def _handle_navidrome_browse_playlists(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper für Playlist-Browse"""
-        if self.navidrome_handler:
-            await update.callback_query.answer()
-            await update.callback_query.edit_message_text(
-                "📋 Playlist-Browser wird gerade entwickelt..."
-            )
-        else:
-            await self._show_handler_not_available(update, "Navidrome-Handler")
+        await navidrome_actions.handle_browse_playlists(update, context, self.navidrome_handler)
 
     async def _handle_navidrome_search_all(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper für universelle Suche"""
-        if self.navidrome_handler:
-            await self.navidrome_handler.handle_search(update, context, "all")
-        else:
-            await self._show_handler_not_available(update, "Navidrome-Handler")
+        await navidrome_actions.handle_search_all(update, context, self.navidrome_handler)
 
     async def _handle_navidrome_search_artists(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper für Künstler-Suche"""
-        if self.navidrome_handler:
-            await self.navidrome_handler.handle_search(update, context, "artists")
-        else:
-            await self._show_handler_not_available(update, "Navidrome-Handler")
+        await navidrome_actions.handle_search_artists(update, context, self.navidrome_handler)
 
     async def _handle_navidrome_search_albums(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper für Album-Suche"""
-        if self.navidrome_handler:
-            await self.navidrome_handler.handle_search(update, context, "albums")
-        else:
-            await self._show_handler_not_available(update, "Navidrome-Handler")
+        await navidrome_actions.handle_search_albums(update, context, self.navidrome_handler)
 
     async def _handle_navidrome_search_songs(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper für Song-Suche"""
-        if self.navidrome_handler:
-            await self.navidrome_handler.handle_search(update, context, "songs")
-        else:
-            await self._show_handler_not_available(update, "Navidrome-Handler")
+        await navidrome_actions.handle_search_songs(update, context, self.navidrome_handler)
 
     async def _handle_navidrome_my_playlists(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper für Meine Playlists"""
-        if self.navidrome_handler:
-            await self.navidrome_handler.handle_my_playlists(update, context)
-        else:
-            await self._show_handler_not_available(update, "Navidrome-Handler")
+        await navidrome_actions.handle_my_playlists(update, context, self.navidrome_handler)
 
     async def _handle_navidrome_favorites(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper für Favoriten"""
-        if self.navidrome_handler:
-            await self.navidrome_handler.handle_favorites(update, context)
-        else:
-            await self._show_handler_not_available(update, "Navidrome-Handler")
+        await navidrome_actions.handle_favorites(update, context, self.navidrome_handler)
 
     async def _handle_navidrome_recent(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper für Zuletzt gespielt (ruft StatistikHandler auf)"""
-        if self.stats_handler and hasattr(self.stats_handler, "handle_last_played"):
-            await self.stats_handler.handle_last_played(update, context)
-        else:
-            await self._show_handler_not_available(update, "Statistik-Handler")
+        await navidrome_actions.handle_recent(update, context, self.stats_handler)
 
     # ====== SESSION MANAGEMENT ======
 
@@ -1731,61 +527,14 @@ class RichMenuSystem:
     def render_menu(
         self, menu_item: MenuItem, user_level: AccessLevel = AccessLevel.USER
     ) -> InlineKeyboardMarkup:
-        """Erstellt Telegram InlineKeyboard für Menü"""
-        keyboard = []
-
-        accessible_items = [
-            item
-            for item in menu_item.children
-            if item.is_active and item.is_accessible(user_level)
-        ]
-
-        for i in range(0, len(accessible_items), 2):
-            row = []
-            for item in accessible_items[i : i + 2]:
-                button_text = f"{item.emoji} {item.title}"
-                row.append(
-                    InlineKeyboardButton(button_text, callback_data=item.callback_data)
-                )
-            keyboard.append(row)
-
-        if menu_item.parent:
-            keyboard.append(
-                [InlineKeyboardButton("⬅️ Zurück", callback_data="menu:back")]
-            )
-
-        if not menu_item.parent or menu_item.id == "main":
-            keyboard.append(
-                [InlineKeyboardButton("❌ Schließen", callback_data="menu:close")]
-            )
-        elif menu_item.parent and menu_item.id != "main":
-            keyboard.append(
-                [InlineKeyboardButton("🏠 Hauptmenü", callback_data="menu:main")]
-            )
-
-        return InlineKeyboardMarkup(keyboard)
+        """Erstellt Telegram InlineKeyboard für Menü (ARCH-024/P-4:
+        delegiert an rendering.render_menu())."""
+        return rendering.render_menu(menu_item, user_level)
 
     def get_menu_text(self, menu_item: MenuItem) -> str:
-        """Erstellt Menü-Text mit Breadcrumb"""
-        breadcrumb = " > ".join(menu_item.get_breadcrumb())
-
-        text_parts = [
-            f"📍 **Navigation:** {breadcrumb}",
-            "",
-        ]
-
-        if menu_item.description:
-            text_parts.extend(
-                [
-                    menu_item.description,
-                    "",
-                ]
-            )
-
-        if menu_item.has_children():
-            text_parts.append("Wähle eine Option:")
-
-        return "\n".join(text_parts)
+        """Erstellt Menü-Text mit Breadcrumb (ARCH-024/P-4: delegiert an
+        rendering.get_menu_text())."""
+        return rendering.get_menu_text(menu_item)
 
     async def show_menu(
         self,
@@ -1793,55 +542,18 @@ class RichMenuSystem:
         context: ContextTypes.DEFAULT_TYPE,
         menu_id: Optional[str] = None,
     ) -> None:
-        """Zeigt Menü an oder aktualisiert es"""
-        query = update.callback_query
-        user_id = update.effective_user.id
-
-        session = self.get_session(user_id)
-
-        if menu_id:
-            menu_item = self.menu_registry.get(menu_id, self.root_menu)
-        elif session.current_menu:
-            menu_item = session.current_menu
-        else:
-            menu_item = self.root_menu
-
-        session.navigate_to(menu_item)
-
-        user_level = self._get_user_access_level(user_id)
-
-        text = self.get_menu_text(menu_item)
-        keyboard = self.render_menu(menu_item, user_level)
-
-        try:
-            if query:
-                if (
-                    query.message.text == text
-                    and query.message.reply_markup == keyboard
-                ):
-                    await query.answer("ℹ️ Ansicht bereits aktuell.")
-                    return
-
-                await query.answer()
-                await query.edit_message_text(
-                    text, reply_markup=keyboard, parse_mode="Markdown"
-                )
-                session.message_id = query.message.message_id
-            else:
-                message = await update.message.reply_text(
-                    text, reply_markup=keyboard, parse_mode="Markdown"
-                )
-                session.message_id = message.message_id
-
-            self.logger.info(f"📱 Menü '{menu_item.id}' angezeigt für User {user_id}")
-
-        except Exception as e:
-            if "Message is not modified" in str(e):
-                self.logger.debug("Menü-Update übersprungen (keine Änderung).")
-            else:
-                self.logger.error(
-                    f"❌ Fehler beim Anzeigen des Menüs: {e}", exc_info=True
-                )
+        """Zeigt Menü an oder aktualisiert es (ARCH-024/P-4: delegiert an
+        rendering.show_menu())."""
+        await rendering.show_menu(
+            update,
+            context,
+            menu_id,
+            self.menu_registry,
+            self.root_menu,
+            self.get_session,
+            self._get_user_access_level,
+            self.logger,
+        )
 
     # ====== HAUPT-CALLBACK-HANDLER ======
 
@@ -2046,174 +758,17 @@ class RichMenuSystem:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: str
     ):
         """Spezial-Handler für alle logger_* Callbacks"""
-        if not self.logger_handler:
-            await update.callback_query.answer("⚠️ Logger-Handler nicht verfügbar")
-            return
-
-        query = update.callback_query
-        await query.answer()
-
-        routing_map = {
-            "logger_main_menu": self.logger_handler.show_main_menu,
-            "logger_modules_list": self.logger_handler.show_modules_list,
-            "logger_global_level": self.logger_handler.show_global_level_menu,
-            "logger_files_list": self.logger_handler.show_log_files_list,
-            "logger_global_stats": self.logger_handler.show_comprehensive_statistics,
-            "logger_handlers_list": self.logger_handler.manage_handlers_advanced,
-            "logger_cleanup_menu": self.logger_handler.show_cleanup_menu,
-            "logger_enable_all": self.logger_handler.enable_all_modules,
-            "logger_disable_all": self.logger_handler.disable_all_modules,
-            "logger_add_module": self.logger_handler.add_module,
-            "logger_files_stats": self.logger_handler.show_log_files_stats,
-            "logger_configure_handlers": self.logger_handler.configure_handlers,
-            "logger_handler_details": self.logger_handler.handler_details,
-            "logger_add_handler": self.logger_handler.add_handler,
-            "logger_remove_handler": self.logger_handler.remove_handler,
-            "logger_reload_handlers": self.logger_handler.reload_handlers,
-        }
-
-        if callback_data.startswith("logger_module_detail_"):
-            module_name = callback_data.replace("logger_module_detail_", "")
-            await self.logger_handler.show_module_detail(update, context, module_name)
-            return
-
-        if callback_data.startswith("logger_module_toggle_"):
-            module_name = callback_data.replace("logger_module_toggle_", "")
-            await self.logger_handler.toggle_module(update, context, module_name)
-            return
-
-        if callback_data.startswith("logger_module_level_"):
-            module_name = callback_data.replace("logger_module_level_", "")
-            await self.logger_handler.show_module_level_menu(
-                update, context, module_name
-            )
-            return
-
-        if callback_data.startswith("logger_set_module_level_"):
-            parts = callback_data.replace("logger_set_module_level_", "").split("_", 1)
-            if len(parts) == 2:
-                module_name, level = parts
-                await self.logger_handler.set_module_level(
-                    update, context, module_name, level
-                )
-            return
-
-        if callback_data.startswith("logger_set_global_level_"):
-            level = callback_data.replace("logger_set_global_level_", "")
-            await self.logger_handler.set_global_log_level(update, context, level)
-            return
-
-        if callback_data.startswith("logger_file_detail_"):
-            filename = callback_data.replace("logger_file_detail_", "")
-            await self.logger_handler.show_log_file_detail(update, context, filename)
-            return
-
-        if callback_data.startswith("logger_file_download_"):
-            filename = callback_data.replace("logger_file_download_", "")
-            await self.logger_handler.download_log_file(update, context, filename)
-            return
-
-        handler_method = routing_map.get(callback_data)
-        if handler_method:
-            await handler_method(update, context)
-        else:
-            self.logger.warning(f"⚠️ Unbekannter Logger-Callback: {callback_data}")
-            await query.answer("⚠️ Funktion nicht implementiert")
+        await admin_diagnostics_actions.handle_logger_callback(
+            update, context, callback_data, self.logger_handler, self.logger
+        )
 
     async def _handle_navidrome_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: str
     ):
         """Spezial-Handler für alle nav_* Callbacks"""
-        if not self.navidrome_handler:
-            await update.callback_query.answer("⚠️ Navidrome-Handler nicht verfügbar")
-            return
-
-        query = update.callback_query
-        await query.answer()
-
-        self.logger.debug(f"🎵 Navidrome-Callback: {callback_data}")
-
-        if callback_data.startswith("nav_browse_artists"):
-            parts = callback_data.split("_")
-            page = int(parts[3]) if len(parts) > 3 else 0
-            await self.navidrome_handler.handle_browse_artists(update, context, page)
-            return
-
-        if callback_data.startswith("nav_browse_albums"):
-            parts = callback_data.split("_")
-            page = int(parts[3]) if len(parts) > 3 else 0
-            artist_id = parts[4] if len(parts) > 4 else None
-            await self.navidrome_handler.handle_browse_albums(
-                update, context, page, artist_id
-            )
-            return
-
-        if callback_data == "nav_browse_genres":
-            await self.navidrome_handler.handle_browse_genres(update, context)
-            return
-
-        if callback_data.startswith("nav_artist_"):
-            artist_id = callback_data.replace("nav_artist_", "")
-            await self.navidrome_handler.handle_artist_detail(
-                update, context, artist_id
-            )
-            return
-
-        if callback_data.startswith("nav_album_"):
-            album_id = callback_data.replace("nav_album_", "")
-            await query.edit_message_text(
-                f"💿 Album-Details (ID: {album_id})\n\nDiese Funktion wird gerade entwickelt..."
-            )
-            return
-
-        if callback_data.startswith("nav_song_"):
-            song_id = callback_data.replace("nav_song_", "")
-            await query.edit_message_text(
-                f"🎵 Song-Details (ID: {song_id})\n\nDiese Funktion wird gerade entwickelt..."
-            )
-            return
-
-        if callback_data.startswith("nav_genre_"):
-            genre_name = callback_data.replace("nav_genre_", "")
-            await self.navidrome_handler.handle_genre_detail(
-                update, context, genre_name
-            )
-            return
-
-        if callback_data == "nav_search":
-            await self.navidrome_handler.handle_search(update, context, "all")
-            return
-
-        if callback_data == "nav_search_artists":
-            await self.navidrome_handler.handle_search(update, context, "artists")
-            return
-
-        if callback_data == "nav_search_albums":
-            await self.navidrome_handler.handle_search(update, context, "albums")
-            return
-
-        if callback_data == "nav_search_songs":
-            await self.navidrome_handler.handle_search(update, context, "songs")
-            return
-
-        if callback_data == "nav_search_genres":
-            await query.edit_message_text(
-                "🔎 Genre-Suche\n\nDiese Funktion wird gerade entwickelt..."
-            )
-            return
-
-        if callback_data == "nav_reconnect":
-            await self.navidrome_handler.handle_reconnect(update, context)
-            return
-
-        if callback_data == "nav_genre_stats":
-            await query.edit_message_text(
-                "📊 Genre-Statistiken\n\nDiese Funktion wird gerade entwickelt..."
-            )
-            return
-
-        self.logger.warning(f"⚠️ Unbekannter Navidrome-Callback: {callback_data}")
-        await query.answer("⚠️ Funktion nicht implementiert")
+        await navidrome_actions.handle_navidrome_callback(
+            update, context, callback_data, self.navidrome_handler, self.logger
+        )
 
     async def _handle_usermgmt_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: str
@@ -2222,252 +777,41 @@ class RichMenuSystem:
         Spezial-Handler für alle usermgmt_* Callbacks
         Unterstützt Navidrome-User-Workflows
         """
-        if not self.user_mgmt_handler:
-            await update.callback_query.answer(
-                "⚠️ UserManagement-Handler nicht verfügbar"
-            )
-            return
-
-        query = update.callback_query
-        admin_user_id = update.effective_user.id
-        await query.answer()
-
-        self.logger.debug(f"👥 UserMgmt-Callback: {callback_data}")
-
-        if callback_data == "usermgmt_add_user":
-            context.user_data["workflow"] = "add_user_id"
-            context.user_data.pop("pending_user_id", None)
-            context.user_data.pop("target_user_id", None)
-            await query.edit_message_text(
-                "➕ **Neuen Benutzer hinzufügen (Schritt 1/2)**\n\n"
-                "Bitte sende mir jetzt die **Telegram User-ID** des neuen Benutzers als Nachricht.\n\n"
-                "*(Du kannst /cancel eingeben, um abzubrechen)*",
-                parse_mode="Markdown",
-            )
-            return
-
-        if callback_data.startswith("usermgmt_set_navidrome_"):
-            target_user_id = callback_data.replace("usermgmt_set_navidrome_", "")
-            context.user_data["workflow"] = "edit_navidrome_user"
-            context.user_data["target_user_id"] = target_user_id
-            await query.edit_message_text(
-                f"👤 **Navidrome-Benutzer festlegen**\n\n"
-                f"Betroffene User-ID: `{target_user_id}`\n\n"
-                "Bitte sende mir jetzt den **Navidrome-Benutzernamen** für diesen Benutzer.\n\n"
-                "*(Du kannst /cancel eingeben, um abzubrechen)*",
-                parse_mode="Markdown",
-            )
-            return
-
-        if callback_data.startswith("usermgmt_list_"):
-            page = int(callback_data.replace("usermgmt_list_", ""))
-            await self.user_mgmt_handler.show_user_management_menu(
-                update, context, page
-            )
-            return
-
-        if callback_data.startswith("usermgmt_detail_"):
-            user_id = callback_data.replace("usermgmt_detail_", "")
-            await self.user_mgmt_handler.show_user_detail(update, context, user_id)
-            return
-
-        if callback_data.startswith("usermgmt_change_role_"):
-            user_id = callback_data.replace("usermgmt_change_role_", "")
-            await self.user_mgmt_handler.show_role_change_menu(update, context, user_id)
-            return
-
-        if callback_data.startswith("usermgmt_set_role_"):
-            parts = callback_data.replace("usermgmt_set_role_", "").split("_", 1)
-            if len(parts) == 2:
-                user_id, new_role = parts
-                await self.user_mgmt_handler.set_user_role(
-                    update, context, user_id, new_role
-                )
-            return
-
-        if callback_data.startswith("usermgmt_delete_confirm_"):
-            user_id = callback_data.replace("usermgmt_delete_confirm_", "")
-            await self.user_mgmt_handler.delete_user_confirm(update, context, user_id)
-            return
-
-        if callback_data.startswith("usermgmt_delete_confirmed_"):
-            user_id = callback_data.replace("usermgmt_delete_confirmed_", "")
-            await self.user_mgmt_handler.delete_user(update, context, user_id)
-            return
-
-        routing_map = {
-            "usermgmt_stats": self.user_mgmt_handler.show_statistics,
-            "usermgmt_search": lambda u, c: query.edit_message_text(
-                "🔍 **Benutzer suchen**\n\nDiese Funktion wird gerade entwickelt..."
-            ),
-            "usermgmt_cleanup": lambda u, c: query.edit_message_text(
-                "🗑️ **Aufräumen**\n\nDiese Funktion wird gerade entwickelt..."
-            ),
-            "usermgmt_pending": lambda u, c: query.edit_message_text(
-                "📋 **Pending Users**\n\nKeine wartenden Benutzer."
-            ),
-        }
-
-        if callback_data.startswith("usermgmt_permissions_"):
-            user_id = callback_data.replace("usermgmt_permissions_", "")
-            await self.user_mgmt_handler.show_permission_menu(update, context, user_id)
-            return
-
-        if callback_data.startswith("usermgmt_toggle_perm_"):
-            parts = callback_data.replace("usermgmt_toggle_perm_", "").split("_", 1)
-            if len(parts) == 2:
-                user_id, permission = parts
-                await self.user_mgmt_handler.toggle_user_permission(
-                    update, context, user_id, permission
-                )
-            return
-
-        if callback_data.startswith("usermgmt_ban_"):
-            user_id = callback_data.replace("usermgmt_ban_", "")
-            await query.edit_message_text(
-                f"🚫 **Benutzer sperren**\n\nUser: {user_id}\n\n"
-                "Diese Funktion wird gerade entwickelt..."
-            )
-            return
-
-        handler_method = routing_map.get(callback_data)
-        if handler_method:
-            await handler_method(update, context)
-        else:
-            self.logger.warning(f"⚠️ Unbekannter UserMgmt-Callback: {callback_data}")
-            await query.answer("⚠️ Funktion nicht implementiert")
+        await usermgmt_actions.handle_usermgmt_callback(
+            update, context, callback_data, self.user_mgmt_handler, self.logger
+        )
 
     async def _handle_duplicate_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: str
     ):
         """Spezial-Handler für alle dup:* Callbacks"""
-        if not self.duplicate_handler:
-            await update.callback_query.answer("⚠️ Duplicate-Handler nicht verfügbar")
-            return
-
-        query = update.callback_query
-
-        self.logger.debug(f"♻️ Duplicate-Callback: {callback_data}")
-
-        if callback_data == "dup:show_stats":
-            await query.answer("Lade Statistiken...")
-            await self.duplicate_handler.show_statistics_menu(update, context)
-            return
-
-        if callback_data == "dup:clear_cache_confirm":
-            await query.answer()
-            await self.duplicate_handler.show_clear_cache_confirm(update, context)
-            return
-
-        if callback_data == "dup:clear_cache_execute":
-            await query.answer("Cache wird geleert...")
-            await self.duplicate_handler.execute_clear_cache(update, context)
-            return
-
-        self.logger.warning(f"⚠️ Unbekannter Duplicate-Callback: {callback_data}")
-        await query.answer("⚠️ Funktion nicht implementiert")
+        await duplicates_actions.handle_duplicate_callback(
+            update, context, callback_data, self.duplicate_handler, self.logger
+        )
 
     async def _handle_error_admin_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: str
     ):
         """Spezial-Handler für alle erradmin:* Callbacks"""
-        if not self.error_admin_interface:
-            await update.callback_query.answer(
-                "⚠️ Error Admin Interface nicht verfügbar"
-            )
-            return
-
-        user_id = update.effective_user.id
-        if not self.error_admin_interface.is_admin(user_id):
-            await update.callback_query.answer("⛔ Keine Berechtigung")
-            return
-
-        self.logger.debug(f"🚨 ErrorAdmin-Callback: {callback_data}")
-
-        routing_map = {
-            "erradmin:show_stats": self.error_admin_interface.handle_error_stats_command,
-            "erradmin:show_report": self.error_admin_interface.handle_error_report_command,
-            "erradmin:show_recent": self.error_admin_interface.handle_recent_errors_command,
-            "erradmin:reset_confirm": self.error_admin_interface.show_reset_stats_confirm,
-            "erradmin:reset_execute": self.error_admin_interface.execute_reset_stats,
-        }
-
-        handler_method = routing_map.get(callback_data)
-        if handler_method:
-            await handler_method(update, context)
-        else:
-            self.logger.warning(f"⚠️ Unbekannter ErrorAdmin-Callback: {callback_data}")
-            await update.callback_query.answer("⚠️ Funktion nicht implementiert")
+        await admin_diagnostics_actions.handle_error_admin_callback(
+            update, context, callback_data, self.error_admin_interface, self.logger
+        )
 
     async def _handle_status_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: str
     ):
         """Spezial-Handler für alle status_* Callbacks"""
-        if not self.status_handler:
-            await update.callback_query.answer("⚠️ Status-Handler nicht verfügbar")
-            return
-
-        query = update.callback_query
-        await query.answer()
-
-        self.logger.debug(f"📊 Status-Callback: {callback_data}")
-
-        routing_map = {
-            "status_menu": self.status_handler.show_status_menu,
-            "status_system": self.status_handler.show_system_status,
-            "status_bot": self.status_handler.show_bot_status,
-            "status_services": self.status_handler.show_services_status,
-            "status_performance": self.status_handler.show_performance_status,
-            "status_storage": self.status_handler.show_storage_status,
-            "status_refresh": self.status_handler.show_status_menu,
-        }
-
-        handler_method = routing_map.get(callback_data)
-        if handler_method:
-            await handler_method(update, context)
-        else:
-            self.logger.warning(f"⚠️ Unbekannter Status-Callback: {callback_data}")
-            await query.answer("⚠️ Funktion nicht implementiert")
+        await admin_diagnostics_actions.handle_status_callback(
+            update, context, callback_data, self.status_handler, self.logger
+        )
 
     async def _handle_backup_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: str
     ):
         """Spezial-Handler für alle backup_* Callbacks"""
-        if not self.backup_handler:
-            await update.callback_query.answer("⚠️ Backup-Handler nicht verfügbar")
-            return
-
-        query = update.callback_query
-        await query.answer()
-
-        self.logger.debug(f"💾 Backup-Callback: {callback_data}")
-
-        if callback_data.startswith("backup_delete_confirm_"):
-            filename = callback_data.replace("backup_delete_confirm_", "")
-            await self.backup_handler.confirm_delete(update, context, filename)
-            return
-
-        if callback_data.startswith("backup_delete_"):
-            filename = callback_data.replace("backup_delete_", "")
-            await self.backup_handler.delete_backup(update, context, filename)
-            return
-
-        routing_map = {
-            "backup_main": self.backup_handler.show_main_menu,
-            "backup_bot_confirm": self.backup_handler.confirm_bot_backup,
-            "backup_lib_confirm": self.backup_handler.confirm_lib_backup,
-            "backup_bot_start": self.backup_handler.start_bot_backup,
-            "backup_lib_start": self.backup_handler.start_lib_backup,
-            "backup_list_bot": self.backup_handler.show_list_bot,
-            "backup_list_lib": self.backup_handler.show_list_lib,
-        }
-
-        handler_method = routing_map.get(callback_data)
-        if handler_method:
-            await handler_method(update, context)
-        else:
-            self.logger.warning(f"⚠️ Unbekannter Backup-Callback: {callback_data}")
-            await query.answer("⚠️ Funktion nicht implementiert")
+        await admin_operations_actions.handle_backup_callback(
+            update, context, callback_data, self.backup_handler, self.logger
+        )
 
     # ====== NEU: BOT-NEUSTART CALLBACK-DISPATCHER ======
 
@@ -2477,40 +821,11 @@ class RichMenuSystem:
         context: ContextTypes.DEFAULT_TYPE,
         callback_data: str,
     ) -> None:
-        """
-        Dispatcher für alle restart:* Callbacks.
-
-        Routing:
-          restart:show    → Bestätigungs-Dialog anzeigen
-          restart:confirm → Neustart ausführen
-          restart:cancel  → Neustart abbrechen
-        """
-        if not self.restart_handler:
-            await update.callback_query.answer(
-                "⚠️ Restart-Handler nicht verfügbar", show_alert=True
-            )
-            return
-
-        # Admin-Check
-        user_id = update.effective_user.id
-        if not self._is_admin_check(user_id):
-            await update.callback_query.answer("⛔ Keine Berechtigung", show_alert=True)
-            return
-
-        self.logger.debug(f"🔄 Restart-Callback: {callback_data} von User {user_id}")
-
-        routing: dict = {
-            "restart:show": self.restart_handler.show_restart_confirm,
-            "restart:confirm": self.restart_handler.execute_restart,
-            "restart:cancel": self.restart_handler.cancel_restart,
-        }
-
-        handler_fn = routing.get(callback_data)
-        if handler_fn:
-            await handler_fn(update, context)
-        else:
-            self.logger.warning(f"⚠️ Unbekannter Restart-Callback: {callback_data}")
-            await update.callback_query.answer("⚠️ Unbekannte Aktion")
+        """Dispatcher für alle restart:* Callbacks - siehe
+        handlers/menu/actions/admin_operations.py::handle_restart_callback()."""
+        await admin_operations_actions.handle_restart_callback(
+            update, context, callback_data, self.restart_handler, self._is_admin_check, self.logger
+        )
 
     # ====== ENDE BOT-NEUSTART CALLBACK-DISPATCHER ======
 
@@ -2518,10 +833,9 @@ class RichMenuSystem:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Wrapper für Status-Menü"""
-        if self.status_handler:
-            await self.status_handler.show_status_menu(update, context)
-        else:
-            await self._show_handler_not_available(update, "Status-Handler")
+        await admin_diagnostics_actions.handle_status_menu(
+            update, context, self.status_handler, self._show_handler_not_available
+        )
 
     async def _handle_back(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Navigiert zurück"""
@@ -2617,365 +931,69 @@ class RichMenuSystem:
         """Wird über den regulären menu:download-Callback aufgerufen
         (query.answer() bereits vom generischen Dispatcher erledigt, siehe
         handle_callback())."""
-        query = update.callback_query
-        chat_id = update.effective_chat.id
-        active = self.active_downloads.get(chat_id) if self.active_downloads else None
-        await self._render_download_menu(query, active)
+        await download_actions.handle_download_menu(update, context, self.active_downloads)
 
     async def _render_download_menu(self, query, active) -> None:
-        # Live-Fund 2026-09-02: active.title/tracker-Inhalte stammen aus
-        # echten YouTube-Titeln/Artist-/Albumnamen - koennen "_"/"*"
-        # enthalten, die Telegrams (Legacy-)Markdown-Parser als
-        # unvollstaendige Formatierung interpretiert
-        # ("Can't parse entities: can't find end of the entity", live
-        # reproduziert für eine URL mit "_"). Bewusst KEIN parse_mode in
-        # dieser gesamten dl:-Sektion, sobald dynamische/externe Inhalte
-        # vorkommen koennen - robuster als selektives Escapen einzelner
-        # Felder (das genau diesen Fund erst verursacht hat).
-        lines = ["📥 Downloads", ""]
-        if active is not None:
-            lines.append(f"🔄 Läuft gerade: {active.title or 'wird vorbereitet …'}")
-        else:
-            lines.append("Lade Musik von YouTube herunter oder verwalte Downloads.")
-
-        keyboard = [
-            [InlineKeyboardButton("➕ Neuer Download", callback_data="dl:new")],
-            [InlineKeyboardButton("🔄 Aktive Downloads", callback_data="dl:active")],
-            [InlineKeyboardButton("📋 Download-Verlauf", callback_data="dl:history")],
-        ]
-        if active is not None:
-            keyboard.append(
-                [InlineKeyboardButton("❌ Abbrechen", callback_data="dl:cancel")]
-            )
-        keyboard.append(
-            [InlineKeyboardButton("◀️ Hauptmenü", callback_data="menu:main")]
-        )
-
-        await query.edit_message_text(
-            "\n".join(lines),
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
+        await download_actions.render_download_menu(query, active)
 
     async def _handle_download_control_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: str
     ) -> None:
         """Spezial-Handler für alle dl:*-Callbacks (Download-Control-Center),
         analog zu _handle_backup_callback() etc."""
-        query = update.callback_query
-        await query.answer()
-        chat_id = update.effective_chat.id
-
-        if callback_data == "dl:new":
-            await self._handle_download_new(query)
-            return
-        if callback_data == "dl:active":
-            await self._handle_download_active(query, chat_id)
-            return
-        if callback_data == "dl:cancel":
-            await self._handle_download_cancel_request(query, chat_id)
-            return
-        if callback_data == "dl:details":
-            await self._handle_download_details(query, chat_id)
-            return
-        if callback_data == "dl:history":
-            await self._handle_download_history(query, chat_id)
-            return
-        if callback_data.startswith("dl:retry:"):
-            await self._handle_download_retry(update, context, query, chat_id, callback_data)
-            return
-        if callback_data == "dl:menu":
-            active = (
-                self.active_downloads.get(chat_id) if self.active_downloads else None
-            )
-            await self._render_download_menu(query, active)
-            return
-
-        self.logger.warning(f"⚠️ Unbekannter dl:-Callback: {callback_data}")
-        await query.edit_message_text("⚠️ Unbekannte Aktion.")
-
-    async def _handle_download_new(self, query) -> None:
-        await query.edit_message_text(
-            "🎵 Neuer Download\n\n"
-            "Sende mir einfach einen YouTube-Link (Song oder Playlist) - "
-            "ich erkenne automatisch, um welchen Typ es sich handelt."
+        await download_actions.handle_download_control_callback(
+            update,
+            context,
+            callback_data,
+            self.active_downloads,
+            self.download_history,
+            self._retry_url_callback,
+            self.logger,
         )
-
-    async def _handle_download_active(self, query, chat_id: int) -> None:
-        """
-        "📥 Download läuft" (Nutzer-Vorgabe, P1): zeigt aktuellen Track,
-        bereits abgeschlossene Tracks und die verbleibende Anzahl anhand
-        des GETEILTEN ProgressTrackers (ActiveDownload.tracker) - derselbe
-        Zustand, den auch die automatischen Zwischen-Updates während des
-        Downloads nutzen (klassen/download_handler.py::
-        _on_playlist_progress()) - hier nur zusätzlich manuell abrufbar,
-        statt nur passiv gepusht.
-        """
-        active = self.active_downloads.get(chat_id) if self.active_downloads else None
-        if active is None:
-            await query.edit_message_text(
-                "🔄 Aktive Downloads\n\nAktuell läuft kein Download.",
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
-                ),
-            )
-            return
-
-        tracker = active.tracker
-        bar = _dl_progress_bar(tracker.processed_items, tracker.total_items)
-        remaining = max(tracker.total_items - tracker.processed_items, 0)
-
-        # Live-Fund 2026-09-02: siehe _render_download_menu() - kein
-        # parse_mode, tracker.current_item/completed_items sind echte
-        # YouTube-Tracktitel (koennen "_"/"*" enthalten).
-        lines = [
-            "📥 Download läuft",
-            "",
-            f"🎵 {active.title or 'wird vorbereitet …'}",
-            "",
-            bar,
-        ]
-        if tracker.current_item:
-            lines += ["", "⬇️ Aktuell", tracker.current_item]
-        if tracker.completed_items:
-            lines += ["", "✅ Abgeschlossen"] + tracker.completed_items[-5:]
-        if remaining > 0:
-            lines += ["", f"⏳ Noch {remaining} Tracks"]
-
-        keyboard = [
-            [InlineKeyboardButton("❌ Download abbrechen", callback_data="dl:cancel")],
-            [InlineKeyboardButton("ℹ️ Details", callback_data="dl:details")],
-            [InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")],
-        ]
-
-        await query.edit_message_text(
-            "\n".join(lines),
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
-
-    async def _handle_download_cancel_request(self, query, chat_id: int) -> None:
-        active = self.active_downloads.get(chat_id) if self.active_downloads else None
-        if active is None:
-            await query.edit_message_text(
-                "ℹ️ Kein aktiver Download zum Abbrechen.",
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
-                ),
-            )
-            return
-
-        active.request_cancel()
-        self.logger.info(f"🛑 [DL-CONTROL] Abbruch angefordert für Chat {chat_id}")
-        await query.edit_message_text(
-            "🛑 Abbruch angefordert - der Download wird in Kürze gestoppt.",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
-            ),
-        )
-
-    async def _handle_download_details(self, query, chat_id: int) -> None:
-        active = self.active_downloads.get(chat_id) if self.active_downloads else None
-        if active is None:
-            await query.edit_message_text(
-                "ℹ️ Kein aktiver Download.",
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
-                ),
-            )
-            return
-
-        tracker = active.tracker
-        elapsed = int(active.elapsed_seconds())
-        minutes, seconds = divmod(elapsed, 60)
-
-        # Live-Fund 2026-09-02: siehe _render_download_menu() - kein
-        # parse_mode. Genau active.url hat den urspruenglichen Fehler
-        # ausgeloest ("Can't parse entities", "_" in der YouTube-URL von
-        # Telegrams Legacy-Markdown-Parser als unvollstaendige Kursiv-
-        # Formatierung interpretiert).
-        lines = [
-            "ℹ️ Download-Details",
-            "",
-            f"🎵 Titel      : {active.title or '?'}",
-            f"🔗 URL        : {active.url}",
-            f"📦 Typ        : {active.download_type}",
-            f"⏱️ Laufzeit   : {minutes}:{seconds:02d} min",
-            f"📊 Fortschritt: {tracker.processed_items}/{tracker.total_items}",
-        ]
-        if tracker.current_item:
-            lines.append(f"⬇️ Aktuell    : {tracker.current_item}")
-
-        await query.edit_message_text(
-            "\n".join(lines),
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:active")]]
-            ),
-        )
-
-    _HISTORY_STATUS_ICONS = {"success": "✅", "failed": "❌", "cancelled": "🛑"}
-
-    async def _handle_download_history(self, query, chat_id: int) -> None:
-        """
-        Download-Verlauf (Nutzer-Priorität 3) + "🔁 Erneut versuchen"
-        (Priorität 4) - Folgeschritt des Download-Control-Centers, siehe
-        docs/FINDINGS_INDEX.md ("Download-Verlauf/Erneut-versuchen").
-        Zeigt die letzten Einträge des Chats aus dem geteilten
-        DownloadHistoryStore (services/downloader/download_history.py),
-        neueste zuerst - jeweils mit einem eigenen "🔁"-Button
-        (callback_data=f"dl:retry:{position}", position bezieht sich auf
-        DownloadHistoryStore.get_recent()/get_entry_by_position(), damit
-        Index und Anzeige immer übereinstimmen).
-        """
-        entries = self.download_history.get_recent(chat_id) if self.download_history else []
-        if not entries:
-            await query.edit_message_text(
-                "📋 Download-Verlauf\n\nNoch keine Downloads in dieser Chat-Historie.",
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")]]
-                ),
-            )
-            return
-
-        lines = ["📋 Download-Verlauf", ""]
-        keyboard = []
-        for position, entry in enumerate(entries):
-            icon = self._HISTORY_STATUS_ICONS.get(entry.status, "•")
-            # Nur Datum/Uhrzeit, kein Sekunden-Praezisions-Rauschen - die
-            # Reihenfolge (neueste zuerst) macht die genaue Sekunde ohnehin
-            # nicht aussagekraeftig.
-            try:
-                when = datetime.fromisoformat(entry.timestamp).strftime("%d.%m. %H:%M")
-            except ValueError:
-                when = "?"
-            lines.append(f"{icon} {entry.artist} - {entry.title}  ({when})")
-            keyboard.append(
-                [
-                    InlineKeyboardButton(
-                        f"🔁 {entry.title[:40]}",
-                        callback_data=f"dl:retry:{position}",
-                    )
-                ]
-            )
-        keyboard.append([InlineKeyboardButton("◀️ Zurück", callback_data="dl:menu")])
-
-        await query.edit_message_text(
-            "\n".join(lines),
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
-
-    async def _handle_download_retry(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE, query, chat_id: int, callback_data: str
-    ) -> None:
-        """Handler für "🔁 Erneut versuchen" (callback_data=f"dl:retry:{position}").
-
-        RichMenuSystem kann selbst keinen DownloadHandler bauen (siehe
-        __init__-Kommentar zu _retry_url_callback) - baut stattdessen ein
-        minimales, schreibgeschütztes Duck-Typing-Objekt anstelle von
-        update.message (PTB-Update-/Message-Objekte sind nach Auslieferung
-        eingefroren, ein echtes Update darf nicht nachtraeglich mutiert
-        werden) und reicht es an genau denselben, bereits produktiv
-        genutzten Pfad weiter (_process_url() -> handler.handle_url() ->
-        handle_youtube_links()) wie ein normaler Text-Download - keine
-        Parallel-Implementierung der Download-Pipeline."""
-        try:
-            position = int(callback_data.split(":", 2)[2])
-        except (IndexError, ValueError):
-            await query.edit_message_text("⚠️ Ungültiger Verlaufseintrag.")
-            return
-
-        if not self.download_history:
-            await query.edit_message_text("⚠️ Download-Verlauf nicht verfügbar.")
-            return
-        entry = self.download_history.get_entry_by_position(chat_id, position)
-        if entry is None or not entry.url:
-            await query.edit_message_text("⚠️ Dieser Eintrag ist nicht mehr verfügbar.")
-            return
-        if not self._retry_url_callback:
-            await query.edit_message_text("⚠️ Erneuter Download aktuell nicht möglich.")
-            return
-
-        await query.edit_message_text(f"🔁 Starte erneuten Download:\n{entry.title}")
-        retry_update = _RetryUpdateAdapter(update, entry.url)
-        await self._retry_url_callback(retry_update, context, entry.url)
 
     # ====== PLATZHALTER-HANDLER ======
 
     async def _handle_download_single(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        await query.edit_message_text(
-            "🎵 Einzelner Track - Sende mir einen YouTube-Link!"
-        )
+        await download_actions.handle_download_single_placeholder(update, context)
 
     async def _handle_download_playlist(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        await query.edit_message_text("📋 Playlist - Sende mir einen Playlist-Link!")
+        await download_actions.handle_download_playlist_placeholder(update, context)
 
     async def _handle_stats_monthly(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.stats_handler:
-            await self.stats_handler.handle_month_review(update, context)
-        else:
-            await query.edit_message_text("📅 Lade Monatsstatistiken...")
+        await stats_actions.handle_stats_monthly_system(update, context, self.stats_handler)
 
     async def _handle_stats_yearly(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.stats_handler:
-            await self.stats_handler.handle_year_review(update, context)
-        else:
-            await query.edit_message_text("🎆 Lade Jahresstatistiken...")
+        await stats_actions.handle_stats_yearly_system(update, context, self.stats_handler)
 
     async def _handle_stats_top_songs(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.stats_handler:
-            await self.stats_handler.handle_top_songs(update, context, period="month")
-        else:
-            await query.edit_message_text("🎵 Lade Top Songs...")
+        await stats_actions.handle_stats_top_songs_system(update, context, self.stats_handler)
 
     async def _handle_stats_library_overview(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Phase 3, P1.1 — Library-Zusammensetzung aus dem Health-Report,
         anders als die übrigen stats_*-Handler keine Play-History."""
-        query = update.callback_query
-        await query.answer()
-        if self.stats_handler:
-            await self.stats_handler.handle_library_overview(update, context)
-        else:
-            await query.edit_message_text("📚 Lade Library-Übersicht...")
+        await stats_actions.handle_stats_library_overview(update, context, self.stats_handler)
 
     async def _handle_stats_top_artists(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.stats_handler:
-            await self.stats_handler.handle_top_artists(update, context, period="month")
-        else:
-            await query.edit_message_text("🎤 Lade Top Künstler...")
+        await stats_actions.handle_stats_top_artists_system(update, context, self.stats_handler)
 
     async def _handle_stats_timeline(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.stats_handler and hasattr(self.stats_handler, "handle_music_timeline"):
-            await self.stats_handler.handle_music_timeline(update, context)
-        else:
-            await query.edit_message_text("📅 Lade Music Timeline...")
+        await stats_actions.handle_stats_timeline_system(update, context, self.stats_handler)
 
     # ====== FAMILIEN-STATISTIK (Phase F2, Family Hub) ======
     # Zugriffsprüfung (Family-Membership) erfolgt in FamilyStatsHandler
@@ -2985,133 +1003,93 @@ class RichMenuSystem:
     async def _handle_family_stats_top_songs(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.family_stats_handler:
-            await self.family_stats_handler.handle_family_top_songs(update, context)
-        else:
-            await query.edit_message_text("🎵 Lade Top Songs Familie...")
+        await family_actions.handle_family_stats_top_songs(
+            update, context, self.family_stats_handler
+        )
 
     async def _handle_family_stats_top_artists(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.family_stats_handler:
-            await self.family_stats_handler.handle_family_top_artists(update, context)
-        else:
-            await query.edit_message_text("🎤 Lade Top Künstler Familie...")
+        await family_actions.handle_family_stats_top_artists(
+            update, context, self.family_stats_handler
+        )
 
     async def _handle_family_stats_member(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.family_stats_handler:
-            await self.family_stats_handler.handle_family_member_stats(update, context)
-        else:
-            await query.edit_message_text("👥 Lade Statistik pro Person...")
+        await family_actions.handle_family_stats_member(
+            update, context, self.family_stats_handler
+        )
 
     async def _handle_family_stats_champion(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.family_stats_handler:
-            await self.family_stats_handler.handle_family_champion(update, context)
-        else:
-            await query.edit_message_text("🏆 Ermittle Musik-Champion...")
+        await family_actions.handle_family_stats_champion(
+            update, context, self.family_stats_handler
+        )
 
     async def _handle_family_stats_listening_times(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.family_stats_handler:
-            await self.family_stats_handler.handle_family_listening_times(
-                update, context
-            )
-        else:
-            await query.edit_message_text("⏰ Lade Hörzeiten...")
+        await family_actions.handle_family_stats_listening_times(
+            update, context, self.family_stats_handler
+        )
 
     async def _handle_family_stats_monthly_trend(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.family_stats_handler:
-            await self.family_stats_handler.handle_family_monthly_trend(
-                update, context
-            )
-        else:
-            await query.edit_message_text("📈 Lade Monatsentwicklung...")
+        await family_actions.handle_family_stats_monthly_trend(
+            update, context, self.family_stats_handler
+        )
 
     # ====== FAMILIEN-CHAT (Phase F3, Family Hub) ======
     # Zugriffsprüfung (Family-Membership) erfolgt in FamilyChatHandler
     # selbst, nicht hier - dieselbe Aufgabenteilung wie bei den übrigen
-    # _handle_*-Methoden dieser Klasse (dünner Wrapper -> Handler).
+    # Actions in handlers/menu/actions/family.py (dünner Wrapper -> Handler).
 
     async def _handle_family_chat_send(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.family_chat_handler:
-            await self.family_chat_handler.handle_send_message_prompt(update, context)
-        else:
-            await query.edit_message_text("📝 Familien-Chat nicht verfügbar...")
+        await family_actions.handle_family_chat_send(
+            update, context, self.family_chat_handler
+        )
 
     async def _handle_family_chat_recent(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.family_chat_handler:
-            await self.family_chat_handler.handle_recent_messages(update, context)
-        else:
-            await query.edit_message_text("📋 Familien-Chat nicht verfügbar...")
+        await family_actions.handle_family_chat_recent(
+            update, context, self.family_chat_handler
+        )
 
     async def _handle_family_chat_notifications(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.family_chat_handler:
-            await self.family_chat_handler.handle_toggle_notifications(update, context)
-        else:
-            await query.edit_message_text("🔔 Familien-Chat nicht verfügbar...")
+        await family_actions.handle_family_chat_notifications(
+            update, context, self.family_chat_handler
+        )
 
     # ====== FAMILIEN-CHALLENGE (Phase F4, Family Hub) ======
     # Zugriffsprüfung (Family-Membership) erfolgt in FamilyChallengeHandler
     # selbst, nicht hier - dieselbe Aufgabenteilung wie bei den übrigen
-    # _handle_*-Methoden dieser Klasse (dünner Wrapper -> Handler).
+    # Actions in handlers/menu/actions/family.py (dünner Wrapper -> Handler).
 
     async def _handle_family_challenge_today(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.family_challenge_handler:
-            await self.family_challenge_handler.handle_todays_challenge(update, context)
-        else:
-            await query.edit_message_text("❓ Familien-Challenge nicht verfügbar...")
+        await family_actions.handle_family_challenge_today(
+            update, context, self.family_challenge_handler
+        )
 
     async def _handle_family_challenge_answer(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.family_challenge_handler:
-            await self.family_challenge_handler.handle_answer_prompt(update, context)
-        else:
-            await query.edit_message_text("✅ Familien-Challenge nicht verfügbar...")
+        await family_actions.handle_family_challenge_answer(
+            update, context, self.family_challenge_handler
+        )
 
     async def _handle_family_challenge_leaderboard(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        query = update.callback_query
-        await query.answer()
-        if self.family_challenge_handler:
-            await self.family_challenge_handler.handle_leaderboard(update, context)
-        else:
-            await query.edit_message_text("🏆 Familien-Challenge nicht verfügbar...")
+        await family_actions.handle_family_challenge_leaderboard(
+            update, context, self.family_challenge_handler
+        )

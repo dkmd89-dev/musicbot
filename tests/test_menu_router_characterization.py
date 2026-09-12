@@ -320,7 +320,7 @@ class TestAdminNavidromeRealRegistry:
         context = Mock()
 
         with patch(
-            "handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan",
+            "handlers.menu.actions.admin_operations.NavidromeScanTrigger.run_scan",
             new=AsyncMock(),
         ) as mock_scan:
             run_async(handler.menu_system.handle_callback(update, context))
@@ -337,7 +337,7 @@ class TestAdminNavidromeRealRegistry:
         context = Mock()
 
         with patch(
-            "handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan",
+            "handlers.menu.actions.admin_operations.NavidromeScanTrigger.run_scan",
             new=AsyncMock(),
         ) as mock_scan:
             run_async(handler.menu_system.handle_callback(update, context))
