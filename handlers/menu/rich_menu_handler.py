@@ -25,12 +25,13 @@ from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 
 from logger import get_module_logger
 from handlers.menu.text_workflow_dispatcher import TextWorkflowDispatcher
-from handlers.menu.rich_menu_system import (
-    RichMenuSystem,
+from handlers.menu.rich_menu_system import RichMenuSystem
+from handlers.menu.models import (
     MenuItem,
     AccessLevel,
     MenuState,
 )
+from handlers.menu.permissions import is_admin_or_owner
 from klassen.download_handler import DownloadHandler
 from services.downloader.active_downloads import ActiveDownloadRegistry
 from services.downloader.download_history import DownloadHistoryStore
@@ -959,10 +960,10 @@ class RichMenuHandler:
     # ====== HILFS-METHODEN ======
 
     def _is_admin(self, user_id: int) -> bool:
-        """Prüft Admin- oder Owner-Rechte."""
-        if user_id == self.config.OWNER_USER_ID:
-            return True
-        return user_id in getattr(self.config, "ADMIN_USER_IDS", [])
+        """Prüft Admin- oder Owner-Rechte (ARCH-021/P-3: delegiert an
+        permissions.is_admin_or_owner(), gemeinsam mit
+        RichMenuSystem._is_admin_check())."""
+        return is_admin_or_owner(user_id, self.config)
 
     def _load_user_data(self) -> Dict[str, Any]:
         """Lädt User-Daten aus JSON."""

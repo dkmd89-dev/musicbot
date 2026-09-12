@@ -32,13 +32,13 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from handlers.menu.rich_menu_system import (
+from handlers.menu.models import (
     AccessLevel,
     MenuItem,
     MenuSession,
     MenuState,
-    RichMenuSystem,
 )
+from handlers.menu.rich_menu_system import RichMenuSystem
 
 
 class MockConfig:

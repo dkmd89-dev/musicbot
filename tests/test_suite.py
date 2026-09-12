@@ -15,13 +15,13 @@ import pytest
 from datetime import datetime, timedelta
 from unittest.mock import Mock, AsyncMock, patch
 
-from handlers.menu.rich_menu_system import (
-    RichMenuSystem,
+from handlers.menu.models import (
     MenuItem,
     MenuState,
     AccessLevel,
     MenuSession,
 )
+from handlers.menu.rich_menu_system import RichMenuSystem
 
 # ==================== FIXTURES ====================
 
