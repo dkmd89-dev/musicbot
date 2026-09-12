@@ -772,13 +772,25 @@ class RichMenuSystem:
             access_level=AccessLevel.ADMIN,
             description="Erweiterte Logger-Steuerung und -Überwachung",
         )
+        # TGPERM-001-Fix (siehe docs/audits/FULL_PROJECT_ARCHITECTURE_AUDIT_
+        # 2026-09-12.md): callback_data wird hier bewusst explizit auf die
+        # ID gesetzt statt der automatischen "menu:<id>"-Generierung
+        # (MenuItem.__post_init__) zu ueberlassen. Ohne dieses Override
+        # dispatchte handle_callback() diese ADMIN-Items ueber den
+        # generischen "menu:"-Fallback (Ende von handle_callback(), ruft
+        # menu_item.handler() OHNE jede Berechtigungspruefung auf) statt
+        # ueber den bereits vorhandenen, in _ADMIN_ONLY_PREFIXES gegateten
+        # "logger_"-Praefixpfad (_handle_logger_callback()'s routing_map,
+        # die exakt dieselben IDs bereits kennt). Die vormaligen
+        # `handler=self._handle_logger_*`-Wrapper sind dadurch obsolet und
+        # wurden entfernt (siehe frueher "LOGGER-HANDLER WRAPPER").
         logger_menu.add_child(
             MenuItem(
                 id="logger_main_menu",
                 title="Logger-Übersicht",
                 emoji="🏠",
                 access_level=AccessLevel.ADMIN,
-                handler=self._handle_logger_main_menu,
+                callback_data="logger_main_menu",
                 is_action=True,
             )
         )
@@ -788,7 +800,7 @@ class RichMenuSystem:
                 title="Module verwalten",
                 emoji="📦",
                 access_level=AccessLevel.ADMIN,
-                handler=self._handle_logger_modules,
+                callback_data="logger_modules_list",
                 is_action=True,
             )
         )
@@ -798,7 +810,7 @@ class RichMenuSystem:
                 title="Globales Level",
                 emoji="🌍",
                 access_level=AccessLevel.ADMIN,
-                handler=self._handle_logger_global_level,
+                callback_data="logger_global_level",
                 is_action=True,
             )
         )
@@ -808,7 +820,7 @@ class RichMenuSystem:
                 title="Log-Dateien",
                 emoji="📁",
                 access_level=AccessLevel.ADMIN,
-                handler=self._handle_logger_files,
+                callback_data="logger_files_list",
                 is_action=True,
             )
         )
@@ -818,7 +830,7 @@ class RichMenuSystem:
                 title="Statistiken",
                 emoji="📈",
                 access_level=AccessLevel.ADMIN,
-                handler=self._handle_logger_stats,
+                callback_data="logger_global_stats",
                 is_action=True,
             )
         )
@@ -828,7 +840,7 @@ class RichMenuSystem:
                 title="Handler-Verwaltung",
                 emoji="⚡",
                 access_level=AccessLevel.ADMIN,
-                handler=self._handle_logger_handlers,
+                callback_data="logger_handlers_list",
                 is_action=True,
             )
         )
@@ -838,7 +850,7 @@ class RichMenuSystem:
                 title="Bereinigung",
                 emoji="🧹",
                 access_level=AccessLevel.ADMIN,
-                handler=self._handle_logger_cleanup,
+                callback_data="logger_cleanup_menu",
                 is_action=True,
             )
         )
@@ -1205,70 +1217,15 @@ class RichMenuSystem:
         for child in menu.children:
             self._build_registry(child)
 
-    # ====== LOGGER-HANDLER WRAPPER ======
-
-    async def _handle_logger_main_menu(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Wrapper für Logger-Hauptmenü"""
-        if self.logger_handler:
-            await self.logger_handler.show_main_menu(update, context)
-        else:
-            await self._show_handler_not_available(update, "Logger-Handler")
-
-    async def _handle_logger_modules(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Wrapper für Logger-Module"""
-        if self.logger_handler:
-            await self.logger_handler.show_modules_list(update, context, page=0)
-        else:
-            await self._show_handler_not_available(update, "Logger-Handler")
-
-    async def _handle_logger_global_level(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Wrapper für globales Log-Level"""
-        if self.logger_handler:
-            await self.logger_handler.show_global_level_menu(update, context)
-        else:
-            await self._show_handler_not_available(update, "Logger-Handler")
-
-    async def _handle_logger_files(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Wrapper für Log-Dateien"""
-        if self.logger_handler:
-            await self.logger_handler.show_log_files_list(update, context)
-        else:
-            await self._show_handler_not_available(update, "Logger-Handler")
-
-    async def _handle_logger_stats(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Wrapper für Logger-Statistiken"""
-        if self.logger_handler:
-            await self.logger_handler.show_comprehensive_statistics(update, context)
-        else:
-            await self._show_handler_not_available(update, "Logger-Handler")
-
-    async def _handle_logger_handlers(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Wrapper für Handler-Verwaltung"""
-        if self.logger_handler:
-            await self.logger_handler.manage_handlers_advanced(update, context)
-        else:
-            await self._show_handler_not_available(update, "Logger-Handler")
-
-    async def _handle_logger_cleanup(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Wrapper für Logger-Bereinigung"""
-        if self.logger_handler:
-            await self.logger_handler.show_cleanup_menu(update, context)
-        else:
-            await self._show_handler_not_available(update, "Logger-Handler")
+    # Die vormaligen LOGGER-HANDLER WRAPPER (_handle_logger_main_menu,
+    # _handle_logger_modules, _handle_logger_global_level,
+    # _handle_logger_files, _handle_logger_stats, _handle_logger_handlers,
+    # _handle_logger_cleanup) wurden im Rahmen des TGPERM-001-Fixes entfernt
+    # (siehe docs/audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md):
+    # die zugehoerigen MenuItems routen jetzt ueber explizites
+    # callback_data direkt in den bereits gegateten "logger_"-Praefixpfad
+    # (_handle_logger_callback()'s routing_map), diese Wrapper wurden dadurch
+    # unerreichbar.
 
     # ====== BACKUP-HANDLER WRAPPER ======
 

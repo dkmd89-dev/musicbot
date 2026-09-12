@@ -31,7 +31,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from handlers.menu.rich_menu_system import RichMenuSystem
+from handlers.menu.rich_menu_system import AccessLevel, RichMenuSystem
 
 
 class MockConfig:
@@ -75,6 +75,12 @@ ADMIN_ONLY_CALLBACKS = [
     "backup_delete_confirm_somefile",
     "backup_main",
     "logger_main_menu",
+    "logger_modules_list",
+    "logger_global_level",
+    "logger_files_list",
+    "logger_global_stats",
+    "logger_handlers_list",
+    "logger_cleanup_menu",
     "dup:clear_cache_execute",
     "status_storage",
     "status_system",
@@ -176,3 +182,99 @@ class TestNonAdminPrefixesAreNotAffected:
         _args, kwargs = update.callback_query.answer.call_args
         message = _args[0] if _args else kwargs.get("text", "")
         assert "Berechtigung" not in message
+
+
+class TestPrivilegedMenuItemsAreGatedTGPERM001:
+    """Regressionstest fuer TGPERM-001 (siehe docs/audits/
+    FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md):
+
+    Die anderen Tests in dieser Datei senden Literalstrings direkt an
+    handle_callback() - das prueft nur, ob die zentrale
+    _ADMIN_ONLY_PREFIXES-Pruefung fuer einen gegebenen String korrekt
+    greift, NICHT ob ein echtes MenuItem tatsaechlich dieses callback_data
+    sendet. Genau diese Luecke verbarg TGPERM-001: 7 Logger- und 3
+    Test-System-MenuItems trugen access_level=AccessLevel.ADMIN, aber ihr
+    tatsaechliches (automatisch generiertes) callback_data war
+    "menu:<id>" - das startet mit KEINEM gegateten Praefix und wird ueber
+    den generischen "menu:"-Fallback in handle_callback() OHNE jede
+    Pruefung an menu_item.handler() durchgereicht.
+
+    Dieser Test iteriert die ECHTE, aus initialize_menu_structure()
+    aufgebaute Menu-Registry und stellt sicher, dass jedes MenuItem mit
+    einem Handler (also einer tatsaechlich ausfuehrbaren Aktion) und
+    access_level > USER entweder ueber einen gegateten Praefix dispatcht
+    wird ODER auf der expliziten Ausnahmeliste fuer Items steht, deren
+    Ziel-Handler selbst einen Admin-/Owner-Check durchfuehrt
+    (Defense-in-Depth, siehe RichMenuHandler._handle_user_management_wrapper/
+    _handle_view_logs/_handle_navidrome_scan und
+    TestMenuHandler._execute_test_run seit dem TGPERM-001-Fix). Faellt ein
+    zukuenftiges ADMIN-/OWNER-MenuItem in dieselbe Luecke, schlaegt dieser
+    Test fehl, statt sie stillschweigend erneut einzufuehren.
+    """
+
+    # Praefixe, die handle_callback() vor dem Dispatch bereits selbst
+    # gated - entweder zentral ueber _ADMIN_ONLY_PREFIXES oder durch einen
+    # eigenen Admin-/Owner-Check im jeweiligen "_handle_*_callback()"
+    # (erradmin:/restart:/maint:/reprocess:/doctor:/review:/repair:, siehe
+    # docs/MusicBot_TELEGRAM_MENU_SYSTEM.md). "dl:" ist bewusst NICHT
+    # gelistet - es ist absichtlich ungegated (chat_id-skopiert, siehe
+    # CLAUDE.md/Telegram-Menue-Doku), traegt aber ohnehin nie
+    # access_level > USER.
+    _GATED_PREFIXES = (
+        "logger_",
+        "usermgmt_",
+        "dup:",
+        "backup_",
+        "status_",
+        "erradmin:",
+        "restart:",
+        "maint:",
+        "reprocess:",
+        "doctor:",
+        "review:",
+        "repair:",
+    )
+
+    # menu:<id>-Items mit access_level > USER, die bewusst NICHT ueber
+    # einen der obigen Praefixe laufen, weil ihr Ziel-Handler selbst einen
+    # Berechtigungscheck durchfuehrt, bevor er irgendetwas Privilegiertes
+    # tut. Wird ein Item hier eingetragen, MUSS der jeweilige Handler
+    # nachweislich einen eigenen _is_admin()/Owner-Check besitzen.
+    _KNOWN_INTERNALLY_GATED_MENU_IDS = {
+        "admin_users",  # RichMenuHandler._handle_user_management_wrapper
+        "admin_logs",  # RichMenuHandler._handle_view_logs
+        "admin_navidrome",  # RichMenuHandler._handle_navidrome_scan
+        "test_unit",  # TestMenuHandler._execute_test_run (TGPERM-001-Fix)
+        "test_integration",  # TestMenuHandler._execute_test_run (TGPERM-001-Fix)
+        "test_performance",  # TestMenuHandler._execute_test_run (TGPERM-001-Fix)
+    }
+
+    def test_every_privileged_action_item_is_gated(self, menu_system):
+        violations = []
+        for menu_id, item in menu_system.menu_registry.items():
+            if not item.is_action:
+                # Reine Navigations-Container ohne eigene Aktion - werden
+                # nicht direkt ausgefuehrt, nur ihre Kinder werden per
+                # is_accessible() gefiltert angezeigt. Kein TGPERM-001-Risiko.
+                # (is_action statt "item.handler is None" als Kriterium,
+                # weil admin_users/admin_logs/test_unit/test_integration/
+                # test_performance ihren handler erst zur Laufzeit via
+                # RichMenuHandler.register_handler() erhalten - in der
+                # rohen, hier per initialize_menu_structure() aufgebauten
+                # Registry ist er noch None, obwohl die Items produktiv
+                # sehr wohl ausfuehrbare Aktionen sind.)
+                continue
+            if item.access_level == AccessLevel.PUBLIC or item.access_level == AccessLevel.USER:
+                continue
+            if item.callback_data.startswith(self._GATED_PREFIXES):
+                continue
+            if menu_id in self._KNOWN_INTERNALLY_GATED_MENU_IDS:
+                continue
+            violations.append((menu_id, item.callback_data, item.access_level))
+
+        assert violations == [], (
+            "Admin-/Owner-MenuItems mit Handler, aber ohne gegateten "
+            "callback_data-Praefix und ohne Eintrag in "
+            "_KNOWN_INTERNALLY_GATED_MENU_IDS gefunden (TGPERM-001-Klasse): "
+            f"{violations}"
+        )

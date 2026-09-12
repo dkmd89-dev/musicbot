@@ -43,6 +43,13 @@ class FakeConfig:
 def make_handler(tmp_path, create_dirs=None):
     config = FakeConfig(tmp_path)
     handler = TestMenuHandler(config, logger_factory=lambda name: Mock())
+    # TGPERM-001-Fix (siehe docs/audits/FULL_PROJECT_ARCHITECTURE_AUDIT_
+    # 2026-09-12.md und tests/test_test_menu_handler.py::
+    # TestExecuteTestRunAdminPermissionTGPERM001, wo die Pruefung selbst
+    # getestet wird): _execute_test_run() prueft jetzt Admin-/Owner-Rechte.
+    # Diese Datei testet die Error-Handler-Integration, nicht die
+    # Berechtigungspruefung - Standard-Handler wird daher permissiv gemacht.
+    handler._is_admin = lambda user_id: True
 
     if create_dirs:
         for subdir, filenames in create_dirs:

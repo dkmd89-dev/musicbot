@@ -52,9 +52,17 @@ def make_handler(tmp_path, create_dirs=None):
 
     create_dirs: Liste von ("unit"|"integration"|"performance", [Dateinamen])
     zum Anlegen echter Test-Verzeichnisse mit test_*.py-Dateien.
+
+    TGPERM-001-Fix: _execute_test_run() prueft jetzt Admin-/Owner-Rechte
+    (siehe TestExecuteTestRunAdminPermissionTGPERM001 unten, die genau
+    diese Pruefung testet). FakeConfig hat kein OWNER_USER_ID/
+    ADMIN_USER_IDS, die uebrigen Tests dieser Datei pruefen die Kernlogik
+    von _execute_test_run() selbst (nicht die Berechtigungspruefung) -
+    der hier erzeugte Standard-Handler wird deshalb permissiv gemacht.
     """
     config = FakeConfig(tmp_path)
     handler = TestMenuHandler(config, logger_factory=lambda name: Mock())
+    handler._is_admin = lambda user_id: True
 
     if create_dirs:
         for subdir, filenames in create_dirs:
@@ -215,6 +223,90 @@ class TestExecuteTestRun:
         last_msg = update.callback_query.edit_message_text.call_args[0][0]
         assert "Fehler bei der Ausführung" in last_msg
         assert update.effective_user.id not in handler.running_tests
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# TGPERM-001-Regression: _execute_test_run() muss Admin-/Owner-Rechte
+# durchsetzen (siehe docs/audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md)
+#
+# test_unit/test_integration/test_performance sind
+# access_level=AccessLevel.ADMIN-MenuItems (handlers/menu/rich_menu_system.py),
+# deren callback_data automatisch als "menu:test_unit" etc. generiert wird
+# und damit ueber den generischen "menu:"-Fallback in
+# RichMenuSystem.handle_callback() dispatcht wird - dieser Fallback ruft
+# menu_item.handler() OHNE jede Berechtigungspruefung auf. Vor diesem Fix
+# konnte JEDER Bot-Nutzer per manuell gesendetem callback_data="menu:test_
+# performance" einen bis zu 900s blockierenden Subprozess-Testlauf
+# ausloesen. Fix: _execute_test_run() prueft jetzt selbst (Defense-in-
+# Depth-Muster wie RichMenuHandler._handle_user_management_wrapper/
+# _handle_view_logs fuer admin_users/admin_logs, die aus demselben Grund
+# ueber denselben generischen Fallback laufen).
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestExecuteTestRunAdminPermissionTGPERM001:
+    OWNER_ID = 111
+    ADMIN_ID = 222
+    NON_ADMIN_ID = 999
+
+    def _make_handler(self, tmp_path):
+        config = FakeConfig(tmp_path)
+        config.OWNER_USER_ID = self.OWNER_ID
+        config.ADMIN_USER_IDS = [self.OWNER_ID, self.ADMIN_ID]
+        return TestMenuHandler(config, logger_factory=lambda name: Mock())
+
+    def _make_update(self, user_id):
+        update = MagicMock()
+        update.effective_user.id = user_id
+        update.callback_query.answer = AsyncMock()
+        update.callback_query.edit_message_text = AsyncMock()
+        return update
+
+    def test_non_admin_is_rejected_with_permission_denied(self, tmp_path):
+        handler = self._make_handler(tmp_path)
+        update = self._make_update(self.NON_ADMIN_ID)
+
+        run_async(handler._execute_test_run(update, "performance", timeout=900))
+
+        update.callback_query.answer.assert_awaited_once()
+        args, kwargs = update.callback_query.answer.call_args
+        message = args[0] if args else kwargs.get("text", "")
+        assert "Berechtigung" in message
+        assert kwargs.get("show_alert") is True
+
+    def test_non_admin_never_starts_a_test_run(self, tmp_path):
+        handler = self._make_handler(tmp_path)
+        update = self._make_update(self.NON_ADMIN_ID)
+
+        run_async(handler._execute_test_run(update, "performance", timeout=900))
+
+        # Kein Subprozess-Testlauf darf gestartet worden sein
+        update.callback_query.edit_message_text.assert_not_called()
+        assert self.NON_ADMIN_ID not in handler.running_tests
+        assert handler.test_results_cache == {}
+
+    def test_owner_passes_the_permission_check(self, tmp_path):
+        handler = self._make_handler(tmp_path)
+        update = self._make_update(self.OWNER_ID)
+
+        run_async(handler._execute_test_run(update, "unit", timeout=600))
+
+        # Kein Testverzeichnis vorhanden - aber die Ablehnung darf NICHT
+        # die Berechtigungspruefung sein, das beweist, dass der Owner sie
+        # passiert hat.
+        update.callback_query.answer.assert_not_called()
+        last_msg = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Berechtigung" not in last_msg
+
+    def test_admin_passes_the_permission_check(self, tmp_path):
+        handler = self._make_handler(tmp_path)
+        update = self._make_update(self.ADMIN_ID)
+
+        run_async(handler._execute_test_run(update, "unit", timeout=600))
+
+        update.callback_query.answer.assert_not_called()
+        last_msg = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Berechtigung" not in last_msg
 
 
 # ─────────────────────────────────────────────────────────────────────────

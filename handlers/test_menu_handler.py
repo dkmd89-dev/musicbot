@@ -58,6 +58,23 @@ class TestMenuHandler:
 
         self.logger.info(f"{self.module_emoji} Test-Menu-Handler initialisiert.")
 
+    def _is_admin(self, user_id: int) -> bool:
+        """Prüft Admin- oder Owner-Rechte (gleiches Muster wie
+        RichMenuSystem._is_admin_check / RichMenuHandler._is_admin).
+
+        TGPERM-001 (siehe docs/audits/FULL_PROJECT_ARCHITECTURE_AUDIT_
+        2026-09-12.md): test_unit/test_integration/test_performance sind
+        access_level=AccessLevel.ADMIN-MenuItems, deren callback_data
+        (automatisch "menu:test_unit" etc.) ueber den generischen
+        "menu:"-Fallback in RichMenuSystem.handle_callback() dispatcht
+        wird - dieser Fallback fuehrt KEINE Berechtigungspruefung durch.
+        Ohne diesen Check konnte jeder Bot-Nutzer einen bis zu
+        900s-Testlauf (Performance-Tests) ausloesen.
+        """
+        if user_id == getattr(self.config, "OWNER_USER_ID", None):
+            return True
+        return user_id in getattr(self.config, "ADMIN_USER_IDS", [])
+
     async def run_unit_tests(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Führt Unit Tests aus"""
         await self._execute_test_run(update, "unit", timeout=600, context=context)
@@ -98,6 +115,14 @@ class TestMenuHandler:
         self.logger.info(
             f"{self.module_emoji} [{test_type}_tests] Anfrage von User {user_id} erhalten."
         )
+
+        if not self._is_admin(user_id):
+            self.logger.warning(
+                f"🚨 [SECURITY] [{test_type}_tests] Nicht-Admin {user_id} "
+                f"versuchte einen Testlauf ueber das Test-Menue auszuloesen."
+            )
+            await update.callback_query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
 
         if user_id in self.running_tests:
             self.logger.warning(
