@@ -36,6 +36,7 @@ from telegram.ext import ContextTypes
 
 from config import Config
 from logger import get_module_logger
+from handlers.menu.permissions import is_admin_or_owner
 from services.library_health.issues import REGISTRY as ISSUE_REGISTRY
 from services.library_health.models import Severity
 from services.library_repair.doctor_runner import (
@@ -84,9 +85,14 @@ class LibraryDoctorHandler:
         self.error_handler: Optional["EnhancedErrorHandler"] = None
 
     def _is_admin(self, user_id: int) -> bool:
-        if user_id == getattr(self.config, "OWNER_USER_ID", None):
-            return True
-        return user_id in getattr(self.config, "ADMIN_USER_IDS", [])
+        """Prüft Admin- oder Owner-Rechte (ARCH-023/P-7: delegiert an
+        permissions.is_admin_or_owner() - vormals eigenständig
+        implementiert, funktional unverändert, siehe
+        tests/test_library_doctor_handler.py::TestIsAdminDirect).
+        Bleibt als Defense-in-Depth-Schicht hinter dem bereits zentral
+        gegateten "doctor:"-Präfix bestehen (RichMenuSystem._handle_doctor_
+        callback())."""
+        return is_admin_or_owner(user_id, self.config)
 
     def _back_to_admin_keyboard(self) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(

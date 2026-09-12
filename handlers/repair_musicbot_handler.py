@@ -46,6 +46,7 @@ from telegram.ext import ContextTypes
 
 from config import Config
 from logger import get_module_logger
+from handlers.menu.permissions import is_admin_or_owner
 from services.library_repair.models import RepairLevel
 from services.library_repair.repair_service import (
     HealthScanFailedError,
@@ -77,9 +78,15 @@ class RepairMusicBotHandler:
     # ── Berechtigung ─────────────────────────────────────────────────────
 
     def _is_admin(self, user_id: int) -> bool:
-        if user_id == getattr(self.config, "OWNER_USER_ID", None):
-            return True
-        return user_id in getattr(self.config, "ADMIN_USER_IDS", [])
+        """Prüft Admin- oder Owner-Rechte (ARCH-023/P-7: delegiert an
+        permissions.is_admin_or_owner() - vormals eigenständig
+        implementiert, funktional unverändert, siehe
+        tests/test_repair_musicbot_handler.py::TestIsAdminDirect). Bleibt
+        als Defense-in-Depth-Schicht bestehen - insbesondere die erneute
+        Prüfung am tatsächlichen Ausführungs-Handler (siehe Modul-
+        Docstring, Abschnitt 43) ist unverändert, nur die Berechnung
+        selbst ist jetzt zentral."""
+        return is_admin_or_owner(user_id, self.config)
 
     def _back_keyboard(self, target: str = _BACK_TO_ADMIN, label: str = "◀️ Zurück") -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=target)]])

@@ -24,6 +24,7 @@ from telegram.error import TelegramError, NetworkError, TimedOut, BadRequest  # 
 
 from config import Config
 from logger import get_module_logger
+from handlers.menu.permissions import is_admin_or_owner
 
 
 class ExceptionMonitor:
@@ -1545,14 +1546,34 @@ class ErrorHandlerAdminInterface:
     Telegram-basierte Admin-Oberfläche für Error-Monitoring
     """
 
-    def __init__(self, error_handler: EnhancedErrorHandler, admin_user_ids: List[int]):
+    def __init__(
+        self,
+        error_handler: EnhancedErrorHandler,
+        admin_user_ids: List[int],
+        config: Config,
+    ):
         self.error_handler = error_handler
         self.admin_user_ids = admin_user_ids
+        self.config = config
         self.logger = get_module_logger("ErrorHandlerAdmin")
 
     def is_admin(self, user_id: int) -> bool:
-        """Prüft Admin-Berechtigung"""
-        return user_id in self.admin_user_ids
+        """Prüft Admin- oder Owner-Berechtigung.
+
+        ARCH-023/P-5: vormals ausschliesslich `user_id in self.admin_user_ids`
+        - Config.ADMIN_USER_IDS schliesst OWNER_USER_ID zwar im Standardfall
+        automatisch ein (config.py: Fallback auf [OWNER_USER_ID] ohne
+        eigenes ADMIN_USER_IDS-Env-Var), aber nicht mehr, sobald ein
+        Betreiber ADMIN_USER_IDS explizit per Env-Var auf eine Liste ohne
+        die eigene ID setzt - der Owner war in diesem Fall von
+        erradmin:-Funktionen ausgeschlossen, obwohl er bei jedem anderen
+        Admin-Praefix (doctor:/review:/repair:/restart:/maint:/
+        _ADMIN_ONLY_PREFIXES) automatisch Zugriff hat (ARCH-023/P-2-Fund).
+        Jetzt konsistent ueber die zentrale permissions.is_admin_or_owner()
+        (OWNER_USER_ID ODER ADMIN_USER_IDS) - eine gemeinsame Quelle der
+        Wahrheit statt einer eigenen, abweichenden Kopie.
+        """
+        return is_admin_or_owner(user_id, self.config)
 
     async def _reply_or_edit(
         self,

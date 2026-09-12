@@ -1403,9 +1403,13 @@ class RichMenuSystem:
         query = update.callback_query
         user_id = update.effective_user.id
 
-        is_admin = user_id == getattr(self.config, "OWNER_USER_ID", None) or \
-            user_id in getattr(self.config, "ADMIN_USER_IDS", [])
-        if not is_admin:
+        # ARCH-023/P-3 Phase 3: vormals inline duplizierte Pruefung durch
+        # die gemeinsame, bereits getestete self._is_admin_check()
+        # ersetzt (funktional aequivalent, siehe
+        # tests/test_menu_router_characterization.py::
+        # TestDoctorReviewRepairEquivalentToIsAdminCheck) - keine
+        # Verhaltensaenderung.
+        if not self._is_admin_check(user_id):
             self.logger.warning(
                 f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte "
                 f"Doctor-Callback: {callback_data}"
@@ -1476,9 +1480,9 @@ class RichMenuSystem:
         query = update.callback_query
         user_id = update.effective_user.id
 
-        is_admin = user_id == getattr(self.config, "OWNER_USER_ID", None) or \
-            user_id in getattr(self.config, "ADMIN_USER_IDS", [])
-        if not is_admin:
+        # ARCH-023/P-3 Phase 3: siehe Kommentar in _handle_doctor_callback()
+        # - identische Konsolidierung, keine Verhaltensaenderung.
+        if not self._is_admin_check(user_id):
             self.logger.warning(
                 f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte "
                 f"Review-Callback: {callback_data}"
@@ -1564,9 +1568,9 @@ class RichMenuSystem:
         query = update.callback_query
         user_id = update.effective_user.id
 
-        is_admin = user_id == getattr(self.config, "OWNER_USER_ID", None) or \
-            user_id in getattr(self.config, "ADMIN_USER_IDS", [])
-        if not is_admin:
+        # ARCH-023/P-3 Phase 3: siehe Kommentar in _handle_doctor_callback()
+        # - identische Konsolidierung, keine Verhaltensaenderung.
+        if not self._is_admin_check(user_id):
             self.logger.warning(
                 f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte "
                 f"Repair-Callback: {callback_data}"
@@ -1994,6 +1998,24 @@ class RichMenuSystem:
                 return
 
             if menu_item.handler:
+                # ARCH-023/P-3 Menu-Fallback-Gate: menu_item.access_level
+                # wurde bisher ausschliesslich in render_menu() fuer die
+                # Button-Sichtbarkeit ausgewertet, nie beim tatsaechlichen
+                # Dispatch hier (TGPERM-001-Fehlerklasse - ein privilegiertes
+                # Item war nur geschuetzt, wenn sein individueller Handler
+                # zufaellig selbst einen Check besass). Zentrale Durchsetzung
+                # jetzt hier, vor jedem Handler-Aufruf, unabhaengig davon, ob
+                # der Ziel-Handler zusaetzlich eine eigene Pruefung hat.
+                user_level = self._get_user_access_level(user_id)
+                if not menu_item.is_accessible(user_level):
+                    self.logger.warning(
+                        f"🚨 [SECURITY] User {user_id} ohne ausreichende Berechtigung "
+                        f"versuchte privilegiertes Menu-Item '{menu_item.id}' "
+                        f"(benoetigt: {menu_item.access_level.name}, hat: {user_level.name}): "
+                        f"{callback_data}"
+                    )
+                    await query.answer("⛔ Keine Berechtigung", show_alert=True)
+                    return
                 self.logger.info(f"⚡ Aktion '{menu_item.id}' wird ausgeführt.")
                 await query.answer()
                 await menu_item.handler(update, context)

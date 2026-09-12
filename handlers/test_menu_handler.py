@@ -20,6 +20,7 @@ from telegram.error import TelegramError
 
 from config import Config
 from logger import get_module_logger, EnhancedLogger
+from handlers.menu.permissions import is_admin_or_owner
 
 # Die Markdown-Helfer werden nicht mehr benötigt
 
@@ -59,21 +60,26 @@ class TestMenuHandler:
         self.logger.info(f"{self.module_emoji} Test-Menu-Handler initialisiert.")
 
     def _is_admin(self, user_id: int) -> bool:
-        """Prüft Admin- oder Owner-Rechte (gleiches Muster wie
-        RichMenuSystem._is_admin_check / RichMenuHandler._is_admin).
+        """Prüft Admin- oder Owner-Rechte (ARCH-023/P-7: delegiert an
+        permissions.is_admin_or_owner() - vormals eigenständig
+        implementiert, funktional unverändert, siehe
+        tests/test_test_menu_handler.py::TestIsAdminDirect).
 
-        TGPERM-001 (siehe docs/audits/FULL_PROJECT_ARCHITECTURE_AUDIT_
-        2026-09-12.md): test_unit/test_integration/test_performance sind
-        access_level=AccessLevel.ADMIN-MenuItems, deren callback_data
+        TGPERM-001-Historie (siehe docs/audits/FULL_PROJECT_ARCHITECTURE_
+        AUDIT_2026-09-12.md): test_unit/test_integration/test_performance
+        sind access_level=AccessLevel.ADMIN-MenuItems, deren callback_data
         (automatisch "menu:test_unit" etc.) ueber den generischen
         "menu:"-Fallback in RichMenuSystem.handle_callback() dispatcht
-        wird - dieser Fallback fuehrt KEINE Berechtigungspruefung durch.
-        Ohne diesen Check konnte jeder Bot-Nutzer einen bis zu
-        900s-Testlauf (Performance-Tests) ausloesen.
+        wird. Zum Zeitpunkt des TGPERM-001-Fixes fuehrte dieser Fallback
+        KEINE eigene Berechtigungspruefung durch - dieser Check war
+        damals die einzige Absicherung. Seit dem zentralen Menu-Fallback-
+        Gate (ARCH-023/P-3, RichMenuSystem.handle_callback() prueft
+        menu_item.is_accessible() vor jedem Handler-Aufruf) wird dieselbe
+        Berechtigung bereits vom Router durchgesetzt - dieser Check bleibt
+        als zusätzliche Defense-in-Depth-Schicht bestehen, ist aber nicht
+        mehr die einzige Absicherung.
         """
-        if user_id == getattr(self.config, "OWNER_USER_ID", None):
-            return True
-        return user_id in getattr(self.config, "ADMIN_USER_IDS", [])
+        return is_admin_or_owner(user_id, self.config)
 
     async def run_unit_tests(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Führt Unit Tests aus"""

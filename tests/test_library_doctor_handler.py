@@ -82,6 +82,22 @@ def _sample_report(extra_issues=None):
     }
 
 
+class TestIsAdminDirect:
+    """ARCH-023/P-7: direkte Charakterisierung von _is_admin() selbst
+    (bisher nur indirekt ueber handle_scan() etc. getestet) - Baseline
+    vor der Umstellung auf permissions.is_admin_or_owner(), belegt
+    Aequivalenz."""
+
+    def test_owner_is_admin(self, handler):
+        assert handler._is_admin(OWNER_ID) is True
+
+    def test_configured_admin_is_admin(self, handler):
+        assert handler._is_admin(ADMIN_ID) is True
+
+    def test_other_user_is_not_admin(self, handler):
+        assert handler._is_admin(OTHER_ID) is False
+
+
 class TestHandleScanAdminGating:
     def test_non_admin_is_rejected(self, handler):
         update = _mock_update(OTHER_ID)

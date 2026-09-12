@@ -90,6 +90,21 @@ def _seed(registry_path, issues, scanned_at="2026-01-01T00:00:00Z"):
     return registry
 
 
+class TestIsAdminDirect:
+    """ARCH-023/P-7: direkte Charakterisierung von _is_admin() selbst
+    (bisher nur indirekt ueber die 11 Aufrufstellen getestet) - Baseline
+    vor der Umstellung auf permissions.is_admin_or_owner()."""
+
+    def test_owner_is_admin(self, handler):
+        assert handler._is_admin(OWNER_ID) is True
+
+    def test_configured_admin_is_admin(self, handler):
+        assert handler._is_admin(ADMIN_ID) is True
+
+    def test_other_user_is_not_admin(self, handler):
+        assert handler._is_admin(OTHER_ID) is False
+
+
 class TestHandleStart:
     def test_no_status_change_on_open(self, handler, registry_path, context):
         issue = _issue("ARTWORK_MISSING", scope="file", path="a.m4a")

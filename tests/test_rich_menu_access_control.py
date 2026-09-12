@@ -31,7 +31,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from handlers.menu.models import AccessLevel
+from handlers.menu.models import AccessLevel, MenuItem
 from handlers.menu.rich_menu_system import RichMenuSystem
 
 
@@ -279,3 +279,150 @@ class TestPrivilegedMenuItemsAreGatedTGPERM001:
             "_KNOWN_INTERNALLY_GATED_MENU_IDS gefunden (TGPERM-001-Klasse): "
             f"{violations}"
         )
+
+
+class TestPrivilegedMenuItemsActuallyDenyNonAdminTGPERM001:
+    """ARCH-023/P-3/P-4: staerkere, VERHALTENSBASIERTE Ergaenzung zu
+    TestPrivilegedMenuItemsAreGatedTGPERM001 oben.
+
+    Die obige Klasse prueft eine STRUKTURELLE Eigenschaft (traegt das
+    callback_data einen gegateten Praefix, oder steht die menu_id auf
+    einer von Hand gepflegten Ausnahmeliste?) - das war vor dem
+    ARCH-023/P-3-Menu-Fallback-Gate die einzig moegliche Pruefung, weil
+    handle_callback()'s generischer "menu:"-Zweig damals ueberhaupt
+    keine access_level-Pruefung durchfuehrte.
+
+    Seit dem Menu-Fallback-Gate (RichMenuSystem.handle_callback(), siehe
+    "menu_item.is_accessible(user_level)" vor jedem Handler-Aufruf) gibt
+    es fuer JEDES "menu:"-geroutete Item mit access_level > USER eine
+    echte, im Code erzwungene Garantie - unabhaengig davon, ob die
+    menu_id auf einer Ausnahmeliste steht. Diese Klasse verifiziert
+    GENAU DAS direkt: ruft handle_callback() mit einem echten
+    Nicht-Admin-User auf und stellt sicher, dass der Handler tatsaechlich
+    NICHT ausgefuehrt wird - statt nur eine Namenskonvention zu pruefen.
+
+    Bewusst NICHT die volle RichMenuHandler.initialize()-Kette (schwer,
+    mit realen Seiteneffekten - Log-Dateien, Permission-Errors bei
+    fehlenden Pfaden, siehe tests/test_menu_router_characterization.py
+    fuer die dortige, isolierte Verwendung) - stattdessen eine kleine,
+    deterministische Erweiterung der bestehenden initialize_menu_structure()-
+    Registry um genau die Items, die produktiv erst zur Laufzeit via
+    register_handler()/add_child_menu_item() hinzukommen (admin_users/
+    admin_logs/test_unit/test_integration/test_performance/
+    admin_navidrome), mit AsyncMock()-Platzhaltern statt echter,
+    schwerer Handler-Konstruktion - bildet die relevante Registry
+    realistisch ab, ohne die echte Bot-Initialisierung zu starten.
+
+    _KNOWN_INTERNALLY_GATED_MENU_IDS (obige Klasse) bleibt unveraendert
+    bestehen - diese Klasse ersetzt sie nicht, sondern ergaenzt eine
+    staerkere, zusaetzliche Garantie (siehe ARCH-023/P-4-Bericht,
+    Abschnitt 3, fuer die Begruendung, warum die Ausnahmeliste bewusst
+    nicht entfernt wurde)."""
+
+    _RUNTIME_REGISTERED_MENU_IDS = (
+        "admin_users",
+        "admin_logs",
+        "test_unit",
+        "test_integration",
+        "test_performance",
+    )
+
+    @pytest.fixture
+    def realistic_registry(self, menu_system):
+        """Erweitert die rohe menu_system-Fixture um die zur Laufzeit
+        hinzukommenden privilegierten Items - mit Mock-Handlern, damit
+        handle_callback() sie wie echte Aktionen dispatcht."""
+        for menu_id in self._RUNTIME_REGISTERED_MENU_IDS:
+            menu_system.register_handler(menu_id, AsyncMock())
+
+        # admin_navidrome: nicht Teil von initialize_menu_structure(),
+        # sondern wird produktiv erst durch
+        # RichMenuHandler._register_system_handlers() via
+        # add_child_menu_item() hinzugefuegt (siehe ARCH-023/P-4 Phase 1
+        # - is_action=True, damit dieses Item vom Sweep unten korrekt
+        # als echte Aktion erkannt wird, exakt wie die echte
+        # Produktionsdefinition in handlers/menu/rich_menu_handler.py).
+        menu_system.add_child_menu_item(
+            "admin_group_library",
+            MenuItem(
+                id="admin_navidrome",
+                title="Navidrome Scan",
+                emoji="🔄",
+                access_level=AccessLevel.ADMIN,
+                handler=AsyncMock(),
+                is_action=True,
+            ),
+        )
+        return menu_system
+
+    def test_no_privileged_menu_item_executes_its_handler_for_a_non_admin(
+        self, realistic_registry
+    ):
+        """Sweep ueber die (realistisch erweiterte) Registry: fuer jedes
+        Item mit is_action=True, access_level > USER und
+        callback_data.startswith('menu:') wird handle_callback() mit
+        NON_ADMIN_USER_ID aufgerufen - der Handler darf in KEINEM Fall
+        ausgefuehrt werden."""
+        menu_system = realistic_registry
+        checked_ids = []
+
+        for menu_id, item in list(menu_system.menu_registry.items()):
+            if not item.is_action:
+                continue
+            if item.access_level == AccessLevel.PUBLIC or item.access_level == AccessLevel.USER:
+                continue
+            if not item.callback_data.startswith("menu:"):
+                # Nicht "menu:"-geroutet - wird von den Praefix-Dispatchern
+                # bzw. der zentralen _ADMIN_ONLY_PREFIXES-Pruefung
+                # abgedeckt, nicht vom Menu-Fallback-Gate. Das deckt
+                # TestAdminOnlyCallbacksRejectNonAdmin/die uebrigen
+                # doctor:/review:/repair:/reprocess:/restart:/maint:-Tests
+                # bereits ab.
+                continue
+
+            assert item.handler is not None, (
+                f"{menu_id}: privilegiertes Item ohne Handler in der "
+                "realistic_registry-Fixture - Fixture-Luecke, nicht "
+                "TGPERM-001-Befund."
+            )
+            checked_ids.append(menu_id)
+
+            update = make_update(NON_ADMIN_USER_ID, item.callback_data)
+            context = make_context()
+
+            asyncio.run(menu_system.handle_callback(update, context))
+
+            item.handler.assert_not_awaited()
+
+        # Stellt sicher, dass der Sweep tatsaechlich etwas geprueft hat -
+        # ein leerer Sweep waere ein stiller False-Negative.
+        assert set(checked_ids) == {
+            "admin_users",
+            "admin_logs",
+            "admin_navidrome",
+            "test_unit",
+            "test_integration",
+            "test_performance",
+        }
+
+    def test_admin_reaches_the_handler_for_the_same_items(self, realistic_registry):
+        """Gegenprobe: derselbe Sweep mit einem echten Admin - der
+        Handler MUSS erreicht werden (belegt, dass die Ablehnung oben
+        tatsaechlich an der Berechtigung liegt, nicht an einem
+        Fixture-Fehler, der jeden Aufruf verschluckt)."""
+        menu_system = realistic_registry
+
+        for menu_id, item in list(menu_system.menu_registry.items()):
+            if not item.is_action:
+                continue
+            if item.access_level == AccessLevel.PUBLIC or item.access_level == AccessLevel.USER:
+                continue
+            if not item.callback_data.startswith("menu:"):
+                continue
+
+            update = make_update(ADMIN_USER_ID, item.callback_data)
+            context = make_context()
+
+            asyncio.run(menu_system.handle_callback(update, context))
+
+            item.handler.assert_awaited_once()
