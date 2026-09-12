@@ -195,6 +195,18 @@ class RichMenuSystem:
         self.logger_handler = None
         self.navidrome_handler = None
         self.stats_handler = None
+        # Familien-Statistik (Phase F2, Family Hub): von RichMenuHandler
+        # injiziert - siehe set_family_stats_handler(). Eigenständig von
+        # stats_handler, da FamilyStatsHandler zusätzlich eine
+        # Family-Membership-Prüfung durchführt, bevor irgendein
+        # Family-Datum gesendet wird.
+        self.family_stats_handler = None
+        # Familien-Chat (Phase F3, Family Hub): von RichMenuHandler
+        # injiziert - siehe set_family_chat_handler().
+        self.family_chat_handler = None
+        # Familien-Challenge (Phase F4, Family Hub): von RichMenuHandler
+        # injiziert - siehe set_family_challenge_handler().
+        self.family_challenge_handler = None
         self.error_handler = None
         self.user_mgmt_handler = None
         self.duplicate_handler = None
@@ -256,6 +268,21 @@ class RichMenuSystem:
         """Setzt den Statistik-Handler"""
         self.stats_handler = handler
         self.logger.info("✅ Statistik-Handler verknüpft")
+
+    def set_family_stats_handler(self, handler) -> None:
+        """Setzt den Familien-Statistik-Handler (Phase F2, Family Hub)"""
+        self.family_stats_handler = handler
+        self.logger.info("✅ Family-Stats-Handler verknüpft")
+
+    def set_family_chat_handler(self, handler) -> None:
+        """Setzt den Familien-Chat-Handler (Phase F3, Family Hub)"""
+        self.family_chat_handler = handler
+        self.logger.info("✅ Family-Chat-Handler verknüpft")
+
+    def set_family_challenge_handler(self, handler) -> None:
+        """Setzt den Familien-Challenge-Handler (Phase F4, Family Hub)"""
+        self.family_challenge_handler = handler
+        self.logger.info("✅ Family-Challenge-Handler verknüpft")
 
     def set_navidrome_handler(self, handler) -> None:
         """Setzt den Navidrome-Handler"""
@@ -442,6 +469,148 @@ class RichMenuSystem:
                 title="Library Übersicht",
                 emoji="📚",
                 handler=self._handle_stats_library_overview,
+                is_action=True,
+            )
+        )
+
+        # Familien-Statistik (Phase F2, Family Hub) - neuer Zweig NEBEN den
+        # bestehenden persönlichen Statistik-Punkten (stats_monthly/...),
+        # die unverändert bleiben (Master-Prompt: "Bestehende Callback-Namen
+        # und Navigation nicht unnötig brechen"). Zugriff wird serverseitig
+        # in FamilyStatsHandler geprüft (Family-Membership), nicht hier.
+        family_stats_menu = MenuItem(
+            id="family_stats",
+            title="Familien-Statistik",
+            emoji="👨‍👩‍👧‍👦",
+            description="Statistiken für alle Familienmitglieder",
+        )
+        family_stats_menu.add_child(
+            MenuItem(
+                id="family_stats_top_songs",
+                title="Top Songs Familie",
+                emoji="🎵",
+                handler=self._handle_family_stats_top_songs,
+                is_action=True,
+            )
+        )
+        family_stats_menu.add_child(
+            MenuItem(
+                id="family_stats_top_artists",
+                title="Top Künstler Familie",
+                emoji="🎤",
+                handler=self._handle_family_stats_top_artists,
+                is_action=True,
+            )
+        )
+        family_stats_menu.add_child(
+            MenuItem(
+                id="family_stats_member",
+                title="Statistik pro Person",
+                emoji="👥",
+                handler=self._handle_family_stats_member,
+                is_action=True,
+            )
+        )
+        family_stats_menu.add_child(
+            MenuItem(
+                id="family_stats_champion",
+                title="Musik-Champion",
+                emoji="🏆",
+                handler=self._handle_family_stats_champion,
+                is_action=True,
+            )
+        )
+        family_stats_menu.add_child(
+            MenuItem(
+                id="family_stats_listening_times",
+                title="Hörzeiten",
+                emoji="⏰",
+                handler=self._handle_family_stats_listening_times,
+                is_action=True,
+            )
+        )
+        family_stats_menu.add_child(
+            MenuItem(
+                id="family_stats_monthly_trend",
+                title="Monatsentwicklung",
+                emoji="📈",
+                handler=self._handle_family_stats_monthly_trend,
+                is_action=True,
+            )
+        )
+        stats_menu.add_child(family_stats_menu)
+
+        # Familien-Chat (Phase F3, Family Hub) - eigenes Top-Level-Menü
+        # (Geschwister von "stats", nicht darunter verschachtelt), analog
+        # zur Master-Prompt-Zielstruktur. Zugriff wird serverseitig in
+        # FamilyChatHandler geprüft (Family-Membership), nicht hier.
+        family_chat_menu = MenuItem(
+            id="family_chat",
+            title="Familien-Chat",
+            emoji="💬",
+            description="Privater Chat für Familienmitglieder",
+        )
+        family_chat_menu.add_child(
+            MenuItem(
+                id="family_chat_send",
+                title="Nachricht senden",
+                emoji="📝",
+                handler=self._handle_family_chat_send,
+                is_action=True,
+            )
+        )
+        family_chat_menu.add_child(
+            MenuItem(
+                id="family_chat_recent",
+                title="Letzte Nachrichten",
+                emoji="📋",
+                handler=self._handle_family_chat_recent,
+                is_action=True,
+            )
+        )
+        family_chat_menu.add_child(
+            MenuItem(
+                id="family_chat_notifications",
+                title="Benachrichtigungen",
+                emoji="🔔",
+                handler=self._handle_family_chat_notifications,
+                is_action=True,
+            )
+        )
+
+        # Familien-Challenge (Phase F4, Family Hub) - eigenes Top-Level-
+        # Menü, analog zu family_chat. Zugriff wird serverseitig in
+        # FamilyChallengeHandler geprüft (Family-Membership), nicht hier.
+        family_challenge_menu = MenuItem(
+            id="family_challenge",
+            title="Familien-Challenge",
+            emoji="🎯",
+            description="Tägliche Musik-Challenge für die Familie",
+        )
+        family_challenge_menu.add_child(
+            MenuItem(
+                id="family_challenge_today",
+                title="Heutige Challenge",
+                emoji="❓",
+                handler=self._handle_family_challenge_today,
+                is_action=True,
+            )
+        )
+        family_challenge_menu.add_child(
+            MenuItem(
+                id="family_challenge_answer",
+                title="Antworten",
+                emoji="✅",
+                handler=self._handle_family_challenge_answer,
+                is_action=True,
+            )
+        )
+        family_challenge_menu.add_child(
+            MenuItem(
+                id="family_challenge_leaderboard",
+                title="Punktestand",
+                emoji="🏆",
+                handler=self._handle_family_challenge_leaderboard,
                 is_action=True,
             )
         )
@@ -1019,6 +1188,8 @@ class RichMenuSystem:
         # Menüs zum Root hinzufügen
         self.root_menu.add_child(download_menu)
         self.root_menu.add_child(stats_menu)
+        self.root_menu.add_child(family_chat_menu)
+        self.root_menu.add_child(family_challenge_menu)
         self.root_menu.add_child(admin_menu)
         self.root_menu.add_child(test_menu)
         self.root_menu.add_child(navidrome_menu)
@@ -2954,3 +3125,142 @@ class RichMenuSystem:
             await self.stats_handler.handle_music_timeline(update, context)
         else:
             await query.edit_message_text("📅 Lade Music Timeline...")
+
+    # ====== FAMILIEN-STATISTIK (Phase F2, Family Hub) ======
+    # Zugriffsprüfung (Family-Membership) erfolgt in FamilyStatsHandler
+    # selbst, nicht hier - dieselbe Aufgabenteilung wie bei allen übrigen
+    # _handle_stats_*-Methoden dieser Klasse (dünner Wrapper -> Handler).
+
+    async def _handle_family_stats_top_songs(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+        if self.family_stats_handler:
+            await self.family_stats_handler.handle_family_top_songs(update, context)
+        else:
+            await query.edit_message_text("🎵 Lade Top Songs Familie...")
+
+    async def _handle_family_stats_top_artists(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+        if self.family_stats_handler:
+            await self.family_stats_handler.handle_family_top_artists(update, context)
+        else:
+            await query.edit_message_text("🎤 Lade Top Künstler Familie...")
+
+    async def _handle_family_stats_member(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+        if self.family_stats_handler:
+            await self.family_stats_handler.handle_family_member_stats(update, context)
+        else:
+            await query.edit_message_text("👥 Lade Statistik pro Person...")
+
+    async def _handle_family_stats_champion(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+        if self.family_stats_handler:
+            await self.family_stats_handler.handle_family_champion(update, context)
+        else:
+            await query.edit_message_text("🏆 Ermittle Musik-Champion...")
+
+    async def _handle_family_stats_listening_times(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+        if self.family_stats_handler:
+            await self.family_stats_handler.handle_family_listening_times(
+                update, context
+            )
+        else:
+            await query.edit_message_text("⏰ Lade Hörzeiten...")
+
+    async def _handle_family_stats_monthly_trend(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+        if self.family_stats_handler:
+            await self.family_stats_handler.handle_family_monthly_trend(
+                update, context
+            )
+        else:
+            await query.edit_message_text("📈 Lade Monatsentwicklung...")
+
+    # ====== FAMILIEN-CHAT (Phase F3, Family Hub) ======
+    # Zugriffsprüfung (Family-Membership) erfolgt in FamilyChatHandler
+    # selbst, nicht hier - dieselbe Aufgabenteilung wie bei den übrigen
+    # _handle_*-Methoden dieser Klasse (dünner Wrapper -> Handler).
+
+    async def _handle_family_chat_send(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+        if self.family_chat_handler:
+            await self.family_chat_handler.handle_send_message_prompt(update, context)
+        else:
+            await query.edit_message_text("📝 Familien-Chat nicht verfügbar...")
+
+    async def _handle_family_chat_recent(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+        if self.family_chat_handler:
+            await self.family_chat_handler.handle_recent_messages(update, context)
+        else:
+            await query.edit_message_text("📋 Familien-Chat nicht verfügbar...")
+
+    async def _handle_family_chat_notifications(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+        if self.family_chat_handler:
+            await self.family_chat_handler.handle_toggle_notifications(update, context)
+        else:
+            await query.edit_message_text("🔔 Familien-Chat nicht verfügbar...")
+
+    # ====== FAMILIEN-CHALLENGE (Phase F4, Family Hub) ======
+    # Zugriffsprüfung (Family-Membership) erfolgt in FamilyChallengeHandler
+    # selbst, nicht hier - dieselbe Aufgabenteilung wie bei den übrigen
+    # _handle_*-Methoden dieser Klasse (dünner Wrapper -> Handler).
+
+    async def _handle_family_challenge_today(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+        if self.family_challenge_handler:
+            await self.family_challenge_handler.handle_todays_challenge(update, context)
+        else:
+            await query.edit_message_text("❓ Familien-Challenge nicht verfügbar...")
+
+    async def _handle_family_challenge_answer(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+        if self.family_challenge_handler:
+            await self.family_challenge_handler.handle_answer_prompt(update, context)
+        else:
+            await query.edit_message_text("✅ Familien-Challenge nicht verfügbar...")
+
+    async def _handle_family_challenge_leaderboard(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+        if self.family_challenge_handler:
+            await self.family_challenge_handler.handle_leaderboard(update, context)
+        else:
+            await query.edit_message_text("🏆 Familien-Challenge nicht verfügbar...")

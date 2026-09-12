@@ -45,6 +45,9 @@ from handlers.library_doctor_handler import LibraryDoctorHandler
 from handlers.library_health_review_handler import LibraryHealthReviewHandler
 from handlers.repair_musicbot_handler import RepairMusicBotHandler
 from handlers.mugge_statistik_handler import StatistikHandler
+from handlers.family_stats_handler import FamilyStatsHandler
+from handlers.family_chat_handler import FamilyChatHandler
+from handlers.family_challenge_handler import FamilyChallengeHandler
 from handlers.admin.user_management_handler import UserManagementHandler
 from handlers.admin.backup_handler import BackupHandler
 from handlers.admin.bot_restart_handler import BotRestartHandler
@@ -91,6 +94,9 @@ class RichMenuHandler:
 
         # Handler-Referenzen
         self.stats_handler: Optional[StatistikHandler] = None
+        self.family_stats_handler: Optional[FamilyStatsHandler] = None
+        self.family_chat_handler: Optional[FamilyChatHandler] = None
+        self.family_challenge_handler: Optional[FamilyChallengeHandler] = None
         self.test_handler: Optional[TestMenuHandler] = None
         self.logger_handler: Optional[EnhancedLoggerMenuHandler] = None
         self.navidrome_handler: Optional[NavidromeMenuHandler] = None
@@ -247,6 +253,36 @@ class RichMenuHandler:
             self.logger.error(f"❌ Statistik-Handler Fehler: {e}", exc_info=True)
             self.stats_handler = None
 
+        # 4b. Family-Stats-Handler (Phase F2, Family Hub) - eigenständig von
+        # StatistikHandler, da FamilyStatsService die Play-History mehrerer
+        # Navidrome-User aggregiert statt eines einzelnen (siehe
+        # services/family/family_stats_service.py).
+        try:
+            self.family_stats_handler = FamilyStatsHandler()
+            self.logger.info("✅ FamilyStatsHandler initialisiert")
+        except Exception as e:
+            self.logger.error(f"❌ Family-Stats-Handler Fehler: {e}", exc_info=True)
+            self.family_stats_handler = None
+
+        # 4c. Family-Chat-Handler (Phase F3, Family Hub)
+        try:
+            self.family_chat_handler = FamilyChatHandler()
+            self.logger.info("✅ FamilyChatHandler initialisiert")
+        except Exception as e:
+            self.logger.error(f"❌ Family-Chat-Handler Fehler: {e}", exc_info=True)
+            self.family_chat_handler = None
+
+        # 4d. Family-Challenge-Handler (Phase F4, Family Hub) - die
+        # tägliche Auslösung/Verteilung übernimmt FamilyChallengeScheduler
+        # (handlers/family_challenge_scheduler.py), von bot.py konstruiert
+        # (braucht die echte Bot-Instanz, die RichMenuHandler nicht hält).
+        try:
+            self.family_challenge_handler = FamilyChallengeHandler()
+            self.logger.info("✅ FamilyChallengeHandler initialisiert")
+        except Exception as e:
+            self.logger.error(f"❌ Family-Challenge-Handler Fehler: {e}", exc_info=True)
+            self.family_challenge_handler = None
+
         # 5. Navidrome-Handler
         try:
             self.navidrome_handler = NavidromeMenuHandler(
@@ -394,6 +430,12 @@ class RichMenuHandler:
             self.menu_system.set_logger_handler(self.logger_handler)
         if self.stats_handler:
             self.menu_system.set_stats_handler(self.stats_handler)
+        if self.family_stats_handler:
+            self.menu_system.set_family_stats_handler(self.family_stats_handler)
+        if self.family_chat_handler:
+            self.menu_system.set_family_chat_handler(self.family_chat_handler)
+        if self.family_challenge_handler:
+            self.menu_system.set_family_challenge_handler(self.family_challenge_handler)
         if self.navidrome_handler:
             self.menu_system.set_navidrome_handler(self.navidrome_handler)
         if self.user_mgmt_handler:
@@ -451,6 +493,9 @@ class RichMenuHandler:
             ("test_handler", self.test_handler),
             ("logger_handler", self.logger_handler),
             ("stats_handler", self.stats_handler),
+            ("family_stats_handler", self.family_stats_handler),
+            ("family_chat_handler", self.family_chat_handler),
+            ("family_challenge_handler", self.family_challenge_handler),
             ("navidrome_handler", self.navidrome_handler),
             ("user_mgmt_handler", self.user_mgmt_handler),
             ("duplicate_handler", self.duplicate_handler),
@@ -1493,6 +1538,12 @@ class RichMenuHandler:
             context.user_data.clear()
             if user_id in self.user_states:
                 del self.user_states[user_id]
+            family_chat_handler = getattr(self, "family_chat_handler", None)
+            if family_chat_handler:
+                family_chat_handler.pending_message_senders.discard(user_id)
+            family_challenge_handler = getattr(self, "family_challenge_handler", None)
+            if family_challenge_handler:
+                family_challenge_handler.pending_answers.pop(user_id, None)
             await update.message.reply_text(
                 "❌ Vorgang abgebrochen.\n\nVerwende /menu, um das Menü zu öffnen."
             )
@@ -1508,6 +1559,22 @@ class RichMenuHandler:
                     )
                     if handled:
                         return
+
+        # Familien-Chat: wartet dieser User gerade auf seine Chat-Nachricht?
+        # (Phase F3, Family Hub - siehe FamilyChatHandler-Docstring zur
+        # bewussten Entscheidung gegen den generischen TextWorkflowDispatcher.)
+        family_chat_handler = getattr(self, "family_chat_handler", None)
+        if family_chat_handler and user_id in family_chat_handler.pending_message_senders:
+            await family_chat_handler.process_pending_message(update, context, text)
+            return
+
+        # Familien-Challenge: wartet dieser User gerade auf seine Antwort?
+        # (Phase F4, Family Hub - dasselbe Muster wie beim Familien-Chat
+        # oben, siehe FamilyChallengeHandler-Docstring.)
+        family_challenge_handler = getattr(self, "family_challenge_handler", None)
+        if family_challenge_handler and user_id in family_challenge_handler.pending_answers:
+            await family_challenge_handler.process_pending_answer(update, context, text)
+            return
 
         # Aktive Workflows prüfen
         handled = await self.workflow_dispatcher.try_dispatch(

@@ -267,6 +267,16 @@ class Config:
         return int(os.getenv("SESSION_TIMEOUT", "300"))
 
     @property
+    def FAMILY_CHALLENGE_TIME(self) -> str:
+        """
+        Lokale Bot-Zeit (HH:MM), zu der FamilyChallengeScheduler
+        (handlers/family_challenge_scheduler.py) täglich die Familien-
+        Challenge erzeugt/verteilt (Phase F4, Family Hub). Bewusst
+        konfigurierbar statt hart im Code, siehe Master-Prompt.
+        """
+        return os.getenv("FAMILY_CHALLENGE_TIME", "20:00")
+
+    @property
     def MAX_CONCURRENT_SESSIONS(self) -> int:
         return int(os.getenv("MAX_CONCURRENT_SESSIONS", "100"))
 
