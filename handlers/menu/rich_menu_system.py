@@ -15,9 +15,7 @@ CHANGELOG:
           • _is_admin_check()            (interne Hilfsmethode)
 """
 
-from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Callable, Any, Set
-from enum import Enum
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
@@ -28,6 +26,14 @@ from telegram.ext import ContextTypes, CallbackQueryHandler
 from logger import get_module_logger
 from handlers.menu.maintenance_gate import is_blocked_by_maintenance
 from handlers.menu.activity_tracking import record_activity
+from handlers.menu.models import (
+    AccessLevel,
+    MenuItem,
+    MenuSession,
+    MenuState,
+)
+from handlers.menu.permissions import is_admin_or_owner, get_user_access_level
+from handlers.menu.session import SessionManager
 
 
 def _dl_progress_bar(current: int, total: int, width: int = 10) -> str:
@@ -38,111 +44,6 @@ def _dl_progress_bar(current: int, total: int, width: int = 10) -> str:
     filled = round(width * current / max(total, 1))
     bar = "█" * filled + "░" * (width - filled)
     return f"{bar} {current}/{total}"
-
-
-class MenuState(Enum):
-    """Menü-Zustände für State Machine"""
-
-    IDLE = "idle"
-    MAIN_MENU = "main_menu"
-    DOWNLOAD_MENU = "download_menu"
-    STATS_MENU = "stats_menu"
-    ADMIN_MENU = "admin_menu"
-    SETTINGS_MENU = "settings_menu"
-    LOGGER_MENU = "logger_menu"
-    PROCESSING = "processing"
-    WAITING_INPUT = "waiting_input"
-    ERROR = "error"
-
-
-class AccessLevel(Enum):
-    """Zugriffsebenen für Menüpunkte"""
-
-    PUBLIC = 0
-    USER = 1
-    MODERATOR = 2
-    ADMIN = 3
-    OWNER = 4
-
-
-@dataclass
-class MenuItem:
-    """Einzelner Menüpunkt mit allen Eigenschaften"""
-
-    id: str
-    title: str
-    emoji: str = "📋"
-    callback_data: Optional[str] = None
-    handler: Optional[Callable] = None
-    children: List["MenuItem"] = field(default_factory=list)
-    parent: Optional["MenuItem"] = None
-    access_level: AccessLevel = AccessLevel.USER
-    description: Optional[str] = None
-    is_active: bool = True
-    is_action: bool = False
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self):
-        """Automatische Callback-Data Generierung"""
-        if not self.callback_data:
-            self.callback_data = f"menu:{self.id}"
-
-    def has_children(self) -> bool:
-        """Prüft ob Menüpunkt Untermenüs hat"""
-        return len(self.children) > 0
-
-    def is_accessible(self, user_level: AccessLevel) -> bool:
-        """Prüft Zugriffsberechtigung"""
-        return user_level.value >= self.access_level.value
-
-    def add_child(self, child: "MenuItem") -> None:
-        """Fügt Untermenü hinzu"""
-        child.parent = self
-        self.children.append(child)
-
-    def get_breadcrumb(self) -> List[str]:
-        """Erstellt Brotkrumen-Navigation"""
-        path = []
-        current = self
-        while current:
-            path.insert(0, current.title)
-            current = current.parent
-        return path
-
-
-@dataclass
-class MenuSession:
-    """Benutzer-Session für Menü-Interaktionen"""
-
-    user_id: int
-    current_menu: Optional[MenuItem] = None
-    state: MenuState = MenuState.IDLE
-    history: List[str] = field(default_factory=list)
-    data: Dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=datetime.now)
-    last_activity: datetime = field(default_factory=datetime.now)
-    message_id: Optional[int] = None
-
-    def is_expired(self, timeout: int = 300) -> bool:
-        """Prüft ob Session abgelaufen ist"""
-        return (datetime.now() - self.last_activity).seconds > timeout
-
-    def update_activity(self) -> None:
-        """Aktualisiert letzte Aktivität"""
-        self.last_activity = datetime.now()
-
-    def navigate_to(self, menu_item: MenuItem) -> None:
-        """Navigiert zu neuem Menüpunkt"""
-        if self.current_menu:
-            self.history.append(self.current_menu.id)
-        self.current_menu = menu_item
-        self.update_activity()
-
-    def go_back(self) -> Optional[str]:
-        """Navigiert zurück"""
-        if self.history:
-            return self.history.pop()
-        return None
 
 
 class _RetryMessageAdapter:
@@ -188,7 +89,6 @@ class RichMenuSystem:
         # Core Komponenten
         self.root_menu: Optional[MenuItem] = None
         self.menu_registry: Dict[str, MenuItem] = {}
-        self.sessions: Dict[int, MenuSession] = {}
         self.handlers: Dict[str, Callable] = {}
 
         # Handler-Referenzen
@@ -246,9 +146,13 @@ class RichMenuSystem:
         # injiziert - siehe set_repair_handler().
         self.repair_handler = None
 
-        # Konfiguration
-        self.session_timeout = getattr(config, "SESSION_TIMEOUT", 300)
-        self.max_sessions = getattr(config, "MAX_CONCURRENT_SESSIONS", 100)
+        # Konfiguration / Session-Verwaltung (ARCH-021/P-4: ausgelagert nach
+        # handlers/menu/session.py::SessionManager)
+        self.session_manager = SessionManager(
+            session_timeout=getattr(config, "SESSION_TIMEOUT", 300),
+            max_sessions=getattr(config, "MAX_CONCURRENT_SESSIONS", 100),
+            logger=self.logger,
+        )
 
         self.logger.info("🎯 RichMenuSystem initialisiert")
 
@@ -1807,21 +1711,18 @@ class RichMenuSystem:
 
     # ====== SESSION MANAGEMENT ======
 
+    @property
+    def sessions(self) -> Dict[int, MenuSession]:
+        """Kompatibilitäts-Property (ARCH-021/P-4): gibt das Live-Dict des
+        SessionManager zurück (keine Kopie) - bestehende direkte Zugriffe
+        wie menu_system.sessions[user_id]/user_id in menu_system.sessions/
+        del self.sessions[user_id] funktionieren dadurch unverändert."""
+        return self.session_manager.sessions
+
     def get_session(self, user_id: int) -> MenuSession:
-        """Holt oder erstellt User-Session"""
-        if user_id not in self.sessions:
-            self.sessions[user_id] = MenuSession(user_id=user_id)
-            self.logger.debug(f"📝 Neue Session für User {user_id}")
-
-        session = self.sessions[user_id]
-
-        if session.is_expired(self.session_timeout):
-            self.logger.info(f"⏰ Session für User {user_id} abgelaufen, erneuere...")
-            self.sessions[user_id] = MenuSession(user_id=user_id)
-            session = self.sessions[user_id]
-
-        session.update_activity()
-        return session
+        """Holt oder erstellt User-Session (ARCH-021/P-4: delegiert an
+        session.SessionManager.get_session())."""
+        return self.session_manager.get_session(user_id)
 
     def render_menu(
         self, menu_item: MenuItem, user_level: AccessLevel = AccessLevel.USER
@@ -2630,36 +2531,18 @@ class RichMenuSystem:
         return self.menu_registry.get(menu_id)
 
     def _get_user_access_level(self, user_id: int) -> AccessLevel:
-        """Ermittelt Zugriffsebene des Users"""
-        if user_id == self.config.OWNER_USER_ID:
-            return AccessLevel.OWNER
-
-        if self.user_mgmt_handler and hasattr(
-            self.user_mgmt_handler, "user_data_cache"
-        ):
-            user_data = self.user_mgmt_handler.user_data_cache.get(str(user_id))
-            if user_data:
-                role_str = user_data.get("role", "user").upper()
-                if role_str == "ADMIN":
-                    return AccessLevel.ADMIN
-                if role_str == "MODERATOR":
-                    return AccessLevel.MODERATOR
-                if role_str == "USER":
-                    return AccessLevel.USER
-
-        if user_id in getattr(self.config, "ADMIN_USER_IDS", []):
-            return AccessLevel.ADMIN
-
-        return AccessLevel.USER
+        """Ermittelt Zugriffsebene des Users (ARCH-021/P-3: delegiert an
+        permissions.get_user_access_level())."""
+        return get_user_access_level(user_id, self.config, self.user_mgmt_handler)
 
     def _is_admin_check(self, user_id: int) -> bool:
         """
-        Interne Admin-Prüfung (wiederverwendbar).
-        Gibt True zurück für Owner und alle konfigurierten Admins.
+        Interne Admin-Prüfung (wiederverwendbar). Gibt True zurück für
+        Owner und alle konfigurierten Admins.
+        ARCH-021/P-3: delegiert an permissions.is_admin_or_owner(),
+        gemeinsam mit RichMenuHandler._is_admin()).
         """
-        if user_id == getattr(self.config, "OWNER_USER_ID", None):
-            return True
-        return user_id in getattr(self.config, "ADMIN_USER_IDS", [])
+        return is_admin_or_owner(user_id, self.config)
 
     def register_handler(self, menu_id: str, handler: Callable) -> None:
         """Registriert Handler für Menüpunkt"""
@@ -2685,20 +2568,9 @@ class RichMenuSystem:
         return True
 
     def cleanup_expired_sessions(self) -> int:
-        """Entfernt abgelaufene Sessions"""
-        expired = [
-            uid
-            for uid, session in self.sessions.items()
-            if session.is_expired(self.session_timeout)
-        ]
-
-        for uid in expired:
-            del self.sessions[uid]
-
-        if expired:
-            self.logger.info(f"🧹 {len(expired)} abgelaufene Sessions bereinigt")
-
-        return len(expired)
+        """Entfernt abgelaufene Sessions (ARCH-021/P-4: delegiert an
+        session.SessionManager.cleanup_expired_sessions())."""
+        return self.session_manager.cleanup_expired_sessions()
 
     # ====== DOWNLOAD-CONTROL-CENTER (2026-09-02, Nutzer-Vorgabe) ======
     #
