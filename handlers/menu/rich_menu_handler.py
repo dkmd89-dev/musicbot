@@ -32,6 +32,11 @@ from handlers.menu.models import (
     MenuState,
 )
 from handlers.menu.permissions import is_admin_or_owner
+from handlers.menu.actions import stats as stats_actions
+from handlers.menu.actions import admin_diagnostics as admin_diagnostics_actions
+from handlers.menu.actions import usermgmt as usermgmt_actions
+from handlers.menu.actions import admin_operations as admin_operations_actions
+from handlers.menu.actions import download as download_actions
 from klassen.download_handler import DownloadHandler
 from services.downloader.active_downloads import ActiveDownloadRegistry
 from services.downloader.download_history import DownloadHistoryStore
@@ -64,9 +69,6 @@ from handlers.enhanced_error_handler import (
     ErrorHandlerAdminInterface,
 )
 from config import Config
-from utils.navidrome_scan_trigger import NavidromeScanTrigger, ScanTimeoutError
-from emoji import EMOJI
-from helfer.markdown_helfer import escape_md_v2
 from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
@@ -753,219 +755,87 @@ class RichMenuHandler:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """Wrapper für Single-Download (YouTube)."""
-        query = update.callback_query
-        user_id = update.effective_user.id
-        await query.answer()
-
-        await query.edit_message_text(
-            "🎵 **Einzelner Track Download**\n\n"
-            "Sende mir einen YouTube-Link.\n\n"
-            "YouTube-Beispiel:\n"
-            "`https://youtube.com/watch?v=...`"
+        await download_actions.handle_download_single_wrapper(
+            update, context, self.user_states, self.logger
         )
-        self.user_states[user_id] = "awaiting_single_url"
-        self.logger.info(f"📝 User {user_id} wartet auf Single-URL")
 
     async def _handle_download_playlist_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """Wrapper für Playlist-Download (YouTube)."""
-        query = update.callback_query
-        user_id = update.effective_user.id
-        await query.answer()
-
-        await query.edit_message_text(
-            "📋 **Playlist Download**\n\n"
-            "Sende mir einen YouTube-Playlist-Link."
+        await download_actions.handle_download_playlist_wrapper(
+            update, context, self.user_states, self.logger
         )
-        self.user_states[user_id] = "awaiting_playlist_url"
-        self.logger.info(f"📝 User {user_id} wartet auf Playlist-URL")
 
     # ====== STATISTIK WRAPPER ======
 
     async def _handle_monthly_stats_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        query = update.callback_query
-        await query.answer()
-        try:
-            if self.stats_handler and hasattr(
-                self.stats_handler, "handle_month_review"
-            ):
-                await self.stats_handler.handle_month_review(update, context)
-            else:
-                await query.edit_message_text(
-                    "📅 **Monatsrückblick**\n\nDiese Funktion wird gerade entwickelt... 🚀"
-                )
-        except Exception as e:
-            self.logger.error(f"❌ Fehler bei Monatsstatistik: {e}")
-            await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
+        await stats_actions.handle_monthly_stats_wrapper(
+            update, context, self.stats_handler, self.logger
+        )
 
     async def _handle_yearly_stats_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        query = update.callback_query
-        await query.answer()
-        try:
-            if self.stats_handler and hasattr(self.stats_handler, "handle_year_review"):
-                await self.stats_handler.handle_year_review(update, context)
-            else:
-                await query.edit_message_text(
-                    "🎆 **Jahresrückblick**\n\nDiese Funktion wird gerade entwickelt... 🚀"
-                )
-        except Exception as e:
-            self.logger.error(f"❌ Fehler bei Jahresstatistik: {e}")
-            await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
+        await stats_actions.handle_yearly_stats_wrapper(
+            update, context, self.stats_handler, self.logger
+        )
 
     async def _handle_top_songs_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        query = update.callback_query
-        await query.answer(f"Lade Top Songs ...")
-        try:
-            if self.stats_handler and hasattr(self.stats_handler, "handle_top_songs"):
-                await self.stats_handler.handle_top_songs(
-                    update, context, period="month"
-                )
-            else:
-                await query.edit_message_text(
-                    "🎵 **Top Songs**\n\nStatistik-Handler nicht gefunden."
-                )
-        except Exception as e:
-            self.logger.error(f"❌ Fehler bei Top Songs Statistik: {e}")
-            await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
+        await stats_actions.handle_top_songs_wrapper(
+            update, context, self.stats_handler, self.logger
+        )
 
     async def _handle_top_artists_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        query = update.callback_query
-        await query.answer("Lade Top Künstler ...")
-        try:
-            if self.stats_handler and hasattr(self.stats_handler, "handle_top_artists"):
-                await self.stats_handler.handle_top_artists(
-                    update, context, period="month"
-                )
-            else:
-                await query.edit_message_text(
-                    "🎤 **Top Künstler**\n\nStatistik-Handler nicht gefunden."
-                )
-        except Exception as e:
-            self.logger.error(f"❌ Fehler bei Top Künstler Statistik: {e}")
-            await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
+        await stats_actions.handle_top_artists_wrapper(
+            update, context, self.stats_handler, self.logger
+        )
 
     async def _handle_timeline_stats_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        query = update.callback_query
-        await query.answer("Lade Music Timeline ...")
-        try:
-            if self.stats_handler and hasattr(
-                self.stats_handler, "handle_music_timeline"
-            ):
-                await self.stats_handler.handle_music_timeline(update, context)
-            else:
-                await query.edit_message_text(
-                    "📅 **Music Timeline**\n\nStatistik-Handler nicht gefunden."
-                )
-        except Exception as e:
-            self.logger.error(f"❌ Fehler bei Music Timeline: {e}")
-            await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
+        await stats_actions.handle_timeline_stats_wrapper(
+            update, context, self.stats_handler, self.logger
+        )
 
     # ====== ADMIN WRAPPER ======
 
     async def _handle_user_management_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        query = update.callback_query
-        user_id = update.effective_user.id
-        if not self._is_admin(user_id):
-            await query.answer("⛔ Keine Berechtigung")
-            return
-        await query.answer()
-        try:
-            if self.user_mgmt_handler:
-                await self.user_mgmt_handler.show_user_management_menu(
-                    update, context, page=0
-                )
-            else:
-                await query.edit_message_text(
-                    "⚠️ UserManagement-Handler nicht verfügbar."
-                )
-        except Exception as e:
-            self.logger.error(f"❌ Fehler in Benutzerverwaltung: {e}", exc_info=True)
-            if self.error_handler:
-                await self.error_handler.handle_callback_error(
-                    update, context, "user_management", e
-                )
-            else:
-                await query.edit_message_text(
-                    "❌ Fehler beim Laden der Benutzerverwaltung"
-                )
+        await usermgmt_actions.handle_user_management_wrapper(
+            update,
+            context,
+            self.config,
+            getattr(self, "user_mgmt_handler", None),
+            getattr(self, "error_handler", None),
+            self.logger,
+        )
 
     async def _handle_view_logs(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        query = update.callback_query
-        user_id = update.effective_user.id
-        if not self._is_admin(user_id):
-            await query.answer("⛔ Keine Berechtigung")
-            return
-        await query.answer()
-        try:
-            log_file = Path(self.config.LOG_FILE)
-            if log_file.exists():
-                with open(log_file, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
-                    last_lines = lines[-20:]
-                log_text = "".join(last_lines)
-                await query.edit_message_text(
-                    f"📄 **System-Logs** (letzte 20 Zeilen)\n\n```\n{log_text[:3000]}\n```",
-                    parse_mode="Markdown",
-                )
-            else:
-                await query.edit_message_text(
-                    "📄 **System-Logs**\n\nLog-Datei nicht gefunden."
-                )
-        except Exception as e:
-            self.logger.error(f"❌ Fehler beim Laden der Logs: {e}")
-            await query.edit_message_text("❌ Fehler beim Laden der Logs")
+        await admin_diagnostics_actions.handle_view_logs(
+            update, context, self.config, self.logger
+        )
 
     async def _handle_navidrome_scan(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """
-        ARCH-009 Phase 9 (Umsetzung A): ruft NavidromeScanTrigger.run_scan()
-        direkt auf statt über die inzwischen entfernte
-        NavidromeAPI.execute_scan()-Bridge (api/navidrome_api.py, war seit
-        ARCH-009 Phase 5 nur noch ein reiner Pass-Through ohne eigene
-        Telegram-Formatierung). Die MarkdownV2-Nachrichtenbildung (Erfolg,
-        Fehlschlag, Timeout, generische Exception) bleibt unverändert hier -
-        Text/Emojis/Escaping 1:1 übernommen, siehe
-        docs/archive/arch/MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md
-        und docs/archive/arch/MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md.
+        ARCH-009 Phase 9 (Umsetzung A) - siehe
+        handlers/menu/actions/admin_operations.py::handle_navidrome_scan()
+        für den vollständigen Docstring/die Begründung.
         """
-        query = update.callback_query
-        user_id = update.effective_user.id
-        if not self._is_admin(user_id):
-            await query.answer("⛔ Keine Berechtigung")
-            return
-        await query.answer("🔄 Starte Scan ...")
-        try:
-            try:
-                result = await NavidromeScanTrigger.run_scan()
-                if result.success:
-                    message = f"{EMOJI['scan']} Scan erfolgreich: \n```{escape_md_v2(result.stdout)}```"
-                else:
-                    message = f"{EMOJI['error']} Scan fehlgeschlagen: \n```{escape_md_v2(result.stderr)}```"
-            except ScanTimeoutError as e:
-                message = f"{EMOJI['warning']} Scan dauert länger als {e.timeout_seconds} Sekunden \\– bitte im Log prüfen\\."
-            await query.edit_message_text(message, parse_mode="MarkdownV2")
-        except Exception as e:
-            self.logger.error(f"❌ Navidrome-Scan-Fehler: {e}", exc_info=True)
-            await query.edit_message_text(
-                f"{EMOJI['error']} Unerwarteter Fehler: `{escape_md_v2(str(e))}`",
-                parse_mode="MarkdownV2",
-            )
+        await admin_operations_actions.handle_navidrome_scan(
+            update, context, self.config, self.logger
+        )
 
     # ====== HILFS-METHODEN ======
 
@@ -1045,25 +915,15 @@ class RichMenuHandler:
             Fertig konfigurierter DownloadHandler oder None bei fehlenden
             Abhängigkeiten.
         """
-        if not self.duplicate_detector:
-            self.logger.error(
-                "❌ DuplicateDetector nicht initialisiert – Download nicht möglich."
-            )
-            return None
-        if not self.metadata_processor:
-            self.logger.error(
-                "❌ MetadataProcessor nicht initialisiert – Download nicht möglich."
-            )
-            return None
-
-        return DownloadHandler(
-            update=update,
-            config=self.config,
-            duplicate_detector=self.duplicate_detector,
-            metadata_processor=self.metadata_processor,
-            logger_factory=self.logger_factory,
-            active_downloads=self.active_downloads,
-            download_history=self.download_history,
+        return download_actions.create_download_handler(
+            update,
+            self.config,
+            self.duplicate_detector,
+            self.metadata_processor,
+            self.logger_factory,
+            self.active_downloads,
+            self.download_history,
+            self.logger,
         )
 
     # ====== COMMAND HANDLER ======
@@ -1415,20 +1275,9 @@ class RichMenuHandler:
         ):
             return
         record_activity(update, getattr(self, "status_handler", None), "message:url")
-        user_id = update.effective_user.id
-        text = update.message.text
-        state = self.user_states.get(user_id)
-
-        if not state:
-            # Keine aktive Menü-Auswahl – URL direkt verarbeiten
-            await self._process_url(update, context, text)
-            return
-
-        if state in ["awaiting_single_url", "awaiting_playlist_url"]:
-            await self._process_url(update, context, text)
-            # State nach Verarbeitung aufräumen
-            if user_id in self.user_states:
-                del self.user_states[user_id]
+        await download_actions.handle_url_message(
+            update, context, self.user_states, self._process_url
+        )
 
     async def _process_url(
         self,
@@ -1437,66 +1286,20 @@ class RichMenuHandler:
         url: str,
     ) -> None:
         """
-        Erstellt einen DownloadHandler und startet den Download-Prozess.
-
-        Args:
-            update: Telegram-Update-Objekt
-            context: Telegram-Kontext
-            url: Die zu verarbeitende URL
-
-        Live-Fund 2026-09-02 (Nutzer-Report: "sobald Download läuft öffnet
-        sich das Menü nicht"): die Telegram-`Application` läuft ohne
-        `concurrent_updates=True` (siehe bot.py) - PTB holt das NÄCHSTE
-        Update aus der Warteschlange erst, NACHDEM der Handler für das
-        aktuelle Update komplett zurückgekehrt ist. Ein direktes
-        `await handler.handle_url(...)` hier blockierte dadurch die
-        Verarbeitung JEDES weiteren Updates (inkl. Menü-Klicks wie "🔄
-        Aktive Downloads"/"❌ Abbrechen") für die GESAMTE Downloaddauer -
-        bestätigt über einen live beobachteten "Query is too old"-
-        BadRequest für einen während eines laufenden Downloads geklickten
-        Button, der erst NACH Downloadende (und damit zu spät für
-        Telegrams Callback-Query-Gültigkeitsfenster) verarbeitet wurde.
-
-        Fix: der eigentliche Download läuft als eigenständiger
-        Hintergrund-Task (asyncio.create_task) - _process_url() selbst
-        kehrt sofort zurück, PTB kann direkt das nächste Update
-        verarbeiten. Bewusst NICHT die globale `concurrent_updates`-
-        Einstellung geändert (deutlich größerer Blast-Radius: beträfe
-        ALLE Handler, nicht nur Downloads) - dieser gezielte Task deckt
-        genau den gemeldeten Fall ab.
-
-        handle_youtube_links() (aufgerufen über handler.handle_url())
-        fängt eigene Fehler bereits breit ab und meldet sie dem Nutzer
-        per Telegram - der add_done_callback()-Handler unten ist nur ein
-        Sicherheitsnetz für wirklich unerwartete, durchrutschende
-        Ausnahmen (verhindert eine stumme "Task exception was never
-        retrieved"-Warnung ohne jedes Logging).
+        Erstellt einen DownloadHandler und startet den Download-Prozess -
+        siehe handlers/menu/actions/download.py::process_url() für den
+        vollständigen Docstring/die Begründung (Hintergrund-Task wegen
+        fehlendem concurrent_updates=True, siehe dort).
         """
-        self.logger.info(
-            f"🔗 Verarbeite 📺 YouTube-URL von User {update.effective_user.id}: {url}"
+        await download_actions.process_url(
+            update, context, url, self._create_download_handler, self.logger
         )
-
-        handler = self._create_download_handler(update)
-        if not handler:
-            await update.message.reply_text(
-                "❌ Download-Dienst nicht verfügbar. Bitte versuche es später erneut."
-            )
-            return
-
-        task = asyncio.create_task(handler.handle_url(update, context))
-        task.add_done_callback(self._log_background_download_task_exception)
 
     def _log_background_download_task_exception(self, task: "asyncio.Task") -> None:
         """add_done_callback()-Sicherheitsnetz für _process_url()'s
-        Hintergrund-Download-Task - siehe dortigen Docstring."""
-        if task.cancelled():
-            return
-        exc = task.exception()
-        if exc:
-            self.logger.error(
-                f"💥 Unerwarteter Fehler im Hintergrund-Download-Task: {exc}",
-                exc_info=exc,
-            )
+        Hintergrund-Download-Task - siehe
+        handlers/menu/actions/download.py::_log_background_download_task_exception()."""
+        download_actions._log_background_download_task_exception(task, self.logger)
 
     # Alias für Rückwärtskompatibilität (wird von älterem Code ggf. noch aufgerufen)
     async def _initiate_download(

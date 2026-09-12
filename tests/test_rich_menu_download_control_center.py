@@ -16,7 +16,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from handlers.menu.rich_menu_system import RichMenuSystem, _dl_progress_bar
+from handlers.menu.rich_menu_system import RichMenuSystem
+from handlers.menu.actions.download import _dl_progress_bar
 from services.downloader.active_downloads import ActiveDownloadRegistry
 
 

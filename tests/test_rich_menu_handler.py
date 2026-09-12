@@ -225,7 +225,7 @@ class TestCreateDownloadHandler:
 
         update = make_update(111)
         with patch(
-            "handlers.menu.rich_menu_handler.DownloadHandler"
+            "handlers.menu.actions.download.DownloadHandler"
         ) as mock_download_handler_cls:
             handler._create_download_handler(update)
 
@@ -243,7 +243,7 @@ class TestCreateDownloadHandler:
 
         update = make_update(111)
         with patch(
-            "handlers.menu.rich_menu_handler.DownloadHandler"
+            "handlers.menu.actions.download.DownloadHandler"
         ) as mock_download_handler_cls:
             handler._create_download_handler(update)
 
@@ -423,7 +423,7 @@ class TestHandleNavidromeScan:
         context = make_context()
 
         with patch(
-            "handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan",
+            "handlers.menu.actions.admin_operations.NavidromeScanTrigger.run_scan",
             new=AsyncMock(
                 return_value=ScanRunResult(
                     success=True, returncode=0, stdout="Scan complete", stderr=""
@@ -444,7 +444,7 @@ class TestHandleNavidromeScan:
         context = make_context()
 
         with patch(
-            "handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan",
+            "handlers.menu.actions.admin_operations.NavidromeScanTrigger.run_scan",
             new=AsyncMock(
                 return_value=ScanRunResult(
                     success=False, returncode=1, stdout="", stderr="boom"
@@ -464,7 +464,7 @@ class TestHandleNavidromeScan:
         context = make_context()
 
         with patch(
-            "handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan",
+            "handlers.menu.actions.admin_operations.NavidromeScanTrigger.run_scan",
             new=AsyncMock(side_effect=ScanTimeoutError(45)),
         ):
             asyncio.run(handler._handle_navidrome_scan(update, context))
@@ -480,7 +480,7 @@ class TestHandleNavidromeScan:
         context = make_context()
 
         with patch(
-            "handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan",
+            "handlers.menu.actions.admin_operations.NavidromeScanTrigger.run_scan",
             new=AsyncMock(),
         ) as mock_scan:
             asyncio.run(handler._handle_navidrome_scan(update, context))
@@ -494,7 +494,7 @@ class TestHandleNavidromeScan:
         context = make_context()
 
         with patch(
-            "handlers.menu.rich_menu_handler.NavidromeScanTrigger.run_scan",
+            "handlers.menu.actions.admin_operations.NavidromeScanTrigger.run_scan",
             new=AsyncMock(side_effect=RuntimeError("boom")),
         ):
             asyncio.run(handler._handle_navidrome_scan(update, context))

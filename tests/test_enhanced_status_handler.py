@@ -189,10 +189,14 @@ class TestUnroutedStatusButtonsAreDocumented:
     }
 
     def test_known_unrouted_buttons_are_still_unrouted(self):
-        source = Path("handlers/menu/rich_menu_system.py").read_text(encoding="utf-8")
-        # Groben Ausschnitt der routing_map in _handle_status_callback holen
-        start = source.index("async def _handle_status_callback")
-        end = source.index("async def _handle_backup_callback")
+        # ARCH-024/P-2: die routing_map lebt jetzt in
+        # handlers/menu/actions/admin_diagnostics.py::handle_status_callback()
+        # (RichMenuSystem._handle_status_callback() ist nur noch ein
+        # dreizeiliger Delegator dorthin).
+        source = Path("handlers/menu/actions/admin_diagnostics.py").read_text(encoding="utf-8")
+        # Groben Ausschnitt der routing_map in handle_status_callback holen
+        start = source.index("async def handle_status_callback")
+        end = source.index("async def handle_status_menu")
         section = source[start:end]
 
         rendered = set(
