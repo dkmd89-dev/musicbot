@@ -25,7 +25,21 @@ Index ist ab sofort die einzige Stelle für den *aktuellen* Stand.
 
 **Baseline-Freeze:** 2026-09-02 (Baseline v8 — eingefrorener Schnappschuss,
 Tech-Debt-Tabelle dort unverändert, siehe z. B. `docs/archive/MusicBot_ENGINEERING_BASELINE_v8.md`). Aktuell eingefrorener Referenzpunkt: `docs/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze 2026-09-07); laufender Zwischenstand seit dem v9-Freeze: `docs/MusicBot_ENGINEERING_BASELINE_v10.md` (DRAFT — nur ARCH-Historie/Testzahlen, keine Findings; die stehen hier).
-**Aktueller Finding-Stand (dieses Dokument):** 2026-09-13 (zuletzt aktualisiert:
+**Aktueller Finding-Stand (dieses Dokument):** 2026-09-12 (zuletzt aktualisiert:
+TGPERM-001 CLOSED — Full-Project-Architecture-Audit vom 2026-09-12
+(`docs/audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md`) fand einen
+Telegram-Permission-Bypass: 7 Logger-Menüpunkte und die 3 Test-System-
+Menüpunkte trugen `access_level=AccessLevel.ADMIN`, liefen aber über den
+ungegateten generischen `menu:`-Fallback in `RichMenuSystem.handle_callback()`,
+weil ihr automatisch generiertes `callback_data` keinen der gegateten
+Präfixe traf — jeder Bot-Nutzer konnte dadurch u. a. das globale Log-Level
+ändern oder einen bis zu 900s-Testlauf auslösen. Noch am selben Tag
+behoben: die 7 Logger-Items routen jetzt über explizites `callback_data`
+in den bereits vorhandenen, gegateten `logger_`-Präfixpfad; die drei
+Test-System-Items erhielten einen eigenen `_is_admin()`-Check in
+`TestMenuHandler._execute_test_run()`. Neuer Registry-weiter Sweep-Test
+schützt gegen dieselbe Fehlerklasse bei zukünftigen Admin-Menüpunkten.
+Details siehe Tabelle unten. Davor:
 Family Hub (Phase F1–F5) umgesetzt — private Familienstruktur (explizit
 konfiguriert, keine erfundenen IDs), Familien-Statistik (wiederverwendet die
 bestehende Play-History-Infrastruktur unverändert), bot-interner Familien-Chat,
@@ -107,6 +121,7 @@ Library Repair Production Audit P1–P3 CLOSED, siehe
 
 | ID | Status | Prio | Kurzfassung | Quelle |
 |---|---|---|---|---|
+| TGPERM-001 (Telegram Permission-Bypass, Logger-/Test-System-Menü) | CLOSED (2026-09-12) | war P1 | Full-Project-Architecture-Audit vom 2026-09-12 fand: 7 Logger-MenuItems (`logger_main_menu` u. a., `handlers/menu/rich_menu_system.py`) sowie `test_unit`/`test_integration`/`test_performance` (`handlers/test_menu_handler.py`) tragen `access_level=AccessLevel.ADMIN`, aber ihr automatisch generiertes `callback_data` (`"menu:<id>"`) erreichte NICHT `_ADMIN_ONLY_PREFIXES` und wurde über den generischen `menu:`-Fallback in `RichMenuSystem.handle_callback()` ohne jede Berechtigungsprüfung an den jeweiligen Handler durchgereicht — jeder Bot-Nutzer konnte globales Log-Level ändern (hebelt den SEC-001-Schutz aus), Log-Dateien einsehen oder einen bis zu 900s-Testlauf auslösen. Der ursprüngliche SEC-003-Regressionstest (`tests/test_rich_menu_access_control.py`) testete dabei den literalen ID-String statt des real gesendeten `callback_data` und schlug deshalb nie an. Fix: die 7 Logger-Items erhalten jetzt explizites `callback_data="logger_<id>"` und routen damit über den bereits vorhandenen, gegateten `logger_`-Präfixpfad (`_handle_logger_callback()`s `routing_map` kannte dieselben IDs bereits); die dadurch obsoleten `_handle_logger_*`-Wrapper-Methoden wurden entfernt. Für die drei Test-System-Items (kein existierender gegateter Präfix) neuer `TestMenuHandler._is_admin()`-Check in `_execute_test_run()` (Defense-in-Depth-Muster wie `admin_users`/`admin_logs`/`admin_navidrome`). Neuer Registry-weiter Sweep-Test `TestPrivilegedMenuItemsAreGatedTGPERM001` verhindert dieselbe Fehlerklasse für zukünftige Admin-/Owner-Menüpunkte, statt nur die konkret gefundenen Items abzudecken. Pre-Fix-Diskriminierung via `git stash` bestätigt (3 neue Tests schlagen gegen den ungefixten Code fehl); thematische Suite (Rich-Menu/Logger/Test-Menu/User-Management/Navidrome/Family) 513/0 grün. | `docs/audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md` Abschnitt 5/6 |
 | — (Family Hub, Challenge-Typ „Rate den Song") | OPEN (DEFER) | P3 | Master-Prompt nennt „Rate den Song!" als Beispiel-Challenge; nicht umgesetzt — bräuchte eine Audio-/Lyrics-Snippet-Auslieferung über Telegram, kein bestehender Baustein dafür vorhanden. `FamilyChallengeService` unterstützt aktuell nur 3 Play-History-basierte Typen. | `docs/MusicBot_TELEGRAM_MENU_SYSTEM.md` Abschnitt 6.12 |
 | — (Family Hub, Challenge-Typ „Playlist für Stimmung erstellen") | OPEN (DEFER) | P3 | Master-Prompt-Beispiel „Erstelle eine Playlist mit 5 Songs für [Stimmung]" nicht umgesetzt — keine automatisch prüfbare korrekte Antwort, würde manuelle Bewertung erfordern. | `docs/MusicBot_TELEGRAM_MENU_SYSTEM.md` Abschnitt 6.12 |
 | F-01 (Artist Identity Resolution) | CLOSED (2026-09-08, Migration Phase B/D) | war P1 | Keine dedizierte Identity Resolution nach der Kandidatenwahl — `normalize()` war String-Normalizer + opportunistischer Override-Lookup ohne Signal. Behoben: neue Komponente `services/metadata/artist_identity_resolver.py` (`ArtistIdentity{canonical, source, known}`), in `EnhancedMetadataProcessor` Schritt 6b nach `determine_best_artist()` verdrahtet; `normalize()` seit Phase D reine String-Normalisierung. Priorität `artist_override > known_artist > auto_learned_alias > library_identity > musicbrainz_mbid > parser`. | `docs/audits/ARTIST_IDENTITY_RESOLUTION_MIGRATION_2026-09-08.md` |
