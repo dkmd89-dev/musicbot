@@ -165,6 +165,8 @@ class TestRecordInitialHandlerStatuses:
         handler.test_handler = Mock()
         handler.logger_handler = None  # simuliert fehlgeschlagene Konstruktion
         handler.stats_handler = Mock()
+        handler.family_stats_handler = Mock()
+        handler.family_chat_handler = None  # simuliert fehlgeschlagene Konstruktion
         handler.navidrome_handler = Mock()
         handler.user_mgmt_handler = Mock()
         handler.duplicate_handler = Mock()
@@ -182,13 +184,16 @@ class TestRecordInitialHandlerStatuses:
         }
         assert calls["error_handler"] == "active"
         assert calls["logger_handler"] == "error"
+        assert calls["family_stats_handler"] == "active"
+        assert calls["family_chat_handler"] == "error"
         assert calls["restart_handler"] == "error"
         assert calls["metadata_processor"] == "active"
         assert calls["reprocessing_handler"] == "active"
         assert calls["doctor_handler"] == "error"
         assert calls["review_handler"] == "error"  # nicht explizit gesetzt -> Default None
         assert calls["repair_handler"] == "error"  # nicht explizit gesetzt -> Default None
-        assert len(calls) == 14
+        assert calls["family_challenge_handler"] == "error"  # nicht explizit gesetzt -> Default None
+        assert len(calls) == 17
 
     def test_missing_status_handler_is_noop(self, tmp_path):
         handler = _make_handler(tmp_path)

@@ -54,7 +54,9 @@ für Blätter mit eigener Aktion statt reinem Untermenü-Rendering).
 
 Nur zur Orientierung — Detailverhalten der einzelnen Admin-/Statistik-/
 Navidrome-Bereiche ist nicht Gegenstand dieses Dokuments, da sie nicht in
-dieser Phase entstanden sind.
+dieser Phase entstanden sind. **Ausnahme: die drei Family-Hub-Zweige**
+(👨‍👩‍👧‍👦 Familien-Statistik, 💬 Familien-Chat, 🎯 Familien-Challenge) — siehe
+Abschnitt 6 für die vollständige Doku dieser Phase.
 
 **Admin-Menü-Reorg (UX/Navigation):** Administration wurde von 12
 gleichrangigen Einzelpunkten auf 5 Top-Level-Punkte (3 thematische
@@ -69,11 +71,26 @@ zusätzlich korrigiert.
 
 ```text
 Hauptmenü
-├── 📥 Downloads                    → siehe Abschnitt 3 (diese Phase)
+├── 📥 Downloads                    → siehe Abschnitt 3
 ├── 📊 Statistiken
 │   ├── Monatsrückblick / Jahresrückblick
 │   ├── Top Songs / Top Künstler
-│   └── Library Übersicht           (USER-Level, kein Admin-Gate)
+│   ├── Music Timeline
+│   ├── Library Übersicht           (USER-Level, kein Admin-Gate)
+│   └── 👨‍👩‍👧‍👦 Familien-Statistik    → siehe Abschnitt 6 (Family Hub, F2)
+│       ├── Top Songs Familie / Top Künstler Familie
+│       ├── Statistik pro Person
+│       ├── Musik-Champion
+│       ├── Hörzeiten
+│       └── Monatsentwicklung
+├── 💬 Familien-Chat                 → siehe Abschnitt 6 (Family Hub, F3)
+│   ├── Nachricht senden
+│   ├── Letzte Nachrichten
+│   └── Benachrichtigungen
+├── 🎯 Familien-Challenge            → siehe Abschnitt 6 (Family Hub, F4)
+│   ├── Heutige Challenge
+│   ├── Antworten
+│   └── Punktestand
 ├── ⚙️ Administration                (ADMIN-Level)
 │   ├── 🎵 Bibliothek & Navidrome
 │   │   ├── MusicBot Doctor (Health-Scan + SAFE_AUTOMATIC-Repair)
@@ -446,7 +463,310 @@ passed, 1 skipped, 0 Regressionen.
 
 ---
 
-## 6. Muster für künftige Menü-Erweiterungen
+## 6. Family Hub — Statistik, Chat & Tägliche Challenge (Phase F1–F5, 2026-09-12/13)
+
+### 6.1 Auftrag
+
+Nutzer-Vorgabe (Master-Prompt „Family Music Hub"): die bestehende
+MusicBot-Architektur zu einem privaten Familien-Musikhub erweitern —
+Familien-Gesamtstatistik/Statistik pro Person, ein bot-interner
+Familien-Chat, sowie eine tägliche Familien-Musik-Challenge. Explizite
+Vorgaben: **keine** zweite Statistik-Engine (bestehende
+`StatistikService`/`PlayHistoryRepository`/`StatisticsCalculator`
+wiederverwenden), **keine** erfundenen Telegram-IDs, **keine**
+automatische Familienzuordnung, Downloads und Plays bleiben
+konzeptionell getrennt.
+
+Phasenablauf: AUDIT → F1 Family Basis → F2 Family Statistics → F3 Family
+Chat → F4 Daily Challenges (+ Scheduler) → F5 Hardening. Jede Phase
+einzeln implementiert, gezielt + thematisch getestet, dann per
+Nutzer-Freigabe fortgesetzt.
+
+### 6.2 Architektur
+
+Neue, eigenständige Schicht `services/family/` (Konvention wie
+`services/duplicate/`/`services/library_health/`) — reine Fachlogik,
+keine Telegram-Objekte:
+
+```text
+Telegram-Update
+   ↓
+handlers/family_stats_handler.py       (F2, Präsentation)
+handlers/family_chat_handler.py        (F3, Präsentation)
+handlers/family_challenge_handler.py   (F4, Präsentation)
+handlers/family_challenge_scheduler.py (F4, täglicher Trigger + Broadcast)
+   ↓
+services/family/family_service.py           (F1 — Berechtigung/Membership)
+services/family/family_repository.py        (F1 — Persistenz Familienstruktur)
+services/family/family_stats_service.py     (F2 — Aggregation über PlayHistoryRepository)
+services/family/family_chat_service.py      (F3 — Fachlogik Chat)
+services/family/family_message_repository.py(F3 — Persistenz Nachrichten)
+services/family/family_challenge_service.py (F4 — Challenge-Auswahl/Auswertung)
+services/family/family_challenge_repository.py(F4 — Persistenz Challenges/Antworten)
+   ↓
+services/statistik/play_history_repository.py  (WIEDERVERWENDET, unverändert)
+services/statistik/statistics_calculator.py    (WIEDERVERWENDET, unverändert)
+```
+
+`StatisticsCalculator`/`StatistikService` (persönliche Statistik) wurden
+**nicht verändert** — `FamilyStatsService` liest dieselben
+Play-History-JSON-Dateien über eine eigene `PlayHistoryRepository`-Instanz
+(zustandslos, mehrere Instanzen sind unproblematisch) und aggregiert
+zusätzlich über mehrere Navidrome-User hinweg.
+
+### 6.3 Datenmodell
+
+Drei neue, lokale JSON-Dateien (wie `data/user_data.json` durch
+`.gitignore` von Git ausgenommen — Laufzeitdaten, keine Codeartefakte):
+
+```text
+data/family_data.json
+{
+  "<family_id>": {
+    "name": str,
+    "members": {
+      "<telegram_id>": {
+        "display_name": str,
+        "navidrome_user": str,
+        "active": bool,
+        "notifications": bool
+      }
+    }
+  }
+}
+
+data/family_messages.json
+{
+  "<family_id>": {
+    "next_id": int,
+    "messages": [
+      {"id": int, "family_id": str, "sender_user_id": str,
+       "sender_display_name": str, "message": str, "created_at": str}
+    ]
+  }
+}   # Historie pro Familie auf 500 Einträge gedeckelt
+
+data/family_challenges.json
+{
+  "<family_id>": {
+    "next_id": int,
+    "challenges": [
+      {"id": int, "family_id": str, "date": "YYYY-MM-DD", "type": str,
+       "question": str, "correct_answer": Optional[str], "created_at": str}
+    ]
+  }
+}
+
+data/family_challenge_answers.json
+{
+  "<family_id>": {
+    "answers": [
+      {"challenge_id": int, "user_id": str, "answer": str,
+       "points": int, "answered_at": str}
+    ]
+  }
+}
+```
+
+Alle vier Dateien: atomares Schreiben (write-tmp + `Path.replace()`),
+identisches Muster zu `UserManagementHandler._save_users()`/
+`MetadataCache.store()`. **Bewusst kein separates „Rolle"-Feld** im
+Family-Modell — die bestehende Rollen-/Berechtigungswahrheit bleibt
+`data/user_data.json`/`UserManagementHandler.ROLES`, um keine zweite,
+potenziell abweichende Quelle zu schaffen.
+
+`next_id` läuft **pro Familie unabhängig** (wie bei allen bestehenden
+Cache-Dateien mit fortlaufenden IDs) — Challenge-/Nachrichten-IDs
+kollidieren also normalerweise zwischen Familien (beide starten bei 1).
+Das ist unkritisch, weil jeder Lookup (`get_challenge_by_id`,
+`get_recent_messages`, …) strikt über die aufgelöste `family_id` skopiert
+ist — regressionsgetestet in `tests/test_family_challenge_service.py::
+test_member_cannot_answer_another_familys_colliding_challenge_id`.
+
+### 6.4 Berechtigungsmodell (Datenschutz)
+
+Serverseitige Zugriffsprüfung, identisch in allen drei Handlern:
+
+```text
+Telegram User ID → FamilyService.is_active_family_member()? → nein → Zugriff verweigert
+                                                              → ja  → FamilyService.get_family_id_for_telegram_user()
+                                                                      → Aggregation/Nachricht/Challenge NUR für diese family_id
+```
+
+`family_id` wird **niemals** aus Nutzereingaben/Callback-Daten
+übernommen — ausschließlich serverseitig aus der Telegram-ID aufgelöst
+(repoweit verifiziert, siehe F5-Audit). Ein normaler Bot-Benutzer ohne
+Family-Eintrag bekommt an jedem der drei Menüzweige ausschließlich eine
+Zugriffsverweigerung (`⛔ Nur für Familienmitglieder verfügbar.`).
+
+Aktuelle Familie „main" (Stand F1, `data/family_data.json`): die zwei
+bereits registrierten Telegram-Nutzer `dkmd` und `marina` — explizit vom
+Nutzer bestätigt, keine erfundenen IDs. Ein drittes Navidrome-Profil
+(„jamie") existiert in der Play-History, hat aber keinen Telegram-Account
+und ist deshalb bewusst **kein** Familienmitglied.
+
+### 6.5 F2 — Family Statistics
+
+`FamilyStatsService` aggregiert `PlayHistoryRepository.load()` über alle
+aktiven Mitglieder einer Familie:
+
+| Methode | Liefert |
+|---|---|
+| `generate_family_stats(family_id, period)` | Gesamt-Plays, Top-10-Artists/-Songs, Top-5-Alben, Plays pro Mitglied, `listening_seconds`/`listening_seconds_reliable` |
+| `get_champion(family_id, period)` | Mitglied mit den meisten Plays (`(telegram_id, display_name, plays)`) — **ausschließlich Plays, keine Downloads** |
+| `generate_family_timeline(family_id)` | Heute/Woche/Monat (kalenderbasiert wie `StatisticsCalculator`): Track-Count, Top-Artist, Top-Song, Plays pro Mitglied |
+| `generate_listening_times(family_id, period)` | Verteilung nach Tagesstunde/Wochentag (auf Play-Count, nicht Dauer — siehe unten) |
+| `generate_monthly_trend(family_id, months)` | Plays pro Kalendermonat, chronologisch |
+
+**Hörzeit-Einschränkung (bewusste Design-Entscheidung):** `duration` wird
+vom bestehenden `PlayHistoryPoller` unverändert aus Navidrome übernommen
+und ist in der realen Play-History praktisch immer `null`
+(clientabhängig). Jede Sekunden-Summe wird deshalb von einem
+`listening_seconds_reliable`-Flag begleitet; „Hörzeit pro Monat" wurde
+deshalb bewusst **nicht** umgesetzt (wäre irreführend). „Hörzeiten"
+(Stunde/Wochentag) basiert stattdessen auf Wiedergabe-**Zeitpunkten**,
+nicht auf Dauer.
+
+Menü: neuer Zweig „👨‍👩‍👧‍👦 Familien-Statistik" als zusätzliches Kind unter
+dem bestehenden `stats`-Menü (Geschwister der 6 bisherigen Punkte, die
+unverändert bleiben).
+
+### 6.6 F3 — Family Chat
+
+Bot-interner, privater Chat (kein Telegram-Nachbau) über
+`FamilyChatService`/`FamilyMessageRepository`. „📝 Nachricht senden" ist
+ein Zwei-Schritt-Ablauf (Klick → Freitext) über ein handler-eigenes
+`pending_message_senders`-Set (`FamilyChatHandler`) — bewusst **nicht**
+über den generischen `TextWorkflowDispatcher`
+(`handlers/menu/text_workflow_dispatcher.py`), dessen `WORKFLOW_METHODS`
+fest auf `user_mgmt_handler` verdrahtet ist. Stattdessen exakt dasselbe,
+bereits etablierte Muster wie `NavidromeMenuHandler.browse_states`.
+`RichMenuHandler.handle_text_message()` prüft dieses Set **vor** dem
+generischen Workflow-Dispatch; der bestehende `/cancel`-Block räumt es
+mit auf.
+
+Neue Nachricht wird an alle **anderen** aktiven Mitglieder mit
+aktivierten Notifications verteilt (`context.bot.send_message()`,
+Zustellfehler bei einzelnen Empfängern werden geloggt, nicht geworfen —
+kein Abbruch der übrigen Zustellung). „🔔 Benachrichtigungen" ist ein
+Toggle bei jedem Klick, persistiert über
+`FamilyRepository.update_member()`/`FamilyService.set_notifications()`
+(F1-Erweiterung).
+
+### 6.7 F4 — Daily Family Challenges + Scheduler
+
+`FamilyChallengeService` wählt **deterministisch** (`date.toordinal() %
+3`, kein `random.choice`) einen von 3 zuverlässig aus der Play-History
+berechenbaren Challenge-Typen:
+
+| Typ | Frage | Korrekte Antwort |
+|---|---|---|
+| `family_top_artist_today` | „Welcher Künstler wurde heute in der Familie am häufigsten gehört?" | family-weit, aus `FamilyStatsService`-Timeline |
+| `family_top_song_today` | „Welcher Song wurde heute in der Familie am häufigsten gehört?" | family-weit, aus `FamilyStatsService`-Timeline (additive Erweiterung: `top_song` je Periode) |
+| `own_top_song_today` | „Welches Lied hast DU heute am meisten gehört?" | **pro Nutzer verschieden** — live gegen die echte `StatisticsCalculator.generate_timeline_stats()` ausgewertet, kein gespeichertes `correct_answer` |
+
+`get_or_create_todays_challenge(family_id)` ist **idempotent pro Tag**
+(sowohl ein manueller Menü-Klick als auch der tägliche Scheduler rufen
+dieselbe Methode auf, ohne doppelte Challenges zu erzeugen). Eine
+Antwort pro (Challenge, Nutzer) — keine Mehrfachwertung
+(`FamilyChallengeRepository.has_answered()`).
+
+**Scheduler** (`handlers/family_challenge_scheduler.py`): täglich um
+`Config.FAMILY_CHALLENGE_TIME` (Default `20:00`, env-konfigurierbar).
+Kein neuer Scheduling-Mechanismus — exakt dasselbe `asyncio.create_task`
++ `while True`/`asyncio.sleep`-Muster wie das bestehende
+`PlayHistoryPoller` (Projekt nutzt kein python-telegram-bot-`JobQueue`
+und keinen APScheduler/cron). Konstruiert/gestartet in `bot.py`
+(`ExtendedBot.start_polling()`, Schritt 4b) statt in
+`RichMenuHandler.initialize()`, weil er die echte `Bot`-Instanz
+(`self.application.bot`) braucht. Broadcast **nur**, wenn die
+Tages-Challenge durch diesen Lauf tatsächlich neu erzeugt wurde (kein
+Doppel-Versand, falls ein Mitglied sie vorher schon manuell aufgerufen
+hat).
+
+Menü: neues Top-Level-Menü „🎯 Familien-Challenge" (Geschwister von
+„💬 Familien-Chat"), „✅ Antworten" nutzt dasselbe Pending-State-Muster
+wie F3 (`pending_answers: Dict[telegram_id, challenge_id]`).
+
+### 6.8 F5 — Hardening
+
+Audit-Ergebnis: die meisten Punkte aus der Hardening-Checkliste
+(Berechtigungen, Family Isolation, Notifications, Challenge-Duplikate,
+fremde Telegram-ID) waren durch F1–F4 bereits abgedeckt. Gezielt
+nachgezogen:
+
+- **Familienmitglieder ohne Plays**: charakterisiert, dass ein Mitglied
+  ohne Wiedergaben in `per_member` schlicht fehlt (kein `0`-Eintrag) —
+  kein Bug, aber dokumentationspflichtiges Verhalten für Aufrufer.
+- **Tagesgrenzen** („Zeitzonen/Tagesgrenzen"): Eintrag exakt um
+  Mitternacht zählt zu „heute", eine Mikrosekunde davor zu „gestern"
+  (identisch zu `StatisticsCalculator`); eine gestern erzeugte Challenge
+  blockiert nicht die heutige Neu-Erzeugung und bleibt selbst
+  unverändert. **Kein** neues Zeitzonen-Handling eingeführt — das
+  gesamte Projekt rechnet konsequent mit naivem, lokalem
+  `datetime.now()`, Family Hub charakterisiert nur dasselbe Verhalten.
+- **Isolations-Audit**: Grep-Durchlauf bestätigt, dass jede öffentliche
+  `handle_*`-Methode in allen drei Handlern `is_active_family_member()`
+  vor jedem Datenzugriff prüft, und `family_id` nie aus Nutzereingaben
+  stammt.
+
+### 6.9 Neue Config-Werte
+
+```text
+FAMILY_CHALLENGE_TIME=20:00   # optional, HH:MM lokale Bot-Zeit
+```
+
+### 6.10 Neue Callback-/Menü-IDs
+
+`family_stats` (+ `family_stats_top_songs`/`_top_artists`/`_member`/
+`_champion`/`_listening_times`/`_monthly_trend`), `family_chat` (+
+`family_chat_send`/`_recent`/`_notifications`), `family_challenge` (+
+`family_challenge_today`/`_answer`/`_leaderboard`) — alle als
+`MenuItem`-IDs mit automatisch generiertem `callback_data=f"menu:{id}"`
+(Standardmuster, kein neuer Callback-Präfix nötig).
+
+### 6.11 Tests
+
+| Datei | Tests |
+|---|---|
+| `tests/test_family_repository.py` | 14 (inkl. `update_member`) |
+| `tests/test_family_service.py` | 21 (inkl. `set_notifications`, Isolation) |
+| `tests/test_family_stats_service.py` | 18 (inkl. `top_song`) |
+| `tests/test_family_stats_handler.py` | 10 |
+| `tests/test_family_message_repository.py` | 11 |
+| `tests/test_family_chat_service.py` | 14 |
+| `tests/test_family_chat_handler.py` | 13 |
+| `tests/test_family_challenge_repository.py` | 16 |
+| `tests/test_family_challenge_service.py` | 25 (inkl. Cross-Family-ID-Kollision) |
+| `tests/test_family_challenge_handler.py` | 13 |
+| `tests/test_family_challenge_scheduler.py` | 10 |
+| `tests/test_family_hardening.py` | 9 (F5, Mitglieder ohne Plays + Tagesgrenzen) |
+
+Thematische Regressionsgruppe (F1–F5 + Statistik + User Management +
+Menü + `PlayHistoryPoller`-Muster): **366 passed, 0 Regressionen**. Volle
+Suite (Stand vor F4/F5, mit expliziter Nutzer-Freigabe ausgeführt):
+**3186 passed, 1 failed (vorbestehend/unabhängig,
+`test_artist_overrides_orphan_cleanup.py`), 1 skipped, 11 subtests
+passed**. Volle Suite nach F4/F5 steht beim Nutzer aus (§8.A).
+
+### 6.12 Offen / zurückgestellt
+
+Von den 5 im Master-Prompt genannten Challenge-Typ-Beispielen wurden
+bewusst nur 3 umgesetzt (siehe 6.7). Zurückgestellt, jeweils P3:
+
+- **„Rate den Song"** — bräuchte eine Audio-/Lyrics-Snippet-Auslieferung
+  über Telegram, kein bestehender Baustein dafür vorhanden.
+- **„Erstelle eine Playlist mit 5 Songs für [Stimmung]"** — keine
+  automatisch prüfbare korrekte Antwort, würde manuelle Bewertung
+  erfordern.
+
+Family Chat/Challenge sind aktuell nur für 2 Mitglieder (dkmd, marina)
+nutzbar — bei einer Erweiterung der Familie ist ausschließlich
+`data/family_data.json` zu pflegen (keine Codeänderung nötig).
+
+---
+
+## 7. Muster für künftige Menü-Erweiterungen
 
 Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
 
@@ -471,7 +791,7 @@ Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
 
 ---
 
-## 7. Verwandte Dokumente
+## 8. Verwandte Dokumente
 
 - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — Details zu allen vier
   live gefundenen Bugs dieser Phase sowie zum inzwischen geschlossenen
@@ -483,6 +803,10 @@ Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
 - [`docs/METADATA_REPROCESSING.md`](METADATA_REPROCESSING.md) — vollständige
   Doku des Reprocessing-Tools selbst (Sicherheitsmodell, CLI, Abschnitt 2a
   zum Subprozess-Aufrufmodell).
+- [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — die beiden zurückgestellten
+  Challenge-Typen aus Abschnitt 6.12 (Family Hub, F4).
+- [`docs/MusicBot_ENGINEERING_BASELINE_v10.md`](MusicBot_ENGINEERING_BASELINE_v10.md)
+  (DRAFT) — Family Hub (F1–F5) in „Recent Major Changes" (Abschnitt 3).
 
 ---
 

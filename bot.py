@@ -32,6 +32,7 @@ from services.downloader.download_artifact_cleanup import (
 
 # Import der RichMenuSystem Komponenten
 from handlers.menu.rich_menu_handler import RichMenuHandler
+from handlers.family_challenge_scheduler import FamilyChallengeScheduler
 
 # ====== ERROR HANDLER IMPORT ======
 from handlers.enhanced_error_handler import (
@@ -56,6 +57,11 @@ class ExtendedBot:
 
         self._cleanup_task = None
         self._shutdown_event = asyncio.Event()
+
+        # Family-Challenge-Scheduler (Phase F4, Family Hub): braucht die
+        # echte Bot-Instanz (self.application.bot), erst nach Application-
+        # Konstruktion verfügbar - siehe start_polling()/​_cleanup() unten.
+        self._family_challenge_scheduler = None
 
     def _setup_logger(self) -> EnhancedLogger:
         """Konfiguriert den erweiterten Logger"""
@@ -260,6 +266,32 @@ class ExtendedBot:
                     "⚠️ Statistik-Handler nicht verfügbar. History-Polling ist DEAKTIVIERT."
                 )
 
+            # 4b. Family-Challenge-Scheduler starten (Phase F4, Family Hub -
+            # braucht die echte Bot-Instanz, deshalb erst hier konstruierbar,
+            # nicht in RichMenuHandler.initialize()).
+            if (
+                self.rich_menu_handler
+                and self.rich_menu_handler.family_challenge_handler
+            ):
+                try:
+                    challenge_handler = self.rich_menu_handler.family_challenge_handler
+                    self._family_challenge_scheduler = FamilyChallengeScheduler(
+                        self.application.bot,
+                        family_service=challenge_handler.family_service,
+                        challenge_service=challenge_handler.challenge_service,
+                    )
+                    self._family_challenge_scheduler.start_polling()
+                    self.logger.info("🎯✅ Family-Challenge-Scheduler erfolgreich gestartet")
+                except Exception as e:
+                    self.logger.error(
+                        f"❌ Fehler beim Starten des Family-Challenge-Schedulers: {e}"
+                    )
+            else:
+                self.logger.warning(
+                    "⚠️ Family-Challenge-Handler nicht verfügbar. "
+                    "Tägliche Challenge-Verteilung ist DEAKTIVIERT."
+                )
+
             # 5. Updater starten (falls vorhanden)
             if self.application.updater:
                 await self.application.updater.start_polling(
@@ -339,6 +371,16 @@ class ExtendedBot:
                 self.logger.info("📊✅ Statistik-History-Polling gestoppt")
             except Exception as e:
                 self.logger.error(f"❌ Fehler beim Stoppen des Statistik-Pollings: {e}")
+
+        # Family-Challenge-Scheduler stoppen (Phase F4, Family Hub)
+        if self._family_challenge_scheduler:
+            try:
+                await self._family_challenge_scheduler.stop_polling()
+                self.logger.info("🎯✅ Family-Challenge-Scheduler gestoppt")
+            except Exception as e:
+                self.logger.error(
+                    f"❌ Fehler beim Stoppen des Family-Challenge-Schedulers: {e}"
+                )
 
         # ====== ERROR HANDLER CLEANUP ======
         if self.error_handler:
