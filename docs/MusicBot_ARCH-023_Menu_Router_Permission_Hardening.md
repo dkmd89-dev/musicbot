@@ -1,7 +1,8 @@
 # ARCH-023 — Menu-Router- und Permission-Architektur-Härtung
 
-**Status:** COMPLETE (P-1 bis P-7), Stand 2026-09-13. Noch **ungecommittet** —
-alle Code-/Teständerungen liegen im Working Tree, siehe Abschnitt „Commit-Status" unten.
+**Status:** COMPLETE (P-1 bis P-7). PR #204 gemergt (2026-09-13), siehe
+Abschnitt „Commit-Status" unten. Nachfolgearchitektur `ARCH-024`
+(Datei-Dekomposition) ebenfalls COMPLETE, siehe „Nächster Schritt".
 **Scope:** `RichMenuSystem.handle_callback()` (Router-Autorisierung), die
 fünf privilegierten Fach-Handler (`library_doctor_handler.py`,
 `library_health_review_handler.py`, `repair_musicbot_handler.py`,
@@ -170,11 +171,13 @@ Permissions-Charakterisierung + erradmin + maintenance_gate)
 
 ## Commit-Status
 
-Alle ARCH-023-Änderungen (P-1 bis P-7) liegen zum Zeitpunkt dieses
-Dokuments **ungecommittet** im Working Tree von `main` (Basis `2f9f34b`).
-Enthält u. a.: `bot.py`, `handlers/enhanced_error_handler.py`,
-`handlers/menu/maintenance_gate.py`, `handlers/menu/rich_menu_handler.py`,
-`handlers/menu/rich_menu_system.py`, `handlers/library_doctor_handler.py`,
+Alle ARCH-023-Änderungen (P-1 bis P-7) wurden über Branch
+`arch-023/menu-router-permission-hardening`, Commit `0a908aa`
+(+ Baseline-Nachzug `a346a7f`), als **PR #204 gemergt** (Merge-Commit
+`2e1bf18`, Basis `2f9f34b`). Enthält u. a.: `bot.py`,
+`handlers/enhanced_error_handler.py`, `handlers/menu/maintenance_gate.py`,
+`handlers/menu/rich_menu_handler.py`, `handlers/menu/rich_menu_system.py`,
+`handlers/library_doctor_handler.py`,
 `handlers/library_health_review_handler.py`,
 `handlers/repair_musicbot_handler.py`,
 `handlers/admin/bot_restart_handler.py`, `handlers/test_menu_handler.py`,
@@ -182,11 +185,13 @@ zugehörige Tests, `tests/test_menu_router_characterization.py` (neu).
 
 ---
 
-## Nächster Schritt
+## Nächster Schritt (Historie — Folgearchitektur)
 
 **`ARCH-024`** — Datei-Dekomposition von `handlers/menu/rich_menu_system.py`
-(weiterhin 3117 Zeilen)/`rich_menu_handler.py` (1608 Zeilen): Actions,
-Definitions, Rendering, optional Onboarding — der ursprünglich in
-`ARCH-021/P-1` als „P-6 Actions … P-9 Onboarding" skizzierte, bisher nicht
-begonnene Teil der Menü-Migration. Siehe
+(3117 → 1095 Zeilen)/`rich_menu_handler.py` (1608 → 1411 Zeilen): Actions
+(9 Domänen-Module unter `handlers/menu/actions/`), Definitions
+(`definitions.py`), Rendering (`rendering.py`); Onboarding-Extraktion nach
+Kriterien geprüft und als NOT WARRANTED eingestuft — der ursprünglich in
+`ARCH-021/P-1` als „P-6 Actions … P-9 Onboarding" skizzierte Teil der
+Menü-Migration. **Status: COMPLETE** (P-1–P-4; P-5 NOT WARRANTED). Siehe
 `docs/MusicBot_ARCH-024_Menu_File_Decomposition.md`.

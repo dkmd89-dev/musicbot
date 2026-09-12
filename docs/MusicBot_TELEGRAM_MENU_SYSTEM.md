@@ -48,6 +48,72 @@ Admin-Funktion).
 `MenuItem`-Baum (Titel, `id`, Kinder, optional `handler=`/`is_action=True`
 für Blätter mit eigener Aktion statt reinem Untermenü-Rendering).
 
+### 1a. Interne Modulstruktur von `handlers/menu/` (seit ARCH-024, COMPLETE)
+
+Die beiden Kerndateien sind seit `ARCH-024` (siehe
+[`MusicBot_ARCH-024_Menu_File_Decomposition.md`](MusicBot_ARCH-024_Menu_File_Decomposition.md))
+in kohäsive Module aufgeteilt — die obige Zwei-Ebenen-Routing-Beschreibung
+und der Menübaum in Abschnitt 2 bleiben davon unberührt (reine interne
+Umstrukturierung, keine Verhaltensänderung, alle bisherigen öffentlichen/
+privaten Methodennamen auf `RichMenuSystem`/`RichMenuHandler` bleiben als
+dünne Delegatoren erhalten):
+
+```text
+bot.py
+  ↓
+RichMenuHandler        Composition Root, Lifecycle, Onboarding (/start,
+                        /help), Download-Pipeline-Einstieg
+  (initialize(), get_telegram_handlers(), Setter, cleanup())
+  ↓
+RichMenuSystem          zentraler Callback-Router
+  (handle_callback(): _ADMIN_ONLY_PREFIXES-Gate + Menu-Fallback-Gate;
+   Composition-Setter; dünne Action-Delegatoren; Session-/Permission-
+   Delegates; menu:back/menu:close; Registry-Lookup)
+  ├── definitions.py    Menübaum-Aufbau (build_menu_tree()) + Registry
+  │                     (populate_registry()) — einzige Ausnahme von der
+  │                     Rückreferenz-Regel: nimmt die RichMenuSystem-
+  │                     Instanz entgegen, da MenuItem.handler-Bindungen
+  │                     auf deren dünne Delegatoren zeigen
+  ├── rendering.py       render_menu()/get_menu_text()/show_menu() —
+  │                     reine Darstellung, keine Permission-/Business-Logik
+  ├── actions/           9 fachliche Domänen-Module, zustandslose
+  │   ├── family.py           Funktionen mit explizit übergebenen
+  │   ├── duplicates.py       Abhängigkeiten (keine Rückreferenz auf
+  │   ├── navidrome.py        RichMenuSystem/RichMenuHandler):
+  │   ├── stats.py
+  │   ├── admin_diagnostics.py   (Logger/Status/ErrorAdmin/System-Logs —
+  │   │                           entspricht "🩺 Diagnose & Monitoring")
+  │   ├── usermgmt.py
+  │   ├── library.py             (Reprocessing/Doctor/Review/Repair —
+  │   │                           entspricht "🎵 Bibliothek & Navidrome")
+  │   ├── admin_operations.py    (Backup/Neustart/Wartungsmodus/
+  │   │                           Navidrome-Scan — entspricht
+  │   │                           "🤖 Bot & Betrieb")
+  │   └── download.py            (Download-Control-Center + Pipeline-
+  │                               Logik — einzige Domäne, die sowohl
+  │                               RichMenuSystem als auch RichMenuHandler
+  │                               betrifft)
+  ├── permissions.py     is_admin_or_owner()/get_user_access_level() —
+  │                     zentrale, einzige Quelle für Admin-/Owner-Checks
+  │                     (ARCH-021/P-3, ARCH-023)
+  ├── session.py          SessionManager — zentrales Session-Management
+  │                     (ARCH-021/P-4)
+  └── models.py           MenuState/AccessLevel/MenuItem/MenuSession
+                        (ARCH-021/P-2)
+```
+
+**Wichtig: Duplikat-Verwaltung (`duplicates.py`) ist bewusst eine eigene
+Domäne**, nicht Teil von `library.py` — Duplicate Detection ist laut
+CLAUDE.md Abschnitt 15 eine eigene P0-Domäne.
+
+`permissions.py`/`session.py`/`models.py` sind durch `ARCH-024` **nicht**
+verändert worden (Scope war ausschließlich Actions/Definitions/Rendering).
+Onboarding (`/start`, `/help`, Feature-Katalog) wurde nach den im
+ARCH-024-Master-Prompt vorgegebenen Kriterien geprüft und bleibt bewusst
+in `RichMenuHandler` (NOT WARRANTED — zu stark mit dem dortigen
+`self.features`-Katalog verwoben, kein Testbarkeits- oder
+Kohäsionsgewinn durch Extraktion).
+
 ---
 
 ## 2. Bestehender Menübaum (Überblick)
@@ -770,12 +836,19 @@ nutzbar — bei einer Erweiterung der Familie ist ausschließlich
 
 Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
 
-1. `MenuItem` in `RichMenuSystem.initialize_menu_structure()` ergänzen
-   (bzw. bestehendes Item mit `handler=`/`is_action=True` versehen).
-2. `_handle_*`-Methode(n) in `RichMenuSystem` implementieren — bei
-   dynamischen/externen Inhalten (Titel, URLs, Nutzereingaben) **kein**
-   `parse_mode="Markdown"` verwenden, sofern der Text nicht nachweislich
-   vollständig statisch ist (siehe Bug D, Abschnitt 3.3).
+1. `MenuItem` in `handlers/menu/definitions.py::build_menu_tree()`
+   ergänzen (bzw. bestehendes Item mit `handler=`/`is_action=True`
+   versehen) — seit ARCH-024 nicht mehr in `RichMenuSystem` selbst.
+2. Die eigentliche Fachlogik als Funktion im passenden
+   `handlers/menu/actions/<domäne>.py`-Modul implementieren (neue Domäne
+   nur bei echter fachlicher Eigenständigkeit, sonst in eine bestehende
+   Domäne einordnen), plus einen dünnen `_handle_*`-Delegator in
+   `RichMenuSystem`/`RichMenuHandler`, der die aktuellen Abhängigkeiten
+   (Handler-Referenzen, Config, Logger) explizit übergibt — keine
+   Rückreferenz aus `actions/` auf `RichMenuSystem`/`RichMenuHandler`.
+   Bei dynamischen/externen Inhalten (Titel, URLs, Nutzereingaben)
+   **kein** `parse_mode="Markdown"` verwenden, sofern der Text nicht
+   nachweislich vollständig statisch ist (siehe Bug D, Abschnitt 3.3).
 3. Bei einem **neuen** Callback-Präfix: `CallbackQueryHandler(...,
    pattern="^<präfix>:")` in `RichMenuHandler.get_telegram_handlers()`
    ergänzen — sonst verpufft der Klick stillschweigend (Bug B).
@@ -807,6 +880,13 @@ Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
   Challenge-Typen aus Abschnitt 6.12 (Family Hub, F4).
 - [`docs/MusicBot_ENGINEERING_BASELINE_v10.md`](MusicBot_ENGINEERING_BASELINE_v10.md)
   (DRAFT) — Family Hub (F1–F5) in „Recent Major Changes" (Abschnitt 3).
+- [`docs/MusicBot_ARCH-021_Menu_Architecture_Migration.md`](MusicBot_ARCH-021_Menu_Architecture_Migration.md),
+  [`docs/MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md`](MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md),
+  [`docs/MusicBot_ARCH-024_Menu_File_Decomposition.md`](MusicBot_ARCH-024_Menu_File_Decomposition.md)
+  — die drei Architekturmigrationsphasen der internen `handlers/menu/`-
+  Modulstruktur (Models/Permissions/Session → Router-/Permission-Härtung
+  → Actions/Definitions/Rendering-Dekomposition), alle COMPLETE. Siehe
+  Abschnitt 1a oben für die daraus resultierende aktuelle Modulstruktur.
 
 ---
 

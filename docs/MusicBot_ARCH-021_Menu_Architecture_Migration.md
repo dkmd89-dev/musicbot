@@ -38,8 +38,8 @@ Last.fm.** Der nächste freie, unbenutzte ARCH-Slot für künftige neue Phasen i
 | P-2 | Models Extraction (`MenuItem`/`MenuSession`/`AccessLevel`/`MenuState` → `handlers/menu/models.py`) | ✅ COMPLETE | Commit `69e419e`, PR #203 |
 | P-3 | Permissions Extraction (`is_admin_or_owner()`/`get_user_access_level()` → `handlers/menu/permissions.py`) | ✅ COMPLETE | Commit `69e419e`, PR #203 |
 | P-4 | Session/State Extraction (`SessionManager` → `handlers/menu/session.py`) | ✅ COMPLETE | Commit `69e419e`, PR #203 |
-| P-5 | Router-Härtung (deklarative Präfix→AccessLevel-Tabelle statt hartcodierter `if/elif`-Kette + 5-Präfix-Allowlist) | ⏳ NOT STARTED — nächster Schritt ist ein reines READ-ONLY-Audit, kein Code | — |
-| P-6+ | Actions-/Definitions-/Rendering-Extraktion | ⏳ NOT STARTED | — |
+| P-5 | Router-Härtung (deklarative Präfix→AccessLevel-Tabelle statt hartcodierter `if/elif`-Kette + 5-Präfix-Allowlist) | ⏳ NOT STARTED unter dieser Nummerierung — **fortgeführt und abgeschlossen unter `ARCH-023`** (P-1–P-7, COMPLETE), siehe Abschnitt „Nächster Schritt" unten | — |
+| P-6+ | Actions-/Definitions-/Rendering-Extraktion | ⏳ NOT STARTED unter dieser Nummerierung — **fortgeführt und abgeschlossen unter `ARCH-024`** (P-1–P-4 COMPLETE, P-5 Onboarding NOT WARRANTED), siehe Abschnitt „Nächster Schritt" unten | — |
 
 ---
 
@@ -86,7 +86,7 @@ Vollständiger, read-only Architekturaudit von `handlers/menu/` (repoweite Depen
 ## Gemeinsame Ergebnisse P-2/P-3/P-4
 
 **Commit:** `69e419e` (Branch `arch-021/p2-p3-p4-menu-decomposition`)
-**Pull Request:** [#203](https://github.com/dkmd89-dev/musicbot/pull/203) — offen, noch nicht gemergt (Stand dieses Dokuments)
+**Pull Request:** [#203](https://github.com/dkmd89-dev/musicbot/pull/203) — gemergt (Merge-Commit `2f9f34b`)
 
 **Architekturprüfung:** `models.py` hat keine interne `handlers.menu.*`-Abhängigkeit (Basis der Schichtung); `permissions.py` und `session.py` hängen je ausschließlich von `handlers.menu.models` ab — keine Abhängigkeit untereinander oder auf `rich_menu_system.py`/`rich_menu_handler.py`/Telegram, exakt wie im P-1-Audit als Zielarchitektur festgelegt. Import-Rundlauf (`models` → `permissions`/`session` → `rich_menu_system` → `rich_menu_handler`) fehlerfrei, keine Zirkularität.
 
@@ -127,19 +127,29 @@ Keine dieser Beobachtungen stellt eine durch P-2/P-3/P-4 verursachte Regression 
 
 ## Nächster Schritt (Historie — siehe ARCH-023/ARCH-024)
 
+**Hinweis:** dieser Abschnitt beschreibt den ursprünglichen Planungsstand
+zum Zeitpunkt des P-1-Audits (2026-09-12) sowie dessen tatsächliche
+Fortführung. Die historische Planungsaussage selbst (P-5/P-6+ „NOT
+STARTED" unter der `ARCH-021`-Nummerierung) bleibt unverändert — beide
+Folgeblöcke sind inzwischen unter neuer Nummerierung **COMPLETE**.
+
 Der hier ursprünglich als „ARCH-021/P-5 — Router-Härtung" skizzierte
 Schritt wuchs zu einem eigenständigen, sicherheitsfokussierten
 Mini-Projekt mit eigener Phasenzählung und wurde als **`ARCH-023`**
-(P-1–P-7, COMPLETE) fortgeführt — inkl. des hier beschriebenen Ziels
-(deklarative, zentrale `access_level`-Prüfung statt hartcodierter
-5-Präfix-Allowlist, siehe `ARCH-023/P-3`). Vollständige Doku:
-`docs/MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md`.
+(P-1–P-7, COMPLETE, PR #204 gemergt) fortgeführt — inkl. des hier
+beschriebenen Ziels (deklarative, zentrale `access_level`-Prüfung statt
+hartcodierter 5-Präfix-Allowlist, siehe `ARCH-023/P-3`). Vollständige
+Doku: `docs/MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md`.
 
 Die im ursprünglichen Phasenplan (siehe oben, Abschnitt „P-1 —
 Kernentscheidungen") vorgesehenen **„P-6 Actions"/„P-7 Definitions"/
 „P-8 Rendering"/„P-9 Onboarding"** (Datei-Dekomposition von
 `rich_menu_system.py`/`rich_menu_handler.py`) wurden dadurch **nicht**
 unter diesen Nummern umgesetzt — `ARCH-023` belegte P-6/P-7 bereits für
-andere Inhalte. Diese Datei-Dekomposition ist weiterhin vollständig offen
-und läuft als eigener Block **`ARCH-024`**, siehe
+andere Inhalte. Diese Datei-Dekomposition wurde stattdessen als eigener
+Block **`ARCH-024`** durchgeführt und ist **COMPLETE** (P-1 Audit, P-2
+Actions-Extraktion in 9 Domänen-Module, P-3 Definitions-Extraktion,
+P-4 Rendering-Extraktion; P-5 Onboarding-Extraktion nach den im
+Master-Prompt vorgegebenen Kriterien geprüft und als NOT WARRANTED
+eingestuft). Vollständige Doku:
 `docs/MusicBot_ARCH-024_Menu_File_Decomposition.md`.
