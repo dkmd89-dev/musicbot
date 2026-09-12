@@ -25,6 +25,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from logger import get_module_logger
+from handlers.menu.permissions import is_admin_or_owner
 from utils.bot_restart_trigger import BotRestartTrigger
 
 # Name des systemd-Service (muss mit /etc/systemd/system/<NAME>.service übereinstimmen)
@@ -162,7 +163,12 @@ class BotRestartHandler:
     # ------------------------------------------------------------------
 
     def _is_admin(self, user_id: int) -> bool:
-        """Prüft, ob der User Admin- oder Owner-Rechte hat."""
-        if user_id == getattr(self.config, "OWNER_USER_ID", None):
-            return True
-        return user_id in getattr(self.config, "ADMIN_USER_IDS", [])
+        """Prüft, ob der User Admin- oder Owner-Rechte hat (ARCH-023/P-7:
+        delegiert an permissions.is_admin_or_owner() - vormals
+        eigenständig implementiert, funktional unverändert, siehe
+        tests/test_bot_restart_handler.py::TestIsAdmin). Bleibt als
+        Defense-in-Depth-Schicht hinter dem bereits zentral gegateten
+        "restart:"-Präfix bestehen (RichMenuSystem._handle_restart_
+        callback()). utils/bot_restart_trigger.py::BotRestartTrigger
+        bleibt unverändert ohne eigene Permission-Logik (ARCH-023/P-6)."""
+        return is_admin_or_owner(user_id, self.config)

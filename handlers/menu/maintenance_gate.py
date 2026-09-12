@@ -15,6 +15,8 @@ Abhängigkeit der einen Klasse von der anderen nur für diesen einen Check.
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from handlers.menu.permissions import is_admin_or_owner
+
 _MAINTENANCE_MESSAGE = (
     "🛠️ Der Bot befindet sich aktuell im Wartungsmodus.\n\n"
     "Bitte versuche es später erneut."
@@ -50,10 +52,11 @@ async def is_blocked_by_maintenance(
         return False
 
     user_id = update.effective_user.id if update.effective_user else None
-    is_admin = user_id == getattr(config, "OWNER_USER_ID", None) or user_id in getattr(
-        config, "ADMIN_USER_IDS", []
-    )
-    if is_admin:
+    # ARCH-023/P-4 Phase 3: vormals inline duplizierte Pruefung durch die
+    # gemeinsame, bereits getestete permissions.is_admin_or_owner()
+    # ersetzt - funktional aequivalent (inkl. user_id=None-Randfall),
+    # keine Verhaltensaenderung.
+    if is_admin_or_owner(user_id, config):
         return False
 
     if update.callback_query:

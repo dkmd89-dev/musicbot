@@ -559,6 +559,16 @@ class RichMenuHandler:
             emoji="🔄",
             access_level=AccessLevel.ADMIN,
             handler=self._handle_navidrome_scan,
+            # ARCH-023/P-4: is_action war zuvor False (Default) trotz bei
+            # Konstruktion gesetztem handler= - semantisch inkonsistent mit
+            # jedem anderen echten Aktions-Item im Menuebaum (siehe
+            # initialize_menu_structure(), wo jede echte Aktion explizit
+            # is_action=True traegt; nur reine Navigations-Links wie
+            # "nav_link_stats" bleiben bewusst False). is_action wird von
+            # keiner Produktionslogik gelesen (nur von Test-Tooling, siehe
+            # tests/test_rich_menu_access_control.py/test_suite.py) -
+            # reine Korrektur der Modellierung, kein Verhaltensrisiko.
+            is_action=True,
         )
         # Admin-Menü-Reorg: Navidrome Scan gehört fachlich zur Gruppe
         # "Bibliothek & Navidrome" (admin_group_library), nicht mehr direkt

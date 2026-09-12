@@ -36,6 +36,7 @@ from telegram.ext import ContextTypes
 
 from config import Config
 from logger import get_module_logger
+from handlers.menu.permissions import is_admin_or_owner
 from services.library_health.findings import (
     DEFAULT_FILENAME,
     STATUS_FALSE_POSITIVE,
@@ -87,9 +88,14 @@ class LibraryHealthReviewHandler:
     # ── Berechtigung ─────────────────────────────────────────────────────
 
     def _is_admin(self, user_id: int) -> bool:
-        if user_id == getattr(self.config, "OWNER_USER_ID", None):
-            return True
-        return user_id in getattr(self.config, "ADMIN_USER_IDS", [])
+        """Prüft Admin- oder Owner-Rechte (ARCH-023/P-7: delegiert an
+        permissions.is_admin_or_owner() - vormals eigenständig
+        implementiert, funktional unverändert, siehe
+        tests/test_library_health_review_handler.py::TestIsAdminDirect).
+        Bleibt als Defense-in-Depth-Schicht hinter dem bereits zentral
+        gegateten "review:"-Präfix bestehen (RichMenuSystem._handle_review_
+        callback())."""
+        return is_admin_or_owner(user_id, self.config)
 
     def _registry_path(self):
         from pathlib import Path

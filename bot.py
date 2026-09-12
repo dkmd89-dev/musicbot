@@ -151,7 +151,7 @@ class ExtendedBot:
         if hasattr(self.config, "ADMIN_USER_IDS") and self.config.ADMIN_USER_IDS:
             try:
                 self.error_admin_interface = ErrorHandlerAdminInterface(
-                    self.error_handler, self.config.ADMIN_USER_IDS
+                    self.error_handler, self.config.ADMIN_USER_IDS, self.config
                 )
                 self.error_admin_interface.register_admin_commands(self.application)
                 self.logger.info("✅ Error Handler Admin Commands registriert")

@@ -225,10 +225,21 @@ def make_context():
 ADMIN_IDS = [111, 222]
 
 
+class FakeConfig:
+    # ARCH-023/P-5: OWNER_USER_ID bewusst ausserhalb von ADMIN_IDS/999
+    # gewaehlt, damit TestIsAdmin unten weiterhin ausschliesslich die
+    # ADMIN_USER_IDS-Mitgliedschaftslogik testet (nicht die neue
+    # Owner-Sonderregel - die ist in
+    # tests/test_menu_router_characterization.py::
+    # TestErradminCharacterization dediziert abgedeckt).
+    OWNER_USER_ID = 999999
+    ADMIN_USER_IDS = ADMIN_IDS
+
+
 @pytest.fixture
 def admin_interface():
     fake_error_handler = Mock()
-    return ErrorHandlerAdminInterface(fake_error_handler, ADMIN_IDS)
+    return ErrorHandlerAdminInterface(fake_error_handler, ADMIN_IDS, FakeConfig())
 
 
 class TestIsAdmin:

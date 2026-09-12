@@ -125,6 +125,21 @@ Keine dieser Beobachtungen stellt eine durch P-2/P-3/P-4 verursachte Regression 
 
 ---
 
-## Nächster Schritt
+## Nächster Schritt (Historie — siehe ARCH-023/ARCH-024)
 
-**ARCH-021/P-5 — Router-Härtung**, zunächst als reines READ-ONLY-Audit (Ist-Zustand/Characterization/Abhängigkeiten/Zielarchitektur/Risiken/Testplan), erst nach gesonderter Freigabe als Implementierung. Ziel laut P-1-Audit: die heutige `if callback_data.startswith(...)`-Kette plus hartcodierte 5-Präfix-Admin-Allowlist (`_ADMIN_ONLY_PREFIXES`) durch eine deklarative, vollständige Präfix→AccessLevel-Tabelle ersetzen, die zentral vor jedem Dispatch geprüft wird — die strukturelle Antwort auf die TGPERM-001-Fehlerklasse, nicht nur deren punktuellen Fix.
+Der hier ursprünglich als „ARCH-021/P-5 — Router-Härtung" skizzierte
+Schritt wuchs zu einem eigenständigen, sicherheitsfokussierten
+Mini-Projekt mit eigener Phasenzählung und wurde als **`ARCH-023`**
+(P-1–P-7, COMPLETE) fortgeführt — inkl. des hier beschriebenen Ziels
+(deklarative, zentrale `access_level`-Prüfung statt hartcodierter
+5-Präfix-Allowlist, siehe `ARCH-023/P-3`). Vollständige Doku:
+`docs/MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md`.
+
+Die im ursprünglichen Phasenplan (siehe oben, Abschnitt „P-1 —
+Kernentscheidungen") vorgesehenen **„P-6 Actions"/„P-7 Definitions"/
+„P-8 Rendering"/„P-9 Onboarding"** (Datei-Dekomposition von
+`rich_menu_system.py`/`rich_menu_handler.py`) wurden dadurch **nicht**
+unter diesen Nummern umgesetzt — `ARCH-023` belegte P-6/P-7 bereits für
+andere Inhalte. Diese Datei-Dekomposition ist weiterhin vollständig offen
+und läuft als eigener Block **`ARCH-024`**, siehe
+`docs/MusicBot_ARCH-024_Menu_File_Decomposition.md`.

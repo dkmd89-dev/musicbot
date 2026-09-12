@@ -309,6 +309,35 @@ class TestExecuteTestRunAdminPermissionTGPERM001:
         assert "Berechtigung" not in last_msg
 
 
+class TestIsAdminDirect:
+    """ARCH-023/P-7: direkte Charakterisierung von _is_admin() selbst
+    (bisher nur indirekt ueber _execute_test_run() in
+    TestExecuteTestRunAdminPermissionTGPERM001 getestet) - Baseline vor
+    der Umstellung auf permissions.is_admin_or_owner()."""
+
+    OWNER_ID = 111
+    ADMIN_ID = 222
+    NON_ADMIN_ID = 999
+
+    def _make_handler(self, tmp_path):
+        config = FakeConfig(tmp_path)
+        config.OWNER_USER_ID = self.OWNER_ID
+        config.ADMIN_USER_IDS = [self.OWNER_ID, self.ADMIN_ID]
+        return TestMenuHandler(config, logger_factory=lambda name: Mock())
+
+    def test_owner_is_admin(self, tmp_path):
+        handler = self._make_handler(tmp_path)
+        assert handler._is_admin(self.OWNER_ID) is True
+
+    def test_configured_admin_is_admin(self, tmp_path):
+        handler = self._make_handler(tmp_path)
+        assert handler._is_admin(self.ADMIN_ID) is True
+
+    def test_other_user_is_not_admin(self, tmp_path):
+        handler = self._make_handler(tmp_path)
+        assert handler._is_admin(self.NON_ADMIN_ID) is False
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # _parse_pytest_output (inkl. BUG-014-Regression)
 # ─────────────────────────────────────────────────────────────────────────
