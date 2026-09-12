@@ -1,21 +1,69 @@
 {
   "ARTIST_GENRE_MAP": {
-    "Boloboys": {
+    "Ben Zucker": {
       "confidence": "OBSERVED",
       "description": "Auto-learned via Last.fm (rule)",
       "genre_counts": {
-        "Hip Hop": 1
+        "Schlager": 1
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Schlager",
+          "secondary": [
+            "Pop",
+            "Rock"
+          ]
+        }
+      ],
+      "observations": 1,
+      "primary": "Schlager",
+      "secondary": [
+        "Pop",
+        "Rock"
+      ]
+    },
+    "Boloboys": {
+      "confidence": "LEARNED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Hip Hop": 2
       },
       "locked_primary": null,
       "observation_log": [
         {
           "primary": "Hip Hop",
           "secondary": []
+        },
+        {
+          "primary": "Hip Hop",
+          "secondary": []
+        }
+      ],
+      "observations": 2,
+      "primary": "Hip Hop",
+      "secondary": []
+    },
+    "CASPER": {
+      "confidence": "OBSERVED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Deutschrap": 1
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Deutschrap",
+          "secondary": [
+            "Hip Hop"
+          ]
         }
       ],
       "observations": 1,
-      "primary": "Hip Hop",
-      "secondary": []
+      "primary": "Deutschrap",
+      "secondary": [
+        "Hip Hop"
+      ]
     },
     "Christina Stürmer": {
       "confidence": "OBSERVED",
@@ -36,6 +84,166 @@
       "primary": "Pop",
       "secondary": [
         "Rock"
+      ]
+    },
+    "Eli Preiss": {
+      "confidence": "OBSERVED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Hip Hop": 1
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Hip Hop",
+          "secondary": [
+            "R&B"
+          ]
+        }
+      ],
+      "observations": 1,
+      "primary": "Hip Hop",
+      "secondary": [
+        "R&B"
+      ]
+    },
+    "Maikel": {
+      "confidence": "OBSERVED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Hip Hop": 1
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Hip Hop",
+          "secondary": []
+        }
+      ],
+      "observations": 1,
+      "primary": "Hip Hop",
+      "secondary": []
+    },
+    "Mr. Polska": {
+      "confidence": "OBSERVED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Hip Hop": 1
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Hip Hop",
+          "secondary": []
+        }
+      ],
+      "observations": 1,
+      "primary": "Hip Hop",
+      "secondary": []
+    },
+    "OVE": {
+      "confidence": "LEARNED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Indie": 2
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Indie",
+          "secondary": []
+        },
+        {
+          "primary": "Indie",
+          "secondary": []
+        }
+      ],
+      "observations": 2,
+      "primary": "Indie",
+      "secondary": []
+    },
+    "Sampagne": {
+      "confidence": "OBSERVED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Deutschrap": 1
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Deutschrap",
+          "secondary": [
+            "Hip Hop"
+          ]
+        }
+      ],
+      "observations": 1,
+      "primary": "Deutschrap",
+      "secondary": [
+        "Hip Hop"
+      ]
+    },
+    "Toobrokeforfiji": {
+      "confidence": "CONFIRMED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Deutschrap": 8
+      },
+      "locked_primary": "Deutschrap",
+      "observation_log": [
+        {
+          "primary": "Deutschrap",
+          "secondary": [
+            "Hip Hop"
+          ]
+        },
+        {
+          "primary": "Deutschrap",
+          "secondary": [
+            "Hip Hop"
+          ]
+        },
+        {
+          "primary": "Deutschrap",
+          "secondary": [
+            "Hip Hop"
+          ]
+        },
+        {
+          "primary": "Deutschrap",
+          "secondary": [
+            "Hip Hop"
+          ]
+        },
+        {
+          "primary": "Deutschrap",
+          "secondary": [
+            "Hip Hop"
+          ]
+        },
+        {
+          "primary": "Deutschrap",
+          "secondary": [
+            "Hip Hop"
+          ]
+        },
+        {
+          "primary": "Deutschrap",
+          "secondary": [
+            "Hip Hop"
+          ]
+        },
+        {
+          "primary": "Deutschrap",
+          "secondary": [
+            "Hip Hop"
+          ]
+        }
+      ],
+      "observations": 8,
+      "primary": "Deutschrap",
+      "secondary": [
+        "Hip Hop"
       ]
     },
     "Unheilig": {

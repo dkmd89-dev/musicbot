@@ -1,5 +1,86 @@
 {
   "featured_artists": {
+    "Aaron": {
+      "canonical": "Aaron",
+      "last_observed_track": "Zartmann - meinen die uns",
+      "observations": 1,
+      "primary_artists": [
+        "Zartmann"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Andreas Bourani": {
+      "canonical": "Andreas Bourani",
+      "last_observed_track": "Clueso - Willkommen Zurück",
+      "observations": 1,
+      "primary_artists": [
+        "Clueso"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Antonius": {
+      "canonical": "Antonius",
+      "last_observed_track": "01099 - 25grad",
+      "observations": 2,
+      "primary_artists": [
+        "Zartmann",
+        "01099"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "LEARNED"
+    },
+    "BHZ": {
+      "canonical": "BHZ",
+      "last_observed_track": "01099 - Halligalli",
+      "observations": 1,
+      "primary_artists": [
+        "01099"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "BIBIZA": {
+      "canonical": "BIBIZA",
+      "last_observed_track": "Toobrokeforfiji - Kuh.mp3",
+      "observations": 1,
+      "primary_artists": [
+        "Toobrokeforfiji"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Bausa": {
+      "canonical": "Bausa",
+      "last_observed_track": "CHAPO102 - OMG",
+      "observations": 3,
+      "primary_artists": [
+        "Zartmann",
+        "Badchieff",
+        "CHAPO102"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "LEARNED"
+    },
     "Beslik": {
       "canonical": "Beslik",
       "last_observed_track": "Boloboys - fr fr",
@@ -15,10 +96,223 @@
     },
     "Beslik Meister": {
       "canonical": "Beslik Meister",
-      "last_observed_track": "makko - ADLIBS",
+      "last_observed_track": "Toobrokeforfiji - Chanel Shades",
+      "observations": 2,
+      "primary_artists": [
+        "makko",
+        "Toobrokeforfiji"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "LEARNED"
+    },
+    "CAN MIT MER": {
+      "canonical": "CAN MIT MER",
+      "last_observed_track": "Boloboys - Fratellis",
+      "observations": 1,
+      "primary_artists": [
+        "Boloboys"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "CRO": {
+      "canonical": "CRO",
+      "last_observed_track": "01099 - Glücklich",
+      "observations": 4,
+      "primary_artists": [
+        "Badchieff",
+        "Sampagne",
+        "01099"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "CONFIRMED"
+    },
+    "Domiziana": {
+      "canonical": "Domiziana",
+      "last_observed_track": "Ski Aggu - Tour de Berlin",
+      "observations": 1,
+      "primary_artists": [
+        "Ski Aggu"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Edo Saiya": {
+      "canonical": "Edo Saiya",
+      "last_observed_track": "Badchieff - Ich liebe....",
+      "observations": 1,
+      "primary_artists": [
+        "Badchieff"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Emileo": {
+      "canonical": "Emileo",
+      "last_observed_track": "Zartmann - Easy",
+      "observations": 1,
+      "primary_artists": [
+        "Zartmann"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Ericson": {
+      "canonical": "Ericson",
+      "last_observed_track": "Ski Aggu - Verschwommen",
+      "observations": 1,
+      "primary_artists": [
+        "Ski Aggu"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "GDA": {
+      "canonical": "GDA",
+      "last_observed_track": "makko - POWER",
       "observations": 1,
       "primary_artists": [
         "makko"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Gustav 01099": {
+      "canonical": "Gustav 01099",
+      "last_observed_track": "Zartmann - schönhauser",
+      "observations": 1,
+      "primary_artists": [
+        "Zartmann"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Ikkimel": {
+      "canonical": "Ikkimel",
+      "last_observed_track": "01099 - Nachtschicht",
+      "observations": 1,
+      "primary_artists": [
+        "01099"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Johannes Oerding": {
+      "canonical": "Johannes Oerding",
+      "last_observed_track": "Clueso - Im Februar",
+      "observations": 1,
+      "primary_artists": [
+        "Clueso"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Joost": {
+      "canonical": "Joost",
+      "last_observed_track": "Ski Aggu - Friesenjung",
+      "observations": 1,
+      "primary_artists": [
+        "Ski Aggu"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Kasi": {
+      "canonical": "Kasi",
+      "last_observed_track": "01099 - 25grad",
+      "observations": 2,
+      "primary_artists": [
+        "Zartmann",
+        "01099"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "LEARNED"
+    },
+    "Khrome": {
+      "canonical": "Khrome",
+      "last_observed_track": "CHAPO102 - WARUM TUT ES SO WEH",
+      "observations": 1,
+      "primary_artists": [
+        "CHAPO102"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Longus Mongus": {
+      "canonical": "Longus Mongus",
+      "last_observed_track": "CHAPO102 - MEIN TEE WIRD LANGSAM KALT",
+      "observations": 2,
+      "primary_artists": [
+        "Ski Aggu",
+        "CHAPO102"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "LEARNED"
+    },
+    "Lucidbeatz": {
+      "canonical": "Lucidbeatz",
+      "last_observed_track": "makko - Jänner",
+      "observations": 3,
+      "primary_artists": [
+        "makko"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "LEARNED"
+    },
+    "Lugatti": {
+      "canonical": "Lugatti",
+      "last_observed_track": "Toobrokeforfiji - Ayran",
+      "observations": 1,
+      "primary_artists": [
+        "Toobrokeforfiji"
       ],
       "role": "featured_artist",
       "sources": [
@@ -32,6 +326,270 @@
       "observations": 1,
       "primary_artists": [
         "LEA"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "MACLOUD": {
+      "canonical": "MACLOUD",
+      "last_observed_track": "CHAPO102 - OMG",
+      "observations": 6,
+      "primary_artists": [
+        "Miksu & Macloud",
+        "makko",
+        "CHAPO102"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "CONFIRMED"
+    },
+    "MAJAN": {
+      "canonical": "MAJAN",
+      "last_observed_track": "Badchieff - Ich liebe....",
+      "observations": 1,
+      "primary_artists": [
+        "Badchieff"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Mathea": {
+      "canonical": "Mathea",
+      "last_observed_track": "Clueso - Der Letzte Song (ReBoot Live Concerts)",
+      "observations": 1,
+      "primary_artists": [
+        "Clueso"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Monk": {
+      "canonical": "Monk",
+      "last_observed_track": "Ski Aggu - nicht nachmachen!!",
+      "observations": 1,
+      "primary_artists": [
+        "Ski Aggu"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Natte Visstick": {
+      "canonical": "Natte Visstick",
+      "last_observed_track": "Mr. Polska - Spring",
+      "observations": 1,
+      "primary_artists": [
+        "Mr. Polska"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "OHO Bani": {
+      "canonical": "OHO Bani",
+      "last_observed_track": "01099 - Cider",
+      "observations": 2,
+      "primary_artists": [
+        "Ski Aggu",
+        "01099"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "LEARNED"
+    },
+    "Okfella": {
+      "canonical": "Okfella",
+      "last_observed_track": "makko - More Love",
+      "observations": 2,
+      "primary_artists": [
+        "Boloboys",
+        "makko"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "LEARNED"
+    },
+    "Otto Waalkes": {
+      "canonical": "Otto Waalkes",
+      "last_observed_track": "Ski Aggu - Friesenjung",
+      "observations": 1,
+      "primary_artists": [
+        "Ski Aggu"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "RIN": {
+      "canonical": "RIN",
+      "last_observed_track": "01099 - – Wahnsinn",
+      "observations": 1,
+      "primary_artists": [
+        "01099"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "SDP": {
+      "canonical": "SDP",
+      "last_observed_track": "Clueso - Tanz aus der Reihe",
+      "observations": 1,
+      "primary_artists": [
+        "Clueso"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "SIN Davis": {
+      "canonical": "SIN Davis",
+      "last_observed_track": "Toobrokeforfiji - Camel Blue",
+      "observations": 2,
+      "primary_artists": [
+        "Toobrokeforfiji"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "LEARNED"
+    },
+    "SIRA": {
+      "canonical": "SIRA",
+      "last_observed_track": "Badchieff - JUNG UND LAUT",
+      "observations": 3,
+      "primary_artists": [
+        "Badchieff"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "LEARNED"
+    },
+    "Ski Aggu": {
+      "canonical": "Ski Aggu",
+      "last_observed_track": "Mr. Polska - Spring",
+      "observations": 1,
+      "primary_artists": [
+        "Mr. Polska"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Stacks102": {
+      "canonical": "Stacks102",
+      "last_observed_track": "CHAPO102 - MEIN TEE WIRD LANGSAM KALT",
+      "observations": 1,
+      "primary_artists": [
+        "CHAPO102"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "The Chainsmokers": {
+      "canonical": "The Chainsmokers",
+      "last_observed_track": "makko - Inundauswendig",
+      "observations": 1,
+      "primary_artists": [
+        "makko"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Theo Junior": {
+      "canonical": "Theo Junior",
+      "last_observed_track": "Zartmann - Ich kann nicht mehr",
+      "observations": 1,
+      "primary_artists": [
+        "Zartmann"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Verifiziert": {
+      "canonical": "Verifiziert",
+      "last_observed_track": "01099 - Matin",
+      "observations": 1,
+      "primary_artists": [
+        "01099"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Wildbwoys": {
+      "canonical": "Wildbwoys",
+      "last_observed_track": "CHAPO102 - FALLEN",
+      "observations": 1,
+      "primary_artists": [
+        "CHAPO102"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "XAVER": {
+      "canonical": "XAVER",
+      "last_observed_track": "Zartmann - Easy",
+      "observations": 1,
+      "primary_artists": [
+        "Zartmann"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Yecca": {
+      "canonical": "Yecca",
+      "last_observed_track": "Badchieff - REPLAY",
+      "observations": 1,
+      "primary_artists": [
+        "Badchieff"
       ],
       "role": "featured_artist",
       "sources": [
