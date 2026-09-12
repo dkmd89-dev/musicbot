@@ -47,6 +47,14 @@ import json
 # Integritaetstest dabei aber nicht mitgezogen. 'Fritz Kalkbrenner' ist
 # ein realer Artist (Fix per test_collab_artist_shared_surname_kalkbrenner.py
 # abgesichert) - in die Whitelist aufgenommen, Key-Count 21 -> 29.
+#
+# Nachtrag 2026-09-12: durch einen echten, regulaeren Download waehrend
+# laufender Entwicklungsarbeit hat das Auto-Learn-System den zusaetzlichen
+# Key 'fiji' -> 'Toobrokeforfiji' geschrieben (neben dem bereits
+# bestehenden Key 'toobrokeforfiji' -> 'Toobrokeforfiji', vermutlich ein
+# kuerzerer YouTube-Channel-/Credit-Name derselben Person). Der Wert
+# 'Toobrokeforfiji' ist bereits seit 2026-09-03 whitelisted - kein neuer
+# Wert, nur ein zusaetzlicher Schreibvarianten-Key. Key-Count 29 -> 30.
 WHITELIST_VALUES_LOWER = {
     "01099",
     "2pac",
@@ -76,17 +84,19 @@ class TestArtistOverridesFreeOfOrphans:
         assert not orphans, f"verwaiste Overrides gefunden: {orphans}"
 
     def test_expected_key_count_after_cleanup(self):
-        """Dokumentiert den bereinigten Stand (zuletzt 2026-09-09): 29 Keys
+        """Dokumentiert den bereinigten Stand (zuletzt 2026-09-12): 30 Keys
         - 21 wie beim 2026-09-07-Stand (12 Library-Artists, davon 'makko'
         als 1, + 6 Miksu & Macloud-Varianten + 't-low' + 'toobrokeforfiji'
         + 'christina sturmer') + 8 aus PR #194 fuer den
-        'Fritz & Paul Kalkbrenner'-Kollab-Fall (7 Schreibvarianten + Self).
-        Kein Anspruch auf ewige Gueltigkeit dieser exakten Zahl - wird bei
-        zukuenftigen legitimen Aenderungen bewusst angepasst, nicht blind
-        hochgezaehlt."""
+        'Fritz & Paul Kalkbrenner'-Kollab-Fall (7 Schreibvarianten + Self)
+        + 1 neuer Key 'fiji' (zusaetzliche Schreibvariante fuer den
+        bereits whitelisteten Wert 'Toobrokeforfiji', echter Download
+        2026-09-12). Kein Anspruch auf ewige Gueltigkeit dieser exakten
+        Zahl - wird bei zukuenftigen legitimen Aenderungen bewusst
+        angepasst, nicht blind hochgezaehlt."""
         with open("mapping/artist_overrides.json", encoding="utf-8") as f:
             data = json.load(f)
-        assert len(data) == 29
+        assert len(data) == 30
 
     def test_no_junk_entries_like_pycache(self):
         """Regressionsschutz: der vor der Bereinigung gefundene
