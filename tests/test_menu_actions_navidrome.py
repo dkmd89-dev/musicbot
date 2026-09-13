@@ -42,16 +42,6 @@ async def test_browse_artists_shows_unavailable_when_missing():
 
 
 @pytest.mark.asyncio
-async def test_browse_playlists_shows_placeholder_when_present():
-    update = _make_update()
-    handler = Mock()
-    await nav_actions.handle_browse_playlists(update, Mock(), handler)
-    update.callback_query.edit_message_text.assert_awaited_once_with(
-        "📋 Playlist-Browser wird gerade entwickelt..."
-    )
-
-
-@pytest.mark.asyncio
 async def test_recent_uses_stats_handler_when_hasattr():
     update = _make_update()
     stats_handler = Mock()
@@ -190,6 +180,37 @@ async def test_callback_artist_albums_all_does_not_call_artist_detail_with_corru
     handler.handle_artist_detail.assert_not_called()
     text = update.callback_query.edit_message_text.call_args[0][0]
     assert "albums_all" not in text
+
+
+@pytest.mark.asyncio
+async def test_callback_playlist_detail_delegates_with_correct_id_nav_f5():
+    """NAV-F5: nav_playlist_<id> war eine Dead Route (Buttons in
+    handle_my_playlists() erzeugten den Callback, kein Dispatcher-Zweig
+    existierte) - delegiert jetzt an handle_playlist_detail()."""
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_playlist_detail = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_playlist_pl123", handler, Mock()
+    )
+    handler.handle_playlist_detail.assert_awaited_once_with(update, context, "pl123")
+
+
+@pytest.mark.asyncio
+async def test_callback_nav_playlists_menu_id_does_not_collide_with_playlist_detail_nav_f5():
+    """Regressionsschutz: 'nav_playlists' (Top-Level-Menuepunkt 'Meine
+    Playlists') darf nicht vom neuen 'nav_playlist_'-Praefix-Zweig
+    abgefangen werden. Erreicht diesen Dispatcher in der Praxis nie
+    (laeuft ueber 'menu:nav_playlists'), aber falls doch: darf nicht auf
+    handle_playlist_detail() mit korruptem Parameter '"s"' landen."""
+    update = _make_update()
+    handler = Mock()
+    handler.handle_playlist_detail = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, Mock(), "nav_playlists", handler, Mock()
+    )
+    handler.handle_playlist_detail.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -940,6 +940,100 @@ Du hast {len(playlists)} Playlist\\(s\\) verfügbar:
                     "❌ Fehler beim Laden der Playlists."
                 )
 
+    # NEU (NAV-F5): Playlist-Details anzeigen
+    async def handle_playlist_detail(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, playlist_id: str
+    ):
+        """Zeigt Details einer Playlist mit Tracklist (schließt die bisherige
+        `nav_playlist_<id>`-Dead-Route - die Buttons in `handle_my_playlists()`
+        erzeugten diesen Callback bereits, es existierte aber kein
+        Dispatcher-Zweig dafür, siehe
+        docs/MusicBot_NAVIDROME_MENU_ARCHITECTURE.md NAV-F5). Tracklist
+        analog zu `handle_album_detail()` bewusst auf 25 Songs gedeckelt
+        (keine neue Pagination-Button-Fehlerquelle, siehe NAV-F2/NAV-F11)."""
+        if not self._check_connection():
+            await self._show_connection_error(update)
+            return
+
+        try:
+            self.logger.info(f"📋 Lade Playlist-Details für ID: {playlist_id}")
+
+            data = await asyncio.to_thread(
+                self.navidrome_api.make_request, "getPlaylist", {"id": playlist_id}
+            )
+
+            subsonic_response = data.get("subsonic-response", {})
+            playlist = subsonic_response.get("playlist", {})
+
+            if not playlist:
+                await update.callback_query.edit_message_text(
+                    "❌ Playlist nicht gefunden."
+                )
+                return
+
+            playlist_name = playlist.get("name", "Unbekannt")
+            owner = playlist.get("owner", "")
+            songs = playlist.get("entry", [])
+
+            keyboard = []
+            for song in songs[:25]:
+                track_num = song.get("track")
+                track_prefix = f"{track_num}. " if track_num else ""
+                song_text = f"🎵 {track_prefix}{song.get('title', 'Unbekannt')}"
+                if len(song_text) > 40:
+                    song_text = song_text[:37] + "..."
+
+                keyboard.append(
+                    [
+                        InlineKeyboardButton(
+                            song_text, callback_data=f"nav_song_{song['id']}"
+                        )
+                    ]
+                )
+
+            keyboard.append(
+                [InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")]
+            )
+
+            song_count = playlist.get("songCount", len(songs))
+            duration_text = self._format_track_duration(playlist.get("duration", 0))
+
+            more_songs_note = ""
+            if len(songs) > 25:
+                more_songs_note = f"\n_+{len(songs) - 25} weitere Songs nicht angezeigt_"
+
+            # BUG-007-Fix-Analogon (siehe handle_album_detail()): playlist_name/
+            # owner kommen unveraendert aus der Navidrome-Bibliothek und werden
+            # hier in einen MarkdownV2-Nachrichtentext eingefuegt - mit
+            # escape_md_v2() statt roh eingesetzt.
+            lines = [f"📋 **{escape_md_v2(playlist_name)}**\n"]
+            if owner:
+                lines.append(f"👤 Ersteller: {escape_md_v2(owner)}")
+            lines.append(
+                f"🎵 {escape_md_v2(str(song_count))} Songs · "
+                f"⏱️ {escape_md_v2(duration_text)}"
+            )
+            if more_songs_note:
+                lines.append(more_songs_note)
+            lines.append("\n**Tracklist:**")
+
+            await update.callback_query.edit_message_text(
+                text="\n".join(lines),
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="MarkdownV2",
+            )
+
+        except Exception as e:
+            self.logger.error(f"❌ Fehler beim Laden der Playlist-Details: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_playlist_detail", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    "❌ Fehler beim Laden der Playlist-Details."
+                )
+
     async def handle_favorites(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):

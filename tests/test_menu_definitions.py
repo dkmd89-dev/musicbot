@@ -40,7 +40,7 @@ class _FakeSystem:
             "_handle_restart_show", "_handle_maintenance_show", "_handle_reprocessing_show",
             "_handle_doctor_scan", "_handle_review_start", "_handle_repair_start",
             "_handle_navidrome_browse_artists", "_handle_navidrome_browse_albums",
-            "_handle_navidrome_browse_genres", "_handle_navidrome_browse_playlists",
+            "_handle_navidrome_browse_genres",
             "_handle_navidrome_search_all", "_handle_navidrome_search_artists",
             "_handle_navidrome_search_albums", "_handle_navidrome_search_songs",
             "_handle_navidrome_my_playlists", "_handle_navidrome_favorites",

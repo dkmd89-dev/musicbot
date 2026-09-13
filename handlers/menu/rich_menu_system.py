@@ -458,12 +458,6 @@ class RichMenuSystem:
         """Wrapper für Genre-Browse"""
         await navidrome_actions.handle_browse_genres(update, context, self.navidrome_handler)
 
-    async def _handle_navidrome_browse_playlists(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Wrapper für Playlist-Browse"""
-        await navidrome_actions.handle_browse_playlists(update, context, self.navidrome_handler)
-
     async def _handle_navidrome_search_all(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
