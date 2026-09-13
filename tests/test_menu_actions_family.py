@@ -52,6 +52,10 @@ ALL_CASES = FAMILY_STATS_CASES + FAMILY_CHAT_CASES + FAMILY_CHALLENGE_CASES
 @pytest.mark.asyncio
 @pytest.mark.parametrize("action_func,method_name,fallback_text", ALL_CASES)
 async def test_delegates_to_handler_when_present(action_func, method_name, fallback_text):
+    """ARCH-029: `reply_markup` wird additiv durchgereicht (Default
+    None, wenn kein nav_markup übergeben wird) - siehe
+    test_nav_markup_is_passed_through_as_reply_markup für den
+    nicht-None-Fall."""
     update = _make_update()
     context = Mock()
     handler = Mock()
@@ -60,8 +64,31 @@ async def test_delegates_to_handler_when_present(action_func, method_name, fallb
     await action_func(update, context, handler)
 
     update.callback_query.answer.assert_awaited_once()
-    getattr(handler, method_name).assert_awaited_once_with(update, context)
+    getattr(handler, method_name).assert_awaited_once_with(
+        update, context, reply_markup=None
+    )
     update.callback_query.edit_message_text.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action_func,method_name,fallback_text", ALL_CASES)
+async def test_nav_markup_is_passed_through_as_reply_markup(
+    action_func, method_name, fallback_text
+):
+    """ARCH-029 (Menu Navigation Continuity): ein von RichMenuSystem
+    berechnetes nav_markup wird 1:1 als reply_markup an den Domain-Handler
+    weitergereicht - diese Actions-Schicht baut selbst keine Navigation."""
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    setattr(handler, method_name, AsyncMock())
+    sentinel_markup = Mock(name="nav_markup")
+
+    await action_func(update, context, handler, nav_markup=sentinel_markup)
+
+    getattr(handler, method_name).assert_awaited_once_with(
+        update, context, reply_markup=sentinel_markup
+    )
 
 
 @pytest.mark.asyncio

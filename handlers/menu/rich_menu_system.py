@@ -867,6 +867,22 @@ class RichMenuSystem:
         """Findet MenuItem anhand seiner ID"""
         return self.menu_registry.get(menu_id)
 
+    def get_result_navigation(self, menu_id: str):
+        """ARCH-029 (Menu Navigation Continuity): baut die kontextuelle
+        Ergebnis-Navigation für die Action `menu_id` aus deren Position
+        im MenuItem-Baum (siehe rendering.render_result_navigation()).
+        `None` bei unbekannter ID (defensiv - Aufrufer erhalten dann
+        weiterhin `reply_markup=None`, identisch zum Vor-ARCH-029-
+        Verhalten, statt eines Fehlers). Bewusst public (nicht `_`-
+        prefixed): wird sowohl intern (Family-Delegatoren unten) als auch
+        von RichMenuHandler (Statistik-Wrapper, eigene Klasse) aufgerufen -
+        analog zu den bestehenden `set_*_handler()`/`register_handler()`-
+        Settern dieser Klasse."""
+        menu_item = self.menu_registry.get(menu_id)
+        if not menu_item:
+            return None
+        return rendering.render_result_navigation(menu_item)
+
     def _get_user_access_level(self, user_id: int) -> AccessLevel:
         """Ermittelt Zugriffsebene des Users (ARCH-021/P-3: delegiert an
         permissions.get_user_access_level())."""
@@ -979,7 +995,10 @@ class RichMenuSystem:
     ):
         """Phase 3, P1.1 — Library-Zusammensetzung aus dem Health-Report,
         anders als die übrigen stats_*-Handler keine Play-History."""
-        await stats_actions.handle_stats_library_overview(update, context, self.stats_handler)
+        await stats_actions.handle_stats_library_overview(
+            update, context, self.stats_handler,
+            nav_markup=self.get_result_navigation("stats_library_overview"),
+        )
 
     # ARCH-025: _handle_stats_monthly/_yearly/_top_songs/_top_artists/
     # _timeline (und die zugehörigen stats_actions.handle_stats_*_system-
@@ -1000,42 +1019,48 @@ class RichMenuSystem:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         await family_actions.handle_family_stats_top_songs(
-            update, context, self.family_stats_handler
+            update, context, self.family_stats_handler,
+            nav_markup=self.get_result_navigation("family_stats_top_songs"),
         )
 
     async def _handle_family_stats_top_artists(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         await family_actions.handle_family_stats_top_artists(
-            update, context, self.family_stats_handler
+            update, context, self.family_stats_handler,
+            nav_markup=self.get_result_navigation("family_stats_top_artists"),
         )
 
     async def _handle_family_stats_member(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         await family_actions.handle_family_stats_member(
-            update, context, self.family_stats_handler
+            update, context, self.family_stats_handler,
+            nav_markup=self.get_result_navigation("family_stats_member"),
         )
 
     async def _handle_family_stats_champion(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         await family_actions.handle_family_stats_champion(
-            update, context, self.family_stats_handler
+            update, context, self.family_stats_handler,
+            nav_markup=self.get_result_navigation("family_stats_champion"),
         )
 
     async def _handle_family_stats_listening_times(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         await family_actions.handle_family_stats_listening_times(
-            update, context, self.family_stats_handler
+            update, context, self.family_stats_handler,
+            nav_markup=self.get_result_navigation("family_stats_listening_times"),
         )
 
     async def _handle_family_stats_monthly_trend(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         await family_actions.handle_family_stats_monthly_trend(
-            update, context, self.family_stats_handler
+            update, context, self.family_stats_handler,
+            nav_markup=self.get_result_navigation("family_stats_monthly_trend"),
         )
 
     # ====== FAMILIEN-CHAT (Phase F3, Family Hub) ======
@@ -1047,21 +1072,24 @@ class RichMenuSystem:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         await family_actions.handle_family_chat_send(
-            update, context, self.family_chat_handler
+            update, context, self.family_chat_handler,
+            nav_markup=self.get_result_navigation("family_chat_send"),
         )
 
     async def _handle_family_chat_recent(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         await family_actions.handle_family_chat_recent(
-            update, context, self.family_chat_handler
+            update, context, self.family_chat_handler,
+            nav_markup=self.get_result_navigation("family_chat_recent"),
         )
 
     async def _handle_family_chat_notifications(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         await family_actions.handle_family_chat_notifications(
-            update, context, self.family_chat_handler
+            update, context, self.family_chat_handler,
+            nav_markup=self.get_result_navigation("family_chat_notifications"),
         )
 
     # ====== FAMILIEN-CHALLENGE (Phase F4, Family Hub) ======
@@ -1073,19 +1101,22 @@ class RichMenuSystem:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         await family_actions.handle_family_challenge_today(
-            update, context, self.family_challenge_handler
+            update, context, self.family_challenge_handler,
+            nav_markup=self.get_result_navigation("family_challenge_today"),
         )
 
     async def _handle_family_challenge_answer(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         await family_actions.handle_family_challenge_answer(
-            update, context, self.family_challenge_handler
+            update, context, self.family_challenge_handler,
+            nav_markup=self.get_result_navigation("family_challenge_answer"),
         )
 
     async def _handle_family_challenge_leaderboard(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         await family_actions.handle_family_challenge_leaderboard(
-            update, context, self.family_challenge_handler
+            update, context, self.family_challenge_handler,
+            nav_markup=self.get_result_navigation("family_challenge_leaderboard"),
         )

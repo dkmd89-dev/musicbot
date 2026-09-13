@@ -768,47 +768,60 @@ class RichMenuHandler:
         )
 
     # ====== STATISTIK WRAPPER ======
+    # ARCH-029 (Menu Navigation Continuity): jeder Wrapper berechnet
+    # nav_markup über self.menu_system.get_result_navigation(<eigene
+    # MenuItem-ID>) - abgeleitet aus dem statischen MenuItem-Baum, kein
+    # Session-/History-Zugriff (siehe rendering.render_result_navigation()-
+    # Docstring). RichMenuHandler ist hier der richtige Ort, weil er
+    # bereits sowohl self.menu_system (Registry) als auch self.stats_handler
+    # kennt - stats_actions.py selbst bleibt frei von MenuItem-Wissen.
 
     async def _handle_weekly_stats_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         await stats_actions.handle_weekly_stats_wrapper(
-            update, context, self.stats_handler, self.logger
+            update, context, self.stats_handler, self.logger,
+            nav_markup=self.menu_system.get_result_navigation("stats_weekly"),
         )
 
     async def _handle_monthly_stats_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         await stats_actions.handle_monthly_stats_wrapper(
-            update, context, self.stats_handler, self.logger
+            update, context, self.stats_handler, self.logger,
+            nav_markup=self.menu_system.get_result_navigation("stats_monthly"),
         )
 
     async def _handle_yearly_stats_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         await stats_actions.handle_yearly_stats_wrapper(
-            update, context, self.stats_handler, self.logger
+            update, context, self.stats_handler, self.logger,
+            nav_markup=self.menu_system.get_result_navigation("stats_yearly"),
         )
 
     async def _handle_top_songs_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         await stats_actions.handle_top_songs_wrapper(
-            update, context, self.stats_handler, self.logger
+            update, context, self.stats_handler, self.logger,
+            nav_markup=self.menu_system.get_result_navigation("stats_top_songs"),
         )
 
     async def _handle_top_artists_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         await stats_actions.handle_top_artists_wrapper(
-            update, context, self.stats_handler, self.logger
+            update, context, self.stats_handler, self.logger,
+            nav_markup=self.menu_system.get_result_navigation("stats_top_artists"),
         )
 
     async def _handle_timeline_stats_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         await stats_actions.handle_timeline_stats_wrapper(
-            update, context, self.stats_handler, self.logger
+            update, context, self.stats_handler, self.logger,
+            nav_markup=self.menu_system.get_result_navigation("stats_timeline"),
         )
 
     # ====== ADMIN WRAPPER ======

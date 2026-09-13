@@ -15,13 +15,31 @@ docs/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6) wurden
 nach Verifikation entfernt. handle_stats_library_overview() bleibt -
 einzige Stats-Menu-Definition, die NICHT überschrieben wird, im
 Produktivbetrieb live.
+
+ARCH-029 (Menu Navigation Continuity): jede Wrapper-Funktion nimmt
+zusätzlich ein optionales `nav_markup` (Default `None`, additiv) entgegen
+- ein bereits fertiges `InlineKeyboardMarkup`, das der Aufrufer
+(handlers/menu/rich_menu_handler.py) per
+handlers/menu/rendering.py::render_result_navigation() aus dem
+MenuItem-Baum berechnet hat. Dieses Modul kennt selbst weder MenuItem
+noch die Menü-Registry - reiner Passthrough an den jeweiligen
+StatistikHandler, der `reply_markup` an sein eigenes finales
+edit_text() anhängt (siehe dessen Docstrings). Kein neuer Callback-
+Präfix, keine Navigations-Logik hier.
 """
 
-from telegram import Update
+from typing import Optional
+
+from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 
-async def handle_stats_library_overview(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler):
+async def handle_stats_library_overview(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    stats_handler,
+    nav_markup: Optional[InlineKeyboardMarkup] = None,
+):
     """Phase 3, P1.1 — Library-Zusammensetzung aus dem Health-Report,
     anders als die übrigen stats_*-Handler keine Play-History. Einzige
     Stats-Menu-Definition, die NICHT von RichMenuHandler überschrieben
@@ -29,7 +47,9 @@ async def handle_stats_library_overview(update: Update, context: ContextTypes.DE
     query = update.callback_query
     await query.answer()
     if stats_handler:
-        await stats_handler.handle_library_overview(update, context)
+        await stats_handler.handle_library_overview(
+            update, context, reply_markup=nav_markup
+        )
     else:
         await query.edit_message_text("📚 Lade Library-Übersicht...")
 
@@ -37,7 +57,13 @@ async def handle_stats_library_overview(update: Update, context: ContextTypes.DE
 # ====== aus RichMenuHandler (per register_handler live gebunden) ======
 
 
-async def handle_weekly_stats_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler, logger):
+async def handle_weekly_stats_wrapper(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    stats_handler,
+    logger,
+    nav_markup: Optional[InlineKeyboardMarkup] = None,
+):
     """Statistics Menu UX & Architecture Optimization: neuer Wochenrückblick
     ("stats_weekly" → "Diese Woche"), analoges Muster zu
     handle_monthly_stats_wrapper()."""
@@ -45,7 +71,9 @@ async def handle_weekly_stats_wrapper(update: Update, context: ContextTypes.DEFA
     await query.answer()
     try:
         if stats_handler and hasattr(stats_handler, "handle_week_review"):
-            await stats_handler.handle_week_review(update, context)
+            await stats_handler.handle_week_review(
+                update, context, reply_markup=nav_markup
+            )
         else:
             await query.edit_message_text(
                 "📅 **Diese Woche**\n\nDiese Funktion wird gerade entwickelt... 🚀"
@@ -55,12 +83,20 @@ async def handle_weekly_stats_wrapper(update: Update, context: ContextTypes.DEFA
         await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
 
 
-async def handle_monthly_stats_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler, logger):
+async def handle_monthly_stats_wrapper(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    stats_handler,
+    logger,
+    nav_markup: Optional[InlineKeyboardMarkup] = None,
+):
     query = update.callback_query
     await query.answer()
     try:
         if stats_handler and hasattr(stats_handler, "handle_month_review"):
-            await stats_handler.handle_month_review(update, context)
+            await stats_handler.handle_month_review(
+                update, context, reply_markup=nav_markup
+            )
         else:
             await query.edit_message_text(
                 "📅 **Monatsrückblick**\n\nDiese Funktion wird gerade entwickelt... 🚀"
@@ -70,12 +106,20 @@ async def handle_monthly_stats_wrapper(update: Update, context: ContextTypes.DEF
         await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
 
 
-async def handle_yearly_stats_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler, logger):
+async def handle_yearly_stats_wrapper(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    stats_handler,
+    logger,
+    nav_markup: Optional[InlineKeyboardMarkup] = None,
+):
     query = update.callback_query
     await query.answer()
     try:
         if stats_handler and hasattr(stats_handler, "handle_year_review"):
-            await stats_handler.handle_year_review(update, context)
+            await stats_handler.handle_year_review(
+                update, context, reply_markup=nav_markup
+            )
         else:
             await query.edit_message_text(
                 "🎆 **Jahresrückblick**\n\nDiese Funktion wird gerade entwickelt... 🚀"
@@ -85,12 +129,20 @@ async def handle_yearly_stats_wrapper(update: Update, context: ContextTypes.DEFA
         await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
 
 
-async def handle_top_songs_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler, logger):
+async def handle_top_songs_wrapper(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    stats_handler,
+    logger,
+    nav_markup: Optional[InlineKeyboardMarkup] = None,
+):
     query = update.callback_query
     await query.answer(f"Lade Top Songs ...")
     try:
         if stats_handler and hasattr(stats_handler, "handle_top_songs"):
-            await stats_handler.handle_top_songs(update, context, period="month")
+            await stats_handler.handle_top_songs(
+                update, context, period="month", reply_markup=nav_markup
+            )
         else:
             await query.edit_message_text(
                 "🎵 **Top Songs**\n\nStatistik-Handler nicht gefunden."
@@ -100,12 +152,20 @@ async def handle_top_songs_wrapper(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
 
 
-async def handle_top_artists_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler, logger):
+async def handle_top_artists_wrapper(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    stats_handler,
+    logger,
+    nav_markup: Optional[InlineKeyboardMarkup] = None,
+):
     query = update.callback_query
     await query.answer("Lade Top Künstler ...")
     try:
         if stats_handler and hasattr(stats_handler, "handle_top_artists"):
-            await stats_handler.handle_top_artists(update, context, period="month")
+            await stats_handler.handle_top_artists(
+                update, context, period="month", reply_markup=nav_markup
+            )
         else:
             await query.edit_message_text(
                 "🎤 **Top Künstler**\n\nStatistik-Handler nicht gefunden."
@@ -115,12 +175,20 @@ async def handle_top_artists_wrapper(update: Update, context: ContextTypes.DEFAU
         await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
 
 
-async def handle_timeline_stats_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler, logger):
+async def handle_timeline_stats_wrapper(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    stats_handler,
+    logger,
+    nav_markup: Optional[InlineKeyboardMarkup] = None,
+):
     query = update.callback_query
     await query.answer("Lade Music Timeline ...")
     try:
         if stats_handler and hasattr(stats_handler, "handle_music_timeline"):
-            await stats_handler.handle_music_timeline(update, context)
+            await stats_handler.handle_music_timeline(
+                update, context, reply_markup=nav_markup
+            )
         else:
             await query.edit_message_text(
                 "📅 **Music Timeline**\n\nStatistik-Handler nicht gefunden."

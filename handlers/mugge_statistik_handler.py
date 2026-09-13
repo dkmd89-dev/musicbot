@@ -342,6 +342,7 @@ class StatistikHandler:
         period: str,
         short_label: str,
         period_label: str,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
         """
         Statistics UX & Architecture (v Final): gemeinsame Implementierung
@@ -355,6 +356,17 @@ class StatistikHandler:
         vorhandenem Account-Verlauf) ein gültiges Dict statt `None` -
         ermöglicht eine periodenbezogene "noch keine Wiedergaben"-Meldung
         statt einer generischen Fehlermeldung.
+
+        ARCH-029 (Menu Navigation Continuity): `reply_markup` ist additiv
+        und optional (Default `None` - Verhalten ohne Menü-Kontext, z. B.
+        in bestehenden Tests, unverändert). Wird von
+        handlers/menu/actions/stats.py durchgereicht (dort per
+        handlers/menu/rendering.py::render_result_navigation() aus dem
+        MenuItem-Baum abgeleitet - diese Klasse kennt selbst keine
+        Parent-Menüs/Callback-Strings). An JEDEM terminalen
+        msg.edit_text()-Aufruf angehängt (Erfolg, leere Periode,
+        Fehlerfall), damit keiner dieser drei Zustände ein Dead End
+        bleibt.
         """
         self.logger.info(f"{EMOJI['calendar']} {short_label} angefragt")
 
@@ -373,7 +385,8 @@ class StatistikHandler:
 
             if not stats:
                 await msg.edit_text(
-                    f"{EMOJI['warning']} ⚠️ Keine Daten für '{self._escape_text(nav_user)}' verfügbar."
+                    f"{EMOJI['warning']} ⚠️ Keine Daten für '{self._escape_text(nav_user)}' verfügbar.",
+                    reply_markup=reply_markup,
                 )
                 self.logger.warning(
                     f"{EMOJI['warning']} ⚠️ Keine Daten für {short_label} (User: {nav_user})"
@@ -388,7 +401,8 @@ class StatistikHandler:
                 esc = self._escape_text
                 await msg.edit_text(
                     f"📊 {period_label} · {esc(nav_user)}\n{date_range}\n\n"
-                    f"Noch keine Wiedergaben in diesem Zeitraum."
+                    f"Noch keine Wiedergaben in diesem Zeitraum.",
+                    reply_markup=reply_markup,
                 )
                 self.logger.info(
                     f"ℹ️ {short_label}: leere Periode (User: {nav_user})"
@@ -398,19 +412,23 @@ class StatistikHandler:
             text = self._format_period_statistics(
                 stats, period_label, date_range, nav_user
             )
-            await msg.edit_text(text)
+            await msg.edit_text(text, reply_markup=reply_markup)
             self.logger.info(f"✅ {short_label} erfolgreich (User: {nav_user})")
 
         except Exception as e:
             await msg.edit_text(
-                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}"
+                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}",
+                reply_markup=reply_markup,
             )
             self.logger.error(
                 f"❌ Fehler bei {short_label}: {str(e)}", exc_info=True
             )
 
     async def handle_week_review(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
         """
         Behandelt die Anfrage für "Diese Woche" (Statistics Menu UX &
@@ -421,19 +439,27 @@ class StatistikHandler:
         eine Periode - kein redundanter zweiter Wochen-Handler, sondern
         eine andere Darstellungstiefe (Master-Prompt Phase 14, Option A)."""
         await self._handle_period_review(
-            update, context, "week", "Wochenrückblick", "Wochenstatistik"
+            update, context, "week", "Wochenrückblick", "Wochenstatistik",
+            reply_markup=reply_markup,
         )
 
     async def handle_month_review(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
         """Behandelt die Anfrage für einen Monatsrückblick"""
         await self._handle_period_review(
-            update, context, "month", "Monatsrückblick", "Monatsstatistik"
+            update, context, "month", "Monatsrückblick", "Monatsstatistik",
+            reply_markup=reply_markup,
         )
 
     async def handle_library_overview(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
         """
         Zeigt die Library-Zusammensetzung (Tracks/Albums/Artists/Genre-
@@ -441,6 +467,9 @@ class StatistikHandler:
         Report (Phase 3, P1.1). Anders als die übrigen Methoden dieser
         Klasse: keine Play-History, kein Navidrome-User-Bezug — der
         Health-Report ist library-weit, nicht pro Benutzer.
+
+        ARCH-029: `reply_markup` additiv/optional, siehe
+        _handle_period_review()-Docstring.
         """
         self.logger.info(f"{EMOJI['statistics']} 📚 Library-Übersicht angefragt")
 
@@ -461,7 +490,8 @@ class StatistikHandler:
             if not report_path.exists():
                 await msg.edit_text(
                     f"{EMOJI['warning']} ⚠️ Noch kein Library-Health-Report vorhanden.\n"
-                    f"Zuerst einen Scan starten (scripts/library_health_check.py)."
+                    f"Zuerst einen Scan starten (scripts/library_health_check.py).",
+                    reply_markup=reply_markup,
                 )
                 return
 
@@ -497,13 +527,14 @@ class StatistikHandler:
                 *genre_lines,
             ]
 
-            await msg.edit_text("\n".join(lines))
+            await msg.edit_text("\n".join(lines), reply_markup=reply_markup)
             self.logger.info("✅ Library-Übersicht erfolgreich gesendet")
 
         except (json.JSONDecodeError, KeyError, OSError) as e:
             await msg.edit_text(
                 f"{EMOJI['warning']} ⚠️ Health-Report ist unlesbar/unvollständig "
-                f"({self._escape_text(str(e))}). Neuen Scan starten."
+                f"({self._escape_text(str(e))}). Neuen Scan starten.",
+                reply_markup=reply_markup,
             )
             self.logger.error(
                 f"❌ Health-Report unlesbar in handle_library_overview: {e}",
@@ -511,7 +542,8 @@ class StatistikHandler:
             )
         except Exception as e:
             await msg.edit_text(
-                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}"
+                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}",
+                reply_markup=reply_markup,
             )
             self.logger.error(
                 f"❌ Fehler in handle_library_overview: {str(e)}", exc_info=True
@@ -611,7 +643,10 @@ class StatistikHandler:
         return "\n".join(lines)
 
     async def handle_year_review(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
         """
         Behandelt die Anfrage für einen Jahresrückblick. Statistics UX &
@@ -621,7 +656,11 @@ class StatistikHandler:
         (generate_year_stats()) und eigener Renderer
         (_render_annual_statistics(), inkl. `<code>`-Monatsdiagramm,
         daher `parse_mode=ParseMode.HTML` statt der sonst in dieser
-        Klasse durchgängigen Plain-Text-Formatierung)."""
+        Klasse durchgängigen Plain-Text-Formatierung).
+
+        ARCH-029: `reply_markup` additiv/optional, siehe
+        _handle_period_review()-Docstring - an allen drei terminalen
+        edit_text()-Aufrufen angehängt."""
         self.logger.info(f"{EMOJI['calendar']} Jahresrückblick angefragt")
 
         nav_user = self._get_navidrome_user_for_request(update)
@@ -639,7 +678,8 @@ class StatistikHandler:
 
             if not stats:
                 await msg.edit_text(
-                    f"{EMOJI['warning']} ⚠️ Keine Daten für '{self._escape_text(nav_user)}' verfügbar."
+                    f"{EMOJI['warning']} ⚠️ Keine Daten für '{self._escape_text(nav_user)}' verfügbar.",
+                    reply_markup=reply_markup,
                 )
                 self.logger.warning(
                     f"{EMOJI['warning']} ⚠️ Keine Daten für Jahresrückblick (User: {nav_user})"
@@ -653,7 +693,8 @@ class StatistikHandler:
                 )
                 await msg.edit_text(
                     f"📊 Jahresstatistik · {esc(nav_user)}\n{date_range}\n\n"
-                    f"Noch keine Wiedergaben in diesem Jahr."
+                    f"Noch keine Wiedergaben in diesem Jahr.",
+                    reply_markup=reply_markup,
                 )
                 self.logger.info(
                     f"ℹ️ Jahresrückblick: leeres Jahr (User: {nav_user})"
@@ -661,21 +702,31 @@ class StatistikHandler:
                 return
 
             text = self._render_annual_statistics(stats, nav_user)
-            await msg.edit_text(text, parse_mode=ParseMode.HTML)
+            await msg.edit_text(
+                text, parse_mode=ParseMode.HTML, reply_markup=reply_markup
+            )
             self.logger.info(f"✅ Jahresrückblick erfolgreich (User: {nav_user})")
 
         except Exception as e:
             await msg.edit_text(
-                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}"
+                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}",
+                reply_markup=reply_markup,
             )
             self.logger.error(
                 f"❌ Fehler bei Jahresrückblick: {str(e)}", exc_info=True
             )
 
     async def handle_top_songs(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE, period: str = "month"
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        period: str = "month",
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
-        """Behandelt die Anfrage für Top Songs"""
+        """Behandelt die Anfrage für Top Songs.
+
+        ARCH-029: `reply_markup` additiv/optional, siehe
+        _handle_period_review()-Docstring."""
         self.logger.info(
             f"{EMOJI['topsongs']} 🎵 Top Songs angefragt für Periode: {period}"
         )
@@ -696,7 +747,8 @@ class StatistikHandler:
             )
             if not stats:
                 await msg.edit_text(
-                    f"{EMOJI['warning']} ⚠️ Keine Song-Daten für '{self._escape_text(nav_user)}' verfügbar."
+                    f"{EMOJI['warning']} ⚠️ Keine Song-Daten für '{self._escape_text(nav_user)}' verfügbar.",
+                    reply_markup=reply_markup,
                 )
                 self.logger.warning(
                     f"{EMOJI['warning']} ⚠️ Keine Song-Daten (User: {nav_user}, Periode: {period})"
@@ -707,7 +759,8 @@ class StatistikHandler:
 
             if stats["total_plays"] == 0:
                 await msg.edit_text(
-                    f"{EMOJI['topsongs']} {header}:\n\nNoch keine Wiedergaben in diesem Zeitraum."
+                    f"{EMOJI['topsongs']} {header}:\n\nNoch keine Wiedergaben in diesem Zeitraum.",
+                    reply_markup=reply_markup,
                 )
                 self.logger.info(f"ℹ️ Top Songs: leere Periode (User: {nav_user})")
                 return
@@ -735,7 +788,7 @@ class StatistikHandler:
             )
             response = "\n".join(lines)
 
-            await msg.edit_text(response)
+            await msg.edit_text(response, reply_markup=reply_markup)
             self.logger.info(
                 f"{EMOJI['success']} ✅ Top Songs Liste erstellt "
                 f"({len(stats['top_songs_detailed'])} Einträge, User: {nav_user})"
@@ -743,16 +796,24 @@ class StatistikHandler:
 
         except Exception as e:
             await msg.edit_text(
-                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}"
+                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}",
+                reply_markup=reply_markup,
             )
             self.logger.error(
                 f"{EMOJI['error']} ❌ Fehler in handle_top_songs: {e}", exc_info=True
             )
 
     async def handle_top_artists(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE, period: str = "month"
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        period: str = "month",
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
-        """Behandelt die Anfrage für Top Künstler"""
+        """Behandelt die Anfrage für Top Künstler.
+
+        ARCH-029: `reply_markup` additiv/optional, siehe
+        _handle_period_review()-Docstring."""
         self.logger.info(
             f"{EMOJI['topartists']} 👑 Top Künstler angefragt für Periode: {period}"
         )
@@ -773,7 +834,8 @@ class StatistikHandler:
             )
             if not stats:
                 await msg.edit_text(
-                    f"{EMOJI['warning']} ⚠️ Keine Künstler-Daten für '{self._escape_text(nav_user)}' verfügbar."
+                    f"{EMOJI['warning']} ⚠️ Keine Künstler-Daten für '{self._escape_text(nav_user)}' verfügbar.",
+                    reply_markup=reply_markup,
                 )
                 self.logger.warning(
                     f"{EMOJI['warning']} ⚠️ Keine Künstler-Daten (User: {nav_user}, Periode: {period})"
@@ -784,7 +846,8 @@ class StatistikHandler:
 
             if stats["total_plays"] == 0:
                 await msg.edit_text(
-                    f"{EMOJI['topartists']} {header}:\n\nNoch keine Wiedergaben in diesem Zeitraum."
+                    f"{EMOJI['topartists']} {header}:\n\nNoch keine Wiedergaben in diesem Zeitraum.",
+                    reply_markup=reply_markup,
                 )
                 self.logger.info(f"ℹ️ Top Künstler: leere Periode (User: {nav_user})")
                 return
@@ -809,7 +872,7 @@ class StatistikHandler:
             )
             response = "\n".join(lines)
 
-            await msg.edit_text(response)
+            await msg.edit_text(response, reply_markup=reply_markup)
             self.logger.info(
                 f"{EMOJI['success']} ✅ Top Künstler Liste erstellt "
                 f"({len(stats['top_artists_split'])} Einträge, User: {nav_user})"
@@ -817,7 +880,8 @@ class StatistikHandler:
 
         except Exception as e:
             await msg.edit_text(
-                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}"
+                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}",
+                reply_markup=reply_markup,
             )
             self.logger.error(
                 f"{EMOJI['error']} ❌ Fehler in handle_top_artists: {str(e)}",
@@ -958,11 +1022,17 @@ class StatistikHandler:
         return block
 
     async def handle_music_timeline(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
         """
         Behandelt die Anfrage für die Music-Timeline-Übersicht
         (Heute / Diese Woche / Diesen Monat).
+
+        ARCH-029: `reply_markup` additiv/optional, siehe
+        _handle_period_review()-Docstring.
 
         Music Timeline Consistency & UX: Layout überarbeitet, damit
         Timeline dieselbe visuelle Sprache wie Woche-/Monats-/
@@ -996,7 +1066,8 @@ class StatistikHandler:
 
             if not timeline:
                 await msg.edit_text(
-                    f"{EMOJI['warning']} ⚠️ Keine Daten für '{self._escape_text(nav_user)}' verfügbar."
+                    f"{EMOJI['warning']} ⚠️ Keine Daten für '{self._escape_text(nav_user)}' verfügbar.",
+                    reply_markup=reply_markup,
                 )
                 self.logger.warning(
                     f"{EMOJI['warning']} ⚠️ Keine Timeline-Daten (User: {nav_user})"
@@ -1011,14 +1082,15 @@ class StatistikHandler:
             lines.append("")
             lines += self._render_timeline_period("month", periods["month"])
 
-            await msg.edit_text("\n".join(lines))
+            await msg.edit_text("\n".join(lines), reply_markup=reply_markup)
             self.logger.info(
                 f"{EMOJI['success']} ✅ Music Timeline erstellt (User: {nav_user})"
             )
 
         except Exception as e:
             await msg.edit_text(
-                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}"
+                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}",
+                reply_markup=reply_markup,
             )
             self.logger.error(
                 f"{EMOJI['error']} ❌ Fehler in handle_music_timeline: {str(e)}",

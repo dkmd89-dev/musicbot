@@ -111,8 +111,19 @@ class MenuSession:
         self.last_activity = datetime.now()
 
     def navigate_to(self, menu_item: MenuItem) -> None:
-        """Navigiert zu neuem Menüpunkt"""
-        if self.current_menu:
+        """Navigiert zu neuem Menüpunkt.
+
+        ARCH-029: kein History-Eintrag, wenn `menu_item` bereits das
+        aktuelle Menü ist (Identitätsvergleich) - tritt auf, wenn ein
+        Action-Ergebnis über render_result_navigation() zu genau dem
+        Menü zurücknavigiert, von dem die Action gestartet wurde (Actions
+        rufen navigate_to() selbst nie auf, session.current_menu bleibt
+        also unverändert stehen). Ohne diesen Guard würde ein
+        selbstreferenzieller History-Eintrag entstehen, der einen
+        späteren "⬅️ Zurück"-Klick auf diesem Menü einmal wirkungslos
+        macht (zeigt sich selbst erneut statt eine Ebene höher zu
+        springen)."""
+        if self.current_menu and self.current_menu is not menu_item:
             self.history.append(self.current_menu.id)
         self.current_menu = menu_item
         self.update_activity()

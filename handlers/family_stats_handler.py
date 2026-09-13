@@ -32,7 +32,7 @@ Family-Zugehörigkeit bekommt ausschließlich eine Zugriffsverweigerung.
 
 from typing import Any, Dict, List, Optional
 
-from telegram import Update
+from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from emoji import EMOJI
@@ -135,8 +135,17 @@ class FamilyStatsHandler:
     # ─────────────────────────────────────────────────────────────
 
     async def handle_family_top_songs(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE, period: str = "month"
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        period: str = "month",
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
+        """ARCH-029: `reply_markup` additiv/optional (Default `None`) -
+        von handlers/menu/actions/family.py durchgereicht, dort per
+        RichMenuSystem.get_result_navigation() aus dem MenuItem-Baum
+        abgeleitet. Diese Klasse kennt selbst keine Parent-Menüs/
+        Callback-Strings. An JEDEM terminalen edit_text() angehängt."""
         family_id = self._resolve_family_id(update)
         if family_id is None:
             await self._deny_access(update)
@@ -150,7 +159,8 @@ class FamilyStatsHandler:
             stats = self.family_stats_service.generate_family_stats(family_id, period)
             if not stats or not stats["top_songs"]:
                 await msg.edit_text(
-                    f"{EMOJI['warning']} Keine Wiedergaben der Familie im Zeitraum '{period}'."
+                    f"{EMOJI['warning']} Keine Wiedergaben der Familie im Zeitraum '{period}'.",
+                    reply_markup=reply_markup,
                 )
                 return
 
@@ -164,15 +174,20 @@ class FamilyStatsHandler:
 
             lines.append(SEPARATOR)
             lines.append(f"📊 Familie gesamt · {format_plays(stats['total_plays'])}")
-            await msg.edit_text("\n".join(lines))
+            await msg.edit_text("\n".join(lines), reply_markup=reply_markup)
 
         except Exception as e:
-            await msg.edit_text(f"{EMOJI['error']} Fehler: {e}")
+            await msg.edit_text(f"{EMOJI['error']} Fehler: {e}", reply_markup=reply_markup)
             self.logger.error(f"❌ Fehler in handle_family_top_songs: {e}", exc_info=True)
 
     async def handle_family_top_artists(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE, period: str = "month"
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        period: str = "month",
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
+        """ARCH-029: siehe handle_family_top_songs()-Docstring."""
         family_id = self._resolve_family_id(update)
         if family_id is None:
             await self._deny_access(update)
@@ -186,7 +201,8 @@ class FamilyStatsHandler:
             stats = self.family_stats_service.generate_family_stats(family_id, period)
             if not stats or not stats["top_artists"]:
                 await msg.edit_text(
-                    f"{EMOJI['warning']} Keine Wiedergaben der Familie im Zeitraum '{period}'."
+                    f"{EMOJI['warning']} Keine Wiedergaben der Familie im Zeitraum '{period}'.",
+                    reply_markup=reply_markup,
                 )
                 return
 
@@ -201,10 +217,10 @@ class FamilyStatsHandler:
 
             lines.append(SEPARATOR)
             lines.append(f"📊 Familie gesamt · {format_plays(stats['total_plays'])}")
-            await msg.edit_text("\n".join(lines))
+            await msg.edit_text("\n".join(lines), reply_markup=reply_markup)
 
         except Exception as e:
-            await msg.edit_text(f"{EMOJI['error']} Fehler: {e}")
+            await msg.edit_text(f"{EMOJI['error']} Fehler: {e}", reply_markup=reply_markup)
             self.logger.error(f"❌ Fehler in handle_family_top_artists: {e}", exc_info=True)
 
     # ─────────────────────────────────────────────────────────────
@@ -212,8 +228,13 @@ class FamilyStatsHandler:
     # ─────────────────────────────────────────────────────────────
 
     async def handle_family_member_stats(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE, period: str = "month"
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        period: str = "month",
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
+        """ARCH-029: siehe handle_family_top_songs()-Docstring."""
         family_id = self._resolve_family_id(update)
         if family_id is None:
             await self._deny_access(update)
@@ -227,7 +248,8 @@ class FamilyStatsHandler:
             stats = self.family_stats_service.generate_family_stats(family_id, period)
             if not stats or not stats["per_member"]:
                 await msg.edit_text(
-                    f"{EMOJI['warning']} Keine Wiedergaben der Familie im Zeitraum '{period}'."
+                    f"{EMOJI['warning']} Keine Wiedergaben der Familie im Zeitraum '{period}'.",
+                    reply_markup=reply_markup,
                 )
                 return
 
@@ -247,10 +269,10 @@ class FamilyStatsHandler:
 
             lines.append(SEPARATOR)
             lines.append(f"📊 Familie gesamt · {format_plays(total)}")
-            await msg.edit_text("\n".join(lines))
+            await msg.edit_text("\n".join(lines), reply_markup=reply_markup)
 
         except Exception as e:
-            await msg.edit_text(f"{EMOJI['error']} Fehler: {e}")
+            await msg.edit_text(f"{EMOJI['error']} Fehler: {e}", reply_markup=reply_markup)
             self.logger.error(
                 f"❌ Fehler in handle_family_member_stats: {e}", exc_info=True
             )
@@ -260,8 +282,13 @@ class FamilyStatsHandler:
     # ─────────────────────────────────────────────────────────────
 
     async def handle_family_champion(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE, period: str = "month"
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        period: str = "month",
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
+        """ARCH-029: siehe handle_family_top_songs()-Docstring."""
         family_id = self._resolve_family_id(update)
         if family_id is None:
             await self._deny_access(update)
@@ -275,17 +302,19 @@ class FamilyStatsHandler:
             champion = self.family_stats_service.get_champion(family_id, period)
             if champion is None:
                 await msg.edit_text(
-                    f"{EMOJI['warning']} Keine Wiedergaben der Familie im Zeitraum '{period}'."
+                    f"{EMOJI['warning']} Keine Wiedergaben der Familie im Zeitraum '{period}'.",
+                    reply_markup=reply_markup,
                 )
                 return
 
             _, display_name, plays = champion
             await msg.edit_text(
-                f"🏆 Musik-Champion\n\n{display_name} · {format_plays(plays)}"
+                f"🏆 Musik-Champion\n\n{display_name} · {format_plays(plays)}",
+                reply_markup=reply_markup,
             )
 
         except Exception as e:
-            await msg.edit_text(f"{EMOJI['error']} Fehler: {e}")
+            await msg.edit_text(f"{EMOJI['error']} Fehler: {e}", reply_markup=reply_markup)
             self.logger.error(f"❌ Fehler in handle_family_champion: {e}", exc_info=True)
 
     # ─────────────────────────────────────────────────────────────
@@ -293,8 +322,13 @@ class FamilyStatsHandler:
     # ─────────────────────────────────────────────────────────────
 
     async def handle_family_listening_times(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE, period: str = "month"
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        period: str = "month",
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
+        """ARCH-029: siehe handle_family_top_songs()-Docstring."""
         family_id = self._resolve_family_id(update)
         if family_id is None:
             await self._deny_access(update)
@@ -308,7 +342,8 @@ class FamilyStatsHandler:
             result = self.family_stats_service.generate_listening_times(family_id, period)
             if not result:
                 await msg.edit_text(
-                    f"{EMOJI['warning']} Keine Wiedergaben der Familie im Zeitraum '{period}'."
+                    f"{EMOJI['warning']} Keine Wiedergaben der Familie im Zeitraum '{period}'.",
+                    reply_markup=reply_markup,
                 )
                 return
 
@@ -329,10 +364,10 @@ class FamilyStatsHandler:
                 SEPARATOR,
                 f"📊 Familie gesamt · {format_plays(result['total_plays'])}",
             ]
-            await msg.edit_text("\n".join(lines))
+            await msg.edit_text("\n".join(lines), reply_markup=reply_markup)
 
         except Exception as e:
-            await msg.edit_text(f"{EMOJI['error']} Fehler: {e}")
+            await msg.edit_text(f"{EMOJI['error']} Fehler: {e}", reply_markup=reply_markup)
             self.logger.error(
                 f"❌ Fehler in handle_family_listening_times: {e}", exc_info=True
             )
@@ -342,8 +377,12 @@ class FamilyStatsHandler:
     # ─────────────────────────────────────────────────────────────
 
     async def handle_family_monthly_trend(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
+        """ARCH-029: siehe handle_family_top_songs()-Docstring."""
         family_id = self._resolve_family_id(update)
         if family_id is None:
             await self._deny_access(update)
@@ -357,7 +396,8 @@ class FamilyStatsHandler:
             trend = self.family_stats_service.generate_monthly_trend(family_id)
             if not trend:
                 await msg.edit_text(
-                    f"{EMOJI['warning']} Keine Wiedergaben der Familie in den letzten Monaten."
+                    f"{EMOJI['warning']} Keine Wiedergaben der Familie in den letzten Monaten.",
+                    reply_markup=reply_markup,
                 )
                 return
 
@@ -367,10 +407,10 @@ class FamilyStatsHandler:
                 month_name = GERMAN_MONTHS[int(month_str) - 1]
                 plays = trend["plays_by_month"][month_key]
                 lines.append(f"{month_name.ljust(11)}· {format_plays(plays)}")
-            await msg.edit_text("\n".join(lines))
+            await msg.edit_text("\n".join(lines), reply_markup=reply_markup)
 
         except Exception as e:
-            await msg.edit_text(f"{EMOJI['error']} Fehler: {e}")
+            await msg.edit_text(f"{EMOJI['error']} Fehler: {e}", reply_markup=reply_markup)
             self.logger.error(
                 f"❌ Fehler in handle_family_monthly_trend: {e}", exc_info=True
             )

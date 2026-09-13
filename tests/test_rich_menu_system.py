@@ -458,6 +458,10 @@ class TestStatsLibraryOverviewMenuItem:
         assert item.callback_data == "menu:stats_library_overview"
 
     def test_delegates_to_stats_handler_when_present(self, menu_system):
+        """ARCH-029 (Menu Navigation Continuity): der Delegator berechnet
+        jetzt zusätzlich ein reply_markup aus der eigenen MenuItem-
+        Position (menu_system.get_result_navigation()) und reicht es
+        durch - additive Änderung, kein zweiter Aufrufpfad."""
         fake_stats_handler = Mock()
         fake_stats_handler.handle_library_overview = AsyncMock()
         menu_system.set_stats_handler(fake_stats_handler)
@@ -467,7 +471,8 @@ class TestStatsLibraryOverviewMenuItem:
         asyncio.run(menu_system._handle_stats_library_overview(update, context))
 
         fake_stats_handler.handle_library_overview.assert_awaited_once_with(
-            update, context
+            update, context,
+            reply_markup=menu_system.get_result_navigation("stats_library_overview"),
         )
 
     def test_shows_placeholder_when_no_stats_handler(self, menu_system):

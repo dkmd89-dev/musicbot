@@ -124,3 +124,62 @@ async def test_top_songs_wrapper_answers_with_loading_text():
     update.callback_query.answer.assert_awaited_once_with("Lade Top Songs ...")
     args, kwargs = handler.handle_top_songs.call_args
     assert kwargs.get("period") == "month"
+
+
+# ---- ARCH-029 (Menu Navigation Continuity): nav_markup-Passthrough ----
+# Jeder Wrapper reicht ein übergebenes nav_markup unverändert als
+# reply_markup an den Domain-Handler durch (Default None ohne Menü-
+# Kontext) - Abschnitt 21: Verhalten, nicht nur Existenz, prüfen.
+
+_NAV_MARKUP_CASES = [
+    (stats_actions.handle_weekly_stats_wrapper, "handle_week_review", {}),
+    (stats_actions.handle_monthly_stats_wrapper, "handle_month_review", {}),
+    (stats_actions.handle_yearly_stats_wrapper, "handle_year_review", {}),
+    (stats_actions.handle_top_songs_wrapper, "handle_top_songs", {"period": "month"}),
+    (stats_actions.handle_top_artists_wrapper, "handle_top_artists", {"period": "month"}),
+    (stats_actions.handle_timeline_stats_wrapper, "handle_music_timeline", {}),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wrapper_func,method_name,extra_kwargs", _NAV_MARKUP_CASES)
+async def test_nav_markup_defaults_to_none(wrapper_func, method_name, extra_kwargs):
+    update = _make_update()
+    handler = Mock()
+    setattr(handler, method_name, AsyncMock())
+    await wrapper_func(update, Mock(), handler, Mock())
+    _, kwargs = getattr(handler, method_name).call_args
+    assert kwargs.get("reply_markup") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wrapper_func,method_name,extra_kwargs", _NAV_MARKUP_CASES)
+async def test_nav_markup_is_passed_through_as_reply_markup(
+    wrapper_func, method_name, extra_kwargs
+):
+    update = _make_update()
+    handler = Mock()
+    setattr(handler, method_name, AsyncMock())
+    sentinel_markup = Mock(name="nav_markup")
+
+    await wrapper_func(update, Mock(), handler, Mock(), nav_markup=sentinel_markup)
+
+    _, kwargs = getattr(handler, method_name).call_args
+    assert kwargs.get("reply_markup") is sentinel_markup
+    for key, value in extra_kwargs.items():
+        assert kwargs.get(key) == value
+
+
+@pytest.mark.asyncio
+async def test_stats_library_overview_nav_markup_passthrough():
+    update = _make_update()
+    handler = Mock()
+    handler.handle_library_overview = AsyncMock()
+    sentinel_markup = Mock(name="nav_markup")
+
+    await stats_actions.handle_stats_library_overview(
+        update, Mock(), handler, nav_markup=sentinel_markup
+    )
+
+    _, kwargs = handler.handle_library_overview.call_args
+    assert kwargs.get("reply_markup") is sentinel_markup
