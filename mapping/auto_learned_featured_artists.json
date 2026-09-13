@@ -26,6 +26,19 @@
       ],
       "status": "OBSERVED"
     },
+    "Anna Grey": {
+      "canonical": "Anna Grey",
+      "last_observed_track": "Klangspiel - Dein Lied",
+      "observations": 1,
+      "primary_artists": [
+        "Klangspiel"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
     "Antonius": {
       "canonical": "Antonius",
       "last_observed_track": "01099 - 25grad",

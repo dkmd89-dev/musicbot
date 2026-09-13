@@ -107,6 +107,27 @@
         "R&B"
       ]
     },
+    "Klangspiel": {
+      "confidence": "LEARNED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Experimental": 2
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Experimental",
+          "secondary": []
+        },
+        {
+          "primary": "Experimental",
+          "secondary": []
+        }
+      ],
+      "observations": 2,
+      "primary": "Experimental",
+      "secondary": []
+    },
     "Maikel": {
       "confidence": "OBSERVED",
       "description": "Auto-learned via Last.fm (rule)",
@@ -161,6 +182,33 @@
       "observations": 2,
       "primary": "Indie",
       "secondary": []
+    },
+    "Pur": {
+      "confidence": "LEARNED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Pop": 2
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Pop",
+          "secondary": [
+            "Rock"
+          ]
+        },
+        {
+          "primary": "Pop",
+          "secondary": [
+            "Rock"
+          ]
+        }
+      ],
+      "observations": 2,
+      "primary": "Pop",
+      "secondary": [
+        "Rock"
+      ]
     },
     "Sampagne": {
       "confidence": "OBSERVED",
