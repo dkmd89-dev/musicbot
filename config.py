@@ -78,13 +78,13 @@ class Config:
     # === DIRECTORY STRUCTURE ===
     LIBRARY_DIR = Path("/mnt/musik_bilder/library")
     PODCAST_DIR = Path("/mnt/musik_bilder/Podcast")
-    DOWNLOAD_DIR = BASE_DIR / "import" / "downloads"
-    PROCESSED_DIR = BASE_DIR / "import" / "prozess"
-    FAIL_DIR = BASE_DIR / "import" / "fail"
-    ARCHIVE_DIR = BASE_DIR / "import" / "archiv"
+    DOWNLOAD_DIR = BASE_DIR / "cache" / "downloads"
+    PROCESSED_DIR = BASE_DIR / "cache" / "prozess"
+    FAIL_DIR = BASE_DIR / "cache" / "fail"
+    ARCHIVE_DIR = BASE_DIR / "cache" / "archiv"
 
     # === CACHE STRUCTURE ===
-    DATA_DIR = BASE_DIR / "cache" / "data"
+    DATA_DIR = BASE_DIR / "data"
     ESCAPE_DIR = BASE_DIR / "cache" / "escaped_scripts"
     METADATA_CACHE_DIR = BASE_DIR / "cache" / "metadata_cache"
     DUPLICATE_CACHE_DIR = BASE_DIR / "cache" / "duplicate_cache"

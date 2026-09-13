@@ -96,6 +96,11 @@ ARTIST_GENRE_MAP:
     secondary: [Deutschrap, Trap, Street Rap, Gangsta Rap]
     description: Deutscher Rapper mit harten Trap-Beats und streetnahen Texten, authentischer Sound
 
+  klangspiel:
+    primary: Dance
+    secondary: [Electronic]
+    description: Musikprojekt mit elektronischem Dance-Sound. Die Single „Jedes Mal“ erschien 2026.
+
   l'a capone:
     primary: Hip Hop
     secondary: [Drill, Gangsta Rap, Chicago Rap, Street Rap]
