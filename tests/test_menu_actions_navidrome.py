@@ -145,3 +145,64 @@ async def test_callback_unknown_shows_not_implemented():
         update, Mock(), "nav_totally_unknown", handler, Mock()
     )
     update.callback_query.answer.assert_awaited_with("⚠️ Funktion nicht implementiert")
+
+
+@pytest.mark.asyncio
+async def test_callback_album_detail_delegates_with_correct_id_nav_f9():
+    """NAV-F9: nav_album_<id> ist kein STUB mehr, sondern delegiert an
+    handle_album_detail() mit dem korrekten Album-Parameter."""
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_album_detail = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_album_abc123", handler, Mock()
+    )
+    handler.handle_album_detail.assert_awaited_once_with(update, context, "abc123")
+
+
+@pytest.mark.asyncio
+async def test_callback_song_detail_delegates_with_correct_id_nav_f9():
+    """NAV-F9: nav_song_<id> ist kein STUB mehr, sondern delegiert an
+    handle_song_detail() mit dem korrekten Song-Parameter."""
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_song_detail = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_song_xyz789", handler, Mock()
+    )
+    handler.handle_song_detail.assert_awaited_once_with(update, context, "xyz789")
+
+
+@pytest.mark.asyncio
+async def test_callback_artist_albums_all_does_not_call_artist_detail_with_corrupted_id_nav_f11():
+    """NAV-F11 (entdeckt bei NAV-F9): 'nav_artist_albums_all_<id>' wurde
+    bisher vom generischen 'nav_artist_'-Präfix-Zweig abgefangen und
+    lieferte einen korrupten Parameter ('albums_all_<id>' statt '<id>')
+    an handle_artist_detail() - derselbe Bug-Typ wie NAV-F2."""
+    update = _make_update()
+    handler = Mock()
+    handler.handle_artist_detail = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, Mock(), "nav_artist_albums_all_real-artist-id", handler, Mock()
+    )
+    handler.handle_artist_detail.assert_not_called()
+    text = update.callback_query.edit_message_text.call_args[0][0]
+    assert "albums_all" not in text
+
+
+@pytest.mark.asyncio
+async def test_callback_normal_artist_still_extracts_correct_id_nav_f11():
+    """Regressionsschutz: der NAV-F11-Fix darf den normalen
+    'nav_artist_<id>'-Pfad nicht brechen."""
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_artist_detail = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_artist_real-artist-id", handler, Mock()
+    )
+    handler.handle_artist_detail.assert_awaited_once_with(
+        update, context, "real-artist-id"
+    )

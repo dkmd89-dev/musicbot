@@ -206,6 +206,203 @@ class TestGenreDetailMarkdownEscapingBug007b:
         assert "Keine Songs" in text
 
 
+class TestAlbumDetailNavF9:
+    """NAV-F9: handle_album_detail() schließt den bisherigen
+    nav_album_<id>-STUB (Navidrome Menu System Audit, 2026-09-13)."""
+
+    def test_album_details_are_rendered_with_tracklist(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "album": {
+                    "id": "a1",
+                    "name": "Test Album",
+                    "artist": "Test Artist",
+                    "artistId": "ar1",
+                    "songCount": 2,
+                    "duration": 245,
+                    "year": 2023,
+                    "song": [
+                        {"id": "s1", "title": "Track One", "track": 1},
+                        {"id": "s2", "title": "Track Two", "track": 2},
+                    ],
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_album_detail(update, context, "a1"))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        assert kwargs["parse_mode"] == "MarkdownV2"
+        assert "Test Artist" in kwargs["text"]
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_song_s1" in buttons
+        assert "nav_song_s2" in buttons
+        assert "nav_artist_ar1" in buttons
+        assert "menu:navidrome" in buttons
+
+    def test_album_name_with_special_chars_is_escaped(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "album": {
+                    "id": "a1",
+                    "name": "Greatest Hits (Deluxe)!",
+                    "artist": "Artist & Friends",
+                    "song": [],
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_album_detail(update, context, "a1"))
+
+        sent_text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "(Deluxe)!" not in sent_text
+        assert "\\(Deluxe\\)\\!" in sent_text
+
+    def test_album_not_found_shows_error_without_crashing(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {"subsonic-response": {}}
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_album_detail(update, context, "a1"))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "nicht gefunden" in text
+
+    def test_connection_error_shown_when_unconfigured(self):
+        handler = NavidromeMenuHandler(FakeConfigUnconfigured())
+        update = make_update()
+        context = make_context()
+
+        with patch("handlers.navidrome_menu_handler.NavidromeAPI.make_request") as mock_request:
+            asyncio.run(handler.handle_album_detail(update, context, "a1"))
+
+        mock_request.assert_not_called()
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "nicht verfügbar" in text
+
+
+class TestSongDetailNavF9:
+    """NAV-F9: handle_song_detail() schließt den bisherigen
+    nav_song_<id>-STUB (Navidrome Menu System Audit, 2026-09-13)."""
+
+    def test_song_details_are_rendered_with_navigation_buttons(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "song": {
+                    "id": "s1",
+                    "title": "Some Song",
+                    "artist": "Artist X",
+                    "artistId": "ar1",
+                    "album": "Album Y",
+                    "albumId": "al1",
+                    "track": 5,
+                    "year": 2022,
+                    "genre": "Pop",
+                    "duration": 187,
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_song_detail(update, context, "s1"))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        assert kwargs["parse_mode"] == "MarkdownV2"
+        sent_text = kwargs["text"]
+        assert "Artist X" in sent_text
+        assert "Album Y" in sent_text
+        assert "3\\:07" in sent_text  # 187s -> 3:07
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_artist_ar1" in buttons
+        assert "nav_album_al1" in buttons
+        assert "menu:navidrome" in buttons
+
+    def test_song_title_with_special_chars_is_escaped(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "song": {"id": "s1", "title": "Song (Live) - Remix!", "artist": "A"}
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_song_detail(update, context, "s1"))
+
+        sent_text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "(Live) - Remix!" not in sent_text
+        assert "\\(Live\\) \\- Remix\\!" in sent_text
+
+    def test_song_not_found_shows_error_without_crashing(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {"subsonic-response": {}}
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_song_detail(update, context, "s1"))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "nicht gefunden" in text
+
+
+class TestFormatTrackDuration:
+    def test_formats_seconds_as_minutes_seconds(self):
+        assert NavidromeMenuHandler._format_track_duration(187) == "3:07"
+        assert NavidromeMenuHandler._format_track_duration(60) == "1:00"
+        assert NavidromeMenuHandler._format_track_duration(0) == "0:00"
+
+    def test_handles_missing_or_invalid_value(self):
+        assert NavidromeMenuHandler._format_track_duration(None) == "0:00"
+        assert NavidromeMenuHandler._format_track_duration("n/a") == "0:00"
+
+
 class TestErrorHandlerIntegration:
     """error_handler wird von rich_menu_handler.py nach der Konstruktion
     zugewiesen (self.navidrome_handler.error_handler = self.error_handler).
