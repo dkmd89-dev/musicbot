@@ -150,9 +150,10 @@ Extraktionsbedarf).
 
 Nur zur Orientierung — Detailverhalten der einzelnen Admin-/Statistik-/
 Navidrome-Bereiche ist nicht Gegenstand dieses Dokuments, da sie nicht in
-dieser Phase entstanden sind. **Ausnahme: die drei Family-Hub-Zweige**
-(👨‍👩‍👧‍👦 Familien-Statistik, 💬 Familien-Chat, 🎯 Familien-Challenge) — siehe
-Abschnitt 6 für die vollständige Doku dieser Phase.
+dieser Phase entstanden sind. **Ausnahme: der Family-Hub-Zweig**
+(👨‍👩‍👧‍👦 Familie mit Familien-Statistik, Familien-Chat, Familien-Challenge)
+— siehe Abschnitt 6 für die vollständige Doku dieser Phase, Abschnitt 6.13
+für die Navigations-Umstrukturierung.
 
 **Admin-Menü-Reorg (UX/Navigation):** Administration wurde von 12
 gleichrangigen Einzelpunkten auf 5 Top-Level-Punkte (3 thematische
@@ -177,21 +178,22 @@ Hauptmenü
 │   │   ├── Top Songs (stats_top_songs)
 │   │   └── Top Künstler (stats_top_artists)
 │   ├── 📈 Music Timeline (stats_timeline)
-│   ├── 📚 Meine Library (stats_library_overview, USER-Level, kein Admin-Gate)
-│   └── 👨‍👩‍👧‍👦 Familien-Statistik    → siehe Abschnitt 6 (Family Hub, F2) - UNVERÄNDERT
-│       ├── Top Songs Familie / Top Künstler Familie
-│       ├── Statistik pro Person
-│       ├── Musik-Champion
-│       ├── Hörzeiten
-│       └── Monatsentwicklung
-├── 💬 Familien-Chat                 → siehe Abschnitt 6 (Family Hub, F3)
-│   ├── Nachricht senden
-│   ├── Letzte Nachrichten
-│   └── Benachrichtigungen
-├── 🎯 Familien-Challenge            → siehe Abschnitt 6 (Family Hub, F4)
-│   ├── Heutige Challenge
-│   ├── Antworten
-│   └── Punktestand
+│   └── 📚 Meine Library (stats_library_overview, USER-Level, kein Admin-Gate)
+├── 👨‍👩‍👧‍👦 Familie                     → siehe Abschnitt 6.13 (Family Hub Navigation Restructuring)
+│   ├── 📊 Familien-Statistik        → siehe Abschnitt 6 (Family Hub, F2) - fachlich UNVERÄNDERT
+│   │   ├── Top Songs Familie / Top Künstler Familie
+│   │   ├── Statistik pro Person
+│   │   ├── Musik-Champion
+│   │   ├── Hör-Aktivität
+│   │   └── Monatsentwicklung
+│   ├── 💬 Familien-Chat             → siehe Abschnitt 6 (Family Hub, F3) - fachlich UNVERÄNDERT
+│   │   ├── Nachricht senden
+│   │   ├── Letzte Nachrichten
+│   │   └── Benachrichtigungen
+│   └── 🎯 Familien-Challenge        → siehe Abschnitt 6 (Family Hub, F4) - fachlich UNVERÄNDERT
+│       ├── Heutige Challenge
+│       ├── Antworten
+│       └── Punktestand
 ├── ⚙️ Administration                (ADMIN-Level)
 │   ├── 🎵 Bibliothek & Navidrome
 │   │   ├── MusicBot Doctor (Health-Scan + SAFE_AUTOMATIC-Repair)
@@ -709,28 +711,32 @@ und ist deshalb bewusst **kein** Familienmitglied.
 ### 6.5 F2 — Family Statistics
 
 `FamilyStatsService` aggregiert `PlayHistoryRepository.load()` über alle
-aktiven Mitglieder einer Familie:
+aktiven Mitglieder einer Familie. Seit MASTER PHASE B (Abschnitt 6.14)
+über eine intern komponierte `StatisticsCalculator`-Instanz (dieselbe
+`PlayHistoryRepository`-Quelle) — keine zweite Kalender-/Identity-/
+Split-Engine:
 
 | Methode | Liefert |
 |---|---|
-| `generate_family_stats(family_id, period)` | Gesamt-Plays, Top-10-Artists/-Songs, Top-5-Alben, Plays pro Mitglied, `listening_seconds`/`listening_seconds_reliable` |
-| `get_champion(family_id, period)` | Mitglied mit den meisten Plays (`(telegram_id, display_name, plays)`) — **ausschließlich Plays, keine Downloads** |
-| `generate_family_timeline(family_id)` | Heute/Woche/Monat (kalenderbasiert wie `StatisticsCalculator`): Track-Count, Top-Artist, Top-Song, Plays pro Mitglied |
-| `generate_listening_times(family_id, period)` | Verteilung nach Tagesstunde/Wochentag (auf Play-Count, nicht Dauer — siehe unten) |
-| `generate_monthly_trend(family_id, months)` | Plays pro Kalendermonat, chronologisch |
+| `generate_family_stats(family_id, period, now=None)` | echte Kalenderperiode (`period_start`/`period_end`), Gesamt-Plays, Top-10 Songs/Artists (strukturiert, mit Member-Attribution), Plays pro Mitglied, `listening_seconds`/`listening_seconds_reliable` |
+| `get_champion(family_id, period, now=None)` | Mitglied mit den meisten Plays (`(telegram_id, display_name, plays)`) — **ausschließlich Plays, keine Downloads** |
+| `generate_family_timeline(family_id)` | Heute/Woche/Monat (kalenderbasiert, eigene unveränderte Logik seit F2 — siehe Abschnitt 6.14): Track-Count, Top-Artist, Top-Song, Plays pro Mitglied |
+| `generate_listening_times(family_id, period, now=None)` | Verteilung nach Tagesstunde/Wochentag (auf Play-Count, nicht Dauer — siehe unten), echte Kalenderperiode |
+| `generate_monthly_trend(family_id, months, now=None)` | Plays pro Kalendermonat, chronologisch |
 
-**Hörzeit-Einschränkung (bewusste Design-Entscheidung):** `duration` wird
-vom bestehenden `PlayHistoryPoller` unverändert aus Navidrome übernommen
-und ist in der realen Play-History praktisch immer `null`
+**Hör-Aktivität statt Hörzeit (bewusste Design-Entscheidung):** `duration`
+wird vom bestehenden `PlayHistoryPoller` unverändert aus Navidrome
+übernommen und ist in der realen Play-History praktisch immer `null`
 (clientabhängig). Jede Sekunden-Summe wird deshalb von einem
 `listening_seconds_reliable`-Flag begleitet; „Hörzeit pro Monat" wurde
-deshalb bewusst **nicht** umgesetzt (wäre irreführend). „Hörzeiten"
-(Stunde/Wochentag) basiert stattdessen auf Wiedergabe-**Zeitpunkten**,
-nicht auf Dauer.
+deshalb bewusst **nicht** umgesetzt (wäre irreführend). Die Funktion
+(intern weiterhin `generate_listening_times()`) misst Wiedergabe-
+**Zeitpunkte** (Stunde/Wochentag), keine echte Hördauer — seit MASTER
+PHASE B heißt der Telegram-Menüpunkt/die Anzeige deshalb konsequent
+„⏰ Hör-Aktivität", nicht mehr „Hörzeiten" (Abschnitt 6.14).
 
-Menü: neuer Zweig „👨‍👩‍👧‍👦 Familien-Statistik" als zusätzliches Kind unter
-dem bestehenden `stats`-Menü (Geschwister der 6 bisherigen Punkte, die
-unverändert bleiben).
+Menü: „📊 Familien-Statistik" liegt seit MASTER PHASE A unter
+„👨‍👩‍👧‍👦 Familie" (siehe Abschnitt 6.13), nicht mehr unter „📊 Statistiken".
 
 ### 6.6 F3 — Family Chat
 
@@ -864,6 +870,140 @@ bewusst nur 3 umgesetzt (siehe 6.7). Zurückgestellt, jeweils P3:
 Family Chat/Challenge sind aktuell nur für 2 Mitglieder (dkmd, marina)
 nutzbar — bei einer Erweiterung der Familie ist ausschließlich
 `data/family_data.json` zu pflegen (keine Codeänderung nötig).
+
+### 6.13 Family Hub Navigation Restructuring (MASTER PHASE A, 2026-09-13)
+
+**Auftrag:** F2 (Familien-Statistik), F3 (Familien-Chat) und F4
+(Familien-Challenge) waren bislang über drei getrennte Zugriffspfade
+erreichbar — F2 als Kind von „📊 Statistiken", F3/F4 als eigenständige
+Top-Level-Menüs neben „📊 Statistiken". Master-Vorgabe: alle drei Bereiche
+zu EINER Top-Level-Kategorie „👨‍👩‍👧‍👦 Familie" bündeln, ohne die fachliche
+Logik von F2/F3/F4 anzufassen.
+
+**Umsetzung:** rein navigatorische Änderung in
+`handlers/menu/definitions.py::build_menu_tree()` — neuer, reiner
+Navigations-Container `family` (`MenuItem(id="family", ...)`, kein
+`handler=`, analog zu `stats_reviews`/`stats_rankings`) wird Kind von
+`root_menu`; `family_stats_menu`/`family_chat_menu`/`family_challenge_menu`
+werden per `add_child()` auf `family_menu` umgehängt (`.parent`
+automatisch aktualisiert). `stats_menu.add_child(family_stats_menu)` und
+die beiden `root_menu.add_child(family_chat_menu)`/
+`root_menu.add_child(family_challenge_menu)`-Zeilen entfernt.
+
+**Keine der 12 bestehenden Family-Callback-IDs wurde umbenannt** (alle
+nutzen weiterhin das Standardmuster `callback_data=f"menu:{id}"`,
+automatisch generiert aus der unveränderten ID) — nur ihre Position im
+Baum ändert sich. Die Handler-Bindung (`handler=system._handle_family_*`)
+ist unabhängig von der Baumposition und bleibt unverändert. Die
+Zurück-/Breadcrumb-Navigation (`handlers/menu/rendering.py`) ist
+vollständig generisch über `MenuItem.parent` implementiert — keine
+Änderung dort nötig. `services/family/*`, alle drei Family-Handler
+(`handlers/family_*_handler.py`) und `handlers/menu/actions/family.py`
+wurden nicht angefasst.
+
+**Effekt:** `root.children` 7 → 6 Einträge (`family_chat`/
+`family_challenge` verschwinden als Root-Geschwister, tauchen jetzt unter
+`family` auf); `stats.children` 5 → 4 Einträge (`family_stats` entfernt —
+kein zweiter Zugriffspfad „Statistiken → Familien-Statistik" mehr).
+
+**Tests:** `tests/test_menu_definitions.py` — der bisherige Pin-Test
+`TestFamilyStatisticsUnchanged` (aus der vorherigen Statistics-UX-Phase,
+die F2 explizit als „Kind von stats, nicht anfassen" schützte) wurde
+durch `TestFamilyHubStructure` ersetzt, da genau diese Struktur nun
+absichtlich geändert wurde — pinnt jetzt die neue Hub-Hierarchie
+(`family` → `family_stats`/`family_chat`/`family_challenge`), unveränderte
+Handler-Bindung/Titel/Emoji/`callback_data` für alle 12 Blattpunkte, sowie
+„kein Family-Punkt mehr auf Root- oder Statistiken-Ebene". Root-
+Kinderlisten-Test umbenannt/angepasst (sechs statt sieben Top-Level-Kinder).
+Thematische Regressionsgruppe (Menu/Family/Stats, 18 Dateien): **335
+passed, 0 Regressionen**.
+
+### 6.14 Family Statistics Attribution, Identity & UX Optimization (MASTER PHASE B, 2026-09-13)
+
+**Auftrag:** baut auf MASTER PHASE A auf (Family Hub bereits etabliert)
+und optimiert ausschließlich F2 (die 6 Familien-Statistik-Funktionen):
+korrekte Kalenderperioden, kollisionssichere Song-/Artist-Identity, echte
+Member-Attribution statt reiner `(name, count)`-Tupel, Wiederverwendung
+der kanonischen Statistics-Domain, konsistente Telegram-UX.
+
+**Root-Cause-Befund:** `FamilyStatsService` verwendete bislang ein
+Rolling-N-Day-Window (`_PERIOD_DAYS = {"week":7,"month":30,"year":365}`,
+entfernt) statt echter Kalenderperioden — derselbe Bug, der in der
+Personal-Statistics-„Statistics Menu UX & Architecture Optimization"-
+Phase bereits behoben wurde. `top_songs`/`top_artists` gruppierten nur
+über den rohen Titel-/Artist-String (Kollisionsrisiko, keine
+Member-Attribution).
+
+**Single Source of Truth statt zweiter Engine:** `FamilyStatsService`
+hält jetzt intern eine `StatisticsCalculator`-Instanz (Komposition,
+dieselbe `PlayHistoryRepository`) und nutzt deren kanonische Bausteine
+wieder — `_calendar_period_bounds()`/`_parse_history_entries()`
+(Instanzmethoden), `_identity_key()`/`_split_artists()` (statisch).
+`StatisticsCalculator` selbst bleibt dabei unverändert (0 Zeilen Diff).
+
+**Neues Datenmodell** (`generate_family_stats()`): `top_songs`/
+`top_artists` sind jetzt Listen strukturierter Dicts statt Tupeln —
+`{"title", "artists" (roher Artist-String), "total_plays", "members":
+[{"telegram_id", "display_name", "plays"}, ...]}` bzw. `{"artist",
+"total_plays", "members": [...]}`. Song-Identity über `_identity_key()`
+(Artist+Titel, kollisionssicher). Artist-Identity über `_split_artists()`
+PLUS eine neue, **familien-spezifische** Case-insensitive-Aggregation
+(casefold-Schlüssel, Anzeigewert = häufigste Original-Schreibweise,
+Ties → zuerst gesehen) — bewusst NICHT in `_split_artists()` selbst
+verortet (das bliebe sonst eine zweite, von der Personal-Statistics-
+Verwendung abweichende Regel; Personal Statistics bleibt bewusst
+case-sensitiv). `top_albums` entfernt (0 Consumer, kein Menüpunkt,
+analog zur Personal-Statistics-„Output Optimization"-Phase). Kein
+Cross-Member-Deduplication — jeder reale Play zählt separat.
+`period_start`/`period_end` neu im Rückgabewert (Grundlage für die
+Datumsbereich-Header, siehe unten).
+
+**Bewusst unverändert:** `generate_family_timeline()` — bereits
+kalenderbasiert (eigene, seit F2 etablierte Logik), keine der 6
+F2-Menüfunktionen, sondern eine geteilte Abhängigkeit von F4
+(`family_challenge_service.py`s `family_top_artist_today`/
+`family_top_song_today`-Korrektantwort). Ohne konkrete Regression bleibt
+sie unangetastet — verwendet weiterhin ihre eigene
+`_load_all_entries()`/`_FamilyEntry`-Infrastruktur.
+
+**Geteiltes Format-Helper-Modul** (`handlers/statistik_format_helpers.py`,
+neu): `format_plays()`/`format_rank()`/`format_date_range()`/`SEPARATOR`
+1:1 aus `mugge_statistik_handler.py::StatistikHandler` extrahiert — dessen
+gleichnamige Instanzmethoden sind jetzt dünne Delegatoren (Call-Sites/
+Tests dort unverändert lauffähig). `handlers/family_stats_handler.py`
+importiert direkt aus dem geteilten Modul — eine Formatierungsquelle
+statt einer zweiten, potenziell abweichenden Kopie.
+
+**UX-Umbau** (`handlers/family_stats_handler.py`): alle 6 Methoden nutzen
+jetzt Medaillen (🥇🥈🥉, ab Rang 4 numerisch), Play-Pluralisierung
+(„1 Play"/„2 Plays"), Datumsbereich-Header (`format_date_range()`, gleiche
+Darstellung wie Personal Statistics — kein zweites Datumsformat) und den
+20-Zeichen-Trenner vor der Familien-Gesamtzeile. Top-Songs/-Artists zeigen
+Member-Zeilen (`👤 Name · X Plays`); eine zusätzliche „📊 Gesamt · N
+Plays"-Zeile erscheint nur, wenn mehr als ein Mitglied beteiligt ist
+(kein redundanter Wert bei genau einem Hörer). „Statistik pro Person"
+zeigt zusätzlich den Prozentanteil (1 Dezimalstelle, deutsches
+Komma-Format). „⏰ Hörzeiten" → „⏰ Hör-Aktivität" (Text UND Menü-Titel in
+`definitions.py`, keine Callback-ID-Änderung) — vermeidet den
+irreführenden Eindruck einer echten Hördauer-Messung. „📈 Monatsentwicklung"
+zeigt jetzt deutsche Monatsnamen (`GERMAN_MONTHS`, kanonische Quelle)
+statt roher `"YYYY-MM"`-Schlüssel.
+
+**Tests:** `tests/test_family_stats_service.py` komplett auf injiziertes
+`now` umgestellt (Kalenderperioden statt Rolling-Window können sonst an
+Monats-/Jahresgrenzen flakey werden) — neue Testgruppen für
+Kalenderperioden/Artist-Case-Insensitivität/Song-Identity/Family-
+Aggregation/Member-Attribution/Artist-Attribution sowie ein
+Konsistenz-Test, der Family-Attribution eines Mitglieds gegen
+`StatisticsCalculator.generate_stats()` für denselben Navidrome-User
+prüft. `tests/test_family_stats_handler.py` auf neue Datenstruktur
+umgestellt, neue UX-Assertions. Neues `tests/test_statistik_format_helpers.py`
+für das extrahierte Modul. `tests/test_family_hardening.py`/
+`test_family_challenge_*` unverändert grün (keine Kopplung an die
+geänderten Felder/mocken `generate_family_timeline()` vollständig).
+
+Thematische Regressionsgruppe (F2/Family/Stats/Menu, 19 Dateien): **509
+passed, 0 Regressionen**.
 
 ---
 

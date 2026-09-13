@@ -30,7 +30,7 @@ FAMILY_STATS_CASES = [
     (family_actions.handle_family_stats_top_artists, "handle_family_top_artists", "Top Künstler Familie"),
     (family_actions.handle_family_stats_member, "handle_family_member_stats", "Statistik pro Person"),
     (family_actions.handle_family_stats_champion, "handle_family_champion", "Musik-Champion"),
-    (family_actions.handle_family_stats_listening_times, "handle_family_listening_times", "Hörzeiten"),
+    (family_actions.handle_family_stats_listening_times, "handle_family_listening_times", "Hör-Aktivität"),
     (family_actions.handle_family_stats_monthly_trend, "handle_family_monthly_trend", "Monatsentwicklung"),
 ]
 

@@ -182,11 +182,12 @@ def build_menu_tree(system) -> MenuItem:
         )
     )
 
-    # Familien-Statistik (Phase F2, Family Hub) - neuer Zweig NEBEN den
-    # bestehenden persönlichen Statistik-Punkten (stats_monthly/...),
-    # die unverändert bleiben (Master-Prompt: "Bestehende Callback-Namen
-    # und Navigation nicht unnötig brechen"). Zugriff wird serverseitig
-    # in FamilyStatsHandler geprüft (Family-Membership), nicht hier.
+    # Familien-Statistik (Phase F2, Family Hub). Zugriff wird
+    # serverseitig in FamilyStatsHandler geprüft (Family-Membership),
+    # nicht hier. MASTER PHASE A (Family Hub Navigation Restructuring):
+    # ist jetzt Kind von family_menu statt von stats_menu (siehe unten,
+    # "stats_menu.add_child(family_stats_menu)" entfernt) - kein
+    # zweiter Zugriffspfad über "Statistiken" mehr.
     family_stats_menu = MenuItem(
         id="family_stats",
         title="Familien-Statistik",
@@ -232,7 +233,7 @@ def build_menu_tree(system) -> MenuItem:
     family_stats_menu.add_child(
         MenuItem(
             id="family_stats_listening_times",
-            title="Hörzeiten",
+            title="Hör-Aktivität",
             emoji="⏰",
             handler=system._handle_family_stats_listening_times,
             is_action=True,
@@ -247,12 +248,10 @@ def build_menu_tree(system) -> MenuItem:
             is_action=True,
         )
     )
-    stats_menu.add_child(family_stats_menu)
-
-    # Familien-Chat (Phase F3, Family Hub) - eigenes Top-Level-Menü
-    # (Geschwister von "stats", nicht darunter verschachtelt), analog
-    # zur Master-Prompt-Zielstruktur. Zugriff wird serverseitig in
+    # Familien-Chat (Phase F3, Family Hub). Zugriff wird serverseitig in
     # FamilyChatHandler geprüft (Family-Membership), nicht hier.
+    # MASTER PHASE A (Family Hub Navigation Restructuring): ist jetzt
+    # Kind von family_menu statt eigenständiges Root-Menü (siehe unten).
     family_chat_menu = MenuItem(
         id="family_chat",
         title="Familien-Chat",
@@ -287,9 +286,11 @@ def build_menu_tree(system) -> MenuItem:
         )
     )
 
-    # Familien-Challenge (Phase F4, Family Hub) - eigenes Top-Level-
-    # Menü, analog zu family_chat. Zugriff wird serverseitig in
-    # FamilyChallengeHandler geprüft (Family-Membership), nicht hier.
+    # Familien-Challenge (Phase F4, Family Hub). Zugriff wird
+    # serverseitig in FamilyChallengeHandler geprüft (Family-Membership),
+    # nicht hier. MASTER PHASE A (Family Hub Navigation Restructuring):
+    # ist jetzt Kind von family_menu statt eigenständiges Root-Menü
+    # (siehe unten).
     family_challenge_menu = MenuItem(
         id="family_challenge",
         title="Familien-Challenge",
@@ -323,6 +324,23 @@ def build_menu_tree(system) -> MenuItem:
             is_action=True,
         )
     )
+
+    # Familie (MASTER PHASE A, Family Hub Navigation Restructuring) -
+    # reiner Navigations-Container ohne eigenen Handler (analog zu
+    # stats_reviews/stats_rankings), bündelt F2/F3/F4 als EINE
+    # Top-Level-Kategorie statt drei separater Zugriffspfade. Die
+    # fachliche Logik/Berechtigungsprüfung von F2/F3/F4 bleibt
+    # unverändert in den jeweiligen Handlern - diese Phase ändert
+    # ausschließlich Parent-Beziehungen im Menübaum.
+    family_menu = MenuItem(
+        id="family",
+        title="Familie",
+        emoji="👨‍👩‍👧‍👦",
+        description="Statistik, Chat und Challenge für die Familie",
+    )
+    family_menu.add_child(family_stats_menu)
+    family_menu.add_child(family_chat_menu)
+    family_menu.add_child(family_challenge_menu)
 
     # Admin-Menü
     admin_menu = MenuItem(
@@ -909,8 +927,7 @@ def build_menu_tree(system) -> MenuItem:
     # Menüs zum Root hinzufügen
     root_menu.add_child(download_menu)
     root_menu.add_child(stats_menu)
-    root_menu.add_child(family_chat_menu)
-    root_menu.add_child(family_challenge_menu)
+    root_menu.add_child(family_menu)
     root_menu.add_child(admin_menu)
     root_menu.add_child(test_menu)
     root_menu.add_child(navidrome_menu)

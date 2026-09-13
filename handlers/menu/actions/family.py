@@ -72,7 +72,7 @@ async def handle_family_stats_listening_times(
     if family_stats_handler:
         await family_stats_handler.handle_family_listening_times(update, context)
     else:
-        await query.edit_message_text("⏰ Lade Hörzeiten...")
+        await query.edit_message_text("⏰ Lade Hör-Aktivität...")
 
 
 async def handle_family_stats_monthly_trend(

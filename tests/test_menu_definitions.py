@@ -49,11 +49,15 @@ class _FakeSystem:
             setattr(self, name, Mock(name=name))
 
 
-def test_build_menu_tree_root_has_seven_top_level_children():
+def test_build_menu_tree_root_has_six_top_level_children():
+    """MASTER PHASE A (Family Hub Navigation Restructuring): family_chat/
+    family_challenge sind keine eigenständigen Root-Kinder mehr - beide
+    liegen jetzt unter dem neuen Navigations-Container 'family' (siehe
+    TestFamilyHubStructure)."""
     system = _FakeSystem()
     root = definitions.build_menu_tree(system)
     assert [c.id for c in root.children] == [
-        "download", "stats", "family_chat", "family_challenge", "admin", "tests", "navidrome"
+        "download", "stats", "family", "admin", "tests", "navidrome"
     ]
 
 
@@ -127,11 +131,14 @@ class TestStatsMenuStructure:
         definitions.populate_registry(registry, root)
         return registry
 
-    def test_stats_top_level_children_are_reviews_rankings_timeline_library_family(self):
+    def test_stats_top_level_children_are_reviews_rankings_timeline_library(self):
+        """MASTER PHASE A (Family Hub Navigation Restructuring):
+        family_stats ist kein Kind von 'stats' mehr - siehe
+        TestFamilyHubStructure (jetzt Kind von 'family')."""
         registry = self._registry()
         assert [c.id for c in registry["stats"].children] == [
             "stats_reviews", "stats_rankings", "stats_timeline",
-            "stats_library_overview", "family_stats",
+            "stats_library_overview",
         ]
 
     def test_stats_reviews_is_pure_navigation_container(self):
@@ -173,23 +180,59 @@ class TestStatsMenuStructure:
         assert len(callback_data_values) == len(set(callback_data_values))
 
 
-class TestFamilyStatisticsUnchanged:
-    """Master-Prompt: Familien-Statistik ist explizit OUT OF SCOPE dieser
-    Phase - dieser Test pinnt die bestehende Struktur/Handler-Bindung
-    als Regressionsschutz gegen versehentliche Änderungen."""
+class TestFamilyHubStructure:
+    """MASTER PHASE A - Family Hub Navigation Restructuring: F2/F3/F4
+    werden als EINE Top-Level-Kategorie '👨‍👩‍👧‍👦 Familie' gebündelt statt
+    (wie zuvor) family_stats unter 'stats' und family_chat/
+    family_challenge als eigenständige Root-Einträge zu führen.
+    Fachlogik/Handler-Bindung von F2/F3/F4 bleibt dabei unverändert
+    (regressionsgetestet hier) - nur die Parent-Beziehungen im
+    Menübaum ändern sich. Ersetzt die alte TestFamilyStatisticsUnchanged
+    (deren Kernaussage - family_stats bleibt Kind von stats - genau das
+    Gegenteil des jetzigen, explizit verlangten Zielbilds war)."""
 
-    def test_family_stats_is_still_a_child_of_stats(self):
+    def _registry(self):
         system = _FakeSystem()
         root = definitions.build_menu_tree(system)
         registry = {}
         definitions.populate_registry(registry, root)
-        assert "family_stats" in [c.id for c in registry["stats"].children]
+        return registry, system
+
+    def test_family_is_a_top_level_child(self):
+        registry, _ = self._registry()
+        assert "family" in [c.id for c in registry["main"].children]
+
+    def test_family_is_pure_navigation_container(self):
+        registry, _ = self._registry()
+        family = registry["family"]
+        assert family.handler is None
+        assert family.is_action is False
+        assert family.title == "Familie"
+        assert family.emoji == "👨‍👩‍👧‍👦"
+
+    def test_family_children_are_stats_chat_challenge(self):
+        registry, _ = self._registry()
+        assert [c.id for c in registry["family"].children] == [
+            "family_stats", "family_chat", "family_challenge",
+        ]
+
+    def test_no_family_item_is_a_top_level_root_child_anymore(self):
+        registry, _ = self._registry()
+        root_child_ids = [c.id for c in registry["main"].children]
+        assert "family_stats" not in root_child_ids
+        assert "family_chat" not in root_child_ids
+        assert "family_challenge" not in root_child_ids
+        assert "family" in root_child_ids
+
+    def test_family_stats_no_longer_reachable_via_stats(self):
+        """Kein zweiter Zugriffspfad mehr: 'Statistiken -> Familien-
+        Statistik' existiert nicht mehr."""
+        registry, _ = self._registry()
+        assert "family_stats" not in [c.id for c in registry["stats"].children]
+        assert registry["family_stats"].parent.id == "family"
 
     def test_family_stats_children_and_handlers_unchanged(self):
-        system = _FakeSystem()
-        root = definitions.build_menu_tree(system)
-        registry = {}
-        definitions.populate_registry(registry, root)
+        registry, system = self._registry()
 
         expected_handlers = {
             "family_stats_top_songs": system._handle_family_stats_top_songs,
@@ -206,13 +249,59 @@ class TestFamilyStatisticsUnchanged:
             assert registry[child_id].is_action is True
 
     def test_family_stats_title_and_emoji_unchanged(self):
-        system = _FakeSystem()
-        root = definitions.build_menu_tree(system)
-        registry = {}
-        definitions.populate_registry(registry, root)
+        registry, _ = self._registry()
         family_stats = registry["family_stats"]
         assert family_stats.title == "Familien-Statistik"
         assert family_stats.emoji == "👨‍👩‍👧‍👦"
+
+    def test_family_chat_children_and_handlers_unchanged(self):
+        registry, system = self._registry()
+        expected_handlers = {
+            "family_chat_send": system._handle_family_chat_send,
+            "family_chat_recent": system._handle_family_chat_recent,
+            "family_chat_notifications": system._handle_family_chat_notifications,
+        }
+        family_chat = registry["family_chat"]
+        assert [c.id for c in family_chat.children] == list(expected_handlers.keys())
+        for child_id, expected_handler in expected_handlers.items():
+            assert registry[child_id].handler is expected_handler
+            assert registry[child_id].is_action is True
+        assert family_chat.parent.id == "family"
+
+    def test_family_challenge_children_and_handlers_unchanged(self):
+        registry, system = self._registry()
+        expected_handlers = {
+            "family_challenge_today": system._handle_family_challenge_today,
+            "family_challenge_answer": system._handle_family_challenge_answer,
+            "family_challenge_leaderboard": system._handle_family_challenge_leaderboard,
+        }
+        family_challenge = registry["family_challenge"]
+        assert [c.id for c in family_challenge.children] == list(expected_handlers.keys())
+        for child_id, expected_handler in expected_handlers.items():
+            assert registry[child_id].handler is expected_handler
+            assert registry[child_id].is_action is True
+        assert family_challenge.parent.id == "family"
+
+    def test_existing_callback_ids_unchanged(self):
+        """Reparenting darf callback_data nicht verändern (Standardmuster
+        menu:<id>, kein eigener Callback-Präfix für Family-IDs)."""
+        registry, _ = self._registry()
+        for item_id in ["family_stats", "family_chat", "family_challenge"]:
+            assert registry[item_id].callback_data == f"menu:{item_id}"
+
+    def test_no_duplicate_callback_ids_across_family_subtree(self):
+        registry, _ = self._registry()
+        family_ids = [
+            "family", "family_stats", "family_stats_top_songs",
+            "family_stats_top_artists", "family_stats_member",
+            "family_stats_champion", "family_stats_listening_times",
+            "family_stats_monthly_trend", "family_chat", "family_chat_send",
+            "family_chat_recent", "family_chat_notifications",
+            "family_challenge", "family_challenge_today",
+            "family_challenge_answer", "family_challenge_leaderboard",
+        ]
+        callback_data_values = [registry[i].callback_data for i in family_ids]
+        assert len(callback_data_values) == len(set(callback_data_values))
 
 
 def test_build_menu_tree_admin_menu_has_admin_access_level():
