@@ -2,7 +2,8 @@
 
 **Status:** CURRENT (lebendes Dokument). Entstanden aus dem read-only
 „MASTER PHASE — NAVIDROME MENU SYSTEM"-Audit (2026-09-13). P0-Findings
-(NAV-F1/NAV-F2) und NAV-F10 sind CLOSED; NAV-F3–F9 bleiben offen/geplant.
+(NAV-F1/NAV-F2), NAV-F10 und NAV-F6 sind CLOSED; NAV-F3–F5/F7–F9 bleiben
+offen/geplant.
 **Scope:** `handlers/navidrome_menu_handler.py`,
 `handlers/menu/actions/navidrome.py`, `services/clients/navidrome_api.py`
 und ihre unmittelbaren Kollaborateure (Personal-Statistics-Domain nur
@@ -49,16 +50,20 @@ einer Klasse — kein Renderer, keine Service-Schicht dazwischen. Siehe
 Abschnitt 5 (Zielarchitektur) für die empfohlene, noch nicht umgesetzte
 Auflösung.
 
-**Zwei nicht deckungsgleiche „Connection-Check"-Konzepte:**
+**Connection-Check-Konzepte (NAV-F6, CLOSED 2026-09-13):**
 `enhanced_status_handler.py` (Admin-Diagnose) nutzt den echten
-`NavidromeAPI.check_connection()` (`ping`-Request). Der User-facing
-Navidrome-Bereich (`NavidromeMenuHandler._check_connection()`) prüft
-dagegen nur, ob `NAVIDROME_URL`/`NAVIDROME_USER` nicht-leer sind (BUG-007a,
-bereits gefixt) — **niemals** einen echten `ping`. „🔄 Erneut versuchen"
-(`nav_reconnect`) testet dadurch keine echte Konnektivität. Bewusst als
-kleinerer, bereits im Code dokumentierter Teil-Fix belassen (ein voller
-async-Umbau auf den echten Connection-Test ist größer und wurde
-zurückgestellt) — siehe NAV-F6 unten.
+`NavidromeAPI.check_connection()` (`ping`-Request). Der schnelle, rein
+lokale `NavidromeMenuHandler._check_connection()`-Vorab-Check (prüft nur,
+ob `NAVIDROME_URL`/`NAVIDROME_USER` nicht-leer sind, BUG-007a) bleibt
+bewusst unverändert vor den 8 Browse-/Such-Methoden — kein `ping` vor
+jedem einzelnen Klick (Latenz-Trade-off). `handle_reconnect()`
+(„🔄 Erneut versuchen") führt seit dem NAV-F6-Fix zusätzlich einen echten
+`await NavidromeAPI.check_connection()` aus, bevor „✅ Verbindung
+wiederhergestellt!" angezeigt wird — nur dieser explizit vom Nutzer
+ausgelöste Klick rechtfertigt den echten Netzwerk-Request. Schlägt der
+Ping fehl, wird `connection_status` zusätzlich zurückgesetzt, damit der
+nächste Klick auf eine andere Navidrome-Funktion wieder korrekt den
+Verbindungsfehler-Screen zeigt.
 
 ---
 
@@ -134,7 +139,7 @@ Server-Ebene, nicht gleichbedeutend mit `UNSUPPORTED`).
 | NAV-F3 | `NavidromeMenuHandler.handle_stats()` (getIndexes-basiert) ist unerreichbar (kein Menüpunkt; `nav_link_stats` verlinkt stattdessen korrekt auf die Personal-Statistics-Domain) — toter Code inkl. eigenem Test für unerreichbaren Pfad. | DEAD_ROUTE | P2 | OPEN |
 | NAV-F4 | `nav_browse_playlists` (unter „Durchsuchen", STUB) vs. `nav_playlists` („Meine Playlists", Top-Level, real) — zwei Menüpunkte für dasselbe Konzept. | DUPLICATE | P1 | OPEN |
 | NAV-F5 | `nav_playlist_<id>`-Buttons werden in `handle_my_playlists()` erzeugt, aber es existiert kein Dispatcher-Zweig dafür (fällt auf generisches „Funktion nicht implementiert"). | DEAD_ROUTE | P1 | OPEN |
-| NAV-F6 | `_check_connection()`/`handle_reconnect()` prüfen nie den echten `NavidromeAPI.check_connection()` (`ping`), nur lokale Config-Präsenz — abweichend von `enhanced_status_handler.py`, das den echten Ping bereits nutzt. | ARCHITECTURE_VIOLATION | P1 | OPEN |
+| NAV-F6 | `handle_reconnect()` prüfte nie den echten `NavidromeAPI.check_connection()` (`ping`), nur lokale Config-Präsenz — abweichend von `enhanced_status_handler.py`, das den echten Ping bereits nutzt. | ARCHITECTURE_VIOLATION | P1 | **CLOSED** (2026-09-13) |
 | NAV-F7 | `nav_search_genres` — STUB. | — | P3 | OPEN |
 | NAV-F8 | `nav_genre_stats` — STUB. | — | P3 | OPEN |
 | NAV-F9 | `nav_album_<id>`/`nav_song_<id>` Detailansichten — STUB, obwohl an 6 Stellen im Code bereits verlinkt (`getAlbum`/`getSong` nicht implementiert). | — | **P1** | OPEN |
@@ -202,7 +207,7 @@ Verschiebung von Serverstatus/Scan aus dem Admin-Bereich hierher.
 1. ~~NAV-F1~~ ✅ CLOSED
 2. ~~NAV-F2~~ ✅ CLOSED
 3. ~~NAV-F10~~ ✅ CLOSED — `reply_markup` für `handle_last_played()` nachgezogen (ARCH-029-Muster wiederverwendet: `RichMenuSystem.get_result_navigation("nav_recent")` → `handlers/menu/actions/navidrome.py::handle_recent()` → `StatistikHandler.handle_last_played(reply_markup=...)`)
-4. NAV-F6 — echten `NavidromeAPI.check_connection()` in `_check_connection()`/`handle_reconnect()` nutzen
+4. ~~NAV-F6~~ ✅ CLOSED — `handle_reconnect()` nutzt jetzt einen echten `await NavidromeAPI.check_connection()` (`ping`), bevor Erfolg gemeldet wird; schlägt der Ping fehl, wird `connection_status` zurückgesetzt. Der schnelle lokale `_check_connection()`-Vorab-Check vor den übrigen 8 Browse-/Such-Methoden bleibt bewusst unverändert (kein `ping` vor jedem Klick)
 5. NAV-F4/NAV-F5 — Playlist-Duplikat mergen, `getPlaylist`-Client-Methode + Dispatcher-Zweig ergänzen
 6. NAV-F9 — `getAlbum`/`getSong`-Client-Methoden + Detail-Rendering
 7. NAV-F3 — toten `handle_stats()`-Code + zugehörigen Test entfernen
@@ -218,7 +223,7 @@ gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
 
 | Bereich | Datei | Umfang |
 |---|---|---|
-| `NavidromeMenuHandler` (Connection-Status, Escaping, Error-Routing, NAV-F1) | `tests/test_navidrome_menu_handler.py` | 29 Tests (BUG-007a/b, NAV-F1, NAV-F2) |
+| `NavidromeMenuHandler` (Connection-Status, Escaping, Error-Routing, NAV-F1, NAV-F6) | `tests/test_navidrome_menu_handler.py` | 36 Tests (BUG-007a/b, NAV-F1, NAV-F2, NAV-F6) |
 | `handlers/menu/actions/navidrome.py`-Wrapper + interner Dispatcher (NAV-F10) | `tests/test_menu_actions_navidrome.py` | 11 Tests |
 | `NavidromeAPI`-Adapter (Logging, Timeout, Characterization) | `tests/test_navidrome_api_characterization.py`, `tests/test_navidrome_api_logging.py`, `tests/test_navidrome_api_timeout.py` | siehe dort |
 | Result-Navigation End-to-End (ARCH-029-Muster, NAV-F10) | `tests/test_menu_navigation_continuity.py::TestLastPlayedResultNavigationEndToEndNavF10` | 2 Tests |

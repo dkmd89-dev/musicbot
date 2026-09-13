@@ -361,6 +361,9 @@ class TestBackButtonsUseValidMenuCallbackFormatNavF1:
 
     def test_reconnect_success_button_uses_menu_colon_format(self):
         handler = NavidromeMenuHandler(FakeConfigConfigured())
+        # NAV-F6: handle_reconnect() ruft jetzt echt check_connection() auf
+        # (Regel 7 - externer Netzwerkaufruf wird gemockt).
+        handler.navidrome_api.check_connection = AsyncMock(return_value=True)
         update = make_update()
         context = make_context()
 
@@ -384,6 +387,88 @@ class TestBackButtonsUseValidMenuCallbackFormatNavF1:
         source = inspect.getsource(module)
         assert 'callback_data="menu_navidrome"' not in source
         assert 'callback_data="menu_main"' not in source
+
+
+class TestReconnectUsesRealConnectionCheckNavF6:
+    """NAV-F6-Regressionstest (Navidrome Menu System Audit, 2026-09-13):
+    handle_reconnect() prüfte bisher nur erneut die Config-Präsenz
+    (_initialize_api()/_check_connection()), NIEMALS einen echten
+    Subsonic-`ping`. "🔄 Erneut versuchen" meldete dadurch auch dann
+    Erfolg, wenn der Server tatsächlich nicht erreichbar war. Pinnt
+    jetzt, dass ein echter NavidromeAPI.check_connection()-Aufruf
+    stattfindet und dessen Ergebnis über Erfolg/Fehler entscheidet."""
+
+    def test_successful_ping_shows_success_message(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        handler.navidrome_api.check_connection = AsyncMock(return_value=True)
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_reconnect(update, context))
+
+        handler.navidrome_api.check_connection.assert_awaited_once()
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Verbindung wiederhergestellt" in text
+
+    def test_failed_ping_shows_connection_error_not_success(self):
+        """Der eigentliche Bug: bei nicht erreichbarem Server (echter
+        ping schlägt fehl) durfte NIE 'Verbindung wiederhergestellt'
+        angezeigt werden, obwohl die Config selbst vollständig ist."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        handler.navidrome_api.check_connection = AsyncMock(return_value=False)
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_reconnect(update, context))
+
+        handler.navidrome_api.check_connection.assert_awaited_once()
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "nicht verfügbar" in text
+        assert "wiederhergestellt" not in text
+
+    def test_failed_ping_resets_connection_status_for_subsequent_clicks(self):
+        """Ohne diesen Reset würde der nächste Klick auf z.B. 'Künstler
+        durchsuchen' die veraltete True-Config-Präsenz nutzen und eine
+        echte API-Exception riskieren statt der freundlichen
+        Verbindungsfehler-Meldung."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        handler.navidrome_api.check_connection = AsyncMock(return_value=False)
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_reconnect(update, context))
+
+        assert handler.connection_status is False
+
+    def test_unconfigured_config_shows_connection_error_without_ping(self):
+        """Bei fehlender Config wird kein Netzwerkaufruf ausgelöst -
+        der schnelle lokale Check bleibt die erste Instanz."""
+        handler = NavidromeMenuHandler(FakeConfigUnconfigured())
+        handler.navidrome_api.check_connection = AsyncMock(return_value=True)
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_reconnect(update, context))
+
+        handler.navidrome_api.check_connection.assert_not_awaited()
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "nicht verfügbar" in text
+
+    def test_browse_precheck_remains_local_no_network_call(self):
+        """Der schnelle lokale Vorab-Check vor den übrigen Browse-/Such-
+        Methoden bleibt bewusst unverändert - kein ping vor jedem
+        einzelnen Klick (Latenz-Trade-off, siehe NAV-F6-Dokumentation)."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        handler.navidrome_api.check_connection = AsyncMock(return_value=True)
+        handler.navidrome_api.get_artists = AsyncMock(
+            return_value=[{"id": "1", "name": "Artist A"}]
+        )
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_browse_artists(update, context))
+
+        handler.navidrome_api.check_connection.assert_not_awaited()
 
 
 class TestGenreSongsAllRoutingNavF2:
