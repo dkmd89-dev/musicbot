@@ -1674,7 +1674,119 @@ Family Hub, 22 Dateien): **516 passed, 0 Regressionen.**
 
 ---
 
-## 13. Verwandte Dokumente
+## 13. ARCH-029 — Menu Navigation Continuity & Result Navigation (2026-09-13)
+
+### 13.1 Problem
+
+Nach einer Menü-Action (z. B. „Diese Woche") wurde zwar das fachliche
+Ergebnis angezeigt, aber die Ergebnisnachricht enthielt kein
+`reply_markup` — ein Navigations-Dead-End, obwohl der Benutzer aus einem
+Menü heraus gestartet war. Betroffen: alle 7 Personal-Statistics-
+Ergebnismethoden (`handle_week_review`/`handle_month_review`/
+`handle_year_review`/`handle_top_songs`/`handle_top_artists`/
+`handle_music_timeline`/`handle_library_overview`) sowie alle 12
+Family-Hub-Ergebnismethoden (F2 6, F3 3, F4 3) in
+`handlers/mugge_statistik_handler.py`/`handlers/family_stats_handler.py`/
+`handlers/family_chat_handler.py`/`handlers/family_challenge_handler.py`.
+
+**Root Cause:** `RichMenuSystem.handle_callback()` ruft für `menu:`-Items
+mit gebundenem `handler` diesen direkt auf (`await menu_item.handler(...)`)
+— **nie** `show_menu()`/`session.navigate_to()`. `session.current_menu`
+bleibt dadurch nach einer Action exakt beim MenuItem stehen, von dem die
+Action gestartet wurde. Der Domain-Handler sendet sein Ergebnis über
+`msg.edit_text(...)` ohne `reply_markup` — es gab keine Stelle, die
+automatisch eine Navigation an das Ergebnis anhängt.
+
+### 13.2 Architekturentscheidung: Result-Navigation aus dem MenuItem-Baum
+
+Keine neue Navigationsarchitektur, keine zweite Back-Mechanik neben
+`menu:back`. Stattdessen: `handlers/menu/rendering.py::
+render_result_navigation(menu_item)` — eine reine Funktion, die aus der
+bereits vorhandenen statischen Parent-Kette eines MenuItem (`.parent`,
+`.parent.parent`, `.title`, `.emoji` — dieselbe Struktur, die
+`get_breadcrumb()` nutzt) ein `InlineKeyboardMarkup` baut:
+
+```text
+Level 1 (Parent):      [⬅️ <Parent-Titel>]
+Level 2 (Grandparent):  [<Grandparent-Emoji> <Grandparent-Titel>] [🏠 Hauptmenü]
+```
+
+Grandparent wird nur gezeigt, wenn er nicht bereits „main" ist (kein
+redundanter Button). Ist der Parent bereits „main", erscheint nur ein
+einzelner „🏠 Hauptmenü"-Button.
+
+**Warum NICHT `menu:back` wiederverwendet wird:** da Actions
+`session.current_menu` nie verändern, würde ein `menu:back`-Klick auf dem
+Ergebnis (history-Pop relativ zum unveränderten `current_menu`) eine
+Ebene zu weit zurückspringen (z. B. von „Diese Woche" direkt zu
+„Statistiken" statt zu „Rückblicke"). Der literale `menu:<parent.id>`-
+Callback (bestehendes, unverändertes Format) referenziert stattdessen
+exakt den unmittelbaren Parent — kein neuer Callback-Präfix.
+
+**Selbstreferenz-Guard:** `MenuSession.navigate_to()` überspringt jetzt
+den History-Eintrag, wenn das Ziel-MenuItem bereits `current_menu` ist
+(Identitätsvergleich) — verhindert einen wirkungslosen ersten „Zurück"-
+Klick, nachdem der Nutzer vom Action-Ergebnis zum Parent-Menü navigiert
+ist.
+
+### 13.3 Verantwortlichkeit / Verdrahtung
+
+`RichMenuSystem.get_result_navigation(menu_id)` (public) schlägt die ID
+in der eigenen Registry nach und liefert `render_result_navigation(item)`
+(`None` bei unbekannter ID, defensiv). Aufgerufen von:
+
+- `RichMenuHandler`s 6 Statistik-Wrapper-Methoden (`_handle_*_stats_wrapper`)
+  über `self.menu_system.get_result_navigation(...)`.
+- `RichMenuSystem`s eigene Family-Delegatoren (`_handle_family_*`) über
+  `self.get_result_navigation(...)`.
+
+Das berechnete `InlineKeyboardMarkup` wird als `nav_markup` explizit an
+die jeweilige `handlers/menu/actions/{stats,family}.py`-Wrapper-Funktion
+übergeben, die es 1:1 als `reply_markup` an die Domain-Handler-Methode
+durchreicht — **weder `actions/*.py` noch die Domain-Handler
+(`StatistikHandler`/`FamilyStatsHandler`/`FamilyChatHandler`/
+`FamilyChallengeHandler`) kennen MenuItem, die Registry oder
+Callback-Strings.** `reply_markup` ist überall additiv/optional
+(Default `None`) und wird an **jedem** terminalen `edit_text()`/
+`reply_text()`-Aufruf angehängt (Erfolg, leere Periode, Fehlerfall) —
+kein Zustand bleibt ein Dead End.
+
+```text
+Menu Action (RichMenuHandler/RichMenuSystem)
+    ↓  get_result_navigation(eigene MenuItem-ID)
+Navigation (InlineKeyboardMarkup, aus dem MenuItem-Baum)
+    ↓  nav_markup= (explizit übergeben)
+Actions-Schicht (handlers/menu/actions/*.py)
+    ↓  reply_markup= (1:1 durchgereicht)
+Domain-Handler (StatistikHandler/Family*Handler)
+    ↓  an JEDEM terminalen edit_text()/reply_text()
+Telegram-Ergebnisnachricht (mit Navigation)
+```
+
+### 13.4 Was Domain-Handler/Actions NICHT selbst tun
+
+- Keine eigenen Callback-Strings bauen oder kennen.
+- Kein Wissen über Parent-/Grandparent-Menüs.
+- Keine eigene `InlineKeyboardMarkup`-Konstruktion für Navigation (nur
+  für rein fachliche Inline-Buttons, sofern vorhanden — hier nicht der
+  Fall).
+- Kein Zugriff auf `MenuItem`/die Menü-Registry/`MenuSession`.
+
+### 13.5 Scope dieser Phase
+
+Umgesetzt: alle 7 Personal-Statistics- und alle 12 Family-Hub-
+Ergebnismethoden. **Nicht Teil dieser Phase** (bereits vorhandene eigene
+Navigation, stichprobenartig verifiziert, siehe ARCH-029-Analyse):
+Duplikate, Admin/Diagnose (Logger/Status/ErrorAdmin), Backup,
+Library/Doctor/Repair/Health-Review, Navidrome, Test-System,
+Download-Control-Center. `handle_last_played()` hat keinen Menüpunkt
+(kein Kontext ableitbar) und bleibt unverändert. Keine Änderung an
+Callback-IDs, Menüstruktur, `StatisticsCalculator`, `FamilyStatsService`,
+F3/F4-Fachlogik, `generate_family_timeline()`.
+
+---
+
+## 14. Verwandte Dokumente
 
 - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — Details zu allen vier
   live gefundenen Bugs dieser Phase sowie zum inzwischen geschlossenen

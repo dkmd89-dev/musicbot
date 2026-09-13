@@ -18,9 +18,9 @@ eintreffende Freitext-Nachricht richtet - deshalb ein Dict
 Sets.
 """
 
-from typing import Dict
+from typing import Dict, Optional
 
-from telegram import Update
+from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from emoji import EMOJI
@@ -71,8 +71,14 @@ class FamilyChallengeHandler:
     # ─────────────────────────────────────────────────────────────
 
     async def handle_todays_challenge(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ) -> None:
+        """ARCH-029: `reply_markup` additiv/optional, siehe
+        handlers/family_stats_handler.py::handle_family_top_songs()-
+        Docstring für das allgemeine Muster."""
         telegram_id = update.effective_user.id
         if not self.family_service.is_active_family_member(telegram_id):
             await self._deny_access(update)
@@ -94,7 +100,8 @@ class FamilyChallengeHandler:
             else "\n\nAntworte über '✅ Antworten' im Menü."
         )
         await reply_target.reply_text(
-            f"🎯 Heutige Familien-Challenge:\n\n{challenge['question']}{hint}"
+            f"🎯 Heutige Familien-Challenge:\n\n{challenge['question']}{hint}",
+            reply_markup=reply_markup,
         )
 
     # ─────────────────────────────────────────────────────────────
@@ -102,8 +109,13 @@ class FamilyChallengeHandler:
     # ─────────────────────────────────────────────────────────────
 
     async def handle_answer_prompt(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ) -> None:
+        """ARCH-029: `reply_markup` additiv/optional, siehe
+        handle_todays_challenge()-Docstring."""
         telegram_id = update.effective_user.id
         if not self.family_service.is_active_family_member(telegram_id):
             await self._deny_access(update)
@@ -119,14 +131,16 @@ class FamilyChallengeHandler:
         if self.challenge_service.has_user_answered(telegram_id, challenge["id"]):
             await reply_target.reply_text(
                 f"{EMOJI['warning']} Du hast heute schon geantwortet - "
-                "keine Mehrfachwertung."
+                "keine Mehrfachwertung.",
+                reply_markup=reply_markup,
             )
             return
 
         self.pending_answers[telegram_id] = challenge["id"]
         await reply_target.reply_text(
             f"❓ {challenge['question']}\n\n"
-            "Schreibe jetzt deine Antwort (oder /cancel zum Abbrechen):"
+            "Schreibe jetzt deine Antwort (oder /cancel zum Abbrechen):",
+            reply_markup=reply_markup,
         )
 
     async def process_pending_answer(
@@ -171,8 +185,13 @@ class FamilyChallengeHandler:
     # ─────────────────────────────────────────────────────────────
 
     async def handle_leaderboard(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ) -> None:
+        """ARCH-029: `reply_markup` additiv/optional, siehe
+        handle_todays_challenge()-Docstring."""
         telegram_id = update.effective_user.id
         if not self.family_service.is_active_family_member(telegram_id):
             await self._deny_access(update)
@@ -187,7 +206,8 @@ class FamilyChallengeHandler:
 
         if not leaderboard:
             await reply_target.reply_text(
-                f"{EMOJI['warning']} Noch keine Familienmitglieder für den Punktestand."
+                f"{EMOJI['warning']} Noch keine Familienmitglieder für den Punktestand.",
+                reply_markup=reply_markup,
             )
             return
 
@@ -195,4 +215,7 @@ class FamilyChallengeHandler:
             f"{idx + 1}. {name}: {points} Punkte"
             for idx, (_, name, points) in enumerate(leaderboard)
         ]
-        await reply_target.reply_text("🏆 Punktestand Familien-Challenge:\n\n" + "\n".join(lines))
+        await reply_target.reply_text(
+            "🏆 Punktestand Familien-Challenge:\n\n" + "\n".join(lines),
+            reply_markup=reply_markup,
+        )

@@ -27,9 +27,9 @@ FamilyService.is_active_family_member() bzw. verlässt sich auf
 FamilyChatService, das dieselbe Prüfung selbst durchführt.
 """
 
-from typing import Set
+from typing import Optional, Set
 
-from telegram import Update
+from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from emoji import EMOJI
@@ -80,8 +80,16 @@ class FamilyChatHandler:
     # ─────────────────────────────────────────────────────────────
 
     async def handle_send_message_prompt(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ) -> None:
+        """ARCH-029: `reply_markup` additiv/optional (Default `None`),
+        siehe handlers/family_stats_handler.py::handle_family_top_songs()-
+        Docstring für das allgemeine Muster. Hier zusätzlich als kleiner
+        Ausstieg nützlich, falls der Nutzer doch nicht senden will (die
+        Text-Eingabe selbst bleibt über /cancel abbrechbar, unverändert)."""
         telegram_id = update.effective_user.id
         if not self.family_service.is_active_family_member(telegram_id):
             await self._deny_access(update)
@@ -92,7 +100,8 @@ class FamilyChatHandler:
         if reply_target:
             await reply_target.reply_text(
                 "📝 Schreibe jetzt deine Nachricht an die Familie "
-                "(oder /cancel zum Abbrechen):"
+                "(oder /cancel zum Abbrechen):",
+                reply_markup=reply_markup,
             )
 
     async def process_pending_message(
@@ -140,8 +149,13 @@ class FamilyChatHandler:
     # ─────────────────────────────────────────────────────────────
 
     async def handle_recent_messages(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ) -> None:
+        """ARCH-029: `reply_markup` additiv/optional, siehe
+        handle_send_message_prompt()-Docstring."""
         telegram_id = update.effective_user.id
         messages = self.chat_service.get_recent_messages(telegram_id, limit=10)
 
@@ -155,7 +169,8 @@ class FamilyChatHandler:
 
         if not messages:
             await reply_target.reply_text(
-                f"{EMOJI['warning']} Noch keine Nachrichten im Familien-Chat."
+                f"{EMOJI['warning']} Noch keine Nachrichten im Familien-Chat.",
+                reply_markup=reply_markup,
             )
             return
 
@@ -165,15 +180,20 @@ class FamilyChatHandler:
             for m in messages
         ]
         response = "📋 Letzte Nachrichten:\n\n" + "\n\n".join(lines)
-        await reply_target.reply_text(response)
+        await reply_target.reply_text(response, reply_markup=reply_markup)
 
     # ─────────────────────────────────────────────────────────────
     # 🔔 Benachrichtigungen (Toggle bei jedem Klick)
     # ─────────────────────────────────────────────────────────────
 
     async def handle_toggle_notifications(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ) -> None:
+        """ARCH-029: `reply_markup` additiv/optional, siehe
+        handle_send_message_prompt()-Docstring."""
         telegram_id = update.effective_user.id
         if not self.family_service.is_active_family_member(telegram_id):
             await self._deny_access(update)
@@ -188,10 +208,14 @@ class FamilyChatHandler:
             return
 
         if not success:
-            await reply_target.reply_text(f"{EMOJI['error']} Konnte nicht gespeichert werden.")
+            await reply_target.reply_text(
+                f"{EMOJI['error']} Konnte nicht gespeichert werden.",
+                reply_markup=reply_markup,
+            )
             return
 
         status_text = "🔔 AN" if new_state else "🔕 AUS"
         await reply_target.reply_text(
-            f"Familien-Chat-Benachrichtigungen: {status_text}"
+            f"Familien-Chat-Benachrichtigungen: {status_text}",
+            reply_markup=reply_markup,
         )

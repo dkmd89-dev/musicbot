@@ -74,6 +74,56 @@ def render_menu(
     return InlineKeyboardMarkup(keyboard)
 
 
+def render_result_navigation(menu_item: MenuItem) -> InlineKeyboardMarkup:
+    """ARCH-029 (Menu Navigation Continuity): kontextuelle Navigation für
+    die ERGEBNISNACHRICHT einer Menü-Action (z. B. "Diese Woche" ->
+    Wochenstatistik-Text) - abgeleitet ausschließlich aus der statischen
+    Parent-Kette von `menu_item` im MenuItem-Baum (dieselbe Struktur, die
+    bereits get_breadcrumb() nutzt), KEIN Session-/History-Zugriff.
+
+    Bewusst NICHT über "menu:back"/session.history: Action-Handler werden
+    von RichMenuSystem.handle_callback() direkt aufgerufen, ohne
+    show_menu()/session.navigate_to() - session.current_menu bleibt daher
+    beim ELTERN-Menü stehen, von dem aus die Action gestartet wurde. Ein
+    "menu:back"-Klick (history-Pop relativ zu diesem unveränderten
+    current_menu) würde deshalb eine Ebene zu weit zurückspringen (z. B.
+    von "Diese Woche" direkt zu "Statistiken" statt zu "Rückblicke").
+    Der literale `menu:<parent.id>`-Callback (bereits existierendes,
+    unverändertes Format aus MenuItem.__post_init__) referenziert
+    stattdessen exakt den unmittelbaren Parent - kein neuer
+    Callback-Präfix, keine zweite Back-Navigation.
+
+    Level 1 (falls vorhanden): "⬅️ <Parent-Titel>" - eigene Zeile.
+    Level 2: Grandparent (nur wenn dieser nicht bereits "main" ist, um
+    keinen redundanten Button neben "🏠 Hauptmenü" zu erzeugen) + "🏠
+    Hauptmenü" in derselben Zeile. Ist `menu_item` bereits direktes Kind
+    von "main" (kein sinnvoller Zwischen-Parent), nur ein einzelner
+    "🏠 Hauptmenü"-Button."""
+    parent = menu_item.parent
+    if not parent or parent.id == "main":
+        return InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🏠 Hauptmenü", callback_data="menu:main")]]
+        )
+
+    rows = [
+        [InlineKeyboardButton(f"⬅️ {parent.title}", callback_data=f"menu:{parent.id}")]
+    ]
+
+    grandparent = parent.parent
+    second_row = []
+    if grandparent and grandparent.id != "main":
+        second_row.append(
+            InlineKeyboardButton(
+                f"{grandparent.emoji} {grandparent.title}",
+                callback_data=f"menu:{grandparent.id}",
+            )
+        )
+    second_row.append(InlineKeyboardButton("🏠 Hauptmenü", callback_data="menu:main"))
+    rows.append(second_row)
+
+    return InlineKeyboardMarkup(rows)
+
+
 def get_menu_text(menu_item: MenuItem) -> str:
     """Erstellt Menü-Text mit Breadcrumb"""
     breadcrumb = " > ".join(menu_item.get_breadcrumb())
