@@ -3,7 +3,11 @@
 **Status:** CURRENT (lebendes Dokument). Entstanden aus dem read-only
 „MASTER PHASE — NAVIDROME MENU SYSTEM"-Audit (2026-09-13). **Alle
 Findings des Audits (NAV-F1–NAV-F11) sowie die bei der NAV-F8-Umsetzung
-zusätzlich entdeckten NAV-F12/NAV-F13 sind CLOSED.**
+zusätzlich entdeckten NAV-F12/NAV-F13 sind CLOSED.** Ein weiterer
+Befund, NAV-F14, wurde beim Architecture Refactoring Audit (Stufe 3,
+Characterization-Tests) entdeckt und ist bewusst **OPEN** (siehe
+Abschnitt 4) — keine Vermischung von Test-Vorbereitung und Bugfix in
+derselben Migrationsstufe.
 **Scope:** `handlers/navidrome_menu_handler.py`,
 `handlers/menu/actions/navidrome.py`, `services/clients/navidrome_api.py`
 und ihre unmittelbaren Kollaborateure (Personal-Statistics-Domain nur
@@ -160,6 +164,7 @@ Server-Ebene, nicht gleichbedeutend mit `UNSUPPORTED`).
 | NAV-F10 | `StatistikHandler.handle_last_played()` (erreicht über `nav_recent`) hatte kein `reply_markup` — in der ARCH-029-Phase („Menu Navigation Continuity") übersehen, da die Methode über `nav_recent`, nicht über eine `stats_*`-ID erreichbar ist. | Navigation-Gap (ARCH-029-Nachtrag) | P1 | **CLOSED** (2026-09-13) |
 | **NAV-F12** | `nav_genre_stats` wurde vom generischen `nav_genre_`-Präfix-Zweig fehlerhaft abgefangen (`callback_data.startswith("nav_genre_")` matcht auch `"nav_genre_stats"`) — lieferte `handle_genre_detail(..., "stats")` statt den `nav_genre_stats`-Zweig zu erreichen. Derselbe Bug-Typ wie NAV-F2/NAV-F11, bisher unbemerkt, weil der STUB-Platzhaltertext ebenfalls nie erreicht wurde. Entdeckt beim Implementieren von NAV-F8 (per Regressionstest). Fix: eigener Zweig vor dem generischen `nav_genre_`-Check. | BROKEN, DEAD_ROUTE | P0 | **CLOSED** (2026-09-13) |
 | **NAV-F13** | `handle_genre_detail()` sendete den statischen Text `"(erste 10 angezeigt)"` unescaped in einer `parse_mode="MarkdownV2"`-Nachricht — Telegram lehnte JEDEN erfolgreichen Genre-Lookup mit Songs mit `"Can't parse entities: character '(' is reserved"` ab (Live-Fund aus den Produktionslogs, reproduzierbar bei jedem Genre). Anders als BUG-007/NAV-F1-artige Findings kein dynamischer, sondern ein statischer String-Literal-Bug. Fix: `\\(erste 10 angezeigt\\)`. | BROKEN | P0 | **CLOSED** (2026-09-13) |
+| **NAV-F14** | `handle_browse_genres()`: bei nicht-numerischem `songCount` fängt der Sortier-`try/except` die Konvertierung ab und fällt auf alphabetische Sortierung zurück — aber die Anzeige-Schleife nutzt denselben rohen Wert danach ungeprüft in `if song_count > 0:`, was crasht (`TypeError`) und die generische Fehlermeldung statt einer Genre-Liste zeigt. Zusätzlich sortiert der Fallback selbst nach dem falschen Feld (`"name"` statt dem tatsächlich angezeigten `"value"`) — in der Praxis unbeobachtbar, da der Crash zuerst eintritt. Entdeckt beim Schreiben von Characterization-Tests für Migrationsstufe 3 (siehe Abschnitt 6/`docs/audits/NAVIDROME_MENU_HANDLER_REFACTORING_MIGRATION_PLAN_2026-09-13.md`), bewusst nicht im selben Schritt gefixt. Niedrige Priorität (reale Subsonic-Antworten liefern `songCount` normalerweise als Integer). | BROKEN | P3 | OPEN |
 
 Vollständige Details/Codebelege zu allen Findings: Audit-Transkript
 (Session vom 2026-09-13) sowie `docs/FINDINGS_INDEX.md` (repoweite
@@ -279,21 +284,34 @@ gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
 | `PlayHistoryPoller`-Genre-Erfassung (NAV-F8, `genre` + strukturiertes `genres` inkl. Dedup/Malformed-Handling) | `tests/test_play_history_poller.py` | 15 Tests (7 neu für NAV-F8) |
 
 **Bekannte Testlücken** (Details: Audit-Transkript): keine Verhaltenstests
-für `handle_browse_albums`/`handle_browse_genres`/`handle_my_playlists`/
-`handle_favorites` (Erfolgsfall, Pagination, leere Liste), keine Tests für
-`process_search_query`-Ergebnisverarbeitung des generischen
-`search3`-Pfads, kein Test für `handle_reconnect()`-Erfolgsfall gegen
-einen echten `check_connection()`.
+für `handle_my_playlists`/`handle_favorites` (Erfolgsfall, Pagination,
+leere Liste), keine Tests für `process_search_query`-Ergebnisverarbeitung
+des generischen `search3`-Pfads, kein Test für `handle_reconnect()`-
+Erfolgsfall gegen einen echten `check_connection()`. `handle_browse_artists`/
+`handle_browse_albums`/`handle_browse_genres` sind seit dem Architecture
+Refactoring Audit (Migrationsstufe 3, Pflichtschritt vor der eigentlichen
+Extraktion) durch `TestBrowseArtistsCharacterization`/
+`TestBrowseAlbumsCharacterization`/`TestBrowseGenresCharacterization` in
+`tests/test_navidrome_menu_handler.py` abgedeckt (17 neue Tests) — dabei
+NAV-F14 entdeckt (siehe Abschnitt 4, OPEN).
 
 ---
 
 ## 8. Offene Punkte
 
-**Alle 13 Findings des Audits (NAV-F1–NAV-F13) sind CLOSED.** Keine
+**Alle 13 Findings des ursprünglichen Audits (NAV-F1–NAV-F13) sind
+CLOSED.** Ein neuer, beim Architecture Refactoring Audit entdeckter
+Befund, **NAV-F14, ist OPEN** (P3, bewusst nicht mit der laufenden
+Migrationsstufe 3 vermischt — siehe Abschnitt 4 und
+`docs/audits/NAVIDROME_MENU_HANDLER_REFACTORING_MIGRATION_PLAN_2026-09-13.md`).
+Sonst keine
 offenen Findings mehr in diesem Dokument.
 
 - Testlücken aus Abschnitt 7 — bewusst zurückgestellt, keine akute
   Priorität (P2/P3-Bereich, kein bekannter Bug dahinter).
-- Zielarchitektur aus Abschnitt 5 (Renderer-Extraktion, Discovery-
-  Erweiterung, Playlist-CRUD) bleibt P2/P3 und unumgesetzt — keine
-  Findings, sondern optionale Weiterentwicklung.
+- Zielarchitektur aus Abschnitt 5: Renderer-Extraktion Stufe 1 (Album/
+  Song/Playlist-Detail) ist IMPLEMENTED; Browse-Rendering-Extraktion
+  (Stufe 3) ist per Characterization-Tests vorbereitet, aber selbst
+  noch nicht umgesetzt; `browser_service.py`, Discovery-Erweiterung,
+  Playlist-CRUD bleiben P2/P3 und unumgesetzt — keine Findings,
+  sondern optionale Weiterentwicklung.
