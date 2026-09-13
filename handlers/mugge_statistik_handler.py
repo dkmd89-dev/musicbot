@@ -1065,66 +1065,41 @@ class StatistikHandler:
         hours, minutes = divmod(total_minutes, 60)
         return f"{hours}h {minutes}m" if hours else f"{minutes}m"
 
-    _TIMELINE_SEPARATOR = "────────────────────"
-    _TIMELINE_EMPTY_LABELS = {
-        "today": "heute",
-        "week": "diese Woche",
-        "month": "diesen Monat",
-    }
+    def _render_timeline_today(self, today: Dict[str, Any]) -> List[str]:
+        """
+        MASTER PHASE — MUSIC TIMELINE — FINAL CLOSURE: Timeline zeigt
+        ausschließlich den aktuellen Tag als kompakte Daily-Music-
+        Übersicht. Ersetzt die vorherige Heute/Woche/Monat-Darstellung
+        (_render_timeline_period()/_format_timeline_period_label()/
+        _TIMELINE_SEPARATOR/_TIMELINE_EMPTY_LABELS entfallen damit -
+        keine weiteren Consumer, siehe generate_timeline_stats()).
 
-    def _format_timeline_period_label(self, period_key: str, data: Dict[str, Any]) -> str:
-        """
-        Music Timeline Consistency & UX, Abschnitt 3: "Heute"/"Diesen
-        Monat" verwenden weiterhin unverändert _format_period_label()
-        (einziger Consumer dieser Methode, siehe deren Docstring). "Diese
-        Woche" zeigt dagegen einen echten Datumsbereich
-        (_format_date_range(), bereits aus der Woche-/Monatsstatistik-
-        Phase vorhanden) statt eines Einzeldatums - ein einzelnes
-        Wochen-Datum wäre hier weniger aussagekräftig als in den
-        Rückblicken, da Timeline drei Perioden nebeneinander zeigt.
-        """
-        if period_key == "week":
-            date_range = self._format_date_range(
-                data["period_start"], data["period_end"]
-            )
-            return f"Diese Woche · {date_range}"
-        return self._format_period_label(period_key, data["period_start"])
-
-    def _render_timeline_period(self, period_key: str, data: Dict[str, Any]) -> List[str]:
-        """
-        Music Timeline Consistency & UX, Abschnitt 3/4/5: dieselbe
-        visuelle Sprache wie Woche-/Monats-/Jahresstatistik -
-        `_format_plays()` statt `(Nx)`/`(N Plays)`, konsistente Emojis
-        (🎤💿🔁🆕), kein `_truncate()` (Telegram darf normal umbrechen,
-        analog zum Rückblick-Layout), keine `0m`-Zeile bei fehlender
-        Dauer, sauberer Empty-State statt einer Null-Sektion.
+        Feste Zeilenreihenfolge, jede Zeile optional außer der
+        "neue Tracks"-Zeile: 🎧 Plays, 🔥 Top Artist, 💿 Top Album,
+        🎸 Top Genre, ❤️ Meistgehört (bewusst OHNE Plays-Zahl - der
+        Track ist ein persönlicher Highlight-Eintrag, kein Ranking-
+        Eintrag), ✨ Neue Tracks. Keine Separator-Linie, kein
+        `_truncate()` (Telegram darf normal umbrechen).
         """
         esc = self._escape_text
-        block = [
-            self._format_timeline_period_label(period_key, data),
-            self._TIMELINE_SEPARATOR,
-        ]
+        if today["track_count"] == 0:
+            return ["Keine Wiedergaben heute"]
 
-        if data["track_count"] == 0:
-            block.append(
-                f"Keine Wiedergaben {self._TIMELINE_EMPTY_LABELS[period_key]}"
-            )
-            return block
-
-        block.append(f"🎧 {data['track_count']} Tracks")
-        if data["listening_seconds"] > 0:
-            block.append(f"⏱️ {self._format_duration(data['listening_seconds'])}")
-        if data["top_artist"]:
-            artist, plays = data["top_artist"]
-            block.append(f"🎤 Top Artist: {esc(artist)} · {self._format_plays(plays)}")
-        if data["top_album"]:
-            album, plays = data["top_album"]
-            block.append(f"💿 Top Album: {esc(album)} · {self._format_plays(plays)}")
-        if data["most_replayed_track"]:
-            title, plays = data["most_replayed_track"]
-            block.append(f"🔁 Meistgehört: {esc(title)} · {self._format_plays(plays)}")
-        block.append(f"🆕 Neue Tracks: {data['new_track_count']}")
-        return block
+        lines = [f"🎧 {self._format_plays(today['track_count'])}"]
+        if today["top_artist"]:
+            artist, plays = today["top_artist"]
+            lines.append(f"🔥 {esc(artist)} · {self._format_plays(plays)}")
+        if today["top_album"]:
+            album, plays = today["top_album"]
+            lines.append(f"💿 {esc(album)} · {self._format_plays(plays)}")
+        if today["top_genre"]:
+            genre, plays = today["top_genre"]
+            lines.append(f"🎸 {esc(genre)} · {self._format_plays(plays)}")
+        if today["most_replayed_track"]:
+            title, _plays = today["most_replayed_track"]
+            lines.append(f"❤️ {esc(title)}")
+        lines.append(f"✨ {today['new_track_count']} neue Tracks entdeckt")
+        return lines
 
     async def handle_music_timeline(
         self,
@@ -1133,25 +1108,17 @@ class StatistikHandler:
         reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
         """
-        Behandelt die Anfrage für die Music-Timeline-Übersicht
-        (Heute / Diese Woche / Diesen Monat).
+        Behandelt die Anfrage für die Music-Timeline-Übersicht - eine
+        kompakte Daily-Music-Übersicht für den AKTUELLEN Tag.
 
         ARCH-029: `reply_markup` additiv/optional, siehe
         _handle_period_review()-Docstring.
 
-        Music Timeline Consistency & UX: Layout überarbeitet, damit
-        Timeline dieselbe visuelle Sprache wie Woche-/Monats-/
-        Jahresstatistik spricht (siehe _render_timeline_period()) -
-        insbesondere zeigt "Top Artist" jetzt garantiert dieselbe Zahl
-        wie der jeweilige Period-Rückblick (Artist-Split-Fix in
-        StatisticsCalculator.generate_timeline_stats(), siehe deren
-        Docstring), statt wie zuvor einen unsplitteten Combo-String zu
-        zählen.
-
-        Feature-Basis: History.txt ("Music Timeline"). Der dort skizzierte
-        Genre-Zeitverlauf ist NICHT enthalten, da das Datenmodell aktuell
-        kein "genre"-Feld im Wiedergabeverlauf erfasst (siehe
-        StatisticsCalculator.generate_timeline_stats).
+        MASTER PHASE — MUSIC TIMELINE — FINAL CLOSURE: Timeline zeigt nur
+        noch "heute" (siehe StatisticsCalculator.generate_timeline_stats()
+        Docstring) - Woche-/Monatsblöcke entfallen, dafür ergänzt um
+        Top-Genre. Reine Darstellungsänderung (_render_timeline_today()),
+        keine zusätzliche Business-Logik im Handler.
         """
         self.logger.info(f"{EMOJI['chart']} 📅 Music Timeline angefragt")
 
@@ -1179,13 +1146,12 @@ class StatistikHandler:
                 )
                 return
 
-            periods = timeline["periods"]
-            lines = [f"📅 Deine Musik · {self._escape_text(nav_user)}", ""]
-            lines += self._render_timeline_period("today", periods["today"])
+            today = timeline["today"]
+            header = f"📅 {self._format_period_label('today', today['period_start'])}"
+            lines = [header, ""]
+            lines += self._render_timeline_today(today)
             lines.append("")
-            lines += self._render_timeline_period("week", periods["week"])
-            lines.append("")
-            lines += self._render_timeline_period("month", periods["month"])
+            lines.append(f"👤 {self._escape_text(nav_user)}")
 
             await msg.edit_text("\n".join(lines), reply_markup=reply_markup)
             self.logger.info(

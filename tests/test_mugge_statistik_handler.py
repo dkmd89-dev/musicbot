@@ -1158,174 +1158,216 @@ def _run_timeline_handler(handler, timeline_return):
 
 
 class TestHandleMusicTimelineLayout:
-    """Music Timeline Consistency & UX: neues Layout, dieselbe visuelle
-    Sprache wie Woche-/Monats-/Jahresstatistik."""
+    """MASTER PHASE — MUSIC TIMELINE — FINAL CLOSURE: Timeline zeigt
+    ausschließlich den aktuellen Tag als kompakte Daily-Music-Übersicht.
+    Ersetzt die vorherige Heute/Woche/Monat-Testklasse (kein
+    "periods"-Wrapper mehr im Service-Return, siehe
+    StatisticsCalculator.generate_timeline_stats())."""
 
-    def _fake_timeline(self, **period_overrides):
-        period_template = {
-            "period_end": datetime(2026, 9, 14),
-            "track_count": 22,
-            "listening_seconds": 0,
-            "top_artist": ("Clueso", 9),
-            "top_album": ("ALBUM", 5),
-            "most_replayed_track": ("Inundauswendig", 2),
-            "new_track_count": 9,
-        }
+    def _fake_timeline(self, **today_overrides):
         today = {
-            **period_template,
             "period_start": datetime(2026, 9, 13),
             "period_end": datetime(2026, 9, 14),
-            "track_count": 0,
-            "top_artist": None,
-            "top_album": None,
-            "most_replayed_track": None,
-            "new_track_count": 0,
+            "track_count": 24,
+            "listening_seconds": 3600,
+            "top_artist": ("Clueso", 6),
+            "top_album": ("Stadtrandlichter", 6),
+            "top_genre": ("Hip-Hop", 8),
+            "most_replayed_track": ("Mit dir alleine sein", 4),
+            "new_track_count": 18,
         }
-        week = {
-            **period_template,
-            "period_start": datetime(2026, 9, 7),
-            "period_end": datetime(2026, 9, 14),
-        }
-        month = {
-            **period_template,
-            "period_start": datetime(2026, 9, 1),
-            "period_end": datetime(2026, 10, 1),
-            "track_count": 71,
-            "top_artist": ("makko", 26),
-            "most_replayed_track": ("Shibuya SWAG", 3),
-            "new_track_count": 51,
-        }
-        periods = {"today": today, "week": week, "month": month}
-        for key, overrides in period_overrides.items():
-            periods[key].update(overrides)
-        return {"navidrome_username": "robin", "periods": periods}
+        today.update(today_overrides)
+        return {"navidrome_username": "robin", "today": today}
 
-    def test_header_uses_middle_dot_format(self, tmp_path):
+    def test_header_uses_heute_date_format(self, tmp_path):
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
 
         msg_mock, _ = _run_timeline_handler(handler, self._fake_timeline())
 
         sent_text = msg_mock.edit_text.call_args[0][0]
-        assert sent_text.startswith("📅 Deine Musik · robin")
+        assert sent_text.startswith("📅 Heute · 13.09.2026")
 
-    def test_today_uses_single_date_label(self, tmp_path):
+    def test_footer_shows_username(self, tmp_path):
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
 
         msg_mock, _ = _run_timeline_handler(handler, self._fake_timeline())
 
         sent_text = msg_mock.edit_text.call_args[0][0]
-        assert "Heute · 13.09.2026" in sent_text
+        assert sent_text.rstrip().splitlines()[-1] == "👤 robin"
 
-    def test_week_uses_date_range_label(self, tmp_path):
+    def test_exact_final_output_for_full_data(self, tmp_path):
+        """Section 13/31: die verbindliche Standardausgabe."""
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
 
         msg_mock, _ = _run_timeline_handler(handler, self._fake_timeline())
 
         sent_text = msg_mock.edit_text.call_args[0][0]
-        assert "Diese Woche · 07.–13.09.2026" in sent_text
+        assert sent_text == (
+            "📅 Heute · 13.09.2026\n"
+            "\n"
+            "🎧 24 Plays\n"
+            "🔥 Clueso · 6 Plays\n"
+            "💿 Stadtrandlichter · 6 Plays\n"
+            "🎸 Hip-Hop · 8 Plays\n"
+            "❤️ Mit dir alleine sein\n"
+            "✨ 18 neue Tracks entdeckt\n"
+            "\n"
+            "👤 robin"
+        )
 
-    def test_month_uses_month_name_label(self, tmp_path):
+    def test_most_replayed_track_shows_no_plays_count(self, tmp_path):
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
 
         msg_mock, _ = _run_timeline_handler(handler, self._fake_timeline())
 
         sent_text = msg_mock.edit_text.call_args[0][0]
-        assert "Diesen Monat · September 2026" in sent_text
+        assert "❤️ Mit dir alleine sein" in sent_text
+        assert "Mit dir alleine sein · 4 Plays" not in sent_text
+        assert "Meistgehört" not in sent_text
 
-    def test_separator_is_twenty_dashes(self, tmp_path):
+    def test_no_separator_line(self, tmp_path):
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
 
         msg_mock, _ = _run_timeline_handler(handler, self._fake_timeline())
 
         sent_text = msg_mock.edit_text.call_args[0][0]
-        assert "────────────────────" in sent_text
-        assert len("────────────────────") == 20
+        assert "─" not in sent_text
 
-    def test_content_uses_format_plays_not_parentheses_or_x_suffix(self, tmp_path):
+    def test_no_week_or_month_content(self, tmp_path):
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
 
         msg_mock, _ = _run_timeline_handler(handler, self._fake_timeline())
 
         sent_text = msg_mock.edit_text.call_args[0][0]
-        assert "🎤 Top Artist: Clueso · 9 Plays" in sent_text
-        assert "💿 Top Album: ALBUM · 5 Plays" in sent_text
-        assert "🔁 Meistgehört: Inundauswendig · 2 Plays" in sent_text
-        assert "(2x)" not in sent_text
-        assert "(9 Plays)" not in sent_text
+        assert "Diese Woche" not in sent_text
+        assert "Diesen Monat" not in sent_text
 
-    def test_tracks_line_shown_only_when_positive(self, tmp_path):
+    def test_no_duration_line(self, tmp_path):
+        """Verbindliche Endausgabe (Section 13/14) enthält keine
+        Hörzeit-Zeile mehr - listening_seconds bleibt intern vorhanden,
+        wird aber nicht mehr gerendert."""
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
 
         msg_mock, _ = _run_timeline_handler(handler, self._fake_timeline())
 
         sent_text = msg_mock.edit_text.call_args[0][0]
-        assert "🎧 22 Tracks" in sent_text
-        assert "🎧 71 Tracks" in sent_text
-        assert "🎧 0 Tracks" not in sent_text
-
-    def test_new_tracks_line_shown(self, tmp_path):
-        handler = _make_handler()
-        handler.user_data_file = tmp_path / "does_not_exist.json"
-
-        msg_mock, _ = _run_timeline_handler(handler, self._fake_timeline())
-
-        sent_text = msg_mock.edit_text.call_args[0][0]
-        assert "🆕 Neue Tracks: 9" in sent_text
-        assert "🆕 Neue Tracks: 51" in sent_text
-
-    def test_empty_period_shows_clean_empty_state(self, tmp_path):
-        """Master-Prompt Abschnitt 5: Empty-State statt Null-Sektion."""
-        handler = _make_handler()
-        handler.user_data_file = tmp_path / "does_not_exist.json"
-
-        msg_mock, _ = _run_timeline_handler(handler, self._fake_timeline())
-
-        sent_text = msg_mock.edit_text.call_args[0][0]
-        assert "Keine Wiedergaben heute" in sent_text
-        # Keine Null-Sektion fuer "today" (0 Tracks/0 Plays-Zeilen).
-        today_block = sent_text.split("Heute ·")[1].split("Diese Woche")[0]
-        assert "🎧" not in today_block
-        assert "Top Artist" not in today_block
-
-    def test_no_duration_line_when_listening_seconds_zero(self, tmp_path):
-        """Master-Prompt Abschnitt 4: kein '0m', Zeile fehlt komplett."""
-        handler = _make_handler()
-        handler.user_data_file = tmp_path / "does_not_exist.json"
-
-        msg_mock, _ = _run_timeline_handler(handler, self._fake_timeline())
-
-        sent_text = msg_mock.edit_text.call_args[0][0]
-        assert "0m" not in sent_text
         assert "⏱️" not in sent_text
-
-    def test_duration_line_shown_when_listening_seconds_positive(self, tmp_path):
-        handler = _make_handler()
-        handler.user_data_file = tmp_path / "does_not_exist.json"
-        timeline = self._fake_timeline(week={"listening_seconds": 3720})
-
-        msg_mock, _ = _run_timeline_handler(handler, timeline)
-
-        sent_text = msg_mock.edit_text.call_args[0][0]
-        assert "⏱️ 1h 2m" in sent_text
 
     def test_no_truncation_of_long_names(self, tmp_path):
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
         long_artist = "A" * 80
-        timeline = self._fake_timeline(week={"top_artist": (long_artist, 9)})
+        timeline = self._fake_timeline(top_artist=(long_artist, 9))
 
         msg_mock, _ = _run_timeline_handler(handler, timeline)
 
         sent_text = msg_mock.edit_text.call_args[0][0]
         assert long_artist in sent_text
         assert "…" not in sent_text
+
+    def test_singular_play_uses_format_plays_helper(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        timeline = self._fake_timeline(track_count=1)
+
+        msg_mock, _ = _run_timeline_handler(handler, timeline)
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "🎧 1 Play" in sent_text
+        assert "🎧 1 Plays" not in sent_text
+
+    def test_missing_artist_line_omitted(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        timeline = self._fake_timeline(top_artist=None)
+
+        msg_mock, _ = _run_timeline_handler(handler, timeline)
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "🔥" not in sent_text
+        assert "💿 Stadtrandlichter · 6 Plays" in sent_text
+        assert "✨ 18 neue Tracks entdeckt" in sent_text
+
+    def test_missing_album_line_omitted(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        timeline = self._fake_timeline(top_album=None)
+
+        msg_mock, _ = _run_timeline_handler(handler, timeline)
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "💿" not in sent_text
+        assert "🔥 Clueso · 6 Plays" in sent_text
+
+    def test_missing_genre_line_omitted(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        timeline = self._fake_timeline(top_genre=None)
+
+        msg_mock, _ = _run_timeline_handler(handler, timeline)
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "🎸" not in sent_text
+        assert "❤️ Mit dir alleine sein" in sent_text
+
+    def test_missing_most_replayed_track_line_omitted(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        timeline = self._fake_timeline(most_replayed_track=None)
+
+        msg_mock, _ = _run_timeline_handler(handler, timeline)
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "❤️" not in sent_text
+        assert "✨ 18 neue Tracks entdeckt" in sent_text
+
+    def test_no_placeholder_values_for_missing_fields(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        timeline = self._fake_timeline(
+            top_artist=None, top_album=None, top_genre=None
+        )
+
+        msg_mock, _ = _run_timeline_handler(handler, timeline)
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        for placeholder in ("N/A", "Unknown", "Keine Daten", " - \n"):
+            assert placeholder not in sent_text
+
+    def test_empty_state_shows_exact_message(self, tmp_path):
+        """Section 16: exakte Empty-State-Ausgabe bei 0 Wiedergaben
+        heute, keine "0 Plays"-Zeilen, keine Platzhalter."""
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        timeline = self._fake_timeline(
+            track_count=0,
+            listening_seconds=0,
+            top_artist=None,
+            top_album=None,
+            top_genre=None,
+            most_replayed_track=None,
+            new_track_count=0,
+        )
+
+        msg_mock, _ = _run_timeline_handler(handler, timeline)
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert sent_text == (
+            "📅 Heute · 13.09.2026\n"
+            "\n"
+            "Keine Wiedergaben heute\n"
+            "\n"
+            "👤 robin"
+        )
+        assert "0 Plays" not in sent_text
+        assert "🎧" not in sent_text
 
     def test_no_data_shows_generic_message(self, tmp_path):
         handler = _make_handler()

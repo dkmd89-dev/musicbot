@@ -141,7 +141,7 @@ class StatistikService:
     def generate_timeline_stats(
         self, navidrome_username: str = None, now=None
     ) -> Optional[Dict[str, Any]]:
-        """Music-Timeline (Heute/Woche/Monat). Siehe StatisticsCalculator.
+        """Music-Timeline (nur "heute", siehe StatisticsCalculator).
         `now` optional injizierbar für deterministische Tests."""
         return self._calculator.generate_timeline_stats(navidrome_username, now=now)
 

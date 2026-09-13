@@ -379,43 +379,53 @@ class StatisticsCalculator:
         self, navidrome_username: str = None, now: Optional[datetime] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Erstellt eine Music-Timeline-Übersicht (Heute / Diese Woche /
-        Diesen Monat) mit Track-Anzahl, Hörzeit, Top-Artist, Top-Album,
-        meistgespieltem Track und Anzahl neuer Tracks je Zeitraum.
+        Erstellt eine Music-Timeline-Übersicht für den AKTUELLEN Tag
+        (Daily-Music-Übersicht) mit Track-Anzahl, Hörzeit, Top-Artist,
+        Top-Album, Top-Genre, meistgespieltem Track und Anzahl neuer
+        Tracks.
 
-        Zeiträume sind KALENDERBASIERT (nicht rollierend, siehe
-        _calendar_period_bounds()):
-          - "today": ab lokaler Mitternacht des aktuellen Tages
-          - "week":  ab Montag 00:00 der aktuellen Kalenderwoche
-          - "month": ab dem 1. des aktuellen Kalendermonats
+        MASTER PHASE — MUSIC TIMELINE — FINAL CLOSURE: Timeline deckt nur
+        noch "today" ab (siehe _calendar_period_bounds(): ab lokaler
+        Mitternacht bis zum nächsten Tagesbeginn, exklusiv). "week"/
+        "month" wurden aus dem Timeline-Contract entfernt - beide bleiben
+        unverändert über generate_stats()/generate_year_stats() verfügbar,
+        das sind separate, hiervon unabhängige Konzepte (Timeline = reine
+        Tagesübersicht, keine Periodenauswahl mehr).
 
         `now` optional injizierbar für deterministische Tests.
 
-        Music Timeline Consistency & UX: `top_artist` wird über
-        _split_artists() ermittelt - identische Aggregationslogik wie
-        generate_stats()' top_artists_split, damit Timeline und
-        Wochen-/Monats-/Jahresrückblick für denselben Zeitraum garantiert
-        dieselbe Top-Artist-Zahl zeigen (siehe
-        TestTimelineConsistencyWithPeriodReview). `top_album`/
-        `most_replayed_track` bleiben unverändert unsplitted/Klartext
-        (Family-Challenge-Kompatibilität, siehe _identity_key()-Docstring).
+        `top_artist` wird über _split_artists() ermittelt - identische
+        Aggregationslogik wie generate_stats()' top_artists_split (Music
+        Timeline Consistency & UX). `top_album`/`most_replayed_track`
+        bleiben unverändert unsplitted/Klartext (Family-Challenge-
+        Kompatibilität, siehe _identity_key()-Docstring) -
+        services/family/family_challenge_service.py liest
+        `most_replayed_track` weiterhin als `(title, plays)`-Tupel, nur
+        über den neuen `timeline["today"]`-Pfad statt vormals
+        `timeline["periods"]["today"]`.
 
-        Feature-Hinweis (History.txt, "Music Timeline"): Der dort
-        skizzierte Genre-Zeitverlauf ("Jan Hip-Hop, Feb Pop, ...") ist
-        mit dem aktuellen Datenmodell NICHT umsetzbar, da weder
-        PlayHistoryPoller noch NavidromeAPI ein "genre"-Feld im
-        Wiedergabeverlauf erfassen. Bewusst ausgeklammert statt mit
-        Platzhalter-/Fake-Daten zu füllen. TODO: bei Bedarf Genre-Erfassung
-        separat ergänzen (Poller + Datenmodell), dann hier nachziehen.
+        `top_genre` zählt Plays je Genre AUSSCHLIESSLICH über das
+        strukturierte `"genres"`-Feld (`List[str]`, wie von
+        PlayHistoryPoller aus Navidromes Genre-Response extrahiert) -
+        dieselbe Datenquelle/Dedup-Regel (ein Genre zählt pro Play
+        höchstens einmal) wie generate_genre_stats(), hier inline auf
+        "today" beschränkt statt All-Time. Kein String-Splitting eines
+        einfachen "genre"-Felds. Kein verwertbares Genre -> `None`.
 
         Returns:
             Optional[Dict[str, Any]]: {
                 "navidrome_username": str,
-                "periods": {
-                    "today": {..., "period_start": datetime},
-                    "week": {..., "period_start": datetime},
-                    "month": {..., "period_start": datetime},
-                }
+                "today": {
+                    "period_start": datetime,
+                    "period_end": datetime,
+                    "track_count": int,
+                    "listening_seconds": int,
+                    "top_artist": tuple[str, int] | None,
+                    "top_album": tuple[str, int] | None,
+                    "top_genre": tuple[str, int] | None,
+                    "most_replayed_track": tuple[str, int] | None,
+                    "new_track_count": int,
+                },
             } oder None, wenn keine (gültige) Historie vorhanden ist.
         """
         if not navidrome_username:
@@ -431,19 +441,7 @@ class StatisticsCalculator:
             )
             return None
 
-        # Music Timeline Consistency & UX: period_end zusätzlich zu
-        # period_start festgehalten (beide bereits von
-        # _calendar_period_bounds() berechnet, vorher wurde nur [0]
-        # verwendet) - ermöglicht dem Renderer einen echten Datumsbereich
-        # für "Diese Woche" (siehe handle_music_timeline()), ohne
-        # _calendar_period_bounds() selbst anzufassen.
-        period_bounds_full = {
-            period_name: self._calendar_period_bounds(period_name, now=now)
-            for period_name in ("today", "week", "month")
-        }
-        period_bounds = {
-            period_name: bounds[0] for period_name, bounds in period_bounds_full.items()
-        }
+        start_bound, end_bound = self._calendar_period_bounds("today", now=now)
 
         parsed_entries = self._parse_history_entries(
             history, navidrome_username, now=now
@@ -457,90 +455,91 @@ class StatisticsCalculator:
 
         # Erstes Auftreten je Track-Identität (Artist+Titel, siehe
         # _identity_key()) über die GESAMTE Historie - Grundlage für
-        # "neue Musik" je Zeitraum. Titel-only würde "Artist A - Song X"
-        # und "Artist B - Song X" faelschlich als denselben Track
-        # behandeln (Phase 10 des Audits).
+        # "neue Musik" heute. Titel-only würde "Artist A - Song X" und
+        # "Artist B - Song X" faelschlich als denselben Track behandeln
+        # (Phase 10 des Audits).
         first_seen: Dict[Tuple[str, str], datetime] = {}
         for entry_time, track in parsed_entries:
             key = self._identity_key(track, "title")
             if key not in first_seen:
                 first_seen[key] = entry_time
 
-        periods_result: Dict[str, Any] = {}
+        track_count = 0
+        listening_seconds = 0
+        artist_counts: Dict[str, int] = defaultdict(int)
+        album_counts: Dict[Tuple[str, str], int] = defaultdict(int)
+        song_counts: Dict[Tuple[str, str], int] = defaultdict(int)
+        genre_counts: Dict[str, int] = defaultdict(int)
+        new_track_keys: set = set()
 
-        for period_name, start_bound in period_bounds.items():
-            track_count = 0
-            listening_seconds = 0
-            artist_counts: Dict[str, int] = defaultdict(int)
-            album_counts: Dict[Tuple[str, str], int] = defaultdict(int)
-            song_counts: Dict[Tuple[str, str], int] = defaultdict(int)
-            new_track_keys: set = set()
+        for entry_time, track in parsed_entries:
+            if entry_time < start_bound:
+                continue
 
-            for entry_time, track in parsed_entries:
-                if entry_time < start_bound:
-                    continue
+            track_count += 1
+            duration = track.get("duration")
+            if isinstance(duration, (int, float)):
+                listening_seconds += duration
 
-                track_count += 1
-                duration = track.get("duration")
-                if isinstance(duration, (int, float)):
-                    listening_seconds += duration
+            key = self._identity_key(track, "title")
+            for split_artist in self._split_artists(track.get("artist") or "Unbekannt"):
+                artist_counts[split_artist] += 1
+            album_counts[self._identity_key(track, "album")] += 1
+            song_counts[key] += 1
 
-                key = self._identity_key(track, "title")
-                for split_artist in self._split_artists(track.get("artist") or "Unbekannt"):
-                    artist_counts[split_artist] += 1
-                album_counts[self._identity_key(track, "album")] += 1
-                song_counts[key] += 1
+            genres_raw = track.get("genres") or []
+            if isinstance(genres_raw, list):
+                genres_for_play = {
+                    g.strip() for g in genres_raw if isinstance(g, str) and g.strip()
+                }
+                for genre in genres_for_play:
+                    genre_counts[genre] += 1
 
-                if first_seen.get(key, start_bound) >= start_bound:
-                    new_track_keys.add(key)
+            if first_seen.get(key, start_bound) >= start_bound:
+                new_track_keys.add(key)
 
-            # Music Timeline Consistency & UX: top_artist wird seit dieser
-            # Phase über dieselben gesplitteten Artist-Identitäten wie
-            # generate_stats()' top_artists_split ermittelt (siehe
-            # _split_artists()-Aufruf oben) - vorher zählte ein Play mit
-            # "A • B • C" als EIN Combo-Artist, wodurch Timeline und
-            # Wochen-/Monatsrückblick für denselben Zeitraum
-            # unterschiedliche Top-Artist-Zahlen zeigen konnten (echte
-            # Inkonsistenz, siehe Nutzer-Audit). top_album/most_replayed_track
-            # bleiben BEWUSST unverändert titel-/albumname-basiert (kein
-            # Split) - most_replayed_track wird von
-            # services/family/family_challenge_service.py wörtlich mit
-            # einer Nutzer-Texteingabe verglichen (siehe
-            # _identity_key()-Docstring), dieser Vertrag darf durch diese
-            # Phase nicht verändert werden.
-            top_artist = max(artist_counts.items(), key=lambda x: x[1], default=None)
-            top_album_raw = max(album_counts.items(), key=lambda x: x[1], default=None)
-            most_replayed_raw = max(song_counts.items(), key=lambda x: x[1], default=None)
-            # (artist, album)/(artist, title) -> reiner Name für die
-            # Anzeige (siehe _identity_key()-Docstring).
-            top_album = (top_album_raw[0][1], top_album_raw[1]) if top_album_raw else None
-            most_replayed = (
-                (most_replayed_raw[0][1], most_replayed_raw[1])
-                if most_replayed_raw
-                else None
-            )
+        # top_artist wird über dieselben gesplitteten Artist-Identitäten
+        # wie generate_stats()' top_artists_split ermittelt (siehe
+        # _split_artists()-Aufruf oben) - ein Play mit "A • B • C" zählt
+        # für jeden Teil-Artist. top_album/most_replayed_track bleiben
+        # BEWUSST unverändert titel-/albumname-basiert (kein Split) -
+        # most_replayed_track wird von
+        # services/family/family_challenge_service.py wörtlich mit einer
+        # Nutzer-Texteingabe verglichen (siehe _identity_key()-Docstring),
+        # dieser Vertrag darf durch diese Phase nicht verändert werden.
+        top_artist = max(artist_counts.items(), key=lambda x: x[1], default=None)
+        top_album_raw = max(album_counts.items(), key=lambda x: x[1], default=None)
+        top_genre = max(genre_counts.items(), key=lambda x: x[1], default=None)
+        most_replayed_raw = max(song_counts.items(), key=lambda x: x[1], default=None)
+        # (artist, album)/(artist, title) -> reiner Name für die Anzeige
+        # (siehe _identity_key()-Docstring).
+        top_album = (top_album_raw[0][1], top_album_raw[1]) if top_album_raw else None
+        most_replayed = (
+            (most_replayed_raw[0][1], most_replayed_raw[1])
+            if most_replayed_raw
+            else None
+        )
 
-            periods_result[period_name] = {
-                "period_start": start_bound,
-                "period_end": period_bounds_full[period_name][1],
-                "track_count": track_count,
-                "listening_seconds": listening_seconds,
-                "top_artist": top_artist,
-                "top_album": top_album,
-                "most_replayed_track": most_replayed,
-                "new_track_count": len(new_track_keys),
-            }
+        today_result = {
+            "period_start": start_bound,
+            "period_end": end_bound,
+            "track_count": track_count,
+            "listening_seconds": listening_seconds,
+            "top_artist": top_artist,
+            "top_album": top_album,
+            "top_genre": top_genre,
+            "most_replayed_track": most_replayed,
+            "new_track_count": len(new_track_keys),
+        }
 
         self.logger.info(
             f"✅ Timeline-Statistik für '{navidrome_username}' erstellt "
-            f"(heute: {periods_result['today']['track_count']}, "
-            f"woche: {periods_result['week']['track_count']}, "
-            f"monat: {periods_result['month']['track_count']})"
+            f"(heute: {today_result['track_count']})"
         )
 
         return {
             "navidrome_username": navidrome_username,
-            "periods": periods_result,
+            "today": today_result,
         }
 
     def generate_year_stats(
