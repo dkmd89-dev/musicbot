@@ -4,6 +4,15 @@
 Characterization/Regressionstests für handlers/menu/actions/stats.py
 (ARCH-024/P-2, Actions Extraction) - 1:1 verschoben aus
 RichMenuSystem._handle_stats_*/RichMenuHandler._handle_*_stats_wrapper.
+
+ARCH-025: die vormals hier mitgetesteten toten "_system"-Funktionen
+(handle_stats_monthly_system/_timeline_system u. a.) wurden nach
+Verifikation entfernt (siehe handlers/menu/actions/stats.py-Docstring) -
+ihre Tests (test_stats_monthly_system_delegates/
+test_stats_monthly_system_fallback_without_handler/
+test_stats_timeline_system_requires_hasattr) sind mit ihnen entfallen.
+test_stats_library_overview_delegates bleibt (einzige weiterhin live
+genutzte "_system"-artige Funktion).
 """
 
 import pytest
@@ -18,27 +27,6 @@ def _make_update():
     return update
 
 
-# ---- RichMenuSystem-Seite (teils tot, s. Modul-Docstring) ----
-
-
-@pytest.mark.asyncio
-async def test_stats_monthly_system_delegates():
-    update = _make_update()
-    handler = Mock()
-    handler.handle_month_review = AsyncMock()
-    await stats_actions.handle_stats_monthly_system(update, Mock(), handler)
-    handler.handle_month_review.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_stats_monthly_system_fallback_without_handler():
-    update = _make_update()
-    await stats_actions.handle_stats_monthly_system(update, Mock(), None)
-    update.callback_query.edit_message_text.assert_awaited_once_with(
-        "📅 Lade Monatsstatistiken..."
-    )
-
-
 @pytest.mark.asyncio
 async def test_stats_library_overview_delegates():
     update = _make_update()
@@ -49,12 +37,11 @@ async def test_stats_library_overview_delegates():
 
 
 @pytest.mark.asyncio
-async def test_stats_timeline_system_requires_hasattr():
+async def test_stats_library_overview_fallback_without_handler():
     update = _make_update()
-    handler = object()  # kein handle_music_timeline
-    await stats_actions.handle_stats_timeline_system(update, Mock(), handler)
+    await stats_actions.handle_stats_library_overview(update, Mock(), None)
     update.callback_query.edit_message_text.assert_awaited_once_with(
-        "📅 Lade Music Timeline..."
+        "📚 Lade Library-Übersicht..."
     )
 
 

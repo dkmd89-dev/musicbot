@@ -80,12 +80,21 @@ def build_menu_tree(system) -> MenuItem:
         emoji="📊",
         description="Übersichten und Analysen",
     )
+    # ARCH-025: stats_monthly/_yearly/_top_songs/_top_artists/_timeline
+    # bekommen hier bewusst KEIN handler= mehr (vorher ein von
+    # RichMenuHandler._register_stats_handlers() ohnehin unbedingt
+    # überschriebener, nie erreichbarer Platzhalter, siehe
+    # docs/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6 und
+    # docs/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md). Der
+    # tatsächlich genutzte Handler wird weiterhin unverändert per
+    # register_handler() in RichMenuHandler._register_stats_handlers()
+    # verdrahtet, bevor der Bot Updates verarbeitet - keine
+    # Verhaltensänderung.
     stats_menu.add_child(
         MenuItem(
             id="stats_monthly",
             title="Monatsrückblick",
             emoji="📅",
-            handler=system._handle_stats_monthly,
             is_action=True,
         )
     )
@@ -94,7 +103,6 @@ def build_menu_tree(system) -> MenuItem:
             id="stats_yearly",
             title="Jahresrückblick",
             emoji="🎆",
-            handler=system._handle_stats_yearly,
             is_action=True,
         )
     )
@@ -103,7 +111,6 @@ def build_menu_tree(system) -> MenuItem:
             id="stats_top_songs",
             title="Top Songs",
             emoji="🎵",
-            handler=system._handle_stats_top_songs,
             is_action=True,
         )
     )
@@ -112,7 +119,6 @@ def build_menu_tree(system) -> MenuItem:
             id="stats_top_artists",
             title="Top Künstler",
             emoji="🎤",
-            handler=system._handle_stats_top_artists,
             is_action=True,
         )
     )
@@ -121,7 +127,6 @@ def build_menu_tree(system) -> MenuItem:
             id="stats_timeline",
             title="Music Timeline",
             emoji="📅",
-            handler=system._handle_stats_timeline,
             is_action=True,
         )
     )

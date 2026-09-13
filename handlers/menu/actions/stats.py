@@ -7,49 +7,18 @@ ARCH-024/P-2 (Actions Extraction): 1:1 aus
 handlers/menu/rich_menu_system.py und handlers/menu/rich_menu_handler.py
 verschoben (reine Move-Operation).
 
-Wichtiger Bestandsbefund (siehe
-docs/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6): die
-"_system_*"-Funktionen unten (aus RichMenuSystem) sind im
-Produktivbetrieb NICHT erreichbar, da
-RichMenuHandler._register_stats_handlers() ihre MenuItem-Bindung nach
-initialize_menu_structure() per register_handler() überschreibt -
-außer stats_library_overview, das nicht überschrieben wird. Diese
-"toten" Funktionen werden trotzdem 1:1 mitverschoben (Verhaltensparität,
-kein ARCH-024-Scope, sie zu entfernen).
+ARCH-025: die damals mitverschobenen, nie erreichbaren
+"_system"-Funktionen (handle_stats_monthly_system/_yearly_system/
+_top_songs_system/_top_artists_system/_timeline_system - überschrieben
+durch RichMenuHandler._register_stats_handlers(), siehe
+docs/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6) wurden
+nach Verifikation entfernt. handle_stats_library_overview() bleibt -
+einzige Stats-Menu-Definition, die NICHT überschrieben wird, im
+Produktivbetrieb live.
 """
 
 from telegram import Update
 from telegram.ext import ContextTypes
-
-
-# ====== aus RichMenuSystem (Menu-Definition, teils tot - s. Docstring) ======
-
-
-async def handle_stats_monthly_system(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler):
-    query = update.callback_query
-    await query.answer()
-    if stats_handler:
-        await stats_handler.handle_month_review(update, context)
-    else:
-        await query.edit_message_text("📅 Lade Monatsstatistiken...")
-
-
-async def handle_stats_yearly_system(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler):
-    query = update.callback_query
-    await query.answer()
-    if stats_handler:
-        await stats_handler.handle_year_review(update, context)
-    else:
-        await query.edit_message_text("🎆 Lade Jahresstatistiken...")
-
-
-async def handle_stats_top_songs_system(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler):
-    query = update.callback_query
-    await query.answer()
-    if stats_handler:
-        await stats_handler.handle_top_songs(update, context, period="month")
-    else:
-        await query.edit_message_text("🎵 Lade Top Songs...")
 
 
 async def handle_stats_library_overview(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler):
@@ -63,24 +32,6 @@ async def handle_stats_library_overview(update: Update, context: ContextTypes.DE
         await stats_handler.handle_library_overview(update, context)
     else:
         await query.edit_message_text("📚 Lade Library-Übersicht...")
-
-
-async def handle_stats_top_artists_system(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler):
-    query = update.callback_query
-    await query.answer()
-    if stats_handler:
-        await stats_handler.handle_top_artists(update, context, period="month")
-    else:
-        await query.edit_message_text("🎤 Lade Top Künstler...")
-
-
-async def handle_stats_timeline_system(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler):
-    query = update.callback_query
-    await query.answer()
-    if stats_handler and hasattr(stats_handler, "handle_music_timeline"):
-        await stats_handler.handle_music_timeline(update, context)
-    else:
-        await query.edit_message_text("📅 Lade Music Timeline...")
 
 
 # ====== aus RichMenuHandler (per register_handler live gebunden) ======

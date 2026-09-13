@@ -15,12 +15,10 @@ docs/archive/arch/MusicBot_ARCH-020_Download_Pipeline_Characterization.md, Absch
 """
 
 import asyncio
-import json
-from datetime import datetime
 from typing import Dict, Callable, Optional, Any
 from pathlib import Path
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 
 from logger import get_module_logger
@@ -32,6 +30,9 @@ from handlers.menu.models import (
     MenuState,
 )
 from handlers.menu.permissions import is_admin_or_owner
+from handlers.menu.content import user_context
+from handlers.menu.content import greeting
+from handlers.menu.content import help as help_content
 from handlers.menu.actions import stats as stats_actions
 from handlers.menu.actions import admin_diagnostics as admin_diagnostics_actions
 from handlers.menu.actions import usermgmt as usermgmt_actions
@@ -160,49 +161,10 @@ class RichMenuHandler:
         # User-Data für Start/Help
         self.user_data_file = Path("data/user_data.json")
 
-        # Feature-Katalog
-        self.features = {
-            "download": {
-                "emoji": "📥",
-                "title": "Downloads",
-                "description": "Lade Musik von YouTube herunter",
-                "commands": ["/download"],
-                "min_role": "user",
-                "menu_id": "download",
-            },
-            "stats": {
-                "emoji": "📊",
-                "title": "Statistiken",
-                "description": "Zeige deine Hörstatistiken",
-                "commands": ["/stats", "/month", "/year"],
-                "min_role": "user",
-                "menu_id": "stats",
-            },
-            "navidrome": {
-                "emoji": "🎵",
-                "title": "Navidrome",
-                "description": "Durchsuche deine Musikbibliothek",
-                "commands": ["/navidrome", "/search"],
-                "min_role": "user",
-                "menu_id": "navidrome",
-            },
-            "admin": {
-                "emoji": "⚙️",
-                "title": "Administration",
-                "description": "Systemverwaltung und User-Management",
-                "commands": ["/admin", "/users"],
-                "min_role": "admin",
-                "menu_id": "admin",
-            },
-            "tests": {
-                "emoji": "🧪",
-                "title": "Test-System",
-                "description": "Unit-, Integrations- und Performance-Tests",
-                "commands": ["/tests"],
-                "min_role": "admin",
-                "menu_id": "tests",
-            },
-        }
+        # Feature-Katalog (ARCH-025: verschoben nach
+        # handlers/menu/content/user_context.py::FEATURES - Attribut hier
+        # bewusst als Alias erhalten, falls extern gelesen).
+        self.features = user_context.FEATURES
 
         self.logger.info("🎯 RichMenuHandler initialisiert")
 
@@ -846,60 +808,37 @@ class RichMenuHandler:
         return is_admin_or_owner(user_id, self.config)
 
     def _load_user_data(self) -> Dict[str, Any]:
-        """Lädt User-Daten aus JSON."""
-        try:
-            if self.user_data_file.exists():
-                with open(self.user_data_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    if self.user_mgmt_handler:
-                        self.user_mgmt_handler.user_data_cache = data
-                    return data
-            return {}
-        except Exception as e:
-            self.logger.error(f"❌ Fehler beim Laden der User-Daten: {e}")
-            return {}
+        """Lädt User-Daten aus JSON (ARCH-025: delegiert an
+        content.user_context.load_user_data())."""
+        return user_context.load_user_data(
+            self.user_data_file, self.logger, self.user_mgmt_handler
+        )
 
     def _get_user_info(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Holt User-Informationen."""
-        if self.user_mgmt_handler and self.user_mgmt_handler.user_data_cache:
-            return self.user_mgmt_handler.user_data_cache.get(str(user_id))
-        users = self._load_user_data()
-        return users.get(str(user_id))
+        """Holt User-Informationen (ARCH-025: delegiert an
+        content.user_context.get_user_info())."""
+        return user_context.get_user_info(
+            user_id, self.user_data_file, self.logger, self.user_mgmt_handler
+        )
 
     def _is_new_user(self, user_id: int) -> bool:
-        """Prüft ob User neu ist (< 24h registriert)."""
-        user_info = self._get_user_info(user_id)
-        if not user_info:
-            return True
-        created_at = user_info.get("created_at")
-        if created_at:
-            try:
-                created_time = datetime.fromisoformat(created_at)
-                return (datetime.now() - created_time).total_seconds() < 86400
-            except Exception:
-                pass
-        return False
+        """Prüft ob User neu ist (< 24h registriert) (ARCH-025: delegiert
+        an content.user_context.is_new_user())."""
+        return user_context.is_new_user(
+            user_id, self.user_data_file, self.logger, self.user_mgmt_handler
+        )
 
     def _get_user_role(self, user_id: int) -> str:
-        """Ermittelt User-Rolle (owner > admin > moderator > user)."""
-        if user_id == self.config.OWNER_USER_ID:
-            return "owner"
-        user_info = self._get_user_info(user_id)
-        if user_info:
-            return user_info.get("role", "user")
-        if user_id in getattr(self.config, "ADMIN_USER_IDS", []):
-            return "admin"
-        return "user"
+        """Ermittelt User-Rolle (owner > admin > moderator > user)
+        (ARCH-025: delegiert an content.user_context.get_user_role())."""
+        return user_context.get_user_role(
+            user_id, self.config, self.user_data_file, self.logger, self.user_mgmt_handler
+        )
 
     def _get_available_features(self, user_role: str) -> Dict[str, Dict]:
-        """Gibt verfügbare Features basierend auf Rolle zurück."""
-        role_hierarchy = {"user": 0, "moderator": 1, "admin": 2, "owner": 3}
-        user_level = role_hierarchy.get(user_role, 0)
-        return {
-            fid: fdata
-            for fid, fdata in self.features.items()
-            if user_level >= role_hierarchy.get(fdata.get("min_role", "user"), 0)
-        }
+        """Gibt verfügbare Features basierend auf Rolle zurück (ARCH-025:
+        delegiert an content.user_context.get_available_features())."""
+        return user_context.get_available_features(user_role)
 
     def _create_download_handler(self, update: Update) -> Optional[DownloadHandler]:
         """
@@ -931,7 +870,8 @@ class RichMenuHandler:
     async def handle_start_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Erweiterter /start Command Handler mit personalisierter Begrüßung."""
+        """Erweiterter /start Command Handler mit personalisierter Begrüßung
+        (ARCH-025: delegiert an content.greeting.send_start_message())."""
         if await is_blocked_by_maintenance(
             update,
             context,
@@ -941,98 +881,15 @@ class RichMenuHandler:
         ):
             return
         record_activity(update, getattr(self, "status_handler", None), "command:start")
-        try:
-            user = update.effective_user
-            user_id = user.id
-            username = user.username or user.first_name
-
-            self.logger.info(f"🚀 /start von User {user_id} ({username})")
-
-            is_new = self._is_new_user(user_id)
-            user_role = self._get_user_role(user_id)
-            available_features = self._get_available_features(user_role)
-
-            greeting_parts = []
-            if is_new:
-                greeting_parts.extend(
-                    [
-                        f"👋 **Willkommen, {username}!**\n",
-                        "🎉 Schön, dass du hier bist!",
-                        "Lass mich dir zeigen, was ich kann...\n",
-                    ]
-                )
-            else:
-                greeting_parts.extend(
-                    [
-                        f"👋 **Hallo zurück, {username}!**\n",
-                        "Schön, dich wiederzusehen!\n",
-                    ]
-                )
-
-            if user_role != "user":
-                role_emoji = {"moderator": "🛡️", "admin": "⚙️", "owner": "👑"}.get(
-                    user_role, "👤"
-                )
-                greeting_parts.append(
-                    f"\n{role_emoji} Deine Rolle: **{user_role.capitalize()}**\n"
-                )
-
-            greeting_parts.append("\n📚 **Verfügbare Funktionen:**\n")
-            for feature_id, feature in available_features.items():
-                greeting_parts.append(f"{feature['emoji']} **{feature['title']}**")
-                greeting_parts.append(f"   _{feature['description']}_\n")
-
-            greeting_parts.extend(
-                [
-                    "\n💡 **Schnellstart:**",
-                    "• Nutze /menu für das Hauptmenü",
-                    "• Nutze /help für detaillierte Hilfe",
-                ]
-            )
-
-            if "download" in available_features:
-                greeting_parts.append(
-                    "• Sende mir einen YouTube-Link zum Download"
-                )
-            if "navidrome" in available_features:
-                greeting_parts.append("• Nutze /search um Musik zu suchen")
-
-            greeting = "\n".join(greeting_parts)
-
-            keyboard = [
-                [InlineKeyboardButton("🏠 Hauptmenü", callback_data="menu:main")]
-            ]
-            feature_buttons = [
-                InlineKeyboardButton(
-                    f"{fdata['emoji']} {fdata['title']}",
-                    callback_data=f"menu:{fdata.get('menu_id', fid)}",
-                )
-                for fid, fdata in available_features.items()
-            ]
-            for i in range(0, len(feature_buttons), 2):
-                keyboard.append(feature_buttons[i : i + 2])
-            keyboard.append(
-                [InlineKeyboardButton("❓ Hilfe", callback_data="help:main")]
-            )
-
-            await update.message.reply_text(
-                greeting,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="Markdown",
-            )
-            self.logger.info(f"✅ Start-Nachricht gesendet an {user_id}")
-
-        except Exception as e:
-            self.logger.error(f"❌ Fehler in handle_start_command: {e}", exc_info=True)
-            if self.error_handler:
-                await self.error_handler.handle_command_error(
-                    update, context, "start", e
-                )
-            else:
-                try:
-                    await update.message.reply_text("❌ Ein Fehler ist aufgetreten.")
-                except Exception:
-                    pass
+        await greeting.send_start_message(
+            update,
+            context,
+            self.config,
+            self.user_mgmt_handler,
+            self.user_data_file,
+            self.error_handler,
+            self.logger,
+        )
 
     async def handle_menu_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -1053,7 +910,8 @@ class RichMenuHandler:
     async def handle_help(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Erweiterter /help Command Handler."""
+        """Erweiterter /help Command Handler (ARCH-025: delegiert an
+        content.help.send_help_message())."""
         if await is_blocked_by_maintenance(
             update,
             context,
@@ -1063,70 +921,21 @@ class RichMenuHandler:
         ):
             return
         record_activity(update, getattr(self, "status_handler", None), "command:help")
-        try:
-            user_id = update.effective_user.id
-            user_role = self._get_user_role(user_id)
-            available_features = self._get_available_features(user_role)
-
-            self.logger.info(f"❓ /help von User {user_id}")
-
-            help_parts = [
-                "📚 **Hilfe & Dokumentation**\n",
-                "Übersicht aller Funktionen:\n",
-            ]
-            for feature_id, feature in available_features.items():
-                commands = feature.get("commands", [])
-                help_parts.append(f"{feature['emoji']} **{feature['title']}**")
-                help_parts.append(feature["description"])
-                if commands:
-                    help_parts.append(f"_Befehle: {', '.join(commands)}_\n")
-                else:
-                    help_parts.append("")
-
-            help_parts.extend(
-                [
-                    "\n⚡ **Allgemeine Befehle:**",
-                    "• /start - Bot neu starten",
-                    "• /menu - Hauptmenü öffnen",
-                    "• /help - Diese Hilfe anzeigen",
-                    "• /cancel - Aktion abbrechen\n",
-                    "💬 **Benötigst du Unterstützung?**",
-                    "Nutze /menu und navigiere zu den jeweiligen Funktionen.",
-                ]
-            )
-
-            keyboard = [
-                [InlineKeyboardButton("🏠 Hauptmenü", callback_data="menu:main")],
-                [
-                    InlineKeyboardButton("📥 Downloads", callback_data="help:download"),
-                    InlineKeyboardButton("📊 Statistiken", callback_data="help:stats"),
-                ],
-                [InlineKeyboardButton("🎵 Navidrome", callback_data="help:navidrome")],
-            ]
-            if user_role in ["admin", "owner"]:
-                keyboard.append(
-                    [InlineKeyboardButton("⚙️ Admin-Hilfe", callback_data="help:admin")]
-                )
-            keyboard.append(
-                [InlineKeyboardButton("❌ Schließen", callback_data="menu:close")]
-            )
-
-            await update.message.reply_text(
-                "\n".join(help_parts),
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="Markdown",
-            )
-        except Exception as e:
-            self.logger.error(f"❌ Fehler in handle_help: {e}", exc_info=True)
-            if self.error_handler:
-                await self.error_handler.handle_command_error(
-                    update, context, "help", e
-                )
+        await help_content.send_help_message(
+            update,
+            context,
+            self.config,
+            self.user_mgmt_handler,
+            self.user_data_file,
+            self.error_handler,
+            self.logger,
+        )
 
     async def handle_help_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Callback-Handler für spezifische Hilfe-Themen (pattern='^help:')."""
+        """Callback-Handler für spezifische Hilfe-Themen (pattern='^help:')
+        (ARCH-025: delegiert an content.help.send_help_callback_response())."""
         if await is_blocked_by_maintenance(
             update,
             context,
@@ -1136,124 +945,13 @@ class RichMenuHandler:
         ):
             return
         record_activity(update, getattr(self, "status_handler", None), "callback:help")
-        try:
-            query = update.callback_query
-            topic = query.data.split(":", 1)[-1]
-            await query.answer()
-
-            user_id = update.effective_user.id
-            user_role = self._get_user_role(user_id)
-
-            help_texts = {
-                "download": self._get_download_help(),
-                "stats": self._get_stats_help(),
-                "navidrome": self._get_navidrome_help(),
-                "admin": (
-                    self._get_admin_help() if user_role in ["admin", "owner"] else None
-                ),
-            }
-
-            help_text = help_texts.get(topic) if topic != "main" else None
-
-            if topic == "main" or not help_text:
-                main_text = "📚 **Hilfe & Dokumentation**\n\nWähle ein Thema:"
-                keyboard = [
-                    [InlineKeyboardButton("🏠 Hauptmenü", callback_data="menu:main")],
-                    [
-                        InlineKeyboardButton(
-                            "📥 Downloads", callback_data="help:download"
-                        ),
-                        InlineKeyboardButton(
-                            "📊 Statistiken", callback_data="help:stats"
-                        ),
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            "🎵 Navidrome", callback_data="help:navidrome"
-                        )
-                    ],
-                ]
-                if user_role in ["admin", "owner"]:
-                    keyboard.append(
-                        [
-                            InlineKeyboardButton(
-                                "⚙️ Admin-Hilfe", callback_data="help:admin"
-                            )
-                        ]
-                    )
-                keyboard.append(
-                    [InlineKeyboardButton("❌ Schließen", callback_data="menu:close")]
-                )
-                await query.edit_message_text(
-                    main_text,
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode="Markdown",
-                )
-                return
-
-            keyboard = InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            "⬅️ Zurück zur Hilfe", callback_data="help:main"
-                        )
-                    ],
-                    [InlineKeyboardButton("🏠 Hauptmenü", callback_data="menu:main")],
-                    [InlineKeyboardButton("❌ Schließen", callback_data="menu:close")],
-                ]
-            )
-            await query.edit_message_text(
-                help_text, reply_markup=keyboard, parse_mode="Markdown"
-            )
-
-        except Exception as e:
-            self.logger.error(f"❌ Fehler in handle_help_callback: {e}", exc_info=True)
-
-    # ====== HILFE-TEXTE ======
-
-    def _get_download_help(self) -> str:
-        """Hilfe für Download-Funktionen (YouTube)."""
-        return (
-            "📥 **Download-Hilfe**\n\n"
-            "**YouTube-Downloads:**\n"
-            "1. Kopiere einen YouTube-Link\n"
-            "2. Sende ihn an den Bot\n"
-            "3. Der Bot lädt die Musik herunter\n\n"
-            "Beispiel: `https://youtube.com/watch?v=...`\n\n"
-            "**Unterstützte Formate:**\n"
-            "• Einzelne Videos, Playlists, Mix-Playlists"
-        )
-
-    def _get_stats_help(self) -> str:
-        return (
-            "📊 **Statistik-Hilfe**\n\n"
-            "• 📅 Monatsrückblick\n"
-            "• 🎆 Jahresrückblick\n"
-            "• 🎵 Top Songs\n"
-            "• 🎤 Top Künstler\n\n"
-            "Alle Statistiken basieren auf deinem Navidrome-Account."
-        )
-
-    def _get_navidrome_help(self) -> str:
-        return (
-            "🎵 **Navidrome-Hilfe**\n\n"
-            "• 🔍 Suche nach Songs, Alben, Künstlern\n"
-            "• 📂 Durchsuche nach Kategorien\n"
-            "• ⭐ Favoriten verwalten\n"
-            "• 📋 Playlists verwalten\n\n"
-            "Befehle: /search, /menu → Navidrome"
-        )
-
-    def _get_admin_help(self) -> str:
-        return (
-            "⚙️ **Admin-Hilfe**\n\n"
-            "• 👥 Benutzerverwaltung\n"
-            "• 📊 Logger-Verwaltung\n"
-            "• 🔄 Bot neu starten\n"
-            "• 💾 Backup-Verwaltung\n"
-            "• 🧪 Test-System\n"
-            "• 🚨 Error-Verwaltung\n\n"
-            "Alle Admin-Aktionen werden geloggt."
+        await help_content.send_help_callback_response(
+            update,
+            context,
+            self.config,
+            self.user_mgmt_handler,
+            self.user_data_file,
+            self.logger,
         )
 
     # ====== MESSAGE HANDLER ======
