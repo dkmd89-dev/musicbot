@@ -165,6 +165,8 @@ Server-Ebene, nicht gleichbedeutend mit `UNSUPPORTED`).
 | **NAV-F12** | `nav_genre_stats` wurde vom generischen `nav_genre_`-Präfix-Zweig fehlerhaft abgefangen (`callback_data.startswith("nav_genre_")` matcht auch `"nav_genre_stats"`) — lieferte `handle_genre_detail(..., "stats")` statt den `nav_genre_stats`-Zweig zu erreichen. Derselbe Bug-Typ wie NAV-F2/NAV-F11, bisher unbemerkt, weil der STUB-Platzhaltertext ebenfalls nie erreicht wurde. Entdeckt beim Implementieren von NAV-F8 (per Regressionstest). Fix: eigener Zweig vor dem generischen `nav_genre_`-Check. | BROKEN, DEAD_ROUTE | P0 | **CLOSED** (2026-09-13) |
 | **NAV-F13** | `handle_genre_detail()` sendete den statischen Text `"(erste 10 angezeigt)"` unescaped in einer `parse_mode="MarkdownV2"`-Nachricht — Telegram lehnte JEDEN erfolgreichen Genre-Lookup mit Songs mit `"Can't parse entities: character '(' is reserved"` ab (Live-Fund aus den Produktionslogs, reproduzierbar bei jedem Genre). Anders als BUG-007/NAV-F1-artige Findings kein dynamischer, sondern ein statischer String-Literal-Bug. Fix: `\\(erste 10 angezeigt\\)`. | BROKEN | P0 | **CLOSED** (2026-09-13) |
 | **NAV-F14** | `handle_browse_genres()`: bei nicht-numerischem `songCount` fing der Sortier-`try/except` die Konvertierung ab und fiel auf alphabetische Sortierung zurück — aber die Anzeige-Schleife nutzte denselben rohen Wert danach ungeprüft in `if song_count > 0:`, was crashte (`TypeError`) und die generische Fehlermeldung statt einer Genre-Liste zeigte. Zusätzlich sortierte der Fallback nach dem falschen Feld (`"name"` statt dem tatsächlich angezeigten `"value"`). Fix: `songCount` wird jetzt einmalig vor Sortierung und Anzeige sicher zu `int` normalisiert (fehlerhafte Werte → 0), Sortierung erfolgt über `(-songCount, name.lower())` mit demselben `value`-bevorzugenden Feld wie die Anzeige. | BROKEN | P3 | **CLOSED** (2026-09-13) |
+| **NAV-F15** | Vom Nutzer selbst gefunden+behoben: `render_playlist_detail()`s Tracklist-Overflow-Hinweis (`"_+N weitere Songs nicht angezeigt_"`, bei Playlists mit >25 Songs) enthielt ein rohes `+` in MarkdownV2-Text — `+` ist reserviert, Telegram lehnt die Nachricht mit `BadRequest` ab. Dieselbe Bug-Klasse wie NAV-F13. Fix: `+` entfernt (reines Stilmittel). | BROKEN | P0 | **CLOSED** (2026-09-13) |
+| **NAV-F16** | Derselbe Bug wie NAV-F15, aber in `render_album_detail()` (Alben mit >25 Songs) — bewusst nicht im selben Schritt mitgefixt. | BROKEN | P0 | OPEN |
 
 Vollständige Details/Codebelege zu allen Findings: Audit-Transkript
 (Session vom 2026-09-13) sowie `docs/FINDINGS_INDEX.md` (repoweite
@@ -282,7 +284,7 @@ gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
 | Bereich | Datei | Umfang |
 |---|---|---|
 | `NavidromeMenuHandler` (Connection-Status, Escaping, Error-Routing, Album-/Song-/Playlist-Detail, Genre-Suche, NAV-F1, NAV-F6, NAV-F9, NAV-F7, NAV-F13) | `tests/test_navidrome_menu_handler.py` | 40 Tests (BUG-007a/b, NAV-F1, NAV-F2, NAV-F6, NAV-F9, NAV-F7, NAV-F13; toter Test zu `handle_stats()` mit NAV-F3 entfernt; `TestFormatTrackDuration` nach `test_navidrome_renderer.py` verschoben, `TestPlaylistDetailNavF5` neu ergänzt — Architecture Refactoring Audit Stufe 1) |
-| `handlers/navidrome_renderer.py` (reine Render-Funktionen, Architecture Refactoring Audit Stufe 1 + 3) | `tests/test_navidrome_renderer.py` | 24 Tests (ohne Mocks, reine Funktionsaufrufe; 11 neu für Stufe 3) |
+| `handlers/navidrome_renderer.py` (reine Render-Funktionen, Architecture Refactoring Audit Stufe 1 + 3, NAV-F15) | `tests/test_navidrome_renderer.py` | 25 Tests (ohne Mocks, reine Funktionsaufrufe; 11 neu für Stufe 3, 1 neu für NAV-F15) |
 | `handlers/menu/actions/navidrome.py`-Wrapper + interner Dispatcher (NAV-F9, NAV-F10, NAV-F11, NAV-F5, NAV-F7, NAV-F8, NAV-F12) | `tests/test_menu_actions_navidrome.py` | 20 Tests |
 | `NavidromeAPI`-Adapter (Logging, Timeout, Characterization, NAV-F8 `genre`/`genres`-Passthrough) | `tests/test_navidrome_api_characterization.py`, `tests/test_navidrome_api_logging.py`, `tests/test_navidrome_api_timeout.py` | `test_navidrome_api_characterization.py` 15 Tests (2 neu für NAV-F8), übrige siehe dort |
 | Result-Navigation End-to-End (ARCH-029-Muster, NAV-F10) | `tests/test_menu_navigation_continuity.py::TestLastPlayedResultNavigationEndToEndNavF10` | 2 Tests |
@@ -308,9 +310,10 @@ NAV-F14 entdeckt und CLOSED (siehe Abschnitt 4).
 
 ## 8. Offene Punkte
 
-**Alle 14 Findings (NAV-F1–NAV-F14, inkl. des beim Architecture
-Refactoring Audit entdeckten NAV-F14) sind CLOSED.** Keine
-offenen Findings mehr in diesem Dokument.
+**15 von 16 Findings (NAV-F1–NAV-F15) sind CLOSED.** Ein Befund,
+**NAV-F16, ist OPEN** (P0, dasselbe `+`-Escaping-Problem wie NAV-F15,
+aber in `render_album_detail()` — bewusst nicht mit dem NAV-F15-Fix
+des Nutzers vermischt, siehe Abschnitt 4).
 
 - Testlücken aus Abschnitt 7 — bewusst zurückgestellt, keine akute
   Priorität (P2/P3-Bereich, kein bekannter Bug dahinter).

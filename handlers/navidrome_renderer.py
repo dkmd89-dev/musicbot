@@ -175,7 +175,17 @@ def render_playlist_detail(
     """Baut Text+Keyboard für die Playlist-Detailansicht (NAV-F5).
     Tracklist analog zu render_album_detail() bewusst auf 25 Songs
     gedeckelt. 1:1 aus NavidromeMenuHandler.handle_playlist_detail()
-    verschoben."""
+    verschoben.
+
+    NAV-F15: Das Literal "_+N weitere Songs nicht angezeigt_" enthielt
+    ein '+' im MarkdownV2-Text. '+' ist ein reserviertes Zeichen und
+    muss entweder escaped oder durch ein nicht-reserviertes Zeichen
+    ersetzt werden. Da das '+' hier nur ein Stilmittel ohne inhaltliche
+    Bedeutung war, wird es weggelassen - die Zeile bleibt verständlich.
+    Derselbe Bug existiert unveraendert in render_album_detail() (Zeile
+    ~106) - dort bewusst NICHT in diesem Schritt mitgefixt, siehe
+    docs/FINDINGS_INDEX.md (eigener, separat zurückgestellter Fund).
+    """
     playlist_name = playlist.get("name", "Unbekannt")
     owner = playlist.get("owner", "")
     songs = playlist.get("entry", [])
@@ -205,7 +215,7 @@ def render_playlist_detail(
 
     more_songs_note = ""
     if len(songs) > 25:
-        more_songs_note = f"\n_+{len(songs) - 25} weitere Songs nicht angezeigt_"
+        more_songs_note = f"\n_{len(songs) - 25} weitere Songs nicht angezeigt_"
 
     # BUG-007-Fix-Analogon (siehe render_album_detail()): playlist_name/
     # owner kommen unveraendert aus der Navidrome-Bibliothek und werden
