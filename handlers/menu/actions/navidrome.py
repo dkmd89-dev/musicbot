@@ -147,6 +147,24 @@ async def handle_navidrome_callback(
         )
         return
 
+    # NAV-F2-Fix (Navidrome Menu System Audit, 2026-09-13): dieser Zweig
+    # MUSS vor dem generischen "nav_genre_"-Prefix-Check unten stehen -
+    # "nav_genre_songs_all_<name>" startet ebenfalls mit "nav_genre_" und
+    # wurde deshalb bisher fälschlich dort abgefangen; das anschließende
+    # .replace("nav_genre_", "") lieferte einen korrupten Parameter
+    # ("songs_all_<name>" statt "<name>") an handle_genre_detail(), das
+    # dann Songs für einen nicht existierenden Genre-Namen suchte. Der
+    # zugrundeliegende Button ("➕ N weitere anzeigen") hat noch keine
+    # eigene Implementierung (zeigt bisher nur die ersten 10 Songs eines
+    # Genres) - Platzhaltertext analog zu den bestehenden STUB-Zweigen
+    # ("nav_search_genres"/"nav_genre_stats") statt der korrupten
+    # Weiterleitung.
+    if callback_data.startswith("nav_genre_songs_all_"):
+        await query.edit_message_text(
+            "🎵 Weitere Songs anzeigen\n\nDiese Funktion wird gerade entwickelt..."
+        )
+        return
+
     if callback_data.startswith("nav_genre_"):
         genre_name = callback_data.replace("nav_genre_", "")
         await navidrome_handler.handle_genre_detail(update, context, genre_name)
