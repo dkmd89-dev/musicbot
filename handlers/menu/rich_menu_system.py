@@ -768,9 +768,18 @@ class RichMenuSystem:
     async def _handle_navidrome_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: str
     ):
-        """Spezial-Handler für alle nav_* Callbacks"""
+        """Spezial-Handler für alle nav_* Callbacks.
+
+        NAV-F8: `stats_handler` zusätzlich durchgereicht (nur für
+        `nav_genre_stats` benötigt, siehe
+        navidrome_actions.handle_navidrome_callback()-Docstring)."""
         await navidrome_actions.handle_navidrome_callback(
-            update, context, callback_data, self.navidrome_handler, self.logger
+            update,
+            context,
+            callback_data,
+            self.navidrome_handler,
+            self.logger,
+            stats_handler=self.stats_handler,
         )
 
     async def _handle_usermgmt_callback(

@@ -152,6 +152,13 @@ class StatistikService:
             artist_name, navidrome_username, period
         )
 
+    def generate_genre_stats(
+        self, navidrome_username: str = None, top_n: int = 10
+    ) -> Optional[Dict[str, Any]]:
+        """Top-`top_n`-Genres nach Plays (All-Time, NAV-F8). Siehe
+        StatisticsCalculator.generate_genre_stats()."""
+        return self._calculator.generate_genre_stats(navidrome_username, top_n=top_n)
+
     def export_stats_to_json(
         self, navidrome_username: str = None, period: str = "month"
     ):

@@ -111,6 +111,47 @@ class TestUpdatePlayHistory:
         assert result is False
         assert len(repo.load("alice")) == 1
 
+    def test_genre_field_is_captured_from_song_info_nav_f8(self, tmp_path):
+        """NAV-F8 (Navidrome Menu System Audit): der Wiedergabeverlauf
+        erfasste bisher kein 'genre'-Feld, wodurch 'gehoerte Genres nach
+        Plays'-Statistiken unmoeglich waren - jetzt wird es aus dem
+        bereits vorhandenen Song-Objekt mitgeschrieben."""
+        poller, repo, api = make_poller(tmp_path)
+        api.get_now_playing.return_value = [
+            {
+                "song": {
+                    "title": "Song A", "artist": "Bausa", "album": "Alb",
+                    "id": "1", "genre": "Hip-Hop",
+                },
+                "user": "alice",
+                "player": "web",
+            }
+        ]
+
+        asyncio.run(poller.update_play_history())
+
+        history = repo.load("alice")
+        assert history[0]["tracks"][0]["genre"] == "Hip-Hop"
+
+    def test_genre_field_defaults_to_empty_string_when_missing_nav_f8(self, tmp_path):
+        """Regressionsschutz: ein Song ohne 'genre'-Feld (Navidrome-
+        Bibliothek ohne Genre-Tag) darf nicht crashen, sondern liefert
+        einen leeren String (von StatisticsCalculator.generate_genre_stats()
+        stillschweigend uebersprungen, nicht als 'Unbekannt' gezaehlt)."""
+        poller, repo, api = make_poller(tmp_path)
+        api.get_now_playing.return_value = [
+            {
+                "song": {"title": "Song A", "artist": "Bausa", "id": "1"},
+                "user": "alice",
+                "player": "web",
+            }
+        ]
+
+        asyncio.run(poller.update_play_history())
+
+        history = repo.load("alice")
+        assert history[0]["tracks"][0]["genre"] == ""
+
     def test_api_exception_is_caught_and_returns_false(self, tmp_path):
         poller, _, api = make_poller(tmp_path)
         api.get_now_playing.side_effect = RuntimeError("boom")

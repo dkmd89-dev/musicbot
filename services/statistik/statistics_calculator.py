@@ -760,6 +760,71 @@ class StatisticsCalculator:
         )
         return 0
 
+    def generate_genre_stats(
+        self, navidrome_username: str = None, top_n: int = 10
+    ) -> Optional[Dict[str, Any]]:
+        """Zählt Plays je Genre über den gesamten Wiedergabeverlauf (NAV-F8,
+        Navidrome Menu System Audit). V1 bewusst einfach gehalten
+        (Nutzer-Vorgabe): kein Kalenderzeitraum wie bei generate_stats()
+        (All-Time, analog zu get_last_played_song()), absteigend nach
+        Plays, Top `top_n` (Default 10). Reine Wiederverwendung von
+        `_parse_history_entries()`/`self.repository` - keine neue
+        Statistics-Pipeline.
+
+        Nur Tracks mit nicht-leerem `"genre"`-Feld werden gezählt. Dieses
+        Feld wurde erst mit NAV-F8 in `PlayHistoryPoller` ergänzt -
+        ältere Verlaufseinträge haben es nicht und werden stillschweigend
+        übersprungen (keine "Unbekannt"-Sammelkategorie, die reale
+        Genre-Play-Counts verwässern würde). Läuft über die bestehende
+        `PLAY_HISTORY_RETENTION_DAYS`-Bereinigung aus, keine dauerhafte
+        Datenlücke.
+
+        Returns:
+            Optional[Dict[str, Any]]: {
+                "navidrome_username": str,
+                "total_plays_with_genre": int,
+                "top_genres": List[Tuple[str, int]],  # (genre, count), absteigend
+            } oder `None`, wenn für `navidrome_username` überhaupt keine
+            Verlaufsdaten existieren (Account hat noch nie etwas
+            abgespielt) - existiert Verlauf, aber ohne verwertbare
+            Genre-Angaben, wird stattdessen ein gültiges Dict mit leerer
+            `top_genres`-Liste zurückgegeben.
+        """
+        if not navidrome_username:
+            self.logger.error(
+                "❌ generate_genre_stats ohne navidrome_username aufgerufen. Abbruch."
+            )
+            return None
+
+        history = self.repository.load(navidrome_username)
+        if not history:
+            self.logger.debug(
+                f"📭 Keine Verlaufsdaten für '{navidrome_username}' verfügbar (Genre-Stats)."
+            )
+            return None
+
+        parsed_entries = self._parse_history_entries(history, navidrome_username)
+
+        genre_counts: Dict[str, int] = defaultdict(int)
+        total_plays_with_genre = 0
+
+        for _entry_time, track_info in parsed_entries:
+            genre = (track_info.get("genre") or "").strip()
+            if not genre:
+                continue
+            genre_counts[genre] += 1
+            total_plays_with_genre += 1
+
+        top_genres = sorted(
+            genre_counts.items(), key=lambda x: x[1], reverse=True
+        )[:top_n]
+
+        return {
+            "navidrome_username": navidrome_username,
+            "total_plays_with_genre": total_plays_with_genre,
+            "top_genres": top_genres,
+        }
+
     def export_stats_to_json(
         self, navidrome_username: str = None, period: str = "month"
     ) -> Optional[Path]:

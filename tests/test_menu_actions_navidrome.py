@@ -214,6 +214,69 @@ async def test_callback_nav_playlists_menu_id_does_not_collide_with_playlist_det
 
 
 @pytest.mark.asyncio
+async def test_callback_search_genres_delegates_to_handle_search_nav_f7():
+    """NAV-F7: nav_search_genres war ein STUB - delegiert jetzt an
+    handle_search(update, context, "genres") (eigener search_type, siehe
+    NavidromeMenuHandler._process_genre_search_query()-Docstring)."""
+    update = _make_update()
+    handler = Mock()
+    handler.handle_search = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, Mock(), "nav_search_genres", handler, Mock()
+    )
+    handler.handle_search.assert_awaited_once()
+    args, _ = handler.handle_search.call_args
+    assert args[2] == "genres"
+
+
+@pytest.mark.asyncio
+async def test_callback_genre_stats_delegates_to_stats_handler_nav_f8():
+    """NAV-F8: nav_genre_stats war ein STUB - delegiert jetzt an
+    StatistikHandler.handle_genre_stats() (bestehendes Statistics-System,
+    analog zu nav_recent/handle_recent())."""
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    stats_handler = Mock()
+    stats_handler.handle_genre_stats = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_genre_stats", handler, Mock(), stats_handler=stats_handler
+    )
+    stats_handler.handle_genre_stats.assert_awaited_once_with(update, context)
+
+
+@pytest.mark.asyncio
+async def test_callback_genre_stats_does_not_collide_with_generic_genre_detail_nav_f8():
+    """Regressionsschutz (entdeckt beim Implementieren von NAV-F8):
+    'nav_genre_stats' startet ebenfalls mit dem generischen
+    'nav_genre_'-Praefix und wurde deshalb bisher faelschlich als
+    handle_genre_detail(..., 'stats') geroutet - derselbe Bug-Typ wie
+    NAV-F2/NAV-F11. Muss stattdessen an handle_genre_stats() gehen."""
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_genre_detail = AsyncMock()
+    stats_handler = Mock()
+    stats_handler.handle_genre_stats = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_genre_stats", handler, Mock(), stats_handler=stats_handler
+    )
+    handler.handle_genre_detail.assert_not_called()
+    stats_handler.handle_genre_stats.assert_awaited_once_with(update, context)
+
+
+@pytest.mark.asyncio
+async def test_callback_genre_stats_shows_unavailable_without_stats_handler_nav_f8():
+    update = _make_update()
+    handler = Mock()
+    await nav_actions.handle_navidrome_callback(
+        update, Mock(), "nav_genre_stats", handler, Mock(), stats_handler=None
+    )
+    text = update.callback_query.edit_message_text.call_args[0][0]
+    assert "Statistik-Handler" in text
+
+
+@pytest.mark.asyncio
 async def test_callback_normal_artist_still_extracts_correct_id_nav_f11():
     """Regressionsschutz: der NAV-F11-Fix darf den normalen
     'nav_artist_<id>'-Pfad nicht brechen."""

@@ -1,9 +1,9 @@
 # Navidrome Menu System — API Capability & Architecture
 
 **Status:** CURRENT (lebendes Dokument). Entstanden aus dem read-only
-„MASTER PHASE — NAVIDROME MENU SYSTEM"-Audit (2026-09-13). P0-Findings
-(NAV-F1/NAV-F2), NAV-F10, NAV-F6, NAV-F9, NAV-F11 und NAV-F3 sind CLOSED;
-NAV-F4/NAV-F5 sind ebenfalls CLOSED; NAV-F7/F8 bleiben offen/geplant.
+„MASTER PHASE — NAVIDROME MENU SYSTEM"-Audit (2026-09-13). **Alle
+Findings des Audits (NAV-F1–NAV-F11) sowie der bei der NAV-F8-Umsetzung
+zusätzlich entdeckte NAV-F12 sind CLOSED.**
 **Scope:** `handlers/navidrome_menu_handler.py`,
 `handlers/menu/actions/navidrome.py`, `services/clients/navidrome_api.py`
 und ihre unmittelbaren Kollaborateure (Personal-Statistics-Domain nur
@@ -79,7 +79,11 @@ Verbindungsfehler-Screen zeigt.
 │   ├── 🔍 Überall        nav_search            — IMPLEMENTED
 │   ├── 🎤 Künstler       nav_search_artists    — IMPLEMENTED
 │   ├── 💿 Alben          nav_search_albums     — IMPLEMENTED
-│   └── 🎵 Songs          nav_search_songs      — IMPLEMENTED
+│   ├── 🎵 Songs          nav_search_songs      — IMPLEMENTED
+│   └── 🎭 Genres         nav_search_genres     — IMPLEMENTED (NAV-F7:
+│                                                  Teilstring-Filter über
+│                                                  getGenres(), keine
+│                                                  eigene Such-API)
 ├── 📋 Meine Playlists    nav_playlists         — IMPLEMENTED (das frühere
 │                                                  Duplikat nav_browse_playlists
 │                                                  wurde entfernt, NAV-F4);
@@ -104,6 +108,11 @@ Verbindungsfehler-Screen zeigt.
 - `NavidromeMenuHandler.handle_stats()` (ein `getIndexes`-basierter
   Statistik-Versuch) war unerreichbar (kein Menüpunkt zeigte darauf) und
   wurde daher entfernt — siehe NAV-F3 (CLOSED).
+- Zwei dynamische Buttons innerhalb von `handle_browse_genres()`
+  ("🔍 Genre suchen" → `nav_search_genres`, "📊 Genre-Stats" →
+  `nav_genre_stats`) sind seit NAV-F7/NAV-F8 IMPLEMENTED. Beide erscheinen
+  bewusst nicht im obigen Baum (kein eigener Menüpunkt, sondern
+  Inline-Buttons innerhalb der Genre-Liste selbst).
 
 ---
 
@@ -144,15 +153,16 @@ Server-Ebene, nicht gleichbedeutend mit `UNSUPPORTED`).
 | **NAV-F4** | `nav_browse_playlists` (unter „Durchsuchen", STUB) vs. `nav_playlists` („Meine Playlists", Top-Level, real) — zwei Menüpunkte für dasselbe Konzept. Entscheidung: `nav_playlists` bleibt, `nav_browse_playlists` entfernt (MenuItem, Wrapper, Action-Funktion, Tests). | DUPLICATE | P1 | **CLOSED** (2026-09-13) |
 | **NAV-F5** | `nav_playlist_<id>`-Buttons wurden in `handle_my_playlists()` erzeugt, aber es existierte kein Dispatcher-Zweig dafür (fiel auf generisches „Funktion nicht implementiert"). Fix: `handle_playlist_detail()` implementiert (`getPlaylist` via `make_request`, analog zu `handle_album_detail()`), Dispatcher-Zweig `nav_playlist_` ergänzt (kollisionsfrei zu `nav_playlists`, da Letzteres nur über `menu:nav_playlists` läuft). | DEAD_ROUTE | P1 | **CLOSED** (2026-09-13) |
 | NAV-F6 | `handle_reconnect()` prüfte nie den echten `NavidromeAPI.check_connection()` (`ping`), nur lokale Config-Präsenz — abweichend von `enhanced_status_handler.py`, das den echten Ping bereits nutzt. | ARCHITECTURE_VIOLATION | P1 | **CLOSED** (2026-09-13) |
-| NAV-F7 | `nav_search_genres` — STUB. | — | P3 | OPEN |
-| NAV-F8 | `nav_genre_stats` — STUB. | — | P3 | OPEN |
+| **NAV-F7** | `nav_search_genres` — STUB. Fix: eigener Suchpfad `search_type="genres"` in `NavidromeMenuHandler.handle_search()`/`process_search_query()` — Teilstring-Filter über die bereits von `handle_browse_genres()` genutzte `getGenres()`-Liste (keine dedizierte Subsonic-Genre-Such-API, keine neue Pipeline). | — | P3 | **CLOSED** (2026-09-13) |
+| **NAV-F8** | `nav_genre_stats` — STUB. Fix: `StatisticsCalculator.generate_genre_stats()` (neu, All-Time Top-10 nach Plays, reine Wiederverwendung von `_parse_history_entries()`/`self.repository`) + `StatistikHandler.handle_genre_stats()`, Dispatcher delegiert analog zu `nav_recent`. Voraussetzung: `PlayHistoryPoller` erfasst seither zusätzlich `"genre"` pro Play (fehlte bisher komplett im Datenmodell — dokumentierter TODO in `generate_timeline_stats()`). | — | P3 | **CLOSED** (2026-09-13) |
 | NAV-F9 | `nav_album_<id>`/`nav_song_<id>` Detailansichten — STUB, obwohl an 6 Stellen im Code bereits verlinkt (`getAlbum`/`getSong` nicht implementiert). | — | **P1** | **CLOSED** (2026-09-13) |
 | NAV-F11 | `nav_artist_albums_all_<id>` (Button „➕ N weitere Alben" in `handle_artist_detail()`) wurde vom generischen `nav_artist_`-Präfix-Zweig fehlerhaft abgefangen, lieferte korrupten Artist-Namen an `handle_artist_detail()` — derselbe Bug-Typ wie NAV-F2, entdeckt bei der NAV-F9-Umsetzung. | BROKEN | P0 | **CLOSED** (2026-09-13) |
 | NAV-F10 | `StatistikHandler.handle_last_played()` (erreicht über `nav_recent`) hatte kein `reply_markup` — in der ARCH-029-Phase („Menu Navigation Continuity") übersehen, da die Methode über `nav_recent`, nicht über eine `stats_*`-ID erreichbar ist. | Navigation-Gap (ARCH-029-Nachtrag) | P1 | **CLOSED** (2026-09-13) |
+| **NAV-F12** | `nav_genre_stats` wurde vom generischen `nav_genre_`-Präfix-Zweig fehlerhaft abgefangen (`callback_data.startswith("nav_genre_")` matcht auch `"nav_genre_stats"`) — lieferte `handle_genre_detail(..., "stats")` statt den `nav_genre_stats`-Zweig zu erreichen. Derselbe Bug-Typ wie NAV-F2/NAV-F11, bisher unbemerkt, weil der STUB-Platzhaltertext ebenfalls nie erreicht wurde. Entdeckt beim Implementieren von NAV-F8 (per Regressionstest). Fix: eigener Zweig vor dem generischen `nav_genre_`-Check. | BROKEN, DEAD_ROUTE | P0 | **CLOSED** (2026-09-13) |
 
-Vollständige Details/Codebelege zu NAV-F3–F10: Audit-Transkript
-(Session vom 2026-09-13); Übernahme nach `docs/FINDINGS_INDEX.md` steht
-noch aus (siehe Offene Punkte).
+Vollständige Details/Codebelege zu allen Findings: Audit-Transkript
+(Session vom 2026-09-13) sowie `docs/FINDINGS_INDEX.md` (repoweite
+Findings-Ledger, alle NAV-Findings dort ebenfalls CLOSED).
 
 ---
 
@@ -195,6 +205,8 @@ durch Playlist-CRUD, aktuell nicht geplant).
 │   Durchsuchen/Suche/Favoriten/Genre-Detail, kein eigener Menüpunkt nötig
 ├── ⭐ Favoriten (unverändert)
 ├── 🕐 Zuletzt gespielt (unverändert, nur reply_markup-Nachtrag NAV-F10)
+├── 🎭 Genre-Suche/-Stats  ← ✅ CLOSED (NAV-F7/NAV-F8): Inline-Buttons in
+│   Durchsuchen → Genres, kein eigener Menüpunkt nötig
 ├── 🎵 Entdecken  ← NEU (P2, nach den P1-Fixes)
 │   ├── 🎲 Zufällige Songs (getRandomSongs)
 │   ├── 🔥 Top Songs je Künstler (getTopSongs)
@@ -220,8 +232,9 @@ Verschiebung von Serverstatus/Scan aus dem Admin-Bereich hierher.
 6. ~~NAV-F11~~ ✅ CLOSED (neuer Fund, entdeckt bei NAV-F9) — `nav_artist_albums_all_<id>` wurde vom generischen `nav_artist_`-Präfix fehlerhaft abgefangen (derselbe Bug-Typ wie NAV-F2); eigener Zweig vor dem generischen Check ergänzt.
 7. ~~NAV-F3~~ ✅ CLOSED — toten `handle_stats()`-Code + zugehörigen Test entfernt (triple-grep-verifiziert unerreichbar: keine Aufrufer in `handlers/`, `handlers/menu/`, `tests/`)
 8. ~~NAV-F4/NAV-F5~~ ✅ CLOSED — Playlist-Duplikat gemergt (`nav_playlists` bleibt, `nav_browse_playlists`-MenuItem/-Wrapper/-Action entfernt), `handle_playlist_detail()` implementiert (`getPlaylist` via `make_request`, analog `handle_album_detail()`), Dispatcher-Zweig `nav_playlist_` ergänzt
-9. Renderer-Extraktion (`navidrome_renderer.py`)
-10. Discovery-Erweiterung (`getRandomSongs`/`getTopSongs`/weitere `getAlbumList2`-Typen)
+9. ~~NAV-F7/NAV-F8/NAV-F12~~ ✅ CLOSED — Genre-Suche (`nav_search_genres`, Teilstring-Filter über `getGenres()`) + Genre-Statistik (`nav_genre_stats`, `StatisticsCalculator.generate_genre_stats()`, All-Time Top-10 nach Plays, reine Wiederverwendung des bestehenden Statistics-/Scrobble-Systems inkl. additiver `"genre"`-Erfassung in `PlayHistoryPoller`) implementiert; dabei NAV-F12 entdeckt+behoben (`nav_genre_stats` kollidierte mit dem generischen `nav_genre_`-Präfix, derselbe Bug-Typ wie NAV-F2/NAV-F11)
+10. Renderer-Extraktion (`navidrome_renderer.py`)
+11. Discovery-Erweiterung (`getRandomSongs`/`getTopSongs`/weitere `getAlbumList2`-Typen)
 
 Jeder Schritt: eigener Branch/PR, volle Regressionsprüfung, keine
 gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
@@ -232,24 +245,32 @@ gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
 
 | Bereich | Datei | Umfang |
 |---|---|---|
-| `NavidromeMenuHandler` (Connection-Status, Escaping, Error-Routing, Album-/Song-/Playlist-Detail, NAV-F1, NAV-F6, NAV-F9) | `tests/test_navidrome_menu_handler.py` | 33 Tests (BUG-007a/b, NAV-F1, NAV-F2, NAV-F6, NAV-F9; toter Test zu `handle_stats()` mit NAV-F3 entfernt; `handle_playlist_detail()` nur indirekt über den Dispatcher-Test in `test_menu_actions_navidrome.py` abgedeckt, kein eigener Unit-Test) |
-| `handlers/menu/actions/navidrome.py`-Wrapper + interner Dispatcher (NAV-F9, NAV-F10, NAV-F11, NAV-F5) | `tests/test_menu_actions_navidrome.py` | 16 Tests (toter `handle_browse_playlists`-Test mit NAV-F4 entfernt, 2 neue NAV-F5-Dispatcher-Tests) |
+| `NavidromeMenuHandler` (Connection-Status, Escaping, Error-Routing, Album-/Song-/Playlist-Detail, Genre-Suche, NAV-F1, NAV-F6, NAV-F9, NAV-F7) | `tests/test_navidrome_menu_handler.py` | 37 Tests (BUG-007a/b, NAV-F1, NAV-F2, NAV-F6, NAV-F9, NAV-F7; toter Test zu `handle_stats()` mit NAV-F3 entfernt) |
+| `handlers/menu/actions/navidrome.py`-Wrapper + interner Dispatcher (NAV-F9, NAV-F10, NAV-F11, NAV-F5, NAV-F7, NAV-F8, NAV-F12) | `tests/test_menu_actions_navidrome.py` | 20 Tests |
 | `NavidromeAPI`-Adapter (Logging, Timeout, Characterization) | `tests/test_navidrome_api_characterization.py`, `tests/test_navidrome_api_logging.py`, `tests/test_navidrome_api_timeout.py` | siehe dort |
 | Result-Navigation End-to-End (ARCH-029-Muster, NAV-F10) | `tests/test_menu_navigation_continuity.py::TestLastPlayedResultNavigationEndToEndNavF10` | 2 Tests |
-| `handle_last_played()` `reply_markup`-Passthrough (NAV-F10) | `tests/test_mugge_statistik_handler.py::TestHandleLastPlayed` | 1 neuer Test |
+| `handle_last_played()` `reply_markup`-Passthrough (NAV-F10) | `tests/test_mugge_statistik_handler.py::TestHandleLastPlayed` | 1 Test |
+| `handle_genre_stats()` (NAV-F8) | `tests/test_mugge_statistik_handler.py::TestHandleGenreStats` | 4 Tests |
+| `StatisticsCalculator.generate_genre_stats()` (NAV-F8) | `tests/test_statistics_calculator.py::TestGenerateGenreStats` | 6 Tests |
+| `StatistikService.generate_genre_stats()`-Delegator (NAV-F8) | `tests/test_statistik_service.py::TestGenerateGenreStats` | 2 Tests |
+| `PlayHistoryPoller`-Genre-Erfassung (NAV-F8) | `tests/test_play_history_poller.py` | 2 neue Tests |
 
 **Bekannte Testlücken** (Details: Audit-Transkript): keine Verhaltenstests
 für `handle_browse_albums`/`handle_browse_genres`/`handle_my_playlists`/
 `handle_favorites` (Erfolgsfall, Pagination, leere Liste), keine Tests für
-`process_search_query`-Ergebnisverarbeitung, kein Test für
-`handle_reconnect()`-Erfolgsfall gegen einen echten `check_connection()`.
+`process_search_query`-Ergebnisverarbeitung des generischen
+`search3`-Pfads, kein Test für `handle_reconnect()`-Erfolgsfall gegen
+einen echten `check_connection()`.
 
 ---
 
 ## 8. Offene Punkte
 
-- NAV-F7/F8 (siehe Abschnitt 4) — Umsetzung erst nach expliziter
-  Freigabe je Schritt (CLAUDE.md Abschnitt 18: kein großer Refactor als
-  erste Reaktion).
-- Testlücken aus Abschnitt 7 — Priorität analog zur jeweiligen
-  Implementierungs-Priorität in Abschnitt 4.
+**Alle 12 Findings des Audits (NAV-F1–NAV-F12) sind CLOSED.** Keine
+offenen Findings mehr in diesem Dokument.
+
+- Testlücken aus Abschnitt 7 — bewusst zurückgestellt, keine akute
+  Priorität (P2/P3-Bereich, kein bekannter Bug dahinter).
+- Zielarchitektur aus Abschnitt 5 (Renderer-Extraktion, Discovery-
+  Erweiterung, Playlist-CRUD) bleibt P2/P3 und unumgesetzt — keine
+  Findings, sondern optionale Weiterentwicklung.
