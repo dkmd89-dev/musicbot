@@ -208,10 +208,16 @@ class TestHandleTopSongs:
         assert "Keine Song-Daten" in sent_text
 
     def test_stats_with_songs_are_formatted_and_sent(self, tmp_path):
+        """MASTER FIX (Rankings Closure): nutzt jetzt top_songs_detailed
+        (Titel + vollständiger Artist-String getrennt) statt des alten
+        kombinierten top_songs-Strings."""
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
         handler.statistik_service.generate_stats.return_value = {
-            "top_songs": [("Song A — Artist A", 10), ("Song B — Artist B", 5)],
+            "top_songs_detailed": [
+                ("Song A", "Artist A", 10),
+                ("Song B", "Artist B", 5),
+            ],
             "total_plays": 15,
         }
 
@@ -227,9 +233,65 @@ class TestHandleTopSongs:
 
         msg_mock.edit_text.assert_called_once()
         sent_text = msg_mock.edit_text.call_args[0][0]
-        assert "Song A — Artist A" in sent_text
-        assert "Song B — Artist B" in sent_text
+        assert "Song A" in sent_text and "Artist A" in sent_text
+        assert "Song B" in sent_text and "Artist B" in sent_text
         assert "15" in sent_text
+
+    def test_no_truncation_of_long_song_or_artist_names(self, tmp_path):
+        """MASTER FIX (Rankings Closure), Abschnitt 2/5A: kein _truncate(),
+        kein '…'/'...' mehr - vollständige Titel/Artist-Werte, Telegram
+        darf normal umbrechen (identisch zur Wochen-/Monatsstatistik-UX)."""
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        long_title = "Der Letzte Song (ReBoot Live Concerts) - Ein sehr langer Titel"
+        long_artists = "Toobrokeforfiji • makko • Beslik Meister • Ein vierter Artist"
+        handler.statistik_service.generate_stats.return_value = {
+            "top_songs_detailed": [(long_title, long_artists, 3)],
+            "total_plays": 3,
+        }
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_top_songs(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert long_title in sent_text
+        assert long_artists in sent_text
+        assert "…" not in sent_text
+        assert "..." not in sent_text
+
+    def test_medals_and_play_pluralization_used(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        handler.statistik_service.generate_stats.return_value = {
+            "top_songs_detailed": [
+                ("Song A", "Artist A", 1),
+                ("Song B", "Artist B", 2),
+                ("Song C", "Artist C", 2),
+                ("Song D", "Artist D", 1),
+            ],
+            "total_plays": 6,
+        }
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_top_songs(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "🥇" in sent_text and "🥈" in sent_text and "🥉" in sent_text
+        assert "4." in sent_text
+        assert "1 Play" in sent_text
+        assert "1 Plays" not in sent_text
 
     def test_no_png_chart_is_sent_anymore(self, tmp_path):
         """Statistics Menu UX & Output Optimization: 'PNG-Charts
@@ -237,7 +299,7 @@ class TestHandleTopSongs:
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
         handler.statistik_service.generate_stats.return_value = {
-            "top_songs": [("Song A — Artist A", 10)],
+            "top_songs_detailed": [("Song A", "Artist A", 10)],
             "total_plays": 10,
         }
 
@@ -257,8 +319,8 @@ class TestHandleTopSongs:
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
         handler.statistik_service.generate_stats.return_value = {
-            "top_songs": [],
-            "top_artists": [],
+            "top_songs_detailed": [],
+            "top_artists_split": [],
             "total_plays": 0,
             "period_start": None,
             "period_end": None,
@@ -298,10 +360,13 @@ class TestHandleTopArtists:
         assert "Keine Künstler-Daten" in sent_text
 
     def test_stats_with_artists_are_formatted_and_sent(self, tmp_path):
+        """MASTER FIX (Rankings Closure): nutzt jetzt top_artists_split
+        (bereits _split_artists()-aggregiert) statt des alten kombinierten
+        top_artists-Strings."""
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
         handler.statistik_service.generate_stats.return_value = {
-            "top_artists": [("Artist A", 10), ("Artist B", 5)],
+            "top_artists_split": [("Artist A", 10), ("Artist B", 5)],
             "total_plays": 15,
         }
 
@@ -319,11 +384,68 @@ class TestHandleTopArtists:
         assert "Artist B" in sent_text
         assert "15" in sent_text
 
+    def test_multi_artist_combo_strings_are_split_into_separate_rankings(self, tmp_path):
+        """MASTER FIX (Rankings Closure), Abschnitt 3/5B: 'makko &
+        toobrokeforfiji' und 'Clueso • Mathea' erscheinen als getrennte
+        Ranking-Einträge, weil generate_stats() top_artists_split bereits
+        über StatisticsCalculator._split_artists() aggregiert liefert -
+        der Handler splittet hier nichts selbst, sondern konsumiert nur
+        das bereits korrekt aufgeschlüsselte Feld."""
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        handler.statistik_service.generate_stats.return_value = {
+            "top_artists_split": [
+                ("makko", 15),
+                ("toobrokeforfiji", 4),
+                ("Clueso", 10),
+                ("Mathea", 3),
+            ],
+            "total_plays": 32,
+        }
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_top_artists(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "makko & toobrokeforfiji" not in sent_text
+        assert "Clueso • Mathea" not in sent_text
+        for name in ("makko", "toobrokeforfiji", "Clueso", "Mathea"):
+            assert name in sent_text
+
+    def test_no_truncation_of_long_artist_names(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        long_artist = "Toobrokeforfiji Und Ein Sehr Langer Zusatzname Der Nicht Gekuerzt Wird"
+        handler.statistik_service.generate_stats.return_value = {
+            "top_artists_split": [(long_artist, 2)],
+            "total_plays": 2,
+        }
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_top_artists(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert long_artist in sent_text
+        assert "…" not in sent_text
+        assert "..." not in sent_text
+
     def test_no_png_chart_is_sent_anymore(self, tmp_path):
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
         handler.statistik_service.generate_stats.return_value = {
-            "top_artists": [("Artist A", 10)],
+            "top_artists_split": [("Artist A", 10)],
             "total_plays": 10,
         }
 
@@ -343,7 +465,7 @@ class TestHandleTopArtists:
         handler = _make_handler()
         handler.user_data_file = tmp_path / "does_not_exist.json"
         handler.statistik_service.generate_stats.return_value = {
-            "top_artists": [],
+            "top_artists_split": [],
             "total_plays": 0,
         }
 

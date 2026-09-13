@@ -712,20 +712,33 @@ class StatistikHandler:
                 self.logger.info(f"ℹ️ Top Songs: leere Periode (User: {nav_user})")
                 return
 
-            lines = [
-                f"{self._escape_text(idx+1)}. {self._truncate(title)} ({self._escape_text(count)} Plays)"
-                for idx, (title, count) in enumerate(stats["top_songs"])
-            ]
+            # MASTER FIX (Personal Statistics Rankings Closure): nutzt
+            # jetzt top_songs_detailed (Titel + vollständiger, unveränderter
+            # Artist-String, kollisionssicher über _identity_key()) statt
+            # des alten kombinierten top_songs-Strings - und _format_rank()/
+            # _format_plays() statt der alten "N. X (Y Plays)"-Formatierung.
+            # KEIN _truncate() mehr (Abschnitt 2 des Master-Prompts - Telegram
+            # darf normal umbrechen, identisch zur bereits etablierten
+            # Wochen-/Monatsstatistik-UX, siehe _format_period_statistics()).
+            lines = [f"{EMOJI['topsongs']} {header}", ""]
+            for idx, (title, artists, count) in enumerate(
+                stats["top_songs_detailed"], start=1
+            ):
+                lines.append(f"{self._format_rank(idx)} {self._escape_text(title)}")
+                lines.append(
+                    f"   {self._escape_text(artists)} · {self._format_plays(count)}"
+                )
+                lines.append("")
 
-            response = (
-                f"{EMOJI['topsongs']} {header}:\n\n"
-                + "\n".join(lines)
-                + f"\n\n{EMOJI['statistics']} Gesamt Plays: {self._escape_text(stats['total_plays'])}"
+            lines.append(
+                f"{EMOJI['statistics']} Gesamt Plays: {self._format_plays(stats['total_plays'])}"
             )
+            response = "\n".join(lines)
 
             await msg.edit_text(response)
             self.logger.info(
-                f"{EMOJI['success']} ✅ Top Songs Liste erstellt ({len(stats['top_songs'])} Einträge, User: {nav_user})"
+                f"{EMOJI['success']} ✅ Top Songs Liste erstellt "
+                f"({len(stats['top_songs_detailed'])} Einträge, User: {nav_user})"
             )
 
         except Exception as e:
@@ -776,20 +789,30 @@ class StatistikHandler:
                 self.logger.info(f"ℹ️ Top Künstler: leere Periode (User: {nav_user})")
                 return
 
-            lines = [
-                f"{self._escape_text(idx+1)}. {self._truncate(artist)} ({self._escape_text(count)} Plays)"
-                for idx, (artist, count) in enumerate(stats["top_artists"])
-            ]
+            # MASTER FIX (Personal Statistics Rankings Closure): nutzt
+            # jetzt top_artists_split (StatisticsCalculator._split_artists()
+            # bereits VOR der Aggregation angewendet, siehe dessen Docstring)
+            # statt des alten kombinierten top_artists-Strings - Multi-
+            # Artist-Einträge wie "makko & toobrokeforfiji" erscheinen jetzt
+            # als getrennte Artist-Identitäten. KEIN _truncate() mehr
+            # (Abschnitt 2/4 des Master-Prompts).
+            lines = [f"{EMOJI['topartists']} {header}", ""]
+            for idx, (artist, count) in enumerate(stats["top_artists_split"], start=1):
+                lines.append(
+                    f"{self._format_rank(idx)} {self._escape_text(artist)} · "
+                    f"{self._format_plays(count)}"
+                )
 
-            response = (
-                f"{EMOJI['topartists']} {header}:\n\n"
-                + "\n".join(lines)
-                + f"\n\n{EMOJI['statistics']} Gesamt Plays: {self._escape_text(stats['total_plays'])}"
+            lines.append("")
+            lines.append(
+                f"{EMOJI['statistics']} Gesamt Plays: {self._format_plays(stats['total_plays'])}"
             )
+            response = "\n".join(lines)
 
             await msg.edit_text(response)
             self.logger.info(
-                f"{EMOJI['success']} ✅ Top Künstler Liste erstellt ({len(stats['top_artists'])} Einträge, User: {nav_user})"
+                f"{EMOJI['success']} ✅ Top Künstler Liste erstellt "
+                f"({len(stats['top_artists_split'])} Einträge, User: {nav_user})"
             )
 
         except Exception as e:
