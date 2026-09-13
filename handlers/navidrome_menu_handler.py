@@ -1098,14 +1098,40 @@ Kontaktiere den Administrator\\!
     async def handle_reconnect(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        """Versucht die Verbindung wiederherzustellen"""
+        """Versucht die Verbindung wiederherzustellen.
+
+        NAV-F6-Fix (Navidrome Menu System Audit, 2026-09-13): führt jetzt
+        tatsächlich einen echten Subsonic-`ping`-Request aus
+        (NavidromeAPI.check_connection()), bevor „✅ Verbindung
+        wiederhergestellt!" angezeigt wird. Vorher rief diese Methode nur
+        _initialize_api() (reine Config-Präsenzprüfung, KEIN
+        Netzwerkaufruf) erneut auf - bei nicht-leerer Config wurde immer
+        Erfolg gemeldet, selbst wenn der Server tatsächlich nicht
+        erreichbar war ("🔄 Erneut versuchen" testete keine echte
+        Konnektivität).
+
+        Der schnelle, rein lokale `_check_connection()`-Vorab-Check vor
+        den übrigen 8 Browse-/Such-Methoden bleibt BEWUSST unverändert -
+        kein `ping` vor jedem einzelnen Klick (Latenz-Trade-off, siehe
+        docs/MusicBot_NAVIDROME_MENU_ARCHITECTURE.md, NAV-F6). Nur der
+        explizit vom Nutzer ausgelöste "🔄 Erneut versuchen"-Klick
+        rechtfertigt einen echten Netzwerk-Request. `connection_status`
+        wird bei fehlgeschlagenem Ping auf False gesetzt, damit der
+        nächste Klick auf eine andere Navidrome-Funktion wieder korrekt
+        den Verbindungsfehler zeigt, statt mit einer veralteten
+        `True`-Config-Präsenz eine echte API-Exception zu riskieren."""
         await update.callback_query.edit_message_text(
             "🔄 Verbindung wird wiederhergestellt..."
         )
 
         try:
             self._initialize_api()
-            if self._check_connection():
+            if not self._check_connection():
+                await self._show_connection_error(update)
+                return
+
+            connection_ok = await self.navidrome_api.check_connection()
+            if connection_ok:
                 await update.callback_query.edit_message_text(
                     "✅ Verbindung wiederhergestellt!",
                     reply_markup=InlineKeyboardMarkup(
@@ -1119,6 +1145,7 @@ Kontaktiere den Administrator\\!
                     ),
                 )
             else:
+                self.connection_status = False
                 await self._show_connection_error(update)
         except Exception as e:
             self.logger.error(f"❌ Reconnect fehlgeschlagen: {e}")
