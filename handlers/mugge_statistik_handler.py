@@ -18,15 +18,26 @@ from logger import get_module_logger
 from helfer.markdown_helfer import escape_md_v2
 from emoji import EMOJI
 from config import Config  # WICHTIG
+from handlers.statistik_format_helpers import (
+    RANK_MEDALS as _RANK_MEDALS,
+    format_plays as _format_plays_helper,
+    format_rank as _format_rank_helper,
+    format_date_range as _format_date_range_helper,
+)
 
 # Statistics UX & Architecture (v Final), Abschnitt 17: _GERMAN_MONTHS
 # ist jetzt ein Re-Export der kanonischen Quelle in
 # services/statistik/statistics_calculator.py (dort auch von
 # generate_year_stats() für monthly_plays/highlights verwendet) - EINE
 # Quelle statt einer zweiten, potenziell abweichenden Konstante.
-# Rang-Symbole für Top-5-Listen (Abschnitt 8): 1.-3. Platz mit Medaille,
-# 4./5. Platz als reine Zahl.
-_RANK_MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
+#
+# MASTER PHASE B (Family Statistics, Abschnitt 26.1): _format_plays()/
+# _format_rank()/_format_date_range()/_RANK_MEDALS sind jetzt nach
+# handlers/statistik_format_helpers.py extrahiert und werden von dort
+# importiert - die Instanzmethoden unten bleiben als dünne Delegatoren
+# bestehen (bestehende Call-Sites/Tests in dieser Klasse bleiben
+# unverändert lauffähig), handlers/family_stats_handler.py importiert
+# direkt aus dem geteilten Modul.
 
 
 class StatistikHandler:
@@ -210,48 +221,24 @@ class StatistikHandler:
 
     def _format_plays(self, count: int) -> str:
         """Statistics UX & Architecture (v Final), Abschnitt 9: zentrale
-        Play-Pluralisierung ("1 Play" / "2 Plays") - ersetzt das bisherige,
-        über alle Statistics-Renderer verstreute feste " Plays"-Suffix.
-        Die bestehende Music-Timeline-Darstellung ("Xx") bleibt bewusst
-        unverändert (Abschnitt 9/30 - andere Semantik, kein Konsument
-        dieser Methode)."""
-        return f"{count} {'Play' if count == 1 else 'Plays'}"
+        Play-Pluralisierung ("1 Play" / "2 Plays"). MASTER PHASE B,
+        Abschnitt 26.1: dünner Delegator auf
+        handlers/statistik_format_helpers.py (siehe Modul-Docstring
+        oben) - Verhalten unverändert."""
+        return _format_plays_helper(count)
 
     def _format_rank(self, position: int) -> str:
         """1-basierter Rang -> Medaille (1.-3. Platz) oder reine Zahl mit
-        Punkt (4./5. Platz), siehe Abschnitt 8."""
-        return _RANK_MEDALS.get(position, f"{position}.")
+        Punkt (4./5. Platz), siehe Abschnitt 8. Dünner Delegator, siehe
+        _format_plays()."""
+        return _format_rank_helper(position)
 
     def _format_date_range(self, period_start: datetime, period_end: datetime) -> str:
         """
-        Statistics UX & Architecture (v Final), Abschnitt 12: der
-        Calculator liefert ausschließlich `period_start`/`period_end`
-        (exklusiv) - reine Rohdaten, keine UI-Datumsstrings. Diese
-        Presentation-Methode berechnet daraus den inklusiven Endpunkt
-        (`period_end - 1 Tag`) und formatiert den sichtbaren Bereich:
-
-          - "07.–13.09.2026"   (Woche/Monat innerhalb desselben Monats/Jahres)
-          - "28.09.–04.10.2026" (Woche über einen Monatswechsel hinweg)
-          - "28.12.2026–03.01.2027" (Woche über einen Jahreswechsel hinweg)
-
-        Ein Kalendermonat selbst liegt immer vollständig in einem Monat/
-        Jahr (period_end - 1 Tag landet für "month" immer im selben Monat
-        wie period_start), nur eine Kalenderwoche kann einen Monats-/
-        Jahreswechsel überspannen - daher die zusätzlichen Zweige.
-        """
-        end_inclusive = period_end - timedelta(days=1)
-
-        if period_start.year != end_inclusive.year:
-            return (
-                f"{period_start.strftime('%d.%m.%Y')}"
-                f"–{end_inclusive.strftime('%d.%m.%Y')}"
-            )
-        if period_start.month != end_inclusive.month:
-            return (
-                f"{period_start.strftime('%d.%m')}."
-                f"–{end_inclusive.strftime('%d.%m.%Y')}"
-            )
-        return f"{period_start.strftime('%d')}.–{end_inclusive.strftime('%d.%m.%Y')}"
+        Statistics UX & Architecture (v Final), Abschnitt 12. Dünner
+        Delegator auf handlers/statistik_format_helpers.py, siehe
+        _format_plays()."""
+        return _format_date_range_helper(period_start, period_end)
 
     def _format_report_age(self, completed_at_iso: str) -> str:
         """
