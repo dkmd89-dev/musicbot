@@ -24,26 +24,29 @@ Zentralisiert wurden Button-Labels, die mehrfach verwendet werden
 Labels (z. B. "⬅️ Zurück zur Hilfe", "❓ Hilfe") bleiben bewusst lokal
 in greeting.py/help.py (keine erzwungene Zentralisierung ohne
 Duplizierung, siehe Master-Prompt Abschnitt 10).
+
+Telegram Start/Help/Menu UX Finalization v2: die GREETING_*-Konstanten
+wurden auf einen kurzen Begrüßungsblock reduziert (Name + Rolle,
+optional). Die vorherige, vollständige Feature-Liste samt Schnellstart-
+Hinweisen entfiel ersatzlos, da /start jetzt direkt in das zentrale
+Hauptmenü übergeht (identische Buttons/Access-Filterung wie /menu,
+siehe content/greeting.py) - eine separate Textliste derselben
+Funktionen wäre eine Duplikation derselben Information gewesen.
 """
 
 # ====== GREETING (/start) ======
 
-GREETING_WELCOME_NEW = "👋 **Willkommen, {username}!**\n"
-GREETING_WELCOME_NEW_LINE_2 = "🎉 Schön, dass du hier bist!"
-GREETING_WELCOME_NEW_LINE_3 = "Lass mich dir zeigen, was ich kann...\n"
+GREETING_WELCOME_NEW = "👋 **Willkommen bei deinem MusicBot, {username}!**"
+GREETING_WELCOME_BACK = "👋 **Willkommen zurück, {username}!**"
 
-GREETING_WELCOME_BACK = "👋 **Hallo zurück, {username}!**\n"
-GREETING_WELCOME_BACK_LINE_2 = "Schön, dich wiederzusehen!\n"
+GREETING_TAGLINE = (
+    "🎵 Deine persönliche Musikzentrale für Downloads, Navidrome "
+    "und deine Musikbibliothek."
+)
 
-GREETING_ROLE_LINE = "\n{role_emoji} Deine Rolle: **{role_title}**\n"
+GREETING_ROLE_LINE = "{role_emoji} Rolle: **{role_title}**"
 
-GREETING_FEATURES_HEADER = "\n📚 **Verfügbare Funktionen:**\n"
-
-GREETING_QUICKSTART_HEADER = "\n💡 **Schnellstart:**"
-GREETING_QUICKSTART_MENU = "• Nutze /menu für das Hauptmenü"
-GREETING_QUICKSTART_HELP = "• Nutze /help für detaillierte Hilfe"
-GREETING_HINT_DOWNLOAD = "• Sende mir einen YouTube-Link zum Download"
-GREETING_HINT_SEARCH = "• Nutze /search um Musik zu suchen"
+GREETING_DIVIDER = "──────────────"
 
 # ====== HELP (/help + Help-Callback) ======
 
@@ -51,7 +54,7 @@ HELP_INTRO_TITLE = "📚 **Hilfe & Dokumentation**\n"
 HELP_INTRO_SUBTITLE = "Übersicht aller Funktionen:\n"
 
 HELP_GENERAL_COMMANDS_HEADER = "\n⚡ **Allgemeine Befehle:**"
-HELP_CMD_START = "• /start - Bot neu starten"
+HELP_CMD_START = "• /start - Begrüßung & Hauptmenü anzeigen"
 HELP_CMD_MENU = "• /menu - Hauptmenü öffnen"
 HELP_CMD_HELP = "• /help - Diese Hilfe anzeigen"
 HELP_CMD_CANCEL = "• /cancel - Aktion abbrechen\n"
@@ -86,7 +89,7 @@ HELP_NAVIDROME = (
     "• 📂 Durchsuche nach Kategorien\n"
     "• ⭐ Favoriten verwalten\n"
     "• 📋 Playlists verwalten\n\n"
-    "Befehle: /search, /menu → Navidrome"
+    "Zugang: /menu → 🎵 Navidrome Mediathek"
 )
 
 HELP_ADMIN = (

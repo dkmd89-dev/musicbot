@@ -283,6 +283,82 @@ class TestRenderMenu:
         assert "menu:main" in all_callback_data
 
 
+def make_command_update(user_id: int):
+    """Simuliert einen Command-Aufruf (z. B. /start) - message gesetzt,
+    callback_query bewusst None (kein Klick auf einen Inline-Button)."""
+    update = Mock()
+    update.effective_user.id = user_id
+    update.callback_query = None
+    update.message = Mock()
+    update.message.reply_text = AsyncMock()
+    return update
+
+
+class TestShowMenuHeaderText:
+    """Telegram Start/Help/Menu UX Finalization v2: RichMenuSystem.show_menu()
+    akzeptiert optional `header_text`, um eine Begrüßung (z. B. /start)
+    und das zentrale Hauptmenü in einer Nachricht zu kombinieren (siehe
+    handlers/menu/content/greeting.py). Ohne header_text bleibt das
+    Verhalten unveraendert (Regressionsschutz)."""
+
+    def test_header_text_is_prepended_to_menu_text(self, menu_system):
+        update = make_command_update(42)
+        context = make_context()
+
+        asyncio.run(
+            menu_system.show_menu(
+                update, context, "main", header_text="👋 Willkommen, Test!"
+            )
+        )
+
+        text = update.message.reply_text.call_args.args[0]
+        assert text.startswith("👋 Willkommen, Test!")
+        assert "📍 **Navigation:** Hauptmenü" in text
+
+    def test_keyboard_is_unaffected_by_header_text(self, menu_system):
+        update = make_command_update(42)
+        context = make_context()
+
+        asyncio.run(
+            menu_system.show_menu(
+                update, context, "main", header_text="👋 Willkommen, Test!"
+            )
+        )
+        with_header_markup = update.message.reply_text.call_args.kwargs.get(
+            "reply_markup"
+        )
+
+        update2 = make_command_update(43)
+        asyncio.run(menu_system.show_menu(update2, context, "main"))
+        without_header_markup = update2.message.reply_text.call_args.kwargs.get(
+            "reply_markup"
+        )
+
+        assert with_header_markup == without_header_markup
+
+    def test_no_header_text_behaves_exactly_as_before(self, menu_system):
+        update = make_command_update(42)
+        context = make_context()
+
+        asyncio.run(menu_system.show_menu(update, context, "main"))
+
+        text = update.message.reply_text.call_args.args[0]
+        assert text.startswith("📍 **Navigation:** Hauptmenü")
+
+    def test_header_text_also_works_via_callback_edit(self, menu_system):
+        update = make_update(42)
+        context = make_context()
+
+        asyncio.run(
+            menu_system.show_menu(
+                update, context, "main", header_text="👋 Willkommen zurück!"
+            )
+        )
+
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        assert text.startswith("👋 Willkommen zurück!")
+
+
 class TestBackAndClose:
     def test_close_removes_session_and_deletes_message(self, menu_system):
         menu_system.get_session(42)

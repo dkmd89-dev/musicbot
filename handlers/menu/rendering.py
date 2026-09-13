@@ -15,6 +15,17 @@ Registry-/Permission-Zugriff und nimmt diese Abhängigkeiten explizit
 entgegen (kein Zugriff auf die RichMenuSystem-Instanz selbst - Rendering
 beantwortet nur "wie wird etwas dargestellt", nicht "darf der Nutzer
 das" oder "wie wird navigiert").
+
+Telegram Start/Help/Menu UX Finalization v2: show_menu() akzeptiert
+optional `header_text` - ein bereits fertig formatierter, vorangestellter
+Textblock (z. B. die kurze /start-Begrüßung aus content/greeting.py).
+Damit lassen sich Begrüßung + zentrales Hauptmenü in EINER Telegram-
+Nachricht kombinieren, ohne eine zweite Rendering-/Menü-Implementierung
+zu bauen - `text`/`keyboard` bleiben exakt die des angeforderten Menüs,
+nur der sichtbare Nachrichtentext bekommt einen Präfix. Bei `header_text
+= None` (Standard, z. B. /menu und jede normale Navigation) ist das
+Verhalten unverändert identisch zum bisherigen Stand - reine additive
+Erweiterung, keine Breaking Change.
 """
 
 from typing import Callable, Dict, Optional
@@ -95,8 +106,12 @@ async def show_menu(
     get_session: Callable,
     get_user_access_level: Callable,
     logger,
+    header_text: Optional[str] = None,
 ) -> None:
-    """Zeigt Menü an oder aktualisiert es"""
+    """Zeigt Menü an oder aktualisiert es. `header_text` (optional): wird,
+    falls gesetzt, vor den eigentlichen Menütext gestellt (siehe
+    Moduldocstring) - Keyboard/Navigation/Session-Verhalten bleiben
+    unverändert."""
     query = update.callback_query
     user_id = update.effective_user.id
 
@@ -114,6 +129,8 @@ async def show_menu(
     user_level = get_user_access_level(user_id)
 
     text = get_menu_text(menu_item)
+    if header_text:
+        text = f"{header_text}\n\n{text}"
     keyboard = render_menu(menu_item, user_level)
 
     try:

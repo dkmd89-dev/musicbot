@@ -57,6 +57,19 @@ def test_build_menu_tree_root_has_seven_top_level_children():
     ]
 
 
+def test_root_menu_has_no_static_welcome_description():
+    """Telegram Start/Help/Menu UX Finalization v2: root_menu.description
+    wurde entfernt, da /start bereits einen eigenen, personalisierten
+    Begruessungstext liefert (header_text vor demselben Hauptmenue,
+    siehe content/greeting.py) - ein zusaetzliches statisches
+    "Willkommen..." hier waere eine Doppelinformation bei jedem
+    /menu-Aufruf, nicht nur beim ersten Einstieg."""
+    system = _FakeSystem()
+    root = definitions.build_menu_tree(system)
+
+    assert root.description is None
+
+
 def test_build_menu_tree_admin_groups_present():
     system = _FakeSystem()
     root = definitions.build_menu_tree(system)
