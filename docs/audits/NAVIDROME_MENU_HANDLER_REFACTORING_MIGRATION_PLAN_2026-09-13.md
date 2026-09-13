@@ -5,11 +5,9 @@ und die Detail-View-Familien-Vervollständigung (Artist-/Genre-Detail,
 über den ursprünglichen Plan hinaus ergänzt) wurden vom Nutzer
 freigegeben und sind seit 2026-09-13 IMPLEMENTED** (siehe Nachtrag am
 Ende von Abschnitt 5 bzw. Nachtrag 3/4 in Abschnitt 4). Dabei
-zusätzlich entdeckte NAV-F14/NAV-F15 sind ebenfalls CLOSED (je eigener
-PR); NAV-F16 (identischer Bug wie NAV-F15, in `render_album_detail()`)
-ist bewusst OPEN geblieben. Stufe 2 (optional, nicht umgesetzt) sowie
-Stufe 4/5 bleiben weiterhin reine Planung, nicht freigegeben, nicht
-umgesetzt.
+zusätzlich entdeckte NAV-F14/NAV-F15/NAV-F16 sind ebenfalls CLOSED (je
+eigener PR). Stufe 2 (optional, nicht umgesetzt) sowie Stufe 4/5
+bleiben weiterhin reine Planung, nicht freigegeben, nicht umgesetzt.
 
 **Scope:** `handlers/navidrome_menu_handler.py` (1454 Zeilen Methodencode,
 19 Methoden), `handlers/menu/actions/navidrome.py` (258 Zeilen, dünner
@@ -228,9 +226,11 @@ der nummerierten Stufen):** der Nutzer fand und fixte selbst ein rohes
 (reserviertes MarkdownV2-Zeichen, `BadRequest` bei Playlists mit >25
 Songs) — von Claude ordnungsgemäß durchs Ship-Verfahren geführt
 (Fehlbezeichnung in Kommentaren korrigiert, als NAV-F15 CLOSED
-dokumentiert). Derselbe Bug existiert unverändert in
-`render_album_detail()` — bewusst nicht mitgefixt, als eigener,
-zurückgestellter Fund NAV-F16 (OPEN, P0) dokumentiert.
+dokumentiert). Derselbe Bug existierte unverändert in
+`render_album_detail()` — zunächst bewusst nicht mitgefixt, als
+eigener, zurückgestellter Fund NAV-F16 (OPEN, P0) dokumentiert, danach
+auf Nutzer-Freigabe in einem eigenen PR identisch behoben (CLOSED).
+**Alle 16 Findings des Navidrome-Menu-Audits sind damit geschlossen.**
 
 **Nachtrag 5 (2026-09-13) — Detail-View-Familie vervollständigt
 (über den ursprünglichen Plan hinaus, vom Nutzer explizit
