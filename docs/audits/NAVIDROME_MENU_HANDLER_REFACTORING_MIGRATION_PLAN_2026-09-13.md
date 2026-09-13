@@ -170,6 +170,22 @@ Characterization-Tests für alle drei Methoden VOR der Extraktion
 (analog zum Playlist-Nachtrag in Stufe 1) — das ist der größte
 Einzel-Arbeitsblock dieser Stufe, nicht die Extraktion selbst.
 
+**Nachtrag (2026-09-13) — Voraussetzung erfüllt, Extraktion selbst
+noch offen:** die Characterization-Tests wurden freigegeben und
+umgesetzt (eigener PR, siehe `docs/MusicBot_ENGINEERING_BASELINE_v10.md`)
+als bewusst separater erster Schritt (Nutzerentscheidung: „Zwei PRs:
+Tests zuerst" statt Tests+Extraktion in einem PR wie bei Stufe 1) —
+17 neue Tests in `TestBrowseArtistsCharacterization`/
+`TestBrowseAlbumsCharacterization`/`TestBrowseGenresCharacterization`
+(`tests/test_navidrome_menu_handler.py`), reine Testergänzung, keine
+Produktionscode-Änderung. Dabei wurde **NAV-F14** entdeckt (`handle_
+browse_genres()` crasht bei nicht-numerischem `songCount` statt sauber
+auf die alphabetische Sortierung zurückzufallen — Details siehe
+`docs/MusicBot_NAVIDROME_MENU_ARCHITECTURE.md` Abschnitt 4) — bewusst
+NICHT im selben Schritt gefixt, bleibt OPEN als eigenständige
+Entscheidung. Die eigentliche Rendering-Extraktion (zweiter PR) ist
+noch nicht freigegeben.
+
 ### Stufe 4 — `services/navidrome/browser_service.py` (API-Extraktion)
 **Ziel:** Der in der Zieldoku beschriebene `browser_service` — reine
 API-Aufruf-/Datenextraktions-Funktionen (`get_artists_page()`,

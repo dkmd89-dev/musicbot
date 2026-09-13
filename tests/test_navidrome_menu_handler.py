@@ -114,6 +114,400 @@ class TestConnectionErrorShownWhenUnconfigured:
         assert "nicht verfügbar" in text
 
 
+class TestBrowseArtistsCharacterization:
+    """Architecture Refactoring Audit, Migrationsstufe 3 (Browse-Rendering-
+    Extraktion, siehe
+    docs/audits/NAVIDROME_MENU_HANDLER_REFACTORING_MIGRATION_PLAN_2026-09-13.md):
+    Pflichtschritt VOR der Extraktion. handle_browse_artists() hatte bisher
+    nur 1 duennen Test (Button-Format in TestBackButtonsUseValidMenuCallbackFormatNavF1),
+    keinen echten Verhaltenstest fuer Pagination/leere Liste. Diese Klasse
+    schliesst die Luecke, damit der Rendering/API-Schnitt denselben
+    Regressionsschutz hat wie bei Stufe 1 (Album/Song/Playlist)."""
+
+    def test_empty_list_shows_no_artists_message(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        handler.navidrome_api.get_artists = AsyncMock(return_value=[])
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_browse_artists(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Keine Künstler" in text
+
+    def test_first_page_renders_artist_buttons_without_previous_button(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        handler.navidrome_api.get_artists = AsyncMock(
+            return_value=[
+                {"id": "1", "name": "Artist A"},
+                {"id": "2", "name": "Artist B"},
+            ]
+        )
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_browse_artists(update, context, page=0))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        assert kwargs["parse_mode"] == "MarkdownV2"
+        assert "Seite 1" in kwargs["text"]
+        buttons = {b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row}
+        assert "nav_artist_1" in buttons
+        assert "nav_artist_2" in buttons
+        assert not any(cb.startswith("nav_browse_artists_") for cb in buttons)
+
+    def test_middle_page_shows_both_previous_and_next_buttons(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        # page_size=20 -> 45 Kuenstler ergeben 3 Seiten (0,1,2).
+        handler.navidrome_api.get_artists = AsyncMock(
+            return_value=[{"id": str(i), "name": f"Artist {i}"} for i in range(45)]
+        )
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_browse_artists(update, context, page=1))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        buttons = {b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row}
+        assert "nav_browse_artists_0" in buttons
+        assert "nav_browse_artists_2" in buttons
+
+    def test_last_page_omits_next_button(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        handler.navidrome_api.get_artists = AsyncMock(
+            return_value=[{"id": str(i), "name": f"Artist {i}"} for i in range(25)]
+        )
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_browse_artists(update, context, page=1))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        buttons = {b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row}
+        assert "nav_browse_artists_0" in buttons
+        assert not any(cb == "nav_browse_artists_2" for cb in buttons)
+
+    def test_artist_name_and_id_fall_back_to_alternate_fields(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        handler.navidrome_api.get_artists = AsyncMock(
+            return_value=[{"title": "Fallback Name", "artistId": "fb1"}]
+        )
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_browse_artists(update, context))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        buttons = {b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row}
+        assert "nav_artist_fb1" in buttons
+
+
+class TestBrowseAlbumsCharacterization:
+    """Architecture Refactoring Audit, Migrationsstufe 3, Pflichtschritt:
+    handle_browse_albums() hatte bisher 0 direkte Tests, obwohl sie zwei
+    unterschiedliche API-Pfade (getArtist vs. getAlbumList2) und echte
+    Pagination-Arithmetik enthaelt (siehe Audit-Tabelle im Migrationsplan)."""
+
+    def test_empty_albums_shows_no_albums_message(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        fake_response = {
+            "subsonic-response": {"albumList2": {"album": []}}
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_browse_albums(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Keine Alben" in text
+
+    def test_no_artist_id_uses_album_list2_and_shows_all_albums_title(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        fake_response = {
+            "subsonic-response": {
+                "albumList2": {
+                    "album": [{"id": "al1", "name": "Album One", "artist": "X"}]
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ) as mock_to_thread:
+            asyncio.run(handler.handle_browse_albums(update, context))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        assert "Alle Alben" in kwargs["text"]
+        buttons = {b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row}
+        assert "nav_album_al1" in buttons
+        # Kein "Kuenstler"-Back-Button ohne artist_id.
+        assert "nav_browse_artists" not in buttons
+        assert mock_to_thread.call_args[0][1] == "getAlbumList2"
+
+    def test_with_artist_id_uses_get_artist_endpoint_and_shows_kuenstler_button(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        fake_response = {
+            "subsonic-response": {
+                "artist": {
+                    "album": [{"id": "al1", "name": "Album One", "artist": "X"}]
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ) as mock_to_thread:
+            asyncio.run(handler.handle_browse_albums(update, context, artist_id="ar1"))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        assert "Alben des Künstlers" in kwargs["text"]
+        buttons = {b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row}
+        assert "nav_browse_artists" in buttons
+        assert mock_to_thread.call_args[0][1] == "getArtist"
+
+    def test_full_page_shows_next_button_with_artist_id_suffix(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        # page_size=15 - genau 15 Alben loest has_next aus.
+        fake_response = {
+            "subsonic-response": {
+                "artist": {
+                    "album": [
+                        {"id": f"al{i}", "name": f"Album {i}"} for i in range(15)
+                    ]
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_browse_albums(update, context, artist_id="ar1"))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        buttons = {b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row}
+        assert "nav_browse_albums_1_ar1" in buttons
+
+    def test_previous_button_includes_artist_id_suffix(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        # page_size=15, page=1 -> Slice [15:30]; braucht >15 Alben, sonst
+        # ist die Seite leer und "Keine Alben gefunden" greift statt der
+        # Navigation (siehe test_empty_albums_shows_no_albums_message).
+        fake_response = {
+            "subsonic-response": {
+                "artist": {
+                    "album": [
+                        {"id": f"al{i}", "name": f"Album {i}"} for i in range(20)
+                    ]
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(
+                handler.handle_browse_albums(update, context, page=1, artist_id="ar1")
+            )
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        buttons = {b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row}
+        assert "nav_browse_albums_0_ar1" in buttons
+
+    def test_connection_error_shown_when_unconfigured(self):
+        handler = NavidromeMenuHandler(FakeConfigUnconfigured())
+        update = make_update()
+        context = make_context()
+
+        with patch("handlers.navidrome_menu_handler.NavidromeAPI.make_request") as mock_request:
+            asyncio.run(handler.handle_browse_albums(update, context))
+
+        mock_request.assert_not_called()
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "nicht verfügbar" in text
+
+
+class TestBrowseGenresCharacterization:
+    """Architecture Refactoring Audit, Migrationsstufe 3, Pflichtschritt:
+    handle_browse_genres() hatte bisher 0 direkte Tests, obwohl sie einen
+    Sortier-Fallback-Zweig (songCount nicht parsebar -> alphabetisch)
+    enthaelt (siehe Audit-Tabelle im Migrationsplan)."""
+
+    def test_empty_genres_shows_no_genres_message(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        fake_response = {"subsonic-response": {"genres": {"genre": []}}}
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_browse_genres(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Keine Genres" in text
+
+    def test_genres_sorted_by_song_count_descending(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        fake_response = {
+            "subsonic-response": {
+                "genres": {
+                    "genre": [
+                        {"value": "Pop", "songCount": 5},
+                        {"value": "Hip-Hop", "songCount": 50},
+                    ]
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_browse_genres(update, context))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        buttons_in_order = [
+            b.text for row in kwargs["reply_markup"].inline_keyboard for b in row
+            if b.callback_data.startswith("nav_genre_")
+        ]
+        assert buttons_in_order.index("🎭 Hip-Hop (50)") < buttons_in_order.index("🎭 Pop (5)")
+
+    def test_non_numeric_song_count_crashes_instead_of_falling_back_cleanly(self):
+        """Charakterisiert einen TATSAECHLICHEN, bisher unentdeckten Bug
+        (kein Sollverhalten): handle_browse_genres() hat einen
+        try/except um den Sortier-Aufruf, der bei nicht-numerischem
+        `songCount` (z.B. "n/a") auf alphabetische Sortierung nach
+        `x.get("name", "")` zurückfaellt (Zeile ~366) - ABER die
+        anschliessende Anzeige-Schleife nutzt denselben rohen,
+        nicht-konvertierten `song_count`-Wert direkt in einem
+        `if song_count > 0:`-Vergleich (Zeile ~382), was bei einem
+        String/None-Wert mit
+        "TypeError: '>' not supported between instances of 'str' and 'int'"
+        crasht. Der Fallback im Sortier-Schritt faengt diesen
+        Folgefehler NICHT ab - die Methode landet im aeusseren
+        Exception-Handler und zeigt die generische Fehlermeldung statt
+        einer (wenn auch fehlerhaft sortierten) Genre-Liste. Zusaetzlich
+        zeigt der Sortier-Fallback selbst einen zweiten, dadurch aber
+        praktisch unbeobachtbaren Bug: er sortiert nach `x.get("name", "")`
+        statt nach dem tatsaechlich fuer die Anzeige genutzten
+        `x.get("value")`-Feld (Zeile ~378/1222) - unbeobachtbar, weil der
+        Crash oben in der Praxis immer zuerst eintritt, bevor das
+        Sortierergebnis je gerendert wird. Entdeckt beim Schreiben dieses
+        Characterization-Tests (Architecture Refactoring Audit,
+        Migrationsstufe 3, Pflichtschritt) - bewusst NICHT gefixt, siehe
+        Kandidat-Finding NAV-F14 in
+        docs/audits/NAVIDROME_MENU_HANDLER_REFACTORING_MIGRATION_PLAN_2026-09-13.md."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        fake_response = {
+            "subsonic-response": {
+                "genres": {
+                    "genre": [
+                        {"value": "Zeta", "songCount": "n/a"},
+                        {"value": "Alpha", "songCount": "n/a"},
+                    ]
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_browse_genres(update, context))
+
+        # Kein Crash der Testumgebung (Exception wird intern abgefangen),
+        # aber die generische Fehlermeldung statt einer Genre-Liste -
+        # kein "reply_markup"/keine Genre-Buttons im Ergebnis.
+        args, kwargs = update.callback_query.edit_message_text.call_args
+        assert "reply_markup" not in kwargs
+        assert "Fehler beim Laden der Genres" in args[0]
+
+    def test_genre_button_omits_parens_when_song_count_zero(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        fake_response = {
+            "subsonic-response": {
+                "genres": {"genre": [{"value": "Obscure", "songCount": 0}]}
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_browse_genres(update, context))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        buttons = {b.text for row in kwargs["reply_markup"].inline_keyboard for b in row}
+        assert "🎭 Obscure" in buttons
+
+    def test_max_20_genres_shown_in_keyboard(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        fake_response = {
+            "subsonic-response": {
+                "genres": {
+                    "genre": [
+                        {"value": f"Genre{i}", "songCount": i} for i in range(30)
+                    ]
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_browse_genres(update, context))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        # "nav_genre_stats" (Control-Button) startet ebenfalls mit
+        # "nav_genre_" (derselbe NAV-F12-Praefix, siehe
+        # handlers/menu/actions/navidrome.py) - hier explizit
+        # ausgeschlossen, um nur echte Genre-Buttons zu zaehlen.
+        genre_buttons = [
+            b for row in kwargs["reply_markup"].inline_keyboard for b in row
+            if b.callback_data.startswith("nav_genre_")
+            and b.callback_data != "nav_genre_stats"
+        ]
+        assert len(genre_buttons) == 20
+
+    def test_connection_error_shown_when_unconfigured(self):
+        handler = NavidromeMenuHandler(FakeConfigUnconfigured())
+        update = make_update()
+        context = make_context()
+
+        with patch("handlers.navidrome_menu_handler.NavidromeAPI.make_request") as mock_request:
+            asyncio.run(handler.handle_browse_genres(update, context))
+
+        mock_request.assert_not_called()
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "nicht verfügbar" in text
+
+
 class TestArtistDetailMarkdownEscapingBug007b:
     def test_artist_name_with_special_chars_is_escaped(self):
         handler = NavidromeMenuHandler(FakeConfigConfigured())
