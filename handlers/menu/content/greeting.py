@@ -8,12 +8,23 @@ handlers/menu/rich_menu_handler.py::handle_start_command() verschoben.
 RichMenuHandler.handle_start_command() bleibt ein dünner Delegator
 (Maintenance-Gate + Activity-Tracking + Aufruf hierher) - siehe
 docs/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md.
+
+Content-Separation-Closure: die statischen Begrüßungstexte/Button-
+Labels wurden nach handlers/menu/content/messages.py ausgelagert -
+diese Datei bleibt für die Orchestrierung zuständig (Nutzerkontext
+laden, Neuling-/Rollen-/Feature-Ermittlung, dynamische Werte in die
+Templates einsetzen, Nachricht senden), siehe
+docs/MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md.
 """
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from handlers.menu.content import messages
 from handlers.menu.content import user_context
+
+_ROLE_EMOJI = {"moderator": "🛡️", "admin": "⚙️", "owner": "👑"}
+_ROLE_EMOJI_DEFAULT = "👤"
 
 
 async def send_start_message(
@@ -43,51 +54,49 @@ async def send_start_message(
         if is_new:
             greeting_parts.extend(
                 [
-                    f"👋 **Willkommen, {username}!**\n",
-                    "🎉 Schön, dass du hier bist!",
-                    "Lass mich dir zeigen, was ich kann...\n",
+                    messages.GREETING_WELCOME_NEW.format(username=username),
+                    messages.GREETING_WELCOME_NEW_LINE_2,
+                    messages.GREETING_WELCOME_NEW_LINE_3,
                 ]
             )
         else:
             greeting_parts.extend(
                 [
-                    f"👋 **Hallo zurück, {username}!**\n",
-                    "Schön, dich wiederzusehen!\n",
+                    messages.GREETING_WELCOME_BACK.format(username=username),
+                    messages.GREETING_WELCOME_BACK_LINE_2,
                 ]
             )
 
         if user_role != "user":
-            role_emoji = {"moderator": "🛡️", "admin": "⚙️", "owner": "👑"}.get(
-                user_role, "👤"
-            )
+            role_emoji = _ROLE_EMOJI.get(user_role, _ROLE_EMOJI_DEFAULT)
             greeting_parts.append(
-                f"\n{role_emoji} Deine Rolle: **{user_role.capitalize()}**\n"
+                messages.GREETING_ROLE_LINE.format(
+                    role_emoji=role_emoji, role_title=user_role.capitalize()
+                )
             )
 
-        greeting_parts.append("\n📚 **Verfügbare Funktionen:**\n")
+        greeting_parts.append(messages.GREETING_FEATURES_HEADER)
         for feature_id, feature in available_features.items():
             greeting_parts.append(f"{feature['emoji']} **{feature['title']}**")
             greeting_parts.append(f"   _{feature['description']}_\n")
 
         greeting_parts.extend(
             [
-                "\n💡 **Schnellstart:**",
-                "• Nutze /menu für das Hauptmenü",
-                "• Nutze /help für detaillierte Hilfe",
+                messages.GREETING_QUICKSTART_HEADER,
+                messages.GREETING_QUICKSTART_MENU,
+                messages.GREETING_QUICKSTART_HELP,
             ]
         )
 
         if "download" in available_features:
-            greeting_parts.append(
-                "• Sende mir einen YouTube-Link zum Download"
-            )
+            greeting_parts.append(messages.GREETING_HINT_DOWNLOAD)
         if "navidrome" in available_features:
-            greeting_parts.append("• Nutze /search um Musik zu suchen")
+            greeting_parts.append(messages.GREETING_HINT_SEARCH)
 
         greeting = "\n".join(greeting_parts)
 
         keyboard = [
-            [InlineKeyboardButton("🏠 Hauptmenü", callback_data="menu:main")]
+            [InlineKeyboardButton(messages.BTN_MAIN_MENU, callback_data="menu:main")]
         ]
         feature_buttons = [
             InlineKeyboardButton(
@@ -117,6 +126,6 @@ async def send_start_message(
             )
         else:
             try:
-                await update.message.reply_text("❌ Ein Fehler ist aufgetreten.")
+                await update.message.reply_text(messages.ERROR_GENERIC)
             except Exception:
                 pass

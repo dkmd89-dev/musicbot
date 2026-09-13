@@ -74,9 +74,18 @@ RichMenuHandler        Composition Root, Lifecycle, dünne Command-
   │   │                       get_available_features()/is_new_user()/
   │   │                       get_user_info()/load_user_data())
   │   ├── greeting.py          send_start_message() — /start-Begrüßung
-  │   └── help.py              send_help_message()/
-  │                            send_help_callback_response() + die 4
-  │                            statischen Hilfetexte
+  │   │                        (Orchestrierung, Texte aus messages.py)
+  │   ├── help.py              send_help_message()/
+  │   │                        send_help_callback_response() +
+  │   │                        get_download_help()/get_stats_help()/
+  │   │                        get_navidrome_help()/get_admin_help()
+  │   │                        (dünne Wrapper, Texte aus messages.py)
+  │   └── messages.py          statischer UI-Content (ARCH-025 Content-
+  │                            Separation-Closure): Begrüßungs-/
+  │                            Hilfetexte + mehrfach verwendete Button-
+  │                            Labels als reine String-Konstanten, keine
+  │                            Abhängigkeit auf RichMenuHandler/
+  │                            RichMenuSystem/actions
   ↓
 RichMenuSystem          zentraler Callback-Router
   (handle_callback(): _ADMIN_ONLY_PREFIXES-Gate + Menu-Fallback-Gate;
@@ -121,6 +130,11 @@ CLAUDE.md Abschnitt 15 eine eigene P0-Domäne. **`content/` ist bewusst
 kein Teil von `actions/`** — Help-/Greeting-Content ist User-Facing
 Presentation/Messaging, keine Domain-Action (siehe ARCH-025-Dokument
 Abschnitt A.2).
+
+Innerhalb von `content/` trennt die ARCH-025 Content-Separation-Closure
+zusätzlich statischen Text (`messages.py`) von Orchestrierung
+(`greeting.py`/`help.py`) und Kontext (`user_context.py`) — siehe
+[`MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md`](MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md).
 
 `permissions.py`/`session.py`/`models.py` sind durch `ARCH-024`/`ARCH-025`
 **nicht** verändert worden. `RichMenuHandler` behält aus dem Onboarding-

@@ -17,61 +17,37 @@ Verhaltensänderung): send_help_message()'s except-Zweig ruft bei
 vorhandenem error_handler dessen handle_command_error() auf,
 send_help_callback_response()'s except-Zweig loggt nur - dieselbe
 Asymmetrie wie im ursprünglichen handle_help()/handle_help_callback().
+
+Content-Separation-Closure: get_download_help()/get_stats_help()/
+get_navidrome_help()/get_admin_help() sind seither dünne Wrapper um
+die in handlers/menu/content/messages.py zentralisierten Texte -
+diese Datei bleibt für Themenauswahl/Keyboard-Aufbau/Telegram-Versand
+zuständig, siehe
+docs/MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md.
 """
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from handlers.menu.content import messages
 from handlers.menu.content import user_context
 
 
 def get_download_help() -> str:
     """Hilfe für Download-Funktionen (YouTube)."""
-    return (
-        "📥 **Download-Hilfe**\n\n"
-        "**YouTube-Downloads:**\n"
-        "1. Kopiere einen YouTube-Link\n"
-        "2. Sende ihn an den Bot\n"
-        "3. Der Bot lädt die Musik herunter\n\n"
-        "Beispiel: `https://youtube.com/watch?v=...`\n\n"
-        "**Unterstützte Formate:**\n"
-        "• Einzelne Videos, Playlists, Mix-Playlists"
-    )
+    return messages.HELP_DOWNLOAD
 
 
 def get_stats_help() -> str:
-    return (
-        "📊 **Statistik-Hilfe**\n\n"
-        "• 📅 Monatsrückblick\n"
-        "• 🎆 Jahresrückblick\n"
-        "• 🎵 Top Songs\n"
-        "• 🎤 Top Künstler\n\n"
-        "Alle Statistiken basieren auf deinem Navidrome-Account."
-    )
+    return messages.HELP_STATS
 
 
 def get_navidrome_help() -> str:
-    return (
-        "🎵 **Navidrome-Hilfe**\n\n"
-        "• 🔍 Suche nach Songs, Alben, Künstlern\n"
-        "• 📂 Durchsuche nach Kategorien\n"
-        "• ⭐ Favoriten verwalten\n"
-        "• 📋 Playlists verwalten\n\n"
-        "Befehle: /search, /menu → Navidrome"
-    )
+    return messages.HELP_NAVIDROME
 
 
 def get_admin_help() -> str:
-    return (
-        "⚙️ **Admin-Hilfe**\n\n"
-        "• 👥 Benutzerverwaltung\n"
-        "• 📊 Logger-Verwaltung\n"
-        "• 🔄 Bot neu starten\n"
-        "• 💾 Backup-Verwaltung\n"
-        "• 🧪 Test-System\n"
-        "• 🚨 Error-Verwaltung\n\n"
-        "Alle Admin-Aktionen werden geloggt."
-    )
+    return messages.HELP_ADMIN
 
 
 async def send_help_message(
@@ -94,8 +70,8 @@ async def send_help_message(
         logger.info(f"❓ /help von User {user_id}")
 
         help_parts = [
-            "📚 **Hilfe & Dokumentation**\n",
-            "Übersicht aller Funktionen:\n",
+            messages.HELP_INTRO_TITLE,
+            messages.HELP_INTRO_SUBTITLE,
         ]
         for feature_id, feature in available_features.items():
             commands = feature.get("commands", [])
@@ -108,30 +84,30 @@ async def send_help_message(
 
         help_parts.extend(
             [
-                "\n⚡ **Allgemeine Befehle:**",
-                "• /start - Bot neu starten",
-                "• /menu - Hauptmenü öffnen",
-                "• /help - Diese Hilfe anzeigen",
-                "• /cancel - Aktion abbrechen\n",
-                "💬 **Benötigst du Unterstützung?**",
-                "Nutze /menu und navigiere zu den jeweiligen Funktionen.",
+                messages.HELP_GENERAL_COMMANDS_HEADER,
+                messages.HELP_CMD_START,
+                messages.HELP_CMD_MENU,
+                messages.HELP_CMD_HELP,
+                messages.HELP_CMD_CANCEL,
+                messages.HELP_SUPPORT_HEADER,
+                messages.HELP_SUPPORT_TEXT,
             ]
         )
 
         keyboard = [
-            [InlineKeyboardButton("🏠 Hauptmenü", callback_data="menu:main")],
+            [InlineKeyboardButton(messages.BTN_MAIN_MENU, callback_data="menu:main")],
             [
-                InlineKeyboardButton("📥 Downloads", callback_data="help:download"),
-                InlineKeyboardButton("📊 Statistiken", callback_data="help:stats"),
+                InlineKeyboardButton(messages.BTN_HELP_DOWNLOAD, callback_data="help:download"),
+                InlineKeyboardButton(messages.BTN_HELP_STATS, callback_data="help:stats"),
             ],
-            [InlineKeyboardButton("🎵 Navidrome", callback_data="help:navidrome")],
+            [InlineKeyboardButton(messages.BTN_HELP_NAVIDROME, callback_data="help:navidrome")],
         ]
         if user_role in ["admin", "owner"]:
             keyboard.append(
-                [InlineKeyboardButton("⚙️ Admin-Hilfe", callback_data="help:admin")]
+                [InlineKeyboardButton(messages.BTN_HELP_ADMIN, callback_data="help:admin")]
             )
         keyboard.append(
-            [InlineKeyboardButton("❌ Schließen", callback_data="menu:close")]
+            [InlineKeyboardButton(messages.BTN_CLOSE, callback_data="menu:close")]
         )
 
         await update.message.reply_text(
@@ -178,20 +154,20 @@ async def send_help_callback_response(
         help_text = help_texts.get(topic) if topic != "main" else None
 
         if topic == "main" or not help_text:
-            main_text = "📚 **Hilfe & Dokumentation**\n\nWähle ein Thema:"
+            main_text = messages.HELP_MAIN_MENU_TEXT
             keyboard = [
-                [InlineKeyboardButton("🏠 Hauptmenü", callback_data="menu:main")],
+                [InlineKeyboardButton(messages.BTN_MAIN_MENU, callback_data="menu:main")],
                 [
                     InlineKeyboardButton(
-                        "📥 Downloads", callback_data="help:download"
+                        messages.BTN_HELP_DOWNLOAD, callback_data="help:download"
                     ),
                     InlineKeyboardButton(
-                        "📊 Statistiken", callback_data="help:stats"
+                        messages.BTN_HELP_STATS, callback_data="help:stats"
                     ),
                 ],
                 [
                     InlineKeyboardButton(
-                        "🎵 Navidrome", callback_data="help:navidrome"
+                        messages.BTN_HELP_NAVIDROME, callback_data="help:navidrome"
                     )
                 ],
             ]
@@ -199,12 +175,12 @@ async def send_help_callback_response(
                 keyboard.append(
                     [
                         InlineKeyboardButton(
-                            "⚙️ Admin-Hilfe", callback_data="help:admin"
+                            messages.BTN_HELP_ADMIN, callback_data="help:admin"
                         )
                     ]
                 )
             keyboard.append(
-                [InlineKeyboardButton("❌ Schließen", callback_data="menu:close")]
+                [InlineKeyboardButton(messages.BTN_CLOSE, callback_data="menu:close")]
             )
             await query.edit_message_text(
                 main_text,
@@ -220,8 +196,8 @@ async def send_help_callback_response(
                         "⬅️ Zurück zur Hilfe", callback_data="help:main"
                     )
                 ],
-                [InlineKeyboardButton("🏠 Hauptmenü", callback_data="menu:main")],
-                [InlineKeyboardButton("❌ Schließen", callback_data="menu:close")],
+                [InlineKeyboardButton(messages.BTN_MAIN_MENU, callback_data="menu:main")],
+                [InlineKeyboardButton(messages.BTN_CLOSE, callback_data="menu:close")],
             ]
         )
         await query.edit_message_text(
