@@ -310,7 +310,12 @@ class TestStatusStorageCleanupIsKnownPlaceholder:
     ohne Handler-Implementierung existierenden Cleanup-Button.
     STATUS-MENU-CLOSURE: wird bewusst als bekannter Platzhalter behandelt
     (nicht als echter, unerwarteter Callback), siehe
-    handle_status_callback()."""
+    handle_status_callback(). Seit der Master-Phase "Complete Telegram
+    System Status Menu" der EINZIGE verbleibende Platzhalter
+    (UNAVAILABLE_BY_DESIGN) - alle anderen 11 zuvor als Platzhalter
+    gefuehrten Callbacks sind jetzt echt implementiert, siehe
+    tests/test_menu_actions_admin_diagnostics.py und
+    docs/MusicBot_STATUS_MENU_CLOSURE.md."""
 
     def test_status_storage_cleanup_shows_placeholder_message(
         self, menu_system

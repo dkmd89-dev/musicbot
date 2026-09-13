@@ -97,6 +97,16 @@ async def test_status_callback_unknown_logs_warning():
     assert "status_unknown" in logger.warning.call_args.args[0]
 
 
+_ALL_REAL_STATUS_HANDLER_METHODS = (
+    "show_status_menu", "show_system_status", "show_bot_status",
+    "show_services_status", "show_performance_status", "show_storage_status",
+    "show_users_status", "show_trends", "show_system_detail",
+    "show_system_history", "show_bot_handlers", "show_bot_logs",
+    "show_services_check", "show_services_detail", "show_performance_reset",
+    "show_storage_detail",
+)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "callback_data,method_name",
@@ -108,6 +118,19 @@ async def test_status_callback_unknown_logs_warning():
         ("status_performance", "show_performance_status"),
         ("status_storage", "show_storage_status"),
         ("status_refresh", "show_status_menu"),
+        # STATUS-MENU-CLOSURE (Master-Phase): 11 zuvor als Platzhalter
+        # gefuehrte Callbacks sind jetzt auf echte Implementierungen
+        # geroutet - siehe docs/MusicBot_STATUS_MENU_CLOSURE.md.
+        ("status_users", "show_users_status"),
+        ("status_trends", "show_trends"),
+        ("status_system_detail", "show_system_detail"),
+        ("status_system_history", "show_system_history"),
+        ("status_bot_handlers", "show_bot_handlers"),
+        ("status_bot_logs", "show_bot_logs"),
+        ("status_services_check", "show_services_check"),
+        ("status_services_detail", "show_services_detail"),
+        ("status_performance_reset", "show_performance_reset"),
+        ("status_storage_detail", "show_storage_detail"),
     ],
 )
 async def test_status_callback_routes_to_expected_handler_method(callback_data, method_name):
@@ -116,10 +139,7 @@ async def test_status_callback_routes_to_expected_handler_method(callback_data, 
     aufgerufen werden - Routing-Contract-Test."""
     update = _make_update()
     handler = Mock()
-    for name in (
-        "show_status_menu", "show_system_status", "show_bot_status",
-        "show_services_status", "show_performance_status", "show_storage_status",
-    ):
+    for name in _ALL_REAL_STATUS_HANDLER_METHODS:
         setattr(handler, name, AsyncMock())
 
     await diag_actions.handle_status_callback(update, Mock(), callback_data, handler, Mock())
@@ -129,45 +149,69 @@ async def test_status_callback_routes_to_expected_handler_method(callback_data, 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "callback_data",
+    "callback_data,method_name",
     [
-        "status_users",
-        "status_trends",
-        "status_system_detail",
-        "status_system_history",
-        "status_bot_handlers",
-        "status_bot_logs",
-        "status_services_check",
-        "status_services_detail",
-        "status_performance_history",
-        "status_performance_reset",
-        "status_storage_cleanup",
-        "status_storage_detail",
+        ("status_menu", "show_status_menu"),
+        ("status_system", "show_system_status"),
+        ("status_users", "show_users_status"),
+        ("status_storage_detail", "show_storage_detail"),
     ],
 )
-async def test_status_callback_known_placeholder_shows_friendly_message_without_warning(
-    callback_data,
+async def test_status_callback_records_operation_for_routed_callbacks(
+    callback_data, method_name
 ):
-    """STATUS-MENU-CLOSURE: die 12 Buttons ohne echte Implementierung
-    (Kategorie C, repoweit verifiziert - keine existierende Funktion unter
-    irgendeinem Namen) duerfen weiterhin auf KEINE erfundene Route zeigen,
-    aber auch nicht mehr wie ein echter, unerwarteter Bug aussehen (kein
-    WARNING-Log)."""
+    """STATUS-MENU-CLOSURE Phase 8: minimale record_operation()-
+    Instrumentierung - jeder tatsaechlich geroutete status_*-Callback
+    zaehlt als eine Operation (gibt der zuvor immer leeren "Top
+    Operationen"-Liste in show_performance_status() reale Daten)."""
+    update = _make_update()
+    handler = Mock()
+    for name in _ALL_REAL_STATUS_HANDLER_METHODS:
+        setattr(handler, name, AsyncMock())
+    handler.system_monitor = Mock()
+
+    await diag_actions.handle_status_callback(update, Mock(), callback_data, handler, Mock())
+
+    handler.system_monitor.record_operation.assert_called_once_with(callback_data)
+
+
+@pytest.mark.asyncio
+async def test_status_callback_placeholder_does_not_record_operation():
+    """Ein Platzhalter-Callback (kein echtes Routing) darf keine
+    Operation aufzeichnen - es wurde ja tatsaechlich nichts ausgefuehrt."""
+    update = _make_update()
+    handler = Mock()
+    handler.system_monitor = Mock()
+
+    await diag_actions.handle_status_callback(
+        update, Mock(), "status_storage_cleanup", handler, Mock()
+    )
+
+    handler.system_monitor.record_operation.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_status_callback_known_placeholder_shows_friendly_message_without_warning():
+    """STATUS-MENU-CLOSURE (Master-Phase): nur noch EIN Button bleibt
+    bewusster Platzhalter - status_storage_cleanup (UNAVAILABLE_BY_DESIGN,
+    destruktive Aktion ohne definierten Cleanup-Contract). Alle anderen
+    11 zuvor als Platzhalter gefuehrten Callbacks sind jetzt echt
+    implementiert (siehe test_status_callback_routes_to_expected_handler_method
+    oben)."""
     update = _make_update()
     handler = Mock()
     logger = Mock()
 
-    await diag_actions.handle_status_callback(update, Mock(), callback_data, handler, logger)
+    await diag_actions.handle_status_callback(
+        update, Mock(), "status_storage_cleanup", handler, logger
+    )
 
     logger.warning.assert_not_called()
     message = update.callback_query.answer.call_args.args[0]
     assert "nicht implementiert" in message
     # Keine der echten Handler-Methoden darf fuer einen Platzhalter
     # aufgerufen worden sein (keine erfundene Route).
-    for name in (
-        "show_status_menu", "show_system_status", "show_bot_status",
-        "show_services_status", "show_performance_status", "show_storage_status",
-    ):
+    for name in _ALL_REAL_STATUS_HANDLER_METHODS:
         method = getattr(handler, name, None)
         if isinstance(method, (Mock, AsyncMock)):
             method.assert_not_called()

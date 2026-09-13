@@ -21,6 +21,7 @@ from telegram.error import TelegramError
 
 from config import Config
 from logger import get_module_logger, get_logging_stats, _module_loggers
+from services.clients.navidrome_api import NavidromeAPI
 
 
 # ==================== TELEGRAM-RENDERING-ROBUSTHEIT ====================
@@ -65,6 +66,38 @@ def _is_message_not_modified_error(exc: Exception) -> bool:
     Abschnitt "Message is not modified".
     """
     return isinstance(exc, TelegramError) and "message is not modified" in str(exc).lower()
+
+
+def _find_partition_for_path(path: Path) -> Optional[Any]:
+    """
+    Ermittelt die psutil-Partition (Mountpoint/Dateisystemtyp), auf der
+    `path` tatsächlich liegt - längster passender Mountpoint-Präfix
+    (Standardtechnik, analog zu `df <pfad>`). Reine Read-Only-Abfrage
+    von bereits vom Betriebssystem bereitgestellten Informationen, keine
+    neue Datenquelle.
+    """
+    try:
+        resolved = str(path.resolve())
+    except Exception:
+        resolved = str(path)
+
+    best_match = None
+    best_len = -1
+    for part in psutil.disk_partitions(all=False):
+        if resolved.startswith(part.mountpoint) and len(part.mountpoint) > best_len:
+            best_match = part
+            best_len = len(part.mountpoint)
+    return best_match
+
+
+# STATUS-MENU-CLOSURE: nur Navidrome besitzt aktuell eine tatsächliche,
+# read-only Konnektivitätsprüfung (NavidromeAPI.check_connection()).
+# Fuer "download"/"statistics"/"logger" existiert keine analoge externe
+# Health-Check-Funktion (es sind In-Prozess-Subsysteme ohne eigenen
+# "erreichbar/nicht erreichbar"-Zustand) - bewusst nicht simuliert, um
+# keine Fake-Daten zu erzeugen (siehe status_services_check/_detail in
+# docs/MusicBot_STATUS_MENU_CLOSURE.md).
+_SERVICES_WITH_AUTOMATED_CHECK = frozenset({"navidrome"})
 
 
 class SystemMonitor:
@@ -153,6 +186,7 @@ class SystemMonitor:
                         if self.disk_history
                         else 0
                     ),
+                    "history": list(self.disk_history),
                 },
                 "network": {
                     "bytes_sent": net_io.bytes_sent,
@@ -191,6 +225,64 @@ class SystemMonitor:
             "seconds": seconds,
             "formatted": f"{days}d {hours}h {minutes}m {seconds}s",
             "start_time": self.start_time.isoformat(),
+        }
+
+    def get_extended_system_info(self) -> Dict[str, Any]:
+        """
+        STATUS-MENU-CLOSURE (status_system_detail): zusätzliche, über
+        das bereits verwendete psutil hinaus abrufbare Systemwerte, die
+        get_system_metrics() bisher nicht exponiert - keine neue
+        Datenquelle, nur zusätzliche Felder derselben Bibliothek.
+        """
+        try:
+            swap = psutil.swap_memory()
+            try:
+                load_avg = psutil.getloadavg()
+            except (AttributeError, OSError):
+                # getloadavg() ist auf manchen Plattformen (u.a. Windows)
+                # nicht verfügbar - kein Crash, nur leeres Ergebnis.
+                load_avg = None
+
+            return {
+                "load_average": load_avg,
+                "swap": {
+                    "total": swap.total,
+                    "used": swap.used,
+                    "percent": swap.percent,
+                },
+                "cpu_per_core": psutil.cpu_percent(interval=0.1, percpu=True),
+                "boot_time": datetime.fromtimestamp(psutil.boot_time()),
+            }
+        except Exception as e:
+            self.logger.error(f"❌ Fehler beim Sammeln der erweiterten System-Infos: {e}")
+            return {}
+
+    def get_history_summary(self) -> Dict[str, Any]:
+        """
+        STATUS-MENU-CLOSURE (status_trends): kompakte Trend-Zusammenfassung
+        (aktuell/Durchschnitt/Min/Max) über die bereits gesammelten,
+        prozessweiten CPU/RAM/Disk-Verlaufsdaten (letzte 60 Messungen seit
+        Bot-Start, siehe cpu_history/memory_history/disk_history) - keine
+        neue Persistenz, nur eine Auswertung der bereits vorhandenen,
+        laufzeitgebundenen deques.
+        """
+
+        def _summary(history: deque) -> Dict[str, float]:
+            values = list(history)
+            if not values:
+                return {"current": 0.0, "average": 0.0, "min": 0.0, "max": 0.0}
+            return {
+                "current": values[-1],
+                "average": sum(values) / len(values),
+                "min": min(values),
+                "max": max(values),
+            }
+
+        return {
+            "cpu": _summary(self.cpu_history),
+            "memory": _summary(self.memory_history),
+            "disk": _summary(self.disk_history),
+            "sample_count": len(self.cpu_history),
         }
 
     def record_operation(self, operation_type: str):
@@ -262,12 +354,24 @@ class BotStatusTracker:
             "last_update": datetime.now().isoformat(),
         }
 
-    def update_service_status(self, service_name: str, status: str):
-        """Aktualisiert Status eines Services"""
+    def update_service_status(
+        self, service_name: str, status: str, reason: Optional[str] = None
+    ):
+        """
+        Aktualisiert Status eines Services.
+
+        `reason` (STATUS-MENU-CLOSURE Final Correction): optionaler,
+        fachlicher Grund für den Status - insbesondere für "unknown",
+        wenn kein automatisierter Health-Check existiert (z. B. "Kein
+        automatisierter Health-Check verfügbar"). Wird bei jedem Aufruf
+        vollständig neu gesetzt (kein Nachziehen eines veralteten Grundes
+        aus einem früheren, unabhängigen Aufruf).
+        """
         if service_name in self.services:
             self.services[service_name] = {
                 "status": status,
                 "last_check": datetime.now().isoformat(),
+                "reason": reason,
             }
 
     def record_user_activity(self, user_id: int, activity_type: str):
@@ -413,6 +517,110 @@ class EnhancedStatusHandler:
                     update, context, "status_menu", e
                 )
 
+    async def show_users_status(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """
+        👥 STATUS-MENU-CLOSURE (status_users): nutzt die bereits
+        vorhandene, echte BotStatusTracker.get_user_activity() (befüllt
+        über handlers/menu/activity_tracking.py::record_activity() bei
+        jeder durchgelassenen Nutzer-Interaktion). Zeigt AUSSCHLIESSLICH
+        aggregierte Zählwerte - explizit KEINE Telegram-User-IDs,
+        Chat-IDs, Nachrichteninhalte oder sonstige PII (Master-Prompt
+        Phase 7: "keine PII-Leaks, nicht anzeigen: Chat IDs, Telegram
+        User IDs, Nachrichteninhalte, private Daten").
+        """
+        try:
+            query = update.callback_query
+            await query.answer("👥 Lade User-Aktivität...")
+
+            activity = self.bot_tracker.get_user_activity()
+
+            users_text = f"""👥 **User-Aktivität**
+
+**Aktive User (seit Bot-Start):** {activity['active_users']}
+**Aufgezeichnete Aktivitäten:** {activity['total_recorded_activities']}
+
+_Nur aggregierte Zählwerte - keine User-IDs oder Nachrichteninhalte._"""
+
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Aktualisieren", callback_data="status_users"
+                        ),
+                        InlineKeyboardButton("🔙 Zurück", callback_data="status_menu"),
+                    ],
+                ]
+            )
+
+            await query.edit_message_text(
+                users_text, reply_markup=keyboard, parse_mode="Markdown"
+            )
+
+            self.logger.info("👥 User-Aktivität angezeigt")
+
+        except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
+            self.logger.error(f"❌ Fehler bei der User-Aktivität: {e}")
+            await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
+
+    async def show_trends(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        📈 STATUS-MENU-CLOSURE (status_trends): kompakte Trend-
+        Zusammenfassung (aktuell/Durchschnitt/Min/Max) über
+        SystemMonitor.get_history_summary() - dieselben bereits
+        gesammelten CPU/RAM/Disk-Verlaufsdaten wie status_system_history,
+        hier als abgeleitete Kennzahlen statt Rohwert-Sequenz. Bewusst
+        System-Trends (CPU/RAM/Disk), nicht Musik-/Play-Trends - passend
+        zu den übrigen Geschwister-Buttons im Status-Hauptmenü (System/
+        Bot/Services/Performance/Storage sind ebenfalls System-Metriken,
+        keine Navidrome-/Library-Domäne).
+        """
+        try:
+            query = update.callback_query
+            await query.answer("📈 Lade Trends...")
+
+            summary = self.system_monitor.get_history_summary()
+
+            def _line(label: str, data: dict) -> str:
+                return (
+                    f"**{label}:** {data['current']:.1f}% "
+                    f"(Ø {data['average']:.1f}%, min {data['min']:.1f}%, max {data['max']:.1f}%)"
+                )
+
+            trends_text = f"""📈 **System-Trends**
+
+{_line('CPU', summary['cpu'])}
+{_line('RAM', summary['memory'])}
+{_line('Disk', summary['disk'])}
+
+_Basis: letzte {summary['sample_count']} Messungen seit Bot-Start._"""
+
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Aktualisieren", callback_data="status_trends"
+                        ),
+                        InlineKeyboardButton("🔙 Zurück", callback_data="status_menu"),
+                    ],
+                ]
+            )
+
+            await query.edit_message_text(
+                trends_text, reply_markup=keyboard, parse_mode="Markdown"
+            )
+
+            self.logger.info("📈 Trends angezeigt")
+
+        except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
+            self.logger.error(f"❌ Fehler bei den Trends: {e}")
+            await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
+
     # ==================== SYSTEM STATUS ====================
 
     async def show_system_status(
@@ -502,6 +710,159 @@ class EnhancedStatusHandler:
             self.logger.error(f"❌ Fehler beim System-Status: {e}")
             await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
 
+    async def show_system_detail(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """
+        📊 STATUS-MENU-CLOSURE (status_system_detail): zusätzliche
+        Systemwerte über die bereits in show_system_status() gezeigten
+        hinaus - Load Average, Swap, Pro-Kern-CPU-Auslastung, Boot-Zeit.
+        Alle Werte kommen aus SystemMonitor.get_extended_system_info()
+        (bereits importiertes psutil, keine neue Datenquelle).
+        """
+        try:
+            query = update.callback_query
+            await query.answer("📊 Lade Detail-Daten...")
+
+            info = self.system_monitor.get_extended_system_info()
+
+            load_avg = info.get("load_average")
+            if load_avg:
+                load_line = f"{load_avg[0]:.2f} / {load_avg[1]:.2f} / {load_avg[2]:.2f} (1/5/15 min)"
+            else:
+                load_line = "nicht verfügbar auf dieser Plattform"
+
+            swap = info.get("swap", {})
+            cpu_per_core = info.get("cpu_per_core", [])
+            core_lines = "\n".join(
+                f"  Kern {i}: {pct:.1f}%" for i, pct in enumerate(cpu_per_core)
+            ) or "  nicht verfügbar"
+            boot_time = info.get("boot_time")
+            boot_line = (
+                boot_time.strftime("%d.%m.%Y %H:%M:%S") if boot_time else "unbekannt"
+            )
+
+            detail_text = f"""📊 **System-Status — Detail**
+
+**Load Average:**
+• {load_line}
+
+**Swap:**
+• Verwendet: {swap.get('used', 0) / (1024**3):.1f} GB / {swap.get('total', 0) / (1024**3):.1f} GB
+• Auslastung: {swap.get('percent', 0):.1f}%
+
+**CPU pro Kern:**
+{core_lines}
+
+**System-Boot:**
+• {boot_line}"""
+
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Aktualisieren", callback_data="status_system_detail"
+                        ),
+                        InlineKeyboardButton(
+                            "🔙 Zurück", callback_data="status_system"
+                        ),
+                    ],
+                ]
+            )
+
+            await query.edit_message_text(
+                detail_text, reply_markup=keyboard, parse_mode="Markdown"
+            )
+
+            self.logger.info("📊 System-Detail angezeigt")
+
+        except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
+            self.logger.error(f"❌ Fehler beim System-Detail: {e}")
+            await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
+
+    async def show_system_history(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """
+        📈 STATUS-MENU-CLOSURE Final Correction (status_system_history):
+        rohe, zeitlich geordnete Folge der letzten aufgezeichneten
+        CPU/RAM/Disk-Messungen (SystemMonitor.cpu_history/memory_history/
+        disk_history - dieselbe Datenquelle wie status_trends, hier aber
+        als Rohwerte statt als Min/Avg/Max-Zusammenfassung). Ausdrücklich
+        "seit Bot-Start" (In-Memory, max. 60 Messwerte) - KEINE über
+        Neustarts hinweg persistierte Historie, um keine
+        Fake-Langzeit-History vorzutäuschen.
+
+        WICHTIG (SAMPLING vs. HISTORY VIEW): diese Methode liest die
+        bereits vorhandenen history-Deques DIREKT und ruft NICHT
+        get_system_metrics() auf - jener ist die SAMPLING-Funktion, die
+        als Seiteneffekt eine neue Messung an cpu_history/memory_history/
+        disk_history anhängt. Würde diese Ansicht sie aufrufen, würde
+        allein das Öffnen des Verlaufs künstlich eine neue Messung
+        erzeugen (und eine leere Historie wäre nie wirklich leer). Ein
+        reiner Anzeige-Vorgang darf keine neue Messung erzeugen.
+        """
+        try:
+            query = update.callback_query
+            await query.answer("📈 Lade Verlauf...")
+
+            cpu_history = list(self.system_monitor.cpu_history)
+            memory_history = list(self.system_monitor.memory_history)
+            disk_history = list(self.system_monitor.disk_history)
+
+            def _recent(values: list, count: int = 10) -> str:
+                recent_values = values[-count:]
+                if not recent_values:
+                    return "  (noch keine Messungen)"
+                return "  " + " → ".join(f"{v:.0f}%" for v in recent_values)
+
+            if not cpu_history and not memory_history and not disk_history:
+                history_text = """📈 **System-Verlauf**
+
+Noch keine Messungen seit Bot-Start.
+
+_Nur In-Memory seit Bot-Start (max. 60 Messungen), kein Langzeit-Archiv._"""
+            else:
+                history_text = f"""📈 **System-Verlauf** (letzte Messungen seit Bot-Start)
+
+**CPU:**
+{_recent(cpu_history)}
+
+**RAM:**
+{_recent(memory_history)}
+
+**Festplatte:**
+{_recent(disk_history)}
+
+_Nur In-Memory seit Bot-Start (max. 60 Messungen), kein Langzeit-Archiv._"""
+
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Aktualisieren", callback_data="status_system_history"
+                        ),
+                        InlineKeyboardButton(
+                            "🔙 Zurück", callback_data="status_system"
+                        ),
+                    ],
+                ]
+            )
+
+            await query.edit_message_text(
+                history_text, reply_markup=keyboard, parse_mode="Markdown"
+            )
+
+            self.logger.info("📈 System-Verlauf angezeigt")
+
+        except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
+            self.logger.error(f"❌ Fehler beim System-Verlauf: {e}")
+            await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
+
     # ==================== BOT STATUS ====================
 
     async def show_bot_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -516,8 +877,20 @@ class EnhancedStatusHandler:
             user_activity = self.bot_tracker.get_user_activity()
 
             # Logger-Status
+            # STATUS-MENU-CLOSURE (Deferred Finding aus der letzten Phase,
+            # jetzt behoben): get_logging_stats() (ohne module-Argument)
+            # liefert NIE einen Top-Level-Schluessel "total_logs" - nur
+            # "total_modules"/"modules" (siehe logger.py::get_logging_stats()).
+            # "Gesamt-Logs" zeigte dadurch strukturell immer 0. Fix: echte
+            # Aggregation ueber die pro Modul bereits vorhandenen
+            # get_stats()["total_logs"]-Werte (reine Zaehler, kein
+            # Log-Inhalt, keine PII).
             logger_stats = get_logging_stats()
             active_modules = len(_module_loggers)
+            total_logs = sum(
+                module_stats.get("total_logs", 0)
+                for module_stats in logger_stats.get("modules", {}).values()
+            )
 
             bot_info = f"""🤖 **Bot-Status**
 
@@ -530,7 +903,7 @@ class EnhancedStatusHandler:
 
 **Logging:**
 • Aktive Module: {active_modules}
-• Gesamt-Logs: {logger_stats.get('total_logs', 0):,}
+• Gesamt-Logs: {total_logs:,}
 
 **User-Aktivität:**
 • Aktive Users: {user_activity['active_users']}
@@ -575,6 +948,133 @@ class EnhancedStatusHandler:
             self.logger.error(f"❌ Fehler beim Bot-Status: {e}")
             await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
 
+    async def show_bot_handlers(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """
+        📦 STATUS-MENU-CLOSURE (status_bot_handlers): echte, bereits
+        aufgezeichnete Handler-Konstruktionsstatus aus
+        BotStatusTracker.get_handler_overview() - befüllt von
+        RichMenuHandler._record_initial_handler_statuses() ("active" bei
+        erfolgreicher Konstruktion, "error" wenn der jeweilige
+        try/except-Block in initialize() fehlschlug). Keine erfundene
+        Handler-Liste - real ca. 17 benannte Handler, daher keine
+        "riesige Liste".
+        """
+        try:
+            query = update.callback_query
+            await query.answer("📦 Lade Handler-Übersicht...")
+
+            overview = self.bot_tracker.get_handler_overview()
+            handlers = overview.get("handlers", {})
+
+            if not handlers:
+                lines = "_Noch keine Handler-Status aufgezeichnet._"
+            else:
+                lines = "\n".join(
+                    f"{'✅' if data['status'] == 'active' else '❌'} "
+                    f"{_escape_markdown(name)}"
+                    for name, data in sorted(handlers.items())
+                )
+
+            handlers_text = f"""📦 **Handler-Übersicht**
+
+**Gesamt:** {overview['total_handlers']}  ·  **Aktiv:** {overview['active_handlers']}
+
+{lines}"""
+
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Aktualisieren", callback_data="status_bot_handlers"
+                        ),
+                        InlineKeyboardButton("🔙 Zurück", callback_data="status_bot"),
+                    ],
+                ]
+            )
+
+            await query.edit_message_text(
+                handlers_text, reply_markup=keyboard, parse_mode="Markdown"
+            )
+
+            self.logger.info("📦 Handler-Übersicht angezeigt")
+
+        except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
+            self.logger.error(f"❌ Fehler bei der Handler-Übersicht: {e}")
+            await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
+
+    async def show_bot_logs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        📝 STATUS-MENU-CLOSURE (status_bot_logs): reine Log-ZÄHLER pro
+        Modul (debug/info/warning/error/critical), NICHT der Loginhalt
+        selbst - siehe logger.py::ModuleLogger.get_stats(). Bewusst keine
+        Logzeilen/-nachrichten (könnten Pfade/Nutzereingaben enthalten,
+        siehe Master-Prompt: "keine vollständigen Logfiles ausgeben,
+        keine Secrets/Tokens/Credentials/PII"). Top 5 Module nach
+        Fehler-Anzahl (die für einen Admin relevanteste Sortierung).
+        """
+        try:
+            query = update.callback_query
+            await query.answer("📝 Lade Log-Statistiken...")
+
+            logger_stats = get_logging_stats()
+            modules = logger_stats.get("modules", {})
+
+            total_logs = sum(m.get("total_logs", 0) for m in modules.values())
+            total_errors = sum(
+                m.get("error_count", 0) + m.get("critical_count", 0)
+                for m in modules.values()
+            )
+
+            top_by_errors = sorted(
+                modules.items(),
+                key=lambda item: item[1].get("error_count", 0)
+                + item[1].get("critical_count", 0),
+                reverse=True,
+            )[:5]
+
+            top_lines = "\n".join(
+                f"• {_escape_markdown(name)}: {data.get('error_count', 0)} ❌ / "
+                f"{data.get('critical_count', 0)} 🚨"
+                for name, data in top_by_errors
+                if data.get("error_count", 0) + data.get("critical_count", 0) > 0
+            ) or "_Keine Fehler/Kritisch-Einträge in einem der Module._"
+
+            logs_text = f"""📝 **Log-Statistiken**
+
+**Module:** {logger_stats.get('total_modules', 0)}
+**Gesamt-Logs:** {total_logs:,}
+**Fehler gesamt:** {total_errors:,}
+
+**Top-Module nach Fehlern:**
+{top_lines}"""
+
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Aktualisieren", callback_data="status_bot_logs"
+                        ),
+                        InlineKeyboardButton("🔙 Zurück", callback_data="status_bot"),
+                    ],
+                ]
+            )
+
+            await query.edit_message_text(
+                logs_text, reply_markup=keyboard, parse_mode="Markdown"
+            )
+
+            self.logger.info("📝 Log-Statistiken angezeigt")
+
+        except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
+            self.logger.error(f"❌ Fehler bei den Log-Statistiken: {e}")
+            await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
+
     # ==================== SERVICES STATUS ====================
 
     async def show_services_status(
@@ -612,6 +1112,14 @@ class EnhancedStatusHandler:
                 services_text += f"   Status: {_escape_markdown(status)}\n"
                 if check_time:
                     services_text += f"   Geprüft: {check_time}\n"
+                # STATUS-MENU-CLOSURE Final Correction: "reason" erklärt
+                # ehrlich, WARUM ein Service "unknown" bleibt (z. B. kein
+                # automatisierter Health-Check verfügbar) - siehe
+                # show_services_check(). Nur angezeigt, wenn tatsächlich
+                # gesetzt.
+                reason = service_data.get("reason")
+                if reason:
+                    services_text += f"   Grund: {_escape_markdown(reason)}\n"
                 services_text += "\n"
 
             services_text += f"**Zusammenfassung:**\n"
@@ -647,6 +1155,131 @@ class EnhancedStatusHandler:
             if _is_message_not_modified_error(e):
                 return
             self.logger.error(f"❌ Fehler beim Service-Status: {e}")
+            await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
+
+    async def show_services_check(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """
+        🔄 STATUS-MENU-CLOSURE Final Correction (status_services_check):
+        tatsächlicher, read-only Verbindungstest - NICHT nur ein erneutes
+        Rendern. Alle vier bekannten Services (download/navidrome/
+        statistics/logger) werden hier explizit berücksichtigt - aber
+        NICHT pauschal auf "healthy" gesetzt (keine Fake Health Checks:
+        kein erfolgreicher Import, keine reine Konfigurationspräsenz und
+        keine künstliche Dummy-Operation zählen hier als "gesund").
+
+        Ausschließlich Navidrome besitzt aktuell einen echten,
+        deterministischen Health-Check (NavidromeAPI.check_connection(),
+        ein einzelner "ping"-Request, keine Mutation). Für "download"/
+        "statistics"/"logger" existiert in der bestehenden Architektur
+        kein analoger automatisierter Health-/Readiness-Check - sie
+        bleiben deshalb ehrlich auf "unknown", mit einem konkreten,
+        nachvollziehbaren Grund statt eines erfundenen Status.
+
+        Fehlerisolation: jeder Service wird in einem eigenen try/except
+        verarbeitet. Ein Fehler bei einem Service (z. B. Navidrome nicht
+        erreichbar) verhindert nicht, dass die übrigen drei Services
+        weiterhin verarbeitet werden.
+        """
+        _NO_AUTOMATED_CHECK_REASON = "Kein automatisierter Health-Check verfügbar"
+
+        try:
+            # Kein eigener query.answer() hier - show_services_status()
+            # unten uebernimmt das (vermeidet einen doppelten
+            # answerCallbackQuery()-Aufruf fuer denselben Callback).
+            try:
+                navidrome_ok = await NavidromeAPI().check_connection()
+                self.bot_tracker.update_service_status(
+                    "navidrome", "healthy" if navidrome_ok else "error"
+                )
+            except Exception as check_error:
+                self.logger.warning(
+                    f"⚠️ Navidrome-Check fehlgeschlagen: {check_error}"
+                )
+                self.bot_tracker.update_service_status("navidrome", "error")
+
+            # download/statistics/logger: In-Prozess-Subsysteme ohne
+            # externe Health-Check-Funktion. Jeder Service wird dennoch
+            # explizit "betrachtet" (nicht stillschweigend ausgelassen) -
+            # der Status bleibt aber ehrlich "unknown" mit Grund, statt
+            # eines erfundenen "healthy".
+            for service_name in ("download", "statistics", "logger"):
+                try:
+                    self.bot_tracker.update_service_status(
+                        service_name, "unknown", reason=_NO_AUTOMATED_CHECK_REASON
+                    )
+                except Exception as service_error:
+                    self.logger.warning(
+                        f"⚠️ Service-Check für '{service_name}' fehlgeschlagen: "
+                        f"{service_error}"
+                    )
+
+            # Nach dem Check dieselbe Darstellung wie show_services_status()
+            # erneut rendern - kein Duplikat der Rendering-Logik.
+            await self.show_services_status(update, context)
+
+        except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
+            self.logger.error(f"❌ Fehler beim Service-Check: {e}")
+            await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
+
+    async def show_services_detail(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """
+        📊 STATUS-MENU-CLOSURE (status_services_detail): zeigt zusätzlich
+        zum Status selbst, für welche Services überhaupt ein
+        automatisierter Check existiert - echte, im Code verifizierbare
+        Information (_SERVICES_WITH_AUTOMATED_CHECK), keine erfundene
+        Zusatzansicht ohne neuen Informationsgehalt.
+        """
+        try:
+            query = update.callback_query
+            await query.answer("📊 Lade Service-Details...")
+
+            service_overview = self.bot_tracker.get_service_overview()
+
+            lines = []
+            for service_name, service_data in service_overview["services"].items():
+                has_check = service_name in _SERVICES_WITH_AUTOMATED_CHECK
+                check_note = (
+                    "automatisierter Check verfügbar"
+                    if has_check
+                    else "kein automatisierter Check definiert"
+                )
+                lines.append(
+                    f"**{_escape_markdown(service_name.capitalize())}**\n"
+                    f"   Status: {_escape_markdown(service_data['status'])}\n"
+                    f"   {check_note}"
+                )
+
+            detail_text = "📊 **Service-Details**\n\n" + "\n\n".join(lines)
+
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Services prüfen", callback_data="status_services_check"
+                        ),
+                        InlineKeyboardButton(
+                            "🔙 Zurück", callback_data="status_services"
+                        ),
+                    ],
+                ]
+            )
+
+            await query.edit_message_text(
+                detail_text, reply_markup=keyboard, parse_mode="Markdown"
+            )
+
+            self.logger.info("📊 Service-Details angezeigt")
+
+        except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
+            self.logger.error(f"❌ Fehler bei den Service-Details: {e}")
             await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
 
     # ==================== PERFORMANCE STATUS ====================
@@ -686,27 +1319,37 @@ class EnhancedStatusHandler:
                 reverse=True,
             )[:5]
 
+            if not top_ops:
+                perf_text += "\n_Noch keine aufgezeichneten Operationen._"
             for op_type, count in top_ops:
-                # op_type stammt aus record_operation()-Aufrufen (aktuell
-                # kein produktiver Aufrufer, siehe
-                # docs/MusicBot_STATUS_MENU_CLOSURE.md) - defensiv
-                # escaped, da der Wert grundsaetzlich frei waehlbar ist.
+                # op_type stammt aus record_operation()-Aufrufen - seit
+                # STATUS-MENU-CLOSURE minimal instrumentiert in
+                # handle_status_callback() (jeder status_*-Callback zaehlt
+                # als eine Operation, siehe admin_diagnostics.py). Bewusst
+                # escaped, da der Wert grundsaetzlich frei waehlbar ist
+                # (Aufrufer koennten beliebige Strings uebergeben).
                 perf_text += f"\n• {_escape_markdown(op_type)}: {count:,}"
 
+            # STATUS-MENU-CLOSURE: "📈 Verlauf" (status_performance_history)
+            # entfernt - es existiert keine über einzelne Resets/Neustarts
+            # hinweg gespeicherte Performance-Historie (operation_counts/
+            # error_counts sind reine seit-last_reset-Zähler ohne
+            # Snapshot-Persistenz). Eine "Verlauf"-Ansicht hätte hier
+            # zwangsläufig Fake-Daten zeigen müssen - Button daher bewusst
+            # aus dem UI entfernt statt als Platzhalter geführt (siehe
+            # docs/MusicBot_STATUS_MENU_CLOSURE.md, status_performance_history:
+            # REMOVED).
             keyboard = InlineKeyboardMarkup(
                 [
                     [
                         InlineKeyboardButton(
-                            "📈 Verlauf", callback_data="status_performance_history"
-                        ),
-                        InlineKeyboardButton(
                             "🔄 Reset", callback_data="status_performance_reset"
                         ),
-                    ],
-                    [
                         InlineKeyboardButton(
                             "🔄 Aktualisieren", callback_data="status_performance"
                         ),
+                    ],
+                    [
                         InlineKeyboardButton("🔙 Zurück", callback_data="status_menu"),
                     ],
                 ]
@@ -722,6 +1365,36 @@ class EnhancedStatusHandler:
             if _is_message_not_modified_error(e):
                 return
             self.logger.error(f"❌ Fehler beim Performance-Status: {e}")
+            await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
+
+    async def show_performance_reset(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """
+        🔄 STATUS-MENU-CLOSURE (status_performance_reset): nutzt die
+        bereits vorhandene SystemMonitor.reset_statistics() (setzt
+        operation_counts/error_counts/last_reset zurück - reine
+        In-Memory-Zähler seit dem letzten Reset bzw. Bot-Start, keine
+        permanenten/persistenten Daten). Bewusst OHNE separaten
+        Bestätigungsschritt: der Callback ist bereits über
+        RichMenuSystem._ADMIN_ONLY_PREFIXES ("status_") Admin-gated, und
+        der Vorgang betrifft ausschließlich ephemere Analytics-Zähler
+        (kein Datenverlust vergleichbar mit Library-/Backup-Löschungen -
+        ein Bot-Neustart hätte denselben Effekt). Kein neuer
+        Confirm-Callback/keine neue Architektur.
+        """
+        try:
+            self.system_monitor.reset_statistics()
+            self.logger.info("🔄 Performance-Statistiken auf Nutzeranfrage zurückgesetzt")
+
+            # Nach dem Reset dieselbe Darstellung wie show_performance_status()
+            # erneut rendern (zeigt jetzt die genullten Werte).
+            await self.show_performance_status(update, context)
+
+        except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
+            self.logger.error(f"❌ Fehler beim Performance-Reset: {e}")
             await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
 
     # ==================== STORAGE STATUS ====================
@@ -820,6 +1493,70 @@ class EnhancedStatusHandler:
 
         storage_text += f"**Gesamt verwendet:** {total_used / (1024**3):.2f} GB"
         return storage_text
+
+    async def show_storage_detail(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """
+        📊 STATUS-MENU-CLOSURE (status_storage_detail): zusätzliche,
+        reale Dateisystem-Informationen für das Library-Verzeichnis -
+        Mountpoint, Dateisystemtyp, Gesamt-/freie Kapazität via bereits
+        importiertem psutil (disk_partitions()/disk_usage()) - dieselbe
+        Bibliothek, die SystemMonitor bereits für die Disk-Metriken
+        verwendet, keine neue Datenquelle.
+        """
+        try:
+            query = update.callback_query
+            await query.answer("📊 Lade Storage-Details...")
+
+            library_dir = self.config.LIBRARY_DIR
+            partition = await asyncio.get_event_loop().run_in_executor(
+                None, _find_partition_for_path, library_dir
+            )
+
+            if partition:
+                usage = psutil.disk_usage(partition.mountpoint)
+                detail_text = f"""📊 **Storage-Details — Library**
+
+**Pfad:** {_escape_markdown(str(library_dir))}
+**Mountpoint:** {_escape_markdown(partition.mountpoint)}
+**Dateisystem:** {_escape_markdown(partition.fstype)}
+
+**Kapazität:**
+• Gesamt: {usage.total / (1024**3):.1f} GB
+• Verwendet: {usage.used / (1024**3):.1f} GB ({usage.percent:.1f}%)
+• Frei: {usage.free / (1024**3):.1f} GB"""
+            else:
+                detail_text = (
+                    "📊 **Storage-Details — Library**\n\n"
+                    f"**Pfad:** {_escape_markdown(str(library_dir))}\n\n"
+                    "_Mountpoint konnte nicht ermittelt werden._"
+                )
+
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Aktualisieren", callback_data="status_storage_detail"
+                        ),
+                        InlineKeyboardButton(
+                            "🔙 Zurück", callback_data="status_storage"
+                        ),
+                    ],
+                ]
+            )
+
+            await query.edit_message_text(
+                detail_text, reply_markup=keyboard, parse_mode="Markdown"
+            )
+
+            self.logger.info("📊 Storage-Details angezeigt")
+
+        except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
+            self.logger.error(f"❌ Fehler bei den Storage-Details: {e}")
+            await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
 
     # ==================== UTILITY FUNCTIONS ====================
 
@@ -921,34 +1658,40 @@ print(f"Operations/s: {perf['operations_per_second']}")
 ✅ Error-Rate-Monitoring
 ✅ Integration mit Error Handler
 ✅ Cache für Performance
+✅ Vollständige Menu-Integration (siehe docs/MusicBot_STATUS_MENU_CLOSURE.md
+   für die vollständige Callback-Matrix - alle Callbacks IMPLEMENTED,
+   REMOVED oder UNAVAILABLE_BY_DESIGN, keine unklaren/erreichbaren
+   Zustände)
 
-🎨 MENU-STRUKTUR (STATUS-MENU-CLOSURE, siehe
-docs/MusicBot_STATUS_MENU_CLOSURE.md für die vollständige Callback-Matrix):
+🎨 MENU-STRUKTUR (STATUS-MENU-CLOSURE):
 
 Status-Hauptmenü
 ├── 💻 System Status                       [aktiv]
-│   ├── Detaillierte Ansicht                (Platzhalter, kein Handler)
-│   └── Verlaufs-Diagramm                   (Platzhalter, kein Handler)
+│   ├── Detaillierte Ansicht (Load/Swap/Kerne)  [aktiv]
+│   └── Verlauf (letzte Messungen)              [aktiv]
 ├── 🤖 Bot Status                          [aktiv]
-│   ├── Handler-Übersicht                   (Platzhalter, kein Handler)
-│   ├── Service-Details → 📦 Services       [aktiv, selber Screen]
-│   └── Log-Statistiken                     (Platzhalter, kein Handler)
+│   ├── Handler-Übersicht                       [aktiv]
+│   ├── Service-Details → 📦 Services           [aktiv, selber Screen]
+│   └── Log-Statistiken                         [aktiv]
 ├── 📦 Services                            [aktiv]
-│   ├── Health-Checks                       (Platzhalter, kein Handler)
-│   └── Service-Details                     (Platzhalter, kein Handler)
-├── 👥 User-Aktivität                       (Platzhalter, kein Handler)
+│   ├── Services prüfen (Navidrome-Ping)         [aktiv]
+│   └── Service-Details (Check-Verfügbarkeit)    [aktiv]
+├── 👥 User-Aktivität                      [aktiv]
 ├── 📊 Performance                         [aktiv]
-│   ├── Operations-Breakdown (Verlauf)      (Platzhalter, kein Handler)
-│   └── Error-Analyse (Reset)               (Platzhalter, kein Handler)
+│   └── Reset                                    [aktiv]
+│   (kein "Verlauf"-Button mehr - keine über Neustarts hinweg
+│    gespeicherte Performance-Historie vorhanden, siehe Closure-Doku)
 ├── 📁 Storage                             [aktiv]
-│   ├── Verzeichnis-Übersicht (Details)     (Platzhalter, kein Handler)
-│   └── Cleanup-Optionen                    (Platzhalter, kein Handler)
-└── 📈 Trends                               (Platzhalter, kein Handler)
+│   ├── Details (Mountpoint/Dateisystem/Kapazität) [aktiv]
+│   └── Cleanup                             [UNAVAILABLE_BY_DESIGN -
+│                                             destruktive Aktion ohne
+│                                             definierten Contract,
+│                                             bewusst nicht implementiert]
+└── 📈 Trends (CPU/RAM/Disk Min/Avg/Max)   [aktiv]
 
-"Platzhalter" = Button existiert, aber keine Handler-Implementierung
-(weder unter diesem noch einem anderen Namen, repoweit verifiziert) -
-zeigt beim Anklicken "🚧 Diese Funktion ist noch nicht implementiert.",
-ohne wie ein unerwarteter Fehler behandelt zu werden. Kein Feature-Bau
-in der STATUS-MENU-CLOSURE-Phase - nur konsistente, erkennbare
-Behandlung statt stiller "Unbekannter Callback"-Warnung.
+Alle [aktiv]-Einträge nutzen ausschließlich bereits vorhandene
+Datenquellen (SystemMonitor/BotStatusTracker/get_logging_stats()/
+NavidromeAPI.check_connection()/psutil) - keine Fake-Daten, keine
+Fake-History, keine Fake-Trends. Vollständige Fall-Entscheidung je
+Callback in docs/MusicBot_STATUS_MENU_CLOSURE.md.
 """
