@@ -61,7 +61,13 @@ def render_album_detail(album: Dict[str, Any]) -> Tuple[str, InlineKeyboardMarku
     """Baut Text+Keyboard für die Album-Detailansicht (NAV-F9). Tracklist
     bewusst auf 25 Songs gedeckelt (keine neue Pagination-Button-
     Fehlerquelle, siehe NAV-F2/NAV-F11). 1:1 aus
-    NavidromeMenuHandler.handle_album_detail() verschoben."""
+    NavidromeMenuHandler.handle_album_detail() verschoben.
+
+    NAV-F16 (derselbe Bug wie NAV-F15, siehe render_playlist_detail()):
+    das Literal "_+N weitere Songs nicht angezeigt_" enthielt ein '+'
+    im MarkdownV2-Text - '+' ist ein reserviertes Zeichen, Telegram
+    lehnt die Nachricht mit BadRequest ab. Da das '+' hier nur ein
+    Stilmittel ohne inhaltliche Bedeutung war, wird es weggelassen."""
     album_name = album.get("name", "Unbekannt")
     artist_name = album.get("artist", "Unbekannt")
     artist_id = album.get("artistId", "")
@@ -103,7 +109,7 @@ def render_album_detail(album: Dict[str, Any]) -> Tuple[str, InlineKeyboardMarku
 
     more_songs_note = ""
     if len(songs) > 25:
-        more_songs_note = f"\n_+{len(songs) - 25} weitere Songs nicht angezeigt_"
+        more_songs_note = f"\n_{len(songs) - 25} weitere Songs nicht angezeigt_"
 
     # BUG-007-Fix-Analogon (siehe handle_artist_detail()/
     # handle_genre_detail()): album_name/artist_name/year_suffix
@@ -182,10 +188,9 @@ def render_playlist_detail(
     muss entweder escaped oder durch ein nicht-reserviertes Zeichen
     ersetzt werden. Da das '+' hier nur ein Stilmittel ohne inhaltliche
     Bedeutung war, wird es weggelassen - die Zeile bleibt verständlich.
-    Derselbe Bug existiert unveraendert in render_album_detail() (Zeile
-    ~106) - dort bewusst NICHT in diesem Schritt mitgefixt, siehe
-    docs/FINDINGS_INDEX.md (eigener, separat zurückgestellter Fund).
-    """
+    Derselbe Bug existierte auch in render_album_detail() - dort
+    bewusst nicht im selben Schritt mitgefixt (separat als NAV-F16
+    dokumentiert), inzwischen in einem eigenen PR ebenfalls behoben."""
     playlist_name = playlist.get("name", "Unbekannt")
     owner = playlist.get("owner", "")
     songs = playlist.get("entry", [])

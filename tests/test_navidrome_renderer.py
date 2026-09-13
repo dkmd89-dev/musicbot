@@ -115,7 +115,10 @@ class TestRenderAlbumDetail:
             if b.callback_data.startswith("nav_song_")
         ]
         assert len(song_buttons) == 25
-        assert "+5 weitere Songs nicht angezeigt" in text
+        # NAV-F16: Overflow-Hinweis enthält keinen rohen '+' mehr (das
+        # Zahlenteil 30 - 25 = 5 bleibt erhalten).
+        assert "5 weitere Songs nicht angezeigt" in text
+        assert "+5" not in text
 
     def test_no_artist_id_omits_artist_button(self):
         album = {"id": "a1", "name": "Album", "artist": "X", "song": []}
@@ -233,6 +236,23 @@ class TestNavF15RegressionPlaylistOverflowNoRawPlus:
         }
 
         text, _markup = render_playlist_detail(playlist)
+
+        assert "+5" not in text
+        assert "\\+5" not in text
+
+
+class TestNavF16RegressionAlbumOverflowNoRawPlus:
+    """NAV-F16-Regressionstest (derselbe Bug wie NAV-F15): der
+    Tracklist-Overflow-Hinweis in render_album_detail() darf kein
+    rohes '+' im MarkdownV2-Text enthalten."""
+
+    def test_album_overflow_note_has_no_raw_plus(self):
+        album = {
+            "id": "a1", "name": "Big Album", "artist": "X",
+            "song": [{"id": f"s{i}", "title": f"Track {i}"} for i in range(30)],
+        }
+
+        text, _markup = render_album_detail(album)
 
         assert "+5" not in text
         assert "\\+5" not in text
