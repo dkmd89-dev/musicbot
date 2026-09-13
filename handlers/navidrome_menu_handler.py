@@ -355,15 +355,39 @@ Wähle ein Album aus oder verwende die Navigation\\:
                 )
                 return
 
-            # Sortiere nach Song-Anzahl (falls verfügbar)
-            try:
-                genres.sort(key=lambda x: int(x.get("songCount", 0)), reverse=True)
-            except (ValueError, TypeError) as e:
+            # NAV-F14-Fix: songCount wird jetzt EINMALIG in eine sichere
+            # int normalisiert, bevor sortiert UND bevor die Anzeige-
+            # Schleife unten darauf zugreift. Vorher wurde eine nicht-
+            # numerische songCount nur im Sortier-try/except abgefangen
+            # (mit Fallback auf alphabetische Sortierung) - die
+            # Anzeige-Schleife weiter unten nutzte danach aber denselben
+            # UNKONVERTIERTEN Rohwert in einem "> 0"-Vergleich, was dort
+            # mit TypeError crashte (bevor der Fallback-Sort je sichtbar
+            # gerendert wurde). Zusätzlich sortierte der alte Fallback
+            # fälschlich nach "name" statt nach dem tatsächlich für die
+            # Anzeige genutzten "value"-Feld (siehe genre_name unten) -
+            # die alphabetische Sekundärsortierung hier nutzt jetzt
+            # dasselbe Feld wie die Anzeige.
+            genre_songcount_fallback_used = False
+            for genre in genres:
+                try:
+                    genre["songCount"] = int(genre.get("songCount") or 0)
+                except (TypeError, ValueError):
+                    genre["songCount"] = 0
+                    genre_songcount_fallback_used = True
+
+            if genre_songcount_fallback_used:
                 self.logger.warning(
-                    f"⚠️ Konnte Genres nicht nach songCount sortieren: {e}"
+                    "⚠️ Mindestens ein Genre hatte einen nicht-numerischen "
+                    "songCount-Wert - auf 0 normalisiert."
                 )
-                # Fallback: alphabetisch sortieren
-                genres.sort(key=lambda x: x.get("name", "").lower())
+
+            genres.sort(
+                key=lambda g: (
+                    -g["songCount"],
+                    (g.get("value") or g.get("name") or "").lower(),
+                )
+            )
 
             # Keyboard erstellen - 2 Spalten Layout
             keyboard = []

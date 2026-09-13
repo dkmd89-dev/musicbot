@@ -391,31 +391,16 @@ class TestBrowseGenresCharacterization:
         ]
         assert buttons_in_order.index("🎭 Hip-Hop (50)") < buttons_in_order.index("🎭 Pop (5)")
 
-    def test_non_numeric_song_count_crashes_instead_of_falling_back_cleanly(self):
-        """Charakterisiert einen TATSAECHLICHEN, bisher unentdeckten Bug
-        (kein Sollverhalten): handle_browse_genres() hat einen
-        try/except um den Sortier-Aufruf, der bei nicht-numerischem
-        `songCount` (z.B. "n/a") auf alphabetische Sortierung nach
-        `x.get("name", "")` zurückfaellt (Zeile ~366) - ABER die
-        anschliessende Anzeige-Schleife nutzt denselben rohen,
-        nicht-konvertierten `song_count`-Wert direkt in einem
-        `if song_count > 0:`-Vergleich (Zeile ~382), was bei einem
-        String/None-Wert mit
-        "TypeError: '>' not supported between instances of 'str' and 'int'"
-        crasht. Der Fallback im Sortier-Schritt faengt diesen
-        Folgefehler NICHT ab - die Methode landet im aeusseren
-        Exception-Handler und zeigt die generische Fehlermeldung statt
-        einer (wenn auch fehlerhaft sortierten) Genre-Liste. Zusaetzlich
-        zeigt der Sortier-Fallback selbst einen zweiten, dadurch aber
-        praktisch unbeobachtbaren Bug: er sortiert nach `x.get("name", "")`
-        statt nach dem tatsaechlich fuer die Anzeige genutzten
-        `x.get("value")`-Feld (Zeile ~378/1222) - unbeobachtbar, weil der
-        Crash oben in der Praxis immer zuerst eintritt, bevor das
-        Sortierergebnis je gerendert wird. Entdeckt beim Schreiben dieses
-        Characterization-Tests (Architecture Refactoring Audit,
-        Migrationsstufe 3, Pflichtschritt) - bewusst NICHT gefixt, siehe
-        Kandidat-Finding NAV-F14 in
-        docs/audits/NAVIDROME_MENU_HANDLER_REFACTORING_MIGRATION_PLAN_2026-09-13.md."""
+    def test_non_numeric_song_count_no_longer_crashes_nav_f14(self):
+        """NAV-F14-Fix: nicht-numerische `songCount`-Werte (z.B. "n/a")
+        wurden bisher EINMALIG im Sortier-try/except abgefangen, aber die
+        Anzeige-Schleife nutzte danach denselben unkonvertierten Rohwert
+        in einem "> 0"-Vergleich und crashte (TypeError) - die Methode
+        landete in der generischen Fehlermeldung statt einer Genre-Liste.
+        Fix: songCount wird jetzt einmalig VOR Sortierung+Anzeige sicher
+        zu int normalisiert (fehlerhafte Werte -> 0), Sortierung UND
+        Anzeige nutzen danach denselben sicheren Wert - kein Crash mehr,
+        die betroffenen Genres landen (songCount=0) am Ende der Liste."""
         handler = NavidromeMenuHandler(FakeConfigConfigured())
         update = make_update()
         context = make_context()
@@ -425,6 +410,7 @@ class TestBrowseGenresCharacterization:
                     "genre": [
                         {"value": "Zeta", "songCount": "n/a"},
                         {"value": "Alpha", "songCount": "n/a"},
+                        {"value": "Real Genre", "songCount": 5},
                     ]
                 }
             }
@@ -436,12 +422,52 @@ class TestBrowseGenresCharacterization:
         ):
             asyncio.run(handler.handle_browse_genres(update, context))
 
-        # Kein Crash der Testumgebung (Exception wird intern abgefangen),
-        # aber die generische Fehlermeldung statt einer Genre-Liste -
-        # kein "reply_markup"/keine Genre-Buttons im Ergebnis.
-        args, kwargs = update.callback_query.edit_message_text.call_args
-        assert "reply_markup" not in kwargs
-        assert "Fehler beim Laden der Genres" in args[0]
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        assert "reply_markup" in kwargs
+        buttons_in_order = [
+            b.text for row in kwargs["reply_markup"].inline_keyboard for b in row
+            if b.callback_data.startswith("nav_genre_")
+            and b.callback_data != "nav_genre_stats"
+        ]
+        # Echter Songcount (5) steht vor den auf 0 normalisierten
+        # Eintraegen; die beiden normalisierten Eintraege sind
+        # untereinander alphabetisch sortiert (Alpha vor Zeta) - nutzt
+        # jetzt dasselbe "value"-Feld wie die Anzeige, nicht mehr "name".
+        assert buttons_in_order == ["🎭 Real Genre (5)", "🎭 Alpha", "🎭 Zeta"]
+
+    def test_sort_uses_value_field_not_name_field_for_alphabetical_tiebreak_nav_f14(self):
+        """Regressionsschutz fuer den zweiten Teil von NAV-F14: die
+        alphabetische Sekundaersortierung muss dasselbe Feld nutzen wie
+        die Anzeige (genre.get("value") or genre.get("name")), nicht nur
+        "name" allein - sonst bleibt sie bei Genres, die nur "value"
+        tragen (der Normalfall), wirkungslos."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        fake_response = {
+            "subsonic-response": {
+                "genres": {
+                    "genre": [
+                        {"value": "Zeta", "songCount": 0},
+                        {"value": "Alpha", "songCount": 0},
+                    ]
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_browse_genres(update, context))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        buttons_in_order = [
+            b.text for row in kwargs["reply_markup"].inline_keyboard for b in row
+            if b.callback_data.startswith("nav_genre_")
+            and b.callback_data != "nav_genre_stats"
+        ]
+        assert buttons_in_order == ["🎭 Alpha", "🎭 Zeta"]
 
     def test_genre_button_omits_parens_when_song_count_zero(self):
         handler = NavidromeMenuHandler(FakeConfigConfigured())
