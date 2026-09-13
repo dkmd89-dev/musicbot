@@ -1,9 +1,11 @@
 # Architecture Refactoring Audit — Migrationsplan: NavidromeMenuHandler
 
-**Status:** Ursprünglich READ-ONLY AUDIT-ERGEBNIS. **Stufe 1 wurde vom
-Nutzer freigegeben und ist seit 2026-09-13 IMPLEMENTED** (siehe
-Nachtrag am Ende von Abschnitt 5). Stufen 2–5 bleiben weiterhin reine
-Planung, nicht freigegeben, nicht umgesetzt.
+**Status:** Ursprünglich READ-ONLY AUDIT-ERGEBNIS. **Stufe 1 und Stufe 3
+wurden vom Nutzer freigegeben und sind seit 2026-09-13 IMPLEMENTED**
+(siehe Nachtrag am Ende von Abschnitt 5 bzw. Nachtrag 3 in Abschnitt 4).
+Dabei zusätzlich entdecktes NAV-F14 ist ebenfalls CLOSED (eigener PR).
+Stufe 2 (optional, nicht umgesetzt) sowie Stufe 4/5 bleiben weiterhin
+reine Planung, nicht freigegeben, nicht umgesetzt.
 
 **Scope:** `handlers/navidrome_menu_handler.py` (1454 Zeilen Methodencode,
 19 Methoden), `handlers/menu/actions/navidrome.py` (258 Zeilen, dünner
@@ -193,6 +195,28 @@ Anzeige — behebt beide Teilbugs in einem Schritt, siehe
 `docs/MusicBot_NAVIDROME_MENU_ARCHITECTURE.md` Abschnitt 4, NAV-F14
 CLOSED). Die eigentliche Browse-Rendering-Extraktion folgt als
 nächster, separater PR auf demselben bereits getesteten Stand.
+
+**Nachtrag 3 (2026-09-13) — Stufe 3 vollständig IMPLEMENTED:** dritter
+PR extrahierte `render_browse_artists()`/`render_browse_albums()`/
+`render_browse_genres()` nach `handlers/navidrome_renderer.py`, exakt
+wie geplant. `handle_browse_albums()` behält beide API-Pfade
+(`getArtist`/`getAlbumList2`) in `NavidromeMenuHandler`, da sie einen
+echten Netzwerkaufruf enthalten (nur die reine Keyboard-/Text-Bau-Logik
+wanderte, inkl. der bereits im Original identischen, hier auf eine
+Zeile vereinfachten `has_next`-Berechnung). `render_browse_genres()`
+enthält die NAV-F14-Fix-Logik (songCount-Normalisierung) vollständig,
+mit eigenem Modul-Logger (`NavidromeRenderer`) für die Diagnose-Warnung
+bei Fallback-Normalisierung. **Abbruchkriterium griff nicht:** alle 18
+vorbereiteten Characterization-Tests
+(`TestBrowseArtistsCharacterization`/`TestBrowseAlbumsCharacterization`/
+`TestBrowseGenresCharacterization`) liefen nach der Extraktion
+unverändert grün (0 inhaltliche Anpassungen). Byte-genauer
+Vorher-/Nachher-Vergleich der drei MarkdownV2-Textbausteine
+(inkl. eines zunächst übersehenen doppelten Leerzeichens am Zeilenende
+im Genre-Übersichtstext) bestätigte identischen Output. 11 neue, reine
+Unit-Tests in `tests/test_navidrome_renderer.py`. `NavidromeMenuHandler`
+schrumpfte auf 1179 Zeilen (von ursprünglich 1493 vor Stufe 1).
+Migrationsstufen 4/5 bleiben weiterhin nicht freigegeben.
 
 ### Stufe 4 — `services/navidrome/browser_service.py` (API-Extraktion)
 **Ziel:** Der in der Zieldoku beschriebene `browser_service` — reine

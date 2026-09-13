@@ -100,7 +100,12 @@ class NavidromeMenuHandler:
     async def handle_browse_artists(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0
     ):
-        """Zeigt Künstler-Liste an (paginierte Sicht auf get_artists)."""
+        """Zeigt Künstler-Liste an (paginierte Sicht auf get_artists).
+
+        Architecture Refactoring Audit, Migrationsstufe 3: Text-/
+        Keyboard-Bau wurde nach navidrome_renderer.render_browse_artists()
+        ausgelagert - diese Methode bleibt reine Orchestrierung
+        (Connection-Check, API-Aufruf, Error-Handling)."""
         if not self._check_connection():
             await self._show_connection_error(update)
             return
@@ -114,66 +119,12 @@ class NavidromeMenuHandler:
                 )
                 return
 
-            page_size = 20
-            start = page * page_size
-            end = start + page_size
-            artists = all_artists[start:end]
-
-            # Keyboard erstellen (2 Spalten)
-            keyboard = []
-            for i in range(0, len(artists), 2):
-                row = []
-                for j in range(2):
-                    if i + j < len(artists):
-                        artist = artists[i + j]
-                        name = artist.get("name") or artist.get("title") or "Unbekannt"
-                        artist_id = artist.get("id") or artist.get("artistId") or ""
-                        row.append(
-                            InlineKeyboardButton(
-                                f"🎤 {name[:25]}",
-                                callback_data=f"nav_artist_{artist_id}",
-                            )
-                        )
-                keyboard.append(row)
-
-            # Navigation
-            nav_row = []
-            if page > 0:
-                nav_row.append(
-                    InlineKeyboardButton(
-                        "⬅️ Vorherige", callback_data=f"nav_browse_artists_{page-1}"
-                    )
-                )
-            if end < len(all_artists):
-                nav_row.append(
-                    InlineKeyboardButton(
-                        "Nächste ➡️", callback_data=f"nav_browse_artists_{page+1}"
-                    )
-                )
-            if nav_row:
-                keyboard.append(nav_row)
-
-            keyboard.append(
-                [
-                    InlineKeyboardButton(
-                        "🔍 Suchen", callback_data="nav_search_artists"
-                    ),
-                    InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome"),
-                ]
+            message_text, reply_markup = navidrome_renderer.render_browse_artists(
+                all_artists, page
             )
 
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            message_text = f"""
-🎤 **Künstler durchsuchen**
-
-Seite {page + 1} \\- {len(artists)} Künstler auf dieser Seite
-
-Wähle einen Künstler aus oder verwende die Navigation\\:
-"""
-
             await update.callback_query.edit_message_text(
-                text=message_text.strip(),
+                text=message_text,
                 reply_markup=reply_markup,
                 parse_mode="MarkdownV2",
             )
@@ -196,7 +147,12 @@ Wähle einen Künstler aus oder verwende die Navigation\\:
         page: int = 0,
         artist_id: str = None,
     ):
-        """Zeigt Album-Liste an (Artist-spezifisch via getArtist, sonst getAlbumList2)."""
+        """Zeigt Album-Liste an (Artist-spezifisch via getArtist, sonst getAlbumList2).
+
+        Architecture Refactoring Audit, Migrationsstufe 3: Text-/
+        Keyboard-Bau wurde nach navidrome_renderer.render_browse_albums()
+        ausgelagert - der API-Pfad (getArtist vs. getAlbumList2) bleibt
+        hier, da er einen echten Netzwerkaufruf enthält."""
         if not self._check_connection():
             await self._show_connection_error(update)
             return
@@ -238,78 +194,12 @@ Wähle einen Künstler aus oder verwende die Navigation\\:
                 )
                 return
 
-            # Keyboard erstellen
-            keyboard = []
-            for album in albums:
-                album_text = f"💿 {album['name'][:30]}"
-                if "artist" in album:
-                    album_text += f" - {album['artist'][:20]}"
-
-                keyboard.append(
-                    [
-                        InlineKeyboardButton(
-                            album_text, callback_data=f"nav_album_{album['id']}"
-                        )
-                    ]
-                )
-
-            # Navigation
-            nav_row = []
-            if page > 0:
-                callback_data = f"nav_browse_albums_{page-1}"
-                if artist_id:
-                    callback_data += f"_{artist_id}"
-                nav_row.append(
-                    InlineKeyboardButton("⬅️ Vorherige", callback_data=callback_data)
-                )
-
-            # Bei artist_id lokal prüfen, ob es weitere Seiten gibt
-            has_next = False
-            if artist_id:
-                # Wenn wir genau page_size Elemente zeigen, könnte es noch mehr geben
-                has_next = len(albums) == page_size
-            else:
-                # AlbumList2 liefert genau size Einträge, solange verfügbar
-                has_next = len(albums) == page_size
-
-            if has_next:
-                callback_data = f"nav_browse_albums_{page+1}"
-                if artist_id:
-                    callback_data += f"_{artist_id}"
-                nav_row.append(
-                    InlineKeyboardButton("Nächste ➡️", callback_data=callback_data)
-                )
-
-            if nav_row:
-                keyboard.append(nav_row)
-
-            # Zurück-Buttons
-            back_row = [
-                InlineKeyboardButton("🔍 Suchen", callback_data="nav_search_albums")
-            ]
-            if artist_id:
-                back_row.append(
-                    InlineKeyboardButton(
-                        "🎤 Künstler", callback_data="nav_browse_artists"
-                    )
-                )
-            back_row.append(
-                InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")
+            message_text, reply_markup = navidrome_renderer.render_browse_albums(
+                albums, title_prefix, page, artist_id, page_size
             )
-            keyboard.append(back_row)
-
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            message_text = f"""
-{title_prefix}
-
-Seite {page + 1} \\- {len(albums)} Alben auf dieser Seite
-
-Wähle ein Album aus oder verwende die Navigation\\:
-"""
 
             await update.callback_query.edit_message_text(
-                text=message_text.strip(),
+                text=message_text,
                 reply_markup=reply_markup,
                 parse_mode="MarkdownV2",
             )
@@ -328,7 +218,11 @@ Wähle ein Album aus oder verwende die Navigation\\:
     async def handle_browse_genres(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        """Zeigt Genre-Liste an - KORRIGIERT für richtige API-Response-Verarbeitung"""
+        """Zeigt Genre-Liste an - KORRIGIERT für richtige API-Response-Verarbeitung
+
+        Architecture Refactoring Audit, Migrationsstufe 3: Text-/
+        Keyboard-Bau (inkl. der NAV-F14-Sortier-/Normalisierungslogik)
+        wurde nach navidrome_renderer.render_browse_genres() ausgelagert."""
         if not self._check_connection():
             await self._show_connection_error(update)
             return
@@ -355,103 +249,9 @@ Wähle ein Album aus oder verwende die Navigation\\:
                 )
                 return
 
-            # NAV-F14-Fix: songCount wird jetzt EINMALIG in eine sichere
-            # int normalisiert, bevor sortiert UND bevor die Anzeige-
-            # Schleife unten darauf zugreift. Vorher wurde eine nicht-
-            # numerische songCount nur im Sortier-try/except abgefangen
-            # (mit Fallback auf alphabetische Sortierung) - die
-            # Anzeige-Schleife weiter unten nutzte danach aber denselben
-            # UNKONVERTIERTEN Rohwert in einem "> 0"-Vergleich, was dort
-            # mit TypeError crashte (bevor der Fallback-Sort je sichtbar
-            # gerendert wurde). Zusätzlich sortierte der alte Fallback
-            # fälschlich nach "name" statt nach dem tatsächlich für die
-            # Anzeige genutzten "value"-Feld (siehe genre_name unten) -
-            # die alphabetische Sekundärsortierung hier nutzt jetzt
-            # dasselbe Feld wie die Anzeige.
-            genre_songcount_fallback_used = False
-            for genre in genres:
-                try:
-                    genre["songCount"] = int(genre.get("songCount") or 0)
-                except (TypeError, ValueError):
-                    genre["songCount"] = 0
-                    genre_songcount_fallback_used = True
-
-            if genre_songcount_fallback_used:
-                self.logger.warning(
-                    "⚠️ Mindestens ein Genre hatte einen nicht-numerischen "
-                    "songCount-Wert - auf 0 normalisiert."
-                )
-
-            genres.sort(
-                key=lambda g: (
-                    -g["songCount"],
-                    (g.get("value") or g.get("name") or "").lower(),
-                )
+            message_text, reply_markup = navidrome_renderer.render_browse_genres(
+                genres
             )
-
-            # Keyboard erstellen - 2 Spalten Layout
-            keyboard = []
-            max_genres = min(len(genres), 20)  # Maximal 20 Genres
-
-            for i in range(0, max_genres, 2):
-                row = []
-                for j in range(2):
-                    if i + j < max_genres:
-                        genre = genres[i + j]
-                        genre_name = (
-                            genre.get("value") or genre.get("name") or "Unbekannt"
-                        )
-                        song_count = genre.get("songCount", 0)
-
-                        # Formatiere Genre-Button
-                        if song_count > 0:
-                            genre_text = f"🎭 {genre_name} ({song_count})"
-                        else:
-                            genre_text = f"🎭 {genre_name}"
-
-                        # Kürze Text falls zu lang
-                        if len(genre_text) > 35:
-                            genre_text = genre_text[:32] + "..."
-
-                        row.append(
-                            InlineKeyboardButton(
-                                genre_text, callback_data=f"nav_genre_{genre_name}"
-                            )
-                        )
-
-                if row:  # Nur hinzufügen wenn Row nicht leer
-                    keyboard.append(row)
-
-            # Control-Buttons hinzufügen
-            keyboard.append(
-                [
-                    InlineKeyboardButton(
-                        "🔍 Genre suchen", callback_data="nav_search_genres"
-                    ),
-                    InlineKeyboardButton(
-                        "📊 Genre-Stats", callback_data="nav_genre_stats"
-                    ),
-                ]
-            )
-
-            keyboard.append(
-                [InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")]
-            )
-
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            # Statistiken berechnen
-            total_songs = sum(int(g.get("songCount", 0)) for g in genres)
-            avg_songs = total_songs // max(len(genres), 1)
-
-            message_text = f"""🎭 **Genres durchsuchen**
-
-📊 **Übersicht:**
-• {len(genres)} Genres verfügbar
-• {total_songs:,} Songs gesamt  
-• ∅ {avg_songs} Songs pro Genre
-
-Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
 
             await update.callback_query.edit_message_text(
                 text=message_text,
