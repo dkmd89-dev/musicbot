@@ -126,6 +126,18 @@ class LibraryDoctorHandler:
             result = await run_health_scan()
         except Exception as e:
             self.logger.error(f"💥 Unerwarteter Fehler beim Health-Scan: {e}", exc_info=True)
+            # ARCH-027/F6: injizierter error_handler bisher ungenutzt.
+            # Kein update/context verfügbar (Hintergrund-Task) -
+            # handle_exception() registriert die Exception zentral, ohne
+            # eine zweite Nutzer-Benachrichtigung auszulösen (update=None).
+            if self.error_handler:
+                await self.error_handler.handle_exception(
+                    e,
+                    context={
+                        "module": "LibraryDoctorHandler",
+                        "operation": "run_health_scan",
+                    },
+                )
             await message.edit_text(f"❌ Unerwarteter Fehler: {html.escape(str(e))}")
             return
 
@@ -268,6 +280,15 @@ class LibraryDoctorHandler:
             result = await run_safe_automatic_repair()
         except Exception as e:
             self.logger.error(f"💥 Unerwarteter Fehler beim Repair-Lauf: {e}", exc_info=True)
+            # ARCH-027/F6: siehe _run_scan_and_report() oben.
+            if self.error_handler:
+                await self.error_handler.handle_exception(
+                    e,
+                    context={
+                        "module": "LibraryDoctorHandler",
+                        "operation": "run_safe_automatic_repair",
+                    },
+                )
             await message.edit_text(f"❌ Unerwarteter Fehler: {html.escape(str(e))}")
             return
 

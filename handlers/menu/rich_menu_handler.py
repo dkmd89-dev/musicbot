@@ -898,6 +898,7 @@ class RichMenuHandler:
             self.active_downloads,
             self.download_history,
             self.logger,
+            error_handler=self.error_handler,
         )
 
     # ====== COMMAND HANDLER ======

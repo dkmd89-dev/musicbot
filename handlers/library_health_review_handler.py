@@ -28,6 +28,7 @@ identisches Muster wie handlers/library_doctor_handler.py.
 
 from __future__ import annotations
 
+import asyncio
 import html
 from typing import Callable, Optional, TYPE_CHECKING
 
@@ -107,6 +108,24 @@ class LibraryHealthReviewHandler:
             return FindingsRegistry(self._registry_path(), logger=self.logger)
         except FindingsRegistryError as e:
             self.logger.error(f"❌ Findings-Registry ungültig: {e}")
+            # ARCH-027/F6: injizierter error_handler bisher ungenutzt.
+            # _load_registry() ist bewusst synchron (11 Aufrufer, alle
+            # werten nur den Rückgabewert aus) - asyncio.create_task()
+            # statt await, um die Methode nicht in async konvertieren zu
+            # müssen (analog zum etablierten Muster in
+            # EnhancedErrorHandler.handle_sync_exceptions()).
+            # handle_exception() fängt eigene Fehler bereits intern ab
+            # (siehe dortiger Docstring) - kein done_callback nötig.
+            if self.error_handler:
+                asyncio.create_task(
+                    self.error_handler.handle_exception(
+                        e,
+                        context={
+                            "module": "LibraryHealthReviewHandler",
+                            "operation": "load_registry",
+                        },
+                    )
+                )
             return None
 
     # ── Kleine Render-Helfer ─────────────────────────────────────────────

@@ -196,6 +196,24 @@ class ReprocessingMenuHandler:
                 f"'{artist_name}': {e}",
                 exc_info=True,
             )
+            # ARCH-027/F6: der injizierte error_handler wurde bisher nie
+            # aufgerufen (reine Deklaration). Kein update/context
+            # verfügbar (Hintergrund-Task, siehe Docstring oben) -
+            # handle_exception() statt handle_callback_error(), damit die
+            # Exception trotzdem im zentralen ExceptionMonitor landet;
+            # die Nutzer-Benachrichtigung bleibt unverändert lokal
+            # (keine Doppel-Benachrichtigung, da update=None keine
+            # Recovery/Notification in handle_exception() auslöst).
+            if self.error_handler:
+                await self.error_handler.handle_exception(
+                    e,
+                    context={
+                        "module": "ReprocessingMenuHandler",
+                        "operation": "run_reprocessing",
+                        "artist_name": artist_name,
+                        "dry_run": dry_run,
+                    },
+                )
             await message.edit_text(
                 f"❌ Unerwarteter Fehler: {html.escape(str(e))}"
             )

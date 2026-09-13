@@ -292,6 +292,52 @@ class TestRunAndReportMessageContent:
         assert "Unerwarteter Fehler" in text
         assert "boom" in text
 
+    def test_unexpected_exception_is_reported_to_injected_error_handler(self, handler):
+        """ARCH-027/F6: der injizierte error_handler wurde vorher nie
+        aufgerufen - handle_exception() muss jetzt fuer echte,
+        unerwartete Exceptions ausgeloest werden (kein update/context
+        vorhanden, da Hintergrund-Task - daher handle_exception() statt
+        handle_callback_error())."""
+        message = Mock()
+        message.edit_text = AsyncMock()
+        handler.error_handler = Mock()
+        handler.error_handler.handle_exception = AsyncMock()
+        exc = RuntimeError("boom")
+
+        with patch(
+            "handlers.menu.reprocessing_menu_handler.run_reprocessing",
+            AsyncMock(side_effect=exc),
+        ):
+            run_async(handler._run_and_report(message, "Alpha", True, idx=0))
+
+        handler.error_handler.handle_exception.assert_awaited_once()
+        call_args = handler.error_handler.handle_exception.call_args
+        assert call_args.args[0] is exc
+        assert call_args.kwargs["context"]["module"] == "ReprocessingMenuHandler"
+        assert call_args.kwargs["context"]["artist_name"] == "Alpha"
+        # Nutzerbenachrichtigung bleibt unveraendert lokal (keine
+        # Doppel-Benachrichtigung durch handle_exception() selbst, da
+        # dort kein update uebergeben wird).
+        text = message.edit_text.call_args.args[0]
+        assert "Unerwarteter Fehler" in text
+
+    def test_unexpected_exception_without_error_handler_still_works(self, handler):
+        """Rueckwaertskompatibilitaet: handler.error_handler bleibt bei
+        Standalone-Konstruktion None - der bestehende Pfad (nur lokale
+        Nutzerbenachrichtigung) darf nicht brechen."""
+        message = Mock()
+        message.edit_text = AsyncMock()
+        assert handler.error_handler is None
+
+        with patch(
+            "handlers.menu.reprocessing_menu_handler.run_reprocessing",
+            AsyncMock(side_effect=RuntimeError("boom")),
+        ):
+            run_async(handler._run_and_report(message, "Alpha", True, idx=0))
+
+        text = message.edit_text.call_args.args[0]
+        assert "Unerwarteter Fehler" in text
+
     def test_artist_name_is_html_escaped(self, handler):
         message = Mock()
         message.edit_text = AsyncMock()

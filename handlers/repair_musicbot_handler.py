@@ -149,6 +149,21 @@ class RepairMusicBotHandler:
             return
         except Exception as e:  # noqa: BLE001
             self.logger.error(f"💥 Unerwarteter Fehler bei der Analyse: {e}", exc_info=True)
+            # ARCH-027/F6: injizierter error_handler bisher ungenutzt.
+            # Kein update/context verfügbar (Hintergrund-Task) -
+            # handle_exception() registriert die Exception zentral, ohne
+            # eine zweite Nutzer-Benachrichtigung auszulösen (update=None).
+            # HealthScanFailedError oben bleibt bewusst lokal (erwarteter,
+            # bereits mit eigener Nutzer-Nachricht behandelter Fall, kein
+            # unerwarteter Fehler im Sinne des zentralen Monitorings).
+            if self.error_handler:
+                await self.error_handler.handle_exception(
+                    e,
+                    context={
+                        "module": "RepairMusicBotHandler",
+                        "operation": "build_repair_plan",
+                    },
+                )
             await message.edit_text(
                 f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
                 reply_markup=self._back_keyboard("repair:start"),
@@ -361,6 +376,17 @@ class RepairMusicBotHandler:
             return
         except Exception as e:  # noqa: BLE001
             self.logger.error(f"💥 Unerwarteter Fehler bei der Reparatur: {e}", exc_info=True)
+            # ARCH-027/F6: siehe _run_analyze_and_report() oben.
+            # RepairAlreadyRunningError bleibt bewusst lokal (erwarteter
+            # Fall mit eigener Nutzer-Nachricht).
+            if self.error_handler:
+                await self.error_handler.handle_exception(
+                    e,
+                    context={
+                        "module": "RepairMusicBotHandler",
+                        "operation": "execute_safe_automatic_repair",
+                    },
+                )
             await message.edit_text(
                 f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
                 reply_markup=self._back_keyboard("repair:start"),

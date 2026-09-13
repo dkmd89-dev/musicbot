@@ -235,6 +235,76 @@ class TestRunScanAndReport:
         message.edit_text.assert_awaited_once()
         assert "boom" in message.edit_text.call_args.args[0]
 
+    def test_unexpected_exception_is_reported_to_injected_error_handler(self, handler):
+        """ARCH-027/F6: der injizierte error_handler wurde vorher nie
+        aufgerufen."""
+        update = _mock_update(OWNER_ID)
+        message = update.callback_query.message
+        handler.error_handler = Mock()
+        handler.error_handler.handle_exception = AsyncMock()
+        exc = RuntimeError("boom")
+
+        with patch(
+            "handlers.library_doctor_handler.run_health_scan",
+            new=AsyncMock(side_effect=exc),
+        ):
+            run_async(handler._run_scan_and_report(message))
+
+        handler.error_handler.handle_exception.assert_awaited_once()
+        call_args = handler.error_handler.handle_exception.call_args
+        assert call_args.args[0] is exc
+        assert call_args.kwargs["context"]["module"] == "LibraryDoctorHandler"
+        assert call_args.kwargs["context"]["operation"] == "run_health_scan"
+        assert "boom" in message.edit_text.call_args.args[0]
+
+
+class TestRunRepairAndReport:
+    def test_success_result_is_formatted_and_sent(self, handler):
+        message = Mock()
+        message.edit_text = AsyncMock()
+
+        with patch(
+            "handlers.library_doctor_handler.run_safe_automatic_repair",
+            new=AsyncMock(return_value=DoctorRepairResult(exit_code=0, stdout_tail="ok")),
+        ):
+            run_async(handler._run_repair_and_report(message))
+
+        message.edit_text.assert_awaited_once()
+
+    def test_unexpected_exception_shows_generic_error_not_crash(self, handler):
+        message = Mock()
+        message.edit_text = AsyncMock()
+
+        with patch(
+            "handlers.library_doctor_handler.run_safe_automatic_repair",
+            new=AsyncMock(side_effect=RuntimeError("boom")),
+        ):
+            run_async(handler._run_repair_and_report(message))  # darf nicht raisen
+
+        message.edit_text.assert_awaited_once()
+        assert "boom" in message.edit_text.call_args.args[0]
+
+    def test_unexpected_exception_is_reported_to_injected_error_handler(self, handler):
+        """ARCH-027/F6: der injizierte error_handler wurde vorher nie
+        aufgerufen."""
+        message = Mock()
+        message.edit_text = AsyncMock()
+        handler.error_handler = Mock()
+        handler.error_handler.handle_exception = AsyncMock()
+        exc = RuntimeError("boom")
+
+        with patch(
+            "handlers.library_doctor_handler.run_safe_automatic_repair",
+            new=AsyncMock(side_effect=exc),
+        ):
+            run_async(handler._run_repair_and_report(message))
+
+        handler.error_handler.handle_exception.assert_awaited_once()
+        call_args = handler.error_handler.handle_exception.call_args
+        assert call_args.args[0] is exc
+        assert call_args.kwargs["context"]["module"] == "LibraryDoctorHandler"
+        assert call_args.kwargs["context"]["operation"] == "run_safe_automatic_repair"
+
 
 class TestApplySafeConfirmPrompt:
     def test_non_admin_is_rejected(self, handler):
