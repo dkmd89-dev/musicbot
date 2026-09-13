@@ -24,6 +24,19 @@ tests/test_navidrome_menu_handler.py (TestBrowseArtistsCharacterization/
 TestBrowseAlbumsCharacterization/TestBrowseGenresCharacterization, aus
 der Stufe-3-Vorbereitung) bleiben unverändert als End-to-End-
 Regressionsschutz bestehen.
+
+NAV-F15: Der Tracklist-Overflow-Hinweis "_+N weitere Songs nicht
+angezeigt_" enthielt ein rohes '+' im MarkdownV2-Text ('+' ist ein
+reserviertes Zeichen und wurde von Telegram mit BadRequest abgelehnt).
+Fix in render_playlist_detail(): '+' entfernt (nur Stilmittel, keine
+inhaltliche Bedeutung). Der Test test_tracklist_capped_at_25_songs in
+TestRenderPlaylistDetail prüft jetzt negativ auf das '+'.
+
+Hinweis zur Abgrenzung: render_album_detail() behält denselben Bug
+bewusst unverändert (kein Fix in diesem PR, eigener zurückgestellter
+Fund - siehe docs/FINDINGS_INDEX.md). TestRenderAlbumDetail bleibt
+entsprechend unverändert - sein '+'-Positivtest pinnt das aktuelle,
+noch fehlerhafte Verhalten als Charakterisierung.
 """
 
 from handlers.navidrome_renderer import (
@@ -193,7 +206,10 @@ class TestRenderPlaylistDetail:
             if b.callback_data.startswith("nav_song_")
         ]
         assert len(song_buttons) == 25
-        assert "+5 weitere Songs nicht angezeigt" in text
+        # NAV-F15: Overflow-Hinweis enthält keinen rohen '+' mehr.
+        # Der Zahlenteil (30 - 25 = 5) bleibt erhalten.
+        assert "5 weitere Songs nicht angezeigt" in text
+        assert "+5" not in text
 
     def test_no_owner_omits_ersteller_line(self):
         playlist = {"id": "pl1", "name": "No Owner Playlist", "owner": "", "entry": []}
@@ -201,6 +217,23 @@ class TestRenderPlaylistDetail:
         text, _markup = render_playlist_detail(playlist)
 
         assert "Ersteller" not in text
+
+
+class TestNavF15RegressionPlaylistOverflowNoRawPlus:
+    """NAV-F15-Regressionstest: Der Tracklist-Overflow-Hinweis in
+    render_playlist_detail() darf kein rohes '+' im MarkdownV2-Text
+    enthalten."""
+
+    def test_playlist_overflow_note_has_no_raw_plus(self):
+        playlist = {
+            "id": "pl1", "name": "Big Playlist", "owner": "",
+            "entry": [{"id": f"s{i}", "title": f"Track {i}"} for i in range(30)],
+        }
+
+        text, _markup = render_playlist_detail(playlist)
+
+        assert "+5" not in text
+        assert "\\+5" not in text
 
 
 class TestRenderBrowseArtists:
@@ -297,7 +330,6 @@ class TestRenderBrowseGenres:
         assert "2 Genres verfügbar" in text
 
     def test_non_numeric_song_count_normalized_to_zero_no_crash(self):
-        """NAV-F14-Regressionsschutz auf Renderer-Ebene."""
         genres = [
             {"value": "Zeta", "songCount": "n/a"},
             {"value": "Alpha", "songCount": "n/a"},
