@@ -9,10 +9,13 @@ NAV-F14/NAV-F15/NAV-F16 sind ebenfalls CLOSED (je eigener PR). Die
 restlichen dokumentierten Testlücken (Playlists/Favoriten/Such-
 Erfolgspfad) wurden ebenfalls geschlossen. Stufe 2 (optional) sowie
 Stufe 5 (kein erkennbarer Zusatznutzen mehr) bleiben unumgesetzt.
-**Damit ist dieser Migrationsplan im Kern abgeschlossen** — verbleibende
-Punkte (Discovery-Erweiterung, Playlist-CRUD) sind keine
-Findings/Migrationsschritte mehr, sondern optionale
-Weiterentwicklung außerhalb dieses Plans.
+**Damit ist dieser Migrationsplan im Kern abgeschlossen.** Die beiden
+verbleibenden Punkte Discovery-Erweiterung und Playlist-CRUD sind keine
+Migrationsschritte dieses Plans mehr, wurden aber als eigene, bewusst
+zurückgestellte Findings **NAV-F17** (Discovery-Erweiterung) und
+**NAV-F18** (Playlist-CRUD) formalisiert — Status **OPEN (DEFER)**,
+siehe `docs/FINDINGS_INDEX.md` und
+`docs/MusicBot_NAVIDROME_MENU_ARCHITECTURE.md` Abschnitt 4/8.
 
 **Scope:** `handlers/navidrome_menu_handler.py` (1454 Zeilen Methodencode,
 19 Methoden), `handlers/menu/actions/navidrome.py` (258 Zeilen, dünner

@@ -1,13 +1,14 @@
 # Navidrome Menu System — API Capability & Architecture
 
 **Status:** CURRENT (lebendes Dokument). Entstanden aus dem read-only
-„MASTER PHASE — NAVIDROME MENU SYSTEM"-Audit (2026-09-13). **Alle
-Findings des Audits (NAV-F1–NAV-F11) sowie die bei der NAV-F8-Umsetzung
-zusätzlich entdeckten NAV-F12/NAV-F13 sind CLOSED.** Ein weiterer
-Befund, NAV-F14, wurde beim Architecture Refactoring Audit (Stufe 3,
-Characterization-Tests) entdeckt, zunächst bewusst nicht mit der
-Testvorbereitung vermischt und danach in einem eigenen Schritt
-CLOSED (siehe Abschnitt 4).
+„MASTER PHASE — NAVIDROME MENU SYSTEM"-Audit (2026-09-13). **Alle 16
+Bug-Findings (NAV-F1–NAV-F16) sind CLOSED** (NAV-F12–NAV-F16 wurden
+erst im Verlauf der Umsetzung bzw. des Architecture Refactoring Audits
+entdeckt, siehe Abschnitt 4). Zwei weitere Einträge, **NAV-F17
+(Discovery-Erweiterung) und NAV-F18 (Playlist-CRUD), sind OPEN
+(DEFER)** — keine Bugs, sondern bewusst zurückgestellte
+Funktionserweiterungen ohne aktuellen Auftrag (siehe Abschnitt 4/8 und
+`docs/FINDINGS_INDEX.md`).
 **Scope:** `handlers/navidrome_menu_handler.py`,
 `handlers/menu/actions/navidrome.py`, `services/clients/navidrome_api.py`
 und ihre unmittelbaren Kollaborateure (Personal-Statistics-Domain nur
@@ -167,10 +168,12 @@ Server-Ebene, nicht gleichbedeutend mit `UNSUPPORTED`).
 | **NAV-F14** | `handle_browse_genres()`: bei nicht-numerischem `songCount` fing der Sortier-`try/except` die Konvertierung ab und fiel auf alphabetische Sortierung zurück — aber die Anzeige-Schleife nutzte denselben rohen Wert danach ungeprüft in `if song_count > 0:`, was crashte (`TypeError`) und die generische Fehlermeldung statt einer Genre-Liste zeigte. Zusätzlich sortierte der Fallback nach dem falschen Feld (`"name"` statt dem tatsächlich angezeigten `"value"`). Fix: `songCount` wird jetzt einmalig vor Sortierung und Anzeige sicher zu `int` normalisiert (fehlerhafte Werte → 0), Sortierung erfolgt über `(-songCount, name.lower())` mit demselben `value`-bevorzugenden Feld wie die Anzeige. | BROKEN | P3 | **CLOSED** (2026-09-13) |
 | **NAV-F15** | Vom Nutzer selbst gefunden+behoben: `render_playlist_detail()`s Tracklist-Overflow-Hinweis (`"_+N weitere Songs nicht angezeigt_"`, bei Playlists mit >25 Songs) enthielt ein rohes `+` in MarkdownV2-Text — `+` ist reserviert, Telegram lehnt die Nachricht mit `BadRequest` ab. Dieselbe Bug-Klasse wie NAV-F13. Fix: `+` entfernt (reines Stilmittel). | BROKEN | P0 | **CLOSED** (2026-09-13) |
 | **NAV-F16** | Derselbe Bug wie NAV-F15, in `render_album_detail()` (Alben mit >25 Songs). Fix: `+` entfernt, identisch zu NAV-F15. | BROKEN | P0 | **CLOSED** (2026-09-13) |
+| NAV-F17 | Kein Bug: im empfohlenen Zielmenü (Abschnitt 5) skizziertes, unimplementiertes Untermenü „🎵 Entdecken" (🎲 Zufällige Songs via `getRandomSongs`, 🔥 Top Songs je Künstler via `getTopSongs`, 🆕 Neue Alben via `getAlbumList2 type=newest`) — alle drei Endpunkte laut Capability-Matrix (Abschnitt 3) vollständig ungenutzt. | — | P2 | **OPEN (DEFER)** |
+| NAV-F18 | Kein Bug: Playlist-Erstellung/-Bearbeitung/-Löschung (`createPlaylist`/`updatePlaylist`/`deletePlaylist`) laut Capability-Matrix vollständig ungenutzt — aktuell nur lesender Zugriff. Wäre der im Migrationsplan genannte Auslöser, Playlist-Funktionen aus dem bewussten „KEEP"-Zustand herauswachsen zu lassen. | — | P2 | **OPEN (DEFER)** |
 
 Vollständige Details/Codebelege zu allen Findings: Audit-Transkript
 (Session vom 2026-09-13) sowie `docs/FINDINGS_INDEX.md` (repoweite
-Findings-Ledger, alle NAV-Findings dort ebenfalls CLOSED).
+Findings-Ledger, alle NAV-Findings dort gespiegelt).
 
 ---
 
@@ -295,7 +298,8 @@ Verschiebung von Serverstatus/Scan aus dem Admin-Bereich hierher.
 13. ~~Detail-View-Familie vervollständigen (Artist/Genre-Detail)~~ ✅ IMPLEMENTED (2026-09-13) — `render_artist_detail()`/`render_genre_detail()` neu, Pflichtschritt (fehlende Erfolgspfad-/Overflow-/Connection-Error-Tests) + Extraktion in einem PR. Alle 5 Detail-Views konsistent im Renderer. `NavidromeMenuHandler` 1179→1059 Zeilen.
 14. ~~Restliche Testlücken geschlossen (Playlists/Favoriten/Such-Erfolgspfad)~~ ✅ IMPLEMENTED (2026-09-13) — reine Testergänzung, kein Produktionscode geändert. 9 neue Tests.
 15. ~~Stufe 4, reduziert (`services/navidrome/browser_service.py`)~~ ✅ IMPLEMENTED (2026-09-13) — bewusst nur `get_albums_page()` (einzige Browse-Methode mit echter Verzweigungslogik), Artists/Genres bewusst unangetastet gelassen (Anti-Overengineering-Entscheidung). Stufe 5 (finale Orchestrierungs-Schlankung) — siehe `docs/audits/NAVIDROME_MENU_HANDLER_REFACTORING_MIGRATION_PLAN_2026-09-13.md` — noch nicht freigegeben, aktuell auch kein erkennbarer Zusatznutzen mehr (`NavidromeMenuHandler` ist bereits reine Orchestrierung).
-16. Discovery-Erweiterung (`getRandomSongs`/`getTopSongs`/weitere `getAlbumList2`-Typen)
+16. NAV-F17 — Discovery-Erweiterung (`getRandomSongs`/`getTopSongs`/weitere `getAlbumList2`-Typen), OPEN (DEFER), keine aktuelle Freigabe
+17. NAV-F18 — Playlist-CRUD (`createPlaylist`/`updatePlaylist`/`deletePlaylist`), OPEN (DEFER), keine aktuelle Freigabe
 
 Jeder Schritt: eigener Branch/PR, volle Regressionsprüfung, keine
 gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
@@ -347,8 +351,19 @@ Netzwerkcode in einem Unit-Test duplizieren. Keine akute Priorität.
 
 ## 8. Offene Punkte
 
-**Alle 16 Findings (NAV-F1–NAV-F16) sind CLOSED.** Keine offenen
-Findings mehr in diesem Dokument.
+**Alle 16 Bug-Findings (NAV-F1–NAV-F16) sind CLOSED.** Zwei weitere
+Einträge sind **OPEN (DEFER)** — keine Bugs, sondern bewusst
+zurückgestellte Funktionserweiterungen ohne aktuellen Auftrag:
+
+- **NAV-F17** — Discovery-Erweiterung (neues Untermenü „🎵 Entdecken":
+  `getRandomSongs`/`getTopSongs`/`getAlbumList2 type=newest`), P2.
+- **NAV-F18** — Playlist-CRUD (`createPlaylist`/`updatePlaylist`/
+  `deletePlaylist`), P2. Wäre zugleich der Auslöser, Playlist-Funktionen
+  aus dem bewussten „KEEP auf `NavidromeMenuHandler`"-Zustand
+  herauswachsen zu lassen (siehe Abschnitt 5, Anti-Overengineering-
+  Bewertung).
+
+Beide auch in `docs/FINDINGS_INDEX.md` als eigene Zeilen geführt.
 
 - Testlücken aus Abschnitt 7 — nur noch `handle_reconnect()`-Erfolgsfall
   gegen eine echte `check_connection()`, bewusst zurückgestellt (keine
@@ -360,5 +375,3 @@ Findings mehr in diesem Dokument.
   auf `get_albums_page()`) sind IMPLEMENTED. Finale Orchestrierungs-
   Schlankung (Stufe 5) bleibt unumgesetzt — aktuell kein erkennbarer
   Zusatznutzen, `NavidromeMenuHandler` ist bereits reine Orchestrierung.
-  Discovery-Erweiterung, Playlist-CRUD bleiben P2/P3 und unumgesetzt —
-  keine Findings, sondern optionale Weiterentwicklung.
