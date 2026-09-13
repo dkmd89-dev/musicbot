@@ -48,16 +48,34 @@ class ExceptionMonitor:
         self.exception_history = deque(maxlen=max_history)
 
         # Kategorisierung
+        #
+        # FINDINGS_INDEX.md F11 (ARCH-026-Audit, ursprünglich nur OSError in
+        # zwei Kategorien dokumentiert) - bei Re-Evaluation (2026-09-14)
+        # zwei weitere, bisher unbemerkte Duplikate gefunden: PermissionError
+        # (file_system + authentication) und ValueError/KeyError (parsing +
+        # data). categorize_exception() gibt IMMER den ERSTEN Dict-Treffer
+        # zurück (Iterationsreihenfolge = Einfügereihenfolge) - jedes doppelt
+        # gelistete Typ landete daher schon vorher garantiert in der zuerst
+        # genannten Kategorie, die zweite Nennung war toter Code. Am
+        # deutlichsten bei "authentication": PermissionError wird IMMER von
+        # "file_system" (früher in der Liste) abgefangen, "authentication"
+        # konnte dadurch nie zurückgegeben werden (0 Aufrufer/Tests prüfen
+        # auf diesen String, siehe Findings-Index) - Kategorie komplett
+        # entfernt statt mit leerer Liste als totem Platzhalter stehen zu
+        # lassen. "data" bleibt bestehen (jetzt nur noch IndexError, der
+        # einzige nicht bereits anderswo doppelt vergebene Typ). Reine
+        # Bereinigung unerreichbarer Duplikate - KEINE Kategorie, die
+        # vorher tatsächlich zurückgegeben wurde, liefert jetzt ein anderes
+        # Ergebnis (siehe TestCategorizeExceptionNoDuplicates-Regressionstest).
         self.categories = {
             "telegram": [TelegramError, NetworkError, TimedOut, BadRequest],
             "file_system": [FileNotFoundError, PermissionError, OSError, IOError],
-            "network": [ConnectionError, TimeoutError, OSError],
+            "network": [ConnectionError, TimeoutError],
             "parsing": [ValueError, KeyError, TypeError, AttributeError],
             "memory": [MemoryError, OverflowError],
             "runtime": [RuntimeError, SystemError],
             "import": [ImportError, ModuleNotFoundError],
-            "authentication": [PermissionError],
-            "data": [ValueError, KeyError, IndexError],
+            "data": [IndexError],
             "async": [asyncio.TimeoutError, asyncio.CancelledError],
         }
 
