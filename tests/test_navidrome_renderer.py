@@ -16,11 +16,22 @@ TestSongDetailNavF9/TestPlaylistDetailNavF5/TestFormatTrackDuration
 + API-Aufruf + Error-Handling + Rendering über edit_message_text())
 bestehen - diese Datei hier testet ausschließlich die reine
 Rendering-Funktion isoliert.
+
+Migrationsstufe 3: ergänzt um render_browse_artists()/
+render_browse_albums()/render_browse_genres() - ebenfalls 1:1
+extrahiert. Die vorher bestehenden Tests in
+tests/test_navidrome_menu_handler.py (TestBrowseArtistsCharacterization/
+TestBrowseAlbumsCharacterization/TestBrowseGenresCharacterization, aus
+der Stufe-3-Vorbereitung) bleiben unverändert als End-to-End-
+Regressionsschutz bestehen.
 """
 
 from handlers.navidrome_renderer import (
     format_track_duration,
     render_album_detail,
+    render_browse_albums,
+    render_browse_artists,
+    render_browse_genres,
     render_playlist_detail,
     render_song_detail,
 )
@@ -190,3 +201,135 @@ class TestRenderPlaylistDetail:
         text, _markup = render_playlist_detail(playlist)
 
         assert "Ersteller" not in text
+
+
+class TestRenderBrowseArtists:
+    def test_renders_first_page_without_previous_button(self):
+        artists = [{"id": "1", "name": "Artist A"}, {"id": "2", "name": "Artist B"}]
+
+        text, markup = render_browse_artists(artists, page=0)
+
+        assert "Seite 1" in text
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_artist_1" in buttons
+        assert "nav_artist_2" in buttons
+        assert not any(cb.startswith("nav_browse_artists_") for cb in buttons)
+
+    def test_middle_page_shows_both_navigation_buttons(self):
+        artists = [{"id": str(i), "name": f"Artist {i}"} for i in range(45)]
+
+        _text, markup = render_browse_artists(artists, page=1)
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_browse_artists_0" in buttons
+        assert "nav_browse_artists_2" in buttons
+
+    def test_name_and_id_fall_back_to_alternate_fields(self):
+        artists = [{"title": "Fallback Name", "artistId": "fb1"}]
+
+        _text, markup = render_browse_artists(artists, page=0)
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_artist_fb1" in buttons
+
+
+class TestRenderBrowseAlbums:
+    def test_renders_albums_with_all_albums_title(self):
+        albums = [{"id": "al1", "name": "Album One", "artist": "X"}]
+
+        text, markup = render_browse_albums(
+            albums, "💿 Alle Alben", page=0, artist_id=None, page_size=15
+        )
+
+        assert "Alle Alben" in text
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_album_al1" in buttons
+        assert "nav_browse_artists" not in buttons
+
+    def test_with_artist_id_shows_kuenstler_button_and_suffixed_pagination(self):
+        albums = [{"id": f"al{i}", "name": f"Album {i}"} for i in range(15)]
+
+        text, markup = render_browse_albums(
+            albums, "🎤 Alben des Künstlers", page=0, artist_id="ar1", page_size=15
+        )
+
+        assert "Alben des Künstlers" in text
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_browse_artists" in buttons
+        assert "nav_browse_albums_1_ar1" in buttons
+
+    def test_previous_button_includes_artist_id_suffix(self):
+        albums = [{"id": "al1", "name": "Album One"}]
+
+        _text, markup = render_browse_albums(
+            albums, "🎤 Alben des Künstlers", page=1, artist_id="ar1", page_size=15
+        )
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_browse_albums_0_ar1" in buttons
+
+    def test_full_page_without_artist_id_shows_unsuffixed_next_button(self):
+        albums = [{"id": f"al{i}", "name": f"Album {i}"} for i in range(15)]
+
+        _text, markup = render_browse_albums(
+            albums, "💿 Alle Alben", page=0, artist_id=None, page_size=15
+        )
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_browse_albums_1" in buttons
+
+
+class TestRenderBrowseGenres:
+    def test_sorted_descending_by_song_count(self):
+        genres = [
+            {"value": "Pop", "songCount": 5},
+            {"value": "Hip-Hop", "songCount": 50},
+        ]
+
+        text, markup = render_browse_genres(genres)
+
+        buttons_in_order = [
+            b.text for row in markup.inline_keyboard for b in row
+            if b.callback_data.startswith("nav_genre_")
+            and b.callback_data != "nav_genre_stats"
+        ]
+        assert buttons_in_order == ["🎭 Hip-Hop (50)", "🎭 Pop (5)"]
+        assert "2 Genres verfügbar" in text
+
+    def test_non_numeric_song_count_normalized_to_zero_no_crash(self):
+        """NAV-F14-Regressionsschutz auf Renderer-Ebene."""
+        genres = [
+            {"value": "Zeta", "songCount": "n/a"},
+            {"value": "Alpha", "songCount": "n/a"},
+            {"value": "Real Genre", "songCount": 5},
+        ]
+
+        text, markup = render_browse_genres(genres)
+
+        buttons_in_order = [
+            b.text for row in markup.inline_keyboard for b in row
+            if b.callback_data.startswith("nav_genre_")
+            and b.callback_data != "nav_genre_stats"
+        ]
+        assert buttons_in_order == ["🎭 Real Genre (5)", "🎭 Alpha", "🎭 Zeta"]
+        assert text  # kein Crash
+
+    def test_max_20_genres_shown(self):
+        genres = [{"value": f"Genre{i}", "songCount": i} for i in range(30)]
+
+        _text, markup = render_browse_genres(genres)
+
+        genre_buttons = [
+            b for row in markup.inline_keyboard for b in row
+            if b.callback_data.startswith("nav_genre_")
+            and b.callback_data != "nav_genre_stats"
+        ]
+        assert len(genre_buttons) == 20
+
+    def test_zero_song_count_omits_parens(self):
+        genres = [{"value": "Obscure", "songCount": 0}]
+
+        _text, markup = render_browse_genres(genres)
+
+        buttons = {b.text for row in markup.inline_keyboard for b in row}
+        assert "🎭 Obscure" in buttons
