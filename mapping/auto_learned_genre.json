@@ -183,6 +183,29 @@
       "primary": "Indie",
       "secondary": []
     },
+    "Paul Kalkbrenner": {
+      "confidence": "OBSERVED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "House": 1
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "House",
+          "secondary": [
+            "Techno",
+            "Electronic"
+          ]
+        }
+      ],
+      "observations": 1,
+      "primary": "House",
+      "secondary": [
+        "Techno",
+        "Electronic"
+      ]
+    },
     "Pur": {
       "confidence": "LEARNED",
       "description": "Auto-learned via Last.fm (rule)",
