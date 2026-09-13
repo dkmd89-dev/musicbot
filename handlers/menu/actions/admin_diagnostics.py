@@ -142,6 +142,36 @@ async def handle_error_admin_callback(
 
 # ====== System-Status ======
 
+# STATUS-MENU-CLOSURE: handlers/enhanced_status_handler.py rendert 12
+# "status_*"-Buttons (Detail-/History-/Check-/Reset-/Cleanup-Unteransichten
+# sowie die Top-Level-Buttons "status_users"/"status_trends"), für die
+# KEINE Handler-Implementierung existiert (repoweit verifiziert, siehe
+# docs/MusicBot_STATUS_MENU_CLOSURE.md) - reine, bislang unfertige UI-
+# Vorschau ohne Backing-Funktion. Bewusst NICHT auf eine erfundene/
+# angenäherte Funktion geroutet (Master-Prompt: "nicht blind
+# registrieren"). Damit ein Klick darauf nicht wie ein echter, unerwarteter
+# Bug aussieht (bisher identisch zu einem tatsächlich unbekannten
+# callback_data-Wert behandelt - "⚠️ Unbekannter Status-Callback" im Log),
+# werden sie hier explizit als bekannter Platzhalter geführt: freundliche
+# Nutzer-Rückmeldung, aber kein WARNING-Log wie bei einem echten,
+# unerwarteten Callback-Wert.
+_PLACEHOLDER_STATUS_CALLBACKS = frozenset(
+    {
+        "status_users",
+        "status_trends",
+        "status_system_detail",
+        "status_system_history",
+        "status_bot_handlers",
+        "status_bot_logs",
+        "status_services_check",
+        "status_services_detail",
+        "status_performance_history",
+        "status_performance_reset",
+        "status_storage_cleanup",
+        "status_storage_detail",
+    }
+)
+
 
 async def handle_status_callback(
     update: Update,
@@ -173,6 +203,11 @@ async def handle_status_callback(
     handler_method = routing_map.get(callback_data)
     if handler_method:
         await handler_method(update, context)
+    elif callback_data in _PLACEHOLDER_STATUS_CALLBACKS:
+        logger.debug(
+            f"📋 Status-Platzhalter aufgerufen (noch nicht implementiert): {callback_data}"
+        )
+        await query.answer("🚧 Diese Funktion ist noch nicht implementiert.")
     else:
         logger.warning(f"⚠️ Unbekannter Status-Callback: {callback_data}")
         await query.answer("⚠️ Funktion nicht implementiert")
