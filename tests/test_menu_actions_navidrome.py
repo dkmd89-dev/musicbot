@@ -166,6 +166,89 @@ async def test_callback_song_detail_delegates_with_correct_id_nav_f9():
 
 
 @pytest.mark.asyncio
+async def test_callback_artist_topsongs_delegates_with_correct_id_nav_f17():
+    """NAV-F17: 'nav_artist_topsongs_<id>' MUSS vor dem generischen
+    'nav_artist_'-Präfix-Zweig geroutet werden - derselbe Bug-Typ wie
+    NAV-F2/NAV-F11 (Präfix-Kollision)."""
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_top_songs = AsyncMock()
+    handler.handle_artist_detail = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_artist_topsongs_real-artist-id", handler, Mock()
+    )
+    handler.handle_top_songs.assert_awaited_once_with(
+        update, context, "real-artist-id"
+    )
+    handler.handle_artist_detail.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_callback_artist_detail_still_works_after_topsongs_fix_nav_f17():
+    """Regressionsschutz: der neue 'nav_artist_topsongs_'-Zweig darf den
+    normalen 'nav_artist_<id>'-Pfad nicht brechen."""
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_artist_detail = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_artist_real-artist-id", handler, Mock()
+    )
+    handler.handle_artist_detail.assert_awaited_once_with(
+        update, context, "real-artist-id"
+    )
+
+
+@pytest.mark.asyncio
+async def test_callback_discover_menu_delegates_nav_f17():
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_discover_menu = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_discover", handler, Mock()
+    )
+    handler.handle_discover_menu.assert_awaited_once_with(update, context)
+
+
+@pytest.mark.asyncio
+async def test_callback_discover_random_delegates_nav_f17():
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_random_songs = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_discover_random", handler, Mock()
+    )
+    handler.handle_random_songs.assert_awaited_once_with(update, context)
+
+
+@pytest.mark.asyncio
+async def test_callback_discover_newest_albums_first_page_defaults_to_zero_nav_f17():
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_newest_albums = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_discover_newest_albums", handler, Mock()
+    )
+    handler.handle_newest_albums.assert_awaited_once_with(update, context, 0)
+
+
+@pytest.mark.asyncio
+async def test_callback_discover_newest_albums_parses_page_number_nav_f17():
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_newest_albums = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_discover_newest_albums_2", handler, Mock()
+    )
+    handler.handle_newest_albums.assert_awaited_once_with(update, context, 2)
+
+
+@pytest.mark.asyncio
 async def test_callback_artist_albums_all_does_not_call_artist_detail_with_corrupted_id_nav_f11():
     """NAV-F11 (entdeckt bei NAV-F9): 'nav_artist_albums_all_<id>' wurde
     bisher vom generischen 'nav_artist_'-Präfix-Zweig abgefangen und

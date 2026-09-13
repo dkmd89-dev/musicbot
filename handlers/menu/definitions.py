@@ -909,6 +909,15 @@ def build_menu_tree(system) -> MenuItem:
     )
     navidrome_menu.add_child(
         MenuItem(
+            id="nav_discover",
+            title="Entdecken",
+            emoji="🎵",
+            handler=system._handle_navidrome_discover,
+            is_action=True,
+        )
+    )
+    navidrome_menu.add_child(
+        MenuItem(
             id="nav_link_stats",
             title="Statistiken",
             emoji="📊",

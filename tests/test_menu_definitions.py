@@ -44,7 +44,7 @@ class _FakeSystem:
             "_handle_navidrome_search_all", "_handle_navidrome_search_artists",
             "_handle_navidrome_search_albums", "_handle_navidrome_search_songs",
             "_handle_navidrome_my_playlists", "_handle_navidrome_favorites",
-            "_handle_navidrome_recent",
+            "_handle_navidrome_recent", "_handle_navidrome_discover",
         ]:
             setattr(self, name, Mock(name=name))
 

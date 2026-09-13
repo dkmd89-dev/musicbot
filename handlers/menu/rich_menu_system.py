@@ -508,6 +508,12 @@ class RichMenuSystem:
             nav_markup=self.get_result_navigation("nav_recent"),
         )
 
+    async def _handle_navidrome_discover(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Wrapper für "🎵 Entdecken" (NAV-F17)"""
+        await navidrome_actions.handle_discover_menu(update, context, self.navidrome_handler)
+
     # ====== SESSION MANAGEMENT ======
 
     @property
