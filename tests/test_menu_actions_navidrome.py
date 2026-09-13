@@ -61,6 +61,36 @@ async def test_recent_uses_stats_handler_when_hasattr():
 
 
 @pytest.mark.asyncio
+async def test_recent_nav_markup_defaults_to_none():
+    """NAV-F10: reply_markup ohne übergebenes nav_markup bleibt None
+    (additiv, Rückwärtskompatibilität)."""
+    update = _make_update()
+    stats_handler = Mock()
+    stats_handler.handle_last_played = AsyncMock()
+    await nav_actions.handle_recent(update, Mock(), stats_handler)
+    _, kwargs = stats_handler.handle_last_played.call_args
+    assert kwargs.get("reply_markup") is None
+
+
+@pytest.mark.asyncio
+async def test_recent_nav_markup_is_passed_through_as_reply_markup():
+    """NAV-F10 (Navidrome Menu System Audit): ein von RichMenuSystem
+    berechnetes nav_markup wird 1:1 als reply_markup durchgereicht -
+    schließt den in ARCH-029 übersehenen Dead-End für 'Zuletzt gespielt'."""
+    update = _make_update()
+    stats_handler = Mock()
+    stats_handler.handle_last_played = AsyncMock()
+    sentinel_markup = Mock(name="nav_markup")
+
+    await nav_actions.handle_recent(
+        update, Mock(), stats_handler, nav_markup=sentinel_markup
+    )
+
+    _, kwargs = stats_handler.handle_last_played.call_args
+    assert kwargs.get("reply_markup") is sentinel_markup
+
+
+@pytest.mark.asyncio
 async def test_recent_shows_unavailable_without_attr():
     update = _make_update()
     stats_handler = object()  # kein handle_last_played

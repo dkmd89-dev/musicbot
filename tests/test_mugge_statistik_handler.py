@@ -524,6 +524,36 @@ class TestHandleLastPlayed:
         assert "Some Artist" in sent_text
         assert "15.01.2026" in sent_text
 
+    def test_reply_markup_is_attached_when_provided_nav_f10(self, tmp_path):
+        """NAV-F10 (Navidrome Menu System Audit): reply_markup additiv/
+        optional, an den terminalen edit_text()-Aufruf angehängt - schließt
+        den in ARCH-029 übersehenen Dead-End für 'Zuletzt gespielt'."""
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        handler.statistik_service.get_last_played_song.return_value = {
+            "title": "Some Title",
+            "artist": "Some Artist",
+            "album": "Some Album",
+            "timestamp": "2026-01-15T12:30:00",
+        }
+        sentinel_markup = Mock(name="nav_markup")
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(
+                handler.handle_last_played(
+                    update, context, reply_markup=sentinel_markup
+                )
+            )
+
+        _, kwargs = msg_mock.edit_text.call_args
+        assert kwargs.get("reply_markup") is sentinel_markup
+
 
 class TestHandleLibraryOverview:
     """Phase 3, P1.1 — Library-Statistics-Ansicht aus dem Health-Report."""

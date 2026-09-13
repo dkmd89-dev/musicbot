@@ -503,8 +503,16 @@ class RichMenuSystem:
     async def _handle_navidrome_recent(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        """Wrapper für Zuletzt gespielt (ruft StatistikHandler auf)"""
-        await navidrome_actions.handle_recent(update, context, self.stats_handler)
+        """Wrapper für Zuletzt gespielt (ruft StatistikHandler auf).
+
+        NAV-F10 (Navidrome Menu System Audit, ARCH-029-Nachtrag):
+        berechnet jetzt ebenfalls ein nav_markup aus der eigenen
+        MenuItem-Position ("nav_recent"), analog zu den Statistik- und
+        Family-Delegatoren."""
+        await navidrome_actions.handle_recent(
+            update, context, self.stats_handler,
+            nav_markup=self.get_result_navigation("nav_recent"),
+        )
 
     # ====== SESSION MANAGEMENT ======
 

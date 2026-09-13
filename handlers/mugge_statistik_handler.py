@@ -889,9 +889,22 @@ class StatistikHandler:
             )
 
     async def handle_last_played(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
     ):
-        """Behandelt die Anfrage für den zuletzt gespielten Song"""
+        """Behandelt die Anfrage für den zuletzt gespielten Song.
+
+        NAV-F10 (Navidrome Menu System Audit, 2026-09-13): erreicht über
+        `nav_recent` im Navidrome-Menü (siehe
+        handlers/menu/actions/navidrome.py::handle_recent()) - wurde in
+        ARCH-029 ("Menu Navigation Continuity") übersehen, da die Methode
+        nicht über eine `stats_*`-ID, sondern über `nav_recent` erreichbar
+        ist. `reply_markup` additiv/optional (Default `None`), siehe
+        _handle_period_review()-Docstring für das allgemeine Muster - von
+        RichMenuSystem._handle_navidrome_recent() über
+        handlers/menu/actions/navidrome.py::handle_recent() durchgereicht."""
         self.logger.info(f"{EMOJI['lastplayed']} 🔍 Letzter Song angefragt")
 
         # 🔑 KERNÄNDERUNG: User-Mapping verwenden
@@ -911,7 +924,8 @@ class StatistikHandler:
 
             if not last_song:
                 await msg.edit_text(
-                    f"{EMOJI['warning']} ⚠️ Keine Songs in der History für '{self._escape_text(nav_user)}' gefunden."
+                    f"{EMOJI['warning']} ⚠️ Keine Songs in der History für '{self._escape_text(nav_user)}' gefunden.",
+                    reply_markup=reply_markup,
                 )
                 self.logger.warning(
                     f"{EMOJI['warning']} ⚠️ Keine Songs in der History gefunden (User: {nav_user})"
@@ -937,14 +951,15 @@ class StatistikHandler:
                 f"⏱️ Zeitpunkt: {timestamp_str}"
             )
 
-            await msg.edit_text(response)
+            await msg.edit_text(response, reply_markup=reply_markup)
             self.logger.info(
                 f"{EMOJI['success']} ✅ Letzter Song gefunden (User: {nav_user}): {last_song.get('artist')} - {last_song.get('title')}"
             )
 
         except Exception as e:
             await msg.edit_text(
-                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}"
+                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}",
+                reply_markup=reply_markup,
             )
             self.logger.error(
                 f"{EMOJI['error']} ❌ Fehler in handle_last_played: {str(e)}",
