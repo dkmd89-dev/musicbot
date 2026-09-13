@@ -380,3 +380,89 @@ class TestHandleErrorStatsCommandPermission:
 
         message = update.message.reply_text.call_args[1]["text"]
         assert "STATISTIKEN" in message
+
+
+class TestReplyOrEditDefaultParseModeHotfix2:
+    """PARSE-MODE-AUDIT 2026-09-13, Hotfix 2: alle error_msg-Aufrufer
+    (f"...: {e}") riefen _reply_or_edit() bisher OHNE explizites
+    parse_mode auf und erbten damit den vorherigen Default "Markdown" -
+    ein einzelnes "_"/"`"/"[" im rohen Exception-Text liess die
+    Fehleranzeige selbst mit "Can't parse entities" abstuerzen. Default
+    ist jetzt None (Plain-Text); Aufrufer mit explizitem
+    parse_mode="Markdown" (statischer, kontrollierter Text) bleiben
+    unveraendert."""
+
+    def test_default_parse_mode_is_none_for_edit_message_text(self, admin_interface):
+        update = make_update(111, has_callback_query=True, has_message=False)
+        context = make_context()
+
+        asyncio.run(
+            admin_interface._reply_or_edit(update, context, "❌ Fehler: /pfad_mit_unterstrich")
+        )
+
+        _args, kwargs = update.callback_query.edit_message_text.call_args
+        assert kwargs["parse_mode"] is None
+
+    def test_default_parse_mode_is_none_for_reply_text(self, admin_interface):
+        update = make_update(111, has_callback_query=False, has_message=True)
+        context = make_context()
+
+        asyncio.run(
+            admin_interface._reply_or_edit(update, context, "❌ Fehler: /pfad_mit_unterstrich")
+        )
+
+        _args, kwargs = update.message.reply_text.call_args
+        assert kwargs["parse_mode"] is None
+
+    def test_explicit_parse_mode_still_honored(self, admin_interface):
+        """Aufrufer mit statischem, kontrolliertem Text setzen parse_mode
+        weiterhin explizit - das darf durch den neuen Default nicht
+        beeinflusst werden."""
+        update = make_update(111, has_callback_query=True, has_message=False)
+        context = make_context()
+
+        asyncio.run(
+            admin_interface._reply_or_edit(
+                update, context, "📊 **Text**", parse_mode="Markdown"
+            )
+        )
+
+        _args, kwargs = update.callback_query.edit_message_text.call_args
+        assert kwargs["parse_mode"] == "Markdown"
+
+
+class TestHandleRecentErrorsCommandMessagePreviewEscaping:
+    """PARSE-MODE-AUDIT 2026-09-13, Hotfix 2 (Zusatzfund): message_preview
+    stammt aus echten Exception-Texten und wird trotz explizitem
+    parse_mode="Markdown" ungeschuetzt eingebettet - derselbe unpaarige-
+    Sonderzeichen-Absturz wie bei error_msg, hier aber im Erfolgspfad
+    (nicht im Fallback), daher vom Default-parse_mode-Fix allein nicht
+    abgedeckt."""
+
+    def test_message_preview_with_underscore_is_escaped(self, admin_interface):
+        admin_interface.error_handler.get_recent_exceptions_summary.return_value = [
+            {
+                "timestamp": "2026-09-13T12:00:00",
+                "type": "OSError",
+                "category": "filesystem",
+                "message_preview": "/mnt/musik_bilder/library nicht gefunden",
+            }
+        ]
+        update = make_update(111, has_callback_query=False, has_message=True)
+        context = make_context()
+
+        asyncio.run(admin_interface.handle_recent_errors_command(update, context))
+
+        _args, kwargs = update.message.reply_text.call_args
+        assert "musik\\_bilder" in kwargs["text"]
+        assert kwargs["parse_mode"] == "Markdown"
+
+    def test_no_recent_exceptions_shows_plain_message(self, admin_interface):
+        admin_interface.error_handler.get_recent_exceptions_summary.return_value = []
+        update = make_update(111, has_callback_query=False, has_message=True)
+        context = make_context()
+
+        asyncio.run(admin_interface.handle_recent_errors_command(update, context))
+
+        message = update.message.reply_text.call_args[1]["text"]
+        assert "Keine aktuellen Exceptions" in message

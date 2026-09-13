@@ -413,3 +413,55 @@ class TestUserManagementMenuPagination:
 
         text = update.callback_query.edit_message_text.call_args[0][0]
         assert "Keine Benutzer registriert" in text
+
+
+class TestParseModeAuditHotfix1NavidromeUserEscaping:
+    """PARSE-MODE-AUDIT 2026-09-13, Hotfix 1: navidrome_user ist admin-
+    eingegebener Freitext und wird in parse_mode="Markdown"-Texten
+    gerendert (show_user_detail(), show_user_management_menu()). Ein
+    unpaariges Legacy-Markdown-Sonderzeichen (_ * ` [) im Namen liess
+    Telegram bisher mit "Can't parse entities" ablehnen - dieselbe
+    Fehlerklasse wie NAV-F13/F14/STATUS-MENU-CLOSURE. Regressionstest:
+    beide Stellen escapen jetzt ueber den wiederverwendeten
+    enhanced_status_handler._escape_markdown()."""
+
+    def test_show_user_detail_escapes_underscore_in_navidrome_user(self, tmp_path):
+        handler, _ = _make_handler(tmp_path)
+        _seed_users(handler, {"222": {"role": "user", "navidrome_user": "john_doe"}})
+
+        update = make_update(111)
+        context = make_context()
+
+        asyncio.run(handler.show_user_detail(update, context, "222"))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "john\\_doe" in text
+
+    def test_show_user_detail_missing_navidrome_user_unaffected(self, tmp_path):
+        """Regressionsschutz: der Fallback-Text "Nicht zugeordnet" enthaelt
+        keine Legacy-Markdown-Sonderzeichen - escapen darf ihn nicht
+        veraendern."""
+        handler, _ = _make_handler(tmp_path)
+        _seed_users(handler, {"222": {"role": "user"}})
+
+        update = make_update(111)
+        context = make_context()
+
+        asyncio.run(handler.show_user_detail(update, context, "222"))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "❌ Nicht zugeordnet" in text
+
+    def test_user_list_escapes_underscore_in_navidrome_user(self, tmp_path):
+        handler, _ = _make_handler(tmp_path)
+        _seed_users(
+            handler, {"222": {"role": "user", "navidrome_user": "toobrokeforfiji_x"}}
+        )
+
+        update = make_update(111)
+        context = make_context()
+
+        asyncio.run(handler.show_user_management_menu(update, context, page=0))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "toobrokeforfiji\\_x" in text

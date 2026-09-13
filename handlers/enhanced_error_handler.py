@@ -26,6 +26,13 @@ from config import Config
 from logger import get_module_logger
 from handlers.menu.permissions import is_admin_or_owner
 
+# PARSE-MODE-AUDIT 2026-09-13, Hotfix 2: message_preview stammt aus
+# echten, unkontrollierten Exception-Texten (z.B. Dateipfade mit "_") -
+# vor Einbettung in parse_mode="Markdown"-Texte escapen (dieselbe
+# Fehlerklasse wie Hotfix 1). Wiederverwendung des bestehenden Legacy-
+# Markdown-v1-Escapers statt einer eigenen Neu-Definition.
+from handlers.enhanced_status_handler import _escape_markdown
+
 
 class ExceptionMonitor:
     """
@@ -1618,10 +1625,22 @@ class ErrorHandlerAdminInterface:
         context: ContextTypes.DEFAULT_TYPE,
         text: str,
         reply_markup: InlineKeyboardMarkup = None,
-        parse_mode: str = "Markdown",
+        parse_mode: Optional[str] = None,
     ):
         """
         Antwortet robust, egal ob per Befehl (reply) oder Button (edit).
+
+        PARSE-MODE-AUDIT 2026-09-13, Hotfix 2: Default vorher "Markdown" -
+        alle Aufrufer, die hier rohen, nicht kontrollierbaren Exception-
+        Text (f"...: {e}") ohne explizites parse_mode einbetten, erbten
+        damit ungewollt Markdown-Parsing. Ein einzelnes "_"/"`"/"[" im
+        Exception-Text (z.B. ein Dateipfad) ließ dadurch die
+        Fehleranzeige selbst mit "Can't parse entities" abstürzen -
+        genau dann, wenn sie eigentlich zuverlässig funktionieren muss.
+        Default jetzt None (Plain-Text), analog zur bewussten Entscheidung
+        in handlers/menu/actions/download.py. Aufrufer mit statischem,
+        kontrolliertem Text setzen parse_mode="Markdown" weiterhin
+        explizit (unverändert).
         """
         query = update.callback_query
 
@@ -1806,7 +1825,7 @@ class ErrorHandlerAdminInterface:
                 response.append(
                     f"{i}. 🕒 {time_str}\n"
                     f"   🏷️ {exc['type']} ({exc['category']})\n"
-                    f"   📝 {exc['message_preview']}\n"
+                    f"   📝 {_escape_markdown(exc['message_preview'])}\n"
                 )
 
             keyboard = None
