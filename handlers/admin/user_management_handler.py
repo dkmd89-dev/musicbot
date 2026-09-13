@@ -14,6 +14,15 @@ import time
 
 from logger import get_module_logger
 
+# PARSE-MODE-AUDIT 2026-09-13, Hotfix 1: navidrome_user ist admin-
+# eingegebener Freitext, der unescaped in parse_mode="Markdown"-Texte
+# eingebettet wurde - ein Unterstrich im Namen (z.B. "john_doe") ließ
+# Telegram mit "Can't parse entities: can't find end of the entity..."
+# ablehnen (dieselbe Fehlerklasse wie NAV-F13/F14/STATUS-MENU-CLOSURE).
+# Wiederverwendung des bestehenden Legacy-Markdown-v1-Escapers statt
+# einer dritten unabhängigen Neu-Definition (Audit-Empfehlung 1).
+from handlers.enhanced_status_handler import _escape_markdown
+
 if TYPE_CHECKING:
     from handlers.enhanced_error_handler import EnhancedErrorHandler
 
@@ -122,7 +131,7 @@ class UserManagementHandler:
 **Rolle:** {role}
 **Registriert:** {created[:19] if created != 'Unbekannt' else 'Unbekannt'}
 **Berechtigungen:** {', '.join(permissions) if permissions else 'Standard'}
-**🎵 Navidrome-User:** {nav_user}
+**🎵 Navidrome-User:** {_escape_markdown(nav_user)}
 
 Aktionen:"""
 
@@ -388,7 +397,7 @@ Aktionen:"""
                 role = data.get("role", "user")
                 created = data.get("created_at", "Unbekannt")
                 nav_user = data.get("navidrome_user", "❌")
-                text += f"• **{user_id}**: {role} | 🎵 {nav_user}\n"
+                text += f"• **{user_id}**: {role} | 🎵 {_escape_markdown(nav_user)}\n"
                 text += f"  Registriert: {created[:10] if created != 'Unbekannt' else 'Unbekannt'}\n"
 
             text += f"\nGesamt: {len(users)} Benutzer"
