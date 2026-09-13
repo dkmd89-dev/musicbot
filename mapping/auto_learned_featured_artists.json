@@ -79,6 +79,19 @@
       ],
       "status": "OBSERVED"
     },
+    "Babytron": {
+      "canonical": "Babytron",
+      "last_observed_track": "Eminem - Tobey",
+      "observations": 1,
+      "primary_artists": [
+        "Eminem"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
     "Bausa": {
       "canonical": "Bausa",
       "last_observed_track": "CHAPO102 - OMG",
@@ -120,6 +133,19 @@
         "metadata"
       ],
       "status": "LEARNED"
+    },
+    "Big Sean": {
+      "canonical": "Big Sean",
+      "last_observed_track": "Eminem - Tobey",
+      "observations": 1,
+      "primary_artists": [
+        "Eminem"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
     },
     "CAN MIT MER": {
       "canonical": "CAN MIT MER",
