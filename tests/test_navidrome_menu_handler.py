@@ -1145,7 +1145,7 @@ class TestMyPlaylistsCharacterization:
         ):
             asyncio.run(handler.handle_my_playlists(update, context))
 
-        text = update.callback_query.edit_message_text.call_args[0][0]
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
         assert "Keine Playlists" in text
 
     def test_playlists_are_rendered_with_buttons(self):
@@ -1189,6 +1189,239 @@ class TestMyPlaylistsCharacterization:
 
         with patch("handlers.navidrome_menu_handler.NavidromeAPI.make_request") as mock_request:
             asyncio.run(handler.handle_my_playlists(update, context))
+
+        mock_request.assert_not_called()
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "nicht verfügbar" in text
+
+    def test_create_playlist_button_present_with_playlists(self):
+        """NAV-F18: '➕ Neue Playlist' bleibt sichtbar, auch wenn bereits
+        Playlists existieren."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "playlists": {"playlist": [{"id": "pl1", "name": "Mix", "songCount": 1}]}
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_my_playlists(update, context))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_playlist_create_prompt" in buttons
+
+    def test_create_playlist_button_present_when_empty(self):
+        """NAV-F18: '➕ Neue Playlist' bootstrapt die allererste Playlist -
+        muss auch bei leerer Liste erscheinen (kein frueher Return mehr)."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {"subsonic-response": {"playlists": {"playlist": []}}}
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_my_playlists(update, context))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_playlist_create_prompt" in buttons
+
+
+class TestPlaylistCrudNavF18:
+    """NAV-F18: Playlist-Erstellung (nur Name)/-Umbenennung/-Löschung
+    (mit Bestätigung) - bewusst reduzierter Zuschnitt, siehe
+    handle_playlist_create_prompt()-Docstring."""
+
+    def test_create_prompt_sets_waiting_flag(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_playlist_create_prompt(update, context))
+
+        assert handler.browse_states[update.effective_user.id][
+            "waiting_for_playlist_name"
+        ] is True
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "Neue Playlist" in text
+
+    def test_process_playlist_name_ignored_without_active_workflow(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        update.message = Mock()
+        update.message.reply_text = AsyncMock()
+
+        handled = asyncio.run(
+            handler.process_playlist_name(update, context, "My Playlist")
+        )
+
+        assert handled is False
+        update.message.reply_text.assert_not_called()
+
+    def test_process_playlist_name_creates_playlist(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        update.message = Mock()
+        update.message.reply_text = AsyncMock()
+        user_id = update.effective_user.id
+        handler.browse_states[user_id] = {"waiting_for_playlist_name": True}
+
+        fake_response = {
+            "subsonic-response": {"playlist": {"id": "pl-new", "name": "My Playlist"}}
+        }
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            handled = asyncio.run(
+                handler.process_playlist_name(update, context, "My Playlist")
+            )
+
+        assert handled is True
+        assert handler.browse_states[user_id]["waiting_for_playlist_name"] is False
+        message = update.message.reply_text.call_args[0][0]
+        assert "My Playlist" in message
+        assert "erstellt" in message
+
+    def test_process_playlist_name_rejects_blank_name(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        update.message = Mock()
+        update.message.reply_text = AsyncMock()
+        user_id = update.effective_user.id
+        handler.browse_states[user_id] = {"waiting_for_playlist_name": True}
+
+        handled = asyncio.run(handler.process_playlist_name(update, context, "   "))
+
+        assert handled is True
+        message = update.message.reply_text.call_args[0][0]
+        assert "leer" in message
+
+    def test_rename_prompt_sets_waiting_flag_and_playlist_id(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_playlist_rename_prompt(update, context, "pl1"))
+
+        state = handler.browse_states[update.effective_user.id]
+        assert state["waiting_for_playlist_rename"] is True
+        assert state["rename_playlist_id"] == "pl1"
+
+    def test_process_playlist_rename_updates_playlist(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        update.message = Mock()
+        update.message.reply_text = AsyncMock()
+        user_id = update.effective_user.id
+        handler.browse_states[user_id] = {
+            "waiting_for_playlist_rename": True,
+            "rename_playlist_id": "pl1",
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value={}),
+        ) as mock_to_thread:
+            handled = asyncio.run(
+                handler.process_playlist_rename(update, context, "New Name")
+            )
+
+        assert handled is True
+        state_after = handler.browse_states[user_id]
+        assert state_after["waiting_for_playlist_rename"] is False
+        assert "rename_playlist_id" not in state_after
+        message = update.message.reply_text.call_args[0][0]
+        assert "New Name" in message
+        # updatePlaylist wurde mit der gespeicherten playlistId aufgerufen
+        # (asyncio.to_thread(func, *args) - call_args[0] sind die
+        # Positionsargumente, [1]=func, [2]=erstes echtes Argument).
+        called_args = mock_to_thread.call_args[0]
+        assert called_args[1] == "updatePlaylist"
+        assert called_args[2] == {"playlistId": "pl1", "name": "New Name"}
+
+    def test_process_playlist_rename_ignored_without_active_workflow(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+        update.message = Mock()
+        update.message.reply_text = AsyncMock()
+
+        handled = asyncio.run(
+            handler.process_playlist_rename(update, context, "New Name")
+        )
+
+        assert handled is False
+        update.message.reply_text.assert_not_called()
+
+    def test_delete_confirm_shows_yes_no_buttons(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_playlist_delete_confirm(update, context, "pl1"))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_playlist_delete_execute_pl1" in buttons
+        assert "nav_playlist_pl1" in buttons  # Abbrechen -> zurueck zum Detail
+
+    def test_delete_execute_calls_api_and_confirms(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value={}),
+        ) as mock_to_thread:
+            asyncio.run(handler.handle_playlist_delete_execute(update, context, "pl1"))
+
+        called_args = mock_to_thread.call_args[0]
+        assert called_args[1] == "deletePlaylist"
+        assert called_args[2] == {"id": "pl1"}
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        assert "gelöscht" in kwargs["text"]
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "menu:nav_playlists" in buttons
+
+    def test_delete_execute_connection_error_when_unconfigured(self):
+        handler = NavidromeMenuHandler(FakeConfigUnconfigured())
+        update = make_update()
+        context = make_context()
+
+        with patch("handlers.navidrome_menu_handler.NavidromeAPI.make_request") as mock_request:
+            asyncio.run(handler.handle_playlist_delete_execute(update, context, "pl1"))
 
         mock_request.assert_not_called()
         text = update.callback_query.edit_message_text.call_args[1]["text"]

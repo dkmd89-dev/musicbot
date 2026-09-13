@@ -197,6 +197,38 @@ async def handle_navidrome_callback(
         await navidrome_handler.handle_song_detail(update, context, song_id)
         return
 
+    # NAV-F18 (Playlist-CRUD): alle vier Zweige MUESSEN vor dem
+    # generischen "nav_playlist_"-Praefix-Check unten stehen - derselbe
+    # Bug-Typ wie NAV-F2/NAV-F11/NAV-F17 ("nav_playlist_create_prompt"/
+    # "nav_playlist_rename_<id>"/"nav_playlist_delete_confirm_<id>"/
+    # "nav_playlist_delete_execute_<id>" starten ebenfalls alle mit
+    # "nav_playlist_"). Reihenfolge untereinander ist irrelevant
+    # (vollstaendig disjunkte, spezifischere Praefixe).
+    if callback_data == "nav_playlist_create_prompt":
+        await navidrome_handler.handle_playlist_create_prompt(update, context)
+        return
+
+    if callback_data.startswith("nav_playlist_rename_"):
+        playlist_id = callback_data.replace("nav_playlist_rename_", "")
+        await navidrome_handler.handle_playlist_rename_prompt(
+            update, context, playlist_id
+        )
+        return
+
+    if callback_data.startswith("nav_playlist_delete_confirm_"):
+        playlist_id = callback_data.replace("nav_playlist_delete_confirm_", "")
+        await navidrome_handler.handle_playlist_delete_confirm(
+            update, context, playlist_id
+        )
+        return
+
+    if callback_data.startswith("nav_playlist_delete_execute_"):
+        playlist_id = callback_data.replace("nav_playlist_delete_execute_", "")
+        await navidrome_handler.handle_playlist_delete_execute(
+            update, context, playlist_id
+        )
+        return
+
     # NAV-F5-Fix: "nav_playlist_<id>"-Buttons wurden bereits in
     # handle_my_playlists() erzeugt, es existierte aber kein
     # Dispatcher-Zweig dafuer (fiel auf "Funktion nicht implementiert"

@@ -249,6 +249,85 @@ async def test_callback_discover_newest_albums_parses_page_number_nav_f17():
 
 
 @pytest.mark.asyncio
+async def test_callback_playlist_create_prompt_delegates_nav_f18():
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_playlist_create_prompt = AsyncMock()
+    handler.handle_playlist_detail = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_playlist_create_prompt", handler, Mock()
+    )
+    handler.handle_playlist_create_prompt.assert_awaited_once_with(update, context)
+    handler.handle_playlist_detail.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_callback_playlist_rename_delegates_with_correct_id_nav_f18():
+    """NAV-F18: 'nav_playlist_rename_<id>' MUSS vor dem generischen
+    'nav_playlist_'-Praefix-Zweig geroutet werden - derselbe Bug-Typ wie
+    NAV-F2/F11/F17."""
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_playlist_rename_prompt = AsyncMock()
+    handler.handle_playlist_detail = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_playlist_rename_pl123", handler, Mock()
+    )
+    handler.handle_playlist_rename_prompt.assert_awaited_once_with(
+        update, context, "pl123"
+    )
+    handler.handle_playlist_detail.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_callback_playlist_delete_confirm_delegates_with_correct_id_nav_f18():
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_playlist_delete_confirm = AsyncMock()
+    handler.handle_playlist_detail = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_playlist_delete_confirm_pl123", handler, Mock()
+    )
+    handler.handle_playlist_delete_confirm.assert_awaited_once_with(
+        update, context, "pl123"
+    )
+    handler.handle_playlist_detail.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_callback_playlist_delete_execute_delegates_with_correct_id_nav_f18():
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_playlist_delete_execute = AsyncMock()
+    handler.handle_playlist_detail = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_playlist_delete_execute_pl123", handler, Mock()
+    )
+    handler.handle_playlist_delete_execute.assert_awaited_once_with(
+        update, context, "pl123"
+    )
+    handler.handle_playlist_detail.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_callback_playlist_detail_still_works_after_crud_fix_nav_f18():
+    """Regressionsschutz: die vier neuen CRUD-Zweige duerfen den
+    normalen 'nav_playlist_<id>'-Pfad nicht brechen."""
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_playlist_detail = AsyncMock()
+    await nav_actions.handle_navidrome_callback(
+        update, context, "nav_playlist_pl123", handler, Mock()
+    )
+    handler.handle_playlist_detail.assert_awaited_once_with(update, context, "pl123")
+
+
+@pytest.mark.asyncio
 async def test_callback_artist_albums_all_does_not_call_artist_detail_with_corrupted_id_nav_f11():
     """NAV-F11 (entdeckt bei NAV-F9): 'nav_artist_albums_all_<id>' wurde
     bisher vom generischen 'nav_artist_'-Präfix-Zweig abgefangen und
