@@ -6,9 +6,9 @@ Bug-Findings (NAV-F1–NAV-F16) sind CLOSED** (NAV-F12–NAV-F16 wurden
 erst im Verlauf der Umsetzung bzw. des Architecture Refactoring Audits
 entdeckt, siehe Abschnitt 4). **NAV-F17 (Discovery-Erweiterung) ist
 CLOSED (2026-09-14)** — auf Nutzerwunsch umgesetzt, siehe Abschnitt 4.
-**NAV-F18 (Playlist-CRUD) bleibt OPEN (DEFER)** — bewusst zurückgestellte
-Funktionserweiterung ohne aktuellen Auftrag (siehe Abschnitt 4/8 und
-`docs/FINDINGS_INDEX.md`).
+**NAV-F18 (Playlist-CRUD) ist CLOSED (2026-09-14)** — auf Nutzerwunsch
+umgesetzt, siehe Abschnitt 4. Damit sind alle 18 Findings dieses
+Dokuments geschlossen, keine offenen Punkte mehr.
 **Scope:** `handlers/navidrome_menu_handler.py`,
 `handlers/menu/actions/navidrome.py`, `services/clients/navidrome_api.py`
 und ihre unmittelbaren Kollaborateure (Personal-Statistics-Domain nur
@@ -133,7 +133,7 @@ mit allen 33 geprüften Subsonic-Capabilities: siehe Audit-Transkript
 | Album/Song-Detail | `getAlbum`, `getSong` (NAV-F9, CLOSED) | — | — |
 | Album/Song-Listen | `getRandomSongs` (NAV-F17, CLOSED) | — | `getAlbumList` (v1), weitere `getAlbumList2`-Typen (`recent`/`frequent`/etc.) |
 | Suche | `search3` | — | `search2` |
-| Playlists | `getPlaylists` (Liste), `getPlaylist` (Detail, NAV-F5, CLOSED) | — | `createPlaylist`/`updatePlaylist`/`deletePlaylist` |
+| Playlists | `getPlaylists` (Liste), `getPlaylist` (Detail, NAV-F5, CLOSED), `createPlaylist`/`updatePlaylist`/`deletePlaylist` (NAV-F18, CLOSED) | — | — |
 | Media | — | — | `stream`, `download`, `getCoverArt`, `getLyrics`, `getAvatar` |
 | Annotation | — | — | `star`, `unstar`, `setRating`, `scrobble` |
 | Favoriten | `getStarred2` (nur lesend) | — | `getStarred` (v1) |
@@ -169,7 +169,7 @@ Server-Ebene, nicht gleichbedeutend mit `UNSUPPORTED`).
 | **NAV-F15** | Vom Nutzer selbst gefunden+behoben: `render_playlist_detail()`s Tracklist-Overflow-Hinweis (`"_+N weitere Songs nicht angezeigt_"`, bei Playlists mit >25 Songs) enthielt ein rohes `+` in MarkdownV2-Text — `+` ist reserviert, Telegram lehnt die Nachricht mit `BadRequest` ab. Dieselbe Bug-Klasse wie NAV-F13. Fix: `+` entfernt (reines Stilmittel). | BROKEN | P0 | **CLOSED** (2026-09-13) |
 | **NAV-F16** | Derselbe Bug wie NAV-F15, in `render_album_detail()` (Alben mit >25 Songs). Fix: `+` entfernt, identisch zu NAV-F15. | BROKEN | P0 | **CLOSED** (2026-09-13) |
 | NAV-F17 | Kein Bug: im empfohlenen Zielmenü (Abschnitt 5) skizziertes Untermenü „🎵 Entdecken" implementiert. Umsetzung weicht in einem Punkt bewusst vom ursprünglichen Skizzen-Vorschlag ab (auf Nutzerentscheidung): „🔥 Top Songs je Künstler" (`getTopSongs`) ist KEIN eigener Menüpunkt im „Entdecken"-Menü, sondern ein neuer Button direkt in `render_artist_detail()` — der Artist-Name ist dort bereits bekannt, ein separater Freitext-Prompt (Artist-Name eintippen) wäre unnötiger Umfang. „🎲 Zufällige Songs" (`getRandomSongs`) und „🆕 Neue Alben" (`getAlbumList2 type=newest`) sind reine Inline-Buttons innerhalb der "Entdecken"-Nachricht (kein eigenes MenuItem je Option, analog zu Genre-Suche/-Stats NAV-F7/F8) - nur der Einstieg "nav_discover" ist ein MenuItem. Neuer Dispatcher-Zweig `nav_artist_topsongs_` MUSS (wie bei NAV-F2/F11/F8 bereits etabliert) vor dem generischen `nav_artist_`-Präfix-Check stehen. | — | P2 | **CLOSED (2026-09-14)** |
-| NAV-F18 | Kein Bug: Playlist-Erstellung/-Bearbeitung/-Löschung (`createPlaylist`/`updatePlaylist`/`deletePlaylist`) laut Capability-Matrix vollständig ungenutzt — aktuell nur lesender Zugriff. Wäre der im Migrationsplan genannte Auslöser, Playlist-Funktionen aus dem bewussten „KEEP"-Zustand herauswachsen zu lassen. | — | P2 | **OPEN (DEFER)** |
+| NAV-F18 | Kein Bug: Playlist-CRUD implementiert — bewusst reduzierter Zuschnitt (Nutzerentscheidung): Erstellung nur mit Name (leere Playlist, kein Song-Auswahl-Schritt — bräuchte einen im Bot aktuell nirgends vorhandenen Mehrfachauswahl-Song-Picker, eigener Folge-Scope), Umbenennung, Löschung mit Bestätigungsdialog (analog `UserManagementHandler.delete_user_confirm()`). `handle_my_playlists()`s früher Return bei leerer Liste entfernt (der „➕ Neue Playlist"-Button muss auch dort erscheinen, um die erste Playlist zu bootstrappen). Vier neue Dispatcher-Zweige (`nav_playlist_create_prompt`/`_rename_`/`_delete_confirm_`/`_delete_execute_`) MÜSSEN vor dem generischen `nav_playlist_`-Präfix-Check stehen — derselbe Bug-Typ wie NAV-F2/F11/F17. | — | P2 | **CLOSED (2026-09-14)** |
 
 Vollständige Details/Codebelege zu allen Findings: Audit-Transkript
 (Session vom 2026-09-13) sowie `docs/FINDINGS_INDEX.md` (repoweite
@@ -303,7 +303,9 @@ Verschiebung von Serverstatus/Scan aus dem Admin-Bereich hierher.
 14. ~~Restliche Testlücken geschlossen (Playlists/Favoriten/Such-Erfolgspfad)~~ ✅ IMPLEMENTED (2026-09-13) — reine Testergänzung, kein Produktionscode geändert. 9 neue Tests.
 15. ~~Stufe 4, reduziert (`services/navidrome/browser_service.py`)~~ ✅ IMPLEMENTED (2026-09-13) — bewusst nur `get_albums_page()` (einzige Browse-Methode mit echter Verzweigungslogik), Artists/Genres bewusst unangetastet gelassen (Anti-Overengineering-Entscheidung). Stufe 5 (finale Orchestrierungs-Schlankung) — siehe `docs/audits/NAVIDROME_MENU_HANDLER_REFACTORING_MIGRATION_PLAN_2026-09-13.md` — noch nicht freigegeben, aktuell auch kein erkennbarer Zusatznutzen mehr (`NavidromeMenuHandler` ist bereits reine Orchestrierung).
 16. ~~NAV-F17~~ ✅ CLOSED (2026-09-14) — Discovery-Erweiterung: neues Menü „🎵 Entdecken" (`nav_discover`), `render_discover_menu()`/`render_random_songs()`/`render_top_songs()`/`render_newest_albums()` in `handlers/navidrome_renderer.py`, `handle_discover_menu()`/`handle_random_songs()`/`handle_top_songs()`/`handle_newest_albums()` in `NavidromeMenuHandler`. „Top Songs je Künstler" als Button in `render_artist_detail()` statt eigenem Menüpunkt (Nutzerentscheidung, siehe Abschnitt 4).
-17. NAV-F18 — Playlist-CRUD (`createPlaylist`/`updatePlaylist`/`deletePlaylist`), OPEN (DEFER), keine aktuelle Freigabe
+17. ~~NAV-F18~~ ✅ CLOSED (2026-09-14) — Playlist-CRUD: `handle_playlist_create_prompt()`/`process_playlist_name()`/`handle_playlist_rename_prompt()`/`process_playlist_rename()`/`handle_playlist_delete_confirm()`/`handle_playlist_delete_execute()` in `NavidromeMenuHandler`, „➕ Neue Playlist"-Button in `handle_my_playlists()`, „✏️ Umbenennen"/„🗑️ Löschen"-Buttons in `render_playlist_detail()`. Freitext-Workflows (Name-Eingabe) über dasselbe `browse_states`-Flag-Muster wie die bestehende Suche, verdrahtet in `rich_menu_handler.py::handle_text_message()`.
+
+**Damit ist der Migrationsplan vollständig abgeschlossen — keine offenen NAV-Findings mehr.**
 
 Jeder Schritt: eigener Branch/PR, volle Regressionsprüfung, keine
 gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
@@ -355,18 +357,18 @@ Netzwerkcode in einem Unit-Test duplizieren. Keine akute Priorität.
 
 ## 8. Offene Punkte
 
-**Alle 16 Bug-Findings (NAV-F1–NAV-F16) sind CLOSED. NAV-F17 ist
-ebenfalls CLOSED (2026-09-14).** Ein Eintrag bleibt **OPEN (DEFER)** —
-kein Bug, sondern eine bewusst zurückgestellte Funktionserweiterung
-ohne aktuellen Auftrag:
+**Alle 18 Findings dieses Dokuments (NAV-F1–NAV-F18) sind CLOSED.**
+Keine offenen Navidrome-Menu-Findings mehr. Bewusst zurückgestellte,
+nicht in Findings-Form gegossene Restlücken (kein Bug, keine aktuelle
+Priorität):
 
-- **NAV-F18** — Playlist-CRUD (`createPlaylist`/`updatePlaylist`/
-  `deletePlaylist`), P2. Wäre zugleich der Auslöser, Playlist-Funktionen
-  aus dem bewussten „KEEP auf `NavidromeMenuHandler`"-Zustand
-  herauswachsen zu lassen (siehe Abschnitt 5, Anti-Overengineering-
-  Bewertung).
-
-Beide auch in `docs/FINDINGS_INDEX.md` als eigene Zeilen geführt.
+- Kein dedizierter End-to-End-Test für `handle_reconnect()` gegen eine
+  echte `NavidromeAPI.check_connection()`-Implementierung (siehe
+  Abschnitt 7).
+- Playlist-CRUD (NAV-F18) beschränkt sich bewusst auf Name/Umbenennen/
+  Löschen — „Songs zu einer Playlist hinzufügen/entfernen" (bräuchte
+  einen im Bot aktuell nirgends vorhandenen Mehrfachauswahl-Song-Picker)
+  bleibt ein eigener, separater Folge-Scope ohne aktuellen Auftrag.
 
 - Testlücken aus Abschnitt 7 — nur noch `handle_reconnect()`-Erfolgsfall
   gegen eine echte `check_connection()`, bewusst zurückgestellt (keine

@@ -418,6 +418,56 @@ class TestHandleTextMessageWorkflow:
         message = update.message.reply_text.call_args[0][0]
         assert "abgebrochen" in message
 
+    def test_playlist_name_workflow_delegates_to_process_playlist_name(self, tmp_path):
+        """NAV-F18: identisches Muster wie die Navidrome-Suche oben."""
+        handler, _ = _make_handler(tmp_path)
+        fake_navidrome = Mock()
+        fake_navidrome.browse_states = {111: {"waiting_for_playlist_name": True}}
+        fake_navidrome.process_playlist_name = AsyncMock(return_value=True)
+        handler.navidrome_handler = fake_navidrome
+
+        update = make_update(111, text="My New Playlist")
+        context = make_context()
+
+        asyncio.run(handler.handle_text_message(update, context))
+
+        fake_navidrome.process_playlist_name.assert_awaited_once_with(
+            update, context, "My New Playlist"
+        )
+
+    def test_playlist_rename_workflow_delegates_to_process_playlist_rename(self, tmp_path):
+        handler, _ = _make_handler(tmp_path)
+        fake_navidrome = Mock()
+        fake_navidrome.browse_states = {111: {"waiting_for_playlist_rename": True}}
+        fake_navidrome.process_playlist_rename = AsyncMock(return_value=True)
+        handler.navidrome_handler = fake_navidrome
+
+        update = make_update(111, text="Renamed Playlist")
+        context = make_context()
+
+        asyncio.run(handler.handle_text_message(update, context))
+
+        fake_navidrome.process_playlist_rename.assert_awaited_once_with(
+            update, context, "Renamed Playlist"
+        )
+
+    def test_cancel_also_works_during_playlist_create_workflow(self, tmp_path):
+        """Gleiche BUG-006-Absicherung wie bei der Navidrome-Suche."""
+        handler, _ = _make_handler(tmp_path)
+        fake_navidrome = Mock()
+        fake_navidrome.browse_states = {111: {"waiting_for_playlist_name": True}}
+        fake_navidrome.process_playlist_name = AsyncMock()
+        handler.navidrome_handler = fake_navidrome
+
+        update = make_update(111, text="/cancel")
+        context = make_context()
+
+        asyncio.run(handler.handle_text_message(update, context))
+
+        fake_navidrome.process_playlist_name.assert_not_called()
+        message = update.message.reply_text.call_args[0][0]
+        assert "abgebrochen" in message
+
     def test_unhandled_text_without_workflow_does_not_crash(self, tmp_path):
         handler, _ = _make_handler(tmp_path)
 

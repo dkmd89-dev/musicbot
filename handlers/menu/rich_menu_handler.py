@@ -1132,6 +1132,24 @@ class RichMenuHandler:
                     if handled:
                         return
 
+                # NAV-F18 (Playlist-CRUD): identisches Freitext-Workflow-
+                # Muster wie die Suche oben (browse_states-Flag statt
+                # eigenem Dispatcher-Eintrag, da hier kein User-Management-
+                # Bezug besteht).
+                if user_state.get("waiting_for_playlist_name", False):
+                    handled = await self.navidrome_handler.process_playlist_name(
+                        update, context, text
+                    )
+                    if handled:
+                        return
+
+                if user_state.get("waiting_for_playlist_rename", False):
+                    handled = await self.navidrome_handler.process_playlist_rename(
+                        update, context, text
+                    )
+                    if handled:
+                        return
+
         # Familien-Chat: wartet dieser User gerade auf seine Chat-Nachricht?
         # (Phase F3, Family Hub - siehe FamilyChatHandler-Docstring zur
         # bewussten Entscheidung gegen den generischen TextWorkflowDispatcher.)

@@ -642,12 +642,6 @@ class NavidromeMenuHandler:
             playlists_data = subsonic_response.get("playlists", {})
             playlists = playlists_data.get("playlist", [])
 
-            if not playlists:
-                await update.callback_query.edit_message_text(
-                    "❌ Keine Playlists gefunden."
-                )
-                return
-
             keyboard = []
             # Paginierung (falls gewünscht, hier vereinfacht: erste 20)
             for playlist in playlists[:20]:
@@ -664,14 +658,31 @@ class NavidromeMenuHandler:
                     ]
                 )
 
+            # NAV-F18 (Playlist-CRUD): "➕ Neue Playlist" bleibt auch bei
+            # leerer Liste sichtbar (bootstrapt die allererste Playlist),
+            # anders als der bisherige fruehe Return bei "not playlists".
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        "➕ Neue Playlist", callback_data="nav_playlist_create_prompt"
+                    )
+                ]
+            )
             keyboard.append(
                 [InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")]
             )
 
-            message_text = f"""
+            if playlists:
+                message_text = f"""
 📋 **Meine Playlists**
 
 Du hast {len(playlists)} Playlist\\(s\\) verfügbar:
+"""
+            else:
+                message_text = """
+📋 **Meine Playlists**
+
+❌ Keine Playlists gefunden\\.
 """
             await update.callback_query.edit_message_text(
                 text=message_text,
@@ -743,6 +754,237 @@ Du hast {len(playlists)} Playlist\\(s\\) verfügbar:
             else:
                 await update.callback_query.edit_message_text(
                     "❌ Fehler beim Laden der Playlist-Details."
+                )
+
+    # NEU (NAV-F18): Playlist-CRUD - bewusst reduzierter Zuschnitt
+    # (Nutzerentscheidung): nur Name-Erstellung (leere Playlist), kein
+    # Song-Auswahl-Schritt im selben Zug (bräuchte einen im Bot aktuell
+    # nirgends vorhandenen Mehrfachauswahl-Song-Picker - "Songs zu
+    # Playlist hinzufügen" bleibt ein eigener, separater Folge-Scope).
+    async def handle_playlist_create_prompt(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Fragt nach dem Namen der neuen Playlist (Freitext-Workflow,
+        identisches Muster zu handle_search()/browse_states)."""
+        user_id = update.effective_user.id
+        if user_id not in self.browse_states:
+            self.browse_states[user_id] = {}
+        self.browse_states[user_id]["waiting_for_playlist_name"] = True
+
+        message_text = """
+📋 **Neue Playlist erstellen**
+
+Sende mir jetzt den Namen für die neue Playlist\\!
+"""
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("❌ Abbrechen", callback_data="menu:navidrome")]]
+        )
+        await update.callback_query.edit_message_text(
+            text=message_text.strip(), reply_markup=keyboard, parse_mode="MarkdownV2"
+        )
+
+    async def process_playlist_name(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, name: str
+    ) -> bool:
+        """Verarbeitet den eingegebenen Playlist-Namen (createPlaylist,
+        leere Playlist). Rückgabewert analog zu process_search_query():
+        `True` = Text wurde konsumiert, `False` = kein aktiver Workflow
+        (Aufrufer soll die Nachricht anderweitig behandeln)."""
+        user_id = update.effective_user.id
+
+        if user_id not in self.browse_states or not self.browse_states[user_id].get(
+            "waiting_for_playlist_name"
+        ):
+            return False
+
+        self.browse_states[user_id]["waiting_for_playlist_name"] = False
+
+        name = (name or "").strip()
+        if not name:
+            await update.message.reply_text(
+                "❌ Der Playlist-Name darf nicht leer sein."
+            )
+            return True
+
+        if not self._check_connection():
+            await update.message.reply_text("❌ Keine Verbindung zu Navidrome.")
+            return True
+
+        try:
+            self.logger.info(f"📋 Erstelle neue Playlist: {name}")
+            data = await asyncio.to_thread(
+                self.navidrome_api.make_request, "createPlaylist", {"name": name}
+            )
+            playlist = data.get("subsonic-response", {}).get("playlist", {})
+
+            await update.message.reply_text(
+                f"✅ Playlist '{name}' wurde erstellt."
+                if not playlist
+                else f"✅ Playlist '{playlist.get('name', name)}' wurde erstellt."
+            )
+
+        except Exception as e:
+            self.logger.error(f"❌ Fehler beim Erstellen der Playlist: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_playlist_create", e
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ Fehler beim Erstellen der Playlist."
+                )
+
+        return True
+
+    async def handle_playlist_rename_prompt(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, playlist_id: str
+    ):
+        """Fragt nach dem neuen Namen einer bestehenden Playlist."""
+        user_id = update.effective_user.id
+        if user_id not in self.browse_states:
+            self.browse_states[user_id] = {}
+        self.browse_states[user_id]["waiting_for_playlist_rename"] = True
+        self.browse_states[user_id]["rename_playlist_id"] = playlist_id
+
+        message_text = """
+✏️ **Playlist umbenennen**
+
+Sende mir jetzt den neuen Namen für diese Playlist\\!
+"""
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "❌ Abbrechen", callback_data=f"nav_playlist_{playlist_id}"
+                    )
+                ]
+            ]
+        )
+        await update.callback_query.edit_message_text(
+            text=message_text.strip(), reply_markup=keyboard, parse_mode="MarkdownV2"
+        )
+
+    async def process_playlist_rename(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, name: str
+    ) -> bool:
+        """Verarbeitet den eingegebenen neuen Playlist-Namen
+        (updatePlaylist). Rückgabewert analog zu process_playlist_name()."""
+        user_id = update.effective_user.id
+
+        if user_id not in self.browse_states or not self.browse_states[user_id].get(
+            "waiting_for_playlist_rename"
+        ):
+            return False
+
+        self.browse_states[user_id]["waiting_for_playlist_rename"] = False
+        playlist_id = self.browse_states[user_id].pop("rename_playlist_id", None)
+
+        name = (name or "").strip()
+        if not name:
+            await update.message.reply_text(
+                "❌ Der Playlist-Name darf nicht leer sein."
+            )
+            return True
+
+        if not playlist_id:
+            await update.message.reply_text(
+                "❌ Fehler: keine Playlist-ID gefunden."
+            )
+            return True
+
+        if not self._check_connection():
+            await update.message.reply_text("❌ Keine Verbindung zu Navidrome.")
+            return True
+
+        try:
+            self.logger.info(f"✏️ Benenne Playlist {playlist_id} um zu: {name}")
+            await asyncio.to_thread(
+                self.navidrome_api.make_request,
+                "updatePlaylist",
+                {"playlistId": playlist_id, "name": name},
+            )
+            await update.message.reply_text(f"✅ Playlist wurde in '{name}' umbenannt.")
+
+        except Exception as e:
+            self.logger.error(f"❌ Fehler beim Umbenennen der Playlist: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_playlist_rename", e
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ Fehler beim Umbenennen der Playlist."
+                )
+
+        return True
+
+    async def handle_playlist_delete_confirm(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, playlist_id: str
+    ):
+        """Zeigt Bestätigungs-Dialog vor dem Löschen (irreversible
+        Aktion, analog zu UserManagementHandler.delete_user_confirm())."""
+        message_text = """
+⚠️ **Playlist löschen**
+
+Bist du sicher, dass du diese Playlist löschen möchtest\\?
+
+Diese Aktion kann nicht rückgängig gemacht werden\\!
+"""
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "✅ Ja, löschen",
+                        callback_data=f"nav_playlist_delete_execute_{playlist_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "❌ Abbrechen", callback_data=f"nav_playlist_{playlist_id}"
+                    ),
+                ]
+            ]
+        )
+        await update.callback_query.edit_message_text(
+            text=message_text.strip(), reply_markup=keyboard, parse_mode="MarkdownV2"
+        )
+
+    async def handle_playlist_delete_execute(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, playlist_id: str
+    ):
+        """Führt die Löschung aus (nach Bestätigung)."""
+        if not self._check_connection():
+            await self._show_connection_error(update)
+            return
+
+        try:
+            self.logger.info(f"🗑️ Lösche Playlist: {playlist_id}")
+            await asyncio.to_thread(
+                self.navidrome_api.make_request, "deletePlaylist", {"id": playlist_id}
+            )
+
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "📋 Meine Playlists", callback_data="menu:nav_playlists"
+                        )
+                    ]
+                ]
+            )
+            await update.callback_query.edit_message_text(
+                text="✅ Playlist wurde gelöscht\\.",
+                reply_markup=keyboard,
+                parse_mode="MarkdownV2",
+            )
+
+        except Exception as e:
+            self.logger.error(f"❌ Fehler beim Löschen der Playlist: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_playlist_delete", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    "❌ Fehler beim Löschen der Playlist."
                 )
 
     async def handle_favorites(

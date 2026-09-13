@@ -227,6 +227,27 @@ class TestRenderPlaylistDetail:
 
         assert "Ersteller" not in text
 
+    def test_rename_and_delete_buttons_present_nav_f18(self):
+        playlist = {"id": "pl1", "name": "Test Playlist", "owner": "", "entry": []}
+
+        _text, markup = render_playlist_detail(playlist)
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_playlist_rename_pl1" in buttons
+        assert "nav_playlist_delete_confirm_pl1" in buttons
+
+    def test_no_crud_buttons_when_id_missing(self):
+        """Ohne 'id' im Playlist-Dict (sollte laut Subsonic-API nicht
+        vorkommen, aber defensiv) werden keine kaputten Callback-IDs wie
+        'nav_playlist_rename_' erzeugt."""
+        playlist = {"name": "No ID Playlist", "owner": "", "entry": []}
+
+        _text, markup = render_playlist_detail(playlist)
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert not any(cb.startswith("nav_playlist_rename_") for cb in buttons)
+        assert not any(cb.startswith("nav_playlist_delete_confirm_") for cb in buttons)
+
 
 class TestNavF15RegressionPlaylistOverflowNoRawPlus:
     """NAV-F15-Regressionstest: Der Tracklist-Overflow-Hinweis in

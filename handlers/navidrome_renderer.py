@@ -190,7 +190,14 @@ def render_playlist_detail(
     Bedeutung war, wird es weggelassen - die Zeile bleibt verständlich.
     Derselbe Bug existierte auch in render_album_detail() - dort
     bewusst nicht im selben Schritt mitgefixt (separat als NAV-F16
-    dokumentiert), inzwischen in einem eigenen PR ebenfalls behoben."""
+    dokumentiert), inzwischen in einem eigenen PR ebenfalls behoben.
+
+    NAV-F18 (Playlist-CRUD): "✏️ Umbenennen"/"🗑️ Löschen"-Buttons
+    ergänzt. `playlist["id"]` kommt bereits aus der Subsonic-
+    getPlaylist()-Antwort selbst (im Gegensatz zu render_artist_detail(),
+    wo die ID separat übergeben werden muss) - kein neuer Parameter
+    nötig, kein bestehender Aufrufer/Test betroffen."""
+    playlist_id = playlist.get("id", "")
     playlist_name = playlist.get("name", "Unbekannt")
     owner = playlist.get("owner", "")
     songs = playlist.get("entry", [])
@@ -208,6 +215,20 @@ def render_playlist_detail(
                 InlineKeyboardButton(
                     song_text, callback_data=f"nav_song_{song['id']}"
                 )
+            ]
+        )
+
+    if playlist_id:
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "✏️ Umbenennen",
+                    callback_data=f"nav_playlist_rename_{playlist_id}",
+                ),
+                InlineKeyboardButton(
+                    "🗑️ Löschen",
+                    callback_data=f"nav_playlist_delete_confirm_{playlist_id}",
+                ),
             ]
         )
 
