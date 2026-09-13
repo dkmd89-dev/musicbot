@@ -85,13 +85,29 @@ class RichMenuHandler:
     Reihenfolge und verknüpft sie mit dem Menüsystem.
     """
 
-    def __init__(self, config: Config, logger_factory=None):
+    def __init__(
+        self,
+        config: Config,
+        logger_factory=None,
+        error_handler: Optional[EnhancedErrorHandler] = None,
+    ):
         self.config = config
         self.logger_factory = logger_factory
         self.logger = (self.logger_factory or get_module_logger)("RichMenuHandler")
 
-        # Error Handler (muss zuerst initialisiert werden)
-        self.error_handler: Optional[EnhancedErrorHandler] = None
+        # Error Handler (muss zuerst initialisiert werden).
+        # ARCH-027: optionale Constructor-Injection einer bereits von
+        # bot.py erzeugten und als PTB-Application-Error-Handler
+        # registrierten EnhancedErrorHandler-Instanz - siehe initialize()
+        # weiter unten, das bei bereits injizierter Instanz KEINE eigene
+        # zweite Instanz mehr erzeugt (vorher: RichMenuHandler erzeugte in
+        # initialize() immer eine eigene, von bot.py unabhaengige Instanz -
+        # siehe docs/MusicBot_ARCH-026_Error_Handler_Integration_Audit.md,
+        # docs/MusicBot_ARCH-027_Error_Handler_Consolidation.md). Bleibt
+        # None fuer eigenstaendige Konstruktion ohne bot.py (Tests,
+        # Standalone-Nutzung) - initialize() erzeugt dann wie bisher einen
+        # kontrollierten Fallback.
+        self.error_handler: Optional[EnhancedErrorHandler] = error_handler
 
         # Core System
         self.menu_system = RichMenuSystem(config, self.logger_factory)
@@ -183,16 +199,35 @@ class RichMenuHandler:
         self.logger.info("🚀 Starte Handler-Integration ...")
 
         # 1. Error Handler (höchste Priorität – alle anderen hängen davon ab)
-        try:
-            self.error_handler = create_enhanced_error_handler(
-                self.config, self.logger_factory
+        #
+        # ARCH-027: kein stilles Überschreiben einer bereits per Constructor
+        # injizierten, gemeinsamen Instanz (siehe __init__ oben) - nur wenn
+        # RichMenuHandler eigenständig ohne bot.py konstruiert wurde (Tests,
+        # Standalone-Nutzung), wird hier ein kontrollierter Fallback
+        # erzeugt. Production (bot.py) injiziert immer bereits eine
+        # Instanz, die zugleich als PTB-Application-Error-Handler
+        # registriert ist - dadurch teilen sich PTB, RichMenuSystem, alle
+        # Sub-Handler und ErrorHandlerAdminInterface exakt denselben
+        # Monitoring-/Statistik-Zustand (siehe
+        # docs/MusicBot_ARCH-027_Error_Handler_Consolidation.md).
+        if self.error_handler is not None:
+            self.logger.info(
+                "✅ Enhanced Error Handler übernommen (gemeinsame Instanz von bot.py)"
             )
-            self.logger.info("✅ Enhanced Error Handler initialisiert")
-        except Exception as e:
-            self.logger.critical(
-                f"❌ FATAL: Error Handler konnte nicht initialisiert werden: {e}"
-            )
-            raise
+        else:
+            try:
+                self.error_handler = create_enhanced_error_handler(
+                    self.config, self.logger_factory
+                )
+                self.logger.info(
+                    "✅ Enhanced Error Handler initialisiert (Standalone-Fallback, "
+                    "keine Instanz injiziert)"
+                )
+            except Exception as e:
+                self.logger.critical(
+                    f"❌ FATAL: Error Handler konnte nicht initialisiert werden: {e}"
+                )
+                raise
 
         # 2. Test-Handler
         self.test_handler = TestMenuHandler(self.config, self.logger_factory)

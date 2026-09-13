@@ -114,7 +114,14 @@ class ExtendedBot:
         try:
             # RichMenuHandler erwartet KEINE logger_factory!
             # Es verwendet intern get_module_logger
-            self.rich_menu_handler = RichMenuHandler(self.config)
+            # ARCH-027: error_handler=self.error_handler injiziert dieselbe
+            # (bereits als PTB-Application-Error-Handler registrierte)
+            # Instanz - RichMenuHandler.initialize() erzeugt dadurch keine
+            # zweite, unabhängige Instanz mehr (siehe
+            # docs/MusicBot_ARCH-027_Error_Handler_Consolidation.md).
+            self.rich_menu_handler = RichMenuHandler(
+                self.config, error_handler=self.error_handler
+            )
             self.logger.info("✅ RichMenuHandler erstellt")
         except Exception as e:
             self.logger.critical(
