@@ -17,6 +17,19 @@ Docstring) - get_user_role() liefert eine String-Rolle für Begrüßungs-/
 Hilfetext, nicht die AccessLevel-Enum aus permissions.get_user_access_level().
 Beide bleiben getrennt (unterschiedliche Rückgabetypen/Konsumenten,
 ARCH-021/P-3-Entscheidung).
+
+Telegram Start/Help/Menu UX Finalization v2: FEATURES besaß bisher ein
+"commands"-Feld je Eintrag (z. B. "/download", "/stats", "/month",
+"/year", "/navidrome", "/search", "/admin", "/users", "/tests") - keiner
+dieser Werte war je als echter Telegram-CommandHandler registriert
+(einzige real registrierte Commands: /start, /menu, /help, siehe
+RichMenuHandler.get_telegram_handlers(); /cancel wird als Freitext-
+Schlüsselwort in text_workflow_dispatcher.py behandelt). Der einzige
+Konsument dieses Felds (content/help.py::send_help_message()) zeigte
+diese erfundenen Befehle direkt im /help-Text an. Feld ersatzlos
+entfernt statt mit echten Werten befüllt, da die tatsächliche
+Bedienung ausschließlich über /menu (Inline-Buttons) erfolgt - siehe
+docs/MusicBot_TELEGRAM_MENU_SYSTEM.md.
 """
 
 import json
@@ -29,7 +42,6 @@ FEATURES: Dict[str, Dict] = {
         "emoji": "📥",
         "title": "Downloads",
         "description": "Lade Musik von YouTube herunter",
-        "commands": ["/download"],
         "min_role": "user",
         "menu_id": "download",
     },
@@ -37,7 +49,6 @@ FEATURES: Dict[str, Dict] = {
         "emoji": "📊",
         "title": "Statistiken",
         "description": "Zeige deine Hörstatistiken",
-        "commands": ["/stats", "/month", "/year"],
         "min_role": "user",
         "menu_id": "stats",
     },
@@ -45,7 +56,6 @@ FEATURES: Dict[str, Dict] = {
         "emoji": "🎵",
         "title": "Navidrome",
         "description": "Durchsuche deine Musikbibliothek",
-        "commands": ["/navidrome", "/search"],
         "min_role": "user",
         "menu_id": "navidrome",
     },
@@ -53,7 +63,6 @@ FEATURES: Dict[str, Dict] = {
         "emoji": "⚙️",
         "title": "Administration",
         "description": "Systemverwaltung und User-Management",
-        "commands": ["/admin", "/users"],
         "min_role": "admin",
         "menu_id": "admin",
     },
@@ -61,7 +70,6 @@ FEATURES: Dict[str, Dict] = {
         "emoji": "🧪",
         "title": "Test-System",
         "description": "Unit-, Integrations- und Performance-Tests",
-        "commands": ["/tests"],
         "min_role": "admin",
         "menu_id": "tests",
     },

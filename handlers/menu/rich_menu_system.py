@@ -538,9 +538,12 @@ class RichMenuSystem:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         menu_id: Optional[str] = None,
+        header_text: Optional[str] = None,
     ) -> None:
         """Zeigt Menü an oder aktualisiert es (ARCH-024/P-4: delegiert an
-        rendering.show_menu())."""
+        rendering.show_menu()). `header_text`: optionaler, vorangestellter
+        Textblock (Telegram Start/Help/Menu UX Finalization v2, siehe
+        rendering.py-Docstring) - z. B. die /start-Begrüßung."""
         await rendering.show_menu(
             update,
             context,
@@ -550,6 +553,7 @@ class RichMenuSystem:
             self.get_session,
             self._get_user_access_level,
             self.logger,
+            header_text=header_text,
         )
 
     # ====== HAUPT-CALLBACK-HANDLER ======

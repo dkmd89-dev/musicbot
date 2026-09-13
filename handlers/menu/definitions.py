@@ -31,11 +31,17 @@ def build_menu_tree(system) -> MenuItem:
     Instanz, deren dünne `_handle_*`-Delegatoren (ARCH-024/P-2) als
     MenuItem.handler gebunden werden."""
     # Hauptmenü
+    # Telegram Start/Help/Menu UX Finalization v2: description bewusst
+    # leer - /start liefert bereits einen eigenen, personalisierten
+    # Begrüßungstext als header_text vor demselben Hauptmenü (siehe
+    # content/greeting.py). Ein zusätzliches statisches "Willkommen..."
+    # hier würde sich bei JEDEM /menu-Aufruf und jedem Klick auf
+    # "🏠 Hauptmenü" wiederholen (Doppelinformation), nicht nur beim
+    # ersten Einstieg.
     root_menu = MenuItem(
         id="main",
         title="Hauptmenü",
         emoji="🏠",
-        description="Willkommen beim Musik-Bot",
     )
 
     # Download-Menü

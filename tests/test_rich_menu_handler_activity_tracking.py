@@ -41,6 +41,7 @@ def _make_handler(tmp_path):
     with patch("handlers.menu.rich_menu_handler.Path", side_effect=_fake_path):
         handler = RichMenuHandler(config)
     handler.menu_system = Mock()
+    handler.menu_system.show_menu = AsyncMock()
     handler.status_handler = Mock()
     return handler
 

@@ -925,6 +925,7 @@ class RichMenuHandler:
             self.user_data_file,
             self.error_handler,
             self.logger,
+            self.menu_system,
         )
 
     async def handle_menu_command(

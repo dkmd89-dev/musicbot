@@ -24,6 +24,14 @@ die in handlers/menu/content/messages.py zentralisierten Texte -
 diese Datei bleibt für Themenauswahl/Keyboard-Aufbau/Telegram-Versand
 zuständig, siehe
 docs/MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md.
+
+Telegram Start/Help/Menu UX Finalization v2: send_help_message()s
+Pro-Feature-Zeile zeigte bisher zusätzlich `feature["commands"]` an -
+dieses Feld enthielt ausschließlich erfundene, nie als
+Telegram-CommandHandler registrierte Befehle (siehe
+content/user_context.py-Docstring). Feld und Zeile entfernt; die
+tatsächliche Bedienung läuft über /menu (bereits in
+HELP_GENERAL_COMMANDS_HEADER dokumentiert).
 """
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -74,13 +82,9 @@ async def send_help_message(
             messages.HELP_INTRO_SUBTITLE,
         ]
         for feature_id, feature in available_features.items():
-            commands = feature.get("commands", [])
             help_parts.append(f"{feature['emoji']} **{feature['title']}**")
             help_parts.append(feature["description"])
-            if commands:
-                help_parts.append(f"_Befehle: {', '.join(commands)}_\n")
-            else:
-                help_parts.append("")
+            help_parts.append("")
 
         help_parts.extend(
             [

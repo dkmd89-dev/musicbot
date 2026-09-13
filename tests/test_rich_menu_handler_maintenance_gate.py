@@ -46,6 +46,7 @@ def _make_handler(tmp_path):
     with patch("handlers.menu.rich_menu_handler.Path", side_effect=_fake_path):
         handler = RichMenuHandler(config)
     handler.menu_system = Mock()
+    handler.menu_system.show_menu = AsyncMock()
     return handler
 
 
@@ -154,9 +155,14 @@ class TestAdminBypassesMaintenanceMode:
         run_async(handler.handle_start_command(update, Mock()))
 
         # Wurde NICHT mit der Wartungsmeldung beantwortet - die reale
-        # Start-Begruessung (laenger, mit Keyboard) lief stattdessen durch.
-        update.message.reply_text.assert_awaited_once()
-        assert "Wartungsmodus" not in update.message.reply_text.call_args.args[0]
+        # Start-Begruessung (header_text vor dem zentralen Hauptmenue,
+        # siehe content/greeting.py) lief stattdessen durch.
+        update.message.reply_text.assert_not_called()
+        handler.menu_system.show_menu.assert_awaited_once()
+        header_text = handler.menu_system.show_menu.call_args.kwargs.get(
+            "header_text", ""
+        )
+        assert "Wartungsmodus" not in header_text
 
     def test_admin_menu_command_not_blocked(self, tmp_path):
         handler = _make_handler(tmp_path)
@@ -177,5 +183,9 @@ class TestMaintenanceInactiveDoesNotBlockAnyone:
 
         run_async(handler.handle_start_command(update, Mock()))
 
-        update.message.reply_text.assert_awaited_once()
-        assert "Wartungsmodus" not in update.message.reply_text.call_args.args[0]
+        update.message.reply_text.assert_not_called()
+        handler.menu_system.show_menu.assert_awaited_once()
+        header_text = handler.menu_system.show_menu.call_args.kwargs.get(
+            "header_text", ""
+        )
+        assert "Wartungsmodus" not in header_text

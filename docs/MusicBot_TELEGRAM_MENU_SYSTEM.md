@@ -900,7 +900,149 @@ Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
 
 ---
 
-## 8. Verwandte Dokumente
+## 8. Telegram Start/Help/Menu UX Finalization v2 (2026-09-13)
+
+### 8.1 Auftrag
+
+Nutzer-Vorgabe: `/start`, `/menu`, `/help` final auf konsistentes Layout
+und eine einzige, zentrale Menüarchitektur bringen — explizit **keine**
+zweite, parallele Menüimplementierung für `/start`.
+
+### 8.2 Docs↔Code-Delta (vor der Umsetzung festgestellt)
+
+Zwei reale Abweichungen zwischen beabsichtigter Architektur
+(„eine zentrale Main-Menu-Definition") und tatsächlichem Code:
+
+1. **`/start` rief nie `RichMenuSystem.show_menu()` auf.**
+   `content/greeting.py::send_start_message()` baute stattdessen eine
+   eigene, vollständige Feature-Liste (aus
+   `user_context.FEATURES`/`get_available_features()`, eigene
+   Rollen-Hierarchie-Prüfung) **und** eine eigene Tastatur
+   (`InlineKeyboardButton` pro Feature + eigener „🏠 Hauptmenü"-Button,
+   der erst per Klick zum echten Hauptmenü führte) — eine zweite,
+   inhaltlich redundante Menüdarstellung mit eigener,
+   parallel zur `AccessLevel`-Architektur laufender Sichtbarkeitsprüfung.
+2. **`user_context.FEATURES` enthielt erfundene Commands.** Jeder
+   Eintrag hatte ein `"commands"`-Feld (`/download`, `/stats`, `/month`,
+   `/year`, `/navidrome`, `/search`, `/admin`, `/users`, `/tests`) — real
+   registriert sind ausschließlich `/start`, `/menu`, `/help`
+   (`RichMenuHandler.get_telegram_handlers()`); `/cancel` funktioniert
+   als Freitext-Schlüsselwort (`text_workflow_dispatcher.py`), ist aber
+   kein `CommandHandler`. Der einzige Konsument dieses Felds
+   (`content/help.py::send_help_message()`) zeigte diese erfundenen
+   Befehle direkt im `/help`-Text an. `HELP_NAVIDROME` referenzierte
+   zusätzlich ein nie existierendes `/search`.
+
+Keine weiteren Abweichungen gefunden — Maintenance Gate, Activity
+Tracking, Access-Level-Architektur, Session-/Callback-/`message_id`-
+Handling und die Content-/Rendering-/Actions-Trennung (ARCH-024/025)
+entsprachen bereits der Dokumentation und wurden **nicht** verändert.
+
+### 8.3 Umsetzung
+
+**`/start` = Begrüßung + zentrales Hauptmenü, eine Nachricht:**
+`rendering.show_menu()`/`RichMenuSystem.show_menu()` haben ein neues,
+optionales `header_text`-Argument — wird es gesetzt, steht es vor dem
+regulären Menütext derselben, unveränderten `render_menu()`/
+`get_menu_text()`-Ausgabe. Bei `header_text=None` (z. B. jeder
+`/menu`-Aufruf, jede Navigation) ist das Verhalten exakt wie zuvor.
+
+`content/greeting.py::send_start_message()` baut jetzt nur noch einen
+kurzen Begrüßungstext (Name + optionale, dezente Rollenzeile bei
+moderator/admin/owner + Trennlinie `──────────────`, derselbe
+Divider-Stil wie in `handlers/mugge_statistik_handler.py`) und ruft
+`menu_system.show_menu(update, context, "main", header_text=welcome_text)`
+— keine eigene Feature-Liste, keine eigene Tastatur mehr. `menu_system`
+wird dafür als zusätzliche, explizite Abhängigkeit übergeben
+(`RichMenuHandler` hält bereits `self.menu_system`). Ergebnis: `/start`
+und `/menu` zeigen exakt dieselbe Tastatur, dieselbe
+`AccessLevel`-Filterung, denselben Navigationszustand.
+
+`root_menu.description` (`"Willkommen beim Musik-Bot"`) wurde entfernt
+— stand zuvor bei **jedem** `/menu`-Aufruf und jedem Klick auf
+„🏠 Hauptmenü" im Text, was neben der neuen, personalisierten
+`/start`-Begrüßung eine Doppelinformation gewesen wäre.
+
+**Keine Fake-Commands mehr:** `user_context.FEATURES`s `"commands"`-Feld
+wurde ersatzlos entfernt (kein Ersatz durch Verzeichnis-/Pseudo-Befehle
+— die tatsächliche Bedienung läuft über `/menu`). `help.py`s
+Pro-Feature-Zeile zeigt entsprechend keine Befehle mehr an; die
+allgemeinen, tatsächlich existierenden Befehle (`/start`/`/menu`/
+`/help`/`/cancel`) bleiben unverändert im „⚡ Allgemeine Befehle"-Block.
+`HELP_NAVIDROME` verweist jetzt auf `/menu → 🎵 Navidrome Mediathek`
+statt auf das nie existierende `/search`. `HELP_CMD_START` beschrieb
+`/start` bisher fälschlich als „Bot neu starten" (das tut nur der
+separate, admin-only „🔄 Bot neu starten"-Button/`BotRestartHandler`,
+via `systemctl restart`) — korrigiert auf „Begrüßung & Hauptmenü
+anzeigen".
+
+**`/help`-Gruppierung unverändert belassen:** `send_help_message()`
+gruppierte bereits vor dieser Phase nach Feature-Bereich (Downloads/
+Statistiken/Navidrome/Administration, rollenabhängig über dieselbe
+`get_available_features()`) — entspricht der gewünschten Struktur, kein
+Umbau nötig.
+
+**Premium-/Rollen-Darstellung (geprüft, bewusst nicht eingeführt):** die
+bestehende Access-Architektur (`AccessLevel` in `models.py`/
+`permissions.py`) kennt ausschließlich PUBLIC/USER/MODERATOR/ADMIN/
+OWNER — kein „Premium"-Konzept. Ein „⭐ Premium"-Divider wäre reine
+Fiktion ohne Rückhalt in der Access-Control gewesen (Master-Prompt
+Abschnitt 9 verbietet genau das). Stattdessen wird die bereits
+vorhandene, rein dekorative Rollenzeile (`get_user_role()` — ein von
+`AccessLevel` bewusst getrennter Begrüßungs-/Hilfetext-Belang, siehe
+`user_context.py`-Docstring, ARCH-021/P-3) in der `/start`-Begrüßung
+weiterverwendet: eine Zeile, nur für moderator/admin/owner sichtbar,
+steuert keinerlei Sichtbarkeit von Menüpunkten.
+
+**Markdown-Robustheit:** der Telegram-Username/Vorname wird vor dem
+Einsetzen in den fett formatierten Begrüßungstext escaped
+(`content/greeting.py::_escape_markdown()`, dieselbe Legacy-Markdown-
+Sonderzeichen-Menge `_ * `` [` wie in `enhanced_status_handler.py`) —
+ohne Escaping hätte ein Username wie „john_doe" zu
+`BadRequest: Can't parse entities` geführt (dieselbe Fehlerklasse wie
+`docs/FINDINGS_INDEX.md`, dl:-Menüs mit dynamischen Inhalten).
+
+### 8.4 Geänderte Dateien
+
+`handlers/menu/rendering.py` (`header_text`-Parameter),
+`handlers/menu/rich_menu_system.py` (`show_menu()` reicht `header_text`
+durch), `handlers/menu/content/greeting.py` (Neuschreibung: kurze
+Begrüßung statt Feature-Liste/eigene Tastatur), `handlers/menu/content/
+messages.py` (GREETING_*-Konstanten reduziert, `/search`-Fix in
+`HELP_NAVIDROME`), `handlers/menu/content/user_context.py`
+(`"commands"`-Feld aus `FEATURES` entfernt), `handlers/menu/content/
+help.py` (Pro-Feature-„Befehle:"-Zeile entfernt),
+`handlers/menu/rich_menu_handler.py` (`menu_system` an
+`send_start_message()` übergeben), `handlers/menu/definitions.py`
+(`root_menu.description` entfernt).
+
+### 8.5 Tests
+
+Neu: `tests/test_menu_content_greeting.py` (11), `tests/
+test_menu_content_help.py` (9), `tests/test_menu_content_user_context.py`
+(2), `TestShowMenuHeaderText` in `tests/test_rich_menu_system.py` (4),
+`test_root_menu_has_no_static_welcome_description` in `tests/
+test_menu_definitions.py`. Angepasst (Verhaltensänderung, keine
+Abschwächung): `tests/test_rich_menu_handler_maintenance_gate.py` (2
+Tests prüften bisher `update.message.reply_text` direkt für `/start` —
+prüfen jetzt `menu_system.show_menu(header_text=...)`, da `/start` seine
+Nachricht nicht mehr selbst verschickt), `tests/
+test_rich_menu_handler_activity_tracking.py` (`_make_handler()`:
+`menu_system.show_menu` explizit als `AsyncMock` vorbelegt). Thematische
+Regressionsgruppe (Menu/Content/Rendering/Permissions/Access-Control):
+**234 passed, 0 Regressionen.**
+
+### 8.6 Bewusst nicht verändert
+
+Keine Änderung an: Maintenance Gate, Activity Tracking, Session-
+Management, Callback-Routing (`RichMenuSystem.handle_callback()`),
+`actions/`-Domänen, Access-Level-Architektur selbst, `/help`-Gruppierung
+(bereits korrekt), `handlers/menu/`-Modulstruktur (ARCH-024/025 bleiben
+unverändert gültig).
+
+---
+
+## 9. Verwandte Dokumente
 
 - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — Details zu allen vier
   live gefundenen Bugs dieser Phase sowie zum inzwischen geschlossenen
