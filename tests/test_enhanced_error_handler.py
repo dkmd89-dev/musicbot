@@ -114,6 +114,34 @@ class TestExceptionMonitor:
         assert monitor.categorize_exception(ValueError()) == "parsing"
         assert monitor.categorize_exception(IndexError()) == "data"
 
+    def test_permission_error_is_categorized_as_file_system_not_authentication(self):
+        """
+        FINDINGS_INDEX.md F11 Re-Evaluation (2026-09-14): PermissionError
+        war sowohl in "file_system" als auch in "authentication" gelistet -
+        "file_system" gewann schon vorher immer (kommt zuerst im Dict),
+        "authentication" war dadurch fuer PermissionError (ihren einzigen
+        Eintrag) faktisch unerreichbar und wurde komplett entfernt. Dieser
+        Test pinnt das bereits vorher tatsaechliche Ergebnis - keine
+        Verhaltensaenderung, nur Entfernung des toten Duplikats.
+        """
+        monitor = ExceptionMonitor()
+        assert monitor.categorize_exception(PermissionError()) == "file_system"
+
+    def test_authentication_category_no_longer_exists(self):
+        monitor = ExceptionMonitor()
+        assert "authentication" not in monitor.categories
+
+    def test_index_error_remains_categorized_as_data(self):
+        """
+        F11 Re-Evaluation: "data" listete zusaetzlich ValueError/KeyError,
+        die bereits von "parsing" (kommt zuerst) abgefangen wurden - beide
+        entfernt, "data" bleibt fuer IndexError (den einzigen nicht
+        anderweitig doppelt vergebenen Typ) unveraendert erreichbar.
+        """
+        monitor = ExceptionMonitor()
+        assert monitor.categorize_exception(IndexError()) == "data"
+        assert monitor.categorize_exception(KeyError()) == "parsing"
+
     def test_determine_severity_critical_for_memory_error(self):
         monitor = ExceptionMonitor()
         assert monitor.determine_severity(MemoryError(), {}) == "critical"
