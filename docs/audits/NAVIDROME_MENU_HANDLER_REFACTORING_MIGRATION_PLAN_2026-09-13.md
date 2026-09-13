@@ -1,11 +1,15 @@
 # Architecture Refactoring Audit — Migrationsplan: NavidromeMenuHandler
 
-**Status:** Ursprünglich READ-ONLY AUDIT-ERGEBNIS. **Stufe 1 und Stufe 3
-wurden vom Nutzer freigegeben und sind seit 2026-09-13 IMPLEMENTED**
-(siehe Nachtrag am Ende von Abschnitt 5 bzw. Nachtrag 3 in Abschnitt 4).
-Dabei zusätzlich entdecktes NAV-F14 ist ebenfalls CLOSED (eigener PR).
-Stufe 2 (optional, nicht umgesetzt) sowie Stufe 4/5 bleiben weiterhin
-reine Planung, nicht freigegeben, nicht umgesetzt.
+**Status:** Ursprünglich READ-ONLY AUDIT-ERGEBNIS. **Stufe 1, Stufe 3
+und die Detail-View-Familien-Vervollständigung (Artist-/Genre-Detail,
+über den ursprünglichen Plan hinaus ergänzt) wurden vom Nutzer
+freigegeben und sind seit 2026-09-13 IMPLEMENTED** (siehe Nachtrag am
+Ende von Abschnitt 5 bzw. Nachtrag 3/4 in Abschnitt 4). Dabei
+zusätzlich entdeckte NAV-F14/NAV-F15 sind ebenfalls CLOSED (je eigener
+PR); NAV-F16 (identischer Bug wie NAV-F15, in `render_album_detail()`)
+ist bewusst OPEN geblieben. Stufe 2 (optional, nicht umgesetzt) sowie
+Stufe 4/5 bleiben weiterhin reine Planung, nicht freigegeben, nicht
+umgesetzt.
 
 **Scope:** `handlers/navidrome_menu_handler.py` (1454 Zeilen Methodencode,
 19 Methoden), `handlers/menu/actions/navidrome.py` (258 Zeilen, dünner
@@ -217,6 +221,35 @@ im Genre-Übersichtstext) bestätigte identischen Output. 11 neue, reine
 Unit-Tests in `tests/test_navidrome_renderer.py`. `NavidromeMenuHandler`
 schrumpfte auf 1179 Zeilen (von ursprünglich 1493 vor Stufe 1).
 Migrationsstufen 4/5 bleiben weiterhin nicht freigegeben.
+
+**Nachtrag 4 (2026-09-13) — Zwischendurch: NAV-F15/NAV-F16 (außerhalb
+der nummerierten Stufen):** der Nutzer fand und fixte selbst ein rohes
+`+` in `render_playlist_detail()`s Tracklist-Overflow-Hinweis
+(reserviertes MarkdownV2-Zeichen, `BadRequest` bei Playlists mit >25
+Songs) — von Claude ordnungsgemäß durchs Ship-Verfahren geführt
+(Fehlbezeichnung in Kommentaren korrigiert, als NAV-F15 CLOSED
+dokumentiert). Derselbe Bug existiert unverändert in
+`render_album_detail()` — bewusst nicht mitgefixt, als eigener,
+zurückgestellter Fund NAV-F16 (OPEN, P0) dokumentiert.
+
+**Nachtrag 5 (2026-09-13) — Detail-View-Familie vervollständigt
+(über den ursprünglichen Plan hinaus, vom Nutzer explizit
+nachgefragt):** `render_artist_detail()`/`render_genre_detail()` neu
+in `handlers/navidrome_renderer.py`, exakt nach demselben Muster wie
+Stufe 1 (Pflichtschritt: fehlende Erfolgspfad-/Overflow-Button-/
+Connection-Error-Tests für beide Methoden zuerst ergänzt - 11 neue
+Tests in `TestArtistDetailMarkdownEscapingBug007b`/
+`TestGenreDetailMarkdownEscapingBug007b`, liefen gegen den
+unveränderten Code grün, kein bisher unentdeckter Bug aufgedeckt -
+dann Extraktion in demselben PR). **Abbruchkriterium griff nicht:**
+alle 11 Tests liefen nach der Extraktion unverändert grün. Byte-genauer
+Vorher-/Nachher-Vergleich beider MarkdownV2-Textbausteine bestätigte
+identischen Output. 8 neue, reine Unit-Tests in
+`tests/test_navidrome_renderer.py`. Damit sind alle 5 Detail-Views
+(Artist/Album/Song/Playlist/Genre) konsistent im Renderer.
+`NavidromeMenuHandler` schrumpfte auf 1059 Zeilen (von ursprünglich
+1493 vor Stufe 1). Migrationsstufen 4/5 bleiben weiterhin nicht
+freigegeben.
 
 ### Stufe 4 — `services/navidrome/browser_service.py` (API-Extraktion)
 **Ziel:** Der in der Zieldoku beschriebene `browser_service` — reine
