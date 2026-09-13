@@ -2,7 +2,7 @@
 
 **Status:** CURRENT (lebendes Dokument). Entstanden aus dem read-only
 „MASTER PHASE — NAVIDROME MENU SYSTEM"-Audit (2026-09-13). P0-Findings
-(NAV-F1/NAV-F2) sind CLOSED; P1-P3 bleiben offen/geplant.
+(NAV-F1/NAV-F2) und NAV-F10 sind CLOSED; NAV-F3–F9 bleiben offen/geplant.
 **Scope:** `handlers/navidrome_menu_handler.py`,
 `handlers/menu/actions/navidrome.py`, `services/clients/navidrome_api.py`
 und ihre unmittelbaren Kollaborateure (Personal-Statistics-Domain nur
@@ -138,7 +138,7 @@ Server-Ebene, nicht gleichbedeutend mit `UNSUPPORTED`).
 | NAV-F7 | `nav_search_genres` — STUB. | — | P3 | OPEN |
 | NAV-F8 | `nav_genre_stats` — STUB. | — | P3 | OPEN |
 | NAV-F9 | `nav_album_<id>`/`nav_song_<id>` Detailansichten — STUB, obwohl an 6 Stellen im Code bereits verlinkt (`getAlbum`/`getSong` nicht implementiert). | — | **P1** | OPEN |
-| NAV-F10 | `StatistikHandler.handle_last_played()` (erreicht über `nav_recent`) hat kein `reply_markup` — in der ARCH-029-Phase („Menu Navigation Continuity") übersehen, da die Methode über `nav_recent`, nicht über eine `stats_*`-ID erreichbar ist. | Navigation-Gap (ARCH-029-Nachtrag) | P1 | OPEN |
+| NAV-F10 | `StatistikHandler.handle_last_played()` (erreicht über `nav_recent`) hatte kein `reply_markup` — in der ARCH-029-Phase („Menu Navigation Continuity") übersehen, da die Methode über `nav_recent`, nicht über eine `stats_*`-ID erreichbar ist. | Navigation-Gap (ARCH-029-Nachtrag) | P1 | **CLOSED** (2026-09-13) |
 
 Vollständige Details/Codebelege zu NAV-F3–F10: Audit-Transkript
 (Session vom 2026-09-13); Übernahme nach `docs/FINDINGS_INDEX.md` steht
@@ -201,7 +201,7 @@ Verschiebung von Serverstatus/Scan aus dem Admin-Bereich hierher.
 
 1. ~~NAV-F1~~ ✅ CLOSED
 2. ~~NAV-F2~~ ✅ CLOSED
-3. NAV-F10 — `reply_markup` für `handle_last_played()` nachziehen (ARCH-029-Muster wiederverwenden)
+3. ~~NAV-F10~~ ✅ CLOSED — `reply_markup` für `handle_last_played()` nachgezogen (ARCH-029-Muster wiederverwendet: `RichMenuSystem.get_result_navigation("nav_recent")` → `handlers/menu/actions/navidrome.py::handle_recent()` → `StatistikHandler.handle_last_played(reply_markup=...)`)
 4. NAV-F6 — echten `NavidromeAPI.check_connection()` in `_check_connection()`/`handle_reconnect()` nutzen
 5. NAV-F4/NAV-F5 — Playlist-Duplikat mergen, `getPlaylist`-Client-Methode + Dispatcher-Zweig ergänzen
 6. NAV-F9 — `getAlbum`/`getSong`-Client-Methoden + Detail-Rendering
@@ -218,9 +218,11 @@ gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
 
 | Bereich | Datei | Umfang |
 |---|---|---|
-| `NavidromeMenuHandler` (Connection-Status, Escaping, Error-Routing) | `tests/test_navidrome_menu_handler.py` | 29 Tests (BUG-007a/b, NAV-F1, NAV-F2) |
-| `handlers/menu/actions/navidrome.py`-Wrapper + interner Dispatcher | `tests/test_menu_actions_navidrome.py` | 9 Tests |
+| `NavidromeMenuHandler` (Connection-Status, Escaping, Error-Routing, NAV-F1) | `tests/test_navidrome_menu_handler.py` | 29 Tests (BUG-007a/b, NAV-F1, NAV-F2) |
+| `handlers/menu/actions/navidrome.py`-Wrapper + interner Dispatcher (NAV-F10) | `tests/test_menu_actions_navidrome.py` | 11 Tests |
 | `NavidromeAPI`-Adapter (Logging, Timeout, Characterization) | `tests/test_navidrome_api_characterization.py`, `tests/test_navidrome_api_logging.py`, `tests/test_navidrome_api_timeout.py` | siehe dort |
+| Result-Navigation End-to-End (ARCH-029-Muster, NAV-F10) | `tests/test_menu_navigation_continuity.py::TestLastPlayedResultNavigationEndToEndNavF10` | 2 Tests |
+| `handle_last_played()` `reply_markup`-Passthrough (NAV-F10) | `tests/test_mugge_statistik_handler.py::TestHandleLastPlayed` | 1 neuer Test |
 
 **Bekannte Testlücken** (Details: Audit-Transkript): keine Verhaltenstests
 für `handle_browse_albums`/`handle_browse_genres`/`handle_my_playlists`/

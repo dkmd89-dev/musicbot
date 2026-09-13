@@ -7,7 +7,9 @@ ARCH-024/P-2 (Actions Extraction): 1:1 aus
 handlers/menu/rich_menu_system.py verschoben (reine Move-Operation).
 """
 
-from telegram import Update
+from typing import Optional
+
+from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from handlers.menu.actions._common import show_handler_not_available
@@ -86,10 +88,24 @@ async def handle_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE, n
         await show_handler_not_available(update, "Navidrome-Handler")
 
 
-async def handle_recent(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler):
-    """Wrapper für Zuletzt gespielt (ruft StatistikHandler auf)"""
+async def handle_recent(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    stats_handler,
+    nav_markup: Optional[InlineKeyboardMarkup] = None,
+):
+    """Wrapper für Zuletzt gespielt (ruft StatistikHandler auf).
+
+    NAV-F10: `nav_markup` additiv/optional (Default `None`), von
+    RichMenuSystem._handle_navidrome_recent() per
+    RichMenuSystem.get_result_navigation("nav_recent") berechnet - siehe
+    handlers/menu/rendering.py::render_result_navigation()-Docstring
+    (ARCH-029-Muster). Dieses Modul kennt selbst weder MenuItem noch die
+    Menü-Registry, reiner Passthrough."""
     if stats_handler and hasattr(stats_handler, "handle_last_played"):
-        await stats_handler.handle_last_played(update, context)
+        await stats_handler.handle_last_played(
+            update, context, reply_markup=nav_markup
+        )
     else:
         await show_handler_not_available(update, "Statistik-Handler")
 

@@ -270,6 +270,58 @@ class TestWeeklyStatsResultNavigationEndToEnd:
         assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
 
 
+class TestLastPlayedResultNavigationEndToEndNavF10:
+    """NAV-F10 (Navidrome Menu System Audit): 'Zuletzt gespielt'
+    (nav_recent) war in ARCH-029 übersehen worden, da die Methode nicht
+    über eine stats_*-ID, sondern über den Navidrome-Menüzweig
+    erreichbar ist. Prüft den vollständigen Pfad: Klick auf 'Zuletzt
+    gespielt' -> reply_markup -> Klick auf '⬅️ Navidrome Mediathek' ->
+    zeigt tatsächlich das Navidrome-Menü."""
+
+    def test_last_played_result_carries_navigation(self, tmp_path):
+        handler = _make_initialized_handler(tmp_path)
+        # _handle_navidrome_recent() lebt auf RichMenuSystem und liest
+        # dessen EIGENES self.stats_handler (== handler.menu_system.
+        # stats_handler, von initialize() per set_stats_handler()
+        # propagiert) - nicht handler.stats_handler (RichMenuHandler
+        # selbst), siehe analoges Muster bei den Family-Tests unten.
+        handler.menu_system.stats_handler = Mock()
+        handler.menu_system.stats_handler.handle_last_played = AsyncMock()
+
+        update = _make_update(OWNER_ID, "menu:nav_recent")
+        context = Mock()
+
+        run_async(handler.menu_system.handle_callback(update, context))
+
+        _, kwargs = handler.menu_system.stats_handler.handle_last_played.call_args
+        markup = kwargs.get("reply_markup")
+        assert isinstance(markup, InlineKeyboardMarkup)
+        buttons = [(b.text, b.callback_data) for row in markup.inline_keyboard for b in row]
+        assert ("⬅️ Navidrome Mediathek", "menu:navidrome") in buttons
+        assert ("🏠 Hauptmenü", "menu:main") in buttons
+
+    def test_clicking_back_button_shows_the_navidrome_menu(self, tmp_path):
+        handler = _make_initialized_handler(tmp_path)
+
+        update = _make_update(OWNER_ID, "menu:navidrome")
+        context = Mock()
+
+        run_async(handler.menu_system.handle_callback(update, context))
+
+        update.callback_query.edit_message_text.assert_awaited_once()
+        args, kwargs = update.callback_query.edit_message_text.call_args
+        text = args[0]
+        assert "Navidrome Mediathek" in text
+        keyboard = kwargs["reply_markup"]
+        buttons = [
+            (b.text, b.callback_data)
+            for row in keyboard.inline_keyboard
+            for b in row
+        ]
+        assert any(cb == "menu:nav_recent" for _, cb in buttons)
+        assert any(cb == "menu:nav_favorites" for _, cb in buttons)
+
+
 class TestFamilyStatsResultNavigationEndToEnd:
     def test_family_top_songs_result_carries_navigation(self, tmp_path):
         handler = _make_initialized_handler(tmp_path)
