@@ -683,16 +683,40 @@ korrigiert - alle drei waren Testartefakte (Patch-Ziele, Bare-Object-
 Konstruktionsreihenfolge), keine Produktionslogik-Regressionen.
 
 ## Remaining Technical Debt
-- `stats.py`s `handle_stats_monthly_system`/`_yearly_system`/
+
+**Status (ARCH-025, 2026-09-13): alle drei ursprünglich hier gelisteten
+Punkte sind CLOSED — siehe
+`docs/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md`, Abschnitt
+„Technical Debt Fixes". Aus historischer Nachvollziehbarkeit bleibt die
+ursprüngliche Formulierung unten erhalten, jeweils mit Schließungsvermerk:**
+
+- ~~`stats.py`s `handle_stats_monthly_system`/`_yearly_system`/
   `_top_songs_system`/`_top_artists_system`/`_timeline_system` bleiben
   im Produktivbetrieb unerreichbar (überschrieben durch
   `RichMenuHandler._register_stats_handlers()`, s. P-1 Abschnitt 1.6) -
-  1:1 mitverschoben, nicht bereinigt (außerhalb ARCH-024-Scope).
-- 6 bereits vor ARCH-024 tote Importe in `rich_menu_system.py`
+  1:1 mitverschoben, nicht bereinigt (außerhalb ARCH-024-Scope).~~
+  **CLOSED (ARCH-025):** alle 5 Funktionen nach Verifikation entfernt,
+  `definitions.py` setzt für diese 5 MenuItems kein `handler=` mehr,
+  `register_handler()` verdrahtet weiterhin unverändert den echten,
+  live genutzten Handler.
+- ~~6 bereits vor ARCH-024 tote Importe in `rich_menu_system.py`
   (`Any`/`MenuState`/`Path`/`json`/`timedelta`/`CallbackQueryHandler`) -
-  nicht angefasst.
-- `RichMenuHandler`s Onboarding-Cluster (~280 Zeilen) bleibt
-  zusammen mit Composition/Lifecycle in einer Datei (P-5-Entscheidung).
+  nicht angefasst.~~ **CLOSED (ARCH-025):** alle 6 nach erneuter
+  Verifikation (0 Verwendungen inkl. Docstrings/Kommentaren/Patch-Zielen)
+  entfernt.
+- ~~`RichMenuHandler`s Onboarding-Cluster (~280 Zeilen) bleibt
+  zusammen mit Composition/Lifecycle in einer Datei (P-5-Entscheidung).~~
+  **CLOSED (ARCH-025):** Onboarding-Cluster (Command-Logik + Help-/
+  Greeting-Content + Nutzerkontext-Auflösung) nach `handlers/menu/content/`
+  extrahiert (`greeting.py`/`help.py`/`user_context.py`).
+  `RichMenuHandler` behält nur noch dünne Delegatoren + die bewusst
+  nicht extrahierte `handle_menu_command()`.
+
+**Neu während ARCH-025 gefunden, bewusst nicht behoben (außerhalb des
+ARCH-025-Scopes, siehe dortiges Dokument Abschnitt „Remaining Technical
+Debt"):** `MenuState`/`Callable` sind bereits vor ARCH-025 tote Importe
+in `handlers/menu/rich_menu_handler.py` - nicht angefasst (nicht Teil
+der explizit benannten 6 `rich_menu_system.py`-Importe).
 
 ## Deferred Architecture Issues
 Keine neuen. Die vier in ARCH-021/P-2 zurückgestellten Legacy-Findings

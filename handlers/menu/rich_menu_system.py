@@ -15,13 +15,11 @@ CHANGELOG:
           • _is_admin_check()            (interne Hilfsmethode)
 """
 
-from typing import Dict, List, Optional, Callable, Any, Set
-from datetime import datetime, timedelta
-import json
-from pathlib import Path
+from typing import Dict, List, Optional, Callable, Set
+from datetime import datetime
 
 from telegram import Update, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, CallbackQueryHandler
+from telegram.ext import ContextTypes
 
 from logger import get_module_logger
 from handlers.menu.maintenance_gate import is_blocked_by_maintenance
@@ -30,7 +28,6 @@ from handlers.menu.models import (
     AccessLevel,
     MenuItem,
     MenuSession,
-    MenuState,
 )
 from handlers.menu.permissions import is_admin_or_owner, get_user_access_level
 from handlers.menu.session import SessionManager
@@ -910,20 +907,30 @@ class RichMenuSystem:
 
     # ====== DOWNLOAD-CONTROL-CENTER (2026-09-02, Nutzer-Vorgabe) ======
     #
+    # ARCH-024/P-2 (2026-09-13): die eigentliche Implementierung dieser
+    # Domäne (inkl. der beiden unten erwähnten Methoden) liegt seit der
+    # Actions-Extraktion in handlers/menu/actions/download.py als
+    # handle_download_new()/handle_download_history() - hier verbleiben
+    # nur noch die dünnen Delegatoren. Historischer Kontext (weiterhin
+    # gültig) unverändert erhalten:
+    #
     # "📥 Downloads" wird zu einem echten Steuerzentrum statt der
     # bisherigen statischen 2-Optionen-Liste (Einzelner Track/Playlist -
     # ohnehin redundant, da download_utils.py Single/Playlist automatisch
-    # anhand der URL erkennt, siehe _handle_download_new()). "❌
-    # Abbrechen" erscheint NUR, wenn tatsächlich ein Download für diesen
-    # Chat aktiv ist (self.active_downloads, siehe
+    # anhand der URL erkennt, siehe handle_download_new() in
+    # actions/download.py). "❌ Abbrechen" erscheint NUR, wenn
+    # tatsächlich ein Download für diesen Chat aktiv ist
+    # (self.active_downloads, siehe
     # services/downloader/active_downloads.py) - "keine toten Buttons".
     #
     # 📋 Download-Verlauf / 🔁 Erneut versuchen (Nutzer-Prioritäten 3/4)
-    # sind bewusst NOCH NICHT Teil dieser ersten Ausbaustufe - sie
-    # brauchen einen persistenten Verlaufsspeicher, der als eigener
-    # Folgeschritt kommt (siehe _handle_download_history()-Platzhalter).
+    # waren zum Zeitpunkt dieses ursprünglichen Kommentars (2026-09-02)
+    # noch nicht Teil der ersten Ausbaustufe - sie brauchten einen
+    # persistenten Verlaufsspeicher, der als eigener Folgeschritt kam
+    # (seit 2026-09-03 umgesetzt, siehe handle_download_history() in
+    # actions/download.py und docs/FINDINGS_INDEX.md).
     # 🔄 Reprocessing (Priorität 5) ist laut Nutzer-Entscheidung ein
-    # eigener Bereich, absichtlich NICHT Teil dieses Menüs.
+    # eigener Bereich, bewusst NICHT Teil dieses Menüs.
 
     async def _handle_download_menu(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -963,21 +970,6 @@ class RichMenuSystem:
     ):
         await download_actions.handle_download_playlist_placeholder(update, context)
 
-    async def _handle_stats_monthly(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        await stats_actions.handle_stats_monthly_system(update, context, self.stats_handler)
-
-    async def _handle_stats_yearly(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        await stats_actions.handle_stats_yearly_system(update, context, self.stats_handler)
-
-    async def _handle_stats_top_songs(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        await stats_actions.handle_stats_top_songs_system(update, context, self.stats_handler)
-
     async def _handle_stats_library_overview(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
@@ -985,15 +977,15 @@ class RichMenuSystem:
         anders als die übrigen stats_*-Handler keine Play-History."""
         await stats_actions.handle_stats_library_overview(update, context, self.stats_handler)
 
-    async def _handle_stats_top_artists(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        await stats_actions.handle_stats_top_artists_system(update, context, self.stats_handler)
-
-    async def _handle_stats_timeline(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        await stats_actions.handle_stats_timeline_system(update, context, self.stats_handler)
+    # ARCH-025: _handle_stats_monthly/_yearly/_top_songs/_top_artists/
+    # _timeline (und die zugehörigen stats_actions.handle_stats_*_system-
+    # Funktionen) wurden entfernt - sie waren seit jeher unerreichbar
+    # (RichMenuHandler._register_stats_handlers() überschreibt die
+    # MenuItem-Bindung dieser fünf IDs unbedingt, siehe
+    # docs/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6).
+    # definitions.py setzt für diese fünf Items seither kein handler=
+    # mehr - register_handler() verdrahtet den echten, live genutzten
+    # Handler (_handle_*_stats_wrapper) unverändert.
 
     # ====== FAMILIEN-STATISTIK (Phase F2, Family Hub) ======
     # Zugriffsprüfung (Family-Membership) erfolgt in FamilyStatsHandler

@@ -48,10 +48,12 @@ Admin-Funktion).
 `MenuItem`-Baum (Titel, `id`, Kinder, optional `handler=`/`is_action=True`
 für Blätter mit eigener Aktion statt reinem Untermenü-Rendering).
 
-### 1a. Interne Modulstruktur von `handlers/menu/` (seit ARCH-024, COMPLETE)
+### 1a. Interne Modulstruktur von `handlers/menu/` (seit ARCH-024/ARCH-025, COMPLETE)
 
-Die beiden Kerndateien sind seit `ARCH-024` (siehe
-[`MusicBot_ARCH-024_Menu_File_Decomposition.md`](MusicBot_ARCH-024_Menu_File_Decomposition.md))
+Die beiden Kerndateien sind seit `ARCH-024`
+([`MusicBot_ARCH-024_Menu_File_Decomposition.md`](MusicBot_ARCH-024_Menu_File_Decomposition.md))
+und `ARCH-025`
+([`MusicBot_ARCH-025_Command_Help_Content_Decomposition.md`](MusicBot_ARCH-025_Command_Help_Content_Decomposition.md))
 in kohäsive Module aufgeteilt — die obige Zwei-Ebenen-Routing-Beschreibung
 und der Menübaum in Abschnitt 2 bleiben davon unberührt (reine interne
 Umstrukturierung, keine Verhaltensänderung, alle bisherigen öffentlichen/
@@ -61,9 +63,20 @@ dünne Delegatoren erhalten):
 ```text
 bot.py
   ↓
-RichMenuHandler        Composition Root, Lifecycle, Onboarding (/start,
-                        /help), Download-Pipeline-Einstieg
+RichMenuHandler        Composition Root, Lifecycle, dünne Command-
+                        Adapter (/start, /menu, /help → je Maintenance-
+                        Gate + Activity-Tracking + 1 Delegationsaufruf),
+                        Download-Pipeline-Einstieg
   (initialize(), get_telegram_handlers(), Setter, cleanup())
+  ├── content/            /start-/Help-Content, zustandslose Funktionen
+  │   ├── user_context.py     FEATURES-Katalog + Rollen-/Neuling-
+  │   │                       Ermittlung (get_user_role()/
+  │   │                       get_available_features()/is_new_user()/
+  │   │                       get_user_info()/load_user_data())
+  │   ├── greeting.py          send_start_message() — /start-Begrüßung
+  │   └── help.py              send_help_message()/
+  │                            send_help_callback_response() + die 4
+  │                            statischen Hilfetexte
   ↓
 RichMenuSystem          zentraler Callback-Router
   (handle_callback(): _ADMIN_ONLY_PREFIXES-Gate + Menu-Fallback-Gate;
@@ -104,15 +117,18 @@ RichMenuSystem          zentraler Callback-Router
 
 **Wichtig: Duplikat-Verwaltung (`duplicates.py`) ist bewusst eine eigene
 Domäne**, nicht Teil von `library.py` — Duplicate Detection ist laut
-CLAUDE.md Abschnitt 15 eine eigene P0-Domäne.
+CLAUDE.md Abschnitt 15 eine eigene P0-Domäne. **`content/` ist bewusst
+kein Teil von `actions/`** — Help-/Greeting-Content ist User-Facing
+Presentation/Messaging, keine Domain-Action (siehe ARCH-025-Dokument
+Abschnitt A.2).
 
-`permissions.py`/`session.py`/`models.py` sind durch `ARCH-024` **nicht**
-verändert worden (Scope war ausschließlich Actions/Definitions/Rendering).
-Onboarding (`/start`, `/help`, Feature-Katalog) wurde nach den im
-ARCH-024-Master-Prompt vorgegebenen Kriterien geprüft und bleibt bewusst
-in `RichMenuHandler` (NOT WARRANTED — zu stark mit dem dortigen
-`self.features`-Katalog verwoben, kein Testbarkeits- oder
-Kohäsionsgewinn durch Extraktion).
+`permissions.py`/`session.py`/`models.py` sind durch `ARCH-024`/`ARCH-025`
+**nicht** verändert worden. `RichMenuHandler` behält aus dem Onboarding-
+Cluster bewusst 5 dünne Delegator-Methoden (`_load_user_data()`/
+`_get_user_info()`/`_is_new_user()`/`_get_user_role()`/
+`_get_available_features()`, delegieren nach `content/user_context.py`)
+sowie `handle_menu_command()` (bereits dünner Adapter, kein
+Extraktionsbedarf).
 
 ---
 
@@ -849,6 +865,12 @@ Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
    Bei dynamischen/externen Inhalten (Titel, URLs, Nutzereingaben)
    **kein** `parse_mode="Markdown"` verwenden, sofern der Text nicht
    nachweislich vollständig statisch ist (siehe Bug D, Abschnitt 3.3).
+   Handelt es sich stattdessen um reinen Command-/Help-/Begrüßungs-
+   Content (User-Facing Presentation ohne fachliche Domain-Aktion, wie
+   `/start`/`/help`) statt einer Domain-Action: in
+   `handlers/menu/content/` einordnen (seit ARCH-025), nicht in
+   `actions/` — `RichMenuHandler` behält dafür einen dünnen
+   Command-Adapter (Maintenance-Gate + Activity-Tracking + Delegation).
 3. Bei einem **neuen** Callback-Präfix: `CallbackQueryHandler(...,
    pattern="^<präfix>:")` in `RichMenuHandler.get_telegram_handlers()`
    ergänzen — sonst verpufft der Klick stillschweigend (Bug B).
@@ -882,11 +904,13 @@ Bei jeder neuen Menüfunktion (neuer Button, neuer Callback-Präfix):
   (DRAFT) — Family Hub (F1–F5) in „Recent Major Changes" (Abschnitt 3).
 - [`docs/MusicBot_ARCH-021_Menu_Architecture_Migration.md`](MusicBot_ARCH-021_Menu_Architecture_Migration.md),
   [`docs/MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md`](MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md),
-  [`docs/MusicBot_ARCH-024_Menu_File_Decomposition.md`](MusicBot_ARCH-024_Menu_File_Decomposition.md)
-  — die drei Architekturmigrationsphasen der internen `handlers/menu/`-
+  [`docs/MusicBot_ARCH-024_Menu_File_Decomposition.md`](MusicBot_ARCH-024_Menu_File_Decomposition.md),
+  [`docs/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md`](MusicBot_ARCH-025_Command_Help_Content_Decomposition.md)
+  — die vier Architekturmigrationsphasen der internen `handlers/menu/`-
   Modulstruktur (Models/Permissions/Session → Router-/Permission-Härtung
-  → Actions/Definitions/Rendering-Dekomposition), alle COMPLETE. Siehe
-  Abschnitt 1a oben für die daraus resultierende aktuelle Modulstruktur.
+  → Actions/Definitions/Rendering-Dekomposition → Command/Help-Content-
+  Dekomposition + Debt-Fixes), alle COMPLETE. Siehe Abschnitt 1a oben für
+  die daraus resultierende aktuelle Modulstruktur.
 
 ---
 

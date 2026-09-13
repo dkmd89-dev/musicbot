@@ -23,8 +23,10 @@ und der Modul-Docstring von tests/test_menu_permissions_characterization.py):
 RichMenuHandler._get_user_role() liefert eine String-Rolle für
 Begrüßungstext/Feature-Liste und hängt an
 RichMenuHandler._get_user_info()/_load_user_data() (JSON-Datei-Fallback,
-State-Belang) - das ist kein reiner Permission-Belang und bleibt
-unverändert in rich_menu_handler.py.
+State-Belang) - das ist kein reiner Permission-Belang. RichMenuHandler
+behält diese Methodennamen als dünne Delegatoren; die Implementierung
+liegt seit ARCH-025 in handlers/menu/content/user_context.py (reine
+Verschiebung, unverändertes Verhalten).
 
 Dieses Modul darf keine Abhängigkeit auf rich_menu_system.py,
 rich_menu_handler.py oder Telegram-Infrastruktur haben.

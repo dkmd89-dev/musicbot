@@ -25,8 +25,10 @@ class _FakeSystem:
     def __init__(self):
         for name in [
             "_handle_download_menu", "_handle_download_single", "_handle_download_playlist",
-            "_handle_stats_monthly", "_handle_stats_yearly", "_handle_stats_top_songs",
-            "_handle_stats_top_artists", "_handle_stats_timeline", "_handle_stats_library_overview",
+            # ARCH-025: stats_monthly/_yearly/_top_songs/_top_artists/_timeline
+            # brauchen seit dem Debt-Fix kein handler=-Attribut mehr (s.
+            # definitions.py) - nur stats_library_overview bleibt live gebunden.
+            "_handle_stats_library_overview",
             "_handle_family_stats_top_songs", "_handle_family_stats_top_artists",
             "_handle_family_stats_member", "_handle_family_stats_champion",
             "_handle_family_stats_listening_times", "_handle_family_stats_monthly_trend",
@@ -73,6 +75,28 @@ def test_build_menu_tree_download_handler_bound_to_system_method():
     registry = {}
     definitions.populate_registry(registry, root)
     assert registry["download"].handler is system._handle_download_menu
+
+
+def test_build_menu_tree_dead_stats_items_have_no_handler_but_stay_actions():
+    """ARCH-025-Debt-Fix: stats_monthly/_yearly/_top_songs/_top_artists/
+    _timeline hatten vorher ein von RichMenuHandler._register_stats_handlers()
+    ohnehin unbedingt überschriebenes, nie erreichbares handler=. definitions.py
+    setzt seither bewusst kein handler= mehr - is_action=True bleibt erhalten
+    (Registrierung erfolgt weiterhin per register_handler() zur Laufzeit).
+    stats_library_overview bleibt die einzige direkt gebundene Ausnahme."""
+    system = _FakeSystem()
+    root = definitions.build_menu_tree(system)
+    registry = {}
+    definitions.populate_registry(registry, root)
+
+    for dead_id in [
+        "stats_monthly", "stats_yearly", "stats_top_songs",
+        "stats_top_artists", "stats_timeline",
+    ]:
+        assert registry[dead_id].handler is None
+        assert registry[dead_id].is_action is True
+
+    assert registry["stats_library_overview"].handler is system._handle_stats_library_overview
 
 
 def test_build_menu_tree_admin_menu_has_admin_access_level():
