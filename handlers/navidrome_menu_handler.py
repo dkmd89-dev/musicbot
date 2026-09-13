@@ -648,8 +648,8 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
             # Bindestrich, Klammern, Ausrufezeichen - in echten Kuenstler-
             # namen keine Seltenheit) zu einem "can't parse entities"-Fehler
             # von Telegram, der hier als generische Fehlermeldung endet statt
-            # die Kuenstlerdetails anzuzeigen. process_search_query()/
-            # handle_stats() escapen bereits korrekt, diese Methode nicht.
+            # die Kuenstlerdetails anzuzeigen. process_search_query() escapt
+            # bereits korrekt, diese Methode nicht.
             message_text = f"""🎤 **Künstler: {escape_md_v2(artist_name)}**
 
 📊 **Alben:** {len(albums)}
@@ -1025,63 +1025,6 @@ Du hast {len(playlists)} Playlist\\(s\\) verfügbar:
             else:
                 await update.callback_query.edit_message_text(
                     "❌ Fehler beim Laden der Favoriten."
-                )
-
-    async def handle_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Zeigt allgemeine Bibliotheksstatistiken"""
-        if not self._check_connection():
-            await self._show_connection_error(update)
-            return
-
-        try:
-            self.logger.info("📊 Lade Bibliotheksstatistiken...")
-            # getIndexes liefert oft Künstler- und Album-Zahlen
-            data = await asyncio.to_thread(self.navidrome_api.make_request, "getIndexes", {})
-            subsonic_response = data.get("subsonic-response", {})
-            indexes = subsonic_response.get("indexes", {})
-
-            # Versuche, Statistiken aus 'getIndexes' zu extrahieren
-            # Navidrome-spezifisch: 'index' ist eine Liste von Dictionaries
-            stats = {}
-            if "index" in indexes:
-                for index in indexes.get("index", []):
-                    name = index.get("name", "Unbekannt")
-                    artist_count = len(index.get("artist", []))
-                    if artist_count > 0:
-                        stats[name] = artist_count
-
-            # Fallback oder zusätzliche Infos
-            if not stats:
-                # Alternative: 'getArtistCount', 'getAlbumCount', 'getSongCount'
-                # (Diese sind nicht Standard-Subsonic, aber Navidrome unterstützt sie vllt?)
-                # Hier als Platzhalter:
-                stats["Künstler (geschätzt)"] = indexes.get("artistCount", "N/A")
-                stats["Alben (geschätzt)"] = indexes.get("albumCount", "N/A")
-                stats["Songs (geschätzt)"] = indexes.get("songCount", "N/A")
-
-            message_parts = ["📊 **Bibliotheksstatistiken**\n"]
-            for key, value in stats.items():
-                message_parts.append(f"• {escape_md_v2(key)}: {md_bold(str(value))}")
-
-            keyboard = [
-                [InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")]
-            ]
-
-            await update.callback_query.edit_message_text(
-                text="\n".join(message_parts),
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="MarkdownV2",
-            )
-
-        except Exception as e:
-            self.logger.error(f"❌ Fehler beim Laden der Statistiken: {e}")
-            if self.error_handler:
-                await self.error_handler.handle_callback_error(
-                    update, context, "navidrome_stats", e
-                )
-            else:
-                await update.callback_query.edit_message_text(
-                    "❌ Fehler beim Laden der Statistiken."
                 )
 
     async def handle_search(

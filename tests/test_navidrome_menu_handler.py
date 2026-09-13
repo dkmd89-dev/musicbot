@@ -18,7 +18,7 @@ tatsächlichen Konfiguration IMMER True. Fix: prüft jetzt echte
 BUG-007b: handle_artist_detail()/handle_genre_detail() fügten
 artist_name/genre_name ungeschützt in einen mit parse_mode="MarkdownV2"
 gesendeten Nachrichtentext ein. Andere Methoden im selben File
-(process_search_query, handle_stats) escapen dynamische Inhalte bereits
+(process_search_query) escapen dynamische Inhalte bereits
 korrekt mit escape_md_v2() - diese zwei nicht. Jeder MarkdownV2-
 Sonderzeichen im Namen (Punkt, Bindestrich, Klammern, Ausrufezeichen -
 in echten Künstler-/Genre-Namen keine Seltenheit, z.B. "Lo-Fi", "R&B/Soul")
@@ -491,22 +491,6 @@ class TestErrorHandlerIntegration:
         assert update.message.reply_text.await_count == 2
         error_text = update.message.reply_text.call_args[0][0]
         assert "Fehler bei der Suche" in error_text
-
-    def test_stats_routes_through_error_handler_when_set(self):
-        handler = NavidromeMenuHandler(FakeConfigConfigured())
-        handler.error_handler = Mock()
-        handler.error_handler.handle_callback_error = AsyncMock()
-        update = make_update()
-        context = make_context()
-
-        with patch(
-            "handlers.navidrome_menu_handler.asyncio.to_thread",
-            new=AsyncMock(side_effect=RuntimeError("boom")),
-        ):
-            asyncio.run(handler.handle_stats(update, context))
-
-        handler.error_handler.handle_callback_error.assert_awaited_once()
-        assert handler.error_handler.handle_callback_error.call_args[0][2] == "navidrome_stats"
 
 
 class TestBackButtonsUseValidMenuCallbackFormatNavF1:
