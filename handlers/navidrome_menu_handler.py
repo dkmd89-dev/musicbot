@@ -30,6 +30,7 @@ from logger import get_module_logger, EnhancedLogger
 from helfer.markdown_helfer import escape_md_v2, md_bold, md_code
 from handlers import navidrome_renderer
 from services.clients.navidrome_api import NavidromeAPI
+from services.navidrome import browser_service
 
 if TYPE_CHECKING:
     from handlers.enhanced_error_handler import EnhancedErrorHandler
@@ -151,42 +152,20 @@ class NavidromeMenuHandler:
 
         Architecture Refactoring Audit, Migrationsstufe 3: Text-/
         Keyboard-Bau wurde nach navidrome_renderer.render_browse_albums()
-        ausgelagert - der API-Pfad (getArtist vs. getAlbumList2) bleibt
-        hier, da er einen echten Netzwerkaufruf enthält."""
+        ausgelagert. Migrationsstufe 4: der API-Pfad (getArtist vs.
+        getAlbumList2) wurde zusätzlich nach
+        services/navidrome/browser_service.py::get_albums_page()
+        ausgelagert - diese Methode bleibt reine Orchestrierung
+        (Connection-Check, Service-Aufruf, Error-Handling)."""
         if not self._check_connection():
             await self._show_connection_error(update)
             return
 
         try:
             page_size = 15
-            if artist_id:
-                # getArtist liefert Albumliste des Künstlers
-                data = await asyncio.to_thread(
-                    self.navidrome_api.make_request, "getArtist", {"id": artist_id}
-                )
-                artist = data.get("subsonic-response", {}).get("artist", {})
-                albums = artist.get("album", [])
-                title_prefix = "🎤 Alben des Künstlers"
-                # Lokal paginieren
-                start = page * page_size
-                end = start + page_size
-                albums = albums[start:end]
-            else:
-                # Alphabetisch nach Künstler mit Offset/Size
-                params = {
-                    "type": "alphabeticalByArtist",
-                    "size": page_size,
-                    "offset": page * page_size,
-                }
-                data = await asyncio.to_thread(
-                    self.navidrome_api.make_request, "getAlbumList2", params
-                )
-                albums = (
-                    data.get("subsonic-response", {})
-                    .get("albumList2", {})
-                    .get("album", [])
-                )
-                title_prefix = "💿 Alle Alben"
+            albums, title_prefix = await browser_service.get_albums_page(
+                self.navidrome_api, page, artist_id, page_size
+            )
 
             if not albums:
                 await update.callback_query.edit_message_text(

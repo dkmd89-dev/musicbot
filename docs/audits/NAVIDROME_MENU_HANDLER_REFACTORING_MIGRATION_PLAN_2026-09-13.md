@@ -1,13 +1,18 @@
 # Architecture Refactoring Audit — Migrationsplan: NavidromeMenuHandler
 
-**Status:** Ursprünglich READ-ONLY AUDIT-ERGEBNIS. **Stufe 1, Stufe 3
-und die Detail-View-Familien-Vervollständigung (Artist-/Genre-Detail,
-über den ursprünglichen Plan hinaus ergänzt) wurden vom Nutzer
-freigegeben und sind seit 2026-09-13 IMPLEMENTED** (siehe Nachtrag am
-Ende von Abschnitt 5 bzw. Nachtrag 3/4 in Abschnitt 4). Dabei
-zusätzlich entdeckte NAV-F14/NAV-F15/NAV-F16 sind ebenfalls CLOSED (je
-eigener PR). Stufe 2 (optional, nicht umgesetzt) sowie Stufe 4/5
-bleiben weiterhin reine Planung, nicht freigegeben, nicht umgesetzt.
+**Status:** Ursprünglich READ-ONLY AUDIT-ERGEBNIS. **Stufe 1, Stufe 3,
+die Detail-View-Familien-Vervollständigung (Artist-/Genre-Detail, über
+den ursprünglichen Plan hinaus ergänzt) und Stufe 4 (bewusst reduziert
+auf `get_albums_page()`, siehe Nachtrag 6) wurden vom Nutzer freigegeben
+und sind seit 2026-09-13 IMPLEMENTED**. Dabei zusätzlich entdeckte
+NAV-F14/NAV-F15/NAV-F16 sind ebenfalls CLOSED (je eigener PR). Die
+restlichen dokumentierten Testlücken (Playlists/Favoriten/Such-
+Erfolgspfad) wurden ebenfalls geschlossen. Stufe 2 (optional) sowie
+Stufe 5 (kein erkennbarer Zusatznutzen mehr) bleiben unumgesetzt.
+**Damit ist dieser Migrationsplan im Kern abgeschlossen** — verbleibende
+Punkte (Discovery-Erweiterung, Playlist-CRUD) sind keine
+Findings/Migrationsschritte mehr, sondern optionale
+Weiterentwicklung außerhalb dieses Plans.
 
 **Scope:** `handlers/navidrome_menu_handler.py` (1454 Zeilen Methodencode,
 19 Methoden), `handlers/menu/actions/navidrome.py` (258 Zeilen, dünner
@@ -278,6 +283,36 @@ KEEP laut Zieldoku Abschnitt 5): `handle_search`,
 Stufen anfassen — sie bleiben Methoden auf `NavidromeMenuHandler`,
 bis ihr Umfang tatsächlich wächst (z. B. durch Playlist-CRUD, aktuell
 nicht geplant).
+
+**Nachtrag 6 (2026-09-13) — Stufe 4 IMPLEMENTED, bewusst reduzierter
+Zuschnitt:** vor der Freigabe wurde der aktuelle Stand von
+`handle_browse_artists()`/`handle_browse_albums()`/
+`handle_browse_genres()` erneut geprüft (nach Stufe 1/3 bereits stark
+verschlankt). Befund: nur `handle_browse_albums()` (zwei API-Pfade
+`getArtist`/`getAlbumList2` mit unterschiedlicher Parameter-/Slicing-
+Logik) hat noch echte, extraktionswürdige Komplexität.
+`handle_browse_artists()` besteht seit Stufe 1/3 nur noch aus einer
+Zeile (`await self.navidrome_api.get_artists()`),
+`handle_browse_genres()` aus zwei Zeilen (API-Call + Dict-Unwrapping) -
+eine Service-Extraktion dort wäre reine Zeremonie ohne
+Kopplungsgewinn und hätte gegen die Anti-Overengineering-Regel dieses
+Plans (Abschnitt 4) verstoßen. Dem Nutzer explizit zur Entscheidung
+vorgelegt (drei Optionen: nur Albums / alle vier wie ursprünglich
+skizziert / Stufe 4 überspringen) - **„Nur Albums" gewählt.**
+
+Umsetzung: neues Package `services/navidrome/` mit
+`browser_service.py::get_albums_page(navidrome_api, page, artist_id,
+page_size) -> (albums, title_prefix)` — 1:1 aus
+`handle_browse_albums()` verschoben, `NavidromeMenuHandler` behält
+Connection-Check, den `if not albums`-Vorab-Check und Error-Handling.
+Kein Pflichtschritt nötig (Testabdeckung für `handle_browse_albums()`
+bereits aus der Stufe-3-Vorbereitung vorhanden). **Abbruchkriterium
+griff nicht:** alle 6 bestehenden `TestBrowseAlbumsCharacterization`-
+Tests liefen nach der Extraktion unverändert grün. 5 neue, reine
+Unit-Tests in `tests/test_navidrome_browser_service.py` (kein
+Telegram-Bezug, `navidrome_api` gemockt). Stufe 5 (finale
+Orchestrierungs-Schlankung) bleibt ohne erkennbaren Zusatznutzen
+unumgesetzt — `NavidromeMenuHandler` ist bereits reine Orchestrierung.
 
 ---
 
