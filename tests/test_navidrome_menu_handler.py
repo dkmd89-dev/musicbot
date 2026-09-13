@@ -310,3 +310,128 @@ class TestErrorHandlerIntegration:
 
         handler.error_handler.handle_callback_error.assert_awaited_once()
         assert handler.error_handler.handle_callback_error.call_args[0][2] == "navidrome_stats"
+
+
+class TestBackButtonsUseValidMenuCallbackFormatNavF1:
+    """NAV-F1-Regressionstest (Navidrome Menu System Audit, 2026-09-13):
+    alle "🔙 Zurück"/"❌ Abbrechen"-Buttons dieser Klasse nutzten bisher
+    callback_data "menu_navidrome"/"menu_main" (Unterstrich) - weder als
+    PTB-CallbackQueryHandler-Pattern registriert (nur "^menu:" mit
+    Doppelpunkt, siehe rich_menu_handler.py::get_telegram_handlers())
+    noch von RichMenuSystem.handle_callback() geroutet. Jeder Klick
+    verpuffte dadurch stillschweigend. Pinnt jetzt, dass ausschließlich
+    das gültige "menu:<id>"-Format verwendet wird."""
+
+    def _extract_callback_data_values(self, reply_markup) -> set:
+        return {
+            button.callback_data
+            for row in reply_markup.inline_keyboard
+            for button in row
+        }
+
+    def test_browse_artists_back_button_uses_menu_colon_format(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        handler.navidrome_api.get_artists = AsyncMock(
+            return_value=[{"id": "1", "name": "Artist A"}]
+        )
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_browse_artists(update, context))
+
+        markup = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
+        callback_values = self._extract_callback_data_values(markup)
+        assert "menu:navidrome" in callback_values
+        assert "menu_navidrome" not in callback_values
+
+    def test_connection_error_reconnect_and_back_use_valid_callbacks(self):
+        handler = NavidromeMenuHandler(FakeConfigUnconfigured())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_browse_artists(update, context))
+
+        markup = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
+        callback_values = self._extract_callback_data_values(markup)
+        assert "menu:main" in callback_values
+        assert "menu_main" not in callback_values
+        # "🔄 Erneut versuchen" bleibt unverändert nav_reconnect (kein
+        # Teil von NAV-F1 - eigener, bereits gültiger nav_-Präfix).
+        assert "nav_reconnect" in callback_values
+
+    def test_reconnect_success_button_uses_menu_colon_format(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_reconnect(update, context))
+
+        markup = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
+        callback_values = self._extract_callback_data_values(markup)
+        assert "menu:navidrome" in callback_values
+        assert "menu_navidrome" not in callback_values
+
+    def test_no_underscore_menu_callbacks_remain_anywhere_in_source(self):
+        """Repoweiter Beweis (Abschnitt 20 CLAUDE.md-Analogon: Wiederholungs-
+        nachweis) - kein 'callback_data="menu_navidrome"'/'callback_data=
+        "menu_main"' (Unterstrich) mehr im Handler-Quelltext (Docstring-
+        Erwähnungen des Bugs selbst bleiben erlaubt, daher der engere,
+        auf das tatsächliche callback_data=-Muster beschränkte Check statt
+        eines naiven Substring-Checks)."""
+        import inspect
+        import handlers.navidrome_menu_handler as module
+
+        source = inspect.getsource(module)
+        assert 'callback_data="menu_navidrome"' not in source
+        assert 'callback_data="menu_main"' not in source
+
+
+class TestGenreSongsAllRoutingNavF2:
+    """NAV-F2-Regressionstest: 'nav_genre_songs_all_<name>' wurde bisher
+    vom generischen 'nav_genre_'-Präfix-Zweig abgefangen und lieferte
+    einen korrupten Parameter ('songs_all_<name>' statt '<name>') an
+    handle_genre_detail(). Pinnt jetzt, dass der Callback sauber als
+    eigener (noch nicht implementierter) Zweig behandelt wird, OHNE
+    handle_genre_detail() mit einem falschen Genre-Namen aufzurufen."""
+
+    def test_songs_all_callback_does_not_call_genre_detail_with_corrupted_name(self):
+        from handlers.menu.actions.navidrome import handle_navidrome_callback
+
+        navidrome_handler = Mock()
+        navidrome_handler.handle_genre_detail = AsyncMock()
+        update = make_update()
+        update.callback_query.data = "nav_genre_songs_all_Lo-Fi"
+        context = make_context()
+        logger = Mock()
+
+        asyncio.run(
+            handle_navidrome_callback(
+                update, context, "nav_genre_songs_all_Lo-Fi", navidrome_handler, logger
+            )
+        )
+
+        navidrome_handler.handle_genre_detail.assert_not_called()
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "songs_all" not in text
+
+    def test_normal_genre_callback_still_extracts_correct_name(self):
+        """Regressionsschutz: der Fix darf den normalen
+        'nav_genre_<name>'-Pfad nicht brechen."""
+        from handlers.menu.actions.navidrome import handle_navidrome_callback
+
+        navidrome_handler = Mock()
+        navidrome_handler.handle_genre_detail = AsyncMock()
+        update = make_update()
+        update.callback_query.data = "nav_genre_Lo-Fi"
+        context = make_context()
+        logger = Mock()
+
+        asyncio.run(
+            handle_navidrome_callback(
+                update, context, "nav_genre_Lo-Fi", navidrome_handler, logger
+            )
+        )
+
+        navidrome_handler.handle_genre_detail.assert_awaited_once_with(
+            update, context, "Lo-Fi"
+        )

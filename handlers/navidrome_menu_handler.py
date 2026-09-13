@@ -3,6 +3,17 @@
 """
 🎵 NAVIDROME MENÜ-HANDLER
 Integrierte Mediensuche und -verwaltung über Navidrome API
+
+NAV-F1-Fix (Navidrome Menu System Audit, 2026-09-13): alle "🔙 Zurück"/
+"❌ Abbrechen"-Buttons dieser Klasse nutzten bisher callback_data
+"menu_navidrome"/"menu_main" (Unterstrich) - weder als PTB-
+CallbackQueryHandler-Pattern registriert noch von
+RichMenuSystem.handle_callback() geroutet (dort ausschließlich
+"menu:<id>" mit Doppelpunkt, siehe MenuItem.__post_init__ in
+handlers/menu/models.py). Jeder Klick verpuffte dadurch stillschweigend
+(PTB liefert für nicht gematchte Callback-Daten keinen Fehler/kein Log).
+Auf "menu:navidrome"/"menu:main" umgestellt - beides bereits bestehende,
+unveränderte Menu-IDs (definitions.py), kein neuer Callback-Präfix.
 """
 
 import asyncio
@@ -146,7 +157,7 @@ class NavidromeMenuHandler:
                     InlineKeyboardButton(
                         "🔍 Suchen", callback_data="nav_search_artists"
                     ),
-                    InlineKeyboardButton("🔙 Zurück", callback_data="menu_navidrome"),
+                    InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome"),
                 ]
             )
 
@@ -282,7 +293,7 @@ Wähle einen Künstler aus oder verwende die Navigation\\:
                     )
                 )
             back_row.append(
-                InlineKeyboardButton("🔙 Zurück", callback_data="menu_navidrome")
+                InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")
             )
             keyboard.append(back_row)
 
@@ -399,7 +410,7 @@ Wähle ein Album aus oder verwende die Navigation\\:
             )
 
             keyboard.append(
-                [InlineKeyboardButton("🔙 Zurück", callback_data="menu_navidrome")]
+                [InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")]
             )
 
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -511,7 +522,7 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
             )
 
             keyboard.append(
-                [InlineKeyboardButton("🔙 Zurück", callback_data="menu_navidrome")]
+                [InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")]
             )
 
             # Statistiken aus Songs berechnen
@@ -617,7 +628,7 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
             )
 
             keyboard.append(
-                [InlineKeyboardButton("🔙 Zurück", callback_data="menu_navidrome")]
+                [InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")]
             )
 
             # Zusätzliche Info falls verfügbar
@@ -702,7 +713,7 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
                 )
 
             keyboard.append(
-                [InlineKeyboardButton("🔙 Zurück", callback_data="menu_navidrome")]
+                [InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")]
             )
 
             message_text = f"""
@@ -794,7 +805,7 @@ Du hast {len(playlists)} Playlist\\(s\\) verfügbar:
                     )
 
             keyboard.append(
-                [InlineKeyboardButton("🔙 Zurück", callback_data="menu_navidrome")]
+                [InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")]
             )
 
             await update.callback_query.edit_message_text(
@@ -851,7 +862,7 @@ Du hast {len(playlists)} Playlist\\(s\\) verfügbar:
                 message_parts.append(f"• {escape_md_v2(key)}: {md_bold(str(value))}")
 
             keyboard = [
-                [InlineKeyboardButton("🔙 Zurück", callback_data="menu_navidrome")]
+                [InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")]
             ]
 
             await update.callback_query.edit_message_text(
@@ -912,7 +923,7 @@ Die Suche ist nicht case\\-sensitiv\\!
 """
 
         keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ Abbrechen", callback_data="menu_navidrome")]]
+            [[InlineKeyboardButton("❌ Abbrechen", callback_data="menu:navidrome")]]
         )
 
         await update.callback_query.edit_message_text(
@@ -1021,7 +1032,7 @@ Die Suche ist nicht case\\-sensitiv\\!
             keyboard.append(
                 [
                     InlineKeyboardButton("🔍 Neue Suche", callback_data="nav_search"),
-                    InlineKeyboardButton("🔙 Zurück", callback_data="menu_navidrome"),
+                    InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome"),
                 ]
             )
 
@@ -1075,7 +1086,7 @@ Kontaktiere den Administrator\\!
                     InlineKeyboardButton(
                         "🔄 Erneut versuchen", callback_data="nav_reconnect"
                     ),
-                    InlineKeyboardButton("🔙 Zurück", callback_data="menu_main"),
+                    InlineKeyboardButton("🔙 Zurück", callback_data="menu:main"),
                 ]
             ]
         )
@@ -1101,7 +1112,7 @@ Kontaktiere den Administrator\\!
                         [
                             [
                                 InlineKeyboardButton(
-                                    "🎵 Zu Navidrome", callback_data="menu_navidrome"
+                                    "🎵 Zu Navidrome", callback_data="menu:navidrome"
                                 )
                             ]
                         ]
