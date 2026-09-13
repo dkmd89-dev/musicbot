@@ -142,35 +142,27 @@ async def handle_error_admin_callback(
 
 # ====== System-Status ======
 
-# STATUS-MENU-CLOSURE: handlers/enhanced_status_handler.py rendert 12
-# "status_*"-Buttons (Detail-/History-/Check-/Reset-/Cleanup-Unteransichten
-# sowie die Top-Level-Buttons "status_users"/"status_trends"), für die
-# KEINE Handler-Implementierung existiert (repoweit verifiziert, siehe
-# docs/MusicBot_STATUS_MENU_CLOSURE.md) - reine, bislang unfertige UI-
-# Vorschau ohne Backing-Funktion. Bewusst NICHT auf eine erfundene/
-# angenäherte Funktion geroutet (Master-Prompt: "nicht blind
-# registrieren"). Damit ein Klick darauf nicht wie ein echter, unerwarteter
-# Bug aussieht (bisher identisch zu einem tatsächlich unbekannten
-# callback_data-Wert behandelt - "⚠️ Unbekannter Status-Callback" im Log),
-# werden sie hier explizit als bekannter Platzhalter geführt: freundliche
-# Nutzer-Rückmeldung, aber kein WARNING-Log wie bei einem echten,
-# unerwarteten Callback-Wert.
-_PLACEHOLDER_STATUS_CALLBACKS = frozenset(
-    {
-        "status_users",
-        "status_trends",
-        "status_system_detail",
-        "status_system_history",
-        "status_bot_handlers",
-        "status_bot_logs",
-        "status_services_check",
-        "status_services_detail",
-        "status_performance_history",
-        "status_performance_reset",
-        "status_storage_cleanup",
-        "status_storage_detail",
-    }
-)
+# STATUS-MENU-CLOSURE (Master-Phase "Complete Telegram System Status
+# Menu"): von den 12 zuvor als Platzhalter geführten "status_*"-Buttons
+# sind 11 jetzt mit echten, auf bereits vorhandenen Datenquellen
+# basierenden Implementierungen verdrahtet (siehe
+# docs/MusicBot_STATUS_MENU_CLOSURE.md für die vollständige
+# Fall-A/B/C/D-Entscheidung je Callback). Nur "status_storage_cleanup"
+# bleibt bewusst ein Platzhalter (UNAVAILABLE_BY_DESIGN) - eine echte
+# Implementierung wäre eine destruktive Aktion auf realen Server-Pfaden
+# ohne definierten, sicheren Cleanup-Contract (Master-Prompt: "KEINE
+# automatische destruktive Cleanup-Funktion implementieren"). Der Button
+# bleibt sichtbar (kein REMOVED), zeigt aber weiterhin die freundliche
+# "noch nicht implementiert"-Rückmeldung statt einer erfundenen Aktion -
+# kein WARNING-Log wie bei einem echten, unerwarteten Callback-Wert.
+#
+# "status_performance_history" wurde stattdessen vollständig aus dem UI
+# ENTFERNT (siehe enhanced_status_handler.py::show_performance_status()) -
+# es existiert keine über Resets/Neustarts hinweg gespeicherte
+# Performance-Historie, eine "Verlauf"-Ansicht hätte zwangsläufig
+# Fake-Daten zeigen müssen. Taucht daher hier bewusst NICHT mehr auf
+# (weder in routing_map noch im Platzhalter-Set).
+_PLACEHOLDER_STATUS_CALLBACKS = frozenset({"status_storage_cleanup"})
 
 
 async def handle_status_callback(
@@ -198,10 +190,32 @@ async def handle_status_callback(
         "status_performance": status_handler.show_performance_status,
         "status_storage": status_handler.show_storage_status,
         "status_refresh": status_handler.show_status_menu,
+        # STATUS-MENU-CLOSURE (Master-Phase): 11 zuvor als Platzhalter
+        # geführte Callbacks jetzt auf echte, datenbasierte
+        # Implementierungen geroutet (siehe enhanced_status_handler.py
+        # und docs/MusicBot_STATUS_MENU_CLOSURE.md).
+        "status_users": status_handler.show_users_status,
+        "status_trends": status_handler.show_trends,
+        "status_system_detail": status_handler.show_system_detail,
+        "status_system_history": status_handler.show_system_history,
+        "status_bot_handlers": status_handler.show_bot_handlers,
+        "status_bot_logs": status_handler.show_bot_logs,
+        "status_services_check": status_handler.show_services_check,
+        "status_services_detail": status_handler.show_services_detail,
+        "status_performance_reset": status_handler.show_performance_reset,
+        "status_storage_detail": status_handler.show_storage_detail,
     }
 
     handler_method = routing_map.get(callback_data)
     if handler_method:
+        # STATUS-MENU-CLOSURE: minimale, auf das Status-Menü selbst
+        # begrenzte record_operation()-Instrumentierung (Master-Prompt
+        # Phase 8: "record_operation() minimal integrieren... nicht den
+        # gesamten Bot instrumentieren") - gibt der bereits vorhandenen,
+        # zuvor immer leeren "Top Operationen"-Liste in
+        # show_performance_status() erstmals reale Nutzungsdaten, ohne
+        # irgendeinen anderen Teil des Bots zu berühren.
+        status_handler.system_monitor.record_operation(callback_data)
         await handler_method(update, context)
     elif callback_data in _PLACEHOLDER_STATUS_CALLBACKS:
         logger.debug(

@@ -1,45 +1,49 @@
 """
 Characterization-Tests fuer handlers/enhanced_status_handler.py
-(EnhancedStatusHandler, vorher 0 Tests).
+(EnhancedStatusHandler).
 
-STATUS-MENU-CLOSURE (siehe docs/MusicBot_STATUS_MENU_CLOSURE.md):
-von 19 im Status-Menue (dieses File) als Buttons gerenderten
-"status_*"-callback_data-Werten sind in
-handlers/menu/actions/admin_diagnostics.py::handle_status_callback()s
-routing_map weiterhin nur 7 tatsaechlich verdrahtet:
+STATUS-MENU-CLOSURE — MASTER-PHASE "Complete Telegram System Status Menu"
+(siehe docs/MusicBot_STATUS_MENU_CLOSURE.md fuer die vollstaendige
+Fall-A/B/C/D-Entscheidung je Callback):
 
-  Verdrahtet:  status_menu, status_system, status_bot, status_services,
-               status_performance, status_storage, status_refresh
-  Platzhalter: status_bot_handlers, status_bot_logs,
-               status_performance_history, status_performance_reset,
-               status_services_check, status_services_detail,
-               status_storage_cleanup, status_storage_detail,
-               status_system_detail, status_system_history,
-               status_trends, status_users
+Vorherige Phase hatte 12 Buttons ohne Handler-Implementierung als
+"bekannten Platzhalter" behandelt (freundliche Meldung statt
+WARNING-Log). Diese Phase hat fuer jeden der 12 tatsaechlich vorhandene
+Datenquellen im Projekt gesucht (Fall A/B) und - wo eine echte,
+nicht-spekulative Implementierung moeglich war - eine kleine, lokale
+Status-Funktion ergaenzt:
 
-Repoweit verifiziert: fuer keinen der 12 Platzhalter-Callbacks existiert
-irgendwo eine Handler-Implementierung (weder unter diesem noch einem
-anderen Methodennamen) - echte Kategorie C (Button ohne Handler), nicht
-nur "nicht geroutet". Bewusst nicht blind verdrahtet (kein Feature-Bau in
-dieser Phase). Seit dem Closure-Fix werden sie in
-handle_status_callback() explizit als bekannter Platzhalter erkannt
-(freundliche "🚧 noch nicht implementiert"-Rueckmeldung, kein
-WARNING-Log wie bei einem echten unerwarteten callback_data-Wert) - siehe
-tests/test_menu_actions_admin_diagnostics.py fuer die Routing-Tests.
+  IMPLEMENTED (11): status_users (BotStatusTracker.get_user_activity()),
+    status_trends + status_system_history (SystemMonitor cpu_history/
+    memory_history/disk_history), status_system_detail (psutil
+    loadavg/swap/per-core), status_bot_handlers
+    (BotStatusTracker.get_handler_overview()), status_bot_logs
+    (get_logging_stats(), inkl. Fix des strukturellen "Gesamt-Logs: 0"-
+    Bugs aus der Vorphase), status_services_check (echter, read-only
+    NavidromeAPI.check_connection()-Ping), status_services_detail
+    (Check-Verfuegbarkeits-Transparenz), status_performance_reset
+    (nutzt die bereits vorhandene SystemMonitor.reset_statistics()),
+    status_storage_detail (psutil disk_partitions()/disk_usage()).
+  REMOVED (1): status_performance_history - keine ueber
+    Resets/Neustarts hinweg gespeicherte Performance-Historie
+    existiert, eine "Verlauf"-Ansicht haette zwangslaeufig Fake-Daten
+    gezeigt. Button komplett aus dem UI entfernt (siehe
+    show_performance_status()s Keyboard).
+  UNAVAILABLE_BY_DESIGN (1): status_storage_cleanup - explizit
+    verbotene destruktive Aktion ohne definierten Cleanup-Contract,
+    bleibt der einzige verbleibende Platzhalter.
 
-Zwei reale Telegram-Markdown-Parse-Bugs gefunden und gefixt (Live-Fund):
-platform.machine() ("x86_64") in show_system_status() und
-Config.LIBRARY_DIR ("/mnt/musik_bilder/library") in show_storage_status()
-enthalten je einen unpaarigen Unterstrich, der Telegrams Legacy-
-"Markdown"-Parser mit "Can't parse entities" ablehnen liess. Fix: neue
-Modul-Funktion _escape_markdown() fuer alle dynamischen Werte, die in
-Markdown-Text eingebettet werden (siehe TestEscapeMarkdown unten).
+Damit sind ALLE 18 verbleibenden "status_*"-Callbacks (19 minus das
+entfernte status_performance_history) vollstaendig charakterisiert -
+keiner ist mehr "unbekannt"/"orphaned"/"unerreichbar".
 
-Zusaetzlich: "Message is not modified" (Telegram-Idempotenzfall bei
-identischem Refresh) wurde bisher wie ein echter Fehler behandelt (Log +
-teils zusaetzliche, verwirrende Fehleranzeige) - jetzt per
-_is_message_not_modified_error() als No-op erkannt, siehe
-TestMessageNotModifiedHandling unten.
+Aus der Vorphase weiterhin gueltig: zwei reale Telegram-Markdown-Parse-
+Bugs (platform.machine()="x86_64", Config.LIBRARY_DIR mit Unterstrich)
+gefixt via _escape_markdown() (siehe TestEscapeMarkdown), sowie
+"Message is not modified" als No-op erkannt via
+_is_message_not_modified_error() (siehe TestMessageNotModifiedHandling).
+Alle NEUEN dynamischen Werte in dieser Phase (Handler-/Modulnamen,
+Mountpoints, Dateisystemtypen) werden ebenfalls konsequent escaped.
 """
 
 import asyncio
@@ -55,6 +59,7 @@ from handlers.enhanced_status_handler import (
     EnhancedStatusHandler,
     SystemMonitor,
     _escape_markdown,
+    _find_partition_for_path,
     _is_message_not_modified_error,
 )
 
@@ -113,6 +118,47 @@ class TestSystemMonitor:
         assert stats["total_operations"] == 0
         assert stats["total_errors"] == 0
 
+    def test_get_extended_system_info_returns_expected_keys(self):
+        """STATUS-MENU-CLOSURE (status_system_detail): neue Methode,
+        reine psutil-Zusatzwerte, keine neue Datenquelle."""
+        monitor = SystemMonitor(FakeConfig())
+        info = monitor.get_extended_system_info()
+
+        assert "load_average" in info
+        assert "swap" in info
+        assert {"total", "used", "percent"} <= set(info["swap"].keys())
+        assert isinstance(info["cpu_per_core"], list)
+        assert len(info["cpu_per_core"]) >= 1
+        assert info["boot_time"] is not None
+
+    def test_get_history_summary_returns_zeroed_defaults_without_measurements(self):
+        """STATUS-MENU-CLOSURE (status_trends): ohne vorherige
+        get_system_metrics()-Aufrufe sind die History-Deques leer -
+        keine Fake-Werte, saubere 0.0-Defaults."""
+        monitor = SystemMonitor(FakeConfig())
+        summary = monitor.get_history_summary()
+
+        assert summary["sample_count"] == 0
+        for metric in ("cpu", "memory", "disk"):
+            assert summary[metric] == {
+                "current": 0.0, "average": 0.0, "min": 0.0, "max": 0.0,
+            }
+
+    def test_get_history_summary_reflects_real_recorded_measurements(self):
+        """Verifiziert echte Aggregation (nicht nur Struktur) - füttert
+        die History-Deque direkt (dieselbe, die get_system_metrics()
+        befüllt) und prüft min/avg/max/current."""
+        monitor = SystemMonitor(FakeConfig())
+        monitor.cpu_history.extend([10.0, 20.0, 30.0])
+
+        summary = monitor.get_history_summary()
+
+        assert summary["cpu"]["current"] == 30.0
+        assert summary["cpu"]["average"] == 20.0
+        assert summary["cpu"]["min"] == 10.0
+        assert summary["cpu"]["max"] == 30.0
+        assert summary["sample_count"] == 3
+
 
 class TestBotStatusTracker:
     def test_update_handler_status_stores_status(self):
@@ -133,6 +179,32 @@ class TestBotStatusTracker:
         assert overview["services"]["navidrome"]["status"] == "healthy"
         assert "totally_unknown_service" not in overview["services"]
         assert overview["healthy_services"] == 1
+
+    def test_update_service_status_stores_optional_reason(self):
+        """STATUS-MENU-CLOSURE Final Correction: der optionale `reason`-
+        Parameter erklaert ehrlich, warum ein Service z. B. "unknown"
+        bleibt (kein automatisierter Health-Check verfuegbar)."""
+        tracker = BotStatusTracker(FakeConfig())
+        tracker.update_service_status(
+            "download", "unknown", reason="Kein automatisierter Health-Check verfügbar"
+        )
+
+        overview = tracker.get_service_overview()
+        assert (
+            overview["services"]["download"]["reason"]
+            == "Kein automatisierter Health-Check verfügbar"
+        )
+
+    def test_update_service_status_without_reason_defaults_to_none(self):
+        """Ein Aufruf ohne `reason` darf keinen veralteten Grund aus einem
+        frueheren, unabhaengigen Aufruf uebernehmen - jeder Aufruf setzt
+        den Service-Eintrag vollstaendig neu."""
+        tracker = BotStatusTracker(FakeConfig())
+        tracker.update_service_status("navidrome", "unknown", reason="alter Grund")
+        tracker.update_service_status("navidrome", "healthy")
+
+        overview = tracker.get_service_overview()
+        assert overview["services"]["navidrome"]["reason"] is None
 
     def test_record_user_activity_tracks_unique_active_users(self):
         tracker = BotStatusTracker(FakeConfig())
@@ -198,16 +270,15 @@ class TestUnroutedStatusButtonsAreDocumented:
     Statischer Abgleich: extrahiert alle in enhanced_status_handler.py
     gerenderten "status_*"-callback_data-Werte und vergleicht sie gegen
     die tatsaechlich in handle_status_callback()s routing_map verdrahtete
-    Liste - schuetzt davor, dass sich die Diskrepanz unbemerkt vergroessert
-    oder (bei zukuenftiger Verdrahtung) diese Charakterisierung veraltet,
-    ohne dass es auffaellt.
+    Liste - schuetzt davor, dass sich eine Diskrepanz unbemerkt vergroessert
+    oder diese Charakterisierung veraltet, ohne dass es auffaellt.
 
-    STATUS-MENU-CLOSURE: "unrouted" heisst seit dem Closure-Fix konkret
-    "nicht in routing_map, sondern im expliziten
-    _PLACEHOLDER_STATUS_CALLBACKS-Platzhalter-Pfad" - nicht mehr "faellt
-    unbemerkt auf den generischen Unbekannt-Zweig zurueck". Die
-    Callback-Menge selbst ist unveraendert (keine neuen Handler
-    implementiert, keine Buttons entfernt).
+    STATUS-MENU-CLOSURE (Master-Phase): 11 der zuvor 12 Platzhalter sind
+    jetzt in der routing_map verdrahtet (echte Implementierungen, siehe
+    Modul-Docstring oben). Nur noch "status_storage_cleanup" bleibt
+    Platzhalter (UNAVAILABLE_BY_DESIGN). "status_performance_history"
+    wurde komplett aus dem UI entfernt (REMOVED) - taucht daher weder in
+    "rendered" noch in einer der beiden Mengen unten auf.
     """
 
     ROUTED_STATUS_CALLBACKS = {
@@ -218,21 +289,20 @@ class TestUnroutedStatusButtonsAreDocumented:
         "status_performance",
         "status_storage",
         "status_refresh",
+        "status_users",
+        "status_trends",
+        "status_system_detail",
+        "status_system_history",
+        "status_bot_handlers",
+        "status_bot_logs",
+        "status_services_check",
+        "status_services_detail",
+        "status_performance_reset",
+        "status_storage_detail",
     }
 
     PLACEHOLDER_STATUS_CALLBACKS = {
-        "status_bot_handlers",
-        "status_bot_logs",
-        "status_performance_history",
-        "status_performance_reset",
-        "status_services_check",
-        "status_services_detail",
         "status_storage_cleanup",
-        "status_storage_detail",
-        "status_system_detail",
-        "status_system_history",
-        "status_trends",
-        "status_users",
     }
 
     def test_known_placeholder_buttons_are_still_not_in_routing_map(self):
@@ -256,6 +326,35 @@ class TestUnroutedStatusButtonsAreDocumented:
         # exakt die bekannte Platzhalter-Menge - kein neu aufgetauchter,
         # tatsaechlich unbekannter Button.
         assert unrouted == self.PLACEHOLDER_STATUS_CALLBACKS
+
+    def test_status_performance_history_button_was_removed_entirely(self):
+        """STATUS-MENU-CLOSURE: keine Fake-History - der Button wurde
+        komplett aus dem UI entfernt, nicht nur umklassifiziert."""
+        rendered = set(
+            re.findall(
+                r'callback_data="(status_[a-z_]+)"',
+                Path("handlers/enhanced_status_handler.py").read_text(encoding="utf-8"),
+            )
+        )
+        assert "status_performance_history" not in rendered
+        assert len(rendered) == 18  # 19 urspruenglich - 1 entfernt
+
+
+class TestFindPartitionForPath:
+    """_find_partition_for_path() (status_storage_detail): laengster
+    passender Mountpoint-Praefix, reine psutil-Abfrage."""
+
+    def test_root_path_resolves_to_a_partition(self):
+        partition = _find_partition_for_path(Path("/"))
+        assert partition is not None
+        assert partition.mountpoint == "/"
+
+    def test_nonexistent_path_still_resolves_via_prefix_matching(self):
+        # .resolve() funktioniert auch fuer nicht existierende Pfade -
+        # der Mountpoint wird ueber den laengsten passenden Praefix
+        # gefunden, unabhaengig davon, ob der Pfad selbst existiert.
+        partition = _find_partition_for_path(Path("/this/does/not/exist/at/all"))
+        assert partition is not None
 
 
 class TestEscapeMarkdown:
@@ -522,3 +621,688 @@ class TestMessageNotModifiedHandling:
         error_text = update.callback_query.edit_message_text.call_args.args[0]
         assert "Fehler" in error_text
         assert "boom" in error_text
+
+
+# =============================================================================
+# STATUS-MENU-CLOSURE (Master-Phase): Tests fuer die 10 neu implementierten
+# Views (status_users, status_trends, status_system_detail/_history,
+# status_bot_handlers/_logs, status_services_check/_detail,
+# status_performance_reset, status_storage_detail).
+# =============================================================================
+
+
+class TestShowUsersStatus:
+    def test_shows_aggregate_counts_only(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        handler.bot_tracker.record_user_activity(111, "download")
+        handler.bot_tracker.record_user_activity(222, "search")
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_users_status(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "2" in text  # active_users
+
+    def test_does_not_leak_user_ids_or_chat_ids(self):
+        """Phase 7: keine PII - User-IDs duerfen nicht im gerenderten
+        Text auftauchen."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        handler.bot_tracker.record_user_activity(123456789, "download")
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_users_status(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "123456789" not in text
+
+
+class TestShowTrends:
+    def test_shows_min_avg_max_current_from_real_history(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        handler.system_monitor.cpu_history.extend([10.0, 50.0])
+        handler.system_monitor.memory_history.extend([20.0])
+        handler.system_monitor.disk_history.extend([30.0])
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_trends(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "CPU" in text and "RAM" in text and "Disk" in text
+
+    def test_no_measurements_does_not_crash(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_trends(update, context))  # darf nicht raisen
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "0.0%" in text
+
+
+class TestShowSystemDetail:
+    def test_renders_load_swap_and_per_core_cpu(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_system_detail(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Load Average" in text
+        assert "Swap" in text
+        assert "Kern 0" in text
+
+    def test_missing_loadavg_shown_gracefully(self):
+        """Manche Plattformen (u.a. Windows) haben kein getloadavg() -
+        AttributeError/OSError darf nicht crashen."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        with patch("psutil.getloadavg", side_effect=OSError("not supported")):
+            asyncio.run(handler.show_system_detail(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "nicht verfügbar" in text
+
+
+class TestShowSystemHistory:
+    def test_shows_recent_samples_as_sequence(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        handler.system_monitor.cpu_history.extend([10.0, 20.0, 30.0])
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_system_history(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "10%" in text and "20%" in text and "30%" in text
+
+    def test_no_measurements_shows_placeholder_not_crash(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_system_history(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        # STATUS-MENU-CLOSURE Final Correction: case-insensitiv geprueft -
+        # der korrigierte, explizite Platzhaltertext beginnt satzinitial
+        # mit Grossbuchstaben ("Noch keine Messungen seit Bot-Start."),
+        # waehrend die alte, jetzt entfernte pro-Metrik-Kurzform
+        # klein geschrieben war ("(noch keine Messungen)"). Die eigentliche
+        # Pruefsemantik (Platzhalter statt Crash/Fake-Werte) bleibt
+        # unveraendert - siehe auch
+        # test_no_measurements_shows_explicit_empty_placeholder_text unten
+        # fuer die exakte Textpruefung.
+        assert "noch keine messungen" in text.lower()
+
+    def test_no_measurements_shows_explicit_empty_placeholder_text(self):
+        """STATUS-MENU-CLOSURE Final Correction: bei komplett leerer
+        Historie wird der explizite Platzhaltertext gezeigt (nicht nur
+        die pro-Metrik-Kurzform), analog zur Vorgabe im Master-Fix."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_system_history(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Noch keine Messungen seit Bot-Start." in text
+
+    def test_viewing_history_creates_no_new_measurement(self):
+        """STATUS-MENU-CLOSURE Final Correction: show_system_history()
+        ist eine reine HISTORY VIEW und darf keine neue SAMPLING-Messung
+        erzeugen (Root Cause des zuvor fehlschlagenden Tests: die alte
+        Implementierung rief get_system_metrics() auf, das als
+        Seiteneffekt cpu_history/memory_history/disk_history befuellt)."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        assert len(handler.system_monitor.cpu_history) == 0
+        assert len(handler.system_monitor.memory_history) == 0
+        assert len(handler.system_monitor.disk_history) == 0
+
+        asyncio.run(handler.show_system_history(update, context))
+
+        assert len(handler.system_monitor.cpu_history) == 0
+        assert len(handler.system_monitor.memory_history) == 0
+        assert len(handler.system_monitor.disk_history) == 0
+
+    def test_viewing_existing_history_does_not_change_entry_count(self):
+        """Anzahl der History-Eintraege bleibt beim reinen Anzeigen
+        unveraendert - auch wenn bereits Messungen vorhanden sind."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        handler.system_monitor.cpu_history.extend([10.0, 20.0, 30.0])
+        handler.system_monitor.memory_history.extend([40.0, 50.0])
+        handler.system_monitor.disk_history.extend([60.0])
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_system_history(update, context))
+
+        assert len(handler.system_monitor.cpu_history) == 3
+        assert len(handler.system_monitor.memory_history) == 2
+        assert len(handler.system_monitor.disk_history) == 1
+
+
+class TestShowBotStatus:
+    """show_bot_status() selbst hatte bisher 0 Tests - insbesondere der
+    'Gesamt-Logs: 0'-Bug (Deferred Finding der Vorphase) war dadurch
+    unentdeckt. Gemockter get_logging_stats() fuer Determinismus
+    (dieselbe Begruendung wie TestShowBotLogs)."""
+
+    def test_total_logs_now_correctly_aggregated_across_modules(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+        fake_stats = {
+            "total_modules": 2,
+            "modules": {
+                "ModuleA": {"total_logs": 7},
+                "ModuleB": {"total_logs": 3},
+            },
+        }
+
+        with patch(
+            "handlers.enhanced_status_handler.get_logging_stats",
+            return_value=fake_stats,
+        ):
+            asyncio.run(handler.show_bot_status(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Gesamt-Logs: 10" in text  # 7 + 3, nicht mehr strukturell 0
+
+
+class TestShowBotHandlers:
+    def test_shows_real_handler_statuses(self):
+        """STATUS-MENU-CLOSURE: reale, ueber
+        BotStatusTracker.update_handler_status() aufgezeichnete Daten -
+        keine erfundene Liste."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        handler.bot_tracker.update_handler_status("error_handler", "active")
+        handler.bot_tracker.update_handler_status("navidrome_handler", "error")
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_bot_handlers(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Gesamt:** 2" in text
+        assert "Aktiv:** 1" in text
+
+    def test_handler_names_with_underscores_are_escaped(self):
+        """Regression: 'error_handler'/'navidrome_handler' etc. enthalten
+        Unterstriche - genau das Live-Bug-Muster aus der Vorphase
+        (x86_64/musik_bilder), hier fuer echte Handler-Namen."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        handler.bot_tracker.update_handler_status("error_handler", "active")
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_bot_handlers(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "error\\_handler" in text
+        assert "error_handler" not in text
+
+    def test_no_handlers_recorded_shows_placeholder(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_bot_handlers(update, context))  # darf nicht raisen
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Noch keine Handler-Status" in text
+
+
+class TestShowBotLogs:
+    """
+    Nutzt einen gemockten get_logging_stats()-Rueckgabewert statt des
+    echten, prozessweit geteilten _module_loggers-Zustands - der ist
+    ueber die gesamte Testsuite hinweg gemeinsam genutzt (jeder Test, der
+    irgendwo get_module_logger() aufruft, traegt dazu bei) und wuerde
+    "Top 5 nach Fehlern"-Assertions unzuverlaessig machen, wenn andere
+    Tests zufaellig mehr Fehler auf anderen Modulen erzeugt haben.
+    """
+
+    def test_shows_aggregated_total_logs_not_zero(self):
+        """Regressionstest fuer den in der Vorphase dokumentierten
+        Deferred Finding: 'Gesamt-Logs' zeigte strukturell immer 0."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+        fake_stats = {
+            "total_modules": 1,
+            "modules": {"TestModule": {"total_logs": 5, "error_count": 1, "critical_count": 0}},
+        }
+
+        with patch(
+            "handlers.enhanced_status_handler.get_logging_stats",
+            return_value=fake_stats,
+        ):
+            asyncio.run(handler.show_bot_logs(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Gesamt-Logs:** 0" not in text
+        assert "Gesamt-Logs:** 5" in text
+
+    def test_module_names_with_underscores_are_escaped(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+        fake_stats = {
+            "total_modules": 1,
+            "modules": {
+                "Test_Module_With_Underscores": {
+                    "total_logs": 3, "error_count": 3, "critical_count": 0,
+                }
+            },
+        }
+
+        with patch(
+            "handlers.enhanced_status_handler.get_logging_stats",
+            return_value=fake_stats,
+        ):
+            asyncio.run(handler.show_bot_logs(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Test\\_Module\\_With\\_Underscores" in text
+        assert "Test_Module_With_Underscores" not in text
+
+    def test_never_shows_raw_log_message_content(self):
+        """Master-Prompt Phase 5: keine vollstaendigen Logfiles/Secrets -
+        nur Zaehler, niemals der eigentliche Lognachrichtentext. Da
+        get_logging_stats() strukturell ohnehin nur Zaehlwerte liefert
+        (siehe logger.py::ModuleLogger.get_stats()), ist ein Leak hier
+        architektonisch ausgeschlossen - dieser Test dokumentiert das."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+        fake_stats = {
+            "total_modules": 1,
+            "modules": {"SecretModule": {"total_logs": 1, "error_count": 1, "critical_count": 0}},
+        }
+
+        with patch(
+            "handlers.enhanced_status_handler.get_logging_stats",
+            return_value=fake_stats,
+        ):
+            asyncio.run(handler.show_bot_logs(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "supersecret123" not in text
+        assert "password" not in text
+
+    def test_top_modules_sorted_by_error_count_descending(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+        fake_stats = {
+            "total_modules": 2,
+            "modules": {
+                "QuietModule": {"total_logs": 10, "error_count": 0, "critical_count": 0},
+                "NoisyModule": {"total_logs": 10, "error_count": 5, "critical_count": 1},
+            },
+        }
+
+        with patch(
+            "handlers.enhanced_status_handler.get_logging_stats",
+            return_value=fake_stats,
+        ):
+            asyncio.run(handler.show_bot_logs(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "NoisyModule" in text
+        # QuietModule hat 0 Fehler - wird gemaess Filter nicht gelistet.
+        assert "QuietModule" not in text
+
+    def test_no_module_errors_shows_placeholder(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+        fake_stats = {
+            "total_modules": 1,
+            "modules": {"CleanModule": {"total_logs": 10, "error_count": 0, "critical_count": 0}},
+        }
+
+        with patch(
+            "handlers.enhanced_status_handler.get_logging_stats",
+            return_value=fake_stats,
+        ):
+            asyncio.run(handler.show_bot_logs(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Keine Fehler" in text
+
+
+class TestShowServicesCheck:
+    def test_updates_navidrome_status_to_healthy_on_successful_ping(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        with patch(
+            "handlers.enhanced_status_handler.NavidromeAPI"
+        ) as mock_navidrome_cls:
+            mock_navidrome_cls.return_value.check_connection = AsyncMock(
+                return_value=True
+            )
+            asyncio.run(handler.show_services_check(update, context))
+
+        overview = handler.bot_tracker.get_service_overview()
+        assert overview["services"]["navidrome"]["status"] == "healthy"
+
+    def test_updates_navidrome_status_to_error_on_failed_ping(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        with patch(
+            "handlers.enhanced_status_handler.NavidromeAPI"
+        ) as mock_navidrome_cls:
+            mock_navidrome_cls.return_value.check_connection = AsyncMock(
+                return_value=False
+            )
+            asyncio.run(handler.show_services_check(update, context))
+
+        overview = handler.bot_tracker.get_service_overview()
+        assert overview["services"]["navidrome"]["status"] == "error"
+
+    def test_connection_exception_is_handled_not_raised(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        with patch(
+            "handlers.enhanced_status_handler.NavidromeAPI"
+        ) as mock_navidrome_cls:
+            mock_navidrome_cls.return_value.check_connection = AsyncMock(
+                side_effect=RuntimeError("network down")
+            )
+            asyncio.run(handler.show_services_check(update, context))  # darf nicht raisen
+
+        overview = handler.bot_tracker.get_service_overview()
+        assert overview["services"]["navidrome"]["status"] == "error"
+
+    def test_other_services_remain_honestly_unknown_not_faked_healthy(self):
+        """Kein Fake-Daten-Verstoss: download/statistics/logger haben
+        keinen automatisierten Check - duerfen NICHT pauschal auf
+        'healthy' gesetzt werden."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        with patch(
+            "handlers.enhanced_status_handler.NavidromeAPI"
+        ) as mock_navidrome_cls:
+            mock_navidrome_cls.return_value.check_connection = AsyncMock(
+                return_value=True
+            )
+            asyncio.run(handler.show_services_check(update, context))
+
+        overview = handler.bot_tracker.get_service_overview()
+        for name in ("download", "statistics", "logger"):
+            assert overview["services"][name]["status"] == "unknown"
+
+    def test_renders_services_view_after_check(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        with patch(
+            "handlers.enhanced_status_handler.NavidromeAPI"
+        ) as mock_navidrome_cls:
+            mock_navidrome_cls.return_value.check_connection = AsyncMock(
+                return_value=True
+            )
+            asyncio.run(handler.show_services_check(update, context))
+
+        update.callback_query.edit_message_text.assert_awaited()
+
+    def test_non_navidrome_services_get_explicit_unknown_reason(self):
+        """STATUS-MENU-CLOSURE Final Correction: download/statistics/
+        logger bleiben nicht nur ehrlich 'unknown', sondern erhalten
+        einen konkreten, nachvollziehbaren Grund (keine erfundene
+        Health-Aussage, aber auch kein unbegruendetes 'unknown')."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        with patch(
+            "handlers.enhanced_status_handler.NavidromeAPI"
+        ) as mock_navidrome_cls:
+            mock_navidrome_cls.return_value.check_connection = AsyncMock(
+                return_value=True
+            )
+            asyncio.run(handler.show_services_check(update, context))
+
+        overview = handler.bot_tracker.get_service_overview()
+        for name in ("download", "statistics", "logger"):
+            assert overview["services"][name]["reason"] == (
+                "Kein automatisierter Health-Check verfügbar"
+            )
+        # Navidrome hat einen echten Check - kein "kein Check verfuegbar"-Grund.
+        assert overview["services"]["navidrome"]["reason"] is None
+
+    def test_all_four_services_are_considered_during_check(self):
+        """Alle vier bekannten Services muessen beim Check tatsaechlich
+        verarbeitet werden (last_check wird fuer jeden gesetzt) - keiner
+        wird stillschweigend ausgelassen."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        with patch(
+            "handlers.enhanced_status_handler.NavidromeAPI"
+        ) as mock_navidrome_cls:
+            mock_navidrome_cls.return_value.check_connection = AsyncMock(
+                return_value=True
+            )
+            asyncio.run(handler.show_services_check(update, context))
+
+        overview = handler.bot_tracker.get_service_overview()
+        for name in ("download", "navidrome", "statistics", "logger"):
+            assert overview["services"][name]["last_check"] is not None
+
+    def test_error_in_one_service_does_not_block_the_others(self):
+        """Fehlerisolation: ein Fehler bei genau einem Service (hier:
+        'statistics') darf die Verarbeitung der uebrigen drei Services
+        nicht verhindern - der gesamte Button darf nicht wegen eines
+        einzelnen Checks abbrechen."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        original_update = handler.bot_tracker.update_service_status
+
+        def flaky_update(service_name, status, reason=None):
+            if service_name == "statistics":
+                raise RuntimeError("Statistics-Check fehlgeschlagen")
+            original_update(service_name, status, reason=reason)
+
+        with patch(
+            "handlers.enhanced_status_handler.NavidromeAPI"
+        ) as mock_navidrome_cls, patch.object(
+            handler.bot_tracker, "update_service_status", side_effect=flaky_update
+        ):
+            mock_navidrome_cls.return_value.check_connection = AsyncMock(
+                return_value=True
+            )
+            asyncio.run(handler.show_services_check(update, context))  # darf nicht raisen
+
+        overview = handler.bot_tracker.get_service_overview()
+        assert overview["services"]["navidrome"]["status"] == "healthy"
+        assert overview["services"]["download"]["status"] == "unknown"
+        assert overview["services"]["logger"]["status"] == "unknown"
+        # "statistics" bleibt beim urspruenglichen Zustand (Fehler beim
+        # Setzen), aber der Button ist insgesamt nicht abgebrochen.
+        update.callback_query.edit_message_text.assert_awaited()
+
+    def test_rendered_view_shows_reason_for_unknown_services(self):
+        """Nach dem Check zeigt die gerenderte Ansicht (show_services_status())
+        den Grund fuer die Services ohne echten Check an."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        with patch(
+            "handlers.enhanced_status_handler.NavidromeAPI"
+        ) as mock_navidrome_cls:
+            mock_navidrome_cls.return_value.check_connection = AsyncMock(
+                return_value=True
+            )
+            asyncio.run(handler.show_services_check(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        # Der Grund-Text enthaelt keine Legacy-Markdown-Sonderzeichen
+        # (_ * ` [), wird also unveraendert von _escape_markdown() zurueckgegeben.
+        assert "Kein automatisierter Health-Check verfügbar" in text
+        assert text.count("Grund: Kein automatisierter Health-Check verfügbar") == 3
+
+    def test_check_result_contains_no_pii_or_secrets(self):
+        """Kein Nutzer-/Token-/Passwort-Leck ueber den Service-Check-Text."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        with patch(
+            "handlers.enhanced_status_handler.NavidromeAPI"
+        ) as mock_navidrome_cls:
+            mock_navidrome_cls.return_value.check_connection = AsyncMock(
+                return_value=True
+            )
+            asyncio.run(handler.show_services_check(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        for forbidden in ("password", "token", "api_key", "Authorization"):
+            assert forbidden.lower() not in text.lower()
+
+
+class TestShowServicesDetail:
+    def test_shows_check_availability_per_service(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_services_detail(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "automatisierter Check verfügbar" in text  # Navidrome
+        assert "kein automatisierter Check definiert" in text  # die anderen 3
+
+
+class TestShowPerformanceReset:
+    def test_resets_operation_and_error_counters(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        handler.system_monitor.record_operation("status_menu")
+        handler.system_monitor.record_error("timeout")
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_performance_reset(update, context))
+
+        stats = handler.system_monitor.get_performance_stats()
+        assert stats["total_operations"] == 0
+        assert stats["total_errors"] == 0
+
+    def test_renders_performance_view_after_reset(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_performance_reset(update, context))
+
+        update.callback_query.edit_message_text.assert_awaited()
+
+    def test_no_confirmation_step_required_matches_admin_gated_low_stakes_design(self):
+        """Dokumentiert die bewusste Entscheidung: kein separater
+        Confirm-Callback (siehe Docstring von show_performance_reset()) -
+        ein einzelner Tap fuehrt den Reset direkt aus."""
+        handler = EnhancedStatusHandler(FakeConfig())
+        handler.system_monitor.record_operation("x")
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_performance_reset(update, context))
+
+        assert handler.system_monitor.get_performance_stats()["total_operations"] == 0
+
+
+class TestShowStorageDetail:
+    def test_shows_mountpoint_and_filesystem_for_root(self):
+        class ConfigWithRootLibrary(FakeConfig):
+            LIBRARY_DIR = Path("/")
+
+        handler = EnhancedStatusHandler(ConfigWithRootLibrary())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_storage_detail(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Mountpoint" in text
+        assert "Dateisystem" in text
+        assert "GB" in text
+
+    def test_path_with_underscores_is_escaped(self, tmp_path):
+        class ConfigWithUnderscorePath(FakeConfig):
+            LIBRARY_DIR = tmp_path / "musik_bilder"
+
+        ConfigWithUnderscorePath.LIBRARY_DIR.mkdir()
+        handler = EnhancedStatusHandler(ConfigWithUnderscorePath())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_storage_detail(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "musik\\_bilder" in text
+
+    def test_unresolvable_mountpoint_does_not_crash(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        with patch(
+            "handlers.enhanced_status_handler._find_partition_for_path",
+            return_value=None,
+        ):
+            asyncio.run(handler.show_storage_detail(update, context))  # darf nicht raisen
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "konnte nicht ermittelt werden" in text
+
+
+class TestShowPerformanceStatusHistoryButtonRemoved:
+    def test_keyboard_no_longer_offers_history_button(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_performance_status(update, context))
+
+        keyboard = update.callback_query.edit_message_text.call_args.kwargs["reply_markup"]
+        callback_datas = {
+            button.callback_data
+            for row in keyboard.inline_keyboard
+            for button in row
+        }
+        assert "status_performance_history" not in callback_datas
+        assert "status_performance_reset" in callback_datas
+
+    def test_empty_operation_breakdown_shows_placeholder_not_nothing(self):
+        handler = EnhancedStatusHandler(FakeConfig())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.show_performance_status(update, context))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Noch keine aufgezeichneten Operationen" in text
