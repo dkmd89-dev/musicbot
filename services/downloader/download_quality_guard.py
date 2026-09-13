@@ -35,13 +35,23 @@ from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from config import Config
 from logger import get_module_logger
 
 logger = get_module_logger("DownloadQualityGuard")
+
+# Append-only JSONL-Aufzeichnung aller Stufe-A-Beobachtungen (OK/SUSPICIOUS/
+# PROBE_FAILED) für die Kalibrierung eines künftigen Stufe-B-Reject-Gates
+# (siehe Phase-3-Plan, P2.3). Bewusst getrennt vom Logging oben (das rotiert
+# bei 2 MB/5 Backups, siehe logger.py — für eine Beobachtungsperiode über
+# Wochen ungeeignet als alleinige Quelle). Reine Zusatzaufzeichnung, ändert
+# nichts an der bestehenden Logik/Rückgabe.
+QUALITY_OBSERVATIONS_PATH = Path(Config.DATA_DIR) / "quality_observations.jsonl"
 
 # Unverbindlicher Ausgangspunkt für die Beobachtungsphase (Stufe A) —
 # siehe Modul-Docstring: kein Anspruch, für DIESEN Zweck bereits
@@ -107,6 +117,28 @@ def _fmt(value, unit: str = "", decimals: Optional[int] = None) -> str:
     if decimals is not None:
         return f"{value:.{decimals}f}{unit}"
     return f"{value}{unit}"
+
+
+def _append_observation(observation: "QualityObservation", status: str) -> None:
+    """Hängt eine Beobachtung als JSONL-Zeile an (append-only, ein Objekt
+    pro Download). Rein additive Zusatzaufzeichnung neben dem bestehenden
+    Logging — wirft nie, ein Schreibfehler darf die Download-Pipeline nicht
+    beeinträchtigen (gleiche Philosophie wie _probe_duration_and_bitrate())."""
+    try:
+        QUALITY_OBSERVATIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "file": Path(observation.path).name,
+            **{k: v for k, v in asdict(observation).items() if k != "path"},
+            "status": status,
+        }
+        with open(QUALITY_OBSERVATIONS_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError as e:
+        logger.warning(
+            f"[QUALITY-CHECK] Konnte Beobachtung nicht in "
+            f"{QUALITY_OBSERVATIONS_PATH} schreiben: {e}"
+        )
 
 
 def check_download_quality(
@@ -178,5 +210,7 @@ def check_download_quality(
             f"⚠️ [QUALITY-OBSERVE] Auffälliger Download (Stufe A, nur "
             f"Beobachtung, kein Reject): {path} — {'; '.join(flags)}"
         )
+
+    _append_observation(observation, status)
 
     return observation
