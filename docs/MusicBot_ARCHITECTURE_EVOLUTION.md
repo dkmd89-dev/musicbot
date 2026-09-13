@@ -26,6 +26,22 @@ Keine Implementierung. Kein Refactoring. Keine Baseline v4.
 > - [`docs/MusicBot_ENGINEERING_BASELINE_v9.md`](MusicBot_ENGINEERING_BASELINE_v9.md) — aktuelle Baseline
 > - [`README.md`](../README.md)
 
+> **⚠️ Nachtrag (ARCH-026 Error Handler Integration Audit, 2026-09-13):**
+> Abschnitt 11 („Error Architecture") und Abschnitt 15 (`set_error_handler()`-
+> Beschreibung) gehen von **einer** zentral propagierten `EnhancedErrorHandler`-
+> Instanz aus, die sowohl als PTB-`add_error_handler` registriert ist als auch
+> an alle Sub-Handler weitergereicht wird. Diese Annahme ist nach dem
+> aktuellen Code-Stand (Menu-Subsystem seit ARCH-021–ARCH-025 vollständig
+> nach `handlers/menu/` dekomponiert) **nicht mehr zutreffend**: `bot.py`
+> und `handlers/menu/rich_menu_handler.py::initialize()` erzeugen jeweils
+> **eigenständig** eine `EnhancedErrorHandler`-Instanz über
+> `create_enhanced_error_handler()` — es existieren zwei unabhängige
+> Instanzen ohne Synchronisation, mit den entsprechenden Konsequenzen für
+> Admin-Monitoring und Recovery-Zähler. Vollständige Analyse:
+> [`docs/MusicBot_ARCH-026_Error_Handler_Integration_Audit.md`](MusicBot_ARCH-026_Error_Handler_Integration_Audit.md).
+> Die ursprüngliche Analyse unten bleibt als historische Argumentation zum
+> damaligen Codestand erhalten.
+
 ---
 
 ## 1. Purpose
