@@ -14,8 +14,10 @@ charakterisiert (jetzt gegen die neuen Modulpfade gepatcht) - hier nur
 ergänzende Direkttests der jetzt eigenständigen Funktionen.
 """
 
+import asyncio
+
 import pytest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from handlers.menu.actions import download as dl_actions
 
@@ -82,6 +84,34 @@ async def test_create_download_handler_missing_duplicate_detector():
     assert result is None
 
 
+def test_create_download_handler_injects_shared_error_handler():
+    """ARCH-027/F4: die Download-Pipeline hatte bisher 0 Referenzen auf
+    einen EnhancedErrorHandler - create_download_handler() muss die
+    zentrale, geteilte Instanz jetzt an DownloadHandler durchreichen."""
+    shared_error_handler = Mock()
+
+    with patch("handlers.menu.actions.download.DownloadHandler") as mock_cls:
+        dl_actions.create_download_handler(
+            _make_update(), Mock(), Mock(), Mock(), Mock(), Mock(), Mock(), Mock(),
+            error_handler=shared_error_handler,
+        )
+
+    _args, kwargs = mock_cls.call_args
+    assert kwargs["error_handler"] is shared_error_handler
+
+
+def test_create_download_handler_defaults_error_handler_to_none():
+    """Rueckwaertskompatibilitaet: bestehende Aufrufer ohne error_handler
+    (z. B. Standalone-/Test-Konstruktion) bleiben funktionsfaehig."""
+    with patch("handlers.menu.actions.download.DownloadHandler") as mock_cls:
+        dl_actions.create_download_handler(
+            _make_update(), Mock(), Mock(), Mock(), Mock(), Mock(), Mock(), Mock()
+        )
+
+    _args, kwargs = mock_cls.call_args
+    assert kwargs["error_handler"] is None
+
+
 @pytest.mark.asyncio
 async def test_process_url_no_handler_replies_error():
     update = _make_update()
@@ -91,6 +121,77 @@ async def test_process_url_no_handler_replies_error():
     update.message.reply_text.assert_awaited_once_with(
         "❌ Download-Dienst nicht verfügbar. Bitte versuche es später erneut."
     )
+
+
+class TestLogBackgroundDownloadTaskException:
+    """ARCH-027/F4: der add_done_callback()-Sicherheitsnetz war bisher
+    der einzige Ort, an dem eine wirklich unerwartete Download-Exception
+    landete - und meldete ausschließlich lokal (kein zentrales
+    Monitoring). Jetzt zusätzlich handle_exception(), wenn eine
+    error_handler-Instanz übergeben wird."""
+
+    def _make_failed_task(self, exc):
+        async def _boom():
+            raise exc
+
+        loop = asyncio.new_event_loop()
+        try:
+            task = loop.create_task(_boom())
+            loop.run_until_complete(
+                asyncio.gather(task, return_exceptions=True)
+            )
+        finally:
+            loop.close()
+        return task
+
+    def test_reports_to_injected_error_handler(self):
+        exc = RuntimeError("boom")
+        task = self._make_failed_task(exc)
+        error_handler = Mock()
+        error_handler.handle_exception = AsyncMock()
+        logger = Mock()
+
+        # asyncio.create_task() innerhalb der Funktion braucht einen
+        # laufenden Loop - synchron per asyncio.run() um den Aufruf
+        # herum ausfuehren.
+        async def _invoke():
+            dl_actions._log_background_download_task_exception(
+                task, logger, error_handler
+            )
+            # Dem fire-and-forget-Task eine Iteration Zeit geben.
+            await asyncio.sleep(0)
+
+        asyncio.run(_invoke())
+
+        logger.error.assert_called_once()
+        error_handler.handle_exception.assert_called_once()
+        call_args = error_handler.handle_exception.call_args
+        assert call_args.args[0] is exc
+        assert call_args.kwargs["context"]["module"] == "DownloadHandler"
+
+    def test_without_error_handler_only_logs(self):
+        """Rueckwaertskompatibilitaet: error_handler=None (Default)
+        aendert das bestehende Logging-Verhalten nicht."""
+        exc = RuntimeError("boom")
+        task = self._make_failed_task(exc)
+        logger = Mock()
+
+        dl_actions._log_background_download_task_exception(task, logger)
+
+        logger.error.assert_called_once()
+
+    def test_cancelled_task_is_ignored(self):
+        task = Mock()
+        task.cancelled.return_value = True
+        error_handler = Mock()
+        error_handler.handle_exception = AsyncMock()
+
+        dl_actions._log_background_download_task_exception(
+            task, Mock(), error_handler
+        )
+
+        task.exception.assert_not_called()
+        error_handler.handle_exception.assert_not_called()
 
 
 @pytest.mark.asyncio

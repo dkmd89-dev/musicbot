@@ -232,6 +232,23 @@ class TestCreateDownloadHandler:
         _args, kwargs = mock_download_handler_cls.call_args
         assert kwargs["duplicate_detector"] is handler.duplicate_detector
 
+    def test_creates_handler_with_shared_error_handler(self, tmp_path):
+        """ARCH-027/F4: die Download-Pipeline hatte bisher 0 Referenzen
+        auf einen EnhancedErrorHandler."""
+        handler, _ = _make_handler(tmp_path)
+        handler.duplicate_detector = Mock()
+        handler.metadata_processor = Mock()
+        handler.error_handler = Mock()
+
+        update = make_update(111)
+        with patch(
+            "handlers.menu.actions.download.DownloadHandler"
+        ) as mock_download_handler_cls:
+            handler._create_download_handler(update)
+
+        _args, kwargs = mock_download_handler_cls.call_args
+        assert kwargs["error_handler"] is handler.error_handler
+
     def test_creates_handler_with_shared_active_downloads_registry(self, tmp_path):
         """Download-Control-Center 2026-09-02: DownloadHandler bekommt
         dieselbe, ueber die gesamte Bot-Laufzeit bestehende

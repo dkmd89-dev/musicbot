@@ -172,6 +172,57 @@ class TestHandleAnalyze:
         assert "Health-Scan fehlgeschlagen" in text
         assert "boom" in text
 
+    def test_unexpected_exception_shows_generic_error_not_crash(self, handler):
+        message = Mock()
+        message.edit_text = AsyncMock()
+        with patch.object(
+            repair_handler_module, "build_repair_plan",
+            new=AsyncMock(side_effect=RuntimeError("boom")),
+        ):
+            run(handler._run_analyze_and_report(message))  # darf nicht raisen
+        text = message.edit_text.call_args.args[0]
+        assert "Unerwarteter Fehler" in text
+        assert "boom" in text
+
+    def test_unexpected_exception_is_reported_to_injected_error_handler(self, handler):
+        """ARCH-027/F6: der injizierte error_handler wurde vorher nie
+        aufgerufen. HealthScanFailedError (Test oben) bleibt bewusst
+        lokal - nur echte, unerwartete Exceptions gehen zentral."""
+        message = Mock()
+        message.edit_text = AsyncMock()
+        handler.error_handler = Mock()
+        handler.error_handler.handle_exception = AsyncMock()
+        exc = RuntimeError("boom")
+
+        with patch.object(
+            repair_handler_module, "build_repair_plan",
+            new=AsyncMock(side_effect=exc),
+        ):
+            run(handler._run_analyze_and_report(message))
+
+        handler.error_handler.handle_exception.assert_awaited_once()
+        call_args = handler.error_handler.handle_exception.call_args
+        assert call_args.args[0] is exc
+        assert call_args.kwargs["context"]["module"] == "RepairMusicBotHandler"
+        assert call_args.kwargs["context"]["operation"] == "build_repair_plan"
+
+    def test_health_scan_failure_is_not_reported_to_error_handler(self, handler):
+        """HealthScanFailedError ist ein erwarteter, bereits mit eigener
+        Nutzer-Nachricht behandelter Fall - kein zentrales Monitoring
+        (siehe Kommentar in repair_musicbot_handler.py)."""
+        message = Mock()
+        message.edit_text = AsyncMock()
+        handler.error_handler = Mock()
+        handler.error_handler.handle_exception = AsyncMock()
+
+        with patch.object(
+            repair_handler_module, "build_repair_plan",
+            new=AsyncMock(side_effect=HealthScanFailedError("boom")),
+        ):
+            run(handler._run_analyze_and_report(message))
+
+        handler.error_handler.handle_exception.assert_not_awaited()
+
     def test_empty_plan_shows_all_clear(self, handler):
         plan = _plan([])
         message = Mock()
@@ -378,6 +429,54 @@ class TestHandleExecute:
             run(handler._run_execute_and_report(message, ADMIN_ID))
         text = message.edit_text.call_args.args[0]
         assert "läuft bereits" in text
+
+    def test_unexpected_exception_shows_generic_error_not_crash(self, handler):
+        message = Mock()
+        message.edit_text = AsyncMock()
+        with patch.object(
+            repair_handler_module, "execute_safe_automatic_repair",
+            new=AsyncMock(side_effect=RuntimeError("boom")),
+        ):
+            run(handler._run_execute_and_report(message, ADMIN_ID))  # darf nicht raisen
+        text = message.edit_text.call_args.args[0]
+        assert "Unerwarteter Fehler" in text
+        assert "boom" in text
+
+    def test_unexpected_exception_is_reported_to_injected_error_handler(self, handler):
+        """ARCH-027/F6: der injizierte error_handler wurde vorher nie
+        aufgerufen. RepairAlreadyRunningError (Test oben) bleibt bewusst
+        lokal - nur echte, unerwartete Exceptions gehen zentral."""
+        message = Mock()
+        message.edit_text = AsyncMock()
+        handler.error_handler = Mock()
+        handler.error_handler.handle_exception = AsyncMock()
+        exc = RuntimeError("boom")
+
+        with patch.object(
+            repair_handler_module, "execute_safe_automatic_repair",
+            new=AsyncMock(side_effect=exc),
+        ):
+            run(handler._run_execute_and_report(message, ADMIN_ID))
+
+        handler.error_handler.handle_exception.assert_awaited_once()
+        call_args = handler.error_handler.handle_exception.call_args
+        assert call_args.args[0] is exc
+        assert call_args.kwargs["context"]["module"] == "RepairMusicBotHandler"
+        assert call_args.kwargs["context"]["operation"] == "execute_safe_automatic_repair"
+
+    def test_already_running_is_not_reported_to_error_handler(self, handler):
+        message = Mock()
+        message.edit_text = AsyncMock()
+        handler.error_handler = Mock()
+        handler.error_handler.handle_exception = AsyncMock()
+
+        with patch.object(
+            repair_handler_module, "execute_safe_automatic_repair",
+            new=AsyncMock(side_effect=RepairAlreadyRunningError("läuft bereits")),
+        ):
+            run(handler._run_execute_and_report(message, ADMIN_ID))
+
+        handler.error_handler.handle_exception.assert_not_awaited()
 
     def test_triggered_by_includes_telegram_user_id(self, handler):
         message = Mock()

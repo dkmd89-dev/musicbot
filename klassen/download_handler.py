@@ -33,7 +33,7 @@ import re
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from mutagen.mp4 import MP4
 from telegram import Message, Update
@@ -55,6 +55,9 @@ from services.metadata.enhanced_metadata_processor import (
 from services.downloader.download_result_reporter import DownloadResultReporter
 from services.downloader.progress_tracker import ProgressTracker
 from utils.filenamefixer import FilenameFixerTool
+
+if TYPE_CHECKING:
+    from handlers.enhanced_error_handler import EnhancedErrorHandler
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # URL-VALIDIERUNG (SEC: Domain-Allowlist vor yt-dlp)
@@ -184,6 +187,15 @@ class DownloadHandler:
     Telegram-Statusnachricht (kompakt) sichtbar gemacht.
     """
 
+    # ARCH-027/F4: Klassenattribut-Fallback fuer object.__new__(DownloadHandler)
+    # -konstruierte Testinstanzen (10 bestehende Testdateien umgehen
+    # __init__() bewusst wegen des schweren Konstruktors, siehe z. B.
+    # tests/test_download_handler_active_download_lifecycle.py) - diese
+    # Instanzen erhalten error_handler nie ueber __init__(), sollen aber
+    # nicht mit AttributeError abbrechen, wenn Code self.error_handler
+    # liest.
+    error_handler: Optional["EnhancedErrorHandler"] = None
+
     def __init__(
         self,
         update: Update,
@@ -193,11 +205,20 @@ class DownloadHandler:
         logger_factory: Optional[Callable] = None,
         active_downloads: Optional[ActiveDownloadRegistry] = None,
         download_history: Optional[DownloadHistoryStore] = None,
+        error_handler: Optional["EnhancedErrorHandler"] = None,
     ):
         self.update = update
         self.config = config
         self.logger_factory = logger_factory or get_module_logger
         self.logger = self.logger_factory("DownloadHandler")
+        # ARCH-027/F4: zentraler, bereits von RichMenuHandler gehaltener
+        # EnhancedErrorHandler (dieselbe geteilte Instanz wie ueberall
+        # sonst, siehe ARCH-027-Konsolidierung) - siehe
+        # handle_youtube_links()/_process_url() fuer die konkrete
+        # Verwendung (nur fuer wirklich unerwartete, sonst nirgends
+        # abgefangene Fehler, nicht fuer die bereits vorhandene, breite
+        # eigene Fehlerbehandlung dieser Klasse).
+        self.error_handler = error_handler
 
         # ── Abhängigkeiten ────────────────────────────────────────────────────
         self.logger.info("🔌 [INIT] Lade Abhängigkeiten...")

@@ -189,6 +189,77 @@ class TestDebugTracker:
         assert tracker.get_session_summary("does-not-exist") is None
 
 
+class TestDecoratorConfigAccessBugFix:
+    """ARCH-027/F5: handle_async_exceptions()/handle_sync_exceptions()
+    riefen bei einer abgefangenen Exception self.config.get(
+    "SUPPRESS_HANDLED_EXCEPTIONS", False) auf - config.Config (und die
+    hier verwendete FakeConfig, dieselbe reine Attribut-Klasse ohne
+    .get()/__getattr__) hat keine .get()-Methode. Bei tatsaechlicher
+    Verwendung des Decorators haette das den echten AttributeError
+    geworfen und die urspruengliche Exception maskiert (ARCH-026/F5,
+    ARCH-027 Abschnitt 9/11) - 0 produktive Verwendungen bisher, aber
+    beide Decorators bleiben als dokumentierte, weiterhin unterstuetzte
+    API bestehen (Verwendungsbeispiel 2 im Modul-Docstring). Fix:
+    getattr(self.config, ...) statt .get(...). Diese Tests wuerden ohne
+    den Fix mit AttributeError statt der erwarteten RuntimeError
+    fehlschlagen (Pre-Fix-Diskriminierung ueber die urspruengliche
+    self.config.get(...)-Zeile manuell nachvollzogen)."""
+
+    @pytest.mark.asyncio
+    async def test_async_decorator_reraises_original_exception_not_attributeerror(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+
+        @handler.handle_async_exceptions("TestModule", "test_op")
+        async def _boom():
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await _boom()
+
+    @pytest.mark.asyncio
+    async def test_async_decorator_suppresses_when_configured(self):
+        config = FakeConfig()
+        config.SUPPRESS_HANDLED_EXCEPTIONS = True
+        handler = EnhancedErrorHandler(config)
+
+        @handler.handle_async_exceptions("TestModule", "test_op")
+        async def _boom():
+            raise RuntimeError("boom")
+
+        result = await _boom()
+        assert result is None
+
+    def test_sync_decorator_reraises_original_exception_not_attributeerror(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+
+        @handler.handle_sync_exceptions("TestModule", "test_op")
+        def _boom():
+            raise RuntimeError("boom")
+
+        async def _run():
+            with pytest.raises(RuntimeError, match="boom"):
+                _boom()
+            # Dem von handle_sync_exceptions() intern per
+            # asyncio.create_task() geplanten handle_exception()-Aufruf
+            # eine Iteration Zeit geben, damit er (inkl. des jetzt
+            # gefixten getattr()-Zugriffs) tatsaechlich durchlaeuft.
+            await asyncio.sleep(0)
+
+        asyncio.run(_run())
+
+    def test_sync_decorator_suppresses_when_configured(self):
+        config = FakeConfig()
+        config.SUPPRESS_HANDLED_EXCEPTIONS = True
+        handler = EnhancedErrorHandler(config)
+
+        @handler.handle_sync_exceptions("TestModule", "test_op")
+        def _boom():
+            raise RuntimeError("boom")
+
+        result = _boom()
+        assert result is None
+
+
 def make_update(user_id, has_callback_query=True, has_message=True, has_chat=True):
     update = Mock()
     update.effective_user.id = user_id

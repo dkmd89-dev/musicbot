@@ -21,6 +21,7 @@ from services.library_health.findings import (
     STATUS_OPEN,
     STATUS_RESOLVED,
     FindingsRegistry,
+    FindingsRegistryError,
     generate_finding_id,
 )
 
@@ -430,6 +431,44 @@ class TestCorruptRegistry:
         run(handler.handle_start(update, context))
 
         assert registry_path.read_text(encoding="utf-8") == "{not valid json"
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        assert "ungültig" in text
+
+    def test_corrupt_registry_is_reported_to_injected_error_handler(
+        self, handler, registry_path, context
+    ):
+        """ARCH-027/F6: der injizierte error_handler wurde vorher nie
+        aufgerufen. _load_registry() ist bewusst synchron (11 Aufrufer) -
+        die Meldung erfolgt per asyncio.create_task() (fire-and-forget),
+        daher wird hier auf den synchronen Aufruf (assert_called_once())
+        geprueft statt auf assert_awaited_once() (timing-unabhaengig,
+        siehe Kommentar in library_health_review_handler.py)."""
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text("{not valid json", encoding="utf-8")
+        handler.error_handler = Mock()
+        handler.error_handler.handle_exception = AsyncMock()
+
+        update = _mock_update(ADMIN_ID)
+        run(handler.handle_start(update, context))
+
+        handler.error_handler.handle_exception.assert_called_once()
+        call_args = handler.error_handler.handle_exception.call_args
+        assert isinstance(call_args.args[0], FindingsRegistryError)
+        assert call_args.kwargs["context"]["module"] == "LibraryHealthReviewHandler"
+        assert call_args.kwargs["context"]["operation"] == "load_registry"
+
+    def test_corrupt_registry_without_error_handler_still_works(
+        self, handler, registry_path, context
+    ):
+        """Rueckwaertskompatibilitaet: handler.error_handler bleibt bei
+        Standalone-Konstruktion None."""
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text("{not valid json", encoding="utf-8")
+        assert handler.error_handler is None
+
+        update = _mock_update(ADMIN_ID)
+        run(handler.handle_start(update, context))
+
         text = update.callback_query.edit_message_text.call_args.args[0]
         assert "ungültig" in text
 

@@ -282,10 +282,17 @@ class ExtendedBot:
             ):
                 try:
                     challenge_handler = self.rich_menu_handler.family_challenge_handler
+                    # ARCH-027 (Error-Handler-Closure): dieselbe, bereits
+                    # existierende Config-Instanz UND der bereits als PTB-
+                    # Error-Handler registrierte, zentrale EnhancedErrorHandler
+                    # werden injiziert statt (wie bisher) gar nicht - siehe
+                    # handlers/family_challenge_scheduler.py-Docstring.
                     self._family_challenge_scheduler = FamilyChallengeScheduler(
                         self.application.bot,
+                        config=self.config,
                         family_service=challenge_handler.family_service,
                         challenge_service=challenge_handler.challenge_service,
+                        error_handler=self.error_handler,
                     )
                     self._family_challenge_scheduler.start_polling()
                     self.logger.info("🎯✅ Family-Challenge-Scheduler erfolgreich gestartet")

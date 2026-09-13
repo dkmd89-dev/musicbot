@@ -1177,7 +1177,18 @@ class EnhancedErrorHandler:
                     )
 
                     # Exception weiterwerfen (oder suppression je nach Konfiguration)
-                    if self.config.get("SUPPRESS_HANDLED_EXCEPTIONS", False):
+                    # ARCH-027/F5: self.config ist eine config.Config-Instanz
+                    # (reine Attribut-Klasse ohne .get()/__getattr__) - der
+                    # vorherige self.config.get(...)-Aufruf hätte bei
+                    # tatsächlicher Verwendung dieses Decorators einen
+                    # AttributeError geworfen, der die eigentliche Exception
+                    # maskiert hätte (siehe
+                    # docs/MusicBot_ARCH-026_Error_Handler_Integration_Audit.md
+                    # F5, docs/MusicBot_ARCH-027_Error_Handler_Consolidation.md
+                    # Abschnitt 9). getattr() statt .get() - konsistent mit
+                    # jedem anderen Config-Zugriff in dieser Datei
+                    # (z. B. self.debug_mode, self.max_recovery_attempts oben).
+                    if getattr(self.config, "SUPPRESS_HANDLED_EXCEPTIONS", False):
                         self.logger.warning(
                             f"🔇 Exception unterdrückt in {func.__name__}: {e}"
                         )
@@ -1238,12 +1249,38 @@ class EnhancedErrorHandler:
                         "sync_function": True,
                     }
 
-                    # Synchrone Exception-Behandlung (ohne await)
-                    asyncio.create_task(
-                        self.handle_exception(e, context, session_id=session_id)
+                    # Synchrone Exception-Behandlung (ohne await).
+                    # ARCH-027/F5: asyncio.create_task() setzt einen bereits
+                    # laufenden Event-Loop voraus (RuntimeError: "no running
+                    # event loop" sonst) - handle_sync_exceptions() dekoriert
+                    # aber gerade SYNCHRONEN Code, der nicht zwingend aus
+                    # einem async-Kontext heraus aufgerufen wird. Coroutine
+                    # nur EINMAL erzeugen (sonst "coroutine was never
+                    # awaited"-Warnung für die verworfene erste Instanz) und
+                    # je nach Loop-Verfügbarkeit einplanen oder synchron zu
+                    # Ende ausführen, statt die Meldung stillschweigend zu
+                    # verlieren oder zu crashen.
+                    handle_exception_coro = self.handle_exception(
+                        e, context, session_id=session_id
                     )
+                    try:
+                        asyncio.get_running_loop()
+                        asyncio.create_task(handle_exception_coro)
+                    except RuntimeError:
+                        asyncio.run(handle_exception_coro)
 
-                    if self.config.get("SUPPRESS_HANDLED_EXCEPTIONS", False):
+                    # ARCH-027/F5: self.config ist eine config.Config-Instanz
+                    # (reine Attribut-Klasse ohne .get()/__getattr__) - der
+                    # vorherige self.config.get(...)-Aufruf hätte bei
+                    # tatsächlicher Verwendung dieses Decorators einen
+                    # AttributeError geworfen, der die eigentliche Exception
+                    # maskiert hätte (siehe
+                    # docs/MusicBot_ARCH-026_Error_Handler_Integration_Audit.md
+                    # F5, docs/MusicBot_ARCH-027_Error_Handler_Consolidation.md
+                    # Abschnitt 9). getattr() statt .get() - konsistent mit
+                    # jedem anderen Config-Zugriff in dieser Datei
+                    # (z. B. self.debug_mode, self.max_recovery_attempts oben).
+                    if getattr(self.config, "SUPPRESS_HANDLED_EXCEPTIONS", False):
                         self.logger.warning(
                             f"🔇 Sync-Exception unterdrückt in {func.__name__}: {e}"
                         )

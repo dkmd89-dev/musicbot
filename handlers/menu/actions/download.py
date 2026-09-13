@@ -437,7 +437,17 @@ async def handle_download_playlist_wrapper(
     logger.info(f"📝 User {user_id} wartet auf Playlist-URL")
 
 
-def create_download_handler(update: Update, config, duplicate_detector, metadata_processor, logger_factory, active_downloads, download_history, logger):
+def create_download_handler(
+    update: Update,
+    config,
+    duplicate_detector,
+    metadata_processor,
+    logger_factory,
+    active_downloads,
+    download_history,
+    logger,
+    error_handler=None,
+):
     """
     Erstellt eine neue DownloadHandler-Instanz mit allen injizierten
     Abhängigkeiten.
@@ -446,6 +456,10 @@ def create_download_handler(update: Update, config, duplicate_detector, metadata
 
     Args:
         update: Telegram-Update-Objekt
+        error_handler: ARCH-027/F4 - die zentrale, geteilte
+            EnhancedErrorHandler-Instanz (RichMenuHandler.error_handler),
+            optional (Standalone-/Test-Konstruktion bleibt ohne
+            zentrales Monitoring funktionsfähig).
 
     Returns:
         Fertig konfigurierter DownloadHandler oder None bei fehlenden
@@ -466,12 +480,28 @@ def create_download_handler(update: Update, config, duplicate_detector, metadata
         logger_factory=logger_factory,
         active_downloads=active_downloads,
         download_history=download_history,
+        error_handler=error_handler,
     )
 
 
-def _log_background_download_task_exception(task: "asyncio.Task", logger) -> None:
+def _log_background_download_task_exception(
+    task: "asyncio.Task", logger, error_handler=None
+) -> None:
     """add_done_callback()-Sicherheitsnetz für process_url()'s
-    Hintergrund-Download-Task - siehe dortigen Docstring."""
+    Hintergrund-Download-Task - siehe dortigen Docstring.
+
+    ARCH-027/F4: dies ist der einzige Punkt, an dem eine wirklich
+    unerwartete, durchrutschende Download-Exception zusätzlich zum
+    bestehenden lokalen Logging an den zentralen EnhancedErrorHandler
+    gemeldet wird - handle_youtube_links() selbst fängt seine eigenen
+    Fehler bereits breit ab und meldet sie dem Nutzer (siehe
+    process_url()-Docstring); diese bereits vorhandene Fehlerbehandlung
+    bleibt unverändert, keine Doppel-Registrierung. Kein update/context
+    verfügbar (Hintergrund-Task) - handle_exception() statt
+    handle_callback_error(). Sync-Callback (add_done_callback) - Fire-
+    and-forget per asyncio.create_task(), analog zum etablierten Muster
+    in handlers/library_health_review_handler.py::_load_registry().
+    """
     if task.cancelled():
         return
     exc = task.exception()
@@ -480,6 +510,16 @@ def _log_background_download_task_exception(task: "asyncio.Task", logger) -> Non
             f"💥 Unerwarteter Fehler im Hintergrund-Download-Task: {exc}",
             exc_info=exc,
         )
+        if error_handler:
+            asyncio.create_task(
+                error_handler.handle_exception(
+                    exc,
+                    context={
+                        "module": "DownloadHandler",
+                        "operation": "background_download_task",
+                    },
+                )
+            )
 
 
 async def process_url(
@@ -540,7 +580,15 @@ async def process_url(
         return
 
     task = asyncio.create_task(handler.handle_url(update, context))
-    task.add_done_callback(lambda t: _log_background_download_task_exception(t, logger))
+    # ARCH-027/F4: error_handler kommt vom bereits konstruierten Handler
+    # (create_handler_callback() injiziert dort die zentrale, geteilte
+    # Instanz, siehe create_download_handler()) - kein zusätzlicher
+    # Parameter auf process_url() nötig.
+    task.add_done_callback(
+        lambda t: _log_background_download_task_exception(
+            t, logger, getattr(handler, "error_handler", None)
+        )
+    )
 
 
 async def handle_url_message(
