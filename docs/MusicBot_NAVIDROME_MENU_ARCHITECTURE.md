@@ -4,10 +4,10 @@
 „MASTER PHASE — NAVIDROME MENU SYSTEM"-Audit (2026-09-13). **Alle 16
 Bug-Findings (NAV-F1–NAV-F16) sind CLOSED** (NAV-F12–NAV-F16 wurden
 erst im Verlauf der Umsetzung bzw. des Architecture Refactoring Audits
-entdeckt, siehe Abschnitt 4). Zwei weitere Einträge, **NAV-F17
-(Discovery-Erweiterung) und NAV-F18 (Playlist-CRUD), sind OPEN
-(DEFER)** — keine Bugs, sondern bewusst zurückgestellte
-Funktionserweiterungen ohne aktuellen Auftrag (siehe Abschnitt 4/8 und
+entdeckt, siehe Abschnitt 4). **NAV-F17 (Discovery-Erweiterung) ist
+CLOSED (2026-09-14)** — auf Nutzerwunsch umgesetzt, siehe Abschnitt 4.
+**NAV-F18 (Playlist-CRUD) bleibt OPEN (DEFER)** — bewusst zurückgestellte
+Funktionserweiterung ohne aktuellen Auftrag (siehe Abschnitt 4/8 und
 `docs/FINDINGS_INDEX.md`).
 **Scope:** `handlers/navidrome_menu_handler.py`,
 `handlers/menu/actions/navidrome.py`, `services/clients/navidrome_api.py`
@@ -129,9 +129,9 @@ mit allen 33 geprüften Subsonic-Capabilities: siehe Audit-Transkript
 
 | Bereich | Implementiert & erreichbar | Implementiert, aber unerreichbar | Fehlt vollständig |
 |---|---|---|---|
-| Browsing | `getArtists`, `getArtist`, `getAlbumList2` (nur `alphabeticalByArtist`), `getGenres`, `getSongsByGenre` | — | `getMusicFolders`, `getMusicDirectory`, `getArtistInfo(2)`, `getAlbumInfo(2)`, `getTopSongs`, `getSimilarSongs(2)`, `getIndexes` (unbenutzt seit NAV-F3) |
+| Browsing | `getArtists`, `getArtist`, `getAlbumList2` (`alphabeticalByArtist` + `newest`, NAV-F17), `getGenres`, `getSongsByGenre`, `getTopSongs` (NAV-F17, CLOSED) | — | `getMusicFolders`, `getMusicDirectory`, `getArtistInfo(2)`, `getAlbumInfo(2)`, `getSimilarSongs(2)`, `getIndexes` (unbenutzt seit NAV-F3) |
 | Album/Song-Detail | `getAlbum`, `getSong` (NAV-F9, CLOSED) | — | — |
-| Album/Song-Listen | — | — | `getAlbumList` (v1), `getRandomSongs`, weitere `getAlbumList2`-Typen |
+| Album/Song-Listen | `getRandomSongs` (NAV-F17, CLOSED) | — | `getAlbumList` (v1), weitere `getAlbumList2`-Typen (`recent`/`frequent`/etc.) |
 | Suche | `search3` | — | `search2` |
 | Playlists | `getPlaylists` (Liste), `getPlaylist` (Detail, NAV-F5, CLOSED) | — | `createPlaylist`/`updatePlaylist`/`deletePlaylist` |
 | Media | — | — | `stream`, `download`, `getCoverArt`, `getLyrics`, `getAvatar` |
@@ -168,7 +168,7 @@ Server-Ebene, nicht gleichbedeutend mit `UNSUPPORTED`).
 | **NAV-F14** | `handle_browse_genres()`: bei nicht-numerischem `songCount` fing der Sortier-`try/except` die Konvertierung ab und fiel auf alphabetische Sortierung zurück — aber die Anzeige-Schleife nutzte denselben rohen Wert danach ungeprüft in `if song_count > 0:`, was crashte (`TypeError`) und die generische Fehlermeldung statt einer Genre-Liste zeigte. Zusätzlich sortierte der Fallback nach dem falschen Feld (`"name"` statt dem tatsächlich angezeigten `"value"`). Fix: `songCount` wird jetzt einmalig vor Sortierung und Anzeige sicher zu `int` normalisiert (fehlerhafte Werte → 0), Sortierung erfolgt über `(-songCount, name.lower())` mit demselben `value`-bevorzugenden Feld wie die Anzeige. | BROKEN | P3 | **CLOSED** (2026-09-13) |
 | **NAV-F15** | Vom Nutzer selbst gefunden+behoben: `render_playlist_detail()`s Tracklist-Overflow-Hinweis (`"_+N weitere Songs nicht angezeigt_"`, bei Playlists mit >25 Songs) enthielt ein rohes `+` in MarkdownV2-Text — `+` ist reserviert, Telegram lehnt die Nachricht mit `BadRequest` ab. Dieselbe Bug-Klasse wie NAV-F13. Fix: `+` entfernt (reines Stilmittel). | BROKEN | P0 | **CLOSED** (2026-09-13) |
 | **NAV-F16** | Derselbe Bug wie NAV-F15, in `render_album_detail()` (Alben mit >25 Songs). Fix: `+` entfernt, identisch zu NAV-F15. | BROKEN | P0 | **CLOSED** (2026-09-13) |
-| NAV-F17 | Kein Bug: im empfohlenen Zielmenü (Abschnitt 5) skizziertes, unimplementiertes Untermenü „🎵 Entdecken" (🎲 Zufällige Songs via `getRandomSongs`, 🔥 Top Songs je Künstler via `getTopSongs`, 🆕 Neue Alben via `getAlbumList2 type=newest`) — alle drei Endpunkte laut Capability-Matrix (Abschnitt 3) vollständig ungenutzt. | — | P2 | **OPEN (DEFER)** |
+| NAV-F17 | Kein Bug: im empfohlenen Zielmenü (Abschnitt 5) skizziertes Untermenü „🎵 Entdecken" implementiert. Umsetzung weicht in einem Punkt bewusst vom ursprünglichen Skizzen-Vorschlag ab (auf Nutzerentscheidung): „🔥 Top Songs je Künstler" (`getTopSongs`) ist KEIN eigener Menüpunkt im „Entdecken"-Menü, sondern ein neuer Button direkt in `render_artist_detail()` — der Artist-Name ist dort bereits bekannt, ein separater Freitext-Prompt (Artist-Name eintippen) wäre unnötiger Umfang. „🎲 Zufällige Songs" (`getRandomSongs`) und „🆕 Neue Alben" (`getAlbumList2 type=newest`) sind reine Inline-Buttons innerhalb der "Entdecken"-Nachricht (kein eigenes MenuItem je Option, analog zu Genre-Suche/-Stats NAV-F7/F8) - nur der Einstieg "nav_discover" ist ein MenuItem. Neuer Dispatcher-Zweig `nav_artist_topsongs_` MUSS (wie bei NAV-F2/F11/F8 bereits etabliert) vor dem generischen `nav_artist_`-Präfix-Check stehen. | — | P2 | **CLOSED (2026-09-14)** |
 | NAV-F18 | Kein Bug: Playlist-Erstellung/-Bearbeitung/-Löschung (`createPlaylist`/`updatePlaylist`/`deletePlaylist`) laut Capability-Matrix vollständig ungenutzt — aktuell nur lesender Zugriff. Wäre der im Migrationsplan genannte Auslöser, Playlist-Funktionen aus dem bewussten „KEEP"-Zustand herauswachsen zu lassen. | — | P2 | **OPEN (DEFER)** |
 
 Vollständige Details/Codebelege zu allen Findings: Audit-Transkript
@@ -266,10 +266,14 @@ durch Playlist-CRUD, aktuell nicht geplant).
 ├── 🕐 Zuletzt gespielt (unverändert, nur reply_markup-Nachtrag NAV-F10)
 ├── 🎭 Genre-Suche/-Stats  ← ✅ CLOSED (NAV-F7/NAV-F8): Inline-Buttons in
 │   Durchsuchen → Genres, kein eigener Menüpunkt nötig
-├── 🎵 Entdecken  ← NEU (P2, nach den P1-Fixes)
+├── 🎵 Entdecken  ← ✅ CLOSED (NAV-F17): "nav_discover"-MenuItem als
+│   │                 Einstieg, die beiden Optionen darunter sind reine
+│   │                 Inline-Buttons (kein eigenes MenuItem je Option)
 │   ├── 🎲 Zufällige Songs (getRandomSongs)
-│   ├── 🔥 Top Songs je Künstler (getTopSongs)
 │   └── 🆕 Neue Alben (getAlbumList2 type=newest)
+│       (🔥 Top Songs je Künstler: getTopSongs — abweichend von dieser
+│        ursprünglichen Skizze als Button in der Artist-Detail-Ansicht
+│        umgesetzt statt als drittem Entdecken-Punkt, siehe Abschnitt 4)
 └── 📊 Statistiken (unverändert, Cross-Link)
 ```
 
@@ -298,7 +302,7 @@ Verschiebung von Serverstatus/Scan aus dem Admin-Bereich hierher.
 13. ~~Detail-View-Familie vervollständigen (Artist/Genre-Detail)~~ ✅ IMPLEMENTED (2026-09-13) — `render_artist_detail()`/`render_genre_detail()` neu, Pflichtschritt (fehlende Erfolgspfad-/Overflow-/Connection-Error-Tests) + Extraktion in einem PR. Alle 5 Detail-Views konsistent im Renderer. `NavidromeMenuHandler` 1179→1059 Zeilen.
 14. ~~Restliche Testlücken geschlossen (Playlists/Favoriten/Such-Erfolgspfad)~~ ✅ IMPLEMENTED (2026-09-13) — reine Testergänzung, kein Produktionscode geändert. 9 neue Tests.
 15. ~~Stufe 4, reduziert (`services/navidrome/browser_service.py`)~~ ✅ IMPLEMENTED (2026-09-13) — bewusst nur `get_albums_page()` (einzige Browse-Methode mit echter Verzweigungslogik), Artists/Genres bewusst unangetastet gelassen (Anti-Overengineering-Entscheidung). Stufe 5 (finale Orchestrierungs-Schlankung) — siehe `docs/audits/NAVIDROME_MENU_HANDLER_REFACTORING_MIGRATION_PLAN_2026-09-13.md` — noch nicht freigegeben, aktuell auch kein erkennbarer Zusatznutzen mehr (`NavidromeMenuHandler` ist bereits reine Orchestrierung).
-16. NAV-F17 — Discovery-Erweiterung (`getRandomSongs`/`getTopSongs`/weitere `getAlbumList2`-Typen), OPEN (DEFER), keine aktuelle Freigabe
+16. ~~NAV-F17~~ ✅ CLOSED (2026-09-14) — Discovery-Erweiterung: neues Menü „🎵 Entdecken" (`nav_discover`), `render_discover_menu()`/`render_random_songs()`/`render_top_songs()`/`render_newest_albums()` in `handlers/navidrome_renderer.py`, `handle_discover_menu()`/`handle_random_songs()`/`handle_top_songs()`/`handle_newest_albums()` in `NavidromeMenuHandler`. „Top Songs je Künstler" als Button in `render_artist_detail()` statt eigenem Menüpunkt (Nutzerentscheidung, siehe Abschnitt 4).
 17. NAV-F18 — Playlist-CRUD (`createPlaylist`/`updatePlaylist`/`deletePlaylist`), OPEN (DEFER), keine aktuelle Freigabe
 
 Jeder Schritt: eigener Branch/PR, volle Regressionsprüfung, keine
@@ -351,12 +355,11 @@ Netzwerkcode in einem Unit-Test duplizieren. Keine akute Priorität.
 
 ## 8. Offene Punkte
 
-**Alle 16 Bug-Findings (NAV-F1–NAV-F16) sind CLOSED.** Zwei weitere
-Einträge sind **OPEN (DEFER)** — keine Bugs, sondern bewusst
-zurückgestellte Funktionserweiterungen ohne aktuellen Auftrag:
+**Alle 16 Bug-Findings (NAV-F1–NAV-F16) sind CLOSED. NAV-F17 ist
+ebenfalls CLOSED (2026-09-14).** Ein Eintrag bleibt **OPEN (DEFER)** —
+kein Bug, sondern eine bewusst zurückgestellte Funktionserweiterung
+ohne aktuellen Auftrag:
 
-- **NAV-F17** — Discovery-Erweiterung (neues Untermenü „🎵 Entdecken":
-  `getRandomSongs`/`getTopSongs`/`getAlbumList2 type=newest`), P2.
 - **NAV-F18** — Playlist-CRUD (`createPlaylist`/`updatePlaylist`/
   `deletePlaylist`), P2. Wäre zugleich der Auslöser, Playlist-Funktionen
   aus dem bewussten „KEEP auf `NavidromeMenuHandler`"-Zustand

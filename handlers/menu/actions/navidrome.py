@@ -64,6 +64,18 @@ async def handle_search_songs(update: Update, context: ContextTypes.DEFAULT_TYPE
         await show_handler_not_available(update, "Navidrome-Handler")
 
 
+async def handle_discover_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, navidrome_handler):
+    """NAV-F17: Einstieg "🎵 Entdecken" - einziges MenuItem dieser
+    Erweiterung. "🎲 Zufällige Songs"/"🆕 Neue Alben" sind bewusst KEINE
+    eigenen MenuItems (analog zu Genre-Suche/-Stats, NAV-F7/F8, "kein
+    eigener Menüpunkt nötig") - reine Inline-Buttons innerhalb der hier
+    gerenderten Nachricht, dispatcht über handle_navidrome_callback()."""
+    if navidrome_handler:
+        await navidrome_handler.handle_discover_menu(update, context)
+    else:
+        await show_handler_not_available(update, "Navidrome-Handler")
+
+
 async def handle_my_playlists(update: Update, context: ContextTypes.DEFAULT_TYPE, navidrome_handler):
     if navidrome_handler:
         await navidrome_handler.handle_my_playlists(update, context)
@@ -159,6 +171,17 @@ async def handle_navidrome_callback(
         )
         return
 
+    # NAV-F17 (Discovery-Erweiterung): derselbe Bug-Typ wie NAV-F2/NAV-F11
+    # ("nav_artist_topsongs_<id>" startet ebenfalls mit "nav_artist_") -
+    # MUSS deshalb vor dem generischen "nav_artist_"-Prefix-Check unten
+    # stehen, sonst wuerde ".replace('nav_artist_', '')" den korrupten
+    # Parameter "topsongs_<id>" statt "<id>" an handle_artist_detail()
+    # liefern.
+    if callback_data.startswith("nav_artist_topsongs_"):
+        artist_id = callback_data.replace("nav_artist_topsongs_", "")
+        await navidrome_handler.handle_top_songs(update, context, artist_id)
+        return
+
     if callback_data.startswith("nav_artist_"):
         artist_id = callback_data.replace("nav_artist_", "")
         await navidrome_handler.handle_artist_detail(update, context, artist_id)
@@ -252,6 +275,27 @@ async def handle_navidrome_callback(
 
     if callback_data == "nav_reconnect":
         await navidrome_handler.handle_reconnect(update, context)
+        return
+
+    # NAV-F17 (Discovery-Erweiterung): "nav_discover" ist der Rueck-Button
+    # aus den beiden Unteransichten (siehe render_random_songs()/
+    # render_newest_albums()) - fuehrt zurueck zum "Entdecken"-Menue.
+    # Reiner exakter Match, kein Prefix-Konflikt mit den beiden
+    # spezifischeren Zweigen unten (unterschiedliche, vollstaendig
+    # verschiedene Strings, keine Ueberschneidungsgefahr wie bei
+    # nav_artist_*/nav_genre_*).
+    if callback_data == "nav_discover":
+        await navidrome_handler.handle_discover_menu(update, context)
+        return
+
+    if callback_data == "nav_discover_random":
+        await navidrome_handler.handle_random_songs(update, context)
+        return
+
+    if callback_data.startswith("nav_discover_newest_albums"):
+        parts = callback_data.split("_")
+        page = int(parts[-1]) if callback_data != "nav_discover_newest_albums" else 0
+        await navidrome_handler.handle_newest_albums(update, context, page)
         return
 
     logger.warning(f"⚠️ Unbekannter Navidrome-Callback: {callback_data}")

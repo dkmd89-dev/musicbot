@@ -357,6 +357,172 @@ class NavidromeMenuHandler:
                     "❌ Fehler beim Laden der Künstler-Details."
                 )
 
+    # NEU (NAV-F17): "🎵 Entdecken"-Menü
+    async def handle_discover_menu(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Zeigt das "🎵 Entdecken"-Menü (NAV-F17) - reine statische
+        Auswahl, kein API-Aufruf/Connection-Check nötig (analog zu
+        anderen reinen Menü-Übersichten)."""
+        message_text, reply_markup = navidrome_renderer.render_discover_menu()
+        await update.callback_query.edit_message_text(
+            text=message_text,
+            reply_markup=reply_markup,
+            parse_mode="MarkdownV2",
+        )
+
+    async def handle_random_songs(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Zeigt "🎲 Zufällige Songs" (NAV-F17, getRandomSongs)."""
+        if not self._check_connection():
+            await self._show_connection_error(update)
+            return
+
+        try:
+            self.logger.info("🎲 Lade zufällige Songs")
+
+            data = await asyncio.to_thread(
+                self.navidrome_api.make_request, "getRandomSongs", {"size": 25}
+            )
+
+            subsonic_response = data.get("subsonic-response", {})
+            songs = subsonic_response.get("randomSongs", {}).get("song", [])
+
+            if not songs:
+                await update.callback_query.edit_message_text(
+                    "❌ Keine Songs gefunden."
+                )
+                return
+
+            message_text, reply_markup = navidrome_renderer.render_random_songs(songs)
+
+            await update.callback_query.edit_message_text(
+                text=message_text,
+                reply_markup=reply_markup,
+                parse_mode="MarkdownV2",
+            )
+
+        except Exception as e:
+            self.logger.error(f"❌ Fehler beim Laden zufälliger Songs: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_random_songs", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    "❌ Fehler beim Laden zufälliger Songs."
+                )
+
+    async def handle_top_songs(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, artist_id: str
+    ):
+        """Zeigt "🔥 Top Songs" eines Künstlers (NAV-F17, getTopSongs) -
+        aufgerufen über den in render_artist_detail() ergänzten Button,
+        nicht über einen eigenen Freitext-Prompt (siehe dessen
+        Docstring). getTopSongs braucht den Artist-NAMEN (nicht die ID),
+        daher zuerst getArtist zur Namensauflösung - identisches Muster
+        zu handle_artist_detail()."""
+        if not self._check_connection():
+            await self._show_connection_error(update)
+            return
+
+        try:
+            self.logger.info(f"🔥 Lade Top Songs für Künstler-ID: {artist_id}")
+
+            artist_data = await asyncio.to_thread(
+                self.navidrome_api.make_request, "getArtist", {"id": artist_id}
+            )
+            artist = artist_data.get("subsonic-response", {}).get("artist", {})
+            artist_name = artist.get("name")
+
+            if not artist_name:
+                await update.callback_query.edit_message_text(
+                    "❌ Künstler nicht gefunden."
+                )
+                return
+
+            data = await asyncio.to_thread(
+                self.navidrome_api.make_request,
+                "getTopSongs",
+                {"artist": artist_name, "count": 25},
+            )
+            songs = data.get("subsonic-response", {}).get("topSongs", {}).get(
+                "song", []
+            )
+
+            message_text, reply_markup = navidrome_renderer.render_top_songs(
+                artist_name, artist_id, songs
+            )
+
+            await update.callback_query.edit_message_text(
+                text=message_text,
+                reply_markup=reply_markup,
+                parse_mode="MarkdownV2",
+            )
+
+        except Exception as e:
+            self.logger.error(f"❌ Fehler beim Laden der Top Songs: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_top_songs", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    "❌ Fehler beim Laden der Top Songs."
+                )
+
+    async def handle_newest_albums(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0
+    ):
+        """Zeigt "🆕 Neue Alben" (NAV-F17, getAlbumList2 type=newest) -
+        Pagination analog zu handle_browse_albums(), aber fachlich
+        unabhängig (neueste zuerst statt alphabetisch), daher eigener
+        Callback-Namensraum (siehe render_newest_albums()-Docstring)."""
+        if not self._check_connection():
+            await self._show_connection_error(update)
+            return
+
+        try:
+            page_size = 15
+            data = await asyncio.to_thread(
+                self.navidrome_api.make_request,
+                "getAlbumList2",
+                {"type": "newest", "size": page_size, "offset": page * page_size},
+            )
+            albums = (
+                data.get("subsonic-response", {})
+                .get("albumList2", {})
+                .get("album", [])
+            )
+
+            if not albums:
+                await update.callback_query.edit_message_text(
+                    "❌ Keine Alben gefunden."
+                )
+                return
+
+            message_text, reply_markup = navidrome_renderer.render_newest_albums(
+                albums, page, page_size
+            )
+
+            await update.callback_query.edit_message_text(
+                text=message_text,
+                reply_markup=reply_markup,
+                parse_mode="MarkdownV2",
+            )
+
+        except Exception as e:
+            self.logger.error(f"❌ Fehler beim Laden neuer Alben: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_newest_albums", e
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    "❌ Fehler beim Laden neuer Alben."
+                )
+
     # NEU (NAV-F9): Album-Details anzeigen
     async def handle_album_detail(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, album_id: str

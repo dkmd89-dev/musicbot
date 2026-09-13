@@ -46,9 +46,13 @@ from handlers.navidrome_renderer import (
     render_browse_albums,
     render_browse_artists,
     render_browse_genres,
+    render_discover_menu,
     render_genre_detail,
+    render_newest_albums,
     render_playlist_detail,
+    render_random_songs,
     render_song_detail,
+    render_top_songs,
 )
 
 
@@ -486,3 +490,114 @@ class TestRenderArtistDetail:
 
         assert "mal abgespielt" not in text
         assert "Favorit" not in text
+
+    def test_top_songs_button_present_with_artist_id(self):
+        """NAV-F17: "🔥 Top Songs"-Button traegt die Artist-ID (nicht den
+        Namen, siehe render_artist_detail()-Docstring: Telegram
+        callback_data-Laengenlimit)."""
+        artist = {"name": "Test Artist", "album": []}
+
+        _text, markup = render_artist_detail(artist, "artist-1")
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_artist_topsongs_artist-1" in buttons
+
+
+class TestRenderDiscoverMenu:
+    """NAV-F17: reine statische Auswahl, kein API-Bezug."""
+
+    def test_shows_both_options_and_back_button(self):
+        _text, markup = render_discover_menu()
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_discover_random" in buttons
+        assert "nav_discover_newest_albums" in buttons
+        assert "menu:navidrome" in buttons
+
+
+class TestRenderRandomSongs:
+    def test_renders_song_buttons(self):
+        songs = [
+            {"id": "s1", "title": "Song A", "artist": "Artist A"},
+            {"id": "s2", "title": "Song B", "artist": "Artist B"},
+        ]
+
+        text, markup = render_random_songs(songs)
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_song_s1" in buttons
+        assert "nav_song_s2" in buttons
+        assert "nav_discover_random" in buttons  # "Neu mischen"
+        assert "2" in text
+
+    def test_reshuffle_and_back_buttons_present(self):
+        _text, markup = render_random_songs([{"id": "s1", "title": "Song A"}])
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_discover" in buttons
+
+
+class TestRenderTopSongs:
+    def test_renders_song_buttons_and_artist_link(self):
+        songs = [{"id": "s1", "title": "Hit Song"}]
+
+        text, markup = render_top_songs("Test Artist", "artist-1", songs)
+
+        assert "Test Artist" in text
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_song_s1" in buttons
+        assert "nav_artist_artist-1" in buttons
+
+    def test_empty_songs_shows_no_results_message(self):
+        text, markup = render_top_songs("Obscure Artist", "artist-2", [])
+
+        assert "Keine Top" in text
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_artist_artist-2" in buttons
+
+    def test_artist_name_special_chars_are_escaped(self):
+        text, _markup = render_top_songs("Sum 41 (Live)!", "artist-1", [])
+
+        assert "(Live)" not in text
+        assert "\\(Live\\)" in text
+
+
+class TestRenderNewestAlbums:
+    def test_renders_album_buttons(self):
+        albums = [
+            {"id": "al1", "name": "Album One", "artist": "Artist A"},
+            {"id": "al2", "name": "Album Two"},
+        ]
+
+        text, markup = render_newest_albums(albums, page=0, page_size=15)
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_album_al1" in buttons
+        assert "nav_album_al2" in buttons
+        assert "Seite 1" in text
+
+    def test_first_page_has_no_previous_button(self):
+        albums = [{"id": "al1", "name": "Album One"}]
+
+        _text, markup = render_newest_albums(albums, page=0, page_size=15)
+
+        labels = {b.text for row in markup.inline_keyboard for b in row}
+        assert not any("Vorherige" in label for label in labels)
+
+    def test_middle_page_has_previous_and_next_buttons(self):
+        albums = [{"id": f"al{i}", "name": f"Album {i}"} for i in range(15)]
+
+        _text, markup = render_newest_albums(albums, page=1, page_size=15)
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_discover_newest_albums_0" in buttons
+        assert "nav_discover_newest_albums_2" in buttons
+
+    def test_last_page_has_no_next_button(self):
+        albums = [{"id": "al1", "name": "Album One"}]
+
+        _text, markup = render_newest_albums(albums, page=2, page_size=15)
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_discover_newest_albums_3" not in buttons
+        assert "nav_discover_newest_albums_1" in buttons

@@ -1772,3 +1772,193 @@ class TestGenreSongsAllRoutingNavF2:
         navidrome_handler.handle_genre_detail.assert_awaited_once_with(
             update, context, "Lo-Fi"
         )
+
+
+class TestDiscoverMenuNavF17:
+    """NAV-F17: "🎵 Entdecken"-Einstieg, reine statische Auswahl."""
+
+    def test_shows_menu_without_api_call(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.handle_discover_menu(update, context))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        assert kwargs["parse_mode"] == "MarkdownV2"
+        assert "Entdecken" in kwargs["text"]
+
+
+class TestRandomSongsNavF17:
+    def test_random_songs_are_rendered(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "randomSongs": {
+                    "song": [
+                        {"id": "s1", "title": "Song A", "artist": "Artist A"},
+                    ]
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_random_songs(update, context))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        assert kwargs["parse_mode"] == "MarkdownV2"
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_song_s1" in buttons
+
+    def test_empty_result_shows_no_songs_message(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {"subsonic-response": {"randomSongs": {}}}
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_random_songs(update, context))
+
+        sent_text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Keine Songs gefunden" in sent_text
+
+    def test_connection_error_when_unconfigured(self):
+        handler = NavidromeMenuHandler(FakeConfigUnconfigured())
+        update = make_update()
+        context = make_context()
+
+        with patch("handlers.navidrome_menu_handler.NavidromeAPI.make_request") as mock_request:
+            asyncio.run(handler.handle_random_songs(update, context))
+
+        mock_request.assert_not_called()
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "nicht verfügbar" in text
+
+
+class TestTopSongsNavF17:
+    def test_top_songs_resolves_artist_name_and_renders(self):
+        """getTopSongs braucht den Artist-NAMEN - handle_top_songs()
+        muss ihn zuerst per getArtist auflösen (zwei sequenzielle
+        to_thread-Aufrufe)."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        artist_response = {
+            "subsonic-response": {"artist": {"id": "ar1", "name": "Test Artist"}}
+        }
+        top_songs_response = {
+            "subsonic-response": {"topSongs": {"song": [{"id": "s1", "title": "Hit"}]}}
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(side_effect=[artist_response, top_songs_response]),
+        ):
+            asyncio.run(handler.handle_top_songs(update, context, "ar1"))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        assert kwargs["parse_mode"] == "MarkdownV2"
+        assert "Test Artist" in kwargs["text"]
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_song_s1" in buttons
+
+    def test_artist_not_found_shows_error(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value={"subsonic-response": {}}),
+        ):
+            asyncio.run(handler.handle_top_songs(update, context, "unknown"))
+
+        sent_text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Künstler nicht gefunden" in sent_text
+
+    def test_connection_error_when_unconfigured(self):
+        handler = NavidromeMenuHandler(FakeConfigUnconfigured())
+        update = make_update()
+        context = make_context()
+
+        with patch("handlers.navidrome_menu_handler.NavidromeAPI.make_request") as mock_request:
+            asyncio.run(handler.handle_top_songs(update, context, "ar1"))
+
+        mock_request.assert_not_called()
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "nicht verfügbar" in text
+
+
+class TestNewestAlbumsNavF17:
+    def test_newest_albums_are_rendered(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "albumList2": {"album": [{"id": "a1", "name": "New Album"}]}
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_newest_albums(update, context))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        assert kwargs["parse_mode"] == "MarkdownV2"
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_album_a1" in buttons
+
+    def test_empty_result_shows_no_albums_message(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {"subsonic-response": {"albumList2": {}}}
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_newest_albums(update, context))
+
+        sent_text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Keine Alben gefunden" in sent_text
+
+    def test_connection_error_when_unconfigured(self):
+        handler = NavidromeMenuHandler(FakeConfigUnconfigured())
+        update = make_update()
+        context = make_context()
+
+        with patch("handlers.navidrome_menu_handler.NavidromeAPI.make_request") as mock_request:
+            asyncio.run(handler.handle_newest_albums(update, context))
+
+        mock_request.assert_not_called()
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "nicht verfügbar" in text

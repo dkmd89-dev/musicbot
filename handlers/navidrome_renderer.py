@@ -579,6 +579,24 @@ def render_artist_detail(
             ]
         )
 
+    # NAV-F17 (Discovery-Erweiterung): "Top Songs je Künstler" (getTopSongs)
+    # braucht einen Artist-Namen als Parameter - der Name ist hier bereits
+    # bekannt (man befindet sich schon in der Artist-Detail-Ansicht), daher
+    # bewusst als Button HIER statt als eigener Freitext-Prompt im
+    # "Entdecken"-Menü (kleinerer Diff, kein neuer Text-Workflow nötig,
+    # siehe docs/MusicBot_NAVIDROME_MENU_ARCHITECTURE.md). Callback trägt
+    # die ID statt des Namens (Telegram callback_data-Längenlimit,
+    # konsistent zu allen übrigen nav_artist_*-Buttons) -
+    # handle_top_songs() löst den Namen selbst per getArtist auf, analog
+    # zu handle_artist_detail().
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                "🔥 Top Songs", callback_data=f"nav_artist_topsongs_{artist_id}"
+            )
+        ]
+    )
+
     keyboard.append(
         [
             InlineKeyboardButton(
@@ -614,5 +632,145 @@ def render_artist_detail(
 📊 **Alben:** {len(albums)}
 {stats_text}
 **💿 Verfügbare Alben:**"""
+
+    return text, InlineKeyboardMarkup(keyboard)
+
+
+def render_discover_menu() -> Tuple[str, InlineKeyboardMarkup]:
+    """Baut Text+Keyboard für das "🎵 Entdecken"-Menü (NAV-F17) - reine
+    statische Auswahl, kein API-Aufruf nötig. "🔥 Top Songs je Künstler"
+    ist bewusst KEIN Punkt hier (siehe render_artist_detail()-Docstring):
+    braucht einen Artist-Namen, den man nur in der Artist-Detail-Ansicht
+    bereits hat."""
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "🎲 Zufällige Songs", callback_data="nav_discover_random"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "🆕 Neue Alben", callback_data="nav_discover_newest_albums"
+            )
+        ],
+        [InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")],
+    ]
+    text = "🎵 **Entdecken**\n\nWähle eine Kategorie\\:"
+    return text, InlineKeyboardMarkup(keyboard)
+
+
+def render_random_songs(songs: List[Dict[str, Any]]) -> Tuple[str, InlineKeyboardMarkup]:
+    """Baut Text+Keyboard für "🎲 Zufällige Songs" (NAV-F17, getRandomSongs).
+    Kein Overflow-Hinweis nötig (im Gegensatz zu render_album_detail()) -
+    die Songliste kommt bereits mit der angeforderten Größe von der API,
+    kein Abschneiden einer größeren Liste hier."""
+    keyboard = []
+    for song in songs:
+        artist_name = song.get("artist", "")
+        song_text = f"🎵 {song.get('title', 'Unbekannt')}"
+        if artist_name:
+            song_text += f" - {artist_name}"
+        if len(song_text) > 40:
+            song_text = song_text[:37] + "..."
+
+        keyboard.append(
+            [InlineKeyboardButton(song_text, callback_data=f"nav_song_{song['id']}")]
+        )
+
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                "🔄 Neu mischen", callback_data="nav_discover_random"
+            ),
+            InlineKeyboardButton("🔙 Zurück", callback_data="nav_discover"),
+        ]
+    )
+
+    text = f"🎲 **Zufällige Songs**\n\n🎵 {escape_md_v2(str(len(songs)))} Songs:"
+    return text, InlineKeyboardMarkup(keyboard)
+
+
+def render_top_songs(
+    artist_name: str, artist_id: str, songs: List[Dict[str, Any]]
+) -> Tuple[str, InlineKeyboardMarkup]:
+    """Baut Text+Keyboard für "🔥 Top Songs" eines Künstlers (NAV-F17,
+    getTopSongs). `artist_id` nur für den "Zurück zum Künstler"-Button,
+    nicht Teil der API-Antwort selbst."""
+    keyboard = []
+    for song in songs:
+        track_text = f"🎵 {song.get('title', 'Unbekannt')}"
+        if len(track_text) > 40:
+            track_text = track_text[:37] + "..."
+        keyboard.append(
+            [InlineKeyboardButton(track_text, callback_data=f"nav_song_{song['id']}")]
+        )
+
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                "🎤 Zum Künstler", callback_data=f"nav_artist_{artist_id}"
+            ),
+            InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome"),
+        ]
+    )
+
+    if songs:
+        text = (
+            f"🔥 **Top Songs: {escape_md_v2(artist_name)}**\n\n"
+            f"🎵 {escape_md_v2(str(len(songs)))} Songs:"
+        )
+    else:
+        text = (
+            f"🔥 **Top Songs: {escape_md_v2(artist_name)}**\n\n"
+            f"Keine Top\\-Songs gefunden\\."
+        )
+    return text, InlineKeyboardMarkup(keyboard)
+
+
+def render_newest_albums(
+    albums: List[Dict[str, Any]], page: int, page_size: int
+) -> Tuple[str, InlineKeyboardMarkup]:
+    """Baut Text+Keyboard für "🆕 Neue Alben" (NAV-F17, getAlbumList2
+    type=newest). Pagination-Logik/Keyboard-Struktur analog zu
+    render_browse_albums(), aber eigener Callback-Namensraum
+    ("nav_discover_newest_albums_<page>") statt "nav_browse_albums_*" -
+    beide Ansichten sind fachlich unabhängig (Browse = alphabetisch,
+    Discover = neueste zuerst)."""
+    keyboard = []
+    for album in albums:
+        album_text = f"💿 {album['name'][:30]}"
+        if "artist" in album:
+            album_text += f" - {album['artist'][:20]}"
+        keyboard.append(
+            [InlineKeyboardButton(album_text, callback_data=f"nav_album_{album['id']}")]
+        )
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(
+            InlineKeyboardButton(
+                "⬅️ Vorherige",
+                callback_data=f"nav_discover_newest_albums_{page-1}",
+            )
+        )
+    if len(albums) == page_size:
+        nav_row.append(
+            InlineKeyboardButton(
+                "Nächste ➡️",
+                callback_data=f"nav_discover_newest_albums_{page+1}",
+            )
+        )
+    if nav_row:
+        keyboard.append(nav_row)
+
+    keyboard.append(
+        [InlineKeyboardButton("🔙 Zurück", callback_data="nav_discover")]
+    )
+
+    text = f"""
+🆕 **Neue Alben**
+
+Seite {page + 1} \\- {len(albums)} Alben auf dieser Seite
+""".strip()
 
     return text, InlineKeyboardMarkup(keyboard)
