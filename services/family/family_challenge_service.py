@@ -189,7 +189,7 @@ class FamilyChallengeService:
                 return False, None
             timeline = self._statistics_calculator.generate_timeline_stats(navidrome_user)
             most_replayed = (
-                timeline["periods"]["today"]["most_replayed_track"] if timeline else None
+                timeline["today"]["most_replayed_track"] if timeline else None
             )
             if not most_replayed:
                 return False, None

@@ -615,16 +615,16 @@ class TestUserIsolation:
         )
         bob_timeline = calc.generate_timeline_stats(navidrome_username="bob", now=now)
 
-        assert alice_timeline["periods"]["today"]["top_artist"] == ("Artist A", 1)
-        assert bob_timeline["periods"]["today"]["top_artist"] == ("Artist B", 1)
+        assert alice_timeline["today"]["top_artist"] == ("Artist A", 1)
+        assert bob_timeline["today"]["top_artist"] == ("Artist B", 1)
 
 
 class TestGenerateTimelineStats:
-    """Bisher 0 dedizierte Tests trotz nicht-trivialer Kalenderlogik -
-    Phase 19 des Audits verlangt explizit: heute/Woche/Monat, leere
-    History, einzelne/mehrere Plays, unterschiedliche Kuenstler/Alben,
-    gleiche Songtitel bei unterschiedlichen Kuenstlern, neue Tracks,
-    ungueltige/Zukunfts-Timestamps, fehlende/0/grosse Duration."""
+    """MASTER PHASE — MUSIC TIMELINE — FINAL CLOSURE: Timeline deckt nur
+    noch "today" ab (kein "periods"-Wrapper, kein week/month mehr - siehe
+    generate_timeline_stats()-Docstring). Woche-/Monats-Kalendergrenzen
+    selbst bleiben unverändert und sind weiterhin über
+    TestCalendarPeriodBounds abgedeckt."""
 
     def test_no_username_returns_none(self, tmp_path):
         calc, _ = make_calculator(tmp_path)
@@ -641,66 +641,58 @@ class TestGenerateTimelineStats:
         repo.save([bad], "alice")
         assert calc.generate_timeline_stats(navidrome_username="alice") is None
 
-    def test_today_week_month_counts_for_single_play(self, tmp_path):
+    def test_return_has_no_periods_wrapper(self, tmp_path):
+        """Section 5: Return enthält "navidrome_username"/"today", KEIN
+        "periods"-Feld mehr."""
         calc, repo = make_calculator(tmp_path)
-        now = datetime(2026, 9, 13, 15, 0, 0)  # Sonntag, Woche ab 07.09.
+        now = datetime(2026, 9, 13, 15, 0, 0)
         repo.save([_entry("Bausa", "Song A", at=now)], "alice")
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
 
-        assert timeline["periods"]["today"]["track_count"] == 1
-        assert timeline["periods"]["week"]["track_count"] == 1
-        assert timeline["periods"]["month"]["track_count"] == 1
+        assert set(timeline.keys()) == {"navidrome_username", "today"}
+        assert timeline["navidrome_username"] == "alice"
+        assert "periods" not in timeline
+        assert "week" not in timeline
+        assert "month" not in timeline
 
-    def test_play_before_today_but_within_week_excluded_from_today(self, tmp_path):
+    def test_today_track_count_for_single_play(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
-        now = datetime(2026, 9, 13, 15, 0, 0)  # Sonntag
+        now = datetime(2026, 9, 13, 15, 0, 0)
+        repo.save([_entry("Bausa", "Song A", at=now)], "alice")
+
+        timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
+
+        assert timeline["today"]["track_count"] == 1
+
+    def test_play_before_today_is_excluded(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 9, 13, 15, 0, 0)
         repo.save(
             [_entry("Bausa", "Yesterday", at=datetime(2026, 9, 12, 10, 0))], "alice"
         )
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
 
-        assert timeline["periods"]["today"]["track_count"] == 0
-        assert timeline["periods"]["week"]["track_count"] == 1
+        assert timeline["today"]["track_count"] == 0
 
-    def test_play_before_current_week_excluded_from_week_and_today(self, tmp_path):
-        calc, repo = make_calculator(tmp_path)
-        now = datetime(2026, 9, 13, 15, 0, 0)  # Woche ab 07.09.2026
-        repo.save(
-            [_entry("Bausa", "Last Week", at=datetime(2026, 9, 6, 10, 0))], "alice"
-        )
-
-        timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
-
-        assert timeline["periods"]["week"]["track_count"] == 0
-        assert timeline["periods"]["month"]["track_count"] == 1
-
-    def test_period_start_dates_are_correct(self, tmp_path):
+    def test_today_starts_at_local_calendar_day_begin(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
         now = datetime(2026, 9, 13, 15, 0, 0)
         repo.save([_entry("Bausa", "Song A", at=now)], "alice")
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
-        periods = timeline["periods"]
 
-        assert periods["today"]["period_start"] == datetime(2026, 9, 13)
-        assert periods["week"]["period_start"] == datetime(2026, 9, 7)
-        assert periods["month"]["period_start"] == datetime(2026, 9, 1)
+        assert timeline["today"]["period_start"] == datetime(2026, 9, 13)
 
-    def test_period_end_dates_are_correct(self, tmp_path):
-        """Music Timeline Consistency & UX: period_end (additiv) ermöglicht
-        dem Renderer einen echten Datumsbereich für 'Diese Woche'."""
+    def test_today_ends_at_next_local_calendar_day_begin(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
         now = datetime(2026, 9, 13, 15, 0, 0)
         repo.save([_entry("Bausa", "Song A", at=now)], "alice")
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
-        periods = timeline["periods"]
 
-        assert periods["today"]["period_end"] == datetime(2026, 9, 14)
-        assert periods["week"]["period_end"] == datetime(2026, 9, 14)
-        assert periods["month"]["period_end"] == datetime(2026, 10, 1)
+        assert timeline["today"]["period_end"] == datetime(2026, 9, 14)
 
     def test_same_title_different_artists_are_not_merged_in_timeline(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
@@ -713,29 +705,45 @@ class TestGenerateTimelineStats:
         repo.save(history, "alice")
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
-        most_replayed = timeline["periods"]["today"]["most_replayed_track"]
+        most_replayed = timeline["today"]["most_replayed_track"]
 
         # Klartext-Titel (kompatibel mit family_challenge_service.py) -
         # Artist A gewinnt mit 2 Plays gegen Artist B's 1 Play, beide
         # Zaehler blieben getrennt (kein Merge auf "Song X": 3).
         assert most_replayed == ("Song X", 2)
 
-    def test_new_track_detected_first_time_seen_in_period(self, tmp_path):
+    def test_most_replayed_track_stays_a_title_plays_tuple(self, tmp_path):
+        """Section 5/10: most_replayed_track bleibt intern (title, plays)
+        - kein reiner String-Contract (Family-Challenge-Kompatibilität)."""
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 9, 13, 15, 0, 0)
+        history = [
+            _entry("Clueso", "Mit dir alleine sein", at=now),
+            _entry("Clueso", "Mit dir alleine sein", at=now - timedelta(hours=1)),
+        ]
+        repo.save(history, "alice")
+
+        timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
+        most_replayed = timeline["today"]["most_replayed_track"]
+
+        assert most_replayed == ("Mit dir alleine sein", 2)
+        assert isinstance(most_replayed, tuple)
+
+    def test_new_track_detected_first_time_seen_today(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
         now = datetime(2026, 9, 13, 15, 0, 0)
         repo.save([_entry("Bausa", "Brand New Song", at=now)], "alice")
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
 
-        assert timeline["periods"]["today"]["new_track_count"] == 1
-        assert timeline["periods"]["week"]["new_track_count"] == 1
-        assert timeline["periods"]["month"]["new_track_count"] == 1
+        assert timeline["today"]["new_track_count"] == 1
 
-    def test_track_seen_before_period_is_not_counted_as_new(self, tmp_path):
+    def test_track_seen_before_today_is_not_counted_as_new(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
         now = datetime(2026, 9, 13, 15, 0, 0)
         history = [
-            # Erstmals gehoert letzten Monat - nicht "neu" in dieser Woche.
+            # Erstmals gehoert letzten Monat - nicht "neu" heute, obwohl
+            # heute erneut gespielt (Identitaet ueber _identity_key("title")).
             _entry("Bausa", "Old Favorite", at=datetime(2026, 8, 1, 10, 0)),
             _entry("Bausa", "Old Favorite", at=now),
         ]
@@ -743,9 +751,9 @@ class TestGenerateTimelineStats:
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
 
-        assert timeline["periods"]["week"]["new_track_count"] == 0
+        assert timeline["today"]["new_track_count"] == 0
 
-    def test_future_timestamp_is_excluded_from_all_periods(self, tmp_path):
+    def test_future_timestamp_is_excluded(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
         now = datetime(2026, 9, 13, 15, 0, 0)
         repo.save(
@@ -761,7 +769,7 @@ class TestGenerateTimelineStats:
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
 
-        assert timeline["periods"]["today"]["listening_seconds"] == 0
+        assert timeline["today"]["listening_seconds"] == 0
 
     def test_duration_zero_is_handled(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
@@ -770,7 +778,7 @@ class TestGenerateTimelineStats:
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
 
-        assert timeline["periods"]["today"]["listening_seconds"] == 0
+        assert timeline["today"]["listening_seconds"] == 0
 
     def test_large_duration_sums_correctly(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
@@ -783,7 +791,7 @@ class TestGenerateTimelineStats:
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
 
-        assert timeline["periods"]["today"]["listening_seconds"] == 10800
+        assert timeline["today"]["listening_seconds"] == 10800
 
     def test_multiple_artists_and_albums_ranked_correctly(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
@@ -796,10 +804,57 @@ class TestGenerateTimelineStats:
         repo.save(history, "alice")
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
-        today = timeline["periods"]["today"]
+        today = timeline["today"]
 
         assert today["top_artist"] == ("Clueso", 2)
         assert today["top_album"] == ("Album 1", 2)
+
+    def test_top_genre_none_when_no_genres_present(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 9, 13, 15, 0, 0)
+        repo.save([_entry("Bausa", "Song A", at=now)], "alice")
+
+        timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
+
+        assert timeline["today"]["top_genre"] is None
+
+    def test_top_genre_ranked_by_play_count(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 9, 13, 15, 0, 0)
+        history = [
+            _entry_with_genres("Bausa", "Song A", ["Hip-Hop"], at=now),
+            _entry_with_genres(
+                "Bausa", "Song B", ["Hip-Hop"], at=now - timedelta(hours=1)
+            ),
+            _entry_with_genres("Bausa", "Song C", ["Pop"], at=now - timedelta(hours=2)),
+        ]
+        repo.save(history, "alice")
+
+        timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
+
+        assert timeline["today"]["top_genre"] == ("Hip-Hop", 2)
+
+    def test_top_genre_multi_genre_track_counts_each_genre_once(self, tmp_path):
+        """Ein Play mit mehreren Genres traegt zu jedem Genre bei, aber
+        ein Genre wird innerhalb DESSELBEN Plays nur einmal gezaehlt
+        (Set-Dedup, dieselbe Regel wie generate_genre_stats())."""
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 9, 13, 15, 0, 0)
+        history = [
+            _entry_with_genres(
+                "Bausa", "Song A", ["Hip-Hop", "Hip-Hop", "Deutschrap"], at=now
+            ),
+            _entry_with_genres(
+                "Bausa", "Song B", ["Deutschrap"], at=now - timedelta(hours=1)
+            ),
+        ]
+        repo.save(history, "alice")
+
+        timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
+
+        # "Hip-Hop" nur 1x (ein Play trotz Duplikat im "genres"-Feld),
+        # "Deutschrap" 2x (zwei separate Plays) -> Deutschrap gewinnt.
+        assert timeline["today"]["top_genre"] == ("Deutschrap", 2)
 
 
 class TestSplitArtists:
@@ -1185,7 +1240,7 @@ class TestTimelineArtistSplit:
         )
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
-        today = timeline["periods"]["today"]
+        today = timeline["today"]
 
         # Beide Artists erhalten 1 Play - keiner der beiden ist der
         # unveraenderte Combo-String.
@@ -1201,7 +1256,7 @@ class TestTimelineArtistSplit:
         repo.save(history, "alice")
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
-        today = timeline["periods"]["today"]
+        today = timeline["today"]
 
         # makko kommt in beiden Plays vor (Combo + Solo) -> 2 Plays,
         # gewinnt gegen Toobrokeforfiji/SIN Davis mit je 1 Play.
@@ -1214,7 +1269,7 @@ class TestTimelineArtistSplit:
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
 
-        assert timeline["periods"]["today"]["top_artist"] == ("Miksu/Macloud", 1)
+        assert timeline["today"]["top_artist"] == ("Miksu/Macloud", 1)
 
     def test_ampersand_artist_split_in_timeline(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
@@ -1227,7 +1282,7 @@ class TestTimelineArtistSplit:
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
 
-        assert timeline["periods"]["today"]["top_artist"] == ("A", 2)
+        assert timeline["today"]["top_artist"] == ("A", 2)
 
     def test_top_album_and_most_replayed_track_remain_unsplit(self, tmp_path):
         """most_replayed_track/top_album duerfen NICHT gesplittet werden
@@ -1239,16 +1294,24 @@ class TestTimelineArtistSplit:
         )
 
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
-        today = timeline["periods"]["today"]
+        today = timeline["today"]
 
         assert today["most_replayed_track"] == ("Song X", 1)
         assert today["top_album"] == ("Album Y", 1)
 
 
 class TestTimelineConsistencyWithPeriodReview:
-    """Music Timeline Consistency & UX, Abschnitt 7.1: WICHTIGSTER Test
-    dieser Phase - Timeline und Period-Rückblick müssen für denselben
-    Zeitraum garantiert dieselbe Top-Artist-Zahl zeigen."""
+    """MASTER PHASE — MUSIC TIMELINE — FINAL CLOSURE: Timeline berechnet
+    nur noch "today" - ein direkter Cross-Check gegen generate_stats()
+    ("week"/"month") ist damit nicht mehr möglich/sinnvoll (generate_stats()
+    kennt keine "today"-Periode). Die frühere
+    week/month-Konsistenzprüfung (Music Timeline Consistency & UX,
+    Abschnitt 7.1) entfällt daher ersatzlos - beide Funktionen nutzen
+    weiterhin denselben _split_artists()-Helper (siehe
+    TestTimelineArtistSplit/TestGenerateStatsAdditiveFields), nur nicht
+    mehr für denselben Zeitraum vergleichbar. Verbleibender Test prüft
+    die "today"-Aggregation selbst gegen eine manuell berechnete
+    Erwartung."""
 
     def _history_with_combo_artists(self, now):
         return [
@@ -1258,12 +1321,7 @@ class TestTimelineConsistencyWithPeriodReview:
             _entry("makko", "Song D", at=now - timedelta(hours=3)),
         ]
 
-    def test_timeline_today_top_artist_matches_generate_stats_not_directly_comparable(
-        self, tmp_path
-    ):
-        """generate_stats() kennt keine 'today'-Periode - today wird
-        stattdessen gegen eine manuell berechnete Erwartung geprüft
-        (siehe test_week/test_month unten für den echten Cross-Check)."""
+    def test_timeline_today_top_artist_uses_split_artist_aggregation(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
         now = datetime(2026, 9, 13, 15, 0, 0)
         repo.save(self._history_with_combo_artists(now), "alice")
@@ -1271,55 +1329,4 @@ class TestTimelineConsistencyWithPeriodReview:
         timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
 
         # Clueso: 2 Solo-Plays + 1 Combo-Play = 3; makko: 1 Combo + 1 Solo = 2.
-        assert timeline["periods"]["today"]["top_artist"] == ("Clueso", 3)
-
-    def test_timeline_week_top_artist_matches_period_review(self, tmp_path):
-        calc, repo = make_calculator(tmp_path)
-        now = datetime(2026, 9, 13, 15, 0, 0)  # Sonntag, Woche 07.-14.09.
-        repo.save(self._history_with_combo_artists(now), "alice")
-
-        timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
-        period = calc.generate_stats("week", navidrome_username="alice", now=now)
-
-        timeline_artist, timeline_plays = timeline["periods"]["week"]["top_artist"]
-        period_artist, period_plays = period["top_artists_split"][0]
-
-        assert timeline_artist == period_artist
-        assert timeline_plays == period_plays
-        assert (timeline_artist, timeline_plays) == ("Clueso", 3)
-
-    def test_timeline_month_top_artist_matches_period_review(self, tmp_path):
-        calc, repo = make_calculator(tmp_path)
-        now = datetime(2026, 9, 13, 15, 0, 0)
-        repo.save(self._history_with_combo_artists(now), "alice")
-
-        timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
-        period = calc.generate_stats("month", navidrome_username="alice", now=now)
-
-        timeline_artist, timeline_plays = timeline["periods"]["month"]["top_artist"]
-        period_artist, period_plays = period["top_artists_split"][0]
-
-        assert timeline_artist == period_artist
-        assert timeline_plays == period_plays
-
-    def test_consistency_holds_with_three_way_combo_and_ties_broken_the_same_way(
-        self, tmp_path
-    ):
-        """Auch bei knappen/mehrdeutigen Zaehlungen (mehrere Combo-Kombinationen)
-        muessen Timeline und Period exakt dieselbe Aggregation (identische
-        dict-Iterationsreihenfolge, da beide auf derselben
-        _split_artists()-Implementierung beruhen) liefern."""
-        calc, repo = make_calculator(tmp_path)
-        now = datetime(2026, 9, 13, 15, 0, 0)
-        history = [
-            _entry("A • B • C", "Song 1", at=now),
-            _entry("B • C", "Song 2", at=now - timedelta(hours=1)),
-            _entry("C", "Song 3", at=now - timedelta(hours=2)),
-        ]
-        repo.save(history, "alice")
-
-        timeline = calc.generate_timeline_stats(navidrome_username="alice", now=now)
-        period = calc.generate_stats("week", navidrome_username="alice", now=now)
-
-        assert timeline["periods"]["week"]["top_artist"] == period["top_artists_split"][0]
-        assert timeline["periods"]["week"]["top_artist"] == ("C", 3)
+        assert timeline["today"]["top_artist"] == ("Clueso", 3)

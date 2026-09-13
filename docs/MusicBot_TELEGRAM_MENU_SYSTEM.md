@@ -1786,7 +1786,116 @@ F3/F4-Fachlogik, `generate_family_timeline()`.
 
 ---
 
-## 14. Verwandte Dokumente
+## 14. Music Timeline — Final Closure (2026-09-13)
+
+Direkte Folgephase auf Abschnitt 12 - Music Timeline endgültig auf eine
+kompakte, ausschließlich tagesbezogene Daily-Music-Übersicht reduziert.
+"Diese Woche"/"Diesen Monat" entfallen ersatzlos aus der Timeline
+(Week-/Month-Statistiken bleiben über `generate_stats()`/
+`generate_year_stats()` unverändert erreichbar - das sind separate
+Konzepte, siehe Abschnitt 9/11).
+
+### 14.1 Contract-Änderung
+
+`StatisticsCalculator.generate_timeline_stats()` liefert seither:
+
+```python
+{
+    "navidrome_username": str,
+    "today": {
+        "period_start": datetime, "period_end": datetime,
+        "track_count": int, "listening_seconds": int,
+        "top_artist": tuple[str, int] | None,
+        "top_album": tuple[str, int] | None,
+        "top_genre": tuple[str, int] | None,
+        "most_replayed_track": tuple[str, int] | None,
+        "new_track_count": int,
+    },
+}
+```
+
+Kein `"periods"`-Wrapper mehr, kein `"week"`/`"month"` mehr im Timeline-
+Return. `most_replayed_track` bleibt bewusst `(title, plays)` (kein
+reiner String-Contract) - `services/family/family_challenge_service.py`s
+`own_top_song_today`-Auswertung liest weiterhin `most_replayed_track[0]`,
+nur über den neuen Pfad `timeline["today"]["most_replayed_track"]` statt
+vormals `timeline["periods"]["today"]["most_replayed_track"]` (einzige
+Änderung an dieser Datei - `_compute_family_wide_answer()`/
+`generate_family_timeline()` sind eine unabhängige, unverändert eigene
+Timeline-Implementierung in `FamilyStatsService` und nicht betroffen).
+
+Neu: `top_genre` (Plays je Genre) - dieselbe Datenquelle/Dedup-Regel wie
+`generate_genre_stats()` (strukturiertes `"genres"`-Listenfeld, ein
+Genre zählt pro Play höchstens einmal), hier inline auf "today" begrenzt
+statt All-Time. Kein eigener `_split_genres()`-Helper (existiert nicht
+im Statistics-Code) - dieselbe bereits vorhandene Zähllogik wird direkt
+wiederverwendet.
+
+### 14.2 UI-Redesign
+
+`handle_music_timeline()` zeigt jetzt ausschließlich:
+
+```text
+📅 Heute · 13.09.2026
+
+🎧 24 Plays
+🔥 Clueso · 6 Plays
+💿 Stadtrandlichter · 6 Plays
+🎸 Hip-Hop · 8 Plays
+❤️ Mit dir alleine sein
+✨ 18 neue Tracks entdeckt
+
+👤 dkmd
+```
+
+Jede Datenzeile außer „neue Tracks" ist optional (fehlt bei fehlendem
+Wert ersatzlos, keine Platzhalter wie „N/A"/„Unknown"). Meistgehörter
+Track zeigt bewusst KEINE Plays-Zahl (persönlicher Highlight-Eintrag,
+kein Ranking). Keine Separator-Linie mehr, keine Hörzeit-Zeile mehr
+(`listening_seconds` bleibt intern erhalten, wird aber nicht mehr
+gerendert). Empty State bei 0 Wiedergaben heute:
+
+```text
+📅 Heute · 13.09.2026
+
+Keine Wiedergaben heute
+
+👤 dkmd
+```
+
+Ersetzt `_render_timeline_period()`/`_format_timeline_period_label()`/
+`_TIMELINE_SEPARATOR`/`_TIMELINE_EMPTY_LABELS` durch eine einzelne
+`_render_timeline_today()` - `_format_period_label()`/`_format_plays()`
+(Header-Datum bzw. Play-Pluralisierung) bleiben unverändert
+wiederverwendet.
+
+### 14.3 Nicht angefasst
+
+`generate_stats()`, `generate_genre_stats()`, `generate_year_stats()`,
+`_handle_period_review()`, `handle_year_review()`,
+`_calendar_period_bounds()`, `_identity_key()`, `_split_artists()`,
+`FamilyStatsService.generate_family_timeline()`,
+`_compute_family_wide_answer()` (Family-weite Challenge-Antworten),
+Repository-Layout, Datenmodell, `PlayHistoryPoller` - alle unverändert
+(per Regressionstests gepinnt).
+
+### 14.4 Tests
+
+`tests/test_statistics_calculator.py` (`TestGenerateTimelineStats` auf
+Today-only-Contract umgebaut + `top_genre`-Fälle neu,
+`TestTimelineArtistSplit` auf `timeline["today"]` umgestellt,
+`TestTimelineConsistencyWithPeriodReview` auf den verbleibenden
+today-Fall reduziert - der bisherige Week-/Month-Cross-Check gegen
+`generate_stats()` entfällt, da die Timeline diese Perioden nicht mehr
+berechnet), `tests/test_mugge_statistik_handler.py`
+(`TestHandleMusicTimelineLayout` komplett neu: exakte Zielausgabe,
+optionale Zeilen, Empty State, keine Separator-/Hörzeit-Zeile). Gezielte
++ thematische Regressionsgruppe (Statistics/Timeline/Family, 8 Dateien):
+**320 passed, 0 Regressionen.**
+
+---
+
+## 15. Verwandte Dokumente
 
 - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — Details zu allen vier
   live gefundenen Bugs dieser Phase sowie zum inzwischen geschlossenen
