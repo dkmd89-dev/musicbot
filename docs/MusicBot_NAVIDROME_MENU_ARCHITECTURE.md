@@ -293,7 +293,7 @@ gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
 
 | Bereich | Datei | Umfang |
 |---|---|---|
-| `NavidromeMenuHandler` (Connection-Status, Escaping, Error-Routing, alle 5 Detail-Views, Browse, Genre-Suche, NAV-F1, NAV-F6, NAV-F9, NAV-F7, NAV-F13) | `tests/test_navidrome_menu_handler.py` | 64 Tests (BUG-007a/b, NAV-F1, NAV-F2, NAV-F6, NAV-F9, NAV-F7, NAV-F13; toter Test zu `handle_stats()` mit NAV-F3 entfernt; `TestFormatTrackDuration` nach `test_navidrome_renderer.py` verschoben; Erfolgspfad-/Overflow-/Connection-Error-Tests für Artist-/Genre-Detail und alle drei Browse-Methoden ergänzt — Architecture Refactoring Audit) |
+| `NavidromeMenuHandler` (Connection-Status, Escaping, Error-Routing, alle 5 Detail-Views, Browse, Playlists, Favoriten, Suche, Genre-Suche, NAV-F1, NAV-F6, NAV-F9, NAV-F7, NAV-F13) | `tests/test_navidrome_menu_handler.py` | 73 Tests (BUG-007a/b, NAV-F1, NAV-F2, NAV-F6, NAV-F9, NAV-F7, NAV-F13; toter Test zu `handle_stats()` mit NAV-F3 entfernt; `TestFormatTrackDuration` nach `test_navidrome_renderer.py` verschoben; Erfolgspfad-/Overflow-/Connection-Error-Tests für Artist-/Genre-Detail, alle drei Browse-Methoden, Playlists, Favoriten und den generischen Such-Erfolgspfad ergänzt — Architecture Refactoring Audit) |
 | `handlers/navidrome_renderer.py` (reine Render-Funktionen, Architecture Refactoring Audit Stufe 1 + 3 + Detail-View-Familie, NAV-F15/F16) | `tests/test_navidrome_renderer.py` | 34 Tests (ohne Mocks, reine Funktionsaufrufe; 8 neu für Artist-/Genre-Detail, 1 neu für NAV-F16) |
 | `handlers/menu/actions/navidrome.py`-Wrapper + interner Dispatcher (NAV-F9, NAV-F10, NAV-F11, NAV-F5, NAV-F7, NAV-F8, NAV-F12) | `tests/test_menu_actions_navidrome.py` | 20 Tests |
 | `NavidromeAPI`-Adapter (Logging, Timeout, Characterization, NAV-F8 `genre`/`genres`-Passthrough) | `tests/test_navidrome_api_characterization.py`, `tests/test_navidrome_api_logging.py`, `tests/test_navidrome_api_timeout.py` | `test_navidrome_api_characterization.py` 15 Tests (2 neu für NAV-F8), übrige siehe dort |
@@ -304,17 +304,30 @@ gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
 | `StatistikService.generate_genre_stats()`-Delegator (NAV-F8) | `tests/test_statistik_service.py::TestGenerateGenreStats` | 2 Tests |
 | `PlayHistoryPoller`-Genre-Erfassung (NAV-F8, `genre` + strukturiertes `genres` inkl. Dedup/Malformed-Handling) | `tests/test_play_history_poller.py` | 15 Tests (7 neu für NAV-F8) |
 
-**Bekannte Testlücken** (Details: Audit-Transkript): keine Verhaltenstests
-für `handle_my_playlists`/`handle_favorites` (Erfolgsfall, Pagination,
-leere Liste), keine Tests für `process_search_query`-Ergebnisverarbeitung
-des generischen `search3`-Pfads, kein Test für `handle_reconnect()`-
-Erfolgsfall gegen einen echten `check_connection()`. `handle_browse_artists`/
+**Frühere Testlücken, inzwischen geschlossen:** `handle_browse_artists`/
 `handle_browse_albums`/`handle_browse_genres` sind seit dem Architecture
 Refactoring Audit (Migrationsstufe 3, Pflichtschritt vor der eigentlichen
 Extraktion) durch `TestBrowseArtistsCharacterization`/
 `TestBrowseAlbumsCharacterization`/`TestBrowseGenresCharacterization` in
 `tests/test_navidrome_menu_handler.py` abgedeckt (17 neue Tests) — dabei
-NAV-F14 entdeckt und CLOSED (siehe Abschnitt 4).
+NAV-F14 entdeckt und CLOSED (siehe Abschnitt 4). `handle_my_playlists`/
+`handle_favorites` (Erfolgsfall, leere Liste, Connection-Error) sowie
+`process_search_query`s generischer `search3`-Ergebnispfad (vorher nur
+über Fehlerpfad-Tests indirekt abgedeckt) sind seit einem weiteren
+Nachtrag durch `TestMyPlaylistsCharacterization`/
+`TestFavoritesCharacterization`/`TestSearchQueryGenericPathCharacterization`
+abgedeckt (9 neue Tests) — kein bisher unentdeckter Bug aufgedeckt.
+
+**Verbleibende, bewusst zurückgestellte Lücke:** kein dedizierter
+Test für `handle_reconnect()`-Erfolgsfall gegen eine ECHTE
+`NavidromeAPI.check_connection()`-Implementierung (nur gegen eine
+gemockte Version, korrekt nach CLAUDE.md Regel 7). Die reale
+`check_connection()`-Logik selbst ist bereits vollständig in
+`tests/test_navidrome_api_characterization.py::TestCheckConnection`
+charakterisiert (Ping-Erfolg/-Fehlschlag/Exception) — die Kombination
+beider Testsuiten deckt den End-to-End-Pfad bereits ab, ein
+zusätzlicher Integrationstest würde nur Regel-7-widrig echten
+Netzwerkcode in einem Unit-Test duplizieren. Keine akute Priorität.
 
 ---
 
