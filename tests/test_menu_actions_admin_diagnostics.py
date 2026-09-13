@@ -84,6 +84,96 @@ async def test_status_callback_unknown_shows_not_implemented():
 
 
 @pytest.mark.asyncio
+async def test_status_callback_unknown_logs_warning():
+    """STATUS-MENU-CLOSURE: ein tatsaechlich unerwarteter callback_data-Wert
+    (Tippfehler, veraltete/geraetete Werte, o.ae.) muss weiterhin sichtbar
+    als WARNING geloggt werden - im Gegensatz zu den bekannten
+    Platzhaltern (siehe test_status_callback_placeholder_* unten)."""
+    update = _make_update()
+    handler = Mock()
+    logger = Mock()
+    await diag_actions.handle_status_callback(update, Mock(), "status_unknown", handler, logger)
+    logger.warning.assert_called_once()
+    assert "status_unknown" in logger.warning.call_args.args[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "callback_data,method_name",
+    [
+        ("status_menu", "show_status_menu"),
+        ("status_system", "show_system_status"),
+        ("status_bot", "show_bot_status"),
+        ("status_services", "show_services_status"),
+        ("status_performance", "show_performance_status"),
+        ("status_storage", "show_storage_status"),
+        ("status_refresh", "show_status_menu"),
+    ],
+)
+async def test_status_callback_routes_to_expected_handler_method(callback_data, method_name):
+    """STATUS-MENU-CLOSURE: fuer jeden tatsaechlich aktiven Status-Button
+    (routing_map-Eintrag) muss genau die dokumentierte Handler-Methode
+    aufgerufen werden - Routing-Contract-Test."""
+    update = _make_update()
+    handler = Mock()
+    for name in (
+        "show_status_menu", "show_system_status", "show_bot_status",
+        "show_services_status", "show_performance_status", "show_storage_status",
+    ):
+        setattr(handler, name, AsyncMock())
+
+    await diag_actions.handle_status_callback(update, Mock(), callback_data, handler, Mock())
+
+    getattr(handler, method_name).assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "callback_data",
+    [
+        "status_users",
+        "status_trends",
+        "status_system_detail",
+        "status_system_history",
+        "status_bot_handlers",
+        "status_bot_logs",
+        "status_services_check",
+        "status_services_detail",
+        "status_performance_history",
+        "status_performance_reset",
+        "status_storage_cleanup",
+        "status_storage_detail",
+    ],
+)
+async def test_status_callback_known_placeholder_shows_friendly_message_without_warning(
+    callback_data,
+):
+    """STATUS-MENU-CLOSURE: die 12 Buttons ohne echte Implementierung
+    (Kategorie C, repoweit verifiziert - keine existierende Funktion unter
+    irgendeinem Namen) duerfen weiterhin auf KEINE erfundene Route zeigen,
+    aber auch nicht mehr wie ein echter, unerwarteter Bug aussehen (kein
+    WARNING-Log)."""
+    update = _make_update()
+    handler = Mock()
+    logger = Mock()
+
+    await diag_actions.handle_status_callback(update, Mock(), callback_data, handler, logger)
+
+    logger.warning.assert_not_called()
+    message = update.callback_query.answer.call_args.args[0]
+    assert "nicht implementiert" in message
+    # Keine der echten Handler-Methoden darf fuer einen Platzhalter
+    # aufgerufen worden sein (keine erfundene Route).
+    for name in (
+        "show_status_menu", "show_system_status", "show_bot_status",
+        "show_services_status", "show_performance_status", "show_storage_status",
+    ):
+        method = getattr(handler, name, None)
+        if isinstance(method, (Mock, AsyncMock)):
+            method.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_status_menu_wrapper_uses_fallback_when_missing():
     update = _make_update()
     fallback = AsyncMock()

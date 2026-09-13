@@ -19,11 +19,15 @@ gefixt):
   ADMIN_USER_IDS), das von diesem Cache-Detail nicht betroffen ist.
 
 - Der "🗑️ Cleanup"-Button in enhanced_status_handler.py sendet
-  callback_data="status_storage_cleanup", aber _handle_status_callback()'s
-  routing_map kennt diesen Callback nicht - er faellt auf den generischen
-  "Funktion nicht implementiert"-Zweig. Der Button ist also aktuell ein
-  Dead End (kein Sicherheitsproblem, im Gegenteil: die in der SEC-003-
-  Doku erwaehnte "destruktive Cleanup-Aktion" ist dadurch faktisch inert).
+  callback_data="status_storage_cleanup", fuer den keine Handler-
+  Implementierung existiert (repoweit verifiziert). STATUS-MENU-CLOSURE
+  (docs/MusicBot_STATUS_MENU_CLOSURE.md): admin_diagnostics_actions.
+  handle_status_callback()'s routing_map kennt diesen Callback weiterhin
+  nicht (kein Feature-Bau in dieser Phase), behandelt ihn aber seither
+  bewusst als bekannten Platzhalter statt wie einen echten, unerwarteten
+  Bug (kein WARNING-Log, freundliche "noch nicht implementiert"-Meldung).
+  Kein Sicherheitsproblem - im Gegenteil: die in der SEC-003-Doku
+  erwaehnte "destruktive Cleanup-Aktion" ist dadurch faktisch inert.
 """
 
 import asyncio
@@ -301,11 +305,14 @@ class TestBackAndClose:
         update.callback_query.edit_message_text.assert_called()
 
 
-class TestStatusStorageCleanupIsUnrouted:
-    """Dokumentiert den in enhanced_status_handler.py gerenderten, aber in
-    _handle_status_callback() nicht gemappten Cleanup-Button."""
+class TestStatusStorageCleanupIsKnownPlaceholder:
+    """Dokumentiert den in enhanced_status_handler.py gerenderten, aber
+    ohne Handler-Implementierung existierenden Cleanup-Button.
+    STATUS-MENU-CLOSURE: wird bewusst als bekannter Platzhalter behandelt
+    (nicht als echter, unerwarteter Callback), siehe
+    handle_status_callback()."""
 
-    def test_status_storage_cleanup_falls_through_to_not_implemented(
+    def test_status_storage_cleanup_shows_placeholder_message(
         self, menu_system
     ):
         fake_status_handler = Mock()

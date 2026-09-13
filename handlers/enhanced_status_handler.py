@@ -23,6 +23,50 @@ from config import Config
 from logger import get_module_logger, get_logging_stats, _module_loggers
 
 
+# ==================== TELEGRAM-RENDERING-ROBUSTHEIT ====================
+# STATUS-MENU-CLOSURE: Dieses Modul rendert dynamische Systemwerte
+# (platform.machine()="x86_64", Bibliothekspfade wie
+# "/mnt/musik_bilder/library" usw.) direkt in mit parse_mode="Markdown"
+# gesendeten Text. Telegrams Legacy-"Markdown"-Modus (NICHT "MarkdownV2")
+# kennt nur 4 reservierte Sonderzeichen (_ * ` [) - ein einzelnes,
+# unpaariges Vorkommen in dynamischen Daten (z.B. der Unterstrich in
+# "x86_64" oder "musik_bilder") lässt Telegram mit "Can't parse entities:
+# can't find end of the entity ..." ablehnen. Siehe
+# docs/MusicBot_STATUS_MENU_CLOSURE.md für die vollständige Analyse.
+_MARKDOWN_V1_SPECIAL_CHARS = ("_", "*", "`", "[")
+
+
+def _escape_markdown(value: Any) -> str:
+    """
+    Escaped Telegrams Legacy-Markdown-Sonderzeichen (_ * ` [) in einem
+    dynamischen Wert, BEVOR er in mit parse_mode="Markdown" gerenderten
+    Text eingebettet wird. Nur für dynamische Werte verwenden - niemals
+    für die statischen "**Überschrift**"-Markdown-Tokens selbst (die
+    müssen unverändert funktionieren).
+
+    Bewusst NICHT helfer/markdown_helfer.py::escape_md_v2() wiederverwendet:
+    das ist für parse_mode="MarkdownV2" und escaped dort u. a. auch "."
+    und "-" - unter dem hier verwendeten Legacy-"Markdown"-Modus wären
+    diese zusätzlichen Escapes falsch und würden sichtbare Backslashes in
+    Versions-/Pfadangaben erzeugen (z. B. "7\\.0\\.0" statt "7.0.0").
+    """
+    text = str(value)
+    for char in _MARKDOWN_V1_SPECIAL_CHARS:
+        text = text.replace(char, f"\\{char}")
+    return text
+
+
+def _is_message_not_modified_error(exc: Exception) -> bool:
+    """
+    Erkennt Telegrams Idempotenz-Fall: edit_message_text() wird mit
+    exakt demselben Text/Keyboard erneut aufgerufen (z. B. "🔄
+    Aktualisieren" ohne zwischenzeitliche Änderung der Werte). Das ist
+    kein echter Fehler, siehe docs/MusicBot_STATUS_MENU_CLOSURE.md,
+    Abschnitt "Message is not modified".
+    """
+    return isinstance(exc, TelegramError) and "message is not modified" in str(exc).lower()
+
+
 class SystemMonitor:
     """
     🔍 SYSTEM MONITORING
@@ -359,6 +403,10 @@ class EnhancedStatusHandler:
             self.logger.info("📊 Status-Menü angezeigt")
 
         except Exception as e:
+            if _is_message_not_modified_error(e):
+                # Identischer Refresh - kein echter Fehler (Telegram-
+                # Idempotenz), siehe _is_message_not_modified_error().
+                return
             self.logger.error(f"❌ Fehler beim Anzeigen des Status-Menüs: {e}")
             if self.error_handler:
                 await self.error_handler.handle_callback_error(
@@ -379,12 +427,24 @@ class EnhancedStatusHandler:
             uptime = self.system_monitor.get_uptime()
 
             # System-Info
+            # STATUS-MENU-CLOSURE: platform.machine() liefert auf x86_64-
+            # Systemen woertlich "x86_64" - der darin enthaltene
+            # Unterstrich brach bisher das Legacy-Markdown-Parsing
+            # ("Can't parse entities: can't find end of the entity
+            # starting at byte offset 108"). platform.release() (z.B.
+            # Kernel-Build-Suffixe) ist ebenfalls extern/variabel - beide
+            # sowie system()/python_version() werden defensiv escaped.
+            os_name = _escape_markdown(platform.system())
+            os_release = _escape_markdown(platform.release())
+            python_version = _escape_markdown(platform.python_version())
+            architecture = _escape_markdown(platform.machine())
+
             system_info = f"""💻 **System-Status**
 
 **Platform:**
-• OS: {platform.system()} {platform.release()}
-• Python: {platform.python_version()}
-• Architektur: {platform.machine()}
+• OS: {os_name} {os_release}
+• Python: {python_version}
+• Architektur: {architecture}
 
 **Uptime:**
 • {uptime['formatted']}
@@ -437,6 +497,8 @@ class EnhancedStatusHandler:
             self.logger.info("💻 System-Status angezeigt")
 
         except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
             self.logger.error(f"❌ Fehler beim System-Status: {e}")
             await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
 
@@ -474,7 +536,7 @@ class EnhancedStatusHandler:
 • Aktive Users: {user_activity['active_users']}
 • Letzte Aktivitäten: {user_activity['total_recorded_activities']}
 
-**Version:** {self.config.VERSION}"""
+**Version:** {_escape_markdown(self.config.VERSION)}"""
 
             keyboard = InlineKeyboardMarkup(
                 [
@@ -508,6 +570,8 @@ class EnhancedStatusHandler:
             self.logger.info("🤖 Bot-Status angezeigt")
 
         except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
             self.logger.error(f"❌ Fehler beim Bot-Status: {e}")
             await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
 
@@ -544,8 +608,8 @@ class EnhancedStatusHandler:
                     check_dt = datetime.fromisoformat(last_check)
                     check_time = check_dt.strftime("%H:%M:%S")
 
-                services_text += f"{icon} **{service_name.capitalize()}**\n"
-                services_text += f"   Status: {status}\n"
+                services_text += f"{icon} **{_escape_markdown(service_name.capitalize())}**\n"
+                services_text += f"   Status: {_escape_markdown(status)}\n"
                 if check_time:
                     services_text += f"   Geprüft: {check_time}\n"
                 services_text += "\n"
@@ -580,6 +644,8 @@ class EnhancedStatusHandler:
             self.logger.info("📦 Service-Status angezeigt")
 
         except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
             self.logger.error(f"❌ Fehler beim Service-Status: {e}")
             await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
 
@@ -621,7 +687,11 @@ class EnhancedStatusHandler:
             )[:5]
 
             for op_type, count in top_ops:
-                perf_text += f"\n• {op_type}: {count:,}"
+                # op_type stammt aus record_operation()-Aufrufen (aktuell
+                # kein produktiver Aufrufer, siehe
+                # docs/MusicBot_STATUS_MENU_CLOSURE.md) - defensiv
+                # escaped, da der Wert grundsaetzlich frei waehlbar ist.
+                perf_text += f"\n• {_escape_markdown(op_type)}: {count:,}"
 
             keyboard = InlineKeyboardMarkup(
                 [
@@ -649,6 +719,8 @@ class EnhancedStatusHandler:
             self.logger.info("📊 Performance-Status angezeigt")
 
         except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
             self.logger.error(f"❌ Fehler beim Performance-Status: {e}")
             await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
 
@@ -706,6 +778,8 @@ class EnhancedStatusHandler:
             self.logger.info("📁 Storage-Status angezeigt")
 
         except Exception as e:
+            if _is_message_not_modified_error(e):
+                return
             self.logger.error(f"❌ Fehler beim Storage-Status: {e}")
             await self._show_error_message(update, f"Fehler beim Laden: {str(e)}")
 
@@ -728,9 +802,17 @@ class EnhancedStatusHandler:
                     size_gb = size / (1024**3)
                     total_used += size
 
+                    # STATUS-MENU-CLOSURE: path ist ein realer Server-
+                    # Dateisystempfad (Config.LIBRARY_DIR etc., z.B.
+                    # "/mnt/musik_bilder/library") - der Unterstrich darin
+                    # brach bisher das Legacy-Markdown-Parsing ("Can't
+                    # parse entities ... byte offset 67"). name ist
+                    # dagegen ein fixer, hier hartkodierter Schluessel
+                    # ("Library"/"Downloads"/"Cache"/"Logs") und braucht
+                    # kein Escaping.
                     storage_text += f"📦 **{name}:**\n"
                     storage_text += f"   {size_gb:.2f} GB\n"
-                    storage_text += f"   {path}\n\n"
+                    storage_text += f"   {_escape_markdown(path)}\n\n"
                 else:
                     storage_text += f"❌ **{name}:** Nicht gefunden\n\n"
             except Exception:
@@ -746,8 +828,13 @@ class EnhancedStatusHandler:
         try:
             query = update.callback_query
 
+            # STATUS-MENU-CLOSURE: error_message enthaelt str(exception) -
+            # beliebiger, nicht kontrollierbarer Text (z.B. Pfade in
+            # OSError-Meldungen) - wird escaped, damit ein zufaelliges
+            # Sonderzeichen in der Fehlermeldung nicht seinerseits das
+            # Markdown-Parsing der Fehleranzeige selbst bricht.
             error_text = (
-                f"❌ **Fehler**\n\n{error_message}\n\nBitte versuche es erneut."
+                f"❌ **Fehler**\n\n{_escape_markdown(error_message)}\n\nBitte versuche es erneut."
             )
 
             keyboard = InlineKeyboardMarkup(
@@ -834,27 +921,34 @@ print(f"Operations/s: {perf['operations_per_second']}")
 ✅ Error-Rate-Monitoring
 ✅ Integration mit Error Handler
 ✅ Cache für Performance
-✅ Vollständige Menu-Integration
 
-🎨 MENU-STRUKTUR:
+🎨 MENU-STRUKTUR (STATUS-MENU-CLOSURE, siehe
+docs/MusicBot_STATUS_MENU_CLOSURE.md für die vollständige Callback-Matrix):
 
 Status-Hauptmenü
-├── 💻 System Status
-│   ├── Detaillierte Ansicht
-│   └── Verlaufs-Diagramm
-├── 🤖 Bot Status
-│   ├── Handler-Übersicht
-│   ├── Service-Details
-│   └── Log-Statistiken
-├── 📦 Services
-│   ├── Health-Checks
-│   └── Service-Details
-├── 👥 User-Aktivität
-├── 📊 Performance
-│   ├── Operations-Breakdown
-│   └── Error-Analyse
-├── 📁 Storage
-│   ├── Verzeichnis-Übersicht
-│   └── Cleanup-Optionen
-└── 📈 Trends
+├── 💻 System Status                       [aktiv]
+│   ├── Detaillierte Ansicht                (Platzhalter, kein Handler)
+│   └── Verlaufs-Diagramm                   (Platzhalter, kein Handler)
+├── 🤖 Bot Status                          [aktiv]
+│   ├── Handler-Übersicht                   (Platzhalter, kein Handler)
+│   ├── Service-Details → 📦 Services       [aktiv, selber Screen]
+│   └── Log-Statistiken                     (Platzhalter, kein Handler)
+├── 📦 Services                            [aktiv]
+│   ├── Health-Checks                       (Platzhalter, kein Handler)
+│   └── Service-Details                     (Platzhalter, kein Handler)
+├── 👥 User-Aktivität                       (Platzhalter, kein Handler)
+├── 📊 Performance                         [aktiv]
+│   ├── Operations-Breakdown (Verlauf)      (Platzhalter, kein Handler)
+│   └── Error-Analyse (Reset)               (Platzhalter, kein Handler)
+├── 📁 Storage                             [aktiv]
+│   ├── Verzeichnis-Übersicht (Details)     (Platzhalter, kein Handler)
+│   └── Cleanup-Optionen                    (Platzhalter, kein Handler)
+└── 📈 Trends                               (Platzhalter, kein Handler)
+
+"Platzhalter" = Button existiert, aber keine Handler-Implementierung
+(weder unter diesem noch einem anderen Namen, repoweit verifiziert) -
+zeigt beim Anklicken "🚧 Diese Funktion ist noch nicht implementiert.",
+ohne wie ein unerwarteter Fehler behandelt zu werden. Kein Feature-Bau
+in der STATUS-MENU-CLOSURE-Phase - nur konsistente, erkennbare
+Behandlung statt stiller "Unbekannter Callback"-Warnung.
 """
