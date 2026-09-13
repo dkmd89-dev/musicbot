@@ -179,12 +179,20 @@ Tests zuerst" statt Tests+Extraktion in einem PR wie bei Stufe 1) —
 `TestBrowseAlbumsCharacterization`/`TestBrowseGenresCharacterization`
 (`tests/test_navidrome_menu_handler.py`), reine Testergänzung, keine
 Produktionscode-Änderung. Dabei wurde **NAV-F14** entdeckt (`handle_
-browse_genres()` crasht bei nicht-numerischem `songCount` statt sauber
-auf die alphabetische Sortierung zurückzufallen — Details siehe
-`docs/MusicBot_NAVIDROME_MENU_ARCHITECTURE.md` Abschnitt 4) — bewusst
-NICHT im selben Schritt gefixt, bleibt OPEN als eigenständige
-Entscheidung. Die eigentliche Rendering-Extraktion (zweiter PR) ist
-noch nicht freigegeben.
+browse_genres()` crashte bei nicht-numerischem `songCount` statt sauber
+auf die alphabetische Sortierung zurückzufallen) — bewusst NICHT im
+selben Schritt gefixt, sondern als eigenständige Entscheidung dem
+Nutzer vorgelegt.
+
+**Nachtrag 2 (2026-09-13) — NAV-F14 gefixt, Extraktion freigegeben:**
+Nutzer gab beides zugleich frei. NAV-F14-Fix in einem eigenen PR
+umgesetzt (`songCount` wird jetzt einmalig vor Sortierung und Anzeige
+sicher zu `int` normalisiert, Sortierung über `(-songCount,
+name.lower())` mit demselben `value`-bevorzugenden Feld wie die
+Anzeige — behebt beide Teilbugs in einem Schritt, siehe
+`docs/MusicBot_NAVIDROME_MENU_ARCHITECTURE.md` Abschnitt 4, NAV-F14
+CLOSED). Die eigentliche Browse-Rendering-Extraktion folgt als
+nächster, separater PR auf demselben bereits getesteten Stand.
 
 ### Stufe 4 — `services/navidrome/browser_service.py` (API-Extraktion)
 **Ziel:** Der in der Zieldoku beschriebene `browser_service` — reine
