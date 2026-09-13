@@ -708,7 +708,7 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
             message_text = f"""
 📋 **Meine Playlists**
 
-Du hast {len(playlists)} Playlist(s) verfügbar:
+Du hast {len(playlists)} Playlist\\(s\\) verfügbar:
 """
             await update.callback_query.edit_message_text(
                 text=message_text,
