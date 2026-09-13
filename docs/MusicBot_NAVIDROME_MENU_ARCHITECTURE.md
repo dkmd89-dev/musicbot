@@ -198,8 +198,17 @@ Vorbereitet durch eigene Characterization-Tests (17 Tests, eigener PR)
 und den dabei entdeckten, in einem separaten PR bereits behobenen
 NAV-F14 (siehe Abschnitt 4). `handle_browse_albums()` behält beide
 API-Pfade (`getArtist`/`getAlbumList2`) in `NavidromeMenuHandler`, da
-sie einen echten Netzwerkaufruf enthalten. `NavidromeMenuHandler`
-schrumpfte dadurch auf 1179 Zeilen (von ursprünglich 1493 vor Stufe 1).
+sie einen echten Netzwerkaufruf enthalten.
+
+**Detail-View-Familie vervollständigt ✅ IMPLEMENTED (2026-09-13):**
+`render_artist_detail()`/`render_genre_detail()` ergänzen die in Stufe 1
+extrahierten Album/Song/Playlist-Detail-Funktionen — dieselbe
+Vorbereitungs-Logik (Pflichtschritt: fehlende Characterization-Tests für
+Erfolgspfad/Overflow-Button/Connection-Error zuerst ergänzt, dann
+Extraktion) in einem PR. Damit sind alle 5 Detail-Views
+(Artist/Album/Song/Playlist/Genre) konsistent aus `NavidromeMenuHandler`
+in den Renderer ausgelagert. `NavidromeMenuHandler` schrumpfte auf
+1059 Zeilen (von ursprünglich 1493 vor Stufe 1).
 `services/navidrome/browser_service.py` (API-Extraktion, Migrationsstufe
 4) bleibt **weiterhin geplant, nicht umgesetzt**.
 
@@ -212,10 +221,10 @@ services/navidrome/browser_service.py  (NEU, P2, GEPLANT) — Artists/
         ↓
 handlers/menu/actions/navidrome.py  (bleibt dünn, unverändert strukturell)
         ↓
-handlers/navidrome_renderer.py (✅ IMPLEMENTIERT — Detail: Album/Song/
-        Playlist [Stufe 1] + Browse: Artists/Albums/Genres [Stufe 3]) —
-        MarkdownV2-Text-/Keyboard-Bau, analog zur bestehenden Trennung
-        rendering.py (Menü) vs. definitions.py
+handlers/navidrome_renderer.py (✅ IMPLEMENTIERT — alle 5 Detail-Views
+        [Artist/Album/Song/Playlist/Genre] + Browse: Artists/Albums/
+        Genres [Stufe 3]) — MarkdownV2-Text-/Keyboard-Bau, analog zur
+        bestehenden Trennung rendering.py (Menü) vs. definitions.py
         ↓
 NavidromeMenuHandler (schlanker: nur noch Orchestrierung +
         Fehlerbehandlung + browse_states)
@@ -271,8 +280,9 @@ Verschiebung von Serverstatus/Scan aus dem Admin-Bereich hierher.
 9. ~~NAV-F7/NAV-F8/NAV-F12~~ ✅ CLOSED — Genre-Suche (`nav_search_genres`, Teilstring-Filter über `getGenres()`) + Genre-Statistik (`nav_genre_stats`, `StatisticsCalculator.generate_genre_stats()`, All-Time Top-10 nach Plays, reine Wiederverwendung des bestehenden Statistics-/Scrobble-Systems inkl. additiver `"genres"`-Erfassung — strukturierte Liste, bevorzugte Datenquelle, siehe NAV-F8 in Abschnitt 4 — in `PlayHistoryPoller`, plus notwendiger `NavidromeAPI.get_now_playing()`-Pass-Through-Fix, ohne den die Erfassung nie befüllt worden wäre) implementiert; dabei NAV-F12 entdeckt+behoben (`nav_genre_stats` kollidierte mit dem generischen `nav_genre_`-Präfix, derselbe Bug-Typ wie NAV-F2/NAV-F11)
 10. ~~NAV-F13~~ ✅ CLOSED (Live-Fund aus Produktionslogs) — statischer, unescapter `"(erste 10 angezeigt)"`-Text in `handle_genre_detail()` ließ Telegram jede erfolgreiche Genre-Detail-Nachricht ablehnen; Fix: `\\(erste 10 angezeigt\\)`
 11. ~~Renderer-Extraktion, Stufe 1 (Detail: Album/Song/Playlist)~~ ✅ IMPLEMENTED (2026-09-13) — `handlers/navidrome_renderer.py` neu, siehe Abschnitt 5.
-12. ~~Renderer-Extraktion, Stufe 3 (Browse: Artists/Albums/Genres)~~ ✅ IMPLEMENTED (2026-09-13) — vorbereitet durch eigene Characterization-Test-PR + separat behobenes NAV-F14, dann Extraktion in einem dritten PR. `NavidromeMenuHandler` 1493→1179 Zeilen. Stufe 4/5 (`browser_service.py`, finale Orchestrierungs-Schlankung) siehe `docs/audits/NAVIDROME_MENU_HANDLER_REFACTORING_MIGRATION_PLAN_2026-09-13.md`, noch nicht freigegeben.
-13. Discovery-Erweiterung (`getRandomSongs`/`getTopSongs`/weitere `getAlbumList2`-Typen)
+12. ~~Renderer-Extraktion, Stufe 3 (Browse: Artists/Albums/Genres)~~ ✅ IMPLEMENTED (2026-09-13) — vorbereitet durch eigene Characterization-Test-PR + separat behobenes NAV-F14, dann Extraktion in einem dritten PR. `NavidromeMenuHandler` 1493→1179 Zeilen.
+13. ~~Detail-View-Familie vervollständigen (Artist/Genre-Detail)~~ ✅ IMPLEMENTED (2026-09-13) — `render_artist_detail()`/`render_genre_detail()` neu, Pflichtschritt (fehlende Erfolgspfad-/Overflow-/Connection-Error-Tests) + Extraktion in einem PR. Alle 5 Detail-Views konsistent im Renderer. `NavidromeMenuHandler` 1179→1059 Zeilen. Stufe 4/5 (`browser_service.py`, finale Orchestrierungs-Schlankung) siehe `docs/audits/NAVIDROME_MENU_HANDLER_REFACTORING_MIGRATION_PLAN_2026-09-13.md`, noch nicht freigegeben.
+14. Discovery-Erweiterung (`getRandomSongs`/`getTopSongs`/weitere `getAlbumList2`-Typen)
 
 Jeder Schritt: eigener Branch/PR, volle Regressionsprüfung, keine
 gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
@@ -283,8 +293,8 @@ gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
 
 | Bereich | Datei | Umfang |
 |---|---|---|
-| `NavidromeMenuHandler` (Connection-Status, Escaping, Error-Routing, Album-/Song-/Playlist-Detail, Genre-Suche, NAV-F1, NAV-F6, NAV-F9, NAV-F7, NAV-F13) | `tests/test_navidrome_menu_handler.py` | 40 Tests (BUG-007a/b, NAV-F1, NAV-F2, NAV-F6, NAV-F9, NAV-F7, NAV-F13; toter Test zu `handle_stats()` mit NAV-F3 entfernt; `TestFormatTrackDuration` nach `test_navidrome_renderer.py` verschoben, `TestPlaylistDetailNavF5` neu ergänzt — Architecture Refactoring Audit Stufe 1) |
-| `handlers/navidrome_renderer.py` (reine Render-Funktionen, Architecture Refactoring Audit Stufe 1 + 3, NAV-F15) | `tests/test_navidrome_renderer.py` | 25 Tests (ohne Mocks, reine Funktionsaufrufe; 11 neu für Stufe 3, 1 neu für NAV-F15) |
+| `NavidromeMenuHandler` (Connection-Status, Escaping, Error-Routing, alle 5 Detail-Views, Browse, Genre-Suche, NAV-F1, NAV-F6, NAV-F9, NAV-F7, NAV-F13) | `tests/test_navidrome_menu_handler.py` | 64 Tests (BUG-007a/b, NAV-F1, NAV-F2, NAV-F6, NAV-F9, NAV-F7, NAV-F13; toter Test zu `handle_stats()` mit NAV-F3 entfernt; `TestFormatTrackDuration` nach `test_navidrome_renderer.py` verschoben; Erfolgspfad-/Overflow-/Connection-Error-Tests für Artist-/Genre-Detail und alle drei Browse-Methoden ergänzt — Architecture Refactoring Audit) |
+| `handlers/navidrome_renderer.py` (reine Render-Funktionen, Architecture Refactoring Audit Stufe 1 + 3 + Detail-View-Familie, NAV-F15) | `tests/test_navidrome_renderer.py` | 33 Tests (ohne Mocks, reine Funktionsaufrufe; 8 neu für Artist-/Genre-Detail) |
 | `handlers/menu/actions/navidrome.py`-Wrapper + interner Dispatcher (NAV-F9, NAV-F10, NAV-F11, NAV-F5, NAV-F7, NAV-F8, NAV-F12) | `tests/test_menu_actions_navidrome.py` | 20 Tests |
 | `NavidromeAPI`-Adapter (Logging, Timeout, Characterization, NAV-F8 `genre`/`genres`-Passthrough) | `tests/test_navidrome_api_characterization.py`, `tests/test_navidrome_api_logging.py`, `tests/test_navidrome_api_timeout.py` | `test_navidrome_api_characterization.py` 15 Tests (2 neu für NAV-F8), übrige siehe dort |
 | Result-Navigation End-to-End (ARCH-029-Muster, NAV-F10) | `tests/test_menu_navigation_continuity.py::TestLastPlayedResultNavigationEndToEndNavF10` | 2 Tests |
@@ -318,8 +328,10 @@ des Nutzers vermischt, siehe Abschnitt 4).
 - Testlücken aus Abschnitt 7 — bewusst zurückgestellt, keine akute
   Priorität (P2/P3-Bereich, kein bekannter Bug dahinter).
 - Zielarchitektur aus Abschnitt 5: Renderer-Extraktion Stufe 1 (Album/
-  Song/Playlist-Detail) UND Stufe 3 (Browse: Artists/Albums/Genres)
-  sind IMPLEMENTED; `services/navidrome/browser_service.py`
-  (API-Extraktion, Stufe 4), finale Orchestrierungs-Schlankung
-  (Stufe 5), Discovery-Erweiterung, Playlist-CRUD bleiben P2/P3 und
-  unumgesetzt — keine Findings, sondern optionale Weiterentwicklung.
+  Song/Playlist-Detail), Stufe 3 (Browse: Artists/Albums/Genres) UND die
+  Detail-View-Familien-Vervollständigung (Artist-/Genre-Detail) sind
+  IMPLEMENTED — alle 5 Detail-Views konsistent im Renderer.
+  `services/navidrome/browser_service.py` (API-Extraktion, Stufe 4),
+  finale Orchestrierungs-Schlankung (Stufe 5), Discovery-Erweiterung,
+  Playlist-CRUD bleiben P2/P3 und unumgesetzt — keine Findings, sondern
+  optionale Weiterentwicklung.

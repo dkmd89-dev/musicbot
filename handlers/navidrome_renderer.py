@@ -464,3 +464,150 @@ def render_browse_genres(
 Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
 
     return text, InlineKeyboardMarkup(keyboard)
+
+
+def render_genre_detail(
+    genre_name: str, songs: List[Dict[str, Any]]
+) -> Tuple[str, InlineKeyboardMarkup]:
+    """Baut Text+Keyboard für die Genre-Detailansicht (Top 10 Songs +
+    Statistiken). `songs` ist die VOLLSTÄNDIGE (bereits vom Aufrufer als
+    nicht-leer geprüfte) Songliste des Genres. 1:1 aus
+    NavidromeMenuHandler.handle_genre_detail() verschoben."""
+    keyboard = []
+    display_songs = songs[:10]
+
+    for song in display_songs:
+        song_title = song.get("title", "Unbekannt")
+        artist_name = song.get("artist", "Unbekannt")
+        song_text = f"🎵 {song_title} - {artist_name}"
+
+        if len(song_text) > 40:
+            song_text = song_text[:37] + "..."
+
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    song_text, callback_data=f"nav_song_{song['id']}"
+                )
+            ]
+        )
+
+    if len(songs) > 10:
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    f"➕ {len(songs) - 10} weitere anzeigen",
+                    callback_data=f"nav_genre_songs_all_{genre_name}",
+                )
+            ]
+        )
+
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                "🎭 Andere Genres", callback_data="nav_browse_genres"
+            ),
+            InlineKeyboardButton(
+                "🔍 In Genre suchen",
+                callback_data=f"nav_search_in_genre_{genre_name}",
+            ),
+        ]
+    )
+
+    keyboard.append(
+        [InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")]
+    )
+
+    artists = set(song.get("artist", "Unbekannt") for song in songs)
+    albums = set(song.get("album", "Unbekannt") for song in songs)
+
+    # BUG-007-Fix: siehe analoge Begruendung in render_artist_detail() -
+    # genre_name ungeschuetzt in MarkdownV2-Body eingefuegt (z.B. "Lo-Fi"
+    # oder "R&B/Soul" enthalten MarkdownV2-Sonderzeichen).
+    text = f"""🎭 **Genre: {escape_md_v2(genre_name)}**
+
+📊 **Statistiken:**
+• {len(songs)} Songs total
+• {len(artists)} verschiedene Künstler
+• {len(albums)} verschiedene Alben
+
+**🎵 Top Songs:** \\(erste 10 angezeigt\\)"""
+
+    return text, InlineKeyboardMarkup(keyboard)
+
+
+def render_artist_detail(
+    artist: Dict[str, Any], artist_id: str
+) -> Tuple[str, InlineKeyboardMarkup]:
+    """Baut Text+Keyboard für die Artist-Detailansicht (Top 15 Alben +
+    Statistiken). `artist_id` wird separat übergeben (nicht zwangsläufig
+    im `artist`-Dict selbst enthalten) - identisch zum Original-Parameter
+    von NavidromeMenuHandler.handle_artist_detail(), 1:1 verschoben."""
+    artist_name = artist.get("name", "Unbekannt")
+    albums = artist.get("album", [])
+
+    keyboard = []
+    for album in albums[:15]:
+        album_name = album.get("name", "Unbekannt")
+        year = album.get("year", "")
+        year_text = f" ({year})" if year else ""
+
+        album_text = f"💿 {album_name}{year_text}"
+        if len(album_text) > 40:
+            album_text = album_text[:37] + "..."
+
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    album_text, callback_data=f"nav_album_{album['id']}"
+                )
+            ]
+        )
+
+    if len(albums) > 15:
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    f"➕ {len(albums) - 15} weitere Alben",
+                    callback_data=f"nav_artist_albums_all_{artist_id}",
+                )
+            ]
+        )
+
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                "🎤 Andere Künstler", callback_data="nav_browse_artists"
+            ),
+            InlineKeyboardButton(
+                "🔍 Künstler suchen", callback_data="nav_search_artists"
+            ),
+        ]
+    )
+
+    keyboard.append(
+        [InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")]
+    )
+
+    star_rating = artist.get("starred", "")
+    play_count = artist.get("playCount", 0)
+
+    stats_text = ""
+    if play_count > 0:
+        stats_text += f"• {play_count} mal abgespielt\n"
+    if star_rating:
+        stats_text += f"• ⭐ Favorit\n"
+
+    # BUG-007-Fix: artist_name kommt unveraendert aus der Navidrome-
+    # Bibliothek (Nutzer-/Library-Daten) und wird hier in einen
+    # MarkdownV2-Nachrichtentext eingefuegt. Ohne escape_md_v2() fuehrt
+    # jeder MarkdownV2-Sonderzeichen im Namen (Punkt, Bindestrich,
+    # Klammern, Ausrufezeichen - in echten Kuenstlernamen keine
+    # Seltenheit) zu einem "can't parse entities"-Fehler von Telegram.
+    text = f"""🎤 **Künstler: {escape_md_v2(artist_name)}**
+
+📊 **Alben:** {len(albums)}
+{stats_text}
+**💿 Verfügbare Alben:**"""
+
+    return text, InlineKeyboardMarkup(keyboard)

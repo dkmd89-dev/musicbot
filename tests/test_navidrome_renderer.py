@@ -42,9 +42,11 @@ noch fehlerhafte Verhalten als Charakterisierung.
 from handlers.navidrome_renderer import (
     format_track_duration,
     render_album_detail,
+    render_artist_detail,
     render_browse_albums,
     render_browse_artists,
     render_browse_genres,
+    render_genre_detail,
     render_playlist_detail,
     render_song_detail,
 )
@@ -365,3 +367,102 @@ class TestRenderBrowseGenres:
 
         buttons = {b.text for row in markup.inline_keyboard for b in row}
         assert "🎭 Obscure" in buttons
+
+
+class TestRenderGenreDetail:
+    def test_renders_text_and_song_buttons_with_stats(self):
+        songs = [
+            {"id": "s1", "title": "Song A", "artist": "Artist A", "album": "Album A"},
+            {"id": "s2", "title": "Song B", "artist": "Artist B", "album": "Album A"},
+        ]
+
+        text, markup = render_genre_detail("Hip-Hop", songs)
+
+        assert "2 Songs total" in text
+        assert "2 verschiedene Künstler" in text
+        assert "1 verschiedene Alben" in text
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_song_s1" in buttons
+        assert "nav_song_s2" in buttons
+        assert "nav_browse_genres" in buttons
+        assert "menu:navidrome" in buttons
+
+    def test_genre_name_special_chars_are_escaped(self):
+        songs = [{"id": "s1", "title": "Song", "artist": "A"}]
+
+        text, _markup = render_genre_detail("Lo-Fi (Chill)!", songs)
+
+        assert "Lo-Fi (Chill)!" not in text
+        assert "Lo\\-Fi \\(Chill\\)\\!" in text
+
+    def test_more_than_10_songs_shows_overflow_button(self):
+        songs = [{"id": f"s{i}", "title": f"Song {i}", "artist": "X"} for i in range(15)]
+
+        _text, markup = render_genre_detail("Pop", songs)
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_genre_songs_all_Pop" in buttons
+        song_buttons = [cb for cb in buttons if cb.startswith("nav_song_")]
+        assert len(song_buttons) == 10
+
+    def test_static_top_songs_footer_parens_are_escaped(self):
+        songs = [{"id": "s1", "title": "Song", "artist": "A"}]
+
+        text, _markup = render_genre_detail("Any", songs)
+
+        assert "(erste 10 angezeigt)" not in text
+        assert "\\(erste 10 angezeigt\\)" in text
+
+
+class TestRenderArtistDetail:
+    def test_renders_text_and_album_buttons_with_stats(self):
+        artist = {
+            "name": "Test Artist",
+            "playCount": 42,
+            "starred": "2024-01-01",
+            "album": [
+                {"id": "al1", "name": "Album One", "year": 2020},
+                {"id": "al2", "name": "Album Two"},
+            ],
+        }
+
+        text, markup = render_artist_detail(artist, "artist-1")
+
+        assert "Test Artist" in text
+        assert "42 mal abgespielt" in text
+        assert "⭐ Favorit" in text
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_album_al1" in buttons
+        assert "nav_album_al2" in buttons
+        assert "nav_browse_artists" in buttons
+        assert "menu:navidrome" in buttons
+
+    def test_artist_name_special_chars_are_escaped(self):
+        artist = {"name": "Sum 41 (Live) - Vol. 2!", "album": []}
+
+        text, _markup = render_artist_detail(artist, "artist-1")
+
+        assert "(Live)" not in text
+        assert "\\(Live\\)" in text
+        assert "Vol\\. 2\\!" in text
+
+    def test_more_than_15_albums_shows_overflow_button(self):
+        artist = {
+            "name": "Prolific Artist",
+            "album": [{"id": f"al{i}", "name": f"Album {i}"} for i in range(18)],
+        }
+
+        _text, markup = render_artist_detail(artist, "artist-1")
+
+        buttons = {b.callback_data for row in markup.inline_keyboard for b in row}
+        assert "nav_artist_albums_all_artist-1" in buttons
+        album_buttons = [cb for cb in buttons if cb.startswith("nav_album_")]
+        assert len(album_buttons) == 15
+
+    def test_no_stats_when_play_count_and_starred_absent(self):
+        artist = {"name": "New Artist", "album": []}
+
+        text, _markup = render_artist_detail(artist, "artist-1")
+
+        assert "mal abgespielt" not in text
+        assert "Favorit" not in text

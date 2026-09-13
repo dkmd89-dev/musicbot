@@ -579,6 +579,95 @@ class TestArtistDetailMarkdownEscapingBug007b:
         text = update.callback_query.edit_message_text.call_args[0][0]
         assert "nicht gefunden" in text
 
+    def test_artist_details_are_rendered_with_album_buttons(self):
+        """Architecture Refactoring Audit, Pflichtschritt vor der
+        Detail-View-Extraktion (Artist/Genre): bisher deckte diese
+        Klasse nur Escaping-Faelle ab, kein echter Erfolgspfad-Test mit
+        Album-Buttons - anders als bei Album/Song/Playlist (NAV-F9/F5)."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "artist": {
+                    "name": "Test Artist",
+                    "playCount": 42,
+                    "starred": "2024-01-01",
+                    "album": [
+                        {"id": "al1", "name": "Album One", "year": 2020},
+                        {"id": "al2", "name": "Album Two"},
+                    ],
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_artist_detail(update, context, "artist-1"))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        assert kwargs["parse_mode"] == "MarkdownV2"
+        sent_text = kwargs["text"]
+        assert "Test Artist" in sent_text
+        assert "42 mal abgespielt" in sent_text
+        assert "⭐ Favorit" in sent_text
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_album_al1" in buttons
+        assert "nav_album_al2" in buttons
+        assert "nav_browse_artists" in buttons
+        assert "menu:navidrome" in buttons
+
+    def test_more_than_15_albums_shows_overflow_button(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "artist": {
+                    "name": "Prolific Artist",
+                    "album": [
+                        {"id": f"al{i}", "name": f"Album {i}"} for i in range(18)
+                    ],
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_artist_detail(update, context, "artist-1"))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_artist_albums_all_artist-1" in buttons
+        album_buttons = [cb for cb in buttons if cb.startswith("nav_album_")]
+        assert len(album_buttons) == 15
+
+    def test_connection_error_shown_when_unconfigured(self):
+        handler = NavidromeMenuHandler(FakeConfigUnconfigured())
+        update = make_update()
+        context = make_context()
+
+        with patch("handlers.navidrome_menu_handler.NavidromeAPI.make_request") as mock_request:
+            asyncio.run(handler.handle_artist_detail(update, context, "artist-1"))
+
+        mock_request.assert_not_called()
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "nicht verfügbar" in text
+
 
 class TestGenreDetailMarkdownEscapingBug007b:
     def test_genre_name_with_special_chars_is_escaped(self):
@@ -624,6 +713,91 @@ class TestGenreDetailMarkdownEscapingBug007b:
 
         text = update.callback_query.edit_message_text.call_args[0][0]
         assert "Keine Songs" in text
+
+    def test_genre_details_are_rendered_with_song_buttons_and_stats(self):
+        """Architecture Refactoring Audit, Pflichtschritt vor der
+        Detail-View-Extraktion (Artist/Genre): bisher deckte diese
+        Klasse nur Escaping-/Leerlisten-Faelle ab, kein echter
+        Erfolgspfad-Test mit Song-Buttons/Statistik-Zeilen."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "songsByGenre": {
+                    "song": [
+                        {"id": "s1", "title": "Song A", "artist": "Artist A", "album": "Album A"},
+                        {"id": "s2", "title": "Song B", "artist": "Artist B", "album": "Album A"},
+                    ]
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_genre_detail(update, context, "Hip-Hop"))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        sent_text = kwargs["text"]
+        assert "2 Songs total" in sent_text
+        assert "2 verschiedene Künstler" in sent_text
+        assert "1 verschiedene Alben" in sent_text
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_song_s1" in buttons
+        assert "nav_song_s2" in buttons
+        assert "nav_browse_genres" in buttons
+        assert "menu:navidrome" in buttons
+
+    def test_more_than_10_songs_shows_overflow_button(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "songsByGenre": {
+                    "song": [
+                        {"id": f"s{i}", "title": f"Song {i}", "artist": "X"}
+                        for i in range(15)
+                    ]
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_genre_detail(update, context, "Pop"))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_genre_songs_all_Pop" in buttons
+        song_buttons = [cb for cb in buttons if cb.startswith("nav_song_")]
+        assert len(song_buttons) == 10
+
+    def test_connection_error_shown_when_unconfigured(self):
+        handler = NavidromeMenuHandler(FakeConfigUnconfigured())
+        update = make_update()
+        context = make_context()
+
+        with patch("handlers.navidrome_menu_handler.NavidromeAPI.make_request") as mock_request:
+            asyncio.run(handler.handle_genre_detail(update, context, "Pop"))
+
+        mock_request.assert_not_called()
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "nicht verfügbar" in text
 
     def test_static_top_songs_footer_parens_are_escaped(self):
         """Regressionstest fuer einen echten Live-Fund: der statische
