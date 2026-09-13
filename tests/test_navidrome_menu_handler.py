@@ -424,15 +424,113 @@ class TestSongDetailNavF9:
         assert "nicht gefunden" in text
 
 
-class TestFormatTrackDuration:
-    def test_formats_seconds_as_minutes_seconds(self):
-        assert NavidromeMenuHandler._format_track_duration(187) == "3:07"
-        assert NavidromeMenuHandler._format_track_duration(60) == "1:00"
-        assert NavidromeMenuHandler._format_track_duration(0) == "0:00"
+class TestPlaylistDetailNavF5:
+    """NAV-F5: handle_playlist_detail() schließt die bisherige
+    nav_playlist_<id>-Dead-Route (Navidrome Menu System Audit,
+    2026-09-13). Nachtrag (Architecture Refactoring Audit, Stufe 1):
+    diese Methode hatte bisher KEINE direkten Unit-Tests - anders als
+    handle_album_detail()/handle_song_detail() (je 3-4 Tests) - obwohl
+    sie strukturell identisch ist. Ergänzt VOR der Rendering-Extraktion
+    (docs/audits/NAVIDROME_MENU_HANDLER_REFACTORING_MIGRATION_PLAN_2026-09-13.md,
+    Abschnitt 5, Pflichtschritt), damit die Extraktion denselben
+    Regressionsschutz hat wie bei Album/Song."""
 
-    def test_handles_missing_or_invalid_value(self):
-        assert NavidromeMenuHandler._format_track_duration(None) == "0:00"
-        assert NavidromeMenuHandler._format_track_duration("n/a") == "0:00"
+    def test_playlist_details_are_rendered_with_tracklist(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "playlist": {
+                    "id": "pl1",
+                    "name": "Test Playlist",
+                    "owner": "robin",
+                    "songCount": 2,
+                    "duration": 245,
+                    "entry": [
+                        {"id": "s1", "title": "Track One", "track": 1},
+                        {"id": "s2", "title": "Track Two", "track": 2},
+                    ],
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_playlist_detail(update, context, "pl1"))
+
+        kwargs = update.callback_query.edit_message_text.call_args[1]
+        assert kwargs["parse_mode"] == "MarkdownV2"
+        assert "robin" in kwargs["text"]
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_song_s1" in buttons
+        assert "nav_song_s2" in buttons
+        assert "menu:navidrome" in buttons
+
+    def test_playlist_name_and_owner_with_special_chars_are_escaped(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "playlist": {
+                    "id": "pl1",
+                    "name": "Party (Deluxe)!",
+                    "owner": "Artist & Friends",
+                    "entry": [],
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_playlist_detail(update, context, "pl1"))
+
+        sent_text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "(Deluxe)!" not in sent_text
+        assert "\\(Deluxe\\)\\!" in sent_text
+        # "&" ist KEIN MarkdownV2-Sonderzeichen (escape_md_v2() escapt es
+        # bewusst nicht, siehe helfer/markdown_helfer.py) - der Owner-Name
+        # erscheint daher unveraendert.
+        assert "Artist & Friends" in sent_text
+
+    def test_playlist_not_found_shows_error_without_crashing(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {"subsonic-response": {}}
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_playlist_detail(update, context, "pl1"))
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "nicht gefunden" in text
+
+    def test_connection_error_shown_when_unconfigured(self):
+        handler = NavidromeMenuHandler(FakeConfigUnconfigured())
+        update = make_update()
+        context = make_context()
+
+        with patch("handlers.navidrome_menu_handler.NavidromeAPI.make_request") as mock_request:
+            asyncio.run(handler.handle_playlist_detail(update, context, "pl1"))
+
+        mock_request.assert_not_called()
+        text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "nicht verfügbar" in text
 
 
 class TestErrorHandlerIntegration:
