@@ -482,6 +482,99 @@ class TestHandleTopArtists:
         assert "Noch keine Wiedergaben in diesem Zeitraum" in sent_text
 
 
+class TestHandleGenreStats:
+    """NAV-F8 (Navidrome Menu System Audit): reine
+    'nav_genre_stats'-Delegation an StatistikService.generate_genre_stats()
+    - kein neues eigenes Datenmodell hier, reine Presentation."""
+
+    def test_no_stats_shows_no_data_message(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        handler.statistik_service.generate_genre_stats.return_value = None
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_genre_stats(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "Keine Daten" in sent_text
+
+    def test_genres_are_formatted_descending_with_ranks(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        handler.statistik_service.generate_genre_stats.return_value = {
+            "navidrome_username": "robin",
+            "top_genres": [("Hip-Hop", 10), ("Pop", 5)],
+            "total_plays_with_genre": 15,
+        }
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_genre_stats(update, context))
+
+        msg_mock.edit_text.assert_called_once()
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "Hip-Hop" in sent_text and "Pop" in sent_text
+        assert "🥇" in sent_text and "🥈" in sent_text
+        assert "15" in sent_text
+        assert sent_text.index("Hip-Hop") < sent_text.index("Pop")
+
+    def test_empty_genres_shows_friendly_message(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        handler.statistik_service.generate_genre_stats.return_value = {
+            "navidrome_username": "robin",
+            "top_genres": [],
+            "total_plays_with_genre": 0,
+        }
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_genre_stats(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "Noch keine Wiedergaben mit Genre-Angabe" in sent_text
+
+    def test_back_button_points_to_navidrome_menu(self, tmp_path):
+        """Eigener 'Zurück'-Button statt ARCH-029-nav_markup (nav_genre_stats
+        ist kein registriertes MenuItem, siehe handle_genre_stats()-Docstring)."""
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        handler.statistik_service.generate_genre_stats.return_value = {
+            "navidrome_username": "robin",
+            "top_genres": [("Pop", 1)],
+            "total_plays_with_genre": 1,
+        }
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_genre_stats(update, context))
+
+        _, kwargs = msg_mock.edit_text.call_args
+        keyboard = kwargs["reply_markup"].inline_keyboard
+        assert keyboard[0][0].callback_data == "menu:navidrome"
+
+
 class TestHandleLastPlayed:
     def test_no_history_shows_appropriate_message(self, tmp_path):
         handler = _make_handler()

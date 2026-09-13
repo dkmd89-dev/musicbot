@@ -888,6 +888,96 @@ class StatistikHandler:
                 exc_info=True,
             )
 
+    async def handle_genre_stats(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Zeigt eine einfache Top-10-Genre-Statistik, absteigend nach
+        Plays (NAV-F8, Navidrome Menu System Audit) - schließt den
+        bisherigen `nav_genre_stats`-STUB.
+
+        V1 bewusst einfach gehalten (Nutzer-Vorgabe): Top 10, absteigend
+        nach Plays, All-Time (kein Kalenderzeitraum wie bei
+        `handle_top_songs()`/`handle_top_artists()`) - reine
+        Wiederverwendung von `StatistikService.generate_genre_stats()`,
+        keine neue Statistics-Pipeline.
+
+        Eigener "🔙 Zurück"-Button statt des ARCH-029-`nav_markup`-
+        Mechanismus (anders als `handle_top_songs()` etc.):
+        `nav_genre_stats` ist kein registriertes MenuItem, sondern ein
+        dynamischer `nav_`-Button aus
+        `NavidromeMenuHandler.handle_browse_genres()` -
+        `RichMenuSystem.get_result_navigation("nav_genre_stats")` liefert
+        dafür `None` (unbekannte ID)."""
+        self.logger.info(f"{EMOJI['genre']} 📊 Genre-Statistik angefragt")
+
+        nav_user = self._get_navidrome_user_for_request(update)
+        reply_target, msg = await self._send_processing_message(
+            update, "Lade Genre-Statistik", nav_user
+        )
+
+        if not reply_target or not msg:
+            return
+
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome")]]
+        )
+
+        try:
+            genre_stats = self.statistik_service.generate_genre_stats(
+                navidrome_username=nav_user
+            )
+            if not genre_stats:
+                await msg.edit_text(
+                    f"{EMOJI['warning']} ⚠️ Keine Daten für '{self._escape_text(nav_user)}' verfügbar.",
+                    reply_markup=keyboard,
+                )
+                self.logger.warning(
+                    f"{EMOJI['warning']} ⚠️ Keine Genre-Statistik-Daten (User: {nav_user})"
+                )
+                return
+
+            header = f"Genre-Statistik für {self._escape_text(nav_user)}"
+
+            if not genre_stats["top_genres"]:
+                await msg.edit_text(
+                    f"{EMOJI['genre']} {header}:\n\nNoch keine Wiedergaben mit Genre-Angabe.",
+                    reply_markup=keyboard,
+                )
+                self.logger.info(
+                    f"ℹ️ Genre-Statistik: keine Genre-Daten (User: {nav_user})"
+                )
+                return
+
+            lines = [f"{EMOJI['genre']} {header}", ""]
+            for idx, (genre, count) in enumerate(genre_stats["top_genres"], start=1):
+                lines.append(
+                    f"{self._format_rank(idx)} {self._escape_text(genre)} · "
+                    f"{self._format_plays(count)}"
+                )
+
+            lines.append("")
+            lines.append(
+                f"{EMOJI['statistics']} Gesamt Plays mit Genre-Angabe: "
+                f"{self._format_plays(genre_stats['total_plays_with_genre'])}"
+            )
+            response = "\n".join(lines)
+
+            await msg.edit_text(response, reply_markup=keyboard)
+            self.logger.info(
+                f"{EMOJI['success']} ✅ Genre-Statistik erstellt "
+                f"({len(genre_stats['top_genres'])} Genres, User: {nav_user})"
+            )
+
+        except Exception as e:
+            await msg.edit_text(
+                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}",
+                reply_markup=keyboard,
+            )
+            self.logger.error(
+                f"{EMOJI['error']} ❌ Fehler in handle_genre_stats: {str(e)}",
+                exc_info=True,
+            )
+
     async def handle_last_played(
         self,
         update: Update,

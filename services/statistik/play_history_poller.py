@@ -125,6 +125,19 @@ class PlayHistoryPoller:
                             "title": song_info.get("title", "N/A"),
                             "artist": song_info.get("artist", "N/A"),
                             "album": song_info.get("album", "N/A"),
+                            # NAV-F8: Genre-Erfassung pro Play ergaenzt -
+                            # vorher fehlte "genre" komplett im
+                            # Wiedergabeverlauf, wodurch echte "gehoerte
+                            # Genres nach Plays"-Statistiken unmoeglich
+                            # waren (siehe StatisticsCalculator.
+                            # generate_genre_stats()-Docstring). Navidrome
+                            # liefert "genre" bereits im Song-Objekt von
+                            # getNowPlaying, wird nur bisher nicht
+                            # mitgeschrieben. Aeltere Verlaufseintraege
+                            # ohne dieses Feld laufen ueber die bestehende
+                            # PLAY_HISTORY_RETENTION_DAYS-Bereinigung aus,
+                            # keine dauerhafte Datenluecke.
+                            "genre": song_info.get("genre", ""),
                             "id": song_info.get("id", "N/A"),
                             "duration": song_info.get("duration", None),
                             "player": play_data.get("player", "N/A"),

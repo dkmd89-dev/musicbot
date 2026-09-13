@@ -194,3 +194,23 @@ class TestGetPlayCountByArtist:
             "Some Other Artist", navidrome_username="alice", period="month"
         )
         assert count == 0
+
+
+class TestGenerateGenreStats:
+    """NAV-F8: reiner Delegator-Test - Facade ruft
+    StatisticsCalculator.generate_genre_stats() korrekt durch."""
+
+    def test_no_username_returns_none(self, service):
+        assert service.generate_genre_stats(navidrome_username=None) is None
+
+    def test_delegates_to_calculator_and_counts_by_genre(self, service):
+        entry_a = _entry("Bausa", "Song A", days_ago=1)
+        entry_a["tracks"][0]["genre"] = "Hip-Hop"
+        entry_b = _entry("Kollegah", "Song B", days_ago=0)
+        entry_b["tracks"][0]["genre"] = "Hip-Hop"
+        service._save_history([entry_a, entry_b], "alice")
+
+        result = service.generate_genre_stats(navidrome_username="alice")
+
+        assert result["top_genres"] == [("Hip-Hop", 2)]
+        assert result["total_plays_with_genre"] == 2

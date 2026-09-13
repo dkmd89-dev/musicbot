@@ -423,6 +423,79 @@ class TestGetPlayCountByArtist:
         assert count == 0
 
 
+def _entry_with_genre(artist: str, title: str, genre: str, *, at: datetime):
+    entry = _entry(artist, title, at=at)
+    entry["tracks"][0]["genre"] = genre
+    return entry
+
+
+class TestGenerateGenreStats:
+    """NAV-F8 (Navidrome Menu System Audit): Top-N-Genres nach Plays,
+    All-Time, V1 bewusst einfach (kein Kalenderzeitraum)."""
+
+    def test_no_username_returns_none(self, tmp_path):
+        calc, _ = make_calculator(tmp_path)
+        assert calc.generate_genre_stats(navidrome_username=None) is None
+
+    def test_no_history_returns_none(self, tmp_path):
+        calc, _ = make_calculator(tmp_path)
+        assert calc.generate_genre_stats(navidrome_username="alice") is None
+
+    def test_counts_descending_by_plays(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        history = [
+            _entry_with_genre("A", "Song 1", "Hip-Hop", at=now - timedelta(days=3)),
+            _entry_with_genre("B", "Song 2", "Hip-Hop", at=now - timedelta(days=2)),
+            _entry_with_genre("C", "Song 3", "Pop", at=now - timedelta(days=1)),
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_genre_stats(navidrome_username="alice")
+
+        assert result["top_genres"] == [("Hip-Hop", 2), ("Pop", 1)]
+        assert result["total_plays_with_genre"] == 3
+
+    def test_caps_at_top_n(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        history = [
+            _entry_with_genre("A", f"Song {i}", f"Genre{i}", at=now - timedelta(days=i))
+            for i in range(15)
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_genre_stats(navidrome_username="alice", top_n=10)
+
+        assert len(result["top_genres"]) == 10
+
+    def test_entries_without_genre_are_skipped_not_counted_as_unbekannt(self, tmp_path):
+        """Ältere Verlaufseinträge (vor NAV-F8) haben kein 'genre'-Feld -
+        dürfen nicht in einer 'Unbekannt'-Sammelkategorie landen."""
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        history = [
+            _entry("A", "Song 1", at=now - timedelta(days=1)),  # kein genre-Feld
+            _entry_with_genre("B", "Song 2", "Pop", at=now),
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_genre_stats(navidrome_username="alice")
+
+        assert result["top_genres"] == [("Pop", 1)]
+        assert result["total_plays_with_genre"] == 1
+
+    def test_history_without_any_genre_returns_empty_top_genres(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        repo.save([_entry("A", "Song 1", at=datetime.now())], "alice")
+
+        result = calc.generate_genre_stats(navidrome_username="alice")
+
+        assert result is not None
+        assert result["top_genres"] == []
+        assert result["total_plays_with_genre"] == 0
+
+
 class TestExportStatsToJson:
     def test_no_username_returns_none(self, tmp_path):
         calc, _ = make_calculator(tmp_path)

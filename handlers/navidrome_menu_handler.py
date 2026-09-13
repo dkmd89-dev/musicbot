@@ -1143,6 +1143,7 @@ Du hast {len(playlists)} Playlist\\(s\\) verfügbar:
             "albums": "Alben",
             "songs": "Songs",
             "playlists": "Playlists",
+            "genres": "Genres",
         }
 
         type_name = search_type_names.get(search_type, "allen Medien")
@@ -1182,6 +1183,15 @@ Die Suche ist nicht case\\-sensitiv\\!
 
         search_type = self.browse_states[user_id].get("search_type", "all")
         self.browse_states[user_id]["waiting_for_search"] = False
+
+        # NAV-F7-Fix (Navidrome Menu System Audit): "genres" ist ein
+        # eigener Suchpfad - Subsonic hat keine dedizierte Genre-Such-API,
+        # daher Teilstring-Filter über die bereits von
+        # handle_browse_genres() genutzte getGenres()-Liste statt der
+        # generischen search3()-Ergebnisverarbeitung unten (die kennt
+        # ohnehin keine Genres, nur artist/album/song).
+        if search_type == "genres":
+            return await self._process_genre_search_query(update, context, query)
 
         if not self._check_connection():
             await update.message.reply_text("❌ Keine Verbindung zu Navidrome.")
@@ -1297,6 +1307,98 @@ Die Suche ist nicht case\\-sensitiv\\!
             else:
                 await update.message.reply_text(
                     "❌ Fehler bei der Suche. Bitte versuche es später erneut."
+                )
+            return True
+
+    # NEU (NAV-F7): Genre-Suche
+    async def _process_genre_search_query(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, query: str
+    ) -> bool:
+        """Verarbeitet eine Genre-Suchanfrage (schließt den bisherigen
+        `nav_search_genres`-STUB, siehe
+        docs/MusicBot_NAVIDROME_MENU_ARCHITECTURE.md NAV-F7). Subsonic hat
+        keine dedizierte Genre-Such-API - filtert stattdessen die bereits
+        in `handle_browse_genres()` verwendete `getGenres()`-Liste per
+        case-insensitive Teilstring-Match. Zeigt Treffer als
+        `nav_genre_<name>`-Buttons (identisch zu `handle_browse_genres()`),
+        auch bei genau einem Treffer - vermeidet einen zweiten,
+        message-context-Aufruf von `handle_genre_detail()` (das erwartet
+        `update.callback_query`, hier liegt nur `update.message` vor)."""
+        if not self._check_connection():
+            await update.message.reply_text("❌ Keine Verbindung zu Navidrome.")
+            return True
+
+        try:
+            search_msg = await update.message.reply_text(
+                f"🔍 Suche Genre '{query}'..."
+            )
+
+            data = await asyncio.to_thread(
+                self.navidrome_api.make_request, "getGenres", {}
+            )
+            subsonic_response = data.get("subsonic-response", {})
+            genres_data = subsonic_response.get("genres", {})
+            genres = genres_data.get("genre", [])
+
+            query_lower = query.strip().lower()
+            matches = [
+                g
+                for g in genres
+                if query_lower
+                and query_lower in (g.get("value") or g.get("name") or "").lower()
+            ]
+
+            if not matches:
+                await search_msg.edit_text(
+                    f"❌ Kein Genre gefunden, das '{escape_md_v2(query)}' enthält\\.",
+                    parse_mode="MarkdownV2",
+                )
+                return True
+
+            keyboard = []
+            for genre in matches[:15]:
+                genre_name = genre.get("value") or genre.get("name") or "Unbekannt"
+                song_count = genre.get("songCount", 0)
+                label = (
+                    f"🎭 {genre_name} ({song_count})"
+                    if song_count
+                    else f"🎭 {genre_name}"
+                )
+                keyboard.append(
+                    [
+                        InlineKeyboardButton(
+                            label[:40], callback_data=f"nav_genre_{genre_name}"
+                        )
+                    ]
+                )
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        "🔍 Neue Genre-Suche", callback_data="nav_search_genres"
+                    ),
+                    InlineKeyboardButton("🔙 Zurück", callback_data="menu:navidrome"),
+                ]
+            )
+
+            await search_msg.edit_text(
+                text=(
+                    f"🎭 **Genres, die '{escape_md_v2(query)}' enthalten** "
+                    f"\\({len(matches)}\\)"
+                ),
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="MarkdownV2",
+            )
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Fehler bei der Genre-Suche: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "navidrome_genre_search_query", e
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ Fehler bei der Genre-Suche. Bitte versuche es später erneut."
                 )
             return True
 

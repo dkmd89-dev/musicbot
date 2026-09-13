@@ -106,8 +106,15 @@ async def handle_navidrome_callback(
     callback_data: str,
     navidrome_handler,
     logger,
+    stats_handler=None,
 ) -> None:
-    """Spezial-Handler für alle nav_* Callbacks"""
+    """Spezial-Handler für alle nav_* Callbacks.
+
+    `stats_handler` (NAV-F8, additiv/optional, Default `None`): nur für
+    den `nav_genre_stats`-Zweig benötigt (delegiert an
+    `StatistikHandler.handle_genre_stats()`, analog zu `handle_recent()`/
+    `nav_recent`). Alle übrigen Zweige bleiben unverändert rein
+    `navidrome_handler`-basiert."""
     if not navidrome_handler:
         await update.callback_query.answer("⚠️ Navidrome-Handler nicht verfügbar")
         return
@@ -197,6 +204,24 @@ async def handle_navidrome_callback(
         )
         return
 
+    # NAV-F8-Fix (entdeckt beim Implementieren von NAV-F8, 2026-09-13):
+    # dieser Zweig MUSS vor dem generischen "nav_genre_"-Prefix-Check
+    # unten stehen - "nav_genre_stats" startet ebenfalls mit "nav_genre_"
+    # und wurde deshalb bisher (als der noch nur reine STUB-Text zeigte)
+    # nie erreicht, sondern fälschlich als handle_genre_detail(update,
+    # context, "stats") geroutet (Suche nach einem Genre namens "stats").
+    # Derselbe Bug-Typ wie NAV-F2/NAV-F11, hier bisher unbemerkt, weil der
+    # STUB-Platzhaltertext dieselbe Bedeutungslosigkeit hatte wie ein
+    # (fälschlich) gesuchtes, nicht existierendes Genre "stats". Jetzt wo
+    # nav_genre_stats echte Funktionalität bekommt (StatistikHandler.
+    # handle_genre_stats()), muss der Zweig tatsächlich erreichbar sein.
+    if callback_data == "nav_genre_stats":
+        if stats_handler and hasattr(stats_handler, "handle_genre_stats"):
+            await stats_handler.handle_genre_stats(update, context)
+        else:
+            await show_handler_not_available(update, "Statistik-Handler")
+        return
+
     if callback_data.startswith("nav_genre_"):
         genre_name = callback_data.replace("nav_genre_", "")
         await navidrome_handler.handle_genre_detail(update, context, genre_name)
@@ -218,20 +243,15 @@ async def handle_navidrome_callback(
         await navidrome_handler.handle_search(update, context, "songs")
         return
 
+    # NAV-F7-Fix: "genres" ist ein eigener search_type ohne generische
+    # search3()-Weiterverarbeitung, siehe
+    # NavidromeMenuHandler._process_genre_search_query()-Docstring.
     if callback_data == "nav_search_genres":
-        await query.edit_message_text(
-            "🔎 Genre-Suche\n\nDiese Funktion wird gerade entwickelt..."
-        )
+        await navidrome_handler.handle_search(update, context, "genres")
         return
 
     if callback_data == "nav_reconnect":
         await navidrome_handler.handle_reconnect(update, context)
-        return
-
-    if callback_data == "nav_genre_stats":
-        await query.edit_message_text(
-            "📊 Genre-Statistiken\n\nDiese Funktion wird gerade entwickelt..."
-        )
         return
 
     logger.warning(f"⚠️ Unbekannter Navidrome-Callback: {callback_data}")

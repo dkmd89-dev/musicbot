@@ -493,6 +493,121 @@ class TestErrorHandlerIntegration:
         assert "Fehler bei der Suche" in error_text
 
 
+class TestGenreSearchQueryNavF7:
+    """NAV-F7 (Navidrome Menu System Audit): nav_search_genres war ein
+    STUB - process_search_query() routet 'genres'-Suchen jetzt an
+    _process_genre_search_query() (case-insensitiver Teilstring-Filter
+    ueber die bereits von handle_browse_genres() genutzte
+    getGenres()-Liste, keine eigene Such-API/-Pipeline)."""
+
+    def _make_search_update(self, user_id=111):
+        update = make_update(user_id)
+        update.message = Mock()
+        update.message.reply_text = AsyncMock(return_value=AsyncMock())
+        return update
+
+    def test_matches_are_shown_as_genre_buttons(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        user_id = 111
+        handler.browse_states[user_id] = {
+            "waiting_for_search": True, "search_type": "genres",
+        }
+        update = self._make_search_update(user_id)
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "genres": {
+                    "genre": [
+                        {"value": "Hip-Hop", "songCount": 12},
+                        {"value": "Pop", "songCount": 5},
+                    ]
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            result = asyncio.run(
+                handler.process_search_query(update, context, "hip")
+            )
+
+        assert result is True
+        search_msg = update.message.reply_text.return_value
+        kwargs = search_msg.edit_text.call_args[1]
+        buttons = {
+            b.callback_data
+            for row in kwargs["reply_markup"].inline_keyboard
+            for b in row
+        }
+        assert "nav_genre_Hip-Hop" in buttons
+        assert "nav_genre_Pop" not in buttons
+
+    def test_no_matches_shows_friendly_message(self):
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        user_id = 111
+        handler.browse_states[user_id] = {
+            "waiting_for_search": True, "search_type": "genres",
+        }
+        update = self._make_search_update(user_id)
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {"genres": {"genre": [{"value": "Pop"}]}}
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.process_search_query(update, context, "zzz-nomatch"))
+
+        search_msg = update.message.reply_text.return_value
+        sent_text = search_msg.edit_text.call_args[0][0]
+        assert "Kein Genre gefunden" in sent_text
+
+    def test_does_not_call_generic_search3(self):
+        """Regressionsschutz: die Genre-Suche darf nicht in den
+        generischen search3()-Pfad (Artist/Album/Song-Ergebnisse) fallen."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        handler.navidrome_api.search = AsyncMock()
+        user_id = 111
+        handler.browse_states[user_id] = {
+            "waiting_for_search": True, "search_type": "genres",
+        }
+        update = self._make_search_update(user_id)
+        context = make_context()
+
+        fake_response = {"subsonic-response": {"genres": {"genre": []}}}
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.process_search_query(update, context, "pop"))
+
+        handler.navidrome_api.search.assert_not_called()
+
+    def test_connection_error_shown_when_unconfigured(self):
+        handler = NavidromeMenuHandler(FakeConfigUnconfigured())
+        user_id = 111
+        handler.browse_states[user_id] = {
+            "waiting_for_search": True, "search_type": "genres",
+        }
+        update = self._make_search_update(user_id)
+        context = make_context()
+
+        with patch("handlers.navidrome_menu_handler.NavidromeAPI.make_request") as mock_request:
+            asyncio.run(handler.process_search_query(update, context, "pop"))
+
+        mock_request.assert_not_called()
+        update.message.reply_text.assert_awaited_once_with(
+            "❌ Keine Verbindung zu Navidrome."
+        )
+
+
 class TestBackButtonsUseValidMenuCallbackFormatNavF1:
     """NAV-F1-Regressionstest (Navidrome Menu System Audit, 2026-09-13):
     alle "🔙 Zurück"/"❌ Abbrechen"-Buttons dieser Klasse nutzten bisher
