@@ -2,8 +2,8 @@
 
 **Status:** CURRENT (lebendes Dokument). Entstanden aus dem read-only
 „MASTER PHASE — NAVIDROME MENU SYSTEM"-Audit (2026-09-13). P0-Findings
-(NAV-F1/NAV-F2), NAV-F10 und NAV-F6 sind CLOSED; NAV-F3–F5/F7–F9 bleiben
-offen/geplant.
+(NAV-F1/NAV-F2), NAV-F10, NAV-F6, NAV-F9 und NAV-F11 sind CLOSED;
+NAV-F3–F5/F7–F8 bleiben offen/geplant.
 **Scope:** `handlers/navidrome_menu_handler.py`,
 `handlers/menu/actions/navidrome.py`, `services/clients/navidrome_api.py`
 und ihre unmittelbaren Kollaborateure (Personal-Statistics-Domain nur
@@ -113,6 +113,7 @@ mit allen 33 geprüften Subsonic-Capabilities: siehe Audit-Transkript
 | Bereich | Implementiert & erreichbar | Implementiert, aber unerreichbar | Fehlt vollständig |
 |---|---|---|---|
 | Browsing | `getArtists`, `getArtist`, `getAlbumList2` (nur `alphabeticalByArtist`), `getGenres`, `getSongsByGenre` | `getIndexes` (NAV-F3) | `getMusicFolders`, `getMusicDirectory`, `getArtistInfo(2)`, `getAlbumInfo(2)`, `getTopSongs`, `getSimilarSongs(2)` |
+| Album/Song-Detail | `getAlbum`, `getSong` (NAV-F9, CLOSED) | — | — |
 | Album/Song-Listen | — | — | `getAlbumList` (v1), `getRandomSongs`, weitere `getAlbumList2`-Typen |
 | Suche | `search3` | — | `search2` |
 | Playlists | `getPlaylists` (nur Liste) | — | `getPlaylist` (Detail), `createPlaylist`/`updatePlaylist`/`deletePlaylist` |
@@ -142,7 +143,8 @@ Server-Ebene, nicht gleichbedeutend mit `UNSUPPORTED`).
 | NAV-F6 | `handle_reconnect()` prüfte nie den echten `NavidromeAPI.check_connection()` (`ping`), nur lokale Config-Präsenz — abweichend von `enhanced_status_handler.py`, das den echten Ping bereits nutzt. | ARCHITECTURE_VIOLATION | P1 | **CLOSED** (2026-09-13) |
 | NAV-F7 | `nav_search_genres` — STUB. | — | P3 | OPEN |
 | NAV-F8 | `nav_genre_stats` — STUB. | — | P3 | OPEN |
-| NAV-F9 | `nav_album_<id>`/`nav_song_<id>` Detailansichten — STUB, obwohl an 6 Stellen im Code bereits verlinkt (`getAlbum`/`getSong` nicht implementiert). | — | **P1** | OPEN |
+| NAV-F9 | `nav_album_<id>`/`nav_song_<id>` Detailansichten — STUB, obwohl an 6 Stellen im Code bereits verlinkt (`getAlbum`/`getSong` nicht implementiert). | — | **P1** | **CLOSED** (2026-09-13) |
+| NAV-F11 | `nav_artist_albums_all_<id>` (Button „➕ N weitere Alben" in `handle_artist_detail()`) wurde vom generischen `nav_artist_`-Präfix-Zweig fehlerhaft abgefangen, lieferte korrupten Artist-Namen an `handle_artist_detail()` — derselbe Bug-Typ wie NAV-F2, entdeckt bei der NAV-F9-Umsetzung. | BROKEN | P0 | **CLOSED** (2026-09-13) |
 | NAV-F10 | `StatistikHandler.handle_last_played()` (erreicht über `nav_recent`) hatte kein `reply_markup` — in der ARCH-029-Phase („Menu Navigation Continuity") übersehen, da die Methode über `nav_recent`, nicht über eine `stats_*`-ID erreichbar ist. | Navigation-Gap (ARCH-029-Nachtrag) | P1 | **CLOSED** (2026-09-13) |
 
 Vollständige Details/Codebelege zu NAV-F3–F10: Audit-Transkript
@@ -185,6 +187,8 @@ durch Playlist-CRUD, siehe NAV-F4/F5).
 ├── 🔎 Suchen (unverändert)
 ├── 📋 Playlists  ← MERGE aus nav_browse_playlists + nav_playlists (NAV-F4)
 │   └── [Playlist-Detail — NEU, schließt NAV-F5]
+├── 💿 Album-/🎵 Song-Detail  ← ✅ CLOSED (NAV-F9): erreichbar aus
+│   Durchsuchen/Suche/Favoriten/Genre-Detail, kein eigener Menüpunkt nötig
 ├── ⭐ Favoriten (unverändert)
 ├── 🕐 Zuletzt gespielt (unverändert, nur reply_markup-Nachtrag NAV-F10)
 ├── 🎵 Entdecken  ← NEU (P2, nach den P1-Fixes)
@@ -208,11 +212,12 @@ Verschiebung von Serverstatus/Scan aus dem Admin-Bereich hierher.
 2. ~~NAV-F2~~ ✅ CLOSED
 3. ~~NAV-F10~~ ✅ CLOSED — `reply_markup` für `handle_last_played()` nachgezogen (ARCH-029-Muster wiederverwendet: `RichMenuSystem.get_result_navigation("nav_recent")` → `handlers/menu/actions/navidrome.py::handle_recent()` → `StatistikHandler.handle_last_played(reply_markup=...)`)
 4. ~~NAV-F6~~ ✅ CLOSED — `handle_reconnect()` nutzt jetzt einen echten `await NavidromeAPI.check_connection()` (`ping`), bevor Erfolg gemeldet wird; schlägt der Ping fehl, wird `connection_status` zurückgesetzt. Der schnelle lokale `_check_connection()`-Vorab-Check vor den übrigen 8 Browse-/Such-Methoden bleibt bewusst unverändert (kein `ping` vor jedem Klick)
-5. NAV-F4/NAV-F5 — Playlist-Duplikat mergen, `getPlaylist`-Client-Methode + Dispatcher-Zweig ergänzen
-6. NAV-F9 — `getAlbum`/`getSong`-Client-Methoden + Detail-Rendering
-7. NAV-F3 — toten `handle_stats()`-Code + zugehörigen Test entfernen
-8. Renderer-Extraktion (`navidrome_renderer.py`)
-9. Discovery-Erweiterung (`getRandomSongs`/`getTopSongs`/weitere `getAlbumList2`-Typen)
+5. ~~NAV-F9~~ ✅ CLOSED — `handle_album_detail()`/`handle_song_detail()` implementiert (`getAlbum`/`getSong` via `make_request`, analog zu `handle_artist_detail()`/`handle_genre_detail()`), Dispatcher-Zweige für `nav_album_`/`nav_song_` auf echte Handler umgestellt. Tracklist bewusst auf 25 Songs gedeckelt (keine neue Pagination-Button-Fehlerquelle).
+6. ~~NAV-F11~~ ✅ CLOSED (neuer Fund, entdeckt bei NAV-F9) — `nav_artist_albums_all_<id>` wurde vom generischen `nav_artist_`-Präfix fehlerhaft abgefangen (derselbe Bug-Typ wie NAV-F2); eigener Zweig vor dem generischen Check ergänzt.
+7. NAV-F4/NAV-F5 — Playlist-Duplikat mergen, `getPlaylist`-Client-Methode + Dispatcher-Zweig ergänzen
+8. NAV-F3 — toten `handle_stats()`-Code + zugehörigen Test entfernen
+9. Renderer-Extraktion (`navidrome_renderer.py`)
+10. Discovery-Erweiterung (`getRandomSongs`/`getTopSongs`/weitere `getAlbumList2`-Typen)
 
 Jeder Schritt: eigener Branch/PR, volle Regressionsprüfung, keine
 gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
@@ -223,8 +228,8 @@ gleichzeitige Bearbeitung mehrerer Schritte (CLAUDE.md Abschnitt 18).
 
 | Bereich | Datei | Umfang |
 |---|---|---|
-| `NavidromeMenuHandler` (Connection-Status, Escaping, Error-Routing, NAV-F1, NAV-F6) | `tests/test_navidrome_menu_handler.py` | 36 Tests (BUG-007a/b, NAV-F1, NAV-F2, NAV-F6) |
-| `handlers/menu/actions/navidrome.py`-Wrapper + interner Dispatcher (NAV-F10) | `tests/test_menu_actions_navidrome.py` | 11 Tests |
+| `NavidromeMenuHandler` (Connection-Status, Escaping, Error-Routing, Album-/Song-Detail, NAV-F1, NAV-F6, NAV-F9) | `tests/test_navidrome_menu_handler.py` | 49 Tests (BUG-007a/b, NAV-F1, NAV-F2, NAV-F6, NAV-F9) |
+| `handlers/menu/actions/navidrome.py`-Wrapper + interner Dispatcher (NAV-F9, NAV-F10, NAV-F11) | `tests/test_menu_actions_navidrome.py` | 15 Tests |
 | `NavidromeAPI`-Adapter (Logging, Timeout, Characterization) | `tests/test_navidrome_api_characterization.py`, `tests/test_navidrome_api_logging.py`, `tests/test_navidrome_api_timeout.py` | siehe dort |
 | Result-Navigation End-to-End (ARCH-029-Muster, NAV-F10) | `tests/test_menu_navigation_continuity.py::TestLastPlayedResultNavigationEndToEndNavF10` | 2 Tests |
 | `handle_last_played()` `reply_markup`-Passthrough (NAV-F10) | `tests/test_mugge_statistik_handler.py::TestHandleLastPlayed` | 1 neuer Test |

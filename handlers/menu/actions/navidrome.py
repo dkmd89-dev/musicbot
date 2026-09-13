@@ -144,6 +144,24 @@ async def handle_navidrome_callback(
         await navidrome_handler.handle_browse_genres(update, context)
         return
 
+    # NAV-F11-Fix (entdeckt bei der NAV-F9-Umsetzung, 2026-09-13): dieser
+    # Zweig MUSS vor dem generischen "nav_artist_"-Prefix-Check unten
+    # stehen - "nav_artist_albums_all_<id>" (Button "➕ N weitere Alben"
+    # in handle_artist_detail(), nur bei >15 Alben sichtbar) startet
+    # ebenfalls mit "nav_artist_" und wurde deshalb bisher fälschlich dort
+    # abgefangen; .replace("nav_artist_", "") lieferte einen korrupten
+    # Parameter ("albums_all_<id>" statt "<id>") an handle_artist_detail(),
+    # das dann einen nicht existierenden Künstler suchte. Derselbe
+    # Bug-Typ wie NAV-F2 (dort für "nav_genre_songs_all_"). Der zugrunde-
+    # liegende Button hat noch keine eigene "weitere Alben"-Implementierung
+    # - Platzhaltertext analog zum NAV-F2-Fix statt der korrupten
+    # Weiterleitung.
+    if callback_data.startswith("nav_artist_albums_all_"):
+        await query.edit_message_text(
+            "💿 Weitere Alben anzeigen\n\nDiese Funktion wird gerade entwickelt..."
+        )
+        return
+
     if callback_data.startswith("nav_artist_"):
         artist_id = callback_data.replace("nav_artist_", "")
         await navidrome_handler.handle_artist_detail(update, context, artist_id)
@@ -151,16 +169,12 @@ async def handle_navidrome_callback(
 
     if callback_data.startswith("nav_album_"):
         album_id = callback_data.replace("nav_album_", "")
-        await query.edit_message_text(
-            f"💿 Album-Details (ID: {album_id})\n\nDiese Funktion wird gerade entwickelt..."
-        )
+        await navidrome_handler.handle_album_detail(update, context, album_id)
         return
 
     if callback_data.startswith("nav_song_"):
         song_id = callback_data.replace("nav_song_", "")
-        await query.edit_message_text(
-            f"🎵 Song-Details (ID: {song_id})\n\nDiese Funktion wird gerade entwickelt..."
-        )
+        await navidrome_handler.handle_song_detail(update, context, song_id)
         return
 
     # NAV-F2-Fix (Navidrome Menu System Audit, 2026-09-13): dieser Zweig
