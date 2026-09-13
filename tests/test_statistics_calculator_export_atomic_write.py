@@ -47,7 +47,7 @@ def _entry(artist: str, title: str, album: str = "Album", days_ago: int = 0):
 class TestExportStatsToJsonAtomicWrite:
     def test_successful_export_writes_valid_file(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
-        repo.save([_entry("Bausa", "Song A", days_ago=1)], "alice")
+        repo.save([_entry("Bausa", "Song A", days_ago=0)], "alice")
 
         export_path = calc.export_stats_to_json(navidrome_username="alice")
 
@@ -65,7 +65,7 @@ class TestExportStatsToJsonAtomicWrite:
         fehlschlaegt - weder eine unvollstaendige noch eine leere.
         """
         calc, repo = make_calculator(tmp_path)
-        repo.save([_entry("Bausa", "Song A", days_ago=1)], "alice")
+        repo.save([_entry("Bausa", "Song A", days_ago=0)], "alice")
 
         monkeypatch.setattr(
             "services.statistik.statistics_calculator.os.replace",
@@ -86,7 +86,7 @@ class TestExportStatsToJsonAtomicWrite:
         self, tmp_path, monkeypatch
     ):
         calc, repo = make_calculator(tmp_path)
-        repo.save([_entry("Bausa", "Song A", days_ago=1)], "alice")
+        repo.save([_entry("Bausa", "Song A", days_ago=0)], "alice")
 
         monkeypatch.setattr(
             "services.statistik.statistics_calculator.os.replace",

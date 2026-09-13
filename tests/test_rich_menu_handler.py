@@ -197,6 +197,43 @@ class TestGetAvailableFeatures:
         assert "admin" not in features
 
 
+class TestRegisterStatsHandlers:
+    """Statistics Menu UX & Architecture Optimization: _register_stats_handlers()
+    bindet 'stats_weekly' (neu) zusätzlich zu den 5 bestehenden IDs -
+    kein doppeltes Registrieren, alle 6 auf die jeweils eigene Wrapper-
+    Methode. Isoliert aufrufbar (nur self.menu_system-Abhängigkeit,
+    anders als initialize() insgesamt nicht end-to-end unit-testbar)."""
+
+    def test_stats_weekly_is_registered_to_its_own_wrapper(self, tmp_path):
+        handler, _ = _make_handler(tmp_path)
+        handler.menu_system.initialize_menu_structure()
+        handler._register_stats_handlers()
+
+        assert (
+            handler.menu_system.menu_registry["stats_weekly"].handler
+            == handler._handle_weekly_stats_wrapper
+        )
+
+    def test_all_six_stats_ids_registered_to_distinct_wrappers(self, tmp_path):
+        handler, _ = _make_handler(tmp_path)
+        handler.menu_system.initialize_menu_structure()
+        handler._register_stats_handlers()
+
+        expected = {
+            "stats_weekly": handler._handle_weekly_stats_wrapper,
+            "stats_monthly": handler._handle_monthly_stats_wrapper,
+            "stats_yearly": handler._handle_yearly_stats_wrapper,
+            "stats_top_songs": handler._handle_top_songs_wrapper,
+            "stats_top_artists": handler._handle_top_artists_wrapper,
+            "stats_timeline": handler._handle_timeline_stats_wrapper,
+        }
+        for menu_id, expected_wrapper in expected.items():
+            assert handler.menu_system.menu_registry[menu_id].handler == expected_wrapper
+        # Keine zwei IDs teilen sich versehentlich denselben Wrapper.
+        wrapper_func_ids = {wrapper.__func__ for wrapper in expected.values()}
+        assert len(wrapper_func_ids) == len(expected)
+
+
 class TestCreateDownloadHandler:
     def test_returns_none_without_duplicate_detector(self, tmp_path):
         handler, _ = _make_handler(tmp_path)
