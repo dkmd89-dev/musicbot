@@ -830,15 +830,9 @@ def build_menu_tree(system) -> MenuItem:
             is_action=True,
         )
     )
-    browse_menu.add_child(
-        MenuItem(
-            id="nav_browse_playlists",
-            title="Playlists",
-            emoji="📋",
-            handler=system._handle_navidrome_browse_playlists,
-            is_action=True,
-        )
-    )
+    # NAV-F4: kein eigener "nav_browse_playlists"-STUB mehr hier - war ein
+    # Duplikat zum bereits realen "nav_playlists" (Top-Level, "Meine
+    # Playlists"), siehe docs/MusicBot_NAVIDROME_MENU_ARCHITECTURE.md.
 
     # Suche-Menü
     search_menu = MenuItem(

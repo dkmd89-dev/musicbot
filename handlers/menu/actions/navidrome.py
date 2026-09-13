@@ -36,16 +36,6 @@ async def handle_browse_genres(update: Update, context: ContextTypes.DEFAULT_TYP
         await show_handler_not_available(update, "Navidrome-Handler")
 
 
-async def handle_browse_playlists(update: Update, context: ContextTypes.DEFAULT_TYPE, navidrome_handler):
-    if navidrome_handler:
-        await update.callback_query.answer()
-        await update.callback_query.edit_message_text(
-            "📋 Playlist-Browser wird gerade entwickelt..."
-        )
-    else:
-        await show_handler_not_available(update, "Navidrome-Handler")
-
-
 async def handle_search_all(update: Update, context: ContextTypes.DEFAULT_TYPE, navidrome_handler):
     if navidrome_handler:
         await navidrome_handler.handle_search(update, context, "all")
@@ -175,6 +165,18 @@ async def handle_navidrome_callback(
     if callback_data.startswith("nav_song_"):
         song_id = callback_data.replace("nav_song_", "")
         await navidrome_handler.handle_song_detail(update, context, song_id)
+        return
+
+    # NAV-F5-Fix: "nav_playlist_<id>"-Buttons wurden bereits in
+    # handle_my_playlists() erzeugt, es existierte aber kein
+    # Dispatcher-Zweig dafuer (fiel auf "Funktion nicht implementiert"
+    # unten durch). "nav_playlists" (Top-Level-Menuepunkt "Meine
+    # Playlists") kollidiert hier nicht - der laeuft ueber das separate
+    # "menu:nav_playlists"-Format und erreicht diesen Praefix-Dispatcher
+    # nie.
+    if callback_data.startswith("nav_playlist_"):
+        playlist_id = callback_data.replace("nav_playlist_", "")
+        await navidrome_handler.handle_playlist_detail(update, context, playlist_id)
         return
 
     # NAV-F2-Fix (Navidrome Menu System Audit, 2026-09-13): dieser Zweig
