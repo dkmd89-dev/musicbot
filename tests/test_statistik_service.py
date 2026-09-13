@@ -131,6 +131,15 @@ class TestCleanupOldEntries:
 
 
 class TestGenerateStats:
+    """Statistics Menu UX & Architecture Optimization: generate_stats()
+    filtert seit dieser Phase nach ECHTEN Kalenderperioden statt eines
+    Rolling-N-Day-Windows (siehe StatisticsCalculator). days_ago=0
+    (statt zuvor 1/2/3) fuer alle Eintraege dieser Klasse - macht die
+    Tests unabhaengig vom tatsaechlichen Ausfuehrungsdatum (kein
+    Monatswechsel-Flackern), ohne dass die Rangfolge-Aussage (Play-Count,
+    nicht Datum) davon beruehrt waere. Kalendergrenzen-Detailtests mit
+    festem `now` liegen in tests/test_statistics_calculator.py."""
+
     def test_no_username_returns_none(self, service):
         assert service.generate_stats("month", navidrome_username=None) is None
 
@@ -139,9 +148,9 @@ class TestGenerateStats:
 
     def test_top_artists_ranked_by_play_count(self, service):
         history = [
-            _entry("Bausa", "Song A", days_ago=1),
-            _entry("Bausa", "Song B", days_ago=2),
-            _entry("Kollegah", "Song C", days_ago=3),
+            _entry("Bausa", "Song A", days_ago=0),
+            _entry("Bausa", "Song B", days_ago=0),
+            _entry("Kollegah", "Song C", days_ago=0),
         ]
         service._save_history(history, "alice")
 
@@ -151,12 +160,17 @@ class TestGenerateStats:
         assert stats["top_artists"][0] == ("Bausa", 2)
 
     def test_entries_outside_period_are_excluded(self, service):
+        """Statistics Menu UX & Output Optimization: Account mit Verlauf,
+        aber 0 Plays in der Periode -> gültiges Dict (total_plays=0),
+        nicht mehr None (siehe test_statistics_calculator.py für den
+        Kalendergrenzen-Detailtest mit festem `now`)."""
         history = [_entry("Bausa", "Old Song", days_ago=400)]
         service._save_history(history, "alice")
 
         stats = service.generate_stats("month", navidrome_username="alice")
 
-        assert stats is None
+        assert stats is not None
+        assert stats["total_plays"] == 0
 
 
 class TestGetPlayCountByArtist:
@@ -164,7 +178,7 @@ class TestGetPlayCountByArtist:
         assert service.get_play_count_by_artist("Bausa", navidrome_username=None) == 0
 
     def test_counts_case_insensitively(self, service):
-        history = [_entry("Bausa", "Song A", days_ago=1), _entry("Bausa", "Song B", days_ago=1)]
+        history = [_entry("Bausa", "Song A", days_ago=0), _entry("Bausa", "Song B", days_ago=0)]
         service._save_history(history, "alice")
 
         count = service.get_play_count_by_artist(
@@ -173,7 +187,7 @@ class TestGetPlayCountByArtist:
         assert count == 2
 
     def test_unknown_artist_returns_zero(self, service):
-        history = [_entry("Bausa", "Song A", days_ago=1)]
+        history = [_entry("Bausa", "Song A", days_ago=0)]
         service._save_history(history, "alice")
 
         count = service.get_play_count_by_artist(

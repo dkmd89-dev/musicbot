@@ -92,24 +92,127 @@ def test_build_menu_tree_download_handler_bound_to_system_method():
 
 def test_build_menu_tree_dead_stats_items_have_no_handler_but_stay_actions():
     """ARCH-025-Debt-Fix: stats_monthly/_yearly/_top_songs/_top_artists/
-    _timeline hatten vorher ein von RichMenuHandler._register_stats_handlers()
-    ohnehin unbedingt überschriebenes, nie erreichbares handler=. definitions.py
-    setzt seither bewusst kein handler= mehr - is_action=True bleibt erhalten
-    (Registrierung erfolgt weiterhin per register_handler() zur Laufzeit).
-    stats_library_overview bleibt die einzige direkt gebundene Ausnahme."""
+    _timeline/_weekly hatten (bzw. haben für _weekly von Anfang an)
+    kein von RichMenuHandler._register_stats_handlers() ohnehin unbedingt
+    überschriebenes handler=. definitions.py setzt bewusst kein handler=
+    - is_action=True bleibt erhalten (Registrierung erfolgt weiterhin per
+    register_handler() zur Laufzeit). stats_library_overview bleibt die
+    einzige direkt gebundene Ausnahme."""
     system = _FakeSystem()
     root = definitions.build_menu_tree(system)
     registry = {}
     definitions.populate_registry(registry, root)
 
     for dead_id in [
-        "stats_monthly", "stats_yearly", "stats_top_songs",
+        "stats_weekly", "stats_monthly", "stats_yearly", "stats_top_songs",
         "stats_top_artists", "stats_timeline",
     ]:
         assert registry[dead_id].handler is None
         assert registry[dead_id].is_action is True
 
     assert registry["stats_library_overview"].handler is system._handle_stats_library_overview
+
+
+class TestStatsMenuStructure:
+    """Statistics Menu UX & Architecture Optimization: neue
+    Navigations-Container 'Rückblicke'/'Rankings' unter 'stats' -
+    reine Untermenüs ohne eigenen Handler (wie family_stats selbst),
+    bestehende Callback-IDs bleiben erhalten, nur ihre Position im Baum
+    und ihr sichtbarer Titel ändern sich."""
+
+    def _registry(self):
+        system = _FakeSystem()
+        root = definitions.build_menu_tree(system)
+        registry = {}
+        definitions.populate_registry(registry, root)
+        return registry
+
+    def test_stats_top_level_children_are_reviews_rankings_timeline_library_family(self):
+        registry = self._registry()
+        assert [c.id for c in registry["stats"].children] == [
+            "stats_reviews", "stats_rankings", "stats_timeline",
+            "stats_library_overview", "family_stats",
+        ]
+
+    def test_stats_reviews_is_pure_navigation_container(self):
+        registry = self._registry()
+        reviews = registry["stats_reviews"]
+        assert reviews.handler is None
+        assert reviews.is_action is False
+        assert [c.id for c in reviews.children] == [
+            "stats_weekly", "stats_monthly", "stats_yearly",
+        ]
+
+    def test_stats_rankings_is_pure_navigation_container(self):
+        registry = self._registry()
+        rankings = registry["stats_rankings"]
+        assert rankings.handler is None
+        assert rankings.is_action is False
+        assert [c.id for c in rankings.children] == [
+            "stats_top_songs", "stats_top_artists",
+        ]
+
+    def test_button_titles_match_target_ux(self):
+        registry = self._registry()
+        assert registry["stats_weekly"].title == "Diese Woche"
+        assert registry["stats_monthly"].title == "Dieser Monat"
+        assert registry["stats_yearly"].title == "Dieses Jahr"
+        assert registry["stats_top_songs"].title == "Top Songs"
+        assert registry["stats_top_artists"].title == "Top Künstler"
+        assert registry["stats_timeline"].title == "Music Timeline"
+        assert registry["stats_library_overview"].title == "Meine Library"
+
+    def test_no_duplicate_callback_ids_in_stats_subtree(self):
+        registry = self._registry()
+        stats_ids = [
+            "stats", "stats_reviews", "stats_weekly", "stats_monthly",
+            "stats_yearly", "stats_rankings", "stats_top_songs",
+            "stats_top_artists", "stats_timeline", "stats_library_overview",
+        ]
+        callback_data_values = [registry[i].callback_data for i in stats_ids]
+        assert len(callback_data_values) == len(set(callback_data_values))
+
+
+class TestFamilyStatisticsUnchanged:
+    """Master-Prompt: Familien-Statistik ist explizit OUT OF SCOPE dieser
+    Phase - dieser Test pinnt die bestehende Struktur/Handler-Bindung
+    als Regressionsschutz gegen versehentliche Änderungen."""
+
+    def test_family_stats_is_still_a_child_of_stats(self):
+        system = _FakeSystem()
+        root = definitions.build_menu_tree(system)
+        registry = {}
+        definitions.populate_registry(registry, root)
+        assert "family_stats" in [c.id for c in registry["stats"].children]
+
+    def test_family_stats_children_and_handlers_unchanged(self):
+        system = _FakeSystem()
+        root = definitions.build_menu_tree(system)
+        registry = {}
+        definitions.populate_registry(registry, root)
+
+        expected_handlers = {
+            "family_stats_top_songs": system._handle_family_stats_top_songs,
+            "family_stats_top_artists": system._handle_family_stats_top_artists,
+            "family_stats_member": system._handle_family_stats_member,
+            "family_stats_champion": system._handle_family_stats_champion,
+            "family_stats_listening_times": system._handle_family_stats_listening_times,
+            "family_stats_monthly_trend": system._handle_family_stats_monthly_trend,
+        }
+        family_stats = registry["family_stats"]
+        assert [c.id for c in family_stats.children] == list(expected_handlers.keys())
+        for child_id, expected_handler in expected_handlers.items():
+            assert registry[child_id].handler is expected_handler
+            assert registry[child_id].is_action is True
+
+    def test_family_stats_title_and_emoji_unchanged(self):
+        system = _FakeSystem()
+        root = definitions.build_menu_tree(system)
+        registry = {}
+        definitions.populate_registry(registry, root)
+        family_stats = registry["family_stats"]
+        assert family_stats.title == "Familien-Statistik"
+        assert family_stats.emoji == "👨‍👩‍👧‍👦"
 
 
 def test_build_menu_tree_admin_menu_has_admin_access_level():

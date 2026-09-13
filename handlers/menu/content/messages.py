@@ -76,10 +76,10 @@ HELP_DOWNLOAD = (
 
 HELP_STATS = (
     "📊 **Statistik-Hilfe**\n\n"
-    "• 📅 Monatsrückblick\n"
-    "• 🎆 Jahresrückblick\n"
-    "• 🎵 Top Songs\n"
-    "• 🎤 Top Künstler\n\n"
+    "• 📅 Rückblicke: Diese Woche / Dieser Monat / Dieses Jahr\n"
+    "• 🏆 Rankings: Top Songs / Top Künstler\n"
+    "• 📈 Music Timeline\n"
+    "• 📚 Meine Library\n\n"
     "Alle Statistiken basieren auf deinem Navidrome-Account."
 )
 

@@ -37,6 +37,24 @@ async def handle_stats_library_overview(update: Update, context: ContextTypes.DE
 # ====== aus RichMenuHandler (per register_handler live gebunden) ======
 
 
+async def handle_weekly_stats_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler, logger):
+    """Statistics Menu UX & Architecture Optimization: neuer Wochenrückblick
+    ("stats_weekly" → "Diese Woche"), analoges Muster zu
+    handle_monthly_stats_wrapper()."""
+    query = update.callback_query
+    await query.answer()
+    try:
+        if stats_handler and hasattr(stats_handler, "handle_week_review"):
+            await stats_handler.handle_week_review(update, context)
+        else:
+            await query.edit_message_text(
+                "📅 **Diese Woche**\n\nDiese Funktion wird gerade entwickelt... 🚀"
+            )
+    except Exception as e:
+        logger.error(f"❌ Fehler bei Wochenstatistik: {e}")
+        await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
+
+
 async def handle_monthly_stats_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, stats_handler, logger):
     query = update.callback_query
     await query.answer()

@@ -3,14 +3,13 @@
 StatistikService – Fassade über die Wiedergabestatistik-Bausteine.
 
 ARCH-003 (P-6): war vorher ein einzelner "God Service", der Persistenz,
-externen API-Zugriff (Navidrome-Polling), Business-Statistik-Berechnung
-und Chart-Rendering (matplotlib) vermischte. Jetzt in 4 fokussierte,
-einzeln injizierbare/testbare Klassen aufgeteilt (services/statistik/):
+externen API-Zugriff (Navidrome-Polling) und Business-Statistik-
+Berechnung vermischte. Jetzt in fokussierte, einzeln injizierbare/
+testbare Klassen aufgeteilt (services/statistik/):
 
   PlayHistoryRepository  – Lesen/Schreiben/Bereinigen der JSON-Verlaufsdateien
   PlayHistoryPoller       – Hintergrund-Polling gegen NavidromeAPI
   StatisticsCalculator    – Statistik-Berechnung aus dem Verlauf
-  ChartRenderer           – matplotlib-Balkendiagramme
 
 Diese Klasse selbst ist eine bewusst dünne, temporäre Fassade: sie bietet
 exakt dieselbe öffentliche API wie vorher (inkl. der als "privat"
@@ -18,6 +17,12 @@ gekennzeichneten, aber von tests/test_statistik_service.py direkt
 getesteten Methoden `_load_history`/`_save_history`/`_cleanup_old_entries`
 sowie der Klassenattribute `CHARTS_DIR`/`USER_HISTORY_DIR`), damit
 bot.py/handlers/mugge_statistik_handler.py unverändert bleiben können.
+
+Statistics Menu UX & Output Optimization: `ChartRenderer` (matplotlib-
+Balkendiagramme) samt `create_chart()`-Wrapper entfernt - die Telegram-
+Rückblicke/Rankings senden keine PNG-Bilder mehr, `create_chart()` hatte
+danach 0 verbleibende Aufrufer im gesamten Projekt (verifiziert). Siehe
+docs/MusicBot_TELEGRAM_MENU_SYSTEM.md Abschnitt 10.
 """
 
 from typing import Any, Dict, List, Optional
@@ -26,7 +31,6 @@ from services.clients.navidrome_api import NavidromeAPI
 from config import Config
 from logger import get_module_logger
 
-from services.statistik.chart_renderer import ChartRenderer
 from services.statistik.play_history_poller import PlayHistoryPoller
 from services.statistik.play_history_repository import PlayHistoryRepository
 from services.statistik.statistics_calculator import StatisticsCalculator
@@ -67,9 +71,6 @@ class StatistikService:
             self._repository,
             self.CHARTS_DIR,
             logger=get_module_logger("StatisticsCalculator"),
-        )
-        self._renderer = ChartRenderer(
-            self.CHARTS_DIR, logger=get_module_logger("ChartRenderer")
         )
 
         self.logger.info(
@@ -114,9 +115,23 @@ class StatistikService:
     # ─────────────────────────────────────────────────────────────────────
 
     def generate_stats(
-        self, period: str = "month", navidrome_username: str = None
+        self,
+        period: str = "month",
+        navidrome_username: str = None,
+        now=None,
     ) -> Optional[Dict[str, Any]]:
-        return self._calculator.generate_stats(period, navidrome_username)
+        """`now` optional injizierbar (Statistics Menu UX & Architecture
+        Optimization) - für deterministische Tests, durchgereicht an
+        StatisticsCalculator.generate_stats()."""
+        return self._calculator.generate_stats(period, navidrome_username, now=now)
+
+    def generate_year_stats(
+        self, navidrome_username: str = None, now=None
+    ) -> Optional[Dict[str, Any]]:
+        """Jahresstatistik (KPIs/Monatsaktivität/Highlight). Siehe
+        StatisticsCalculator.generate_year_stats(). `now` optional
+        injizierbar für deterministische Tests."""
+        return self._calculator.generate_year_stats(navidrome_username, now=now)
 
     def get_last_played_song(
         self, navidrome_username: str = None
@@ -124,10 +139,11 @@ class StatistikService:
         return self._calculator.get_last_played_song(navidrome_username)
 
     def generate_timeline_stats(
-        self, navidrome_username: str = None
+        self, navidrome_username: str = None, now=None
     ) -> Optional[Dict[str, Any]]:
-        """Music-Timeline (Heute/Woche/Monat). Siehe StatisticsCalculator."""
-        return self._calculator.generate_timeline_stats(navidrome_username)
+        """Music-Timeline (Heute/Woche/Monat). Siehe StatisticsCalculator.
+        `now` optional injizierbar für deterministische Tests."""
+        return self._calculator.generate_timeline_stats(navidrome_username, now=now)
 
     def get_play_count_by_artist(
         self, artist_name: str, navidrome_username: str = None, period: str = "month"
@@ -140,10 +156,3 @@ class StatistikService:
         self, navidrome_username: str = None, period: str = "month"
     ):
         return self._calculator.export_stats_to_json(navidrome_username, period)
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Chart-Rendering (→ ChartRenderer)
-    # ─────────────────────────────────────────────────────────────────────
-
-    def create_chart(self, stats: Dict[str, Any], chart_type: str = "songs"):
-        return self._renderer.create_chart(stats, chart_type)

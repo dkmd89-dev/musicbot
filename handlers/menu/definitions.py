@@ -86,8 +86,8 @@ def build_menu_tree(system) -> MenuItem:
         emoji="📊",
         description="Übersichten und Analysen",
     )
-    # ARCH-025: stats_monthly/_yearly/_top_songs/_top_artists/_timeline
-    # bekommen hier bewusst KEIN handler= mehr (vorher ein von
+    # ARCH-025: stats_monthly/_yearly/_top_songs/_top_artists/_timeline/
+    # stats_weekly bekommen hier bewusst KEIN handler= (vorher ein von
     # RichMenuHandler._register_stats_handlers() ohnehin unbedingt
     # überschriebener, nie erreichbarer Platzhalter, siehe
     # docs/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6 und
@@ -96,23 +96,57 @@ def build_menu_tree(system) -> MenuItem:
     # register_handler() in RichMenuHandler._register_stats_handlers()
     # verdrahtet, bevor der Bot Updates verarbeitet - keine
     # Verhaltensänderung.
-    stats_menu.add_child(
+    #
+    # Statistics Menu UX & Architecture Optimization: "Rückblicke"
+    # (stats_reviews) und "Rankings" (stats_rankings) sind reine
+    # Navigations-Container ohne eigene Handler (analog zu family_stats
+    # weiter unten - render_menu() zeigt automatisch ihre Kinder). Die
+    # 5 bestehenden Callback-IDs (stats_monthly/_yearly/_top_songs/
+    # _top_artists/_timeline) bleiben unverändert erhalten (Master-Prompt:
+    # "Bestehende Callback-IDs nach Möglichkeit erhalten") - nur ihre
+    # Position im Baum und ihre sichtbaren Button-Titel ändern sich.
+    # stats_timeline/stats_library_overview bleiben direkte Kinder von
+    # "stats" (Timeline ist konzeptionell kein Rückblick/Ranking, siehe
+    # docs/MusicBot_TELEGRAM_MENU_SYSTEM.md).
+    stats_reviews_menu = MenuItem(
+        id="stats_reviews",
+        title="Rückblicke",
+        emoji="📅",
+        description="Diese Woche, dieser Monat, dieses Jahr",
+    )
+    stats_reviews_menu.add_child(
         MenuItem(
-            id="stats_monthly",
-            title="Monatsrückblick",
+            id="stats_weekly",
+            title="Diese Woche",
             emoji="📅",
             is_action=True,
         )
     )
-    stats_menu.add_child(
+    stats_reviews_menu.add_child(
+        MenuItem(
+            id="stats_monthly",
+            title="Dieser Monat",
+            emoji="📅",
+            is_action=True,
+        )
+    )
+    stats_reviews_menu.add_child(
         MenuItem(
             id="stats_yearly",
-            title="Jahresrückblick",
+            title="Dieses Jahr",
             emoji="🎆",
             is_action=True,
         )
     )
-    stats_menu.add_child(
+    stats_menu.add_child(stats_reviews_menu)
+
+    stats_rankings_menu = MenuItem(
+        id="stats_rankings",
+        title="Rankings",
+        emoji="🏆",
+        description="Deine meistgehörten Songs und Künstler",
+    )
+    stats_rankings_menu.add_child(
         MenuItem(
             id="stats_top_songs",
             title="Top Songs",
@@ -120,7 +154,7 @@ def build_menu_tree(system) -> MenuItem:
             is_action=True,
         )
     )
-    stats_menu.add_child(
+    stats_rankings_menu.add_child(
         MenuItem(
             id="stats_top_artists",
             title="Top Künstler",
@@ -128,18 +162,20 @@ def build_menu_tree(system) -> MenuItem:
             is_action=True,
         )
     )
+    stats_menu.add_child(stats_rankings_menu)
+
     stats_menu.add_child(
         MenuItem(
             id="stats_timeline",
             title="Music Timeline",
-            emoji="📅",
+            emoji="📈",
             is_action=True,
         )
     )
     stats_menu.add_child(
         MenuItem(
             id="stats_library_overview",
-            title="Library Übersicht",
+            title="Meine Library",
             emoji="📚",
             handler=system._handle_stats_library_overview,
             is_action=True,

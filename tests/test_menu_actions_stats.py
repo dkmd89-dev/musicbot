@@ -49,6 +49,41 @@ async def test_stats_library_overview_fallback_without_handler():
 
 
 @pytest.mark.asyncio
+async def test_weekly_wrapper_delegates_when_hasattr():
+    """Statistics Menu UX & Architecture Optimization: neuer
+    stats_weekly-Wrapper, analoges Muster zum bestehenden
+    Monats-Wrapper."""
+    update = _make_update()
+    handler = Mock()
+    handler.handle_week_review = AsyncMock()
+    await stats_actions.handle_weekly_stats_wrapper(update, Mock(), handler, Mock())
+    handler.handle_week_review.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_weekly_wrapper_placeholder_without_hasattr():
+    update = _make_update()
+    handler = object()
+    await stats_actions.handle_weekly_stats_wrapper(update, Mock(), handler, Mock())
+    text = update.callback_query.edit_message_text.call_args[0][0]
+    assert "Diese Woche" in text
+    assert "gerade entwickelt" in text
+
+
+@pytest.mark.asyncio
+async def test_weekly_wrapper_catches_exception_and_logs():
+    update = _make_update()
+    handler = Mock()
+    handler.handle_week_review = AsyncMock(side_effect=RuntimeError("boom"))
+    logger = Mock()
+    await stats_actions.handle_weekly_stats_wrapper(update, Mock(), handler, logger)
+    logger.error.assert_called_once()
+    update.callback_query.edit_message_text.assert_awaited_once_with(
+        "❌ Fehler beim Laden der Statistiken"
+    )
+
+
+@pytest.mark.asyncio
 async def test_monthly_wrapper_delegates_when_hasattr():
     update = _make_update()
     handler = Mock()

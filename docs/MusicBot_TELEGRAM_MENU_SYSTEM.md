@@ -168,12 +168,17 @@ zusätzlich korrigiert.
 ```text
 Hauptmenü
 ├── 📥 Downloads                    → siehe Abschnitt 3
-├── 📊 Statistiken
-│   ├── Monatsrückblick / Jahresrückblick
-│   ├── Top Songs / Top Künstler
-│   ├── Music Timeline
-│   ├── Library Übersicht           (USER-Level, kein Admin-Gate)
-│   └── 👨‍👩‍👧‍👦 Familien-Statistik    → siehe Abschnitt 6 (Family Hub, F2)
+├── 📊 Statistiken                   → siehe Abschnitt 9 (Statistics Menu UX & Architecture Optimization)
+│   ├── 📅 Rückblicke (stats_reviews, reiner Navigations-Container)
+│   │   ├── Diese Woche (stats_weekly, NEU)
+│   │   ├── Dieser Monat (stats_monthly)
+│   │   └── Dieses Jahr (stats_yearly)
+│   ├── 🏆 Rankings (stats_rankings, reiner Navigations-Container)
+│   │   ├── Top Songs (stats_top_songs)
+│   │   └── Top Künstler (stats_top_artists)
+│   ├── 📈 Music Timeline (stats_timeline)
+│   ├── 📚 Meine Library (stats_library_overview, USER-Level, kein Admin-Gate)
+│   └── 👨‍👩‍👧‍👦 Familien-Statistik    → siehe Abschnitt 6 (Family Hub, F2) - UNVERÄNDERT
 │       ├── Top Songs Familie / Top Künstler Familie
 │       ├── Statistik pro Person
 │       ├── Musik-Champion
@@ -1042,7 +1047,494 @@ unverändert gültig).
 
 ---
 
-## 9. Verwandte Dokumente
+## 9. Statistics Menu UX & Architecture Optimization (2026-09-13)
+
+### 9.1 Auftrag
+
+Nutzer-Vorgabe: audit-basierte Optimierung des persönlichen Telegram-
+Statistiksystems — Menüstruktur, Kalenderperioden-Logik, Timeline-
+Darstellung, Track-Identität. **Explizit außerhalb des Scopes:**
+Familien-Statistik (`family_stats`-Zweig, `services/family/`) —
+unangetastet, siehe Abschnitt 9.6.
+
+### 9.2 Docs↔Code-Delta (Audit vor der Umsetzung)
+
+**Kritischer Befund:** `StatisticsCalculator.generate_stats()`
+(genutzt von `stats_monthly`/`stats_yearly`/`stats_top_songs`/
+`stats_top_artists`) filterte über ein reines **Rolling-N-Day-Window**
+(`period_map={"week":7,"month":30,"year":365}` +
+`datetime.now() - timedelta(days=days)`), keine echte Kalenderperiode —
+die Texte bestätigten es explizit ("Monatsrückblick (**30 Tage**)",
+"Jahresrückblick (**365 Tage**)"). `generate_timeline_stats()`
+(genutzt von `stats_timeline`) war dagegen bereits kalenderbasiert
+(Montag-Wochenstart, Monatserster), aber ohne Jahres-Periode, ohne
+Datums-Label in der Darstellung und ohne Zukunfts-Timestamp-Schutz.
+
+**Track-Identität:** `song_counts`/`album_counts`/`first_seen` waren in
+beiden Funktionen nur nach Titel/Albumname gruppiert — zwei Künstler
+mit gleichnamigem Song/Album wurden fälschlich zusammengeführt.
+
+**Menüstruktur:** die 5 Rückblick-/Ranking-Buttons lagen unstrukturiert
+direkt unter „Statistiken", ohne Rückblick-/Ranking-Trennung; kein
+Wochen-Rückblick vorhanden.
+
+Keine weiteren Abweichungen: User-Isolation (`PlayHistoryRepository`,
+strikt pro-Username-Datei) war bereits sauber; die ARCH-024/025-
+Registrierungsarchitektur (Callback-IDs ohne `handler=` in
+`definitions.py`, Bindung zur Laufzeit über
+`RichMenuHandler._register_stats_handlers()`) war bereits korrekt und
+wurde unverändert fortgeführt.
+
+### 9.3 Kalenderlogik (Kernänderung)
+
+`StatisticsCalculator._calendar_period_bounds(period, now=None)` ist
+jetzt die **einzige** Stelle im Projekt, die Kalendergrenzen berechnet
+("today"/"week"/"month"/"year", Montag als Wochenbeginn) — von
+`generate_stats()` (week/month/year) **und** `generate_timeline_stats()`
+(today/week/month) gemeinsam genutzt. `now` ist optional injizierbar
+(deterministische Tests). Kein Rolling-Window mehr:
+
+| Periode | Start | Ende (exklusiv) |
+|---|---|---|
+| „Diese Woche" | Montag 00:00 der aktuellen Kalenderwoche | folgender Montag 00:00 |
+| „Dieser Monat" | 1. des aktuellen Monats, 00:00 | 1. des Folgemonats |
+| „Dieses Jahr" | 1.1. des aktuellen Jahres, 00:00 | 1.1. des Folgejahres |
+
+Anzeige (`StatistikHandler._format_period_label()`): „Diese Woche ·
+07.09.2026" (Montag-Datum, nicht das heutige Datum), „Diesen Monat ·
+September 2026", „Dieses Jahr · 2026" — ersetzt die alten,
+irreführenden „(30 Tage)"/„(365 Tage)"-Labels. Deutsche Monatsnamen
+über eine einfache lokale Konstante (`_GERMAN_MONTHS`), bewusst kein
+`locale.setlocale()` (prozessweiter, nicht-thread-sicherer globaler
+Zustand, im Projekt bisher nirgends verwendet).
+
+**Keine Datenverluste:** Kalenderperioden sind ausschließlich Filter-/
+Auswertungsgrenzen auf der bereits vorhandenen Play-History. Kein
+Löschen, kein Reset, keine Datei-/Eintrags-Mutation — ein neuer Monat/
+eine neue Woche entsteht rein durch die Zeitberechnung beim nächsten
+Aufruf.
+
+### 9.4 Track-Identität
+
+`StatisticsCalculator._identity_key(track, field)` gruppiert Titel/Album
+INTERN immer kombiniert mit dem Artist (`(artist, titel)`-Tupel) -
+verhindert, dass „Artist A – Song X" und „Artist B – Song X" als
+derselbe Track gelten und ihre Play-Counts vermischt werden (betraf
+`top_songs`/`top_albums`/Timeline
+`most_replayed_track`/`top_album`/„neue Tracks"-Erkennung). Das im
+Track-Dict bereits vorhandene Navidrome-`id`-Feld
+(`play_history_poller.py`) identifiziert zwar den konkreten Song
+eindeutig, eignet sich aber nicht als Gruppierungsschlüssel über
+mehrere Wiedergaben hinweg (kann pro Wiedergabe variieren).
+
+**Korrektur nach Live-Regressionsfund:** die erste Implementierung
+dieser Phase gab den kombinierten String (`"Song X – Artist A"`) auch
+als sichtbaren Wert zurück. Der volle Testlauf des Nutzers deckte auf,
+dass `services/family/family_challenge_service.py` (Family-Challenge-
+Typ `own_top_song_today`, **nicht Teil dieser Phase**)
+`most_replayed_track[0]` wörtlich mit einer per Telegram eingegebenen
+Nutzerantwort vergleicht — der geänderte String brach 3 bestehende
+Family-Challenge-Tests. Da Familien-Code laut Auftrag nicht angefasst
+werden darf, bleibt der nach außen sichtbare Wert (`top_songs`/
+`top_albums`/`most_replayed_track`/`top_album`) jetzt bewusst der reine
+Klartext-Titel/Albumname wie vor dieser Phase — nur die interne
+Gruppierung ist kollisionssicher. Zwei kollidierende Einträge erscheinen
+dadurch als zwei separate Zeilen mit demselben sichtbaren Namen, aber
+korrekt getrennten Play-Counts, statt fälschlich zu einer Zeile
+vermischt zu werden. `ChartRenderer` benötigte keine Anpassung (erwartet
+weiterhin generische `(label: str, count: int)`-Tupel).
+
+**Zusätzlich im selben Regressionsfund korrigiert:** der neue
+Zukunfts-Timestamp-Schutz in `_parse_history_entries()` verglich
+zunächst sekundengenau gegen `datetime.now()` - das ließ einen
+legitimen, „heute Mittag" datierten Test-Fixture-Eintrag
+(`tests/test_family_challenge_service.py::_play_entry()`, feste Stunde
+12:00 unabhängig von der tatsächlichen Ausführungszeit) fälschlich als
+„Zukunft" erscheinen, wenn die Suite vormittags lief. Der Vergleich ist
+jetzt tagesgenau (`entry_time.date() > now.date()`) - für die
+Kalenderperioden-Zuordnung (today/week/month/year) macht die Uhrzeit
+innerhalb desselben Tages ohnehin keinen Unterschied.
+
+### 9.5 Menüstruktur & Wochen-Rückblick
+
+Neue reine Navigations-Container (kein eigener Handler, wie
+`family_stats` selbst) unter `stats`: `stats_reviews` („📅 Rückblicke")
+und `stats_rankings` („🏆 Rankings"). Die 5 bestehenden Callback-IDs
+(`stats_monthly`/`_yearly`/`_top_songs`/`_top_artists`/`_timeline`)
+bleiben **unverändert** — nur Position im Baum und sichtbarer
+Button-Titel ändern sich (Master-Prompt: „Bestehende Callback-IDs nach
+Möglichkeit erhalten"). `stats_timeline`/`stats_library_overview`
+bleiben direkte Kinder von `stats` (Timeline ist konzeptionell kein
+Rückblick/Ranking).
+
+**Neu: `stats_weekly`** („Diese Woche") — `StatistikHandler.handle_week_review()`,
+analog zu `handle_month_review()`/`handle_year_review()` (Top-10
+Songs/Künstler/Alben + 2 Chart-Bilder für exakt eine Kalenderperiode).
+Alle drei Rückblick-Methoden teilen sich jetzt eine private
+`_handle_period_review()`-Implementierung (vermeidet eine dritte
+Kopie derselben ~50 Zeilen).
+
+**Entscheidung gegen einen redundanten zweiten Wochen-Handler (Master-
+Prompt Phase 14, Option A gewählt):** Music Timeline deckte die
+Kalenderwoche bereits ab, aber als verdichtete Übersicht (je ein
+Top-Artist/-Album/meistgehörter Track, keine vollständige Top-10-Liste,
+keine Chart-Bilder). „Diese Woche" liefert dieselbe Darstellungstiefe
+wie die bestehenden Monat-/Jahres-Rückblicke — ein echter fachlicher
+Mehrwert, kein Duplikat.
+
+Button-Umbenennungen (IDs unverändert): „Monatsrückblick" →
+„Dieser Monat", „Jahresrückblick" → „Dieses Jahr", „Library Übersicht"
+→ „Meine Library". Emoji-Korrektur: `stats_timeline` 📅→📈 (behob eine
+Kollision mit `stats_monthly`, die beide zuvor 📅 trugen).
+
+### 9.6 Familien-Statistik — UNVERÄNDERT
+
+Keine Datei unter `services/family/`, `handlers/family_*` oder die
+`family_stats_menu`-Definition/-Handler-Bindungen in `definitions.py`
+wurde angefasst — per Regressionstest gepinnt
+(`tests/test_menu_definitions.py::TestFamilyStatisticsUnchanged`).
+
+### 9.7 Geänderte Dateien
+
+`services/statistik/statistics_calculator.py` (Kalenderlogik,
+Track-Identität, gemeinsames History-Parsing), `services/statistik_service.py`
+(`now`-Parameter durchgereicht), `handlers/mugge_statistik_handler.py`
+(`handle_week_review()`, `_format_period_label()`, gemeinsame
+`_handle_period_review()`, Timeline-Datumslabels),
+`handlers/menu/definitions.py` (Menü-Restrukturierung),
+`handlers/menu/actions/stats.py` (`handle_weekly_stats_wrapper`),
+`handlers/menu/rich_menu_handler.py` (`_handle_weekly_stats_wrapper` +
+Registrierung).
+
+### 9.8 Tests
+
+`tests/test_statistics_calculator.py` (komplett überarbeitet — feste
+`now`-Referenzdaten statt real-zeit-relativer `days_ago`-Werte;
+`TestCalendarPeriodBounds` deckt Wochenbeginn Montag/Dienstag/Sonntag,
+Monats-/Jahreswechsel innerhalb einer Woche, exakte Wochengrenzen,
+Monatserster/-letzter, Februar/Schaltjahr, Jahresgrenzen ab;
+`TestGenerateTimelineStats` — bisher 0 Tests trotz nicht-trivialer
+Logik — deckt heute/Woche/Monat, leere History, Kollisionsschutz, neue
+Tracks, Zukunfts-Timestamps, fehlende/0/große Duration ab;
+`TestTrackIdentityCollisionSafety`; `TestUserIsolation`),
+`tests/test_statistik_service.py`/`tests/test_statistics_calculator_export_atomic_write.py`
+(fragile `days_ago`-Werte auf `0` vereinheitlicht — Kalendergrenzen-
+Detailtests liegen jetzt ausschließlich in `test_statistics_calculator.py`),
+`tests/test_mugge_statistik_handler.py` (+8: `handle_week_review()`,
+Kalender-Label-Header, Timeline-Datumslabels), `tests/test_menu_definitions.py`
+(+9: `stats_reviews`/`stats_rankings`-Struktur, Family-Statistics-
+Unverändert-Pin), `tests/test_menu_actions_stats.py` (+3: Weekly-Wrapper),
+`tests/test_rich_menu_handler.py` (+2: alle 6 Stats-IDs korrekt/eindeutig
+registriert). `tests/test_family_challenge_service.py` **nicht
+geändert** - lief nach der in Abschnitt 9.4 beschriebenen
+Produktionscode-Korrektur (Klartext-Werte statt Composite-Label)
+unverändert wieder grün, kein Test-Fake/keine Abschwächung nötig.
+Thematische Regressionsgruppe (Menu/Stats/gesamter Family Hub F1–F5,
+23 Dateien): **428 passed, 0 Regressionen** (nach Korrektur des
+zunächst selbst verursachten Regressionsfunds, siehe 9.4).
+
+---
+
+## 10. Statistics Menu UX & Output Optimization (2026-09-13)
+
+Direkte Folgephase auf Abschnitt 9 (kein erneuter Architektur-Audit) -
+reine Output-/UX-Optimierung der drei Rückblicke (Woche/Monat/Jahr) und
+der beiden Rankings (Top Songs/Top Künstler).
+
+### 10.1 Änderungen
+
+- **Top Alben entfernt.** `generate_stats()` berechnet `album_counts`/
+  `top_albums` nicht mehr - einziger Konsument war die Album-Sektion der
+  Rückblick-Anzeige, die entfällt.
+- **PNG-Charts entfernt.** `_handle_period_review()`/`handle_top_songs()`/
+  `handle_top_artists()` senden keine Chart-Bilder mehr - reine
+  Text-Antwort, kein Warten auf `matplotlib`-Rendering. Dadurch wurde
+  `ChartRenderer`/`create_chart()` beweisbar toter Code (0 verbleibende
+  Aufrufer, repoweit verifiziert): `services/statistik/chart_renderer.py`,
+  der `StatistikService`-Wrapper, `tests/test_chart_renderer.py`,
+  `tests/test_chart_renderer_thread_safety.py` und
+  `tests/test_mugge_statistik_handler_event_loop_blocking.py` (testete
+  ausschließlich das jetzt entfallene Chart-Routing über
+  `asyncio.to_thread()`) entfernt; `matplotlib` aus `requirements.txt`
+  (einziger Verwender war `chart_renderer.py`).
+- **Top Songs verbessert.** `top_songs` (aus `generate_stats()`) zeigt
+  jetzt „Titel — Artist" statt reinem Titel. Anders als
+  `generate_timeline_stats()`s `most_replayed_track` (weiterhin
+  Klartext, siehe Abschnitt 9.4 - `family_challenge_service.py`
+  vergleicht dort wörtlich gegen eine Nutzereingabe) ist `top_songs`
+  durch keinen Familien-Code eingeschränkt (repoweit verifiziert) -
+  macht kollidierende Einträge (gleicher Titel, verschiedene Artists)
+  selbsterklärend statt zweier optisch identischer Zeilen.
+- **Top Künstler geprüft.** Ranking nach Play-Count bestätigt als
+  korrekter, erwarteter Maßstab - kein struktureller Fehler gefunden,
+  keine Änderung nötig außer der Konsistenz-Punkte unten.
+- **Woche/Monat/Jahr** bleiben über die gemeinsame
+  `_handle_period_review()` vereinheitlicht (jetzt schlanker: nur noch
+  Songs + Künstler, kein Alben-/Chart-Code-Pfad).
+- **Leere Perioden.** `generate_stats()` liefert bei einem Account MIT
+  Verlauf, aber 0 Plays in der angefragten Kalenderperiode, jetzt ein
+  gültiges Dict (`total_plays=0`, leere Top-Listen, `period_start`/
+  `period_end` gesetzt) statt `None`. `None` bleibt reserviert für
+  „Account hat überhaupt keinen Verlauf". Die Handler zeigen dadurch
+  eine periodenbezogene Meldung („📅 Diese Woche · 07.09.2026 für dkmd:
+  Noch keine Wiedergaben in diesem Zeitraum.") statt der generischen
+  „⚠️ Keine Daten verfügbar."-Meldung.
+- **Lange Namen.** Neuer `StatistikHandler._truncate()`-Helfer (Kappung
+  bei 45 Zeichen + „…") auf allen Song-/Künstler-/Album-Labels in
+  Rückblicken, Rankings und Timeline angewendet.
+
+### 10.2 Geänderte/entfernte Dateien
+
+Geändert: `services/statistik/statistics_calculator.py`,
+`services/statistik_service.py`, `handlers/mugge_statistik_handler.py`,
+`requirements.txt`. Entfernt: `services/statistik/chart_renderer.py`,
+`tests/test_chart_renderer.py`,
+`tests/test_chart_renderer_thread_safety.py`,
+`tests/test_mugge_statistik_handler_event_loop_blocking.py`.
+
+### 10.3 Tests
+
+`tests/test_statistics_calculator.py` (Leer-Perioden-Semantik,
+Artist-Suffix bei `top_songs`, `top_albums` entfernt-Regressionstest),
+`tests/test_statistik_service.py` (Facade-Ebene analog),
+`tests/test_mugge_statistik_handler.py` (+~20: keine PNG-Charts mehr
+gesendet, keine Alben-Sektion mehr, Leer-Perioden-Meldung, neue
+`TestHandleTopArtists`-Klasse - bisher 0 Tests trotz eigenständiger
+Methode, `TestTruncate`). Thematische Regressionsgruppe (Menu/Stats/
+gesamter Family Hub): **440 passed, 0 Regressionen.**
+
+### 10.4 Family Statistics — weiterhin UNVERÄNDERT
+
+Keine Datei unter `services/family/`/`handlers/family_*` angefasst
+(git status bestätigt). `family_challenge_service.py`s Abhängigkeit von
+`most_replayed_track[0]` als Klartext-String war bereits in Abschnitt
+9.4 berücksichtigt und bleibt unverändert kompatibel (dort wird nichts
+in dieser Phase geändert).
+
+---
+
+## 11. Statistics UX & Architecture (v Final) (2026-09-13)
+
+Direkte Folgephase auf Abschnitt 10 (kein erneuter Architektur-Audit) -
+konsistentes, robustes, rückwärtskompatibles Layout für Wochen-/Monats-/
+Jahresstatistik. Neuer Jahres-Datensatz mit KPIs/Highlight/
+Monatsdiagramm.
+
+### 11.1 Rückwärtskompatibilität (zentrale Leitplanke dieser Phase)
+
+`stats["top_artists"]`/`stats["top_songs"]` (aus `generate_stats()`)
+bleiben semantisch **unverändert** - weiterhin von `handle_top_songs()`/
+`handle_top_artists()` (Rankings-Menü), `get_play_count_by_artist()`
+und `export_stats_to_json()` genutzt. Zwei ADDITIVE Felder ergänzt:
+
+- `top_songs_detailed: List[(title, artists, count)]` - `artists` ist
+  der vollständige Roh-Artist-String, KEINE "title — artist"-Kombination
+  zum späteren Reparsen.
+- `top_artists_split: List[(artist, count)]` - wie `top_artists`, aber
+  mit `_split_artists()` VOR der Aggregation (ein Play kann mehreren
+  Artists gutgeschrieben werden, die Summe kann daher > `total_plays`
+  sein).
+
+Geprüfte Consumer (repoweit gegrept, keiner betroffen): `handlers/
+family_stats_handler.py` nutzt eine komplett eigenständige
+`FamilyStatsService`, nicht `StatisticsCalculator` - unberührt.
+`services/family/family_challenge_service.py`s `most_replayed_track`-
+Abhängigkeit (aus `generate_timeline_stats()`, siehe Abschnitt 9.4)
+bleibt unverändert, da Timeline in dieser Phase nicht angefasst wurde.
+
+### 11.2 Artist-Splitting
+
+`StatisticsCalculator._split_artists()` (neu) trennt NUR an `" • "` und
+`" & "` - explizit NICHT an `"/"`, `","`, `"feat."`, `"ft."` (Beispiele:
+"Miksu/Macloud" bleibt ein Artist, "Artist feat. Artist" bleibt
+unverändert). Wird VOR jeder Ranking-Auswahl angewendet (Rohdaten-Ebene,
+nicht auf bereits gekürzte Top-5-Strings). Bekannter, bewusst
+hingenommener Grenzfall: ein Bandname, der selbst " & " enthält (z. B.
+"Simon & Garfunkel"), würde nach dieser Regel in zwei Artists zerlegt -
+der Master-Prompt definiert die Trenner-Menge explizit und abschließend
+ohne Ausnahme für solche Fälle.
+
+### 11.3 Unique Identity (Songs/Artists/Albums)
+
+`total_songs`/`total_artists`/`total_albums` (nur `generate_year_stats()`)
+werden aus der VOLLSTÄNDIGEN Jahres-History bestimmt (nicht aus den auf
+10 gekappten Top-Listen abgeleitet) - `total_songs`/`total_albums` über
+das bestehende `_identity_key()` (Artist+Feld, kollisionssicher, siehe
+Abschnitt 9.4), `total_artists` über dieselben `_split_artists()`-Regeln
+wie `top_artists_split`. `_identity_key()` wurde zusätzlich gehärtet:
+`track.get(field) or "Unbekannt"` statt nur `.get(field, "Unbekannt")` -
+fängt jetzt auch einen vorhandenen, aber leeren Artist-/Titel-/
+Albumwert ab (nicht nur den fehlenden Schlüssel), an EINER zentralen
+Stelle statt dupliziert im Renderer (Master-Prompt Abschnitt 10).
+
+### 11.4 `_format_period_label()` und Music Timeline
+
+Vor jeder Änderung wurden alle Consumer gesucht: `_handle_period_review()`
+(Woche/Monat-Rückblick) und `handle_music_timeline()`. Woche/Monat
+brauchen jetzt einen echten DatumsBEREICH (`_format_date_range()`, neu,
+reine Presentation-Methode) statt eines Einzeldatum-Labels - Timeline
+behält ihre bestehende Semantik unverändert bei (Abschnitt 30: "Keine
+Scope-Ausweitung", die `Xx`-Darstellung bleibt ebenfalls unverändert).
+`_format_period_label()` bleibt bestehen (weiterhin einziger Timeline-
+Consumer für "today"/"week"/"month") - der "year"-Zweig wurde entfernt,
+da er nach der Jahresrückblick-Umstellung auf einen eigenen Renderer
+keinen Aufrufer mehr hatte (Timeline hatte nie eine "year"-Periode).
+
+### 11.5 Datumsbereiche (`period_start`/`period_end`)
+
+Der Calculator liefert weiterhin ausschließlich rohe `datetime`-Objekte
+(`period_start`/`period_end`, exklusiv) - keine UI-Datumsstrings. Der
+neue `_format_date_range()`-Helper (Handler-Ebene) berechnet
+`end_inclusive = period_end - timedelta(days=1)` und formatiert je nach
+Fall "07.–13.09.2026" (Woche/Monat im selben Monat/Jahr),
+"28.09.–04.10.2026" (Woche über einen Monatswechsel) oder
+"28.12.2026–03.01.2027" (Woche über einen Jahreswechsel) - ein
+Kalendermonat selbst liegt immer vollständig in einem Monat.
+`generate_year_stats()` verwendet für `period_start`/`period_end`
+identisch `_calendar_period_bounds("year")` - keine zweite
+Zeitraum-Definition.
+
+### 11.6 Jahresdiagramm
+
+`_format_monthly_chart()` (neu) rendert die 12 `monthly_plays`-Rohwerte
+als monospace-Balkendiagramm in festen Spaltenbreiten (Monatsname 10,
+Balken 16, Plays 5 Zeichen, siehe Master-Prompt Abschnitt 22.1) - der
+stärkste Monat = 16 gefüllte Zeichen, alle anderen proportional dazu
+(mind. 1 Zeichen bei `plays > 0`), keine Division durch 0 bei
+durchgehend 0 Plays. Nur der Monatszeilenblock steckt in `<code>...</code>`,
+nicht die gesamte Nachricht - `handle_year_review()` sendet daher mit
+`parse_mode=ParseMode.HTML` (einzige Ausnahme von der sonst
+durchgängigen Plain-Text-Formatierung dieser Klasse).
+
+### 11.7 `delta_pct`
+
+`highlights.strongest_month.delta_pct` = gerundeter Prozentsatz über dem
+Monatsdurchschnitt (`(stärkster - Durchschnitt) / Durchschnitt * 100`),
+strukturell nie negativ (stärkster Monat ist per `max()` immer >=
+Durchschnitt). `None` bei < 3 aktiven Monaten ODER `total_plays == 0`
+(deckt sich automatisch, da `average_monthly_plays` dann 0 ist). Bei
+exaktem Gleichstand mit dem Durchschnitt (z. B. alle 12 Monate gleich
+viele Plays) `delta_pct == 0`. Tie-Break beim stärksten Monat: `max()`
+über eine Jan→Dez geordnete Liste liefert bereits den chronologisch
+ersten Treffer bei Gleichstand - kein zusätzlicher Code nötig.
+
+### 11.8 `highlights` strukturell unabhängig
+
+`highlights` enthält in v1 ausschließlich `strongest_month` (`name`/
+`plays`/`delta_pct`) - explizit KEIN `top_artist`/`top_song`-Alias auf
+`top_artists_split[0]`/`top_songs_detailed[0]` (per Test gepinnt,
+`TestHandleYearReview` prüft die exakten Highlight-Keys). Das
+Datenmodell selbst bleibt frei von Ranking-Duplikaten, nicht nur die
+Anzeige.
+
+### 11.9 Bewusste Layout-Entscheidung: Jahres-Songs/-Künstler einzeilig
+
+Wochen-/Monatsrückblick zeigen Songs zweizeilig (Titel + eingerückt
+Artist(s)/Plays, siehe Abschnitt 8 des Master-Prompts). Für den
+Jahresrückblick zeigt Abschnitt 24 des Master-Prompts dagegen explizit
+einzeilige Einträge ("🥇 Song A · 42 Plays", ohne Artist-Zeile) - bei
+bereits umfangreichem Jahres-Text (KPIs + Highlight + 12-Zeilen-Diagramm)
+hält das die Nachricht kompakt. Diese konkrete Beispieldarstellung wurde
+gegenüber der allgemeineren Aussage "dieselbe visuelle Sprache" (Abschnitt
+26) als maßgeblich behandelt - Rang-Symbole/Play-Formatter/Header-Stil
+bleiben identisch, nur die Song-Zeilen-Tiefe unterscheidet sich bewusst.
+
+### 11.10 Nicht Teil dieser Phase (Abschnitt 30)
+
+Music Timeline (`Xx`-Darstellung, Kalenderlogik) unverändert. Keine
+neuen Rollen-/Access-Level-Systeme. Keine Listening-Time-/Genre-/
+Discovery-/Active-Day-Highlights. Keine globale HTML-Escape-Abstraktion
+(`html.escape()` lokal im Annual-Renderer verwendet). Keine präventive
+`_truncate()`-Anwendung im neuen Song-/Künstler-Layout.
+
+### 11.11 Geänderte Dateien
+
+`services/statistik/statistics_calculator.py` (`_split_artists()`,
+`generate_year_stats()`, additive Felder, `_identity_key()`-Härtung,
+`GERMAN_MONTHS` als kanonische Quelle), `services/statistik_service.py`
+(`generate_year_stats()`-Durchreichung), `handlers/mugge_statistik_handler.py`
+(neue Formatter, eigenständiger `handle_year_review()`, neues Woche/
+Monat-Layout).
+
+### 11.12 Tests
+
+`tests/test_statistics_calculator.py` (+~30: `_split_artists()`,
+additive Felder, `generate_year_stats()` inkl. Invariante
+`sum(monthly_plays) == total_plays`, Tie-Break, `delta_pct`-Fälle,
+Unique-Identity aus Volltext statt Top-10), `tests/test_mugge_statistik_handler.py`
+(+~25: Play-/Rang-/Datumsbereich-Formatter, neues Wochen-/Monats-Layout,
+eigenständiger Jahresrückblick inkl. HTML-Escaping/`<code>`-Block/
+ParseMode). Thematische Regressionsgruppe (Menu/Stats/gesamter Family
+Hub, 22 Dateien): **494 passed, 0 Regressionen.**
+
+---
+
+## 12. Music Timeline Consistency & UX (2026-09-13)
+
+Direkte Folgephase auf Abschnitt 11 - letzte verbliebene Inkonsistenz im
+Statistik-System behoben: Timeline zeigte für denselben Zeitraum einen
+anderen "Top Artist"-Wert als der Period-Rückblick.
+
+### 12.1 Bug-Fix: Artist-Split-Inkonsistenz
+
+`generate_timeline_stats()` zählte `top_artist` bisher ohne
+`_split_artists()` - ein Play mit `"Toobrokeforfiji • SIN Davis • makko"`
+zählte als EIN Combo-Artist, während `generate_stats()`s
+`top_artists_split` (Abschnitt 11) bereits gesplittet zählte. Fix:
+`artist_counts` in `generate_timeline_stats()` iteriert jetzt über
+`self._split_artists(...)` (derselbe Helper, kein zweiter Splitting-Code).
+`top_album`/`most_replayed_track`/`new_track_count` bewusst NICHT
+angefasst - `most_replayed_track` wird von
+`services/family/family_challenge_service.py` wörtlich mit einer
+Nutzer-Texteingabe verglichen (siehe Abschnitt 9.4), dieser Vertrag
+bleibt unverändert (repoweit verifiziert, Family-Challenge-Tests laufen
+unverändert grün).
+
+**Garantiert per Test** (`TestTimelineConsistencyWithPeriodReview`):
+`generate_timeline_stats(...)["periods"]["week"]["top_artist"]` ==
+`generate_stats("week", ...)["top_artists_split"][0]` - identisch für
+"week" und "month" (für "today" existiert keine vergleichbare
+`generate_stats()`-Periode).
+
+### 12.2 UX-Redesign
+
+`handle_music_timeline()` spricht jetzt dieselbe visuelle Sprache wie
+Wochen-/Monats-/Jahresstatistik: `_format_plays()` statt `(Nx)`/
+`(N Plays)`, konsistente Emojis (🎤💿🔁🆕🎧), kein `_truncate()` mehr
+(analog zur Begründung bei Woche/Monat: Telegram darf normal umbrechen),
+20-Zeichen-Trennlinie, sauberer Empty-State ("Keine Wiedergaben heute")
+statt einer Null-Sektion, keine `0m`-Zeile mehr (Dauer-Zeile nur bei
+`listening_seconds > 0`).
+
+**Periode-Label:** "Heute"/"Diesen Monat" verwenden weiterhin
+unverändert `_format_period_label()` (einziger verbleibender Consumer).
+"Diese Woche" zeigt neu einen echten Datumsbereich
+(`_format_date_range()`, bereits aus Abschnitt 11 vorhanden) statt eines
+Einzeldatums - dafür wurde `generate_timeline_stats()`s Rückgabe um ein
+additives `period_end`-Feld je Periode ergänzt (`_calendar_period_bounds()`
+lieferte dieses Ende bereits, es wurde vorher nur verworfen) - keine
+Änderung an `_calendar_period_bounds()`/`generate_stats()` selbst.
+
+### 12.3 Nicht angefasst
+
+`generate_stats()`, `_handle_period_review()`, `handle_year_review()`,
+`_calendar_period_bounds()`, `_identity_key()`, `most_replayed_track`,
+`top_songs`/`top_artists`, `GERMAN_MONTHS`, Repository-Layout,
+Datenmodell, `PlayHistoryPoller` - alle unverändert (per Regressionstests
+gepinnt).
+
+### 12.4 Tests
+
+`tests/test_statistics_calculator.py` (+~15: `TestTimelineArtistSplit`,
+`TestTimelineConsistencyWithPeriodReview` - der wichtigste Test dieser
+Phase -, `period_end`-Feld), `tests/test_mugge_statistik_handler.py`
+(Timeline-Testklasse komplett neu: Layout, Empty-State, Dauer-Zeile,
+keine Truncation). Thematische Regressionsgruppe (Menu/Stats/gesamter
+Family Hub, 22 Dateien): **516 passed, 0 Regressionen.**
+
+---
+
+## 13. Verwandte Dokumente
 
 - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — Details zu allen vier
   live gefundenen Bugs dieser Phase sowie zum inzwischen geschlossenen

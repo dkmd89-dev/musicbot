@@ -526,6 +526,9 @@ class RichMenuHandler:
     def _register_stats_handlers(self) -> None:
         """Registriert Statistik-Handler."""
         self.menu_system.register_handler(
+            "stats_weekly", self._handle_weekly_stats_wrapper
+        )
+        self.menu_system.register_handler(
             "stats_monthly", self._handle_monthly_stats_wrapper
         )
         self.menu_system.register_handler(
@@ -765,6 +768,13 @@ class RichMenuHandler:
         )
 
     # ====== STATISTIK WRAPPER ======
+
+    async def _handle_weekly_stats_wrapper(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        await stats_actions.handle_weekly_stats_wrapper(
+            update, context, self.stats_handler, self.logger
+        )
 
     async def _handle_monthly_stats_wrapper(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
