@@ -237,6 +237,19 @@ class NavidromeAPI:
                             "artist": song_info.get("artist", "N/A"),
                             "album": song_info.get("album", "N/A"),
                             "id": song_info.get("id", "N/A"),
+                            # NAV-F8: rohe Subsonic-Genre-Felder unveraendert
+                            # durchgereicht (reiner Integrationsadapter, keine
+                            # Interpretation hier) - "genre" (einzelner
+                            # String, z.B. "Hip Hop") UND "genres"
+                            # (strukturierte Liste, z.B.
+                            # [{"name": "Hip Hop"}, {"name": "Deutschrap"}]),
+                            # je nach Navidrome-Version/-Konfiguration
+                            # vorhanden oder nicht. Vorher wurden beide
+                            # Felder hier stillschweigend verworfen, wodurch
+                            # PlayHistoryPoller nie eine Chance hatte, sie zu
+                            # erfassen.
+                            "genre": song_info.get("genre", ""),
+                            "genres": song_info.get("genres", []),
                         },
                         "user": user,
                         "player": entry.get("playerName", "N/A"),

@@ -539,7 +539,7 @@ Die Zahlen in Klammern zeigen die Anzahl der Songs pro Genre\\."""
 • {len(artists)} verschiedene Künstler
 • {len(albums)} verschiedene Alben
 
-**🎵 Top Songs:** (erste 10 angezeigt)"""
+**🎵 Top Songs:** \\(erste 10 angezeigt\\)"""
 
             await update.callback_query.edit_message_text(
                 text=message_text,

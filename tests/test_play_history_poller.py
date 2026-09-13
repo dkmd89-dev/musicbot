@@ -152,6 +152,96 @@ class TestUpdatePlayHistory:
         history = repo.load("alice")
         assert history[0]["tracks"][0]["genre"] == ""
 
+    def test_structured_genres_field_is_captured_nav_f8(self, tmp_path):
+        """NAV-F8-Nachtrag: das strukturierte 'genres'-Feld (Navidromes
+        bevorzugtes Multi-Genre-Format, z.B.
+        [{'name': 'Hip Hop'}, {'name': 'Deutschrap'}]) ist die von
+        StatisticsCalculator.generate_genre_stats() bevorzugte
+        Datenquelle - NICHT ausschliesslich das einfache 'genre'-Feld."""
+        poller, repo, api = make_poller(tmp_path)
+        api.get_now_playing.return_value = [
+            {
+                "song": {
+                    "title": "Song A", "artist": "Bausa", "album": "Alb",
+                    "id": "1", "genre": "Hip Hop",
+                    "genres": [
+                        {"name": "Hip Hop"},
+                        {"name": "Deutschrap"},
+                        {"name": "Emo Rap"},
+                        {"name": "Cloud Rap"},
+                    ],
+                },
+                "user": "alice",
+                "player": "web",
+            }
+        ]
+
+        asyncio.run(poller.update_play_history())
+
+        history = repo.load("alice")
+        assert history[0]["tracks"][0]["genres"] == [
+            "Hip Hop", "Deutschrap", "Emo Rap", "Cloud Rap",
+        ]
+        # Das einfache "genre"-Feld bleibt zusaetzlich unveraendert erhalten.
+        assert history[0]["tracks"][0]["genre"] == "Hip Hop"
+
+    def test_duplicate_genre_names_within_same_play_are_deduplicated_nav_f8(self, tmp_path):
+        poller, repo, api = make_poller(tmp_path)
+        api.get_now_playing.return_value = [
+            {
+                "song": {
+                    "title": "Song A", "artist": "Bausa", "id": "1",
+                    "genres": [
+                        {"name": "Hip Hop"},
+                        {"name": "Hip Hop"},
+                        {"name": "Deutschrap"},
+                    ],
+                },
+                "user": "alice",
+                "player": "web",
+            }
+        ]
+
+        asyncio.run(poller.update_play_history())
+
+        history = repo.load("alice")
+        assert history[0]["tracks"][0]["genres"] == ["Hip Hop", "Deutschrap"]
+
+    def test_missing_genres_field_defaults_to_empty_list_nav_f8(self, tmp_path):
+        poller, repo, api = make_poller(tmp_path)
+        api.get_now_playing.return_value = [
+            {
+                "song": {"title": "Song A", "artist": "Bausa", "id": "1"},
+                "user": "alice",
+                "player": "web",
+            }
+        ]
+
+        asyncio.run(poller.update_play_history())
+
+        history = repo.load("alice")
+        assert history[0]["tracks"][0]["genres"] == []
+
+    def test_malformed_genres_entries_are_skipped_without_crashing_nav_f8(self, tmp_path):
+        """Defensiv gegen abweichende Navidrome-Versionen/-Antworten: ein
+        Eintrag ohne 'name'-Schluessel oder kein Dict darf nicht crashen."""
+        poller, repo, api = make_poller(tmp_path)
+        api.get_now_playing.return_value = [
+            {
+                "song": {
+                    "title": "Song A", "artist": "Bausa", "id": "1",
+                    "genres": [{"name": "Hip Hop"}, {"no_name": "x"}, "not-a-dict", {"name": ""}],
+                },
+                "user": "alice",
+                "player": "web",
+            }
+        ]
+
+        asyncio.run(poller.update_play_history())
+
+        history = repo.load("alice")
+        assert history[0]["tracks"][0]["genres"] == ["Hip Hop"]
+
     def test_api_exception_is_caught_and_returns_false(self, tmp_path):
         poller, _, api = make_poller(tmp_path)
         api.get_now_playing.side_effect = RuntimeError("boom")

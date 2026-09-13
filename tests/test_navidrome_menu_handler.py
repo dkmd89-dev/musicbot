@@ -205,6 +205,38 @@ class TestGenreDetailMarkdownEscapingBug007b:
         text = update.callback_query.edit_message_text.call_args[0][0]
         assert "Keine Songs" in text
 
+    def test_static_top_songs_footer_parens_are_escaped(self):
+        """Regressionstest fuer einen echten Live-Fund: der statische
+        Text '(erste 10 angezeigt)' im 'Top Songs'-Footer enthielt
+        unescapte Klammern trotz parse_mode='MarkdownV2' - fuehrte bei
+        JEDEM erfolgreichen Genre-Lookup mit Songs zu 'Can't parse
+        entities: character '(' is reserved' (Telegram lehnte die
+        Nachricht ab). Nicht auf dynamische Inhalte beschraenkt (BUG-007-
+        artig), sondern ein statischer String-Literal-Bug."""
+        handler = NavidromeMenuHandler(FakeConfigConfigured())
+        update = make_update()
+        context = make_context()
+
+        fake_response = {
+            "subsonic-response": {
+                "songsByGenre": {
+                    "song": [
+                        {"id": "1", "title": "Song A", "artist": "Artist A", "album": "Album A"}
+                    ]
+                }
+            }
+        }
+
+        with patch(
+            "handlers.navidrome_menu_handler.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_response),
+        ):
+            asyncio.run(handler.handle_genre_detail(update, context, "Experimental"))
+
+        sent_text = update.callback_query.edit_message_text.call_args[1]["text"]
+        assert "(erste 10 angezeigt)" not in sent_text
+        assert "\\(erste 10 angezeigt\\)" in sent_text
+
 
 class TestAlbumDetailNavF9:
     """NAV-F9: handle_album_detail() schließt den bisherigen
