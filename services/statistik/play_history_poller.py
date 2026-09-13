@@ -19,11 +19,29 @@ Extrahiert aus services/statistik_service.py (ARCH-003, P-6) - 1:1
 
 import asyncio
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from logger import get_module_logger
 
 from services.statistik.play_history_repository import PlayHistoryRepository
+
+
+def _extract_genre_names(song_info: Dict[str, Any]) -> List[str]:
+    """Extrahiert die Genre-Namen aus dem strukturierten Subsonic-`genres`-
+    Feld (NAV-F8, bevorzugte Datenquelle: `[{"name": "Hip Hop"}, ...]`,
+    siehe StatisticsCalculator.generate_genre_stats()-Docstring). Dedupliziert
+    innerhalb desselben Plays (Reihenfolge erhalten), ignoriert fehlerhafte/
+    fehlende Einträge defensiv (kein Crash bei abweichender Navidrome-
+    Version/-Konfiguration ohne `genres`)."""
+    raw_genres = song_info.get("genres") or []
+    if not isinstance(raw_genres, list):
+        return []
+    names = [
+        g.get("name")
+        for g in raw_genres
+        if isinstance(g, dict) and isinstance(g.get("name"), str) and g.get("name").strip()
+    ]
+    return list(dict.fromkeys(names))
 
 
 class PlayHistoryPoller:
@@ -126,18 +144,24 @@ class PlayHistoryPoller:
                             "artist": song_info.get("artist", "N/A"),
                             "album": song_info.get("album", "N/A"),
                             # NAV-F8: Genre-Erfassung pro Play ergaenzt -
-                            # vorher fehlte "genre" komplett im
+                            # vorher fehlte Genre komplett im
                             # Wiedergabeverlauf, wodurch echte "gehoerte
                             # Genres nach Plays"-Statistiken unmoeglich
                             # waren (siehe StatisticsCalculator.
-                            # generate_genre_stats()-Docstring). Navidrome
-                            # liefert "genre" bereits im Song-Objekt von
-                            # getNowPlaying, wird nur bisher nicht
-                            # mitgeschrieben. Aeltere Verlaufseintraege
-                            # ohne dieses Feld laufen ueber die bestehende
+                            # generate_genre_stats()-Docstring). "genres"
+                            # (strukturierte Liste, z.B. [{"name": "Hip
+                            # Hop"}, {"name": "Deutschrap"}]) ist die fuer
+                            # NAV-F8 bevorzugte, mehrwertige Datenquelle -
+                            # "genre" (einzelner String) bleibt additiv
+                            # UNVERAENDERT fuer etwaige andere/kuenftige
+                            # Consumer erhalten, wird von
+                            # generate_genre_stats() selbst NICHT
+                            # verwendet. Aeltere Verlaufseintraege ohne
+                            # "genres" laufen ueber die bestehende
                             # PLAY_HISTORY_RETENTION_DAYS-Bereinigung aus,
                             # keine dauerhafte Datenluecke.
                             "genre": song_info.get("genre", ""),
+                            "genres": _extract_genre_names(song_info),
                             "id": song_info.get("id", "N/A"),
                             "duration": song_info.get("duration", None),
                             "player": play_data.get("player", "N/A"),

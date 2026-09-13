@@ -204,13 +204,15 @@ class TestGenerateGenreStats:
         assert service.generate_genre_stats(navidrome_username=None) is None
 
     def test_delegates_to_calculator_and_counts_by_genre(self, service):
+        """NAV-F8: das strukturierte 'genres'-Feld ist die bevorzugte
+        Datenquelle, nicht das einfache 'genre'-Feld."""
         entry_a = _entry("Bausa", "Song A", days_ago=1)
-        entry_a["tracks"][0]["genre"] = "Hip-Hop"
+        entry_a["tracks"][0]["genres"] = ["Hip-Hop"]
         entry_b = _entry("Kollegah", "Song B", days_ago=0)
-        entry_b["tracks"][0]["genre"] = "Hip-Hop"
+        entry_b["tracks"][0]["genres"] = ["Hip-Hop", "Deutschrap"]
         service._save_history([entry_a, entry_b], "alice")
 
         result = service.generate_genre_stats(navidrome_username="alice")
 
-        assert result["top_genres"] == [("Hip-Hop", 2)]
+        assert dict(result["top_genres"]) == {"Hip-Hop": 2, "Deutschrap": 1}
         assert result["total_plays_with_genre"] == 2

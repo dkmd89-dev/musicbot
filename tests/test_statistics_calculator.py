@@ -423,15 +423,22 @@ class TestGetPlayCountByArtist:
         assert count == 0
 
 
-def _entry_with_genre(artist: str, title: str, genre: str, *, at: datetime):
+def _entry_with_genres(artist: str, title: str, genres: list, *, at: datetime):
+    """NAV-F8: baut einen History-Eintrag mit dem strukturierten
+    'genres'-Feld (List[str], bereits so wie PlayHistoryPoller es aus
+    Navidromes [{'name': ...}, ...]-Response extrahiert - siehe
+    generate_genre_stats()-Docstring: das ist die bevorzugte
+    Datenquelle, NICHT das einfache 'genre'-Feld)."""
     entry = _entry(artist, title, at=at)
-    entry["tracks"][0]["genre"] = genre
+    entry["tracks"][0]["genres"] = genres
     return entry
 
 
 class TestGenerateGenreStats:
     """NAV-F8 (Navidrome Menu System Audit): Top-N-Genres nach Plays,
-    All-Time, V1 bewusst einfach (kein Kalenderzeitraum)."""
+    All-Time, V1 bewusst einfach (kein Kalenderzeitraum). Nutzt
+    ausschließlich das strukturierte 'genres'-Feld, siehe
+    generate_genre_stats()-Docstring."""
 
     def test_no_username_returns_none(self, tmp_path):
         calc, _ = make_calculator(tmp_path)
@@ -445,9 +452,9 @@ class TestGenerateGenreStats:
         calc, repo = make_calculator(tmp_path)
         now = datetime(2026, 6, 15, 12, 0, 0)
         history = [
-            _entry_with_genre("A", "Song 1", "Hip-Hop", at=now - timedelta(days=3)),
-            _entry_with_genre("B", "Song 2", "Hip-Hop", at=now - timedelta(days=2)),
-            _entry_with_genre("C", "Song 3", "Pop", at=now - timedelta(days=1)),
+            _entry_with_genres("A", "Song 1", ["Hip-Hop"], at=now - timedelta(days=3)),
+            _entry_with_genres("B", "Song 2", ["Hip-Hop"], at=now - timedelta(days=2)),
+            _entry_with_genres("C", "Song 3", ["Pop"], at=now - timedelta(days=1)),
         ]
         repo.save(history, "alice")
 
@@ -460,7 +467,7 @@ class TestGenerateGenreStats:
         calc, repo = make_calculator(tmp_path)
         now = datetime(2026, 6, 15, 12, 0, 0)
         history = [
-            _entry_with_genre("A", f"Song {i}", f"Genre{i}", at=now - timedelta(days=i))
+            _entry_with_genres("A", f"Song {i}", [f"Genre{i}"], at=now - timedelta(days=i))
             for i in range(15)
         ]
         repo.save(history, "alice")
@@ -469,14 +476,14 @@ class TestGenerateGenreStats:
 
         assert len(result["top_genres"]) == 10
 
-    def test_entries_without_genre_are_skipped_not_counted_as_unbekannt(self, tmp_path):
-        """Ältere Verlaufseinträge (vor NAV-F8) haben kein 'genre'-Feld -
+    def test_entries_without_genres_are_skipped_not_counted_as_unbekannt(self, tmp_path):
+        """Ältere Verlaufseinträge (vor NAV-F8) haben kein 'genres'-Feld -
         dürfen nicht in einer 'Unbekannt'-Sammelkategorie landen."""
         calc, repo = make_calculator(tmp_path)
         now = datetime(2026, 6, 15, 12, 0, 0)
         history = [
-            _entry("A", "Song 1", at=now - timedelta(days=1)),  # kein genre-Feld
-            _entry_with_genre("B", "Song 2", "Pop", at=now),
+            _entry("A", "Song 1", at=now - timedelta(days=1)),  # kein genres-Feld
+            _entry_with_genres("B", "Song 2", ["Pop"], at=now),
         ]
         repo.save(history, "alice")
 
@@ -485,7 +492,7 @@ class TestGenerateGenreStats:
         assert result["top_genres"] == [("Pop", 1)]
         assert result["total_plays_with_genre"] == 1
 
-    def test_history_without_any_genre_returns_empty_top_genres(self, tmp_path):
+    def test_history_without_any_genres_returns_empty_top_genres(self, tmp_path):
         calc, repo = make_calculator(tmp_path)
         repo.save([_entry("A", "Song 1", at=datetime.now())], "alice")
 
@@ -494,6 +501,62 @@ class TestGenerateGenreStats:
         assert result is not None
         assert result["top_genres"] == []
         assert result["total_plays_with_genre"] == 0
+
+    def test_multi_genre_track_credits_every_genre_once(self, tmp_path):
+        """Kernanforderung NAV-F8: ein Multi-Genre-Track (z.B. Hip Hop +
+        Deutschrap + Emo Rap + Cloud Rap) zaehlt fuer JEDES zugeordnete
+        Genre einmal - die Summe der Genre-Counts kann daher groesser
+        als total_plays_with_genre sein (analog top_artists_split)."""
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        history = [
+            _entry_with_genres(
+                "A", "Song 1",
+                ["Hip Hop", "Deutschrap", "Emo Rap", "Cloud Rap"],
+                at=now,
+            ),
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_genre_stats(navidrome_username="alice")
+
+        assert result["total_plays_with_genre"] == 1
+        assert dict(result["top_genres"]) == {
+            "Hip Hop": 1, "Deutschrap": 1, "Emo Rap": 1, "Cloud Rap": 1,
+        }
+        assert sum(count for _, count in result["top_genres"]) == 4 > result["total_plays_with_genre"]
+
+    def test_duplicate_genre_within_same_play_counted_once(self, tmp_path):
+        """Doppelte Genre-Eintraege innerhalb DESSELBEN Plays duerfen
+        nicht doppelt gezaehlt werden (Set-Dedup pro Play)."""
+        calc, repo = make_calculator(tmp_path)
+        history = [
+            _entry_with_genres(
+                "A", "Song 1", ["Hip Hop", "Hip Hop"], at=datetime(2026, 6, 15),
+            ),
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_genre_stats(navidrome_username="alice")
+
+        assert result["top_genres"] == [("Hip Hop", 1)]
+        assert result["total_plays_with_genre"] == 1
+
+    def test_same_genre_across_different_plays_is_counted_per_play(self, tmp_path):
+        """Dedup gilt nur INNERHALB eines Plays - dasselbe Genre in zwei
+        verschiedenen Plays zaehlt beide Male."""
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        history = [
+            _entry_with_genres("A", "Song 1", ["Hip Hop"], at=now - timedelta(days=1)),
+            _entry_with_genres("B", "Song 2", ["Hip Hop"], at=now),
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_genre_stats(navidrome_username="alice")
+
+        assert result["top_genres"] == [("Hip Hop", 2)]
+        assert result["total_plays_with_genre"] == 2
 
 
 class TestExportStatsToJson:

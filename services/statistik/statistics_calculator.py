@@ -771,18 +771,39 @@ class StatisticsCalculator:
         `_parse_history_entries()`/`self.repository` - keine neue
         Statistics-Pipeline.
 
-        Nur Tracks mit nicht-leerem `"genre"`-Feld werden gezählt. Dieses
-        Feld wurde erst mit NAV-F8 in `PlayHistoryPoller` ergänzt -
-        ältere Verlaufseinträge haben es nicht und werden stillschweigend
-        übersprungen (keine "Unbekannt"-Sammelkategorie, die reale
-        Genre-Play-Counts verwässern würde). Läuft über die bestehende
+        Nutzt AUSSCHLIESSLICH das strukturierte `"genres"`-Feld
+        (`List[str]`, von `PlayHistoryPoller` aus Navidromes
+        `[{"name": "Hip Hop"}, ...]`-Response extrahiert) - NICHT das
+        einfache `"genre"`-Feld (bleibt für andere/künftige Consumer
+        unverändert erhalten, wird hier bewusst ignoriert). Ein Multi-
+        Genre-Track zählt für JEDES ihm zugeordnete Genre einmal (z. B.
+        "Hip Hop"+"Deutschrap"+"Emo Rap"+"Cloud Rap" bei einem einzigen
+        Play → alle vier +1) - die Summe aller `top_genres`-Counts kann
+        daher GRÖSSER als `total_plays_with_genre` sein, das ist
+        erwartetes Verhalten (analog zu `_split_artists()`/
+        `top_artists_split`). Doppelte Genre-Namen INNERHALB desselben
+        Plays werden nur einmal gezählt (Set-Deduplizierung pro Play,
+        zusätzlich zur bereits in `PlayHistoryPoller._extract_genre_names()`
+        erfolgten Deduplizierung - robust auch gegen älteren/nicht
+        deduplizierten Bestand).
+
+        Tracks ohne (nicht-leere) `"genres"`-Liste werden übersprungen -
+        weder in `total_plays_with_genre` noch in `top_genres` gezählt.
+        Betrifft ältere Verlaufseinträge (vor NAV-F8) und Navidrome-
+        Instanzen/-Konfigurationen ohne strukturierte Genre-Daten. Keine
+        "Unbekannt"-Sammelkategorie, keine Aufsplittung von String-
+        Trennzeichen (`;`/`,`/`/`) - Navidrome liefert bereits eine
+        strukturierte Liste, ein zusätzliches String-Parsing wäre
+        fehleranfällig und unnötig. Keine rückwirkende Rekonstruktion aus
+        Datei-Tags oder der aktuellen Library - ausschließlich bereits
+        persistierte PlayHistory-Daten. Läuft über die bestehende
         `PLAY_HISTORY_RETENTION_DAYS`-Bereinigung aus, keine dauerhafte
         Datenlücke.
 
         Returns:
             Optional[Dict[str, Any]]: {
                 "navidrome_username": str,
-                "total_plays_with_genre": int,
+                "total_plays_with_genre": int,  # Plays mit >=1 Genre (nicht Summe der Genre-Counts)
                 "top_genres": List[Tuple[str, int]],  # (genre, count), absteigend
             } oder `None`, wenn für `navidrome_username` überhaupt keine
             Verlaufsdaten existieren (Account hat noch nie etwas
@@ -809,11 +830,19 @@ class StatisticsCalculator:
         total_plays_with_genre = 0
 
         for _entry_time, track_info in parsed_entries:
-            genre = (track_info.get("genre") or "").strip()
-            if not genre:
+            genres_raw = track_info.get("genres") or []
+            if not isinstance(genres_raw, list):
                 continue
-            genre_counts[genre] += 1
+            # Set-Deduplizierung pro Play: dieselbe Genre-Zeichenkette darf
+            # innerhalb EINES Plays nicht doppelt gezaehlt werden.
+            genres_for_play = {
+                g.strip() for g in genres_raw if isinstance(g, str) and g.strip()
+            }
+            if not genres_for_play:
+                continue
             total_plays_with_genre += 1
+            for genre in genres_for_play:
+                genre_counts[genre] += 1
 
         top_genres = sorted(
             genre_counts.items(), key=lambda x: x[1], reverse=True

@@ -184,6 +184,51 @@ class TestGetNowPlaying:
             result = asyncio.run(api.get_now_playing())
         assert result[0]["song"]["title"] == "N/A"
 
+    def test_genre_and_genres_fields_are_passed_through_nav_f8(self):
+        """NAV-F8: 'genre' (einzelner String) und 'genres' (strukturierte
+        Liste, Navidromes bevorzugtes Genre-Format) wurden bisher hier
+        stillschweigend verworfen - PlayHistoryPoller hatte dadurch nie
+        eine Chance, sie zu erfassen. Reiner Pass-Through, keine
+        Interpretation im Adapter."""
+        response = {
+            "subsonic-response": {
+                "nowPlaying": {
+                    "entry": {
+                        "username": "robin",
+                        "song": {
+                            "title": "Song A", "artist": "Artist A",
+                            "album": "Album A", "id": "s1",
+                            "genre": "Hip Hop",
+                            "genres": [
+                                {"name": "Hip Hop"},
+                                {"name": "Deutschrap"},
+                            ],
+                        },
+                    }
+                }
+            }
+        }
+        api = NavidromeAPI()
+        with patch.object(api, "make_request", return_value=response):
+            result = asyncio.run(api.get_now_playing())
+
+        assert result[0]["song"]["genre"] == "Hip Hop"
+        assert result[0]["song"]["genres"] == [
+            {"name": "Hip Hop"}, {"name": "Deutschrap"},
+        ]
+
+    def test_missing_genre_fields_default_to_empty_nav_f8(self):
+        response = {
+            "subsonic-response": {
+                "nowPlaying": {"entry": {"song": {}, "username": "robin"}}
+            }
+        }
+        api = NavidromeAPI()
+        with patch.object(api, "make_request", return_value=response):
+            result = asyncio.run(api.get_now_playing())
+        assert result[0]["song"]["genre"] == ""
+        assert result[0]["song"]["genres"] == []
+
 
 class TestSearch:
     def test_extracts_search_result3_from_response(self):
