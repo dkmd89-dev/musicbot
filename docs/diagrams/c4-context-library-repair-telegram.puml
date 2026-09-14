@@ -1,0 +1,29 @@
+@startuml c4-context-library-repair-telegram
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title MusicBot Library Repair — Telegram-Vollintegration (Level 1–3 + Library-Maintenance-Actions) — System Context
+
+Person(admin, "Admin/Owner", "Config.OWNER_USER_ID / ADMIN_USER_IDS")
+
+System_Boundary(musicbot, "MusicBot") {
+  System(telegram_bot, "MusicBot Telegram Bot", "python-telegram-bot Application")
+  System(library_repair, "Library Repair Domain", "services/library_repair/* — Planner, Executor, Repair Service, Journal")
+  System(library_health, "Library Health Scanner", "services/library_health/* — read-only Scan/Score/Findings (P0, unveraendert)")
+}
+
+System_Ext(library, "Music Library", "Dateisystem, .m4a-Dateien unter Config.LIBRARY_DIR")
+System_Ext(musicbrainz, "MusicBrainz API", "externe Metadaten-/ID-Quelle (Level 3 + Level 2 GenreProcessor-Fallback)")
+System_Ext(navidrome, "Navidrome", "Musik-Server, Auto-Scan nach Aenderungen")
+System_Ext(mappings, "Mapping-Dateien", "mapping/artist_overrides.json, case_preserve.yaml, artist_genre.yaml (Fachlogik, CLAUDE.md §10)")
+
+Rel(admin, telegram_bot, "sendet Kommandos / tippt Inline-Buttons", "Telegram")
+Rel(telegram_bot, library_repair, "Repair MusicBot / Library-Wartung Menue")
+Rel(library_repair, library_health, "liest Health-Report/Findings fuer den Finding-getriebenen Repair-Flow (L1/L2/L3)")
+Rel(library_repair, library, "liest/schreibt Tags, Backups vor jedem Schreibvorgang", "mutagen, atomarer replace()")
+Rel(library_repair, musicbrainz, "Level 2 (GenreProcessor-Fallback) / Level 3 (ID-Lookup)", "HTTPS")
+Rel(library_repair, mappings, "liest Casing-/Genre-Mappings (Library-Maintenance-Actions)")
+Rel(library_repair, navidrome, "loest Scan aus nach echter Aenderung", "Subprozess")
+Rel(library_health, library, "liest ausschliesslich (read-only)", "mutagen, ffprobe")
+
+SHOW_LEGEND()
+@enduml

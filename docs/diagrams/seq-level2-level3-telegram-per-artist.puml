@@ -1,0 +1,49 @@
+@startuml seq-level2-level3-telegram-per-artist
+title Level 2 / Level 3 ueber Telegram — Pro-Artist-Bestaetigung (NEU)
+
+actor Admin
+participant "RepairMusicBotHandler" as H
+participant "repair_service.py" as S
+participant "planner.py" as P
+participant "services/library_health\n(Health-Scan)" as HS
+participant "executor.py\n(apply_level2/apply_external_metadata, bestehend)" as Exec
+database "library_repair_journal.jsonl" as JF
+
+Admin -> H: Reparaturvorschlaege oeffnen
+H -> S: build_repair_plan()
+S -> HS: run_health_scan()
+HS --> S: Health-Report
+S -> P: plan_repairs(report)
+P --> S: RepairPlan (alle Level inkl. METADATA_REPROCESSING/EXTERNAL_METADATA)
+S --> H: Plan
+H -> Admin: "12x SAFE_AUTOMATIC · 5x Level 2 (3 Artists) · 2x Level 3 (1 Artist)"
+
+Admin -> H: "Level 2 anzeigen" -> Artist-Liste (gruppiert, NEU)
+H -> Admin: "makko (4 Kandidaten) / Filow (1 Kandidat)"
+Admin -> H: waehlt "makko"
+H -> S: build_preview(filter_plan(plan, artist="makko", level="METADATA_REPROCESSING"))
+S --> H: Preview (Titel-Bereinigung, Genre, Lyrics je Track — read-only)
+H -> Admin: Preview + Warnhinweis "aktualisiert Auto-Learn-Mappings, ruft MusicBrainz/Genius auf, kann Minuten dauern"
+Admin -> H: "✅ JA, FUER makko REPARIEREN" (pro Artist, kein Blanket-Confirm)
+H -> H: is_admin_or_owner() ERNEUT geprueft (Abschnitt 43-Muster)
+H -> S: execute_level2_repair(artist="makko", triggered_by="telegram:<uid>") (NEU)
+S -> S: acquire_repair_lock()
+S -> Exec: apply_level2(reprocess, candidates=filter_plan(..., artist="makko"))
+Exec -> Exec: pro Datei: Backup -> track_reprocessor.process_file() -> Audio-Essenz-Verify -> Rollback bei Abweichung
+Exec --> S: [ExecOutcome, ...]
+S -> JF: Journal-Fenster schreiben (bestehendes Muster wie execute_safe_automatic_repair)
+S -> HS: Verification-Scan (NUR fuer artist="makko"-Scope)
+HS --> S: post_scan
+S -> S: Findings fuer makko RESOLVED setzen, falls verifiziert behoben
+S -> S: release_repair_lock()
+S --> H: RepairRunResult
+H -> Admin: Ergebnis fuer makko (Erfolgreich/Fehlgeschlagen/Uebersprungen)
+
+note over H,S
+  Bewusst KEIN "alle Level-2-Kandidaten ueber alle Artists auf einmal"-Pfad
+  ueber Telegram (Nutzerentscheidung) — jeder Artist ist ein eigener
+  Bestaetigungsschritt, analog zur bisherigen CLI-Nutzung
+  (library_repair.py --artist <X> --level METADATA_REPROCESSING).
+  Level 3 (EXTERNAL_METADATA) spiegelt denselben Ablauf 1:1.
+end note
+@enduml

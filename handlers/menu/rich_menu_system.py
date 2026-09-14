@@ -117,6 +117,9 @@ class RichMenuSystem:
         # Repair MusicBot ("🛠️ Repair MusicBot"): von RichMenuHandler
         # injiziert - siehe set_repair_handler().
         self.repair_handler = None
+        # Library-Wartung ("🧹 Library-Wartung", ARCH-032 Phase 4): von
+        # RichMenuHandler injiziert - siehe set_library_maintenance_handler().
+        self.library_maintenance_handler = None
 
         # Konfiguration / Session-Verwaltung (ARCH-021/P-4: ausgelagert nach
         # handlers/menu/session.py::SessionManager)
@@ -237,6 +240,11 @@ class RichMenuSystem:
         """Setzt den RepairMusicBotHandler ("Repair MusicBot")."""
         self.repair_handler = handler
         self.logger.info("✅ Repair-Handler verknüpft")
+
+    def set_library_maintenance_handler(self, handler) -> None:
+        """Setzt den LibraryMaintenanceHandler ("Library-Wartung", ARCH-032)."""
+        self.library_maintenance_handler = handler
+        self.logger.info("✅ Library-Wartung-Handler verknüpft")
 
     # ====== MENÜ-STRUKTUR ======
 
@@ -433,6 +441,34 @@ class RichMenuSystem:
         )
 
     # ====== ENDE REPAIR MUSICBOT ======
+
+    # ====== LIBRARY-WARTUNG (ARCH-032 Phase 4) ======
+
+    async def _handle_library_maintenance_start(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Einstiegspunkt aus dem Menü-System - Wrapper analog zu
+        _handle_repair_start()."""
+        await library_actions.handle_library_maintenance_start(
+            update, context, self.library_maintenance_handler
+        )
+
+    async def _handle_library_maintenance_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        callback_data: str,
+    ) -> None:
+        """Dispatcher für alle libmaint:* Callbacks - siehe
+        handlers/menu/actions/library.py::handle_library_maintenance_callback().
+        Bewusst NICHT "maint:" (bereits durch den Bot-Wartungsmodus belegt,
+        siehe _handle_maintenance_callback() oben)."""
+        await library_actions.handle_library_maintenance_callback(
+            update, context, callback_data, self.library_maintenance_handler,
+            self._is_admin_check, self.logger,
+        )
+
+    # ====== ENDE LIBRARY-WARTUNG ======
 
     async def _show_handler_not_available(self, update: Update, handler_name: str):
         """Zeigt Fehlermeldung wenn Handler nicht verfügbar"""
@@ -703,6 +739,11 @@ class RichMenuSystem:
             # ── NEU: Repair MusicBot ───────────────────────────────────
             if callback_data.startswith("repair:"):
                 await self._handle_repair_callback(update, context, callback_data)
+                return
+
+            # ── NEU: Library-Wartung (ARCH-032 Phase 4) ────────────────
+            if callback_data.startswith("libmaint:"):
+                await self._handle_library_maintenance_callback(update, context, callback_data)
                 return
 
             # ── Standard Menü-Callback (menu:...) ────────────────────

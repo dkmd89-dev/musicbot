@@ -20,6 +20,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from handlers.menu.actions._common import show_handler_not_available
+from services.library_repair.maintenance_service import ALL_ACTIONS as _MAINTENANCE_ACTIONS
 
 
 # ====== METADATA-REPROCESSING ======
@@ -318,3 +319,95 @@ async def handle_repair_callback(
         await query.answer("⚠️ Unbekannter Repair-Callback")
         return
     await handler_fn(update, context)
+
+
+# ====== LIBRARY-WARTUNG (ARCH-032 Phase 4) ======
+
+
+async def handle_library_maintenance_start(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, maintenance_handler
+) -> None:
+    """Einstiegspunkt aus dem Menü-System - Wrapper analog zu
+    handle_repair_start()."""
+    if maintenance_handler:
+        await maintenance_handler.handle_start(update, context)
+    else:
+        await show_handler_not_available(update, "Library-Wartung-Handler")
+
+
+async def handle_library_maintenance_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    callback_data: str,
+    maintenance_handler,
+    is_admin_check,
+    logger,
+) -> None:
+    """
+    Dispatcher für alle libmaint:* Callbacks.
+
+    Routing (siehe handlers/library_maintenance_handler.py):
+      libmaint:start                    → Startseite
+      libmaint:artists                  → Artist-Liste (Index-Picker)
+      libmaint:pick:<idx>                → Aktions-Auswahl für diesen Artist
+      libmaint:action:<action>:<idx>     → Preview (read-only)
+      libmaint:confirm:<action>:<idx>    → explizite Bestätigung
+      libmaint:execute:<action>:<idx>    → tatsächliche Ausführung
+
+    Eigener Admin-Check hier (Defense-in-Depth, analog zu doctor:/review:/
+    repair:/reprocess: - callback_data ist frei sendbar, siehe SEC-003).
+    Bewusst NICHT "maint:" (bereits durch den Bot-Wartungsmodus belegt,
+    siehe rich_menu_system.py::_handle_maintenance_callback()).
+    """
+    query = update.callback_query
+    user_id = update.effective_user.id
+
+    if not is_admin_check(user_id):
+        logger.warning(
+            f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte "
+            f"Library-Wartung-Callback: {callback_data}"
+        )
+        await query.answer("⛔ Keine Berechtigung", show_alert=True)
+        return
+
+    if not maintenance_handler:
+        await query.answer("⚠️ Library-Wartung-Handler nicht verfügbar", show_alert=True)
+        return
+
+    if callback_data == "libmaint:start":
+        await maintenance_handler.handle_start(update, context)
+        return
+    if callback_data == "libmaint:artists":
+        await maintenance_handler.handle_artist_list(update, context)
+        return
+
+    parts = callback_data.split(":")
+
+    if len(parts) == 3 and parts[1] == "pick":
+        try:
+            idx = int(parts[2])
+        except ValueError:
+            await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+            return
+        await maintenance_handler.handle_pick_artist(update, context, idx)
+        return
+
+    if len(parts) == 4 and parts[1] in ("action", "confirm", "execute"):
+        action, idx_str = parts[2], parts[3]
+        try:
+            idx = int(idx_str)
+        except ValueError:
+            await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+            return
+        if action not in _MAINTENANCE_ACTIONS:
+            await query.answer("⚠️ Unbekannte Aktion", show_alert=True)
+            return
+        if parts[1] == "action":
+            await maintenance_handler.handle_preview(update, context, action, idx)
+        elif parts[1] == "confirm":
+            await maintenance_handler.handle_confirm_prompt(update, context, action, idx)
+        else:
+            await maintenance_handler.handle_execute(update, context, action, idx)
+        return
+
+    await query.answer("⚠️ Unbekannter Library-Wartung-Callback")

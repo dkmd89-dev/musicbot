@@ -675,3 +675,170 @@ Navigieren.
 | `tests/test_rich_menu_repair.py` | Menüpunkt-Registrierung + Admin-Gating/Dispatch-Ebene für `repair:*` |
 | `tests/test_repair_integration.py` | Vollständiger End-to-End-Fluss (Scan → Finding → Plan → Preview → Executor → Verification → Resolve → Re-Scan) mit dem echten `apply_level1()`-Executor gegen eine isolierte Test-Library |
 | `tests/test_review_repair_readonly_safety.py` | Repair-Preview gegen eine isolierte Test-Library, SHA-256-Vergleich vorher==nachher |
+
+---
+
+## 11. Library-Maintenance-Actions (ARCH-032, implementiert)
+
+**Zweite, eigenständige Flow-Kategorie neben dem Finding-getriebenen
+Repair-Flow (§10) — bewusst NICHT Health-Finding-getrieben (ADR-0001):**
+
+```text
+Finding Repair (§10)                Library-Maintenance-Actions (§11)
+    Health-Scan                         Artist wählen
+       ↓                                    ↓
+    Findings                            Aktion wählen
+       ↓                                    ↓
+    Plan → Preview → Confirm            Preview (dry_run=True, derselbe
+       ↓                                Executor-Pfad wie Execute)
+    Executor → Verification                 ↓
+       ↓                                Confirm
+    Finding RESOLVED                        ↓
+                                         Executor → Ergebnis
+                                         (KEIN Finding, KEIN Re-Scan)
+```
+
+Drei Aktionen, jede löst eines der drei ehemals eigenständigen
+Wartungsskripte ab (Commit `6037abf`, entfernt in ARCH-032):
+
+| Aktion | ersetzt | Was passiert |
+|---|---|---|
+| `artist-casing` | `scripts/fix_artist_casing.py` | ©ART/ARTISTS-Casing gegen `mapping/artist_overrides.json`/`case_preserve.yaml` normalisieren (reine Casing-Mappings, keine Namens-Erweiterung) |
+| `legacy-genre-cleanup` | `scripts/remove_legacy_genre_atom.py` | Legacy-Freeform-Atom `----:com.apple.iTunes:GENRE` entfernen, NUR wenn `©gen` bereits vorhanden ist |
+| `set-genre` | `scripts/set_genre.py` | `©gen` setzen (manuell oder aus `mapping/artist_genre.yaml`), entfernt Legacy-Atom als Nebeneffekt |
+
+**Warum kein Health-Finding:** alle drei Aktionen sind gezielte
+Nutzeraktionen, keine Reparatur eines vom Health-Scanner erkannten
+Defekts — `services/library_health/` (P0, read-only) bleibt vollständig
+unangetastet, kein neuer Issue-Code (ARCH-031 B.1, siehe
+`docs/adr/0001-library-maintenance-actions-not-finding-driven.md`).
+
+### 11.1 Architektur
+
+```text
+services/library_repair/
+    artist.py               Domain (rein): load_casing_map(), normalize_values()
+    genre.py                Domain (rein): genre_from_mapping(),
+                             normalize_genre_input(), decide_legacy_genre_removal()
+    executor.py              + apply_artist_casing() / apply_legacy_genre_cleanup() /
+                             apply_set_genre() / tags_fingerprint() — nutzt
+                             dieselbe Safety-/Backup-/Verify-Infrastruktur
+                             wie apply_level1() (safety_check, _sha256,
+                             _audio_essence_md5, _read_atoms/_write_atoms/
+                             _delete_atoms)
+    run_tracking.py         Lock/Journal-Fenster/Run-Index/History/
+                             Statistik — GETEILT mit dem Finding-Flow
+                             (ADR-0004), EIN Journal/Lock für beide Flows
+    maintenance_service.py  Orchestrierung: preview_*()/execute_*()
+    library_artists.py      list_library_artist_dirs()/resolve_artist_by_index()
+                             — index-basierte Artist-Auswahl (ARCH-031 B.8)
+
+handlers/
+    library_maintenance_handler.py  Telegram ("🧹 Library-Wartung"),
+                                     Callback-Präfix libmaint: (bewusst
+                                     NICHT maint: — bereits durch den
+                                     Bot-Wartungsmodus belegt)
+
+scripts/
+    library_repair.py       + --maintenance-action {artist-casing,
+                             legacy-genre-cleanup,set-genre} — zentraler
+                             CLI-Einstiegspunkt statt drei separater Scripts
+```
+
+**Verifikation:** `tags_fingerprint()` (SHA-256 über alle Nicht-Ziel-Atome)
+beweist zusätzlich zu Ziel-Atom-Werten und Audio-Essenz-MD5, dass NUR die
+beabsichtigten Atome verändert wurden — strenger als das bisherige
+L1-Muster. Bewusst NICHT rückwirkend auf `apply_level1()` angewendet
+(Regressionsrisiko, ARCH-031 Follow-up).
+
+### 11.2 CLI
+
+```bash
+python scripts/library_repair.py --maintenance-action artist-casing --artist X [--apply]
+python scripts/library_repair.py --maintenance-action legacy-genre-cleanup --artist X [--apply]
+python scripts/library_repair.py --maintenance-action set-genre --artist X --genre "A; B" [--apply]
+python scripts/library_repair.py --maintenance-action set-genre --artist X --from-mapping [--apply]
+python scripts/library_repair.py --maintenance-action set-genre --artist X --from-mapping \
+    --only-if-missing --apply
+python scripts/library_repair.py --maintenance-action artist-casing --all [--apply]   # ganze Library
+python scripts/library_repair.py --maintenance-action artist-casing --path <Datei/Verzeichnis>
+```
+
+Dry-Run ist Standard (identisch zum Rest dieses Scripts), `--apply`
+erforderlich für echtes Schreiben. `--update-manual-mapping` (nur mit
+`set-genre --artist --genre`) trägt den Wert zusätzlich in
+`mapping/artist_genre.yaml` ein — bleibt CLI-only, kein Telegram-Trigger
+(ARCH-031 A.4). `--path`/`--all`/`--update-manual-mapping`/
+`--only-if-missing` sind CLI-only, `--artist` funktioniert CLI + Telegram.
+
+**Breaking Change:** die drei alten Scripts existieren nicht mehr:
+
+```text
+scripts/fix_artist_casing.py --artist X
+    → scripts/library_repair.py --maintenance-action artist-casing --artist X
+
+scripts/remove_legacy_genre_atom.py --artist X
+    → scripts/library_repair.py --maintenance-action legacy-genre-cleanup --artist X
+
+scripts/set_genre.py --artist X --genre "Y"
+    → scripts/library_repair.py --maintenance-action set-genre --artist X --genre "Y"
+```
+
+Repository-weites Removal-Audit (ARCH-032) fand keine funktionalen
+Aufrufer (kein CI/Cron/Shell-Skript) — kein dokumentierter
+Produktionslauf der drei Scripts existierte (ARCH-031 E).
+
+### 11.3 Telegram
+
+`Hauptmenü → Administration → Bibliothek & Navidrome → 🧹 Library-Wartung`:
+
+```text
+Artist wählen (index-basierter Picker, wie beim Reprocessing-Menü)
+   ↓
+Aktion wählen (🎤 Artist Casing / 🧹 Legacy Genre / 🎼 Genre setzen)
+   ↓
+Preview (read-only, ruft denselben Executor-Pfad mit dry_run=True auf)
+   ↓
+explizite Bestätigung ("✅ JA, AUSFÜHREN")
+   ↓
+Execute (Lock-Status vorab geprüft, Doppelklick-Schutz) → Ergebnis
+```
+
+`set-genre` ist über Telegram bewusst NUR im `--from-mapping`-Modus
+erreichbar (kein Freitext-Genre-Eingabefeld) — für manuelle Werte bleibt
+die CLI zuständig. Öffnen des Menüs/der Artist-Liste/der Aktions-Auswahl
+startet niemals automatisch eine Aktion. Berechtigung (Admin) wird am
+tatsächlichen Ausführungs-Handler erneut geprüft (Defense-in-Depth,
+identisches Muster wie `repair:`/`doctor:`/`review:`).
+
+**Gemeinsame Infrastruktur mit dem Finding-Flow (ADR-0004):** ein
+gemeinsamer Lock (`library_repair.lock`), ein gemeinsames Journal
+(`library_repair_journal.jsonl`), ein gemeinsamer Run-Index
+(`library_repair_runs.json`, Run-Records tragen `"kind":
+"repair"|"maintenance"`) — ein Maintenance-Lauf und ein Finding-Repair-
+Lauf können sich nicht überlappen.
+
+**Tests:**
+
+| Datei | Deckt ab |
+|---|---|
+| `tests/test_library_repair_artist.py` / `_genre.py` | Domain-Funktionen (rein), Cross-Consistency-Test genre.py vs. GenreMapper |
+| `tests/test_library_repair_executor.py` (Maintenance-Klassen) | Safety/Backup/Rollback/Audio-Essenz/Target-Non-Target für alle drei `apply_*()`, `tags_fingerprint()` |
+| `tests/test_library_repair_run_tracking.py` | Extraktions-Regressionstest (Lock/Journal-Fenster/Run-Index/Statistik/`kind`-Feld) |
+| `tests/test_library_repair_maintenance_service.py` | Preview read-only, Execute, Partial Success, Lock-Sharing mit Repair-Flow |
+| `tests/test_library_repair_library_artists.py` | Artist-Listing, Index-Auflösung, Anti-Injection |
+| `tests/test_library_repair_cli_maintenance.py` | CLI `--maintenance-action` End-to-End gegen isolierte Test-Library |
+| `tests/test_library_maintenance_handler.py` | Telegram-Handler (Start/Artist-Liste/Aktions-Auswahl/Preview/Confirm/Execute), kein Auto-Start, Doppelklick-Schutz |
+| `tests/test_rich_menu_library_maintenance.py` | Menüpunkt-Registrierung + Admin-Gating/Dispatch-Ebene für `libmaint:*` |
+
+### 11.4 Offene Follow-ups (ARCH-031, bewusst nicht Teil von ARCH-032)
+
+- `GENRE_EMPTY`/`META_GENRE_MISSING` künftig über den leichteren
+  `set-genre --from-mapping`-Pfad statt voller `METADATA_REPROCESSING`?
+  Würde bestehendes, produktiv gelaufenes Planner-Verhalten ändern —
+  eigene Characterization + Nutzerentscheidung nötig.
+- `tags_fingerprint()` rückwirkend auch für `apply_level1()`?
+  Regressionsrisiko gegen 55 bestehende Executor-Tests.
+- `--update-manual-mapping` als künftige, review-pflichtige
+  Telegram-Admin-Funktion?
+- `--only-if-missing` als Telegram-Option?

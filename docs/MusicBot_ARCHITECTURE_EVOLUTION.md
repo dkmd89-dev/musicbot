@@ -23,7 +23,7 @@ Keine Implementierung. Kein Refactoring. Keine Baseline v4.
 > Projektstatus siehe:
 > - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — lebendes Register aller
 >   aktuell offenen/zurückgestellten Punkte
-> - [`docs/MusicBot_ENGINEERING_BASELINE_v9.md`](MusicBot_ENGINEERING_BASELINE_v9.md) — aktuelle Baseline
+> - [`docs/MusicBot_ENGINEERING_BASELINE_v10.md`](MusicBot_ENGINEERING_BASELINE_v10.md) — aktuelle Baseline (Freeze 2026-09-14; löst die zuvor hier verlinkte v9 ab, siehe `docs/archive/MusicBot_ENGINEERING_BASELINE_v9.md`)
 > - [`README.md`](../README.md)
 
 > **⚠️ Nachtrag (ARCH-026 Error Handler Integration Audit, 2026-09-13):**

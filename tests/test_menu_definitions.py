@@ -39,6 +39,7 @@ class _FakeSystem:
             "_handle_backup_lib_confirm", "_handle_backup_list_bot", "_handle_backup_list_lib",
             "_handle_restart_show", "_handle_maintenance_show", "_handle_reprocessing_show",
             "_handle_doctor_scan", "_handle_review_start", "_handle_repair_start",
+            "_handle_library_maintenance_start",
             "_handle_navidrome_browse_artists", "_handle_navidrome_browse_albums",
             "_handle_navidrome_browse_genres",
             "_handle_navidrome_search_all", "_handle_navidrome_search_artists",

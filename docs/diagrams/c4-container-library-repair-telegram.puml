@@ -1,0 +1,56 @@
+@startuml c4-container-library-repair-telegram
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Library Repair Domain — Ziel-Container (nach Migration, KEIN Code-Stand — Planungsdiagramm)
+
+Person(admin, "Admin/Owner")
+
+System_Boundary(telegram_layer, "handlers/ (Telegram-Praesentation)") {
+  Container(repair_handler, "RepairMusicBotHandler", "handlers/repair_musicbot_handler.py", "Finding-getriebener Flow: Analyze/Proposals/Preview/Confirm/Execute/History — erweitert um Pro-Artist L2/L3")
+  Container(maint_handler, "LibraryMaintenanceHandler", "handlers/library_maintenance_handler.py (NEU)", "Command-getriebener Flow: Artist waehlen -> Aktion waehlen -> Confirm -> Execute (keine Findings)")
+  Container(doctor_handler, "LibraryDoctorHandler", "handlers/library_doctor_handler.py", "unveraendert — Health-Scan + SAFE_AUTOMATIC-Kurzweg")
+}
+
+System_Boundary(repair_domain, "services/library_repair/ (Fachliche Orchestrierung)") {
+  Container(repair_service, "repair_service.py", "Python", "Finding-Flow: build_repair_plan, execute_safe_automatic_repair, NEU execute_level2_repair(artist)/execute_level3_repair(artist)")
+  Container(maint_service, "maintenance_service.py (NEU)", "Python", "Command-Flow: execute_artist_casing_fix(artist), execute_legacy_genre_cleanup(artist), execute_set_genre(artist, source) — kein Health-Report-Bezug")
+  Container(planner, "planner.py", "Python (rein)", "unveraendert — Health-Issue-Code -> RepairSpec Registry")
+  Container(artist_mod, "artist.py (NEU)", "Python (rein)", "aus fix_artist_casing.py extrahiert: load_casing_map(), normalize_values()")
+  Container(genre_mod, "genre.py (NEU)", "Python (rein)", "aus set_genre.py + remove_legacy_genre_atom.py extrahiert: genre_from_mapping(), normalize_genre_input(), legacy-atom-decision")
+  Container(executor, "executor.py", "Python", "gehaertete Safety-/Backup-/Verify-Pipeline. Erweitert um apply_artist_casing(), apply_legacy_genre_cleanup(), apply_set_genre() nach apply_level1()-Muster; safety_check/_audio_essence_md5/_sha256 wiederverwendet statt dupliziert")
+  Container(journal, "journal.py", "Python", "unveraendert — EINE Produktions-Journal-Datei fuer alle Executor-Pfade inkl. der 3 neuen apply_*()")
+}
+
+ContainerDb(journal_file, "library_repair_journal.jsonl", "JSONL", "<DATA_DIR>/library_repair_journal.jsonl — Single Source of Truth fuer Historie/Statistik")
+ContainerDb(runs_index, "library_repair_runs.json", "JSON", "Lauf-Gruppierung ueber Byte-Offset-Fenster")
+
+System_Ext(library_health_svc, "services/library_health/", "unveraendert, P0 read-only, KEINE neuen Issue-Codes")
+System_Ext(mappings_files, "mapping/*.json|yaml", "artist_overrides.json, case_preserve.yaml, artist_genre.yaml")
+System_Ext(library_fs, "Music Library", "Dateisystem")
+
+Rel(admin, repair_handler, "Repair MusicBot")
+Rel(admin, maint_handler, "🧹 Library-Wartung (NEU)")
+Rel(admin, doctor_handler, "🩺 MusicBot Doctor")
+
+Rel(repair_handler, repair_service, "ruft auf")
+Rel(maint_handler, maint_service, "ruft auf")
+
+Rel(repair_service, planner, "plan_repairs()/filter_plan()")
+Rel(repair_service, library_health_svc, "Health-Scan (Finding-Quelle)")
+Rel(repair_service, executor, "apply_level1/apply_level2/apply_external_metadata")
+
+Rel(maint_service, artist_mod, "Casing-Map + Normalisierung")
+Rel(maint_service, genre_mod, "Genre-Wert-Ermittlung + Legacy-Entscheidung")
+Rel(maint_service, executor, "apply_artist_casing/apply_legacy_genre_cleanup/apply_set_genre (NEU)")
+
+Rel(executor, journal, "RepairJournal.record()/flush()")
+Rel(journal, journal_file, "append-only")
+Rel(repair_service, runs_index, "Run-Record anhaengen (auch fuer Maintenance-Actions)")
+Rel(maint_service, runs_index, "Run-Record anhaengen")
+
+Rel(executor, library_fs, "Backup -> temp-Sibling -> Verify -> atomarer replace()")
+Rel(artist_mod, mappings_files, "liest")
+Rel(genre_mod, mappings_files, "liest (+ optionales Mapping-Update wie set_genre.py --update-manual-mapping)")
+
+SHOW_LEGEND()
+@enduml

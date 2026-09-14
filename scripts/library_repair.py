@@ -39,6 +39,26 @@ nichts und ruft keinen externen Dienst. Der Health-Scan selbst
 Cover / L3 / L2 / Loudness laufen NIE im Default-`--apply`, nur auf
 ausdrueckliche Anforderung per --level bzw. --issue. --allow-delete ist
 ein eigener, von --apply unabhaengiger Pfad (siehe oben).
+
+Library-Maintenance-Actions (ARCH-032 Phase 3D) — Command-getrieben,
+KEIN Health-Finding-Bezug (ARCH-031 B.1), loest
+scripts/fix_artist_casing.py / scripts/remove_legacy_genre_atom.py /
+scripts/set_genre.py ab (siehe docs/LIBRARY_REPAIR.md §11):
+
+    --maintenance-action artist-casing --artist X [--apply]
+    --maintenance-action legacy-genre-cleanup --artist X [--apply]
+    --maintenance-action set-genre --artist X --genre "A; B" [--apply]
+    --maintenance-action set-genre --artist X --from-mapping [--apply]
+    --maintenance-action set-genre --artist X --from-mapping \
+        --only-if-missing --apply
+    --maintenance-action artist-casing --all [--apply]   # ganze Library
+    --maintenance-action artist-casing --path <Datei/Verzeichnis>
+
+Wie beim Rest dieses Scripts ist --apply erforderlich fuer echtes
+Schreiben (Default: DRY-RUN). --update-manual-mapping (nur mit
+set-genre + --artist + --genre) traegt den Wert zusaetzlich in
+mapping/artist_genre.yaml ein — bleibt CLI-only, kein Telegram-Trigger
+(ARCH-031 A.4).
 """
 
 from __future__ import annotations
@@ -106,6 +126,201 @@ def _run_duplicate_resolution(args) -> int:
 
     result = subprocess.run(cmd)
     return result.returncode
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Library-Maintenance-Actions (ARCH-032 Phase 3D) — Command-getrieben,
+# KEIN Health-Scan/Planner-Bezug (ARCH-031 B.1). Ruft services/library_repair/
+# artist.py + genre.py (Domain) und executor.py (Mutation) DIREKT auf -
+# genau wie der Rest dieses Scripts fuer L1/L2/L3/Cover/Loudness bereits
+# tut (kein Lock/Run-Index hier, identische Asymmetrie CLI-vs-Telegram
+# wie beim bestehenden Health-Finding-Flow: nur der Telegram-Pfad
+# (services/library_repair/maintenance_service.py) nutzt den geteilten
+# Lock + Run-Index, ARCH-031 B.6). Ersetzt scripts/fix_artist_casing.py /
+# scripts/remove_legacy_genre_atom.py / scripts/set_genre.py.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _collect_maintenance_targets(args, library_root: Path) -> list:
+    """--artist/--path/--all-Zielauswahl - identische Semantik zu den
+    abgeloesten Original-Scripts (collect_targets())."""
+    from services.library_repair.maintenance_service import artist_targets
+
+    if args.path:
+        p = Path(args.path).resolve()
+        if p.is_file():
+            files = [p]
+        elif p.is_dir():
+            files = sorted(p.rglob("*.m4a"))
+        else:
+            raise SystemExit(f"❌ Pfad existiert nicht: {p}")
+        return [
+            str(f.relative_to(library_root)) if library_root in f.parents else str(f)
+            for f in files
+        ]
+    if args.all:
+        return sorted(str(f.relative_to(library_root)) for f in library_root.rglob("*.m4a"))
+    if args.artist:
+        return artist_targets(args.artist, library_root=library_root)
+    raise SystemExit("❌ --artist, --path oder --all angeben")
+
+
+def _update_manual_genre_mapping(
+    artist: str, genre: str, mapping_dir: Path, *, dry_run: bool
+) -> None:
+    """CLI-only (ARCH-031 A.4): traegt den geschriebenen Genre-Wert
+    zusaetzlich in mapping/artist_genre.yaml ein - unveraendert aus
+    scripts/set_genre.py::update_manual_mapping() uebernommen. Kein
+    Backup-/Journal-Muster wie der Executor (fachliche Config-Aenderung,
+    keine Library-Datei-Mutation)."""
+    import yaml
+
+    path = mapping_dir / "artist_genre.yaml"
+    if not path.exists():
+        print(f"⚠️  {path} fehlt — Mapping-Update uebersprungen")
+        return
+
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    mapping = data.get("ARTIST_GENRE_MAP") or {}
+
+    parts = [p.strip() for p in genre.split(";") if p.strip()]
+    primary = parts[0] if parts else genre
+    secondary = parts[1:] if len(parts) > 1 else []
+
+    key = artist.lower()
+    existing = mapping.get(key)
+    new_entry = {
+        "primary": primary,
+        "secondary": secondary,
+        "description": (existing or {}).get(
+            "description",
+            "Manuell gesetzt via library_repair.py --maintenance-action set-genre",
+        ),
+    }
+
+    if existing == new_entry:
+        print(f"ℹ️  {key} bereits in artist_genre.yaml mit identischem Eintrag")
+        return
+
+    if dry_run:
+        print(
+            f"📝 [DRY-RUN] wuerde {key} -> {new_entry} in {path} eintragen "
+            f"(bisher: {existing!r})"
+        )
+        return
+
+    mapping[key] = new_entry
+    data["ARTIST_GENRE_MAP"] = mapping
+    tmp = path.with_suffix(".yaml.tmp")
+    tmp.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
+    tmp.replace(path)
+    print(f"✅ {key} -> {new_entry} in {path} eingetragen")
+
+
+def _run_maintenance_action(args) -> int:
+    from services.library_repair import artist as artist_domain
+    from services.library_repair.executor import (
+        apply_artist_casing,
+        apply_legacy_genre_cleanup,
+        apply_set_genre,
+    )
+    from services.library_repair.journal import RepairJournal
+    from services.library_repair.maintenance_service import (
+        MaintenanceServiceError,
+        resolve_target_genre,
+    )
+
+    config = Config()
+    logger = get_module_logger("library_repair.maintenance")
+    library_root = Path(args.library) if args.library else Path(config.LIBRARY_DIR)
+    mapping_dir = Path(config.GENRE_MAPPING_DIR)
+
+    try:
+        targets = _collect_maintenance_targets(args, library_root)
+    except SystemExit as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    if not targets:
+        print("❌ Keine .m4a-Dateien gefunden.", file=sys.stderr)
+        return 2
+
+    dry_run = not args.apply
+    mode = "DRY-RUN" if dry_run else "APPLY"
+    print(f"🛠️  Maintenance-Action: {args.maintenance_action} — {mode}")
+    print(f"   Library: {library_root}")
+    print(f"   Ziele:   {len(targets)} Datei(en)")
+
+    journal_path = Path(config.DATA_DIR) / "library_repair_journal.jsonl"
+    journal = RepairJournal(journal_path)
+
+    target_genre = None
+    if args.maintenance_action == "artist-casing":
+        casing_map = artist_domain.load_casing_map(mapping_dir)
+        if not casing_map:
+            print(
+                "❌ Keine Casing-Mappings gefunden "
+                "(artist_overrides.json / case_preserve.yaml fehlen oder leer).",
+                file=sys.stderr,
+            )
+            return 2
+        outcomes = apply_artist_casing(
+            targets, library_root, journal, casing_map=casing_map, dry_run=dry_run,
+        )
+    elif args.maintenance_action == "legacy-genre-cleanup":
+        outcomes = apply_legacy_genre_cleanup(targets, library_root, journal, dry_run=dry_run)
+    elif args.maintenance_action == "set-genre":
+        try:
+            target_genre = resolve_target_genre(
+                args.artist or "", genre=args.genre, from_mapping=args.from_mapping,
+                mapping_dir=mapping_dir,
+            )
+        except MaintenanceServiceError as e:
+            print(f"❌ {e}", file=sys.stderr)
+            return 2
+        print(f"   Genre:   {target_genre!r}")
+        outcomes = apply_set_genre(
+            targets, library_root, journal, target_genre=target_genre,
+            only_if_missing=args.only_if_missing, dry_run=dry_run,
+        )
+    else:  # pragma: no cover - von argparse choices bereits ausgeschlossen
+        print(f"❌ Unbekannte --maintenance-action: {args.maintenance_action}", file=sys.stderr)
+        return 2
+
+    print("─" * 70)
+    journal.flush()
+
+    for oc in outcomes:
+        icon = {"SUCCESS": "✅", "DRY_RUN": "🔍", "SKIPPED": "⏭️", "FAILED": "❌"}.get(
+            oc.status, "•"
+        )
+        print(f"{icon} {oc.status:<10} {oc.file}")
+        if oc.before or oc.after:
+            print(f"     {oc.before} → {oc.after}")
+        if oc.reason:
+            print(f"     ({oc.reason})")
+
+    from collections import Counter
+
+    tally = Counter(o.status for o in outcomes)
+    print("─" * 70)
+    print(
+        f"{tally.get('SUCCESS', 0)} success · {tally.get('DRY_RUN', 0)} would-change · "
+        f"{tally.get('SKIPPED', 0)} skipped · {tally.get('FAILED', 0)} failed"
+        f"  →  Journal: {journal_path}"
+    )
+
+    if args.update_manual_mapping:
+        if args.maintenance_action != "set-genre":
+            print("⚠️  --update-manual-mapping nur mit --maintenance-action set-genre wirksam.")
+        elif not (args.artist and args.genre):
+            print("⚠️  --update-manual-mapping erfordert --artist UND --genre (kein --from-mapping).")
+        else:
+            print()
+            _update_manual_genre_mapping(args.artist, target_genre, mapping_dir, dry_run=dry_run)
+
+    return 1 if any(o.status == "FAILED" for o in outcomes) else 0
 
 
 def _load_or_scan_report(args, config, logger) -> dict:
@@ -206,8 +421,48 @@ def main(argv=None) -> int:
         "NavidromeScanTrigger.run_scan() aufgerufen; bei --dry-run "
         "(bzw. ohne --apply) nie.",
     )
+    parser.add_argument(
+        "--maintenance-action",
+        dest="maintenance_action",
+        choices=["artist-casing", "legacy-genre-cleanup", "set-genre"],
+        default=None,
+        help="Library-Maintenance-Action statt Health-Finding-Flow "
+        "(ARCH-032 Phase 3D) - kein Health-Scan, keine Planner-Nutzung. "
+        "Erfordert --artist, --path oder --all.",
+    )
+    parser.add_argument(
+        "--path", default=None,
+        help="Maintenance-Action: einzelne Datei oder Verzeichnis (CLI-only).",
+    )
+    parser.add_argument(
+        "--all", action="store_true",
+        help="Maintenance-Action: ganze Library (CLI-only, Vorsicht!).",
+    )
+    parser.add_argument(
+        "--genre", default=None,
+        help='Maintenance-Action set-genre: manueller Genre-Wert, z. B. "Hip Hop; Rap".',
+    )
+    parser.add_argument(
+        "--from-mapping", dest="from_mapping", action="store_true",
+        help="Maintenance-Action set-genre: Genre aus mapping/artist_genre.yaml "
+        "lesen (erfordert --artist).",
+    )
+    parser.add_argument(
+        "--only-if-missing", dest="only_if_missing", action="store_true",
+        help="Maintenance-Action set-genre: nur schreiben, wenn noch kein "
+        "Genre-Tag existiert (CLI-only).",
+    )
+    parser.add_argument(
+        "--update-manual-mapping", dest="update_manual_mapping", action="store_true",
+        help="Maintenance-Action set-genre: Artist zusaetzlich in "
+        "mapping/artist_genre.yaml eintragen (nur mit --artist und --genre, "
+        "CLI-only, kein Telegram-Trigger, ARCH-031 A.4).",
+    )
 
     args = parser.parse_args(argv)
+
+    if args.maintenance_action:
+        return _run_maintenance_action(args)
 
     if args.allow_delete:
         return _run_duplicate_resolution(args)

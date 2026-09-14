@@ -188,7 +188,7 @@ class TestExecuteSafeAutomaticRepair:
         # Verification-Scan: Finding nicht mehr erkannt -> tatsaechlich behoben.
         post_scan = DoctorScanResult(exit_code=0, report=_report([]))
 
-        journal_path = rs._journal_path()
+        journal_path = rs.journal_path()
         journal_path.parent.mkdir(parents=True, exist_ok=True)
 
         def _fake_apply(*_a, **_kw):
@@ -226,7 +226,7 @@ class TestExecuteSafeAutomaticRepair:
         annotated_issue = {**issue, "finding_id": fid, "finding_status": STATUS_OPEN}
         post_scan = DoctorScanResult(exit_code=0, report=_report([annotated_issue]))
 
-        journal_path = rs._journal_path()
+        journal_path = rs.journal_path()
         journal_path.parent.mkdir(parents=True, exist_ok=True)
 
         def _fake_apply(*_a, **_kw):
@@ -259,7 +259,7 @@ class TestExecuteSafeAutomaticRepair:
         annotated_issue = {**issue, "finding_id": fid, "finding_status": STATUS_OPEN}
         post_scan = DoctorScanResult(exit_code=0, report=_report([annotated_issue]))
 
-        journal_path = rs._journal_path()
+        journal_path = rs.journal_path()
         journal_path.parent.mkdir(parents=True, exist_ok=True)
 
         def _fake_apply(*_a, **_kw):
@@ -302,7 +302,7 @@ class TestExecuteSafeAutomaticRepair:
         annotated_issue = {**issue, "finding_id": fid, "finding_status": STATUS_OPEN}
         post_scan = DoctorScanResult(exit_code=0, report=_report([annotated_issue]))
 
-        journal_path = rs._journal_path()
+        journal_path = rs.journal_path()
         journal_path.parent.mkdir(parents=True, exist_ok=True)
 
         def _fake_apply(*_a, **_kw):
@@ -332,7 +332,7 @@ class TestExecuteSafeAutomaticRepair:
         repair_result = DoctorRepairResult(exit_code=0)
         post_scan = DoctorScanResult(exit_code=0, report=_report([]))
 
-        journal_path = rs._journal_path()
+        journal_path = rs.journal_path()
         journal_path.parent.mkdir(parents=True, exist_ok=True)
 
         def _fake_apply(*_a, **_kw):
@@ -374,7 +374,7 @@ class TestExecuteSafeAutomaticRepair:
                 return DoctorScanResult(exit_code=0, report=_report([issue]))
             return DoctorScanResult(exit_code=0, report=_report([]))
 
-        journal_path = rs._journal_path()
+        journal_path = rs.journal_path()
         journal_path.parent.mkdir(parents=True, exist_ok=True)
 
         def _fake_apply(*_a, **_kw):
@@ -393,7 +393,7 @@ class TestExecuteSafeAutomaticRepair:
 
 class TestJournalWindowReading:
     def test_reads_only_entries_within_offset_window(self, tmp_path):
-        journal_path = rs._journal_path()
+        journal_path = rs.journal_path()
         journal_path.parent.mkdir(parents=True, exist_ok=True)
         journal_path.write_text(json.dumps({"file": "before.m4a", "status": "SUCCESS"}) + "\n")
         offset_before = journal_path.stat().st_size
@@ -403,17 +403,17 @@ class TestJournalWindowReading:
         with open(journal_path, "a", encoding="utf-8") as f:
             f.write(json.dumps({"file": "after.m4a", "status": "SUCCESS"}) + "\n")
 
-        entries = rs._read_journal_window(offset_before, offset_after)
+        entries = rs.read_journal_window(offset_before, offset_after)
         assert [e["file"] for e in entries] == ["during.m4a"]
 
     def test_missing_journal_returns_empty(self, tmp_path):
-        assert rs._read_journal_window(0, 100) == []
+        assert rs.read_journal_window(0, 100) == []
 
     def test_corrupt_line_is_skipped_not_raised(self, tmp_path):
-        journal_path = rs._journal_path()
+        journal_path = rs.journal_path()
         journal_path.parent.mkdir(parents=True, exist_ok=True)
         journal_path.write_text("{not valid json}\n" + json.dumps({"file": "ok.m4a", "status": "SUCCESS"}) + "\n")
-        entries = rs._read_journal_window(0, journal_path.stat().st_size)
+        entries = rs.read_journal_window(0, journal_path.stat().st_size)
         assert [e["file"] for e in entries] == ["ok.m4a"]
 
 
@@ -422,27 +422,27 @@ class TestRepairHistoryAndStatistics:
         assert rs.load_repair_history() == []
 
     def test_history_returns_newest_first(self):
-        rs._append_run_record({"repair_id": "1", "started_at": "2026-01-01T00:00:00Z"})
-        rs._append_run_record({"repair_id": "2", "started_at": "2026-01-02T00:00:00Z"})
+        rs.append_run_record({"repair_id": "1", "started_at": "2026-01-01T00:00:00Z"})
+        rs.append_run_record({"repair_id": "2", "started_at": "2026-01-02T00:00:00Z"})
         history = rs.load_repair_history()
         assert [h["repair_id"] for h in history] == ["2", "1"]
 
     def test_history_limit(self):
         for i in range(5):
-            rs._append_run_record({"repair_id": str(i)})
+            rs.append_run_record({"repair_id": str(i)})
         assert len(rs.load_repair_history(limit=2)) == 2
 
     def test_corrupt_runs_index_does_not_raise(self, tmp_path):
-        rs._runs_index_path().parent.mkdir(parents=True, exist_ok=True)
-        rs._runs_index_path().write_text("{not valid json", encoding="utf-8")
+        rs.runs_index_path().parent.mkdir(parents=True, exist_ok=True)
+        rs.runs_index_path().write_text("{not valid json", encoding="utf-8")
         assert rs.load_repair_history() == []
 
     def test_statistics_are_dynamic_not_hardcoded(self):
-        rs._append_run_record({
+        rs.append_run_record({
             "repair_id": "1", "status_counts": {"SUCCESS": 3, "FAILED": 1},
             "issue_codes": ["ARTWORK_MISSING"],
         })
-        rs._append_run_record({
+        rs.append_run_record({
             "repair_id": "2", "status_counts": {"SUCCESS": 2, "SKIPPED": 1},
             "issue_codes": ["ARTWORK_MISSING", "META_GENRE_MISSING"],
         })

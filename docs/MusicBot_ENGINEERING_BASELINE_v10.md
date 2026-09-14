@@ -1,19 +1,28 @@
 # MusicBot Engineering Baseline v10
 
-> **Status: DRAFT / IN PROGRESS — NICHT eingefroren.**
+> **Status: 🟢 FROZEN (2026-09-14).**
 >
-> Dieses Dokument ist der **laufende Zwischenstand** seit dem v9-Freeze
-> (2026-09-07). Es wird pro ARCH-Phase / PR mit *ARCH Status*, *Recent Major
-> Changes* und *Testzahlen* aktualisiert (CLAUDE.md §30) und erst zu einem
-> ausdrücklichen Freeze-Zeitpunkt (nach 🟢-APPROVED-Freeze-Gate-Audit) zum
-> eingefrorenen Referenzpunkt gemacht — dann werden die Platzhalter-
-> Abschnitte 4–6 befüllt.
+> Nächster verifizierter Engineering-Referenzzustand nach dem v9-Freeze
+> (2026-09-07). Diese Serie deckt drei große, aufeinanderfolgende Blöcke ab:
+> die **Artist-Identity-Resolution-Migration** (Phase A–F, PR #176) + die
+> **Library Closure Phase** (7 PRs), den umfangreichen **Menu-Architektur-
+> Umbau** (ARCH-021/023/024/025, Datei-Dekomposition + Router-/Permission-
+> Härtung), den vollständigen **Error-Handler-Konsolidierungs-Block**
+> (ARCH-026–030, 12 Findings F1–F12 CLOSED), einen breiten **Navidrome-
+> Menu-System-Audit** (NAV-F1–F18) samt Architecture-Refactoring
+> (Browse-/Detail-Rendering-Extraktion), **Family Hub** (Phasen F1–F5) und
+> **Statistics Menu UX & Architecture** (Phasen A–E), sowie zuletzt
+> **ARCH-031/032 „Library Repair Telegram Integration"** (Characterization
+> + vollständige Library-Maintenance-Consolidation, Phasen 1–4) und einen
+> Cache-Import-Fix. `docs/MusicBot_ENGINEERING_BASELINE_v9.md` wird durch
+> dieses Dokument abgelöst und liegt jetzt unter
+> `docs/archive/MusicBot_ENGINEERING_BASELINE_v9.md`.
 >
-> **Bis zum v10-Freeze gilt:**
-> - Eingefrorener technischer Referenzpunkt = `docs/MusicBot_ENGINEERING_BASELINE_v9.md`.
-> - Aktueller Stand aller offenen/zurückgestellten Findings = `docs/FINDINGS_INDEX.md`.
-> - Dieses Dokument dupliziert **keine** Findings — es listet nur die
->   Änderungshistorie seit v9 und die rollende Testzahl.
+> Aktueller Stand aller offenen/zurückgestellten Findings bleibt laufend
+> gepflegt in `docs/FINDINGS_INDEX.md` — dieses Dokument ist ab jetzt
+> abgeschlossen (siehe Footer). Neue Findings/Nachträge gehören in
+> `docs/MusicBot_ENGINEERING_BASELINE_v11.md`, sobald diese angelegt wird
+> (Normalfall: beim nächsten ARCH-Phasen-Abschluss nach diesem Freeze).
 
 ---
 
@@ -22,7 +31,7 @@
 | Feld | Wert |
 |---|---|
 | Baseline | v10 (DRAFT) |
-| Vorgänger | `docs/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze 2026-09-07, 2580 passed / 1 skipped / 0 failed) |
+| Vorgänger | `docs/archive/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze 2026-09-07, 2580 passed / 1 skipped / 0 failed) |
 | Letzte vom Nutzer gemeldete Full-Suite-Zahl | **2920 passed, 1 skipped, 0 failed, 19 subtests passed** (Stand PR #176, 2026-09-08) |
 | Letzte Full-Suite-Zahl (mit expliziter Nutzer-Freigabe vom Implementierungsprozess selbst ausgeführt, §8.A-Ausnahme) | **3186 passed, 1 failed (vorbestehend/unabhängig, `test_artist_overrides_orphan_cleanup.py` — 30 statt erwarteter 29 Keys, Datei bereits vor Sitzungsbeginn uncommitted verändert), 1 skipped, 11 subtests passed** (Stand: Family Hub F1–F3, 2026-09-12). Danach (F4/F5) nur gezielte + thematische Suiten (366 passed) — volle Suite steht erneut beim Nutzer aus. |
 | Seither (PR #177/#178) | nur gezielte + thematische Suiten durch den Implementierungsprozess (CLAUDE.md §8.A); PR #178 fügt 3 Regressionstests hinzu (`test_mapping_additions_2026_09_08.py` = 14, `test_library_repair_executor_l2_real_pipeline.py` +2). Volle Suite steht beim Nutzer aus. |
@@ -59,14 +68,16 @@
 | Seither (NAV-F17/NAV-F18 — Discovery-Erweiterung + Playlist-CRUD, PR #239–#241) | keine eigene Full-Suite-Zahl in dieser Tabelle nachgezogen (nicht Teil dieser ARCH-Phase) — in der nächsten Zeile bereits kumulativ mit ARCH-029 enthalten. |
 | Letzte vom Nutzer gemeldete Full-Suite-Zahl (aktuell, nach ARCH-029 „Error Handler F8-F12 Closure") | **4073 passed, 1 skipped, 11 subtests passed, 0 failed**, 2026-09-14. Deckt kumulativ PR #239–#241 (NAV-F17/F18) sowie ARCH-029 (F8–F12, siehe Abschnitt 2/3) ab — kein separater Lauf zwischen #238 und #241 gemeldet. +73 gegenüber der 4000er-Zahl (PR #236–#238); davon 23 neue Tests eindeutig auf ARCH-029 zurückführbar (`tests/test_enhanced_error_handler.py`: `TestDebugSessionLifecycle` +13, `TestHandleErrorRemoved` +1, `TestExportDebugSessionRemoved` +2, `TestProductionLoggingPIIMinimization` +5, `TestExceptionMonitor` netto +2), die restlichen 50 stammen aus NAV-F17/F18. 0 Regressionen. |
 | Letzte vom Nutzer gemeldete Full-Suite-Zahl (aktuell, nach ARCH-030 „Error Handler F7 Closure", PR #243) | **4076 passed, 1 skipped, 11 subtests passed, 0 failed** (252,82 s), 2026-09-14. +3 gegenüber der vorherigen Zeile (4073) — exakt deckungsgleich mit den 3 neuen Tests in `tests/test_family_chat_handler.py`. Mit ARCH-030 sind alle 12 Findings F1–F12 aus dem ARCH-026-Error-Handler-Audit CLOSED, der ARCH-026–030-Auftragsblock ist damit vollständig abgeschlossen. 0 Regressionen. |
+| Letzte vom Nutzer gemeldete Full-Suite-Zahl (aktuell, nach ARCH-031 „Library Repair Telegram Integration Characterization" + ARCH-032 „Library Maintenance Consolidation", Phasen 1–4, + Cache-Import-Fix) | **4250 passed, 1 skipped, 11 subtests passed, 0 failed** (250,52 s), 2026-09-14. +174 gegenüber der vorherigen Zeile (4076, ARCH-030/PR #243) — deckt ARCH-031 (reine Characterization/Decision, keine Code-Änderung), ARCH-032 Phasen 1–4 (Domain Extraction `artist.py`/`genre.py`, Executor-Erweiterung um `apply_artist_casing()`/`apply_legacy_genre_cleanup()`/`apply_set_genre()`/`tags_fingerprint()`, `run_tracking.py`-Extraktion aus `repair_service.py` (ADR-0004), `maintenance_service.py`/`library_artists.py`, CLI-Konsolidierung `scripts/library_repair.py --maintenance-action` + Entfernung der drei abgelösten Scripts, Telegram-Menüpunkt „🧹 Library-Wartung") sowie den Fix zweier vorbestehender, unabhängig vom Auftrag bereits uncommitted kaputter Änderungen (`services/duplicate/cache.py`/`services/metadata/cache.py`, kaputter Modul-Level-Import) ab. Details Abschnitt 2/3, `docs/LIBRARY_REPAIR.md` §11, `docs/FINDINGS_INDEX.md`. 0 Regressionen. |
 | Seither (NAV-F15 — unescaptes `+` in `render_playlist_detail()` behoben, PR #230) | nur gezielte + thematische Suiten durch den Implementierungsprozess (CLAUDE.md §8.A): gezielt (`test_navidrome_renderer.py` 25 passed + `test_navidrome_menu_handler.py` 58 passed), thematisch (6 Dateien) 206 passed, 0 Regressionen. `compileall` fehlerfrei. Vom Nutzer selbst gefunden+gefixt, von Claude nachbearbeitet (Fehlbezeichnung korrigiert, NAV-F16 für `render_album_detail()` als eigener offener Fund dokumentiert) und ordnungsgemäß durchs Ship-Verfahren geführt. Volle Suite nach diesem Fix steht beim Nutzer aus. |
 | Seither (Architecture Refactoring Audit — Detail-View-Familie vervollständigt: Artist-/Genre-Detail-Extraktion, PR #231) | nur gezielte + thematische Suiten durch den Implementierungsprozess (CLAUDE.md §8.A): gezielt (`test_navidrome_menu_handler.py` 64 passed + `test_navidrome_renderer.py` 33 passed, 8 neu), thematisch (10 Dateien) 277 passed, 0 Regressionen. `compileall` fehlerfrei. Kein bestehender Test musste inhaltlich angepasst werden (Abbruchkriterium griff nicht). `NavidromeMenuHandler` 1179→1059 Zeilen (1493 vor Stufe 1). Alle 5 Detail-Views (Artist/Album/Song/Playlist/Genre) konsistent im Renderer. Volle Suite nach diesem Fix steht beim Nutzer aus. |
 | Seither (NAV-F16 — unescaptes `+` in `render_album_detail()` behoben, PR #232) | nur gezielte + thematische Suiten durch den Implementierungsprozess (CLAUDE.md §8.A): gezielt (`test_navidrome_renderer.py`) 34 passed (1 neu), thematisch (6 Dateien) 221 passed, 0 Regressionen. `compileall` fehlerfrei. NAV-F16 CLOSED — alle 16 Findings des Navidrome-Menu-Audits sind damit geschlossen. Volle Suite nach diesem Fix steht beim Nutzer aus. |
 | Seither (verbleibende Testlücken geschlossen: Playlists/Favoriten/Such-Erfolgspfad, PR #233) | nur gezielte + thematische Suiten durch den Implementierungsprozess (CLAUDE.md §8.A): gezielt (`test_navidrome_menu_handler.py`) 73 passed (9 neu), thematisch (6 Dateien) 230 passed, 0 Regressionen. `compileall` fehlerfrei. Reine Testergänzung, keine Produktionscode-Änderung. Kein bisher unentdeckter Bug aufgedeckt. Volle Suite nach diesem Fix steht beim Nutzer aus. |
 | Seither (Architecture Refactoring Audit — Migrationsstufe 4, reduziert auf `get_albums_page()`, PR #234) | nur gezielte + thematische Suiten durch den Implementierungsprozess (CLAUDE.md §8.A): gezielt (`test_navidrome_menu_handler.py` 73 passed + `test_navidrome_browser_service.py` 5 passed, neu), thematisch (7 Dateien) 235 passed, 0 Regressionen. `compileall` fehlerfrei. Kein bestehender Test musste inhaltlich angepasst werden (Abbruchkriterium griff nicht). Neues Package `services/navidrome/`. Migrationsplan damit im Kern abgeschlossen. Volle Suite nach diesem Fix steht beim Nutzer aus. |
 | Seither (NAV-F17/NAV-F18 formalisiert — Discovery-Erweiterung/Playlist-CRUD, PR #235) | reine Dokumentationsänderung, keine Code-/Teständerung — CLAUDE.md §8.A entfällt. `docs/FINDINGS_INDEX.md` um zwei OPEN (DEFER)-Einträge ergänzt (bisher nur informell als „optionale Weiterentwicklung" erwähnt), konsistent in `docs/MusicBot_NAVIDROME_MENU_ARCHITECTURE.md` (Statuskopf, Findings-Tabelle Abschnitt 4, Migrationsreihenfolge Abschnitt 6, Abschnitt 8 „Offene Punkte" — widersprach zuvor mit „keine offenen Findings mehr") und im Migrationsplan-Dokument nachgezogen. |
-| Zuwachs seit v9-Freeze | +340 passed (Stand PR #176) — Zwischenstand, nicht laufend nachgezogen; für den aktuellen Gesamtstand siehe die Zeilen „Letzte vom Nutzer gemeldete Full-Suite-Zahl" oben |
-| Freeze-Status | offen — kein Freeze-Gate-Audit durchgeführt |
+| Zuwachs seit v9-Freeze | +1670 passed (2580 → 4250), 0 failed am Freeze-Zeitpunkt, Skip-/Subtest-Muster (1 skipped / 11 subtests) seit v9 durchgehend unverändert (kein neues Flackern über die gesamte Serie) |
+| Freeze-Datum | 2026-09-14 |
+| Freeze-Status | 🟢 APPROVED — siehe Abschnitt 6 |
 
 ---
 
@@ -88,6 +99,9 @@
 | **ARCH-028 — Error Handler Closure** — schließt F4/F5/F6 aus dem ARCH-026-Audit ab. F6: die 4 Handler mit zuvor injiziertem, aber ungenutztem `error_handler` (Reprocessing/Doctor/Review/Repair) rufen jetzt in ihren generischen `except Exception`-Hintergrund-Task-Pfaden tatsächlich `handle_exception()` auf (erwartete, bereits lokal behandelte Fehler wie `HealthScanFailedError`/`RepairAlreadyRunningError`/`FindingsRegistryError` bleiben bewusst lokal). F4: `DownloadHandler` erhält einen optionalen `error_handler`-Parameter (Klassenattribut-Fallback für 10 bestehende `object.__new__(DownloadHandler)`-Testdateien); das Hintergrund-Task-Sicherheitsnetz `_log_background_download_task_exception()` meldet zusätzlich zentral. F5: `self.config.get(...)` → `getattr(self.config, ...)` (der dokumentierte Bug) UND ein beim Testen entdeckter zweiter Bug (`asyncio.create_task()` ohne laufenden Event-Loop im Sync-Decorator, behoben mit `asyncio.get_running_loop()`-Check + `asyncio.run()`-Fallback) — beide Decorators bleiben als LEGACY API bestehen, weiterhin 0 produktive Aufrufer. Anschließende Scheduler-Verifikation (statisch, deterministisch statt Live-Bot-Betrieb) bestätigte FALL B: `FamilyChallengeScheduler` hatte 0 Error-Handler-Integration; zusätzlich dabei entdeckt und behoben: Live-Bug `Config.FAMILY_CHALLENGE_TIME` als Klassen- statt Instanzzugriff auf eine `@property` (`'property' object has no attribute 'split'`) — `FamilyChallengeScheduler` erhält jetzt `config`+`error_handler` von `bot.py` injiziert, alle 3 Exception-Pfade (Daily-Loop/pro Familie/pro Broadcast-Empfänger) melden zentral, Fehlerisolation unverändert erhalten. Vollständiges Protokoll: `docs/MusicBot_ARCH-028_Error_Handler_Closure.md`. | — (noch nicht gemergt) | Gezielt nach jedem Punkt grün (F6 125, F4 63, F5 26, Scheduler 16). Thematischer Sweep: 1323 passed, 0 failed. Vollständige Suite (Nutzer): **3490 passed / 1 skipped / 11 subtests passed / 0 failed** (280,76 s), +30 gegenüber Vor-ARCH-028-Stand, 0 Regressionen. |
 | **ARCH-029 — Error Handler F8-F12 Closure** — schließt die verbleibenden, in ARCH-028 bewusst zurückgestellten Findings F8/F9/F10/F11/F12 aus dem ARCH-026-Audit ab, ohne die ARCH-027/028-Architektur (geteilte Instanz, Coverage F4/F5/F6/Scheduler) erneut anzufassen. F8: `handle_exception()` erhält `manage_session: bool = True` — Default für alle bestehenden Direktaufrufer (unverändert); die 3 High-Level-Entry-Points (`handle_telegram_error`/`handle_command_error`/`handle_callback_error`) verlieren ihren eigenen, redundanten `start_session()`/`log_step()`-Vorlauf (übernehmen ihren Kontext stattdessen vollständig über den `context=`-Parameter in `handle_exception()`s eigene Session — echte Verbesserung ggü. dem vorher dokumentierten Kontextverlust); beide Decoratoren übergeben `manage_session=False` (besitzen die Session weiterhin selbst, auch für ihren Erfolgspfad). Beim Testen entdeckter Zusatzfund: im `asyncio.create_task()`-Fire-and-Forget-Zweig von `handle_sync_exceptions()` schloss der synchrone `finally`-Block die Session, bevor der geplante Task lief — behoben über `task.add_done_callback(...)` (etabliertes Muster wie `_log_background_download_task_exception()`, ARCH-028/F4). F9: toter `handle_error()`-Kompat-Wrapper (0 Aufrufer, repoweit final verifiziert) entfernt. F10: `export_debug_session()` (0 externe Aufrufer) entfernt, veraltetes Dokumentationsbeispiel bereinigt; `DebugTracker` bleibt interner Mechanismus. F11: `ExceptionMonitor.categorize_exception()` wählt jetzt deterministisch den spezifischsten Treffer statt des ersten Dict-Treffers — behebt den verbleibenden Kernfall, dass `ConnectionError`/`TimeoutError` (Subklassen von `OSError`) fälschlich `file_system` statt `network` erhielten; generischer `OSError` sowie `FileNotFoundError`/`PermissionError`/`IsADirectoryError` bleiben unverändert `file_system`. F12: `_log_exception_details()` staffelt den `user`-/`message`-Block hinter den bestehenden `self.debug_mode`-Schalter — Production loggt nur `user_id`/`message_id` statt Klarname/Username/Nachrichtentext, Debug-Modus bleibt unverändert vollständig; `callback_data` bleibt in beiden Modi sichtbar (keine PII, für Diagnose essenziell). Vollständiges Protokoll: `docs/MusicBot_ARCH-029_Error_Handler_F8_F12_Closure.md`. | #242 (gemergt) | `tests/test_enhanced_error_handler.py` 55 passed (23 neu/geändert), Regressionstests aller `handle_exception()`-Aufrufer aus ARCH-028: 264 passed, thematischer Sweep: 1620 passed, 0 failed (2454 deselected). Vollständige Suite (Nutzer, 2026-09-14): **4073 passed / 1 skipped / 11 subtests passed / 0 failed** (deckt kumulativ auch PR #239–#241 NAV-F17/F18 ab, siehe Abschnitt 1), 0 Regressionen. |
 | **ARCH-030 — Error Handler F7 Closure** — schließt das letzte verbleibende Finding F7 aus dem ARCH-026-Audit (`FamilyChatHandler`/`FamilyChallengeHandler`/`BotRestartHandler`, undokumentierte Nicht-Integration). Verifikation deckte einen echten, bisher unentdeckten Zusatzfund auf: `FamilyChatHandler.process_pending_message()`s Broadcast-`except`-Block wird über `RichMenuHandler.handle_text_message()` aufgerufen, das anders als `handle_callback()` keinen zentralen Catch-All besitzt — fehlgeschlagene Zustellungen erreichten dadurch nie eine `EnhancedErrorHandler`-Instanz (strukturell identisch zum in ARCH-028 behobenen `FamilyChallengeScheduler._broadcast()`-Fall). Fix: `FamilyChatHandler` erhält `error_handler`-Injection (analog `NavidromeMenuHandler`), meldet fehlgeschlagene Zustellungen jetzt zusätzlich zentral (`handle_exception()`, Fehlerisolation zwischen Empfängern bleibt erhalten). `FamilyChallengeHandler`/`BotRestartHandler` haben 0 lokale `except`-Blöcke (repoweit verifiziert) — dort keine Codeänderung, nur ein dokumentierter Verzicht im Klassen-Docstring (analog `StatistikHandler`). Damit sind alle 12 Findings F1–F12 aus ARCH-026 CLOSED. Vollständiges Protokoll: `docs/MusicBot_ARCH-030_Error_Handler_F7_Closure.md`. | #243 (gemergt) | Gezielt (4 Dateien) 90 passed, thematischer Sweep 1076 passed, 0 failed (3001 deselected). Vollsuite (Nutzer, 2026-09-14): **4076 passed / 1 skipped / 11 subtests passed / 0 failed** (252,82 s), +3 gegenüber ARCH-029 (4073), deckungsgleich mit den 3 neuen `test_family_chat_handler.py`-Tests. 0 Regressionen. |
+| **ARCH-031 — Library Repair Telegram Integration Characterization** — reine Analyse-/Entscheidungsphase (kein Code) zur vollständigen Telegram-Ausführbarkeit von Executor Level 1–3 sowie Konsolidierung dreier neuer, eigenständiger Wartungsskripte (`fix_artist_casing.py`/`remove_legacy_genre_atom.py`/`set_genre.py`, Commit `6037abf`) in `services/library_repair/`. Löst den ursprünglichen Auftrags-Bezeichner „ARCH-030" wegen Nummernkollision (bereits durch die Zeile oben vergeben) auf ARCH-031 auf — analog zum dokumentierten ARCH-021/022-Präzedenzfall. Verbindliche Entscheidungen (B.1–B.11): „Library-Maintenance-Actions" als eigener, NICHT Health-Finding-getriebener Flow (ADR-0001, `services/library_health/` bleibt P0-unangetastet, kein neuer Issue-Code); gemeinsames `run_tracking.py` statt eigenständigem `maintenance_service.py` mit dupliziertem Lock/Journal/Run-Index (ADR-0004, Variante C); bestehendes index-basiertes Artist-Picker-Muster aus `reprocessing_menu_handler.py` wiederverwendet statt neuer Artist-Resolution (B.8); Pro-Artist-Telegram-Freigabe für Level 2/3 (ADR-0003, → ARCH-033); die drei Original-Scripts werden nach Migration entfernt statt als Dauer-Wrapper belassen (→ zentraler `scripts/library_repair.py --maintenance-action`). Vollständiger Migrationsplan Phase 1–5 (ARCH-032/033), C4-/Sequenzdiagramme, ADR-0001–0004. Vier Follow-ups bewusst zurückgestellt (GENRE_EMPTY/META_GENRE_MISSING-Pfad, `tags_fingerprint()`-Retrofit auf `apply_level1()`, `--update-manual-mapping` als Telegram-Funktion, `--only-if-missing` als Telegram-Option). Vollständiges Protokoll: `docs/MusicBot_ARCH-031_Library_Repair_Telegram_Integration_Characterization.md`. | — (lokal, noch nicht als PR) | Reine Dokumentation, kein Testbezug. |
+| **ARCH-032 — Library Maintenance Consolidation (Phasen 1–4)** — setzt die in ARCH-031 beschlossene Zielarchitektur vollständig um. Phase 1 (Domain Extraction): `services/library_repair/artist.py`/`genre.py` — reine Funktionen aus den drei Original-Scripts extrahiert, Characterization-Tests gegen deren Verhalten. Phase 2 (Executor Consolidation): `executor.py` um `apply_artist_casing()`/`apply_legacy_genre_cleanup()`/`apply_set_genre()` + neue geteilte Verifikationsfunktion `tags_fingerprint()` erweitert — nutzt ausschließlich bestehende Safety-/Backup-Infrastruktur (`safety_check`/`_sha256`/`_audio_essence_md5`/`_read_atoms`/`_write_atoms`/`_delete_atoms`/`_je_named`), keine Duplikation; bewusst NICHT rückwirkend auf `apply_level1()` angewendet (Regressionsrisiko, Follow-up). Phase 3 (`run_tracking.py`/`maintenance_service.py`/`library_artists.py`/CLI): Lock/Journal-Fenster/Run-Index/History/Statistik aus `repair_service.py` extrahiert (reiner Move, `repair_service.py` re-exportiert für Rückwärtskompatibilität — inkl. `Config` selbst, da `tests/test_repair_service.py`s `monkeypatch.setattr(rs.Config, ...)`-Fixture sonst gebrochen wäre); neues additives `"kind": "repair"|"maintenance"`-Feld in Run-Records; Command-getriebener `maintenance_service.py` (Preview ruft denselben Executor-Pfad mit `dry_run=True` auf wie Execute); `scripts/library_repair.py --maintenance-action {artist-casing,legacy-genre-cleanup,set-genre}` als zentraler CLI-Einstiegspunkt; Repository-weites Removal-Audit (keine funktionalen Aufrufer gefunden) → die drei Original-Scripts entfernt (Breaking-Change-Migrationstabelle in `docs/LIBRARY_REPAIR.md` §11). Phase 4 (Telegram): neuer Menüpunkt „🧹 Library-Wartung" (`handlers/library_maintenance_handler.py`), Callback-Präfix bewusst `libmaint:` statt `maint:` (echte Kollision mit dem bereits belegten Bot-Wartungsmodus-Präfix gefunden und vermieden), Lock-Status-Vorabprüfung als Doppelklick-Schutz, `set-genre` über Telegram nur im `--from-mapping`-Modus. Dabei zwei bestehende Tests an additive Strukturänderungen angepasst (`_FakeSystem` um neuen Handler-Namen ergänzt, TGPERM-001-Sweep-Test um `libmaint:` in `_GATED_PREFIXES` ergänzt, Handler-Status-Tracker-Count 17→18) — reine Anpassung, keine Assertion abgeschwächt. ARCH-033 (Telegram Level-2/3, execute_level2_repair/execute_level3_repair) bewusst NICHT angefasst. Vollständiges Protokoll: `docs/LIBRARY_REPAIR.md` §11, `docs/FINDINGS_INDEX.md`. | — (lokal, noch nicht als PR) | 178 neue Tests (Phase 1: 34, Phase 2: 28, Phase 3: 72, Phase 4: 44). Thematischer Sweep über alle vier Phasen + gesamtes Menu-System: 771 passed, 0 failed. Vollsuite (Nutzer, 2026-09-14, inkl. Cache-Import-Fix siehe Zeile unten): **4250 passed / 1 skipped / 11 subtests passed / 0 failed** (250,52 s). 0 Regressionen. |
+| **Cache-Import-Fix (`services/duplicate/cache.py`/`services/metadata/cache.py`)** — bei der ARCH-032-Verifikation entdeckt: vorbestehende, vom Auftrag unabhängige uncommitted Änderungen versuchten `DUPLICATE_CACHE_DIR`/`METADATA_CACHE_DIR` per `from config import X` zu importieren — beide existieren nur als `Config`-Klassenattribute, nicht als Modul-Level-Namen; brach jeden Import von `handlers/menu/rich_menu_system.py`. Fix: Import auf `from config import Config` korrigiert; `DuplicateCache.cache_dir`-Parameter wiederhergestellt (Entfernen hätte `detector.py`/`duplicate_handler.py` + 6 Testaufrufer gebrochen, die explizit `cache_dir=` übergeben — behebt nebenbei einen vorbestehenden toten Fallback-Zweig); `MetadataCacheHandler._video_id_index_path` wieder aus dem injizierten `metadata_cache.cache_path` abgeleitet statt aus einem fest verdrahteten zentralen Verzeichnis (sonst echte Test-Isolations-Regression, TESTENV-01-Fehlerklasse). | — (lokal, noch nicht als PR) | 36 gezielte + 106 thematische Tests grün. In der Vollsuite-Zahl der Zeile oben enthalten. |
 
 ---
 
@@ -155,47 +169,141 @@
 | 2026-09-13/14 | Zwei reine Auto-Learn-Mapping-Snapshots (kein Code-/Testbezug, direkt auf `main` nach etabliertem `data(mapping): Auto-Learn-Snapshot`-Muster): „Paul Kalkbrenner" (Known-Artist + Genre House) sowie „EminemMusic"→„Eminem"-Alias sowie Babytron/Big Sean als Featured-Artists (beobachtet auf „Eminem - Tobey"). | (direkt auf `main`) | Kein Testbezug. |
 | 2026-09-14 | **ARCH-029 — Error Handler F8-F12 Closure** — siehe Abschnitt 2 für Details. Schließt die 5 verbleibenden, in ARCH-028 zurückgestellten Findings F8/F9/F10/F11/F12 aus dem ARCH-026-Audit: DebugTracker-Session-Lifecycle vereinheitlicht (F8, inkl. Zusatzfund im Sync-Decorator-Fire-and-Forget-Pfad), `handle_error()`-Kompat-Wrapper entfernt (F9), `export_debug_session()`/externe DebugTracker-API entfernt (F10), `OSError`-vs-`network`-Kategorisierung final korrigiert (F11), Production-Logging von personenbezogenen Nutzerdaten befreit (F12, `debug_mode`-gestaffelt). Nur `handlers/enhanced_error_handler.py` geändert, keine Rückwirkung auf ARCH-027/028. Vollständiges Protokoll: `docs/MusicBot_ARCH-029_Error_Handler_F8_F12_Closure.md`. | #242 (gemergt) | Gezielt 55 passed, Regressionstests aller `handle_exception()`-Aufrufer 264 passed, thematisch 1620 passed, 0 Regressionen. Vollsuite (Nutzer): 4073 passed / 1 skipped / 11 subtests passed / 0 failed. |
 | 2026-09-14 | **ARCH-030 — Error Handler F7 Closure** — siehe Abschnitt 2 für Details. Schließt das letzte verbleibende Finding F7 aus dem ARCH-026-Audit. Zusatzfund: `FamilyChatHandler.process_pending_message()`s Broadcast-`except`-Block meldete fehlgeschlagene Zustellungen bisher nirgends zentral, da `RichMenuHandler.handle_text_message()` (anders als `handle_callback()`) keinen zentralen Catch-All hat — behoben durch `error_handler`-Injection analog `NavidromeMenuHandler`. `FamilyChallengeHandler`/`BotRestartHandler` erhalten nur einen dokumentierten Verzicht (0 lokale `except`-Blöcke, bereits vollständig über Catch-All/PTB-Fallback abgedeckt). Alle 12 Findings F1–F12 aus ARCH-026 damit CLOSED — der Error-Handler-Auftragsblock (ARCH-026–030) ist vollständig abgeschlossen. Vollständiges Protokoll: `docs/MusicBot_ARCH-030_Error_Handler_F7_Closure.md`. | #243 (gemergt) | Gezielt (4 Dateien) 90 passed, thematisch 1076 passed, 0 Regressionen. Vollsuite (Nutzer): 4076 passed / 1 skipped / 11 subtests passed / 0 failed (252,82 s). |
+| 2026-09-14 | **ARCH-031 (Characterization/Decision, kein Code) + ARCH-032 (Library Maintenance Consolidation, Phasen 1–4)** — siehe Abschnitt 2 für Details. „Library-Maintenance-Actions" als eigener Command-Flow neben dem Finding-Repair-Flow (kein neuer Health-Issue-Code); `artist.py`/`genre.py` (Domain), `executor.py` +`apply_artist_casing`/`apply_legacy_genre_cleanup`/`apply_set_genre`/`tags_fingerprint`, `run_tracking.py` (aus `repair_service.py` extrahiert, geteilter Lock/Journal/Run-Index), `maintenance_service.py`/`library_artists.py`, `scripts/library_repair.py --maintenance-action` (zentraler CLI-Einstiegspunkt, ersetzt `fix_artist_casing.py`/`remove_legacy_genre_atom.py`/`set_genre.py`, die entfernt wurden), Telegram-Menüpunkt „🧹 Library-Wartung" (Präfix `libmaint:`). Vollständiges Protokoll: `docs/LIBRARY_REPAIR.md` §11. | — (lokal) | 178 neue Tests, thematisch 771 passed. |
+| 2026-09-14 | Cache-Import-Fix: `services/duplicate/cache.py`/`services/metadata/cache.py` hatten vorbestehende, vom Auftrag unabhängige kaputte `from config import DUPLICATE_CACHE_DIR`/`METADATA_CACHE_DIR`-Importe (existieren nur als `Config`-Klassenattribute) — blockierte jeden Import von `handlers/menu/rich_menu_system.py`. Behoben: `Config`-Import + wiederhergestellter `cache_dir`-Parameter (`DuplicateCache`, sonst 2 Produktions- + 6 Testaufrufer gebrochen); `MetadataCacheHandler._video_id_index_path` wieder aus `metadata_cache.cache_path` abgeleitet (sonst Test-Isolations-Regression, TESTENV-01-Klasse). | — (lokal) | 36 gezielt + 106 thematisch passed. |
+| 2026-09-14 | Full-Suite-Bestätigung nach ARCH-031/032 + Cache-Fix (siehe Abschnitt 1). | — | **4250 passed / 1 skipped / 11 subtests passed / 0 failed** (250,52 s). |
 
 ---
 
-## 4. Technical Debt — Snapshot
+## 4. Technical Debt — Snapshot (Stand 2026-09-14, Freeze-Zeitpunkt)
 
-> Platzhalter — wird beim v10-Freeze als Schnappschuss befüllt (Vergleichswert
-> zum v9-Stand, CLAUDE.md §30). **Bis dahin maßgeblich:**
-> [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md).
->
-> Seit v9 neu zurückgestellt: **F-07** (MusicBrainz-Artist-MBID nicht als
-> Identitätssignal, P3) — in `FINDINGS_INDEX.md`. **F-08** (deprecated
-> Artist-Code) und **INV-01** (`duplicate/cache.py`) sind seit 2026-09-08
-> CLOSED (F-08 Cleanup PR #177, INV-01 akzeptiertes Risiko). Kein offener
-> P0/P1.
+Seit v9 geschlossen: **F-08** (deprecated Artist-Code, PR #177), **INV-01**
+(`duplicate/cache.py` Event-Loop-Persistenz, akzeptiertes Risiko), die
+gesamte **Library Closure Phase** (7 Lücken), **TGPERM-001**,
+**NAV-F1–F18** (vollständiger Navidrome-Menu-Audit), **F1–F12** des
+Error-Handler-Audits (ARCH-026–030), **PMA-F1/F2** (Parse-Mode-Audit),
+sowie der bei ARCH-032 entdeckte **Cache-Import-Fix**. Kein offener P0/P1
+zum Freeze-Zeitpunkt (repoweit gegen `docs/FINDINGS_INDEX.md` verifiziert
+— alle dort als `P0`/`P1` markierten Zeilen sind `CLOSED`).
+
+Verbleibend offen (alle P2/P3 bzw. bewusst unpriorisierte Design-Fragen,
+Details + Begründung in `docs/FINDINGS_INDEX.md`):
+
+| ID | Problem | Status | Priorität |
+|---|---|---|---|
+| F-07 | MusicBrainz-Artist-MBID nicht als Identitätssignal (Timing-Konflikt in der Pipeline) | DEFER (seit 2026-09-08) | P3 |
+| ARCH-021 Session-Legacy-State | `max_sessions` ohne Durchsetzung, `MenuSession.state`/`.data`/`.message_id` ungenutzt | DEFER (seit ARCH-021/P-4) | P3 |
+| Hard-Cancel während FFmpeg-Postprocessing | Cancel-Check-Hook nur in `progress_hooks`, nicht `postprocessor_hooks` | akzeptiertes Restrisiko (unverändert seit v9) | P3 |
+| `_split_artists()` Ampersand-Bandnamen | Bandnamen mit „&" im Namen selbst (z. B. „Simon & Garfunkel") werden fälschlich gesplittet | akzeptiertes Risiko | P3 |
+| Family Hub „Rate den Song" | Challenge-Typ aus Master-Prompt nicht umgesetzt (fehlender Audio-/Lyrics-Snippet-Baustein) | DEFER | P3 |
+| Family Hub „Playlist für Stimmung" | Challenge-Typ nicht umgesetzt (keine automatisch prüfbare Antwort) | DEFER | P3 |
+| P2.3 Stufe B (Bad Download Detector Reject-Gate) | Braucht reale Beobachtungsperiode + explizites Nutzer-Go vor Umsetzung | DEFER | P2 |
+| Metadata Confidence Score | Entscheidung aussstehend: bestehenden Health-Score wiederverwenden vs. separaten Score bauen | DEFER | — |
+| ARCH-031-Follow-ups (4 Punkte) | `GENRE_EMPTY`/`META_GENRE_MISSING`-Pfad, `tags_fingerprint()`-Retrofit auf `apply_level1()`, `--update-manual-mapping` als Telegram-Funktion, `--only-if-missing` als Telegram-Option | DEFER (neu seit ARCH-031) | P3 |
+| ARCH-033 (Telegram Level-2/Level-3 Repair) | `execute_level2_repair`/`execute_level3_repair`, Pro-Artist-Telegram-Freigabe (ADR-0003) — letzte in ARCH-031 beschlossene, noch nicht begonnene Phase | OPEN, noch nicht begonnen | P2 |
+
+10 offene Punkte (ggü. 5 in v9) — der Zuwachs ist ausschließlich neue,
+bewusst kleine/klar begründete Zurückstellungen aus dieser Serie
+(ARCH-021-Legacy-State, ARCH-031-Follow-ups, ARCH-033), kein „vergessenes"
+Risiko.
 
 ---
 
-## 5. Security-Baseline
+## 5. Security-Baseline (Stand 2026-09-14)
 
-> Platzhalter — wird beim v10-Freeze vollständig befüllt.
->
-> **Seit v9 eine sicherheitsrelevante Änderung:** TGPERM-001 (2026-09-12,
-> siehe Abschnitt 3 oben) — Telegram-Permission-Bypass bei 10 Admin-Level-
-> Menüpunkten (Logger-Verwaltung + Test-System), CLOSED noch am Tag der
-> Entdeckung. Details: `docs/audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md`,
-> `docs/FINDINGS_INDEX.md`.
+**Zwei P1-Security-/Robustheits-Funde seit v9, beide CLOSED noch am
+Tag der Entdeckung:**
+- **TGPERM-001** (2026-09-12) — Telegram-Permission-Bypass: 10 Admin-
+  Level-Menüpunkte (Logger-Verwaltung + Test-System) routeten über den
+  ungegateten generischen `menu:`-Fallback, jeder Bot-Nutzer konnte
+  globales Log-Level ändern/Log-Dateien einsehen/Testläufe auslösen.
+  Fix + neuer repoweiter Sweep-Test gegen dieselbe Fehlerklasse. Details:
+  `docs/audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md`.
+- **PMA-F1/PMA-F2** (2026-09-14, Parse-Mode-Audit) — admin-eingegebener
+  Freitext (`navidrome_user`) bzw. roher Exception-Text wurde unescaped
+  in `parse_mode="Markdown"` gerendert; ein unpaariges Legacy-Markdown-
+  Sonderzeichen ließ Telegram die Nachricht ablehnen („Can't parse
+  entities") — kein Datenleck, aber ein Crash-/Verfügbarkeitsrisiko der
+  Admin-Oberfläche selbst (u. a. der Fehleranzeige-Pfad in
+  `enhanced_error_handler.py`). Beide gefixt.
+
+**Neue schützende Mechanismen seit v9** (keine Findings, sondern neue
+Sicherheitsvorkehrungen):
+- **Error-Handler-Konsolidierung** (ARCH-026–030): eine einzige
+  `EnhancedErrorHandler`-Instanz statt zwei unsynchronisierten — Admin-
+  Monitoring (`/error_stats`) sieht jetzt tatsächlich alle Exceptions,
+  inkl. Download-Pipeline (P0, vorher 0 Integration) und Family-
+  Broadcast-Pfaden. Production-Logging von personenbezogenen
+  Nutzerdaten befreit (Klarname/Username/Nachrichtentext nur noch im
+  Debug-Modus, F12).
+- **Menu-Router-/Permission-Härtung** (ARCH-023): zentrale
+  `is_accessible()`-Prüfung vor jedem `menu:`-Handler-Aufruf schließt
+  die TGPERM-001-Fehlerklasse strukturell für alle `menu:`-Items;
+  repoweiter Permission-Audit inkl. `utils/` (16 Dateien), kein
+  P0/P1-Fund; 5 unabhängig implementierte Owner/Admin-Duplikate auf
+  `permissions.is_admin_or_owner()` konsolidiert.
+- **Library-Maintenance-Actions** (ARCH-032): Callback-Präfix bewusst
+  `libmaint:` statt `maint:` (echte Kollision mit dem Bot-Wartungsmodus
+  gefunden und vermieden, bevor sie produktiv wurde); Defense-in-Depth-
+  Admin-Check identisch zu `repair:`/`doctor:`/`review:`; TGPERM-001-
+  Sweep-Test deckt den neuen Menüpunkt automatisch mit ab.
+- Alle Library-Repair-/Maintenance-Executoren (bestehend + neu in
+  ARCH-032) verifizieren weiterhin vor jedem Schreibvorgang Audio-
+  Essenz-Byte-Identität und haben Per-Datei-Rollback bei
+  Verifikationsfehler; `tags_fingerprint()` (neu) verschärft das für
+  die drei neuen Maintenance-Actions zusätzlich auf „nur die Ziel-Atome
+  wurden verändert".
+
+Keine offenen Security-Findings am Ende dieser Serie.
 
 ---
 
 ## 6. Architecture Freeze
 
-> Platzhalter — Freeze-Entscheidung (GO/NO-GO mit Evidenz) ist ein
-> ausdrücklicher, eigenständiger Prüfschritt (CLAUDE.md §30) und noch nicht
-> erfolgt.
+```
+🟢 ARCHITECTURE FREEZE — APPROVED
+```
+
+**Freeze-Gate-Audit (2026-09-14):**
+
+| Kriterium | Ergebnis |
+|---|---|
+| Offene P0/P1-Findings | **0** (repoweit gegen `docs/FINDINGS_INDEX.md` verifiziert, Abschnitt 4) |
+| Vollständige Testsuite | **4250 passed, 1 skipped, 11 subtests passed, 0 failed** (250,52 s), vom Nutzer selbst ausgeführt (CLAUDE.md §8.A) |
+| Bekannte Regressionen | keine — jede ARCH-Phase dieser Serie liefert 0 Regressionen gegenüber ihrer jeweiligen Vorphase (Abschnitt 2/3) |
+| Schichtgrenzen-Verletzungen | keine — alle neuen/erweiterten Module (`handlers/menu/content/`, `services/family/`, `services/navidrome/`, `services/library_repair/{artist,genre,run_tracking,maintenance_service,library_artists}.py`, `handlers/library_maintenance_handler.py`) additiv innerhalb der in CLAUDE.md Abschnitt 4 etablierten Schichten, keine Rückreferenz-Verletzung (mehrfach AST-verifiziert, u. a. ARCH-024/025) |
+| Produktions-Datensicherheit | kein Crash, keine Korruption, kein Datenverlust in Produktion während der gesamten Serie — alle Schreibvorgänge (Library-Repair-Executoren, neue Maintenance-Actions) liefen mit Backup-vor-Schreiben + Audio-Essenz-Byte-Identitäts-Verifikation |
+
+Diese Serie hat den bestehenden Freeze nicht neu geöffnet, sondern
+bestätigt ihn erneut. Die umfangreichste strukturelle Änderung — die
+Menu-Architektur-Migration (ARCH-021/023/024/025) — reduzierte
+`rich_menu_system.py` um 65 % und `rich_menu_handler.py` um insgesamt
+~31 %, ohne Router/Permissions/Session-Verhalten zu ändern
+(Characterization-first, jede Extraktion einzeln verifiziert). Der
+Error-Handler-Block (ARCH-026–030) und ARCH-032 (Library Maintenance
+Consolidation) sind beide additiv (neue/erweiterte Module, keine
+bestehende Funktion verhaltensverändert außer den explizit
+dokumentierten, bewusst entschiedenen Fixes). Der Freeze bleibt
+APPROVED.
 
 ---
 
-## Freeze-Checkliste (beim v10-Freeze abzuarbeiten)
+## Freeze-Checkliste (v10-Freeze, 2026-09-14)
 
-- [ ] Freeze-Gate-Audit → 🟢 APPROVED (alle Kriterien PASS, kein offener P0/P1)
-- [ ] Abschnitte 4–6 als Schnappschuss befüllen
-- [ ] „Baseline Frozen (JJJJ-MM-TT)"-Footer setzen, DRAFT-Kopf entfernen
-- [ ] Referenzen umstellen: `README.md`, `docs/INDEX.md`, `CLAUDE.md` §30
-- [ ] `docs/MusicBot_ENGINEERING_BASELINE_v9.md` → `docs/archive/`
+- [x] Freeze-Gate-Audit → 🟢 APPROVED (alle Kriterien PASS, kein offener P0/P1)
+- [x] Abschnitte 4–6 als Schnappschuss befüllt
+- [x] „Baseline Frozen (2026-09-14)"-Footer gesetzt, DRAFT-Kopf entfernt
+- [x] Referenzen umgestellt: `README.md`, `docs/INDEX.md`, `CLAUDE.md`
+- [x] `docs/MusicBot_ENGINEERING_BASELINE_v9.md` → `docs/archive/`
+
+---
+
+## Baseline Frozen (2026-09-14)
+
+**Diese Datei ist damit abgeschlossen.** Neue Findings, Nachträge oder
+technische Schulden gehören ab jetzt in
+`MusicBot_ENGINEERING_BASELINE_v11.md`, sobald diese angelegt wird
+(Normalfall: beim nächsten ARCH-Phasen-Abschluss mit Code-/YAML-Änderung
+nach diesem Freeze — bis dahin ist dieses Dokument der eingefrorene
+Referenzpunkt). Der laufende Stand aller offenen/zurückgestellten Punkte
+bleibt `docs/FINDINGS_INDEX.md`.

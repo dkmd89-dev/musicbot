@@ -742,6 +742,22 @@ def build_menu_tree(system) -> MenuItem:
     )
     # ====== ENDE REPAIR MUSICBOT ======
 
+    # ====== NEU: LIBRARY-WARTUNG (ARCH-032 Phase 4) ======
+    admin_group_library.add_child(
+        MenuItem(
+            id="admin_library_maintenance",
+            title="Library-Wartung",
+            emoji="🧹",
+            access_level=AccessLevel.ADMIN,
+            callback_data="libmaint:start",
+            handler=system._handle_library_maintenance_start,
+            is_action=True,
+            description="Artist Casing korrigieren, Legacy Genre bereinigen, "
+                        "Genre aus dem Mapping setzen (kein Health-Finding-Bezug)",
+        )
+    )
+    # ====== ENDE LIBRARY-WARTUNG ======
+
     # Admin-Menü-Reorg: Gruppen-Container an Administration haengen -
     # Reihenfolge hier = Anzeige-Reihenfolge im Menü (siehe
     # Analyse-Bericht, Abschnitt F/H).

@@ -41,6 +41,8 @@ from . import (
     replaygain_repairs,
     tag_repairs,
 )
+from . import artist as artist_domain
+from . import genre as genre_domain
 from .journal import JournalEntry, RepairJournal
 from .models import RepairCandidate
 
@@ -69,6 +71,15 @@ L1_RENAME_CODES = frozenset(
         "FILENAME_TITLE_MISMATCH",
         "FILENAME_SUSPICIOUS",
     }
+)
+
+# Library-Maintenance-Actions (ARCH-032 Phase 2): KEIN Health-Issue-Code,
+# NICHT Teil von services.library_health.issues.ALL_CODES — diese drei
+# Aktionen sind Command-getrieben (Artist waehlen -> Aktion ausfuehren),
+# nicht Finding-getrieben (ARCH-031 B.1/ADR-0001). Die Strings dienen
+# ausschliesslich als ExecOutcome.issue_code/Journal-Label.
+MAINTENANCE_ACTION_CODES = frozenset(
+    {"ARTIST_CASING", "LEGACY_GENRE_ATOM_PRESENT", "SET_GENRE"}
 )
 
 
@@ -502,6 +513,446 @@ def apply_level1_rename(
         je = _je(c, oc, dry_run)
         je.sha256_before = sha_before
         je.sha256_after = _sha256(target if renamed_ok else path)
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Maintenance Actions (ARCH-032 Phase 2, ARCH-031 B.3/B.4) — Artist-Casing-
+# Korrektur, Legacy-Genre-Bereinigung, gezieltes Genre-Setzen. Command-
+# getrieben (kein Health-Finding, kein RepairCandidate) — `targets` sind
+# vom Aufrufer (maintenance_service.py) bereits ermittelte relative
+# Pfade innerhalb der Library (Artist-Scope). Nutzen dieselbe Safety-/
+# Backup-/Verify-/Atomic-Replace-Infrastruktur wie apply_level1() oben
+# (safety_check, _sha256, _audio_essence_md5, _read_atoms, _write_atoms,
+# _delete_atoms, _je_named) — keine Duplikation (ARCH-031 B.3/ADR-0002).
+#
+# Trennlinie Domain/Executor (ARCH-031 Auftrag §6.1.1): der Executor
+# importiert artist.py/genre.py direkt (wie apply_level1() bereits
+# tag_repairs.py importiert) und ruft ihre reinen Funktionen mit den vom
+# Aufrufer übergebenen Daten auf (casing_map bzw. bereits bestimmter
+# target_genre) — es gibt keine per-Funktionsparameter injizierte
+# Domain-Callback-Funktion, der Executor selbst enthaelt keine
+# Casing-/Genre-Regeln.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _full_tags(path: Path) -> dict:
+    from mutagen.mp4 import MP4
+
+    return dict(MP4(path).tags or {})
+
+
+def tags_fingerprint(tags: dict, exclude: set) -> str:
+    """Stabiler SHA-256 ueber alle Atome ausser `exclude` — Beweis, dass
+    eine Maintenance-Action NUR die Ziel-Atome veraendert hat (ARCH-031
+    B.4). Extrahiert aus scripts/fix_artist_casing.py /
+    scripts/set_genre.py, verhaltensgleich. Bewusst NICHT rueckwirkend
+    fuer apply_level1() verwendet (ARCH-031 Follow-up, Regressionsrisiko
+    gegen bestehende Tests)."""
+    h = hashlib.sha256()
+    for k in sorted(tags.keys()):
+        if k in exclude:
+            continue
+        h.update(k.encode("utf-8"))
+        h.update(b"\x01")
+        v = tags[k]
+        items = v if isinstance(v, list) else [v]
+        for item in items:
+            if isinstance(item, bytes):
+                h.update(item)
+            elif isinstance(item, str):
+                h.update(item.encode("utf-8"))
+            else:
+                h.update(str(item).encode("utf-8"))
+            h.update(b"\x00")
+        h.update(b"\x02")
+    return h.hexdigest()
+
+
+def _write_genre_atom(src: Path, genre_value: str) -> Path:
+    """Setzt ©gen und entfernt das Legacy-Freeform-Atom als Nebeneffekt
+    (identisch zu scripts/set_genre.py::set_one())."""
+    from mutagen.mp4 import MP4
+
+    tmp = src.with_name(f".{src.stem}.repairtmp_{int(time.time() * 1000)}{src.suffix}")
+    shutil.copy2(src, tmp)
+    audio = MP4(tmp)
+    audio["\xa9gen"] = [genre_value]
+    if audio.tags is not None:
+        audio.tags.pop(genre_domain.LEGACY_GENRE_ATOM, None)
+    audio.save()
+    return tmp
+
+
+def apply_artist_casing(
+    targets: list[str],
+    library_root: Path,
+    journal: RepairJournal,
+    *,
+    casing_map: dict,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """Maintenance Action: Casing von ©ART/ARTISTS gegen `casing_map`
+    (artist.load_casing_map()) normalisieren. `targets`: relative Pfade
+    (str) innerhalb der Library, vom Aufrufer ermittelt (Artist-Scope-
+    Auswahl, kein Verzeichnisname-ist-Wahrheit-Risiko: die tatsaechliche
+    Aenderung ist ausschliesslich tag-wert-getrieben, ARCH-031 B.8)."""
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+
+    for rel in sorted(set(targets)):
+        path = library_root / rel
+        oc = ExecOutcome(
+            file=rel, issue_code="ARTIST_CASING", action="ARTIST_CASING_NORMALIZE",
+            status="SKIPPED",
+        )
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            cur = _read_atoms(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Tag-Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        art_after, art_changes = artist_domain.normalize_values(cur["artist"], casing_map)
+        artists_after, artists_changes = artist_domain.normalize_values(
+            cur["artists_freeform"], casing_map
+        )
+
+        if not art_changes and not artists_changes:
+            oc.reason = "nichts zu tun / bereits korrekt"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        oc.before = {"artist": cur["artist"], "artists_freeform": cur["artists_freeform"]}
+        oc.after = {"artist": art_after, "artists_freeform": artists_after}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        # ── echter Schreibvorgang ────────────────────────────────────────
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        exclude = {"\xa9ART", _ARTISTS_FREEFORM_ATOM}
+        others_before = tags_fingerprint(_full_tags(path), exclude)
+        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _write_atoms(
+                path, {"artist": art_after, "artists_freeform": artists_after}
+            )
+            verify = _read_atoms(tmp)
+            if verify["artist"] != art_after or verify["artists_freeform"] != artists_after:
+                raise RuntimeError("Verifikation fehlgeschlagen (Ziel-Atome)")
+            others_after = tags_fingerprint(_full_tags(tmp), exclude)
+            if others_after != others_before:
+                raise RuntimeError("Andere Atome wurden veraendert (Fingerprint-Diff)")
+            audio_tmp = _audio_essence_md5(tmp)
+            if audio_tmp != audio_before or audio_tmp.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {audio_tmp})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if backup.exists():
+                    backup.replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        finally:
+            if oc.status == "FAILED":
+                try:
+                    Path(backup).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        je = _je_named(rel, oc, dry_run)
+        je.sha256_before = sha_before
+        je.sha256_after = _sha256(path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = (
+            _audio_essence_md5(path) if oc.status in _WROTE_TO_DISK else audio_before
+        )
+        je.backup_path = oc.backup_path
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+def apply_legacy_genre_cleanup(
+    targets: list[str],
+    library_root: Path,
+    journal: RepairJournal,
+    *,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """Maintenance Action: Legacy-Freeform-Atom
+    '----:com.apple.iTunes:GENRE' entfernen, WENN das kanonische '©gen'
+    vorhanden ist (genre.decide_legacy_genre_removal(), rein). Extrahiert
+    aus scripts/remove_legacy_genre_atom.py."""
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+
+    for rel in sorted(set(targets)):
+        path = library_root / rel
+        oc = ExecOutcome(
+            file=rel, issue_code="LEGACY_GENRE_ATOM_PRESENT",
+            action="LEGACY_GENRE_ATOM_REMOVE", status="SKIPPED",
+        )
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            tags = _full_tags(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Tag-Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        decision = genre_domain.decide_legacy_genre_removal(
+            tags.get(genre_domain.LEGACY_GENRE_ATOM),
+            tags.get(genre_domain.CANONICAL_GENRE_ATOM),
+        )
+        if not decision.should_remove:
+            oc.reason = decision.reason
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        oc.before = {
+            "legacy_genre": decision.legacy_text,
+            "canonical_genre": decision.canonical_text,
+        }
+        oc.after = {"legacy_genre": None, "canonical_genre": decision.canonical_text}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        # ── echter Schreibvorgang ────────────────────────────────────────
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        exclude = {genre_domain.LEGACY_GENRE_ATOM}
+        others_before = tags_fingerprint(tags, exclude)
+        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _delete_atoms(path, [genre_domain.LEGACY_GENRE_ATOM])
+            verify_tags = _full_tags(tmp)
+            if verify_tags.get(genre_domain.LEGACY_GENRE_ATOM) is not None:
+                raise RuntimeError("Legacy-Atom noch vorhanden")
+            others_after = tags_fingerprint(verify_tags, exclude)
+            if others_after != others_before:
+                raise RuntimeError(
+                    "Andere Atome wurden veraendert (Fingerprint-Diff, inkl. ©gen)"
+                )
+            audio_tmp = _audio_essence_md5(tmp)
+            if audio_tmp != audio_before or audio_tmp.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {audio_tmp})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if backup.exists():
+                    backup.replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        finally:
+            if oc.status == "FAILED":
+                try:
+                    Path(backup).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        je = _je_named(rel, oc, dry_run)
+        je.sha256_before = sha_before
+        je.sha256_after = _sha256(path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = (
+            _audio_essence_md5(path) if oc.status in _WROTE_TO_DISK else audio_before
+        )
+        je.backup_path = oc.backup_path
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+def apply_set_genre(
+    targets: list[str],
+    library_root: Path,
+    journal: RepairJournal,
+    *,
+    target_genre: str,
+    only_if_missing: bool = False,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """Maintenance Action: ©gen auf `target_genre` setzen. `target_genre`
+    ist ein bereits bestimmter Zielwert (Mapping-Lookup vs. manueller
+    Wert ist Orchestrierungs-/CLI-Entscheidung, nicht Aufgabe des
+    Executors — ARCH-031 Auftrag §6.4). Entfernt als Nebeneffekt das
+    Legacy-Freeform-Atom (identisch zu scripts/set_genre.py::set_one()).
+    `only_if_missing`: nur schreiben, wenn noch kein Genre-Tag existiert
+    (Datei-lokaler Skip-Check, keine Domain-Regel)."""
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+
+    for rel in sorted(set(targets)):
+        path = library_root / rel
+        oc = ExecOutcome(
+            file=rel, issue_code="SET_GENRE", action="SET_GENRE", status="SKIPPED",
+        )
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            tags = _full_tags(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Tag-Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        cur_genre_raw = tags.get(genre_domain.CANONICAL_GENRE_ATOM)
+        cur_genre = (cur_genre_raw[0] if cur_genre_raw else "") or ""
+        cur_legacy = tags.get(genre_domain.LEGACY_GENRE_ATOM)
+
+        if only_if_missing and cur_genre:
+            oc.reason = f"Genre existiert bereits ({cur_genre!r})"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        if cur_genre == target_genre and not cur_legacy:
+            oc.reason = "bereits korrekt"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        oc.before = {"genre": cur_genre, "legacy_present": bool(cur_legacy)}
+        oc.after = {"genre": target_genre, "legacy_present": False}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        # ── echter Schreibvorgang ────────────────────────────────────────
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        exclude = {genre_domain.CANONICAL_GENRE_ATOM, genre_domain.LEGACY_GENRE_ATOM}
+        others_before = tags_fingerprint(tags, exclude)
+        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _write_genre_atom(path, target_genre)
+            verify_tags = _full_tags(tmp)
+            v_genre = verify_tags.get(genre_domain.CANONICAL_GENRE_ATOM)
+            v_genre_str = (v_genre[0] if v_genre else "") or ""
+            if v_genre_str != target_genre:
+                raise RuntimeError(f"©gen falsch: {v_genre_str!r} != {target_genre!r}")
+            if verify_tags.get(genre_domain.LEGACY_GENRE_ATOM) is not None:
+                raise RuntimeError("Legacy-Atom wieder aufgetaucht")
+            others_after = tags_fingerprint(verify_tags, exclude)
+            if others_after != others_before:
+                raise RuntimeError("Andere Atome wurden veraendert (Fingerprint-Diff)")
+            audio_tmp = _audio_essence_md5(tmp)
+            if audio_tmp != audio_before or audio_tmp.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {audio_tmp})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if backup.exists():
+                    backup.replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        finally:
+            if oc.status == "FAILED":
+                try:
+                    Path(backup).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        je = _je_named(rel, oc, dry_run)
+        je.sha256_before = sha_before
+        je.sha256_after = _sha256(path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = (
+            _audio_essence_md5(path) if oc.status in _WROTE_TO_DISK else audio_before
+        )
+        je.backup_path = oc.backup_path
         journal.record(je)
         outcomes.append(oc)
 

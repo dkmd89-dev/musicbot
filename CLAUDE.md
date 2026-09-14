@@ -1101,20 +1101,18 @@ Nicht jede einzelne triviale Funktion braucht eine seitenlange Beschreibung.
 
 ## Baseline-Pflege
 
-Aktuelle **eingefrorene** Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v9.md`
-(Freeze 2026-09-07, 2580 passed / 0 failed, 1 umgebungsbedingt skipped).
-Referenziert von `README.md` und `docs/INDEX.md`. Vorgänger
-`docs/MusicBot_ENGINEERING_BASELINE_v8.md` (Freeze 2026-09-02, 1698
-passed) liegt unverändert unter `docs/archive/`.
+Aktuelle **eingefrorene** Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v10.md`
+(Freeze 2026-09-14, 4250 passed / 0 failed, 1 umgebungsbedingt skipped,
+11 subtests passed). Referenziert von `README.md` und `docs/INDEX.md`.
+Vorgänger `docs/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze 2026-09-07,
+2580 passed) liegt unverändert unter `docs/archive/`.
 
-Laufender Zwischenstand seit dem v9-Freeze:
-`docs/MusicBot_ENGINEERING_BASELINE_v10.md` — **DRAFT, noch nicht
-eingefroren**. Hier werden pro ARCH-Phase / PR *ARCH Status*, *Recent
-Major Changes* und *Testzahlen* mitgeschrieben (siehe Absatz weiter
-unten); die Tech-Debt-/Security-/Freeze-Abschnitte bleiben Platzhalter
-bis zum v10-Freeze. v9 bleibt bis dahin der zitierbare eingefrorene
-Referenzpunkt, `docs/FINDINGS_INDEX.md` die lebende Findings-Quelle. v10
-dupliziert keine Findings.
+Kein laufender Zwischenstand aktuell (**Normalfall direkt nach einem
+Freeze**, siehe Absatz weiter unten): es existiert noch keine
+`ENGINEERING_BASELINE_v11.md` (DRAFT). Sie wird beim nächsten
+ARCH-Phasen-Abschluss mit Code-/YAML-Änderung neu angelegt. Bis dahin
+ist v10 der zitierbare eingefrorene Referenzpunkt,
+`docs/FINDINGS_INDEX.md` die lebende Findings-Quelle.
 
 Der aktuelle Stand aller offenen/zurückgestellten Punkte steht ab sofort
 in `docs/FINDINGS_INDEX.md`, nicht in der Tech-Debt-Tabelle der jeweils
@@ -1126,16 +1124,17 @@ Abschnitt „Baseline-Pflege" oben), ersetzt aber nicht die Pflege von
 `docs/FINDINGS_INDEX.md` als lebende Quelle.
 
 Nach Abschluss jeder ARCH-Phase mit Code-/YAML-Änderung wird die
-laufende `ENGINEERING_BASELINE_v10.md` (DRAFT) im selben PR aktualisiert
+laufende `ENGINEERING_BASELINE_vN+1.md` (DRAFT) im selben PR aktualisiert
 (mindestens: Abschnitt „ARCH Status", „Recent Major Changes",
 Testzahlen — die Testzahl stammt aus dem zuletzt vom Nutzer gemeldeten
 Full-Suite-Lauf, siehe §8.A; der Implementierungsprozess führt die volle
 Suite nicht selbst aus). Solange eine DRAFT-vN+1 existiert, geht der Zwischenstand
 dorthin — die eingefrorene vN wird nicht mehr angefasst. Existiert keine
-DRAFT-vN+1 (Normalfall direkt nach einem Freeze), wird sie beim
-nächsten solchen Abschluss angelegt. Bei größerer Drift (>3 ARCH-Phasen
-seit letztem Sync) ohne DRAFT-vN+1 wird eine neue vN+1 statt eines
-Nachtrags erstellt.
+DRAFT-vN+1 (Normalfall direkt nach einem Freeze — aktuell der Fall,
+siehe oben: v10 ist frisch eingefroren, v11 noch nicht angelegt), wird
+sie beim nächsten solchen Abschluss angelegt. Bei größerer Drift
+(>3 ARCH-Phasen seit letztem Sync) ohne DRAFT-vN+1 wird eine neue vN+1
+statt eines Nachtrags erstellt.
 
 **Freeze-Abschluss ist selbsttätig, nicht die Freeze-Entscheidung
 selbst:** Schließt ein Freeze-Gate-Audit explizit mit 🟢 APPROVED ab

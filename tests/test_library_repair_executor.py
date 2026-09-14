@@ -16,13 +16,17 @@ from mutagen.mp4 import MP4, MP4FreeForm
 
 from services.library_repair.executor import (
     apply_album_cover_unify,
+    apply_artist_casing,
     apply_cover_repairs,
     apply_external_metadata,
+    apply_legacy_genre_cleanup,
     apply_level1,
     apply_level1_rename,
     apply_level2,
     apply_replaygain,
+    apply_set_genre,
     safety_check,
+    tags_fingerprint,
 )
 from services.library_repair.journal import RepairJournal
 from services.library_repair.models import RepairAction, RepairCandidate, RepairLevel
@@ -1432,3 +1436,371 @@ def test_level1_rename_is_idempotent(lib):
     assert o2[0].status == "SKIPPED"
     assert new.exists()
     assert _audio_md5(new) == md5_after
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# ARCH-032 Phase 2 — Maintenance Actions (ARCH-031 B.3/B.4)
+# ═════════════════════════════════════════════════════════════════════════
+
+LEGACY_GENRE_ATOM = "----:com.apple.iTunes:GENRE"
+
+
+def _set_legacy_genre(path: Path, value: str) -> None:
+    a = MP4(path)
+    a[LEGACY_GENRE_ATOM] = [MP4FreeForm(value.encode("utf-8"))]
+    a.save()
+
+
+class TestTagsFingerprint:
+    def test_deterministic_for_same_tags(self):
+        tags = {"©gen": ["Pop"], "©ART": ["X"]}
+        assert tags_fingerprint(tags, exclude=set()) == tags_fingerprint(tags, exclude=set())
+
+    def test_changes_when_included_atom_changes(self):
+        a = tags_fingerprint({"©gen": ["Pop"]}, exclude=set())
+        b = tags_fingerprint({"©gen": ["Rock"]}, exclude=set())
+        assert a != b
+
+    def test_stable_when_only_excluded_atom_changes(self):
+        a = tags_fingerprint({"©gen": ["Pop"], "©ART": ["X"]}, exclude={"©gen"})
+        b = tags_fingerprint({"©gen": ["Rock"], "©ART": ["X"]}, exclude={"©gen"})
+        assert a == b
+
+
+@requires_ffmpeg
+class TestApplyArtistCasing:
+    def test_dry_run_writes_nothing(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, artist=["bausa"])
+        j = RepairJournal(lib / "j.jsonl")
+        md5_before = _audio_md5(p)
+
+        outs = apply_artist_casing(
+            ["A/Singles/song.m4a"], lib, j,
+            casing_map={"bausa": "Bausa"}, dry_run=True,
+        )
+        assert outs[0].status == "DRY_RUN"
+        assert _read(p)["art"] == ["bausa"]
+        assert _audio_md5(p) == md5_before
+
+    def test_success_normalizes_art_and_artists_freeform(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, artist=["bausa"], artists_ff=["bausa"])
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_artist_casing(
+            ["A/Singles/song.m4a"], lib, j,
+            casing_map={"bausa": "Bausa"}, dry_run=False,
+        )
+        assert outs[0].status == "SUCCESS"
+        assert outs[0].backup_path and Path(outs[0].backup_path).exists()
+        tags = _read(p)
+        assert tags["art"] == ["Bausa"]
+        assert tags["ff"] == ["Bausa"]
+
+    def test_skipped_when_already_correct(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, artist=["Bausa"])
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_artist_casing(
+            ["A/Singles/song.m4a"], lib, j,
+            casing_map={"bausa": "Bausa"}, dry_run=False,
+        )
+        assert outs[0].status == "SKIPPED"
+
+    def test_safety_blocks_symlink(self, lib, tmp_path):
+        real = tmp_path / "outside.m4a"
+        _m4a(real, artist=["bausa"])
+        link = lib / "A" / "Singles" / "song.m4a"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(real)
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_artist_casing(
+            ["A/Singles/song.m4a"], lib, j,
+            casing_map={"bausa": "Bausa"}, dry_run=False,
+        )
+        assert outs[0].status == "SKIPPED"
+        assert "Safety" in outs[0].reason
+
+    def test_audio_essence_unchanged(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, artist=["bausa"])
+        md5_before = _audio_md5(p)
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_artist_casing(
+            ["A/Singles/song.m4a"], lib, j,
+            casing_map={"bausa": "Bausa"}, dry_run=False,
+        )
+        assert _audio_md5(p) == md5_before
+
+    def test_non_target_atoms_unchanged(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, artist=["bausa"], genre="Pop", album_artist="Someone Else")
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_artist_casing(
+            ["A/Singles/song.m4a"], lib, j,
+            casing_map={"bausa": "Bausa"}, dry_run=False,
+        )
+        tags = _read(p)
+        assert tags["gen"] == ["Pop"]
+        assert tags["aart"] == ["Someone Else"]
+
+    def test_journal_entry_written_on_success(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, artist=["bausa"])
+        jpath = lib / "j.jsonl"
+        j = RepairJournal(jpath)
+
+        apply_artist_casing(
+            ["A/Singles/song.m4a"], lib, j,
+            casing_map={"bausa": "Bausa"}, dry_run=False,
+        )
+        j.flush()
+        assert jpath.exists()
+        assert "ARTIST_CASING" in jpath.read_text(encoding="utf-8")
+
+    def test_rollback_on_audio_essence_mismatch(self, lib, monkeypatch):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, artist=["bausa"])
+        original_bytes = p.read_bytes()
+        j = RepairJournal(lib / "j.jsonl")
+
+        real_md5 = _exec._audio_essence_md5
+        calls = {"n": 0}
+
+        def _flaky(path):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return real_md5(path)
+            return "DIFFERENT-ESSENCE"
+
+        monkeypatch.setattr(_exec, "_audio_essence_md5", _flaky)
+
+        outs = apply_artist_casing(
+            ["A/Singles/song.m4a"], lib, j,
+            casing_map={"bausa": "Bausa"}, dry_run=False,
+        )
+        assert outs[0].status == "FAILED"
+        assert p.read_bytes() == original_bytes
+
+
+@requires_ffmpeg
+class TestApplyLegacyGenreCleanup:
+    def test_dry_run_writes_nothing(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, genre="Pop; Rock")
+        _set_legacy_genre(p, "Pop; Rock")
+        j = RepairJournal(lib / "j.jsonl")
+        md5_before = _audio_md5(p)
+
+        outs = apply_legacy_genre_cleanup(["A/Singles/song.m4a"], lib, j, dry_run=True)
+        assert outs[0].status == "DRY_RUN"
+        assert _audio_md5(p) == md5_before
+
+    def test_success_removes_legacy_keeps_canonical(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, genre="Pop; Rock")
+        _set_legacy_genre(p, "Pop; Rock")
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_legacy_genre_cleanup(["A/Singles/song.m4a"], lib, j, dry_run=False)
+        assert outs[0].status == "SUCCESS"
+        tags = MP4(p).tags
+        assert LEGACY_GENRE_ATOM not in tags
+        assert tags["©gen"] == ["Pop; Rock"]
+
+    def test_skipped_when_no_legacy_atom(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, genre="Pop")
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_legacy_genre_cleanup(["A/Singles/song.m4a"], lib, j, dry_run=False)
+        assert outs[0].status == "SKIPPED"
+        assert outs[0].reason == "kein Legacy-Atom"
+
+    def test_skipped_when_no_canonical_atom(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)
+        _set_legacy_genre(p, "Pop")
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_legacy_genre_cleanup(["A/Singles/song.m4a"], lib, j, dry_run=False)
+        assert outs[0].status == "SKIPPED"
+        assert "würde Information verlieren" in outs[0].reason
+        assert MP4(p).tags.get(LEGACY_GENRE_ATOM) is not None
+
+    def test_safety_blocks_symlink(self, lib, tmp_path):
+        real = tmp_path / "outside.m4a"
+        _m4a(real, genre="Pop")
+        _set_legacy_genre(real, "Pop")
+        link = lib / "A" / "Singles" / "song.m4a"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(real)
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_legacy_genre_cleanup(["A/Singles/song.m4a"], lib, j, dry_run=False)
+        assert outs[0].status == "SKIPPED"
+        assert "Safety" in outs[0].reason
+
+    def test_audio_essence_unchanged(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, genre="Pop")
+        _set_legacy_genre(p, "Pop")
+        md5_before = _audio_md5(p)
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_legacy_genre_cleanup(["A/Singles/song.m4a"], lib, j, dry_run=False)
+        assert _audio_md5(p) == md5_before
+
+    def test_non_target_atoms_unchanged(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, genre="Pop", artist=["Bausa"])
+        _set_legacy_genre(p, "Pop")
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_legacy_genre_cleanup(["A/Singles/song.m4a"], lib, j, dry_run=False)
+        assert _read(p)["art"] == ["Bausa"]
+
+    def test_rollback_on_audio_essence_mismatch(self, lib, monkeypatch):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, genre="Pop")
+        _set_legacy_genre(p, "Pop")
+        original_bytes = p.read_bytes()
+        j = RepairJournal(lib / "j.jsonl")
+
+        real_md5 = _exec._audio_essence_md5
+        calls = {"n": 0}
+
+        def _flaky(path):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return real_md5(path)
+            return "DIFFERENT-ESSENCE"
+
+        monkeypatch.setattr(_exec, "_audio_essence_md5", _flaky)
+
+        outs = apply_legacy_genre_cleanup(["A/Singles/song.m4a"], lib, j, dry_run=False)
+        assert outs[0].status == "FAILED"
+        assert p.read_bytes() == original_bytes
+
+
+@requires_ffmpeg
+class TestApplySetGenre:
+    def test_dry_run_writes_nothing(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)
+        j = RepairJournal(lib / "j.jsonl")
+        md5_before = _audio_md5(p)
+
+        outs = apply_set_genre(
+            ["A/Singles/song.m4a"], lib, j, target_genre="Pop; Rock", dry_run=True,
+        )
+        assert outs[0].status == "DRY_RUN"
+        assert _audio_md5(p) == md5_before
+        assert MP4(p).tags.get("©gen") is None
+
+    def test_success_writes_canonical_and_removes_legacy(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, genre="Old")
+        _set_legacy_genre(p, "Old")
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_set_genre(
+            ["A/Singles/song.m4a"], lib, j, target_genre="Pop; Rock", dry_run=False,
+        )
+        assert outs[0].status == "SUCCESS"
+        tags = MP4(p).tags
+        assert tags["©gen"] == ["Pop; Rock"]
+        assert LEGACY_GENRE_ATOM not in tags
+
+    def test_only_if_missing_skips_when_genre_present(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, genre="Existing")
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_set_genre(
+            ["A/Singles/song.m4a"], lib, j, target_genre="Pop",
+            only_if_missing=True, dry_run=False,
+        )
+        assert outs[0].status == "SKIPPED"
+        assert MP4(p).tags["©gen"] == ["Existing"]
+
+    def test_only_if_missing_writes_when_genre_absent(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_set_genre(
+            ["A/Singles/song.m4a"], lib, j, target_genre="Pop",
+            only_if_missing=True, dry_run=False,
+        )
+        assert outs[0].status == "SUCCESS"
+        assert MP4(p).tags["©gen"] == ["Pop"]
+
+    def test_skipped_when_already_correct(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, genre="Pop")
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_set_genre(
+            ["A/Singles/song.m4a"], lib, j, target_genre="Pop", dry_run=False,
+        )
+        assert outs[0].status == "SKIPPED"
+
+    def test_safety_blocks_symlink(self, lib, tmp_path):
+        real = tmp_path / "outside.m4a"
+        _m4a(real)
+        link = lib / "A" / "Singles" / "song.m4a"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(real)
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_set_genre(
+            ["A/Singles/song.m4a"], lib, j, target_genre="Pop", dry_run=False,
+        )
+        assert outs[0].status == "SKIPPED"
+        assert "Safety" in outs[0].reason
+
+    def test_audio_essence_unchanged(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)
+        md5_before = _audio_md5(p)
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_set_genre(["A/Singles/song.m4a"], lib, j, target_genre="Pop", dry_run=False)
+        assert _audio_md5(p) == md5_before
+
+    def test_non_target_atoms_unchanged(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, artist=["Bausa"])
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_set_genre(["A/Singles/song.m4a"], lib, j, target_genre="Pop", dry_run=False)
+        assert _read(p)["art"] == ["Bausa"]
+
+    def test_rollback_on_audio_essence_mismatch(self, lib, monkeypatch):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)
+        original_bytes = p.read_bytes()
+        j = RepairJournal(lib / "j.jsonl")
+
+        real_md5 = _exec._audio_essence_md5
+        calls = {"n": 0}
+
+        def _flaky(path):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return real_md5(path)
+            return "DIFFERENT-ESSENCE"
+
+        monkeypatch.setattr(_exec, "_audio_essence_md5", _flaky)
+
+        outs = apply_set_genre(
+            ["A/Singles/song.m4a"], lib, j, target_genre="Pop", dry_run=False,
+        )
+        assert outs[0].status == "FAILED"
+        assert p.read_bytes() == original_bytes
