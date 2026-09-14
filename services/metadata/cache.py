@@ -14,6 +14,20 @@ from .models import MetadataResult
 
 class MetadataCacheHandler:
     def __init__(self, metadata_cache: BaseMetadataCache, logger=None):
+        """Initialisiert den MetadataCacheHandler.
+
+        Args:
+            metadata_cache: Instanz des BaseMetadataCache. Der video_id-Index
+                wird bewusst im selben Verzeichnis abgelegt wie dessen
+                cache_path (statt eines fest verdrahteten zentralen
+                Verzeichnisses) - so bleibt eine an metadata_cache
+                uebergebene Test-/Sonder-cache_dir (siehe
+                tests/test_metadata_cache_handler.py) auch fuer den
+                Index isoliert. metadata_cache erstellt sein cache_path
+                bereits selbst (utils/metadata_cache.py), kein separates
+                mkdir() hier noetig.
+            logger: Optionaler Logger für das Modul.
+        """
         self.metadata_cache = metadata_cache
         self.logger = logger or get_module_logger("MetadataCacheHandler")
         self._video_id_index_path = self.metadata_cache.cache_path / "video_id_index.json"
@@ -22,7 +36,7 @@ class MetadataCacheHandler:
     def _normalize_cache_title(self, title: str) -> str: ...
 
     def _load_video_id_index(self) -> Dict[str, Dict[str, str]]:
-        """Laedt video_id -> {"artist", "title"} Index (siehe TEST-003-Fix)."""
+        """Lädt video_id -> {"artist", "title"} Index (siehe TEST-003-Fix)."""
         if not self._video_id_index_path.exists():
             return {}
         try:

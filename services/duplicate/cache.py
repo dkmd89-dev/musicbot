@@ -19,17 +19,23 @@ from datetime import datetime, timedelta
 
 from logger import get_module_logger
 from services.downloader.models import DuplicateEntry
+from config import Config
 
 
 class DuplicateCache:
     """Cache für Duplikat-Erkennung basierend auf MetadataCache"""
 
-    def __init__(
-        self, cache_dir: str = "duplicate_cache", logger: Optional[Any] = None
-    ):
-        # NEU: Logger als Abhängigkeit
+    def __init__(self, cache_dir: Optional[str] = None, logger: Optional[Any] = None):
+        """Initialisiert den DuplicateCache.
+
+        Args:
+            cache_dir: Ziel-Verzeichnis für die Cache-Dateien. Ohne Angabe
+                wird das zentrale Config.DUPLICATE_CACHE_DIR verwendet
+                (Standardfall in Produktion, siehe services/duplicate/detector.py).
+            logger: Optionaler Logger. Falls nicht angegeben, wird das Modul-Logging verwendet.
+        """
         self.logger = logger or get_module_logger("DuplicateCache")
-        self.cache_path = Path(cache_dir) if cache_dir else Path(DUPLICATE_CACHE_DIR)
+        self.cache_path = Path(cache_dir) if cache_dir else Path(Config.DUPLICATE_CACHE_DIR)
         self.cache_path.mkdir(parents=True, exist_ok=True)
 
         # Separate Duplikat-Dateien
