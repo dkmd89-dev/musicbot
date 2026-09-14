@@ -626,15 +626,18 @@ Finding → RESOLVED   NUR für tatsächlich nicht mehr erkannte Findings
 Repair History (library_repair_runs.json + bestehendes Journal)
 ```
 
-**Bewusst identische Sicherheitsgrenze wie MusicBot Doctor:** nur
-`SAFE_AUTOMATIC` ist über Telegram tatsächlich ausführbar (verlustfrei,
-kein Netzwerk, kein Re-Encode). Alle externen/destruktiven Level
-(`COVER`/`EXTERNAL_METADATA`/`METADATA_REPROCESSING`/`LOUDNESS`/
-`DUPLICATE`) werden im Plan/in den Reparaturvorschlägen zwar angezeigt
-(🟡 REVIEW, zur Transparenz), bleiben aber CLI-only. Repair MusicBot ist
-keine Ausweitung dieser Grenze, sondern eine reichhaltigere Oberfläche
-(Plan/Preview/Historie/Statistik) für denselben, bereits etablierten
-Ausführungspfad.
+**Sicherheitsgrenze, erweitert seit ARCH-033:** ohne Vorschau-Umweg
+direkt ausführbar bleibt nur `SAFE_AUTOMATIC` (verlustfrei, kein
+Netzwerk, kein Re-Encode). `METADATA_REPROCESSING` (L2) und
+`EXTERNAL_METADATA` (L3) sind seit ARCH-033 zusätzlich über Telegram
+erreichbar, aber ausschließlich pro Artist mit eigener Vorschau und
+eigener Bestätigung (siehe §12) — nie als globaler Batch wie
+SAFE_AUTOMATIC. `COVER`/`LOUDNESS`/`DUPLICATE` werden im Plan/in den
+Reparaturvorschlägen weiterhin nur angezeigt (🟡 REVIEW, zur
+Transparenz) und bleiben CLI-only. Repair MusicBot ist keine Ausweitung
+der ursprünglichen SAFE_AUTOMATIC-only-Grenze auf beliebige Level,
+sondern eine gezielt erweiterte, aber weiterhin klar begrenzte
+Oberfläche für bereits etablierte Ausführungspfade.
 
 **Stale-Plan-Schutz:** `execute_safe_automatic_repair()` baut IMMER
 unmittelbar vor der Ausführung einen komplett frischen Plan (neuer
@@ -842,3 +845,98 @@ Lauf können sich nicht überlappen.
 - `--update-manual-mapping` als künftige, review-pflichtige
   Telegram-Admin-Funktion?
 - `--only-if-missing` als Telegram-Option?
+
+---
+
+## 12. Telegram Level-2/Level-3-Reparatur (Pro-Artist, ARCH-033, implementiert)
+
+**Erweitert §10 (Repair MusicBot) um zwei weitere, tatsächlich
+ausführbare Level** — bewusst NICHT als globale Batch-Aktion wie
+SAFE_AUTOMATIC, sondern ausschließlich pro Artist mit eigener Vorschau
+und eigener Bestätigung (`docs/adr/0003-telegram-level2-level3-per-artist-confirmation.md`):
+
+```text
+Findings (wie §10, nur OPEN)
+   ↓
+plan_repairs() / group_candidates_by_artist()   (services/library_repair/planner.py)
+   ↓
+Artist-Liste (L2-/L3-Kandidatenzahl je Artist, index-basiert, paginiert,
+              pro Telegram-Session gecacht — kein Health-Scan bei jedem
+              Button-Tap)
+   ↓
+Artist wählen → Aktion wählen (L2 und/oder L3, je nach Kandidatenzahl)
+   ↓
+Preview (read-only, filter_plan(artist=, level=) + build_preview(),
+         level-spezifischer Warnhinweis)
+   ↓
+[Telegram: explizite Bestätigung "✅ Jetzt ausführen"]
+   ↓
+execute_level2_repair()/execute_level3_repair()   (services/library_repair/
+                                                    repair_service.py)
+   ↓
+run_level2_repair()/run_level3_repair()            (services/library_repair/
+                                                     doctor_runner.py, Subprozess:
+                                                     scripts/library_repair.py
+                                                     --artist X --level <L> --apply)
+   ↓
+Verification: erneuter run_health_scan() (nur wenn mind. 1 Erfolg)
+   ↓
+Finding → RESOLVED   NUR für tatsächlich nicht mehr erkannte Findings
+   ↓
+Repair History (dasselbe library_repair_runs.json wie §10/§11, "kind": "repair")
+```
+
+**L2 (`METADATA_REPROCESSING`) vs. L3 (`EXTERNAL_METADATA`):** beide
+laufen als eigener Subprozess (siehe unten), unterscheiden sich nur in
+`--level` und im Warnhinweis vor der Bestätigung — L2 durchläuft die
+volle Metadaten-Pipeline erneut (auch Genre/Lyrics/Cover-Logik,
+möglicherweise geänderte Auto-Learn-Mappings), L3 ruft zusätzlich
+MusicBrainz auf und macht Netzwerk-/Rate-Limit-Fehler je Datei als
+FEHLGESCHLAGEN sichtbar statt sie still zu überspringen.
+
+**Bewusste Abweichung von der ursprünglichen Implementierungsvorgabe
+(Subprozess statt in-process, nutzerbestätigt):** der ursprüngliche
+Auftrag sah vor, `apply_level2()`/`apply_external_metadata()` in-process
+über `asyncio.to_thread()` aufzurufen. `EnhancedMetadataProcessor`
+(`SingletonMixin`) wird jedoch bereits beim Bot-Start
+(`handlers/menu/rich_menu_handler.py`) für die Live-Download-Pipeline
+konstruiert — ein `asyncio.to_thread()`-Aufruf hätte denselben Singleton
+gleichzeitig aus einem separaten OS-Thread heraus verwendet, während der
+Event-Loop des Bots (potenziell während eines laufenden Downloads durch
+dieselbe Instanz) weiterläuft. Genau diese Klasse von Risiko begründet
+bereits den bestehenden Subprozess-Pfad von `reprocessing_runner.py`.
+Nach Rücksprache mit dem Nutzer laufen `execute_level2_repair()`/
+`execute_level3_repair()` deshalb identisch zu
+`execute_safe_automatic_repair()` als Subprozess
+(`doctor_runner.run_level2_repair()`/`run_level3_repair()`) —
+`apply_level2()`/`apply_external_metadata()` selbst bleiben dabei
+unverändert.
+
+**Bewusst NIE global:** anders als bei SAFE_AUTOMATIC gibt es für L2/L3
+keinen "alle Artists auf einmal"-Button — jede Ausführung ist an genau
+einen zuvor über den Index-Picker gewählten Artist gebunden (ADR-0003).
+
+**Navigation:** `🛠️ Repair MusicBot → Reparaturvorschläge` zeigt einen
+zusätzlichen Button „🛠️ L2/L3-Reparaturen (nach Artist)“, sobald der
+aktuelle Plan L2- oder L3-Kandidaten enthält (zusätzlich zum
+bestehenden SAFE-Preview-Button, nicht anstelle). Callback-Präfix
+`l23rep:` — lebt auf demselben `RepairMusicBotHandler` wie `repair:*`
+(kein eigener Handler, da L2/L3 wie SAFE_AUTOMATIC Findings-getrieben
+sind, ADR-0001). Öffnen des Menüs, der Artist-Liste oder der
+Aktions-Auswahl startet niemals automatisch eine Reparatur. Berechtigung
+(Admin) wird am tatsächlichen Ausführungs-Handler erneut geprüft.
+
+**COVER/LOUDNESS/DUPLICATE bleiben CLI-only** — ARCH-033 deckt
+ausdrücklich nur L2/L3 ab (Scope-Option A). Ein Erweiterungspunkt für
+künftige, eigene ARCH-Phasen (ARCH-034/035) ist in
+`handlers/repair_musicbot_handler.py` neben den `_L23REP_*`-Dicts
+dokumentiert (Phase 4, reine Vorbereitung, kein aktiver Code).
+
+**Tests:**
+
+| Datei | Deckt ab |
+|---|---|
+| `tests/test_library_repair_planner.py` | `group_candidates_by_artist()` — L2/L3 getrennt gezählt, andere Level ignoriert, Sortierung (Gesamtzahl absteigend, dann alphabetisch), Determinismus, Pfad-Präfix-Fallback |
+| `tests/test_doctor_runner.py` | `run_level2_repair()`/`run_level3_repair()` — Subprozess-Aufruf, Timeout, Fehlerfälle |
+| `tests/test_repair_service_level23.py` | `execute_level2_repair()`/`execute_level3_repair()` — Stale-Plan-Schutz, Verification-Gate, Lock-Sharing mit §10/§11, Run-Record `kind: "repair"` |
+| `tests/test_repair_handler_level23.py` | Telegram-Sub-Flow (Start/Artist-Liste inkl. Pagination-Cache/Aktions-Auswahl/Preview/Confirm/Execute), Admin-Re-Check je Schritt, Index-basierte Artist-Auswahl (kein Rohname in `callback_data`), kein Auto-Start, Lock-Konflikt-Anzeige, Teilerfolg-Anzeige |
