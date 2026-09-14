@@ -17,6 +17,15 @@ CHANGELOG:
   - v1.2  (2026-08)  POST-ARCH-009 P-1: systemctl-Prozesssteuerung nach
                       utils/bot_restart_trigger.py ausgelagert (siehe
                       docs/archive/post-arch/MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md)
+
+ARCH-030/F7 (bewusster Verzicht auf EnhancedErrorHandler-Injection,
+analog handlers/mugge_statistik_handler.py): diese Klasse hat KEINEN
+einzigen lokalen `except`-Block (repoweit verifiziert) - jede der drei
+Methoden ist ausschließlich über den `restart:`-Callback-Präfix
+erreichbar, der über RichMenuSystem.handle_callback()s zentralen
+Catch-All abgesichert ist. Eine Injection hätte daher nichts zu melden
+(keine lokal verschluckte Exception, die sonst am zentralen Monitoring
+vorbeiliefe).
 """
 
 import asyncio

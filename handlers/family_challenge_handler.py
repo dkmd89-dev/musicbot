@@ -16,6 +16,21 @@ die `challenge_id` mitgeführt werden, an die sich die als nächstes
 eintreffende Freitext-Nachricht richtet - deshalb ein Dict
 (`pending_answers: Dict[telegram_id, challenge_id]`) statt eines reinen
 Sets.
+
+ARCH-030/F7 (bewusster Verzicht auf EnhancedErrorHandler-Injection,
+analog handlers/mugge_statistik_handler.py): diese Klasse hat KEINEN
+einzigen lokalen `except`-Block (repoweit verifiziert) - alle
+`menu:`/`family_challenge:`-Callback-Pfade laufen über
+RichMenuSystem.handle_callback()s zentralen Catch-All, und der einzige
+Nicht-Callback-Pfad (process_pending_answer(), von
+RichMenuHandler.handle_text_message() aufgerufen) hat ebenfalls keine
+lokale Fehlerbehandlung - eine dort auftretende Exception propagiert
+ungefangen bis zum globalen PTB-Fallback (der seit ARCH-027 geteilten
+EnhancedErrorHandler-Instanz). Eine Injection hätte daher nichts zu
+melden (keine lokal verschluckte Exception) - anders als bei
+handlers/family_chat_handler.py, dessen Broadcast-Schleife bewusst
+lokale Fehlerisolation zwischen Empfängern betreibt und deshalb
+tatsächlich integriert ist.
 """
 
 from typing import Dict, Optional
