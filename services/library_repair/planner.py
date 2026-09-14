@@ -27,6 +27,10 @@ Reparatur spaeter ausfuehrt (Prompt Abschnitt 21 — keine Duplizierung):
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
 from services.library_health.issues import ALL_CODES as _HEALTH_CODES
 
 from .models import RepairAction, RepairCandidate, RepairLevel, RepairPlan, RepairSpec
@@ -383,3 +387,76 @@ def registry_covers_all_health_codes() -> tuple[bool, set[str]]:
     """Fuer Tests: jeder Health-Issue-Code MUSS eine Repair-Zuordnung haben."""
     missing = set(_HEALTH_CODES) - set(REGISTRY)
     return (not missing, missing)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Artist-Gruppierung fuer die Telegram-Pro-Artist-Auswahl (ARCH-033,
+# ADR-0003) — reine Funktion, kein I/O. Bildet einen bereits vorhandenen
+# RepairPlan auf "welcher Artist hat wie viele L2-/L3-Kandidaten" ab, fuer
+# die Artist-Liste im Telegram-Sub-Flow (services/library_repair/
+# level_summary.py wurde bewusst NICHT als eigenes Modul angelegt - die
+# Funktion ist klein genug, um hier neben der Registry zu leben, die sie
+# konsumiert).
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class ArtistCandidateSummary:
+    """Aggregierte L2-/L3-Kandidaten-Anzahl fuer genau einen Artist."""
+
+    artist: str
+    l2_count: int = 0
+    l3_count: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.l2_count + self.l3_count
+
+
+def _candidate_artist(candidate: RepairCandidate) -> Optional[str]:
+    """Liefert den Artist-Scope eines Kandidaten: bevorzugt das bereits
+    vom Health-Scanner gesetzte `artist`-Feld, sonst das erste
+    Pfadsegment (identische Fallback-Konvention wie
+    executor.py::_directory_artist() und filter_plan()s eigener
+    Pfad-Praefix-Abgleich oben)."""
+    if candidate.artist:
+        return candidate.artist
+    if candidate.path:
+        parts = Path(candidate.path).parts
+        if len(parts) >= 2:
+            return parts[0]
+    return None
+
+
+_ARTIST_GROUPING_LEVELS: tuple[RepairLevel, RepairLevel] = (
+    RepairLevel.METADATA_REPROCESSING,
+    RepairLevel.EXTERNAL_METADATA,
+)
+
+
+def group_candidates_by_artist(
+    plan: RepairPlan,
+    levels: tuple[RepairLevel, ...] = _ARTIST_GROUPING_LEVELS,
+) -> dict[str, ArtistCandidateSummary]:
+    """Gruppiert die Plan-Kandidaten der gegebenen Level (Default: L2 +
+    L3) nach Artist, fuer die Telegram-Artist-Auswahl (ARCH-033).
+
+    Deterministisch sortiert: absteigend nach Gesamt-Kandidaten-Anzahl,
+    bei Gleichstand alphabetisch (case-insensitive) — Python-Dicts
+    behalten Einfuegereihenfolge, das zurueckgegebene Dict ist daher
+    bereits in Anzeige-Reihenfolge."""
+    counts: dict[str, ArtistCandidateSummary] = {}
+    for c in plan.candidates:
+        if c.level not in levels:
+            continue
+        artist = _candidate_artist(c)
+        if not artist:
+            continue
+        summary = counts.setdefault(artist, ArtistCandidateSummary(artist=artist))
+        if c.level == RepairLevel.METADATA_REPROCESSING:
+            summary.l2_count += 1
+        elif c.level == RepairLevel.EXTERNAL_METADATA:
+            summary.l3_count += 1
+
+    ordered = sorted(counts.values(), key=lambda s: (-s.total, s.artist.lower()))
+    return {s.artist: s for s in ordered}
