@@ -411,3 +411,95 @@ async def handle_library_maintenance_callback(
         return
 
     await query.answer("⚠️ Unbekannter Library-Wartung-Callback")
+
+
+# ====== L2/L3 PRO-ARTIST-REPARATUR (ARCH-033) ======
+
+
+async def handle_l23rep_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    callback_data: str,
+    repair_handler,
+    is_admin_check,
+    logger,
+) -> None:
+    """
+    Dispatcher für alle l23rep:* Callbacks.
+
+    Routing (siehe handlers/repair_musicbot_handler.py, ARCH-033):
+      l23rep:start                → Einstieg (aus "Reparaturvorschläge")
+      l23rep:artists               → Artist-Liste, Seite 0, frischer Scan
+      l23rep:artists:<page>        → Artist-Liste, Seite <page> (gecacht)
+      l23rep:pick:<idx>            → Aktions-Auswahl (L2/L3) für Artist
+      l23rep:preview:<l2|l3>:<idx> → Preview (read-only)
+      l23rep:confirm:<l2|l3>:<idx> → explizite Bestätigung
+      l23rep:execute:<l2|l3>:<idx> → tatsächliche Ausführung
+
+    Lebt bewusst auf demselben RepairMusicBotHandler wie repair:* (kein
+    neuer Handler) - L2/L3 sind Findings-getrieben wie SAFE_AUTOMATIC
+    (ADR-0001), nur mit Pro-Artist-Bestätigung (ADR-0003). Eigener
+    Admin-Check hier (Defense-in-Depth, analog zu repair:/libmaint:/
+    doctor:/review: - callback_data ist frei sendbar, siehe SEC-003).
+    """
+    query = update.callback_query
+    user_id = update.effective_user.id
+
+    if not is_admin_check(user_id):
+        logger.warning(
+            f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte "
+            f"L2/L3-Repair-Callback: {callback_data}"
+        )
+        await query.answer("⛔ Keine Berechtigung", show_alert=True)
+        return
+
+    if not repair_handler:
+        await query.answer("⚠️ Repair-Handler nicht verfügbar", show_alert=True)
+        return
+
+    if callback_data == "l23rep:start":
+        await repair_handler.handle_l23_start(update, context)
+        return
+    if callback_data == "l23rep:artists":
+        await repair_handler.handle_l23_artist_list(update, context, 0, force_refresh=True)
+        return
+
+    parts = callback_data.split(":")
+
+    if len(parts) == 3 and parts[1] == "artists":
+        try:
+            page = int(parts[2])
+        except ValueError:
+            await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+            return
+        await repair_handler.handle_l23_artist_list(update, context, page)
+        return
+
+    if len(parts) == 3 and parts[1] == "pick":
+        try:
+            idx = int(parts[2])
+        except ValueError:
+            await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+            return
+        await repair_handler.handle_l23_pick_artist(update, context, idx)
+        return
+
+    if len(parts) == 4 and parts[1] in ("preview", "confirm", "execute"):
+        level, idx_str = parts[2], parts[3]
+        if level not in ("l2", "l3"):
+            await query.answer("⚠️ Ungültiges Level", show_alert=True)
+            return
+        try:
+            idx = int(idx_str)
+        except ValueError:
+            await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+            return
+        if parts[1] == "preview":
+            await repair_handler.handle_l23_preview(update, context, level, idx)
+        elif parts[1] == "confirm":
+            await repair_handler.handle_l23_confirm_prompt(update, context, level, idx)
+        else:
+            await repair_handler.handle_l23_execute(update, context, level, idx)
+        return
+
+    await query.answer("⚠️ Unbekannter L2/L3-Repair-Callback")

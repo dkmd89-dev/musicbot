@@ -442,6 +442,25 @@ class RichMenuSystem:
 
     # ====== ENDE REPAIR MUSICBOT ======
 
+    # ====== L2/L3 PRO-ARTIST-REPARATUR (ARCH-033) ======
+
+    async def _handle_l23rep_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        callback_data: str,
+    ) -> None:
+        """Dispatcher für alle l23rep:* Callbacks - siehe
+        handlers/menu/actions/library.py::handle_l23rep_callback(). Nutzt
+        denselben self.repair_handler wie repair:* (kein eigener
+        L2/L3-Handler, siehe Modul-Docstring von
+        handlers/repair_musicbot_handler.py)."""
+        await library_actions.handle_l23rep_callback(
+            update, context, callback_data, self.repair_handler, self._is_admin_check, self.logger
+        )
+
+    # ====== ENDE L2/L3 PRO-ARTIST-REPARATUR ======
+
     # ====== LIBRARY-WARTUNG (ARCH-032 Phase 4) ======
 
     async def _handle_library_maintenance_start(
@@ -739,6 +758,11 @@ class RichMenuSystem:
             # ── NEU: Repair MusicBot ───────────────────────────────────
             if callback_data.startswith("repair:"):
                 await self._handle_repair_callback(update, context, callback_data)
+                return
+
+            # ── NEU: L2/L3 Pro-Artist-Reparatur (ARCH-033) ─────────────
+            if callback_data.startswith("l23rep:"):
+                await self._handle_l23rep_callback(update, context, callback_data)
                 return
 
             # ── NEU: Library-Wartung (ARCH-032 Phase 4) ────────────────
