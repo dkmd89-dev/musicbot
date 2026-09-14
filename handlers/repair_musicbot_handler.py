@@ -99,6 +99,22 @@ _L23REP_WARNING_TEXT = {
     ),
 }
 
+# ── Registry-Vorbereitung (ARCH-033 Phase 4) ────────────────────────────
+# Erweiterungspunkt fuer zukuenftige, EIGENE ARCH-Phasen (ARCH-034/035) -
+# COVER, LOUDNESS und DUPLICATE bleiben bis dahin bewusst CLI-only (siehe
+# RepairLevel in services/library_repair/models.py sowie
+# docs/LIBRARY_REPAIR.md §12). Eine kuenftige Phase wuerde hier lediglich
+# einen weiteren "lX": "..."-Eintrag in JEDEM der drei _L23REP_*-Dicts
+# oben ergaenzen (plus einen passenden execute_level<N>_repair() in
+# repair_service.py, analog zu Phase 1) - kein neuer Executor, kein
+# neuer Callback-Namensraum noetig, der bestehende
+# l23rep:preview/confirm/execute-Flow ist bereits generisch ueber den
+# `level`-Parameter. Beispiel (NICHT aktiv, nur Dokumentation):
+#   "cover":    "Cover · Cover-Art-Reparatur"          (ARCH-034?)
+#   "loudness": "Loudness · Lautheits-Normalisierung"  (ARCH-034?)
+#   "dup":      "Duplicate · Duplikat-Bereinigung"     (ARCH-035?,
+#                destruktiv - eigene Sicherheitsbetrachtung noetig)
+
 
 class RepairMusicBotHandler:
     """Verwaltet den 'Repair MusicBot'-Menübereich im Rich-Menu-System."""
