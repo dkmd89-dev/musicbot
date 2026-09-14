@@ -1,0 +1,46 @@
+@startuml seq-library-maintenance-action
+title Library-Maintenance-Action (NEU) — z.B. "Artist Casing korrigieren" ueber Telegram
+
+actor Admin
+participant "LibraryMaintenanceHandler\n(handlers/)" as H
+participant "maintenance_service.py\n(services/library_repair/, NEU)" as S
+participant "artist.py / genre.py\n(NEU, reine Funktionen)" as Pure
+participant "executor.py\n(apply_artist_casing() etc., NEU)" as Exec
+participant "journal.py" as J
+database "library_repair_journal.jsonl" as JF
+participant "Music Library" as Lib
+
+Admin -> H: 🧹 Library-Wartung -> Artist waehlen -> "Casing korrigieren"
+H -> H: is_admin_or_owner() Check
+H -> S: preview_artist_casing(artist)
+S -> Pure: load_casing_map() + normalize_values(existing_tags)
+Pure --> S: geplante Aenderungen (before/after) je Datei
+S --> H: Preview (read-only, keine Datei veraendert)
+H -> Admin: "3 Aenderungen gefunden — JA, KORRIGIEREN?"
+Admin -> H: Bestaetigung (Pro-Artist, kein Blanket-Confirm)
+H -> H: is_admin_or_owner() ERNEUT geprueft
+H -> S: execute_artist_casing_fix(artist, triggered_by="telegram:<uid>")
+S -> S: acquire_repair_lock() (bestehende Lock-Datei, geteilt mit Finding-Flow)
+loop je betroffene Datei
+  S -> Exec: apply_artist_casing(path, casing_map)
+  Exec -> Exec: safety_check() (bestehend, wiederverwendet)
+  Exec -> Lib: Backup ausserhalb der Library
+  Exec -> Lib: Schreiben auf temp-Sibling
+  Exec -> Exec: Verify: Ziel-Atome + Audio-Essenz-MD5 + Tag-Fingerprint (andere Atome unveraendert)
+  Exec -> Lib: atomarer replace()
+  Exec --> S: ExecOutcome(status=SUCCESS|SKIPPED|FAILED)
+end
+S -> J: RepairJournal.record() je Outcome (SELBE Produktions-Journal-Datei wie L1/L2/L3)
+J -> JF: flush() (append-only)
+S -> S: _append_run_record() in library_repair_runs.json (level="ARTIST_CASING")
+S -> S: release_repair_lock()
+S --> H: RepairRunResult(status, affected_files, ...)
+H -> Admin: Ergebnis (Erfolgreich/Uebersprungen/Fehlgeschlagen)
+
+note over S,JF
+  KEIN Health-Finding beteiligt — anders als beim Finding-Flow gibt es
+  kein "Verification-Rescan schliesst Finding" (execute_safe_automatic_repair()).
+  Die Korrektheit wird ausschliesslich per-Datei durch Exec verifiziert
+  (Tag-Fingerprint + Audio-Essenz), nicht durch einen zweiten Health-Scan.
+end note
+@enduml
