@@ -1901,16 +1901,18 @@ optionale Zeilen, Empty State, keine Separator-/Hörzeit-Zeile). Gezielte
   live gefundenen Bugs dieser Phase sowie zum inzwischen geschlossenen
   Download-Verlauf-Punkt (Abschnitt 3.6).
 - [`archive/MusicBot_ENGINEERING_BASELINE_v8.md`](archive/MusicBot_ENGINEERING_BASELINE_v8.md)
-  — Baseline-Stand vor dieser Phase (mittlerweile durch
-  [`MusicBot_ENGINEERING_BASELINE_v9.md`](MusicBot_ENGINEERING_BASELINE_v9.md)
-  als aktuelle Baseline abgelöst).
+  — Baseline-Stand vor dieser Phase (mittlerweile über
+  [`archive/MusicBot_ENGINEERING_BASELINE_v9.md`](archive/MusicBot_ENGINEERING_BASELINE_v9.md)
+  durch [`MusicBot_ENGINEERING_BASELINE_v10.md`](MusicBot_ENGINEERING_BASELINE_v10.md)
+  (Freeze 2026-09-14) als aktuelle Baseline abgelöst).
 - [`docs/METADATA_REPROCESSING.md`](METADATA_REPROCESSING.md) — vollständige
   Doku des Reprocessing-Tools selbst (Sicherheitsmodell, CLI, Abschnitt 2a
   zum Subprozess-Aufrufmodell).
 - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — die beiden zurückgestellten
   Challenge-Typen aus Abschnitt 6.12 (Family Hub, F4).
 - [`docs/MusicBot_ENGINEERING_BASELINE_v10.md`](MusicBot_ENGINEERING_BASELINE_v10.md)
-  (DRAFT) — Family Hub (F1–F5) in „Recent Major Changes" (Abschnitt 3).
+  (eingefrorene Baseline seit 2026-09-14) — Family Hub (F1–F5) in
+  „Recent Major Changes" (Abschnitt 3).
 - [`docs/MusicBot_ARCH-021_Menu_Architecture_Migration.md`](MusicBot_ARCH-021_Menu_Architecture_Migration.md),
   [`docs/MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md`](MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md),
   [`docs/MusicBot_ARCH-024_Menu_File_Decomposition.md`](MusicBot_ARCH-024_Menu_File_Decomposition.md),

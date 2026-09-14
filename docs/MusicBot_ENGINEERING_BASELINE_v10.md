@@ -1,19 +1,28 @@
 # MusicBot Engineering Baseline v10
 
-> **Status: DRAFT / IN PROGRESS — NICHT eingefroren.**
+> **Status: 🟢 FROZEN (2026-09-14).**
 >
-> Dieses Dokument ist der **laufende Zwischenstand** seit dem v9-Freeze
-> (2026-09-07). Es wird pro ARCH-Phase / PR mit *ARCH Status*, *Recent Major
-> Changes* und *Testzahlen* aktualisiert (CLAUDE.md §30) und erst zu einem
-> ausdrücklichen Freeze-Zeitpunkt (nach 🟢-APPROVED-Freeze-Gate-Audit) zum
-> eingefrorenen Referenzpunkt gemacht — dann werden die Platzhalter-
-> Abschnitte 4–6 befüllt.
+> Nächster verifizierter Engineering-Referenzzustand nach dem v9-Freeze
+> (2026-09-07). Diese Serie deckt drei große, aufeinanderfolgende Blöcke ab:
+> die **Artist-Identity-Resolution-Migration** (Phase A–F, PR #176) + die
+> **Library Closure Phase** (7 PRs), den umfangreichen **Menu-Architektur-
+> Umbau** (ARCH-021/023/024/025, Datei-Dekomposition + Router-/Permission-
+> Härtung), den vollständigen **Error-Handler-Konsolidierungs-Block**
+> (ARCH-026–030, 12 Findings F1–F12 CLOSED), einen breiten **Navidrome-
+> Menu-System-Audit** (NAV-F1–F18) samt Architecture-Refactoring
+> (Browse-/Detail-Rendering-Extraktion), **Family Hub** (Phasen F1–F5) und
+> **Statistics Menu UX & Architecture** (Phasen A–E), sowie zuletzt
+> **ARCH-031/032 „Library Repair Telegram Integration"** (Characterization
+> + vollständige Library-Maintenance-Consolidation, Phasen 1–4) und einen
+> Cache-Import-Fix. `docs/MusicBot_ENGINEERING_BASELINE_v9.md` wird durch
+> dieses Dokument abgelöst und liegt jetzt unter
+> `docs/archive/MusicBot_ENGINEERING_BASELINE_v9.md`.
 >
-> **Bis zum v10-Freeze gilt:**
-> - Eingefrorener technischer Referenzpunkt = `docs/MusicBot_ENGINEERING_BASELINE_v9.md`.
-> - Aktueller Stand aller offenen/zurückgestellten Findings = `docs/FINDINGS_INDEX.md`.
-> - Dieses Dokument dupliziert **keine** Findings — es listet nur die
->   Änderungshistorie seit v9 und die rollende Testzahl.
+> Aktueller Stand aller offenen/zurückgestellten Findings bleibt laufend
+> gepflegt in `docs/FINDINGS_INDEX.md` — dieses Dokument ist ab jetzt
+> abgeschlossen (siehe Footer). Neue Findings/Nachträge gehören in
+> `docs/MusicBot_ENGINEERING_BASELINE_v11.md`, sobald diese angelegt wird
+> (Normalfall: beim nächsten ARCH-Phasen-Abschluss nach diesem Freeze).
 
 ---
 
@@ -22,7 +31,7 @@
 | Feld | Wert |
 |---|---|
 | Baseline | v10 (DRAFT) |
-| Vorgänger | `docs/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze 2026-09-07, 2580 passed / 1 skipped / 0 failed) |
+| Vorgänger | `docs/archive/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze 2026-09-07, 2580 passed / 1 skipped / 0 failed) |
 | Letzte vom Nutzer gemeldete Full-Suite-Zahl | **2920 passed, 1 skipped, 0 failed, 19 subtests passed** (Stand PR #176, 2026-09-08) |
 | Letzte Full-Suite-Zahl (mit expliziter Nutzer-Freigabe vom Implementierungsprozess selbst ausgeführt, §8.A-Ausnahme) | **3186 passed, 1 failed (vorbestehend/unabhängig, `test_artist_overrides_orphan_cleanup.py` — 30 statt erwarteter 29 Keys, Datei bereits vor Sitzungsbeginn uncommitted verändert), 1 skipped, 11 subtests passed** (Stand: Family Hub F1–F3, 2026-09-12). Danach (F4/F5) nur gezielte + thematische Suiten (366 passed) — volle Suite steht erneut beim Nutzer aus. |
 | Seither (PR #177/#178) | nur gezielte + thematische Suiten durch den Implementierungsprozess (CLAUDE.md §8.A); PR #178 fügt 3 Regressionstests hinzu (`test_mapping_additions_2026_09_08.py` = 14, `test_library_repair_executor_l2_real_pipeline.py` +2). Volle Suite steht beim Nutzer aus. |
@@ -66,8 +75,9 @@
 | Seither (verbleibende Testlücken geschlossen: Playlists/Favoriten/Such-Erfolgspfad, PR #233) | nur gezielte + thematische Suiten durch den Implementierungsprozess (CLAUDE.md §8.A): gezielt (`test_navidrome_menu_handler.py`) 73 passed (9 neu), thematisch (6 Dateien) 230 passed, 0 Regressionen. `compileall` fehlerfrei. Reine Testergänzung, keine Produktionscode-Änderung. Kein bisher unentdeckter Bug aufgedeckt. Volle Suite nach diesem Fix steht beim Nutzer aus. |
 | Seither (Architecture Refactoring Audit — Migrationsstufe 4, reduziert auf `get_albums_page()`, PR #234) | nur gezielte + thematische Suiten durch den Implementierungsprozess (CLAUDE.md §8.A): gezielt (`test_navidrome_menu_handler.py` 73 passed + `test_navidrome_browser_service.py` 5 passed, neu), thematisch (7 Dateien) 235 passed, 0 Regressionen. `compileall` fehlerfrei. Kein bestehender Test musste inhaltlich angepasst werden (Abbruchkriterium griff nicht). Neues Package `services/navidrome/`. Migrationsplan damit im Kern abgeschlossen. Volle Suite nach diesem Fix steht beim Nutzer aus. |
 | Seither (NAV-F17/NAV-F18 formalisiert — Discovery-Erweiterung/Playlist-CRUD, PR #235) | reine Dokumentationsänderung, keine Code-/Teständerung — CLAUDE.md §8.A entfällt. `docs/FINDINGS_INDEX.md` um zwei OPEN (DEFER)-Einträge ergänzt (bisher nur informell als „optionale Weiterentwicklung" erwähnt), konsistent in `docs/MusicBot_NAVIDROME_MENU_ARCHITECTURE.md` (Statuskopf, Findings-Tabelle Abschnitt 4, Migrationsreihenfolge Abschnitt 6, Abschnitt 8 „Offene Punkte" — widersprach zuvor mit „keine offenen Findings mehr") und im Migrationsplan-Dokument nachgezogen. |
-| Zuwachs seit v9-Freeze | +340 passed (Stand PR #176) — Zwischenstand, nicht laufend nachgezogen; für den aktuellen Gesamtstand siehe die Zeilen „Letzte vom Nutzer gemeldete Full-Suite-Zahl" oben |
-| Freeze-Status | offen — kein Freeze-Gate-Audit durchgeführt |
+| Zuwachs seit v9-Freeze | +1670 passed (2580 → 4250), 0 failed am Freeze-Zeitpunkt, Skip-/Subtest-Muster (1 skipped / 11 subtests) seit v9 durchgehend unverändert (kein neues Flackern über die gesamte Serie) |
+| Freeze-Datum | 2026-09-14 |
+| Freeze-Status | 🟢 APPROVED — siehe Abschnitt 6 |
 
 ---
 
@@ -165,44 +175,135 @@
 
 ---
 
-## 4. Technical Debt — Snapshot
+## 4. Technical Debt — Snapshot (Stand 2026-09-14, Freeze-Zeitpunkt)
 
-> Platzhalter — wird beim v10-Freeze als Schnappschuss befüllt (Vergleichswert
-> zum v9-Stand, CLAUDE.md §30). **Bis dahin maßgeblich:**
-> [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md).
->
-> Seit v9 neu zurückgestellt: **F-07** (MusicBrainz-Artist-MBID nicht als
-> Identitätssignal, P3) — in `FINDINGS_INDEX.md`. **F-08** (deprecated
-> Artist-Code) und **INV-01** (`duplicate/cache.py`) sind seit 2026-09-08
-> CLOSED (F-08 Cleanup PR #177, INV-01 akzeptiertes Risiko). Kein offener
-> P0/P1.
+Seit v9 geschlossen: **F-08** (deprecated Artist-Code, PR #177), **INV-01**
+(`duplicate/cache.py` Event-Loop-Persistenz, akzeptiertes Risiko), die
+gesamte **Library Closure Phase** (7 Lücken), **TGPERM-001**,
+**NAV-F1–F18** (vollständiger Navidrome-Menu-Audit), **F1–F12** des
+Error-Handler-Audits (ARCH-026–030), **PMA-F1/F2** (Parse-Mode-Audit),
+sowie der bei ARCH-032 entdeckte **Cache-Import-Fix**. Kein offener P0/P1
+zum Freeze-Zeitpunkt (repoweit gegen `docs/FINDINGS_INDEX.md` verifiziert
+— alle dort als `P0`/`P1` markierten Zeilen sind `CLOSED`).
+
+Verbleibend offen (alle P2/P3 bzw. bewusst unpriorisierte Design-Fragen,
+Details + Begründung in `docs/FINDINGS_INDEX.md`):
+
+| ID | Problem | Status | Priorität |
+|---|---|---|---|
+| F-07 | MusicBrainz-Artist-MBID nicht als Identitätssignal (Timing-Konflikt in der Pipeline) | DEFER (seit 2026-09-08) | P3 |
+| ARCH-021 Session-Legacy-State | `max_sessions` ohne Durchsetzung, `MenuSession.state`/`.data`/`.message_id` ungenutzt | DEFER (seit ARCH-021/P-4) | P3 |
+| Hard-Cancel während FFmpeg-Postprocessing | Cancel-Check-Hook nur in `progress_hooks`, nicht `postprocessor_hooks` | akzeptiertes Restrisiko (unverändert seit v9) | P3 |
+| `_split_artists()` Ampersand-Bandnamen | Bandnamen mit „&" im Namen selbst (z. B. „Simon & Garfunkel") werden fälschlich gesplittet | akzeptiertes Risiko | P3 |
+| Family Hub „Rate den Song" | Challenge-Typ aus Master-Prompt nicht umgesetzt (fehlender Audio-/Lyrics-Snippet-Baustein) | DEFER | P3 |
+| Family Hub „Playlist für Stimmung" | Challenge-Typ nicht umgesetzt (keine automatisch prüfbare Antwort) | DEFER | P3 |
+| P2.3 Stufe B (Bad Download Detector Reject-Gate) | Braucht reale Beobachtungsperiode + explizites Nutzer-Go vor Umsetzung | DEFER | P2 |
+| Metadata Confidence Score | Entscheidung aussstehend: bestehenden Health-Score wiederverwenden vs. separaten Score bauen | DEFER | — |
+| ARCH-031-Follow-ups (4 Punkte) | `GENRE_EMPTY`/`META_GENRE_MISSING`-Pfad, `tags_fingerprint()`-Retrofit auf `apply_level1()`, `--update-manual-mapping` als Telegram-Funktion, `--only-if-missing` als Telegram-Option | DEFER (neu seit ARCH-031) | P3 |
+| ARCH-033 (Telegram Level-2/Level-3 Repair) | `execute_level2_repair`/`execute_level3_repair`, Pro-Artist-Telegram-Freigabe (ADR-0003) — letzte in ARCH-031 beschlossene, noch nicht begonnene Phase | OPEN, noch nicht begonnen | P2 |
+
+10 offene Punkte (ggü. 5 in v9) — der Zuwachs ist ausschließlich neue,
+bewusst kleine/klar begründete Zurückstellungen aus dieser Serie
+(ARCH-021-Legacy-State, ARCH-031-Follow-ups, ARCH-033), kein „vergessenes"
+Risiko.
 
 ---
 
-## 5. Security-Baseline
+## 5. Security-Baseline (Stand 2026-09-14)
 
-> Platzhalter — wird beim v10-Freeze vollständig befüllt.
->
-> **Seit v9 eine sicherheitsrelevante Änderung:** TGPERM-001 (2026-09-12,
-> siehe Abschnitt 3 oben) — Telegram-Permission-Bypass bei 10 Admin-Level-
-> Menüpunkten (Logger-Verwaltung + Test-System), CLOSED noch am Tag der
-> Entdeckung. Details: `docs/audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md`,
-> `docs/FINDINGS_INDEX.md`.
+**Zwei P1-Security-/Robustheits-Funde seit v9, beide CLOSED noch am
+Tag der Entdeckung:**
+- **TGPERM-001** (2026-09-12) — Telegram-Permission-Bypass: 10 Admin-
+  Level-Menüpunkte (Logger-Verwaltung + Test-System) routeten über den
+  ungegateten generischen `menu:`-Fallback, jeder Bot-Nutzer konnte
+  globales Log-Level ändern/Log-Dateien einsehen/Testläufe auslösen.
+  Fix + neuer repoweiter Sweep-Test gegen dieselbe Fehlerklasse. Details:
+  `docs/audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md`.
+- **PMA-F1/PMA-F2** (2026-09-14, Parse-Mode-Audit) — admin-eingegebener
+  Freitext (`navidrome_user`) bzw. roher Exception-Text wurde unescaped
+  in `parse_mode="Markdown"` gerendert; ein unpaariges Legacy-Markdown-
+  Sonderzeichen ließ Telegram die Nachricht ablehnen („Can't parse
+  entities") — kein Datenleck, aber ein Crash-/Verfügbarkeitsrisiko der
+  Admin-Oberfläche selbst (u. a. der Fehleranzeige-Pfad in
+  `enhanced_error_handler.py`). Beide gefixt.
+
+**Neue schützende Mechanismen seit v9** (keine Findings, sondern neue
+Sicherheitsvorkehrungen):
+- **Error-Handler-Konsolidierung** (ARCH-026–030): eine einzige
+  `EnhancedErrorHandler`-Instanz statt zwei unsynchronisierten — Admin-
+  Monitoring (`/error_stats`) sieht jetzt tatsächlich alle Exceptions,
+  inkl. Download-Pipeline (P0, vorher 0 Integration) und Family-
+  Broadcast-Pfaden. Production-Logging von personenbezogenen
+  Nutzerdaten befreit (Klarname/Username/Nachrichtentext nur noch im
+  Debug-Modus, F12).
+- **Menu-Router-/Permission-Härtung** (ARCH-023): zentrale
+  `is_accessible()`-Prüfung vor jedem `menu:`-Handler-Aufruf schließt
+  die TGPERM-001-Fehlerklasse strukturell für alle `menu:`-Items;
+  repoweiter Permission-Audit inkl. `utils/` (16 Dateien), kein
+  P0/P1-Fund; 5 unabhängig implementierte Owner/Admin-Duplikate auf
+  `permissions.is_admin_or_owner()` konsolidiert.
+- **Library-Maintenance-Actions** (ARCH-032): Callback-Präfix bewusst
+  `libmaint:` statt `maint:` (echte Kollision mit dem Bot-Wartungsmodus
+  gefunden und vermieden, bevor sie produktiv wurde); Defense-in-Depth-
+  Admin-Check identisch zu `repair:`/`doctor:`/`review:`; TGPERM-001-
+  Sweep-Test deckt den neuen Menüpunkt automatisch mit ab.
+- Alle Library-Repair-/Maintenance-Executoren (bestehend + neu in
+  ARCH-032) verifizieren weiterhin vor jedem Schreibvorgang Audio-
+  Essenz-Byte-Identität und haben Per-Datei-Rollback bei
+  Verifikationsfehler; `tags_fingerprint()` (neu) verschärft das für
+  die drei neuen Maintenance-Actions zusätzlich auf „nur die Ziel-Atome
+  wurden verändert".
+
+Keine offenen Security-Findings am Ende dieser Serie.
 
 ---
 
 ## 6. Architecture Freeze
 
-> Platzhalter — Freeze-Entscheidung (GO/NO-GO mit Evidenz) ist ein
-> ausdrücklicher, eigenständiger Prüfschritt (CLAUDE.md §30) und noch nicht
-> erfolgt.
+```
+🟢 ARCHITECTURE FREEZE — APPROVED
+```
+
+**Freeze-Gate-Audit (2026-09-14):**
+
+| Kriterium | Ergebnis |
+|---|---|
+| Offene P0/P1-Findings | **0** (repoweit gegen `docs/FINDINGS_INDEX.md` verifiziert, Abschnitt 4) |
+| Vollständige Testsuite | **4250 passed, 1 skipped, 11 subtests passed, 0 failed** (250,52 s), vom Nutzer selbst ausgeführt (CLAUDE.md §8.A) |
+| Bekannte Regressionen | keine — jede ARCH-Phase dieser Serie liefert 0 Regressionen gegenüber ihrer jeweiligen Vorphase (Abschnitt 2/3) |
+| Schichtgrenzen-Verletzungen | keine — alle neuen/erweiterten Module (`handlers/menu/content/`, `services/family/`, `services/navidrome/`, `services/library_repair/{artist,genre,run_tracking,maintenance_service,library_artists}.py`, `handlers/library_maintenance_handler.py`) additiv innerhalb der in CLAUDE.md Abschnitt 4 etablierten Schichten, keine Rückreferenz-Verletzung (mehrfach AST-verifiziert, u. a. ARCH-024/025) |
+| Produktions-Datensicherheit | kein Crash, keine Korruption, kein Datenverlust in Produktion während der gesamten Serie — alle Schreibvorgänge (Library-Repair-Executoren, neue Maintenance-Actions) liefen mit Backup-vor-Schreiben + Audio-Essenz-Byte-Identitäts-Verifikation |
+
+Diese Serie hat den bestehenden Freeze nicht neu geöffnet, sondern
+bestätigt ihn erneut. Die umfangreichste strukturelle Änderung — die
+Menu-Architektur-Migration (ARCH-021/023/024/025) — reduzierte
+`rich_menu_system.py` um 65 % und `rich_menu_handler.py` um insgesamt
+~31 %, ohne Router/Permissions/Session-Verhalten zu ändern
+(Characterization-first, jede Extraktion einzeln verifiziert). Der
+Error-Handler-Block (ARCH-026–030) und ARCH-032 (Library Maintenance
+Consolidation) sind beide additiv (neue/erweiterte Module, keine
+bestehende Funktion verhaltensverändert außer den explizit
+dokumentierten, bewusst entschiedenen Fixes). Der Freeze bleibt
+APPROVED.
 
 ---
 
-## Freeze-Checkliste (beim v10-Freeze abzuarbeiten)
+## Freeze-Checkliste (v10-Freeze, 2026-09-14)
 
-- [ ] Freeze-Gate-Audit → 🟢 APPROVED (alle Kriterien PASS, kein offener P0/P1)
-- [ ] Abschnitte 4–6 als Schnappschuss befüllen
-- [ ] „Baseline Frozen (JJJJ-MM-TT)"-Footer setzen, DRAFT-Kopf entfernen
-- [ ] Referenzen umstellen: `README.md`, `docs/INDEX.md`, `CLAUDE.md` §30
-- [ ] `docs/MusicBot_ENGINEERING_BASELINE_v9.md` → `docs/archive/`
+- [x] Freeze-Gate-Audit → 🟢 APPROVED (alle Kriterien PASS, kein offener P0/P1)
+- [x] Abschnitte 4–6 als Schnappschuss befüllt
+- [x] „Baseline Frozen (2026-09-14)"-Footer gesetzt, DRAFT-Kopf entfernt
+- [x] Referenzen umgestellt: `README.md`, `docs/INDEX.md`, `CLAUDE.md`
+- [x] `docs/MusicBot_ENGINEERING_BASELINE_v9.md` → `docs/archive/`
+
+---
+
+## Baseline Frozen (2026-09-14)
+
+**Diese Datei ist damit abgeschlossen.** Neue Findings, Nachträge oder
+technische Schulden gehören ab jetzt in
+`MusicBot_ENGINEERING_BASELINE_v11.md`, sobald diese angelegt wird
+(Normalfall: beim nächsten ARCH-Phasen-Abschluss mit Code-/YAML-Änderung
+nach diesem Freeze — bis dahin ist dieses Dokument der eingefrorene
+Referenzpunkt). Der laufende Stand aller offenen/zurückgestellten Punkte
+bleibt `docs/FINDINGS_INDEX.md`.

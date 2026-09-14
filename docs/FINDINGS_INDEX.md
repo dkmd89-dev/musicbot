@@ -24,7 +24,13 @@ Freeze-Zeitpunkt (wird nach dem Freeze nicht mehr editiert) — dieser
 Index ist ab sofort die einzige Stelle für den *aktuellen* Stand.
 
 **Baseline-Freeze:** 2026-09-02 (Baseline v8 — eingefrorener Schnappschuss,
-Tech-Debt-Tabelle dort unverändert, siehe z. B. `docs/archive/MusicBot_ENGINEERING_BASELINE_v8.md`). Aktuell eingefrorener Referenzpunkt: `docs/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze 2026-09-07); laufender Zwischenstand seit dem v9-Freeze: `docs/MusicBot_ENGINEERING_BASELINE_v10.md` (DRAFT — nur ARCH-Historie/Testzahlen, keine Findings; die stehen hier).
+Tech-Debt-Tabelle dort unverändert, siehe z. B. `docs/archive/MusicBot_ENGINEERING_BASELINE_v8.md`);
+2026-09-07 (Baseline v9, ebenfalls eingefroren, siehe
+`docs/archive/MusicBot_ENGINEERING_BASELINE_v9.md`). Aktuell eingefrorener
+Referenzpunkt: `docs/MusicBot_ENGINEERING_BASELINE_v10.md` (Freeze
+2026-09-14, 4250 passed). Kein laufender Zwischenstand (v11 noch nicht
+angelegt, Normalfall direkt nach einem Freeze) — dieser Index bleibt die
+einzige Stelle für den aktuellen Finding-Stand.
 **Aktueller Finding-Stand (dieses Dokument):** 2026-09-14 (zuletzt aktualisiert:
 ARCH-030 — Error Handler F7 Closure — letztes verbleibendes Finding aus
 dem ARCH-026-Audit (F7, `FamilyChatHandler`/`FamilyChallengeHandler`/
