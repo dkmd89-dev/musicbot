@@ -65,8 +65,20 @@ class ExceptionMonitor:
         # lassen. "data" bleibt bestehen (jetzt nur noch IndexError, der
         # einzige nicht bereits anderswo doppelt vergebene Typ). Reine
         # Bereinigung unerreichbarer Duplikate - KEINE Kategorie, die
-        # vorher tatsächlich zurückgegeben wurde, liefert jetzt ein anderes
-        # Ergebnis (siehe TestCategorizeExceptionNoDuplicates-Regressionstest).
+        # vorher tatsächlich zurückgegeben wurde, lieferte dadurch ein
+        # anderes Ergebnis.
+        #
+        # ARCH-029/F11 (2026-09-14): die Dict-Reihenfolge-Bereinigung allein
+        # löste nicht den verbleibenden, im ARCH-026-Audit dokumentierten
+        # Kernfall: ConnectionError/TimeoutError erben in Python von
+        # OSError. Da "file_system" (listet OSError explizit) im Dict vor
+        # "network" steht, gewann "file_system" für JEDEN
+        # ConnectionError/TimeoutError immer zuerst - "network"s eigene,
+        # spezifischere Einträge waren faktisch unerreichbar.
+        # categorize_exception() wählt daher jetzt nicht mehr den ersten
+        # Dict-Treffer, sondern den SPEZIFISCHSTEN (siehe dortige Methode) -
+        # unabhängig von der Dict-Reihenfolge. Keine Kategorie hier
+        # umbenannt, keine Recovery-Strategie-Zuordnung verändert.
         self.categories = {
             "telegram": [TelegramError, NetworkError, TimedOut, BadRequest],
             "file_system": [FileNotFoundError, PermissionError, OSError, IOError],
@@ -96,14 +108,41 @@ class ExceptionMonitor:
         self.logger.info("🔍 Exception Monitor initialisiert")
 
     def categorize_exception(self, exception: Exception) -> str:
-        """Kategorisiert eine Exception"""
+        """
+        Kategorisiert eine Exception.
+
+        ARCH-029/F11: wählt unter allen Kategorien, deren Typliste eine
+        Vorfahrenklasse von `exception` enthält, deterministisch den
+        SPEZIFISCHSTEN Treffer - nicht mehr den zufällig ersten in der
+        Dict-Iterationsreihenfolge. Ein Treffer-Typ gilt als spezifischer
+        als ein anderer, wenn kein anderer Treffer-Typ eine echte
+        Unterklasse von ihm ist (z. B. ConnectionError ist spezifischer als
+        OSError, weil ConnectionError von OSError erbt). Löst den in
+        ARCH-026 dokumentierten Fall, dass "file_system" (listet OSError)
+        jeden ConnectionError/TimeoutError vor "network" (listet beide
+        explizit) abfing.
+        """
         exc_type = type(exception)
 
-        for category, types in self.categories.items():
-            if any(issubclass(exc_type, t) for t in types):
+        matches = [
+            (matched_type, category)
+            for category, types in self.categories.items()
+            for matched_type in types
+            if issubclass(exc_type, matched_type)
+        ]
+
+        if not matches:
+            return "unknown"
+
+        for matched_type, category in matches:
+            more_specific_match_exists = any(
+                other_type is not matched_type and issubclass(other_type, matched_type)
+                for other_type, _ in matches
+            )
+            if not more_specific_match_exists:
                 return category
 
-        return "unknown"
+        return matches[0][1]
 
     def determine_severity(self, exception: Exception, context: Dict[str, Any]) -> str:
         """Bestimmt die Schwere einer Exception"""
@@ -320,13 +359,6 @@ class EnhancedErrorHandler:
     Umfassendes Error Handling mit transparentem Step-by-Step Logging
     """
 
-    async def handle_error(self, update: object, context: ContextTypes.DEFAULT_TYPE):
-        """
-        🔄 Kompatibilitäts-Wrapper für alte Schnittstellen.
-        Leitet direkt an handle_telegram_error weiter.
-        """
-        await self.handle_telegram_error(update, context)
-
     def __init__(self, config: Config, logger_factory: Callable = None):
         self.config = config
         self.logger_factory = logger_factory or get_module_logger
@@ -395,10 +427,21 @@ class EnhancedErrorHandler:
         update: Optional[Update] = None,
         telegram_context: Optional[ContextTypes.DEFAULT_TYPE] = None,
         session_id: Optional[str] = None,
+        manage_session: bool = True,
     ) -> str:
         """
         🎯 HAUPT-EXCEPTION-HANDLER
         Behandelt jede Art von Exception mit vollständigem Logging
+
+        ARCH-029/F8: `manage_session` steuert, wer den DebugTracker-Session-
+        Lifecycle besitzt. Default True (alle Direktaufrufer sowie die drei
+        High-Level-Entry-Points `handle_telegram_error`/`handle_command_error`/
+        `handle_callback_error`, die keinen eigenen Erfolgspfad haben) - diese
+        Methode ist dann alleiniger Besitzer (genau ein start_session()/
+        end_session()). Die beiden Decoratoren (`handle_async_exceptions`/
+        `handle_sync_exceptions`) besitzen die Session bereits selbst (auch
+        für ihren Erfolgspfad, den diese Methode nie sieht) und übergeben
+        False, damit hier weder erneut gestartet noch beendet wird.
         """
         start_time = datetime.now()
 
@@ -406,14 +449,22 @@ class EnhancedErrorHandler:
         if not session_id:
             session_id = f"EXC_{start_time.strftime('%H%M%S_%f')}"
 
-        self.debug_tracker.start_session(
-            session_id,
-            {
-                "exception_type": type(exception).__name__,
-                "has_update": update is not None,
-                "context_keys": list(context.keys()) if context else [],
-            },
-        )
+        if manage_session:
+            # ARCH-029/F8: voller uebergebener context (nicht nur dessen
+            # Keys) landet jetzt im DebugTracker-Session-Objekt - vorher
+            # ging der entry-point-spezifische Kontext (telegram_error/
+            # command_name/callback_data) verloren, weil die Entry-Points
+            # ihn selbst per eigenem start_session() gesetzt hatten, das
+            # hier unbedingt ueberschrieben wurde (siehe ARCH-026 F8).
+            session_context = dict(context) if context else {}
+            session_context.update(
+                {
+                    "exception_type": type(exception).__name__,
+                    "has_update": update is not None,
+                    "context_keys": list(context.keys()) if context else [],
+                }
+            )
+            self.debug_tracker.start_session(session_id, session_context)
 
         try:
             # 🎯 Step 1: Exception aufzeichnen
@@ -496,7 +547,8 @@ class EnhancedErrorHandler:
             return "HANDLER_ERROR"
 
         finally:
-            self.debug_tracker.end_session(session_id)
+            if manage_session:
+                self.debug_tracker.end_session(session_id)
             self.performance_stats["total_handled"] += 1
 
     def _build_full_context(
@@ -654,22 +706,40 @@ class EnhancedErrorHandler:
                 f"🧵 Thread: {thread_info.get('thread_name')} (ID: {thread_info.get('thread_id')})"
             )
 
-        # Telegram-spezifische Infos
+        # Telegram-spezifische Infos.
+        # ARCH-029/F12: User-Klarname/-Username sowie der rohe
+        # Nachrichtentext-Preview sind personenbezogene Daten, die für die
+        # technische Fehlerdiagnose nicht zwingend erforderlich sind - die
+        # user_id/message_id genügen dafür bereits (Korrelation über
+        # mehrere Fehler hinweg, Nachschlagen bei Bedarf). Production
+        # (debug_mode=False, Standard-Konfiguration) loggt daher nur die
+        # minimierte Variante; im DEBUG-Modus bleibt der volle,
+        # unveränderte Kontext für die lokale Fehlersuche erhalten.
+        # callback_data bleibt in beiden Modi sichtbar - bot-interne
+        # Menü-/Aktions-IDs, kein personenbezogenes Freitextfeld, und für
+        # die Diagnose "welcher Callback-Pfad" essenziell (CLAUDE.md §12/
+        # Master-Prompt Abschnitt 8: keine übertriebene Redaction).
         if "telegram_update" in context:
             tg_info = context["telegram_update"]
             log_method("📱 TELEGRAM CONTEXT:")
 
             if "user" in tg_info:
                 user = tg_info["user"]
-                log_method(
-                    f"   👤 User: {user.get('first_name')} (@{user.get('username')}) [{user.get('id')}]"
-                )
+                if self.debug_mode:
+                    log_method(
+                        f"   👤 User: {user.get('first_name')} (@{user.get('username')}) [{user.get('id')}]"
+                    )
+                else:
+                    log_method(f"   👤 User-ID: {user.get('id')}")
 
             if "message" in tg_info:
                 msg = tg_info["message"]
-                log_method(
-                    f"   💬 Message: ID {msg.get('message_id')} | Preview: {msg.get('text_preview', 'No text')}"
-                )
+                if self.debug_mode:
+                    log_method(
+                        f"   💬 Message: ID {msg.get('message_id')} | Preview: {msg.get('text_preview', 'No text')}"
+                    )
+                else:
+                    log_method(f"   💬 Message-ID: {msg.get('message_id')}")
 
             if "callback_query" in tg_info:
                 cb = tg_info["callback_query"]
@@ -1196,9 +1266,20 @@ class EnhancedErrorHandler:
                         elif str(type(arg)).endswith("ContextTypes.DEFAULT_TYPE'>"):
                             telegram_context = arg
 
-                    # Exception behandeln
+                    # Exception behandeln.
+                    # ARCH-029/F8: manage_session=False, da dieser Decorator
+                    # die Session bereits selbst besitzt (start_session()
+                    # oben, end_session() im finally-Block unten, fuer
+                    # Erfolgs- UND Fehlerpfad) - handle_exception() soll sie
+                    # weder erneut starten (ueberschreibt sonst den bereits
+                    # geloggten "Funktion gestartet"-Step) noch beenden.
                     await self.handle_exception(
-                        e, context, update_obj, telegram_context, session_id
+                        e,
+                        context,
+                        update_obj,
+                        telegram_context,
+                        session_id,
+                        manage_session=False,
                     )
 
                     # Exception weiterwerfen (oder suppression je nach Konfiguration)
@@ -1237,6 +1318,11 @@ class EnhancedErrorHandler:
             @wraps(func)
             def wrapper(*args, **kwargs):
                 session_id = f"{func.__name__}_{datetime.now().strftime('%H%M%S_%f')}"
+                # ARCH-029/F8: wird True, wenn die Session-Beendigung an
+                # einen fire-and-forget-Task delegiert wurde (siehe unten) -
+                # der synchrone finally-Block darf sie dann NICHT zusaetzlich
+                # sofort beenden.
+                session_closed_by_task = False
 
                 try:
                     self.debug_tracker.start_session(
@@ -1285,12 +1371,37 @@ class EnhancedErrorHandler:
                     # je nach Loop-Verfügbarkeit einplanen oder synchron zu
                     # Ende ausführen, statt die Meldung stillschweigend zu
                     # verlieren oder zu crashen.
+                    # ARCH-029/F8: manage_session=False - siehe
+                    # handle_async_exceptions() oben, analoge Begruendung.
+                    # ABER: im create_task()-Zweig (bereits laufender Loop)
+                    # kehrt die Kontrolle SOFORT zu diesem finally-Block
+                    # zurueck, BEVOR der geplante handle_exception()-Task
+                    # ueberhaupt zu laufen beginnt (echtes Fire-and-Forget,
+                    # kein await) - ein synchrones end_session() hier wuerde
+                    # die Session daher vorzeitig schliessen, bevor
+                    # handle_exception() sie ueberhaupt sieht. Das noetigt
+                    # DebugTracker.log_step()s eigenen Auto-Create-Fallback
+                    # zu einer zweiten, unerwuenschten Session-Neuanlage mit
+                    # verlorenem Kontext - exakt das, was F8 beheben soll.
+                    # Fix: end_session() wird ueber add_done_callback() erst
+                    # nach tatsaechlichem Abschluss des Tasks aufgerufen -
+                    # dasselbe bereits etablierte Muster wie
+                    # handlers/menu/actions/download.py::_log_background_download_task_exception().
+                    # Im synchronen asyncio.run()-Fallback (kein Loop aktiv)
+                    # ist handle_exception() dagegen bereits vollstaendig
+                    # durchgelaufen, bevor dieser Codepfad zurueckkehrt -
+                    # dort bleibt das synchrone end_session() im finally
+                    # unten unveraendert korrekt (kein Loop-Task involviert).
                     handle_exception_coro = self.handle_exception(
-                        e, context, session_id=session_id
+                        e, context, session_id=session_id, manage_session=False
                     )
                     try:
                         asyncio.get_running_loop()
-                        asyncio.create_task(handle_exception_coro)
+                        task = asyncio.create_task(handle_exception_coro)
+                        task.add_done_callback(
+                            lambda _t: self.debug_tracker.end_session(session_id)
+                        )
+                        session_closed_by_task = True
                     except RuntimeError:
                         asyncio.run(handle_exception_coro)
 
@@ -1314,7 +1425,8 @@ class EnhancedErrorHandler:
                         raise
 
                 finally:
-                    self.debug_tracker.end_session(session_id)
+                    if not session_closed_by_task:
+                        self.debug_tracker.end_session(session_id)
 
             return wrapper
 
@@ -1370,10 +1482,6 @@ class EnhancedErrorHandler:
             )
 
         return summary
-
-    def export_debug_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Exportiert eine Debug-Session für Analyse"""
-        return self.debug_tracker.get_session_summary(session_id)
 
     async def create_health_report(self) -> str:
         """Erstellt einen Gesundheitsbericht des Error-Handling-Systems"""
@@ -1475,31 +1583,22 @@ class EnhancedErrorHandler:
         """
         error = context.error
 
-        # Session für Telegram-Error
+        # ARCH-029/F8: session_id wird erzeugt und an handle_exception()
+        # durchgereicht, das ab jetzt der alleinige Besitzer des
+        # DebugTracker-Session-Lifecycles ist (siehe handle_exception()-
+        # Docstring) - kein eigener start_session()/log_step() mehr hier,
+        # der sonst von handle_exception()s eigenem start_session()
+        # ueberschrieben wuerde (ARCH-026 F8). Der entry-point-spezifische
+        # Kontext (telegram_error/error_type) landet stattdessen ueber den
+        # untenstehenden telegram_context-Dict direkt im Session-Objekt.
         session_id = f"TG_{datetime.now().strftime('%H%M%S_%f')}"
-
-        self.debug_tracker.start_session(
-            session_id,
-            {
-                "telegram_error": True,
-                "error_type": type(error).__name__,
-                "has_update": update is not None,
-                "update_type": type(update).__name__ if update else None,
-            },
-        )
-
-        self.debug_tracker.log_step(
-            session_id,
-            "Telegram-Error empfangen",
-            {"error_type": type(error).__name__},
-            "🤖",
-        )
 
         # Erweiterten Context für Telegram-Errors bauen
         telegram_context = {
             "telegram_error": True,
             "handler_source": "telegram_bot_framework",
             "error_in_handler": True,
+            "error_type": type(error).__name__,
         }
 
         # Behandle mit dem Hauptsystem
@@ -1522,29 +1621,17 @@ class EnhancedErrorHandler:
         ⚡ COMMAND-SPEZIFISCHER ERROR-HANDLER
         Für Fehler in Command-Handlern mit zusätzlichen Kontext-Informationen
         """
+        # ARCH-029/F8: siehe handle_telegram_error() - kein eigener
+        # start_session()/log_step() mehr, handle_exception() ist
+        # alleiniger Besitzer des Session-Lifecycles.
         session_id = f"CMD_{command_name}_{datetime.now().strftime('%H%M%S_%f')}"
-
-        self.debug_tracker.start_session(
-            session_id,
-            {
-                "command_error": True,
-                "command_name": command_name,
-                "user_id": update.effective_user.id if update.effective_user else None,
-            },
-        )
-
-        self.debug_tracker.log_step(
-            session_id,
-            f"Command-Error in /{command_name}",
-            {"command": command_name},
-            "⚡",
-        )
 
         command_context = {
             "command_error": True,
             "command_name": command_name,
             "handler_type": "command_handler",
             "user_initiated": True,
+            "user_id": update.effective_user.id if update.effective_user else None,
         }
 
         await self.handle_exception(
@@ -1566,26 +1653,17 @@ class EnhancedErrorHandler:
         🎯 CALLBACK-SPEZIFISCHER ERROR-HANDLER
         Für Fehler in Callback-Query-Handlern
         """
+        # ARCH-029/F8: siehe handle_telegram_error() - kein eigener
+        # start_session()/log_step() mehr, handle_exception() ist
+        # alleiniger Besitzer des Session-Lifecycles.
         session_id = f"CB_{datetime.now().strftime('%H%M%S_%f')}"
-
-        self.debug_tracker.start_session(
-            session_id,
-            {
-                "callback_error": True,
-                "callback_data": callback_data,
-                "user_id": update.effective_user.id if update.effective_user else None,
-            },
-        )
-
-        self.debug_tracker.log_step(
-            session_id, f"Callback-Error", {"callback_data": callback_data[:50]}, "🎯"
-        )
 
         callback_context = {
             "callback_error": True,
             "callback_data": callback_data,
             "handler_type": "callback_handler",
             "inline_operation": True,
+            "user_id": update.effective_user.id if update.effective_user else None,
         }
 
         await self.handle_exception(
@@ -2048,28 +2126,22 @@ for exc in recent:
     print(f"{exc['timestamp']}: {exc['type']} - {exc['message_preview']}")
 ```
 
-5. DEBUG-SESSION-TRACKING:
-```python
-session_id = "my_operation_123"
-error_handler.debug_tracker.start_session(session_id, {"user": "test"})
-error_handler.debug_tracker.log_step(session_id, "Step 1", {"data": "value"}, "🔄")
-error_handler.debug_tracker.log_step(session_id, "Step 2", emoji="✅")
-error_handler.debug_tracker.end_session(session_id)
-
-# Session-Zusammenfassung abrufen
-summary = error_handler.export_debug_session(session_id)
-```
+ARCH-029/F10: DebugTracker (start_session()/log_step()/end_session()) ist
+ein interner Implementierungsdetail von EnhancedErrorHandler ohne
+externe Aufrufer (siehe ARCH-027 Abschnitt 10, "Interner Mechanismus")
+- kein Beispiel fuer direkten externen Zugriff hier, um keine
+irrefuehrende Nutzung nahezulegen. export_debug_session() (0 externe
+Aufrufer, ARCH-026 F10) wurde ersatzlos entfernt.
 
 🏆 FEATURES:
 
 ✅ Umfassendes Exception-Monitoring mit Kategorisierung
-✅ Step-by-Step Debug-Tracking mit Emojis
+✅ Step-by-Step Debug-Tracking mit Emojis (intern)
 ✅ Automatische Recovery-Strategien für verschiedene Error-Typen
 ✅ Performance-Monitoring und Statistiken
 ✅ Thread-Safe Operations
 ✅ Telegram-Integration mit benutzerfreundlichen Nachrichten
 ✅ Decorator-Pattern für automatisches Error-Handling
-✅ Export-Funktionen für Analyse
 ✅ Konfigurierbare Logging-Level und Modi
 ✅ Globaler Exception-Handler (optional)
 ✅ Cleanup-Funktionen für alte Daten
