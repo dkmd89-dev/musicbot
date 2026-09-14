@@ -7,7 +7,9 @@ import pytest
 from services.library_health.issues import ALL_CODES
 from services.library_repair.planner import (
     REGISTRY,
+    ArtistCandidateSummary,
     filter_plan,
+    group_candidates_by_artist,
     plan_repairs,
     registry_covers_all_health_codes,
 )
@@ -184,3 +186,64 @@ def test_filter_by_artist_matches_path_prefix():
                        artist=None))
     plan = filter_plan(plan_repairs(r), artist="01099")
     assert len(plan.candidates) == 1
+
+
+# ── Artist-Gruppierung (ARCH-033) ────────────────────────────────────────
+
+
+def test_group_candidates_by_artist_counts_l2_and_l3_separately():
+    r = _report(
+        _issue("META_TITLE_NOT_CLEAN", artist="Bausa", path="Bausa/Singles/a.m4a"),
+        _issue("META_TITLE_NOT_CLEAN", artist="Bausa", path="Bausa/Singles/b.m4a"),
+        _issue("META_MB_RECORDING_MISSING", artist="Bausa", path="Bausa/Singles/a.m4a"),
+    )
+    groups = group_candidates_by_artist(plan_repairs(r))
+    assert groups["Bausa"] == ArtistCandidateSummary(artist="Bausa", l2_count=2, l3_count=1)
+    assert groups["Bausa"].total == 3
+
+
+def test_group_candidates_by_artist_ignores_other_levels():
+    r = _report(
+        _issue("GENRE_DELIMITER_INCONSISTENT", artist="Bausa"),  # SAFE_AUTOMATIC
+        _issue("LOUDNESS_OFF_TARGET", artist="Bausa"),  # LOUDNESS
+    )
+    groups = group_candidates_by_artist(plan_repairs(r))
+    assert groups == {}
+
+
+def test_group_candidates_by_artist_sorted_by_total_descending_then_alpha():
+    r = _report(
+        _issue("META_TITLE_NOT_CLEAN", artist="Zeeba", path="Zeeba/Singles/a.m4a"),
+        _issue("META_TITLE_NOT_CLEAN", artist="Aymen", path="Aymen/Singles/a.m4a"),
+        _issue("META_TITLE_NOT_CLEAN", artist="Aymen", path="Aymen/Singles/b.m4a"),
+        _issue("META_TITLE_NOT_CLEAN", artist="Bausa", path="Bausa/Singles/a.m4a"),
+        _issue("META_TITLE_NOT_CLEAN", artist="Bausa", path="Bausa/Singles/b.m4a"),
+    )
+    groups = group_candidates_by_artist(plan_repairs(r))
+    # Aymen und Bausa haben beide 2 Kandidaten (Gleichstand -> alphabetisch),
+    # Zeeba hat nur 1 (ans Ende).
+    assert list(groups.keys()) == ["Aymen", "Bausa", "Zeeba"]
+
+
+def test_group_candidates_by_artist_deterministic():
+    r = _report(
+        _issue("META_TITLE_NOT_CLEAN", artist="Bausa", path="Bausa/Singles/a.m4a"),
+        _issue("META_MB_RECORDING_MISSING", artist="Filow", path="Filow/Singles/a.m4a"),
+    )
+    plan = plan_repairs(r)
+    a = list(group_candidates_by_artist(plan).keys())
+    b = list(group_candidates_by_artist(plan).keys())
+    assert a == b
+
+
+def test_group_candidates_by_artist_empty_plan_returns_empty_dict():
+    assert group_candidates_by_artist(plan_repairs(_report())) == {}
+
+
+def test_group_candidates_by_artist_falls_back_to_path_prefix_when_artist_field_missing():
+    r = _report(
+        _issue("META_ISRC_MISSING", artist=None, path="01099/2023 - Blaue Stunden/01 - a.m4a"),
+    )
+    groups = group_candidates_by_artist(plan_repairs(r))
+    assert "01099" in groups
+    assert groups["01099"].l3_count == 1

@@ -758,6 +758,11 @@ class RichMenuHandler:
             # reprocess:/doctor:/review: oben - ohne diesen Handler
             # verpuffte jeder repair:-Callback stillschweigend.
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^repair:"),
+            # L2/L3 Pro-Artist-Reparatur (ARCH-033): derselbe "Bug B"-Fall
+            # wie bei maint:/dl:/reprocess:/doctor:/review:/repair: oben -
+            # ohne diesen Handler verpuffte jeder l23rep:-Callback
+            # stillschweigend.
+            CallbackQueryHandler(self.menu_system.handle_callback, pattern="^l23rep:"),
             # Library-Wartung (ARCH-032 Phase 4): derselbe "Bug B"-Fall wie
             # bei maint:/dl:/reprocess:/doctor:/review:/repair: oben - ohne
             # diesen Handler verpuffte jeder libmaint:-Callback

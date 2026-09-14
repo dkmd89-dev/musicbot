@@ -69,7 +69,12 @@ from services.library_health.findings import (
     generate_finding_id,
 )
 from services.library_health.findings import DEFAULT_FILENAME as FINDINGS_DEFAULT_FILENAME
-from services.library_repair.doctor_runner import run_health_scan, run_safe_automatic_repair
+from services.library_repair.doctor_runner import (
+    run_health_scan,
+    run_level2_repair,
+    run_level3_repair,
+    run_safe_automatic_repair,
+)
 from services.library_repair.models import RepairCandidate, RepairPlan
 from services.library_repair.planner import filter_plan, plan_repairs
 from services.library_repair.run_tracking import (
@@ -366,3 +371,224 @@ async def execute_safe_automatic_repair(
         )
     finally:
         release_repair_lock()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Level 2 / Level 3 — Pro-Artist-Reparatur (ARCH-033, ADR-0003/ADR-0004)
+#
+# Bewusst getrennte Funktionen je Level statt eines gemeinsamen
+# "execute_level_repair(level=...)" (ADR-0003: L2/L3 werden pro Artist
+# GETRENNT bestaetigt - unterschiedliche Blast-Radien/Nebeneffekte,
+# siehe docs/adr/0003). execute_safe_automatic_repair() oben bleibt
+# unveraendert - diese beiden neuen Funktionen sind eigenstaendige
+# Geschwister, kein Refactor der bestehenden Funktion.
+#
+# Subprozess-Ausfuehrung (doctor_runner.run_level2_repair()/
+# run_level3_repair()) statt direktem In-Process-Aufruf von
+# executor.py::apply_level2()/apply_external_metadata() - waehrend der
+# Implementierung als echter Architekturkonflikt erkannt und mit dem
+# Nutzer geklaert (EnhancedMetadataProcessor-Singleton-Risiko, siehe
+# doctor_runner.py::_run_level_repair_subprocess()-Docstring). apply_level2()
+# und apply_external_metadata() selbst bleiben dadurch komplett
+# unveraendert - sie laufen weiterhin (wie schon vor ARCH-033) nur
+# innerhalb des scripts/library_repair.py-Subprozesses.
+# ─────────────────────────────────────────────────────────────────────────
+
+_LEVEL_LABELS = {"l2": "METADATA_REPROCESSING", "l3": "EXTERNAL_METADATA"}
+
+
+@dataclass
+class LevelRepairResult:
+    """Ergebnis eines Pro-Artist L2/L3-Laufs (ARCH-033)."""
+
+    repair_id: str
+    artist: str
+    level: str  # "l2" | "l3"
+    status: str  # SUCCESS | FAILED | SKIPPED
+    started_at: str
+    finished_at: str
+    total: int
+    success: int = 0
+    failed: int = 0
+    skipped: int = 0
+    unresolved: int = 0
+    resolved_count: int = 0
+    entries: list = field(default_factory=list)
+    affected_files: list = field(default_factory=list)
+    # Bewusst nie berechnet (ARCH-033): kein verlaessliches maschinenlesbares
+    # Signal ueber die Subprozess-Grenze hinweg, wie viele Auto-Learn-
+    # Mapping-Eintraege sich geaendert haben, ohne fragile Pfad-/Diff-
+    # Heuristiken gegen mapping/auto_learned_*.json einzufuehren. Bleibt
+    # None - der pauschale Preview-Hinweis (Auftrag §2) deckt die
+    # eigentliche Anforderung ("Nutzer weiss, dass es passieren kann") ab.
+    auto_learn_changed: Optional[int] = None
+    rescan_triggered: bool = False
+    error_message: Optional[str] = None
+
+
+async def _execute_level_repair(
+    level: str, artist: str, *, triggered_by: str, scan_timeout: float = 900.0,
+) -> LevelRepairResult:
+    """Gemeinsame Implementierung fuer execute_level2_repair()/
+    execute_level3_repair() - siehe dort fuer die oeffentliche API.
+    `level` ist "l2" oder "l3" (intern gemappt auf den echten
+    RepairLevel-Wert fuer filter_plan())."""
+    repair_level = _LEVEL_LABELS[level]
+    # Namens-Lookup im Modul-Globalstate zur AUFRUFZEIT (nicht ein beim
+    # Import einmalig gebautes Dict!) - nur so wirkt
+    # patch.object(rs, "run_level2_repair"/"run_level3_repair", ...) in
+    # Tests (identisches Prinzip wie der bare-name-Aufruf von
+    # run_safe_automatic_repair() oben in execute_safe_automatic_repair()).
+    # Ein Dict mit frueh gebundenen Funktionsreferenzen wuerde Mocks
+    # stillschweigend ignorieren und stattdessen den echten Subprozess
+    # gegen die Produktions-Library starten.
+    run_repair = globals()["run_level2_repair" if level == "l2" else "run_level3_repair"]
+
+    acquire_repair_lock()
+    try:
+        started_at = now_iso()
+        repair_id = str(uuid.uuid4())
+
+        # Stale-Plan-Schutz (ADR-0003/Abschnitt 41, identisch zu
+        # execute_safe_automatic_repair()): immer ein frischer Scan+Plan
+        # unmittelbar vor der Ausfuehrung.
+        try:
+            plan = await build_repair_plan(scan_timeout=scan_timeout)
+        except HealthScanFailedError as e:
+            return LevelRepairResult(
+                repair_id=repair_id, artist=artist, level=level, status=STATUS_FAILED,
+                started_at=started_at, finished_at=now_iso(), total=0,
+                error_message=f"Health-Scan fehlgeschlagen: {e}",
+            )
+
+        candidates = filter_plan(plan, artist=artist, level=repair_level).candidates
+        if not candidates:
+            return LevelRepairResult(
+                repair_id=repair_id, artist=artist, level=level, status=STATUS_SKIPPED,
+                started_at=started_at, finished_at=now_iso(), total=0,
+            )
+
+        pre_finding_ids = {
+            generate_finding_id(_candidate_to_issue_dict(c)) for c in candidates
+        }
+        issue_codes = sorted({c.issue_code for c in candidates})
+
+        jpath = journal_path()
+        offset_before = jpath.stat().st_size if jpath.exists() else 0
+
+        repair_result = await run_repair(artist, timeout=scan_timeout)
+
+        offset_after = jpath.stat().st_size if jpath.exists() else offset_before
+        entries = read_journal_window(offset_before, offset_after)
+        status_counts = dict(Counter(e.get("status") for e in entries))
+        finished_at = now_iso()
+
+        # ── Verification (identisch zu execute_safe_automatic_repair) ────
+        resolved_ids: list[str] = []
+        rescan_triggered = False
+        if status_counts.get(STATUS_SUCCESS, 0) > 0:
+            rescan_triggered = True
+            try:
+                post_scan = await run_health_scan(timeout=scan_timeout)
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"💥 Verification-Scan fehlgeschlagen: {e}", exc_info=True)
+                post_scan = None
+
+            if post_scan is not None and post_scan.success and post_scan.report is not None:
+                post_open_ids = {
+                    i.get("finding_id") for i in post_scan.report.get("issues", [])
+                    if i.get("finding_status", STATUS_OPEN) == STATUS_OPEN
+                }
+                try:
+                    registry = FindingsRegistry(_findings_registry_path())
+                except Exception as e:  # noqa: BLE001
+                    logger.error(f"💥 Findings-Registry nicht ladbar für Verification: {e}")
+                    registry = None
+
+                if registry is not None:
+                    for fid in pre_finding_ids:
+                        finding = registry.get(fid)
+                        if finding is None or finding.status != STATUS_OPEN:
+                            continue
+                        if fid in post_open_ids:
+                            continue
+                        registry.review_finding(
+                            fid, STATUS_RESOLVED, reviewed_by=f"repair:{triggered_by}",
+                            note=f"Automatisch verifiziert nach {repair_level}-Reparatur "
+                                 "(erneuter Health-Scan bestätigt Behebung).",
+                        )
+                        resolved_ids.append(fid)
+                    registry.save()
+
+        affected_files = sorted({e.get("file") for e in entries if e.get("file")})
+
+        if repair_result.timed_out or repair_result.error_message:
+            overall_status = STATUS_FAILED
+        elif status_counts.get(STATUS_FAILED, 0) > 0 and status_counts.get(STATUS_SUCCESS, 0) == 0:
+            overall_status = STATUS_FAILED
+        elif status_counts.get(STATUS_SUCCESS, 0) > 0:
+            overall_status = STATUS_SUCCESS
+        else:
+            overall_status = STATUS_SKIPPED
+
+        append_run_record({
+            "repair_id": repair_id,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "triggered_by": triggered_by,
+            "level": repair_level,
+            "kind": KIND_REPAIR,
+            "artist": artist,
+            "exit_code": repair_result.exit_code,
+            "status": overall_status,
+            "finding_ids": sorted(pre_finding_ids),
+            "resolved_finding_ids": resolved_ids,
+            "issue_codes": issue_codes,
+            "status_counts": status_counts,
+            "affected_files": affected_files,
+        })
+
+        return LevelRepairResult(
+            repair_id=repair_id, artist=artist, level=level, status=overall_status,
+            started_at=started_at, finished_at=finished_at, total=len(candidates),
+            success=status_counts.get(STATUS_SUCCESS, 0),
+            failed=status_counts.get(STATUS_FAILED, 0),
+            skipped=status_counts.get(STATUS_SKIPPED, 0),
+            unresolved=status_counts.get("UNRESOLVED", 0),
+            resolved_count=len(resolved_ids),
+            entries=entries, affected_files=affected_files,
+            rescan_triggered=rescan_triggered,
+            error_message=repair_result.error_message,
+        )
+    finally:
+        release_repair_lock()
+
+
+async def execute_level2_repair(
+    artist: str, *, triggered_by: str, scan_timeout: float = 900.0,
+) -> LevelRepairResult:
+    """Pro-Artist L2-Reparatur (METADATA_REPROCESSING, ARCH-033/ADR-0003).
+    Ruft scripts/library_repair.py --artist <artist> --level
+    METADATA_REPROCESSING --apply als Subprozess auf (doctor_runner.
+    run_level2_repair()) - apply_level2() selbst bleibt unveraendert.
+    Nutzt denselben Lock/Journal/Run-Index wie SAFE_AUTOMATIC und die
+    Library-Wartung (run_tracking.py, ADR-0004); Run-Record-`kind` bleibt
+    "repair" (nicht "maintenance") - dies ist Finding-getriebene
+    Reparatur, keine Command-getriebene Maintenance-Action."""
+    return await _execute_level_repair(
+        "l2", artist, triggered_by=triggered_by, scan_timeout=scan_timeout,
+    )
+
+
+async def execute_level3_repair(
+    artist: str, *, triggered_by: str, scan_timeout: float = 900.0,
+) -> LevelRepairResult:
+    """Pro-Artist L3-Reparatur (EXTERNAL_METADATA, ARCH-033/ADR-0003).
+    Analog execute_level2_repair() - ruft
+    doctor_runner.run_level3_repair() auf. Netzwerk-/Rate-Limit-Fehler
+    gegen MusicBrainz schlagen sichtbar als FAILED nieder (im Journal-
+    Eintrag der jeweiligen Datei dokumentiert durch
+    apply_external_metadata() selbst) - kein stilles SKIPPED."""
+    return await _execute_level_repair(
+        "l3", artist, triggered_by=triggered_by, scan_timeout=scan_timeout,
+    )

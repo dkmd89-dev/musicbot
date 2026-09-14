@@ -18,16 +18,22 @@ siehe services/library_repair/doctor_runner.py) - kein eigener
 Dateisystemzugriff, keine eigene Repair-Logik hier (CLAUDE.md §4
 Schichtgrenzen).
 
-Bewusst NUR SAFE_AUTOMATIC über Telegram ausführbar - identische
-Sicherheitsgrenze wie MusicBot Doctor (siehe
-handlers/library_doctor_handler.py, docs/LIBRARY_REPAIR.md §3). Alle
-externen/destruktiven Level (COVER/EXTERNAL_METADATA/
-METADATA_REPROCESSING/LOUDNESS/DUPLICATE) werden im Plan zwar angezeigt
-(zur Transparenz), bleiben aber CLI-only.
+SAFE_AUTOMATIC (Level 1) bleibt der primäre, ohne Vorschau-Umweg direkt
+über "Reparaturvorschläge" ausführbare Weg - identische Sicherheitsgrenze
+wie MusicBot Doctor (siehe handlers/library_doctor_handler.py,
+docs/LIBRARY_REPAIR.md §3). Seit ARCH-033 sind zusätzlich Level 2
+(METADATA_REPROCESSING) und Level 3 (EXTERNAL_METADATA) über Telegram
+erreichbar - aber bewusst NUR pro Artist, mit eigener Vorschau und
+eigener Bestätigung je Artist (ADR-0003, docs/LIBRARY_REPAIR.md §12) über
+den separaten "🛠️ L2/L3-Reparaturen (nach Artist)"-Sub-Flow
+(`l23rep:*`-Callbacks unten). COVER/LOUDNESS/DUPLICATE bleiben weiterhin
+CLI-only (spätere, eigene Phasen ARCH-034/035).
 
-Öffnen dieses Menüs, "Reparaturen analysieren" oder "Reparaturvorschläge"
-starten NIEMALS automatisch eine Reparatur (Abschnitt 27/33) - nur der
-explizit bestätigte "JA, REPARIEREN"-Tap tut das.
+Öffnen dieses Menüs, "Reparaturen analysieren", "Reparaturvorschläge"
+oder der L2/L3-Artist-/Aktions-Auswahl starten NIEMALS automatisch eine
+Reparatur (Abschnitt 27/33) - nur der explizit bestätigte
+"JA, REPARIEREN"-bzw. "✅ Jetzt ausführen"-Tap tut das, und niemals für
+mehr als einen Artist auf einmal (keine globale L2/L3-Batch-Freigabe).
 
 Nur für Admins sichtbar/nutzbar (Config.OWNER_USER_ID/ADMIN_USER_IDS),
 identisches Muster wie handlers/library_doctor_handler.py. Die
@@ -48,13 +54,17 @@ from config import Config
 from logger import get_module_logger
 from handlers.menu.permissions import is_admin_or_owner
 from services.library_repair.models import RepairLevel
+from services.library_repair.planner import filter_plan, group_candidates_by_artist
 from services.library_repair.repair_service import (
     HealthScanFailedError,
+    LevelRepairResult,
     RepairAlreadyRunningError,
     RepairPreview,
     build_preview,
     build_repair_plan,
     compute_repair_statistics,
+    execute_level2_repair,
+    execute_level3_repair,
     execute_safe_automatic_repair,
     get_safe_automatic_candidates,
     load_repair_history,
@@ -64,6 +74,46 @@ if TYPE_CHECKING:
     from handlers.enhanced_error_handler import EnhancedErrorHandler
 
 _BACK_TO_ADMIN = "menu:admin_group_library"
+
+# ── L2/L3 Pro-Artist-Sub-Flow (ARCH-033) ────────────────────────────────
+_L23REP_SESSION_KEY = "l23rep_session"
+_L23REP_ARTISTS_PER_PAGE = 8
+_L23REP_LEVEL_LABELS = {
+    "l2": "L2 · Metadata Reprocessing",
+    "l3": "L3 · External Metadata",
+}
+_L23REP_REPAIR_LEVEL_VALUES = {
+    "l2": RepairLevel.METADATA_REPROCESSING.value,
+    "l3": RepairLevel.EXTERNAL_METADATA.value,
+}
+_L23REP_WARNING_TEXT = {
+    "l2": (
+        "Metadata Reprocessing durchläuft die volle Metadaten-Pipeline "
+        "erneut (Genre/Lyrics/Cover-Logik inklusive). Dabei können sich "
+        "auch Auto-Learn-Mappings ändern."
+    ),
+    "l3": (
+        "External Metadata ruft MusicBrainz und weitere externe Dienste "
+        "auf. Netzwerk-/Rate-Limit-Fehler sind möglich und werden je "
+        "Datei als FEHLGESCHLAGEN sichtbar, nicht still übersprungen."
+    ),
+}
+
+# ── Registry-Vorbereitung (ARCH-033 Phase 4) ────────────────────────────
+# Erweiterungspunkt fuer zukuenftige, EIGENE ARCH-Phasen (ARCH-034/035) -
+# COVER, LOUDNESS und DUPLICATE bleiben bis dahin bewusst CLI-only (siehe
+# RepairLevel in services/library_repair/models.py sowie
+# docs/LIBRARY_REPAIR.md §12). Eine kuenftige Phase wuerde hier lediglich
+# einen weiteren "lX": "..."-Eintrag in JEDEM der drei _L23REP_*-Dicts
+# oben ergaenzen (plus einen passenden execute_level<N>_repair() in
+# repair_service.py, analog zu Phase 1) - kein neuer Executor, kein
+# neuer Callback-Namensraum noetig, der bestehende
+# l23rep:preview/confirm/execute-Flow ist bereits generisch ueber den
+# `level`-Parameter. Beispiel (NICHT aktiv, nur Dokumentation):
+#   "cover":    "Cover · Cover-Art-Reparatur"          (ARCH-034?)
+#   "loudness": "Loudness · Lautheits-Normalisierung"  (ARCH-034?)
+#   "dup":      "Duplicate · Duplikat-Bereinigung"     (ARCH-035?,
+#                destruktiv - eigene Sicherheitsbetrachtung noetig)
 
 
 class RepairMusicBotHandler:
@@ -244,15 +294,28 @@ class RepairMusicBotHandler:
         if len(safe_candidates) > 10:
             lines.append(f"  … {len(safe_candidates) - 10} weitere")
 
+        l2l3_count = sum(
+            1 for c in other_actionable
+            if c.level in (RepairLevel.METADATA_REPROCESSING, RepairLevel.EXTERNAL_METADATA)
+        )
         if other_actionable:
             lines.append("")
             lines.append(f"{len(other_actionable)} weitere Reparatur(en) — 🟡 REVIEW "
                          "(nur über die CLI ausführbar, siehe docs/LIBRARY_REPAIR.md)")
+            if l2l3_count:
+                lines.append(
+                    f"  davon {l2l3_count}× L2/L3 — jetzt auch pro Artist über "
+                    "Telegram ausführbar (Button unten)."
+                )
 
         buttons = []
         if safe_candidates:
             buttons.append([InlineKeyboardButton(
                 f"🔍 Preview ({len(safe_candidates)} SAFE)", callback_data="repair:preview",
+            )])
+        if l2l3_count:
+            buttons.append([InlineKeyboardButton(
+                "🛠️ L2/L3-Reparaturen (nach Artist)", callback_data="l23rep:start",
             )])
         buttons.append([InlineKeyboardButton("◀️ Zurück", callback_data="repair:start")])
 
@@ -504,3 +567,393 @@ class RepairMusicBotHandler:
         await query.edit_message_text(
             "\n".join(lines), parse_mode="HTML", reply_markup=self._back_keyboard("repair:start")
         )
+
+    # ── L2/L3 Pro-Artist-Reparatur (ARCH-033) ─────────────────────────────
+    #
+    # Findings-getrieben (ADR-0001) wie "Reparaturvorschläge" oben, aber
+    # bewusst NUR pro Artist mit eigener Vorschau/Bestätigung (ADR-0003).
+    # Die Artist-Liste (inkl. L2-/L3-Kandidatenzahl) wird pro
+    # Telegram-Session in context.user_data gecacht (identisches Muster
+    # zu handlers/library_health_review_handler.py::_SESSION_KEY) - ein
+    # frischer Health-Scan bei JEDEM Button-Tap (Seitenwechsel,
+    # Aktions-Auswahl) wäre für eine große Library nicht praktikabel.
+    # Unmittelbar vor der tatsächlichen Ausführung (execute_level2_repair/
+    # execute_level3_repair) baut der Service selbst ohnehin immer einen
+    # frischen Plan (Stale-Plan-Schutz, siehe repair_service.py) - der
+    # Cache hier dient ausschließlich der Navigation, nie der Ausführung.
+
+    def _l23_session(self, context: ContextTypes.DEFAULT_TYPE) -> Optional[dict]:
+        return context.user_data.get(_L23REP_SESSION_KEY)
+
+    def _l23_resolve(self, context: ContextTypes.DEFAULT_TYPE, idx: int):
+        session = self._l23_session(context)
+        if session is None:
+            return None
+        artists = session.get("artists") or []
+        if not (0 <= idx < len(artists)):
+            return None
+        return artists[idx]
+
+    async def handle_l23_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        text = (
+            "🛠️ <b>L2/L3-Reparaturen (nach Artist)</b>\n\n"
+            "Metadata Reprocessing (L2) und External Metadata (L3) sind "
+            "weitreichender als die automatischen SAFE-Reparaturen und "
+            "werden deshalb nur pro Artist mit eigener Vorschau und "
+            "eigener Bestätigung ausgeführt (nie global).\n\n"
+            "Wähle zuerst einen Artist."
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👤 Artist wählen", callback_data="l23rep:artists")],
+            [InlineKeyboardButton("◀️ Zurück", callback_data="repair:proposals")],
+        ])
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+    # ── Artist-Liste (Index-Picker, gecacht, paginiert) ──────────────────
+
+    async def handle_l23_artist_list(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0,
+        *, force_refresh: bool = False,
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        if not force_refresh and self._l23_session(context) is not None:
+            text, keyboard = self._l23_artist_page_args(context, page)
+            await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+            return
+
+        placeholder = await query.edit_message_text("🔍 Analysiere Library nach Artist ...")
+        task = asyncio.create_task(self._run_l23_artist_scan_and_report(placeholder, context, page))
+        task.add_done_callback(self._log_background_task_exception)
+
+    async def _run_l23_artist_scan_and_report(
+        self, message: Message, context: ContextTypes.DEFAULT_TYPE, page: int,
+    ) -> None:
+        try:
+            plan = await build_repair_plan()
+        except HealthScanFailedError as e:
+            await message.edit_text(
+                f"❌ Health-Scan fehlgeschlagen: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("l23rep:start"),
+            )
+            return
+
+        groups = group_candidates_by_artist(plan)
+        artists = [
+            (summary.artist, summary.l2_count, summary.l3_count)
+            for summary in groups.values()
+        ]
+        context.user_data[_L23REP_SESSION_KEY] = {"artists": artists}
+
+        if not artists:
+            await message.edit_text(
+                "✅ Keine offenen L2/L3-Befunde (mehr) gefunden.",
+                reply_markup=self._back_keyboard("l23rep:start"),
+            )
+            return
+
+        text, keyboard = self._l23_artist_page_args(context, page)
+        await message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+    def _l23_artist_page_args(self, context: ContextTypes.DEFAULT_TYPE, page: int):
+        session = self._l23_session(context) or {"artists": []}
+        artists = session["artists"]
+        total_pages = max(1, (len(artists) + _L23REP_ARTISTS_PER_PAGE - 1) // _L23REP_ARTISTS_PER_PAGE)
+        page = max(0, min(page, total_pages - 1))
+        start = page * _L23REP_ARTISTS_PER_PAGE
+        page_artists = artists[start:start + _L23REP_ARTISTS_PER_PAGE]
+
+        text = (
+            f"👤 <b>Artist wählen</b> (L2/L3-Kandidaten)\n\n"
+            f"{len(artists)} Artist(en), Seite {page + 1}/{total_pages}:"
+        )
+        buttons = []
+        for offset, (name, l2_count, l3_count) in enumerate(page_artists):
+            idx = start + offset
+            label = f"🎵 {name} (L2:{l2_count} L3:{l3_count})"
+            buttons.append([InlineKeyboardButton(label, callback_data=f"l23rep:pick:{idx}")])
+
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton("◀️ Vorherige", callback_data=f"l23rep:artists:{page - 1}"))
+        if page < total_pages - 1:
+            nav_row.append(InlineKeyboardButton("Nächste ▶️", callback_data=f"l23rep:artists:{page + 1}"))
+        if nav_row:
+            buttons.append(nav_row)
+        buttons.append([InlineKeyboardButton("◀️ Zurück", callback_data="l23rep:start")])
+        return text, InlineKeyboardMarkup(buttons)
+
+    async def handle_l23_pick_artist(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, idx: int
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        entry = self._l23_resolve(context, idx)
+        if entry is None:
+            await query.edit_message_text(
+                "⚠️ Artist-Liste ist abgelaufen (z. B. neuer Bot-Start) — "
+                "bitte erneut wählen.",
+                reply_markup=self._back_keyboard("l23rep:artists"),
+            )
+            return
+
+        artist, l2_count, l3_count = entry
+        text = f"👤 <b>{html.escape(artist)}</b>\n\nWähle eine Aktion:"
+        buttons = []
+        if l2_count:
+            buttons.append([InlineKeyboardButton(
+                f"L2 · Metadata Reprocessing ({l2_count})",
+                callback_data=f"l23rep:preview:l2:{idx}",
+            )])
+        if l3_count:
+            buttons.append([InlineKeyboardButton(
+                f"L3 · External Metadata ({l3_count})",
+                callback_data=f"l23rep:preview:l3:{idx}",
+            )])
+        buttons.append([InlineKeyboardButton("◀️ Zurück", callback_data="l23rep:artists")])
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+
+    # ── Preview (read-only) ──────────────────────────────────────────────
+
+    async def handle_l23_preview(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, level: str, idx: int
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        entry = self._l23_resolve(context, idx)
+        if entry is None:
+            await query.edit_message_text(
+                "⚠️ Artist-Liste ist abgelaufen — bitte erneut wählen.",
+                reply_markup=self._back_keyboard("l23rep:artists"),
+            )
+            return
+        artist = entry[0]
+
+        placeholder = await query.edit_message_text(
+            f"🔍 Erstelle Vorschau für {html.escape(artist)} ..."
+        )
+        task = asyncio.create_task(self._run_l23_preview_and_report(placeholder, level, artist, idx))
+        task.add_done_callback(self._log_background_task_exception)
+
+    async def _run_l23_preview_and_report(
+        self, message: Message, level: str, artist: str, idx: int
+    ) -> None:
+        try:
+            plan = await build_repair_plan()
+        except HealthScanFailedError as e:
+            await message.edit_text(
+                f"❌ Health-Scan fehlgeschlagen: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard(f"l23rep:pick:{idx}"),
+            )
+            return
+
+        candidates = filter_plan(
+            plan, artist=artist, level=_L23REP_REPAIR_LEVEL_VALUES[level],
+        ).candidates
+        if not candidates:
+            await message.edit_text(
+                f"✅ {html.escape(artist)}: keine offenen "
+                f"{html.escape(_L23REP_LEVEL_LABELS[level])}-Befunde (mehr) "
+                "vorhanden.",
+                reply_markup=self._back_keyboard(f"l23rep:pick:{idx}"),
+            )
+            return
+
+        preview = build_preview(candidates, level=_L23REP_REPAIR_LEVEL_VALUES[level])
+        lines = [
+            f"🔍 <b>Vorschau — {html.escape(_L23REP_LEVEL_LABELS[level])}</b>",
+            f"Artist: {html.escape(artist)}",
+            "",
+            f"⚠️ {_L23REP_WARNING_TEXT[level]}",
+            "",
+            f"Betroffene Befunde ({preview.candidate_count}):",
+        ]
+        for c in preview.candidates[:15]:
+            loc = " / ".join(p for p in (c.artist, c.album, c.title) if p) or (c.path or "-")
+            lines.append(f"  • {html.escape(c.issue_code)} — {html.escape(loc)}")
+        if preview.candidate_count > 15:
+            lines.append(f"  … {preview.candidate_count - 15} weitere")
+        lines.append("")
+        lines.append("Noch keine Änderungen durchgeführt.")
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "✅ Weiter zur Bestätigung", callback_data=f"l23rep:confirm:{level}:{idx}",
+            )],
+            [InlineKeyboardButton("❌ Abbrechen", callback_data=f"l23rep:pick:{idx}")],
+        ])
+        await message.edit_text(
+            "\n".join(lines), parse_mode="HTML", reply_markup=keyboard,
+        )
+
+    # ── Explizite Bestätigung ─────────────────────────────────────────────
+
+    async def handle_l23_confirm_prompt(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, level: str, idx: int
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        entry = self._l23_resolve(context, idx)
+        if entry is None:
+            await query.edit_message_text(
+                "⚠️ Artist-Liste ist abgelaufen — bitte erneut wählen.",
+                reply_markup=self._back_keyboard("l23rep:artists"),
+            )
+            return
+        artist = entry[0]
+
+        text = (
+            "⚠️ <b>ACHTUNG</b>\n\n"
+            f"Aktion: {html.escape(_L23REP_LEVEL_LABELS[level])}\n"
+            f"Artist: {html.escape(artist)}\n\n"
+            f"{_L23REP_WARNING_TEXT[level]}\n\n"
+            "Diese Aktion verändert Tags/Metadaten dieses Artists in "
+            "deiner Music Library (Backup + Journal + "
+            "Verification-Scan). Fortfahren?"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Jetzt ausführen", callback_data=f"l23rep:execute:{level}:{idx}")],
+            [InlineKeyboardButton("❌ ABBRECHEN", callback_data=f"l23rep:pick:{idx}")],
+        ])
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+    # ── Ausführung ─────────────────────────────────────────────────────────
+
+    async def handle_l23_execute(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, level: str, idx: int
+    ) -> None:
+        """Einzige Stelle, die tatsächlich eine L2/L3-Reparatur startet -
+        Berechtigung wird HIER erneut geprüft (Defense-in-Depth,
+        identisch zu handle_execute() oben)."""
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        entry = self._l23_resolve(context, idx)
+        if entry is None:
+            await query.edit_message_text(
+                "⚠️ Artist-Liste ist abgelaufen — bitte erneut wählen.",
+                reply_markup=self._back_keyboard("l23rep:artists"),
+            )
+            return
+        artist = entry[0]
+
+        placeholder = await query.edit_message_text(
+            f"🛠️ {html.escape(_L23REP_LEVEL_LABELS[level])} läuft für "
+            f"{html.escape(artist)} ..."
+        )
+        task = asyncio.create_task(
+            self._run_l23_execute_and_report(placeholder, level, artist, user_id)
+        )
+        task.add_done_callback(self._log_background_task_exception)
+
+    async def _run_l23_execute_and_report(
+        self, message: Message, level: str, artist: str, user_id: int
+    ) -> None:
+        # Namens-Lookup im Modul-Globalstate zur AUFRUFZEIT statt eines
+        # beim Import gebauten Dicts - identisches Prinzip wie
+        # repair_service.py::_execute_level_repair() (siehe dort für den
+        # dokumentierten Bug, den diese Form vermeidet: ein früh
+        # gebundenes Dict ignoriert unittest.mock.patch.object() in
+        # Tests und würde einen echten Subprozess gegen die
+        # Produktionslibrary starten).
+        execute_fn = globals()["execute_level2_repair" if level == "l2" else "execute_level3_repair"]
+        try:
+            result = await execute_fn(artist, triggered_by=f"telegram:{user_id}")
+        except RepairAlreadyRunningError as e:
+            await message.edit_text(
+                f"🔒 {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("l23rep:start"),
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"💥 Unerwarteter Fehler bei der L2/L3-Reparatur: {e}", exc_info=True)
+            await self._report_error(e, f"execute_{level}")
+            await message.edit_text(
+                f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("l23rep:start"),
+            )
+            return
+
+        await message.edit_text(
+            self._format_l23_result(level, artist, result),
+            parse_mode="HTML",
+            reply_markup=self._back_keyboard("l23rep:start"),
+        )
+
+    async def _report_error(self, e: Exception, operation: str) -> None:
+        if self.error_handler:
+            await self.error_handler.handle_exception(
+                e, context={"module": "RepairMusicBotHandler", "operation": operation},
+            )
+
+    def _format_l23_result(self, level: str, artist: str, result: LevelRepairResult) -> str:
+        if result.status == "SKIPPED" and result.total == 0:
+            return (
+                f"✅ {html.escape(artist)}: keine offenen "
+                f"{html.escape(_L23REP_LEVEL_LABELS[level])}-Befunde (mehr) "
+                "vorhanden."
+            )
+
+        if result.error_message:
+            return (
+                f"❌ <b>{html.escape(_L23REP_LEVEL_LABELS[level])} fehlgeschlagen</b>\n"
+                f"Artist: {html.escape(artist)}\n\n"
+                f"{html.escape(result.error_message)}"
+            )
+
+        emoji = "✅" if result.status == "SUCCESS" and not result.failed else (
+            "⚠️" if result.failed and result.success else "❌"
+        )
+        header = "abgeschlossen" if not result.failed else "teilweise abgeschlossen"
+
+        lines = [
+            f"{emoji} <b>{html.escape(_L23REP_LEVEL_LABELS[level])} {header}</b>",
+            f"Artist: {html.escape(artist)}",
+            "",
+            f"Erfolgreich: {result.success}",
+            f"Übersprungen: {result.skipped}",
+            f"Fehlgeschlagen: {result.failed}",
+            "",
+            f"Geänderte Dateien: {len(result.affected_files)}",
+            f"Verifiziert behoben: {result.resolved_count}",
+        ]
+        if result.rescan_triggered:
+            lines.append("")
+            lines.append(
+                "ℹ️ Ein Verifikations-Scan wurde durchgeführt. Möglicherweise "
+                "haben sich dabei auch Auto-Learn-Mappings geändert "
+                "(mapping/auto_learned_*.json) - unabhängig davon manuell "
+                "prüfbar."
+            )
+        return "\n".join(lines)
