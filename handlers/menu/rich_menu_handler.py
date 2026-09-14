@@ -267,6 +267,10 @@ class RichMenuHandler:
         # 4c. Family-Chat-Handler (Phase F3, Family Hub)
         try:
             self.family_chat_handler = FamilyChatHandler()
+            # ARCH-030/F7: analog NavidromeMenuHandler - meldet
+            # fehlgeschlagene Broadcast-Zustellungen zentral (siehe
+            # FamilyChatHandler.process_pending_message()).
+            self.family_chat_handler.error_handler = self.error_handler
             self.logger.info("✅ FamilyChatHandler initialisiert")
         except Exception as e:
             self.logger.error(f"❌ Family-Chat-Handler Fehler: {e}", exc_info=True)

@@ -117,6 +117,66 @@ class TestProcessPendingMessage:
         asyncio.run(handler.process_pending_message(update, context, "Hallo!"))
         # Kein Raise - Fehler wird nur geloggt.
 
+    def test_broadcast_failure_without_error_handler_does_not_crash(self):
+        """ARCH-030/F7: handler.error_handler ist per Default None (keine
+        Injection in _make_handler()) - der neue `if self.error_handler:`-
+        Guard darf ohne Injection nicht crashen (Rückwärtskompatibilität
+        für Standalone-/Test-Konstruktion)."""
+        handler, _, chat_service = _make_handler()
+        assert handler.error_handler is None
+        chat_service.post_message.return_value = {
+            "sender_display_name": "Papa",
+            "message": "Hallo!",
+        }
+        chat_service.get_notification_recipients.return_value = ["222"]
+        context = make_context()
+        context.bot.send_message.side_effect = Exception("Telegram down")
+
+        asyncio.run(
+            handler.process_pending_message(make_update(111), context, "Hallo!")
+        )
+        # Kein Raise.
+
+    def test_broadcast_failure_reports_to_injected_error_handler(self):
+        """ARCH-030/F7: fehlgeschlagene Zustellung an einen Empfänger wird
+        zusätzlich zentral gemeldet, wenn ein error_handler injiziert ist -
+        analog FamilyChallengeScheduler._broadcast() (ARCH-028)."""
+        handler, _, chat_service = _make_handler()
+        handler.error_handler = AsyncMock()
+        chat_service.post_message.return_value = {
+            "sender_display_name": "Papa",
+            "message": "Hallo!",
+        }
+        chat_service.get_notification_recipients.return_value = ["222", "333"]
+        context = make_context()
+        context.bot.send_message.side_effect = [None, Exception("Telegram down")]
+
+        asyncio.run(
+            handler.process_pending_message(make_update(111), context, "Hallo!")
+        )
+
+        handler.error_handler.handle_exception.assert_awaited_once()
+        _args, kwargs = handler.error_handler.handle_exception.call_args
+        assert kwargs["context"]["module"] == "FamilyChatHandler"
+        assert kwargs["context"]["operation"] == "broadcast_message"
+        assert kwargs["context"]["recipient_id"] == "333"
+
+    def test_successful_broadcast_does_not_call_error_handler(self):
+        handler, _, chat_service = _make_handler()
+        handler.error_handler = AsyncMock()
+        chat_service.post_message.return_value = {
+            "sender_display_name": "Papa",
+            "message": "Hallo!",
+        }
+        chat_service.get_notification_recipients.return_value = ["222"]
+        context = make_context()
+
+        asyncio.run(
+            handler.process_pending_message(make_update(111), context, "Hallo!")
+        )
+
+        handler.error_handler.handle_exception.assert_not_awaited()
+
 
 class TestHandleRecentMessages:
     def test_denied_for_non_member(self):

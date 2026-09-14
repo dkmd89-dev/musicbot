@@ -27,7 +27,7 @@ FamilyService.is_active_family_member() bzw. verlässt sich auf
 FamilyChatService, das dieselbe Prüfung selbst durchführt.
 """
 
-from typing import Optional, Set
+from typing import TYPE_CHECKING, Optional, Set
 
 from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
@@ -36,6 +36,9 @@ from emoji import EMOJI
 from logger import get_module_logger
 from services.family.family_chat_service import FamilyChatService
 from services.family.family_service import FamilyService
+
+if TYPE_CHECKING:
+    from handlers.enhanced_error_handler import EnhancedErrorHandler
 
 
 class FamilyChatHandler:
@@ -54,6 +57,13 @@ class FamilyChatHandler:
         # Telegram-IDs, die gerade eine Chat-Nachricht eintippen sollen
         # (siehe Docstring oben - Analogon zu NavidromeMenuHandler.browse_states).
         self.pending_message_senders: Set[int] = set()
+        # ARCH-030/F7: wird von RichMenuHandler.initialize() nach der
+        # Konstruktion zugewiesen (self.family_chat_handler.error_handler =
+        # self.error_handler), analog NavidromeMenuHandler. Default None,
+        # damit direkte Konstruktion (Tests, Standalone) sicher funktioniert
+        # - process_pending_message()'s Broadcast-Schleife meldet einen
+        # fehlgeschlagenen Zustellversuch zusätzlich zentral, wenn injiziert.
+        self.error_handler: "Optional[EnhancedErrorHandler]" = None
         self.logger.info("✅ FamilyChatHandler initialisiert")
 
     async def _reply_target(self, update: Update):
@@ -143,6 +153,23 @@ class FamilyChatHandler:
                     f"zustellen: {e}",
                     exc_info=True,
                 )
+                # ARCH-030/F7: ein fehlgeschlagener Zustellversuch an EIN
+                # Mitglied darf die anderen nicht stoppen (bestehendes
+                # Verhalten, die for-Schleife läuft unverändert weiter) -
+                # zusätzlich zentral gemeldet, sofern injiziert. Kein
+                # `update`/`telegram_context` für DIESEN Empfänger verfügbar
+                # (nur für den Absender) - handle_exception() statt
+                # handle_callback_error(), analog
+                # FamilyChallengeScheduler._broadcast() (ARCH-028).
+                if self.error_handler:
+                    await self.error_handler.handle_exception(
+                        e,
+                        context={
+                            "module": "FamilyChatHandler",
+                            "operation": "broadcast_message",
+                            "recipient_id": recipient_id,
+                        },
+                    )
 
     # ─────────────────────────────────────────────────────────────
     # 📋 Letzte Nachrichten
