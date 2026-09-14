@@ -45,29 +45,19 @@ MusicBot ist KEINE Ausweitung dieser Grenze, sondern eine reichhaltigere
 Oberfläche (Plan/Preview/History/Statistik) für denselben, bereits
 etablierten Ausführungspfad.
 
-Der Journal (siehe oben) hat keine Lauf-Gruppierung (kein "welche
-Einträge gehören zu EINEM Telegram-Tap"). Da das Journal selbst bewusst
-NICHT verändert wird (Abschnitt 30: bestehende Infrastruktur
-wiederverwenden, keine invasive Änderung an einem bereits gehärteten,
-1300+ Zeilen umfassenden Modul), führt dieser Service einen kleinen,
-zusätzlichen Read-only-kompatiblen Laufindex (`library_repair_runs.json`)
-- er verweist per Byte-Offset-Fenster auf die tatsächlich im Journal
-bereits vorhandenen Einträge, dupliziert deren Inhalt aber nicht
-(Abschnitt 44: "nur wenn keine geeignete Persistenz vorhanden ist, darf
-eine neue Repair History eingeführt werden" - die Lauf-GRUPPIERUNG fehlt
-im Journal, die Datei-FAKTEN selbst nicht).
+Lock/Journal-Fenster/Run-Index/History/Statistik sind seit ARCH-032
+Phase 3 (ADR-0004) nach services/library_repair/run_tracking.py
+ausgelagert - geteilte Infrastruktur mit dem neuen Command-getriebenen
+Maintenance-Flow (services/library_repair/maintenance_service.py). Diese
+Datei re-exportiert die dort definierten Namen fuer Rueckwaertskompatibilitaet
+bestehender Importe (z. B. handlers/repair_musicbot_handler.py).
 """
 
 from __future__ import annotations
 
-import json
-import os
-import time
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 from config import Config
@@ -82,52 +72,41 @@ from services.library_health.findings import DEFAULT_FILENAME as FINDINGS_DEFAUL
 from services.library_repair.doctor_runner import run_health_scan, run_safe_automatic_repair
 from services.library_repair.models import RepairCandidate, RepairPlan
 from services.library_repair.planner import filter_plan, plan_repairs
+from services.library_repair.run_tracking import (
+    KIND_REPAIR,
+    RUNS_INDEX_FILENAME,
+    LOCK_FILENAME,
+    JOURNAL_FILENAME,
+    STATUS_SUCCESS,
+    STATUS_FAILED,
+    STATUS_SKIPPED,
+    RepairAlreadyRunningError,
+    RepairServiceError,
+    acquire_repair_lock,
+    append_run_record,
+    compute_repair_statistics,
+    data_dir,
+    is_repair_running,
+    journal_path,
+    load_repair_history,
+    load_runs_index,
+    lock_path,
+    now_iso,
+    read_journal_window,
+    release_repair_lock,
+    runs_index_path,
+    write_json_atomic,
+)
 
 logger = get_module_logger("RepairService")
-
-RUNS_INDEX_FILENAME = "library_repair_runs.json"
-LOCK_FILENAME = "library_repair.lock"
-JOURNAL_FILENAME = "library_repair_journal.jsonl"
-
-STATUS_SUCCESS = "SUCCESS"
-STATUS_FAILED = "FAILED"
-STATUS_SKIPPED = "SKIPPED"
-
-
-class RepairServiceError(Exception):
-    """Basisklasse für Fehler dieses Services."""
-
-
-class RepairAlreadyRunningError(RepairServiceError):
-    """Wird geworfen, wenn bereits ein Repair-Lauf aktiv ist (Abschnitt 42)."""
 
 
 class HealthScanFailedError(RepairServiceError):
     """Der zugrunde liegende Health-Scan (Plan-Grundlage) ist fehlgeschlagen."""
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _data_dir() -> Path:
-    return Path(Config.DATA_DIR)
-
-
-def _journal_path() -> Path:
-    return _data_dir() / JOURNAL_FILENAME
-
-
-def _runs_index_path() -> Path:
-    return _data_dir() / RUNS_INDEX_FILENAME
-
-
-def _lock_path() -> Path:
-    return _data_dir() / LOCK_FILENAME
-
-
-def _findings_registry_path() -> Path:
-    return _data_dir() / FINDINGS_DEFAULT_FILENAME
+def _findings_registry_path():
+    return data_dir() / FINDINGS_DEFAULT_FILENAME
 
 
 def _candidate_to_issue_dict(candidate: RepairCandidate) -> dict:
@@ -222,138 +201,6 @@ def build_preview(candidates: list[RepairCandidate], *, level: str = "SAFE_AUTOM
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Concurrency-Schutz (Abschnitt 42)
-# ─────────────────────────────────────────────────────────────────────────
-
-
-def acquire_repair_lock() -> None:
-    """Atomare, prozessübergreifende Sperre (O_CREAT|O_EXCL) - schützt
-    sowohl gegen einen zweiten gleichzeitigen Telegram-Tap als auch gegen
-    einen parallel von der Kommandozeile gestarteten
-    `scripts/library_repair.py --apply`-Lauf. Es gab zuvor KEINEN
-    Lock-/Job-Mechanismus für Repair-Läufe (verifiziert: weder
-    doctor_runner.py noch scripts/library_repair.py hatten einen) - dies
-    ist die in Abschnitt 42 geforderte, bislang fehlende Schutzmaßnahme."""
-    path = _lock_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        with os.fdopen(fd, "w") as f:
-            f.write(f"{os.getpid()}|{_now_iso()}")
-    except FileExistsError as e:
-        raise RepairAlreadyRunningError(
-            "Es läuft bereits eine Reparatur - bitte warten, bis diese "
-            "abgeschlossen ist."
-        ) from e
-
-
-def release_repair_lock() -> None:
-    _lock_path().unlink(missing_ok=True)
-
-
-def is_repair_running() -> bool:
-    return _lock_path().exists()
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Journal-Fenster-Lesen (fuer Run-Korrelation, siehe Modul-Docstring)
-# ─────────────────────────────────────────────────────────────────────────
-
-
-def _read_journal_window(offset_before: int, offset_after: int) -> list[dict]:
-    path = _journal_path()
-    if not path.exists() or offset_after <= offset_before:
-        return []
-    entries: list[dict] = []
-    with open(path, "r", encoding="utf-8") as f:
-        f.seek(offset_before)
-        chunk = f.read(offset_after - offset_before)
-    for line in chunk.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entries.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    return entries
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Repair-Runs-Index (Repair History, Abschnitt 44/45)
-# ─────────────────────────────────────────────────────────────────────────
-
-
-def _write_json_atomic(path: Path, data: dict) -> None:
-    """write-tmp + Path.replace() - dasselbe, im Projekt etablierte Muster
-    (INV-02) wie services/library_health/findings.py::FindingsRegistry.
-    _write_json_atomic() und diverse weitere Stores (siehe dortigen
-    Kommentar)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(f".{path.name}.tmp_{int(time.time() * 1000)}")
-    try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        tmp_path.replace(path)
-    except Exception:
-        try:
-            tmp_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
-
-
-def _load_runs_index() -> dict:
-    path = _runs_index_path()
-    if not path.exists():
-        return {"runs": []}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        logger.warning(f"⚠️ Repair-Runs-Index unlesbar, wird als leer behandelt: {path}")
-        return {"runs": []}
-    if not isinstance(data, dict) or not isinstance(data.get("runs"), list):
-        return {"runs": []}
-    return data
-
-
-def _append_run_record(record: dict) -> None:
-    data = _load_runs_index()
-    data["runs"].append(record)
-    _write_json_atomic(_runs_index_path(), data)
-
-
-def load_repair_history(limit: Optional[int] = None) -> list[dict]:
-    """Repair History (Abschnitt 44/45) - neueste zuerst. `limit=None`
-    liefert alle Einträge."""
-    runs = list(reversed(_load_runs_index().get("runs", [])))
-    return runs[:limit] if limit else runs
-
-
-def compute_repair_statistics() -> dict:
-    """Repair-Statistik (Abschnitt 46) - ausschließlich aus der
-    tatsächlichen Repair History berechnet, keine hartkodierten Werte."""
-    runs = _load_runs_index().get("runs", [])
-    totals = Counter()
-    code_counts: Counter = Counter()
-    for run in runs:
-        counts = run.get("status_counts") or {}
-        for status, n in counts.items():
-            totals[status] += n
-        for code in run.get("issue_codes") or []:
-            code_counts[code] += 1
-
-    return {
-        "total_runs": len(runs),
-        "total": sum(totals.values()),
-        "success": totals.get(STATUS_SUCCESS, 0),
-        "failed": totals.get(STATUS_FAILED, 0),
-        "skipped": totals.get(STATUS_SKIPPED, 0),
-        "most_common_issue_codes": code_counts.most_common(),
-    }
-
-
-# ─────────────────────────────────────────────────────────────────────────
 # Execute + Verification (Abschnitt 35/38/39/40/41)
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -395,14 +242,14 @@ async def execute_safe_automatic_repair(
     """
     acquire_repair_lock()
     try:
-        started_at = _now_iso()
+        started_at = now_iso()
 
         try:
             plan = await build_repair_plan(scan_timeout=scan_timeout)
         except HealthScanFailedError as e:
             return RepairRunResult(
                 repair_id=str(uuid.uuid4()), status=STATUS_FAILED,
-                started_at=started_at, finished_at=_now_iso(),
+                started_at=started_at, finished_at=now_iso(),
                 candidates_total=0, resolved_count=0,
                 error_message=f"Health-Scan fehlgeschlagen: {e}",
             )
@@ -411,7 +258,7 @@ async def execute_safe_automatic_repair(
         if not safe_candidates:
             return RepairRunResult(
                 repair_id=str(uuid.uuid4()), status=STATUS_SKIPPED,
-                started_at=started_at, finished_at=_now_iso(),
+                started_at=started_at, finished_at=now_iso(),
                 candidates_total=0, resolved_count=0,
             )
 
@@ -424,15 +271,15 @@ async def execute_safe_automatic_repair(
         # Scan bereits durchgeführt, kein zusätzlicher I/O nötig).
         pre_open_counts = Counter(c.issue_code for c in plan.candidates)
 
-        journal_path = _journal_path()
-        offset_before = journal_path.stat().st_size if journal_path.exists() else 0
+        jpath = journal_path()
+        offset_before = jpath.stat().st_size if jpath.exists() else 0
 
         repair_result = await run_safe_automatic_repair(timeout=scan_timeout)
 
-        offset_after = journal_path.stat().st_size if journal_path.exists() else offset_before
-        entries = _read_journal_window(offset_before, offset_after)
+        offset_after = jpath.stat().st_size if jpath.exists() else offset_before
+        entries = read_journal_window(offset_before, offset_after)
         status_counts = dict(Counter(e.get("status") for e in entries))
-        finished_at = _now_iso()
+        finished_at = now_iso()
 
         # ── Verification (Abschnitt 38/40): erneuter Health-Scan ─────────
         resolved_ids: list[str] = []
@@ -492,12 +339,13 @@ async def execute_safe_automatic_repair(
         else:
             overall_status = STATUS_SKIPPED
 
-        _append_run_record({
+        append_run_record({
             "repair_id": repair_id,
             "started_at": started_at,
             "finished_at": finished_at,
             "triggered_by": triggered_by,
             "level": "SAFE_AUTOMATIC",
+            "kind": KIND_REPAIR,
             "exit_code": repair_result.exit_code,
             "status": overall_status,
             "finding_ids": sorted(pre_finding_ids),
