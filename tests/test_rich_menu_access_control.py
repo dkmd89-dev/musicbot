@@ -216,11 +216,11 @@ class TestPrivilegedMenuItemsAreGatedTGPERM001:
     # Praefixe, die handle_callback() vor dem Dispatch bereits selbst
     # gated - entweder zentral ueber _ADMIN_ONLY_PREFIXES oder durch einen
     # eigenen Admin-/Owner-Check im jeweiligen "_handle_*_callback()"
-    # (erradmin:/restart:/maint:/reprocess:/doctor:/review:/repair:, siehe
-    # docs/MusicBot_TELEGRAM_MENU_SYSTEM.md). "dl:" ist bewusst NICHT
-    # gelistet - es ist absichtlich ungegated (chat_id-skopiert, siehe
-    # CLAUDE.md/Telegram-Menue-Doku), traegt aber ohnehin nie
-    # access_level > USER.
+    # (erradmin:/restart:/maint:/reprocess:/doctor:/review:/repair:/
+    # libmaint:, siehe docs/MusicBot_TELEGRAM_MENU_SYSTEM.md). "dl:" ist
+    # bewusst NICHT gelistet - es ist absichtlich ungegated
+    # (chat_id-skopiert, siehe CLAUDE.md/Telegram-Menue-Doku), traegt
+    # aber ohnehin nie access_level > USER.
     _GATED_PREFIXES = (
         "logger_",
         "usermgmt_",
@@ -234,6 +234,10 @@ class TestPrivilegedMenuItemsAreGatedTGPERM001:
         "doctor:",
         "review:",
         "repair:",
+        "libmaint:",  # ARCH-032 Phase 4, Library-Wartung - eigener
+        # Admin-Check in handle_library_maintenance_callback() (Defense-
+        # in-Depth wie doctor:/review:/repair:, siehe
+        # handlers/menu/actions/library.py)
     )
 
     # menu:<id>-Items mit access_level > USER, die bewusst NICHT ueber

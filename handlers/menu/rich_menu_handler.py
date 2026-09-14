@@ -51,6 +51,7 @@ from handlers.menu.reprocessing_menu_handler import ReprocessingMenuHandler
 from handlers.library_doctor_handler import LibraryDoctorHandler
 from handlers.library_health_review_handler import LibraryHealthReviewHandler
 from handlers.repair_musicbot_handler import RepairMusicBotHandler
+from handlers.library_maintenance_handler import LibraryMaintenanceHandler
 from handlers.mugge_statistik_handler import StatistikHandler
 from handlers.family_stats_handler import FamilyStatsHandler
 from handlers.family_chat_handler import FamilyChatHandler
@@ -132,6 +133,7 @@ class RichMenuHandler:
         self.doctor_handler: Optional[LibraryDoctorHandler] = None
         self.review_handler: Optional[LibraryHealthReviewHandler] = None
         self.repair_handler: Optional[RepairMusicBotHandler] = None
+        self.library_maintenance_handler: Optional[LibraryMaintenanceHandler] = None
 
         # Download-Control-Center 2026-09-02: EINE prozessweite Registry,
         # ueber die gesamte Bot-Laufzeit auf diesem (im Gegensatz zu
@@ -423,6 +425,20 @@ class RichMenuHandler:
             self.logger.error(f"❌ Repair-Handler Fehler: {e}", exc_info=True)
             self.repair_handler = None
 
+        # 16. Library-Wartung-Handler ("Library-Wartung", ARCH-032 Phase 4) -
+        # Telegram-Oberflaeche fuer services/library_repair/maintenance_service.py,
+        # Command-getriebener Flow (kein Health-Finding-Bezug, ADR-0001) -
+        # Artist Casing/Legacy-Genre-Cleanup/Set-Genre.
+        try:
+            self.library_maintenance_handler = LibraryMaintenanceHandler(
+                self.config, self.logger_factory
+            )
+            self.library_maintenance_handler.error_handler = self.error_handler
+            self.logger.info("✅ LibraryMaintenanceHandler initialisiert")
+        except Exception as e:
+            self.logger.error(f"❌ Library-Wartung-Handler Fehler: {e}", exc_info=True)
+            self.library_maintenance_handler = None
+
         self._record_initial_handler_statuses()
 
         # ── Menüsystem initialisieren und Handler verknüpfen ──────────────────
@@ -464,6 +480,8 @@ class RichMenuHandler:
             self.menu_system.set_review_handler(self.review_handler)
         if self.repair_handler:
             self.menu_system.set_repair_handler(self.repair_handler)
+        if self.library_maintenance_handler:
+            self.menu_system.set_library_maintenance_handler(self.library_maintenance_handler)
 
         # Handler registrieren
         self._register_download_handlers()
@@ -510,6 +528,7 @@ class RichMenuHandler:
             ("doctor_handler", self.doctor_handler),
             ("review_handler", self.review_handler),
             ("repair_handler", self.repair_handler),
+            ("library_maintenance_handler", self.library_maintenance_handler),
         ]:
             self.status_handler.bot_tracker.update_handler_status(
                 handler_name, "active" if handler_instance else "error"
@@ -739,6 +758,12 @@ class RichMenuHandler:
             # reprocess:/doctor:/review: oben - ohne diesen Handler
             # verpuffte jeder repair:-Callback stillschweigend.
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^repair:"),
+            # Library-Wartung (ARCH-032 Phase 4): derselbe "Bug B"-Fall wie
+            # bei maint:/dl:/reprocess:/doctor:/review:/repair: oben - ohne
+            # diesen Handler verpuffte jeder libmaint:-Callback
+            # stillschweigend. Bewusst "libmaint:" statt "maint:" (bereits
+            # durch den Bot-Wartungsmodus belegt).
+            CallbackQueryHandler(self.menu_system.handle_callback, pattern="^libmaint:"),
             # Allgemeines Menü zuletzt
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^menu:"),
             # URL Handler (YouTube-URLs)
