@@ -77,23 +77,44 @@ class TestEnhancedErrorHandlerSingleInit:
 
 
 class TestExceptionMonitor:
-    def test_connection_error_is_miscategorized_as_file_system_not_network(self):
+    def test_connection_error_and_timeout_error_categorized_as_network(self):
         """
-        Charakterisiert einen beim Schreiben dieser Tests gefundenen
-        Kategorisierungs-Fehler: ConnectionError/TimeoutError erben in
-        Python von OSError. "file_system" listet OSError ebenfalls und
-        steht im categories-Dict VOR "network" - dadurch gewinnt
-        "file_system" fuer JEDEN ConnectionError/TimeoutError, "network"
-        ist fuer diese beiden (die einzigen zwei explizit als
-        netzwerkbezogen gedachten Eintraege dort) faktisch unerreichbar.
-        Reine Statistik-/Diagnose-Verzerrung (keine Auswirkung auf
-        Kernfunktionen), bewusst nur dokumentiert statt gefixt - eine
-        Umsortierung wuerde weitere Ueberschneidungen beruehren, die nicht
-        Teil dieser Charakterisierung waren.
+        ARCH-029/F11 Regressionstest: ConnectionError/TimeoutError erben in
+        Python von OSError. "file_system" listet OSError ebenfalls, "network"
+        listet ConnectionError/TimeoutError explizit - vor dem Fix gewann
+        "file_system" trotzdem immer (erster Dict-Treffer), weil die
+        Dict-Reihenfolge ueber die Kategorie entschied statt der
+        Exception-Spezifitaet (siehe ARCH-026 F11, vormals
+        test_connection_error_is_miscategorized_as_file_system_not_network).
+        categorize_exception() waehlt jetzt den spezifischsten Treffer
+        (ConnectionError/TimeoutError sind spezifischer als ihr Vorfahre
+        OSError) - unabhaengig von der Dict-Reihenfolge.
         """
         monitor = ExceptionMonitor()
-        assert monitor.categorize_exception(ConnectionError()) == "file_system"
-        assert monitor.categorize_exception(TimeoutError()) == "file_system"
+        assert monitor.categorize_exception(ConnectionError()) == "network"
+        assert monitor.categorize_exception(TimeoutError()) == "network"
+
+    def test_bare_os_error_remains_categorized_as_file_system(self):
+        """
+        ARCH-029/F11: ein generischer OSError (keine spezifischere
+        Netzwerk-Subklasse) bleibt weiterhin "file_system" - das war schon
+        vor dem Fix so und aendert sich nicht, da OSError hier der einzige
+        Treffer ist (kein spezifischerer Konkurrent).
+        """
+        monitor = ExceptionMonitor()
+        assert monitor.categorize_exception(OSError()) == "file_system"
+
+    def test_file_specific_os_subclasses_remain_file_system(self):
+        """
+        ARCH-029/F11: FileNotFoundError/PermissionError/IsADirectoryError
+        sind (auch) OSError-Subklassen, bleiben aber unveraendert
+        "file_system" - IsADirectoryError ist nirgends explizit gelistet,
+        wird also (korrekt) nur ueber OSError erreicht.
+        """
+        monitor = ExceptionMonitor()
+        assert monitor.categorize_exception(FileNotFoundError()) == "file_system"
+        assert monitor.categorize_exception(PermissionError()) == "file_system"
+        assert monitor.categorize_exception(IsADirectoryError()) == "file_system"
 
     def test_categorizes_unknown_exception_type(self):
         class WeirdCustomException(Exception):
@@ -494,3 +515,367 @@ class TestHandleRecentErrorsCommandMessagePreviewEscaping:
 
         message = update.message.reply_text.call_args[1]["text"]
         assert "Keine aktuellen Exceptions" in message
+
+
+class TestDebugSessionLifecycle:
+    """ARCH-029/F8: vorher rief jeder der 3 High-Level-Entry-Points
+    (handle_telegram_error/handle_command_error/handle_callback_error) UND
+    beide Decoratoren (handle_async_exceptions/handle_sync_exceptions)
+    selbst debug_tracker.start_session() auf und uebergab dieselbe
+    session_id an handle_exception(), das unbedingt selbst erneut
+    start_session() aufrief (ueberschreibt) und in seinem finally-Block
+    end_session() aufrief - bei den Decoratoren zusaetzlich ein zweites,
+    harmloses (No-Op) end_session() im eigenen finally-Block (ARCH-026 F8).
+    Fix: handle_exception() erhielt manage_session (Default True, siehe
+    Docstring dort) - die 3 Entry-Points haben keinen eigenen
+    start_session()-Vorlauf mehr (handle_exception() ist alleiniger
+    Besitzer), die 2 Decoratoren uebergeben manage_session=False (sie
+    besitzen die Session bereits selbst, auch fuer ihren Erfolgspfad)."""
+
+    @staticmethod
+    def _count_session_calls(handler):
+        tracker = handler.debug_tracker
+        start_spy = Mock(wraps=tracker.start_session)
+        end_spy = Mock(wraps=tracker.end_session)
+        tracker.start_session = start_spy
+        tracker.end_session = end_spy
+        return start_spy, end_spy
+
+    @pytest.mark.asyncio
+    async def test_handle_exception_direct_call_has_single_start_and_end(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+        start_spy, end_spy = self._count_session_calls(handler)
+
+        await handler.handle_exception(RuntimeError("boom"), context={"module": "x"})
+
+        assert start_spy.call_count == 1
+        assert end_spy.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_handle_telegram_error_has_single_start_and_end(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+        start_spy, end_spy = self._count_session_calls(handler)
+
+        update = make_update(111)
+        context = make_context()
+        context.error = RuntimeError("tg-boom")
+
+        await handler.handle_telegram_error(update, context)
+
+        assert start_spy.call_count == 1
+        assert end_spy.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_handle_command_error_has_single_start_and_end(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+        start_spy, end_spy = self._count_session_calls(handler)
+
+        update = make_update(111)
+        context = make_context()
+
+        await handler.handle_command_error(
+            update, context, "mycommand", RuntimeError("cmd-boom")
+        )
+
+        assert start_spy.call_count == 1
+        assert end_spy.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_handle_callback_error_has_single_start_and_end(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+        start_spy, end_spy = self._count_session_calls(handler)
+
+        update = make_update(111)
+        context = make_context()
+
+        await handler.handle_callback_error(
+            update, context, "nav_test_callback", RuntimeError("cb-boom")
+        )
+
+        assert start_spy.call_count == 1
+        assert end_spy.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_async_decorator_exception_path_has_single_start_and_end(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+        start_spy, end_spy = self._count_session_calls(handler)
+
+        @handler.handle_async_exceptions("TestModule", "test_op")
+        async def _boom():
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError):
+            await _boom()
+
+        assert start_spy.call_count == 1
+        assert end_spy.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_async_decorator_success_path_has_single_start_and_end(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+        start_spy, end_spy = self._count_session_calls(handler)
+
+        @handler.handle_async_exceptions("TestModule", "test_op")
+        async def _ok():
+            return "done"
+
+        result = await _ok()
+
+        assert result == "done"
+        assert start_spy.call_count == 1
+        assert end_spy.call_count == 1
+
+    def test_sync_decorator_exception_path_has_single_start_and_end(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+        start_spy, end_spy = self._count_session_calls(handler)
+
+        @handler.handle_sync_exceptions("TestModule", "test_op")
+        def _boom():
+            raise RuntimeError("boom")
+
+        async def _run():
+            with pytest.raises(RuntimeError):
+                _boom()
+            # Dem per asyncio.create_task() geplanten handle_exception()
+            # genug Event-Loop-Zyklen geben, um vollstaendig durchzulaufen
+            # (mehrere interne awaits, siehe ARCH-029/F8-Kommentar am
+            # add_done_callback() in handle_sync_exceptions()) - ein
+            # einzelnes asyncio.sleep(0) reicht dafuer nicht zuverlaessig.
+            await asyncio.sleep(0.05)
+
+        asyncio.run(_run())
+
+        assert start_spy.call_count == 1
+        assert end_spy.call_count == 1
+
+    def test_sync_decorator_success_path_has_single_start_and_end(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+        start_spy, end_spy = self._count_session_calls(handler)
+
+        @handler.handle_sync_exceptions("TestModule", "test_op")
+        def _ok():
+            return "done"
+
+        result = _ok()
+
+        assert result == "done"
+        assert start_spy.call_count == 1
+        assert end_spy.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_session_id_consistent_across_lifecycle(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+        seen_ids = []
+        original_start = handler.debug_tracker.start_session
+        original_end = handler.debug_tracker.end_session
+
+        def spy_start(session_id, ctx):
+            seen_ids.append(("start", session_id))
+            return original_start(session_id, ctx)
+
+        def spy_end(session_id, status="completed"):
+            seen_ids.append(("end", session_id))
+            return original_end(session_id, status)
+
+        handler.debug_tracker.start_session = spy_start
+        handler.debug_tracker.end_session = spy_end
+
+        await handler.handle_exception(RuntimeError("boom"), context={"module": "x"})
+
+        assert len(seen_ids) == 2
+        assert seen_ids[0][1] == seen_ids[1][1]
+
+    @pytest.mark.asyncio
+    async def test_callback_error_debug_context_preserved_in_session(self):
+        """ARCH-029/F8: der entry-point-spezifische Kontext (hier
+        callback_data) landet jetzt direkt im DebugTracker-Session-Objekt,
+        statt beim ueberschreibenden zweiten start_session() verloren zu
+        gehen (ARCH-026 F8: 'der ursspruengliche, entry-point-spezifische
+        Kontext ... geht damit fuer die DebugTracker-Session verloren')."""
+        handler = EnhancedErrorHandler(FakeConfig())
+        captured = {}
+        original_end = handler.debug_tracker.end_session
+
+        def spy_end(session_id, status="completed"):
+            captured["context"] = handler.debug_tracker.sessions[session_id][
+                "context"
+            ]
+            return original_end(session_id, status)
+
+        handler.debug_tracker.end_session = spy_end
+
+        update = make_update(111)
+        context = make_context()
+
+        await handler.handle_callback_error(
+            update, context, "nav_test_callback", RuntimeError("cb-boom")
+        )
+
+        assert captured["context"].get("callback_data") == "nav_test_callback"
+
+    @pytest.mark.asyncio
+    async def test_async_decorator_debug_context_preserved_across_exception(self):
+        """ARCH-029/F8: die vom Decorator selbst beim Funktionsstart
+        gesetzte Session (function/module/operation) bleibt erhalten, weil
+        handle_exception() bei manage_session=False keine neue Session
+        anlegt, die sie ueberschreiben wuerde."""
+        handler = EnhancedErrorHandler(FakeConfig())
+
+        @handler.handle_async_exceptions("TestModule", "test_op")
+        async def _boom():
+            raise RuntimeError("boom")
+
+        captured_sessions = []
+        original_end = handler.debug_tracker.end_session
+
+        def spy_end(session_id, status="completed"):
+            captured_sessions.append(
+                dict(handler.debug_tracker.sessions[session_id]["context"])
+            )
+            return original_end(session_id, status)
+
+        handler.debug_tracker.end_session = spy_end
+
+        with pytest.raises(RuntimeError):
+            await _boom()
+
+        assert len(captured_sessions) == 1
+        assert captured_sessions[0].get("module") == "TestModule"
+        assert captured_sessions[0].get("operation") == "test_op"
+
+
+class TestHandleErrorRemoved:
+    """ARCH-029/F9: handle_error() war ein Kompatibilitaets-Wrapper mit 0
+    Aufrufern ausserhalb der eigenen Definition (ARCH-026 F9, repoweit
+    inkl. Tests/Docs/Reflection erneut bestaetigt) - ersatzlos entfernt.
+    Die spezialisierten Entry-Points (handle_telegram_error/
+    handle_command_error/handle_callback_error/handle_exception) bleiben
+    unveraendert die einzigen Einstiegspunkte."""
+
+    def test_handle_error_no_longer_exists(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+        assert not hasattr(handler, "handle_error")
+
+
+class TestExportDebugSessionRemoved:
+    """ARCH-029/F10: export_debug_session() hatte 0 externe Aufrufer
+    (ARCH-026 F10, repoweit erneut bestaetigt) - ersatzlos entfernt, ohne
+    neue Ersatz-API. DebugTracker bleibt interner Mechanismus von
+    EnhancedErrorHandler (ARCH-027 Abschnitt 10) und funktioniert dafuer
+    unveraendert weiter."""
+
+    def test_export_debug_session_no_longer_exists(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+        assert not hasattr(handler, "export_debug_session")
+
+    def test_debug_tracker_still_functions_internally(self):
+        handler = EnhancedErrorHandler(FakeConfig())
+        assert isinstance(handler.debug_tracker, DebugTracker)
+
+        handler.debug_tracker.start_session("s1", {"foo": "bar"})
+        handler.debug_tracker.log_step("s1", "step")
+        handler.debug_tracker.end_session("s1")
+
+        summary = handler.debug_tracker.get_session_summary("s1")
+        assert summary is not None
+        assert summary["status"] == "completed"
+
+
+class TestProductionLoggingPIIMinimization:
+    """ARCH-029/F12: _log_exception_details() loggte User-Klarname/
+    -Username sowie den vollen Nachrichtentext-Preview unbedingt ueber
+    den Standard-Logger, unabhaengig von debug_mode (ARCH-026 F12). Fix:
+    Production (debug_mode=False) loggt nur user_id/message_id: Debug
+    (debug_mode=True) bleibt unveraendert vollstaendig. callback_data
+    bleibt in beiden Modi sichtbar (bot-interne ID, fuer Diagnose
+    essenziell, keine PII)."""
+
+    @staticmethod
+    def _make_handler(debug_mode: bool):
+        class LocalFakeConfig:
+            DEBUG_MODE = debug_mode
+            LOG_ALL_EXCEPTIONS = True
+            DETAILED_STACK_TRACES = True
+            MAX_RECOVERY_ATTEMPTS = 3
+
+        handler = EnhancedErrorHandler(LocalFakeConfig())
+        logged_lines = []
+        handler.logger = Mock()
+        handler.logger.error = lambda msg="": logged_lines.append(str(msg))
+        handler.logger.info = lambda msg="": logged_lines.append(str(msg))
+        handler.logger.warning = lambda msg="": logged_lines.append(str(msg))
+        handler.logger.critical = lambda msg="": logged_lines.append(str(msg))
+        return handler, logged_lines
+
+    @staticmethod
+    def _make_full_context(handler):
+        exception = RuntimeError("boom")
+        update = make_update(111)
+        update.effective_user.first_name = "Robin"
+        update.effective_user.username = "robin_m"
+        update.effective_user.language_code = "de"
+        update.message.text = "ein privater Nachrichtentext"
+        update.callback_query.data = "nav_test_callback"
+        return exception, handler._build_full_context(exception, {}, update)
+
+    @pytest.mark.asyncio
+    async def test_production_mode_omits_first_name_and_username(self):
+        handler, logged_lines = self._make_handler(debug_mode=False)
+        exception, full_context = self._make_full_context(handler)
+
+        await handler._log_exception_details(exception, full_context, "EXC_1", "sess-1")
+
+        full_log = "\n".join(logged_lines)
+        assert "Robin" not in full_log
+        assert "robin_m" not in full_log
+        assert f"User-ID: {111}" in full_log
+
+    @pytest.mark.asyncio
+    async def test_production_mode_omits_message_text_preview(self):
+        handler, logged_lines = self._make_handler(debug_mode=False)
+        exception, full_context = self._make_full_context(handler)
+
+        await handler._log_exception_details(exception, full_context, "EXC_1", "sess-1")
+
+        full_log = "\n".join(logged_lines)
+        assert "ein privater Nachrichtentext" not in full_log
+
+    @pytest.mark.asyncio
+    async def test_production_mode_keeps_callback_data(self):
+        handler, logged_lines = self._make_handler(debug_mode=False)
+        exception, full_context = self._make_full_context(handler)
+
+        await handler._log_exception_details(exception, full_context, "EXC_1", "sess-1")
+
+        full_log = "\n".join(logged_lines)
+        assert "nav_test_callback" in full_log
+
+    @pytest.mark.asyncio
+    async def test_debug_mode_keeps_full_context(self):
+        handler, logged_lines = self._make_handler(debug_mode=True)
+        exception, full_context = self._make_full_context(handler)
+
+        await handler._log_exception_details(exception, full_context, "EXC_1", "sess-1")
+
+        full_log = "\n".join(logged_lines)
+        assert "Robin" in full_log
+        assert "robin_m" in full_log
+        assert "ein privater Nachrichtentext" in full_log
+        assert "nav_test_callback" in full_log
+
+    @pytest.mark.asyncio
+    async def test_debug_mode_still_shows_exception_type_and_category(self):
+        """Abschnitt 8 des Master-Prompts: keine uebertriebene Redaction -
+        die fuer die Fehlerdiagnose noetigen technischen Angaben bleiben in
+        BEIDEN Modi erhalten."""
+        for debug_mode in (True, False):
+            handler, logged_lines = self._make_handler(debug_mode=debug_mode)
+            exception, full_context = self._make_full_context(handler)
+
+            await handler._log_exception_details(
+                exception, full_context, "EXC_1", "sess-1"
+            )
+
+            full_log = "\n".join(logged_lines)
+            assert "RuntimeError" in full_log
+            assert "runtime" in full_log
