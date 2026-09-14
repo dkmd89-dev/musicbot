@@ -15,8 +15,15 @@ status: SUPERSEDED durch docs/MusicBot_ARCH-031_Library_Repair_Telegram_Integrat
 # Library Repair — Vollständige Telegram-Integration (Level 1–3) + Konsolidierung der drei neuen Wartungsskripte
 
 > **Hinweis:** Die verbindliche Fassung ist jetzt
-> [`docs/MusicBot_ARCH-031_Library_Repair_Telegram_Integration_Characterization.md`](../MusicBot_ARCH-031_Library_Repair_Telegram_Integration_Characterization.md).
-> Dieses Dokument diente ihr als Ausgangspunkt (Vorphase, 2026-09-14).
+> [`docs/MusicBot_ARCH-031_Library_Repair_Telegram_Integration_Characterization.md`](../MusicBot_ARCH-031_Library_Repair_Telegram_Integration_Characterization.md)
+> (ARCH-031, Decision COMPLETE). Dieses Dokument diente ihr als
+> Ausgangspunkt (Vorphase, 2026-09-14).
+>
+> **Umsetzungsstand:** ARCH-032 (Library Maintenance Consolidation,
+> Phasen 1–4) ist COMPLETE, 2026-09-14 — siehe
+> [`docs/LIBRARY_REPAIR.md`](../LIBRARY_REPAIR.md) §11 für die finale
+> Dokumentation. ARCH-033 (Telegram Level-2/Level-3 Repair) ist noch
+> nicht begonnen.
 
 ## 0. Auftrag & Grenzen dieser Phase
 

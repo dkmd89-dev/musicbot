@@ -1,5 +1,5 @@
 ---
-status: DECIDED (ARCH-031, 2026-09-14, noch nicht implementiert)
+status: IMPLEMENTED (ARCH-032 Phase 3, 2026-09-14)
 ---
 
 # ADR-0004: Gemeinsames `run_tracking.py` statt Duplikat oder Vermischung
@@ -74,3 +74,32 @@ kein Breaking Change für bestehende Aufrufer.
   (29 Tests) müssen nach der Extraktion unverändert grün bleiben (gleiche
   Modul-Pfade der Konstanten ggf. per Test-Anpassung, aber gleiches
   Verhalten) — Teil der Testmatrix in ARCH-031 §21/D.
+
+## Implementierungsstatus (ARCH-032 Phase 3, 2026-09-14)
+
+Umgesetzt wie entschieden — `services/library_repair/run_tracking.py`
+enthält `now_iso()`, `data_dir()`, `journal_path()`, `runs_index_path()`,
+`lock_path()`, `acquire_repair_lock()`/`release_repair_lock()`/
+`is_repair_running()`, `read_journal_window()`, `write_json_atomic()`,
+`load_runs_index()`/`append_run_record()`, `load_repair_history()`,
+`compute_repair_statistics()`, sowie `RepairServiceError`/
+`RepairAlreadyRunningError` und `KIND_REPAIR`/`KIND_MAINTENANCE`.
+
+`repair_service.py` importiert alle verschobenen Namen zurück (inkl.
+`Config` selbst, da `tests/test_repair_service.py`s bestehende
+`monkeypatch.setattr(rs.Config, "DATA_DIR", ...)`-Fixture sonst
+`AttributeError` geworfen hätte — `Config` ist in beiden Modulen dasselbe
+Klassenobjekt, das Patchen wirkt unabhängig davon, über welchen
+Modulnamen darauf zugegriffen wird). `execute_safe_automatic_repair()`
+schreibt jetzt `"kind": KIND_REPAIR` in jeden Run-Record (additiv).
+
+`tests/test_repair_service.py` wurde an mehreren Stellen von den alten
+privaten Namen (`rs._journal_path()`, `rs._read_journal_window()`,
+`rs._append_run_record()`, `rs._runs_index_path()`) auf die neuen
+öffentlichen Namen (`rs.journal_path()` etc.) umgestellt — reine
+Import-/Referenzpfad-Anpassung, keine Assertion verändert. Alle 29
+bestehenden Tests blieben inhaltlich unverändert grün.
+
+`maintenance_service.py` (ARCH-032 Phase 3B) importiert dieselben Namen
+aus `run_tracking.py` und schreibt `"kind": KIND_MAINTENANCE` in seine
+Run-Records.
