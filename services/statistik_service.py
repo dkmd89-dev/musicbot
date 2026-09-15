@@ -159,6 +159,15 @@ class StatistikService:
         StatisticsCalculator.generate_genre_stats()."""
         return self._calculator.generate_genre_stats(navidrome_username, top_n=top_n)
 
+    def generate_music_dna(
+        self, navidrome_username: str = None, top_n: int = 5
+    ) -> Optional[Dict[str, Any]]:
+        """Music DNA v1 (All-Time-Hörprofil: Genres/Artists/Tageszeit/
+        Repeat-Rate in %). Siehe StatisticsCalculator.generate_music_dna()
+        für die vollständige Semantik inkl. der bewusst nicht enthaltenen
+        Dimensionen (Jahrzehnt, Skip-Rate, Favoriten-Abgleich)."""
+        return self._calculator.generate_music_dna(navidrome_username, top_n=top_n)
+
     def export_stats_to_json(
         self, navidrome_username: str = None, period: str = "month"
     ):

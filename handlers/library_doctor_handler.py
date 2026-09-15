@@ -39,12 +39,20 @@ from logger import get_module_logger
 from handlers.menu.permissions import is_admin_or_owner
 from services.library_health.issues import REGISTRY as ISSUE_REGISTRY
 from services.library_health.models import Severity
+from services.library_health.score_history import read_score_history
 from services.library_repair.doctor_runner import (
     DoctorRepairResult,
     DoctorScanResult,
     run_health_scan,
     run_safe_automatic_repair,
 )
+
+# Health-Score-Verlauf (Chat-Charakterisierung 2026-09-15): wie viele der
+# zuletzt geschriebenen Score-Einträge angezeigt werden - deckelt die
+# Telegram-Nachricht auch bei einer sehr langen Historie (jeder Scan
+# inkl. Verification-Rescans schreibt einen Eintrag, siehe
+# services/library_health/score_history.py-Docstring).
+_SCORE_HISTORY_DISPLAY_LIMIT = 15
 
 # Reine Anzeige-Zuordnung Health-Status -> Ampel-Emoji (Statusbänder selbst
 # kommen unveraendert aus services/library_health/scoring.py - hier wird
@@ -223,9 +231,73 @@ class LibraryDoctorHandler:
             [InlineKeyboardButton(
                 "🔧 SAFE_AUTOMATIC anwenden", callback_data="doctor:apply_safe"
             )],
+            [InlineKeyboardButton(
+                "📈 Score-Verlauf", callback_data="doctor:score_history"
+            )],
             [InlineKeyboardButton("◀️ Zurück", callback_data="menu:admin_group_library")],
         ])
         return text, keyboard
+
+    async def handle_score_history(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Health-Score-Verlauf (Chat-Charakterisierung 2026-09-15): reine
+        Anzeige der bereits vorhandenen Score-Historie-Datei - kein neuer
+        Scan, keine Subprozess-/Hintergrund-Task nötig (reiner,
+        synchroner Datei-Read, siehe read_score_history())."""
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        entries = read_score_history(limit=_SCORE_HISTORY_DISPLAY_LIMIT)
+        text = self._format_score_history(entries)
+        await query.edit_message_text(
+            text, parse_mode="HTML", reply_markup=self._back_to_admin_keyboard()
+        )
+
+    def _format_score_history(self, entries: list) -> str:
+        scored = [e for e in entries if e.get("score") is not None]
+        if len(scored) < 2:
+            return (
+                "📈 <b>Health-Score-Verlauf</b>\n\n"
+                "Noch nicht genug abgeschlossene Scans mit Score für "
+                "einen Verlauf (mindestens 2 nötig). Jeder Scan (auch "
+                "über „🔍 Reparaturen analysieren“) trägt automatisch "
+                "einen Eintrag nach."
+            )
+
+        lines = ["📈 <b>Health-Score-Verlauf</b>", ""]
+        # Neueste zuerst, mit Trendpfeil gegenüber dem jeweils VORHERIGEN
+        # (chronologisch früheren) Scan.
+        for idx in range(len(scored) - 1, -1, -1):
+            entry = scored[idx]
+            score = entry["score"]
+            date_label = html.escape(str(entry.get("timestamp") or "?")[:16].replace("T", " "))
+            if idx > 0:
+                prev_score = scored[idx - 1]["score"]
+                if score > prev_score:
+                    arrow = "🔼"
+                elif score < prev_score:
+                    arrow = "🔽"
+                else:
+                    arrow = "▪️"
+            else:
+                arrow = "▪️"
+            lines.append(f"{arrow} {date_label}  ·  {html.escape(str(score))}")
+
+        first_score = scored[0]["score"]
+        last_score = scored[-1]["score"]
+        delta = round(last_score - first_score, 1)
+        trend_word = "verbessert" if delta > 0 else ("verschlechtert" if delta < 0 else "unverändert")
+        lines.append("")
+        lines.append(
+            f"Seit dem ältesten angezeigten Scan: "
+            f"<b>{'+' if delta > 0 else ''}{delta}</b> ({trend_word})"
+        )
+        return "\n".join(lines)
 
     async def handle_apply_safe_confirm_prompt(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE

@@ -514,3 +514,61 @@ fließen nicht ein. Grundlage für die Library-Statistics-Ansicht (Phase 3, P1.1
 | `tests/test_rich_menu_review.py` | Menüpunkt-Registrierung + Admin-Gating/Dispatch-Ebene für `review:*` |
 | `tests/test_library_health_readonly_safety.py` | **SHA256/mtime/size/Pfade vorher==nachher**, CLI-Subprozess (inkl. Findings-Registry), Import-Graph, abgelehnte Mutations-Flags, echter Review-Vorgang ohne Library-Mutation |
 | `tests/test_review_repair_readonly_safety.py` | Vollständige Review-Session + Repair-Preview gegen eine isolierte Test-Library, SHA-256-Vergleich vorher==nachher (Struktur/Metadaten/Audio/Cover in einem Wert) |
+| `tests/test_library_health_score_history.py` | Health-Score-Verlauf: Append/Read, Reihenfolge, `limit`, korrupte/leere Zeilen, `None`-Score (Abschnitt 9) |
+
+---
+
+## 9. Health-Score-Verlauf (Chat-Charakterisierung 2026-09-15)
+
+Bisher wurde bei jedem Scan ausschließlich `library_health_report.json`
+überschrieben — ein reiner Snapshot, keine Historie. Seit dieser Phase
+schreibt `scripts/library_health_check.py` zusätzlich (fünfte, rein
+additive Ausgabedatei) einen Verlaufs-Eintrag an
+`library_health_score_history.jsonl` (append-only JSONL,
+`{"timestamp", "score", "status", "total_issues", "total_files"}` pro
+Zeile) — siehe `services/library_health/score_history.py`.
+
+**Architektur-Entscheidung:** `append_score_history()` wird bewusst NICHT
+von `services/library_health/scanner.py` selbst aufgerufen, sondern nur
+vom CLI-Skript nach dem JSON-Write — der reine, lesende Scan-Kern bleibt
+dadurch frei von jeglichem Schreibzugriff (siehe
+`tests/test_library_health_readonly_safety.py::
+test_scanner_import_graph_has_no_writer_modules()`, unverändert grün).
+`doctor_runner.run_health_scan()` startet genau dieses Skript als
+Subprozess — jeder Telegram-Scan (MusicBot Doctor, Reparaturvorschläge,
+Verification-Rescans nach einer Reparatur) landet dadurch automatisch
+mit im Verlauf, ohne einen zweiten Aufrufer zu benötigen.
+
+**Telegram-Anzeige:** `handlers/library_doctor_handler.py` zeigt nach
+jedem Scan einen neuen Button „📈 Score-Verlauf" — rein lesend (kein
+neuer Scan), zeigt die letzten 15 Einträge mit Trendpfeil (🔼/🔽/▪️)
+gegenüber dem jeweils vorherigen Scan sowie die Gesamtveränderung seit
+dem ältesten angezeigten Scan.
+
+**Bewusste Grenze:** da es aktuell keinen periodischen/automatischen
+Health-Scan gibt (nur manuell über Telegram/CLI ausgelöst), hat der
+Verlauf nur so viele Punkte, wie tatsächlich gescannt wurde — kein
+festes Zeitintervall. Ein periodischer Auto-Scan wäre eine eigene,
+spätere Entscheidung.
+
+**CLI:** `--score-history <Pfad>` überschreibt den Default
+(`<BASE_DIR>/cache/data/library_health_score_history.jsonl`) — genutzt
+von `tests/test_library_health_readonly_safety.py`, um reale
+Produktionsdaten während Tests nicht zu berühren.
+
+**Tests:** `tests/test_library_health_score_history.py` (10 Tests),
+`tests/test_library_doctor_handler.py::TestHandleScoreHistory`/
+`TestFormatScoreHistory` (8 Tests: Admin-Gate, Trendpfeile, Delta-Vorzeichen,
+Reihenfolge neueste-zuerst).
+
+---
+
+## 10. Duplikat-Check — höher-bitratige Duplikate (Chat-Charakterisierung 2026-09-15)
+
+Siehe `docs/LIBRARY_REPAIR.md` §13 für die vollständige Beschreibung —
+nutzt die bereits bestehende, gehärtete Klassifikations-/Resolution-
+Engine aus `scripts/resolve_duplicates.py`
+(`docs/MusicBot_DUPLICATE_RESOLUTION_ARCHITECTURE.md`), NICHT den
+Health-Scanner selbst. Der Health-Scanner meldet Duplikate weiterhin nur
+als `DUPLICATE_EXACT`/`DUPLICATE_RECORDING`/`DUPLICATE_SUSPECTED`-Issues
+(Abschnitt 5) — unverändert.

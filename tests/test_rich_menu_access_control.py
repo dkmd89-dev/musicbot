@@ -238,6 +238,10 @@ class TestPrivilegedMenuItemsAreGatedTGPERM001:
         # Admin-Check in handle_library_maintenance_callback() (Defense-
         # in-Depth wie doctor:/review:/repair:, siehe
         # handlers/menu/actions/library.py)
+        "dupcheck:",  # Chat-Charakterisierung 2026-09-15, Duplikat-Check -
+        # eigener Admin-Check in handle_duplicate_check_callback()
+        # (Defense-in-Depth wie doctor:/review:/repair:/libmaint:, siehe
+        # handlers/menu/actions/library.py)
     )
 
     # menu:<id>-Items mit access_level > USER, die bewusst NICHT ueber

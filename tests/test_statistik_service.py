@@ -216,3 +216,38 @@ class TestGenerateGenreStats:
 
         assert dict(result["top_genres"]) == {"Hip-Hop": 2, "Deutschrap": 1}
         assert result["total_plays_with_genre"] == 2
+
+
+class TestGenerateMusicDna:
+    """Music DNA v1: reiner Delegator-Test - Facade ruft
+    StatisticsCalculator.generate_music_dna() korrekt durch."""
+
+    def test_no_username_returns_none(self, service):
+        assert service.generate_music_dna(navidrome_username=None) is None
+
+    def test_no_history_returns_none(self, service):
+        assert service.generate_music_dna(navidrome_username="alice") is None
+
+    def test_delegates_to_calculator(self, service):
+        entry_a = _entry("Bausa", "Song A", days_ago=1)
+        entry_a["tracks"][0]["genres"] = ["Hip-Hop"]
+        entry_b = _entry("Bausa", "Song B", days_ago=0)
+        entry_b["tracks"][0]["genres"] = ["Hip-Hop"]
+        service._save_history([entry_a, entry_b], "alice")
+
+        result = service.generate_music_dna(navidrome_username="alice")
+
+        assert result["total_plays"] == 2
+        assert dict(result["top_artists_pct"]) == {"Bausa": 100.0}
+        assert dict(result["top_genres_pct"]) == {"Hip-Hop": 100.0}
+
+    def test_top_n_passed_through(self, service):
+        entries = [
+            _entry(f"Artist{i}", f"Song{i}", days_ago=i)
+            for i in range(8)
+        ]
+        service._save_history(entries, "alice")
+
+        result = service.generate_music_dna(navidrome_username="alice", top_n=2)
+
+        assert len(result["top_artists_pct"]) == 2

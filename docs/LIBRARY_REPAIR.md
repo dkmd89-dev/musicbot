@@ -940,3 +940,107 @@ dokumentiert (Phase 4, reine Vorbereitung, kein aktiver Code).
 | `tests/test_doctor_runner.py` | `run_level2_repair()`/`run_level3_repair()` — Subprozess-Aufruf, Timeout, Fehlerfälle |
 | `tests/test_repair_service_level23.py` | `execute_level2_repair()`/`execute_level3_repair()` — Stale-Plan-Schutz, Verification-Gate, Lock-Sharing mit §10/§11, Run-Record `kind: "repair"` |
 | `tests/test_repair_handler_level23.py` | Telegram-Sub-Flow (Start/Artist-Liste inkl. Pagination-Cache/Aktions-Auswahl/Preview/Confirm/Execute), Admin-Re-Check je Schritt, Index-basierte Artist-Auswahl (kein Rohname in `callback_data`), kein Auto-Start, Lock-Konflikt-Anzeige, Teilerfolg-Anzeige |
+
+---
+
+## 13. Duplikat-Check — höher-bitratige Duplikate (Chat-Charakterisierung 2026-09-15)
+
+**Herkunft der Idee:** Nutzer-Vorschlag „wenn `DuplicateDetector` ein
+höher-bitratiges Duplikat findet, automatisch das schlechtere ersetzen
+statt nur zu melden". Im Chat bewusst auf **Erkennung + Vorschlag, KEINE
+automatische Ausführung** reduziert — „automatisch ersetzen" hätte als
+einzige vollautomatische, destruktive Library-Mutation im gesamten
+Projekt die überall sonst etablierte Sicherheitsphilosophie durchbrochen
+(jede andere Mutation: Plan → Preview → explizite Bestätigung → Execute,
+nie automatisch). Zusätzlicher Befund während der Charakterisierung:
+`DuplicateDetector` (`services/duplicate/detector.py`, Live-Download-
+Dublettenprüfung) hat **kein** Bitrate-/Qualitäts-Feld — die bereits
+bestehende, tatsächlich bitrate-vergleichende Engine ist eine völlig
+andere, bereits vorhandene Komponente:
+`scripts/resolve_duplicates.py`/`services/duplicate/{classification,
+resolution,execution}.py`
+(`docs/MusicBot_DUPLICATE_RESOLUTION_ARCHITECTURE.md`) — inkl. eigenem
+Safety-Gate (Dauer-/MusicBrainz-/ISRC-Konsistenz, Album-Context-Risiko).
+Diese Phase baut **keine neue Erkennung**, sondern macht die bereits
+gehärtete Engine über Telegram sichtbar.
+
+### 13.1 Umfang
+
+Nur **read-only Dry-Run-Scan pro Artist** über Telegram
+(`services/library_repair/duplicate_runner.py::run_duplicate_scan()` →
+Subprozess `scripts/resolve_duplicates.py --path <Config.LIBRARY_DIR>/<Artist>`,
+kein `--execute`). Zeigt pro gefundener Duplikat-Gruppe: welche Version
+behalten werden sollte (`keep`) und welche als Lösch-Vorschlag markiert
+ist (`remove_proposal`), inkl. Bitrate-Vergleich — oder bei
+`MANUAL_REVIEW`/`KEEP_BOTH` den Grund. **Kein Execute/Delete über
+Telegram** — das tatsächliche Löschen bleibt CLI-only:
+
+```bash
+scripts/library_repair.py --allow-delete --artist <Name> --apply
+```
+
+(dockt bereits an dasselbe `resolve_duplicates.py` an, siehe §6d.)
+
+### 13.2 Architektur-Falle, während der Charakterisierung entdeckt
+
+`scripts/resolve_duplicates.py` kennt zwei komplett verschiedene
+Scan-Roots:
+
+```text
+--artist <Name>   löst IMMER gegen ALLOWED_ROOT auf
+                  (/tmp/musicbot_test/library, reine Testbibliothek) -
+                  NIEMALS gegen die Produktionslibrary, unabhängig von
+                  --execute.
+--path <Pfad>     ist der einzige Weg, die echte Produktionslibrary
+                  (Config.LIBRARY_DIR, dort als "Read-Only-Produktions-
+                  Root" registriert) zu adressieren.
+```
+
+`duplicate_runner.py::run_duplicate_scan()` ruft deshalb **immer**
+`--path <Config.LIBRARY_DIR>/<Artist>`, nie `--artist` — ein leicht zu
+übersehender Stolperstein für jeden künftigen Aufrufer dieses Skripts.
+
+**Zusätzlich entdeckter Dokumentations-Widerspruch (noch offen, nicht
+Teil dieser Phase):** der Datei-Kopf-Kommentar von
+`scripts/resolve_duplicates.py` (`ALLOWED_READONLY_ROOTS`-Definition)
+behauptet „es gibt keinen Codepfad, der Mutation gegen einen
+ALLOWED_READONLY_ROOTS-Eintrag zulässt" — `validate_scan_root()` selbst
+erlaubt das aber sehr wohl, sofern `--execute --confirm-production-execute`
+UND ein konkretes Unterverzeichnis (z. B. `--path .../EinArtist`)
+angegeben werden (vermutlich ein bei „Freigabe Schritt 3" nachgezogenes
+Feature, dessen Kopf-Kommentar seither nicht aktualisiert wurde). Reine
+Doku-Korrektur, siehe `docs/FINDINGS_INDEX.md`.
+
+### 13.3 Telegram
+
+`Hauptmenü → Administration → Bibliothek & Navidrome → 🔁 Duplikat-Check`:
+
+```text
+Artist wählen (index-basierter Picker, wie bei Library-Wartung)
+   ↓
+Scan läuft (Hintergrund-Task, Subprozess, geteilter Repair-Lock — ADR-0004)
+   ↓
+Ergebnis: pro Gruppe Keep/Remove-Vorschlag + Bitrate, oder Manual-Review-Grund
+   ↓
+Hinweis auf den CLI-Befehl für das tatsächliche Löschen
+```
+
+Öffnen des Menüs oder der Artist-Liste löst niemals einen Scan aus - nur
+die explizite Artist-Auswahl. Berechtigung (Admin) wird am tatsächlichen
+Scan-Auslöser (`handle_pick_artist()`) erneut geprüft (Defense-in-Depth,
+identisches Muster wie `doctor:`/`repair:`/`libmaint:`).
+
+**Geteilter Lock (ADR-0004-Prinzip):** `run_duplicate_scan()` nutzt
+denselben globalen Repair-Lock wie Finding-Repair/Library-Wartung/L2/L3 -
+nicht weil der Dry-Run selbst die Library verändert (tut er nicht),
+sondern weil `REPORT_JSON_PATH` eine einzige, feste Datei ist (kein
+`Config.DATA_DIR`-Bezug) und zwei gleichzeitige Scans sich sonst
+gegenseitig die Report-Datei überschreiben könnten.
+
+### 13.4 Tests
+
+| Datei | Deckt ab |
+|---|---|
+| `tests/test_duplicate_runner.py` | `run_duplicate_scan()` — `--path` statt `--artist`, nie `--execute`, Report-Parsing, Exit-Code-3-Safety-Violation, Lock-Sharing/-Release, Timeout/Start-Fehler (17 Tests) |
+| `tests/test_duplicate_check_handler.py` | Telegram-Handler (Start/Artist-Liste/Pick/Ergebnis-Formatierung), Admin-Re-Check je Schritt, Index-basierte Artist-Auswahl, kein Auto-Start, Lock-Konflikt-Anzeige, Safety-Violation-Anzeige, nie ein Delete-Button (20 Tests) |
+| `tests/test_menu_actions_library.py` | Dispatcher-Routing `dupcheck:*` (Admin-Gate, Start/Artists/Pick, unbekannter Callback) |

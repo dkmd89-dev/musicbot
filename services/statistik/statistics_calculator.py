@@ -853,6 +853,156 @@ class StatisticsCalculator:
             "top_genres": top_genres,
         }
 
+    @staticmethod
+    def _time_of_day_bucket(hour: int) -> str:
+        """Ordnet eine Stunde (0-23) einem von vier Tageszeit-Buckets zu
+        (Music DNA v1): Morgens 6-11, Nachmittags 12-17, Abends 18-22,
+        Nachts 23-5. Feste, unkonfigurierbare Grenzen - für v1 bewusst
+        einfach gehalten (Chat-Charakterisierung 2026-09-15)."""
+        if 6 <= hour <= 11:
+            return "morgens"
+        if 12 <= hour <= 17:
+            return "nachmittags"
+        if 18 <= hour <= 22:
+            return "abends"
+        return "nachts"
+
+    def generate_music_dna(
+        self, navidrome_username: str = None, top_n: int = 5,
+    ) -> Optional[Dict[str, Any]]:
+        """Music DNA v1 (Chat-Charakterisierung 2026-09-15): All-Time-
+        Hörprofil aus bereits vorhandenen Play-History-Daten - reine
+        Wiederverwendung von `_parse_history_entries()`/`_identity_key()`/
+        `_split_artists()`, keine neue Statistics-Pipeline.
+
+        Bewusst NICHT Teil von v1 (siehe Charakterisierung):
+          - Erscheinungsjahr/-jahrzehnt: die Play-History speichert nur den
+            Play-Zeitpunkt, nicht das Erscheinungsjahr des Tracks - dafür
+            wäre ein zusätzlicher Metadaten-Join pro Track nötig (eigene,
+            spätere Entscheidung).
+          - Skip-Verhalten: der Poller erkennt nur "läuft gerade" per
+            Intervall-Polling, kein Start/Skip/Ende-Ereignis - mit dem
+            aktuellen Datenmodell nicht messbar.
+          - Favoriten-Abgleich (Navidrome `getStarred2`): diese Klasse
+            macht laut Klassen-Docstring bewusst KEINEN externen API-
+            Zugriff; ein Abgleich müsste in `StatistikService`/im Handler
+            erfolgen und funktioniert dort ohnehin nur für den EINEN in
+            `Config.NAVIDROME_USER` hinterlegten Account, nicht pro
+            `navidrome_username` - für v1 deshalb ganz weggelassen statt
+            eines irreführenden Teil-Ergebnisses.
+          - Rolling-Window (z. B. "letzte 90 Tage"): All-Time only (analog
+            zu `generate_genre_stats()`) - ein neues Rolling-Window wäre
+            exakt das Muster, das `_calendar_period_bounds()` bewusst
+            abgelöst hat (siehe Klassen-Docstring oben).
+
+        Genre-Prozente beziehen sich auf `total_plays_with_genre` (Plays
+        mit mind. einer Genre-Angabe), nicht auf `total_plays` - identische
+        Konvention wie `generate_genre_stats()` (keine "Unbekannt"-
+        Sammelkategorie). Artist-/Tageszeit-/Repeat-Prozente beziehen sich
+        auf `total_plays`. Ein Multi-Genre-Play zählt für jedes Genre
+        einmal, die Summe der Genre-Prozente kann daher > 100 sein
+        (identisch zu `generate_genre_stats()`/`top_artists_split`).
+
+        `repeat_rate_pct`: Anteil der Plays, die auf bereits zuvor
+        gespielte Songs entfallen (`(total_plays - unique_songs) /
+        total_plays`) - 0% bedeutet "jeder Play war ein anderer Song",
+        hohe Werte bedeuten viel Wiederholung derselben Songs.
+
+        `None` nur, wenn für `navidrome_username` überhaupt keine
+        Verlaufsdaten existieren (identische Semantik zu den übrigen
+        generate_*-Methoden dieser Klasse).
+        """
+        if not navidrome_username:
+            self.logger.error(
+                "❌ generate_music_dna ohne navidrome_username aufgerufen. Abbruch."
+            )
+            return None
+
+        history = self.repository.load(navidrome_username)
+        if not history:
+            self.logger.debug(
+                f"📭 Keine Verlaufsdaten für '{navidrome_username}' verfügbar (Music DNA)."
+            )
+            return None
+
+        parsed_entries = self._parse_history_entries(history, navidrome_username)
+        total_plays = len(parsed_entries)
+
+        empty_time_of_day = {"morgens": 0.0, "nachmittags": 0.0, "abends": 0.0, "nachts": 0.0}
+
+        if total_plays == 0:
+            return {
+                "navidrome_username": navidrome_username,
+                "total_plays": 0,
+                "unique_songs": 0,
+                "top_genres_pct": [],
+                "top_artists_pct": [],
+                "time_of_day_pct": empty_time_of_day,
+                "repeat_rate_pct": 0.0,
+            }
+
+        genre_counts: Dict[str, int] = defaultdict(int)
+        total_plays_with_genre = 0
+        artist_split_counts: Dict[str, int] = defaultdict(int)
+        song_counts: Dict[Tuple[str, str], int] = defaultdict(int)
+        time_bucket_counts: Dict[str, int] = defaultdict(int)
+
+        for entry_time, track_info in parsed_entries:
+            genres_raw = track_info.get("genres") or []
+            if isinstance(genres_raw, list):
+                genres_for_play = {
+                    g.strip() for g in genres_raw if isinstance(g, str) and g.strip()
+                }
+                if genres_for_play:
+                    total_plays_with_genre += 1
+                    for genre in genres_for_play:
+                        genre_counts[genre] += 1
+
+            for split_artist in self._split_artists(track_info.get("artist") or "Unbekannt"):
+                artist_split_counts[split_artist] += 1
+
+            song_counts[self._identity_key(track_info, "title")] += 1
+            time_bucket_counts[self._time_of_day_bucket(entry_time.hour)] += 1
+
+        top_genres = sorted(genre_counts.items(), key=lambda x: x[1], reverse=True)[:top_n]
+        top_artists = sorted(
+            artist_split_counts.items(), key=lambda x: x[1], reverse=True
+        )[:top_n]
+
+        top_genres_pct = [
+            (genre, round(count / total_plays_with_genre * 100, 1))
+            for genre, count in top_genres
+        ] if total_plays_with_genre else []
+
+        top_artists_pct = [
+            (artist, round(count / total_plays * 100, 1))
+            for artist, count in top_artists
+        ]
+
+        time_of_day_pct = {
+            bucket: round(time_bucket_counts.get(bucket, 0) / total_plays * 100, 1)
+            for bucket in empty_time_of_day
+        }
+
+        unique_songs = len(song_counts)
+        repeat_rate_pct = round((total_plays - unique_songs) / total_plays * 100, 1)
+
+        result = {
+            "navidrome_username": navidrome_username,
+            "total_plays": total_plays,
+            "unique_songs": unique_songs,
+            "top_genres_pct": top_genres_pct,
+            "top_artists_pct": top_artists_pct,
+            "time_of_day_pct": time_of_day_pct,
+            "repeat_rate_pct": repeat_rate_pct,
+        }
+
+        self.logger.info(
+            f"✅ Music DNA für '{navidrome_username}' generiert: {total_plays} Plays, "
+            f"{unique_songs} eindeutige Songs, Repeat-Rate {repeat_rate_pct}%."
+        )
+        return result
+
     def export_stats_to_json(
         self, navidrome_username: str = None, period: str = "month"
     ) -> Optional[Path]:

@@ -120,6 +120,10 @@ class RichMenuSystem:
         # Library-Wartung ("🧹 Library-Wartung", ARCH-032 Phase 4): von
         # RichMenuHandler injiziert - siehe set_library_maintenance_handler().
         self.library_maintenance_handler = None
+        # Duplikat-Check ("🔁 Duplikat-Check", Chat-Charakterisierung
+        # 2026-09-15): von RichMenuHandler injiziert - siehe
+        # set_duplicate_check_handler().
+        self.duplicate_check_handler = None
 
         # Konfiguration / Session-Verwaltung (ARCH-021/P-4: ausgelagert nach
         # handlers/menu/session.py::SessionManager)
@@ -245,6 +249,12 @@ class RichMenuSystem:
         """Setzt den LibraryMaintenanceHandler ("Library-Wartung", ARCH-032)."""
         self.library_maintenance_handler = handler
         self.logger.info("✅ Library-Wartung-Handler verknüpft")
+
+    def set_duplicate_check_handler(self, handler) -> None:
+        """Setzt den DuplicateCheckHandler ("Duplikat-Check",
+        Chat-Charakterisierung 2026-09-15)."""
+        self.duplicate_check_handler = handler
+        self.logger.info("✅ Duplikat-Check-Handler verknüpft")
 
     # ====== MENÜ-STRUKTUR ======
 
@@ -488,6 +498,32 @@ class RichMenuSystem:
         )
 
     # ====== ENDE LIBRARY-WARTUNG ======
+
+    # ====== DUPLIKAT-CHECK (Chat-Charakterisierung 2026-09-15) ======
+
+    async def _handle_duplicate_check_start(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Einstiegspunkt aus dem Menü-System - Wrapper analog zu
+        _handle_repair_start()."""
+        await library_actions.handle_duplicate_check_start(
+            update, context, self.duplicate_check_handler
+        )
+
+    async def _handle_duplicate_check_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        callback_data: str,
+    ) -> None:
+        """Dispatcher für alle dupcheck:* Callbacks - siehe
+        handlers/menu/actions/library.py::handle_duplicate_check_callback()."""
+        await library_actions.handle_duplicate_check_callback(
+            update, context, callback_data, self.duplicate_check_handler,
+            self._is_admin_check, self.logger,
+        )
+
+    # ====== ENDE DUPLIKAT-CHECK ======
 
     async def _show_handler_not_available(self, update: Update, handler_name: str):
         """Zeigt Fehlermeldung wenn Handler nicht verfügbar"""
@@ -768,6 +804,11 @@ class RichMenuSystem:
             # ── NEU: Library-Wartung (ARCH-032 Phase 4) ────────────────
             if callback_data.startswith("libmaint:"):
                 await self._handle_library_maintenance_callback(update, context, callback_data)
+                return
+
+            # ── NEU: Duplikat-Check (Chat-Charakterisierung 2026-09-15) ─
+            if callback_data.startswith("dupcheck:"):
+                await self._handle_duplicate_check_callback(update, context, callback_data)
                 return
 
             # ── Standard Menü-Callback (menu:...) ────────────────────

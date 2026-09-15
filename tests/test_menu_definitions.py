@@ -39,7 +39,7 @@ class _FakeSystem:
             "_handle_backup_lib_confirm", "_handle_backup_list_bot", "_handle_backup_list_lib",
             "_handle_restart_show", "_handle_maintenance_show", "_handle_reprocessing_show",
             "_handle_doctor_scan", "_handle_review_start", "_handle_repair_start",
-            "_handle_library_maintenance_start",
+            "_handle_library_maintenance_start", "_handle_duplicate_check_start",
             "_handle_navidrome_browse_artists", "_handle_navidrome_browse_albums",
             "_handle_navidrome_browse_genres",
             "_handle_navidrome_search_all", "_handle_navidrome_search_artists",
@@ -135,11 +135,13 @@ class TestStatsMenuStructure:
     def test_stats_top_level_children_are_reviews_rankings_timeline_library(self):
         """MASTER PHASE A (Family Hub Navigation Restructuring):
         family_stats ist kein Kind von 'stats' mehr - siehe
-        TestFamilyHubStructure (jetzt Kind von 'family')."""
+        TestFamilyHubStructure (jetzt Kind von 'family'). Music DNA
+        (Chat-Charakterisierung 2026-09-15) als neues Kind nach
+        stats_timeline ergänzt."""
         registry = self._registry()
         assert [c.id for c in registry["stats"].children] == [
             "stats_reviews", "stats_rankings", "stats_timeline",
-            "stats_library_overview",
+            "stats_music_dna", "stats_library_overview",
         ]
 
     def test_stats_reviews_is_pure_navigation_container(self):

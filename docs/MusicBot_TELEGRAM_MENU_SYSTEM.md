@@ -178,6 +178,7 @@ Hauptmenü
 │   │   ├── Top Songs (stats_top_songs)
 │   │   └── Top Künstler (stats_top_artists)
 │   ├── 📈 Music Timeline (stats_timeline)
+│   ├── 🧬 Music DNA (stats_music_dna, NEU — siehe Abschnitt 15)
 │   └── 📚 Meine Library (stats_library_overview, USER-Level, kein Admin-Gate)
 ├── 👨‍👩‍👧‍👦 Familie                     → siehe Abschnitt 6.13 (Family Hub Navigation Restructuring)
 │   ├── 📊 Familien-Statistik        → siehe Abschnitt 6 (Family Hub, F2) - fachlich UNVERÄNDERT
@@ -205,7 +206,11 @@ Hauptmenü
 │   │   │      „⚪ Akzeptierte Findings"-Einstieg (nur wenn vorhanden) →
 │   │   │      Liste nach Code → Detail mit Grund → „↩️ Reaktivieren" (unaccept
 │   │   │      → OPEN, Stale-Revalidierung). Rein lesend bis zum Reaktivieren-Tap.
-│   │   └── 🛠️ Repair MusicBot (Plan/Preview/Ausführung/Historie/Statistik)
+│   │   ├── 🛠️ Repair MusicBot (Plan/Preview/Ausführung/Historie/Statistik)
+│   │   ├── 🧹 Library-Wartung (ARCH-032: Artist Casing/Legacy Genre/Set Genre)
+│   │   └── 🔁 Duplikat-Check (Chat-Charakterisierung 2026-09-15: höher-
+│   │          bitratige Duplikate pro Artist, read-only Vorschlag, Löschen
+│   │          bleibt CLI-only)
 │   ├── 🤖 Bot & Betrieb
 │   │   ├── Bot neu starten
 │   │   ├── Wartungsmodus
@@ -1895,7 +1900,89 @@ optionale Zeilen, Empty State, keine Separator-/Hörzeit-Zeile). Gezielte
 
 ---
 
-## 15. Verwandte Dokumente
+## 15. Music DNA v1 (Chat-Charakterisierung, 2026-09-15)
+
+Erste Funktion aus der in Chat besprochenen "Music Intelligence"-Richtung
+— bewusst KEINE neue parallele Engine, sondern eine weitere Methode auf
+der bestehenden `StatisticsCalculator`-Klasse (analog zu
+`generate_genre_stats()`/`generate_year_stats()`), rein lesend über
+bereits vorhandene Play-History-Daten. Neuer Menüpunkt
+`stats_music_dna` unter „📊 Statistiken", nach „📈 Music Timeline".
+
+### 15.1 Umfang v1
+
+All-Time-Hörprofil (kein Kalenderzeitraum, kein Rolling-Window - siehe
+`generate_music_dna()`-Docstring in
+`services/statistik/statistics_calculator.py`):
+
+- **Top-Genres in %** — bezogen auf Plays mit Genre-Angabe (identische
+  Konvention wie `generate_genre_stats()`, keine „Unbekannt"-Kategorie).
+- **Top-Artists in %** — `_split_artists()`-basiert (Combo-Plays wie
+  "A • B" zählen für beide Artists), bezogen auf `total_plays`.
+- **Tageszeit-Profil** — Morgens (6–11 Uhr) / Nachmittags (12–17) /
+  Abends (18–22) / Nachts (23–5), aus den ohnehin gespeicherten
+  Play-Timestamps.
+- **Repeat-Rate** — Anteil der Plays, die auf bereits zuvor gespielte
+  Songs entfallen (`(total_plays - unique_songs) / total_plays`).
+
+### 15.2 Bewusst NICHT Teil von v1
+
+Während der Charakterisierung im Chat vor der Implementierung geprüft
+und explizit zurückgestellt:
+
+- **Erscheinungsjahr/-jahrzehnt** — die Play-History speichert nur den
+  Play-Zeitpunkt, nicht das Erscheinungsjahr des Tracks. Bräuchte einen
+  zusätzlichen Metadaten-Join pro Track — eigene, spätere Entscheidung.
+- **Skip-Verhalten** — `PlayHistoryPoller` erkennt nur „läuft gerade"
+  per Intervall-Polling, kein Start-/Skip-/Ende-Ereignis. Mit dem
+  aktuellen Datenmodell nicht messbar.
+- **Favoriten-Abgleich** (Navidrome `getStarred2`) — `StatisticsCalculator`
+  macht laut Klassen-Docstring bewusst keinen externen API-Zugriff;
+  `getStarred2` läuft außerdem nur gegen den EINEN in
+  `Config.NAVIDROME_USER` hinterlegten Account, nicht pro
+  `navidrome_username` — bei mehreren Play-History-Usern (Family Hub)
+  wäre ein Abgleich pro Person ohnehin nicht korrekt möglich. Für v1
+  ganz weggelassen statt eines irreführenden Teil-Ergebnisses.
+
+### 15.3 Architektur
+
+```text
+services/statistik/statistics_calculator.py
+    StatisticsCalculator.generate_music_dna()   NEU, reine Wiederverwendung
+                                                 von _parse_history_entries()/
+                                                 _identity_key()/_split_artists()
+
+services/statistik_service.py
+    StatistikService.generate_music_dna()       NEU, dünner Facade-Durchgriff
+
+handlers/mugge_statistik_handler.py
+    StatistikHandler.handle_music_dna()         NEU, ARCH-029 nav_markup-Muster
+                                                 (wie handle_top_artists())
+
+handlers/menu/actions/stats.py
+    handle_music_dna_wrapper()                  NEU
+
+handlers/menu/rich_menu_handler.py
+    _handle_music_dna_wrapper() + Registrierung "stats_music_dna" NEU
+
+handlers/menu/definitions.py
+    MenuItem "stats_music_dna" (🧬 Music DNA)   NEU, Kind von "stats"
+```
+
+### 15.4 Tests
+
+`tests/test_statistics_calculator.py::TestGenerateMusicDna` (14 Tests:
+Genre-/Artist-Prozente, Tageszeit-Bucket-Grenzen, Repeat-Rate,
+Multi-Genre-Summe > 100%, Determinismus), `tests/test_statistik_service.py::TestGenerateMusicDna`
+(4 Tests, Facade-Delegation), `tests/test_mugge_statistik_handler.py::TestHandleMusicDna`
+(6 Tests, Presentation/Fehlerfälle/nav_markup-Passthrough),
+`tests/test_menu_definitions.py` (Struktur-Assertion um `stats_music_dna`
+ergänzt). Thematische Suite (`-k "statistik or statistics or menu or stats"`,
+1127 Tests) grün, 0 Regressionen.
+
+---
+
+## 16. Verwandte Dokumente
 
 - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — Details zu allen vier
   live gefundenen Bugs dieser Phase sowie zum inzwischen geschlossenen

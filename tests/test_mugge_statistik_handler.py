@@ -575,6 +575,143 @@ class TestHandleGenreStats:
         assert keyboard[0][0].callback_data == "menu:navidrome"
 
 
+def _dna(**over):
+    base = {
+        "navidrome_username": "robin",
+        "total_plays": 10,
+        "unique_songs": 6,
+        "top_genres_pct": [("Hip-Hop", 66.7), ("Pop", 33.3)],
+        "top_artists_pct": [("Clueso", 40.0), ("Bausa", 20.0)],
+        "time_of_day_pct": {"morgens": 10.0, "nachmittags": 20.0, "abends": 50.0, "nachts": 20.0},
+        "repeat_rate_pct": 40.0,
+    }
+    base.update(over)
+    return base
+
+
+class TestHandleMusicDna:
+    """Music DNA v1: reine Presentation über
+    StatistikService.generate_music_dna() - identisches Testmuster wie
+    TestHandleGenreStats oben."""
+
+    def test_no_data_shows_no_data_message(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        handler.statistik_service.generate_music_dna.return_value = None
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_music_dna(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "Keine Daten" in sent_text
+
+    def test_zero_plays_shows_friendly_message(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        handler.statistik_service.generate_music_dna.return_value = _dna(
+            total_plays=0, unique_songs=0, top_genres_pct=[], top_artists_pct=[],
+            time_of_day_pct={"morgens": 0.0, "nachmittags": 0.0, "abends": 0.0, "nachts": 0.0},
+            repeat_rate_pct=0.0,
+        )
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_music_dna(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "Noch keine Wiedergaben" in sent_text
+
+    def test_profile_contains_all_dimensions(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        handler.statistik_service.generate_music_dna.return_value = _dna()
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_music_dna(update, context))
+
+        msg_mock.edit_text.assert_called_once()
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "Hip-Hop" in sent_text and "66.7%" in sent_text
+        assert "Clueso" in sent_text and "40.0%" in sent_text
+        assert "Morgens" in sent_text and "10.0%" in sent_text
+        assert "Abends" in sent_text and "50.0%" in sent_text
+        assert "Repeat-Rate" in sent_text and "40.0%" in sent_text
+        assert "10" in sent_text  # total_plays
+        assert "6" in sent_text  # unique_songs
+
+    def test_no_genre_data_omits_genre_section_without_crashing(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        handler.statistik_service.generate_music_dna.return_value = _dna(top_genres_pct=[])
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_music_dna(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "🎤 Genres" not in sent_text
+
+    def test_reply_markup_passed_through_arch029_style(self, tmp_path):
+        """ARCH-029: Music DNA ist (anders als genre_stats) ein echtes
+        MenuItem und nutzt daher den nav_markup-Passthrough statt eines
+        eigenen Zurück-Buttons."""
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        handler.statistik_service.generate_music_dna.return_value = _dna()
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+        fake_markup = Mock()
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_music_dna(update, context, reply_markup=fake_markup))
+
+        _, kwargs = msg_mock.edit_text.call_args
+        assert kwargs["reply_markup"] is fake_markup
+
+    def test_exception_shows_error_message(self, tmp_path):
+        handler = _make_handler()
+        handler.user_data_file = tmp_path / "does_not_exist.json"
+        handler.statistik_service.generate_music_dna.side_effect = RuntimeError("boom")
+
+        update = make_update(111)
+        context = Mock()
+        msg_mock = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=msg_mock)
+
+        with patch("handlers.mugge_statistik_handler.get_config") as mock_get_config:
+            mock_get_config.return_value.NAVIDROME_USER = "robin"
+            asyncio.run(handler.handle_music_dna(update, context))
+
+        sent_text = msg_mock.edit_text.call_args[0][0]
+        assert "Fehler" in sent_text and "boom" in sent_text
+
+
 class TestHandleLastPlayed:
     def test_no_history_shows_appropriate_message(self, tmp_path):
         handler = _make_handler()

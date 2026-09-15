@@ -1330,3 +1330,197 @@ class TestTimelineConsistencyWithPeriodReview:
 
         # Clueso: 2 Solo-Plays + 1 Combo-Play = 3; makko: 1 Combo + 1 Solo = 2.
         assert timeline["today"]["top_artist"] == ("Clueso", 3)
+
+
+class TestGenerateMusicDna:
+    """Music DNA v1 (Chat-Charakterisierung 2026-09-15): All-Time-
+    Hörprofil aus Genres/Artists/Tageszeit/Repeat-Rate - reine
+    Wiederverwendung bestehender Bausteine, kein Kalenderzeitraum, kein
+    externer API-Zugriff (siehe generate_music_dna()-Docstring)."""
+
+    def test_no_username_returns_none(self, tmp_path):
+        calc, _ = make_calculator(tmp_path)
+        assert calc.generate_music_dna(navidrome_username=None) is None
+
+    def test_no_history_returns_none(self, tmp_path):
+        calc, _ = make_calculator(tmp_path)
+        assert calc.generate_music_dna(navidrome_username="alice") is None
+
+    def test_history_with_only_unparseable_entries_returns_zeroed_result(self, tmp_path):
+        """History existiert (nicht None), aber kein Eintrag lässt sich
+        parsen (kaputter Timestamp) -> gültiges Ergebnis mit total_plays=0,
+        analog zum None-nur-bei-komplett-fehlender-History-Vertrag."""
+        calc, repo = make_calculator(tmp_path)
+        repo.save([{"timestamp": "not-a-date", "tracks": [{"title": "X", "artist": "Y"}]}], "alice")
+
+        result = calc.generate_music_dna(navidrome_username="alice")
+
+        assert result is not None
+        assert result["total_plays"] == 0
+        assert result["unique_songs"] == 0
+        assert result["top_genres_pct"] == []
+        assert result["top_artists_pct"] == []
+        assert result["repeat_rate_pct"] == 0.0
+        assert result["time_of_day_pct"] == {
+            "morgens": 0.0, "nachmittags": 0.0, "abends": 0.0, "nachts": 0.0,
+        }
+
+    def test_genre_percentages_relative_to_plays_with_genre_not_total_plays(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        history = [
+            _entry_with_genres("A", "Song 1", ["Hip-Hop"], at=now - timedelta(hours=1)),
+            _entry_with_genres("A", "Song 2", ["Hip-Hop"], at=now - timedelta(hours=2)),
+            _entry_with_genres("B", "Song 3", ["Pop"], at=now - timedelta(hours=3)),
+            _entry("C", "Song 4", at=now - timedelta(hours=4)),  # kein Genre
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_music_dna(navidrome_username="alice")
+
+        # total_plays=4, aber nur 3 Plays mit Genre-Angabe -> Nenner ist 3.
+        assert result["total_plays"] == 4
+        assert dict(result["top_genres_pct"]) == {"Hip-Hop": 66.7, "Pop": 33.3}
+
+    def test_artist_percentages_relative_to_total_plays(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        history = [
+            _entry("A", "Song 1", at=now - timedelta(hours=1)),
+            _entry("A", "Song 2", at=now - timedelta(hours=2)),
+            _entry("A", "Song 3", at=now - timedelta(hours=3)),
+            _entry("B", "Song 4", at=now - timedelta(hours=4)),
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_music_dna(navidrome_username="alice")
+
+        assert dict(result["top_artists_pct"]) == {"A": 75.0, "B": 25.0}
+
+    def test_split_artists_used_for_artist_percentages(self, tmp_path):
+        """Ein Combo-Play "A • B" zaehlt fuer BEIDE Artists (analog
+        top_artists_split in generate_stats()) - die Summe der Artist-
+        Prozente kann daher > 100 sein."""
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        history = [
+            _entry("A • B", "Song 1", at=now),
+            _entry("A", "Song 2", at=now - timedelta(hours=1)),
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_music_dna(navidrome_username="alice")
+
+        assert dict(result["top_artists_pct"]) == {"A": 100.0, "B": 50.0}
+
+    def test_time_of_day_buckets(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        base = datetime(2026, 6, 15)
+        history = [
+            _entry("A", "Morgens", at=base.replace(hour=8)),
+            _entry("A", "Nachmittags", at=base.replace(hour=14)),
+            _entry("A", "Abends", at=base.replace(hour=20)),
+            _entry("A", "Nachts", at=base.replace(hour=2)),
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_music_dna(navidrome_username="alice")
+
+        assert result["time_of_day_pct"] == {
+            "morgens": 25.0, "nachmittags": 25.0, "abends": 25.0, "nachts": 25.0,
+        }
+
+    def test_time_of_day_bucket_boundaries(self, tmp_path):
+        """Hour 6/11/12/17/18/22/23/5 - direkte Grenzwertpruefung der
+        vier Buckets (Morgens 6-11, Nachmittags 12-17, Abends 18-22,
+        Nachts 23-5)."""
+        calc = StatisticsCalculator.__new__(StatisticsCalculator)
+        assert calc._time_of_day_bucket(6) == "morgens"
+        assert calc._time_of_day_bucket(11) == "morgens"
+        assert calc._time_of_day_bucket(12) == "nachmittags"
+        assert calc._time_of_day_bucket(17) == "nachmittags"
+        assert calc._time_of_day_bucket(18) == "abends"
+        assert calc._time_of_day_bucket(22) == "abends"
+        assert calc._time_of_day_bucket(23) == "nachts"
+        assert calc._time_of_day_bucket(5) == "nachts"
+
+    def test_repeat_rate_pct(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        history = [
+            _entry("A", "Song 1", at=now - timedelta(hours=1)),
+            _entry("A", "Song 1", at=now - timedelta(hours=2)),
+            _entry("A", "Song 1", at=now - timedelta(hours=3)),
+            _entry("A", "Song 2", at=now - timedelta(hours=4)),
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_music_dna(navidrome_username="alice")
+
+        # 4 Plays, 2 eindeutige Songs -> (4-2)/4 = 50%.
+        assert result["unique_songs"] == 2
+        assert result["repeat_rate_pct"] == 50.0
+
+    def test_repeat_rate_zero_when_every_play_is_a_different_song(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        history = [
+            _entry("A", "Song 1", at=now - timedelta(hours=1)),
+            _entry("A", "Song 2", at=now - timedelta(hours=2)),
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_music_dna(navidrome_username="alice")
+
+        assert result["repeat_rate_pct"] == 0.0
+
+    def test_top_n_caps_genres_and_artists(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        history = [
+            _entry_with_genres(f"Artist{i}", f"Song{i}", [f"Genre{i}"], at=now - timedelta(hours=i))
+            for i in range(8)
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_music_dna(navidrome_username="alice", top_n=3)
+
+        assert len(result["top_genres_pct"]) == 3
+        assert len(result["top_artists_pct"]) == 3
+
+    def test_multi_genre_play_percentages_can_exceed_100(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        history = [
+            _entry_with_genres(
+                "A", "Song 1", ["Hip Hop", "Deutschrap"], at=datetime(2026, 6, 15),
+            ),
+        ]
+        repo.save(history, "alice")
+
+        result = calc.generate_music_dna(navidrome_username="alice")
+
+        assert dict(result["top_genres_pct"]) == {"Hip Hop": 100.0, "Deutschrap": 100.0}
+
+    def test_no_genre_data_at_all_returns_empty_genre_list(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        repo.save([_entry("A", "Song 1", at=datetime(2026, 6, 15))], "alice")
+
+        result = calc.generate_music_dna(navidrome_username="alice")
+
+        assert result["top_genres_pct"] == []
+        # Artist-/Tageszeit-/Repeat-Berechnung bleibt davon unberührt.
+        assert dict(result["top_artists_pct"]) == {"A": 100.0}
+
+    def test_result_deterministic_across_calls(self, tmp_path):
+        calc, repo = make_calculator(tmp_path)
+        now = datetime(2026, 6, 15, 12, 0, 0)
+        history = [
+            _entry_with_genres("A", "Song 1", ["Pop"], at=now),
+            _entry("B", "Song 2", at=now - timedelta(hours=1)),
+        ]
+        repo.save(history, "alice")
+
+        a = calc.generate_music_dna(navidrome_username="alice")
+        b = calc.generate_music_dna(navidrome_username="alice")
+
+        assert a == b

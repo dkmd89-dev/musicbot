@@ -27,9 +27,11 @@ READ-ONLY (Prompt Abschnitt 2): der Scanner veraendert die Library unter
 keinen Umstaenden — kein Umbenennen, Verschieben, Loeschen, Tag-/Cover-/
 Lyrics-Schreiben, kein Re-Encoding. Es gibt bewusst KEINE Mutations-Flags
 (--fix/--repair/--delete/--execute/--apply werden mit Fehler abgelehnt).
-Der einzige Schreibzugriff sind die vier Dateien ausserhalb der Library
-(JSON/Text/Markdown-Summary/Findings-Registry). tests/test_library_health_readonly_safety.py
-weist das technisch nach (SHA256/mtime/size/Pfade vorher == nachher,
+Der einzige Schreibzugriff sind fünf Dateien ausserhalb der Library
+(JSON/Text/Markdown-Summary/Findings-Registry/Score-Historie, siehe
+services/library_health/score_history.py, Chat-Charakterisierung
+2026-09-15). tests/test_library_health_readonly_safety.py weist das
+technisch nach (SHA256/mtime/size/Pfade vorher == nachher,
 Writer-Import-Graph-Check).
 """
 
@@ -53,6 +55,7 @@ from services.library_health.findings import (  # noqa: E402
 )
 from services.library_health.report import render_summary_markdown, render_text  # noqa: E402
 from services.library_health.scanner import run_scan  # noqa: E402
+from services.library_health.score_history import append_score_history  # noqa: E402
 
 _FORBIDDEN_FLAGS = ("--fix", "--repair", "--delete", "--execute", "--apply")
 
@@ -88,6 +91,12 @@ def _build_parser() -> argparse.ArgumentParser:
              "Bereits geprüfte Befunde (RESOLVED/FALSE_POSITIVE) tauchen "
              "dadurch in Summary/Priorität nicht erneut als offen auf, siehe "
              "scripts/library_health_review.py.",
+    )
+    parser.add_argument(
+        "--score-history", dest="score_history_path", type=str, default=None,
+        help="Zielpfad der Health-Score-Verlaufsdatei (append-only JSONL, "
+             "Default: <BASE_DIR>/cache/data/library_health_score_history.jsonl, "
+             "siehe services/library_health/score_history.py).",
     )
     parser.add_argument(
         "--verbose", action="store_true",
@@ -154,6 +163,9 @@ def main(argv=None) -> int:
         if args.findings_registry_path
         else json_path.parent / FINDINGS_DEFAULT_FILENAME
     )
+    score_history_path_arg = (
+        Path(args.score_history_path) if args.score_history_path else None
+    )
 
     logger = get_module_logger("library_health")
 
@@ -203,6 +215,16 @@ def main(argv=None) -> int:
     _write_atomic(json_path, json.dumps(report, indent=2, ensure_ascii=False))
     _write_atomic(text_path, text)
     _write_atomic(summary_path, summary)
+
+    # Health-Score-Verlauf (Chat-Charakterisierung 2026-09-15): fünfte,
+    # rein additive Ausgabedatei - ein fehlgeschlagener History-Append
+    # (z. B. volle Disk) darf einen ansonsten erfolgreichen Scan nicht
+    # zum Fehlschlag machen, deshalb bewusst separat abgefangen statt
+    # den Lauf abzubrechen.
+    try:
+        append_score_history(report, path=score_history_path_arg)
+    except OSError as e:
+        logger.warning(f"⚠️ Score-Historie konnte nicht geschrieben werden: {e}")
 
     print(text)
     print(f"\n📄 JSON:     {json_path}")

@@ -978,6 +978,98 @@ class StatistikHandler:
                 exc_info=True,
             )
 
+    async def handle_music_dna(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_markup: Optional[InlineKeyboardMarkup] = None,
+    ):
+        """Music DNA v1 (Chat-Charakterisierung 2026-09-15): All-Time-
+        Hörprofil (Genres/Artists/Tageszeit/Repeat-Rate in %). Reine
+        Wiederverwendung von StatistikService.generate_music_dna() -
+        siehe dort für die vollständige Semantik inkl. der bewusst nicht
+        enthaltenen Dimensionen (Jahrzehnt, Skip-Rate, Favoriten-Abgleich).
+
+        ARCH-029: `reply_markup` additiv/optional, identisches Muster wie
+        handle_top_artists()/handle_music_timeline()."""
+        self.logger.info(f"{EMOJI['statistics']} 🧬 Music DNA angefragt")
+
+        nav_user = self._get_navidrome_user_for_request(update)
+        reply_target, msg = await self._send_processing_message(
+            update, "Erstelle Music DNA", nav_user
+        )
+
+        if not reply_target or not msg:
+            return
+
+        try:
+            dna = self.statistik_service.generate_music_dna(navidrome_username=nav_user)
+            if not dna:
+                await msg.edit_text(
+                    f"{EMOJI['warning']} ⚠️ Keine Daten für '{self._escape_text(nav_user)}' verfügbar.",
+                    reply_markup=reply_markup,
+                )
+                self.logger.warning(
+                    f"{EMOJI['warning']} ⚠️ Keine Music-DNA-Daten (User: {nav_user})"
+                )
+                return
+
+            header = f"🧬 Music DNA — {self._escape_text(nav_user)}"
+
+            if dna["total_plays"] == 0:
+                await msg.edit_text(
+                    f"{header}\n\nNoch keine Wiedergaben vorhanden.",
+                    reply_markup=reply_markup,
+                )
+                self.logger.info(f"ℹ️ Music DNA: keine Plays (User: {nav_user})")
+                return
+
+            lines = [header, ""]
+
+            if dna["top_genres_pct"]:
+                lines.append("🎤 Genres")
+                for genre, pct in dna["top_genres_pct"]:
+                    lines.append(f"  {self._escape_text(genre)} · {pct}%")
+                lines.append("")
+
+            if dna["top_artists_pct"]:
+                lines.append("🔥 Heavy Rotation")
+                for artist, pct in dna["top_artists_pct"]:
+                    lines.append(f"  {self._escape_text(artist)} · {pct}%")
+                lines.append("")
+
+            tod = dna["time_of_day_pct"]
+            lines.append("🕐 Tageszeit")
+            lines.append(f"  🌅 Morgens · {tod['morgens']}%")
+            lines.append(f"  ☀️ Nachmittags · {tod['nachmittags']}%")
+            lines.append(f"  🌆 Abends · {tod['abends']}%")
+            lines.append(f"  🌙 Nachts · {tod['nachts']}%")
+            lines.append("")
+
+            lines.append(f"🔁 Repeat-Rate · {dna['repeat_rate_pct']}%")
+            lines.append("")
+            lines.append(
+                f"{EMOJI['statistics']} {self._format_plays(dna['total_plays'])} "
+                f"· {dna['unique_songs']} eindeutige Songs"
+            )
+            response = "\n".join(lines)
+
+            await msg.edit_text(response, reply_markup=reply_markup)
+            self.logger.info(
+                f"{EMOJI['success']} ✅ Music DNA erstellt (User: {nav_user}, "
+                f"{dna['total_plays']} Plays)"
+            )
+
+        except Exception as e:
+            await msg.edit_text(
+                f"{EMOJI['error']} ❌ Fehler: {self._escape_text(str(e))}",
+                reply_markup=reply_markup,
+            )
+            self.logger.error(
+                f"{EMOJI['error']} ❌ Fehler in handle_music_dna: {str(e)}",
+                exc_info=True,
+            )
+
     async def handle_last_played(
         self,
         update: Update,

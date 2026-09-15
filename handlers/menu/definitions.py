@@ -174,6 +174,15 @@ def build_menu_tree(system) -> MenuItem:
     )
     stats_menu.add_child(
         MenuItem(
+            id="stats_music_dna",
+            title="Music DNA",
+            emoji="🧬",
+            description="Dein persönliches Hörprofil",
+            is_action=True,
+        )
+    )
+    stats_menu.add_child(
+        MenuItem(
             id="stats_library_overview",
             title="Meine Library",
             emoji="📚",
@@ -757,6 +766,22 @@ def build_menu_tree(system) -> MenuItem:
         )
     )
     # ====== ENDE LIBRARY-WARTUNG ======
+
+    # ====== NEU: DUPLIKAT-CHECK (Chat-Charakterisierung 2026-09-15) ======
+    admin_group_library.add_child(
+        MenuItem(
+            id="admin_duplicate_check",
+            title="Duplikat-Check",
+            emoji="🔁",
+            access_level=AccessLevel.ADMIN,
+            callback_data="dupcheck:start",
+            handler=system._handle_duplicate_check_start,
+            is_action=True,
+            description="Höher-bitratige Duplikate pro Artist finden "
+                        "(read-only, Löschen bleibt CLI-only)",
+        )
+    )
+    # ====== ENDE DUPLIKAT-CHECK ======
 
     # Admin-Menü-Reorg: Gruppen-Container an Administration haengen -
     # Reihenfolge hier = Anzeige-Reihenfolge im Menü (siehe

@@ -52,6 +52,7 @@ from handlers.library_doctor_handler import LibraryDoctorHandler
 from handlers.library_health_review_handler import LibraryHealthReviewHandler
 from handlers.repair_musicbot_handler import RepairMusicBotHandler
 from handlers.library_maintenance_handler import LibraryMaintenanceHandler
+from handlers.duplicate_check_handler import DuplicateCheckHandler
 from handlers.mugge_statistik_handler import StatistikHandler
 from handlers.family_stats_handler import FamilyStatsHandler
 from handlers.family_chat_handler import FamilyChatHandler
@@ -134,6 +135,7 @@ class RichMenuHandler:
         self.review_handler: Optional[LibraryHealthReviewHandler] = None
         self.repair_handler: Optional[RepairMusicBotHandler] = None
         self.library_maintenance_handler: Optional[LibraryMaintenanceHandler] = None
+        self.duplicate_check_handler: Optional[DuplicateCheckHandler] = None
 
         # Download-Control-Center 2026-09-02: EINE prozessweite Registry,
         # ueber die gesamte Bot-Laufzeit auf diesem (im Gegensatz zu
@@ -439,6 +441,20 @@ class RichMenuHandler:
             self.logger.error(f"❌ Library-Wartung-Handler Fehler: {e}", exc_info=True)
             self.library_maintenance_handler = None
 
+        # 17. Duplikat-Check-Handler (Chat-Charakterisierung 2026-09-15) -
+        # Telegram-Oberflaeche fuer services/library_repair/duplicate_runner.py
+        # (Subprozess-Wrapper um scripts/resolve_duplicates.py). Bewusst
+        # NUR read-only Scan/Vorschlag - kein Execute/Delete ueber Telegram.
+        try:
+            self.duplicate_check_handler = DuplicateCheckHandler(
+                self.config, self.logger_factory
+            )
+            self.duplicate_check_handler.error_handler = self.error_handler
+            self.logger.info("✅ DuplicateCheckHandler initialisiert")
+        except Exception as e:
+            self.logger.error(f"❌ Duplikat-Check-Handler Fehler: {e}", exc_info=True)
+            self.duplicate_check_handler = None
+
         self._record_initial_handler_statuses()
 
         # ── Menüsystem initialisieren und Handler verknüpfen ──────────────────
@@ -482,6 +498,8 @@ class RichMenuHandler:
             self.menu_system.set_repair_handler(self.repair_handler)
         if self.library_maintenance_handler:
             self.menu_system.set_library_maintenance_handler(self.library_maintenance_handler)
+        if self.duplicate_check_handler:
+            self.menu_system.set_duplicate_check_handler(self.duplicate_check_handler)
 
         # Handler registrieren
         self._register_download_handlers()
@@ -529,6 +547,7 @@ class RichMenuHandler:
             ("review_handler", self.review_handler),
             ("repair_handler", self.repair_handler),
             ("library_maintenance_handler", self.library_maintenance_handler),
+            ("duplicate_check_handler", self.duplicate_check_handler),
         ]:
             self.status_handler.bot_tracker.update_handler_status(
                 handler_name, "active" if handler_instance else "error"
@@ -565,6 +584,9 @@ class RichMenuHandler:
         )
         self.menu_system.register_handler(
             "stats_timeline", self._handle_timeline_stats_wrapper
+        )
+        self.menu_system.register_handler(
+            "stats_music_dna", self._handle_music_dna_wrapper
         )
         self.logger.debug("📊 Statistik-Handler registriert")
 
@@ -769,6 +791,11 @@ class RichMenuHandler:
             # stillschweigend. Bewusst "libmaint:" statt "maint:" (bereits
             # durch den Bot-Wartungsmodus belegt).
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^libmaint:"),
+            # Duplikat-Check (Chat-Charakterisierung 2026-09-15): derselbe
+            # "Bug B"-Fall wie bei maint:/dl:/reprocess:/doctor:/review:/
+            # repair:/libmaint: oben - ohne diesen Handler verpuffte jeder
+            # dupcheck:-Callback stillschweigend.
+            CallbackQueryHandler(self.menu_system.handle_callback, pattern="^dupcheck:"),
             # Allgemeines Menü zuletzt
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^menu:"),
             # URL Handler (YouTube-URLs)
@@ -856,6 +883,14 @@ class RichMenuHandler:
         await stats_actions.handle_timeline_stats_wrapper(
             update, context, self.stats_handler, self.logger,
             nav_markup=self.menu_system.get_result_navigation("stats_timeline"),
+        )
+
+    async def _handle_music_dna_wrapper(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        await stats_actions.handle_music_dna_wrapper(
+            update, context, self.stats_handler, self.logger,
+            nav_markup=self.menu_system.get_result_navigation("stats_music_dna"),
         )
 
     # ====== ADMIN WRAPPER ======

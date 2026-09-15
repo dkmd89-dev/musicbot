@@ -126,6 +126,7 @@ async def handle_doctor_callback(
                                      den Menüpunkt direkt erreichbar)
       doctor:apply_safe           → Bestätigung vor SAFE_AUTOMATIC-Apply
       doctor:apply_safe_confirm   → SAFE_AUTOMATIC-Apply tatsächlich starten
+      doctor:score_history        → Health-Score-Verlauf anzeigen (read-only)
 
     Eigener Admin-Check hier (Defense-in-Depth, analog zu maint:/
     reprocess: - callback_data ist frei sendbar, siehe SEC-003).
@@ -155,6 +156,10 @@ async def handle_doctor_callback(
 
     if callback_data == "doctor:apply_safe_confirm":
         await doctor_handler.handle_apply_safe_confirmed(update, context)
+        return
+
+    if callback_data == "doctor:score_history":
+        await doctor_handler.handle_score_history(update, context)
         return
 
     await query.answer("⚠️ Unbekannter Doctor-Callback")
@@ -503,3 +508,72 @@ async def handle_l23rep_callback(
         return
 
     await query.answer("⚠️ Unbekannter L2/L3-Repair-Callback")
+
+
+# ====== DUPLIKAT-CHECK (Chat-Charakterisierung 2026-09-15) ======
+
+
+async def handle_duplicate_check_start(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, duplicate_check_handler
+) -> None:
+    """Einstiegspunkt aus dem Menü-System - Wrapper analog zu
+    handle_repair_start()."""
+    if duplicate_check_handler:
+        await duplicate_check_handler.handle_start(update, context)
+    else:
+        await show_handler_not_available(update, "Duplikat-Check-Handler")
+
+
+async def handle_duplicate_check_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    callback_data: str,
+    duplicate_check_handler,
+    is_admin_check,
+    logger,
+) -> None:
+    """
+    Dispatcher für alle dupcheck:* Callbacks.
+
+    Routing (siehe handlers/duplicate_check_handler.py):
+      dupcheck:start        → Startseite
+      dupcheck:artists       → Artist-Liste (Index-Picker)
+      dupcheck:pick:<idx>    → Scan für diesen Artist starten (read-only)
+
+    Eigener Admin-Check hier (Defense-in-Depth, analog zu repair:/
+    libmaint:/doctor:/review: - callback_data ist frei sendbar, siehe
+    SEC-003).
+    """
+    query = update.callback_query
+    user_id = update.effective_user.id
+
+    if not is_admin_check(user_id):
+        logger.warning(
+            f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte "
+            f"Duplikat-Check-Callback: {callback_data}"
+        )
+        await query.answer("⛔ Keine Berechtigung", show_alert=True)
+        return
+
+    if not duplicate_check_handler:
+        await query.answer("⚠️ Duplikat-Check-Handler nicht verfügbar", show_alert=True)
+        return
+
+    if callback_data == "dupcheck:start":
+        await duplicate_check_handler.handle_start(update, context)
+        return
+    if callback_data == "dupcheck:artists":
+        await duplicate_check_handler.handle_artist_list(update, context)
+        return
+
+    parts = callback_data.split(":")
+    if len(parts) == 3 and parts[1] == "pick":
+        try:
+            idx = int(parts[2])
+        except ValueError:
+            await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+            return
+        await duplicate_check_handler.handle_pick_artist(update, context, idx)
+        return
+
+    await query.answer("⚠️ Unbekannter Duplikat-Check-Callback")

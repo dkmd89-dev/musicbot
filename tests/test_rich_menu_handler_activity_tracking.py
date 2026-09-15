@@ -195,7 +195,8 @@ class TestRecordInitialHandlerStatuses:
         assert calls["repair_handler"] == "error"  # nicht explizit gesetzt -> Default None
         assert calls["family_challenge_handler"] == "error"  # nicht explizit gesetzt -> Default None
         assert calls["library_maintenance_handler"] == "error"  # nicht explizit gesetzt -> Default None (ARCH-032)
-        assert len(calls) == 18
+        assert calls["duplicate_check_handler"] == "error"  # nicht explizit gesetzt -> Default None (Chat-Charakterisierung 2026-09-15)
+        assert len(calls) == 19
 
     def test_missing_status_handler_is_noop(self, tmp_path):
         handler = _make_handler(tmp_path)

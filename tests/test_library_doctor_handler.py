@@ -144,6 +144,7 @@ class TestFormatScanResult:
         assert "98.0" in text
         buttons = [btn.text for row in keyboard.inline_keyboard for btn in row]
         assert any("SAFE_AUTOMATIC" in b for b in buttons)
+        assert any("Score-Verlauf" in b for b in buttons)
 
     def test_info_severity_codes_use_human_description_not_raw_code(self, handler):
         """GENRE_DELIMITER_INCONSISTENT/LYRICS_MISSING sind beides INFO -
@@ -418,3 +419,96 @@ class TestShortIssueLabel:
         assert result.endswith("…")
         assert len(result) <= 21
         assert not result[:-1].endswith(" ")
+
+
+class TestHandleScoreHistory:
+    """Health-Score-Verlauf (Chat-Charakterisierung 2026-09-15): reiner,
+    synchroner Datei-Read - kein Subprozess, kein Hintergrund-Task."""
+
+    def test_non_admin_rejected(self, handler):
+        update = _mock_update(OTHER_ID)
+        run_async(handler.handle_score_history(update, _mock_context()))
+        update.callback_query.answer.assert_called_with("⛔ Keine Berechtigung", show_alert=True)
+        update.callback_query.edit_message_text.assert_not_called()
+
+    def test_admin_shows_formatted_history(self, handler):
+        update = _mock_update(ADMIN_ID)
+        with patch(
+            "handlers.library_doctor_handler.read_score_history",
+            return_value=[
+                {"timestamp": "2026-09-01T10:00:00", "score": 70.0},
+                {"timestamp": "2026-09-10T10:00:00", "score": 80.0},
+            ],
+        ):
+            run_async(handler.handle_score_history(update, _mock_context()))
+
+        text = last_edit_text(update)
+        assert "70.0" in text and "80.0" in text
+        assert "Score-Verlauf" in text
+
+    def test_reads_with_configured_display_limit(self, handler):
+        update = _mock_update(ADMIN_ID)
+        with patch(
+            "handlers.library_doctor_handler.read_score_history", return_value=[],
+        ) as mock_read:
+            run_async(handler.handle_score_history(update, _mock_context()))
+        mock_read.assert_called_once()
+        assert mock_read.call_args.kwargs.get("limit") or mock_read.call_args.args
+
+
+class TestFormatScoreHistory:
+    def test_empty_history_shows_friendly_message(self, handler):
+        text = handler._format_score_history([])
+        assert "Noch nicht genug" in text
+
+    def test_single_scored_entry_not_enough_for_trend(self, handler):
+        text = handler._format_score_history([{"timestamp": "t", "score": 90.0}])
+        assert "Noch nicht genug" in text
+
+    def test_entries_without_score_are_ignored(self, handler):
+        text = handler._format_score_history([
+            {"timestamp": "2026-09-01T00:00:00", "score": None},
+            {"timestamp": "2026-09-02T00:00:00", "score": 90.0},
+        ])
+        assert "Noch nicht genug" in text
+
+    def test_two_scored_entries_show_trend(self, handler):
+        entries = [
+            {"timestamp": "2026-09-01T10:00:00", "score": 70.0},
+            {"timestamp": "2026-09-10T10:00:00", "score": 85.0},
+        ]
+        text = handler._format_score_history(entries)
+
+        assert "70.0" in text
+        assert "85.0" in text
+        assert "+15.0" in text
+        assert "verbessert" in text
+
+    def test_declining_trend_shows_negative_delta(self, handler):
+        entries = [
+            {"timestamp": "2026-09-01T10:00:00", "score": 90.0},
+            {"timestamp": "2026-09-10T10:00:00", "score": 75.0},
+        ]
+        text = handler._format_score_history(entries)
+
+        assert "-15.0" in text
+        assert "verschlechtert" in text
+
+    def test_unchanged_score_shows_unveraendert(self, handler):
+        entries = [
+            {"timestamp": "2026-09-01T10:00:00", "score": 80.0},
+            {"timestamp": "2026-09-10T10:00:00", "score": 80.0},
+        ]
+        text = handler._format_score_history(entries)
+
+        assert "+0.0" not in text or "unverändert" in text
+        assert "unverändert" in text
+
+    def test_newest_entry_shown_first(self, handler):
+        entries = [
+            {"timestamp": "2026-09-01T10:00:00", "score": 70.0},
+            {"timestamp": "2026-09-10T10:00:00", "score": 85.0},
+        ]
+        text = handler._format_score_history(entries)
+
+        assert text.index("2026-09-10") < text.index("2026-09-01")

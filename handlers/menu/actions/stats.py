@@ -175,6 +175,31 @@ async def handle_top_artists_wrapper(
         await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
 
 
+async def handle_music_dna_wrapper(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    stats_handler,
+    logger,
+    nav_markup: Optional[InlineKeyboardMarkup] = None,
+):
+    """Music DNA v1 (Chat-Charakterisierung 2026-09-15) - identisches
+    Wrapper-Muster wie handle_timeline_stats_wrapper()."""
+    query = update.callback_query
+    await query.answer("Erstelle Music DNA ...")
+    try:
+        if stats_handler and hasattr(stats_handler, "handle_music_dna"):
+            await stats_handler.handle_music_dna(
+                update, context, reply_markup=nav_markup
+            )
+        else:
+            await query.edit_message_text(
+                "🧬 **Music DNA**\n\nStatistik-Handler nicht gefunden."
+            )
+    except Exception as e:
+        logger.error(f"❌ Fehler bei Music DNA: {e}")
+        await query.edit_message_text("❌ Fehler beim Laden der Statistiken")
+
+
 async def handle_timeline_stats_wrapper(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,

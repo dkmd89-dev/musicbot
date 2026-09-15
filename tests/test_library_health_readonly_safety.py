@@ -105,9 +105,16 @@ def test_run_scan_with_loudness_measurement_does_not_mutate_library(test_library
 def test_cli_subprocess_does_not_mutate_library(test_library, tmp_path):
     before = _snapshot(test_library)
     out_json = tmp_path / "out" / "report.json"
+    # --score-history isoliert (Chat-Charakterisierung 2026-09-15) - ohne
+    # explizite Angabe würde der Subprozess in die ECHTE
+    # Config.DATA_DIR/library_health_score_history.jsonl schreiben (wie
+    # --findings-registry/--output/--summary es hier schon vorher taten,
+    # unveraendert ausserhalb des Scopes dieser Aenderung).
+    out_history = tmp_path / "out" / "score_history.jsonl"
     result = subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "library_health_check.py"),
-         "--library", str(test_library), "--json", str(out_json)],
+         "--library", str(test_library), "--json", str(out_json),
+         "--score-history", str(out_history)],
         capture_output=True, text=True, cwd=str(REPO_ROOT),
     )
     assert result.returncode == 0, result.stderr
@@ -117,6 +124,9 @@ def test_cli_subprocess_does_not_mutate_library(test_library, tmp_path):
     report = json.loads(out_json.read_text())
     assert report["schema_version"]
     assert not str(out_json).startswith(str(test_library))  # Report ausserhalb
+    assert out_history.exists()
+    history_entry = json.loads(out_history.read_text().strip().splitlines()[-1])
+    assert history_entry["score"] == report["health"]["score"]
 
 
 @requires_ffmpeg
@@ -124,6 +134,7 @@ def test_fail_on_error_exit_code(test_library, tmp_path):
     result = subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "library_health_check.py"),
          "--library", str(test_library), "--json", str(tmp_path / "r.json"),
+         "--score-history", str(tmp_path / "score_history.jsonl"),
          "--fail-on-error"],
         capture_output=True, text=True, cwd=str(REPO_ROOT),
     )
@@ -178,7 +189,8 @@ def test_cli_subprocess_writes_findings_registry_without_mutating_library(test_l
         [sys.executable, str(REPO_ROOT / "scripts" / "library_health_check.py"),
          "--library", str(test_library),
          "--json", str(out_dir / "report.json"),
-         "--findings-registry", str(findings_path)],
+         "--findings-registry", str(findings_path),
+         "--score-history", str(out_dir / "score_history.jsonl")],
         capture_output=True, text=True, cwd=str(REPO_ROOT),
     )
     assert result.returncode == 0, result.stderr
@@ -214,7 +226,8 @@ def test_real_review_action_does_not_touch_library_files(test_library, tmp_path)
         [sys.executable, str(REPO_ROOT / "scripts" / "library_health_check.py"),
          "--library", str(test_library),
          "--json", str(out_dir / "report.json"),
-         "--findings-registry", str(findings_path)],
+         "--findings-registry", str(findings_path),
+         "--score-history", str(out_dir / "score_history.jsonl")],
         capture_output=True, text=True, cwd=str(REPO_ROOT),
     )
     assert scan_result.returncode == 0, scan_result.stderr
@@ -241,7 +254,8 @@ def test_real_review_action_does_not_touch_library_files(test_library, tmp_path)
         [sys.executable, str(REPO_ROOT / "scripts" / "library_health_check.py"),
          "--library", str(test_library),
          "--json", str(out_dir / "report.json"),
-         "--findings-registry", str(findings_path)],
+         "--findings-registry", str(findings_path),
+         "--score-history", str(out_dir / "score_history.jsonl")],
         capture_output=True, text=True, cwd=str(REPO_ROOT),
     )
     assert scan_result2.returncode == 0, scan_result2.stderr

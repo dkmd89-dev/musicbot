@@ -102,6 +102,20 @@ async def test_doctor_callback_scan_delegates_for_admin():
 
 
 @pytest.mark.asyncio
+async def test_doctor_callback_score_history_delegates_for_admin():
+    """Health-Score-Verlauf (Chat-Charakterisierung 2026-09-15) - identisches
+    Routing-Muster wie doctor:scan."""
+    update = _make_update()
+    handler = Mock()
+    handler.handle_score_history = AsyncMock()
+    is_admin_check = Mock(return_value=True)
+    await lib_actions.handle_doctor_callback(
+        update, Mock(), "doctor:score_history", handler, is_admin_check, Mock()
+    )
+    handler.handle_score_history.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_doctor_scan_entry_uses_fallback_when_missing():
     update = _make_update()
     await lib_actions.handle_doctor_scan(update, Mock(), None)
@@ -162,3 +176,99 @@ async def test_repair_callback_unknown_shows_message():
         update, Mock(), "repair:unknown", handler, is_admin_check, Mock()
     )
     update.callback_query.answer.assert_awaited_once_with("⚠️ Unbekannter Repair-Callback")
+
+
+# ---- Duplicate-Check (admin-gated, dict-based routing, Chat-Charakterisierung 2026-09-15) ----
+
+
+@pytest.mark.asyncio
+async def test_duplicate_check_callback_denies_non_admin():
+    update = _make_update()
+    is_admin_check = Mock(return_value=False)
+    await lib_actions.handle_duplicate_check_callback(
+        update, Mock(), "dupcheck:start", Mock(), is_admin_check, Mock()
+    )
+    update.callback_query.answer.assert_awaited_once_with(
+        "⛔ Keine Berechtigung", show_alert=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_check_callback_start_delegates_for_admin():
+    update = _make_update()
+    handler = Mock()
+    handler.handle_start = AsyncMock()
+    is_admin_check = Mock(return_value=True)
+    await lib_actions.handle_duplicate_check_callback(
+        update, Mock(), "dupcheck:start", handler, is_admin_check, Mock()
+    )
+    handler.handle_start.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_check_callback_artists_delegates_for_admin():
+    update = _make_update()
+    handler = Mock()
+    handler.handle_artist_list = AsyncMock()
+    is_admin_check = Mock(return_value=True)
+    await lib_actions.handle_duplicate_check_callback(
+        update, Mock(), "dupcheck:artists", handler, is_admin_check, Mock()
+    )
+    handler.handle_artist_list.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_check_callback_pick_routes_with_index():
+    update = _make_update()
+    context = Mock()
+    handler = Mock()
+    handler.handle_pick_artist = AsyncMock()
+    is_admin_check = Mock(return_value=True)
+    await lib_actions.handle_duplicate_check_callback(
+        update, context, "dupcheck:pick:3", handler, is_admin_check, Mock()
+    )
+    handler.handle_pick_artist.assert_awaited_once_with(update, context, 3)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_check_callback_pick_invalid_index_answers_error():
+    update = _make_update()
+    handler = Mock()
+    handler.handle_pick_artist = AsyncMock()
+    is_admin_check = Mock(return_value=True)
+    await lib_actions.handle_duplicate_check_callback(
+        update, Mock(), "dupcheck:pick:not-a-number", handler, is_admin_check, Mock()
+    )
+    handler.handle_pick_artist.assert_not_awaited()
+    update.callback_query.answer.assert_awaited_once_with("⚠️ Ungültiger Callback", show_alert=True)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_check_callback_unknown_shows_message():
+    update = _make_update()
+    handler = Mock()
+    is_admin_check = Mock(return_value=True)
+    await lib_actions.handle_duplicate_check_callback(
+        update, Mock(), "dupcheck:unknown", handler, is_admin_check, Mock()
+    )
+    update.callback_query.answer.assert_awaited_once_with("⚠️ Unbekannter Duplikat-Check-Callback")
+
+
+@pytest.mark.asyncio
+async def test_duplicate_check_callback_no_handler_shows_message():
+    update = _make_update()
+    is_admin_check = Mock(return_value=True)
+    await lib_actions.handle_duplicate_check_callback(
+        update, Mock(), "dupcheck:start", None, is_admin_check, Mock()
+    )
+    update.callback_query.answer.assert_awaited_once_with(
+        "⚠️ Duplikat-Check-Handler nicht verfügbar", show_alert=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_check_start_entry_uses_fallback_when_missing():
+    update = _make_update()
+    await lib_actions.handle_duplicate_check_start(update, Mock(), None)
+    update.callback_query.edit_message_text.assert_awaited_once()
+    assert "Duplikat-Check-Handler" in update.callback_query.edit_message_text.call_args[0][0]
