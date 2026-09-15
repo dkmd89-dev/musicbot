@@ -262,6 +262,29 @@ async def test_whoami_defaults_to_user_level_for_unknown_id(client, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_whoami_resolves_moderator_from_user_data_json(client, monkeypatch, tmp_path):
+    """Nachtrag: get_current_access_level() liest jetzt data/user_data.json
+    (ueber services/user_data.py::load_user_data(), Common-Core-Extraktion
+    aus UserManagementHandler) - schliesst die zuvor dokumentierte MVP-
+    Luecke (MODERATOR war nur ueber Telegram-Rollenverwaltung vergebbar,
+    hier zuvor nicht aufgeloest)."""
+    import json
+
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+    monkeypatch.setattr(Config, "DATA_DIR", tmp_path)
+    (tmp_path / "user_data.json").write_text(
+        json.dumps({"555": {"role": "moderator"}}), encoding="utf-8"
+    )
+
+    await client.post("/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=555))
+    response = await client.get("/api/v1/auth/whoami")
+
+    assert response.status_code == 200
+    assert response.json() == {"user_id": 555, "access_level": "MODERATOR"}
+
+
+@pytest.mark.asyncio
 async def test_whoami_rejects_invalid_session_cookie(client):
     client.cookies.set("cc_session", "garbage.notavalidtoken")
 
@@ -444,3 +467,26 @@ async def test_downloads_history_endpoint_accessible_with_admin_session(client, 
 
     assert response.status_code == 200
     assert response.json() == {"entries": []}
+
+
+@pytest.mark.asyncio
+async def test_statistics_endpoint_requires_authentication(client):
+    response = await client.get("/api/v1/statistics/me")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_statistics_endpoint_accessible_with_plain_user_session(client, monkeypatch, tmp_path):
+    """USER reicht (eigene Daten, wie Health) - kein Navidrome-User
+    konfiguriert ergibt 404, nicht 401/403 (Fachlogik, nicht Auth)."""
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+    monkeypatch.setattr(Config, "DATA_DIR", tmp_path)
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=999)
+    )
+
+    response = await client.get("/api/v1/statistics/me")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NAVIDROME_USER_NOT_CONFIGURED"

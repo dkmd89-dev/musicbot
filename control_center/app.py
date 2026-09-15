@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 
 from logger import get_module_logger
 
-from .routers import auth, downloads, findings, health, repair, ui
+from .routers import auth, downloads, findings, health, repair, statistics, ui
 from .schemas.errors import ErrorDetail
 
 _logger = get_module_logger("control_center.app")
@@ -35,6 +35,7 @@ def create_app() -> FastAPI:
     app.include_router(findings.router)
     app.include_router(repair.router)
     app.include_router(downloads.router)
+    app.include_router(statistics.router)
     app.include_router(auth.router)
     app.include_router(ui.router)
 
