@@ -14,12 +14,14 @@ auf Telegram-Infrastruktur zu haben. Das ist Wiederverwendung von bereits
 isolierter, Telegram-freier Auth-Logik (Master-Prompt Regel 51 "Common
 Core"), kein Bruch der handlers/-Schichtgrenze im Sinne von CLAUDE.md §4.
 
-Bekannte MVP-Einschränkung: get_user_access_level() wird hier OHNE
-user_mgmt_handler aufgerufen — OWNER (config.OWNER_USER_ID) und ADMIN
-(config.ADMIN_USER_IDS) werden korrekt aufgelöst, ein nur über die
-Telegram-Rollenverwaltung (data/user_data.json) vergebener MODERATOR-
-Status jedoch noch NICHT (bewusst dokumentiert, nicht stillschweigend
-übergangen — siehe docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md).
+MODERATOR-Auflösung (Nachtrag): get_user_access_level() nimmt ein Objekt
+mit `.user_data_cache`-Attribut als `user_mgmt_handler` entgegen (siehe
+dortiger hasattr()-Check) — statt dafür die schwerere, Telegram-
+gekoppelte handlers/admin/user_management_handler.py::UserManagementHandler
+zu importieren, baut _UserDataCacheAdapter unten ein minimales
+Adapter-Objekt um services/user_data.py::load_user_data() (dieselbe,
+jetzt geteilte Telegram-freie Kernlogik, Master-Prompt Regel 51 "Common
+Core"). permissions.py selbst bleibt dabei unverändert.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ import hashlib
 import hmac
 import json
 import time
+from pathlib import Path
 from typing import Optional
 
 from fastapi import Cookie, Depends, HTTPException
@@ -37,6 +40,7 @@ from config import Config
 from handlers.menu.models import AccessLevel
 from handlers.menu.permissions import get_user_access_level
 from logger import get_module_logger
+from services.user_data import load_user_data
 
 from .schemas.errors import ErrorDetail
 
@@ -170,14 +174,21 @@ def get_current_user_id(cc_session: Optional[str] = Cookie(default=None)) -> int
     return user_id
 
 
+class _UserDataCacheAdapter:
+    """Minimaler Adapter fuer get_user_access_level()'s duck-typed
+    `user_mgmt_handler`-Parameter (siehe Modul-Docstring)."""
+
+    def __init__(self, user_data: dict) -> None:
+        self.user_data_cache = user_data
+
+
 def get_current_access_level(
     user_id: int = Depends(get_current_user_id),
 ) -> AccessLevel:
     config = Config()
-    # Siehe Modul-Docstring: kein user_mgmt_handler hier, daher wird ein
-    # ausschliesslich per Telegram-Rollenverwaltung vergebener MODERATOR-
-    # Status (noch) nicht aufgeloest.
-    return get_user_access_level(user_id, config, user_mgmt_handler=None)
+    user_data = load_user_data(Path(config.DATA_DIR) / "user_data.json", logger=_logger)
+    adapter = _UserDataCacheAdapter(user_data)
+    return get_user_access_level(user_id, config, user_mgmt_handler=adapter)
 
 
 def require_min_access_level(minimum: AccessLevel):

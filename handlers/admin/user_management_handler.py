@@ -13,6 +13,8 @@ import json
 import time
 
 from logger import get_module_logger
+from services.user_data import get_navidrome_user as _shared_get_navidrome_user
+from services.user_data import load_user_data as _shared_load_user_data
 
 # PARSE-MODE-AUDIT 2026-09-13, Hotfix 1: navidrome_user ist admin-
 # eingegebener Freitext, der unescaped in parse_mode="Markdown"-Texte
@@ -51,15 +53,13 @@ class UserManagementHandler:
         )
 
     def _load_users(self) -> Dict[str, Any]:
-        """Lädt User-Daten aus JSON"""
-        try:
-            if self.user_data_file.exists():
-                with open(self.user_data_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            return {}
-        except Exception as e:
-            self.logger.error(f"❌ Fehler beim Laden der User-Daten: {e}")
-            return {}
+        """Lädt User-Daten aus JSON.
+
+        Dünner Delegator auf services/user_data.py::load_user_data()
+        (Master-Prompt Regel 51 "Common Core" — dieselbe Logik wird jetzt
+        auch von control_center/ genutzt) — unverändertes Verhalten
+        inkl. Fehlerlog."""
+        return _shared_load_user_data(self.user_data_file, logger=self.logger)
 
     def _save_users(self, users: Dict[str, Any]) -> bool:
         """
@@ -96,15 +96,13 @@ class UserManagementHandler:
         """
         Holt Navidrome-Username für Telegram-ID
 
+        Dünner Delegator auf services/user_data.py::get_navidrome_user()
+        (siehe _load_users()-Docstring). Unverändertes Verhalten.
+
         Returns:
             str: Navidrome-Username oder None
         """
-        user_data = self.user_data_cache.get(str(telegram_id))
-        if user_data:
-            nav_user = user_data.get("navidrome_user")
-            if nav_user and nav_user.strip():
-                return nav_user
-        return None
+        return _shared_get_navidrome_user(self.user_data_cache, telegram_id)
 
     async def show_user_detail(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: str

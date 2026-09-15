@@ -253,3 +253,22 @@ Dritter Funktionsbereich nach Health/Dashboard und Library Repair Preview (Nutze
 - Test: neue Tests in `tests/test_download_history_store.py` (`TestGetAllRecent`, 4 Tests) + `tests/test_control_center_downloads_api.py` (5 Tests) + 3 neue Authorization-Wiring-Tests in `tests/test_control_center_auth.py` (401/403/200) — alle grün, plus Gesamt-Suite (`control_center*`/`download_history*`/`library_health*`/`library_repair*`/Permissions/Config) 751/751 grün.
 - Zusätzlich manuell gegen die echten, produktiven Download-Verlaufsdaten verifiziert (5 aktuellste Einträge korrekt inkl. Metadata-Checkliste).
 - Keine neuen Dependencies.
+
+---
+
+## Erweiterung — Statistics-Dashboard (2026-09-15, auf Nutzerfreigabe)
+
+Vierter Funktionsbereich (Nutzerentscheidung zwischen „Statistics-Dashboard", „Navidrome-Status" und „Jobs-Grundgerüst" — Statistics gewählt).
+
+**Wichtiger Architektur-Fund während der Umsetzung — zum zweiten Mal dieselbe Grundfrage wie in Schritt 3:** `StatisticsCalculator.generate_stats()` ist strikt pro Navidrome-Benutzer (`navidrome_username` ist Pflicht, `None` liefert sofort `None` zurück — es gibt keine "globale" Statistik). Die Zuordnung Telegram-ID → Navidrome-Username lebt nur in `UserManagementHandler.get_navidrome_user()` (`handlers/admin/`) — derselben Klasse, die in Schritt 3 bewusst nicht importiert wurde, weshalb dort die MODERATOR-Auflösung unvollständig blieb.
+
+**Diesmal strukturell gelöst statt erneut ad-hoc umgangen (Nutzerentscheidung: "Gemeinsame Funktion extrahieren"):**
+
+- Neues `services/user_data.py` (Telegram-frei): `load_user_data()`, `get_navidrome_user()`, `get_user_role()` — extrahiert aus `UserManagementHandler._load_users()`/`.get_navidrome_user()` (Master-Prompt Regel 51 "Common Core", identisches Extraktionsmuster wie zuvor bei `handlers/menu/permissions.py`). `UserManagementHandler` behält beide Methoden als dünne Delegatoren — unverändertes Verhalten, bestätigt durch die bestehende Testsuite (40 Tests weiterhin grün).
+- **Nachtrag zu Schritt 3:** `control_center/dependencies.py::get_current_access_level()` nutzt jetzt `load_user_data()` + ein minimales `_UserDataCacheAdapter`-Objekt (nur `.user_data_cache`-Attribut) als `user_mgmt_handler`-Argument für das bereits duck-typisierte `handlers/menu/permissions.py::get_user_access_level()` — `permissions.py` selbst bleibt unverändert. Die MODERATOR-Lücke aus Schritt 3 ist damit geschlossen (neuer Test: `test_whoami_resolves_moderator_from_user_data_json`).
+- `GET /api/v1/statistics/me?period=week|month|year` (mind. `AccessLevel.USER` — eigene Daten, wie Health) — löst den Navidrome-Username der aktuell authentifizierten Telegram-ID auf, ruft dann unverändert `StatistikService.generate_stats()` auf. `404 NAVIDROME_USER_NOT_CONFIGURED`, wenn kein Navidrome-User hinterlegt ist. Dünnes Response-Schema reduziert auf `total_plays`/`top_artists`/`top_songs` (die MVP-Ansicht; `top_songs_detailed`/`top_artists_split`/Genre/Music-DNA bewusst nicht Teil dieses Schritts). `has_data=false` bildet den legitimen Empty-State ab (kein Play-Verlauf vorhanden), kein Fehler.
+- Test: `tests/test_user_data.py` (10 Tests, neues Modul) + `tests/test_control_center_statistics_api.py` (5 Tests) + 4 neue Tests in `tests/test_control_center_auth.py` (MODERATOR-Auflösung, Statistics-Auth-Wiring) — alle grün, plus Gesamt-Suite (`control_center*`/`user_data`/`user_management*`/`statistik*`/`download_history*`/Permissions/Config) 320/320 grün, plus `library_health*`/`library_repair*`-Regression 619/619 grün (Auth-Kern-Änderung betrifft alle bestehenden Router).
+- Zusätzlich manuell gegen die echten, produktiven Play-History-Daten verifiziert (97 Plays im aktuellen Monat, korrekte Top-Artists/-Songs-Rangfolge).
+- Keine neuen Dependencies.
+
+**Offen für eine künftige Freigabe:** Genre-Statistik/Music-DNA (`generate_genre_stats()`/`generate_music_dna()` existieren bereits produktiv), Cross-User-Admin-Ansicht (`/api/v1/statistics/{navidrome_username}`, Pfad bewusst kollisionsfrei vorbereitet) — beides bewusst nicht Teil dieser Erweiterung.
