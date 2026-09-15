@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 
 from logger import get_module_logger
 
-from .routers import auth, findings, health
+from .routers import auth, findings, health, ui
 from .schemas.errors import ErrorDetail
 
 _logger = get_module_logger("control_center.app")
@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(findings.router)
     app.include_router(auth.router)
+    app.include_router(ui.router)
 
     @app.exception_handler(HTTPException)
     async def _http_exception_handler(

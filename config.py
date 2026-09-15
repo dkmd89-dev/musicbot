@@ -155,6 +155,18 @@ class Config:
         return os.getenv("ADMIN_CHAT_ID", str(self.OWNER_USER_ID))
 
     @property
+    def BOT_USERNAME(self) -> str:
+        """Telegram-Bot-Username ohne @ (z. B. "MeinMusikBot"), NICHT
+        sensibel (öffentlich sichtbarer Handle) — nur fürs Control-Center-
+        Login-Widget nötig (control_center/routers/ui.py,
+        data-telegram-login-Attribut), nicht aus BOT_TOKEN ableitbar ohne
+        eigenen Telegram-API-Call. Optional wie GENIUS_ACCESS_TOKEN (leerer
+        String statt ValueError) — ohne gesetztes BOT_USERNAME zeigt die
+        Login-Seite stattdessen einen Konfigurationshinweis statt das
+        Widget zu laden."""
+        return os.getenv("BOT_USERNAME", "")
+
+    @property
     def GENIUS_ACCESS_TOKEN(self) -> str:
         """Genius Access Token (SENSIBEL)"""
         return os.getenv("GENIUS_ACCESS_TOKEN", "")
