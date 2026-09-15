@@ -370,3 +370,41 @@ async def test_findings_endpoint_accessible_with_admin_session(client, monkeypat
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_repair_plan_endpoint_requires_authentication(client):
+    response = await client.get("/api/v1/library/repair-plan")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_repair_plan_endpoint_rejects_plain_user_session(client, monkeypatch):
+    """Dieselbe AccessLevel.ADMIN-Schwelle wie Findings."""
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=999)
+    )
+
+    response = await client.get("/api/v1/library/repair-plan")
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_repair_plan_endpoint_accessible_with_admin_session(client, monkeypatch):
+    """Config.LIBRARY_DIR zeigt dank tests/conftest.py::_safe_config_defaults
+    bereits auf ein leeres tmp-Verzeichnis - kein ffmpeg noetig, nur die
+    Auth-Verdrahtung wird hier geprueft (Fachlogik: test_control_center_repair_api.py)."""
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: [777]))
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=777)
+    )
+
+    response = await client.get("/api/v1/library/repair-plan")
+
+    assert response.status_code == 200
+    assert response.json()["candidates"] == []

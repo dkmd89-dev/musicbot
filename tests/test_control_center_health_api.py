@@ -140,12 +140,12 @@ async def test_get_library_health_404_when_library_root_missing(client, tmp_path
 async def test_get_library_health_500_on_scan_failure(client, test_library, monkeypatch):
     monkeypatch.setattr(Config, "LIBRARY_DIR", test_library)
 
-    import control_center.routers.health as health_router
+    import control_center._library_scan as library_scan
 
     def _boom(*args, **kwargs):
         raise RuntimeError("kaputt")
 
-    monkeypatch.setattr(health_router, "run_scan", _boom)
+    monkeypatch.setattr(library_scan, "run_scan", _boom)
 
     response = await client.get("/api/v1/library/health")
 
