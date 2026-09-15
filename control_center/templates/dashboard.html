@@ -46,7 +46,44 @@
       background: var(--accent); color: white; border: none; border-radius: 8px;
       padding: 10px 18px; font-size: 0.9rem; cursor: pointer;
     }
+    button.small { padding: 6px 12px; font-size: 0.8rem; }
     .retry-row { text-align: center; margin-top: 12px; }
+    section.panel {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+      padding: 16px; margin-bottom: 16px;
+    }
+    section.panel h2 {
+      font-size: 1rem; margin: 0 0 12px; display: flex; align-items: center;
+      justify-content: space-between; gap: 8px;
+    }
+    .row-list { display: flex; flex-direction: column; gap: 8px; }
+    .row-item {
+      display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
+      border-bottom: 1px solid var(--border); padding-bottom: 6px; font-size: 0.85rem;
+    }
+    .row-item:last-child { border-bottom: none; padding-bottom: 0; }
+    .row-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row-count { color: var(--muted); flex-shrink: 0; }
+    .badge {
+      display: inline-block; border-radius: 6px; padding: 1px 7px; font-size: 0.72rem;
+      font-weight: 600; margin-right: 6px; color: white;
+    }
+    .badge-CRITICAL { background: #c0392b; }
+    .badge-ERROR { background: #e0663f; }
+    .badge-WARNING { background: #d0a326; }
+    .badge-SUSPECTED { background: #7a6fd0; }
+    .badge-INFO { background: #6b6b6b; }
+    .badge-status-success { background: var(--ok); }
+    .badge-status-failed, .badge-status-cancelled { background: var(--error); }
+    .counts-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 8px; margin-bottom: 10px;
+    }
+    .counts-grid div {
+      background: var(--bg); border-radius: 6px; padding: 6px 8px; font-size: 0.75rem;
+      text-align: center;
+    }
+    .denied, .empty-note { color: var(--muted); font-size: 0.85rem; }
   </style>
 </head>
 <body>
@@ -80,6 +117,30 @@
       <div id="current-user"></div>
       <div id="health-tiles" class="tiles">Lädt…</div>
       <div class="retry-row"><button id="refresh-btn">Aktualisieren</button></div>
+
+      <section class="panel">
+        <h2>Statistics (dieser Monat)</h2>
+        <div id="statistics-content" class="empty-note">Lädt…</div>
+      </section>
+
+      <section class="panel">
+        <h2>Findings</h2>
+        <div id="findings-content" class="empty-note">Lädt…</div>
+      </section>
+
+      <section class="panel">
+        <h2>
+          Repair-Plan (Vorschau)
+          <button id="repair-plan-btn" class="small">Berechnen</button>
+        </h2>
+        <p class="empty-note">Führt einen vollständigen Library-Scan aus (kann eine Weile dauern) — läuft nicht automatisch, nur auf Klick.</p>
+        <div id="repair-plan-content" class="empty-note"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Downloads (Verlauf)</h2>
+        <div id="downloads-content" class="empty-note">Lädt…</div>
+      </section>
     </div>
   </main>
 
@@ -131,6 +192,91 @@
       }
     }
 
+    // Gemeinsamer Lade-/Fehlerbehandlungs-Pfad fuer die read-only-
+    // Zusatzbereiche (Findings/Downloads/Statistics) — identisches
+    // Status-Handling wie loadHealth() oben, nur parametrisiert.
+    async function _loadInto(elementId, url, renderFn) {
+      const el = document.getElementById(elementId);
+      try {
+        const res = await fetch(url, { credentials: "same-origin" });
+        if (res.status === 401) { showOnly("login-view"); return; }
+        if (res.status === 403) {
+          el.innerHTML = '<span class="denied">Keine Berechtigung (Rolle reicht nicht).</span>';
+          return;
+        }
+        if (res.status === 404) {
+          const body = await res.json().catch(() => null);
+          el.innerHTML = `<span class="empty-note">${body && body.error ? body.error.message : "Nicht gefunden."}</span>`;
+          return;
+        }
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          el.textContent = "Fehler: " + (body && body.error ? body.error.message : res.status);
+          return;
+        }
+        renderFn(el, await res.json());
+      } catch (err) {
+        el.textContent = "Netzwerkfehler: " + err.message;
+      }
+    }
+
+    function renderFindings(el, groups) {
+      if (!groups.length) { el.innerHTML = '<p class="empty-note">Keine offenen Findings.</p>'; return; }
+      el.innerHTML = '<div class="row-list">' + groups.map((g) => `
+        <div class="row-item">
+          <div class="row-main"><span class="badge badge-${g.tier}">${g.tier}</span>${g.code}</div>
+          <div class="row-count">${g.open_count}</div>
+        </div>
+      `).join("") + "</div>";
+    }
+    function loadFindings() {
+      return _loadInto("findings-content", "/api/v1/library/findings", renderFindings);
+    }
+
+    function renderRepairPlan(el, plan) {
+      const counts = Object.entries(plan.counts_by_level)
+        .map(([lvl, n]) => `<div><strong>${n}</strong><br>${lvl}</div>`).join("");
+      el.innerHTML = `
+        <div class="counts-grid">${counts || "<div>keine Kandidaten</div>"}</div>
+        <p class="empty-note">${plan.actionable_total} automatisch reparierbar, ${plan.manual_review_total} zur manuellen Prüfung (Health Score ${plan.health_score ?? "–"}). Reine Vorschau — es wird nichts ausgeführt.</p>
+      `;
+    }
+    function loadRepairPlan() {
+      document.getElementById("repair-plan-content").innerHTML =
+        '<span class="empty-note">Scan läuft, kann eine Weile dauern…</span>';
+      return _loadInto("repair-plan-content", "/api/v1/library/repair-plan", renderRepairPlan);
+    }
+
+    function renderDownloads(el, body) {
+      if (!body.entries.length) { el.innerHTML = '<p class="empty-note">Kein Download-Verlauf.</p>'; return; }
+      el.innerHTML = '<div class="row-list">' + body.entries.map((e) => `
+        <div class="row-item">
+          <div class="row-main"><span class="badge badge-status-${e.status}">${e.status}</span>${e.title} — ${e.artist}</div>
+          <div class="row-count">${new Date(e.timestamp).toLocaleString()}</div>
+        </div>
+      `).join("") + "</div>";
+    }
+    function loadDownloads() {
+      return _loadInto("downloads-content", "/api/v1/downloads/history?limit=10", renderDownloads);
+    }
+
+    function renderStatistics(el, stats) {
+      if (!stats.has_data) {
+        el.innerHTML = `<p class="empty-note">Noch keine Wiedergabedaten für ${stats.navidrome_username}.</p>`;
+        return;
+      }
+      const artists = stats.top_artists.slice(0, 5).map((a) => `
+        <div class="row-item"><div class="row-main">${a.label}</div><div class="row-count">${a.count}</div></div>
+      `).join("");
+      el.innerHTML = `
+        <p class="empty-note">${stats.total_plays} Wiedergaben (${stats.navidrome_username})</p>
+        <div class="row-list">${artists}</div>
+      `;
+    }
+    function loadStatistics() {
+      return _loadInto("statistics-content", "/api/v1/statistics/me?period=month", renderStatistics);
+    }
+
     async function checkAuthAndLoad() {
       showOnly("loading-view");
       try {
@@ -141,7 +287,9 @@
         document.getElementById("current-user").textContent =
           `Angemeldet als #${who.user_id} (${who.access_level})`;
         showOnly("dashboard-view");
-        await loadHealth();
+        // Repair-Plan bewusst NICHT hier mitladen (voller Library-Scan,
+        // kostet spuerbar Zeit) - nur auf expliziten Klick, siehe unten.
+        await Promise.all([loadHealth(), loadFindings(), loadDownloads(), loadStatistics()]);
       } catch (err) {
         showError("Netzwerkfehler: " + err.message);
       }
@@ -158,13 +306,27 @@
         .catch((err) => showError("Netzwerkfehler: " + err.message));
     }
 
-    document.getElementById("refresh-btn").addEventListener("click", loadHealth);
+    document.getElementById("refresh-btn").addEventListener("click", () => {
+      loadHealth();
+      loadFindings();
+      loadDownloads();
+      loadStatistics();
+    });
+    document.getElementById("repair-plan-btn").addEventListener("click", loadRepairPlan);
 
     let pollTimer = null;
     function startPolling() {
       if (pollTimer) return;
+      // 30s-Polling bewusst nur fuer die lesend-billigen Endpunkte
+      // (persistente JSON-Reads). Repair-Plan (voller Scan) bleibt
+      // explizit ausserhalb des Pollings, siehe checkAuthAndLoad().
       pollTimer = setInterval(() => {
-        if (!document.getElementById("dashboard-view").hidden) loadHealth();
+        if (!document.getElementById("dashboard-view").hidden) {
+          loadHealth();
+          loadFindings();
+          loadDownloads();
+          loadStatistics();
+        }
       }, 30000);
     }
 

@@ -66,6 +66,33 @@ async def test_dashboard_fetches_real_api_endpoints_from_js(client):
     assert "/api/v1/auth/whoami" in html
     assert "/api/v1/library/health" in html
     assert "/api/v1/auth/telegram-callback" in html
+    assert "/api/v1/library/findings" in html
+    assert "/api/v1/library/repair-plan" in html
+    assert "/api/v1/downloads/history" in html
+    assert "/api/v1/statistics/me" in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_contains_all_new_section_panels(client):
+    """Findings/Repair-Plan/Downloads/Statistics-Erweiterung (Nachtrag zu
+    Schritt 4) - jeder Bereich braucht sein eigenes Content-Element, in
+    das das Client-JS rendert."""
+    html = (await client.get("/")).text
+
+    assert 'id="findings-content"' in html
+    assert 'id="repair-plan-content"' in html
+    assert 'id="downloads-content"' in html
+    assert 'id="statistics-content"' in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_repair_plan_has_dedicated_manual_trigger(client):
+    """Repair-Plan ist bewusst NICHT im 30s-Polling (voller Library-Scan)
+    - es muss einen eigenen manuellen Button geben, keinen impliziten
+    Auto-Load beim Seitenaufruf."""
+    html = (await client.get("/")).text
+
+    assert 'id="repair-plan-btn"' in html
 
 
 @pytest.mark.asyncio
