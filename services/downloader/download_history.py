@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from logger import get_module_logger
 
@@ -183,3 +183,22 @@ class DownloadHistoryStore:
         if 0 <= position < len(recent):
             return recent[position]
         return None
+
+    def get_all_recent(self, limit: int = MAX_ENTRIES_PER_CHAT) -> List[Tuple[int, DownloadHistoryEntry]]:
+        """Liefert die zuletzt hinzugefügten Einträge über ALLE Chats
+        hinweg, neueste zuerst, als (chat_id, DownloadHistoryEntry)-Paare
+        - für eine chat-übergreifende Übersicht (Control-Center-
+        Download-Center), im Unterschied zu get_recent() (ein einzelner
+        Chat). Sortierung über timestamp (ISO-8601, sortiert korrekt
+        lexikographisch, identisches Prinzip wie an anderer Stelle im
+        Projekt bereits verwendet)."""
+        all_entries: List[Tuple[int, DownloadHistoryEntry]] = []
+        for chat_id_str, raw_entries in self._data.items():
+            try:
+                chat_id = int(chat_id_str)
+            except ValueError:
+                continue
+            for raw in raw_entries:
+                all_entries.append((chat_id, DownloadHistoryEntry.from_dict(raw)))
+        all_entries.sort(key=lambda pair: pair[1].timestamp, reverse=True)
+        return all_entries[:limit]

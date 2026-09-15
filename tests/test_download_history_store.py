@@ -135,6 +135,34 @@ class TestGetEntryByPosition:
         assert store.get_entry_by_position(999, 0) is None
 
 
+class TestGetAllRecent:
+    """get_all_recent() - chat-übergreifende Übersicht für das Control
+    Center (control_center/routers/downloads.py)."""
+
+    def test_merges_entries_across_chats_sorted_newest_first(self, store):
+        store.add_entry(1, url="u1", title="Chat1-Alt", artist="A", status="success")
+        store.add_entry(2, url="u2", title="Chat2-Mitte", artist="A", status="success")
+        store.add_entry(1, url="u3", title="Chat1-Neu", artist="A", status="success")
+
+        all_recent = store.get_all_recent()
+
+        assert [e.title for _, e in all_recent] == ["Chat1-Neu", "Chat2-Mitte", "Chat1-Alt"]
+
+    def test_includes_chat_id_per_entry(self, store):
+        store.add_entry(42, url="u", title="T", artist="A", status="success")
+        chat_id, entry = store.get_all_recent()[0]
+        assert chat_id == 42
+        assert entry.title == "T"
+
+    def test_respects_limit_across_all_chats(self, store):
+        for i in range(5):
+            store.add_entry(1, url=f"u{i}", title=f"T{i}", artist="A", status="success")
+        assert len(store.get_all_recent(limit=2)) == 2
+
+    def test_empty_store_returns_empty_list(self, store):
+        assert store.get_all_recent() == []
+
+
 class TestDownloadHistoryEntryRoundtrip:
     def test_to_dict_from_dict_roundtrip(self):
         entry = DownloadHistoryEntry(
