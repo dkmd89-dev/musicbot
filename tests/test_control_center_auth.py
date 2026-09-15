@@ -308,3 +308,65 @@ async def test_dev_auth_bypass_ignores_invalid_cookie(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["user_id"] == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Authorization-Verdrahtung in den bestehenden Health-/Findings-Routern
+# (Schritt 3, Nachtrag: Endpunkte tatsaechlich geschuetzt, nicht nur die
+# Mechanik gebaut) — control_center/routers/health.py fordert mindestens
+# AccessLevel.USER, control_center/routers/findings.py mindestens
+# AccessLevel.ADMIN (spiegelt die bestehende Telegram-Schwelle).
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_health_endpoint_requires_authentication(client):
+    response = await client.get("/api/v1/library/health")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_health_endpoint_accessible_with_plain_user_session(client, monkeypatch):
+    """USER reicht fuer den Health-Endpoint (AccessLevel.USER-Schwelle) —
+    Config.LIBRARY_DIR zeigt dank tests/conftest.py::_safe_config_defaults
+    bereits auf ein leeres, sicheres tmp-Verzeichnis (200 mit 0 Dateien)."""
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=999)
+    )
+
+    response = await client.get("/api/v1/library/health")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_findings_endpoint_rejects_plain_user_session(client, monkeypatch):
+    """USER reicht NICHT fuer Findings (AccessLevel.ADMIN-Schwelle) —
+    403, nicht 401 (Session ist gueltig, Berechtigung reicht nur nicht)."""
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=999)
+    )
+
+    response = await client.get("/api/v1/library/findings")
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_findings_endpoint_accessible_with_admin_session(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: [777]))
+    monkeypatch.setattr(Config, "DATA_DIR", tmp_path)  # keine echte Registry beruehren
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=777)
+    )
+
+    response = await client.get("/api/v1/library/findings")
+
+    assert response.status_code == 200
+    assert response.json() == []

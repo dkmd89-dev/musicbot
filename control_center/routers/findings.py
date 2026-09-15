@@ -17,8 +17,10 @@ liefert per Definition nur STATUS_OPEN) plus eine Tri-State-Zusammenfassung
 Accept-/Unaccept-/Review-Endpoints in diesem Schritt (Scope laut
 Freigabe: "nur Findings anzeigen, read-only").
 
-Noch OHNE Authentifizierung — siehe control_center/routers/health.py fuer
-denselben Hinweis/Grund.
+Authentifiziert seit Schritt 3 mit mindestens AccessLevel.ADMIN — spiegelt
+die bestehende Telegram-Schwelle 1:1 (Findings-Review ist dort bereits
+review:-Bereich == ADMIN, siehe docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md
+Abschnitt 3), keine Aufweichung fuer die Web-Variante.
 """
 
 from __future__ import annotations
@@ -26,9 +28,10 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from config import Config
+from handlers.menu.models import AccessLevel
 from logger import get_module_logger
 from services.library_health.findings import (
     DEFAULT_FILENAME as FINDINGS_DEFAULT_FILENAME,
@@ -38,6 +41,7 @@ from services.library_health.findings import (
     group_open_findings_by_category,
 )
 
+from ..dependencies import require_min_access_level
 from ..schemas.errors import ErrorDetail
 from ..schemas.findings import (
     FindingCategoryGroup,
@@ -46,7 +50,11 @@ from ..schemas.findings import (
     review_summary_to_schema,
 )
 
-router = APIRouter(prefix="/api/v1/library", tags=["library-findings"])
+router = APIRouter(
+    prefix="/api/v1/library",
+    tags=["library-findings"],
+    dependencies=[Depends(require_min_access_level(AccessLevel.ADMIN))],
+)
 _logger = get_module_logger("control_center.findings")
 
 

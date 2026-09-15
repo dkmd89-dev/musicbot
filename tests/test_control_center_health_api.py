@@ -73,6 +73,14 @@ def test_library(tmp_path):
     return lib
 
 
+@pytest.fixture(autouse=True)
+def _authenticated(monkeypatch):
+    """Dieses Testfile prüft den Health-Endpoint selbst, nicht die seit
+    Schritt 3 davorliegende Authentifizierung (dafür: tests/test_control_center_auth.py)
+    — Dev-Auth-Bypass steht dafür genau bereit (control_center/dependencies.py)."""
+    monkeypatch.setattr(Config, "CONTROL_CENTER_DEV_AUTH_BYPASS", property(lambda self: True))
+
+
 @pytest_asyncio.fixture
 async def client():
     from control_center.app import create_app

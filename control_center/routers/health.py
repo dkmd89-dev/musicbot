@@ -14,11 +14,10 @@ Read-only (GET ohne Seiteneffekte, Master-Prompt Regel 12) — identische
 Read-only-Garantie wie der zugrunde liegende Scanner selbst (siehe
 tests/test_library_health_readonly_safety.py).
 
-Noch OHNE Authentifizierung/Authorization (folgt in Schritt 3 des Vertical
-Slice, siehe docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md
-"Naechste Schritte") — dieser Router ist bislang nur fuer den lokalen
-Entwicklungsbetrieb vorgesehen (uvicorn bindet gemaess Architekturvorschlag
-nur an 127.0.0.1).
+Authentifiziert seit Schritt 3 (docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md
+Abschnitt 3): mindestens AccessLevel.USER, serverseitig geprueft ueber
+control_center/dependencies.py::require_min_access_level() — derselbe
+Auth-Kern wie der Bot, kein reiner UI-Check (Master-Prompt Regel 30).
 """
 
 from __future__ import annotations
@@ -26,16 +25,22 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from config import Config
+from handlers.menu.models import AccessLevel
 from logger import get_module_logger
 from services.library_health.scanner import run_scan
 
+from ..dependencies import require_min_access_level
 from ..schemas.errors import ErrorDetail
 from ..schemas.health import LibraryHealthResponse, report_to_health_response
 
-router = APIRouter(prefix="/api/v1/library", tags=["library-health"])
+router = APIRouter(
+    prefix="/api/v1/library",
+    tags=["library-health"],
+    dependencies=[Depends(require_min_access_level(AccessLevel.USER))],
+)
 _logger = get_module_logger("control_center.health")
 
 
