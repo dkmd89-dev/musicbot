@@ -1,0 +1,310 @@
+# tests/test_control_center_auth.py
+# -*- coding: utf-8 -*-
+"""
+Auth-Grundgerüst — Vertical Slice "Health/Dashboard", Schritt 3.
+
+Testet den echten Produktionscode-Pfad (CLAUDE.md Abschnitt 7):
+control_center/dependencies.py direkt (Telegram-Login-Widget-Verifikation,
+Session-Token-Erzeugung/-Prüfung) sowie control_center/routers/auth.py
+über HTTP (httpx.AsyncClient + ASGITransport, siehe
+test_control_center_health_api.py für die Begründung dieser Wahl statt
+starlette.testclient.TestClient).
+
+Config.BOT_TOKEN wird pro Test auf einen festen Test-Wert gepatcht (nie
+das echte Secret aus .env) — Property-Monkeypatch analog zu
+Config.LIBRARY_DIR/DATA_DIR in anderen Control-Center-Tests.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import time
+
+import httpx
+import pytest
+import pytest_asyncio
+
+from config import Config
+from control_center.dependencies import (
+    SESSION_TTL_SECONDS,
+    create_session_token,
+    require_min_access_level,
+    verify_session_token,
+    verify_telegram_login,
+)
+from handlers.menu.models import AccessLevel
+
+TEST_BOT_TOKEN = "123456:TEST-BOT-TOKEN-not-a-real-secret"
+
+
+@pytest.fixture(autouse=True)
+def _fixed_bot_token(monkeypatch):
+    monkeypatch.setattr(Config, "BOT_TOKEN", property(lambda self: TEST_BOT_TOKEN))
+
+
+def _signed_telegram_payload(user_id=42, *, auth_date=None, bot_token=TEST_BOT_TOKEN, **extra):
+    data = {
+        "id": user_id,
+        "first_name": "Test",
+        "auth_date": auth_date if auth_date is not None else int(time.time()),
+        **extra,
+    }
+    check_fields = {k: v for k, v in data.items() if v is not None}
+    data_check_string = "\n".join(f"{k}={check_fields[k]}" for k in sorted(check_fields))
+    secret_key = hashlib.sha256(bot_token.encode("utf-8")).digest()
+    data["hash"] = hmac.new(
+        secret_key, data_check_string.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    return data
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# verify_telegram_login()
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def test_verify_telegram_login_accepts_correctly_signed_payload():
+    payload = _signed_telegram_payload()
+    assert verify_telegram_login(payload, bot_token=TEST_BOT_TOKEN) is True
+
+
+def test_verify_telegram_login_rejects_tampered_field():
+    payload = _signed_telegram_payload()
+    payload["id"] = 999999  # nach der Signierung veraendert
+    assert verify_telegram_login(payload, bot_token=TEST_BOT_TOKEN) is False
+
+
+def test_verify_telegram_login_rejects_wrong_hash():
+    payload = _signed_telegram_payload()
+    payload["hash"] = "0" * 64
+    assert verify_telegram_login(payload, bot_token=TEST_BOT_TOKEN) is False
+
+
+def test_verify_telegram_login_rejects_missing_hash():
+    payload = _signed_telegram_payload()
+    del payload["hash"]
+    assert verify_telegram_login(payload, bot_token=TEST_BOT_TOKEN) is False
+
+
+def test_verify_telegram_login_rejects_signature_from_different_bot_token():
+    payload = _signed_telegram_payload(bot_token="other-bot-token")
+    assert verify_telegram_login(payload, bot_token=TEST_BOT_TOKEN) is False
+
+
+def test_verify_telegram_login_rejects_stale_auth_date():
+    payload = _signed_telegram_payload(auth_date=int(time.time()) - 2 * 24 * 3600)
+    assert verify_telegram_login(payload, bot_token=TEST_BOT_TOKEN) is False
+
+
+def test_verify_telegram_login_rejects_future_auth_date():
+    payload = _signed_telegram_payload(auth_date=int(time.time()) + 3600)
+    assert verify_telegram_login(payload, bot_token=TEST_BOT_TOKEN) is False
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Session-Token
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def test_session_token_round_trips_to_correct_user_id():
+    token = create_session_token(4711, bot_token=TEST_BOT_TOKEN)
+    assert verify_session_token(token, bot_token=TEST_BOT_TOKEN) == 4711
+
+
+def test_session_token_rejected_with_wrong_bot_token():
+    token = create_session_token(4711, bot_token=TEST_BOT_TOKEN)
+    assert verify_session_token(token, bot_token="other-bot-token") is None
+
+
+def test_session_token_rejected_when_tampered():
+    token = create_session_token(4711, bot_token=TEST_BOT_TOKEN)
+    payload_b64, signature = token.split(".", 1)
+    tampered = payload_b64 + "." + ("f" * len(signature))
+    assert verify_session_token(tampered, bot_token=TEST_BOT_TOKEN) is None
+
+
+def test_session_token_rejected_when_malformed():
+    assert verify_session_token("not-a-valid-token", bot_token=TEST_BOT_TOKEN) is None
+
+
+def test_session_token_rejected_when_expired(monkeypatch):
+    import control_center.dependencies as deps
+
+    monkeypatch.setattr(deps, "SESSION_TTL_SECONDS", 1)
+    token = create_session_token(4711, bot_token=TEST_BOT_TOKEN)
+    time.sleep(1.1)
+    assert verify_session_token(token, bot_token=TEST_BOT_TOKEN) is None
+
+
+def test_session_ttl_default_is_positive():
+    assert SESSION_TTL_SECONDS > 0
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# require_min_access_level() — Dependency-Factory
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def test_require_min_access_level_rejects_insufficient_level():
+    from fastapi import HTTPException
+
+    check = require_min_access_level(AccessLevel.ADMIN)
+    with pytest.raises(HTTPException) as exc_info:
+        check(level=AccessLevel.USER)
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail["code"] == "FORBIDDEN"
+
+
+def test_require_min_access_level_allows_sufficient_level():
+    check = require_min_access_level(AccessLevel.ADMIN)
+    assert check(level=AccessLevel.ADMIN) == AccessLevel.ADMIN
+    assert check(level=AccessLevel.OWNER) == AccessLevel.OWNER
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# HTTP: POST /api/v1/auth/telegram-callback + GET /api/v1/auth/whoami
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def client():
+    from control_center.app import create_app
+
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+    # https:// statt http:// (anders als in den uebrigen Control-Center-
+    # Tests): das Session-Cookie wird mit secure=True gesetzt (Master-Prompt
+    # Abschnitt 20/32 - TLS-Pflicht fuer das Telegram-Login-Widget ohnehin
+    # gegeben, siehe docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md
+    # Abschnitt 3). httpx' Cookie-Jar verhaelt sich RFC-6265-konform wie ein
+    # echter Browser und wuerde ein Secure-Cookie unter http:// gar nicht
+    # erst speichern/mitsenden - das Client-Verhalten muss daher zum
+    # Ziel-Deployment (immer hinter TLS) passen, nicht zum lokalen ASGI-Test.
+    c = httpx.AsyncClient(transport=transport, base_url="https://testserver")
+    try:
+        yield c
+    finally:
+        await c.aclose()
+
+
+@pytest.mark.asyncio
+async def test_telegram_callback_accepts_valid_payload_and_sets_cookie(client):
+    payload = _signed_telegram_payload(user_id=555)
+
+    response = await client.post("/api/v1/auth/telegram-callback", json=payload)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert "cc_session" in response.cookies
+
+
+@pytest.mark.asyncio
+async def test_telegram_callback_rejects_invalid_signature(client):
+    payload = _signed_telegram_payload(user_id=555)
+    payload["hash"] = "0" * 64
+
+    response = await client.post("/api/v1/auth/telegram-callback", json=payload)
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "TELEGRAM_LOGIN_INVALID"
+    assert "cc_session" not in response.cookies
+
+
+@pytest.mark.asyncio
+async def test_whoami_requires_authentication(client, monkeypatch):
+    monkeypatch.setattr(Config, "CONTROL_CENTER_DEV_AUTH_BYPASS", property(lambda self: False))
+
+    response = await client.get("/api/v1/auth/whoami")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "NOT_AUTHENTICATED"
+
+
+@pytest.mark.asyncio
+async def test_whoami_returns_user_id_and_access_level_for_valid_session(client, monkeypatch):
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 555))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+
+    login_response = await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=555)
+    )
+    assert login_response.status_code == 200
+
+    response = await client.get("/api/v1/auth/whoami")
+
+    assert response.status_code == 200
+    assert response.json() == {"user_id": 555, "access_level": "OWNER"}
+
+
+@pytest.mark.asyncio
+async def test_whoami_resolves_admin_from_config(client, monkeypatch):
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: [777]))
+
+    await client.post("/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=777))
+    response = await client.get("/api/v1/auth/whoami")
+
+    assert response.status_code == 200
+    assert response.json() == {"user_id": 777, "access_level": "ADMIN"}
+
+
+@pytest.mark.asyncio
+async def test_whoami_defaults_to_user_level_for_unknown_id(client, monkeypatch):
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+
+    await client.post("/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=999))
+    response = await client.get("/api/v1/auth/whoami")
+
+    assert response.status_code == 200
+    assert response.json() == {"user_id": 999, "access_level": "USER"}
+
+
+@pytest.mark.asyncio
+async def test_whoami_rejects_invalid_session_cookie(client):
+    client.cookies.set("cc_session", "garbage.notavalidtoken")
+
+    response = await client.get("/api/v1/auth/whoami")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "SESSION_INVALID"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Dev-Auth-Bypass
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_dev_auth_bypass_disabled_by_default(client):
+    """Ohne explizites Setzen ist der Bypass aus (Deny by default) — kein
+    Cookie noetig heisst hier weiterhin 401, nicht automatischer Zugriff."""
+    response = await client.get("/api/v1/auth/whoami")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_dev_auth_bypass_grants_owner_access_without_session(client, monkeypatch):
+    monkeypatch.setattr(Config, "CONTROL_CENTER_DEV_AUTH_BYPASS", property(lambda self: True))
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+
+    response = await client.get("/api/v1/auth/whoami")
+
+    assert response.status_code == 200
+    assert response.json() == {"user_id": 1, "access_level": "OWNER"}
+
+
+@pytest.mark.asyncio
+async def test_dev_auth_bypass_ignores_invalid_cookie(client, monkeypatch):
+    """Der Bypass greift VOR der Cookie-Pruefung - auch ein kaputter Cookie
+    darf den Bypass nicht versehentlich verhindern (Reihenfolge-Regression-
+    Schutz)."""
+    monkeypatch.setattr(Config, "CONTROL_CENTER_DEV_AUTH_BYPASS", property(lambda self: True))
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    client.cookies.set("cc_session", "garbage")
+
+    response = await client.get("/api/v1/auth/whoami")
+
+    assert response.status_code == 200
+    assert response.json()["user_id"] == 1
