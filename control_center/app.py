@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 
 from logger import get_module_logger
 
-from .routers import health
+from .routers import findings, health
 from .schemas.errors import ErrorDetail
 
 _logger = get_module_logger("control_center.app")
@@ -32,6 +32,7 @@ _logger = get_module_logger("control_center.app")
 def create_app() -> FastAPI:
     app = FastAPI(title="MusicBot Control Center", version="0.1.0")
     app.include_router(health.router)
+    app.include_router(findings.router)
 
     @app.exception_handler(HTTPException)
     async def _http_exception_handler(
