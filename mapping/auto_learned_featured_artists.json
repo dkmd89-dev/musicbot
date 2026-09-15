@@ -175,6 +175,19 @@
       ],
       "status": "CONFIRMED"
     },
+    "Carter Faith": {
+      "canonical": "Carter Faith",
+      "last_observed_track": "Kygo - That's When You Know",
+      "observations": 1,
+      "primary_artists": [
+        "Kygo"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
     "Dalton": {
       "canonical": "Dalton",
       "last_observed_track": "FAYAN - VERSPRICH MIR",
@@ -253,6 +266,32 @@
       ],
       "status": "OBSERVED"
     },
+    "FABER": {
+      "canonical": "FABER",
+      "last_observed_track": "Kraftklub - All die schönen Worte",
+      "observations": 1,
+      "primary_artists": [
+        "Kraftklub"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Fred Rabe": {
+      "canonical": "Fred Rabe",
+      "last_observed_track": "Kraftklub - ALLES WIRD GUT",
+      "observations": 1,
+      "primary_artists": [
+        "Kraftklub"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
     "GDA": {
       "canonical": "GDA",
       "last_observed_track": "makko - POWER",
@@ -272,6 +311,19 @@
       "observations": 1,
       "primary_artists": [
         "Zartmann"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "HAYLA": {
+      "canonical": "HAYLA",
+      "last_observed_track": "Kygo - Without You",
+      "observations": 1,
+      "primary_artists": [
+        "Kygo"
       ],
       "role": "featured_artist",
       "sources": [
@@ -458,6 +510,19 @@
       "observations": 1,
       "primary_artists": [
         "Clueso"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Max Mcnown": {
+      "canonical": "Max Mcnown",
+      "last_observed_track": "Kygo - Take Me Back",
+      "observations": 1,
+      "primary_artists": [
+        "Kygo"
       ],
       "role": "featured_artist",
       "sources": [
