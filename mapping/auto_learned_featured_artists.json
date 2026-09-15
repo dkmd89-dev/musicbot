@@ -29,7 +29,7 @@
     "Anna Grey": {
       "canonical": "Anna Grey",
       "last_observed_track": "Klangspiel - Dein Lied",
-      "observations": 1,
+      "observations": 2,
       "primary_artists": [
         "Klangspiel"
       ],
@@ -37,7 +37,7 @@
       "sources": [
         "metadata"
       ],
-      "status": "OBSERVED"
+      "status": "LEARNED"
     },
     "Antonius": {
       "canonical": "Antonius",
@@ -175,6 +175,19 @@
       ],
       "status": "CONFIRMED"
     },
+    "Dalton": {
+      "canonical": "Dalton",
+      "last_observed_track": "FAYAN - VERSPRICH MIR",
+      "observations": 3,
+      "primary_artists": [
+        "FAYAN"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "LEARNED"
+    },
     "Domiziana": {
       "canonical": "Domiziana",
       "last_observed_track": "Ski Aggu - Tour de Berlin",
@@ -227,6 +240,19 @@
       ],
       "status": "OBSERVED"
     },
+    "Estikay": {
+      "canonical": "Estikay",
+      "last_observed_track": "Sido - Gar nicht mal so glücklich",
+      "observations": 1,
+      "primary_artists": [
+        "Sido"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
     "GDA": {
       "canonical": "GDA",
       "last_observed_track": "makko - POWER",
@@ -259,6 +285,19 @@
       "observations": 1,
       "primary_artists": [
         "01099"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Jamule": {
+      "canonical": "Jamule",
+      "last_observed_track": "Sido - Medizin",
+      "observations": 1,
+      "primary_artists": [
+        "Sido"
       ],
       "role": "featured_artist",
       "sources": [
@@ -400,12 +439,38 @@
       ],
       "status": "OBSERVED"
     },
+    "ML": {
+      "canonical": "ML",
+      "last_observed_track": "Sido - Medizin",
+      "observations": 1,
+      "primary_artists": [
+        "Sido"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
     "Mathea": {
       "canonical": "Mathea",
       "last_observed_track": "Clueso - Der Letzte Song (ReBoot Live Concerts)",
       "observations": 1,
       "primary_artists": [
         "Clueso"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Monet192": {
+      "canonical": "Monet192",
+      "last_observed_track": "Esther Graf - Nie begegnet",
+      "observations": 1,
+      "primary_artists": [
+        "Esther Graf"
       ],
       "role": "featured_artist",
       "sources": [
@@ -493,6 +558,19 @@
       ],
       "status": "OBSERVED"
     },
+    "Rihanna": {
+      "canonical": "Rihanna",
+      "last_observed_track": "Eminem - Love The Way You Lie",
+      "observations": 1,
+      "primary_artists": [
+        "Eminem"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
     "SDP": {
       "canonical": "SDP",
       "last_observed_track": "Clueso - Tanz aus der Reihe",
@@ -531,6 +609,19 @@
         "metadata"
       ],
       "status": "LEARNED"
+    },
+    "Sido": {
+      "canonical": "Sido",
+      "last_observed_track": "Montez - Glück",
+      "observations": 1,
+      "primary_artists": [
+        "Montez"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
     },
     "Ski Aggu": {
       "canonical": "Ski Aggu",
@@ -590,6 +681,19 @@
       "observations": 1,
       "primary_artists": [
         "01099"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "Westbam": {
+      "canonical": "Westbam",
+      "last_observed_track": "Sido - Medizin",
+      "observations": 1,
+      "primary_artists": [
+        "Sido"
       ],
       "role": "featured_artist",
       "sources": [

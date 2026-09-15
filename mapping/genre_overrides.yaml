@@ -194,3 +194,22 @@ GENRE_OVERRIDES:
   battle rap: "Battle Rap"
   technical rap: "Technical Rap"
   comedy rap: "Comedy Rap"
+
+  # Ergänzt 2026-09
+  punk: "Rock"
+  contemporary hip hop: "Hip Hop"
+  contemporary hip-hop: "Hip Hop"
+
+  # Ergänzt 2026-09
+  dance pop: "Pop"
+  dancepop: "Pop"
+
+  # Ergänzt 2026-09
+  party-schlager: "Schlager"
+  partyschlager: "Schlager"
+  party schlager: "Schlager"
+
+  # Ergänzt 2026-09
+  elektropop: "Electropop"
+  "nu disco": "Disco"
+  "ruhrpott-rap": "Ruhrpott Rap"

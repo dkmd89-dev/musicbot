@@ -1,5 +1,32 @@
 {
   "ARTIST_GENRE_MAP": {
+    "Alligatoah": {
+      "confidence": "LEARNED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Deutschrap": 2
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Deutschrap",
+          "secondary": [
+            "Hip Hop"
+          ]
+        },
+        {
+          "primary": "Deutschrap",
+          "secondary": [
+            "Hip Hop"
+          ]
+        }
+      ],
+      "observations": 2,
+      "primary": "Deutschrap",
+      "secondary": [
+        "Hip Hop"
+      ]
+    },
     "Ben Zucker": {
       "confidence": "OBSERVED",
       "description": "Auto-learned via Last.fm (rule)",
