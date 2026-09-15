@@ -12,7 +12,7 @@ analog zu tests/test_rich_menu_repair.py.
 """
 
 import asyncio
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -140,3 +140,131 @@ class TestLibraryMaintenanceDispatchGating:
         update.callback_query.data = "libmaint:action:totally-unknown-action:0"
         run_async(menu_system.handle_callback(update, mock_context))
         update.callback_query.answer.assert_any_call("⚠️ Unbekannte Aktion", show_alert=True)
+
+    def test_crafted_set_genre_action_callback_answers_gracefully_not_keyerror(
+        self, menu_system, mock_context
+    ):
+        """Regressionstest fuer den in Library Genre Management v2
+        behobenen KeyError: set-genre ist seit der Umstellung auf den
+        gs:*-Flow bewusst aus _MAINTENANCE_ACTIONS ausgeschlossen (siehe
+        handlers/menu/actions/library.py) - ein von Hand konstruiertes
+        "libmaint:action:set-genre:0" (SEC-003: callback_data ist frei
+        sendbar) darf nur eine "Unbekannte Aktion"-Meldung ausloesen,
+        nie einen unbehandelten KeyError."""
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:action:set-genre:0"
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_any_call("⚠️ Unbekannte Aktion", show_alert=True)
+
+
+# ── 🎭 Genre-Verwaltung: Dispatch-Routing (Library Genre Management v2) ──
+# Deckt NUR ab, dass jedes neue libmaint:*-Callback-Muster admin-gated ist
+# und an die richtige Handler-Methode geroutet wird - die eigentliche
+# Handler-Logik hat eigene Tests in
+# tests/test_library_maintenance_genre_management.py.
+
+
+class TestGenreManagementDispatchRouting:
+    @pytest.mark.parametrize(
+        "callback_data",
+        [
+            "libmaint:genremenu:0",
+            "libmaint:missing",
+            "libmaint:missingpick:0",
+            "libmaint:gs:src",
+            "libmaint:gs:mapping",
+            "libmaint:gs:manual",
+            "libmaint:gs:mode:overwrite",
+            "libmaint:gs:save:yes",
+            "libmaint:gs:confirm",
+            "libmaint:gs:execute",
+            "libmaint:gr:preview",
+            "libmaint:gr:confirm",
+            "libmaint:gr:execute",
+        ],
+    )
+    def test_non_admin_rejected(self, menu_system, mock_context, callback_data):
+        update = _mock_update(OTHER_ID)
+        update.callback_query.data = callback_data
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_called_with(
+            "⛔ Keine Berechtigung", show_alert=True
+        )
+
+    @pytest.mark.parametrize(
+        "callback_data, method_name, expected_args",
+        [
+            ("libmaint:genremenu:3", "handle_genre_menu", (3,)),
+            ("libmaint:missing", "handle_missing_genre_start", ()),
+            ("libmaint:missingpick:2", "handle_missing_genre_pick", (2,)),
+            ("libmaint:gs:src", "handle_gs_src", ()),
+            ("libmaint:gs:mapping", "handle_gs_mapping", ()),
+            ("libmaint:gs:manual", "handle_gs_manual", ()),
+            ("libmaint:gs:confirm", "handle_gs_confirm", ()),
+            ("libmaint:gs:execute", "handle_gs_execute", ()),
+            ("libmaint:gr:preview", "handle_gr_preview", ()),
+            ("libmaint:gr:confirm", "handle_gr_confirm", ()),
+            ("libmaint:gr:execute", "handle_gr_execute", ()),
+        ],
+    )
+    def test_routes_to_correct_handler_method(
+        self, menu_system, maintenance_handler, mock_context,
+        callback_data, method_name, expected_args,
+    ):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = callback_data
+        with patch.object(maintenance_handler, method_name, AsyncMock()) as mocked:
+            run_async(menu_system.handle_callback(update, mock_context))
+        mocked.assert_called_once_with(update, mock_context, *expected_args)
+
+    @pytest.mark.parametrize(
+        "callback_data, mode",
+        [("libmaint:gs:mode:overwrite", "overwrite"), ("libmaint:gs:mode:onlymissing", "onlymissing")],
+    )
+    def test_routes_gs_mode_with_mode_argument(
+        self, menu_system, maintenance_handler, mock_context, callback_data, mode
+    ):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = callback_data
+        with patch.object(maintenance_handler, "handle_gs_mode", AsyncMock()) as mocked:
+            run_async(menu_system.handle_callback(update, mock_context))
+        mocked.assert_called_once_with(update, mock_context, mode)
+
+    @pytest.mark.parametrize(
+        "callback_data, save",
+        [("libmaint:gs:save:yes", True), ("libmaint:gs:save:no", False)],
+    )
+    def test_routes_gs_save_with_bool_argument(
+        self, menu_system, maintenance_handler, mock_context, callback_data, save
+    ):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = callback_data
+        with patch.object(maintenance_handler, "handle_gs_save", AsyncMock()) as mocked:
+            run_async(menu_system.handle_callback(update, mock_context))
+        mocked.assert_called_once_with(update, mock_context, save)
+
+    def test_invalid_genremenu_index_answers_gracefully(self, menu_system, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:genremenu:not-a-number"
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_any_call("⚠️ Ungültiger Callback", show_alert=True)
+
+    def test_invalid_missingpick_index_answers_gracefully(self, menu_system, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:missingpick:not-a-number"
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_any_call("⚠️ Ungültiger Callback", show_alert=True)
+
+    def test_unknown_gs_subaction_answers_gracefully(self, menu_system, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:gs:totally-unknown"
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_any_call("⚠️ Unbekannter Genre-Setzen-Callback")
+
+    def test_unknown_gr_subaction_answers_gracefully(self, menu_system, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:gr:totally-unknown"
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_any_call(
+            "⚠️ Unbekannter Genre-Revalidierung-Callback"
+        )

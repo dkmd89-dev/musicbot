@@ -20,7 +20,21 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from handlers.menu.actions._common import show_handler_not_available
-from services.library_repair.maintenance_service import ALL_ACTIONS as _MAINTENANCE_ACTIONS
+from services.library_repair.maintenance_service import ACTION_SET_GENRE
+from services.library_repair.maintenance_service import ALL_ACTIONS as _ALL_MAINTENANCE_ACTIONS
+
+# Library Genre Management v2 (Chat-Charakterisierung 2026-09-15):
+# ACTION_SET_GENRE ist ueber die generische "libmaint:action/confirm/
+# execute:<action>:<idx>"-Route bewusst NICHT mehr erreichbar - kein
+# Button erzeugt mehr "libmaint:action:set-genre:*" (siehe
+# handlers/library_maintenance_handler.py::_preview_fn()/_execute_fn(),
+# die diesen Eintrag entfernt haben). Ohne diesen Ausschluss wuerde ein
+# von Hand konstruiertes "libmaint:action:set-genre:0"-callback_data
+# (SEC-003: callback_data ist frei sendbar) zu einem unbehandelten
+# KeyError statt einer sauberen Fehlermeldung fuehren - Genre setzen
+# laeuft jetzt ausschliesslich ueber den neuen "🎭 Genre-Verwaltung"-Flow
+# (libmaint:genremenu:*/gs:*/gr:*/missing*).
+_MAINTENANCE_ACTIONS = tuple(a for a in _ALL_MAINTENANCE_ACTIONS if a != ACTION_SET_GENRE)
 
 
 # ====== METADATA-REPROCESSING ======
@@ -355,9 +369,20 @@ async def handle_library_maintenance_callback(
       libmaint:start                    → Startseite
       libmaint:artists                  → Artist-Liste (Index-Picker)
       libmaint:pick:<idx>                → Aktions-Auswahl für diesen Artist
-      libmaint:action:<action>:<idx>     → Preview (read-only)
+      libmaint:action:<action>:<idx>     → Preview (read-only, NUR artist-casing/
+                                          legacy-genre-cleanup - set-genre laeuft
+                                          seit Library Genre Management v2 ueber
+                                          die genremenu:/gs:-Routen unten)
       libmaint:confirm:<action>:<idx>    → explizite Bestätigung
       libmaint:execute:<action>:<idx>    → tatsächliche Ausführung
+      libmaint:genremenu:<idx>           → 🎭 Genre-Verwaltung für diesen Artist
+      libmaint:missing                   → 🧹 Fehlende Genres (Finding-Artist-Liste)
+      libmaint:missingpick:<idx>         → Artist aus dieser Liste wählen
+      libmaint:gs:src/mapping/manual/mode:<m>/save:<s>/confirm/execute
+                                          → ✏️ Genre setzen (Quelle→Modus→
+                                          Mapping speichern?→Preview→Execute)
+      libmaint:gr:preview/confirm/execute → 🔄 Genre revalidieren (Subprozess,
+                                          siehe genre_revalidation_runner.py)
 
     Eigener Admin-Check hier (Defense-in-Depth, analog zu doctor:/review:/
     repair:/reprocess: - callback_data ist frei sendbar, siehe SEC-003).
@@ -413,6 +438,70 @@ async def handle_library_maintenance_callback(
             await maintenance_handler.handle_confirm_prompt(update, context, action, idx)
         else:
             await maintenance_handler.handle_execute(update, context, action, idx)
+        return
+
+    # ── 🎭 Genre-Verwaltung (Library Genre Management v2,
+    # Chat-Charakterisierung 2026-09-15) ────────────────────────────────
+
+    if len(parts) == 3 and parts[1] == "genremenu":
+        try:
+            idx = int(parts[2])
+        except ValueError:
+            await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+            return
+        await maintenance_handler.handle_genre_menu(update, context, idx)
+        return
+
+    if callback_data == "libmaint:missing":
+        await maintenance_handler.handle_missing_genre_start(update, context)
+        return
+    if len(parts) == 3 and parts[1] == "missingpick":
+        try:
+            idx = int(parts[2])
+        except ValueError:
+            await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+            return
+        await maintenance_handler.handle_missing_genre_pick(update, context, idx)
+        return
+
+    if len(parts) >= 3 and parts[1] == "gs":
+        sub = parts[2]
+        if sub == "src":
+            await maintenance_handler.handle_gs_src(update, context)
+            return
+        if sub == "mapping":
+            await maintenance_handler.handle_gs_mapping(update, context)
+            return
+        if sub == "manual":
+            await maintenance_handler.handle_gs_manual(update, context)
+            return
+        if sub == "mode" and len(parts) == 4 and parts[3] in ("overwrite", "onlymissing"):
+            await maintenance_handler.handle_gs_mode(update, context, parts[3])
+            return
+        if sub == "save" and len(parts) == 4 and parts[3] in ("yes", "no"):
+            await maintenance_handler.handle_gs_save(update, context, parts[3] == "yes")
+            return
+        if sub == "confirm":
+            await maintenance_handler.handle_gs_confirm(update, context)
+            return
+        if sub == "execute":
+            await maintenance_handler.handle_gs_execute(update, context)
+            return
+        await query.answer("⚠️ Unbekannter Genre-Setzen-Callback")
+        return
+
+    if len(parts) == 3 and parts[1] == "gr":
+        sub = parts[2]
+        if sub == "preview":
+            await maintenance_handler.handle_gr_preview(update, context)
+            return
+        if sub == "confirm":
+            await maintenance_handler.handle_gr_confirm(update, context)
+            return
+        if sub == "execute":
+            await maintenance_handler.handle_gr_execute(update, context)
+            return
+        await query.answer("⚠️ Unbekannter Genre-Revalidierung-Callback")
         return
 
     await query.answer("⚠️ Unbekannter Library-Wartung-Callback")

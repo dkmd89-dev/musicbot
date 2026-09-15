@@ -10,12 +10,16 @@ scripts/set_genre.py / scripts/remove_legacy_genre_atom.py
 
 import yaml
 
+import pytest
+
 from services.library_repair.genre import (
+    GenreDomainError,
     LegacyGenreDecision,
     decide_legacy_genre_removal,
     genre_from_mapping,
     known_artist_keys,
     normalize_genre_input,
+    save_manual_genre_mapping,
 )
 from utils.genre_map import GenreMapper
 
@@ -186,3 +190,101 @@ def test_genre_from_mapping_matches_genre_mapper_manual_tier(config):
         dict.fromkeys([theirs.primary, *theirs.secondary])
     )
     assert ours == expected
+
+
+# ── save_manual_genre_mapping() (Library Genre Management v2) ───────────
+
+
+def test_save_manual_mapping_missing_file_raises_domain_error(tmp_path):
+    with pytest.raises(GenreDomainError):
+        save_manual_genre_mapping("Metallica", "Heavy Metal", tmp_path, dry_run=True)
+
+
+def test_save_manual_mapping_dry_run_does_not_write(tmp_path):
+    p = tmp_path / "artist_genre.yaml"
+    _write_artist_genre_yaml(p, {})
+
+    result = save_manual_genre_mapping("Metallica", "Heavy Metal", tmp_path, dry_run=True)
+
+    assert result.dry_run is True
+    assert result.written is False
+    assert result.unchanged is False
+    assert result.artist_key == "metallica"
+    assert result.primary == "Heavy Metal"
+    data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    assert "metallica" not in (data.get("ARTIST_GENRE_MAP") or {})
+
+
+def test_save_manual_mapping_writes_new_entry(tmp_path):
+    p = tmp_path / "artist_genre.yaml"
+    _write_artist_genre_yaml(p, {})
+
+    result = save_manual_genre_mapping("Metallica", "Heavy Metal; Thrash Metal", tmp_path, dry_run=False)
+
+    assert result.written is True
+    assert result.unchanged is False
+    data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    entry = data["ARTIST_GENRE_MAP"]["metallica"]
+    assert entry["primary"] == "Heavy Metal"
+    assert entry["secondary"] == ["Thrash Metal"]
+
+
+def test_save_manual_mapping_case_insensitive_key(tmp_path):
+    p = tmp_path / "artist_genre.yaml"
+    _write_artist_genre_yaml(p, {})
+
+    save_manual_genre_mapping("METALLICA", "Rock", tmp_path, dry_run=False)
+
+    data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    assert "metallica" in data["ARTIST_GENRE_MAP"]
+
+
+def test_save_manual_mapping_identical_entry_is_unchanged_no_write(tmp_path):
+    p = tmp_path / "artist_genre.yaml"
+    _write_artist_genre_yaml(p, {
+        "metallica": {"primary": "Rock", "secondary": [], "description": "x"},
+    })
+    before_mtime = p.stat().st_mtime_ns
+
+    result = save_manual_genre_mapping("Metallica", "Rock", tmp_path, dry_run=False)
+
+    assert result.unchanged is True
+    assert result.written is False
+    assert p.stat().st_mtime_ns == before_mtime
+
+
+def test_save_manual_mapping_preserves_existing_description(tmp_path):
+    p = tmp_path / "artist_genre.yaml"
+    _write_artist_genre_yaml(p, {
+        "metallica": {"primary": "Rock", "secondary": [], "description": "Custom note"},
+    })
+
+    save_manual_genre_mapping("Metallica", "Heavy Metal", tmp_path, dry_run=False)
+
+    data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    assert data["ARTIST_GENRE_MAP"]["metallica"]["description"] == "Custom note"
+
+
+def test_save_manual_mapping_updates_existing_entry(tmp_path):
+    p = tmp_path / "artist_genre.yaml"
+    _write_artist_genre_yaml(p, {
+        "metallica": {"primary": "Rock", "secondary": [], "description": "x"},
+    })
+
+    result = save_manual_genre_mapping("Metallica", "Heavy Metal", tmp_path, dry_run=False)
+
+    assert result.written is True
+    data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    assert data["ARTIST_GENRE_MAP"]["metallica"]["primary"] == "Heavy Metal"
+
+
+def test_save_manual_mapping_does_not_touch_other_artists(tmp_path):
+    p = tmp_path / "artist_genre.yaml"
+    _write_artist_genre_yaml(p, {
+        "bausa": {"primary": "Deutschrap", "secondary": [], "description": "x"},
+    })
+
+    save_manual_genre_mapping("Metallica", "Rock", tmp_path, dry_run=False)
+
+    data = yaml.safe_load(p.read_text(encoding="utf-8"))
+    assert data["ARTIST_GENRE_MAP"]["bausa"]["primary"] == "Deutschrap"

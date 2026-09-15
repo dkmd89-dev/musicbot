@@ -131,6 +131,15 @@ class TestHandlePickArtist:
         assert "nicht mehr gefunden" in text
 
     def test_valid_index_shows_three_actions(self, handler, context):
+        """Library Genre Management v2 (Chat-Charakterisierung 2026-09-15):
+        der dritte Button ist jetzt "🎭 Genre-Verwaltung"
+        (libmaint:genremenu:<idx>) statt eines direkten
+        libmaint:action:set-genre:<idx> - set-genre selbst (manuell/
+        Mapping/only-if-missing/Mapping speichern) läuft über den neuen,
+        mehrstufigen gs:*-Flow, siehe
+        tests/test_library_maintenance_genre_management.py::TestGenreMenu/
+        TestGsSrc ff.
+        unten."""
         update = _mock_update(ADMIN_ID)
         with patch.object(lmh_module, "resolve_artist_by_index", return_value="Bausa"):
             run(handler.handle_pick_artist(update, context, 0))
@@ -138,7 +147,8 @@ class TestHandlePickArtist:
         callback_datas = [b.callback_data for row in keyboard.inline_keyboard for b in row]
         assert f"libmaint:action:{ACTION_ARTIST_CASING}:0" in callback_datas
         assert f"libmaint:action:{ACTION_LEGACY_GENRE_CLEANUP}:0" in callback_datas
-        assert f"libmaint:action:{ACTION_SET_GENRE}:0" in callback_datas
+        assert "libmaint:genremenu:0" in callback_datas
+        assert f"libmaint:action:{ACTION_SET_GENRE}:0" not in callback_datas
 
     def test_opening_action_selection_does_not_call_execute(self, handler, context):
         """Kein Auto-Start (Auftrag §11.5): Artist waehlen loest keine
@@ -215,16 +225,21 @@ class TestHandlePreview:
         assert "Keine Dateien" in text
 
     def test_preview_service_error_shown_to_user(self, handler):
-        """z.B. set-genre fuer einen Artist ohne Mapping-Eintrag."""
+        """Library Genre Management v2: set-genre laeuft nicht mehr ueber
+        diesen generischen Preview-Pfad (siehe
+        tests/test_library_maintenance_genre_management.py::TestGsPreview
+        fuer das Aequivalent von _run_gs_preview_and_report()) - dieser Test prueft
+        die generische MaintenanceServiceError-Anzeige weiterhin anhand
+        einer noch ueber diesen Pfad erreichbaren Aktion."""
         message = Mock()
         message.edit_text = AsyncMock()
         with patch.object(
-            lmh_module, "preview_set_genre",
-            side_effect=MaintenanceServiceError("Artist 'X' nicht in artist_genre.yaml gefunden."),
+            lmh_module, "preview_artist_casing",
+            side_effect=MaintenanceServiceError("Keine Casing-Mappings gefunden."),
         ):
-            run(handler._run_preview_and_report(message, ACTION_SET_GENRE, "X", 0))
+            run(handler._run_preview_and_report(message, ACTION_ARTIST_CASING, "X", 0))
         text = message.edit_text.call_args.args[0]
-        assert "nicht in artist_genre.yaml gefunden" in text
+        assert "Keine Casing-Mappings gefunden" in text
 
 
 # ── Confirm ───────────────────────────────────────────────────────────
@@ -328,15 +343,18 @@ class TestHandleExecute:
         assert "läuft bereits" in text
 
     def test_maintenance_service_error_shown_to_user(self, handler):
+        """Library Genre Management v2: set-genre laeuft nicht mehr ueber
+        diesen generischen Execute-Pfad (siehe
+        tests/test_library_maintenance_genre_management.py::TestGsConfirmAndExecute)."""
         message = Mock()
         message.edit_text = AsyncMock()
         with patch.object(
-            lmh_module, "execute_set_genre",
-            side_effect=MaintenanceServiceError("Artist 'X' nicht in artist_genre.yaml gefunden."),
+            lmh_module, "execute_legacy_genre_cleanup",
+            side_effect=MaintenanceServiceError("Kein Legacy-Atom gefunden."),
         ):
-            run(handler._run_execute_and_report(message, ACTION_SET_GENRE, "X", ADMIN_ID))
+            run(handler._run_execute_and_report(message, ACTION_LEGACY_GENRE_CLEANUP, "X", ADMIN_ID))
         text = message.edit_text.call_args.args[0]
-        assert "nicht in artist_genre.yaml gefunden" in text
+        assert "Kein Legacy-Atom gefunden" in text
 
     def test_unexpected_exception_reports_to_error_handler(self, handler):
         message = Mock()
@@ -352,7 +370,10 @@ class TestHandleExecute:
         assert "Unerwarteter Fehler" in text
 
 
-# ── Alle drei Actions durchgereicht ─────────────────────────────────────
+# ── Beide verbleibenden generischen Actions durchgereicht ───────────────
+# (ACTION_SET_GENRE bewusst NICHT mehr Teil dieser Parametrisierung -
+# Library Genre Management v2 hat set-genre auf den eigenen gs:*-Flow
+# umgestellt, siehe tests/test_library_maintenance_genre_management.py.)
 
 
 class TestAllThreeActionsWired:
@@ -361,7 +382,6 @@ class TestAllThreeActionsWired:
         [
             (ACTION_ARTIST_CASING, "execute_artist_casing_fix"),
             (ACTION_LEGACY_GENRE_CLEANUP, "execute_legacy_genre_cleanup"),
-            (ACTION_SET_GENRE, "execute_set_genre"),
         ],
     )
     def test_execute_calls_correct_service_function_with_resolved_artist(

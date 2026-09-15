@@ -807,12 +807,15 @@ explizite Bestätigung ("✅ JA, AUSFÜHREN")
 Execute (Lock-Status vorab geprüft, Doppelklick-Schutz) → Ergebnis
 ```
 
-`set-genre` ist über Telegram bewusst NUR im `--from-mapping`-Modus
-erreichbar (kein Freitext-Genre-Eingabefeld) — für manuelle Werte bleibt
-die CLI zuständig. Öffnen des Menüs/der Artist-Liste/der Aktions-Auswahl
-startet niemals automatisch eine Aktion. Berechtigung (Admin) wird am
-tatsächlichen Ausführungs-Handler erneut geprüft (Defense-in-Depth,
-identisches Muster wie `repair:`/`doctor:`/`review:`).
+`set-genre` erreicht man aus der Aktions-Auswahl über den Zwischenschritt
+„🎭 Genre-Verwaltung" (`libmaint:genremenu:<idx>`) — dort inzwischen
+sowohl mit Mapping- als auch mit manueller Freitext-Eingabe nutzbar
+(siehe §14, Library Genre Management v2, löst die hier ursprünglich
+dokumentierte `--from-mapping`-only-Einschränkung ab). Öffnen des
+Menüs/der Artist-Liste/der Aktions-Auswahl startet niemals automatisch
+eine Aktion. Berechtigung (Admin) wird am tatsächlichen
+Ausführungs-Handler erneut geprüft (Defense-in-Depth, identisches
+Muster wie `repair:`/`doctor:`/`review:`).
 
 **Gemeinsame Infrastruktur mit dem Finding-Flow (ADR-0004):** ein
 gemeinsamer Lock (`library_repair.lock`), ein gemeinsames Journal
@@ -836,15 +839,30 @@ Lauf können sich nicht überlappen.
 
 ### 11.4 Offene Follow-ups (ARCH-031, bewusst nicht Teil von ARCH-032)
 
-- `GENRE_EMPTY`/`META_GENRE_MISSING` künftig über den leichteren
-  `set-genre --from-mapping`-Pfad statt voller `METADATA_REPROCESSING`?
-  Würde bestehendes, produktiv gelaufenes Planner-Verhalten ändern —
-  eigene Characterization + Nutzerentscheidung nötig.
-- `tags_fingerprint()` rückwirkend auch für `apply_level1()`?
-  Regressionsrisiko gegen 55 bestehende Executor-Tests.
-- `--update-manual-mapping` als künftige, review-pflichtige
-  Telegram-Admin-Funktion?
-- `--only-if-missing` als Telegram-Option?
+Drei der vier ursprünglich hier gelisteten Punkte sind mit Library Genre
+Management v2 (§14, Chat-Charakterisierung 2026-09-15) geschlossen:
+
+- ~~`GENRE_EMPTY`/`META_GENRE_MISSING` künftig über den leichteren
+  `set-genre --from-mapping`-Pfad statt voller `METADATA_REPROCESSING`?~~
+  **CLOSED (§14):** Planner-Routing selbst bleibt bewusst unverändert
+  (weiterhin `METADATA_REPROCESSING`) — zusätzlich dazu findet der neue
+  Telegram-Einstieg „🧹 Fehlende Genres" (`libmaint:missing`) betroffene
+  Artists read-only über den bestehenden Health-Scan/Planner und führt
+  in den leichteren `set-genre`-Flow (§14.1), ohne den Finding-Status
+  selbst zu berühren.
+- `tags_fingerprint()` rückwirkend auch für `apply_level1()`? **weiterhin
+  DEFERRED** — Regressionsrisiko gegen 55 bestehende Executor-Tests,
+  bewusst nicht Teil von Library Genre Management v2.
+- ~~`--update-manual-mapping` als künftige, review-pflichtige
+  Telegram-Admin-Funktion?~~ **CLOSED (§14):** Kernlogik nach
+  `services/library_repair/genre.py::save_manual_genre_mapping()`
+  extrahiert (CLI-Wrapper bleibt verhaltensgleich), im Telegram-`gs:*`-
+  Flow als „Mapping speichern?"-Schritt nach expliziter Preview/
+  Bestätigung nutzbar — kein direkter Dateisystemzugriff aus dem
+  Handler (CLAUDE.md §4).
+- ~~`--only-if-missing` als Telegram-Option?~~ **CLOSED (§14):** als
+  Modus-Wahl im `gs:*`-Flow (`libmaint:gs:mode:onlymissing`), im
+  „Fehlende Genres"-Flow als empfohlener Default markiert.
 
 ---
 
@@ -1044,3 +1062,175 @@ gegenseitig die Report-Datei überschreiben könnten.
 | `tests/test_duplicate_runner.py` | `run_duplicate_scan()` — `--path` statt `--artist`, nie `--execute`, Report-Parsing, Exit-Code-3-Safety-Violation, Lock-Sharing/-Release, Timeout/Start-Fehler (17 Tests) |
 | `tests/test_duplicate_check_handler.py` | Telegram-Handler (Start/Artist-Liste/Pick/Ergebnis-Formatierung), Admin-Re-Check je Schritt, Index-basierte Artist-Auswahl, kein Auto-Start, Lock-Konflikt-Anzeige, Safety-Violation-Anzeige, nie ein Delete-Button (20 Tests) |
 | `tests/test_menu_actions_library.py` | Dispatcher-Routing `dupcheck:*` (Admin-Gate, Start/Artists/Pick, unbekannter Callback) |
+
+---
+
+## 14. Library Genre Management v2 (Chat-Charakterisierung 2026-09-15)
+
+**Herkunft:** Nutzerauftrag „🎭 Genre-Verwaltung" — erweitert das
+bestehende `set-genre` (§11) um manuelle Telegram-Freitext-Eingabe,
+`--only-if-missing` als Telegram-Option, einen leichteren Einstieg für
+offene `GENRE_EMPTY`/`META_GENRE_MISSING`-Befunde und eine neue,
+eigenständige Funktion: **kontrollierte Genre-Revalidierung**
+(Last.fm erneut befragen, bestehende Auto-Learn-Overturn-Regel
+unverändert wiederverwendet, NIEMALS der automatische Download-Pfad).
+Schließt drei der vier in §11.4 offen gelisteten ARCH-031-Follow-ups;
+`tags_fingerprint()` rückwirkend auf `apply_level1()` (der vierte Punkt)
+bleibt bewusst außerhalb des Scopes.
+
+### 14.1 ✏️ Genre setzen — erweiterter `gs:*`-Flow
+
+Ersetzt den in §11.3 ursprünglich dokumentierten `--from-mapping`-only-
+Telegram-Zugang durch einen mehrstufigen, aber weiterhin komplett
+Preview→Bestätigung→Execute-basierten Flow (`handlers/
+library_maintenance_handler.py`, Callback-Unterpräfix `libmaint:gs:`):
+
+```text
+🎭 Genre-Verwaltung (libmaint:genremenu:<idx>)
+   ↓
+Quelle: 📚 Aus Mapping | ✏️ Manuell eingeben (libmaint:gs:mapping / gs:manual)
+   ↓ (bei manuell: Freitext-Eingabe über das bestehende
+   ↓  context.user_data["libmaint_awaiting_genre_text"]-Muster,
+   ↓  identisch zu Family-Chat/-Challenge — KEIN neuer
+   ↓  ConversationHandler, siehe handle_text_message())
+Modus: Überschreiben erlaubt | Nur wenn Genre fehlt (libmaint:gs:mode:*)
+   ↓ (nur bei manuell)
+Mapping speichern? Ja/Nein (libmaint:gs:save:*)
+   ↓
+Preview (read-only, preview_set_genre()) → explizite Bestätigung
+   ↓
+Execute (execute_set_genre(), Lock-Status vorab geprüft) → Ergebnis
+   ↓ (nur wenn "Mapping speichern" gewählt UND success_count > 0)
+save_manual_genre_mapping() → mapping/artist_genre.yaml
+```
+
+**Manuelle Eingabe-Validierung**
+(`_validate_manual_genre_input()`): leer/nur Whitespace, Zeilenumbrüche,
+> 200 Zeichen werden mit einer Fehlermeldung abgelehnt, die Sitzung
+bleibt dabei im `awaiting`-Zustand (erneuter Versuch möglich, `/cancel`
+bricht ab). Die normalisierte Eingabe läuft durch die bestehende zentrale
+Normalisierung (`services/library_repair/genre.py::
+normalize_genre_input()`, Trenner `;`/`,`/`/` → `"; "`) — **keine neue,
+parallele Normalisierung**.
+
+**Mapping speichern** (löst das ARCH-031-Follow-up „`--update-manual-
+mapping` als Telegram-Funktion" — §11.4): die bisher CLI-only
+`_update_manual_genre_mapping()`-Logik aus `scripts/library_repair.py`
+wurde nach `services/library_repair/genre.py::
+save_manual_genre_mapping()` extrahiert (atomarer Schreibvorgang,
+Tmp+Replace, case-insensitiver Key, bestehendes `description`-Feld
+bleibt erhalten) — der CLI-Wrapper ruft dieselbe Funktion auf
+(verhaltensgleich, durch die bestehende CLI-Testsuite abgesichert). Der
+Handler selbst greift **niemals** direkt auf das Dateisystem zu
+(CLAUDE.md §4) — er ruft ausschließlich diese eine Service-Funktion.
+Gilt nur bei manueller Quelle (bei „Aus Mapping" wäre das Mapping mit
+sich selbst identisch).
+
+### 14.2 🧹 Fehlende Genres (löst ARCH-031-Follow-up F1, §11.4)
+
+`libmaint:missing` führt **keinen eigenen Scan** aus, sondern
+liest den bestehenden, read-only Health-Scan/Planner erneut
+(`services/library_repair/repair_service.py::build_repair_plan()` +
+`planner.py::filter_plan(issue_code=...)`, zweimal aufgerufen für
+`GENRE_EMPTY` und `META_GENRE_MISSING`, Artists dedupliziert und
+alphabetisch sortiert) und zeigt eine index-basierte Artist-Liste. Die
+Auswahl eines Artists führt direkt in §14.1s `gs:*`-Flow, mit
+„🆕 Nur wenn Genre fehlt" dort als **empfohlener** (nicht erzwungener)
+Default markiert. Der Planner selbst — inkl. der Entscheidung, dass
+diese beiden Issue-Codes weiterhin nach `RepairLevel.METADATA_
+REPROCESSING` routen — bleibt bewusst unverändert; dieser Flow ist ein
+**zusätzlicher**, leichterer Einstiegspunkt, kein Ersatz.
+
+### 14.3 🔄 Genre revalidieren
+
+**Neue Funktion**, kein Ersatz für Auto-Learning: prüft für einen
+einzelnen Artist erneut gegen Last.fm, ob das aktuell gelockte Genre
+noch Bestand haben sollte, und wendet — nur nach expliziter Telegram-
+Bestätigung — exakt dieselbe, bereits bestehende Auto-Learn-Overturn-
+Regel an wie der normale Lern-Loop.
+
+```text
+services/library_repair/genre_revalidation.py
+    run_genre_revalidation(artist, apply=False|True)
+    — baut EIGENE, frische GenreMapper/ArtistNormalizer/GenreProcessor/
+      AutoLearnManager-Instanzen (NICHT die Bot-Singletons, siehe unten),
+      fragt genre_processor._fetch_genre_from_lastfm() ab, vergleicht
+      gegen auto_learn.preview_genre_learning() — UNVERÄNDERTE
+      Entscheidungsfunktion, keine eigene Overturn-Logik.
+    — Manuelle Mappings (artist_genre.yaml) sind ABSOLUT geschützt:
+      wird zuerst geprüft, blockiert bei Treffer jede weitere Aktion
+      (OUTCOME_BLOCKED_MANUAL) — Revalidierung überschreibt niemals
+      artist_genre.yaml.
+    — Nur bei apply=True UND outcome == OVERTURN_ALLOWED wird tatsächlich
+      geschrieben (auto_learn.learn_genre(), identischer Pfad wie der
+      normale Lern-Loop) — jeder andere Outcome (SAME_GENRE,
+      OVERTURN_REJECTED, NO_CANDIDATE, BLOCKED_MANUAL) ist ein
+      vollständiger No-Op, auch kein stiller Zähler-Increment.
+
+scripts/revalidate_genre.py
+    CLI-Wrapper (echtes config.Config, wie --update-manual-mapping) —
+    --artist (required), --dry-run (Default), --apply,
+    --json <Pfad> (Ergebnis als JSON, atomar geschrieben).
+    --fix/--repair/--force/--execute werden explizit mit Exit-Code 2
+    abgelehnt (Verwechslungsschutz mit anderen Scripts dieses Projekts).
+
+services/library_repair/genre_revalidation_runner.py
+    run_genre_revalidation_subprocess(artist, apply=False|True)
+    — läuft die CLI IMMER als Subprozess (asyncio, Timeout), NIE
+      in-process. Grund: GenreMapper/ArtistNormalizer sind SingletonMixin
+      — ein in-process-Aufruf würde dieselben, beim Bot-Start für die
+      Live-Download-Pipeline konstruierten Instanzen treffen (identisches
+      Risiko/identische Lösung wie ARCH-033 L2/L3, siehe
+      repair_musicbot_handler.py-Docstring). Der normale Download-Pfad
+      (GenreProcessor.determine_genre_with_fallbacks()) bleibt davon
+      vollständig unberührt — kein automatischer Trigger irgendwo.
+    — wrappt den GESAMTEN Subprozess-Aufruf im geteilten Repair-Lock
+      (ADR-0004-Prinzip, identisch zu duplicate_runner.py) — Grund:
+      REPORT_JSON_PATH ist eine feste Datei unter Config.DATA_DIR, zwei
+      gleichzeitige Taps würden sich sonst überschreiben.
+```
+
+Telegram (`libmaint:gr:*`, identisches Preview→Bestätigung→Execute-Muster
+wie §14.1):
+
+```text
+🔄 Genre revalidieren (libmaint:gr:preview)
+   ↓
+Subprozess-Vorschau: aktuelles Genre, ermitteltes Kandidaten-Genre,
+Quelle, Learning-Status, Entscheidung (dry_run — keine Mutation)
+   ↓ (NUR bei outcome == OVERTURN_ALLOWED — bei SAME_GENRE/
+   ↓  OVERTURN_REJECTED/NO_CANDIDATE/BLOCKED_MANUAL gibt es KEINEN
+   ↓  "Änderung anwenden"-Button)
+explizite Bestätigung ("✅ Änderung anwenden", libmaint:gr:confirm)
+   ↓
+Execute (libmaint:gr:execute, Lock-Status vorab geprüft) → Ergebnis
+```
+
+**Bekannter, vorbestehender Fund während der Implementierung entdeckt
+(nicht durch diese Phase verursacht, siehe `docs/FINDINGS_INDEX.md`):**
+`GenreMapper.reload()` lädt über einen hartkodierten String
+(`self._find_mapping_dir("mapping")`) statt über das tatsächlich
+konfigurierte `mapping_dir` der Instanz — `_build_dependencies()` in
+`genre_revalidation.py` ruft `.reload()` deshalb bewusst NICHT auf
+(jeder Subprozess erhält ohnehin frische Singleton-Instanzen über den
+normalen `_do_init()`-Pfad, der das korrekt konfigurierte `mapping_dir`
+respektiert).
+
+### 14.4 Tests
+
+| Datei | Deckt ab |
+|---|---|
+| `tests/test_library_repair_genre.py` | `save_manual_genre_mapping()` — fehlende Datei, Dry-Run, Neuanlage, case-insensitiver Key, unverändert/kein Schreiben, `description`-Erhalt, Update, Isolation zwischen Artists (8 neue Tests, 30 gesamt in der Datei) |
+| `tests/test_genre_revalidation.py` | `run_genre_revalidation()` — Manueller-Mapping-Schutz, No-Candidate, Same-Genre, Overturn-Rejected, Overturn-Allowed, aktuelles Genre in der Anzeige, Run-Tracking (14 Tests) |
+| `tests/test_genre_revalidation_runner.py` | `run_genre_revalidation_subprocess()` — Kommando-Aufbau (`--artist`/`--json`/`--apply`), Erfolg/Fehler-Parsing, Lock-Acquire/-Release (9 Tests) |
+| `tests/test_library_maintenance_genre_management.py` | Telegram-Handler-Ebene: `genremenu`/`missing`/`missingpick`, kompletter `gs:*`-Zustandsautomat inkl. Freitext-Validierung, `gr:*` für alle fünf Outcomes, kein Auto-Start an jedem Zwischenschritt, Lock-Konflikt-Anzeige (58 Tests) |
+| `tests/test_rich_menu_library_maintenance.py` (`TestGenreManagementDispatchRouting`) | Dispatcher-Routing für alle neuen `libmaint:genremenu/missing/missingpick/gs:*/gr:*`-Callback-Muster (Admin-Gate, korrekte Handler-Methode, korrekt durchgereichte Argumente, unbekannte Sub-Callbacks, Regressionstest für den behobenen `set-genre`-KeyError) |
+
+**Bewusst nicht umgesetzt (Auftrag §24.E, „nur wenn trivial"):** Genre-
+Analyse/Explainability (z. B. „warum wurde dieses Genre gewählt") wurde
+geprüft und als **nicht trivial** eingestuft — würde eine neue
+Präsentationsschicht über die interne Entscheidungslogik von
+`GenreProcessor`/`AutoLearnManager` benötigen (mehrstufige Fallback-Kette,
+siehe `docs/GENRE_SYSTEM.md`), die aktuell nirgends strukturiert
+exponiert ist. Bewusst als offener, unpriorisierter Punkt dokumentiert
+statt erzwungen umgesetzt.

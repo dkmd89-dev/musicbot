@@ -168,55 +168,35 @@ def _collect_maintenance_targets(args, library_root: Path) -> list:
 def _update_manual_genre_mapping(
     artist: str, genre: str, mapping_dir: Path, *, dry_run: bool
 ) -> None:
-    """CLI-only (ARCH-031 A.4): traegt den geschriebenen Genre-Wert
-    zusaetzlich in mapping/artist_genre.yaml ein - unveraendert aus
-    scripts/set_genre.py::update_manual_mapping() uebernommen. Kein
-    Backup-/Journal-Muster wie der Executor (fachliche Config-Aenderung,
-    keine Library-Datei-Mutation)."""
-    import yaml
+    """CLI-Praesentation um services.library_repair.genre.
+    save_manual_genre_mapping() (Library Genre Management v2, Chat-
+    Charakterisierung 2026-09-15 - dorthin extrahiert, damit auch der
+    Telegram-Handler dieselbe Schreiblogik nutzen kann, statt sie hier
+    zu duplizieren). Verhalten/Ausgabe unveraendert gegenueber der
+    vorherigen, hier direkt implementierten Fassung."""
+    from services.library_repair.genre import GenreDomainError, save_manual_genre_mapping
 
-    path = mapping_dir / "artist_genre.yaml"
-    if not path.exists():
-        print(f"⚠️  {path} fehlt — Mapping-Update uebersprungen")
+    try:
+        result = save_manual_genre_mapping(artist, genre, mapping_dir, dry_run=dry_run)
+    except GenreDomainError as e:
+        print(f"⚠️  {e}")
         return
 
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    mapping = data.get("ARTIST_GENRE_MAP") or {}
-
-    parts = [p.strip() for p in genre.split(";") if p.strip()]
-    primary = parts[0] if parts else genre
-    secondary = parts[1:] if len(parts) > 1 else []
-
-    key = artist.lower()
-    existing = mapping.get(key)
-    new_entry = {
-        "primary": primary,
-        "secondary": secondary,
-        "description": (existing or {}).get(
-            "description",
-            "Manuell gesetzt via library_repair.py --maintenance-action set-genre",
-        ),
-    }
-
-    if existing == new_entry:
-        print(f"ℹ️  {key} bereits in artist_genre.yaml mit identischem Eintrag")
+    if result.unchanged:
+        print(f"ℹ️  {result.artist_key} bereits in artist_genre.yaml mit identischem Eintrag")
         return
-
-    if dry_run:
+    if result.dry_run:
         print(
-            f"📝 [DRY-RUN] wuerde {key} -> {new_entry} in {path} eintragen "
-            f"(bisher: {existing!r})"
+            f"📝 [DRY-RUN] wuerde {result.artist_key} -> "
+            f"{{'primary': {result.primary!r}, 'secondary': {result.secondary!r}}} "
+            f"in {result.mapping_path} eintragen"
         )
         return
-
-    mapping[key] = new_entry
-    data["ARTIST_GENRE_MAP"] = mapping
-    tmp = path.with_suffix(".yaml.tmp")
-    tmp.write_text(
-        yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    print(
+        f"✅ {result.artist_key} -> "
+        f"{{'primary': {result.primary!r}, 'secondary': {result.secondary!r}}} "
+        f"in {result.mapping_path} eingetragen"
     )
-    tmp.replace(path)
-    print(f"✅ {key} -> {new_entry} in {path} eingetragen")
 
 
 def _run_maintenance_action(args) -> int:

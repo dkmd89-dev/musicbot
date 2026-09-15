@@ -1235,6 +1235,20 @@ class RichMenuHandler:
             await family_challenge_handler.process_pending_answer(update, context, text)
             return
 
+        # Genre-Verwaltung: wartet dieser User gerade auf seine manuelle
+        # Genre-Eingabe? (Library Genre Management v2, Chat-
+        # Charakterisierung 2026-09-15 - identisches context.user_data-
+        # Freitext-Muster wie Navidrome-Suche oben, aber als eigener
+        # Flag-Key statt eines browse_states-Eintrags, da
+        # LibraryMaintenanceHandler keine solche Session-Struktur besitzt.)
+        library_maintenance_handler = getattr(self, "library_maintenance_handler", None)
+        if library_maintenance_handler and context.user_data.get("libmaint_awaiting_genre_text"):
+            handled = await library_maintenance_handler.process_pending_genre_input(
+                update, context, text
+            )
+            if handled:
+                return
+
         # Aktive Workflows prüfen
         handled = await self.workflow_dispatcher.try_dispatch(
             update, context, text, self.user_mgmt_handler

@@ -20,10 +20,22 @@ ein schwergewichtiges SingletonMixin mit externen API-Clients
 (Praezedenz: tag_repairs.py's Nachbildung von split_main_and_featuring()
 statt Import von services.metadata).
 
-Kein Dateisystem-Zugriff ausser dem Lesen von artist_genre.yaml; keine
-Mutagen-/Backup-/Journal-Logik (siehe executor.py, ARCH-031 B.3).
-`--update-manual-mapping` (Schreiben von artist_genre.yaml selbst) ist
-bewusst NICHT hier: CLI-only-Vorgang, siehe ARCH-031 A.4.
+Kein Dateisystem-Zugriff ausser dem Lesen von artist_genre.yaml und -
+seit Library Genre Management v2 (Chat-Charakterisierung 2026-09-15,
+siehe save_manual_genre_mapping() unten) - dem gezielten Schreiben
+genau dieser einen Datei fuer `--update-manual-mapping`. Weiterhin
+KEINE Mutagen-/Backup-/Journal-Logik (das bleibt executor.py
+vorbehalten, ARCH-031 B.3) - artist_genre.yaml ist eine Config-/
+Mapping-Datei, keine Library-Audiodatei, daher kein Audio-Essenz-
+Backup-Bedarf, identisch zur bisherigen CLI-Argumentation.
+
+save_manual_genre_mapping() war urspruenglich (ARCH-031 A.4) bewusst
+CLI-only (scripts/library_repair.py::_update_manual_genre_mapping()) -
+mit Library Genre Management v2 nach hier extrahiert, DAMIT sowohl die
+CLI (duenner Wrapper) als auch der neue Telegram-Handler (der laut
+CLAUDE.md §4 niemals direkt auf Dateien schreiben darf) dieselbe,
+einzige Schreiblogik verwenden. Keine Verhaltensaenderung gegenueber
+der vorherigen CLI-Funktion.
 """
 
 from __future__ import annotations
@@ -34,6 +46,16 @@ from typing import List, Optional
 
 CANONICAL_GENRE_ATOM = "\xa9gen"
 LEGACY_GENRE_ATOM = "----:com.apple.iTunes:GENRE"
+
+
+class GenreDomainError(Exception):
+    """Reine Domain-Fehler dieses Moduls (z. B. artist_genre.yaml fehlt) -
+    bewusst KEIN Import von maintenance_service.MaintenanceServiceError
+    hier (genre.py bleibt die untere, abhaengigkeitsfreie Domain-Schicht,
+    siehe Modul-Docstring; maintenance_service.py importiert genre.py,
+    nicht umgekehrt - ein Ruecking-Import wuerde einen Zyklus erzeugen).
+    Aufrufer in maintenance_service.py fangen dies ab und wandeln es in
+    MaintenanceServiceError um."""
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -92,6 +114,90 @@ def genre_from_mapping(artist: str, mapping_path: Path) -> Optional[str]:
             seen.add(p)
             uniq.append(p)
     return "; ".join(uniq) if uniq else None
+
+
+@dataclass(frozen=True)
+class ManualMappingSaveResult:
+    """Ergebnis eines save_manual_genre_mapping()-Aufrufs - fuer die
+    Praesentationsschicht (CLI-Print, Telegram-Ergebnistext), keine
+    eigene Statuslogik ausser 'was ist passiert'."""
+
+    written: bool  # True nur bei echtem Schreiben (dry_run=False + Aenderung)
+    unchanged: bool  # True, wenn bereits identisch in artist_genre.yaml stand
+    dry_run: bool
+    artist_key: str
+    primary: str
+    secondary: List[str]
+    mapping_path: str
+
+
+def save_manual_genre_mapping(
+    artist: str, genre: str, mapping_dir: Path, *, dry_run: bool = True,
+) -> ManualMappingSaveResult:
+    """Traegt `genre` (bereits normalisiert, z. B. ueber
+    normalize_genre_input()) als manuelles Mapping in artist_genre.yaml
+    ein - identische Semantik zu scripts/library_repair.py::
+    _update_manual_genre_mapping() (dorthin ARCH-031 A.4 urspruenglich
+    CLI-only ausgelagert, hierher extrahiert siehe Modul-Docstring).
+
+    `genre` wird an ';' in primary/secondary aufgeteilt (erster Teil =
+    primary, Rest = secondary) - identisch zur bisherigen CLI-Logik.
+    Case-insensitiver Artist-Key (lowercase), wie GenreMapper/
+    AutoLearnManager es fuer artist_genre.yaml erwarten.
+
+    Schreibt NUR bei dry_run=False UND tatsaechlicher Aenderung
+    (identischer Bestandseintrag => unchanged=True, written=False, kein
+    Schreibzugriff). Atomarer Write (tmp + replace()), identisch zum
+    bisherigen Verhalten."""
+    import yaml
+
+    path = mapping_dir / "artist_genre.yaml"
+    if not path.exists():
+        raise GenreDomainError(
+            f"{path} fehlt — Mapping-Update nicht möglich."
+        )
+
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    mapping = data.get("ARTIST_GENRE_MAP") or {}
+
+    parts = [p.strip() for p in genre.split(";") if p.strip()]
+    primary = parts[0] if parts else genre
+    secondary = parts[1:] if len(parts) > 1 else []
+
+    key = artist.lower()
+    existing = mapping.get(key)
+    new_entry = {
+        "primary": primary,
+        "secondary": secondary,
+        "description": (existing or {}).get(
+            "description",
+            "Manuell gesetzt via library_repair.py --maintenance-action set-genre",
+        ),
+    }
+
+    if existing == new_entry:
+        return ManualMappingSaveResult(
+            written=False, unchanged=True, dry_run=dry_run, artist_key=key,
+            primary=primary, secondary=secondary, mapping_path=str(path),
+        )
+
+    if dry_run:
+        return ManualMappingSaveResult(
+            written=False, unchanged=False, dry_run=True, artist_key=key,
+            primary=primary, secondary=secondary, mapping_path=str(path),
+        )
+
+    mapping[key] = new_entry
+    data["ARTIST_GENRE_MAP"] = mapping
+    tmp = path.with_suffix(".yaml.tmp")
+    tmp.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
+    tmp.replace(path)
+    return ManualMappingSaveResult(
+        written=True, unchanged=False, dry_run=False, artist_key=key,
+        primary=primary, secondary=secondary, mapping_path=str(path),
+    )
 
 
 def known_artist_keys(mapping_path: Path) -> List[str]:

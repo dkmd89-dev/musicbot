@@ -187,11 +187,29 @@ weil der Eintrag bereits `LEARNED`/`CONFIRMED` war.
 
 Charakterisiert (bewusst nicht gefixt, siehe Abschnitt 7) in
 `tests/test_genre_processor_revalidation_gap.py`. Wer einen konkreten
-Artist neu bewerten lassen möchte, nutzt stattdessen gezielt
-`scripts/reprocess_artist_metadata.py` (siehe
-`docs/METADATA_REPROCESSING.md`) — das ruft dieselben
-`learn_genre()`/`preview_genre_learning()`-Methoden manuell auf einen
-einzelnen Artist an.
+Artist neu bewerten lassen möchte, hat zwei gezielte, beide weiterhin
+rein Opt-in/manuell ausgelöste Optionen — die ARCH-022-Entscheidung
+(kein automatisches Revalidieren im Download-Pfad) bleibt in beiden
+Fällen unangetastet:
+
+- `scripts/reprocess_artist_metadata.py` (siehe
+  `docs/METADATA_REPROCESSING.md`) — volle Metadaten-Neuverarbeitung
+  eines Artists (nicht nur Genre), ruft dieselben `learn_genre()`/
+  `preview_genre_learning()`-Methoden manuell auf.
+- **Controlled Genre Revalidation** (Library Genre Management v2, Chat-
+  Charakterisierung 2026-09-15, siehe `docs/LIBRARY_REPAIR.md` §14.3) —
+  gezielt NUR für Genre, mit eigenem Dry-Run/Preview/Confirm/Execute und
+  optionaler Telegram-Integration (`libmaint:gr:*`):
+  `services/library_repair/genre_revalidation.py::run_genre_revalidation()`
+  fragt Last.fm erneut ab und wendet die **identische, unveränderte**
+  `_compute_genre_lock_decision()`-Overturn-Regel (Abschnitt 4.a: ein
+  Challenger überstimmt einen Lock nur bei `challenger_count >= 3 ×
+  locked_count`) über `auto_learn.preview_genre_learning()` an — keine
+  eigene, parallele Entscheidungslogik. Manuelle Mappings
+  (`artist_genre.yaml`) sind dabei absolut geschützt: ein Treffer dort
+  blockiert jede weitere Aktion, bevor Last.fm überhaupt befragt wird.
+  Läuft als Subprozess (`scripts/revalidate_genre.py`), nicht in-process
+  (Singleton-Risiko, siehe `docs/LIBRARY_REPAIR.md` §14.3).
 
 ## 7. Bekannte Grenzen
 
@@ -221,6 +239,21 @@ vielen Beobachtungen zeigt also weiterhin höchstens `CONFIRMED`, nicht
 eine noch höhere, an die tatsächliche (ggf. weit über 10 liegende)
 Gesamtzahl gekoppelte Stufe. Bewusst nicht umgestellt — außerhalb des
 Scopes dieser Phase.
+
+**`GenreMapper.reload()` ignoriert das konfigurierte `mapping_dir` der
+Instanz (entdeckt bei der Implementierung von Library Genre Management
+v2, siehe `docs/FINDINGS_INDEX.md`):** `reload()`
+(`utils/genre_map.py`) ruft intern `self._find_mapping_dir("mapping")`
+mit einem hartkodierten String statt dem tatsächlich bei der Konstruktion
+übergebenen `mapping_dir` — ein `reload()`-Aufruf auf einer mit einem
+abweichenden `mapping_dir` konstruierten Instanz kann dadurch
+unbemerkt Daten aus einem völlig anderen Verzeichnis nachladen. Im
+Produktionsbetrieb (ein einziges, konstantes `mapping/`-Verzeichnis über
+die gesamte Prozesslaufzeit) folgenlos; bei isolierten Tests mit
+abweichendem `mapping_dir` kann `reload()` versehentlich echte
+Produktionsdaten laden. Bewusst nicht gefixt (außerhalb des Scopes
+dieser Phase) — `genre_revalidation.py::_build_dependencies()` ruft
+`reload()` deshalb bewusst nicht auf.
 
 ## 8. Testverfahren
 
