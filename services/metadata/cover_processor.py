@@ -155,6 +155,27 @@ class CoverCandidate:
         return f"{self.file_size_kb} KB"
 
 
+def _cover_sort_key(c: "CoverCandidate") -> tuple:
+    """Einheitlicher Sortier-Schlüssel für Kandidaten-Vergleiche.
+
+    Reihenfolge der Kriterien (alle absteigend):
+      1. total_score    – Score aus Gewichtung (durch Cap bei 150 begrenzt)
+      2. Pixel-Anzahl   – Auflösung als Tiebreaker (Cap-unabhängig)
+      3. Dateigröße KB  – Heuristik für Kompressions-Qualität
+
+    Warum Pixel als Tiebreaker: bei Score-Gleichstand (Cap bei 150)
+    ist die Auflösung das einzige objektive Qualitätsmaß. Ohne diesen
+    Tiebreaker entschied die Completion-Reihenfolge aus
+    `as_completed()` – d.h. der schnellste Netzwerk-Roundtrip gewann,
+    nicht das beste Bild (Fix 2026-09).
+    """
+    return (
+        c.total_score,
+        (c.width or 0) * (c.height or 0),
+        c.file_size_kb or 0,
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Haupt-Klasse
 # ─────────────────────────────────────────────────────────────────────────────
@@ -322,9 +343,19 @@ class CoverProcessor:
                 best_score = max(best_score, cand.total_score)
 
         if _early_exit_met() or (best_score >= ScoreThreshold.GOOD and fallback):
-            _b = max(candidates, key=lambda c: c.total_score)
+            _b = max(candidates, key=_cover_sort_key)
+            # Fix 2026-09: Meldung unterschied je nachdem, welcher der beiden
+            # Zweige tatsächlich gegriffen hat. Vorher stand immer "Early Exit"
+            # da, auch wenn nur der GOOD-Fallback-Abbruch aktiv war.
+            if _early_exit_met():
+                _reason = (
+                    f"Early Exit (Score ≥ {ScoreThreshold.EARLY_EXIT} "
+                    f"& ≥{_EARLY_EXIT_MIN_DIM}px)"
+                )
+            else:
+                _reason = f"Gute Qualität (Score ≥ {ScoreThreshold.GOOD})"
             self.logger.info(
-                f"🖼️ [COVER] ⏹️ Early Exit / gutes Cover – Score {_b.total_score} "
+                f"🖼️ [COVER] ⏹️ {_reason} – Score {_b.total_score} "
                 f"bei {_b.width}×{_b.height} px – überspringe {len(fallback)} "
                 f"Fallback-Quelle(n)"
             )
@@ -366,7 +397,11 @@ class CoverProcessor:
             return None, None
 
         # ── Schritt 5: Gewinner auswählen ──────────────────────────────────
-        best = max(candidates, key=lambda c: c.total_score)
+        # Tiebreaker (Fix 2026-09): Bei Score-Gleichstand (Cap bei 150)
+        # entschied bisher die Completion-Reihenfolge aus as_completed() –
+        # d.h. der schnellste Netzwerk-Roundtrip gewann, nicht das beste
+        # Bild. _cover_sort_key sortiert nach (Score, Pixel, KB).
+        best = max(candidates, key=_cover_sort_key)
         self._log_step_5_winner(best, candidates)
 
         if self.cache_enabled and artist_name and track_title:
@@ -479,8 +514,32 @@ class CoverProcessor:
         elif candidate.jpeg_quality >= 75:
             quality_bonus = 5
 
+        # Fix 2026-09: Diese beiden Boni fließen in _calculate_score() ein,
+        # wurden im Log aber bisher verschwiegen → die gezeigten Komponenten
+        # ergaben eine andere Summe als "Gesamt-Score".
+        color_bonus = 0
+        if candidate.color_count > 100000:
+            color_bonus = 10
+        elif candidate.color_count > 50000:
+            color_bonus = 5
+
+        sharp_bonus = 5 if candidate.sharpness > 0.5 else 0
+
         square_bonus = 15 if candidate.is_square else 0
         yt_penalty = -10 if "youtube" in candidate.source else 0
+
+        # Roh-Score vor Cap, um die Deckelung sichtbar zu machen.
+        raw_score = (
+            base_score
+            + res_bonus
+            + size_bonus
+            + quality_bonus
+            + color_bonus
+            + sharp_bonus
+            + square_bonus
+            + yt_penalty
+        )
+        cap_deduction = candidate.total_score - raw_score  # ≤ 0, wenn gecappt
 
         lines = [
             f"🖼️ [COVER] 📊 SCHRITT 3: Score-Berechnung [{label}]",
@@ -488,11 +547,16 @@ class CoverProcessor:
             f"   Auflösung-Bonus  : {res_bonus:>+4}  ({candidate.resolution_label})",
             f"   Dateigröße-Bonus : {size_bonus:>+4}  ({size_kb} KB)",
             f"   Qualitäts-Bonus  : {quality_bonus:>+4}  (JPEG ~{candidate.jpeg_quality}%)",
+            f"   Farben-Bonus     : {color_bonus:>+4}  ({candidate.color_count} Farben)",
+            f"   Schärfe-Bonus    : {sharp_bonus:>+4}  (Schärfe {candidate.sharpness:.3f})",
             f"   Quadrat-Bonus    : {square_bonus:>+4}  ({'ja' if candidate.is_square else 'nein'})",
             f"   YT-Abzug         : {yt_penalty:>+4}",
             f"   {'─' * 36}",
-            f"   Gesamt-Score     : {candidate.total_score:>4}",
+            f"   Roh-Score        : {raw_score:>4}",
         ]
+        if cap_deduction < 0:
+            lines.append(f"   Cap-Abzug        : {cap_deduction:>+4}  (Cap bei 150)")
+        lines.append(f"   Gesamt-Score     : {candidate.total_score:>4}")
         self.logger.debug("\n".join(lines))
 
     def _log_step_4_ranking(self, candidates: List[CoverCandidate]) -> None:
@@ -506,9 +570,7 @@ class CoverProcessor:
             )
             return
 
-        sorted_candidates = sorted(
-            candidates, key=lambda c: c.total_score, reverse=True
-        )
+        sorted_candidates = sorted(candidates, key=_cover_sort_key, reverse=True)
         lines = [
             f"\n🖼️ [COVER] 🏆 SCHRITT 4: Ranking ({len(sorted_candidates)} Kandidaten)",
             _SEPARATOR,
@@ -528,7 +590,7 @@ class CoverProcessor:
         self, best: CoverCandidate, all_candidates: List[CoverCandidate]
     ) -> None:
         """🖼️ Schritt 5: Gewinner-Auswahl mit Begründung."""
-        runner_up = sorted(all_candidates, key=lambda c: c.total_score, reverse=True)
+        runner_up = sorted(all_candidates, key=_cover_sort_key, reverse=True)
 
         lines = [
             f"\n🖼️ [COVER] 🖼️  SCHRITT 5: Gewinner-Auswahl",
