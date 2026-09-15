@@ -238,3 +238,18 @@ Nächster Funktionsbereich nach Abschluss des Health/Dashboard-Slice (Nutzerents
 - Keine neuen Dependencies.
 
 **Offen für eine künftige Freigabe:** Filter-Query-Parameter (Artist/Issue-Code/Severity/Level, `planner.py::filter_plan()` existiert bereits produktiv für die CLI) sowie der eigentliche Execute-Schritt — beides bewusst nicht Teil dieser Erweiterung.
+
+---
+
+## Erweiterung — Download-Center (2026-09-15, auf Nutzerfreigabe)
+
+Dritter Funktionsbereich nach Health/Dashboard und Library Repair Preview (Nutzerentscheidung zwischen „Download-Center", „Statistics-Dashboard" und „Jobs-Grundgerüst" — Download-Center gewählt).
+
+**Wichtiger Architektur-Fund während der Umsetzung, der die ursprüngliche Empfehlung korrigiert:** Live-Fortschritt laufender Downloads (`services/downloader/active_downloads.py::ActiveDownloadRegistry`) ist laut eigenem Modul-Docstring **ausschließlich Inprozess-Zustand des Bot-Prozesses** (eine langlebige Instanz, gehalten von `RichMenuHandler`). Da `control_center/` als separater Prozess läuft (Abschnitt 7 oben), gibt es keinen gemeinsamen Speicher — dieser Zustand ist aus dem Web-Prozess grundsätzlich nicht lesbar, unabhängig von der Implementierung. Dem Nutzer explizit vorgelegt und entschieden: **Scope auf den bereits persistenten, Cross-Prozess-lesbaren Download-Verlauf begrenzt** (`services/downloader/download_history.py::DownloadHistoryStore`, JSON unter `Config.DOWNLOAD_HISTORY_DIR`). Kein Live-Status in diesem Schritt — eine künftige Erweiterung dafür müsste `bot.py`/`RichMenuHandler` selbst ändern (periodische Persistenz des Registry-Zustands), ein deutlich größerer, separat zu entscheidender Eingriff in den produktiven Bot-Prozess.
+
+- `GET /api/v1/downloads/history?limit=` (mind. `AccessLevel.ADMIN` — die chat-übergreifende Sicht zeigt potenziell Downloads anderer Nutzer/Familienmitglieder, nicht nur die eigenen, anders als die Telegram-eigene Verlaufsansicht) — liest `DownloadHistoryStore` frisch pro Request (identisches Prinzip wie `FindingsRegistry` in `routers/findings.py`), kein Schreibzugriff.
+- Kleine, gezielte Erweiterung von `DownloadHistoryStore` um `get_all_recent()` (chat-übergreifend, neueste zuerst) — bestehende, bereits produktiv genutzte Klasse erweitert statt eine parallele Leselogik zu bauen (Master-Prompt Regel 7). `get_recent(chat_id)` (Telegram-Verlaufsansicht, ein Chat) bleibt unverändert.
+- Dünnes Response-Schema (`control_center/schemas/downloads.py`), `limit`-Query-Parameter serverseitig auf 1–200 begrenzt (FastAPI `Query(ge=1, le=200)`).
+- Test: neue Tests in `tests/test_download_history_store.py` (`TestGetAllRecent`, 4 Tests) + `tests/test_control_center_downloads_api.py` (5 Tests) + 3 neue Authorization-Wiring-Tests in `tests/test_control_center_auth.py` (401/403/200) — alle grün, plus Gesamt-Suite (`control_center*`/`download_history*`/`library_health*`/`library_repair*`/Permissions/Config) 751/751 grün.
+- Zusätzlich manuell gegen die echten, produktiven Download-Verlaufsdaten verifiziert (5 aktuellste Einträge korrekt inkl. Metadata-Checkliste).
+- Keine neuen Dependencies.
