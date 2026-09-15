@@ -272,3 +272,19 @@ Vierter Funktionsbereich (Nutzerentscheidung zwischen „Statistics-Dashboard", 
 - Keine neuen Dependencies.
 
 **Offen für eine künftige Freigabe:** Genre-Statistik/Music-DNA (`generate_genre_stats()`/`generate_music_dna()` existieren bereits produktiv), Cross-User-Admin-Ansicht (`/api/v1/statistics/{navidrome_username}`, Pfad bewusst kollisionsfrei vorbereitet) — beides bewusst nicht Teil dieser Erweiterung.
+
+---
+
+## Erweiterung — Dashboard-UI für Findings/Repair-Plan/Downloads/Statistics (2026-09-15, auf Nutzerfreigabe)
+
+Nachtrag zu Schritt 4 (Health UI): die vier seither hinzugekommenen Funktionsbereiche hatten nur eine API, keine Web-Oberfläche — für den Nutzer im Browser nur über `/docs` (Swagger-UI) erreichbar. `control_center/templates/dashboard.html` um vier neue Panels erweitert, `control_center/routers/`/`schemas/` unverändert (reines Frontend-Nachtrag, keine neue API-Fläche).
+
+- **Findings-Panel:** Kategorien mit Severity-Tier-Badge + Anzahl offener Findings, `GET /api/v1/library/findings`.
+- **Repair-Plan-Panel:** Kandidaten-Anzahl nach Level + `actionable_total`/`manual_review_total`/Health-Score. Bewusst **kein Auto-Load und kein 30s-Polling** — `GET /api/v1/library/repair-plan` kostet einen vollen Library-Scan (identisch teuer wie Health, ~37s auf der Produktions-Library), ein eigener "Berechnen"-Button triggert es nur auf Klick.
+- **Downloads-Panel:** letzte 10 Verlaufseinträge (Status-Badge, Titel — Artist, Zeitstempel), `GET /api/v1/downloads/history?limit=10`.
+- **Statistics-Panel:** Monats-Wiedergabezahl + Top-5-Artists, `GET /api/v1/statistics/me?period=month`.
+- Gemeinsamer `_loadInto()`-JS-Helper für alle vier (401→Login-Ansicht, 403→"Keine Berechtigung"-Text statt Absturz — nicht-Admin-Nutzer sehen die Panels, aber mit einem klaren Hinweis statt Fehler, 404→Fehlermeldungstext z. B. bei fehlendem Navidrome-User, generischer Fehler sonst) — identisches Loading/Empty/Error/Success-State-Prinzip wie das bestehende Health-Panel (Master-Prompt Regel 45).
+- 30s-Polling erweitert auf Findings/Downloads/Statistics (günstige, persistente Reads) — Repair-Plan bleibt bewusst ausgeschlossen (s. o.).
+- Test: `tests/test_control_center_ui.py` von 5 auf 7 Tests erweitert (alle Panel-IDs vorhanden, alle vier neuen API-Pfade im Markup referenziert, dedizierter manueller Trigger für Repair-Plan) — alle grün, Gesamt-Control-Center-Suite 71/71 grün.
+- Manuell per HTTP gegen die echten Produktionsdaten verifiziert (Findings/Downloads/Statistics liefern korrekte Live-Daten über die neue UI-Verdrahtung). Visueller Browser-Check durch den Nutzer für diese Erweiterung selbst noch ausstehend (für die ursprüngliche Health-Ansicht aus Schritt 4 bereits per Screenshot bestätigt) — kein Browser-Automatisierungswerkzeug in dieser Session verbunden.
+- Keine neuen Dependencies, keine neue API-Fläche.
