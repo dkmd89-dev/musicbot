@@ -1,0 +1,6 @@
+{
+  "enabledPlugins": {
+    "engineering@bluehoodie": true,
+    "claude-delegator@jarrodwatts-claude-delegator": true
+  }
+}
