@@ -217,8 +217,24 @@ Kleinstmögliche, jeweils für sich testbare Schritte (Master-Prompt Regel 5/6).
 5. ✅ **Findings-Endpunkt** (2026-09-15, vorgezogen auf Nutzerwunsch als „Phase 3 – Step 2: Library", Scope explizit auf **read-only** begrenzt) — `control_center/routers/findings.py` mit `GET /api/v1/library/findings` (offene Findings gruppiert nach Kategorie, sortiert nach Severity-Tier) + `GET /api/v1/library/findings/summary` (Tri-State-Zusammenfassung open/repaired/accepted/resolved_by_scan/total). Liest ausschließlich die bestehende, persistente `FindingsRegistry` (kein neuer Scan, kein Merge/Save — reines Lesen, GET bleibt seiteneffektfrei). Bewusst **keine** Accept-/Unaccept-/Review-Endpoints (das war die zweite, nicht gewählte Scope-Option — siehe Freigabe-Frage vom 2026-09-15). Dünnes Pydantic-Schema (`control_center/schemas/findings.py`) lässt Review-Historie (reviewed_by/history/resolved_at/...) bewusst aus. Test: `tests/test_control_center_findings_api.py`, 7 Tests — alle grün, plus `tests/test_library_health_findings.py` (68 Tests) weiterhin grün, Gesamt-Control-Center-Suite 308/308. Keine neuen Dependencies (FastAPI/Pydantic bereits aus Schritt 1 vorhanden). Noch ohne Auth (wie Schritt 1).
 6. **Tests konsolidieren** — thematische Suite `tests/test_control_center*.py` (CLAUDE.md §8.A Schritt 3), **keine Vollsuite durch den Implementierungsprozess** (CLAUDE.md §8.A).
 7. **Verification** — manuelles Durchklicken des Vertical Slice (Login → Dashboard → Findings) gegen eine Test-Library, Ergebnis dokumentieren.
-8. **Dokumentation** — README/docs/INDEX.md um Control-Center-Einstieg ergänzen, `CLAUDE.md` Abschnitt 4 (Schichtgrenzen) um `control_center/` ergänzen, falls die Schicht sich als dauerhaft bestätigt.
+8. ✅ **Dokumentation** (2026-09-15) — README.md (Projektstruktur-Tabelle, „Control Center starten"-Abschnitt, neue Env-Vars), `docs/INDEX.md` (neuer „Control Center"-Abschnitt), `CLAUDE.md` Abschnitt 4 (`control_center/` als neue Schicht, Gegenstück zu `handlers/`, ohne Telegram-Objekte). PR #249.
 
-Jeder dieser Schritte ist einzeln committ- und überprüfbar (Master-Prompt Regel 5/6/38) — kein Big-Bang-Commit für den gesamten Slice. Schritte 3/4 (Auth/UI) bleiben vor Schritt 6-8 sinnvoll, unabhängig von der Reihenfolge 1→5.
+Jeder dieser Schritte ist einzeln committ- und überprüfbar (Master-Prompt Regel 5/6/38) — kein Big-Bang-Commit für den gesamten Slice.
 
-**Offene Schritte 2-4/6-8 sind weiterhin nur ein Vorschlag, keine begonnene Implementierung.**
+**Damit ist der Vertical Slice „Health/Dashboard" (Schritte 1, 3, 4, 5, 8) vollständig umgesetzt und gemergt.** Schritte 2/6 waren de facto durch die jeweiligen Test-Läufe bei jedem Schritt bereits mitabgedeckt (siehe dortige Test-Ergebnisse), Schritt 7 (Verification) durch einen vom Nutzer bestätigten Browser-Screenshot nach Schritt 4.
+
+---
+
+## Erweiterung — Library Repair Preview (2026-09-15, auf Nutzerfreigabe nach Abschluss des Vertical Slice)
+
+Nächster Funktionsbereich nach Abschluss des Health/Dashboard-Slice (Nutzerentscheidung zwischen „Jobs-Grundgerüst" und „Library Repair Preview" — Letzteres gewählt, da es direkt auf der bereits vorhandenen Findings-Anzeige aufbaut und kein Jobs-System braucht, da rein lesend).
+
+**Scope (explizit, wie bei Findings): nur Preview, keine Ausführung.** Zeigt zu den aktuell erkannten Health-Issues die vom bestehenden `services/library_repair/planner.py::plan_repairs()` (per eigenem Modul-Docstring bereits read-only, kein Dateisystem-Zugriff, keine Ausführung) vorgeschlagene Reparaturaktion — kein Executor wird aufgerufen, keine Datei verändert.
+
+- `GET /api/v1/library/repair-plan` (mind. `AccessLevel.ADMIN`, identische Schwelle wie Findings) — führt denselben frischen Library-Scan wie `GET /api/v1/library/health` aus (Refactor: `control_center/_library_scan.py::run_library_scan()` jetzt gemeinsam von `routers/health.py` und `routers/repair.py` genutzt statt dupliziert, Master-Prompt Regel 7) und übergibt den Report unverändert an `plan_repairs()`. Dünnes Response-Schema (`control_center/schemas/repair.py`) ergänzt pro Kandidat die Grob-Disposition (`AUTO_REPAIR`/`MANUAL_REVIEW`/`UNREPAIRABLE`, aus `planner.py::disposition_for_level()`), lässt `library_root` aus (identische Begründung wie bei Health).
+- Bewusst **keine** Execute-/Apply-Endpoints, kein Preview→Confirm→Execute-Flow (Master-Prompt Abschnitt 21) — das wäre eine deutlich größere, eigene Freigabe-Entscheidung (destruktive/schreibende Operation).
+- Test: `tests/test_control_center_repair_api.py` (5 Tests, inkl. eines deterministisch bekannten Issue-Codes `META_ARTIST_MISSING` gegen eine echte ffmpeg-generierte Test-Library) + 3 neue Authorization-Wiring-Tests in `tests/test_control_center_auth.py` (401/403/200) — alle grün, plus Gesamt-Suite (`control_center*`/`library_health*`/`library_repair*`/Permissions/Config) 704/704 grün.
+- Zusätzlich manuell gegen die echte Produktions-Library verifiziert: 1114 `actionable`, 96 `MANUAL_REVIEW`, `health_score` 99.9 (konsistent mit dem Health-Endpoint-Smoke-Test aus Schritt 4).
+- Keine neuen Dependencies.
+
+**Offen für eine künftige Freigabe:** Filter-Query-Parameter (Artist/Issue-Code/Severity/Level, `planner.py::filter_plan()` existiert bereits produktiv für die CLI) sowie der eigentliche Execute-Schritt — beides bewusst nicht Teil dieser Erweiterung.
