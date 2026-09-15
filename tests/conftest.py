@@ -44,6 +44,21 @@ def _safe_config_defaults(tmp_path_factory):
     daher den Mechanismus zentral, statt jede betroffene Stelle einzeln
     nachzuruesten (bereits das dritte Auftreten desselben Musters).
 
+    Viertes Auftreten (2026-09-15, beim Vorbereiten von P2.3 Stufe B
+    entdeckt): services/downloader/download_quality_guard.py berechnet
+    QUALITY_OBSERVATIONS_PATH als MODUL-LEVEL-Konstante aus Config.DATA_DIR
+    beim Import - ein reines Config.DATA_DIR-Patchen danach haette also
+    ohnehin nicht gegriffen. tests/test_download_quality_guard.py sowie
+    tests/test_download_utils_playlist_track_retry_config.py/
+    test_download_utils_single_download_cleanup.py rufen check_download_
+    quality() ueber den echten Produktionscode auf, ohne diesen Pfad zu
+    patchen - jeder Testlauf haengte dadurch ~20 synthetische Zeilen
+    (song.m4a/broken.m4a/T1-T3.m4a/Song.webm u.ae.) an die ECHTE
+    data/quality_observations.jsonl an und vermischte sie mit echten
+    Download-Beobachtungen - fuer eine spaetere Stufe-B-Schwellenwert-
+    Ableitung aus "realen" Daten (siehe Modul-Docstring dort) fatal, da
+    unbemerkt.
+
     LIBRARY_DIR zeigt auf ein LEERES tmp-Verzeichnis (verhindert jeden
     "neue Artists gelernt"-Schreibzugriff bereits dadurch, dass es nichts
     zu scannen gibt). GENRE_MAPPING_DIR zeigt auf eine KOPIE des echten
@@ -57,11 +72,18 @@ def _safe_config_defaults(tmp_path_factory):
     safe_mapping_dir = tmp_path_factory.mktemp("safe_config_mapping")
     shutil.copytree(real_mapping_dir, safe_mapping_dir, dirs_exist_ok=True)
     safe_library_dir = tmp_path_factory.mktemp("safe_config_library")
+    safe_data_dir = tmp_path_factory.mktemp("safe_config_data")
+
+    from services.downloader import download_quality_guard
 
     mp = pytest.MonkeyPatch()
     mp.setattr(Config, "LIBRARY_DIR", safe_library_dir)
     mp.setattr(Config, "ARTIST_OVERRIDE_FILE", safe_mapping_dir / "artist_overrides.json")
     mp.setattr(Config, "GENRE_MAPPING_DIR", safe_mapping_dir)
+    mp.setattr(
+        download_quality_guard, "QUALITY_OBSERVATIONS_PATH",
+        safe_data_dir / "quality_observations.jsonl",
+    )
     yield
     mp.undo()
 

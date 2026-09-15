@@ -19,6 +19,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from services.downloader import download_quality_guard
 from services.downloader.download_quality_guard import (
     OBSERVE_MIN_BITRATE_BPS,
     OBSERVE_MIN_DURATION_SECONDS,
@@ -236,6 +237,32 @@ class TestCheckDownloadQualityLogging:
         assert obs.suspicious
         assert obs.duration_seconds == 5.0
         assert obs.bitrate == 192000
+
+
+class TestObservationsWriteIsolation:
+    """Regressionstest fuer die in tests/conftest.py::_safe_config_defaults
+    behobene Kontamination (2026-09-15, viertes Auftreten desselben
+    Musters): QUALITY_OBSERVATIONS_PATH ist eine Modul-Level-Konstante,
+    ein reines check_download_quality()-in-Tests-Aufrufen darf NIE in die
+    echte data/quality_observations.jsonl schreiben."""
+
+    def test_observation_path_is_patched_to_a_tmp_location(self):
+        assert "safe_config_data" in str(download_quality_guard.QUALITY_OBSERVATIONS_PATH)
+
+    def test_calling_check_download_quality_does_not_touch_real_path(self):
+        from config import Config
+
+        real_path = Path(Config.DATA_DIR) / "quality_observations.jsonl"
+        real_before = real_path.read_text() if real_path.exists() else None
+
+        with patch(
+            "subprocess.run",
+            return_value=_fake_ffprobe_result(duration=200.0, bitrate=192000),
+        ):
+            check_download_quality(Path("/fake/song.m4a"))
+
+        real_after = real_path.read_text() if real_path.exists() else None
+        assert real_after == real_before
 
 
 @requires_ffmpeg
