@@ -50,6 +50,14 @@ historischen Dokument.
 | [archive/MusicBot_ENGINEERING_BASELINE_v2.md](archive/MusicBot_ENGINEERING_BASELINE_v2.md) | SUPERSEDED (eingefroren nach Closure 2026-08-25) | Abgelöst durch v3 |
 | [archive/MusicBot_ENGINEERING_BASELINE.md](archive/MusicBot_ENGINEERING_BASELINE.md) | SUPERSEDED | v1, abgelöst durch v2 |
 
+## Control Center
+
+| Datei | Status | Kurzthema |
+|---|---|---|
+| [audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md](audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md) | LIVING (laufender Umsetzungsstand, Phase 2) | Architekturvorschlag für das neue Web-Frontend `control_center/` (FastAPI): API-Design, Service-Integration, Telegram-Login-Widget-Auth-Flow, Frontend-Entscheidung (Jinja2 + Vanilla-JS, kein SPA), Security-Checkliste, Deployment. Wird nach jedem umgesetzten Vertical-Slice-Schritt aktualisiert — aktueller Stand: Schritte 1 (Health API), 3 (Auth-Grundgerüst inkl. Verdrahtung in Health/Findings), 4 (Health-UI) und 5/vorgezogen (Findings API, read-only) umgesetzt und gemergt (PR #246–#248). Enthält den Nachtrag zur spotdl-Versionsbindung (`fastapi`/`uvicorn`/`httpx` absichtlich auf ältere, spotdl-kompatible Versionen begrenzt, da `control_center/` im selben, ungetrennten Python-Environment wie das unabhängige Tool `spotdl` läuft). |
+| [audits/CONTROL_CENTER_ARCHITECTURE_AUDIT_2026-09-15.md](audits/CONTROL_CENTER_ARCHITECTURE_AUDIT_2026-09-15.md) | CURRENT (Phase-0-Snapshot) | Vollständiger Repository-Audit als Ausgangspunkt für das Control Center: bestehende Architektur, CLI-/Telegram-/Admin-Inventar, Reuse-Kandidaten (Permission-Kern, Library-Health-Service, Findings-Registry), fehlende Abstraktionen, ursprünglicher API-Vorschlag, MVP-Vorschlag, Risiken, Teststrategie, Roadmap. Beide dort gestellten Blocker (Web-Auth: Telegram-Login-Widget; Tech-Stack: FastAPI) sind entschieden. |
+| [audits/CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md](audits/CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md) | CURRENT (Phase-1-Snapshot) | CLI/Telegram/Service/Web-Status-Mapping als Grundlage der Architektur-Entscheidung — zeigt, welche bestehende Funktionalität direkt wiederverwendbar ist. |
+
 ## Reprocessing Tool
 
 | Datei | Status | Kurzthema |

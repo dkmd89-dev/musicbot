@@ -122,6 +122,20 @@ handlers/
     → Benutzerinteraktion / Telegram-Präsentation
       (Nachrichtenversand, MarkdownV2-Formatierung, Callback-Handling)
 
+control_center/
+    → Benutzerinteraktion / Web-Präsentation (Gegenstück zu handlers/ für
+      das Web-Control-Center, FastAPI, eigener Prozess neben bot.py):
+      app.py (App-Factory), routers/ (dünne Orchestrierung — ruft
+      ausschließlich services/-Funktionen bzw. bereits Telegram-freie
+      Auth-Logik aus handlers/menu/permissions.py auf, keine eigene
+      Fachlogik), schemas/ (dünne Pydantic-Response-Modelle, kein
+      1:1-Durchreichen interner Report-/Dataclass-Felder),
+      dependencies.py (Telegram-Login-Widget-Auth, Session-Cookies),
+      templates/ (Jinja2 + Vanilla-JS, kein SPA-Framework). Wie
+      handlers/ keine Fachlogik, aber ohne Telegram-Objekte (Update,
+      Message) — stattdessen FastAPI-eigene Typen (Request, Response).
+      Details: docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md.
+
 helfer/
     → reine MarkdownV2-Formatierungs-Helfer für handlers/
       (aktuell: markdown_helfer.py::escape_md_v2()/md_bold()/md_code(),

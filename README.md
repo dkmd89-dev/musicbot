@@ -62,6 +62,7 @@ Ausführlicher, mit Datenfluss/Fehlerbehandlung pro Bereich: [`CLAUDE.md`](CLAUD
 | `services/` (übrige Dateien) | `statistik_service.py` (dünne Fassade) + `services/statistik/` (`play_history_repository.py`, `play_history_poller.py`, `statistics_calculator.py`, `chart_renderer.py`) |
 | `services/family/` | Family Hub (Telegram-frei): `family_service.py`/`family_repository.py` (Membership/Berechtigung), `family_stats_service.py` (Familien-Statistik, wiederverwendet `PlayHistoryRepository`/`StatisticsCalculator` unverändert), `family_chat_service.py`/`family_message_repository.py` (bot-interner Chat), `family_challenge_service.py`/`family_challenge_repository.py` (tägliche Musik-Challenge). Details: [`docs/MusicBot_TELEGRAM_MENU_SYSTEM.md`](docs/MusicBot_TELEGRAM_MENU_SYSTEM.md) Abschnitt 6 |
 | `handlers/` | Telegram-Handler: Menüsystem (`handlers/menu/`), Admin-Funktionen (`handlers/admin/`), Navidrome-Menü, Statistik (inkl. Library-Übersicht), Family Hub (`family_stats_handler.py`, `family_chat_handler.py`, `family_challenge_handler.py` + `family_challenge_scheduler.py`), MusicBot Doctor (`library_doctor_handler.py`), Fehlerbehandlung |
+| `control_center/` | Web-Control-Center (FastAPI, eigener Prozess neben `bot.py`): `app.py` (App-Factory), `routers/` (`health.py`/`findings.py`/`auth.py`/`ui.py`), `schemas/` (dünne Pydantic-Response-Modelle, kein 1:1-Durchreichen interner Reports), `dependencies.py` (Telegram-Login-Widget-Auth, Sessions), `templates/dashboard.html` (Jinja2 + Vanilla-JS). Ruft ausschließlich bestehende `services/`-Funktionen auf, keine eigene Fachlogik. Details: [`docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md`](docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md) |
 | `utils/` | Wiederverwendbare Bausteine: `genre_map.py`, `artist_map.py`, `filenamefixer.py`, `helpers.py`, Caches (`lyrics_cache.py` u. a.), Singleton-Basisklasse, sowie lokale technische Runner ohne Telegram-/API-Kopplung (`navidrome_scan_trigger.py`, `audio_enhancer.py`) |
 | `mapping/` | YAML-/JSON-Dateien mit Fachlogik (Genre-/Artist-Regeln) — **keine belanglose Konfiguration**, siehe unten |
 | `scripts/` | Eigenständige Wartungs-Tools, die außerhalb des Bot-Laufzeitbetriebs auf isolierten Testdaten bzw. (mit expliziten Sicherheitsgates) gegen die Produktions-Library arbeiten, z. B. `reprocess_artist_metadata.py` — bestehende Library-Tracks erneut durch die Metadaten-Pipeline laufen lassen (Tags/Cover/Lyrics/Genre/Multi-Artist/MusicBrainz), ohne Download, ohne Audio-Reencoding (Details: [`docs/METADATA_REPROCESSING.md`](docs/METADATA_REPROCESSING.md)); sowie `library_health_check.py` (read-only Health-Report) und `library_repair.py` (Reparatur-Plan/-Ausführung aus dem Health-Report, Details: [`docs/LIBRARY_REPAIR.md`](docs/LIBRARY_REPAIR.md)) |
@@ -106,6 +107,9 @@ LOG_LEVEL=
 DEBUG_MODE=
 
 FAMILY_CHALLENGE_TIME=        # optional, HH:MM lokale Bot-Zeit, Default 20:00
+
+BOT_USERNAME=                  # optional, für Control-Center-Login-Widget (ohne @)
+CONTROL_CENTER_DEV_AUTH_BYPASS=  # optional, NUR lokale Entwicklung, siehe unten
 ```
 
 ## Bot starten
@@ -113,6 +117,16 @@ FAMILY_CHALLENGE_TIME=        # optional, HH:MM lokale Bot-Zeit, Default 20:00
 ```bash
 python3 bot.py
 ```
+
+## Control Center starten (optional, Web-UI)
+
+Eigener Prozess neben dem Bot, nur für lokale Entwicklung ohne Reverse-Proxy/TLS gedacht (das Telegram-Login-Widget braucht produktiv eine bei BotFather hinterlegte HTTPS-Domain, siehe [`docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md`](docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md) Abschnitt 3/7):
+
+```bash
+CONTROL_CENTER_DEV_AUTH_BYPASS=true python3 -m uvicorn control_center.app:app --host 127.0.0.1 --port 8420
+```
+
+Danach `http://127.0.0.1:8420/` öffnen — mit gesetztem `CONTROL_CENTER_DEV_AUTH_BYPASS` ohne Telegram-Login direkt als Owner angemeldet (**niemals in einer von außen erreichbaren Umgebung aktivieren**, siehe `config.py::Config.CONTROL_CENTER_DEV_AUTH_BYPASS`-Docstring). Aktuell verfügbar: Library-Health-Dashboard (mind. Rolle User) und Findings-Übersicht (mind. Rolle Admin, `GET /api/v1/library/findings`) — read-only.
 
 ## Tests ausführen
 
