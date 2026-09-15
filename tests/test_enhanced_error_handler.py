@@ -24,6 +24,7 @@ Parameter ergaenzt, alle 15 Aufrufstellen angepasst.
 """
 
 import asyncio
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -236,6 +237,83 @@ class TestDebugTracker:
     def test_get_session_summary_for_unknown_session_returns_none(self):
         tracker = DebugTracker()
         assert tracker.get_session_summary("does-not-exist") is None
+
+
+class TestCleanupOldDataStartTimeTypeBug:
+    """
+    Regressionstest fuer den Laufzeit-Bug aus dem Betriebslog: alle 5
+    Minuten "Error Handler Cleanup-Fehler: 'str' object cannot be
+    interpreted as an integer".
+
+    Root Cause: DebugTracker.start_session() speichert "start_time" als
+    echtes datetime-Objekt (datetime.now()), nicht als ISO-String.
+    cleanup_old_data() rief vorher .replace("Z", "+00:00") direkt auf
+    diesem Feld auf - bei einem datetime-Objekt trifft das aber
+    datetime.replace(year=..., month=...) statt str.replace() und wirft
+    genau diesen TypeError. Der Fehler trat bei JEDEM Cleanup-Lauf auf,
+    sobald irgendeine Session end_session() durchlaufen hatte - vorher
+    ungetestet, weil kein Test start_session()+end_session() UND
+    cleanup_old_data() kombinierte.
+    """
+
+    def _handler(self):
+        return EnhancedErrorHandler(FakeConfig())
+
+    def test_cleanup_does_not_raise_on_completed_session(self):
+        """Der eigentliche Bug: durfte vorher gar nicht bis hierhin
+        kommen, ohne TypeError zu werfen."""
+        handler = self._handler()
+        handler.debug_tracker.start_session("sess-old", {})
+        handler.debug_tracker.end_session("sess-old")
+
+        # end_session() setzt start_time zwangsläufig auf "jetzt" -
+        # künstlich veraltern, um den Alters-Filter zu testen.
+        handler.debug_tracker.session_history[-1]["start_time"] = (
+            datetime.now() - timedelta(hours=48)
+        )
+
+        handler.cleanup_old_data(max_age_hours=24)  # darf nicht raisen
+
+    def test_cleanup_removes_expired_completed_session(self):
+        handler = self._handler()
+        handler.debug_tracker.start_session("sess-old", {})
+        handler.debug_tracker.end_session("sess-old")
+        handler.debug_tracker.session_history[-1]["start_time"] = (
+            datetime.now() - timedelta(hours=48)
+        )
+
+        handler.cleanup_old_data(max_age_hours=24)
+
+        ids = [s["id"] for s in handler.debug_tracker.session_history]
+        assert "sess-old" not in ids
+
+    def test_cleanup_keeps_recent_completed_session(self):
+        handler = self._handler()
+        handler.debug_tracker.start_session("sess-recent", {})
+        handler.debug_tracker.end_session("sess-recent")
+        # start_time bleibt "jetzt" (Default von start_session()).
+
+        handler.cleanup_old_data(max_age_hours=24)
+
+        ids = [s["id"] for s in handler.debug_tracker.session_history]
+        assert "sess-recent" in ids
+
+    def test_coerce_start_time_accepts_datetime_object(self):
+        """Hauptfall: so speichert start_session() das Feld tatsaechlich."""
+        dt = datetime.now() - timedelta(hours=1)
+        assert EnhancedErrorHandler._coerce_start_time(dt) == dt
+
+    def test_coerce_start_time_accepts_iso_string(self):
+        """Defensiver Fallback fuer einen String-Wert."""
+        dt = datetime.now() - timedelta(hours=1)
+        result = EnhancedErrorHandler._coerce_start_time(dt.isoformat())
+        assert result == dt
+
+    def test_coerce_start_time_falls_back_to_epoch_on_garbage(self):
+        """Unparsebarer Wert darf den Cleanup-Lauf nicht abbrechen -
+        die betroffene Session gilt dann einfach als sehr alt."""
+        result = EnhancedErrorHandler._coerce_start_time("kein-datum")
+        assert result == datetime.fromtimestamp(0)
 
 
 class TestDecoratorConfigAccessBugFix:

@@ -1548,6 +1548,34 @@ class EnhancedErrorHandler:
 
         self.logger.info("📊 Alle Error-Handler Statistiken zurückgesetzt")
 
+    @staticmethod
+    def _coerce_start_time(value) -> datetime:
+        """Normalisiert `session["start_time"]` zu `datetime`.
+
+        `DebugTracker.start_session()` speichert dieses Feld als echtes
+        `datetime`-Objekt (`datetime.now()`), nicht als ISO-String. Der
+        alte Code hier ging faelschlich von einem String aus und rief
+        `.replace("Z", "+00:00")` direkt darauf auf - bei einem
+        `datetime`-Objekt trifft das aber `datetime.replace(year=...,
+        month=...)` statt `str.replace()` und wirft
+        `TypeError: 'str' object cannot be interpreted as an integer`
+        (siehe docs/FINDINGS_INDEX.md). Diese Methode akzeptiert daher
+        beides: das tatsaechliche `datetime`-Objekt (Hauptfall) und,
+        defensiv, einen ISO-String (falls ein kuenftiger/anderer
+        Aufrufer das Feld doch als String setzt). Bei unparsebaren
+        Werten wird Epoch (1970-01-01) zurueckgegeben, damit die
+        betroffene Session beim naechsten Cleanup als "alt" gilt statt
+        den ganzen Cleanup-Lauf abzubrechen.
+        """
+        if isinstance(value, datetime):
+            return value
+        try:
+            return datetime.fromisoformat(
+                str(value).replace("Z", "+00:00").replace("+00:00", "")
+            )
+        except (ValueError, TypeError):
+            return datetime.fromtimestamp(0)
+
     def cleanup_old_data(self, max_age_hours: int = 24):
         """Bereinigt alte Debug- und Exception-Daten"""
         cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
@@ -1556,12 +1584,7 @@ class EnhancedErrorHandler:
         old_sessions = [
             s
             for s in self.debug_tracker.session_history
-            if datetime.fromisoformat(
-                s.get("start_time", "1970-01-01")
-                .replace("Z", "+00:00")
-                .replace("+00:00", "")
-            )
-            < cutoff_time
+            if self._coerce_start_time(s.get("start_time", "1970-01-01")) < cutoff_time
         ]
 
         for session in old_sessions:
@@ -1830,7 +1853,8 @@ class ErrorHandlerAdminInterface:
                 )
 
             await self._reply_or_edit(
-                update, context,
+                update,
+                context,
                 "\n".join(response),
                 reply_markup=keyboard,
                 parse_mode="Markdown",
@@ -1876,7 +1900,8 @@ class ErrorHandlerAdminInterface:
                 )
 
             await self._reply_or_edit(
-                update, context,
+                update,
+                context,
                 f"```\n{report}\n```",
                 parse_mode="Markdown",
                 reply_markup=keyboard,
@@ -1911,7 +1936,9 @@ class ErrorHandlerAdminInterface:
 
             if not recent:
                 # FIX: Verwendet _reply_or_edit statt update.message.reply_text
-                await self._reply_or_edit(update, context, "✅ Keine aktuellen Exceptions!")
+                await self._reply_or_edit(
+                    update, context, "✅ Keine aktuellen Exceptions!"
+                )
                 return
 
             response = [f"🕐 **LETZTE {len(recent)} EXCEPTIONS:**", ""]
@@ -1942,7 +1969,8 @@ class ErrorHandlerAdminInterface:
                 )
 
             await self._reply_or_edit(
-                update, context,
+                update,
+                context,
                 "\n".join(response),
                 reply_markup=keyboard,
                 parse_mode="Markdown",
