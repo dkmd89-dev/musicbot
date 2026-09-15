@@ -653,3 +653,15 @@ IGNORE_SECONDARY:
   - arrangement
   - orchestration
   - scoring
+  # ============================================================
+  # Ergänzt 2026-09 — Nicht-Genres aus der Auswertung
+  # ============================================================
+  - compilation
+  - cover
+  - formel 1
+  - label sampler
+  - motorsport
+  - remix
+  - sampler
+  - sport
+  - various
