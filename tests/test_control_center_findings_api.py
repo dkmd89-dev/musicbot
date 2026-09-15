@@ -50,6 +50,14 @@ def registry_path(tmp_path):
     return tmp_path / "data" / "library_health_findings.json"
 
 
+@pytest.fixture(autouse=True)
+def _authenticated(monkeypatch):
+    """Dieses Testfile prüft den Findings-Endpoint selbst, nicht die seit
+    Schritt 3 davorliegende Authentifizierung (dafür: tests/test_control_center_auth.py)
+    — Dev-Auth-Bypass steht dafür genau bereit (control_center/dependencies.py)."""
+    monkeypatch.setattr(Config, "CONTROL_CENTER_DEV_AUTH_BYPASS", property(lambda self: True))
+
+
 @pytest_asyncio.fixture
 async def client():
     from control_center.app import create_app

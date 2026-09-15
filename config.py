@@ -255,6 +255,26 @@ class Config:
         return os.getenv("DEBUG_MODE", "false").lower() == "true"
 
     @property
+    def CONTROL_CENTER_DEV_AUTH_BYPASS(self) -> bool:
+        """Nur fuer lokale Control-Center-Entwicklung: umgeht die Telegram-
+        Login-Widget-Verifikation und behandelt jede Anfrage als OWNER
+        (siehe control_center/dependencies.py). Noetig, weil das
+        Login-Widget zwingend eine bei BotFather hinterlegte HTTPS-Domain
+        braucht und nicht mit localhost funktioniert (docs/audits/
+        CONTROL_CENTER_ARCHITECTURE_2026-09-15.md Abschnitt 3).
+
+        Bewusst ein EIGENES Flag statt DEBUG_MODE mitzuverwenden: DEBUG_MODE
+        wird bereits an anderer Stelle (z. B. handlers/enhanced_error_handler.py)
+        fuer harmlose Verbosity-/Exception-Detail-Zwecke genutzt - eine
+        gemeinsame Nutzung wuerde bedeuten, dass ein versehentlich in
+        Produktion aktiviertes DEBUG_MODE (z. B. fuer ausfuehrlicheres
+        Logging) STILLSCHWEIGEND auch die Control-Center-Authentifizierung
+        abschaltet (Master-Prompt Abschnitt 32/56: Security vor Comfort).
+        Default false (Deny by default, Master-Prompt Regel 14) - MUSS in
+        jeder von aussen erreichbaren Umgebung false bleiben."""
+        return os.getenv("CONTROL_CENTER_DEV_AUTH_BYPASS", "false").lower() == "true"
+
+    @property
     def VERSION(self) -> str:
         return os.getenv("VERSION", "2.0")
 
