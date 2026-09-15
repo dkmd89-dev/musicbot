@@ -139,11 +139,14 @@ class TestSpecificAliasNowOutranksGenericAlias:
 
         Mapping-Update 2026-09-07 (Commit a67c17b, neuer Alias
         "indie-pop": "Indie" in mapping/genre_aliases.yaml): macht daraus
-        58 Paare (siehe Docstring von
-        TestSpecificityPairCountRegressionGuard fuer die Herleitung).
+        58 Paare. Mapping-Update 2026-09-15 (Commit b67b56d,
+        GENRE_INVALID-Fix, ~60 neue Aliases): macht daraus 75 Paare -
+        alle weiterhin korrekt aufgeloest (siehe Docstring von
+        TestSpecificityPairCountRegressionGuard fuer die volle
+        Herleitung).
         """
         pairs = _all_specificity_pairs(genre_processor)
-        assert len(pairs) == 58
+        assert len(pairs) == 75
 
         still_generic = []
         for specific_key, generic_key in pairs:
@@ -318,15 +321,33 @@ class TestSpecificityPairCountRegressionGuard:
     Hierarchie-Eintraege ohne eigenen Alias-Eintrag tauchen nicht als Key
     in `GENRE_NORMALIZATION` auf (verifiziert: "alternative hip hop" ist
     kein Key), anders als die gezielt self-aliasten ARCH-015-Faelle oben.
+
+    Mapping-Update 2026-09-15 (Commit b67b56d, "fix(mapping): fehlende
+    Genre-Aliases ergaenzt (GENRE_INVALID)"): ~60 neue Aliases ergaenzt
+    (u. a. Pop-/Rock-/Hip-Hop-/Schlager-Varianten), macht 75 statt 58 -
+    programmatisch nachgezaehlt und einzeln verifiziert, dass ALLE 75
+    Paare weiterhin korrekt ueber die Laenge-Regel aufgeloest werden
+    (siehe TestSpecificAliasNowOutranksGenericAlias, `still_generic ==
+    []`), also keine Verhaltensregression, nur eine erwartete Folge der
+    absichtlich erweiterten Alias-Menge. Zwei der neuen Eintraege
+    (`"brit pop"`/`"britpop"`: "Pop") wurden separat wieder entfernt
+    (widersprachen der in ARCH-013 dokumentierten, bewussten Entscheidung
+    "Britpop ist ein eigenstaendiges Genre, keine Pop-Variante") - das
+    aendert diese Paarzahl NICHT (beide zielten selbst schon auf "Pop",
+    identisch zum generischen "pop"-Alias, also kein Paar mit
+    unterschiedlichem Zielgenre), wirkt sich aber auf den direkten
+    Alias-Lookup in `normalize_genre_name("britpop")` aus (siehe
+    TestWordBoundaryNegativeCasesStillExcluded).
     """
 
     def test_known_pair_count(self, genre_processor):
         pairs = _all_specificity_pairs(genre_processor)
-        assert len(pairs) == 58, (
-            f"Erwartete 58 bekannte Spezifitaets-Paare (55 aus ARCH-014 + "
+        assert len(pairs) == 75, (
+            f"Erwartete 75 bekannte Spezifitaets-Paare (55 aus ARCH-014 + "
             f"2 aus ARCH-015 Phase 2 + 1 aus dem 'indie-pop'-Mapping-Update "
-            f"vom 2026-09-07), gefunden: {len(pairs)}. Wenn dies durch eine "
-            f"bewusste YAML-Aenderung verursacht wurde, ist das kein Fehler "
-            f"- die ARCH-014/015-Dokumentation und diese Zahl sollten dann "
-            f"gemeinsam aktualisiert werden."
+            f"vom 2026-09-07 + 17 aus dem GENRE_INVALID-Mapping-Update vom "
+            f"2026-09-15, Commit b67b56d), gefunden: {len(pairs)}. Wenn dies "
+            f"durch eine bewusste YAML-Aenderung verursacht wurde, ist das "
+            f"kein Fehler - die ARCH-014/015-Dokumentation und diese Zahl "
+            f"sollten dann gemeinsam aktualisiert werden."
         )
