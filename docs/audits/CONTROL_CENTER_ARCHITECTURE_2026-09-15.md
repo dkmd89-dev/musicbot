@@ -301,3 +301,16 @@ Fünfter Funktionsbereich (Nutzerentscheidung zwischen „Navidrome-Status", „
 - Test: `tests/test_control_center_navidrome_api.py` (4 Tests, NavidromeAPI per `monkeypatch.setattr(NavidromeAPI, "make_request", ...)` gemockt — CLAUDE.md Abschnitt 8, externe Dienste nicht real ansprechen) + 2 neue Authorization-Wiring-Tests in `tests/test_control_center_auth.py` + 1 neuer UI-Test — alle grün, Gesamt-Control-Center-Suite 78/78 grün.
 - Zusätzlich manuell gegen den echten, produktiven Navidrome-Server verifiziert: `connected=true`, 37 Artists (deckungsgleich mit der Library-Scan-Artist-Zahl aus dem Health-Endpoint).
 - Keine neuen Dependencies.
+
+---
+
+## Erweiterung — Admin-Übersicht: Nutzer/Rollen (2026-09-15, auf Nutzerfreigabe)
+
+Sechster Funktionsbereich (Nutzerentscheidung zwischen „Admin-Übersicht", „Findings Accept/Unaccept" und „Pause" — Admin-Übersicht gewählt, rundet die read-only-Phase des Control Centers ab).
+
+- `GET /api/v1/admin/users` (mind. `AccessLevel.ADMIN`) — liest `data/user_data.json` über `services/user_data.py::load_user_data()` (dieselbe Common-Core-Extraktion aus der Statistics-Erweiterung), kein Schreibzugriff. Dünnes Schema (`telegram_id`/`role`/`navidrome_user`/`created_at`) — `permissions` bewusst nicht durchgereicht (kein 1:1-Dict-Leak). Explizit **nur Anzeige** — Rollenverwaltung (Ändern/Hinzufügen/Entfernen) bleibt vollständig der Telegram-Admin-UI vorbehalten, kein schreibender Endpunkt in diesem Schritt.
+- Enthält bewusst nicht `pending_users` (wartende Neuanmeldungen) — identisches Cross-Prozess-Problem wie bei `ActiveDownloadRegistry`: das ist In-Memory-Zustand von `UserManagementHandler` im Bot-Prozess, aus `control_center/` nicht lesbar.
+- **Korrektur während der Umsetzung:** Der erste Docstring-Entwurf behauptete, der Owner tauche „nie" in `user_data.json` auf. Der Smoke-Test gegen die echte Produktionsdatei widerlegte das sofort (dort steht tatsächlich ein `role="owner"`-Eintrag) — Docstring korrigiert, bevor der Code committet wurde: die Route zeigt unverändert, was in der Datei steht; maßgeblich für die AccessLevel-Auflösung bleibt ausschließlich `config.OWNER_USER_ID`, nie ein hier angezeigter `role`-Wert.
+- Test: `tests/test_control_center_admin_api.py` (5 Tests) + 3 neue Authorization-Wiring-Tests in `tests/test_control_center_auth.py` — alle grün, Gesamt-Control-Center-Suite 132/132 grün.
+- Manuell gegen die echten, produktiven Nutzerdaten verifiziert (2 registrierte Nutzer, Rollen `owner`/`user` korrekt gelesen — Zahl absichtlich nicht im Detail geloggt, PII-Zurückhaltung).
+- Keine neuen Dependencies, keine neue UI (bewusst nur API — bisher noch kein "Admin"-Panel im Dashboard, analog zur ursprünglichen Health-only-UI vor dem Dashboard-Nachtrag).
