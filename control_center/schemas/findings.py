@@ -1,20 +1,22 @@
 # control_center/schemas/findings.py
 # -*- coding: utf-8 -*-
 """
-Response-Schemas fuer GET /api/v1/library/findings (+ /summary).
+Response-Schemas fuer GET /api/v1/library/findings (+ /summary) sowie
+POST .../accept und .../unaccept.
 
 Wie schemas/health.py bewusst kein 1:1-Durchreichen der internen
 Finding-Dataclass (services/library_health/findings.py::Finding) — Felder,
 die reine Review-/Audit-Historie sind (reviewed_by, resolved_at,
-resolved_by_scan_at, reopened_at, history) sind hier NICHT Teil der
-Response. Diese Route zeigt ausschliesslich aktuell OFFENE Findings
+resolved_by_scan_at, reopened_at, history) sind bei der Findings-LISTE
+NICHT Teil der Response (siehe FindingSchema unten). Diese Route zeigt
+ausschliesslich aktuell OFFENE Findings
 (services/library_health/findings.py::group_open_findings_by_category()
-liefert per Definition nur STATUS_OPEN) — Review-Historie ist fuer diese
-reine Anzeige ohne Interaktion (noch keine Accept/Unaccept-Endpoints,
-siehe docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md) weder
-notwendig noch (Master-Prompt Abschnitt 12: keine unnoetigen
-personenbezogenen Daten) wuenschenswert, solange die Route noch
-unauthentifiziert ist.
+liefert per Definition nur STATUS_OPEN).
+
+FindingActionResponse (Accept/Unaccept) zeigt dagegen bewusst reviewed_at/
+reviewed_by/review_note — das IST hier der Zweck der Response (Bestaetigung
+der durchgefuehrten Aktion inkl. Audit-Spur), keine unpassende Symmetrie
+zu FindingSchema noetig.
 """
 
 from __future__ import annotations
@@ -57,6 +59,22 @@ class FindingsSummaryResponse(BaseModel):
     total: int
 
 
+class AcceptFindingRequest(BaseModel):
+    reason: str = ""
+
+
+class UnacceptFindingRequest(BaseModel):
+    note: str | None = None
+
+
+class FindingActionResponse(BaseModel):
+    finding_id: str
+    status: str
+    reviewed_at: str | None
+    reviewed_by: str | None
+    review_note: str | None
+
+
 def _finding_to_schema(finding: Finding) -> FindingSchema:
     return FindingSchema(
         finding_id=finding.finding_id,
@@ -92,3 +110,13 @@ def category_groups_to_schema(groups: list[CategoryGroup]) -> list[FindingCatego
 
 def review_summary_to_schema(summary: ReviewSummary) -> FindingsSummaryResponse:
     return FindingsSummaryResponse(**summary.to_dict())
+
+
+def finding_to_action_response(finding: Finding) -> FindingActionResponse:
+    return FindingActionResponse(
+        finding_id=finding.finding_id,
+        status=finding.status,
+        reviewed_at=finding.reviewed_at,
+        reviewed_by=finding.reviewed_by,
+        review_note=finding.review_note,
+    )

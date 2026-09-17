@@ -1,17 +1,19 @@
 # tests/test_control_center_findings_api.py
 # -*- coding: utf-8 -*-
 """
-GET /api/v1/library/findings (+ /summary) — Vertical Slice "Health/
-Dashboard", Step 2 (read-only Findings-Anzeige, Scope laut Freigabe
-2026-09-15: "nur Findings anzeigen", keine Accept/Unaccept-Endpoints).
+GET /api/v1/library/findings (+ /summary) sowie POST .../accept und
+.../unaccept — Findings-Anzeige (read-only) + erster schreibender
+Control-Center-Endpunkt (Nachtrag 2026-09-17, siehe
+docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md).
 
 Testet den echten Produktionscode-Pfad (CLAUDE.md Abschnitt 7): der
 Router ruft services/library_health/findings.py::FindingsRegistry/
-group_open_findings_by_category()/get_review_summary() unveraendert auf.
-Die Registry-Fixtures werden ausschliesslich ueber die echte
-FindingsRegistry-API aufgebaut (merge_scan_issues()/review_finding()/
-save()) statt die JSON-Datei direkt zu schreiben — identisches Prinzip
-wie tests/test_library_health_findings.py.
+group_open_findings_by_category()/get_review_summary()/accept_finding()/
+unaccept_finding() unveraendert auf. Die Registry-Fixtures werden
+ausschliesslich ueber die echte FindingsRegistry-API aufgebaut
+(merge_scan_issues()/review_finding()/save()) statt die JSON-Datei
+direkt zu schreiben — identisches Prinzip wie
+tests/test_library_health_findings.py.
 
 Kein ffmpeg noetig (anders als test_control_center_health_api.py) - diese
 Route liest nur die Findings-Registry-JSON-Datei, kein Scan.
@@ -213,3 +215,159 @@ async def test_get_findings_500_on_corrupt_registry(client, registry_path, monke
     assert response.status_code == 500
     body = response.json()
     assert body["error"]["code"] == "FINDINGS_REGISTRY_INVALID"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# POST .../accept + POST .../unaccept — erster schreibender Endpunkt
+# ─────────────────────────────────────────────────────────────────────────
+
+_SAME_ORIGIN = {"Origin": "http://testserver"}
+
+
+async def _seed_open_finding(registry_path, *, path="a.m4a", code="ARTWORK_MISSING"):
+    from services.library_health.findings import FindingsRegistry, generate_finding_id
+
+    registry = FindingsRegistry(registry_path)
+    issue = _issue(code, path=path)
+    registry.merge_scan_issues([issue], scanned_at="2026-01-01T00:00:00+00:00")
+    registry.save()
+    return generate_finding_id(issue)
+
+
+@pytest.mark.asyncio
+async def test_accept_finding_marks_as_accepted_and_removes_from_open_list(
+    client, registry_path, monkeypatch
+):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 42))
+    finding_id = await _seed_open_finding(registry_path)
+
+    response = await client.post(
+        f"/api/v1/library/findings/{finding_id}/accept",
+        json={"reason": "Bewusst so gewollt"},
+        headers=_SAME_ORIGIN,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["finding_id"] == finding_id
+    assert body["status"] == "FALSE_POSITIVE"
+    assert body["reviewed_by"] == "42"  # Dev-Bypass -> config.OWNER_USER_ID, als str im Audit-Trail
+    assert body["review_note"] == "Bewusst so gewollt"
+
+    open_findings = (await client.get("/api/v1/library/findings")).json()
+    assert open_findings == []
+
+
+@pytest.mark.asyncio
+async def test_accept_finding_requires_non_empty_reason(client, registry_path, monkeypatch):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    finding_id = await _seed_open_finding(registry_path)
+
+    response = await client.post(
+        f"/api/v1/library/findings/{finding_id}/accept",
+        json={"reason": "   "},
+        headers=_SAME_ORIGIN,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "REASON_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_accept_finding_404_for_unknown_id(client, registry_path, monkeypatch):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+
+    response = await client.post(
+        "/api/v1/library/findings/does-not-exist/accept",
+        json={"reason": "egal"},
+        headers=_SAME_ORIGIN,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "FINDING_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_accept_finding_rejected_without_origin_header(client, registry_path, monkeypatch):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    finding_id = await _seed_open_finding(registry_path)
+
+    response = await client.post(
+        f"/api/v1/library/findings/{finding_id}/accept", json={"reason": "x"}
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "ORIGIN_CHECK_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_accept_finding_rejected_with_mismatched_origin_header(
+    client, registry_path, monkeypatch
+):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    finding_id = await _seed_open_finding(registry_path)
+
+    response = await client.post(
+        f"/api/v1/library/findings/{finding_id}/accept",
+        json={"reason": "x"},
+        headers={"Origin": "http://evil.example"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "ORIGIN_CHECK_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_unaccept_finding_reopens_and_reappears_in_open_list(
+    client, registry_path, monkeypatch
+):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    finding_id = await _seed_open_finding(registry_path)
+    await client.post(
+        f"/api/v1/library/findings/{finding_id}/accept",
+        json={"reason": "x"},
+        headers=_SAME_ORIGIN,
+    )
+
+    response = await client.post(
+        f"/api/v1/library/findings/{finding_id}/unaccept",
+        json={"note": "Doch nicht akzeptiert"},
+        headers=_SAME_ORIGIN,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "OPEN"
+
+    open_findings = (await client.get("/api/v1/library/findings")).json()
+    assert len(open_findings) == 1
+
+
+@pytest.mark.asyncio
+async def test_unaccept_finding_409_when_already_open(client, registry_path, monkeypatch):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    finding_id = await _seed_open_finding(registry_path)
+
+    response = await client.post(
+        f"/api/v1/library/findings/{finding_id}/unaccept",
+        json={},
+        headers=_SAME_ORIGIN,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "ALREADY_OPEN"
+
+
+@pytest.mark.asyncio
+async def test_unaccept_finding_404_for_unknown_id(client, registry_path, monkeypatch):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+
+    response = await client.post(
+        "/api/v1/library/findings/does-not-exist/unaccept",
+        json={},
+        headers=_SAME_ORIGIN,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "FINDING_NOT_FOUND"

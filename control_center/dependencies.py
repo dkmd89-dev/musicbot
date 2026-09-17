@@ -34,7 +34,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Cookie, Depends, HTTPException
+from fastapi import Cookie, Depends, HTTPException, Request
 
 from config import Config
 from handlers.menu.models import AccessLevel
@@ -206,3 +206,35 @@ def require_min_access_level(minimum: AccessLevel):
         return level
 
     return _check
+
+
+def verify_same_origin(request: Request) -> None:
+    """CSRF-Schutz für schreibende Endpunkte (Nachtrag zum ersten
+    schreibenden Endpunkt, Findings Accept/Unaccept — offener Punkt aus
+    der Security-Checkliste in docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md
+    Abschnitt 6: "bei den ersten schreibenden Endpunkten zusätzlich
+    CSRF-Token oder striktes samesite+Origin-Check prüfen").
+
+    Das Session-Cookie ist bereits `samesite=strict` gesetzt (siehe
+    telegram_callback() in routers/auth.py) — das allein verhindert
+    schon, dass ein Cross-Site-Request das Cookie überhaupt mitschickt.
+    Dieser Origin-Header-Check ist eine zusätzliche, günstige
+    Verteidigungsebene (Belt-and-Suspenders) für den Fall inkonsistenter
+    SameSite-Durchsetzung durch ältere/exotische Clients — kein Ersatz
+    für ein volles CSRF-Token-System, das für den aktuellen Umfang
+    (wenige, klar umrissene Admin-Aktionen) unverhältnismäßig wäre
+    (Master-Prompt Regel 26: nicht blind optimieren).
+
+    Echte Browser senden bei POST/PUT/DELETE-Requests (auch same-origin)
+    einen Origin-Header mit — fehlt er oder passt er nicht zum
+    aufgerufenen Host, wird der Request abgelehnt."""
+    origin = request.headers.get("origin")
+    expected = f"{request.url.scheme}://{request.url.netloc}"
+    if origin is None or origin != expected:
+        raise HTTPException(
+            status_code=403,
+            detail=ErrorDetail(
+                code="ORIGIN_CHECK_FAILED",
+                message="Anfrage-Ursprung konnte nicht verifiziert werden.",
+            ).model_dump(),
+        )
