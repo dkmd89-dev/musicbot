@@ -107,6 +107,21 @@ async def test_dashboard_findings_panel_has_accept_wiring(client):
 
 
 @pytest.mark.asyncio
+async def test_dashboard_has_accepted_findings_toggle_and_unaccept_wiring(client):
+    """Nachtrag: schliesst den Review-Kreislauf — akzeptierte Findings
+    sind (lazy, per Toggle statt Auto-Load) einsehbar und ueber
+    Reaktivieren-Buttons (POST .../unaccept) zuruecknehmbar."""
+    html = (await client.get("/")).text
+
+    assert 'id="accepted-findings-toggle"' in html
+    assert 'id="accepted-findings-content"' in html
+    assert "/api/v1/library/findings/accepted" in html
+    assert "unacceptFinding" in html
+    assert "unaccept-btn" in html
+    assert "/unaccept" in html
+
+
+@pytest.mark.asyncio
 async def test_dashboard_escapes_untrusted_text_helper_present(client):
     """Sicherheitsnachtrag: Titel/Artist/Pfad-Felder aus Library-/
     Download-Metadaten werden vor dem innerHTML-Einsatz escaped (XSS-
