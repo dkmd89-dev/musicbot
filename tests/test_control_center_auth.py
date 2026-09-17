@@ -584,3 +584,38 @@ async def test_findings_accept_endpoint_rejects_plain_user_session(client, monke
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_jobs_endpoint_requires_authentication(client):
+    response = await client.get("/api/v1/jobs")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_jobs_endpoint_rejects_plain_user_session(client, monkeypatch):
+    """Dieselbe AccessLevel.ADMIN-Schwelle wie Findings/Repair-Plan/Downloads."""
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=999)
+    )
+
+    response = await client.get("/api/v1/jobs")
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_jobs_endpoint_accessible_with_admin_session(client, monkeypatch):
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: [777]))
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=777)
+    )
+
+    response = await client.get("/api/v1/jobs")
+
+    assert response.status_code == 200
+    assert response.json() == {"jobs": []}

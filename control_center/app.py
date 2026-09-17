@@ -23,7 +23,9 @@ from fastapi.responses import JSONResponse
 
 from logger import get_module_logger
 
-from .routers import admin, auth, downloads, findings, health, navidrome, repair, statistics, ui
+from services.jobs.job_registry import JobRegistry
+
+from .routers import admin, auth, downloads, findings, health, jobs, navidrome, repair, statistics, ui
 from .schemas.errors import ErrorDetail
 
 _logger = get_module_logger("control_center.app")
@@ -31,6 +33,11 @@ _logger = get_module_logger("control_center.app")
 
 def create_app() -> FastAPI:
     app = FastAPI(title="MusicBot Control Center", version="0.1.0")
+    # EINE JobRegistry-Instanz pro App/Prozess (siehe routers/jobs.py-
+    # Docstring) - ueber app.state statt Modul-Level-Global, damit jeder
+    # frische create_app()-Aufruf (wie in allen Tests) automatisch eine
+    # isolierte Registry bekommt.
+    app.state.job_registry = JobRegistry()
     app.include_router(health.router)
     app.include_router(findings.router)
     app.include_router(repair.router)
@@ -38,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(statistics.router)
     app.include_router(navidrome.router)
     app.include_router(admin.router)
+    app.include_router(jobs.router)
     app.include_router(auth.router)
     app.include_router(ui.router)
 
