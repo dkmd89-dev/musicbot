@@ -356,3 +356,16 @@ Schließt den in den beiden vorangegangenen Schritten bewusst offen gelassenen R
 - Test: `tests/test_control_center_findings_api.py` von 19 auf 21 erweitert (inkl. des Limit/Total-Nachtrags) + `tests/test_control_center_ui.py` von 10 auf 11 — alle grün, Gesamt-Control-Center-Suite 105/105 grün.
 - Manuell gegen die echte Produktions-Registry verifiziert: `limit=50` liefert korrekt 50 von 1173 — der Fix wurde nicht nur getestet, sondern auch gegen die tatsächlichen Daten bestätigt, die das Problem ursprünglich aufgedeckt hatten.
 - Keine neuen Dependencies.
+
+---
+
+## Erweiterung — Admin-Übersicht-UI (2026-09-17, auf Nutzerfreigabe)
+
+Letzter bisher API-only-Bereich bekommt eine Dashboard-Ansicht (reines Frontend, `routers/`/`schemas/admin.py` unverändert) — rundet das "jeder Bereich hat eine Oberfläche"-Bild ab, bevor der nächste große Schritt (Jobs-Grundgerüst/Repair-Execution) beginnt.
+
+- Neues Panel "Admin: Nutzer & Rollen" zeigt Telegram-ID, Rolle (farbcodiertes Badge, wiederverwendet die bereits vorhandenen Severity-Tier-CSS-Klassen: owner→CRITICAL, admin→ERROR, moderator→WARNING, user→INFO), Navidrome-Zuordnung, Registrierungsdatum.
+- Im normalen 30s-Polling/Auto-Load/Refresh-Button (wie Findings/Downloads/Statistics/Navidrome-Status) — anders als Repair-Plan (voller Scan) oder Accepted-Findings (potenziell sehr groß) ist `GET /api/v1/admin/users` ein kleiner, günstiger Read ohne Skalierungsrisiko (aktuell 2 Einträge in Produktion).
+- Für nicht-Admin-Rollen greift der bereits bestehende 403-„Keine Berechtigung"-Pfad von `_loadInto()` — kein separater Code nötig.
+- Test: `tests/test_control_center_ui.py` von 11 auf 12 Tests erweitert — alle grün, Gesamt-Control-Center-Suite 106/106 grün.
+- Manuell gegen die echten Produktionsdaten verifiziert (Panel rendert, 2 Nutzer korrekt geladen).
+- Keine neuen Dependencies, keine Backend-Änderung.
