@@ -369,3 +369,20 @@ Letzter bisher API-only-Bereich bekommt eine Dashboard-Ansicht (reines Frontend,
 - Test: `tests/test_control_center_ui.py` von 11 auf 12 Tests erweitert — alle grün, Gesamt-Control-Center-Suite 106/106 grün.
 - Manuell gegen die echten Produktionsdaten verifiziert (Panel rendert, 2 Nutzer korrekt geladen).
 - Keine neuen Dependencies, keine Backend-Änderung.
+
+---
+
+## Erweiterung — Jobs-Grundgerüst, Phase 1 (2026-09-17, auf Nutzerfreigabe)
+
+Erster Teilschritt des größeren, vom Nutzer freigegebenen Vorhabens "Jobs-Grundgerüst Richtung Repair-Execution" — bewusst in zwei Teilschritte aufgeteilt (Nutzerentscheidung auf Nachfrage): **Phase 1 = nur Infrastruktur, noch keine echte Ausführung.** Repair-Execution als erster echter Job-Typ ist ein eigener, separat freizugebender Folgeschritt.
+
+- Neues `services/jobs/` (Telegram-frei, analog zu `services/library_health/`/`services/library_repair/`): `models.py` (`Job`-Dataclass, `JobStatus`-Enum: PENDING/RUNNING/SUCCEEDED/FAILED/CANCELLED) + `job_registry.py::JobRegistry` — Zustandsmuster identisch zu `services/downloader/active_downloads.py::ActiveDownloadRegistry` (EINE Instanz pro Prozess, `threading.Lock` statt `asyncio.Lock`, weil sowohl async Tasks als auch sync Route-Handler zugreifen; kooperatives Abbrechen über `threading.Event`, identisch zu `ActiveDownload.request_cancel()`).
+- **Architekturentscheidung, die sich von den bisherigen Registries unterscheidet:** die JobRegistry liegt NICHT als Modul-Level-Singleton (wie ursprünglich naheliegend), sondern in `app.state.job_registry` (`control_center/app.py`), per FastAPI-Dependency injiziert. Grund: anders als `FindingsRegistry`/`DownloadHistoryStore` (dateibasiert, "frisch pro Request" teilt sich automatisch über die Datei) ist die JobRegistry rein In-Memory — ein Modul-Level-Global hätte sich unkontrolliert über alle Tests hinweg geteilt. `app.state` sorgt dafür, dass jeder `create_app()`-Aufruf (wie ihn bereits jeder bestehende Test macht) automatisch eine isolierte Registry bekommt, ohne einen eigenen Reset-Mechanismus zu brauchen.
+- `GET /api/v1/jobs?limit=` + `GET /api/v1/jobs/{job_id}` (Lesen) + `POST /api/v1/jobs/demo` + `POST /api/v1/jobs/{job_id}/cancel` (schreibend, `verify_same_origin()`-CSRF-geschützt wie Findings Accept/Unaccept) — alle mind. `AccessLevel.ADMIN`.
+- **Nur ein einziger, ausdrücklich als Test-/Demo-Fähigkeit gekennzeichneter Job-Typ** (`demo_progress`, Pfad `/demo` statt eines allgemein klingenden Namens) — läuft 5 Schritte à 1 Sekunde hoch, führt keine reale Operation aus (Master-Prompt Regel 39: keine Fake-Implementierung, die wie eine fertige Funktion aussieht — der Name macht unmissverständlich klar, dass hier nichts Echtes passiert).
+- Test: `tests/test_job_registry.py` (17 Tests, reine Registry-Logik ohne FastAPI) + `tests/test_control_center_jobs_api.py` (12 Tests, inkl. Demo-Job-Lebenszyklus PENDING→RUNNING→SUCCEEDED, Abbruch vor Fertigstellung, CSRF, Limit) + 3 neue Authorization-Wiring-Tests in `tests/test_control_center_auth.py` — alle grün, Gesamt-Control-Center-Suite 138/138 grün.
+- Manuell gegen einen echten laufenden `uvicorn`-Prozess verifiziert (nicht nur den In-Process-Testclient): kompletter Lebenszyklus PENDING→RUNNING→SUCCEEDED über mehrere echte HTTP-Requests hinweg, exakt nach 5 Sekunden abgeschlossen — ungefährlich, da der Demo-Job keinerlei reale Seiteneffekte hat.
+- Keine UI in diesem Schritt (eine Job-UI wäre erst mit einem echten Job-Typ sinnvoll, nicht für eine reine Demo-Fähigkeit).
+- Keine neuen Dependencies.
+
+**Offen für den separat freizugebenden Folgeschritt (Phase 2):** Repair-Execution als erster echter Job-Typ (`scripts/library_repair.py` als Subprozess, analog zum bestehenden `doctor_runner.py`-Muster für SAFE_AUTOMATIC-Reparaturen) + zugehörige UI.
