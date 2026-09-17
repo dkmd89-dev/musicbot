@@ -386,3 +386,18 @@ Erster Teilschritt des größeren, vom Nutzer freigegebenen Vorhabens "Jobs-Grun
 - Keine neuen Dependencies.
 
 **Offen für den separat freizugebenden Folgeschritt (Phase 2):** Repair-Execution als erster echter Job-Typ (`scripts/library_repair.py` als Subprozess, analog zum bestehenden `doctor_runner.py`-Muster für SAFE_AUTOMATIC-Reparaturen) + zugehörige UI.
+
+---
+
+## Erweiterung — Jobs-Grundgerüst, Phase 2: Repair-Execution als erster echter Job-Typ (2026-09-17, auf Nutzerfreigabe)
+
+Zweiter Teilschritt des größeren Vorhabens — erste genuin destruktive, dateiverändernde Fähigkeit im Control Center überhaupt. Nutzerentscheidung auf Nachfrage (drei Optionen: welche Reparaturstufe, Subprozess-Wiederverwendung, Einzel-Finding vs. Bulk): **die bestehende "🩺 MusicBot Doctor"-Telegram-Fähigkeit 1:1 nachbilden**, keine neue Granularität erfinden.
+
+- Neuer Job-Typ `repair_safe_automatic` (`POST /api/v1/jobs/repair-safe-automatic`) bildet `handlers/library_doctor_handler.py::handle_apply_safe_confirmed()` exakt nach: Health-Scan + `SAFE_AUTOMATIC`-Apply über die bereits produktiven `services/library_repair/doctor_runner.py::run_health_scan()`/`run_safe_automatic_repair()`-Subprozess-Funktionen (Backup/Rollback/Journal bereits dort abgesichert) — **keine neue Ausführungslogik**, nur eine neue Tür (Web statt Telegram) zu einer bestehenden Fähigkeit. Bewusst nur dieser eine Level (kein Netzwerk, kein Re-Encode) — identische Sicherheitsgrenze wie `doctor_runner.py` selbst.
+- **"Preview" ist bewusst kein neuer Mechanismus** — das bereits vorhandene `GET /api/v1/library/repair-plan` zeigt schon vorher die Anzahl `SAFE_AUTOMATIC`-Kandidaten, bevor der Job gestartet wird.
+- **Kooperatives Abbrechen nur zwischen Scan und Repair** (Prüfung von `is_cancel_requested()` nach dem Scan, vor dem Start des Repair-Subprozesses) — explizit dokumentierte Grenze, kein Kill eines bereits laufenden Subprozesses möglich (`doctor_runner.py::_run_subprocess()` kapselt den Prozess-Handle vollständig). Keine verschleierte Lücke (Master-Prompt Regel 39), sondern eine bewusst benannte Einschränkung.
+- `JobRegistry.mark_failed()` um ein optionales `result`-Feld erweitert, damit ein fehlgeschlagener Job trotzdem Diagnosedaten (z. B. Subprozess-stdout bei Exit-Code ≠ 0) mitliefern kann.
+- Test: `tests/test_control_center_jobs_api.py` von 12 auf 19 Tests erweitert (Erfolg, Scan-Fehler verhindert Repair-Start, Timeout, nicht-null Exit-Code mit Diagnosedaten, Abbruch zwischen Scan und Repair, CSRF, Initiator-Aufzeichnung) + 1 neuer Test in `tests/test_job_registry.py` — alle grün, Gesamt-Control-Center-Suite 146/146 grün, plus Regression `tests/test_doctor_runner.py`/`test_library_doctor_handler.py`/`test_rich_menu_doctor.py` (73 Tests) weiterhin grün (Telegram-Pfad unverändert).
+- **Kein Live-Smoke-Test gegen die echte Library** — anders als der Demo-Job würde ein echter Aufruf sofort `--level SAFE_AUTOMATIC --apply` gegen die Produktionsbibliothek auslösen (Dateien umbenennen, Tags schreiben). Stattdessen gegen einen echten laufenden Prozess nur sicher verifiziert: Route existiert (`GET /api/v1/jobs`) und CSRF-Check greift (falscher Origin lässt den Job nie anlaufen) — echte Ausführung wurde nie ausgelöst.
+- **Keine UI in diesem Schritt** — bei der ersten echten, dateiverändernden Fähigkeit soll das UX (Start-Button, Fortschrittsanzeige, Bestätigungstext) als eigener, separat zu besprechender Schritt entstehen, nicht stillschweigend mitgeliefert werden.
+- Keine neuen Dependencies.

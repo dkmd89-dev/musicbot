@@ -1,9 +1,9 @@
 # tests/test_control_center_jobs_api.py
 # -*- coding: utf-8 -*-
 """
-GET /api/v1/jobs (+ /{job_id}), POST /demo, POST /{job_id}/cancel —
-Jobs-Grundgerüst (Vertical Slice "Jobs", Phase 1: nur Infrastruktur,
-noch kein echter Job-Typ — siehe control_center/routers/jobs.py-Docstring).
+GET /api/v1/jobs (+ /{job_id}), POST /demo, POST /repair-safe-automatic,
+POST /{job_id}/cancel — Jobs-Grundgerüst (Phase 1) + erster echter
+Job-Typ (Phase 2, siehe control_center/routers/jobs.py-Docstring).
 
 Testet den echten Produktionscode-Pfad (CLAUDE.md Abschnitt 7): der
 Router nutzt services/jobs/job_registry.py::JobRegistry unverändert.
@@ -12,7 +12,12 @@ JobRegistry (app.state.job_registry) — kein Reset-Mechanismus nötig.
 
 _DEMO_JOB_STEPS/_DEMO_JOB_STEP_SECONDS werden für schnelle Tests auf
 winzige Werte gepatcht (Produktions-Default: 5 Schritte à 1 Sekunde).
-"""
+
+Phase-2-Tests mocken services/library_repair/doctor_runner.py::
+run_health_scan()/run_safe_automatic_repair() (CLAUDE.md Abschnitt 8:
+externe/subprozessgebundene Operationen nicht real in Unit-Tests
+ausführen — ein echter Lauf würde die Produktions-Library scannen/
+verändern)."""
 
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ import pytest
 import pytest_asyncio
 
 from config import Config
+from services.library_repair.doctor_runner import DoctorRepairResult, DoctorScanResult
 
 _SAME_ORIGIN = {"Origin": "http://testserver"}
 
@@ -190,3 +196,186 @@ async def test_list_jobs_rejects_invalid_limit(client):
     response = await client.get("/api/v1/jobs", params={"limit": 0})
 
     assert response.status_code == 422
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# POST /repair-safe-automatic — erster echter Job-Typ (Phase 2)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _ok_scan_result(report=None):
+    return DoctorScanResult(exit_code=0, report=report or {"health": {"score": 99.0}})
+
+
+def _failed_scan_result():
+    return DoctorScanResult(exit_code=1, report=None, stderr_tail="Scan kaputt")
+
+
+def _ok_repair_result(stdout="alles repariert"):
+    return DoctorRepairResult(exit_code=0, stdout_tail=stdout)
+
+
+def _nonzero_repair_result():
+    return DoctorRepairResult(exit_code=1, stdout_tail="teilweise fehlgeschlagen")
+
+
+def _timed_out_repair_result():
+    return DoctorRepairResult(exit_code=None, timed_out=True, error_message="Timeout nach 900s")
+
+
+@pytest.mark.asyncio
+async def test_repair_job_succeeds_when_scan_and_repair_succeed(client, monkeypatch):
+    import control_center.routers.jobs as jobs_router
+
+    async def _fake_scan():
+        return _ok_scan_result()
+
+    async def _fake_repair():
+        return _ok_repair_result()
+
+    monkeypatch.setattr(jobs_router, "run_health_scan", _fake_scan)
+    monkeypatch.setattr(jobs_router, "run_safe_automatic_repair", _fake_repair)
+
+    job_id = (
+        await client.post("/api/v1/jobs/repair-safe-automatic", headers=_SAME_ORIGIN)
+    ).json()["job_id"]
+    await asyncio.sleep(0.05)
+
+    body = (await client.get(f"/api/v1/jobs/{job_id}")).json()
+    assert body["status"] == "SUCCEEDED"
+    assert body["result"]["phase"] == "repair"
+    assert body["result"]["exit_code"] == 0
+
+
+@pytest.mark.asyncio
+async def test_repair_job_fails_when_scan_fails_and_never_starts_repair(client, monkeypatch):
+    import control_center.routers.jobs as jobs_router
+
+    repair_called = False
+
+    async def _fake_scan():
+        return _failed_scan_result()
+
+    async def _fake_repair():
+        nonlocal repair_called
+        repair_called = True
+        return _ok_repair_result()
+
+    monkeypatch.setattr(jobs_router, "run_health_scan", _fake_scan)
+    monkeypatch.setattr(jobs_router, "run_safe_automatic_repair", _fake_repair)
+
+    job_id = (
+        await client.post("/api/v1/jobs/repair-safe-automatic", headers=_SAME_ORIGIN)
+    ).json()["job_id"]
+    await asyncio.sleep(0.05)
+
+    body = (await client.get(f"/api/v1/jobs/{job_id}")).json()
+    assert body["status"] == "FAILED"
+    assert body["result"]["phase"] == "scan"
+    assert repair_called is False
+
+
+@pytest.mark.asyncio
+async def test_repair_job_fails_on_repair_timeout(client, monkeypatch):
+    import control_center.routers.jobs as jobs_router
+
+    async def _fake_scan():
+        return _ok_scan_result()
+
+    async def _fake_timeout_repair():
+        return _timed_out_repair_result()
+
+    monkeypatch.setattr(jobs_router, "run_health_scan", _fake_scan)
+    monkeypatch.setattr(jobs_router, "run_safe_automatic_repair", _fake_timeout_repair)
+
+    job_id = (
+        await client.post("/api/v1/jobs/repair-safe-automatic", headers=_SAME_ORIGIN)
+    ).json()["job_id"]
+    await asyncio.sleep(0.05)
+
+    body = (await client.get(f"/api/v1/jobs/{job_id}")).json()
+    assert body["status"] == "FAILED"
+    assert "Timeout" in body["error"]
+
+
+@pytest.mark.asyncio
+async def test_repair_job_fails_with_diagnostic_result_on_nonzero_exit(client, monkeypatch):
+    import control_center.routers.jobs as jobs_router
+
+    async def _fake_scan():
+        return _ok_scan_result()
+
+    async def _fake_repair():
+        return _nonzero_repair_result()
+
+    monkeypatch.setattr(jobs_router, "run_health_scan", _fake_scan)
+    monkeypatch.setattr(jobs_router, "run_safe_automatic_repair", _fake_repair)
+
+    job_id = (
+        await client.post("/api/v1/jobs/repair-safe-automatic", headers=_SAME_ORIGIN)
+    ).json()["job_id"]
+    await asyncio.sleep(0.05)
+
+    body = (await client.get(f"/api/v1/jobs/{job_id}")).json()
+    assert body["status"] == "FAILED"
+    assert body["result"]["stdout_tail"] == "teilweise fehlgeschlagen"
+    assert "1" in body["error"]
+
+
+@pytest.mark.asyncio
+async def test_repair_job_cancel_between_scan_and_repair_prevents_repair(client, monkeypatch):
+    import control_center.routers.jobs as jobs_router
+
+    repair_called = False
+
+    async def _slow_scan():
+        await asyncio.sleep(0.08)
+        return _ok_scan_result()
+
+    async def _fake_repair():
+        nonlocal repair_called
+        repair_called = True
+        return _ok_repair_result()
+
+    monkeypatch.setattr(jobs_router, "run_health_scan", _slow_scan)
+    monkeypatch.setattr(jobs_router, "run_safe_automatic_repair", _fake_repair)
+
+    job_id = (
+        await client.post("/api/v1/jobs/repair-safe-automatic", headers=_SAME_ORIGIN)
+    ).json()["job_id"]
+    await asyncio.sleep(0.02)  # Job ist im Scan (der 0.08s dauert)
+    await client.post(f"/api/v1/jobs/{job_id}/cancel", headers=_SAME_ORIGIN)
+    await asyncio.sleep(0.15)  # Scan beendet sich, Abbruch-Check greift
+
+    body = (await client.get(f"/api/v1/jobs/{job_id}")).json()
+    assert body["status"] == "CANCELLED"
+    assert repair_called is False
+
+
+@pytest.mark.asyncio
+async def test_repair_job_rejected_without_origin_header(client):
+    response = await client.post("/api/v1/jobs/repair-safe-automatic")
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "ORIGIN_CHECK_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_repair_job_records_initiator(client, monkeypatch):
+    import control_center.routers.jobs as jobs_router
+
+    async def _fake_scan():
+        return _ok_scan_result()
+
+    async def _fake_repair():
+        return _ok_repair_result()
+
+    monkeypatch.setattr(jobs_router, "run_health_scan", _fake_scan)
+    monkeypatch.setattr(jobs_router, "run_safe_automatic_repair", _fake_repair)
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 555))
+
+    body = (
+        await client.post("/api/v1/jobs/repair-safe-automatic", headers=_SAME_ORIGIN)
+    ).json()
+    assert body["initiator"] == "555"
+    assert body["kind"] == "repair_safe_automatic"
