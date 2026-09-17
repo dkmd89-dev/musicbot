@@ -331,3 +331,15 @@ Nach Abschluss der read-only-Phase (Nutzerentscheidung zwischen "erst alle read-
 - Manuell verifiziert: Lesezugriff gegen die echte Produktions-Findings-Registry funktioniert unverändert (5 Kategorien); der CSRF-Check wurde mit einem absichtlich falschen Origin-Header UND einer nicht-existenten Finding-ID getestet (sicher, keine reale Mutation möglich) — echtes Accept/Unaccept gegen produktive Findings-Daten bewusst NICHT als Smoke-Test ausgeführt (reale Zustandsänderung, nicht ohne gesonderte Nutzerfreigabe).
 - Keine UI in diesem Schritt (bewusst API-only, analog zur Admin-Übersicht) — Accept/Unaccept-Buttons im Findings-Panel wären ein eigener, noch nicht freigegebener Folgeschritt.
 - Keine neuen Dependencies.
+
+---
+
+## Erweiterung — Findings-Accept-UI (2026-09-17, auf Nutzerfreigabe „nächster Schritt, den du empfehlst")
+
+Empfehlung nach Abschluss des ersten schreibenden Endpunkts: den bereits gebauten Accept-Endpunkt tatsächlich nutzbar machen, statt einen neuen Funktionsbereich zu beginnen. **Unaccept bewusst nicht mit umgesetzt** — dafür fehlt weiterhin ein Lese-Endpunkt für akzeptierte Findings (`get_accepted_findings()` existiert produktiv, aber `control_center/` exponiert ihn noch nicht), eigener Folgeschritt.
+
+- `control_center/templates/dashboard.html`: Findings-Panel zeigt jetzt pro Kategorie die einzelnen offenen Findings (Pfad/Artist/Album/Titel als Label, volle Meldung als Tooltip) mit einem "Akzeptieren"-Button. Klick → `window.prompt()` für den Pflicht-Grund → `window.confirm()` als leichte Bestätigung (kein volles Preview/Diff, proportional zum bereits in der API-Erweiterung begründeten Risiko: nur Registry-Status, nie eine Library-Datei) → `POST .../accept` mit `credentials: "same-origin"` (Cookie-Auth) → bei Erfolg wird die Findings-Liste neu geladen (akzeptiertes Finding verschwindet sichtbar aus der offenen Liste).
+- **Sicherheitsnachtrag beim Anfassen derselben Stelle entdeckt und mitbehoben:** die vier `render*()`-Funktionen (Findings/Downloads/Statistics, neu seit dem Dashboard-Nachtrag) betteten Titel/Artist/Pfad/Message-Felder aus Library-/Download-Metadaten (z. B. YouTube-Videotitel) bislang ungefiltert per `innerHTML` ein — ein präparierter Titel hätte Skript-Inhalt einschleusen können (XSS). Neuer `_escapeHtml()`-Helper, konsequent auf allen betroffenen Feldern angewendet (auch rückwirkend in Downloads/Statistics, nicht nur im neuen Findings-Code). Interne, bereits enum-artige Werte (Status-Codes, Severity-Tiers, Zahlen) blieben unverändert, da dort kein Risiko besteht.
+- Test: `tests/test_control_center_ui.py` von 8 auf 10 Tests erweitert (Accept-Verdrahtung im Markup vorhanden, `_escapeHtml()`-Helper existiert und wird tatsächlich verwendet, nicht nur definiert) — alle grün, Gesamt-Control-Center-Suite 98/98 grün.
+- Manuell verifiziert: Dashboard-Shell rendert weiterhin korrekt gegen die echte Produktionsumgebung (Accept-Buttons entstehen client-seitig nach dem Findings-Fetch, daher serverseitig 0 im initialen HTML — erwartet). Kein echter Accept-Klick gegen produktive Findings-Daten ausgeführt (identische Zurückhaltung wie beim API-Schritt).
+- Keine neuen Dependencies.
