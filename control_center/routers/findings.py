@@ -43,7 +43,7 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from config import Config
 from handlers.menu.models import AccessLevel
@@ -53,6 +53,7 @@ from services.library_health.findings import (
     FindingsRegistry,
     FindingsRegistryError,
     accept_finding,
+    get_accepted_findings,
     get_review_summary,
     group_open_findings_by_category,
     unaccept_finding,
@@ -61,11 +62,13 @@ from services.library_health.findings import (
 from ..dependencies import get_current_user_id, require_min_access_level, verify_same_origin
 from ..schemas.errors import ErrorDetail
 from ..schemas.findings import (
+    AcceptedFindingsResponse,
     AcceptFindingRequest,
     FindingActionResponse,
     FindingCategoryGroup,
     FindingsSummaryResponse,
     UnacceptFindingRequest,
+    accepted_findings_to_response,
     category_groups_to_schema,
     finding_to_action_response,
     review_summary_to_schema,
@@ -118,6 +121,27 @@ def get_findings_summary() -> FindingsSummaryResponse:
     registry = _load_registry()
     summary = get_review_summary(registry)
     return review_summary_to_schema(summary)
+
+
+@router.get("/findings/accepted", response_model=AcceptedFindingsResponse)
+def get_accepted_findings_endpoint(
+    limit: int = Query(default=50, ge=1, le=500),
+) -> AcceptedFindingsResponse:
+    """Nachtrag zu Findings Accept/Unaccept: macht akzeptierte Findings
+    im Web sichtbar (bisher nur über Telegram/CLI einsehbar) — schließt
+    den Review-Kreislauf, damit eine Web-Akzeptanz auch im Web
+    zurücknehmbar ist (siehe .../unaccept unten).
+
+    `limit` (Default 50, wie routers/downloads.py) — beim Smoke-Test
+    gegen die echte Produktions-Registry zeigte sich, dass dort bereits
+    1173 akzeptierte Findings existieren (historisch über Telegram/CLI
+    akzeptiert). Ungekürzt an den Client zu senden/zu rendern wäre
+    dieselbe, im Repair-Plan-Schritt bereits bewusst vermiedene Falle
+    (dort: 1114 Reparatur-Kandidaten) — hier nachträglich vor dem Commit
+    korrigiert, nicht erst nach einem Problembericht."""
+    registry = _load_registry()
+    findings = get_accepted_findings(registry)
+    return accepted_findings_to_response(findings, limit=limit)
 
 
 @router.post(

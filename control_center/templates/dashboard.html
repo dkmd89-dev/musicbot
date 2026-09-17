@@ -136,6 +136,10 @@
       <section class="panel">
         <h2>Findings</h2>
         <div id="findings-content" class="empty-note">Lädt…</div>
+        <div class="retry-row">
+          <button id="accepted-findings-toggle" class="small">Akzeptierte Findings anzeigen</button>
+        </div>
+        <div id="accepted-findings-content" class="empty-note" hidden></div>
       </section>
 
       <section class="panel">
@@ -295,6 +299,12 @@
           return;
         }
         await loadFindings(); // neu laden — akzeptiertes Finding verschwindet aus der offenen Liste
+        // Falls die Akzeptiert-Liste gerade sichtbar ist, ebenfalls
+        // aktualisieren, damit das neu akzeptierte Finding dort sofort
+        // auftaucht statt erst nach erneutem Ein-/Ausklappen.
+        if (!document.getElementById("accepted-findings-content").hidden) {
+          await loadAcceptedFindings();
+        }
       } catch (err) {
         window.alert("Netzwerkfehler: " + err.message);
         buttonEl.disabled = false;
@@ -305,6 +315,76 @@
       const btn = event.target.closest(".accept-btn");
       if (!btn) return;
       acceptFinding(btn.dataset.findingId, btn);
+    });
+
+    function renderAcceptedFindings(el, body) {
+      if (!body.findings.length) {
+        el.innerHTML = '<p class="empty-note">Keine akzeptierten Findings.</p>';
+        return;
+      }
+      const truncNote = body.total > body.findings.length
+        ? `<p class="empty-note">Zeige ${body.findings.length} von ${body.total} — ältere/weitere nicht geladen (kein Auto-Rendern großer Listen).</p>`
+        : "";
+      el.innerHTML = truncNote + '<div class="row-list">' + body.findings.map((f) => `
+        <div class="row-item" data-finding-id="${_escapeHtml(f.finding_id)}">
+          <div class="row-main" title="${_escapeHtml(f.message)}">
+            <span class="badge badge-INFO">${_escapeHtml(f.code)}</span>
+            ${_escapeHtml(_findingLabel(f))}
+            ${f.present_in_latest_scan === false ? '<span class="denied">(veraltet — nicht mehr erkannt)</span>' : ""}
+            <div class="hint">${_escapeHtml(f.review_note || "")}</div>
+          </div>
+          <button class="small unaccept-btn" data-finding-id="${_escapeHtml(f.finding_id)}">Reaktivieren</button>
+        </div>
+      `).join("") + "</div>";
+    }
+    function loadAcceptedFindings() {
+      return _loadInto(
+        "accepted-findings-content", "/api/v1/library/findings/accepted", renderAcceptedFindings
+      );
+    }
+
+    async function unacceptFinding(findingId, buttonEl) {
+      if (!window.confirm("Diese Akzeptanz wirklich zurücknehmen? Das Finding wird wieder als offen geführt.")) return;
+
+      buttonEl.disabled = true;
+      try {
+        const res = await fetch(`/api/v1/library/findings/${encodeURIComponent(findingId)}/unaccept`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({}),
+        });
+        if (res.status === 401) { showOnly("login-view"); return; }
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          window.alert("Fehler: " + (body && body.error ? body.error.message : res.status));
+          buttonEl.disabled = false;
+          return;
+        }
+        await loadAcceptedFindings();
+        await loadFindings(); // reaktiviertes Finding erscheint wieder in der offenen Liste
+      } catch (err) {
+        window.alert("Netzwerkfehler: " + err.message);
+        buttonEl.disabled = false;
+      }
+    }
+
+    document.getElementById("accepted-findings-content").addEventListener("click", (event) => {
+      const btn = event.target.closest(".unaccept-btn");
+      if (!btn) return;
+      unacceptFinding(btn.dataset.findingId, btn);
+    });
+
+    document.getElementById("accepted-findings-toggle").addEventListener("click", async () => {
+      const content = document.getElementById("accepted-findings-content");
+      const toggleBtn = document.getElementById("accepted-findings-toggle");
+      const willShow = content.hidden;
+      content.hidden = !willShow;
+      toggleBtn.textContent = willShow ? "Akzeptierte Findings verbergen" : "Akzeptierte Findings anzeigen";
+      if (willShow) {
+        content.textContent = "Lädt…";
+        await loadAcceptedFindings();
+      }
     });
 
     function renderRepairPlan(el, plan) {

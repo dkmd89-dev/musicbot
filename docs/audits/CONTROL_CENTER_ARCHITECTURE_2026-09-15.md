@@ -343,3 +343,16 @@ Empfehlung nach Abschluss des ersten schreibenden Endpunkts: den bereits gebaute
 - Test: `tests/test_control_center_ui.py` von 8 auf 10 Tests erweitert (Accept-Verdrahtung im Markup vorhanden, `_escapeHtml()`-Helper existiert und wird tatsächlich verwendet, nicht nur definiert) — alle grün, Gesamt-Control-Center-Suite 98/98 grün.
 - Manuell verifiziert: Dashboard-Shell rendert weiterhin korrekt gegen die echte Produktionsumgebung (Accept-Buttons entstehen client-seitig nach dem Findings-Fetch, daher serverseitig 0 im initialen HTML — erwartet). Kein echter Accept-Klick gegen produktive Findings-Daten ausgeführt (identische Zurückhaltung wie beim API-Schritt).
 - Keine neuen Dependencies.
+
+---
+
+## Erweiterung — Accepted Findings + Unaccept-Fertigstellung (2026-09-17, auf Nutzerfreigabe)
+
+Schließt den in den beiden vorangegangenen Schritten bewusst offen gelassenen Review-Kreislauf: akzeptierte Findings sind jetzt im Web sichtbar und über einen "Reaktivieren"-Button zurücknehmbar (`unaccept_finding()` war bereits seit dem ersten schreibenden Schritt produktiv, nur ohne Lese-Endpunkt/UI dafür).
+
+- `GET /api/v1/library/findings/accepted?limit=` (mind. `AccessLevel.ADMIN`, identisch zur bestehenden Findings-Schwelle) — dünner Wrapper um `services/library_health/findings.py::get_accepted_findings()`. Anders als `FindingSchema` (offene Findings) zeigt `AcceptedFindingSchema` bewusst die Review-Metadaten (`reviewed_at`/`reviewed_by`/`review_note`/`present_in_latest_scan`) — das IST hier der Anzeigezweck (Auditierbarkeit, Master-Prompt Regel 31).
+- Dashboard: neuer Toggle "Akzeptierte Findings anzeigen" im Findings-Panel — **lazy geladen**, nicht Teil des 30s-Polling/Auto-Loads (bewusste Entscheidung, siehe Korrektur unten). Jeder Eintrag mit "Reaktivieren"-Button (leichter `confirm()`-Dialog, identisches Risikoprofil wie Accept — nur Registry-Status, reversibel).
+- **Korrektur vor dem Commit (Smoke-Test-Fund):** Der erste Entwurf sendete/renderte die komplette akzeptierte Liste ungekürzt. Der Smoke-Test gegen die echte Produktions-Registry zeigte **1173 akzeptierte Findings** (historisch über Telegram/CLI akzeptiert) — dieselbe, im Repair-Plan-Schritt bereits bewusst vermiedene Falle (dort: 1114 Kandidaten), hier zunächst übersehen. Noch vor dem Commit korrigiert: `limit`-Query-Parameter (Default 50, max 500, wie bei Downloads), `total` im Response-Schema ergänzt, UI zeigt bei Kürzung „Zeige X von Y" an.
+- Test: `tests/test_control_center_findings_api.py` von 19 auf 21 erweitert (inkl. des Limit/Total-Nachtrags) + `tests/test_control_center_ui.py` von 10 auf 11 — alle grün, Gesamt-Control-Center-Suite 105/105 grün.
+- Manuell gegen die echte Produktions-Registry verifiziert: `limit=50` liefert korrekt 50 von 1173 — der Fix wurde nicht nur getestet, sondern auch gegen die tatsächlichen Daten bestätigt, die das Problem ursprünglich aufgedeckt hatten.
+- Keine neuen Dependencies.

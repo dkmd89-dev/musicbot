@@ -75,6 +75,37 @@ class FindingActionResponse(BaseModel):
     review_note: str | None
 
 
+class AcceptedFindingSchema(BaseModel):
+    """Anders als FindingSchema (offene Findings) zeigt diese Variante
+    bewusst die Review-Metadaten (reviewed_at/reviewed_by/review_note) —
+    das IST hier der Zweck der Anzeige (wer hat wann warum akzeptiert,
+    Master-Prompt Regel 31 Auditierbarkeit), keine unpassende Symmetrie
+    zu FindingSchema nötig. present_in_latest_scan zeigt "stale"
+    Akzeptanzen an (Finding vom Scanner nicht mehr erkannt, z. B. weil
+    zwischenzeitlich anderweitig repariert)."""
+
+    finding_id: str
+    code: str
+    scope: str
+    artist: str | None
+    album: str | None
+    title: str | None
+    path: str | None
+    message: str
+    severity: str | None
+    confidence: str | None
+    occurrences: int
+    present_in_latest_scan: bool
+    reviewed_at: str | None
+    reviewed_by: str | None
+    review_note: str | None
+
+
+class AcceptedFindingsResponse(BaseModel):
+    findings: list[AcceptedFindingSchema]
+    total: int
+
+
 def _finding_to_schema(finding: Finding) -> FindingSchema:
     return FindingSchema(
         finding_id=finding.finding_id,
@@ -119,4 +150,38 @@ def finding_to_action_response(finding: Finding) -> FindingActionResponse:
         reviewed_at=finding.reviewed_at,
         reviewed_by=finding.reviewed_by,
         review_note=finding.review_note,
+    )
+
+
+def _finding_to_accepted_schema(finding: Finding) -> AcceptedFindingSchema:
+    return AcceptedFindingSchema(
+        finding_id=finding.finding_id,
+        code=finding.code,
+        scope=finding.scope,
+        artist=finding.artist,
+        album=finding.album,
+        title=finding.title,
+        path=finding.path,
+        message=finding.message,
+        severity=finding.severity,
+        confidence=finding.confidence,
+        occurrences=finding.occurrences,
+        present_in_latest_scan=finding.present_in_latest_scan,
+        reviewed_at=finding.reviewed_at,
+        reviewed_by=finding.reviewed_by,
+        review_note=finding.review_note,
+    )
+
+
+def accepted_findings_to_response(
+    findings: list[Finding], *, limit: int
+) -> AcceptedFindingsResponse:
+    """Reines Mapping, keine Fachlogik — identisches Prinzip wie
+    category_groups_to_schema(). `total` ist die ungekuerzte Gesamtzahl
+    (Produktions-Registry kann vierstellig viele akzeptierte Findings
+    enthalten — siehe Router-Docstring), `findings` die auf `limit`
+    gekuerzte Teilmenge fuer die Anzeige."""
+    return AcceptedFindingsResponse(
+        findings=[_finding_to_accepted_schema(f) for f in findings[:limit]],
+        total=len(findings),
     )

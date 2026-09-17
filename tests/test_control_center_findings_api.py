@@ -371,3 +371,112 @@ async def test_unaccept_finding_404_for_unknown_id(client, registry_path, monkey
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "FINDING_NOT_FOUND"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# GET .../findings/accepted — Nachtrag zu Accept/Unaccept
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_accepted_findings_empty_when_none_accepted(client, registry_path, monkeypatch):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    await _seed_open_finding(registry_path)
+
+    response = await client.get("/api/v1/library/findings/accepted")
+
+    assert response.status_code == 200
+    assert response.json() == {"findings": [], "total": 0}
+
+
+@pytest.mark.asyncio
+async def test_get_accepted_findings_shows_accepted_with_review_metadata(
+    client, registry_path, monkeypatch
+):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 42))
+    finding_id = await _seed_open_finding(registry_path)
+    await client.post(
+        f"/api/v1/library/findings/{finding_id}/accept",
+        json={"reason": "Bewusst so gewollt"},
+        headers=_SAME_ORIGIN,
+    )
+
+    response = await client.get("/api/v1/library/findings/accepted")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["findings"]) == 1
+    accepted = body["findings"][0]
+    assert accepted["finding_id"] == finding_id
+    assert accepted["review_note"] == "Bewusst so gewollt"
+    assert accepted["reviewed_by"] == "42"
+    assert accepted["present_in_latest_scan"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_accepted_findings_excludes_still_open_findings(client, registry_path, monkeypatch):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    await _seed_open_finding(registry_path)  # bleibt offen, wird nicht akzeptiert
+
+    body = (await client.get("/api/v1/library/findings/accepted")).json()
+
+    assert body["findings"] == []
+
+
+@pytest.mark.asyncio
+async def test_unaccept_finding_removes_from_accepted_list(client, registry_path, monkeypatch):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    finding_id = await _seed_open_finding(registry_path)
+    await client.post(
+        f"/api/v1/library/findings/{finding_id}/accept",
+        json={"reason": "x"},
+        headers=_SAME_ORIGIN,
+    )
+
+    await client.post(
+        f"/api/v1/library/findings/{finding_id}/unaccept",
+        json={},
+        headers=_SAME_ORIGIN,
+    )
+
+    body = (await client.get("/api/v1/library/findings/accepted")).json()
+    assert body["findings"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_accepted_findings_respects_limit_and_reports_total(
+    client, registry_path, monkeypatch
+):
+    """Nachtrag: Smoke-Test gegen die echte Produktions-Registry zeigte
+    1173 akzeptierte Findings — ungekuerzt gerendert waere das dieselbe
+    Falle wie beim Repair-Plan (1114 Kandidaten)."""
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    from services.library_health.findings import FindingsRegistry, generate_finding_id
+
+    registry = FindingsRegistry(registry_path)
+    issues = [_issue("ARTWORK_MISSING", path=f"f{i}.m4a") for i in range(5)]
+    registry.merge_scan_issues(issues, scanned_at="2026-01-01T00:00:00+00:00")
+    for issue in issues:
+        registry.review_finding(generate_finding_id(issue), "FALSE_POSITIVE", note="x")
+    registry.save()
+
+    response = await client.get(
+        "/api/v1/library/findings/accepted", params={"limit": 2}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["findings"]) == 2
+    assert body["total"] == 5
+
+
+@pytest.mark.asyncio
+async def test_get_accepted_findings_rejects_invalid_limit(client, registry_path, monkeypatch):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+
+    response = await client.get(
+        "/api/v1/library/findings/accepted", params={"limit": 0}
+    )
+
+    assert response.status_code == 422
