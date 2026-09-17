@@ -34,6 +34,7 @@ from control_center.dependencies import (
     verify_telegram_login,
 )
 from handlers.menu.models import AccessLevel
+from services.clients.navidrome_api import NavidromeAPI
 
 TEST_BOT_TOKEN = "123456:TEST-BOT-TOKEN-not-a-real-secret"
 
@@ -490,3 +491,30 @@ async def test_statistics_endpoint_accessible_with_plain_user_session(client, mo
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NAVIDROME_USER_NOT_CONFIGURED"
+
+
+@pytest.mark.asyncio
+async def test_navidrome_status_endpoint_requires_authentication(client):
+    response = await client.get("/api/v1/navidrome/status")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_navidrome_status_endpoint_accessible_with_plain_user_session(client, monkeypatch):
+    """USER reicht (reiner Status, wie Health). NavidromeAPI wird gemockt
+    (CLAUDE.md Abschnitt 8) - nur die Auth-Verdrahtung wird hier geprueft
+    (Fachlogik: test_control_center_navidrome_api.py)."""
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+    monkeypatch.setattr(
+        NavidromeAPI, "make_request",
+        lambda self, endpoint, params=None: {"subsonic-response": {"status": "failed"}},
+    )
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=999)
+    )
+
+    response = await client.get("/api/v1/navidrome/status")
+
+    assert response.status_code == 200
+    assert response.json() == {"connected": False, "artist_count": None}

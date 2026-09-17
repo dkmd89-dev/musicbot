@@ -86,6 +86,14 @@ async def test_dashboard_contains_all_new_section_panels(client):
 
 
 @pytest.mark.asyncio
+async def test_dashboard_contains_navidrome_status_line(client):
+    html = (await client.get("/")).text
+
+    assert 'id="navidrome-status"' in html
+    assert "/api/v1/navidrome/status" in html
+
+
+@pytest.mark.asyncio
 async def test_dashboard_repair_plan_has_dedicated_manual_trigger(client):
     """Repair-Plan ist bewusst NICHT im 30s-Polling (voller Library-Scan)
     - es muss einen eigenen manuellen Button geben, keinen impliziten
