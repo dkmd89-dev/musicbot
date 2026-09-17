@@ -94,6 +94,33 @@ async def test_dashboard_contains_navidrome_status_line(client):
 
 
 @pytest.mark.asyncio
+async def test_dashboard_findings_panel_has_accept_wiring(client):
+    """Nachtrag: Accept-Button-Verdrahtung fuer den ersten schreibenden
+    Endpunkt (POST .../accept) - Event-Delegation auf dem Content-
+    Container, damit re-gerenderte Buttons nach jedem Poll weiter
+    funktionieren, plus der eigentliche Accept-Aufruf im Markup."""
+    html = (await client.get("/")).text
+
+    assert "acceptFinding" in html
+    assert "accept-btn" in html
+    assert "/accept" in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_escapes_untrusted_text_helper_present(client):
+    """Sicherheitsnachtrag: Titel/Artist/Pfad-Felder aus Library-/
+    Download-Metadaten werden vor dem innerHTML-Einsatz escaped (XSS-
+    Schutz) - stellt sicher, dass der Helper existiert und tatsaechlich
+    in den render*()-Funktionen verwendet wird, nicht nur definiert."""
+    html = (await client.get("/")).text
+
+    assert "function _escapeHtml" in html
+    # In mind. den vier Stellen verwendet, die freien Text aus Library-/
+    # Download-/Statistik-Daten einbetten (Findings/Downloads/Statistics).
+    assert html.count("_escapeHtml(") >= 8
+
+
+@pytest.mark.asyncio
 async def test_dashboard_repair_plan_has_dedicated_manual_trigger(client):
     """Repair-Plan ist bewusst NICHT im 30s-Polling (voller Library-Scan)
     - es muss einen eigenen manuellen Button geben, keinen impliziten
