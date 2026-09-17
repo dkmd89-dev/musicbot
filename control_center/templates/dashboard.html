@@ -41,7 +41,11 @@
     .tile-value { font-size: 1.6rem; font-weight: 600; }
     .status-EXCELLENT, .status-GOOD { color: var(--ok); }
     .status-CRITICAL, .status-POOR { color: var(--error); }
-    #current-user { color: var(--muted); font-size: 0.85rem; margin-bottom: 16px; }
+    #current-user { color: var(--muted); font-size: 0.85rem; margin-bottom: 4px; }
+    #navidrome-status { color: var(--muted); font-size: 0.85rem; margin-bottom: 16px; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .dot-ok { background: var(--ok); }
+    .dot-error { background: var(--error); }
     button {
       background: var(--accent); color: white; border: none; border-radius: 8px;
       padding: 10px 18px; font-size: 0.9rem; cursor: pointer;
@@ -115,6 +119,7 @@
 
     <div id="dashboard-view" hidden>
       <div id="current-user"></div>
+      <div id="navidrome-status">Navidrome: Lädt…</div>
       <div id="health-tiles" class="tiles">Lädt…</div>
       <div class="retry-row"><button id="refresh-btn">Aktualisieren</button></div>
 
@@ -277,6 +282,23 @@
       return _loadInto("statistics-content", "/api/v1/statistics/me?period=month", renderStatistics);
     }
 
+    async function loadNavidromeStatus() {
+      const el = document.getElementById("navidrome-status");
+      try {
+        const res = await fetch("/api/v1/navidrome/status", { credentials: "same-origin" });
+        if (res.status === 401) { showOnly("login-view"); return; }
+        if (!res.ok) { el.textContent = "Navidrome: Status nicht abrufbar."; return; }
+        const status = await res.json();
+        const dot = status.connected ? "dot-ok" : "dot-error";
+        const label = status.connected ? "Verbunden" : "Nicht erreichbar";
+        const count = status.connected && status.artist_count != null
+          ? ` (${status.artist_count} Artists)` : "";
+        el.innerHTML = `<span class="dot ${dot}"></span>Navidrome: ${label}${count}`;
+      } catch (err) {
+        el.textContent = "Navidrome: Netzwerkfehler.";
+      }
+    }
+
     async function checkAuthAndLoad() {
       showOnly("loading-view");
       try {
@@ -289,7 +311,7 @@
         showOnly("dashboard-view");
         // Repair-Plan bewusst NICHT hier mitladen (voller Library-Scan,
         // kostet spuerbar Zeit) - nur auf expliziten Klick, siehe unten.
-        await Promise.all([loadHealth(), loadFindings(), loadDownloads(), loadStatistics()]);
+        await Promise.all([loadHealth(), loadFindings(), loadDownloads(), loadStatistics(), loadNavidromeStatus()]);
       } catch (err) {
         showError("Netzwerkfehler: " + err.message);
       }
@@ -311,6 +333,7 @@
       loadFindings();
       loadDownloads();
       loadStatistics();
+      loadNavidromeStatus();
     });
     document.getElementById("repair-plan-btn").addEventListener("click", loadRepairPlan);
 
@@ -318,14 +341,16 @@
     function startPolling() {
       if (pollTimer) return;
       // 30s-Polling bewusst nur fuer die lesend-billigen Endpunkte
-      // (persistente JSON-Reads). Repair-Plan (voller Scan) bleibt
-      // explizit ausserhalb des Pollings, siehe checkAuthAndLoad().
+      // (persistente JSON-Reads / ein einzelner Navidrome-Ping).
+      // Repair-Plan (voller Scan) bleibt explizit ausserhalb des
+      // Pollings, siehe checkAuthAndLoad().
       pollTimer = setInterval(() => {
         if (!document.getElementById("dashboard-view").hidden) {
           loadHealth();
           loadFindings();
           loadDownloads();
           loadStatistics();
+          loadNavidromeStatus();
         }
       }, 30000);
     }

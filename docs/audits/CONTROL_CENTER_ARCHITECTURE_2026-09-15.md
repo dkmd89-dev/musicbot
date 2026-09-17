@@ -288,3 +288,16 @@ Nachtrag zu Schritt 4 (Health UI): die vier seither hinzugekommenen Funktionsber
 - Test: `tests/test_control_center_ui.py` von 5 auf 7 Tests erweitert (alle Panel-IDs vorhanden, alle vier neuen API-Pfade im Markup referenziert, dedizierter manueller Trigger für Repair-Plan) — alle grün, Gesamt-Control-Center-Suite 71/71 grün.
 - Manuell per HTTP gegen die echten Produktionsdaten verifiziert (Findings/Downloads/Statistics liefern korrekte Live-Daten über die neue UI-Verdrahtung). Visueller Browser-Check durch den Nutzer für diese Erweiterung selbst noch ausstehend (für die ursprüngliche Health-Ansicht aus Schritt 4 bereits per Screenshot bestätigt) — kein Browser-Automatisierungswerkzeug in dieser Session verbunden.
 - Keine neuen Dependencies, keine neue API-Fläche.
+
+---
+
+## Erweiterung — Navidrome-Status (2026-09-15, auf Nutzerfreigabe)
+
+Fünfter Funktionsbereich (Nutzerentscheidung zwischen „Navidrome-Status", „Admin-Übersicht: Nutzer/Rollen" und „Findings Accept/Unaccept" — Navidrome-Status gewählt, Navidrome-Status stand schon zweimal zuvor als Option zur Wahl).
+
+- `GET /api/v1/navidrome/status` (mind. `AccessLevel.USER`, reiner Status wie Health) — ruft ausschließlich `services/clients/navidrome_api.py::NavidromeAPI.check_connection()`/`get_artists()` auf. **Erster `async def`-Router in `control_center/`:** NavidromeAPI ist eine echte netzwerkgebundene Integration (anders als alle bisherigen Router, die ausschließlich lokale/synchrone Produktionsfunktionen aufrufen) — `check_connection()`/`get_artists()` sind bereits async (intern `asyncio.to_thread`-gewrappt), FastAPI awaitet sie direkt.
+- Degradiert bewusst: `check_connection()` fängt jeden Fehler bereits selbst ab (`False` statt Exception) — kein eigenes Error-Handling nötig. Ein Fehler im nachgelagerten `get_artists()`-Aufruf (z. B. Ping ok, aber `getArtists` kaputt) darf das primäre „ist erreichbar"-Signal nicht verdecken → `artist_count=None` statt Request-Fehlschlag (kein 500).
+- Dashboard-Panel: kleine Statuszeile („🟢 Navidrome: Verbunden (37 Artists)") direkt unter dem Nutzer-Login-Hinweis, passend zum Master-Prompt-Dashboard-Mockup (Abschnitt 5: „Navidrome 🟢 Connected"). Im 30s-Polling (günstiger Einzel-Ping, kein Scan).
+- Test: `tests/test_control_center_navidrome_api.py` (4 Tests, NavidromeAPI per `monkeypatch.setattr(NavidromeAPI, "make_request", ...)` gemockt — CLAUDE.md Abschnitt 8, externe Dienste nicht real ansprechen) + 2 neue Authorization-Wiring-Tests in `tests/test_control_center_auth.py` + 1 neuer UI-Test — alle grün, Gesamt-Control-Center-Suite 78/78 grün.
+- Zusätzlich manuell gegen den echten, produktiven Navidrome-Server verifiziert: `connected=true`, 37 Artists (deckungsgleich mit der Library-Scan-Artist-Zahl aus dem Health-Endpoint).
+- Keine neuen Dependencies.
