@@ -554,3 +554,33 @@ async def test_admin_users_endpoint_accessible_with_admin_session(client, monkey
 
     assert response.status_code == 200
     assert response.json() == {"users": []}
+
+
+@pytest.mark.asyncio
+async def test_findings_accept_endpoint_requires_authentication(client):
+    """Erster schreibender Endpunkt — Auth-Verdrahtung wie alle anderen
+    ADMIN-Routen (Fachlogik/Origin-Check: test_control_center_findings_api.py)."""
+    response = await client.post(
+        "/api/v1/library/findings/does-not-exist/accept",
+        json={"reason": "x"},
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_findings_accept_endpoint_rejects_plain_user_session(client, monkeypatch):
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=999)
+    )
+
+    response = await client.post(
+        "/api/v1/library/findings/does-not-exist/accept",
+        json={"reason": "x"},
+        headers={"Origin": "http://testserver"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"

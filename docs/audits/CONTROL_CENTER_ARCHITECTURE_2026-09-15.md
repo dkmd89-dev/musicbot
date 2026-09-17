@@ -314,3 +314,20 @@ Sechster Funktionsbereich (Nutzerentscheidung zwischen „Admin-Übersicht", „
 - Test: `tests/test_control_center_admin_api.py` (5 Tests) + 3 neue Authorization-Wiring-Tests in `tests/test_control_center_auth.py` — alle grün, Gesamt-Control-Center-Suite 132/132 grün.
 - Manuell gegen die echten, produktiven Nutzerdaten verifiziert (2 registrierte Nutzer, Rollen `owner`/`user` korrekt gelesen — Zahl absichtlich nicht im Detail geloggt, PII-Zurückhaltung).
 - Keine neuen Dependencies, keine neue UI (bewusst nur API — bisher noch kein "Admin"-Panel im Dashboard, analog zur ursprünglichen Health-only-UI vor dem Dashboard-Nachtrag).
+
+---
+
+## Erweiterung — Findings Accept/Unaccept: erster schreibender Endpunkt (2026-09-17, auf Nutzerfreigabe)
+
+Nach Abschluss der read-only-Phase (Nutzerentscheidung zwischen "erst alle read-only-Bereiche" und "nächster größerer Schritt" — Letzteres gewählt): erster schreibender Control-Center-Endpunkt überhaupt.
+
+**Risikoeinordnung (bewusst kein volles Preview→Diff→Confirm→Execute-Schwergewicht à la Master-Prompt Abschnitt 21):** `accept_finding()`/`unaccept_finding()` verändern ausschließlich den Review-Status in der Findings-Registry (Metadaten außerhalb der Library) — niemals eine Library-Datei, vollständig reversibel (`unaccept_finding()` existiert exakt für die Rücknahme). Kein Executor wird aufgerufen. Damit deutlich risikoärmer als eine künftige Repair-Execution — ein leichtgewichtiger Client-seitiger Bestätigungsdialog reicht, kein serverseitiger Mehrstufen-Flow.
+
+- `POST /api/v1/library/findings/{finding_id}/accept` (Body: `{"reason": str}`, Pflichtfeld — leer/nur Whitespace → `422 REASON_REQUIRED`) und `POST .../unaccept` (Body optional: `{"note": str}`) — beide mind. `AccessLevel.ADMIN`, dünne Wrapper um die bestehenden, produktiv genutzten `services/library_health/findings.py::accept_finding()`/`unaccept_finding()` (identischer Kern wie `scripts/library_health_review.py`).
+- **CSRF-Schutz (Nachtrag zum offenen Punkt aus der ursprünglichen Security-Checkliste, Abschnitt 6):** neue `control_center/dependencies.py::verify_same_origin()`-Dependency, nur auf den beiden schreibenden Routen. Primärer Schutz bleibt das bereits `samesite=strict`-Session-Cookie aus Schritt 3; der Origin-Header-Check ist eine zusätzliche, günstige Verteidigungsebene, kein volles CSRF-Token-System (unverhältnismäßig für den aktuellen, kleinen Satz an Admin-Aktionen).
+- **Audit-Spur:** `reviewed_by` wird auf die authentifizierte Telegram-ID gesetzt (als String) — nutzt das bereits vorhandene `Finding.history`-Feld, kein neues Audit-System (Master-Prompt Regel 31 „Who/What/When/Result").
+- Fehler-Mapping: unbekannte `finding_id` → `404 FINDING_NOT_FOUND`, leerer Grund → `422 REASON_REQUIRED`, Unaccept auf bereits offenes Finding → `409 ALREADY_OPEN` (Idempotenz-Konflikt sauber kommuniziert statt stillschweigend erfolgreich, Master-Prompt Regel 29).
+- Test: 10 neue Tests in `tests/test_control_center_findings_api.py` (Accept/Unaccept-Happy-Path inkl. Verschwinden/Wiedererscheinen in der offenen Liste, leerer Grund, unbekannte ID, fehlender/falscher Origin-Header) + 2 neue Authorization-Wiring-Tests in `tests/test_control_center_auth.py` — alle grün, Gesamt-Control-Center-Suite 164/164 grün.
+- Manuell verifiziert: Lesezugriff gegen die echte Produktions-Findings-Registry funktioniert unverändert (5 Kategorien); der CSRF-Check wurde mit einem absichtlich falschen Origin-Header UND einer nicht-existenten Finding-ID getestet (sicher, keine reale Mutation möglich) — echtes Accept/Unaccept gegen produktive Findings-Daten bewusst NICHT als Smoke-Test ausgeführt (reale Zustandsänderung, nicht ohne gesonderte Nutzerfreigabe).
+- Keine UI in diesem Schritt (bewusst API-only, analog zur Admin-Übersicht) — Accept/Unaccept-Buttons im Findings-Panel wären ein eigener, noch nicht freigegebener Folgeschritt.
+- Keine neuen Dependencies.
