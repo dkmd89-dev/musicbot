@@ -155,6 +155,11 @@
         <h2>Downloads (Verlauf)</h2>
         <div id="downloads-content" class="empty-note">Lädt…</div>
       </section>
+
+      <section class="panel">
+        <h2>Admin: Nutzer &amp; Rollen</h2>
+        <div id="admin-users-content" class="empty-note">Lädt…</div>
+      </section>
     </div>
   </main>
 
@@ -414,6 +419,23 @@
       return _loadInto("downloads-content", "/api/v1/downloads/history?limit=10", renderDownloads);
     }
 
+    function renderAdminUsers(el, body) {
+      if (!body.users.length) { el.innerHTML = '<p class="empty-note">Keine registrierten Nutzer.</p>'; return; }
+      const roleBadge = { owner: "CRITICAL", admin: "ERROR", moderator: "WARNING", user: "INFO" };
+      el.innerHTML = '<div class="row-list">' + body.users.map((u) => `
+        <div class="row-item">
+          <div class="row-main">
+            <span class="badge badge-${roleBadge[u.role] || "INFO"}">${_escapeHtml(u.role)}</span>
+            #${u.telegram_id}${u.navidrome_user ? " — 🎵 " + _escapeHtml(u.navidrome_user) : ""}
+          </div>
+          <div class="row-count">${u.created_at ? new Date(u.created_at).toLocaleDateString() : "–"}</div>
+        </div>
+      `).join("") + "</div>";
+    }
+    function loadAdminUsers() {
+      return _loadInto("admin-users-content", "/api/v1/admin/users", renderAdminUsers);
+    }
+
     function renderStatistics(el, stats) {
       if (!stats.has_data) {
         el.innerHTML = `<p class="empty-note">Noch keine Wiedergabedaten für ${_escapeHtml(stats.navidrome_username)}.</p>`;
@@ -460,7 +482,10 @@
         showOnly("dashboard-view");
         // Repair-Plan bewusst NICHT hier mitladen (voller Library-Scan,
         // kostet spuerbar Zeit) - nur auf expliziten Klick, siehe unten.
-        await Promise.all([loadHealth(), loadFindings(), loadDownloads(), loadStatistics(), loadNavidromeStatus()]);
+        await Promise.all([
+          loadHealth(), loadFindings(), loadDownloads(), loadStatistics(),
+          loadNavidromeStatus(), loadAdminUsers(),
+        ]);
       } catch (err) {
         showError("Netzwerkfehler: " + err.message);
       }
@@ -483,6 +508,7 @@
       loadDownloads();
       loadStatistics();
       loadNavidromeStatus();
+      loadAdminUsers();
     });
     document.getElementById("repair-plan-btn").addEventListener("click", loadRepairPlan);
 
@@ -500,6 +526,7 @@
           loadDownloads();
           loadStatistics();
           loadNavidromeStatus();
+          loadAdminUsers();
         }
       }, 30000);
     }

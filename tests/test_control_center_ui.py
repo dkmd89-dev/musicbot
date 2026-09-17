@@ -70,6 +70,7 @@ async def test_dashboard_fetches_real_api_endpoints_from_js(client):
     assert "/api/v1/library/repair-plan" in html
     assert "/api/v1/downloads/history" in html
     assert "/api/v1/statistics/me" in html
+    assert "/api/v1/admin/users" in html
 
 
 @pytest.mark.asyncio
@@ -83,6 +84,18 @@ async def test_dashboard_contains_all_new_section_panels(client):
     assert 'id="repair-plan-content"' in html
     assert 'id="downloads-content"' in html
     assert 'id="statistics-content"' in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_contains_admin_users_panel(client):
+    """Nachtrag: letzter bisher API-only-Bereich bekommt jetzt ebenfalls
+    eine Dashboard-Ansicht (Admin-Übersicht, mind. AccessLevel.ADMIN —
+    zeigt sich für andere Rollen ueber den bestehenden 403-Denied-Pfad
+    von _loadInto(), kein separater Code noetig)."""
+    html = (await client.get("/")).text
+
+    assert 'id="admin-users-content"' in html
+    assert "loadAdminUsers" in html
 
 
 @pytest.mark.asyncio
