@@ -493,3 +493,50 @@ Fähigkeit einzuführen.
   Bestätigung ist ein eigener, separat zu besprechender Folgeschritt
   (analog zum SAFE_AUTOMATIC-Präzedenzfall: erst API, dann UI).
 - Keine neuen Dependencies.
+
+---
+
+## Erweiterung — Level-2/Level-3-Reparatur, Pro-Artist UI (2026-09-20, auf Nutzerfreigabe)
+
+UI-Folgeschritt zum vorherigen Eintrag — eigenes neues Panel „L2/L3-
+Reparaturen (nach Artist)" direkt unter dem bestehenden Repair-Plan-Panel.
+
+- **Eigener manueller Trigger** (`#level23-plan-btn`, kein Auto-Load) —
+  identisches Prinzip wie das Repair-Plan-Panel: `GET .../repair-plan/by-artist`
+  ist ein voller Library-Scan, bewusst nicht Teil des 30s-Pollings.
+- Pro Artist-Zeile ein oder zwei Buttons (`L2 (n)`/`L3 (m)`), nur
+  gerendert, wenn die jeweilige Kandidatenzahl > 0 ist — kein globaler
+  Batch-Button (ADR-0003, identisch zu Telegram).
+- `window.confirm()` vor dem Start nennt Artist, Level-Klartext
+  (L2 = volle Metadaten-Pipeline erneut, L3 = MusicBrainz/Netzwerk, kann
+  pro Datei fehlschlagen), Kandidatenzahl aus der zuletzt geladenen
+  Vorschau und den Backup-/Dateiänderungs-Hinweis — bei L3 zusätzlich
+  einen expliziten Netzwerk-/Rate-Limit-Warnhinweis (Master-Prompt
+  Regel 11).
+- Nach dem Start: 1s-Polling über das bereits vorhandene
+  `GET /api/v1/jobs/{job_id}` — Ergebnis-Anzeige nutzt die im
+  Job-`result` mitgelieferten Zähler (`success`/`skipped`/`failed`/
+  `resolved_count`/`affected_files`) statt nur eines rohen Exit-Codes,
+  da `execute_level2_repair()`/`execute_level3_repair()` (anders als
+  `run_safe_automatic_repair()`) diese bereits strukturiert liefern.
+- **Bewusst KEIN Abbrechen-Button** — anders als beim SAFE_AUTOMATIC-Panel.
+  `execute_level2_repair()`/`execute_level3_repair()` sind ein einzelner
+  atomarer `await` ohne Zwischen-Checkpoint (bereits im API-Schritt
+  dokumentiert); ein Abbrechen-Button hier hätte keine Wirkung gehabt —
+  bewusst nicht gebaut statt einer vorgetäuschten Fähigkeit (Master-Prompt
+  Regel 39). Alle `.level23-btn`-Buttons werden während eines laufenden
+  Jobs deaktiviert (verhindert parallele Starts), reaktiviert bei
+  Abschluss/Fehlschlag.
+- Test: `tests/test_control_center_ui.py` von 16 auf 20 Tests erweitert
+  (Panel-Präsenz, JS-Verdrahtung, Abwesenheit eines Cancel-Buttons als
+  expliziter Test, Bestätigungsdialog erwähnt Backup/Dateien/MusicBrainz)
+  — alle grün, Gesamt-Control-Center-Suite 181/181 grün. JS-Syntax mit
+  `node --check` gegen den extrahierten `<script>`-Block verifiziert.
+- **Kein Live-Smoke-Test gegen die echte Library** — identische
+  Begründung wie beim API-Schritt (ein echter Klick würde sofort
+  `--apply` gegen die Produktionsbibliothek auslösen). Nur sicher
+  verifiziert: Panel/Verdrahtung im initialen HTML vorhanden, kein
+  Cancel-Button vorhanden.
+- Keine neuen Dependencies, keine neue API-Fläche (reine
+  Frontend-Verdrahtung auf den im vorherigen Schritt hinzugefügten
+  Endpunkten).
