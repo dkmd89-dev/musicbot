@@ -21,7 +21,11 @@ dmypy.json
 config.py
 cookies.txt
 *.log
-logs/
+# "/logs/" statt "logs/" (Slash verankert das Muster auf das Repo-Root):
+# ein unverankertes "logs/" traf sonst auch das neue Quellcode-Paket
+# services/logs/ (Logs & Diagnostics, Master-Prompt Abschnitt 12) - hier
+# ist ausschliesslich das Laufzeit-Logverzeichnis im Repo-Root gemeint.
+/logs/
 data/
 cache/
 history/

@@ -1003,3 +1003,82 @@ das ausdrücklich für Phase 1):
 (Metadata Management: Reprocessing/Cover verwalten, danach Logs &
 Diagnostics, siehe frühere Gap-Analyse) folgt gemäß `ui_prompt.txt`
 Abschnitt 52 als eigene, separat freizugebende Entscheidung.
+
+---
+
+## Logs & Diagnostics (2026-09-20, auf Nutzerfreigabe)
+
+Master-Prompt Abschnitt 12 "LOGS & DIAGNOSTICS" — laut Gap-Analyse einer
+der bis dahin komplett unbearbeiteten V1-Funktionsbereiche.
+
+**Wichtiger Charakterisierungsbefund vor der Implementierung:** es
+existiert bereits eine umfangreiche Telegram-seitige Log-Verwaltung
+(`handlers/enhanced_logger_menu_handler.py::EnhancedLoggerMenuHandler`,
+1711 Zeilen, inkl. eines bereits gefixten Path-Traversal-Bugs SEC-003,
+siehe `tests/test_logger_menu_path_traversal.py`) — Datei-Übersicht +
+5-Zeilen-Vorschau + naive Level-Zählung (`if level in line`), aber
+**kein** strukturierter, nach Level/Component filterbarer
+Zeilen-Browser. Diese Erweiterung dupliziert daher keine bereits
+gelöste Funktion, liefert aber eine dort fehlende Fähigkeit — und
+übernimmt bewusst zwei dort bereits etablierte, bewährte Muster statt
+sie neu zu erfinden: die Datei-Discovery (`log_dir.glob("*.log*")`) und
+den Path-Traversal-Schutz (`resolve()` + `is_relative_to()`).
+
+- **Neues `services/logs/reader.py`** (Telegram-frei) — `list_log_sources()`
+  (alle `*.log*`-Dateien in `Config.LOG_DIR`, alphabetisch) +
+  `read_logs()` (liest genau eine gewählte Datei, filtert nach
+  Level/Component/Search, liefert die neuesten `limit` Treffer plus
+  `total_matched`).
+- **Zwei real vorkommende Zeilenformate entdeckt** (per Live-Smoke-Test
+  gegen die echten 42 Logdateien in `logs/` charakterisiert): das
+  Root-/`bot.log`-Format (`logger.py::ColoredFormatter`, `HH:MM:SS`
+  ohne Datum, mit ANSI-Farbcodes, da `setup_enhanced_logging()`
+  denselben Formatter für Konsole UND Datei verwendet) wird
+  strukturiert geparst (Time/Level/Component/Message). Modul-eigene
+  Dateien (z. B. `autolearnmanager.log`, `propagate=False`, eigener
+  Formatter mit vollem Datum) entsprechen NICHT demselben Muster —
+  ihre Zeilen werden nicht verworfen oder falsch geparst, sondern
+  ehrlich als unstrukturierter Eintrag (`level=None`, `component=None`,
+  `message`=ganze Zeile) zurückgegeben: weiterhin durchsuchbar, nur
+  nicht nach Level/Component filterbar. Keine Vortäuschung einer
+  repoweiten Formatvereinheitlichung, die nicht existiert (Master-Prompt
+  Regel 38).
+- **Bewusst KEIN Zeitraum-Filter** — das Root-Format enthält kein Datum
+  in der Zeile selbst; die Datei-Auswahl (`source`) ist die einzige
+  verlässliche grobe zeitliche Eingrenzung.
+- **Bewusst KEIN Job-/User-Filter** — keiner der bestehenden `log*()`-
+  Aufrufe im gesamten Repository korreliert Log-Zeilen strukturiert mit
+  einer Job-/User-ID; das flächendeckend nachzurüsten wäre ein großer,
+  hier nicht beauftragter Eingriff in sehr viele bestehende log-Aufrufe.
+- **Security:** zusätzliche, defensive Redaktion offensichtlicher
+  Secret-Muster (`token=`/`password=`/`api_key=`-Zuweisungen,
+  `Authorization: Bearer`-Header, Telegram-Bot-Token-Form) VOR der
+  Auslieferung — ergänzt die bestehende P0-Regel "keine Secrets loggen"
+  (CLAUDE.md Abschnitt 12), ersetzt sie nicht (im Live-Smoke-Test gegen
+  die echten Produktions-Logs bestätigt: 0 Treffer für
+  `token=`/`password=`/`api_key=`/`Authorization: Bearer` — die P0-Regel
+  wird bereits eingehalten). ANSI-Farbcodes werden vor der Auslieferung
+  entfernt.
+- **`GET /api/v1/logs`** (neues `control_center/routers/logs.py`, Query:
+  `source`/`level`/`component`/`search`/`limit`) — reine Orchestrierung,
+  ruft ausschließlich `read_logs()` auf. Mindestens `AccessLevel.ADMIN`
+  (identische Schwelle wie Findings/Repair-Plan/Metadata — Logzeilen
+  können interne Pfade/Fehlermeldungen enthalten).
+- UI: `/logs`-Seite (ersetzt den zuvor als „Noch nicht implementiert"
+  angelegten Platzhalter aus der UI-Structure-Redesign-Phase) mit
+  Datei-/Level-/Component-/Search-Filtern, Trunkierungshinweis bei mehr
+  Treffern als geladen (identisches Muster wie Accepted-Findings/
+  Library-Metadata).
+- Test: `tests/test_logs_reader.py` (28 Tests, inkl. Path-Traversal-
+  Regressionstest, der die zweite Verteidigungslinie unabhängig vom
+  Whitelist-Abgleich prüft) + `tests/test_control_center_logs_api.py`
+  (9 Tests) + 3 neue Auth-Schwellen-Tests in
+  `tests/test_control_center_auth.py` + 4 neue UI-Tests — alle grün,
+  Regression `tests/test_logger_menu_path_traversal.py` (4 Tests, SEC-003
+  weiterhin geschlossen) unverändert grün, Gesamt-Control-Center-Suite
+  322/322 grün.
+- Live-Smoke-Test gegen die echten Produktions-Logs durchgeführt (reine
+  Lesefunktion, unbedenklich) — 42 reale Logdateien korrekt entdeckt,
+  `bot.log` strukturiert geparst (1317 Treffer), `autolearnmanager.log`
+  korrekt als unstrukturiert erkannt statt falsch geparst.
+- Keine neuen Dependencies.
