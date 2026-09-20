@@ -383,11 +383,15 @@ async def handle_library_maintenance_callback(
                                           Mapping speichern?→Preview→Execute)
       libmaint:gr:preview/confirm/execute → 🔄 Genre revalidieren (Subprozess,
                                           siehe genre_revalidation_runner.py)
-      libmaint:meta:<idx>/artist:*/title:*
+      libmaint:meta:<idx>/artist:*/title:*/album:*/albumartist:*
                                           → 📝 Metadaten bearbeiten (Manual
-                                          Metadata Editing v1) - Artist
+                                          Metadata Editing v1+v2) - Artist
                                           bearbeiten / Titel bearbeiten
-                                          (eigener Track-Picker) /
+                                          (eigener Track-Picker) / Album
+                                          bearbeiten / Albuminterpret
+                                          bearbeiten (beide mit eigenem
+                                          Album-Picker, library_artists.py::
+                                          list_artist_albums()) /
                                           Genre-Verwaltung (Verweis auf
                                           genremenu:* oben, keine
                                           Duplizierung)
@@ -571,6 +575,59 @@ async def handle_library_maintenance_callback(
                 await query.answer("⚠️ Ungültiger Callback", show_alert=True)
                 return
             await maintenance_handler.handle_meta_title_pick(update, context, idx, track_idx)
+            return
+
+        # ── 💿 Album bearbeiten / 👤 Albuminterpret bearbeiten (Manual
+        # Metadata Editing v2) ───────────────────────────────────────────
+
+        if len(parts) == 4 and parts[2] == "album":
+            sub = parts[3]
+            if sub == "confirm":
+                await maintenance_handler.handle_meta_album_confirm(update, context)
+                return
+            if sub == "execute":
+                await maintenance_handler.handle_meta_album_execute(update, context)
+                return
+            try:
+                idx = int(sub)
+            except ValueError:
+                await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+                return
+            await maintenance_handler.handle_meta_album_start(update, context, idx)
+            return
+
+        if len(parts) == 6 and parts[2] == "album" and parts[3] == "pick":
+            try:
+                idx, album_idx = int(parts[4]), int(parts[5])
+            except ValueError:
+                await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+                return
+            await maintenance_handler.handle_meta_album_pick(update, context, idx, album_idx)
+            return
+
+        if len(parts) == 4 and parts[2] == "albumartist":
+            sub = parts[3]
+            if sub == "confirm":
+                await maintenance_handler.handle_meta_albumartist_confirm(update, context)
+                return
+            if sub == "execute":
+                await maintenance_handler.handle_meta_albumartist_execute(update, context)
+                return
+            try:
+                idx = int(sub)
+            except ValueError:
+                await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+                return
+            await maintenance_handler.handle_meta_albumartist_start(update, context, idx)
+            return
+
+        if len(parts) == 6 and parts[2] == "albumartist" and parts[3] == "pick":
+            try:
+                idx, album_idx = int(parts[4]), int(parts[5])
+            except ValueError:
+                await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+                return
+            await maintenance_handler.handle_meta_albumartist_pick(update, context, idx, album_idx)
             return
 
         await query.answer("⚠️ Unbekannter Metadaten-Callback")

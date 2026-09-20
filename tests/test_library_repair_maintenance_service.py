@@ -21,7 +21,7 @@ FFMPEG = shutil.which("ffmpeg")
 requires_ffmpeg = pytest.mark.skipif(not FFMPEG, reason="ffmpeg nicht auf PATH")
 
 
-def _m4a(path: Path, *, genre=None, artist=None, artists_ff=None):
+def _m4a(path: Path, *, genre=None, artist=None, artists_ff=None, album=None, album_artist=None):
     path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [
@@ -38,6 +38,10 @@ def _m4a(path: Path, *, genre=None, artist=None, artists_ff=None):
         a["©ART"] = artist if isinstance(artist, list) else [artist]
     if artists_ff:
         a["----:com.apple.iTunes:ARTISTS"] = [MP4FreeForm(x.encode()) for x in artists_ff]
+    if album:
+        a["©alb"] = [album]
+    if album_artist:
+        a["aART"] = [album_artist]
     a.save()
 
 
@@ -467,6 +471,194 @@ class TestTitleEditFlow:
                 ms.execute_title_edit(
                     "Bausa", "Bausa/Singles/a.m4a", "Neuer Titel",
                     triggered_by="test", library_root=lib,
+                )
+        finally:
+            rt.release_repair_lock()
+
+
+# ── _resolve_within_library() (Defense-in-Depth) ─────────────────────────
+
+
+class TestResolveWithinLibrary:
+    def test_in_bounds_path_resolves(self, tmp_path):
+        (tmp_path / "a.m4a").touch()
+        result = ms._resolve_within_library("a.m4a", tmp_path)
+        assert result == (tmp_path / "a.m4a").resolve()
+
+    def test_traversal_outside_library_raises(self, tmp_path):
+        outside = tmp_path.parent / "outside_lib_test"
+        outside.mkdir(exist_ok=True)
+        with pytest.raises(ms.MaintenanceServiceError):
+            ms._resolve_within_library("../outside_lib_test", tmp_path)
+
+
+# ── album_targets() / current_album() / current_album_artist() ──────────
+
+
+@requires_ffmpeg
+class TestAlbumTargets:
+    def test_lists_m4a_files_under_album_dir(self, lib):
+        (lib / "Bausa" / "2020 - Album X" / "01.m4a").parent.mkdir(parents=True)
+        (lib / "Bausa" / "2020 - Album X" / "01.m4a").touch()
+        (lib / "Bausa" / "2020 - Album X" / "02.m4a").touch()
+        (lib / "Bausa" / "2020 - Album X" / "notes.txt").touch()
+
+        targets = ms.album_targets("Bausa", "2020 - Album X", library_root=lib)
+        assert targets == [
+            "Bausa/2020 - Album X/01.m4a", "Bausa/2020 - Album X/02.m4a",
+        ]
+
+    def test_unknown_album_returns_empty(self, lib):
+        (lib / "Bausa").mkdir(parents=True)
+        assert ms.album_targets("Bausa", "Unknown Album", library_root=lib) == []
+
+    def test_different_album_dirs_stay_independent(self, lib):
+        """Auftrag §7: zwei Ordner mit identischem sichtbaren Albumnamen
+        bleiben unabhaengige Scopes."""
+        (lib / "Bausa" / "2024 - Album X" / "a.m4a").parent.mkdir(parents=True)
+        (lib / "Bausa" / "2024 - Album X" / "a.m4a").touch()
+        (lib / "Bausa" / "2025 - Album X" / "a.m4a").parent.mkdir(parents=True)
+        (lib / "Bausa" / "2025 - Album X" / "a.m4a").touch()
+
+        targets_2024 = ms.album_targets("Bausa", "2024 - Album X", library_root=lib)
+        targets_2025 = ms.album_targets("Bausa", "2025 - Album X", library_root=lib)
+        assert targets_2024 == ["Bausa/2024 - Album X/a.m4a"]
+        assert targets_2025 == ["Bausa/2025 - Album X/a.m4a"]
+        assert set(targets_2024).isdisjoint(targets_2025)
+
+
+@requires_ffmpeg
+class TestCurrentAlbumAndAlbumArtist:
+    def test_reads_representative_album_value(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album="Album X")
+        assert ms.current_album("Bausa", "2020 - Album X", library_root=lib) == "Album X"
+
+    def test_empty_when_no_targets(self, lib):
+        (lib / "Bausa").mkdir(parents=True)
+        assert ms.current_album("Bausa", "Unknown", library_root=lib) == ""
+
+    def test_reads_representative_album_artist_value(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album_artist="Bausa")
+        assert ms.current_album_artist("Bausa", "2020 - Album X", library_root=lib) == "Bausa"
+
+
+# ── Manual Album Editing: Preview + Execute (Auftrag Abschnitt 6-9) ──────
+
+
+@requires_ffmpeg
+class TestAlbumEditFlow:
+    def test_preview_is_read_only(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album="Album X")
+
+        preview = ms.preview_album_edit("Bausa", "2020 - Album X", "Album X (Deluxe)", library_root=lib)
+        assert preview.read_only is True
+        assert preview.target_count == 1
+        assert preview.changed_count == 1
+        assert MP4(p).tags["©alb"] == ["Album X"]
+        assert not rt.journal_path().exists()
+
+    def test_identical_value_yields_zero_changed(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album="Album X")
+
+        preview = ms.preview_album_edit("Bausa", "2020 - Album X", "Album X", library_root=lib)
+        assert preview.changed_count == 0
+
+    def test_execute_writes_and_records_run(self, lib):
+        p1 = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        p2 = lib / "Bausa" / "2020 - Album X" / "b.m4a"
+        _m4a(p1, album="Album X")
+        _m4a(p2, album="Album X")
+
+        result = ms.execute_album_edit(
+            "Bausa", "2020 - Album X", "Album X (Deluxe)", triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert result.success_count == 2
+        assert MP4(p1).tags["©alb"] == ["Album X (Deluxe)"]
+        assert MP4(p2).tags["©alb"] == ["Album X (Deluxe)"]
+
+        history = rt.load_repair_history()
+        assert len(history) == 1
+        assert history[0]["kind"] == rt.KIND_MAINTENANCE
+        assert history[0]["level"] == "ALBUM_EDIT"
+        assert rt.is_repair_running() is False
+
+    def test_execute_with_empty_value_raises_without_writing(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album="Album X")
+
+        with pytest.raises(ms.MaintenanceServiceError):
+            ms.execute_album_edit("Bausa", "2020 - Album X", "   ", triggered_by="test", library_root=lib)
+        assert MP4(p).tags["©alb"] == ["Album X"]
+        assert rt.is_repair_running() is False
+
+    def test_execute_shares_lock_with_repair_flow(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album="Album X")
+
+        rt.acquire_repair_lock()
+        try:
+            with pytest.raises(rt.RepairAlreadyRunningError):
+                ms.execute_album_edit(
+                    "Bausa", "2020 - Album X", "Neu", triggered_by="test", library_root=lib,
+                )
+        finally:
+            rt.release_repair_lock()
+
+
+# ── Manual Album Artist Editing: Preview + Execute (Auftrag §10-13) ─────
+
+
+@requires_ffmpeg
+class TestAlbumArtistEditFlow:
+    def test_preview_is_read_only(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album_artist="Bausa")
+
+        preview = ms.preview_album_artist_edit(
+            "Bausa", "2020 - Album X", "Bausa & Friends", library_root=lib,
+        )
+        assert preview.read_only is True
+        assert preview.target_count == 1
+        assert preview.changed_count == 1
+        assert MP4(p).tags["aART"] == ["Bausa"]
+
+    def test_identical_value_yields_zero_changed(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album_artist="Bausa")
+
+        preview = ms.preview_album_artist_edit("Bausa", "2020 - Album X", "Bausa", library_root=lib)
+        assert preview.changed_count == 0
+
+    def test_execute_writes_only_album_artist(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album_artist="Bausa", artist=["Bausa"], album="Album X")
+
+        result = ms.execute_album_artist_edit(
+            "Bausa", "2020 - Album X", "Bausa & Friends", triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        tags = MP4(p).tags
+        assert tags["aART"] == ["Bausa & Friends"]
+        assert tags["©ART"] == ["Bausa"]
+        assert tags["©alb"] == ["Album X"]
+
+        history = rt.load_repair_history()
+        assert history[0]["level"] == "ALBUM_ARTIST_EDIT"
+
+    def test_execute_shares_lock_with_repair_flow(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album_artist="Bausa")
+
+        rt.acquire_repair_lock()
+        try:
+            with pytest.raises(rt.RepairAlreadyRunningError):
+                ms.execute_album_artist_edit(
+                    "Bausa", "2020 - Album X", "Neu", triggered_by="test", library_root=lib,
                 )
         finally:
             rt.release_repair_lock()

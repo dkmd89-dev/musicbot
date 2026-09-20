@@ -113,17 +113,27 @@ from services.library_repair.library_artists import (
     list_library_artist_dirs,
     resolve_artist_by_index,
 )
+from services.library_repair.library_artists import (
+    list_artist_albums,
+    resolve_album_by_index,
+)
 from services.library_repair.maintenance_service import (
     ACTION_ARTIST_CASING,
     ACTION_LEGACY_GENRE_CLEANUP,
     MaintenanceServiceError,
     artist_targets,
+    current_album,
+    current_album_artist,
     current_title,
+    execute_album_artist_edit,
+    execute_album_edit,
     execute_artist_casing_fix,
     execute_artist_rename,
     execute_legacy_genre_cleanup,
     execute_set_genre,
     execute_title_edit,
+    preview_album_artist_edit,
+    preview_album_edit,
     preview_artist_casing,
     preview_artist_rename,
     preview_legacy_genre_cleanup,
@@ -150,8 +160,15 @@ _ACTION_LABELS = {
 _MISSING_GENRE_ISSUE_CODES = ("GENRE_EMPTY", "META_GENRE_MISSING")
 _GENRE_MAX_INPUT_LEN = 200
 
-# ── Metadaten bearbeiten (Manual Metadata Editing v1) ────────────────────
+# ── Metadaten bearbeiten (Manual Metadata Editing v1/v2) ─────────────────
 _META_MAX_INPUT_LEN = 200
+# Telegram lehnt zu grosse InlineKeyboardMarkup-Payloads ab (Bad Request) -
+# ein Artist mit sehr vielen Tracks/Alben wuerde sonst handle_meta_title_
+# start()/handle_meta_album_start() zum Absturz bringen (Review-Fund,
+# Manual Metadata Editing v1). Keine echte Pagination (Auftrag v2 §25:
+# "wenn bereits vorhanden wiederverwenden" - keine vorhanden, keine neue
+# Infrastruktur bauen) - stattdessen defensive Kappung mit Hinweistext.
+_META_PICKER_LIMIT = 80
 
 
 def _validate_manual_meta_input(text: Optional[str], *, label: str) -> Optional[str]:
@@ -1302,7 +1319,7 @@ class LibraryMaintenanceHandler:
         return "\n".join(lines), back_kb
 
     # ═════════════════════════════════════════════════════════════════
-    # 📝 METADATEN BEARBEITEN (Manual Metadata Editing v1)
+    # 📝 METADATEN BEARBEITEN (Manual Metadata Editing v1 + v2)
     # ═════════════════════════════════════════════════════════════════
     #
     # Session-Status in context.user_data (identisches Prinzip wie die
@@ -1313,19 +1330,59 @@ class LibraryMaintenanceHandler:
     #       resolve_track_by_index(), kein Rohpfad aus callback_data)
     #   libmaint_meta_current_title   -> str, aktueller Titel-Tag-Wert des
     #       gewählten Tracks (NUR Anzeige in der Preview)
+    #   libmaint_meta_album           -> str, gewählter Album-Verzeichnis-
+    #       name (Album bearbeiten UND Albuminterpret bearbeiten - kommt
+    #       ausschließlich aus resolve_album_by_index())
+    #   libmaint_meta_current_album          -> str, aktueller ©alb-
+    #       Repräsentativwert (NUR Album bearbeiten, Anzeige)
+    #   libmaint_meta_current_album_artist   -> str, aktueller aART-
+    #       Repräsentativwert (NUR Albuminterpret bearbeiten, Anzeige)
     #   libmaint_meta_new_value       -> str, validierter neuer Zielwert
-    #       (Artist-Name ODER Titel, je nach aktivem Flow)
-    #   libmaint_awaiting_artist_text -> True, während auf die manuelle
-    #       Artist-Eingabe gewartet wird (process_pending_artist_input())
-    #   libmaint_awaiting_title_text  -> True, während auf die manuelle
-    #       Titel-Eingabe gewartet wird (process_pending_title_input())
+    #       (Artist-Name/Titel/Albumname/Albuminterpret, je nach aktivem
+    #       Flow)
+    #   libmaint_awaiting_artist_text      -> True, während auf die
+    #       manuelle Artist-Eingabe gewartet wird
+    #   libmaint_awaiting_title_text       -> True, während auf die
+    #       manuelle Titel-Eingabe gewartet wird
+    #   libmaint_awaiting_album_text       -> True, während auf die
+    #       manuelle Albumname-Eingabe gewartet wird
+    #   libmaint_awaiting_albumartist_text -> True, während auf die
+    #       manuelle Albuminterpret-Eingabe gewartet wird
     #
     # Terminal-/Fehlerpfade führen bewusst einheitlich zurück zu
     # "libmaint:start" (identisches Prinzip wie die gs:*/gr:*-Flows oben -
     # hält die Zustandsverwaltung klein).
+    #
+    # State Cleanup (Auftrag v2 §27, Review-Fund aus v1): JEDER neue
+    # Flow-Einstiegspunkt (handle_meta_artist_start()/handle_meta_title_
+    # pick()/handle_meta_album_pick()/handle_meta_albumartist_pick())
+    # ruft _reset_meta_edit_state() VOR dem Setzen seines eigenen
+    # awaiting-Flags auf - verhindert, dass ein abgebrochener Flow (z. B.
+    # Artist bearbeiten gestartet, dann ohne Abschluss zu Titel
+    # bearbeiten gewechselt) sein awaiting-Flag/seinen Zielwert an einen
+    # später gestarteten, anderen Flow "vererbt" (reales Szenario: ohne
+    # diesen Reset würde eine anschließend eingegebene Titel-Eingabe vom
+    # noch aktiven Artist-awaiting-Flag abgefangen und fälschlich als
+    # Artist-Umbenennung interpretiert - handle_text_message() prüft die
+    # Flags in fester Reihenfolge).
 
     def _meta_artist(self, context: ContextTypes.DEFAULT_TYPE) -> Optional[str]:
         return context.user_data.get("libmaint_meta_artist")
+
+    def _reset_meta_edit_state(self, context: ContextTypes.DEFAULT_TYPE) -> None:
+        for key in (
+            "libmaint_meta_track",
+            "libmaint_meta_current_title",
+            "libmaint_meta_album",
+            "libmaint_meta_current_album",
+            "libmaint_meta_current_album_artist",
+            "libmaint_meta_new_value",
+            "libmaint_awaiting_artist_text",
+            "libmaint_awaiting_title_text",
+            "libmaint_awaiting_album_text",
+            "libmaint_awaiting_albumartist_text",
+        ):
+            context.user_data.pop(key, None)
 
     async def _meta_session_expired(self, query) -> None:
         await query.edit_message_text(
@@ -1383,16 +1440,16 @@ class LibraryMaintenanceHandler:
             return
 
         context.user_data["libmaint_meta_artist"] = artist
-        context.user_data.pop("libmaint_meta_track", None)
-        context.user_data.pop("libmaint_meta_current_title", None)
-        context.user_data.pop("libmaint_meta_new_value", None)
-        context.user_data.pop("libmaint_awaiting_artist_text", None)
-        context.user_data.pop("libmaint_awaiting_title_text", None)
+        self._reset_meta_edit_state(context)
 
         text = f"📝 <b>Metadaten bearbeiten — {html.escape(artist)}</b>\n\nWähle eine Aktion:"
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🎤 Artist bearbeiten", callback_data=f"libmaint:meta:artist:{idx}")],
             [InlineKeyboardButton("🎵 Titel bearbeiten", callback_data=f"libmaint:meta:title:{idx}")],
+            [InlineKeyboardButton("💿 Album bearbeiten", callback_data=f"libmaint:meta:album:{idx}")],
+            [InlineKeyboardButton(
+                "👤 Albuminterpret bearbeiten", callback_data=f"libmaint:meta:albumartist:{idx}",
+            )],
             [InlineKeyboardButton("🎭 Genre-Verwaltung", callback_data=f"libmaint:genremenu:{idx}")],
             [InlineKeyboardButton("◀️ Zurück", callback_data=f"libmaint:pick:{idx}")],
         ])
@@ -1418,8 +1475,8 @@ class LibraryMaintenanceHandler:
             )
             return
 
+        self._reset_meta_edit_state(context)
         context.user_data["libmaint_meta_artist"] = artist
-        context.user_data.pop("libmaint_meta_new_value", None)
         context.user_data["libmaint_awaiting_artist_text"] = True
         await query.edit_message_text(
             f"🎤 <b>Artist bearbeiten</b>\n\n"
@@ -1492,9 +1549,30 @@ class LibraryMaintenanceHandler:
             )
             return
         if preview.changed_count == 0:
+            # Artist-Rename ist tag-wert-getrieben (Auftrag §7/§15,
+            # normalize_values() gegen den casefold-Wert des gewaehlten
+            # Ausgangs-Artist) - "keine Aenderung" kann hier entweder
+            # "Wert bereits korrekt" ODER "kein Datei-Tag entspricht
+            # aktuell exakt diesem Ausgangswert" bedeuten (Review-Fund:
+            # eine pauschale "bereits korrekt"-Meldung waere in letzterem
+            # Fall irrefuehrend). Safety-Skips (Datei nicht mehr
+            # verfuegbar) werden zusaetzlich separat gemeldet, identisches
+            # Prinzip wie beim Titel-Edit unten.
+            safety_skipped = [
+                o for o in preview.outcomes
+                if o.reason and o.reason.startswith("Safety:")
+            ]
+            if safety_skipped and len(safety_skipped) == len(preview.outcomes):
+                await message.edit_text(
+                    f"📁 Keine der {preview.target_count} Datei(en) ist aktuell "
+                    "verfügbar/lesbar — bitte erneut prüfen.",
+                    reply_markup=self._back_keyboard("libmaint:start"),
+                )
+                return
             await message.edit_text(
-                "✅ Der neue Wert entspricht bereits dem aktuellen Wert "
-                f"({preview.target_count} Datei(en) geprüft, keine Änderung nötig).",
+                "ℹ️ Keine Änderung nötig: kein Artist-Tag entspricht aktuell "
+                f"exakt „{html.escape(artist)}\", oder der Wert war bereits korrekt "
+                f"({preview.target_count} Datei(en) geprüft).",
                 reply_markup=self._back_keyboard("libmaint:start"),
             )
             return
@@ -1651,16 +1729,26 @@ class LibraryMaintenanceHandler:
             return
 
         context.user_data["libmaint_meta_artist"] = artist
+        # Defensive Kappung (Review-Fund): _META_PICKER_LIMIT verhindert
+        # ein zu grosses InlineKeyboardMarkup (Telegram Bad Request) bei
+        # sehr vielen Tracks - tidx bleibt der echte Index in `tracks`
+        # (Slice von vorne, resolve_track_by_index() loest gegen dieselbe
+        # vollstaendige Liste erneut auf).
+        shown = tracks[:_META_PICKER_LIMIT]
         buttons = [
             [InlineKeyboardButton(
                 f"🎵 {Path(rel).stem[:60]}", callback_data=f"libmaint:meta:title:pick:{idx}:{tidx}",
             )]
-            for tidx, rel in enumerate(tracks)
+            for tidx, rel in enumerate(shown)
         ]
         buttons.append([InlineKeyboardButton("◀️ Zurück", callback_data=f"libmaint:meta:{idx}")])
+        note = (
+            f" (nur die ersten {_META_PICKER_LIMIT} angezeigt)"
+            if len(tracks) > _META_PICKER_LIMIT else ""
+        )
         await query.edit_message_text(
             f"🎵 <b>Titel bearbeiten — {html.escape(artist)}</b>\n\n"
-            f"{len(tracks)} Track(s) gefunden — Track wählen:",
+            f"{len(tracks)} Track(s) gefunden{note} — Track wählen:",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(buttons),
         )
@@ -1703,10 +1791,10 @@ class LibraryMaintenanceHandler:
             )
             return
 
+        self._reset_meta_edit_state(context)
         context.user_data["libmaint_meta_artist"] = artist
         context.user_data["libmaint_meta_track"] = rel
         context.user_data["libmaint_meta_current_title"] = title_now
-        context.user_data.pop("libmaint_meta_new_value", None)
         context.user_data["libmaint_awaiting_title_text"] = True
         await query.edit_message_text(
             f"🎵 <b>Titel bearbeiten</b>\n\n"
@@ -1911,6 +1999,620 @@ class LibraryMaintenanceHandler:
         await message.edit_text(
             self._format_manual_edit_result(
                 "Titel geändert", "Titel teilweise geändert", artist, result,
+            ),
+            parse_mode="HTML",
+            reply_markup=self._back_keyboard("libmaint:start"),
+        )
+
+    # ── 💿 Album bearbeiten (Manual Metadata Editing v2, Auftrag §6-9) ──
+
+    async def _show_album_picker(
+        self, query, context: ContextTypes.DEFAULT_TYPE, idx: int, artist: str, next_prefix: str,
+    ) -> bool:
+        """Zeigt die Album-Auswahl fuer `artist` - gemeinsam genutzt von
+        Album bearbeiten UND Albuminterpret bearbeiten (`next_prefix`
+        bestimmt die Callback-Route der Buttons, z. B.
+        "libmaint:meta:album:pick" bzw. "libmaint:meta:albumartist:pick").
+        Gibt False zurueck (und hat bereits eine Meldung gezeigt), wenn
+        keine Alben gefunden wurden."""
+        albums = list_artist_albums(artist)
+        if not albums:
+            await query.edit_message_text(
+                f"📁 Keine Album-Verzeichnisse für {html.escape(artist)} gefunden "
+                "(Singles zählen nicht als Album-Kontext).",
+                reply_markup=self._back_keyboard(f"libmaint:meta:{idx}"),
+            )
+            return False
+
+        shown = albums[:_META_PICKER_LIMIT]
+        buttons = [
+            [InlineKeyboardButton(
+                f"💿 {name[:60]}", callback_data=f"{next_prefix}:{idx}:{aidx}",
+            )]
+            for aidx, name in enumerate(shown)
+        ]
+        buttons.append([InlineKeyboardButton("◀️ Zurück", callback_data=f"libmaint:meta:{idx}")])
+        note = (
+            f" (nur die ersten {_META_PICKER_LIMIT} angezeigt)"
+            if len(albums) > _META_PICKER_LIMIT else ""
+        )
+        await query.edit_message_text(
+            f"💿 <b>Album auswählen — {html.escape(artist)}</b>\n\n"
+            f"{len(albums)} Album(en) gefunden{note}:",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+        return True
+
+    async def handle_meta_album_start(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, idx: int
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        artist = resolve_artist_by_index(idx)
+        if artist is None:
+            await query.edit_message_text(
+                "⚠️ Artist nicht mehr gefunden — bitte erneut wählen.",
+                reply_markup=self._back_keyboard("libmaint:artists"),
+            )
+            return
+
+        context.user_data["libmaint_meta_artist"] = artist
+        await self._show_album_picker(query, context, idx, artist, "libmaint:meta:album:pick")
+
+    async def handle_meta_album_pick(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, idx: int, album_idx: int
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        artist = resolve_artist_by_index(idx)
+        if artist is None:
+            await query.edit_message_text(
+                "⚠️ Artist nicht mehr gefunden — bitte erneut wählen.",
+                reply_markup=self._back_keyboard("libmaint:artists"),
+            )
+            return
+
+        album = resolve_album_by_index(artist, album_idx)
+        if album is None:
+            await query.edit_message_text(
+                "⚠️ Album nicht mehr gefunden (Liste hat sich geändert) — "
+                "bitte erneut wählen.",
+                reply_markup=self._back_keyboard(f"libmaint:meta:album:{idx}"),
+            )
+            return
+
+        try:
+            album_now = current_album(artist, album)
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"💥 Unerwarteter Fehler beim Album-Lesen: {e}", exc_info=True)
+            await self._report_error(e, "meta_album_read")
+            await query.edit_message_text(
+                f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        self._reset_meta_edit_state(context)
+        context.user_data["libmaint_meta_artist"] = artist
+        context.user_data["libmaint_meta_album"] = album
+        context.user_data["libmaint_meta_current_album"] = album_now
+        context.user_data["libmaint_awaiting_album_text"] = True
+        await query.edit_message_text(
+            f"💿 <b>Album bearbeiten</b>\n\n"
+            f"Album:\n{html.escape(album)}\n\n"
+            f"Aktueller Albumname:\n{html.escape(album_now) if album_now else '(kein Albumname)'}\n\n"
+            "Neuen Albumnamen eingeben. Mit /cancel abbrechen.",
+            parse_mode="HTML",
+        )
+
+    async def process_pending_album_input(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
+    ) -> bool:
+        """Wird von handlers/menu/rich_menu_handler.py::handle_text_message()
+        aufgerufen, WENN context.user_data["libmaint_awaiting_album_text"]
+        gesetzt ist. Gibt True zurück, wenn die Nachricht hier behandelt
+        wurde."""
+        if not context.user_data.get("libmaint_awaiting_album_text"):
+            return False
+
+        artist = self._meta_artist(context)
+        album = context.user_data.get("libmaint_meta_album")
+        current = context.user_data.get("libmaint_meta_current_album") or ""
+        if not artist or not album:
+            context.user_data.pop("libmaint_awaiting_album_text", None)
+            await update.message.reply_text(
+                "⚠️ Sitzung abgelaufen — bitte über /menu erneut beginnen."
+            )
+            return True
+
+        error = _validate_manual_meta_input(text, label="den Albumnamen")
+        if error:
+            await update.message.reply_text(f"❌ {error} Bitte erneut eingeben oder /cancel.")
+            return True  # bleibt awaiting - erneuter Versuch möglich
+
+        new_album = text.strip()
+        context.user_data.pop("libmaint_awaiting_album_text", None)
+        context.user_data["libmaint_meta_new_value"] = new_album
+
+        placeholder = await update.message.reply_text(
+            f"🔍 Erstelle Vorschau für {html.escape(album)} ..."
+        )
+        task = asyncio.create_task(
+            self._run_album_edit_preview_and_report(placeholder, artist, album, current, new_album)
+        )
+        task.add_done_callback(self._log_background_task_exception)
+        return True
+
+    async def _run_album_edit_preview_and_report(
+        self, message: Message, artist: str, album: str, current: str, new_album: str,
+    ) -> None:
+        try:
+            preview = preview_album_edit(artist, album, new_album)
+        except MaintenanceServiceError as e:
+            await message.edit_text(
+                f"❌ {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"💥 Unerwarteter Fehler bei der Album-Vorschau: {e}", exc_info=True)
+            await self._report_error(e, "meta_album_preview")
+            await message.edit_text(
+                f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        if preview.target_count == 0:
+            await message.edit_text(
+                f"📁 Keine Dateien mehr für {html.escape(album)} gefunden — "
+                "bitte erneut wählen.",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        if preview.changed_count == 0:
+            safety_skipped = [
+                o for o in preview.outcomes
+                if o.reason and o.reason.startswith("Safety:")
+            ]
+            if safety_skipped and len(safety_skipped) == len(preview.outcomes):
+                await message.edit_text(
+                    f"📁 Keine der {preview.target_count} Datei(en) ist aktuell "
+                    "verfügbar/lesbar — bitte erneut prüfen.",
+                    reply_markup=self._back_keyboard("libmaint:start"),
+                )
+                return
+            await message.edit_text(
+                "✅ Der neue Wert entspricht bereits dem aktuellen Wert "
+                f"({preview.target_count} Datei(en) geprüft, keine Änderung nötig).",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        lines = [
+            "🔍 <b>Änderung prüfen</b>", "",
+            "Album:", html.escape(album), "",
+            "Albumname:",
+            html.escape(current) if current else "(kein Albumname)",
+            "↓",
+            html.escape(new_album),
+            "",
+            f"Betroffene Tracks: {preview.changed_count}",
+            f"Betroffene Dateien: {preview.changed_count}",
+            "", "Noch keine Änderungen durchgeführt.",
+        ]
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Ausführen", callback_data="libmaint:meta:album:confirm")],
+            [InlineKeyboardButton("❌ Abbrechen", callback_data="libmaint:start")],
+        ])
+        await message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=keyboard)
+
+    async def handle_meta_album_confirm(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        artist = self._meta_artist(context)
+        album = context.user_data.get("libmaint_meta_album")
+        new_value = context.user_data.get("libmaint_meta_new_value")
+        if not artist or not album or not new_value:
+            await self._meta_session_expired(query)
+            return
+
+        text = (
+            "⚠️ <b>ACHTUNG</b>\n\n"
+            f"Album {html.escape(album)} wird geändert:\n"
+            f"Albumname → {html.escape(new_value)}\n\n"
+            "Diese Aktion verändert Tags in deiner Music Library "
+            "(Backup + Journal + Audio-Essenz-Verifikation vor jeder "
+            "Übernahme).\n\nFortfahren?"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ JA, AUSFÜHREN", callback_data="libmaint:meta:album:execute")],
+            [InlineKeyboardButton("❌ ABBRECHEN", callback_data="libmaint:start")],
+        ])
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+    async def handle_meta_album_execute(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Einzige Stelle, die tatsächlich einen Album-Edit ausführt -
+        Berechtigung wird HIER erneut geprüft, Lock-Status vorab geprüft."""
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        if is_repair_running():
+            await query.edit_message_text(
+                "🔒 Eine andere Reparatur/Wartung läuft gerade — bitte "
+                "warten, bis diese abgeschlossen ist.",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        artist = self._meta_artist(context)
+        album = context.user_data.get("libmaint_meta_album")
+        new_value = context.user_data.get("libmaint_meta_new_value")
+        if not artist or not album or not new_value:
+            await self._meta_session_expired(query)
+            return
+
+        placeholder = await query.edit_message_text(
+            f"💿 Album wird geändert für {html.escape(album)} ..."
+        )
+        task = asyncio.create_task(
+            self._run_album_edit_execute_and_report(
+                placeholder, context, artist, album, new_value, user_id,
+            )
+        )
+        task.add_done_callback(self._log_background_task_exception)
+
+    async def _run_album_edit_execute_and_report(
+        self, message: Message, context: ContextTypes.DEFAULT_TYPE,
+        artist: str, album: str, new_album: str, user_id: int,
+    ) -> None:
+        try:
+            result = execute_album_edit(
+                artist, album, new_album, triggered_by=f"telegram:{user_id}",
+            )
+        except RepairAlreadyRunningError as e:
+            await message.edit_text(
+                f"🔒 {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        except MaintenanceServiceError as e:
+            await message.edit_text(
+                f"❌ {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"💥 Unerwarteter Fehler beim Album-Edit: {e}", exc_info=True)
+            await self._report_error(e, "meta_album_execute")
+            await message.edit_text(
+                f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        context.user_data.pop("libmaint_meta_new_value", None)
+        context.user_data.pop("libmaint_meta_album", None)
+        context.user_data.pop("libmaint_meta_current_album", None)
+        await message.edit_text(
+            self._format_manual_edit_result(
+                "Album geändert", "Album teilweise geändert", artist, result,
+            ),
+            parse_mode="HTML",
+            reply_markup=self._back_keyboard("libmaint:start"),
+        )
+
+    # ── 👤 Albuminterpret bearbeiten (Manual Metadata Editing v2,
+    # Auftrag §10-13) ─────────────────────────────────────────────────
+
+    async def handle_meta_albumartist_start(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, idx: int
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        artist = resolve_artist_by_index(idx)
+        if artist is None:
+            await query.edit_message_text(
+                "⚠️ Artist nicht mehr gefunden — bitte erneut wählen.",
+                reply_markup=self._back_keyboard("libmaint:artists"),
+            )
+            return
+
+        context.user_data["libmaint_meta_artist"] = artist
+        await self._show_album_picker(query, context, idx, artist, "libmaint:meta:albumartist:pick")
+
+    async def handle_meta_albumartist_pick(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, idx: int, album_idx: int
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        artist = resolve_artist_by_index(idx)
+        if artist is None:
+            await query.edit_message_text(
+                "⚠️ Artist nicht mehr gefunden — bitte erneut wählen.",
+                reply_markup=self._back_keyboard("libmaint:artists"),
+            )
+            return
+
+        album = resolve_album_by_index(artist, album_idx)
+        if album is None:
+            await query.edit_message_text(
+                "⚠️ Album nicht mehr gefunden (Liste hat sich geändert) — "
+                "bitte erneut wählen.",
+                reply_markup=self._back_keyboard(f"libmaint:meta:albumartist:{idx}"),
+            )
+            return
+
+        try:
+            album_artist_now = current_album_artist(artist, album)
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"💥 Unerwarteter Fehler beim Albuminterpret-Lesen: {e}", exc_info=True)
+            await self._report_error(e, "meta_albumartist_read")
+            await query.edit_message_text(
+                f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        self._reset_meta_edit_state(context)
+        context.user_data["libmaint_meta_artist"] = artist
+        context.user_data["libmaint_meta_album"] = album
+        context.user_data["libmaint_meta_current_album_artist"] = album_artist_now
+        context.user_data["libmaint_awaiting_albumartist_text"] = True
+        await query.edit_message_text(
+            f"👤 <b>Albuminterpret bearbeiten</b>\n\n"
+            f"Album:\n{html.escape(album)}\n\n"
+            "Aktueller Albuminterpret:\n"
+            f"{html.escape(album_artist_now) if album_artist_now else '(kein Albuminterpret)'}\n\n"
+            "Neuen Albuminterpret eingeben. Mit /cancel abbrechen.",
+            parse_mode="HTML",
+        )
+
+    async def process_pending_albumartist_input(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
+    ) -> bool:
+        """Wird von handlers/menu/rich_menu_handler.py::handle_text_message()
+        aufgerufen, WENN context.user_data["libmaint_awaiting_albumartist_text"]
+        gesetzt ist. Gibt True zurück, wenn die Nachricht hier behandelt
+        wurde."""
+        if not context.user_data.get("libmaint_awaiting_albumartist_text"):
+            return False
+
+        artist = self._meta_artist(context)
+        album = context.user_data.get("libmaint_meta_album")
+        current = context.user_data.get("libmaint_meta_current_album_artist") or ""
+        if not artist or not album:
+            context.user_data.pop("libmaint_awaiting_albumartist_text", None)
+            await update.message.reply_text(
+                "⚠️ Sitzung abgelaufen — bitte über /menu erneut beginnen."
+            )
+            return True
+
+        error = _validate_manual_meta_input(text, label="den Albuminterpret")
+        if error:
+            await update.message.reply_text(f"❌ {error} Bitte erneut eingeben oder /cancel.")
+            return True  # bleibt awaiting - erneuter Versuch möglich
+
+        new_album_artist = text.strip()
+        context.user_data.pop("libmaint_awaiting_albumartist_text", None)
+        context.user_data["libmaint_meta_new_value"] = new_album_artist
+
+        placeholder = await update.message.reply_text(
+            f"🔍 Erstelle Vorschau für {html.escape(album)} ..."
+        )
+        task = asyncio.create_task(
+            self._run_album_artist_edit_preview_and_report(
+                placeholder, artist, album, current, new_album_artist,
+            )
+        )
+        task.add_done_callback(self._log_background_task_exception)
+        return True
+
+    async def _run_album_artist_edit_preview_and_report(
+        self, message: Message, artist: str, album: str, current: str, new_album_artist: str,
+    ) -> None:
+        try:
+            preview = preview_album_artist_edit(artist, album, new_album_artist)
+        except MaintenanceServiceError as e:
+            await message.edit_text(
+                f"❌ {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"💥 Unerwarteter Fehler bei der Albuminterpret-Vorschau: {e}", exc_info=True)
+            await self._report_error(e, "meta_albumartist_preview")
+            await message.edit_text(
+                f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        if preview.target_count == 0:
+            await message.edit_text(
+                f"📁 Keine Dateien mehr für {html.escape(album)} gefunden — "
+                "bitte erneut wählen.",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        if preview.changed_count == 0:
+            safety_skipped = [
+                o for o in preview.outcomes
+                if o.reason and o.reason.startswith("Safety:")
+            ]
+            if safety_skipped and len(safety_skipped) == len(preview.outcomes):
+                await message.edit_text(
+                    f"📁 Keine der {preview.target_count} Datei(en) ist aktuell "
+                    "verfügbar/lesbar — bitte erneut prüfen.",
+                    reply_markup=self._back_keyboard("libmaint:start"),
+                )
+                return
+            await message.edit_text(
+                "✅ Der neue Wert entspricht bereits dem aktuellen Wert "
+                f"({preview.target_count} Datei(en) geprüft, keine Änderung nötig).",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        lines = [
+            "🔍 <b>Änderung prüfen</b>", "",
+            "Album:", html.escape(album), "",
+            "Albuminterpret:",
+            html.escape(current) if current else "(kein Albuminterpret)",
+            "↓",
+            html.escape(new_album_artist),
+            "",
+            f"Betroffene Tracks: {preview.changed_count}",
+            f"Betroffene Dateien: {preview.changed_count}",
+            "", "Noch keine Änderungen durchgeführt.",
+        ]
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Ausführen", callback_data="libmaint:meta:albumartist:confirm")],
+            [InlineKeyboardButton("❌ Abbrechen", callback_data="libmaint:start")],
+        ])
+        await message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=keyboard)
+
+    async def handle_meta_albumartist_confirm(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        artist = self._meta_artist(context)
+        album = context.user_data.get("libmaint_meta_album")
+        new_value = context.user_data.get("libmaint_meta_new_value")
+        if not artist or not album or not new_value:
+            await self._meta_session_expired(query)
+            return
+
+        text = (
+            "⚠️ <b>ACHTUNG</b>\n\n"
+            f"Albuminterpret für Album {html.escape(album)} wird geändert:\n"
+            f"Albuminterpret → {html.escape(new_value)}\n\n"
+            "Der normale Artist-Tag (©ART) bleibt dabei unverändert.\n\n"
+            "Diese Aktion verändert Tags in deiner Music Library "
+            "(Backup + Journal + Audio-Essenz-Verifikation vor jeder "
+            "Übernahme).\n\nFortfahren?"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "✅ JA, AUSFÜHREN", callback_data="libmaint:meta:albumartist:execute",
+            )],
+            [InlineKeyboardButton("❌ ABBRECHEN", callback_data="libmaint:start")],
+        ])
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+    async def handle_meta_albumartist_execute(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Einzige Stelle, die tatsächlich einen Album-Artist-Edit
+        ausführt - Berechtigung wird HIER erneut geprüft, Lock-Status
+        vorab geprüft."""
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        if is_repair_running():
+            await query.edit_message_text(
+                "🔒 Eine andere Reparatur/Wartung läuft gerade — bitte "
+                "warten, bis diese abgeschlossen ist.",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        artist = self._meta_artist(context)
+        album = context.user_data.get("libmaint_meta_album")
+        new_value = context.user_data.get("libmaint_meta_new_value")
+        if not artist or not album or not new_value:
+            await self._meta_session_expired(query)
+            return
+
+        placeholder = await query.edit_message_text(
+            f"👤 Albuminterpret wird geändert für {html.escape(album)} ..."
+        )
+        task = asyncio.create_task(
+            self._run_album_artist_edit_execute_and_report(
+                placeholder, context, artist, album, new_value, user_id,
+            )
+        )
+        task.add_done_callback(self._log_background_task_exception)
+
+    async def _run_album_artist_edit_execute_and_report(
+        self, message: Message, context: ContextTypes.DEFAULT_TYPE,
+        artist: str, album: str, new_album_artist: str, user_id: int,
+    ) -> None:
+        try:
+            result = execute_album_artist_edit(
+                artist, album, new_album_artist, triggered_by=f"telegram:{user_id}",
+            )
+        except RepairAlreadyRunningError as e:
+            await message.edit_text(
+                f"🔒 {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        except MaintenanceServiceError as e:
+            await message.edit_text(
+                f"❌ {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"💥 Unerwarteter Fehler beim Album-Artist-Edit: {e}", exc_info=True)
+            await self._report_error(e, "meta_albumartist_execute")
+            await message.edit_text(
+                f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        context.user_data.pop("libmaint_meta_new_value", None)
+        context.user_data.pop("libmaint_meta_album", None)
+        context.user_data.pop("libmaint_meta_current_album_artist", None)
+        await message.edit_text(
+            self._format_manual_edit_result(
+                "Albuminterpret geändert", "Albuminterpret teilweise geändert", artist, result,
             ),
             parse_mode="HTML",
             reply_markup=self._back_keyboard("libmaint:start"),

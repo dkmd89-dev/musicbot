@@ -41,11 +41,15 @@ from services.library_repair import artist as artist_domain
 from services.library_repair import genre as genre_domain
 from services.library_repair.executor import (
     ExecOutcome,
+    apply_album_artist_edit,
+    apply_album_edit,
     apply_artist_casing,
     apply_artist_rename,
     apply_legacy_genre_cleanup,
     apply_set_genre,
     apply_title_edit,
+    read_current_album,
+    read_current_album_artist,
     read_current_title,
 )
 from services.library_repair.journal import RepairJournal
@@ -78,6 +82,12 @@ ALL_ACTIONS = (ACTION_ARTIST_CASING, ACTION_LEGACY_GENRE_CLEANUP, ACTION_SET_GEN
 # --maintenance-action-Wert (Auftrag bewusst Telegram-only, Abschnitt 1).
 ACTION_ARTIST_RENAME = "artist-rename"
 ACTION_TITLE_EDIT = "title-edit"
+
+# Manual Metadata Editing v2 (ARCH-032-Folgeauftrag) - dieselbe bewusste
+# Nicht-Aufnahme in ALL_ACTIONS wie ACTION_ARTIST_RENAME/ACTION_TITLE_EDIT
+# oben (eigene mehrstufige Telegram-only-Flows, kein CLI-Zugang).
+ACTION_ALBUM_EDIT = "album-edit"
+ACTION_ALBUM_ARTIST_EDIT = "album-artist-edit"
 
 _MAX_MANUAL_VALUE_LEN = 200
 
@@ -123,12 +133,83 @@ def resolve_track_by_index(
     return None
 
 
+def _resolve_within_library(rel_path: str, library_root: Path) -> Path:
+    """Verweigert Pfade ausserhalb der Library-Wurzel (Defense-in-Depth
+    an der Service-Grenze — alle aktuellen Aufrufer beziehen `rel_path`
+    bereits ausschliesslich aus resolve_track_by_index()/album_targets(),
+    nie aus rohem Telegram-callback_data; dieser Check haertet zusaetzlich
+    gegen einen kuenftigen, weniger sorgfaeltigen Aufrufer ab)."""
+    root = library_root.resolve()
+    candidate = (library_root / rel_path).resolve()
+    if root != candidate and root not in candidate.parents:
+        raise MaintenanceServiceError(f"Pfad außerhalb der Library: {rel_path!r}")
+    return candidate
+
+
 def current_title(rel_path: str, *, library_root: Optional[Path] = None) -> str:
     """Liest den aktuellen Titel-Tag (©nam) fuer die Eingabe-/Preview-
     Anzeige des Manual Title Editing (rein lesend, Auftrag Abschnitt 8).
     `rel_path` kommt ausschliesslich aus resolve_track_by_index()
     (server-seitig neu aufgeloest, kein Rohpfad aus callback_data)."""
-    return read_current_title(_library_root(library_root) / rel_path)
+    root = _library_root(library_root)
+    return read_current_title(_resolve_within_library(rel_path, root))
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Album-Target-Resolution (Manual Metadata Editing v2, Auftrag Abschnitt
+# 6-9/22/23) — VERZEICHNIS-basiert, identische Konvention wie
+# artist_targets() oben, eine Ebene tiefer: <library>/<artist>/<album>/.
+# Album-Scope ist damit deterministisch, gehoert ausschliesslich zum
+# gewaehlten Album-Kontext und mischt keine anderen Alben/Artists (Auftrag
+# §22) — zwei Ordner mit identischem sichtbaren Albumnamen (z. B.
+# "2024 - Album X" vs. "2025 - Album X") bleiben unabhaengige Scopes, ein
+# Ordner mit bereits inkonsistenten ©alb-Werten bleibt vollstaendig im
+# Scope (Auftrag §23 — siehe executor.py::apply_album_edit()-Docstring).
+# Wiederverwendet exakt dieselbe Klassifikation wie der bereits
+# bestehende Health-Scanner (services/library_health/discovery.py /
+# group_analysis.py's (artist_directory, album_directory)-Gruppierung),
+# hier als leichtgewichtiger Verzeichnis-Adapter ohne die schwerere
+# FileHealth-/Tag-Scan-Infrastruktur des vollen Health-Scans (Auftrag
+# §22: "keine neue vollstaendige Library-Scan-Architektur").
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def album_targets(
+    artist: str, album: str, *, library_root: Optional[Path] = None
+) -> list[str]:
+    """Relative .m4a-Pfade unter <library>/<artist>/<album>/. `album` MUSS
+    ein exakter Verzeichnisname sein (server-seitig aus
+    library_artists.py::list_artist_albums()/resolve_album_by_index()
+    aufgeloest, kein Rohpfad aus Telegram-callback_data)."""
+    root = _library_root(library_root)
+    album_dir = root / artist / album
+    if not album_dir.is_dir():
+        return []
+    return sorted(str(p.relative_to(root)) for p in album_dir.rglob("*.m4a"))
+
+
+def current_album(artist: str, album: str, *, library_root: Optional[Path] = None) -> str:
+    """Liest den aktuellen ©alb-Wert repraesentativ von der ersten Datei
+    im Album-Scope (rein lesend, Preview-/Eingabe-Anzeige, Auftrag §8) -
+    der Scope kann bereits inkonsistente ©alb-Werte enthalten (§23);
+    apply_album_edit() liest/vergleicht bei der Ausfuehrung unabhaengig
+    davon erneut pro Datei."""
+    root = _library_root(library_root)
+    targets = album_targets(artist, album, library_root=root)
+    if not targets:
+        return ""
+    return read_current_album(_resolve_within_library(targets[0], root))
+
+
+def current_album_artist(artist: str, album: str, *, library_root: Optional[Path] = None) -> str:
+    """Liest den aktuellen aART-Wert repraesentativ von der ersten Datei
+    im Album-Scope (rein lesend, Auftrag §10) - identisches Prinzip wie
+    current_album()."""
+    root = _library_root(library_root)
+    targets = album_targets(artist, album, library_root=root)
+    if not targets:
+        return ""
+    return read_current_album_artist(_resolve_within_library(targets[0], root))
 
 
 def _validate_manual_value(value: Optional[str], *, label: str) -> str:
@@ -515,6 +596,107 @@ def execute_title_edit(
         )
         _record_run(
             run_id=run_id, action=ACTION_TITLE_EDIT, artist=artist,
+            started_at=started_at, result=result, triggered_by=triggered_by,
+        )
+        return result
+    finally:
+        release_repair_lock()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Manual Album Editing (Auftrag Abschnitt 6-9) - expliziter Nutzer-
+# Zielwert fuer ©alb ueber den gesamten (verzeichnisbasierten) Album-Scope.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def preview_album_edit(
+    artist: str, album: str, new_album: str, *, library_root: Optional[Path] = None,
+) -> MaintenancePreview:
+    new_album = _validate_manual_value(new_album, label="Albumname")
+    targets = album_targets(artist, album, library_root=library_root)
+    journal = RepairJournal(journal_path())  # nie geflusht -> read-only
+    outcomes = apply_album_edit(
+        targets, _library_root(library_root), journal, new_album=new_album, dry_run=True,
+    )
+    return MaintenancePreview(
+        action=ACTION_ALBUM_EDIT, artist=artist, target_count=len(targets), outcomes=outcomes,
+    )
+
+
+def execute_album_edit(
+    artist: str, album: str, new_album: str, *, triggered_by: str,
+    library_root: Optional[Path] = None,
+) -> MaintenanceRunResult:
+    new_album = _validate_manual_value(new_album, label="Albumname")
+    acquire_repair_lock()
+    try:
+        started_at = now_iso()
+        run_id = str(uuid.uuid4())
+        targets = album_targets(artist, album, library_root=library_root)
+        journal = RepairJournal(journal_path())
+        outcomes = apply_album_edit(
+            targets, _library_root(library_root), journal, new_album=new_album, dry_run=False,
+        )
+        journal.flush()
+        result = _run_result_from_outcomes(
+            run_id=run_id, action=ACTION_ALBUM_EDIT, artist=artist,
+            started_at=started_at, target_count=len(targets), outcomes=outcomes, dry_run=False,
+        )
+        _record_run(
+            run_id=run_id, action=ACTION_ALBUM_EDIT, artist=artist,
+            started_at=started_at, result=result, triggered_by=triggered_by,
+        )
+        return result
+    finally:
+        release_repair_lock()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Manual Album Artist Editing (Auftrag Abschnitt 10-13) - AUSSCHLIESSLICH
+# aART, ©ART/©alb/©nam bleiben unangetastet (siehe
+# executor.py::apply_album_artist_edit()).
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def preview_album_artist_edit(
+    artist: str, album: str, new_album_artist: str, *,
+    library_root: Optional[Path] = None,
+) -> MaintenancePreview:
+    new_album_artist = _validate_manual_value(new_album_artist, label="Albuminterpret")
+    targets = album_targets(artist, album, library_root=library_root)
+    journal = RepairJournal(journal_path())  # nie geflusht -> read-only
+    outcomes = apply_album_artist_edit(
+        targets, _library_root(library_root), journal,
+        new_album_artist=new_album_artist, dry_run=True,
+    )
+    return MaintenancePreview(
+        action=ACTION_ALBUM_ARTIST_EDIT, artist=artist,
+        target_count=len(targets), outcomes=outcomes,
+    )
+
+
+def execute_album_artist_edit(
+    artist: str, album: str, new_album_artist: str, *, triggered_by: str,
+    library_root: Optional[Path] = None,
+) -> MaintenanceRunResult:
+    new_album_artist = _validate_manual_value(new_album_artist, label="Albuminterpret")
+    acquire_repair_lock()
+    try:
+        started_at = now_iso()
+        run_id = str(uuid.uuid4())
+        targets = album_targets(artist, album, library_root=library_root)
+        journal = RepairJournal(journal_path())
+        outcomes = apply_album_artist_edit(
+            targets, _library_root(library_root), journal,
+            new_album_artist=new_album_artist, dry_run=False,
+        )
+        journal.flush()
+        result = _run_result_from_outcomes(
+            run_id=run_id, action=ACTION_ALBUM_ARTIST_EDIT, artist=artist,
+            started_at=started_at, target_count=len(targets), outcomes=outcomes, dry_run=False,
+        )
+        _record_run(
+            run_id=run_id, action=ACTION_ALBUM_ARTIST_EDIT, artist=artist,
             started_at=started_at, result=result, triggered_by=triggered_by,
         )
         return result

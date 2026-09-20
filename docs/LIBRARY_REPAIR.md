@@ -1342,3 +1342,110 @@ Dateien laut Executor-Diff, kein Sonderfall im Domain-Code nötig).
 | `tests/test_library_repair_maintenance_service.py` | `resolve_track_by_index()`, `current_title()`, `_validate_manual_value()`, Preview/Execute für beide Flows, Lock-Sharing mit dem übrigen Repair-/Maintenance-Flow |
 | `tests/test_library_maintenance_metadata_edit.py` | Telegram-Handler-Ebene: `meta`-Menü, kompletter Artist-/Titel-Zustandsautomat inkl. Freitext-Validierung, Track-Picker (Index-basiert, kein Rohpfad), kein Auto-Start an jedem Zwischenschritt, Lock-Konflikt-Anzeige |
 | `tests/test_rich_menu_library_maintenance.py` (`TestMetadataEditDispatchRouting`) | Dispatcher-Routing für alle `libmaint:meta:*`-Callback-Muster (Admin-Gate, korrekte Handler-Methode, korrekt durchgereichte Argumente, unbekannte Sub-Callbacks) |
+
+---
+
+## 16. Manual Metadata Editing v2 — Album + Album Artist (2026-09-20)
+
+**Herkunft:** Folgeauftrag zu §15 — erweitert „📝 Metadaten bearbeiten" um
+💿 Album bearbeiten und 👤 Albuminterpret bearbeiten. Baut vollständig auf
+§15s Architektur auf (Handler → Service → Executor, Preview → explizite
+Bestätigung → Execute, dieselbe Backup-/Journal-/Audio-Essenz-/
+Fingerprint-Infrastruktur) — **keine neue Schreib-Pipeline**.
+
+### 16.1 Album-Scope — verzeichnisbasiert, nicht ©alb-tag-basiert
+
+Der Album-Kontext wird **exakt wie im bestehenden Health-Scanner**
+bestimmt (`services/library_health/discovery.py::
+_classify_section_and_dirs()` / `group_analysis.py`s
+`(artist_directory, album_directory)`-Gruppierung, wiederverwendet statt
+neu erfunden): jedes direkte Unterverzeichnis eines Artist-Ordners AUSSER
+„Singles" (case-insensitiv) ist ein Album-Kontext
+(`library_artists.py::list_artist_albums()`/`resolve_album_by_index()`,
+identisches Index-Picker-Muster wie die Artist-Auswahl).
+`maintenance_service.py::album_targets()` listet die `.m4a`-Dateien genau
+dieses Verzeichnisses (identisches Muster wie `artist_targets()`, eine
+Ebene tiefer).
+
+Bewusst **nicht** über `©alb == angefragter Wert`: zwei Ordner mit
+identischem sichtbaren Albumnamen (z. B. `2024 - Album X` vs.
+`2025 - Album X`) bleiben unabhängige, getrennt bearbeitbare Scopes; ein
+Ordner mit bereits inkonsistenten `©alb`-Werten bleibt vollständig im
+Scope — genau diese Vereinheitlichung ist der Zweck von Album Editing.
+
+### 16.2 💿 Album bearbeiten / 👤 Albuminterpret bearbeiten
+
+`executor.py::apply_album_edit()`/`apply_album_artist_edit()` schreiben
+**unbedingt pro Datei** im (bereits server-seitig aufgelösten) Scope —
+anders als `apply_artist_rename()` (tag-wert-gefiltert, Artist-weiter
+Scope kann mehrere Album-Kontexte enthalten) gibt es innerhalb eines
+Album-Ordners keine analoge „gehört nicht dazu"-Mehrdeutigkeit; jede
+Datei im Ordner wird individuell verglichen und nur bei Abweichung
+geschrieben (Idempotenz-Skip, identisches Prinzip wie
+`apply_set_genre()`).
+
+`apply_album_edit()` setzt ausschließlich `©alb`. `apply_album_artist_edit()`
+setzt ausschließlich `aART` — `©ART`/`©alb`/`©nam`/`©gen`/`©day` bleiben
+garantiert unverändert (Fingerprint-Diff-Prüfung erzwingt das, identisches
+Prinzip wie bei `apply_title_edit()`). Keine automatische Synchronisierung
+zwischen Artist/Album-Artist/Album (Auftrag §12) — jede der vier manuellen
+Operationen (Artist/Titel/Album/Albuminterpret) bleibt unabhängig.
+
+```text
+💿 Album bearbeiten (libmaint:meta:album:<idx>)
+   ↓
+Album wählen (index-basiert, libmaint:meta:album:pick:<idx>:<album_idx>)
+   ↓
+Freitext-Eingabe (neuer Albumname, libmaint_awaiting_album_text)
+   ↓
+Preview (read-only, preview_album_edit())
+   ↓
+explizite Bestätigung (libmaint:meta:album:confirm)
+   ↓
+Execute (execute_album_edit()) → Ergebnis
+
+👤 Albuminterpret bearbeiten (libmaint:meta:albumartist:<idx>)
+   ↓ (identischer Album-Picker wie oben, eigene Callback-Route)
+Album wählen (libmaint:meta:albumartist:pick:<idx>:<album_idx>)
+   ↓
+Freitext-Eingabe (neuer Albuminterpret, libmaint_awaiting_albumartist_text)
+   ↓
+Preview (read-only, preview_album_artist_edit())
+   ↓
+explizite Bestätigung (libmaint:meta:albumartist:confirm)
+   ↓
+Execute (execute_album_artist_edit()) → Ergebnis
+```
+
+### 16.3 State Cleanup (Review-Fund aus v1)
+
+Beim Review von v1 fiel auf, dass jeder Flow-Einstiegspunkt bisher nur
+sein **eigenes** `awaiting_*_text`-Flag setzte, ohne die Flags/temporären
+Werte der jeweils anderen Flows zu löschen — ein abgebrochener Artist-
+Edit konnte so sein Flag an einen später gestarteten Titel-Edit
+„vererben". Mit v2 (vier statt zwei Flows) wurde das behoben:
+`LibraryMaintenanceHandler._reset_meta_edit_state()` löscht an JEDEM
+neuen Flow-Einstiegspunkt (Artist/Titel/Album/Albuminterpret) alle vier
+`awaiting_*_text`-Flags sowie die temporären Anzeige-/Zielwerte, bevor
+der jeweilige Flow sein eigenes Flag setzt — rückwirkend auch für die
+bestehenden v1-Flows angewendet (Auftrag v2 §27, keine funktionale
+Änderung an Artist-/Titel-Editing selbst, nur an der Flag-Hygiene).
+
+Zusätzlich wurde die `changed_count == 0`-Meldung beim Artist-Rename
+präzisiert: da dieser Flow tag-wert-gefiltert ist, konnte „keine
+Änderung" zuvor fälschlich pauschal als „bereits korrekt" dargestellt
+werden, obwohl der eigentliche Grund „kein Datei-Tag entspricht dem
+gewählten Ausgangswert" sein kann — die Meldung deckt jetzt beide Fälle
+ehrlich ab, zusätzlich getrennt vom Fall „Dateien nicht mehr
+verfügbar" (Safety-Skip), identisch zum bereits bestehenden Muster bei
+Titel-/Album-/Albuminterpret-Editing.
+
+### 16.4 Tests
+
+| Datei | Deckt ab |
+|---|---|
+| `tests/test_library_repair_library_artists.py` | `list_artist_albums()`/`resolve_album_by_index()` — Sortierung, Singles-Ausschluss (case-insensitiv), gleicher Albumname in unterschiedlichen Verzeichnissen bleibt getrennt, versteckte/symlink-Verzeichnisse ausgeschlossen |
+| `tests/test_library_repair_executor.py` (`TestApplyAlbumEdit`/`TestApplyAlbumArtistEdit`/`TestReadCurrentAlbumAndAlbumArtist`) | Dry-Run/Success/Skipped/Safety/Audio-Essenz/Fingerprint/Journal/Rollback, inkonsistente `©alb`-Werte im Ordner werden alle vereinheitlicht, `©ART` bleibt bei Album-Artist-Edit garantiert unverändert |
+| `tests/test_library_repair_maintenance_service.py` | `album_targets()` (inkl. Scope-Trennung gleicher Albumnamen), `current_album()`/`current_album_artist()`, `_resolve_within_library()` (Pfad-Containment-Härtung), Preview/Execute für beide Flows |
+| `tests/test_library_maintenance_metadata_edit.py` | Vollständiger Album-/Albuminterpret-Zustandsautomat (Picker/Eingabe/Preview/Confirm/Execute), `TestCrossFlowStateReset` (Regressionstest für den v1-Review-Fund) |
+| `tests/test_rich_menu_library_maintenance.py` (`TestAlbumMetadataEditDispatchRouting`) | Dispatcher-Routing für `libmaint:meta:album:*`/`libmaint:meta:albumartist:*` |
