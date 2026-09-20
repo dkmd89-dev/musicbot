@@ -54,3 +54,49 @@ def resolve_artist_by_index(idx: int, *, library_root: Optional[Path] = None) ->
     if 0 <= idx < len(artists):
         return artists[idx]
     return None
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Album-Auswahl (Manual Metadata Editing v2) — identisches Index-Picker-
+# Muster wie die Artist-Auswahl oben, eine Ebene tiefer.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def list_artist_albums(artist: str, *, library_root: Optional[Path] = None) -> List[str]:
+    """Sortierte Liste der Album-Verzeichnisnamen direkt unterhalb eines
+    Artist-Verzeichnisses — identische Klassifikation wie
+    services/library_health/discovery.py::_classify_section_and_dirs()
+    (LIBRARY_DIR/<Artist>/<Jahr> - <Album>/...): jedes direkte
+    Unterverzeichnis AUSSER "Singles" (case-insensitiv) ist ein
+    Album-Kontext. Album-Scope ist damit verzeichnisbasiert, nicht
+    ©alb-tag-basiert (Auftrag §7/§22/§23 — zwei Ordner mit demselben
+    sichtbaren Albumnamen bleiben unabhängige Kontexte). "Singles" wird
+    bewusst ausgeschlossen (Auftrag §24 — keine globale Änderung aller
+    Singles eines Artists als "ein Album"). Nur echte Verzeichnisse
+    (keine Symlinks, keine versteckten Einträge) — identische Vorsicht
+    wie list_library_artist_dirs()."""
+    root = Path(library_root) if library_root is not None else Path(Config.LIBRARY_DIR)
+    artist_dir = root / artist
+    if not artist_dir.is_dir():
+        return []
+    return sorted(
+        p.name
+        for p in artist_dir.iterdir()
+        if p.is_dir()
+        and not p.is_symlink()
+        and not p.name.startswith(".")
+        and p.name.strip().lower() != "singles"
+    )
+
+
+def resolve_album_by_index(
+    artist: str, idx: int, *, library_root: Optional[Path] = None
+) -> Optional[str]:
+    """Löst einen Button-Index gegen eine frisch ermittelte Album-Liste
+    dieses Artists auf — identisches Anti-Injection-Prinzip wie
+    resolve_artist_by_index() (kein Rohpfad/Albumname aus
+    Telegram-`callback_data`)."""
+    albums = list_artist_albums(artist, library_root=library_root)
+    if 0 <= idx < len(albums):
+        return albums[idx]
+    return None

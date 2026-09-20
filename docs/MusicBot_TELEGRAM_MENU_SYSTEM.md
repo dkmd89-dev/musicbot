@@ -208,9 +208,11 @@ Hauptmenü
 │   │   │      → OPEN, Stale-Revalidierung). Rein lesend bis zum Reaktivieren-Tap.
 │   │   ├── 🛠️ Repair MusicBot (Plan/Preview/Ausführung/Historie/Statistik)
 │   │   ├── 🧹 Library-Wartung (ARCH-032: Artist Casing/Legacy Genre/Set Genre;
-│   │   │      Manual Metadata Editing v1, 2026-09-20: 📝 Metadaten bearbeiten
-│   │   │      → 🎤 Artist bearbeiten/🎵 Titel bearbeiten (eigener Track-Picker)/
-│   │   │      🎭 Genre-Verwaltung (Verweis, siehe LIBRARY_REPAIR.md §15))
+│   │   │      Manual Metadata Editing v1+v2, 2026-09-20: 📝 Metadaten
+│   │   │      bearbeiten → 🎤 Artist bearbeiten/🎵 Titel bearbeiten (eigener
+│   │   │      Track-Picker)/💿 Album bearbeiten/👤 Albuminterpret bearbeiten
+│   │   │      (beide mit eigenem, verzeichnisbasiertem Album-Picker)/
+│   │   │      🎭 Genre-Verwaltung (Verweis, siehe LIBRARY_REPAIR.md §15/§16))
 │   │   └── 🔁 Duplikat-Check (Chat-Charakterisierung 2026-09-15: höher-
 │   │          bitratige Duplikate pro Artist, read-only Vorschlag, Löschen
 │   │          bleibt CLI-only)

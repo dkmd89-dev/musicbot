@@ -85,6 +85,8 @@ MAINTENANCE_ACTION_CODES = frozenset(
         "SET_GENRE",
         "ARTIST_MANUAL_RENAME",
         "TITLE_MANUAL_EDIT",
+        "ALBUM_MANUAL_EDIT",
+        "ALBUM_ARTIST_MANUAL_EDIT",
     }
 )
 
@@ -1210,6 +1212,323 @@ def apply_title_edit(
             v_title = v_title.decode("utf-8", "replace") if isinstance(v_title, bytes) else str(v_title)
             if v_title != new_title:
                 raise RuntimeError(f"©nam falsch: {v_title!r} != {new_title!r}")
+            others_after = tags_fingerprint(verify_tags, exclude)
+            if others_after != others_before:
+                raise RuntimeError("Andere Atome wurden veraendert (Fingerprint-Diff)")
+            audio_tmp = _audio_essence_md5(tmp)
+            if audio_tmp != audio_before or audio_tmp.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {audio_tmp})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if backup.exists():
+                    backup.replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        finally:
+            if oc.status == "FAILED":
+                try:
+                    Path(backup).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        je = _je_named(rel, oc, dry_run)
+        je.sha256_before = sha_before
+        je.sha256_after = _sha256(path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = (
+            _audio_essence_md5(path) if oc.status in _WROTE_TO_DISK else audio_before
+        )
+        je.backup_path = oc.backup_path
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Manual Metadata Editing v2 — Album Edit + Album Artist Edit
+# (ARCH-032-Folgeauftrag "Manual Metadata Editing v2"): explizite
+# Nutzer-Zielwerte fuer ©alb/aART ueber einen bereits server-seitig
+# aufgeloesten, VERZEICHNIS-basierten Album-Scope (siehe
+# maintenance_service.py::album_targets() /
+# library_artists.py::list_artist_albums() — identische Konvention wie
+# services/library_health/discovery.py / group_analysis.py's
+# (artist_directory, album_directory)-Gruppierung, Auftrag §7/§22/§23).
+#
+# Bewusst UNBEDINGT pro Datei (nicht tag-wert-gefiltert wie
+# apply_artist_rename()): der ausgewaehlte Album-Ordner IST der Scope —
+# alle Dateien darin gehoeren per Library-Konvention zu diesem Album-
+# Kontext, auch wenn ihr aktueller ©alb-Wert bereits inkonsistent ist
+# (genau das zu vereinheitlichen ist der Zweck von Album Editing, Auftrag
+# §23). Identisches Verhalten wie apply_set_genre(): jede Datei wird
+# individuell verglichen und nur bei Abweichung geschrieben (Idempotenz-
+# Skip), keine zusaetzliche Tag-Wert-Filterung des Scopes.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def read_current_album(path: Path) -> str:
+    """Liest den aktuellen ©alb-Wert EINER Datei (repraesentativ fuer die
+    Preview-/Eingabe-Anzeige, rein lesend, Auftrag §8) - der Album-Scope
+    kann bereits inkonsistente ©alb-Werte enthalten (§23); die eigentliche
+    Datei-fuer-Datei-Entscheidung beim Schreiben trifft
+    apply_album_edit() unabhaengig davon erneut pro Datei."""
+    tags = _full_tags(path)
+    raw = tags.get("\xa9alb")
+    if not raw:
+        return ""
+    v = raw[0]
+    return v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v)
+
+
+def read_current_album_artist(path: Path) -> str:
+    """Liest den aktuellen aART-Wert EINER Datei (repraesentativ, rein
+    lesend, Auftrag §10) - identisches Prinzip wie read_current_album()."""
+    tags = _full_tags(path)
+    raw = tags.get("aART")
+    if not raw:
+        return ""
+    v = raw[0]
+    return v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v)
+
+
+def _write_album_atom(src: Path, album_value: str) -> Path:
+    """Setzt NUR ©alb (identisches Sibling-Tmp-Muster wie
+    _write_title_atom())."""
+    from mutagen.mp4 import MP4
+
+    tmp = src.with_name(f".{src.stem}.repairtmp_{int(time.time() * 1000)}{src.suffix}")
+    shutil.copy2(src, tmp)
+    audio = MP4(tmp)
+    audio["\xa9alb"] = [album_value]
+    audio.save()
+    return tmp
+
+
+def _write_album_artist_atom(src: Path, album_artist_value: str) -> Path:
+    """Setzt NUR aART - Auftrag §11: ©ART/©alb/©nam/©gen/©day duerfen
+    hierdurch niemals veraendert werden."""
+    from mutagen.mp4 import MP4
+
+    tmp = src.with_name(f".{src.stem}.repairtmp_{int(time.time() * 1000)}{src.suffix}")
+    shutil.copy2(src, tmp)
+    audio = MP4(tmp)
+    audio["aART"] = [album_artist_value]
+    audio.save()
+    return tmp
+
+
+def apply_album_edit(
+    targets: list[str],
+    library_root: Path,
+    journal: RepairJournal,
+    *,
+    new_album: str,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """Manual Album Editing (Auftrag Abschnitt 6-9): setzt ©alb auf einen
+    expliziten Nutzer-Zielwert fuer ALLE Dateien im bereits server-seitig
+    aufgeloesten Album-Scope (unbedingt, siehe Modul-Kommentar oben) -
+    identisches Sicherheits-/Verifikationsmuster wie apply_set_genre()."""
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+
+    for rel in sorted(set(targets)):
+        path = library_root / rel
+        oc = ExecOutcome(
+            file=rel, issue_code="ALBUM_MANUAL_EDIT", action="ALBUM_MANUAL_EDIT",
+            status="SKIPPED",
+        )
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            tags = _full_tags(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Tag-Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        cur_raw = tags.get("\xa9alb")
+        cur_album = cur_raw[0] if cur_raw else ""
+        cur_album = (
+            cur_album.decode("utf-8", "replace") if isinstance(cur_album, bytes) else str(cur_album)
+        )
+
+        if cur_album == new_album:
+            oc.reason = "bereits korrekt"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        oc.before = {"album": cur_album}
+        oc.after = {"album": new_album}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        # ── echter Schreibvorgang ────────────────────────────────────────
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        exclude = {"\xa9alb"}
+        others_before = tags_fingerprint(tags, exclude)
+        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _write_album_atom(path, new_album)
+            verify_tags = _full_tags(tmp)
+            v_raw = verify_tags.get("\xa9alb")
+            v_album = v_raw[0] if v_raw else ""
+            v_album = (
+                v_album.decode("utf-8", "replace") if isinstance(v_album, bytes) else str(v_album)
+            )
+            if v_album != new_album:
+                raise RuntimeError(f"©alb falsch: {v_album!r} != {new_album!r}")
+            others_after = tags_fingerprint(verify_tags, exclude)
+            if others_after != others_before:
+                raise RuntimeError("Andere Atome wurden veraendert (Fingerprint-Diff)")
+            audio_tmp = _audio_essence_md5(tmp)
+            if audio_tmp != audio_before or audio_tmp.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {audio_tmp})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if backup.exists():
+                    backup.replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        finally:
+            if oc.status == "FAILED":
+                try:
+                    Path(backup).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        je = _je_named(rel, oc, dry_run)
+        je.sha256_before = sha_before
+        je.sha256_after = _sha256(path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = (
+            _audio_essence_md5(path) if oc.status in _WROTE_TO_DISK else audio_before
+        )
+        je.backup_path = oc.backup_path
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+def apply_album_artist_edit(
+    targets: list[str],
+    library_root: Path,
+    journal: RepairJournal,
+    *,
+    new_album_artist: str,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """Manual Album Artist Editing (Auftrag Abschnitt 10-13): setzt
+    ausschliesslich aART auf einen expliziten Nutzer-Zielwert fuer ALLE
+    Dateien im Album-Scope - ©ART/©alb/©nam/©gen/©day bleiben garantiert
+    unveraendert (Fingerprint-Diff-Pruefung erzwingt das). Identisches
+    Muster wie apply_album_edit()/apply_set_genre()."""
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+
+    for rel in sorted(set(targets)):
+        path = library_root / rel
+        oc = ExecOutcome(
+            file=rel, issue_code="ALBUM_ARTIST_MANUAL_EDIT", action="ALBUM_ARTIST_MANUAL_EDIT",
+            status="SKIPPED",
+        )
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            tags = _full_tags(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Tag-Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        cur_raw = tags.get("aART")
+        cur_aa = cur_raw[0] if cur_raw else ""
+        cur_aa = cur_aa.decode("utf-8", "replace") if isinstance(cur_aa, bytes) else str(cur_aa)
+
+        if cur_aa == new_album_artist:
+            oc.reason = "bereits korrekt"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        oc.before = {"album_artist": cur_aa}
+        oc.after = {"album_artist": new_album_artist}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        # ── echter Schreibvorgang ────────────────────────────────────────
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        exclude = {"aART"}
+        others_before = tags_fingerprint(tags, exclude)
+        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _write_album_artist_atom(path, new_album_artist)
+            verify_tags = _full_tags(tmp)
+            v_raw = verify_tags.get("aART")
+            v_aa = v_raw[0] if v_raw else ""
+            v_aa = v_aa.decode("utf-8", "replace") if isinstance(v_aa, bytes) else str(v_aa)
+            if v_aa != new_album_artist:
+                raise RuntimeError(f"aART falsch: {v_aa!r} != {new_album_artist!r}")
             others_after = tags_fingerprint(verify_tags, exclude)
             if others_after != others_before:
                 raise RuntimeError("Andere Atome wurden veraendert (Fingerprint-Diff)")

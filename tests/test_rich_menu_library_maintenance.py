@@ -351,3 +351,83 @@ class TestMetadataEditDispatchRouting:
         update.callback_query.data = "libmaint:meta:title:pick:0:1:extra"
         run_async(menu_system.handle_callback(update, mock_context))
         update.callback_query.answer.assert_any_call("⚠️ Unbekannter Metadaten-Callback")
+
+
+# ── 💿/👤 Album/Albuminterpret bearbeiten: Dispatch-Routing (Manual
+# Metadata Editing v2) ─────────────────────────────────────────────────
+
+
+class TestAlbumMetadataEditDispatchRouting:
+    @pytest.mark.parametrize(
+        "callback_data",
+        [
+            "libmaint:meta:album:0",
+            "libmaint:meta:album:pick:0:1",
+            "libmaint:meta:album:confirm",
+            "libmaint:meta:album:execute",
+            "libmaint:meta:albumartist:0",
+            "libmaint:meta:albumartist:pick:0:1",
+            "libmaint:meta:albumartist:confirm",
+            "libmaint:meta:albumartist:execute",
+        ],
+    )
+    def test_non_admin_rejected(self, menu_system, mock_context, callback_data):
+        update = _mock_update(OTHER_ID)
+        update.callback_query.data = callback_data
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_called_with(
+            "⛔ Keine Berechtigung", show_alert=True
+        )
+
+    @pytest.mark.parametrize(
+        "callback_data, method_name, expected_args",
+        [
+            ("libmaint:meta:album:3", "handle_meta_album_start", (3,)),
+            ("libmaint:meta:album:confirm", "handle_meta_album_confirm", ()),
+            ("libmaint:meta:album:execute", "handle_meta_album_execute", ()),
+            ("libmaint:meta:albumartist:3", "handle_meta_albumartist_start", (3,)),
+            ("libmaint:meta:albumartist:confirm", "handle_meta_albumartist_confirm", ()),
+            ("libmaint:meta:albumartist:execute", "handle_meta_albumartist_execute", ()),
+        ],
+    )
+    def test_routes_to_correct_handler_method(
+        self, menu_system, maintenance_handler, mock_context,
+        callback_data, method_name, expected_args,
+    ):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = callback_data
+        with patch.object(maintenance_handler, method_name, AsyncMock()) as mocked:
+            run_async(menu_system.handle_callback(update, mock_context))
+        mocked.assert_called_once_with(update, mock_context, *expected_args)
+
+    def test_routes_album_pick_with_both_indices(self, menu_system, maintenance_handler, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:meta:album:pick:2:7"
+        with patch.object(maintenance_handler, "handle_meta_album_pick", AsyncMock()) as mocked:
+            run_async(menu_system.handle_callback(update, mock_context))
+        mocked.assert_called_once_with(update, mock_context, 2, 7)
+
+    def test_routes_albumartist_pick_with_both_indices(self, menu_system, maintenance_handler, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:meta:albumartist:pick:2:7"
+        with patch.object(maintenance_handler, "handle_meta_albumartist_pick", AsyncMock()) as mocked:
+            run_async(menu_system.handle_callback(update, mock_context))
+        mocked.assert_called_once_with(update, mock_context, 2, 7)
+
+    def test_invalid_album_start_index_answers_gracefully(self, menu_system, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:meta:album:not-a-number"
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_any_call("⚠️ Ungültiger Callback", show_alert=True)
+
+    def test_invalid_album_pick_indices_answer_gracefully(self, menu_system, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:meta:album:pick:0:not-a-number"
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_any_call("⚠️ Ungültiger Callback", show_alert=True)
+
+    def test_invalid_albumartist_start_index_answers_gracefully(self, menu_system, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:meta:albumartist:not-a-number"
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_any_call("⚠️ Ungültiger Callback", show_alert=True)

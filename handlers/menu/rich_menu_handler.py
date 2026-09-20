@@ -1267,6 +1267,22 @@ class RichMenuHandler:
             if handled:
                 return
 
+        # Manual Metadata Editing v2 (Album bearbeiten/Albuminterpret
+        # bearbeiten) - identisches Freitext-Muster wie Artist/Titel oben.
+        if library_maintenance_handler and context.user_data.get("libmaint_awaiting_album_text"):
+            handled = await library_maintenance_handler.process_pending_album_input(
+                update, context, text
+            )
+            if handled:
+                return
+
+        if library_maintenance_handler and context.user_data.get("libmaint_awaiting_albumartist_text"):
+            handled = await library_maintenance_handler.process_pending_albumartist_input(
+                update, context, text
+            )
+            if handled:
+                return
+
         # Aktive Workflows prüfen
         handled = await self.workflow_dispatcher.try_dispatch(
             update, context, text, self.user_mgmt_handler

@@ -15,7 +15,9 @@ import pytest
 from mutagen.mp4 import MP4, MP4FreeForm
 
 from services.library_repair.executor import (
+    apply_album_artist_edit,
     apply_album_cover_unify,
+    apply_album_edit,
     apply_artist_casing,
     apply_artist_rename,
     apply_cover_repairs,
@@ -27,6 +29,8 @@ from services.library_repair.executor import (
     apply_replaygain,
     apply_set_genre,
     apply_title_edit,
+    read_current_album,
+    read_current_album_artist,
     read_current_title,
     safety_check,
     tags_fingerprint,
@@ -38,7 +42,7 @@ FFMPEG = shutil.which("ffmpeg")
 requires_ffmpeg = pytest.mark.skipif(not FFMPEG, reason="ffmpeg nicht auf PATH")
 
 
-def _m4a(path: Path, *, genre=None, artist=None, artists_ff=None, album_artist=None):
+def _m4a(path: Path, *, genre=None, artist=None, artists_ff=None, album_artist=None, album=None):
     path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [
@@ -66,6 +70,8 @@ def _m4a(path: Path, *, genre=None, artist=None, artists_ff=None, album_artist=N
         a["©ART"] = artist if isinstance(artist, list) else [artist]
     if album_artist:
         a["aART"] = [album_artist]
+    if album:
+        a["©alb"] = [album]
     if artists_ff:
         a["----:com.apple.iTunes:ARTISTS"] = [
             MP4FreeForm(x.encode()) for x in artists_ff
@@ -2088,3 +2094,297 @@ class TestReadCurrentTitle:
         del a["©nam"]
         a.save()
         assert read_current_title(p) == ""
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Manual Metadata Editing v2 — Album Edit + Album Artist Edit
+# ═════════════════════════════════════════════════════════════════════
+
+
+@requires_ffmpeg
+class TestApplyAlbumEdit:
+    """Album-Scope ist bereits server-seitig aufgeloest (Verzeichnis) -
+    apply_album_edit() schreibt UNBEDINGT pro Datei im Scope (Auftrag
+    §23: der Ordner kann inkonsistente ©alb-Werte enthalten, genau die
+    sollen vereinheitlicht werden), skipt nur bei bereits korrektem Wert."""
+
+    def test_dry_run_writes_nothing(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album="Album X")
+        j = RepairJournal(lib / "j.jsonl")
+        md5_before = _exec._audio_essence_md5(p)
+
+        outs = apply_album_edit(
+            ["Bausa/2020 - Album X/01.m4a"], lib, j, new_album="Album X (Deluxe)", dry_run=True,
+        )
+        assert outs[0].status == "DRY_RUN"
+        assert MP4(p).tags["©alb"] == ["Album X"]
+        assert _exec._audio_essence_md5(p) == md5_before
+
+    def test_success_writes_new_album_for_all_targets(self, lib):
+        p1 = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        p2 = lib / "Bausa" / "2020 - Album X" / "02.m4a"
+        _m4a(p1, album="Album X")
+        _m4a(p2, album="Album X")
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_album_edit(
+            ["Bausa/2020 - Album X/01.m4a", "Bausa/2020 - Album X/02.m4a"], lib, j,
+            new_album="Album X (Deluxe)", dry_run=False,
+        )
+        assert all(o.status == "SUCCESS" for o in outs)
+        assert outs[0].issue_code == "ALBUM_MANUAL_EDIT"
+        assert MP4(p1).tags["©alb"] == ["Album X (Deluxe)"]
+        assert MP4(p2).tags["©alb"] == ["Album X (Deluxe)"]
+
+    def test_inconsistent_album_tags_all_get_unified(self, lib):
+        """Auftrag §23-Kernszenario: Ordner mit uneinheitlichen ©alb-
+        Werten - Album Editing schreibt trotzdem ALLE Dateien im
+        Verzeichnis-Scope, nicht nur die mit dem "mehrheitlichen" Wert."""
+        p1 = lib / "Bausa" / "2025 - Album X" / "01.m4a"
+        p2 = lib / "Bausa" / "2025 - Album X" / "02.m4a"
+        p3 = lib / "Bausa" / "2025 - Album X" / "03.m4a"
+        _m4a(p1, album="Album X")
+        _m4a(p2, album="Album X")
+        _m4a(p3, album="Album X (Deluxe)")  # bereits abweichend
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_album_edit(
+            [
+                "Bausa/2025 - Album X/01.m4a", "Bausa/2025 - Album X/02.m4a",
+                "Bausa/2025 - Album X/03.m4a",
+            ],
+            lib, j, new_album="Album X (Remastered)", dry_run=False,
+        )
+        assert all(o.status == "SUCCESS" for o in outs)
+        for p in (p1, p2, p3):
+            assert MP4(p).tags["©alb"] == ["Album X (Remastered)"]
+
+    def test_skipped_when_already_correct(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album="Album X")
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_album_edit(
+            ["Bausa/2020 - Album X/01.m4a"], lib, j, new_album="Album X", dry_run=False,
+        )
+        assert outs[0].status == "SKIPPED"
+
+    def test_safety_blocks_symlink(self, lib, tmp_path):
+        real = tmp_path / "outside.m4a"
+        _m4a(real, album="Album X")
+        link = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(real)
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_album_edit(
+            ["Bausa/2020 - Album X/01.m4a"], lib, j, new_album="Neu", dry_run=False,
+        )
+        assert outs[0].status == "SKIPPED"
+        assert "Safety" in outs[0].reason
+
+    def test_audio_essence_unchanged(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album="Album X")
+        md5_before = _exec._audio_essence_md5(p)
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_album_edit(["Bausa/2020 - Album X/01.m4a"], lib, j, new_album="Neu", dry_run=False)
+        assert _exec._audio_essence_md5(p) == md5_before
+
+    def test_non_target_atoms_unchanged(self, lib):
+        """Tag-Invarianten (Auftrag §31): ©ART/aART/©nam bleiben
+        unveraendert."""
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album="Album X", artist=["Bausa"], album_artist="Bausa", genre="Pop")
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_album_edit(["Bausa/2020 - Album X/01.m4a"], lib, j, new_album="Neu", dry_run=False)
+        tags = MP4(p).tags
+        assert tags["©ART"] == ["Bausa"]
+        assert tags["aART"] == ["Bausa"]
+        assert tags["©nam"] == ["T"]
+        assert tags["©gen"] == ["Pop"]
+
+    def test_journal_entry_written_on_success(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album="Album X")
+        jpath = lib / "j.jsonl"
+        j = RepairJournal(jpath)
+
+        apply_album_edit(["Bausa/2020 - Album X/01.m4a"], lib, j, new_album="Neu", dry_run=False)
+        j.flush()
+        assert jpath.exists()
+        assert "ALBUM_MANUAL_EDIT" in jpath.read_text(encoding="utf-8")
+
+    def test_rollback_on_audio_essence_mismatch(self, lib, monkeypatch):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album="Album X")
+        original_bytes = p.read_bytes()
+        j = RepairJournal(lib / "j.jsonl")
+
+        real_md5 = _exec._audio_essence_md5
+        calls = {"n": 0}
+
+        def _flaky(path):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return real_md5(path)
+            return "DIFFERENT-ESSENCE"
+
+        monkeypatch.setattr(_exec, "_audio_essence_md5", _flaky)
+
+        outs = apply_album_edit(
+            ["Bausa/2020 - Album X/01.m4a"], lib, j, new_album="Neu", dry_run=False,
+        )
+        assert outs[0].status == "FAILED"
+        assert p.read_bytes() == original_bytes
+
+
+@requires_ffmpeg
+class TestApplyAlbumArtistEdit:
+    """Auftrag §11/§13: schreibt ausschliesslich aART - ©ART/©alb/©nam
+    bleiben garantiert unveraendert (Fingerprint-Diff erzwingt das)."""
+
+    def test_dry_run_writes_nothing(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album_artist="Bausa")
+        j = RepairJournal(lib / "j.jsonl")
+        md5_before = _exec._audio_essence_md5(p)
+
+        outs = apply_album_artist_edit(
+            ["Bausa/2020 - Album X/01.m4a"], lib, j,
+            new_album_artist="Bausa & Friends", dry_run=True,
+        )
+        assert outs[0].status == "DRY_RUN"
+        assert MP4(p).tags["aART"] == ["Bausa"]
+        assert _exec._audio_essence_md5(p) == md5_before
+
+    def test_success_writes_only_album_artist(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album_artist="Bausa", artist=["Bausa"], album="Album X")
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_album_artist_edit(
+            ["Bausa/2020 - Album X/01.m4a"], lib, j,
+            new_album_artist="Bausa & Friends", dry_run=False,
+        )
+        assert outs[0].status == "SUCCESS"
+        assert outs[0].issue_code == "ALBUM_ARTIST_MANUAL_EDIT"
+        tags = MP4(p).tags
+        assert tags["aART"] == ["Bausa & Friends"]
+        # ©ART bleibt garantiert unveraendert (Auftrag §11/§13 - Kernregel):
+        assert tags["©ART"] == ["Bausa"]
+        assert tags["©alb"] == ["Album X"]
+        assert tags["©nam"] == ["T"]
+
+    def test_artist_tag_never_touched_even_when_identical_to_album_artist(self, lib):
+        """Auftrag §11-Beispiel: ©ART == aART vor der Aenderung - nach
+        Album-Artist-Edit bleibt ©ART trotzdem exakt der alte Wert."""
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, artist=["Bausa"], album_artist="Bausa")
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_album_artist_edit(
+            ["Bausa/2020 - Album X/01.m4a"], lib, j,
+            new_album_artist="Bausa & Friends", dry_run=False,
+        )
+        tags = MP4(p).tags
+        assert tags["©ART"] == ["Bausa"]
+        assert tags["aART"] == ["Bausa & Friends"]
+
+    def test_skipped_when_already_correct(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album_artist="Bausa & Friends")
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_album_artist_edit(
+            ["Bausa/2020 - Album X/01.m4a"], lib, j,
+            new_album_artist="Bausa & Friends", dry_run=False,
+        )
+        assert outs[0].status == "SKIPPED"
+
+    def test_safety_blocks_symlink(self, lib, tmp_path):
+        real = tmp_path / "outside.m4a"
+        _m4a(real, album_artist="Bausa")
+        link = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(real)
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_album_artist_edit(
+            ["Bausa/2020 - Album X/01.m4a"], lib, j,
+            new_album_artist="Neu", dry_run=False,
+        )
+        assert outs[0].status == "SKIPPED"
+        assert "Safety" in outs[0].reason
+
+    def test_audio_essence_unchanged(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album_artist="Bausa")
+        md5_before = _exec._audio_essence_md5(p)
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_album_artist_edit(
+            ["Bausa/2020 - Album X/01.m4a"], lib, j, new_album_artist="Neu", dry_run=False,
+        )
+        assert _exec._audio_essence_md5(p) == md5_before
+
+    def test_journal_entry_written_on_success(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album_artist="Bausa")
+        jpath = lib / "j.jsonl"
+        j = RepairJournal(jpath)
+
+        apply_album_artist_edit(
+            ["Bausa/2020 - Album X/01.m4a"], lib, j, new_album_artist="Neu", dry_run=False,
+        )
+        j.flush()
+        assert jpath.exists()
+        assert "ALBUM_ARTIST_MANUAL_EDIT" in jpath.read_text(encoding="utf-8")
+
+    def test_rollback_on_audio_essence_mismatch(self, lib, monkeypatch):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album_artist="Bausa")
+        original_bytes = p.read_bytes()
+        j = RepairJournal(lib / "j.jsonl")
+
+        real_md5 = _exec._audio_essence_md5
+        calls = {"n": 0}
+
+        def _flaky(path):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return real_md5(path)
+            return "DIFFERENT-ESSENCE"
+
+        monkeypatch.setattr(_exec, "_audio_essence_md5", _flaky)
+
+        outs = apply_album_artist_edit(
+            ["Bausa/2020 - Album X/01.m4a"], lib, j, new_album_artist="Neu", dry_run=False,
+        )
+        assert outs[0].status == "FAILED"
+        assert p.read_bytes() == original_bytes
+
+
+class TestReadCurrentAlbumAndAlbumArtist:
+    def test_reads_album_tag(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album="Album X")
+        assert read_current_album(p) == "Album X"
+
+    def test_empty_when_no_album_tag(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p)
+        assert read_current_album(p) == ""
+
+    def test_reads_album_artist_tag(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p, album_artist="Bausa")
+        assert read_current_album_artist(p) == "Bausa"
+
+    def test_empty_when_no_album_artist_tag(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "01.m4a"
+        _m4a(p)
+        assert read_current_album_artist(p) == ""
