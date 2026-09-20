@@ -157,6 +157,16 @@
       </section>
 
       <section class="panel">
+        <h2>
+          L2/L3-Reparaturen (nach Artist)
+          <button id="level23-plan-btn" class="small">Laden</button>
+        </h2>
+        <p class="empty-note">Führt einen vollständigen Library-Scan aus und gruppiert L2 (Neuverarbeitung)/L3 (MusicBrainz) nach Artist — läuft nicht automatisch, nur auf Klick. Jede Reparatur ist nur pro Artist ausführbar, kein globaler Batch.</p>
+        <div id="level23-artists-content" class="empty-note"></div>
+        <div id="level23-job-content" class="empty-note"></div>
+      </section>
+
+      <section class="panel">
         <h2>Downloads (Verlauf)</h2>
         <div id="downloads-content" class="empty-note">Lädt…</div>
       </section>
@@ -536,6 +546,136 @@
 
     document.getElementById("repair-start-btn").addEventListener("click", startRepairJob);
     document.getElementById("repair-cancel-btn").addEventListener("click", cancelRepairJob);
+
+    // ── L2/L3-Reparatur (Pro-Artist, Pendant zu ARCH-033 §12 Telegram) ────
+    // Bewusst kein globaler Batch-Button (wie SAFE_AUTOMATIC), sondern nur
+    // pro Artist - Artist-Liste kommt aus GET .../repair-plan/by-artist.
+    // Bewusst KEIN Abbrechen-Button hier: POST /jobs/repair-level2/3 ruft
+    // execute_level2_repair()/execute_level3_repair() als einzelnen
+    // atomaren await auf (siehe control_center/routers/jobs.py-Docstring)
+    // - es gibt keinen Zwischen-Checkpoint, an dem ein Abbruch etwas
+    // bewirken würde. Ein Abbrechen-Button würde eine Fähigkeit
+    // vortäuschen, die nicht existiert (Master-Prompt Regel 39).
+
+    const _LEVEL23_LABELS = {
+      l2: "L2 (Neuverarbeitung — volle Metadaten-Pipeline erneut)",
+      l3: "L3 (MusicBrainz — Netzwerk, kann pro Datei fehlschlagen)",
+    };
+
+    let _level23JobPollTimer = null;
+    let _level23JobId = null;
+
+    function _stopLevel23JobPolling() {
+      if (_level23JobPollTimer) {
+        clearInterval(_level23JobPollTimer);
+        _level23JobPollTimer = null;
+      }
+    }
+
+    function _setLevel23ButtonsDisabled(disabled) {
+      document.querySelectorAll(".level23-btn").forEach((btn) => { btn.disabled = disabled; });
+    }
+
+    function _renderLevel23JobStatus(job) {
+      const el = document.getElementById("level23-job-content");
+
+      if (job.status === "PENDING" || job.status === "RUNNING") {
+        el.innerHTML = `<p class="empty-note">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%) — ${_escapeHtml(job.message || "")}</p>`;
+        return;
+      }
+
+      _stopLevel23JobPolling();
+      _setLevel23ButtonsDisabled(false);
+      const r = job.result || {};
+
+      if (job.status === "SUCCEEDED") {
+        if (r.status === "SKIPPED" || r.total === 0) {
+          el.innerHTML = `<p><span class="dot dot-ok"></span>${_escapeHtml(r.artist || "")}: keine offenen ${_escapeHtml(_LEVEL23_LABELS[r.level] || "")}-Befunde (mehr) vorhanden.</p>`;
+          return;
+        }
+        el.innerHTML = `<p><span class="dot dot-ok"></span>${_escapeHtml(r.artist || "")} — ${_escapeHtml(r.level || "")} abgeschlossen: ` +
+          `${r.success} erfolgreich, ${r.skipped} übersprungen, ${r.failed} fehlgeschlagen, ` +
+          `${r.resolved_count} Finding(s) verifiziert behoben, ${(r.affected_files || []).length} Datei(en) geändert.</p>`;
+      } else {
+        el.innerHTML = `<p><span class="dot dot-error"></span>Fehlgeschlagen: ${_escapeHtml(job.error || "Unbekannter Fehler")}</p>`;
+      }
+    }
+
+    async function _pollLevel23Job(jobId) {
+      try {
+        const res = await fetch(`/api/v1/jobs/${encodeURIComponent(jobId)}`, { credentials: "same-origin" });
+        if (res.status === 401) { showOnly("login-view"); _stopLevel23JobPolling(); return; }
+        if (!res.ok) return;
+        _renderLevel23JobStatus(await res.json());
+      } catch (err) {
+        // Netzwerk-Hoppler wird beim naechsten Poll automatisch geheilt.
+      }
+    }
+
+    async function startLevel23Job(level, artist, count) {
+      const confirmed = window.confirm(
+        `${_LEVEL23_LABELS[level]} wirklich starten für "${artist}"?\n\n` +
+        `Betrifft ${count} Kandidat(en) aus der zuletzt geladenen Vorschau. ` +
+        `Mit Backup abgesichert — aber es werden tatsächlich Dateien in der Library verändert.` +
+        (level === "l3" ? "\n\nL3 ruft MusicBrainz auf — einzelne Dateien können bei Netzwerk-/Rate-Limit-Fehlern fehlschlagen." : "")
+      );
+      if (!confirmed) return;
+
+      _setLevel23ButtonsDisabled(true);
+      document.getElementById("level23-job-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
+
+      try {
+        const res = await fetch(`/api/v1/jobs/repair-level${level === "l2" ? "2" : "3"}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ artist }),
+        });
+        if (res.status === 401) { showOnly("login-view"); return; }
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          window.alert("Fehler: " + (body && body.error ? body.error.message : res.status));
+          _setLevel23ButtonsDisabled(false);
+          return;
+        }
+        const job = await res.json();
+        _level23JobId = job.job_id;
+        _renderLevel23JobStatus(job);
+        _stopLevel23JobPolling();
+        _level23JobPollTimer = setInterval(() => _pollLevel23Job(_level23JobId), 1000);
+      } catch (err) {
+        window.alert("Netzwerkfehler: " + err.message);
+        _setLevel23ButtonsDisabled(false);
+      }
+    }
+
+    function renderLevel23Artists(el, plan) {
+      if (!plan.artists.length) {
+        el.innerHTML = '<p class="empty-note">Keine L2/L3-Kandidaten.</p>';
+        return;
+      }
+      el.innerHTML = '<div class="row-list">' + plan.artists.map((a) => `
+        <div class="row-item">
+          <div class="row-main">${_escapeHtml(a.artist)}</div>
+          <div class="row-count">
+            ${a.l2_count > 0 ? `<button class="small level23-btn" data-level="l2" data-artist="${_escapeHtml(a.artist)}" data-count="${a.l2_count}">L2 (${a.l2_count})</button>` : ""}
+            ${a.l3_count > 0 ? `<button class="small level23-btn" data-level="l3" data-artist="${_escapeHtml(a.artist)}" data-count="${a.l3_count}">L3 (${a.l3_count})</button>` : ""}
+          </div>
+        </div>
+      `).join("") + "</div>";
+    }
+    function loadLevel23Artists() {
+      document.getElementById("level23-artists-content").innerHTML =
+        '<span class="empty-note">Scan läuft, kann eine Weile dauern…</span>';
+      return _loadInto("level23-artists-content", "/api/v1/library/repair-plan/by-artist", renderLevel23Artists);
+    }
+
+    document.getElementById("level23-artists-content").addEventListener("click", (event) => {
+      const btn = event.target.closest(".level23-btn");
+      if (!btn) return;
+      startLevel23Job(btn.dataset.level, btn.dataset.artist, btn.dataset.count);
+    });
+    document.getElementById("level23-plan-btn").addEventListener("click", loadLevel23Artists);
 
     function renderDownloads(el, body) {
       if (!body.entries.length) { el.innerHTML = '<p class="empty-note">Kein Download-Verlauf.</p>'; return; }
