@@ -50,6 +50,40 @@ Alle drei Genre-Verwaltung-Flows halten sich strikt an Preview → explizite
 Bestätigung → Execute → Verification/Run-Tracking, identisch zu den
 bereits bestehenden drei Maintenance-Actions unten - keine Ausnahme.
 
+Manual Metadata Editing v1 (ARCH-032-Folgeauftrag "Manual Metadata Editing
+v1") - erweitert die Aktions-Auswahl um "📝 Metadaten bearbeiten"
+(`libmaint:meta:<idx>`):
+  - 🎤 Artist bearbeiten (`libmaint:meta:artist:*`): expliziter, vom Nutzer
+    eingegebener Zielwert fuer ©ART/ARTISTS-Freeform, Artist-weiter Scope
+    (identische Zielmenge wie Artist Casing - artist_targets()). KEINE
+    Casing-Korrektur/Normalisierung/Identity-Resolution (Auftrag
+    Abschnitt 6) - services.library_repair.executor.apply_artist_rename()
+    aendert pro Datei nur dann etwas, wenn der tatsaechliche Tag-Wert dem
+    gewaehlten Ausgangs-Artist entspricht (tag-wert-getrieben, ARCH-031 B.8).
+  - 🎵 Titel bearbeiten (`libmaint:meta:title:*`): IMMER track-spezifisch -
+    Track-Auswahl ueber einen zusaetzlichen index-basierten Picker
+    (`libmaint:meta:title:pick:<idx>:<tidx>`, resolve_track_by_index()),
+    dieselbe Datei-Zielmenge wie artist_targets() (Auftrag Abschnitt 16).
+    KEIN automatischer TitleCleaner (Auftrag Abschnitt 8/9) - der manuell
+    eingegebene Zielwert wird unveraendert geschrieben, die automatische
+    Title-Cleanup-/Reprocessing-Pipeline
+    (services/metadata/track_reprocessor.py) bleibt komplett unberuehrt.
+  - 🎭 Genre-Verwaltung: KEINE Duplizierung - der Button unter
+    "📝 Metadaten bearbeiten" fuehrt in denselben, bereits bestehenden
+    genremenu:*-Flow (handle_genre_menu() oben) wie der direkte Button auf
+    dem Aktions-Auswahl-Bildschirm (beide bleiben erreichbar, Auftrag
+    Abschnitt 10).
+
+  Beide neuen Flows folgen demselben context.user_data-Freitext-Muster wie
+  Genre setzen (libmaint_awaiting_artist_text/libmaint_awaiting_title_text
+  statt libmaint_awaiting_genre_text) und demselben Preview → explizite
+  Bestätigung → Execute-Ablauf ueber den bestehenden Executor
+  (apply_artist_rename()/apply_title_edit() - Backup + Journal +
+  Audio-Essenz-Verifikation identisch zu den uebrigen Maintenance-Actions,
+  KEINE neue Schreib-Pipeline, Auftrag Abschnitt 13). Terminal-/
+  Fehlerpfade fuehren einheitlich zu "libmaint:start" zurueck (identisches
+  Prinzip wie die gs:*/gr:*-Flows oben).
+
 Öffnen dieses Menüs, der Artist-Liste oder der Aktions-Auswahl startet
 NIEMALS automatisch eine Wartungsaktion - nur der explizit bestätigte
 "JA, AUSFÜHREN"-Tap tut das.
@@ -83,13 +117,20 @@ from services.library_repair.maintenance_service import (
     ACTION_ARTIST_CASING,
     ACTION_LEGACY_GENRE_CLEANUP,
     MaintenanceServiceError,
+    artist_targets,
+    current_title,
     execute_artist_casing_fix,
+    execute_artist_rename,
     execute_legacy_genre_cleanup,
     execute_set_genre,
+    execute_title_edit,
     preview_artist_casing,
+    preview_artist_rename,
     preview_legacy_genre_cleanup,
     preview_set_genre,
+    preview_title_edit,
     resolve_target_genre,
+    resolve_track_by_index,
 )
 from services.library_repair.planner import filter_plan
 from services.library_repair.repair_service import HealthScanFailedError, build_repair_plan
@@ -108,6 +149,28 @@ _ACTION_LABELS = {
 # ── Genre-Verwaltung (Library Genre Management v2) ──────────────────────
 _MISSING_GENRE_ISSUE_CODES = ("GENRE_EMPTY", "META_GENRE_MISSING")
 _GENRE_MAX_INPUT_LEN = 200
+
+# ── Metadaten bearbeiten (Manual Metadata Editing v1) ────────────────────
+_META_MAX_INPUT_LEN = 200
+
+
+def _validate_manual_meta_input(text: Optional[str], *, label: str) -> Optional[str]:
+    """Format-Validierung fuer die manuelle Artist-/Titel-Freitext-Eingabe
+    (Auftrag Abschnitt 14) - identisches Prinzip wie
+    _validate_manual_genre_input() unten, aber ohne Genre-spezifische
+    Normalisierung (Manual Artist/Title Editing hat keine
+    Delimiter-Normalisierung - der Zielwert ist der explizite
+    Nutzerwunsch, Auftrag Abschnitt 6/8/9)."""
+    if text is None:
+        return "Keine Eingabe erhalten."
+    if "\n" in text or "\r" in text:
+        return f"Zeilenumbrüche sind nicht erlaubt — bitte {label} in einer Zeile eingeben."
+    stripped = text.strip()
+    if not stripped:
+        return "Eingabe darf nicht leer sein."
+    if len(stripped) > _META_MAX_INPUT_LEN:
+        return f"Eingabe zu lang (max. {_META_MAX_INPUT_LEN} Zeichen)."
+    return None
 
 
 def _validate_manual_genre_input(text: Optional[str]) -> Optional[str]:
@@ -266,6 +329,9 @@ class LibraryMaintenanceHandler:
 
         text = f"👤 <b>{html.escape(artist)}</b>\n\nWähle eine Aktion:"
         keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "📝 Metadaten bearbeiten", callback_data=f"libmaint:meta:{idx}",
+            )],
             [InlineKeyboardButton(
                 _ACTION_LABELS[ACTION_ARTIST_CASING],
                 callback_data=f"libmaint:action:{ACTION_ARTIST_CASING}:{idx}",
@@ -1234,3 +1300,618 @@ class LibraryMaintenanceHandler:
             "ℹ️ Keine Änderung möglich"
         )
         return "\n".join(lines), back_kb
+
+    # ═════════════════════════════════════════════════════════════════
+    # 📝 METADATEN BEARBEITEN (Manual Metadata Editing v1)
+    # ═════════════════════════════════════════════════════════════════
+    #
+    # Session-Status in context.user_data (identisches Prinzip wie die
+    # Genre-Verwaltung oben):
+    #   libmaint_meta_artist          -> str, aktuell gewählter Artist
+    #   libmaint_meta_track           -> str, relativer Pfad des gewählten
+    #       Tracks (NUR Titel bearbeiten - kommt ausschließlich aus
+    #       resolve_track_by_index(), kein Rohpfad aus callback_data)
+    #   libmaint_meta_current_title   -> str, aktueller Titel-Tag-Wert des
+    #       gewählten Tracks (NUR Anzeige in der Preview)
+    #   libmaint_meta_new_value       -> str, validierter neuer Zielwert
+    #       (Artist-Name ODER Titel, je nach aktivem Flow)
+    #   libmaint_awaiting_artist_text -> True, während auf die manuelle
+    #       Artist-Eingabe gewartet wird (process_pending_artist_input())
+    #   libmaint_awaiting_title_text  -> True, während auf die manuelle
+    #       Titel-Eingabe gewartet wird (process_pending_title_input())
+    #
+    # Terminal-/Fehlerpfade führen bewusst einheitlich zurück zu
+    # "libmaint:start" (identisches Prinzip wie die gs:*/gr:*-Flows oben -
+    # hält die Zustandsverwaltung klein).
+
+    def _meta_artist(self, context: ContextTypes.DEFAULT_TYPE) -> Optional[str]:
+        return context.user_data.get("libmaint_meta_artist")
+
+    async def _meta_session_expired(self, query) -> None:
+        await query.edit_message_text(
+            "⚠️ Sitzung abgelaufen — bitte Artist erneut wählen.",
+            reply_markup=self._back_keyboard("libmaint:start"),
+        )
+
+    def _format_manual_edit_result(
+        self, header_ok: str, header_partial: str, artist: str, result,
+    ) -> str:
+        """Gemeinsame Ergebnis-Formatierung fuer Artist-Rename und
+        Title-Edit (identisches MaintenanceRunResult-Shape wie
+        _format_result()/_format_gs_result() oben - eigene Funktion statt
+        Wiederverwendung, da jene an eine feste, andere Kopfzeile
+        gebunden sind)."""
+        if result.status == "SUCCESS":
+            emoji = "⚠️" if result.failed_count else "✅"
+        elif result.status == "FAILED":
+            emoji = "❌"
+        else:
+            emoji = "ℹ️"
+        header = header_partial if result.failed_count else header_ok
+        lines = [
+            f"{emoji} <b>{header}</b>",
+            f"Künstler: {html.escape(artist)}",
+            "",
+            f"Ziele: {result.target_count}",
+            f"Erfolgreich: {result.success_count}",
+            f"Übersprungen: {result.skipped_count}",
+            f"Fehlgeschlagen: {result.failed_count}",
+        ]
+        if result.error_message:
+            lines.append("")
+            lines.append(f"⚠️ {html.escape(result.error_message)}")
+        return "\n".join(lines)
+
+    # ── Einstieg: Metadaten bearbeiten für EINEN Artist ─────────────────
+
+    async def handle_meta_menu(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, idx: int
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        artist = resolve_artist_by_index(idx)
+        if artist is None:
+            await query.edit_message_text(
+                "⚠️ Artist nicht mehr gefunden — bitte erneut wählen.",
+                reply_markup=self._back_keyboard("libmaint:artists"),
+            )
+            return
+
+        context.user_data["libmaint_meta_artist"] = artist
+        context.user_data.pop("libmaint_meta_track", None)
+        context.user_data.pop("libmaint_meta_current_title", None)
+        context.user_data.pop("libmaint_meta_new_value", None)
+        context.user_data.pop("libmaint_awaiting_artist_text", None)
+        context.user_data.pop("libmaint_awaiting_title_text", None)
+
+        text = f"📝 <b>Metadaten bearbeiten — {html.escape(artist)}</b>\n\nWähle eine Aktion:"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎤 Artist bearbeiten", callback_data=f"libmaint:meta:artist:{idx}")],
+            [InlineKeyboardButton("🎵 Titel bearbeiten", callback_data=f"libmaint:meta:title:{idx}")],
+            [InlineKeyboardButton("🎭 Genre-Verwaltung", callback_data=f"libmaint:genremenu:{idx}")],
+            [InlineKeyboardButton("◀️ Zurück", callback_data=f"libmaint:pick:{idx}")],
+        ])
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+    # ── 🎤 Artist bearbeiten (Auftrag Abschnitt 5-7) ────────────────────
+
+    async def handle_meta_artist_start(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, idx: int
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        artist = resolve_artist_by_index(idx)
+        if artist is None:
+            await query.edit_message_text(
+                "⚠️ Artist nicht mehr gefunden — bitte erneut wählen.",
+                reply_markup=self._back_keyboard("libmaint:artists"),
+            )
+            return
+
+        context.user_data["libmaint_meta_artist"] = artist
+        context.user_data.pop("libmaint_meta_new_value", None)
+        context.user_data["libmaint_awaiting_artist_text"] = True
+        await query.edit_message_text(
+            f"🎤 <b>Artist bearbeiten</b>\n\n"
+            f"Aktueller Artist:\n{html.escape(artist)}\n\n"
+            "Neuen Artist-Namen eingeben. Mit /cancel abbrechen.",
+            parse_mode="HTML",
+        )
+
+    async def process_pending_artist_input(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
+    ) -> bool:
+        """Wird von handlers/menu/rich_menu_handler.py::handle_text_message()
+        aufgerufen, WENN context.user_data["libmaint_awaiting_artist_text"]
+        gesetzt ist (identisches Freitext-Übergabemuster wie
+        process_pending_genre_input()). Gibt True zurück, wenn die
+        Nachricht hier behandelt wurde."""
+        if not context.user_data.get("libmaint_awaiting_artist_text"):
+            return False
+
+        artist = self._meta_artist(context)
+        if not artist:
+            context.user_data.pop("libmaint_awaiting_artist_text", None)
+            await update.message.reply_text(
+                "⚠️ Sitzung abgelaufen — bitte über /menu erneut beginnen."
+            )
+            return True
+
+        error = _validate_manual_meta_input(text, label="den Artist-Namen")
+        if error:
+            await update.message.reply_text(f"❌ {error} Bitte erneut eingeben oder /cancel.")
+            return True  # bleibt awaiting - erneuter Versuch möglich
+
+        new_artist = text.strip()
+        context.user_data.pop("libmaint_awaiting_artist_text", None)
+        context.user_data["libmaint_meta_new_value"] = new_artist
+
+        placeholder = await update.message.reply_text(
+            f"🔍 Erstelle Vorschau für {html.escape(artist)} ..."
+        )
+        task = asyncio.create_task(
+            self._run_artist_rename_preview_and_report(placeholder, artist, new_artist)
+        )
+        task.add_done_callback(self._log_background_task_exception)
+        return True
+
+    async def _run_artist_rename_preview_and_report(
+        self, message: Message, artist: str, new_artist: str
+    ) -> None:
+        try:
+            preview = preview_artist_rename(artist, new_artist)
+        except MaintenanceServiceError as e:
+            await message.edit_text(
+                f"❌ {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"💥 Unerwarteter Fehler bei der Artist-Vorschau: {e}", exc_info=True)
+            await self._report_error(e, "meta_artist_preview")
+            await message.edit_text(
+                f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        if preview.target_count == 0:
+            await message.edit_text(
+                f"📁 Keine Dateien für {html.escape(artist)} gefunden.",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        if preview.changed_count == 0:
+            await message.edit_text(
+                "✅ Der neue Wert entspricht bereits dem aktuellen Wert "
+                f"({preview.target_count} Datei(en) geprüft, keine Änderung nötig).",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        lines = [
+            "🔍 <b>Änderung prüfen</b>", "",
+            "Artist:",
+            html.escape(artist),
+            "↓",
+            html.escape(new_artist),
+            "",
+            f"Betroffene Dateien: {preview.changed_count}",
+        ]
+        changed = [o for o in preview.outcomes if o.status == "DRY_RUN"]
+        for oc in changed[:10]:
+            lines.append(f"  • {html.escape(oc.file)}")
+        if len(changed) > 10:
+            lines.append(f"  … {len(changed) - 10} weitere")
+        lines.append("")
+        lines.append("Noch keine Änderungen durchgeführt.")
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Ausführen", callback_data="libmaint:meta:artist:confirm")],
+            [InlineKeyboardButton("❌ Abbrechen", callback_data="libmaint:start")],
+        ])
+        await message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=keyboard)
+
+    async def handle_meta_artist_confirm(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        artist = self._meta_artist(context)
+        new_value = context.user_data.get("libmaint_meta_new_value")
+        if not artist or not new_value:
+            await self._meta_session_expired(query)
+            return
+
+        text = (
+            "⚠️ <b>ACHTUNG</b>\n\n"
+            f"Artist wird geändert:\n{html.escape(artist)} → {html.escape(new_value)}\n\n"
+            "Diese Aktion verändert Tags in deiner Music Library "
+            "(Backup + Journal + Audio-Essenz-Verifikation vor jeder "
+            "Übernahme).\n\nFortfahren?"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ JA, AUSFÜHREN", callback_data="libmaint:meta:artist:execute")],
+            [InlineKeyboardButton("❌ ABBRECHEN", callback_data="libmaint:start")],
+        ])
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+    async def handle_meta_artist_execute(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Einzige Stelle, die tatsächlich einen Artist-Rename ausführt -
+        Berechtigung wird HIER erneut geprüft, Lock-Status vorab geprüft
+        (Doppelklick-Schutz, identisches Muster wie handle_execute() oben)."""
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        if is_repair_running():
+            await query.edit_message_text(
+                "🔒 Eine andere Reparatur/Wartung läuft gerade — bitte "
+                "warten, bis diese abgeschlossen ist.",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        artist = self._meta_artist(context)
+        new_value = context.user_data.get("libmaint_meta_new_value")
+        if not artist or not new_value:
+            await self._meta_session_expired(query)
+            return
+
+        placeholder = await query.edit_message_text(
+            f"🎤 Artist wird geändert für {html.escape(artist)} ..."
+        )
+        task = asyncio.create_task(
+            self._run_artist_rename_execute_and_report(placeholder, context, artist, new_value, user_id)
+        )
+        task.add_done_callback(self._log_background_task_exception)
+
+    async def _run_artist_rename_execute_and_report(
+        self, message: Message, context: ContextTypes.DEFAULT_TYPE,
+        artist: str, new_value: str, user_id: int,
+    ) -> None:
+        try:
+            result = execute_artist_rename(artist, new_value, triggered_by=f"telegram:{user_id}")
+        except RepairAlreadyRunningError as e:
+            await message.edit_text(
+                f"🔒 {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        except MaintenanceServiceError as e:
+            await message.edit_text(
+                f"❌ {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"💥 Unerwarteter Fehler beim Artist-Rename: {e}", exc_info=True)
+            await self._report_error(e, "meta_artist_execute")
+            await message.edit_text(
+                f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        context.user_data.pop("libmaint_meta_new_value", None)
+        await message.edit_text(
+            self._format_manual_edit_result(
+                "Artist geändert", "Artist teilweise geändert", artist, result,
+            ),
+            parse_mode="HTML",
+            reply_markup=self._back_keyboard("libmaint:start"),
+        )
+
+    # ── 🎵 Titel bearbeiten (Auftrag Abschnitt 8/9/16) ──────────────────
+
+    async def handle_meta_title_start(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, idx: int
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        artist = resolve_artist_by_index(idx)
+        if artist is None:
+            await query.edit_message_text(
+                "⚠️ Artist nicht mehr gefunden — bitte erneut wählen.",
+                reply_markup=self._back_keyboard("libmaint:artists"),
+            )
+            return
+
+        tracks = artist_targets(artist)
+        if not tracks:
+            await query.edit_message_text(
+                f"📁 Keine Tracks für {html.escape(artist)} gefunden.",
+                reply_markup=self._back_keyboard(f"libmaint:meta:{idx}"),
+            )
+            return
+
+        context.user_data["libmaint_meta_artist"] = artist
+        buttons = [
+            [InlineKeyboardButton(
+                f"🎵 {Path(rel).stem[:60]}", callback_data=f"libmaint:meta:title:pick:{idx}:{tidx}",
+            )]
+            for tidx, rel in enumerate(tracks)
+        ]
+        buttons.append([InlineKeyboardButton("◀️ Zurück", callback_data=f"libmaint:meta:{idx}")])
+        await query.edit_message_text(
+            f"🎵 <b>Titel bearbeiten — {html.escape(artist)}</b>\n\n"
+            f"{len(tracks)} Track(s) gefunden — Track wählen:",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+
+    async def handle_meta_title_pick(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, idx: int, track_idx: int
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        artist = resolve_artist_by_index(idx)
+        if artist is None:
+            await query.edit_message_text(
+                "⚠️ Artist nicht mehr gefunden — bitte erneut wählen.",
+                reply_markup=self._back_keyboard("libmaint:artists"),
+            )
+            return
+
+        rel = resolve_track_by_index(artist, track_idx)
+        if rel is None:
+            await query.edit_message_text(
+                "⚠️ Track nicht mehr gefunden (Liste hat sich geändert) — "
+                "bitte erneut wählen.",
+                reply_markup=self._back_keyboard(f"libmaint:meta:title:{idx}"),
+            )
+            return
+
+        try:
+            title_now = current_title(rel)
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"💥 Unerwarteter Fehler beim Titel-Lesen: {e}", exc_info=True)
+            await self._report_error(e, "meta_title_read")
+            await query.edit_message_text(
+                f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        context.user_data["libmaint_meta_artist"] = artist
+        context.user_data["libmaint_meta_track"] = rel
+        context.user_data["libmaint_meta_current_title"] = title_now
+        context.user_data.pop("libmaint_meta_new_value", None)
+        context.user_data["libmaint_awaiting_title_text"] = True
+        await query.edit_message_text(
+            f"🎵 <b>Titel bearbeiten</b>\n\n"
+            f"Datei:\n{html.escape(rel)}\n\n"
+            f"Aktueller Titel:\n{html.escape(title_now) if title_now else '(kein Titel)'}\n\n"
+            "Neuen Titel eingeben. Mit /cancel abbrechen.",
+            parse_mode="HTML",
+        )
+
+    async def process_pending_title_input(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
+    ) -> bool:
+        """Wird von handlers/menu/rich_menu_handler.py::handle_text_message()
+        aufgerufen, WENN context.user_data["libmaint_awaiting_title_text"]
+        gesetzt ist. Gibt True zurück, wenn die Nachricht hier behandelt
+        wurde."""
+        if not context.user_data.get("libmaint_awaiting_title_text"):
+            return False
+
+        artist = self._meta_artist(context)
+        rel = context.user_data.get("libmaint_meta_track")
+        current = context.user_data.get("libmaint_meta_current_title") or ""
+        if not artist or not rel:
+            context.user_data.pop("libmaint_awaiting_title_text", None)
+            await update.message.reply_text(
+                "⚠️ Sitzung abgelaufen — bitte über /menu erneut beginnen."
+            )
+            return True
+
+        error = _validate_manual_meta_input(text, label="den Titel")
+        if error:
+            await update.message.reply_text(f"❌ {error} Bitte erneut eingeben oder /cancel.")
+            return True  # bleibt awaiting - erneuter Versuch möglich
+
+        new_title = text.strip()
+        context.user_data.pop("libmaint_awaiting_title_text", None)
+        context.user_data["libmaint_meta_new_value"] = new_title
+
+        placeholder = await update.message.reply_text(
+            f"🔍 Erstelle Vorschau für {html.escape(rel)} ..."
+        )
+        task = asyncio.create_task(
+            self._run_title_edit_preview_and_report(placeholder, artist, rel, current, new_title)
+        )
+        task.add_done_callback(self._log_background_task_exception)
+        return True
+
+    async def _run_title_edit_preview_and_report(
+        self, message: Message, artist: str, rel: str, current: str, new_title: str,
+    ) -> None:
+        try:
+            preview = preview_title_edit(artist, rel, new_title)
+        except MaintenanceServiceError as e:
+            await message.edit_text(
+                f"❌ {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"💥 Unerwarteter Fehler bei der Titel-Vorschau: {e}", exc_info=True)
+            await self._report_error(e, "meta_title_preview")
+            await message.edit_text(
+                f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        if preview.changed_count == 0:
+            # target_count ist bei Title-Edit immer 1 (Scope = genau eine
+            # Datei) - "keine Aenderung" kann daher entweder "identischer
+            # Wert" ODER "Datei zwischen Track-Auswahl und Eingabe
+            # verschwunden" bedeuten (safety_check() in apply_title_edit()
+            # liefert dafuer einen "Safety: ..."-Grund). Beide Faelle
+            # bleiben read-only-sicher (nichts wird geschrieben), aber
+            # verdienen unterschiedliche Rueckmeldungen (Auftrag §14).
+            skip = preview.outcomes[0] if preview.outcomes else None
+            if skip is not None and skip.reason and skip.reason.startswith("Safety:"):
+                await message.edit_text(
+                    f"📁 Datei nicht mehr verfügbar ({html.escape(skip.reason)}) — "
+                    "bitte erneut wählen.",
+                    reply_markup=self._back_keyboard("libmaint:start"),
+                )
+                return
+            await message.edit_text(
+                "✅ Der neue Wert entspricht bereits dem aktuellen Wert "
+                "(keine Änderung nötig).",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        lines = [
+            "🔍 <b>Änderung prüfen</b>", "",
+            "Datei:", html.escape(rel), "",
+            "Titel:",
+            html.escape(current) if current else "(kein Titel)",
+            "↓",
+            html.escape(new_title),
+            "",
+            "Noch keine Änderungen durchgeführt.",
+        ]
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Ausführen", callback_data="libmaint:meta:title:confirm")],
+            [InlineKeyboardButton("❌ Abbrechen", callback_data="libmaint:start")],
+        ])
+        await message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=keyboard)
+
+    async def handle_meta_title_confirm(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        artist = self._meta_artist(context)
+        rel = context.user_data.get("libmaint_meta_track")
+        new_value = context.user_data.get("libmaint_meta_new_value")
+        if not artist or not rel or not new_value:
+            await self._meta_session_expired(query)
+            return
+
+        text = (
+            "⚠️ <b>ACHTUNG</b>\n\n"
+            f"Titel wird geändert für:\n{html.escape(rel)}\n\n"
+            "Diese Aktion verändert Tags in deiner Music Library "
+            "(Backup + Journal + Audio-Essenz-Verifikation vor jeder "
+            "Übernahme).\n\nFortfahren?"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ JA, AUSFÜHREN", callback_data="libmaint:meta:title:execute")],
+            [InlineKeyboardButton("❌ ABBRECHEN", callback_data="libmaint:start")],
+        ])
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+    async def handle_meta_title_execute(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Einzige Stelle, die tatsächlich einen Title-Edit ausführt -
+        Berechtigung wird HIER erneut geprüft, Lock-Status vorab geprüft."""
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if not self._is_admin(user_id):
+            await query.answer("⛔ Keine Berechtigung", show_alert=True)
+            return
+        await query.answer()
+
+        if is_repair_running():
+            await query.edit_message_text(
+                "🔒 Eine andere Reparatur/Wartung läuft gerade — bitte "
+                "warten, bis diese abgeschlossen ist.",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        artist = self._meta_artist(context)
+        rel = context.user_data.get("libmaint_meta_track")
+        new_value = context.user_data.get("libmaint_meta_new_value")
+        if not artist or not rel or not new_value:
+            await self._meta_session_expired(query)
+            return
+
+        placeholder = await query.edit_message_text("🎵 Titel wird geändert ...")
+        task = asyncio.create_task(
+            self._run_title_edit_execute_and_report(placeholder, context, artist, rel, new_value, user_id)
+        )
+        task.add_done_callback(self._log_background_task_exception)
+
+    async def _run_title_edit_execute_and_report(
+        self, message: Message, context: ContextTypes.DEFAULT_TYPE,
+        artist: str, rel: str, new_value: str, user_id: int,
+    ) -> None:
+        try:
+            result = execute_title_edit(
+                artist, rel, new_value, triggered_by=f"telegram:{user_id}",
+            )
+        except RepairAlreadyRunningError as e:
+            await message.edit_text(
+                f"🔒 {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        except MaintenanceServiceError as e:
+            await message.edit_text(
+                f"❌ {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(f"💥 Unerwarteter Fehler beim Title-Edit: {e}", exc_info=True)
+            await self._report_error(e, "meta_title_execute")
+            await message.edit_text(
+                f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
+        context.user_data.pop("libmaint_meta_new_value", None)
+        context.user_data.pop("libmaint_meta_track", None)
+        context.user_data.pop("libmaint_meta_current_title", None)
+        await message.edit_text(
+            self._format_manual_edit_result(
+                "Titel geändert", "Titel teilweise geändert", artist, result,
+            ),
+            parse_mode="HTML",
+            reply_markup=self._back_keyboard("libmaint:start"),
+        )

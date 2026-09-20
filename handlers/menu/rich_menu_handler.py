@@ -1249,6 +1249,24 @@ class RichMenuHandler:
             if handled:
                 return
 
+        # Metadaten bearbeiten: wartet dieser User gerade auf seine
+        # manuelle Artist-/Titel-Eingabe? (Manual Metadata Editing v1 -
+        # identisches context.user_data-Freitext-Muster wie die
+        # Genre-Verwaltung direkt oberhalb, aber eigene Flag-Keys.)
+        if library_maintenance_handler and context.user_data.get("libmaint_awaiting_artist_text"):
+            handled = await library_maintenance_handler.process_pending_artist_input(
+                update, context, text
+            )
+            if handled:
+                return
+
+        if library_maintenance_handler and context.user_data.get("libmaint_awaiting_title_text"):
+            handled = await library_maintenance_handler.process_pending_title_input(
+                update, context, text
+            )
+            if handled:
+                return
+
         # Aktive Workflows prüfen
         handled = await self.workflow_dispatcher.try_dispatch(
             update, context, text, self.user_mgmt_handler

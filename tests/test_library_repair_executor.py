@@ -17,6 +17,7 @@ from mutagen.mp4 import MP4, MP4FreeForm
 from services.library_repair.executor import (
     apply_album_cover_unify,
     apply_artist_casing,
+    apply_artist_rename,
     apply_cover_repairs,
     apply_external_metadata,
     apply_legacy_genre_cleanup,
@@ -25,6 +26,8 @@ from services.library_repair.executor import (
     apply_level2,
     apply_replaygain,
     apply_set_genre,
+    apply_title_edit,
+    read_current_title,
     safety_check,
     tags_fingerprint,
 )
@@ -1804,3 +1807,284 @@ class TestApplySetGenre:
         )
         assert outs[0].status == "FAILED"
         assert p.read_bytes() == original_bytes
+
+
+@requires_ffmpeg
+class TestApplyArtistRename:
+    """Manual Artist Editing (ARCH-032 Manual Metadata Editing v1, Auftrag
+    Abschnitt 5-7/15) - bewusst getrennt von TestApplyArtistCasing oben:
+    gleiche Multi-Artist-Tag-Semantik (normalize_values()), aber ein
+    expliziter Nutzer-Zielwert statt eines Casing-Mappings, eigene
+    issue_code/action-Labels."""
+
+    def test_dry_run_writes_nothing(self, lib):
+        p = lib / "Hardtekk Tutorial" / "Singles" / "song.m4a"
+        _m4a(p, artist=["Hardtekk Tutorial"])
+        j = RepairJournal(lib / "j.jsonl")
+        md5_before = _audio_md5(p)
+
+        outs = apply_artist_rename(
+            ["Hardtekk Tutorial/Singles/song.m4a"], lib, j,
+            old_artist="Hardtekk Tutorial", new_artist="Hardtekk Tutorial Records",
+            dry_run=True,
+        )
+        assert outs[0].status == "DRY_RUN"
+        assert _read(p)["art"] == ["Hardtekk Tutorial"]
+        assert _audio_md5(p) == md5_before
+
+    def test_success_renames_art_and_artists_freeform(self, lib):
+        p = lib / "Macloud" / "Singles" / "song.m4a"
+        _m4a(p, artist=["Macloud"], artists_ff=["Macloud"])
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_artist_rename(
+            ["Macloud/Singles/song.m4a"], lib, j,
+            old_artist="Macloud", new_artist="Miksu & Macloud", dry_run=False,
+        )
+        assert outs[0].status == "SUCCESS"
+        assert outs[0].issue_code == "ARTIST_MANUAL_RENAME"
+        assert outs[0].backup_path and Path(outs[0].backup_path).exists()
+        tags = _read(p)
+        assert tags["art"] == ["Miksu & Macloud"]
+        assert tags["ff"] == ["Miksu & Macloud"]
+
+    def test_skipped_when_tag_does_not_match_old_value(self, lib):
+        """Tag-wert-getrieben (ARCH-031 B.8): eine Datei, deren
+        tatsaechlicher Artist-Tag NICHT dem gewaehlten Ausgangswert
+        entspricht, bleibt unangetastet."""
+        p = lib / "Macloud" / "Singles" / "song.m4a"
+        _m4a(p, artist=["Someone Else"])
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_artist_rename(
+            ["Macloud/Singles/song.m4a"], lib, j,
+            old_artist="Macloud", new_artist="Miksu & Macloud", dry_run=False,
+        )
+        assert outs[0].status == "SKIPPED"
+        assert MP4(p).tags["©ART"] == ["Someone Else"]
+
+    def test_identical_value_yields_no_changes(self, lib):
+        p = lib / "Macloud" / "Singles" / "song.m4a"
+        _m4a(p, artist=["Macloud"])
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_artist_rename(
+            ["Macloud/Singles/song.m4a"], lib, j,
+            old_artist="Macloud", new_artist="Macloud", dry_run=True,
+        )
+        assert outs[0].status == "SKIPPED"
+
+    def test_safety_blocks_symlink(self, lib, tmp_path):
+        real = tmp_path / "outside.m4a"
+        _m4a(real, artist=["Macloud"])
+        link = lib / "Macloud" / "Singles" / "song.m4a"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(real)
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_artist_rename(
+            ["Macloud/Singles/song.m4a"], lib, j,
+            old_artist="Macloud", new_artist="Miksu & Macloud", dry_run=False,
+        )
+        assert outs[0].status == "SKIPPED"
+        assert "Safety" in outs[0].reason
+
+    def test_audio_essence_unchanged(self, lib):
+        p = lib / "Macloud" / "Singles" / "song.m4a"
+        _m4a(p, artist=["Macloud"])
+        md5_before = _audio_md5(p)
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_artist_rename(
+            ["Macloud/Singles/song.m4a"], lib, j,
+            old_artist="Macloud", new_artist="Miksu & Macloud", dry_run=False,
+        )
+        assert _audio_md5(p) == md5_before
+
+    def test_non_target_atoms_unchanged(self, lib):
+        p = lib / "Macloud" / "Singles" / "song.m4a"
+        _m4a(p, artist=["Macloud"], genre="Pop", album_artist="Someone Else")
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_artist_rename(
+            ["Macloud/Singles/song.m4a"], lib, j,
+            old_artist="Macloud", new_artist="Miksu & Macloud", dry_run=False,
+        )
+        tags = _read(p)
+        assert tags["gen"] == ["Pop"]
+        assert tags["aart"] == ["Someone Else"]
+
+    def test_journal_entry_written_on_success(self, lib):
+        p = lib / "Macloud" / "Singles" / "song.m4a"
+        _m4a(p, artist=["Macloud"])
+        jpath = lib / "j.jsonl"
+        j = RepairJournal(jpath)
+
+        apply_artist_rename(
+            ["Macloud/Singles/song.m4a"], lib, j,
+            old_artist="Macloud", new_artist="Miksu & Macloud", dry_run=False,
+        )
+        j.flush()
+        assert jpath.exists()
+        assert "ARTIST_MANUAL_RENAME" in jpath.read_text(encoding="utf-8")
+
+    def test_rollback_on_audio_essence_mismatch(self, lib, monkeypatch):
+        p = lib / "Macloud" / "Singles" / "song.m4a"
+        _m4a(p, artist=["Macloud"])
+        original_bytes = p.read_bytes()
+        j = RepairJournal(lib / "j.jsonl")
+
+        real_md5 = _exec._audio_essence_md5
+        calls = {"n": 0}
+
+        def _flaky(path):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return real_md5(path)
+            return "DIFFERENT-ESSENCE"
+
+        monkeypatch.setattr(_exec, "_audio_essence_md5", _flaky)
+
+        outs = apply_artist_rename(
+            ["Macloud/Singles/song.m4a"], lib, j,
+            old_artist="Macloud", new_artist="Miksu & Macloud", dry_run=False,
+        )
+        assert outs[0].status == "FAILED"
+        assert p.read_bytes() == original_bytes
+
+
+@requires_ffmpeg
+class TestApplyTitleEdit:
+    """Manual Title Editing (Auftrag Abschnitt 8/9) - IMMER track-
+    spezifisch, KEIN TitleCleaner (der manuell eingegebene Zielwert ist
+    die explizite Nutzerentscheidung, keine automatische Bereinigung)."""
+
+    def test_dry_run_writes_nothing(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)  # ©nam == "T" per _m4a()-Default
+        j = RepairJournal(lib / "j.jsonl")
+        md5_before = _audio_md5(p)
+
+        outs = apply_title_edit(
+            ["A/Singles/song.m4a"], lib, j, new_title="Bass im Blut 2026", dry_run=True,
+        )
+        assert outs[0].status == "DRY_RUN"
+        assert MP4(p).tags["©nam"] == ["T"]
+        assert _audio_md5(p) == md5_before
+
+    def test_success_writes_new_title(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_title_edit(
+            ["A/Singles/song.m4a"], lib, j, new_title="Bass im Blut 2026", dry_run=False,
+        )
+        assert outs[0].status == "SUCCESS"
+        assert outs[0].issue_code == "TITLE_MANUAL_EDIT"
+        assert outs[0].backup_path and Path(outs[0].backup_path).exists()
+        assert MP4(p).tags["©nam"] == ["Bass im Blut 2026"]
+
+    def test_skipped_when_already_correct(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_title_edit(["A/Singles/song.m4a"], lib, j, new_title="T", dry_run=False)
+        assert outs[0].status == "SKIPPED"
+
+    def test_no_automatic_title_cleanup_applied(self, lib):
+        """Auftrag Abschnitt 8: KEIN TitleCleaner auf den manuell
+        eingegebenen Wert - ein absichtlich "unsauberer" Titel (Marketing-
+        Suffix, wie ihn der TitleCleaner sonst entfernen wuerde) wird
+        unveraendert uebernommen."""
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_title_edit(
+            ["A/Singles/song.m4a"], lib, j,
+            new_title='"Bass im Blut" prod. XY', dry_run=False,
+        )
+        assert outs[0].status == "SUCCESS"
+        assert MP4(p).tags["©nam"] == ['"Bass im Blut" prod. XY']
+
+    def test_safety_blocks_symlink(self, lib, tmp_path):
+        real = tmp_path / "outside.m4a"
+        _m4a(real)
+        link = lib / "A" / "Singles" / "song.m4a"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(real)
+        j = RepairJournal(lib / "j.jsonl")
+
+        outs = apply_title_edit(
+            ["A/Singles/song.m4a"], lib, j, new_title="Neu", dry_run=False,
+        )
+        assert outs[0].status == "SKIPPED"
+        assert "Safety" in outs[0].reason
+
+    def test_audio_essence_unchanged(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)
+        md5_before = _audio_md5(p)
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_title_edit(["A/Singles/song.m4a"], lib, j, new_title="Neu", dry_run=False)
+        assert _audio_md5(p) == md5_before
+
+    def test_non_target_atoms_unchanged(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p, artist=["Bausa"], genre="Pop")
+        j = RepairJournal(lib / "j.jsonl")
+
+        apply_title_edit(["A/Singles/song.m4a"], lib, j, new_title="Neu", dry_run=False)
+        tags = _read(p)
+        assert tags["art"] == ["Bausa"]
+        assert tags["gen"] == ["Pop"]
+
+    def test_journal_entry_written_on_success(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)
+        jpath = lib / "j.jsonl"
+        j = RepairJournal(jpath)
+
+        apply_title_edit(["A/Singles/song.m4a"], lib, j, new_title="Neu", dry_run=False)
+        j.flush()
+        assert jpath.exists()
+        assert "TITLE_MANUAL_EDIT" in jpath.read_text(encoding="utf-8")
+
+    def test_rollback_on_audio_essence_mismatch(self, lib, monkeypatch):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)
+        original_bytes = p.read_bytes()
+        j = RepairJournal(lib / "j.jsonl")
+
+        real_md5 = _exec._audio_essence_md5
+        calls = {"n": 0}
+
+        def _flaky(path):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return real_md5(path)
+            return "DIFFERENT-ESSENCE"
+
+        monkeypatch.setattr(_exec, "_audio_essence_md5", _flaky)
+
+        outs = apply_title_edit(["A/Singles/song.m4a"], lib, j, new_title="Neu", dry_run=False)
+        assert outs[0].status == "FAILED"
+        assert p.read_bytes() == original_bytes
+
+
+class TestReadCurrentTitle:
+    def test_reads_title_tag(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)
+        assert read_current_title(p) == "T"
+
+    def test_empty_when_no_title_tag(self, lib):
+        p = lib / "A" / "Singles" / "song.m4a"
+        _m4a(p)
+        a = MP4(p)
+        del a["©nam"]
+        a.save()
+        assert read_current_title(p) == ""

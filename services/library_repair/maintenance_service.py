@@ -42,8 +42,11 @@ from services.library_repair import genre as genre_domain
 from services.library_repair.executor import (
     ExecOutcome,
     apply_artist_casing,
+    apply_artist_rename,
     apply_legacy_genre_cleanup,
     apply_set_genre,
+    apply_title_edit,
+    read_current_title,
 )
 from services.library_repair.journal import RepairJournal
 from services.library_repair.run_tracking import (
@@ -64,6 +67,19 @@ ACTION_ARTIST_CASING = "artist-casing"
 ACTION_LEGACY_GENRE_CLEANUP = "legacy-genre-cleanup"
 ACTION_SET_GENRE = "set-genre"
 ALL_ACTIONS = (ACTION_ARTIST_CASING, ACTION_LEGACY_GENRE_CLEANUP, ACTION_SET_GENRE)
+
+# Manual Metadata Editing v1 (ARCH-032-Folgeauftrag) - bewusst NICHT in
+# ALL_ACTIONS: dieses Tupel treibt weiterhin nur die drei bestehenden,
+# generischen Single-Tap-CLI-/Telegram-Actions (scripts/library_repair.py
+# --maintenance-action, handlers/menu/actions/library.py::
+# _MAINTENANCE_ACTIONS). Artist-Rename/Title-Edit sind mehrstufige
+# Freitext-Flows (wie set-genre seit Library Genre Management v2) mit
+# eigenen Callback-Routen (libmaint:meta:*) - kein CLI-Zugang, kein
+# --maintenance-action-Wert (Auftrag bewusst Telegram-only, Abschnitt 1).
+ACTION_ARTIST_RENAME = "artist-rename"
+ACTION_TITLE_EDIT = "title-edit"
+
+_MAX_MANUAL_VALUE_LEN = 200
 
 
 class MaintenanceServiceError(Exception):
@@ -90,6 +106,49 @@ def artist_targets(artist: str, *, library_root: Optional[Path] = None) -> list[
     if not artist_dir.is_dir():
         return []
     return sorted(str(p.relative_to(root)) for p in artist_dir.rglob("*.m4a"))
+
+
+def resolve_track_by_index(
+    artist: str, idx: int, *, library_root: Optional[Path] = None
+) -> Optional[str]:
+    """Loest einen Button-Index gegen eine frisch ermittelte Track-Liste
+    dieses Artists auf (ARCH-031 B.8-Muster wie
+    library_artists.py::resolve_artist_by_index() - kein Rohpfad aus
+    Telegram-callback_data). Nutzt dieselbe Zielmenge wie alle anderen
+    Maintenance-Actions (artist_targets()) - kein zweiter Library-Scan
+    fuer Manual Title Editing (Auftrag Abschnitt 16)."""
+    targets = artist_targets(artist, library_root=library_root)
+    if 0 <= idx < len(targets):
+        return targets[idx]
+    return None
+
+
+def current_title(rel_path: str, *, library_root: Optional[Path] = None) -> str:
+    """Liest den aktuellen Titel-Tag (©nam) fuer die Eingabe-/Preview-
+    Anzeige des Manual Title Editing (rein lesend, Auftrag Abschnitt 8).
+    `rel_path` kommt ausschliesslich aus resolve_track_by_index()
+    (server-seitig neu aufgeloest, kein Rohpfad aus callback_data)."""
+    return read_current_title(_library_root(library_root) / rel_path)
+
+
+def _validate_manual_value(value: Optional[str], *, label: str) -> str:
+    """Domain-seitige Validierung (Defense-in-Depth zu den Format-Checks
+    in handlers/library_maintenance_handler.py, Auftrag Abschnitt 14) -
+    liefert den getrimmten Zielwert oder wirft MaintenanceServiceError."""
+    if value is None:
+        raise MaintenanceServiceError(f"Kein neuer {label} angegeben.")
+    if "\n" in value or "\r" in value:
+        raise MaintenanceServiceError(
+            f"{label} darf keine Zeilenumbrüche enthalten."
+        )
+    trimmed = value.strip()
+    if not trimmed:
+        raise MaintenanceServiceError(f"{label} darf nicht leer sein.")
+    if len(trimmed) > _MAX_MANUAL_VALUE_LEN:
+        raise MaintenanceServiceError(
+            f"{label} zu lang (max. {_MAX_MANUAL_VALUE_LEN} Zeichen)."
+        )
+    return trimmed
 
 
 @dataclass
@@ -353,6 +412,109 @@ def execute_set_genre(
         )
         _record_run(
             run_id=run_id, action=ACTION_SET_GENRE, artist=artist,
+            started_at=started_at, result=result, triggered_by=triggered_by,
+        )
+        return result
+    finally:
+        release_repair_lock()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Manual Artist Editing (Auftrag Abschnitt 5-7) - expliziter Nutzer-
+# Zielwert, KEIN Casing-Mapping/keine Normalisierung (Auftrag Abschnitt 6).
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def preview_artist_rename(
+    artist: str, new_artist: str, *, library_root: Optional[Path] = None,
+) -> MaintenancePreview:
+    new_artist = _validate_manual_value(new_artist, label="Artist-Name")
+    targets = artist_targets(artist, library_root=library_root)
+    journal = RepairJournal(journal_path())  # nie geflusht -> read-only
+    outcomes = apply_artist_rename(
+        targets, _library_root(library_root), journal,
+        old_artist=artist, new_artist=new_artist, dry_run=True,
+    )
+    return MaintenancePreview(
+        action=ACTION_ARTIST_RENAME, artist=artist,
+        target_count=len(targets), outcomes=outcomes,
+    )
+
+
+def execute_artist_rename(
+    artist: str, new_artist: str, *, triggered_by: str,
+    library_root: Optional[Path] = None,
+) -> MaintenanceRunResult:
+    new_artist = _validate_manual_value(new_artist, label="Artist-Name")
+    acquire_repair_lock()
+    try:
+        started_at = now_iso()
+        run_id = str(uuid.uuid4())
+        targets = artist_targets(artist, library_root=library_root)
+        journal = RepairJournal(journal_path())
+        outcomes = apply_artist_rename(
+            targets, _library_root(library_root), journal,
+            old_artist=artist, new_artist=new_artist, dry_run=False,
+        )
+        journal.flush()
+        result = _run_result_from_outcomes(
+            run_id=run_id, action=ACTION_ARTIST_RENAME, artist=artist,
+            started_at=started_at, target_count=len(targets),
+            outcomes=outcomes, dry_run=False,
+        )
+        _record_run(
+            run_id=run_id, action=ACTION_ARTIST_RENAME, artist=artist,
+            started_at=started_at, result=result, triggered_by=triggered_by,
+        )
+        return result
+    finally:
+        release_repair_lock()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Manual Title Editing (Auftrag Abschnitt 8/9) - IMMER track-spezifisch,
+# KEIN TitleCleaner (der manuell eingegebene Zielwert ist die explizite
+# Nutzerentscheidung).
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def preview_title_edit(
+    artist: str, rel_path: str, new_title: str, *,
+    library_root: Optional[Path] = None,
+) -> MaintenancePreview:
+    new_title = _validate_manual_value(new_title, label="Titel")
+    journal = RepairJournal(journal_path())  # nie geflusht -> read-only
+    outcomes = apply_title_edit(
+        [rel_path], _library_root(library_root), journal,
+        new_title=new_title, dry_run=True,
+    )
+    return MaintenancePreview(
+        action=ACTION_TITLE_EDIT, artist=artist, target_count=1, outcomes=outcomes,
+    )
+
+
+def execute_title_edit(
+    artist: str, rel_path: str, new_title: str, *, triggered_by: str,
+    library_root: Optional[Path] = None,
+) -> MaintenanceRunResult:
+    new_title = _validate_manual_value(new_title, label="Titel")
+    acquire_repair_lock()
+    try:
+        started_at = now_iso()
+        run_id = str(uuid.uuid4())
+        journal = RepairJournal(journal_path())
+        outcomes = apply_title_edit(
+            [rel_path], _library_root(library_root), journal,
+            new_title=new_title, dry_run=False,
+        )
+        journal.flush()
+        result = _run_result_from_outcomes(
+            run_id=run_id, action=ACTION_TITLE_EDIT, artist=artist,
+            started_at=started_at, target_count=1,
+            outcomes=outcomes, dry_run=False,
+        )
+        _record_run(
+            run_id=run_id, action=ACTION_TITLE_EDIT, artist=artist,
             started_at=started_at, result=result, triggered_by=triggered_by,
         )
         return result
