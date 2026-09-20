@@ -13,9 +13,10 @@ oder Aggregationslogik. `report["files"]`/`report["artists"]`/
 liefern bereits alle benötigten Felder.
 
 Bewusst NUR lesend in diesem Schritt — Metadata bearbeiten, Reprocessing
-starten, Cover verwalten, Mapping anzeigen sind eigene, separat
-freizugebende Folgeschritte (Master-Prompt Abschnitt 7 nennt alle als
-"perspektivisch", nicht als ein einzelner Schritt).
+starten, Cover verwalten sind eigene, separat freizugebende
+Folgeschritte (Master-Prompt Abschnitt 7 nennt alle als "perspektivisch",
+nicht als ein einzelner Schritt). "Mapping anzeigen" ist per
+GET /mapping-summary unten bereits Teil dieses Routers.
 
 Pagination (`limit`/`offset`) von Anfang an, siehe schemas/metadata.py-
 Docstring.
@@ -23,23 +24,36 @@ Docstring.
 Authentifiziert mit mindestens AccessLevel.ADMIN (identische Schwelle
 wie findings/repair-plan — granulare Pro-Datei-Daten inkl. Pfaden, nicht
 nur aggregierte Kennzahlen wie health.py).
+
+GET /mapping-summary (Nachtrag, "Mapping anzeigen" aus Master-Prompt
+Abschnitt 7): reine Übersicht (Anzahl Einträge je Mapping-Kategorie),
+KEIN Bearbeiten — mappt utils.genre_map.GenreMapper.get_statistics()
+unverändert. GenreMapper ist SingletonMixin-basiert (wie bereits von
+scanner.py für validate_genre() verwendet, identischer, etablierter
+Aufrufpfad in einem frischen Prozess) — Test-Isolation läuft bereits
+global über tests/conftest.py (SingletonMixin._instances wird vor/nach
+jedem Test geleert), kein Zusatzaufwand hier nötig.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
+from config import Config
 from handlers.menu.models import AccessLevel
 from logger import get_module_logger
+from utils.genre_map import GenreMapper
 
 from .._library_scan import run_library_scan
 from ..dependencies import require_min_access_level
 from ..schemas.metadata import (
     AlbumsResponse,
     ArtistsResponse,
+    MappingSummaryResponse,
     TracksResponse,
     albums_to_response,
     artists_to_response,
+    mapping_statistics_to_response,
     tracks_to_response,
 )
 
@@ -76,3 +90,10 @@ def get_albums(
 ) -> AlbumsResponse:
     report = run_library_scan(logger=_logger)
     return albums_to_response(report.get("albums", []), limit=limit, offset=offset)
+
+
+@router.get("/mapping-summary", response_model=MappingSummaryResponse)
+def get_mapping_summary() -> MappingSummaryResponse:
+    config = Config()
+    mapper = GenreMapper(str(config.GENRE_MAPPING_DIR))
+    return mapping_statistics_to_response(mapper.get_statistics())

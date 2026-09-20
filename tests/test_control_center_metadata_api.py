@@ -233,3 +233,46 @@ async def test_get_albums_respects_pagination(client, test_library, monkeypatch)
     body = response.json()
     assert body["total"] == 2
     assert len(body["albums"]) == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# GET /api/v1/library/mapping-summary — "Mapping anzeigen"
+#
+# Testet gegen die ECHTEN Mapping-Dateien in mapping/ (nicht isoliert/
+# gemockt) - identisches Prinzip wie tests/test_genre_processor.py, das
+# denselben GenreMapper bereits gegen config.GENRE_MAPPING_DIR
+# charakterisiert (CLAUDE.md Abschnitt 10: Mapping-Dateien sind
+# Fachlogik). GenreMapper aendert nichts an den Dateien (reine
+# Lesefunktion), daher unbedenklich. Exakte Zahlen werden bewusst NICHT
+# geprueft (die Mapping-Dateien aendern sich im echten Projekt) - nur
+# strukturelle Eigenschaften.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_mapping_summary_returns_real_mapping_counts(client):
+    response = await client.get("/api/v1/library/mapping-summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body.keys()) == {
+        "artists", "channels", "hierarchy", "rules", "aliases", "overrides",
+        "unique_primary_genres",
+    }
+    for value in body.values():
+        assert isinstance(value, int)
+        assert value >= 0
+    # Die echte mapping/-Registry ist nicht leer (Produktions-Mappingdaten).
+    assert body["artists"] > 0
+    assert body["unique_primary_genres"] > 0
+
+
+@pytest.mark.asyncio
+async def test_get_mapping_summary_omits_runtime_cache_stats(client):
+    """Nur Mapping-Inhalt, keine Laufzeit-Query-/Cache-Statistiken
+    (queries/cache_hits/fuzzy_matches/rule_matches/cache_hit_rate) - die
+    waeren fuer eine frische Anfrage nicht aussagekraeftig."""
+    body = (await client.get("/api/v1/library/mapping-summary")).json()
+
+    assert "queries" not in body
+    assert "cache_hit_rate" not in body
