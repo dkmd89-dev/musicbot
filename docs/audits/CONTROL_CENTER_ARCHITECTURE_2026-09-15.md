@@ -1273,3 +1273,72 @@ respektiert §39 (alte Routen nicht ungeprüft anfassen).
   redundant zur neuen Artist-Übersicht — bewusst nicht entfernt (Auftrag
   §19/§39), Bewertung „behalten/redundant/späterer Cleanup" folgt in
   CC-AC-5.
+
+## Manual Metadata Editing v1 im Artist-Kontext — CC-AC-2 (2026-09-21, auf Nutzerfreigabe)
+
+Zweiter Schritt aus `library_artist_centric_UX.txt` (Folge-Task zu
+CC-AC-1). Ergänzt die READ-ONLY Artist-Detailseite
+(`control_center/templates/library_artist_detail.html`, `GET
+/library/{artist}`) um ein neues Panel „📝 Metadaten bearbeiten" mit drei
+Aktionen: 🎤 Artist bearbeiten, 🎵 Titel bearbeiten, 🎭 Genre-Verwaltung.
+
+**Reine Verdrahtung, keine neue Ausführungslogik** (Auftrag §14):
+verwendet ausschließlich die bereits produktiven Endpunkte
+- `POST /api/v1/admin/maintenance/artist-rename/preview` + `/execute`
+  (`control_center/routers/admin_maintenance.py`, unverändert seit dem
+  vorherigen Maintenance-Schritt),
+- `POST /api/v1/admin/maintenance/title-edit/preview` + `/execute`
+  (derselbe Router),
+- `GET /api/v1/library/artists/{artist}/genre-preview` +
+  `POST /api/v1/library/artists/{artist}/set-genre`
+  (`control_center/routers/metadata_actions.py`).
+
+Kein einziger neuer Router, kein neues Schema, keine neue Executor-/
+Backup-/Verification-Logik — identisches Preview→Confirm→Execute-Muster
+wie das bestehende generische Formular in `admin.html`
+(`window.confirm()` vor jeder schreibenden Aktion, Auftrag §25).
+
+**Unterschied zum generischen `admin.html`-Formular:** Der Artist ist
+hier nicht mehr ein Freitextfeld, sondern kommt implizit aus dem bereits
+etablierten `currentArtistFromPath()` (Auftrag §12 „Artist-Kontext über
+den gesamten Flow" — der Nutzer muss den Artist nicht erneut auswählen).
+Bei „Artist bearbeiten" ändert sich dieser Kontext selbst (der
+Artist-Ordner wird umbenannt) — nach erfolgreicher Ausführung navigiert
+die Seite deshalb bewusst per vollständigem Reload auf
+`/library/{new_artist}` (keine In-Place-Aktualisierung eines jetzt
+ungültigen Pfad-Kontexts). „Titel bearbeiten" und „Genre-Verwaltung"
+laden stattdessen nach Erfolg dieselbe Artist-Detailseite neu
+(`loadArtistDetail()`), da der Artist-Kontext dabei stabil bleibt.
+
+**Sichtbarkeitsschranke:** Das gesamte Panel ist standardmäßig
+`hidden` und wird nur eingeblendet, wenn `GET /api/v1/auth/whoami`
+`access_level` „ADMIN" oder „OWNER" liefert — zusätzlich zur ohnehin
+serverseitig auf `AccessLevel.ADMIN` gegateten API (Master-Prompt Regel
+30: kein reiner UI-Check als alleiniger Schutz, hier eine zusätzliche
+sichtbare UX-Schranke gemäß Task-Scope-Vorgabe).
+
+- Keine Änderung an `admin_maintenance.py`, `metadata_actions.py`,
+  `maintenance_service.py` oder den zugehörigen Schemas — reine
+  Template-/JS-Ergänzung.
+- Test: 8 neue UI-Tests in `tests/test_control_center_ui.py` (Panel
+  standardmäßig versteckt, Admin-Gating-Code vorhanden, alle sechs
+  Button-IDs vorhanden, Verdrahtung auf die drei bestehenden
+  Endpunktpaare, impliziter Artist-Kontext statt Freitextfeld,
+  `window.confirm()` vor jeder Aktion). Gezielt: 15/15 grün
+  (`test_control_center_ui.py -k artist_detail`). Regression:
+  `test_control_center_admin_maintenance_api.py` (15/15) +
+  `test_control_center_metadata_actions_api.py` (15/15) unverändert
+  grün — beide Endpunkte selbst wurden nicht angefasst. Thematische
+  Suite: gesamte `tests/test_control_center*.py` 402/402 grün.
+  `node --check` für den neuen/geänderten Skript-Block der
+  Artist-Detailseite grün. Vollständige Projekt-Suite bewusst nicht
+  durch den Implementierungsprozess ausgeführt (CLAUDE.md §8.A) — dem
+  Nutzer empfohlen.
+- Keine neuen Dependencies.
+- **Nicht Teil dieses Schritts** (Folge-Tasks): Album/Albuminterpret-
+  Editing (CC-AC-3), Library-Wartung wie Artist-Casing/Legacy-Genre-
+  Cleanup/Genre-Revalidierung/L2-L3-Reparatur im Artist-Kontext
+  (CC-AC-4), Navigation-Cleanup (CC-AC-5). Das generische
+  Maintenance-Formular in `admin.html` bleibt unverändert erhalten
+  (Auftrag §39) — mit dieser Phase teilweise redundant zu den neuen
+  Artist-kontextbezogenen Aktionen, Bewertung folgt in CC-AC-5.

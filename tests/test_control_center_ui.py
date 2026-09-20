@@ -382,6 +382,95 @@ async def test_artist_detail_page_resolves_artist_client_side_not_server_side(cl
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# GET /library/{artist} — Manual Metadata Editing v1 (CC-AC-2)
+# ─────────────────────────────────────────────────────────────────────────
+#
+# Reine Verdrahtung der bereits produktiven Endpunkte aus
+# admin_maintenance.py (Artist/Titel) und metadata_actions.py (Genre) -
+# jene Endpunkte haben eigene Test-Suiten
+# (test_control_center_admin_maintenance_api.py,
+# test_control_center_metadata_actions_api.py), hier wird nur geprueft,
+# dass das Artist-Detail-Template sie tatsaechlich verdrahtet und die
+# Buttons standardmaessig hinter der Admin-Sichtbarkeitsschranke stehen
+# (Auftrag CC-AC-2-Scope).
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_has_metadata_edit_panel_hidden_by_default(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'id="artist-metadata-edit-panel" hidden' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_metadata_edit_gated_by_access_level(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'who.access_level === "ADMIN" || who.access_level === "OWNER"' in html
+    assert 'getElementById("artist-metadata-edit-panel").hidden = !isAdmin' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_has_manual_metadata_editing_buttons(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'id="artist-edit-preview-btn"' in html
+    assert 'id="artist-edit-execute-btn"' in html
+    assert 'id="title-edit-preview-btn"' in html
+    assert 'id="title-edit-execute-btn"' in html
+    assert 'id="genre-manage-preview-btn"' in html
+    assert 'id="genre-manage-execute-btn"' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_wires_existing_artist_rename_endpoints(client):
+    """Auftrag §13/§14: Artist bearbeiten ruft ausschliesslich den
+    bestehenden admin_maintenance-Endpunkt auf, keine neue Ausfuehrung."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "/api/v1/admin/maintenance/artist-rename/preview?" in html
+    assert '"/api/v1/admin/maintenance/artist-rename/execute"' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_wires_existing_title_edit_endpoints(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert "/api/v1/admin/maintenance/title-edit/preview?" in html
+    assert '"/api/v1/admin/maintenance/title-edit/execute"' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_wires_existing_genre_endpoints(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert "/api/v1/library/artists/${encodeURIComponent(artist)}/genre-preview" in html
+    assert "/api/v1/library/artists/${encodeURIComponent(artist)}/set-genre" in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_metadata_edit_uses_artist_context_not_free_text(client):
+    """Auftrag §12: der Artist-Kontext (aus dem Pfad) wird implizit
+    mitgegeben - kein eigenes Freitext-Artist-Feld wie im generischen
+    admin.html-Formular."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'id="mnt-artist-rename-artist"' not in html
+    assert "currentArtistFromPath()" in html
+    assert "artist, new_artist: newArtist" in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_confirms_before_write_actions(client):
+    """Auftrag §25: Preview -> Confirmation -> Execute, window.confirm()
+    identisch zu admin_maintenance heute (admin.html)."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "window.confirm(" in html
+    assert html.count("window.confirm(") >= 3
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # GET /metadata — Genre setzen (erste schreibende Metadata-Fähigkeit)
 # ─────────────────────────────────────────────────────────────────────────
 
