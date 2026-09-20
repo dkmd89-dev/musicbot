@@ -747,3 +747,65 @@ Swagger/`curl`.
   Pagination-Buttons) — alle grün, Gesamt-Control-Center-Suite 210/210
   grün. JS-Syntax mit `node --check` verifiziert.
 - Keine neuen Dependencies, keine neue API-Fläche.
+
+---
+
+## Erweiterung — Metadata Management, Schritt 4: Metadata bearbeiten (Genre setzen) (2026-09-20, auf Nutzerfreigabe)
+
+Vierter Schritt der Metadata-Management-Phase (Master-Prompt Abschnitt
+7, "Metadata bearbeiten") — **erste schreibende Fähigkeit** in diesem
+Funktionsbereich. Wie Schritt 2/3 ohne Merge-Wartepause direkt im
+Anschluss implementiert, auf demselben main-Stand wie Schritt 1
+verzweigt.
+
+- **`GET /api/v1/library/artists/{artist}/genre-preview`** +
+  **`POST /api/v1/library/artists/{artist}/set-genre`** (neues
+  `control_center/routers/metadata_actions.py`) — spiegelt die
+  bestehende, bereits produktive Telegram-/CLI-Fähigkeit „✏️ Genre
+  setzen" (ARCH-032, `docs/LIBRARY_REPAIR.md` §11.3/§14.1). Rufen
+  ausschließlich `services/library_repair/maintenance_service.py::
+  preview_set_genre()`/`execute_set_genre()` auf, die wiederum
+  `executor.py::apply_set_genre()` nutzen (Backup + SHA-256- +
+  Audio-Essenz-Verifikation + Rollback + Journal, bereits produktiv,
+  unverändert übernommen). **Keine neue Ausführungslogik.**
+- **Preview→Diff→Confirmation→Execution→Verification** (Master-Prompt
+  Abschnitt 7) vollständig abgebildet: Preview liefert das komplette
+  Vorher/Nachher je Datei (`before`/`after`), Confirmation ist
+  Frontend-Verantwortung (`window.confirm()`, identisches Muster wie
+  SAFE_AUTOMATIC/L2-L3), Verification läuft bereits innerhalb von
+  `apply_set_genre()` selbst (Tag-Rücklesen + Audio-Essenz-Vergleich vor
+  dem endgültigen Datei-Replace) — kein separater Verifikationsschritt
+  nötig, da schon im wiederverwendeten Executor enthalten.
+- **Bewusst NUR `from_mapping=True`** (kein Freitext-Genre-Eingabefeld)
+  — identische Einschränkung wie die bestehende Telegram-Fähigkeit,
+  keine neue, in Telegram nirgends existierende Fähigkeit (identisches
+  Prinzip wie die Cover-Scope-Entscheidung bei ARCH-033/L2-L3).
+- `RepairAlreadyRunningError` (gemeinsamer Lock mit Telegram/CLI/Repair/
+  L2-L3) wird als `409` gemeldet, `MaintenanceServiceError` (Artist
+  nicht in `artist_genre.yaml`) als `404`.
+- **Bewusst synchron, kein Job/Polling** — `apply_set_genre()` schreibt
+  direkt in-process per Mutagen (kein Subprozess, kein Netzwerk), für
+  die Dateien eines einzelnen Artists ausreichend schnell für eine
+  normale Request/Response-Antwort.
+- UI: neues Panel „Metadata bearbeiten: Genre setzen" — Artist-Name-
+  Eingabefeld (Freitext für den Ordnernamen, NICHT für den Genre-Wert
+  selbst), Vorschau-Button lädt den Diff, „Genre setzen"-Button bleibt
+  `disabled`, bis eine Vorschau mit tatsächlichen Änderungen geladen
+  wurde. Nach Ausführung automatischer Re-Preview (Verifikation, dass
+  der Diff jetzt leer ist).
+- Test: neues `tests/test_control_center_metadata_actions_api.py` (6
+  Tests: Preview zeigt Diff ohne Dateiänderung, 404 bei unbekanntem
+  Artist, Execute schreibt Tag + Run-History-Eintrag, 404/409/CSRF-
+  Ablehnung) — **gegen echte, isolierte m4a-Testdateien** (ffmpeg), nie
+  die Produktionsbibliothek, identisches Muster wie
+  `tests/test_library_repair_maintenance_service.py`. `tests/test_control_center_ui.py`
+  um 2 Tests erweitert. Alle grün, Regression
+  `tests/test_library_repair_maintenance_service.py` +
+  `tests/test_library_maintenance_genre_management.py` (73 Tests),
+  thematische Suite `tests/test_library_repair*.py` (322 Tests)
+  weiterhin grün, Gesamt-Control-Center-Suite 218/218 grün. JS-Syntax
+  mit `node --check` verifiziert.
+- **Kein Live-Smoke-Test gegen die echte Library** — ein echter Aufruf
+  würde sofort Dateien in der Produktionsbibliothek verändern. Nur
+  gegen isolierte Testdaten verifiziert (siehe oben).
+- Keine neuen Dependencies.
