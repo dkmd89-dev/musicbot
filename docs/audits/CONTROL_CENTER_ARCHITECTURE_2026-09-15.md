@@ -540,3 +540,43 @@ Reparaturen (nach Artist)" direkt unter dem bestehenden Repair-Plan-Panel.
 - Keine neuen Dependencies, keine neue API-Fläche (reine
   Frontend-Verdrahtung auf den im vorherigen Schritt hinzugefügten
   Endpunkten).
+
+---
+
+## Erweiterung — Statistics Cross-User-Admin-Ansicht (2026-09-20, auf Nutzerfreigabe)
+
+Schließt einen der beiden seit dem Statistics-Schritt offenen Punkte
+(„Offen für eine künftige Freigabe" oben). Reine Lesefunktion, kein
+Risiko — natürliche Ergänzung zur bereits vorhandenen Admin-
+Nutzerübersicht (`routers/admin.py` liefert `navidrome_user` bereits pro
+Zeile mit).
+
+- **`GET /api/v1/statistics/{navidrome_username}`** (`control_center/routers/statistics.py`) —
+  ruft wie `/me` ausschließlich `StatistikService.generate_stats()` auf,
+  diesmal mit dem Navidrome-Username direkt aus dem Pfad statt über die
+  eigene Telegram-ID→Navidrome-Zuordnung aufgelöst. Kein neuer
+  Endpunkt zur Namensauflösung nötig — die Admin-Nutzerübersicht liefert
+  den Namen bereits.
+- **Schwelle bewusst höher als der Rest des Routers:** Router-Level bleibt
+  `AccessLevel.USER` (für `/me`), diese eine Route bekommt zusätzlich
+  `dependencies=[Depends(require_min_access_level(AccessLevel.ADMIN))]`
+  auf Route-Ebene — erster Präzedenzfall im Control Center für eine
+  Route-spezifische, strengere Schwelle innerhalb eines sonst
+  niedrigschwelligeren Routers (Standard-FastAPI-Mechanismus, additive
+  Dependency neben der Router-Level-Dependency).
+- **Pfadkollisionsfreiheit bereits im Statistics-Schritt vorbereitet**
+  (`/me` als literaler Pfad zuerst registriert, gewinnt gegen
+  `/{navidrome_username}`) — keine Änderung an `/me` nötig.
+- Unbekannter `navidrome_username` liefert `has_data=false` (identisches
+  Verhalten wie bei `/me` ohne Historie) statt eines Fehlers — kein
+  Informationsleck über Existenz eines Nutzers, da die Antwortform
+  identisch zu "kein Verlauf" ist.
+- Test: `tests/test_control_center_statistics_api.py` um 4 Tests erweitert,
+  `tests/test_control_center_auth.py` um 2 Tests (ADMIN-Schwelle:
+  403 für USER, 200 für ADMIN) — alle grün, Gesamt-Control-Center-Suite
+  187/187 grün.
+- **Kein UI in diesem Schritt** (bewusst API-only, analog zum
+  Admin-Übersicht-Präzedenzfall) — eine Anzeige (z. B. anklickbarer
+  `navidrome_user` im Admin-Nutzer-Panel) wäre ein eigener,
+  separat zu besprechender Folgeschritt.
+- Keine neuen Dependencies.

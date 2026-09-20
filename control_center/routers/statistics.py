@@ -14,12 +14,21 @@ eigene Statistik-Berechnung hier (CLAUDE.md Abschnitt 4).
 "/me" statt eines generischen "/api/v1/statistics": die Statistik ist
 strikt pro Navidrome-Benutzer (generate_stats() liefert None ohne einen
 konkreten navidrome_username — es gibt keine "globale" Statistik). Der
-Name lässt bewusst Raum für einen späteren, admin-only Cross-User-Endpunkt
-ohne Pfadkollision.
+Name lässt bewusst Raum für den Cross-User-Endpunkt unten ohne
+Pfadkollision ("/me" ist als literaler Pfad zuerst registriert und
+gewinnt gegen "/{navidrome_username}").
 
 Authentifiziert mit mindestens AccessLevel.USER (eigene Daten, wie
 routers/health.py — anders als die aggregierten, chat-/nutzer-
 übergreifenden ADMIN-Endpunkte findings/repair-plan/downloads).
+
+GET /{navidrome_username} (Nachtrag) hebt die Schwelle für genau diese
+eine Route zusätzlich auf AccessLevel.ADMIN an (Route-Level-Dependency
+zusätzlich zur Router-Level-USER-Schwelle) — erster Admin-only-Einblick
+in fremde Hörstatistiken, natürliche Ergänzung zur bereits vorhandenen
+Admin-Nutzerübersicht (routers/admin.py). Bewusst kein eigener Endpunkt
+zur Auflösung Telegram-ID→Navidrome-Username nötig: die Admin-Übersicht
+liefert `navidrome_user` bereits pro Zeile mit.
 """
 
 from __future__ import annotations
@@ -65,6 +74,20 @@ def get_my_statistics(
             ).model_dump(),
         )
 
+    service = StatistikService()
+    stats = service.generate_stats(period=period, navidrome_username=navidrome_username)
+    return stats_to_response(navidrome_username, stats)
+
+
+@router.get(
+    "/{navidrome_username}",
+    response_model=StatisticsResponse,
+    dependencies=[Depends(require_min_access_level(AccessLevel.ADMIN))],
+)
+def get_user_statistics(
+    navidrome_username: str,
+    period: Literal["week", "month", "year"] = Query(default="month"),
+) -> StatisticsResponse:
     service = StatistikService()
     stats = service.generate_stats(period=period, navidrome_username=navidrome_username)
     return stats_to_response(navidrome_username, stats)

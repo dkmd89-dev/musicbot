@@ -151,3 +151,62 @@ async def test_get_statistics_rejects_invalid_period(client, user_data_dir):
     response = await client.get("/api/v1/statistics/me", params={"period": "decade"})
 
     assert response.status_code == 422
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# GET /api/v1/statistics/{navidrome_username} — Cross-User-Admin-Ansicht
+# (Auth-Schwelle selbst: tests/test_control_center_auth.py)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_user_statistics_returns_top_artists_for_given_user(client):
+    service = StatistikService()
+    service._save_history(
+        [_entry("Bausa", "Song A"), _entry("Bausa", "Song B"), _entry("Kollegah", "Song C")],
+        "alice",
+    )
+
+    response = await client.get("/api/v1/statistics/alice")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["navidrome_username"] == "alice"
+    assert body["has_data"] is True
+    assert body["total_plays"] == 3
+    assert body["top_artists"][0] == {"label": "Bausa", "count": 2}
+
+
+@pytest.mark.asyncio
+async def test_get_user_statistics_has_data_false_for_unknown_user(client):
+    response = await client.get("/api/v1/statistics/does-not-exist")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["has_data"] is False
+    assert body["navidrome_username"] == "does-not-exist"
+
+
+@pytest.mark.asyncio
+async def test_get_user_statistics_accepts_period_query_param(client):
+    service = StatistikService()
+    service._save_history([_entry("Bausa", "Song A")], "alice")
+
+    response = await client.get("/api/v1/statistics/alice", params={"period": "week"})
+
+    assert response.status_code == 200
+    assert response.json()["period"] == "week"
+
+
+@pytest.mark.asyncio
+async def test_get_user_statistics_does_not_require_own_user_data_configured(client, user_data_dir):
+    """Anders als /me: die Cross-User-Ansicht braucht keinen Eintrag in
+    user_data.json fuer den ANFRAGENDEN Admin - der Navidrome-Username
+    kommt direkt aus dem Pfad, nicht aus der eigenen Zuordnung."""
+    service = StatistikService()
+    service._save_history([_entry("Bausa", "Song A")], "alice")
+
+    response = await client.get("/api/v1/statistics/alice")
+
+    assert response.status_code == 200
+    assert response.json()["has_data"] is True

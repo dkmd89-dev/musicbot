@@ -35,6 +35,7 @@ from control_center.dependencies import (
 )
 from handlers.menu.models import AccessLevel
 from services.clients.navidrome_api import NavidromeAPI
+from services.statistik_service import StatistikService
 
 TEST_BOT_TOKEN = "123456:TEST-BOT-TOKEN-not-a-real-secret"
 
@@ -491,6 +492,42 @@ async def test_statistics_endpoint_accessible_with_plain_user_session(client, mo
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NAVIDROME_USER_NOT_CONFIGURED"
+
+
+@pytest.mark.asyncio
+async def test_cross_user_statistics_endpoint_rejects_plain_user_session(client, monkeypatch, tmp_path):
+    """Anders als /me braucht GET /{navidrome_username} AccessLevel.ADMIN
+    (fremde Hörstatistiken) - 403, nicht 401 (Session ist gueltig, Rolle
+    reicht nur nicht)."""
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+    monkeypatch.setattr(StatistikService, "CHARTS_DIR", tmp_path / "stats_charts")
+    monkeypatch.setattr(StatistikService, "USER_HISTORY_DIR", tmp_path / "user_histories")
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=999)
+    )
+
+    response = await client.get("/api/v1/statistics/alice")
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_cross_user_statistics_endpoint_accessible_with_admin_session(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: [777]))
+    monkeypatch.setattr(StatistikService, "CHARTS_DIR", tmp_path / "stats_charts")
+    monkeypatch.setattr(StatistikService, "USER_HISTORY_DIR", tmp_path / "user_histories")
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=777)
+    )
+
+    response = await client.get("/api/v1/statistics/alice")
+
+    assert response.status_code == 200
+    assert response.json()["navidrome_username"] == "alice"
+    assert response.json()["has_data"] is False  # keine Historie fuer "alice" angelegt
 
 
 @pytest.mark.asyncio
