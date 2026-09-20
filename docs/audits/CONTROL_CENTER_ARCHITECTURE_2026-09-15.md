@@ -401,3 +401,17 @@ Zweiter Teilschritt des größeren Vorhabens — erste genuin destruktive, datei
 - **Kein Live-Smoke-Test gegen die echte Library** — anders als der Demo-Job würde ein echter Aufruf sofort `--level SAFE_AUTOMATIC --apply` gegen die Produktionsbibliothek auslösen (Dateien umbenennen, Tags schreiben). Stattdessen gegen einen echten laufenden Prozess nur sicher verifiziert: Route existiert (`GET /api/v1/jobs`) und CSRF-Check greift (falscher Origin lässt den Job nie anlaufen) — echte Ausführung wurde nie ausgelöst.
 - **Keine UI in diesem Schritt** — bei der ersten echten, dateiverändernden Fähigkeit soll das UX (Start-Button, Fortschrittsanzeige, Bestätigungstext) als eigener, separat zu besprechender Schritt entstehen, nicht stillschweigend mitgeliefert werden.
 - Keine neuen Dependencies.
+
+---
+
+## Erweiterung — Repair-Job-UI (2026-09-20, auf Nutzerfreigabe des vorab abgestimmten UX-Vorschlags)
+
+UX für die erste dateiverändernde Fähigkeit — vorab mit dem Nutzer abgestimmt (Vorschlag vorgelegt, bestätigt), nicht stillschweigend mitgeliefert.
+
+- Start-Button **im bestehenden Repair-Plan-Panel** (keine neue Sektion) — bleibt `disabled`, bis mindestens einmal ein Repair-Plan geladen wurde (`renderRepairPlan()` schaltet ihn frei und trägt die aktuelle `SAFE_AUTOMATIC`-Kandidatenzahl in den Button-Text ein). Kein Rätselraten über die Anzahl im Bestätigungsdialog.
+- `window.confirm()` vor dem Start nennt explizit die Kandidatenzahl, den Backup-/Rollback-Hinweis und dass tatsächlich Dateien verändert werden (Master-Prompt Regel 11: Bestätigung muss verständlich machen, was passiert, nicht nur "Sicher?").
+- Nach dem Start: 1s-Polling über `GET /api/v1/jobs/{job_id}` (nutzt die bestehende Jobs-Infrastruktur unverändert) — zeigt Status/Fortschritt/Nachricht während `PENDING`/`RUNNING`, bei Abschluss Erfolg (inkl. `stdout_tail`) oder Fehler (inkl. Diagnose-Ausgabe aus `Job.result`) an. Kein separates neues Panel.
+- **Abbrechen-Button** erscheint nur während `PENDING`/`RUNNING`, ruft `POST /{job_id}/cancel` (bestehender Endpunkt). UI-Kommentar macht explizit klar, dass der Abbruch nur zwischen Scan und Repair wirkt, kein sofortiger Kill (identische, bereits im Router dokumentierte Einschränkung, nicht verschleiert).
+- Test: `tests/test_control_center_ui.py` von 12 auf 15 Tests erweitert (Start-Button initial disabled, komplette JS-Verdrahtung vorhanden, Bestätigungsdialog erwähnt Backup + Dateien) — alle grün, Gesamt-Control-Center-Suite 131/131 grün.
+- **Weiterhin kein Live-Smoke-Test gegen die echte Library** — nur sicher verifiziert, dass der Start-Button im initialen HTML tatsächlich `disabled` ist (keine versehentliche Ausführung durch einen Rendering-Fehler möglich).
+- Keine neuen Dependencies, keine neue API-Fläche (reine Frontend-Verdrahtung auf bereits vorhandenen Endpunkten).

@@ -149,6 +149,11 @@
         </h2>
         <p class="empty-note">Führt einen vollständigen Library-Scan aus (kann eine Weile dauern) — läuft nicht automatisch, nur auf Klick.</p>
         <div id="repair-plan-content" class="empty-note"></div>
+        <div class="retry-row">
+          <button id="repair-start-btn" class="small" disabled>SAFE_AUTOMATIC reparieren</button>
+          <button id="repair-cancel-btn" class="small" hidden>Abbrechen</button>
+        </div>
+        <div id="repair-job-content" class="empty-note"></div>
       </section>
 
       <section class="panel">
@@ -392,6 +397,11 @@
       }
     });
 
+    // Merkt sich die zuletzt geladene SAFE_AUTOMATIC-Kandidatenzahl fuer
+    // den Bestaetigungsdialog des Repair-Jobs (siehe startRepairJob()) -
+    // ohne erneuten Repair-Plan-Fetch nur fuer die Zahl im Dialogtext.
+    let _lastSafeAutomaticCount = null;
+
     function renderRepairPlan(el, plan) {
       const counts = Object.entries(plan.counts_by_level)
         .map(([lvl, n]) => `<div><strong>${n}</strong><br>${lvl}</div>`).join("");
@@ -399,12 +409,133 @@
         <div class="counts-grid">${counts || "<div>keine Kandidaten</div>"}</div>
         <p class="empty-note">${plan.actionable_total} automatisch reparierbar, ${plan.manual_review_total} zur manuellen Prüfung (Health Score ${plan.health_score ?? "–"}). Reine Vorschau — es wird nichts ausgeführt.</p>
       `;
+      _lastSafeAutomaticCount = plan.counts_by_level.SAFE_AUTOMATIC || 0;
+      const startBtn = document.getElementById("repair-start-btn");
+      startBtn.disabled = false;
+      startBtn.textContent = `SAFE_AUTOMATIC reparieren (${_lastSafeAutomaticCount})`;
     }
     function loadRepairPlan() {
       document.getElementById("repair-plan-content").innerHTML =
         '<span class="empty-note">Scan läuft, kann eine Weile dauern…</span>';
       return _loadInto("repair-plan-content", "/api/v1/library/repair-plan", renderRepairPlan);
     }
+
+    // ── Repair-Job (Phase 2: erste dateiveraendernde Faehigkeit) ──────────
+    // Start-Button bleibt disabled, bis mind. einmal ein Repair-Plan
+    // geladen wurde (siehe renderRepairPlan()) - der Bestaetigungsdialog
+    // braucht eine echte, aktuelle Kandidatenzahl, keine geratene.
+
+    let _repairJobPollTimer = null;
+    let _currentRepairJobId = null;
+
+    function _stopRepairJobPolling() {
+      if (_repairJobPollTimer) {
+        clearInterval(_repairJobPollTimer);
+        _repairJobPollTimer = null;
+      }
+    }
+
+    function _renderRepairJobStatus(job) {
+      const el = document.getElementById("repair-job-content");
+      const cancelBtn = document.getElementById("repair-cancel-btn");
+      const startBtn = document.getElementById("repair-start-btn");
+
+      if (job.status === "PENDING" || job.status === "RUNNING") {
+        cancelBtn.hidden = false;
+        startBtn.disabled = true;
+        el.innerHTML = `<p class="empty-note">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%) — ${_escapeHtml(job.message || "")}</p>`;
+        return;
+      }
+
+      cancelBtn.hidden = true;
+      startBtn.disabled = false;
+      _stopRepairJobPolling();
+
+      if (job.status === "SUCCEEDED") {
+        const tail = (job.result && job.result.stdout_tail) || "";
+        el.innerHTML = `<p><span class="dot dot-ok"></span>Reparatur abgeschlossen.</p>` +
+          (tail ? `<pre style="white-space:pre-wrap;font-size:0.75rem;">${_escapeHtml(tail.slice(-1200))}</pre>` : "");
+      } else if (job.status === "CANCELLED") {
+        el.innerHTML = `<p class="empty-note">Abgebrochen.</p>`;
+      } else {
+        const tail = (job.result && job.result.stdout_tail) || (job.result && job.result.stderr_tail) || "";
+        el.innerHTML = `<p><span class="dot dot-error"></span>Fehlgeschlagen: ${_escapeHtml(job.error || "Unbekannter Fehler")}</p>` +
+          (tail ? `<pre style="white-space:pre-wrap;font-size:0.75rem;">${_escapeHtml(tail.slice(-1200))}</pre>` : "");
+      }
+    }
+
+    async function _pollRepairJob(jobId) {
+      try {
+        const res = await fetch(`/api/v1/jobs/${encodeURIComponent(jobId)}`, { credentials: "same-origin" });
+        if (res.status === 401) { showOnly("login-view"); _stopRepairJobPolling(); return; }
+        if (!res.ok) return; // naechster Poll versucht es erneut
+        _renderRepairJobStatus(await res.json());
+      } catch (err) {
+        // Netzwerk-Hoppler wird beim naechsten Poll automatisch geheilt.
+      }
+    }
+
+    async function startRepairJob() {
+      const count = _lastSafeAutomaticCount ?? "unbekannt viele";
+      const confirmed = window.confirm(
+        `SAFE_AUTOMATIC-Reparatur wirklich starten?\n\n` +
+        `Betrifft ${count} Kandidat(en) aus der zuletzt geladenen Vorschau. ` +
+        `Verlustfrei/deterministisch, mit Backup + Rollback abgesichert — ` +
+        `aber es werden tatsächlich Dateien in der Library verändert.`
+      );
+      if (!confirmed) return;
+
+      const startBtn = document.getElementById("repair-start-btn");
+      startBtn.disabled = true;
+      document.getElementById("repair-job-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
+
+      try {
+        const res = await fetch("/api/v1/jobs/repair-safe-automatic", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+        });
+        if (res.status === 401) { showOnly("login-view"); return; }
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          window.alert("Fehler: " + (body && body.error ? body.error.message : res.status));
+          startBtn.disabled = false;
+          return;
+        }
+        const job = await res.json();
+        _currentRepairJobId = job.job_id;
+        _renderRepairJobStatus(job);
+        _stopRepairJobPolling();
+        _repairJobPollTimer = setInterval(() => _pollRepairJob(_currentRepairJobId), 1000);
+      } catch (err) {
+        window.alert("Netzwerkfehler: " + err.message);
+        startBtn.disabled = false;
+      }
+    }
+
+    async function cancelRepairJob() {
+      if (!_currentRepairJobId) return;
+      const cancelBtn = document.getElementById("repair-cancel-btn");
+      cancelBtn.disabled = true;
+      try {
+        await fetch(`/api/v1/jobs/${encodeURIComponent(_currentRepairJobId)}/cancel`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+        });
+        // Ergebnis kommt ueber das laufende Polling (naechster Tick zeigt
+        // CANCELLED, sobald der Job-Runner den Abbruch bemerkt - siehe
+        // control_center/routers/jobs.py: nur zwischen Scan und Repair
+        // wirksam, kein sofortiger Kill eines laufenden Subprozesses).
+      } catch (err) {
+        window.alert("Netzwerkfehler beim Abbrechen: " + err.message);
+      } finally {
+        cancelBtn.disabled = false;
+      }
+    }
+
+    document.getElementById("repair-start-btn").addEventListener("click", startRepairJob);
+    document.getElementById("repair-cancel-btn").addEventListener("click", cancelRepairJob);
 
     function renderDownloads(el, body) {
       if (!body.entries.length) { el.innerHTML = '<p class="empty-note">Kein Download-Verlauf.</p>'; return; }
