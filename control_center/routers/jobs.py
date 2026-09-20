@@ -43,9 +43,42 @@ kapselt den Prozess-Handle vollständig, kein Kill-Zugriff von aussen).
 Das ist eine bewusste, dokumentierte Einschränkung, keine verschleierte
 Lücke (Master-Prompt Regel 39).
 
-POST /demo, POST /repair-safe-automatic und POST /{job_id}/cancel sind
-schreibend — alle über verify_same_origin() CSRF-geschützt, identisches
-Muster wie Findings Accept/Unaccept.
+Phase 3 (dieser Nachtrag): "repair_level2"/"repair_level3" (POST
+/repair-level2, POST /repair-level3) — Pendant zu ARCH-033 §12 (Telegram
+Level-2/Level-3-Reparatur, Pro-Artist, `docs/LIBRARY_REPAIR.md`). Bildet
+den bestehenden `l23rep:*`-Telegram-Subflow nach
+(handlers/repair_musicbot_handler.py::_run_l23_execute_and_report()):
+ruft ausschließlich services/library_repair/repair_service.py::
+execute_level2_repair()/execute_level3_repair() auf — dieselbe
+Orchestrierung (Health-Scan + Stale-Plan-Schutz + Subprozess über
+doctor_runner.run_level2_repair()/run_level3_repair() + Verification-
+Rescan + Run-History-Eintrag), inkl. desselben prozessübergreifenden
+Locks wie Telegram/CLI (services/library_repair/run_tracking.py::
+acquire_repair_lock() — ein bereits laufender Telegram- oder CLI-Lauf
+lässt den Job kontrolliert als FAILED enden, kein stiller Konflikt).
+
+**Bewusst KEIN globaler Batch-Button wie SAFE_AUTOMATIC** — L2/L3 sind
+nur pro Artist ausführbar (ADR-0003, identische Begründung wie Telegram:
+L2 durchläuft die volle Metadaten-Pipeline erneut, L3 macht MusicBrainz-/
+Netzwerkfehler je Datei sichtbar statt sie still zu überspringen). Die
+Artist-Auswahl selbst kommt aus GET /api/v1/library/repair-plan/by-artist
+(routers/repair.py).
+
+**Kooperatives Abbrechen ist für diese beiden Job-Typen NICHT wirksam**
+(anders als repair_safe_automatic oben): execute_level2_repair()/
+execute_level3_repair() sind ein einzelner atomarer Aufruf ohne
+Zwischenpunkt, an dem is_cancel_requested() sinnvoll geprüft werden
+könnte (Scan, Subprozess und Verification laufen komplett innerhalb
+dieses einen awaits). POST /{job_id}/cancel bleibt zwar technisch
+erreichbar (generischer Endpunkt für alle Job-Typen), hat für diese
+beiden Kinds aber keine Wirkung — bewusst nicht verschleiert (Master-
+Prompt Regel 39), sondern hier UND im UI-Folgeschritt explizit
+dokumentiert statt eine funktionierende Abbrechen-Fähigkeit vorzutäuschen.
+
+POST /demo, POST /repair-safe-automatic, POST /repair-level2,
+POST /repair-level3 und POST /{job_id}/cancel sind schreibend — alle
+über verify_same_origin() CSRF-geschützt, identisches Muster wie
+Findings Accept/Unaccept.
 
 Authentifiziert mit mindestens AccessLevel.ADMIN.
 """
@@ -60,10 +93,21 @@ from handlers.menu.models import AccessLevel
 from logger import get_module_logger
 from services.jobs.job_registry import JobRegistry
 from services.library_repair.doctor_runner import run_health_scan, run_safe_automatic_repair
+from services.library_repair.repair_service import (
+    RepairAlreadyRunningError,
+    execute_level2_repair,
+    execute_level3_repair,
+)
 
 from ..dependencies import get_current_user_id, require_min_access_level, verify_same_origin
 from ..schemas.errors import ErrorDetail
-from ..schemas.jobs import JobListResponse, JobSchema, job_to_schema, jobs_to_response
+from ..schemas.jobs import (
+    ArtistLevelRepairRequest,
+    JobListResponse,
+    JobSchema,
+    job_to_schema,
+    jobs_to_response,
+)
 
 router = APIRouter(
     prefix="/api/v1/jobs",
@@ -200,6 +244,98 @@ async def start_safe_automatic_repair_job(
 ) -> JobSchema:
     job = registry.create(kind="repair_safe_automatic", initiator=str(user_id))
     asyncio.create_task(_run_safe_automatic_repair_job(registry, job.job_id))
+    return job_to_schema(job)
+
+
+_LEVEL_LABELS = {"l2": "L2 (METADATA_REPROCESSING)", "l3": "L3 (EXTERNAL_METADATA)"}
+
+
+async def _run_level_repair_job(
+    registry: JobRegistry, job_id: str, *, level: str, artist: str, user_id: str
+) -> None:
+    """Gemeinsame Implementierung für repair_level2/repair_level3 - siehe
+    Modul-Docstring (Phase 3). Kein Zwischen-Checkpoint für
+    is_cancel_requested() möglich (execute_level2_repair()/
+    execute_level3_repair() sind ein einzelner atomarer await)."""
+    registry.mark_running(job_id)
+    registry.update_progress(
+        job_id, 10.0, f"{_LEVEL_LABELS[level]}-Reparatur läuft für {artist}…"
+    )
+    execute_fn = execute_level2_repair if level == "l2" else execute_level3_repair
+    try:
+        result = await execute_fn(artist, triggered_by=f"control_center:{user_id}")
+    except RepairAlreadyRunningError as e:
+        registry.mark_failed(job_id, str(e))
+        return
+    except Exception as e:  # noqa: BLE001
+        _logger.error(f"{level.upper()}-Repair-Job {job_id} fehlgeschlagen: {e!r}")
+        registry.mark_failed(job_id, "Interner Fehler im Repair-Job.")
+        return
+
+    result_dict = {
+        "repair_id": result.repair_id,
+        "artist": result.artist,
+        "level": result.level,
+        "status": result.status,
+        "total": result.total,
+        "success": result.success,
+        "failed": result.failed,
+        "skipped": result.skipped,
+        "resolved_count": result.resolved_count,
+        "affected_files": result.affected_files,
+        "rescan_triggered": result.rescan_triggered,
+    }
+    if result.status == "FAILED":
+        registry.mark_failed(
+            job_id, result.error_message or "Reparatur fehlgeschlagen.", result=result_dict,
+        )
+    else:
+        registry.mark_succeeded(job_id, result=result_dict)
+
+
+def _require_artist(payload: ArtistLevelRepairRequest) -> str:
+    artist = payload.artist.strip()
+    if not artist:
+        raise HTTPException(
+            status_code=422,
+            detail=ErrorDetail(code="ARTIST_REQUIRED", message="Artist darf nicht leer sein.").model_dump(),
+        )
+    return artist
+
+
+@router.post(
+    "/repair-level2",
+    response_model=JobSchema,
+    dependencies=[Depends(verify_same_origin)],
+)
+async def start_level2_repair_job(
+    payload: ArtistLevelRepairRequest,
+    user_id: int = Depends(get_current_user_id),
+    registry: JobRegistry = Depends(get_job_registry),
+) -> JobSchema:
+    artist = _require_artist(payload)
+    job = registry.create(kind="repair_level2", initiator=str(user_id))
+    asyncio.create_task(
+        _run_level_repair_job(registry, job.job_id, level="l2", artist=artist, user_id=str(user_id))
+    )
+    return job_to_schema(job)
+
+
+@router.post(
+    "/repair-level3",
+    response_model=JobSchema,
+    dependencies=[Depends(verify_same_origin)],
+)
+async def start_level3_repair_job(
+    payload: ArtistLevelRepairRequest,
+    user_id: int = Depends(get_current_user_id),
+    registry: JobRegistry = Depends(get_job_registry),
+) -> JobSchema:
+    artist = _require_artist(payload)
+    job = registry.create(kind="repair_level3", initiator=str(user_id))
+    asyncio.create_task(
+        _run_level_repair_job(registry, job.job_id, level="l3", artist=artist, user_id=str(user_id))
+    )
     return job_to_schema(job)
 
 

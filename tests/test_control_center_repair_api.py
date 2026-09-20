@@ -153,3 +153,64 @@ async def test_get_repair_plan_500_on_scan_failure(client, test_library, monkeyp
     body = response.json()
     assert body["error"]["code"] == "LIBRARY_HEALTH_SCAN_FAILED"
     assert "kaputt" not in body["error"]["message"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# GET /api/v1/library/repair-plan/by-artist — Pendant zur Telegram-Pro-
+# Artist-L2/L3-Auswahl (ARCH-033 §12)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_get_repair_plan_by_artist_groups_l2_candidate(client, test_library, monkeypatch):
+    monkeypatch.setattr(Config, "LIBRARY_DIR", test_library)
+
+    response = await client.get("/api/v1/library/repair-plan/by-artist")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["plan_schema_version"]
+    assert len(body["artists"]) == 1
+    entry = body["artists"][0]
+    assert entry["artist"] == "Artist One"
+    # Charakterisiert gegen die echte Registry (services/library_repair/
+    # planner.py): dieselbe Datei erzeugt neben META_ARTIST_MISSING auch
+    # LYRICS_MISSING (beide METADATA_REPROCESSING/L2) sowie
+    # META_ISRC_MISSING/META_MB_RECORDING_MISSING/META_MB_RELEASE_MISSING
+    # (alle drei EXTERNAL_METADATA/L3).
+    assert entry["l2_count"] == 2
+    assert entry["l3_count"] == 3
+    assert entry["total"] == 5
+
+
+@pytest.mark.asyncio
+async def test_get_repair_plan_by_artist_empty_library_yields_no_artists(client, tmp_path, monkeypatch):
+    lib = tmp_path / "empty_library"
+    lib.mkdir()
+    monkeypatch.setattr(Config, "LIBRARY_DIR", lib)
+
+    body = (await client.get("/api/v1/library/repair-plan/by-artist")).json()
+
+    assert body["artists"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_repair_plan_by_artist_404_when_library_root_missing(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(Config, "LIBRARY_DIR", tmp_path / "does-not-exist")
+
+    response = await client.get("/api/v1/library/repair-plan/by-artist")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "LIBRARY_ROOT_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_get_repair_plan_by_artist_response_omits_internal_details(client, tmp_path, monkeypatch):
+    lib = tmp_path / "empty_library"
+    lib.mkdir()
+    monkeypatch.setattr(Config, "LIBRARY_DIR", lib)
+
+    body = (await client.get("/api/v1/library/repair-plan/by-artist")).json()
+
+    assert set(body.keys()) == {"plan_schema_version", "health_score", "artists"}

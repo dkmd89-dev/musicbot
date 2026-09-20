@@ -22,7 +22,11 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from services.library_repair.models import PLAN_SCHEMA_VERSION, RepairCandidate, RepairPlan
-from services.library_repair.planner import disposition_for_level
+from services.library_repair.planner import (
+    ArtistCandidateSummary,
+    disposition_for_level,
+    group_candidates_by_artist,
+)
 
 
 class RepairCandidateSchema(BaseModel):
@@ -89,4 +93,39 @@ def plan_to_response(plan: RepairPlan) -> RepairPlanResponse:
         manual_review_total=len(plan.manual_review()),
         unmapped_issue_codes=sorted(plan.unmapped_issue_codes),
         candidates=[_candidate_to_schema(c) for c in sorted_candidates],
+    )
+
+
+class ArtistRepairSummarySchema(BaseModel):
+    artist: str
+    l2_count: int
+    l3_count: int
+    total: int
+
+
+class ArtistRepairPlanResponse(BaseModel):
+    plan_schema_version: str
+    health_score: float | None
+    artists: list[ArtistRepairSummarySchema]
+
+
+def _artist_summary_to_schema(s: ArtistCandidateSummary) -> ArtistRepairSummarySchema:
+    return ArtistRepairSummarySchema(
+        artist=s.artist, l2_count=s.l2_count, l3_count=s.l3_count, total=s.total,
+    )
+
+
+def plan_to_artist_response(plan: RepairPlan) -> ArtistRepairPlanResponse:
+    """Für die geplante Control-Center-Pendant-Ansicht zur Telegram-Pro-
+    Artist-Auswahl (ARCH-033 §12, `docs/LIBRARY_REPAIR.md`) — nutzt
+    dieselbe reine Gruppierungsfunktion wie der Telegram-Handler
+    (`services/library_repair/planner.py::group_candidates_by_artist()`,
+    Default: nur L2/METADATA_REPROCESSING + L3/EXTERNAL_METADATA), bereits
+    deterministisch sortiert (absteigend nach Gesamtzahl, dann
+    alphabetisch) — reines Mapping, keine eigene Gruppierungslogik hier."""
+    groups = group_candidates_by_artist(plan)
+    return ArtistRepairPlanResponse(
+        plan_schema_version=PLAN_SCHEMA_VERSION,
+        health_score=plan.health_score,
+        artists=[_artist_summary_to_schema(s) for s in groups.values()],
     )
