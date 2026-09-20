@@ -177,15 +177,22 @@ def current_title(rel_path: str, *, library_root: Optional[Path] = None) -> str:
 def album_targets(
     artist: str, album: str, *, library_root: Optional[Path] = None
 ) -> list[str]:
-    """Relative .m4a-Pfade unter <library>/<artist>/<album>/. `album` MUSS
-    ein exakter Verzeichnisname sein (server-seitig aus
-    library_artists.py::list_artist_albums()/resolve_album_by_index()
-    aufgeloest, kein Rohpfad aus Telegram-callback_data)."""
+    """Relative .m4a-Pfade des Album-Kontexts `album` unter
+    <library>/<artist>/. `album` MUSS ein exakter Wert aus
+    library_artists.py::list_artist_albums()/resolve_album_by_index() sein
+    (kein Rohpfad aus Telegram-callback_data) — entweder ein
+    Verzeichnisname (Mehr-Track-Album, `<library>/<artist>/<album>/*.m4a`)
+    oder `"<Singles-Ordner>/<Dateiname>"` (Einzel-Track-Scope einer
+    Single, Nutzer-Fund 2026-09-20 — list_artist_albums() listet jede
+    Single individuell statt den gesamten Singles-Ordner als einen
+    gemeinsamen Bulk-Kontext, Auftrag §24 bleibt dadurch respektiert)."""
     root = _library_root(library_root)
-    album_dir = root / artist / album
-    if not album_dir.is_dir():
-        return []
-    return sorted(str(p.relative_to(root)) for p in album_dir.rglob("*.m4a"))
+    candidate = root / artist / album
+    if candidate.is_dir():
+        return sorted(str(p.relative_to(root)) for p in candidate.rglob("*.m4a"))
+    if candidate.is_file() and not candidate.is_symlink() and candidate.suffix.lower() == ".m4a":
+        return [str(candidate.relative_to(root))]
+    return []
 
 
 def current_album(artist: str, album: str, *, library_root: Optional[Path] = None) -> str:

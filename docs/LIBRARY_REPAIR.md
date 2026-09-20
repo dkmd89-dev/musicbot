@@ -1360,12 +1360,30 @@ bestimmt (`services/library_health/discovery.py::
 _classify_section_and_dirs()` / `group_analysis.py`s
 `(artist_directory, album_directory)`-Gruppierung, wiederverwendet statt
 neu erfunden): jedes direkte Unterverzeichnis eines Artist-Ordners AUSSER
-„Singles" (case-insensitiv) ist ein Album-Kontext
+„Singles" (case-insensitiv) ist ein Mehr-Track-Album-Kontext
 (`library_artists.py::list_artist_albums()`/`resolve_album_by_index()`,
 identisches Index-Picker-Muster wie die Artist-Auswahl).
 `maintenance_service.py::album_targets()` listet die `.m4a`-Dateien genau
 dieses Verzeichnisses (identisches Muster wie `artist_targets()`, eine
 Ebene tiefer).
+
+**Singles (Nutzer-Fund 2026-09-20, nachträglich ergänzt):** ursprünglich
+wurde der komplette „Singles"-Ordner ausgeschlossen — Artists ohne
+eigene Album-Ordner (z. B. reine Single-Künstler wie „Apache 207")
+hatten dadurch überhaupt keinen editierbaren Album-Kontext. Fix: jede
+einzelne Datei direkt unter „Singles/" wird jetzt als **eigener,
+exakt EIN Track umfassender** Kontext gelistet
+(Rückgabewert `"Singles/<Dateiname>"` — am „/" von echten
+Mehr-Track-Album-Verzeichnisnamen unterscheidbar, die nie einen „/"
+enthalten können). Der Singles-**Ordner** selbst bleibt weiterhin KEIN
+wählbarer Bulk-Kontext — Auftrag §24 „keine globale Änderung aller
+Singles eines Artists als ein Album" gilt unverändert, nur jetzt
+erfüllt durch Einzelauswahl statt durch Totalausschluss.
+`handlers/library_maintenance_handler.py::_album_display_label()`
+übersetzt den internen Wert für die Telegram-Anzeige
+(„Singles/2019 - Roller.m4a" → „2019 - Roller (Single)"), der an
+`preview_*`/`execute_*`/`current_*()` übergebene Rohwert bleibt
+unverändert der interne Bezeichner.
 
 Bewusst **nicht** über `©alb == angefragter Wert`: zwei Ordner mit
 identischem sichtbaren Albumnamen (z. B. `2024 - Album X` vs.
@@ -1444,7 +1462,7 @@ Titel-/Album-/Albuminterpret-Editing.
 
 | Datei | Deckt ab |
 |---|---|
-| `tests/test_library_repair_library_artists.py` | `list_artist_albums()`/`resolve_album_by_index()` — Sortierung, Singles-Ausschluss (case-insensitiv), gleicher Albumname in unterschiedlichen Verzeichnissen bleibt getrennt, versteckte/symlink-Verzeichnisse ausgeschlossen |
+| `tests/test_library_repair_library_artists.py` | `list_artist_albums()`/`resolve_album_by_index()` — Sortierung, Singles werden individuell (nicht als Bulk-Ordner) gelistet, gleicher Albumname in unterschiedlichen Verzeichnissen bleibt getrennt, versteckte/symlink-Verzeichnisse/-Dateien ausgeschlossen |
 | `tests/test_library_repair_executor.py` (`TestApplyAlbumEdit`/`TestApplyAlbumArtistEdit`/`TestReadCurrentAlbumAndAlbumArtist`) | Dry-Run/Success/Skipped/Safety/Audio-Essenz/Fingerprint/Journal/Rollback, inkonsistente `©alb`-Werte im Ordner werden alle vereinheitlicht, `©ART` bleibt bei Album-Artist-Edit garantiert unverändert |
 | `tests/test_library_repair_maintenance_service.py` | `album_targets()` (inkl. Scope-Trennung gleicher Albumnamen), `current_album()`/`current_album_artist()`, `_resolve_within_library()` (Pfad-Containment-Härtung), Preview/Execute für beide Flows |
 | `tests/test_library_maintenance_metadata_edit.py` | Vollständiger Album-/Albuminterpret-Zustandsautomat (Picker/Eingabe/Preview/Confirm/Execute), `TestCrossFlowStateReset` (Regressionstest für den v1-Review-Fund) |

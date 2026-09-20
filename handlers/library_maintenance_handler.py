@@ -1390,6 +1390,19 @@ class LibraryMaintenanceHandler:
             reply_markup=self._back_keyboard("libmaint:start"),
         )
 
+    def _album_display_label(self, album: str) -> str:
+        """Anzeige-Label fuer einen Album-Kontext (Auftrag/Nutzer-Fund
+        2026-09-20: list_artist_albums() liefert fuer Singles
+        "<Singles-Ordner>/<Dateiname>" statt eines Verzeichnisnamens - ein
+        "/" im Wert kommt AUSSCHLIESSLICH von einer Single, da echte
+        Album-Verzeichnisnamen aus iterdir() nie "/" enthalten koennen).
+        `album` selbst (der Rohwert) bleibt unveraendert der an
+        preview_*/execute_*/current_*() uebergebene Bezeichner - nur die
+        TELEGRAM-ANZEIGE wird hier huebscher aufbereitet."""
+        if "/" in album:
+            return f"{Path(album).stem} (Single)"
+        return album
+
     def _format_manual_edit_result(
         self, header_ok: str, header_partial: str, artist: str, result,
     ) -> str:
@@ -2018,8 +2031,7 @@ class LibraryMaintenanceHandler:
         albums = list_artist_albums(artist)
         if not albums:
             await query.edit_message_text(
-                f"📁 Keine Album-Verzeichnisse für {html.escape(artist)} gefunden "
-                "(Singles zählen nicht als Album-Kontext).",
+                f"📁 Keine Alben oder Singles für {html.escape(artist)} gefunden.",
                 reply_markup=self._back_keyboard(f"libmaint:meta:{idx}"),
             )
             return False
@@ -2027,7 +2039,9 @@ class LibraryMaintenanceHandler:
         shown = albums[:_META_PICKER_LIMIT]
         buttons = [
             [InlineKeyboardButton(
-                f"💿 {name[:60]}", callback_data=f"{next_prefix}:{idx}:{aidx}",
+                f"🎵 {self._album_display_label(name)[:55]}" if "/" in name
+                else f"💿 {name[:60]}",
+                callback_data=f"{next_prefix}:{idx}:{aidx}",
             )]
             for aidx, name in enumerate(shown)
         ]
@@ -2110,7 +2124,7 @@ class LibraryMaintenanceHandler:
         context.user_data["libmaint_awaiting_album_text"] = True
         await query.edit_message_text(
             f"💿 <b>Album bearbeiten</b>\n\n"
-            f"Album:\n{html.escape(album)}\n\n"
+            f"Album:\n{html.escape(self._album_display_label(album))}\n\n"
             f"Aktueller Albumname:\n{html.escape(album_now) if album_now else '(kein Albumname)'}\n\n"
             "Neuen Albumnamen eingeben. Mit /cancel abbrechen.",
             parse_mode="HTML",
@@ -2146,7 +2160,7 @@ class LibraryMaintenanceHandler:
         context.user_data["libmaint_meta_new_value"] = new_album
 
         placeholder = await update.message.reply_text(
-            f"🔍 Erstelle Vorschau für {html.escape(album)} ..."
+            f"🔍 Erstelle Vorschau für {html.escape(self._album_display_label(album))} ..."
         )
         task = asyncio.create_task(
             self._run_album_edit_preview_and_report(placeholder, artist, album, current, new_album)
@@ -2176,8 +2190,8 @@ class LibraryMaintenanceHandler:
 
         if preview.target_count == 0:
             await message.edit_text(
-                f"📁 Keine Dateien mehr für {html.escape(album)} gefunden — "
-                "bitte erneut wählen.",
+                f"📁 Keine Dateien mehr für {html.escape(self._album_display_label(album))} "
+                "gefunden — bitte erneut wählen.",
                 reply_markup=self._back_keyboard("libmaint:start"),
             )
             return
@@ -2202,7 +2216,7 @@ class LibraryMaintenanceHandler:
 
         lines = [
             "🔍 <b>Änderung prüfen</b>", "",
-            "Album:", html.escape(album), "",
+            "Album:", html.escape(self._album_display_label(album)), "",
             "Albumname:",
             html.escape(current) if current else "(kein Albumname)",
             "↓",
@@ -2237,7 +2251,7 @@ class LibraryMaintenanceHandler:
 
         text = (
             "⚠️ <b>ACHTUNG</b>\n\n"
-            f"Album {html.escape(album)} wird geändert:\n"
+            f"Album {html.escape(self._album_display_label(album))} wird geändert:\n"
             f"Albumname → {html.escape(new_value)}\n\n"
             "Diese Aktion verändert Tags in deiner Music Library "
             "(Backup + Journal + Audio-Essenz-Verifikation vor jeder "
@@ -2277,7 +2291,7 @@ class LibraryMaintenanceHandler:
             return
 
         placeholder = await query.edit_message_text(
-            f"💿 Album wird geändert für {html.escape(album)} ..."
+            f"💿 Album wird geändert für {html.escape(self._album_display_label(album))} ..."
         )
         task = asyncio.create_task(
             self._run_album_edit_execute_and_report(
@@ -2395,7 +2409,7 @@ class LibraryMaintenanceHandler:
         context.user_data["libmaint_awaiting_albumartist_text"] = True
         await query.edit_message_text(
             f"👤 <b>Albuminterpret bearbeiten</b>\n\n"
-            f"Album:\n{html.escape(album)}\n\n"
+            f"Album:\n{html.escape(self._album_display_label(album))}\n\n"
             "Aktueller Albuminterpret:\n"
             f"{html.escape(album_artist_now) if album_artist_now else '(kein Albuminterpret)'}\n\n"
             "Neuen Albuminterpret eingeben. Mit /cancel abbrechen.",
@@ -2432,7 +2446,7 @@ class LibraryMaintenanceHandler:
         context.user_data["libmaint_meta_new_value"] = new_album_artist
 
         placeholder = await update.message.reply_text(
-            f"🔍 Erstelle Vorschau für {html.escape(album)} ..."
+            f"🔍 Erstelle Vorschau für {html.escape(self._album_display_label(album))} ..."
         )
         task = asyncio.create_task(
             self._run_album_artist_edit_preview_and_report(
@@ -2464,8 +2478,8 @@ class LibraryMaintenanceHandler:
 
         if preview.target_count == 0:
             await message.edit_text(
-                f"📁 Keine Dateien mehr für {html.escape(album)} gefunden — "
-                "bitte erneut wählen.",
+                f"📁 Keine Dateien mehr für {html.escape(self._album_display_label(album))} "
+                "gefunden — bitte erneut wählen.",
                 reply_markup=self._back_keyboard("libmaint:start"),
             )
             return
@@ -2490,7 +2504,7 @@ class LibraryMaintenanceHandler:
 
         lines = [
             "🔍 <b>Änderung prüfen</b>", "",
-            "Album:", html.escape(album), "",
+            "Album:", html.escape(self._album_display_label(album)), "",
             "Albuminterpret:",
             html.escape(current) if current else "(kein Albuminterpret)",
             "↓",
@@ -2525,8 +2539,8 @@ class LibraryMaintenanceHandler:
 
         text = (
             "⚠️ <b>ACHTUNG</b>\n\n"
-            f"Albuminterpret für Album {html.escape(album)} wird geändert:\n"
-            f"Albuminterpret → {html.escape(new_value)}\n\n"
+            f"Albuminterpret für Album {html.escape(self._album_display_label(album))} wird "
+            f"geändert:\nAlbuminterpret → {html.escape(new_value)}\n\n"
             "Der normale Artist-Tag (©ART) bleibt dabei unverändert.\n\n"
             "Diese Aktion verändert Tags in deiner Music Library "
             "(Backup + Journal + Audio-Essenz-Verifikation vor jeder "
@@ -2569,7 +2583,7 @@ class LibraryMaintenanceHandler:
             return
 
         placeholder = await query.edit_message_text(
-            f"👤 Albuminterpret wird geändert für {html.escape(album)} ..."
+            f"👤 Albuminterpret wird geändert für {html.escape(self._album_display_label(album))} ..."
         )
         task = asyncio.create_task(
             self._run_album_artist_edit_execute_and_report(
