@@ -634,6 +634,51 @@ async def test_admin_users_endpoint_accessible_with_admin_session(client, monkey
 
 
 @pytest.mark.asyncio
+async def test_admin_maintenance_endpoint_requires_authentication(client):
+    response = await client.get(
+        "/api/v1/admin/maintenance/artist-casing/preview", params={"artist": "Nichtvorhanden"}
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_admin_maintenance_endpoint_rejects_plain_user_session(client, monkeypatch):
+    """Dieselbe AccessLevel.ADMIN-Schwelle wie Findings/Repair-Plan/Admin-Users."""
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=999)
+    )
+
+    response = await client.get(
+        "/api/v1/admin/maintenance/artist-casing/preview", params={"artist": "Nichtvorhanden"}
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_admin_maintenance_endpoint_accessible_with_admin_session(client, monkeypatch):
+    """Config.LIBRARY_DIR zeigt dank tests/conftest.py::_safe_config_defaults
+    bereits auf ein leeres tmp-Verzeichnis - kein ffmpeg noetig, nur die
+    Auth-Verdrahtung wird hier geprueft (Fachlogik:
+    test_control_center_admin_maintenance_api.py)."""
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: [777]))
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=777)
+    )
+
+    response = await client.get(
+        "/api/v1/admin/maintenance/artist-casing/preview", params={"artist": "Nichtvorhanden"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["target_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_findings_accept_endpoint_requires_authentication(client):
     """Erster schreibender Endpunkt — Auth-Verdrahtung wie alle anderen
     ADMIN-Routen (Fachlogik/Origin-Check: test_control_center_findings_api.py)."""

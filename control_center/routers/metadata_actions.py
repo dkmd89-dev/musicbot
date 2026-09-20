@@ -43,6 +43,13 @@ ausreichend schnell für eine normale Request/Response-Antwort.
 Authentifiziert mit mindestens AccessLevel.ADMIN. POST ist über
 verify_same_origin() CSRF-geschützt, identisches Muster wie Findings
 Accept/Unaccept.
+
+Response-Schema (Nachtrag): nach schemas/maintenance.py verschoben
+(MaintenancePreviewResponse/MaintenanceExecuteResponse, vormals
+GenrePreviewResponse/GenreExecuteResponse) — die Datenform war bereits
+generisch, wird jetzt zusätzlich von
+control_center/routers/admin_maintenance.py wiederverwendet (Artist-
+Casing/Legacy-Genre-Cleanup/Artist-Rename/Titel bearbeiten).
 """
 
 from __future__ import annotations
@@ -60,11 +67,11 @@ from services.library_repair.run_tracking import RepairAlreadyRunningError
 
 from ..dependencies import get_current_user_id, require_min_access_level, verify_same_origin
 from ..schemas.errors import ErrorDetail
-from ..schemas.metadata import (
-    GenreExecuteResponse,
-    GenrePreviewResponse,
-    genre_execute_to_response,
-    genre_preview_to_response,
+from ..schemas.maintenance import (
+    MaintenanceExecuteResponse,
+    MaintenancePreviewResponse,
+    maintenance_execute_to_response,
+    maintenance_preview_to_response,
 )
 
 router = APIRouter(
@@ -75,8 +82,8 @@ router = APIRouter(
 _logger = get_module_logger("control_center.metadata_actions")
 
 
-@router.get("/artists/{artist}/genre-preview", response_model=GenrePreviewResponse)
-def get_genre_preview(artist: str) -> GenrePreviewResponse:
+@router.get("/artists/{artist}/genre-preview", response_model=MaintenancePreviewResponse)
+def get_genre_preview(artist: str) -> MaintenancePreviewResponse:
     try:
         preview = preview_set_genre(artist, from_mapping=True)
     except MaintenanceServiceError as e:
@@ -84,17 +91,17 @@ def get_genre_preview(artist: str) -> GenrePreviewResponse:
             status_code=404,
             detail=ErrorDetail(code="ARTIST_NOT_IN_MAPPING", message=str(e)).model_dump(),
         ) from e
-    return genre_preview_to_response(preview)
+    return maintenance_preview_to_response(preview)
 
 
 @router.post(
     "/artists/{artist}/set-genre",
-    response_model=GenreExecuteResponse,
+    response_model=MaintenanceExecuteResponse,
     dependencies=[Depends(verify_same_origin)],
 )
 def post_set_genre(
     artist: str, user_id: int = Depends(get_current_user_id)
-) -> GenreExecuteResponse:
+) -> MaintenanceExecuteResponse:
     try:
         result = execute_set_genre(
             artist, triggered_by=f"control_center:{user_id}", from_mapping=True,
@@ -109,4 +116,4 @@ def post_set_genre(
             status_code=409,
             detail=ErrorDetail(code="REPAIR_ALREADY_RUNNING", message=str(e)).model_dump(),
         ) from e
-    return genre_execute_to_response(result)
+    return maintenance_execute_to_response(result)

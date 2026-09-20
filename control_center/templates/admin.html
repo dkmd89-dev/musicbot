@@ -9,6 +9,65 @@
     <div id="admin-users-content" class="empty-note">Lädt…</div>
     <div id="admin-user-stats-content" class="empty-note" hidden></div>
   </section>
+
+  <section class="panel">
+    <h2>Artist-Casing korrigieren</h2>
+    <p class="empty-note">Normalisiert die Groß-/Kleinschreibung von ©ART/ARTISTS eines Artists gegen das bestehende Mapping (mapping/artist_overrides.json) — identisch zur bestehenden Telegram-Fähigkeit "🧹 Library-Wartung".</p>
+    <div class="retry-row">
+      <input type="text" id="mnt-artist-casing-artist" placeholder="Artist-Name (Ordnername in der Library)">
+      <button id="mnt-artist-casing-preview-btn" class="small">Vorschau laden</button>
+    </div>
+    <div id="mnt-artist-casing-content" class="empty-note"></div>
+    <div class="retry-row">
+      <button id="mnt-artist-casing-execute-btn" class="small" disabled>Casing korrigieren</button>
+    </div>
+    <div id="mnt-artist-casing-result-content" class="empty-note"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Legacy-Genre-Cleanup</h2>
+    <p class="empty-note">Entfernt veraltete Freeform-Genre-Atome eines Artists, sofern das kanonische Genre bereits gesetzt ist — identisch zur bestehenden Telegram-Fähigkeit.</p>
+    <div class="retry-row">
+      <input type="text" id="mnt-legacy-genre-cleanup-artist" placeholder="Artist-Name (Ordnername in der Library)">
+      <button id="mnt-legacy-genre-cleanup-preview-btn" class="small">Vorschau laden</button>
+    </div>
+    <div id="mnt-legacy-genre-cleanup-content" class="empty-note"></div>
+    <div class="retry-row">
+      <button id="mnt-legacy-genre-cleanup-execute-btn" class="small" disabled>Legacy-Atome entfernen</button>
+    </div>
+    <div id="mnt-legacy-genre-cleanup-result-content" class="empty-note"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Artist umbenennen</h2>
+    <p class="empty-note">Setzt ©ART/ARTISTS auf einen manuellen Zielwert — KEIN Casing-Mapping, keine Normalisierung (explizite Nutzerentscheidung, identisch zur Telegram-Fähigkeit "📝 Metadaten bearbeiten → Artist").</p>
+    <div class="retry-row">
+      <input type="text" id="mnt-artist-rename-artist" placeholder="Aktueller Artist-Name">
+      <input type="text" id="mnt-artist-rename-new-artist" placeholder="Neuer Artist-Name">
+      <button id="mnt-artist-rename-preview-btn" class="small">Vorschau laden</button>
+    </div>
+    <div id="mnt-artist-rename-content" class="empty-note"></div>
+    <div class="retry-row">
+      <button id="mnt-artist-rename-execute-btn" class="small" disabled>Artist umbenennen</button>
+    </div>
+    <div id="mnt-artist-rename-result-content" class="empty-note"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Titel bearbeiten</h2>
+    <p class="empty-note">Setzt ©nam auf einen manuellen Zielwert für genau einen Track — KEIN automatischer TitleCleaner. Den relativen Pfad aus der <a href="/library">Library</a>-Track-Ansicht kopieren.</p>
+    <div class="retry-row">
+      <input type="text" id="mnt-title-edit-artist" placeholder="Artist-Name">
+      <input type="text" id="mnt-title-edit-rel-path" placeholder="Relativer Pfad (z. B. Artist/Album/Track.m4a)">
+      <input type="text" id="mnt-title-edit-new-title" placeholder="Neuer Titel">
+      <button id="mnt-title-edit-preview-btn" class="small">Vorschau laden</button>
+    </div>
+    <div id="mnt-title-edit-content" class="empty-note"></div>
+    <div class="retry-row">
+      <button id="mnt-title-edit-execute-btn" class="small" disabled>Titel setzen</button>
+    </div>
+    <div id="mnt-title-edit-result-content" class="empty-note"></div>
+  </section>
 {% endblock %}
 
 {% block scripts %}
@@ -60,6 +119,133 @@
     const btn = event.target.closest(".view-stats-btn");
     if (!btn) return;
     loadUserStatsForAdmin(btn.dataset.navidromeUser);
+  });
+
+  // Library-Wartung: vier Aktionen (Artist-Casing, Legacy-Genre-Cleanup,
+  // Artist umbenennen, Titel bearbeiten) - spiegeln die bestehenden,
+  // bereits produktiven Telegram-Maintenance-Flows (ARCH-032 + der neuere
+  // "Metadaten bearbeiten"-Zweig), identisches Preview->Diff->
+  // Confirmation->Execution-Prinzip wie "Genre setzen" (metadata.html).
+  const MAINTENANCE_ACTIONS = [
+    {
+      key: "artist-casing", fields: ["artist"], bodyMode: "query",
+      confirm: (v) => `Artist-Casing für "${v.artist}" wirklich korrigieren?`,
+    },
+    {
+      key: "legacy-genre-cleanup", fields: ["artist"], bodyMode: "query",
+      confirm: (v) => `Legacy-Genre-Atome für "${v.artist}" wirklich entfernen?`,
+    },
+    {
+      key: "artist-rename", fields: ["artist", "new_artist"], bodyMode: "json",
+      confirm: (v) => `Artist "${v.artist}" wirklich zu "${v.new_artist}" umbenennen?`,
+    },
+    {
+      key: "title-edit", fields: ["artist", "rel_path", "new_title"], bodyMode: "json",
+      confirm: (v) => `Titel für "${v.rel_path}" wirklich zu "${v.new_title}" ändern?`,
+    },
+  ];
+
+  function _mntFieldId(actionKey, field) {
+    return `mnt-${actionKey}-${field.replace(/_/g, "-")}`;
+  }
+
+  function _mntReadFields(action) {
+    const values = {};
+    for (const f of action.fields) {
+      values[f] = document.getElementById(_mntFieldId(action.key, f)).value.trim();
+    }
+    return values;
+  }
+
+  function _diffSummary(before, after) {
+    const parts = [];
+    for (const key of Object.keys(after)) {
+      const b = Array.isArray(before[key]) ? before[key].join(", ") : (before[key] ?? "–");
+      const a = Array.isArray(after[key]) ? after[key].join(", ") : (after[key] ?? "–");
+      if (String(b) === String(a)) continue;
+      parts.push(`${key}: ${b} → ${a}`);
+    }
+    return parts.join(" | ");
+  }
+
+  function renderMaintenancePreview(el, body, execBtnId) {
+    const startBtn = document.getElementById(execBtnId);
+    if (!body.target_count) {
+      el.innerHTML = '<p class="empty-note">Keine Dateien gefunden.</p>';
+      startBtn.disabled = true;
+      return;
+    }
+    if (!body.changed_count) {
+      el.innerHTML = `<p class="empty-note">${body.target_count} Datei(en) — keine Änderung nötig.</p>`;
+      startBtn.disabled = true;
+      return;
+    }
+    const rows = body.outcomes.filter((o) => o.status === "DRY_RUN").map((o) => `
+      <div class="row-item">
+        <div class="row-main">${_escapeHtml(o.file)}</div>
+        <div class="row-count">${_escapeHtml(_diffSummary(o.before, o.after))}</div>
+      </div>
+    `).join("");
+    el.innerHTML = `<p class="empty-note">${body.changed_count} von ${body.target_count} Datei(en) werden geändert:</p><div class="row-list">${rows}</div>`;
+    startBtn.disabled = false;
+  }
+
+  async function loadMaintenancePreview(action) {
+    const values = _mntReadFields(action);
+    if (Object.values(values).some((v) => !v)) { window.alert("Bitte alle Felder ausfüllen."); return; }
+    document.getElementById(`mnt-${action.key}-execute-btn`).disabled = true;
+    document.getElementById(`mnt-${action.key}-result-content`).innerHTML = "";
+    const params = new URLSearchParams(values).toString();
+    await _loadInto(
+      `mnt-${action.key}-content`,
+      `/api/v1/admin/maintenance/${action.key}/preview?${params}`,
+      (el, body) => renderMaintenancePreview(el, body, `mnt-${action.key}-execute-btn`),
+    );
+  }
+
+  async function executeMaintenanceAction(action) {
+    const values = _mntReadFields(action);
+    if (Object.values(values).some((v) => !v)) return;
+    const confirmed = window.confirm(
+      `${action.confirm(values)}\n\n` +
+      `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+      `aber es werden tatsächlich Dateien in der Library verändert.`
+    );
+    if (!confirmed) return;
+
+    const execBtn = document.getElementById(`mnt-${action.key}-execute-btn`);
+    const resultEl = document.getElementById(`mnt-${action.key}-result-content`);
+    execBtn.disabled = true;
+    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+
+    try {
+      let url = `/api/v1/admin/maintenance/${action.key}/execute`;
+      const opts = { method: "POST", credentials: "same-origin" };
+      if (action.bodyMode === "json") {
+        opts.headers = { "Content-Type": "application/json" };
+        opts.body = JSON.stringify(values);
+      } else {
+        url += `?${new URLSearchParams(values).toString()}`;
+      }
+      const res = await fetch(url, opts);
+      if (res.status === 401) { showOnly("login-view"); return; }
+      const body = await res.json();
+      if (!res.ok) {
+        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        return;
+      }
+      resultEl.innerHTML = `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>`;
+      await loadMaintenancePreview(action);
+    } catch (err) {
+      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Netzwerkfehler: ${_escapeHtml(err.message)}</p>`;
+    } finally {
+      execBtn.disabled = false;
+    }
+  }
+
+  MAINTENANCE_ACTIONS.forEach((action) => {
+    document.getElementById(`mnt-${action.key}-preview-btn`).addEventListener("click", () => loadMaintenancePreview(action));
+    document.getElementById(`mnt-${action.key}-execute-btn`).addEventListener("click", () => executeMaintenanceAction(action));
   });
 
   function initPage() {
