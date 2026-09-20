@@ -580,3 +580,37 @@ Zeile mit).
   `navidrome_user` im Admin-Nutzer-Panel) wäre ein eigener,
   separat zu besprechender Folgeschritt.
 - Keine neuen Dependencies.
+
+---
+
+## Erweiterung — Genre-Statistik & Music DNA (2026-09-20, auf Nutzerfreigabe)
+
+Schließt den zweiten der beiden seit dem Statistics-Schritt offenen
+Punkte. Reines Mapping über bereits produktive `StatistikService`-Methoden.
+
+- **`GET /api/v1/statistics/me/genres`** — mappt
+  `generate_genre_stats()` (All-Time, `top_n`-Query-Param, Default 10).
+- **`GET /api/v1/statistics/me/music-dna`** — mappt `generate_music_dna()`
+  (All-Time-Hörprofil: Genre-/Artist-Anteile, Tageszeit-Verteilung,
+  Repeat-Rate; `top_n`-Query-Param, Default 5).
+- Beide bewusst nur **„/me"** in diesem Schritt (kein Cross-User-Pendant)
+  — kleinster sinnvoller Schritt, analog dazu, dass die reguläre
+  Cross-User-Statistik ebenfalls ein separat freigegebener Folgeschritt
+  war (siehe vorheriger Eintrag). Zwei Pfadsegmente kollidieren nicht mit
+  dem einsegmentigen `/{navidrome_username}` (Starlette prüft die
+  Segmentzahl beim Pfad-Matching).
+- Telegram-ID→Navidrome-Username-Auflösung (404 bei fehlender
+  Konfiguration) in `_resolve_own_navidrome_username()` aus
+  `get_my_statistics()` extrahiert und von allen drei „/me"-Endpunkten
+  gemeinsam genutzt — reiner Refactor ohne Verhaltensänderung (bestehender
+  `/me`-Test bleibt unverändert grün).
+- `has_data=False` bildet „keinerlei Verlaufsdaten" ab (identische
+  Semantik zu `/me`); ein vorhandener Verlauf ohne auswertbare
+  Genre-Angaben liefert `has_data=True` mit leeren Listen (Quell-Semantik
+  von `generate_genre_stats()` unverändert übernommen).
+- Test: `tests/test_control_center_statistics_api.py` um 10 Tests
+  erweitert (404/leer/Zählung/`top_n` je Endpunkt) — alle grün,
+  Regression `tests/test_control_center_auth.py` + `tests/test_statistik_service.py`
+  (71 Tests) sowie Gesamt-Control-Center-Suite (195/195) grün.
+- **Kein UI in diesem Schritt** (analog zum vorherigen Statistics-Schritt).
+- Keine neuen Dependencies.
