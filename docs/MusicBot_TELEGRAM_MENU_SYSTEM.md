@@ -207,7 +207,10 @@ Hauptmenü
 │   │   │      Liste nach Code → Detail mit Grund → „↩️ Reaktivieren" (unaccept
 │   │   │      → OPEN, Stale-Revalidierung). Rein lesend bis zum Reaktivieren-Tap.
 │   │   ├── 🛠️ Repair MusicBot (Plan/Preview/Ausführung/Historie/Statistik)
-│   │   ├── 🧹 Library-Wartung (ARCH-032: Artist Casing/Legacy Genre/Set Genre)
+│   │   ├── 🧹 Library-Wartung (ARCH-032: Artist Casing/Legacy Genre/Set Genre;
+│   │   │      Manual Metadata Editing v1, 2026-09-20: 📝 Metadaten bearbeiten
+│   │   │      → 🎤 Artist bearbeiten/🎵 Titel bearbeiten (eigener Track-Picker)/
+│   │   │      🎭 Genre-Verwaltung (Verweis, siehe LIBRARY_REPAIR.md §15))
 │   │   └── 🔁 Duplikat-Check (Chat-Charakterisierung 2026-09-15: höher-
 │   │          bitratige Duplikate pro Artist, read-only Vorschlag, Löschen
 │   │          bleibt CLI-only)

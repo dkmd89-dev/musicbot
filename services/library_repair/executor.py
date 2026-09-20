@@ -79,7 +79,13 @@ L1_RENAME_CODES = frozenset(
 # nicht Finding-getrieben (ARCH-031 B.1/ADR-0001). Die Strings dienen
 # ausschliesslich als ExecOutcome.issue_code/Journal-Label.
 MAINTENANCE_ACTION_CODES = frozenset(
-    {"ARTIST_CASING", "LEGACY_GENRE_ATOM_PRESENT", "SET_GENRE"}
+    {
+        "ARTIST_CASING",
+        "LEGACY_GENRE_ATOM_PRESENT",
+        "SET_GENRE",
+        "ARTIST_MANUAL_RENAME",
+        "TITLE_MANUAL_EDIT",
+    }
 )
 
 
@@ -916,6 +922,294 @@ def apply_set_genre(
                 raise RuntimeError(f"©gen falsch: {v_genre_str!r} != {target_genre!r}")
             if verify_tags.get(genre_domain.LEGACY_GENRE_ATOM) is not None:
                 raise RuntimeError("Legacy-Atom wieder aufgetaucht")
+            others_after = tags_fingerprint(verify_tags, exclude)
+            if others_after != others_before:
+                raise RuntimeError("Andere Atome wurden veraendert (Fingerprint-Diff)")
+            audio_tmp = _audio_essence_md5(tmp)
+            if audio_tmp != audio_before or audio_tmp.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {audio_tmp})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if backup.exists():
+                    backup.replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        finally:
+            if oc.status == "FAILED":
+                try:
+                    Path(backup).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        je = _je_named(rel, oc, dry_run)
+        je.sha256_before = sha_before
+        je.sha256_after = _sha256(path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = (
+            _audio_essence_md5(path) if oc.status in _WROTE_TO_DISK else audio_before
+        )
+        je.backup_path = oc.backup_path
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Manual Metadata Editing v1 — Artist Rename + Title Edit
+# (ARCH-032-Folgeauftrag "Manual Metadata Editing v1"): explizite
+# Nutzer-Zielwerte, KEINE Casing-Korrektur/Normalisierung/Reprocessing.
+# Wiederverwendet dieselbe Safety-/Backup-/Verify-Infrastruktur wie die
+# uebrigen Maintenance-Actions oben (safety_check, _sha256,
+# _audio_essence_md5, tags_fingerprint, _je_named) - eigene issue_code/
+# action-Labels halten Journal/History getrennt von echten
+# Casing-/Genre-Fixes (Auftrag Abschnitt 3/6/9).
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def read_current_title(path: Path) -> str:
+    """Liest den aktuellen ©nam-Wert einer Datei (rein lesend) - fuer die
+    Eingabe-/Preview-Anzeige des Manual Title Editing (Auftrag Abschnitt 8),
+    kein Schreibzugriff."""
+    tags = _full_tags(path)
+    raw = tags.get("\xa9nam")
+    if not raw:
+        return ""
+    v = raw[0]
+    return v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v)
+
+
+def _write_title_atom(src: Path, title_value: str) -> Path:
+    """Setzt NUR ©nam (identisches Sibling-Tmp-Muster wie
+    _write_genre_atom())."""
+    from mutagen.mp4 import MP4
+
+    tmp = src.with_name(f".{src.stem}.repairtmp_{int(time.time() * 1000)}{src.suffix}")
+    shutil.copy2(src, tmp)
+    audio = MP4(tmp)
+    audio["\xa9nam"] = [title_value]
+    audio.save()
+    return tmp
+
+
+def apply_artist_rename(
+    targets: list[str],
+    library_root: Path,
+    journal: RepairJournal,
+    *,
+    old_artist: str,
+    new_artist: str,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """Manual Artist Editing (Auftrag Abschnitt 5-7): expliziter
+    Nutzer-Zielwert fuer ©ART/ARTISTS-Freeform - KEIN Casing-Mapping, KEINE
+    Normalisierung/Identity-Resolution (Auftrag Abschnitt 6). Nutzt
+    artist_domain.normalize_values() 1:1 wieder (dieselbe Multi-Artist-
+    Tag-Semantik wie apply_artist_casing(), Auftrag Abschnitt 15) - nur
+    mit einer Single-Entry-Map (artist_domain.build_manual_rename_map())
+    statt der aus mapping/ geladenen Casing-Map. Dadurch aendert sich pro
+    Datei NUR dann etwas, wenn der tatsaechliche Tag-Wert `old_artist`
+    (casefold) entspricht - tag-wert-getrieben, nicht
+    verzeichnisname-getrieben (identisches Prinzip wie ARCH-031 B.8)."""
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    rename_map = artist_domain.build_manual_rename_map(old_artist, new_artist)
+    outcomes: list[ExecOutcome] = []
+
+    for rel in sorted(set(targets)):
+        path = library_root / rel
+        oc = ExecOutcome(
+            file=rel, issue_code="ARTIST_MANUAL_RENAME",
+            action="ARTIST_MANUAL_RENAME", status="SKIPPED",
+        )
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            cur = _read_atoms(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Tag-Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        art_after, art_changes = artist_domain.normalize_values(cur["artist"], rename_map)
+        artists_after, artists_changes = artist_domain.normalize_values(
+            cur["artists_freeform"], rename_map
+        )
+
+        if not art_changes and not artists_changes:
+            oc.reason = "Artist-Tag entspricht nicht dem gewaehlten Ausgangswert"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        oc.before = {"artist": cur["artist"], "artists_freeform": cur["artists_freeform"]}
+        oc.after = {"artist": art_after, "artists_freeform": artists_after}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        # ── echter Schreibvorgang (identisch zu apply_artist_casing) ────
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        exclude = {"\xa9ART", _ARTISTS_FREEFORM_ATOM}
+        others_before = tags_fingerprint(_full_tags(path), exclude)
+        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _write_atoms(
+                path, {"artist": art_after, "artists_freeform": artists_after}
+            )
+            verify = _read_atoms(tmp)
+            if verify["artist"] != art_after or verify["artists_freeform"] != artists_after:
+                raise RuntimeError("Verifikation fehlgeschlagen (Ziel-Atome)")
+            others_after = tags_fingerprint(_full_tags(tmp), exclude)
+            if others_after != others_before:
+                raise RuntimeError("Andere Atome wurden veraendert (Fingerprint-Diff)")
+            audio_tmp = _audio_essence_md5(tmp)
+            if audio_tmp != audio_before or audio_tmp.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {audio_tmp})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if backup.exists():
+                    backup.replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        finally:
+            if oc.status == "FAILED":
+                try:
+                    Path(backup).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        je = _je_named(rel, oc, dry_run)
+        je.sha256_before = sha_before
+        je.sha256_after = _sha256(path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = (
+            _audio_essence_md5(path) if oc.status in _WROTE_TO_DISK else audio_before
+        )
+        je.backup_path = oc.backup_path
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+def apply_title_edit(
+    targets: list[str],
+    library_root: Path,
+    journal: RepairJournal,
+    *,
+    new_title: str,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """Manual Title Editing (Auftrag Abschnitt 8/9): setzt ©nam auf einen
+    expliziten Nutzer-Zielwert - KEIN TitleCleaner/Reprocessing (die
+    automatische Pipeline in services/metadata/track_reprocessor.py bleibt
+    unberuehrt, Auftrag Abschnitt 9). `targets` enthaelt in der Praxis
+    IMMER genau eine Datei (Title-Edit ist track-spezifisch, Auftrag
+    Abschnitt 8) - Listen-Signatur nur fuer Konsistenz mit den uebrigen
+    apply_*()-Funktionen dieses Moduls."""
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+
+    for rel in sorted(set(targets)):
+        path = library_root / rel
+        oc = ExecOutcome(
+            file=rel, issue_code="TITLE_MANUAL_EDIT",
+            action="TITLE_MANUAL_EDIT", status="SKIPPED",
+        )
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            tags = _full_tags(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Tag-Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        cur_title_raw = tags.get("\xa9nam")
+        cur_title = cur_title_raw[0] if cur_title_raw else ""
+        cur_title = cur_title.decode("utf-8", "replace") if isinstance(cur_title, bytes) else str(cur_title)
+
+        if cur_title == new_title:
+            oc.reason = "bereits korrekt"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        oc.before = {"title": cur_title}
+        oc.after = {"title": new_title}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        # ── echter Schreibvorgang ────────────────────────────────────────
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        exclude = {"\xa9nam"}
+        others_before = tags_fingerprint(tags, exclude)
+        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _write_title_atom(path, new_title)
+            verify_tags = _full_tags(tmp)
+            v_title_raw = verify_tags.get("\xa9nam")
+            v_title = v_title_raw[0] if v_title_raw else ""
+            v_title = v_title.decode("utf-8", "replace") if isinstance(v_title, bytes) else str(v_title)
+            if v_title != new_title:
+                raise RuntimeError(f"©nam falsch: {v_title!r} != {new_title!r}")
             others_after = tags_fingerprint(verify_tags, exclude)
             if others_after != others_before:
                 raise RuntimeError("Andere Atome wurden veraendert (Fingerprint-Diff)")

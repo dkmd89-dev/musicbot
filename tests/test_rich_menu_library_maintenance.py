@@ -268,3 +268,86 @@ class TestGenreManagementDispatchRouting:
         update.callback_query.answer.assert_any_call(
             "⚠️ Unbekannter Genre-Revalidierung-Callback"
         )
+
+
+# ── 📝 Metadaten bearbeiten: Dispatch-Routing (Manual Metadata Editing v1) ─
+# Deckt NUR ab, dass jedes neue libmaint:meta:*-Callback-Muster admin-gated
+# ist und an die richtige Handler-Methode geroutet wird - die eigentliche
+# Handler-Logik hat eigene Tests in
+# tests/test_library_maintenance_metadata_edit.py.
+
+
+class TestMetadataEditDispatchRouting:
+    @pytest.mark.parametrize(
+        "callback_data",
+        [
+            "libmaint:meta:0",
+            "libmaint:meta:artist:0",
+            "libmaint:meta:artist:confirm",
+            "libmaint:meta:artist:execute",
+            "libmaint:meta:title:0",
+            "libmaint:meta:title:pick:0:1",
+            "libmaint:meta:title:confirm",
+            "libmaint:meta:title:execute",
+        ],
+    )
+    def test_non_admin_rejected(self, menu_system, mock_context, callback_data):
+        update = _mock_update(OTHER_ID)
+        update.callback_query.data = callback_data
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_called_with(
+            "⛔ Keine Berechtigung", show_alert=True
+        )
+
+    @pytest.mark.parametrize(
+        "callback_data, method_name, expected_args",
+        [
+            ("libmaint:meta:3", "handle_meta_menu", (3,)),
+            ("libmaint:meta:artist:3", "handle_meta_artist_start", (3,)),
+            ("libmaint:meta:artist:confirm", "handle_meta_artist_confirm", ()),
+            ("libmaint:meta:artist:execute", "handle_meta_artist_execute", ()),
+            ("libmaint:meta:title:3", "handle_meta_title_start", (3,)),
+            ("libmaint:meta:title:confirm", "handle_meta_title_confirm", ()),
+            ("libmaint:meta:title:execute", "handle_meta_title_execute", ()),
+        ],
+    )
+    def test_routes_to_correct_handler_method(
+        self, menu_system, maintenance_handler, mock_context,
+        callback_data, method_name, expected_args,
+    ):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = callback_data
+        with patch.object(maintenance_handler, method_name, AsyncMock()) as mocked:
+            run_async(menu_system.handle_callback(update, mock_context))
+        mocked.assert_called_once_with(update, mock_context, *expected_args)
+
+    def test_routes_title_pick_with_both_indices(self, menu_system, maintenance_handler, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:meta:title:pick:2:7"
+        with patch.object(maintenance_handler, "handle_meta_title_pick", AsyncMock()) as mocked:
+            run_async(menu_system.handle_callback(update, mock_context))
+        mocked.assert_called_once_with(update, mock_context, 2, 7)
+
+    def test_invalid_meta_index_answers_gracefully(self, menu_system, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:meta:not-a-number"
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_any_call("⚠️ Ungültiger Callback", show_alert=True)
+
+    def test_invalid_artist_start_index_answers_gracefully(self, menu_system, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:meta:artist:not-a-number"
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_any_call("⚠️ Ungültiger Callback", show_alert=True)
+
+    def test_invalid_title_pick_indices_answer_gracefully(self, menu_system, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:meta:title:pick:0:not-a-number"
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_any_call("⚠️ Ungültiger Callback", show_alert=True)
+
+    def test_unknown_meta_subaction_answers_gracefully(self, menu_system, mock_context):
+        update = _mock_update(OWNER_ID)
+        update.callback_query.data = "libmaint:meta:title:pick:0:1:extra"
+        run_async(menu_system.handle_callback(update, mock_context))
+        update.callback_query.answer.assert_any_call("⚠️ Unbekannter Metadaten-Callback")

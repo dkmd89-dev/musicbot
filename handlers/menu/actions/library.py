@@ -383,6 +383,14 @@ async def handle_library_maintenance_callback(
                                           Mapping speichern?→Preview→Execute)
       libmaint:gr:preview/confirm/execute → 🔄 Genre revalidieren (Subprozess,
                                           siehe genre_revalidation_runner.py)
+      libmaint:meta:<idx>/artist:*/title:*
+                                          → 📝 Metadaten bearbeiten (Manual
+                                          Metadata Editing v1) - Artist
+                                          bearbeiten / Titel bearbeiten
+                                          (eigener Track-Picker) /
+                                          Genre-Verwaltung (Verweis auf
+                                          genremenu:* oben, keine
+                                          Duplizierung)
 
     Eigener Admin-Check hier (Defense-in-Depth, analog zu doctor:/review:/
     repair:/reprocess: - callback_data ist frei sendbar, siehe SEC-003).
@@ -502,6 +510,70 @@ async def handle_library_maintenance_callback(
             await maintenance_handler.handle_gr_execute(update, context)
             return
         await query.answer("⚠️ Unbekannter Genre-Revalidierung-Callback")
+        return
+
+    # ── 📝 Metadaten bearbeiten (Manual Metadata Editing v1) ─────────────
+    # libmaint:meta:<idx>                        -> Aktions-Auswahl (Artist/
+    #                                               Titel/Genre-Verwaltung)
+    # libmaint:meta:artist:<idx>                 -> Freitext-Eingabe starten
+    # libmaint:meta:artist:confirm/execute       -> Bestätigung/Ausführung
+    # libmaint:meta:title:<idx>                  -> Track-Picker
+    # libmaint:meta:title:pick:<idx>:<track_idx> -> Track wählen, Freitext
+    #                                               starten
+    # libmaint:meta:title:confirm/execute        -> Bestätigung/Ausführung
+
+    if len(parts) >= 3 and parts[1] == "meta":
+        if len(parts) == 3:
+            try:
+                idx = int(parts[2])
+            except ValueError:
+                await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+                return
+            await maintenance_handler.handle_meta_menu(update, context, idx)
+            return
+
+        if len(parts) == 4 and parts[2] == "artist":
+            sub = parts[3]
+            if sub == "confirm":
+                await maintenance_handler.handle_meta_artist_confirm(update, context)
+                return
+            if sub == "execute":
+                await maintenance_handler.handle_meta_artist_execute(update, context)
+                return
+            try:
+                idx = int(sub)
+            except ValueError:
+                await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+                return
+            await maintenance_handler.handle_meta_artist_start(update, context, idx)
+            return
+
+        if len(parts) == 4 and parts[2] == "title":
+            sub = parts[3]
+            if sub == "confirm":
+                await maintenance_handler.handle_meta_title_confirm(update, context)
+                return
+            if sub == "execute":
+                await maintenance_handler.handle_meta_title_execute(update, context)
+                return
+            try:
+                idx = int(sub)
+            except ValueError:
+                await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+                return
+            await maintenance_handler.handle_meta_title_start(update, context, idx)
+            return
+
+        if len(parts) == 6 and parts[2] == "title" and parts[3] == "pick":
+            try:
+                idx, track_idx = int(parts[4]), int(parts[5])
+            except ValueError:
+                await query.answer("⚠️ Ungültiger Callback", show_alert=True)
+                return
+            await maintenance_handler.handle_meta_title_pick(update, context, idx, track_idx)
+            return
+
+        await query.answer("⚠️ Unbekannter Metadaten-Callback")
         return
 
     await query.answer("⚠️ Unbekannter Library-Wartung-Callback")

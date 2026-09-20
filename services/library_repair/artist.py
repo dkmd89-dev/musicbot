@@ -64,6 +64,19 @@ def _to_str(x) -> str:
     return str(x)
 
 
+def build_manual_rename_map(old_artist: str, new_artist: str) -> Dict[str, str]:
+    """Baut eine Single-Entry-Map fuer executor.py::apply_artist_rename() -
+    wiederverwendet dieselbe Wertsemantik wie load_casing_map()/
+    normalize_values() (casefold(alter Wert) -> expliziter neuer Zielwert),
+    aber fuer einen vom Nutzer gewaehlten Zielwert statt eines
+    Casing-Mappings aus mapping/case_preserve.yaml/artist_overrides.json.
+    Manual Artist Editing ist KEINE Artist-Casing-Korrektur (ARCH-032
+    Manual Metadata Editing v1, Auftrag Abschnitt 6) - eigene Funktion statt
+    Wiederverwendung von load_casing_map(), damit beide Konzepte im Code
+    sichtbar getrennt bleiben."""
+    return {old_artist.casefold(): new_artist}
+
+
 def normalize_values(
     values: List, casing_map: Dict[str, str]
 ) -> Tuple[List[str], List[Tuple[str, str]]]:

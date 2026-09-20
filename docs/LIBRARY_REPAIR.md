@@ -1234,3 +1234,111 @@ Präsentationsschicht über die interne Entscheidungslogik von
 siehe `docs/GENRE_SYSTEM.md`), die aktuell nirgends strukturiert
 exponiert ist. Bewusst als offener, unpriorisierter Punkt dokumentiert
 statt erzwungen umgesetzt.
+
+---
+
+## 15. Manual Metadata Editing v1 (Chat-Charakterisierung 2026-09-20)
+
+**Herkunft:** Nutzerauftrag „Manual Metadata Editing v1" — erweitert die
+Library-Wartung-Aktions-Auswahl um „📝 Metadaten bearbeiten" mit zwei
+neuen, expliziten Bearbeitungsfunktionen (🎤 Artist bearbeiten, 🎵 Titel
+bearbeiten) und macht die bestehende Genre-Verwaltung (§14) zusätzlich
+darunter erreichbar (Verweis, keine Duplizierung).
+
+**Bewusst KEINE neue Schreib-Pipeline** (Auftrag §1/§13): beide neuen
+Aktionen laufen über exakt dieselbe Safety-/Backup-/Journal-/
+Verifikations-Infrastruktur wie Artist Casing/Legacy Genre/Set Genre
+(`executor.py::safety_check()`/`_sha256()`/`_audio_essence_md5()`/
+`tags_fingerprint()`, `RepairJournal`, geteilter Lock/Run-Index aus
+`run_tracking.py`, ADR-0004).
+
+### 15.1 🎤 Artist bearbeiten
+
+Explizite, vom Nutzer eingegebene Zielwerte für ©ART/ARTISTS-Freeform —
+**KEINE** Artist-Casing-Korrektur, Normalisierung oder Identity-Resolution
+(Auftrag §6). Scope ist Artist-weit (identische Zielmenge wie Artist
+Casing, `maintenance_service.py::artist_targets()`), die tatsächliche
+Änderung bleibt **tag-wert-getrieben** (ARCH-031 B.8):
+`executor.py::apply_artist_rename()` wendet
+`artist_domain.build_manual_rename_map(alter_wert, neuer_wert)` +
+`artist_domain.normalize_values()` **unverändert wieder** (dieselbe
+Multi-Artist-Tag-Semantik wie `apply_artist_casing()`) — eine Datei ändert
+sich nur, wenn ihr tatsächlicher Tag-Wert (casefold) dem gewählten
+Ausgangswert entspricht. Eigene `issue_code`/`action`-Labels
+(`ARTIST_MANUAL_RENAME`) halten Journal/History getrennt von echten
+Casing-Fixes.
+
+```text
+🎤 Artist bearbeiten (libmaint:meta:artist:<idx>)
+   ↓
+Freitext-Eingabe (neuer Artist-Name, context.user_data-Muster wie
+Genre setzen, libmaint_awaiting_artist_text)
+   ↓
+Preview (read-only, preview_artist_rename() — identischer Wert wie
+der Ausgangs-Artist ⇒ 0 Änderungen ⇒ eigene Rückmeldung, keine
+künstliche Reparatur, Auftrag §14)
+   ↓
+explizite Bestätigung (libmaint:meta:artist:confirm)
+   ↓
+Execute (execute_artist_rename(), Lock-Status vorab geprüft) → Ergebnis
+```
+
+### 15.2 🎵 Titel bearbeiten
+
+**Immer track-spezifisch** (Auftrag §8) — eigener, index-basierter
+Track-Picker (`libmaint:meta:title:<idx>` → `libmaint:meta:title:pick:
+<idx>:<track_idx>`, `maintenance_service.py::resolve_track_by_index()`,
+identische Zielmenge/Anti-Injection-Muster wie
+`library_artists.py::resolve_artist_by_index()` — kein Rohpfad in
+`callback_data`). `executor.py::apply_title_edit()` schreibt **nur**
+©nam — **kein automatischer TitleCleaner** (Auftrag §8/9): der manuell
+eingegebene Zielwert wird unverändert übernommen, die automatische
+Title-Cleanup-/Reprocessing-Pipeline
+(`services/metadata/track_reprocessor.py`, `META_TITLE_NOT_CLEAN` →
+`METADATA_REPROCESSING`, §6a) bleibt vollständig unberührt — beide Pfade
+sind bewusst getrennt.
+
+```text
+🎵 Titel bearbeiten (libmaint:meta:title:<idx>)
+   ↓
+Track wählen (index-basiert, libmaint:meta:title:pick:<idx>:<track_idx>)
+   ↓
+Freitext-Eingabe (neuer Titel, libmaint_awaiting_title_text)
+   ↓
+Preview (read-only, preview_title_edit())
+   ↓
+explizite Bestätigung (libmaint:meta:title:confirm)
+   ↓
+Execute (execute_title_edit(), Lock-Status vorab geprüft) → Ergebnis
+```
+
+### 15.3 🎭 Genre-Verwaltung
+
+Keine zweite Genre-Schreib-/Preview-/Confirmation-/Mapping-Logik: der
+Button unter „📝 Metadaten bearbeiten" (`libmaint:meta:<idx>` →
+„🎭 Genre-Verwaltung") führt in denselben, bereits bestehenden
+`genremenu:*`-Flow (§14.1) wie der weiterhin unveränderte direkte Button
+auf dem Aktions-Auswahl-Bildschirm — beide Zugänge bleiben nebeneinander
+erreichbar.
+
+### 15.4 Validierung
+
+Format-Validierung (leer/Whitespace-only/Zeilenumbrüche/max. 200 Zeichen)
+in `handlers/library_maintenance_handler.py::_validate_manual_meta_input()`
+(Retry-freundlich, identisches Prinzip wie
+`_validate_manual_genre_input()`), zusätzlich Defense-in-Depth in
+`maintenance_service.py::_validate_manual_value()` (wirft
+`MaintenanceServiceError`). Identischer alter/neuer Wert erzeugt **keine**
+künstliche Reparatur — die Preview zeigt stattdessen „Der neue Wert
+entspricht bereits dem aktuellen Wert." (0 tatsächlich geänderte
+Dateien laut Executor-Diff, kein Sonderfall im Domain-Code nötig).
+
+### 15.5 Tests
+
+| Datei | Deckt ab |
+|---|---|
+| `tests/test_library_repair_artist.py` | `build_manual_rename_map()` — Single-Entry-Map, Zusammenspiel mit `normalize_values()` (voller Rename vs. identischer Wert) |
+| `tests/test_library_repair_executor.py` (`TestApplyArtistRename`/`TestApplyTitleEdit`/`TestReadCurrentTitle`) | Dry-Run/Success/Skipped (tag-wert-getrieben bzw. bereits korrekt)/Safety/Audio-Essenz/Fingerprint/Journal/Rollback, kein automatischer TitleCleaner |
+| `tests/test_library_repair_maintenance_service.py` | `resolve_track_by_index()`, `current_title()`, `_validate_manual_value()`, Preview/Execute für beide Flows, Lock-Sharing mit dem übrigen Repair-/Maintenance-Flow |
+| `tests/test_library_maintenance_metadata_edit.py` | Telegram-Handler-Ebene: `meta`-Menü, kompletter Artist-/Titel-Zustandsautomat inkl. Freitext-Validierung, Track-Picker (Index-basiert, kein Rohpfad), kein Auto-Start an jedem Zwischenschritt, Lock-Konflikt-Anzeige |
+| `tests/test_rich_menu_library_maintenance.py` (`TestMetadataEditDispatchRouting`) | Dispatcher-Routing für alle `libmaint:meta:*`-Callback-Muster (Admin-Gate, korrekte Handler-Methode, korrekt durchgereichte Argumente, unbekannte Sub-Callbacks) |

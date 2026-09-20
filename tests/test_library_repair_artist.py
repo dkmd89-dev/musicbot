@@ -14,7 +14,11 @@ import json
 import pytest
 import yaml
 
-from services.library_repair.artist import load_casing_map, normalize_values
+from services.library_repair.artist import (
+    build_manual_rename_map,
+    load_casing_map,
+    normalize_values,
+)
 
 
 # ── load_casing_map() ────────────────────────────────────────────────────
@@ -128,3 +132,29 @@ def test_normalize_values_handles_bytes_values():
     new, changes = normalize_values([b"bausa"], casing_map)
     assert new == ["Bausa"]
     assert changes == [("bausa", "Bausa")]
+
+
+# ── build_manual_rename_map() (ARCH-032 Manual Metadata Editing v1) ─────
+
+
+def test_build_manual_rename_map_single_entry():
+    assert build_manual_rename_map("Macloud", "Miksu & Macloud") == {
+        "macloud": "Miksu & Macloud"
+    }
+
+
+def test_build_manual_rename_map_used_with_normalize_values_full_rename():
+    """Manual Artist Editing ist KEIN Casing-Fix (Auftrag Abschnitt 6):
+    ein voellig anderer Zielwert wird trotzdem 1:1 uebernommen, solange
+    der Ausgangswert (casefold) passt."""
+    rename_map = build_manual_rename_map("Macloud", "Miksu & Macloud")
+    new, changes = normalize_values(["Macloud"], rename_map)
+    assert new == ["Miksu & Macloud"]
+    assert changes == [("Macloud", "Miksu & Macloud")]
+
+
+def test_build_manual_rename_map_identical_value_yields_no_change():
+    rename_map = build_manual_rename_map("Macloud", "Macloud")
+    new, changes = normalize_values(["Macloud"], rename_map)
+    assert new == ["Macloud"]
+    assert changes == []

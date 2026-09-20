@@ -278,3 +278,195 @@ class TestPartialSuccess:
         # success_count/failed_count tragen die Partial-Info fuer die
         # Praesentationsschicht.
         assert result.status == rt.STATUS_SUCCESS
+
+
+# ── resolve_track_by_index() / current_title() (Manual Title Editing) ────
+
+
+@requires_ffmpeg
+class TestResolveTrackByIndex:
+    def test_resolves_valid_index(self, lib):
+        p1 = lib / "Bausa" / "Singles" / "a.m4a"
+        p2 = lib / "Bausa" / "Singles" / "b.m4a"
+        _m4a(p1)
+        _m4a(p2)
+        assert ms.resolve_track_by_index("Bausa", 0, library_root=lib) == "Bausa/Singles/a.m4a"
+        assert ms.resolve_track_by_index("Bausa", 1, library_root=lib) == "Bausa/Singles/b.m4a"
+
+    def test_out_of_range_returns_none(self, lib):
+        p1 = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p1)
+        assert ms.resolve_track_by_index("Bausa", 5, library_root=lib) is None
+        assert ms.resolve_track_by_index("Bausa", -1, library_root=lib) is None
+
+    def test_unknown_artist_returns_none(self, lib):
+        lib.mkdir()
+        assert ms.resolve_track_by_index("Unknown", 0, library_root=lib) is None
+
+
+@requires_ffmpeg
+class TestCurrentTitle:
+    def test_reads_title_tag(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+        assert ms.current_title("Bausa/Singles/a.m4a", library_root=lib) == "T"
+
+
+# ── _validate_manual_value() ─────────────────────────────────────────────
+
+
+class TestValidateManualValue:
+    def test_trims_whitespace(self):
+        assert ms._validate_manual_value("  Neu  ", label="X") == "Neu"
+
+    def test_none_raises(self):
+        with pytest.raises(ms.MaintenanceServiceError):
+            ms._validate_manual_value(None, label="X")
+
+    def test_empty_raises(self):
+        with pytest.raises(ms.MaintenanceServiceError):
+            ms._validate_manual_value("   ", label="X")
+
+    def test_newline_raises(self):
+        with pytest.raises(ms.MaintenanceServiceError):
+            ms._validate_manual_value("a\nb", label="X")
+
+    def test_too_long_raises(self):
+        with pytest.raises(ms.MaintenanceServiceError):
+            ms._validate_manual_value("x" * 201, label="X")
+
+    def test_max_length_accepted(self):
+        assert ms._validate_manual_value("x" * 200, label="X") == "x" * 200
+
+
+# ── Manual Artist Editing: Preview + Execute (Auftrag Abschnitt 5-7) ─────
+
+
+@requires_ffmpeg
+class TestArtistRenameFlow:
+    def test_preview_is_read_only(self, lib):
+        p = lib / "Macloud" / "Singles" / "a.m4a"
+        _m4a(p, artist=["Macloud"])
+
+        preview = ms.preview_artist_rename("Macloud", "Miksu & Macloud", library_root=lib)
+        assert preview.read_only is True
+        assert preview.target_count == 1
+        assert preview.changed_count == 1
+        assert MP4(p).tags["©ART"] == ["Macloud"]
+        assert not rt.journal_path().exists()
+
+    def test_identical_value_yields_zero_changed(self, lib):
+        p = lib / "Macloud" / "Singles" / "a.m4a"
+        _m4a(p, artist=["Macloud"])
+
+        preview = ms.preview_artist_rename("Macloud", "Macloud", library_root=lib)
+        assert preview.target_count == 1
+        assert preview.changed_count == 0
+
+    def test_execute_writes_and_records_run(self, lib):
+        p = lib / "Macloud" / "Singles" / "a.m4a"
+        _m4a(p, artist=["Macloud"])
+
+        result = ms.execute_artist_rename(
+            "Macloud", "Miksu & Macloud", triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert result.success_count == 1
+        assert MP4(p).tags["©ART"] == ["Miksu & Macloud"]
+
+        history = rt.load_repair_history()
+        assert len(history) == 1
+        assert history[0]["kind"] == rt.KIND_MAINTENANCE
+        assert history[0]["level"] == "ARTIST_RENAME"
+        assert rt.is_repair_running() is False
+
+    def test_execute_with_empty_new_value_raises_without_writing(self, lib):
+        p = lib / "Macloud" / "Singles" / "a.m4a"
+        _m4a(p, artist=["Macloud"])
+
+        with pytest.raises(ms.MaintenanceServiceError):
+            ms.execute_artist_rename("Macloud", "   ", triggered_by="test", library_root=lib)
+        assert MP4(p).tags["©ART"] == ["Macloud"]
+        assert rt.is_repair_running() is False  # Lock nicht haengen geblieben
+
+    def test_execute_shares_lock_with_repair_flow(self, lib):
+        p = lib / "Macloud" / "Singles" / "a.m4a"
+        _m4a(p, artist=["Macloud"])
+
+        rt.acquire_repair_lock()
+        try:
+            with pytest.raises(rt.RepairAlreadyRunningError):
+                ms.execute_artist_rename(
+                    "Macloud", "Miksu & Macloud", triggered_by="test", library_root=lib,
+                )
+        finally:
+            rt.release_repair_lock()
+
+
+# ── Manual Title Editing: Preview + Execute (Auftrag Abschnitt 8/9) ──────
+
+
+@requires_ffmpeg
+class TestTitleEditFlow:
+    def test_preview_is_read_only(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+
+        preview = ms.preview_title_edit(
+            "Bausa", "Bausa/Singles/a.m4a", "Neuer Titel", library_root=lib,
+        )
+        assert preview.read_only is True
+        assert preview.target_count == 1
+        assert preview.changed_count == 1
+        assert MP4(p).tags["©nam"] == ["T"]
+        assert not rt.journal_path().exists()
+
+    def test_identical_value_yields_zero_changed(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+
+        preview = ms.preview_title_edit("Bausa", "Bausa/Singles/a.m4a", "T", library_root=lib)
+        assert preview.changed_count == 0
+
+    def test_execute_writes_and_records_run(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+
+        result = ms.execute_title_edit(
+            "Bausa", "Bausa/Singles/a.m4a", "Neuer Titel", triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert result.success_count == 1
+        assert MP4(p).tags["©nam"] == ["Neuer Titel"]
+
+        history = rt.load_repair_history()
+        assert len(history) == 1
+        assert history[0]["kind"] == rt.KIND_MAINTENANCE
+        assert history[0]["level"] == "TITLE_EDIT"
+
+    def test_no_automatic_title_cleanup(self, lib):
+        """Auftrag Abschnitt 8/9: kein TitleCleaner auf den manuellen
+        Zielwert - Marketing-Suffix bleibt exakt wie eingegeben."""
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+
+        result = ms.execute_title_edit(
+            "Bausa", "Bausa/Singles/a.m4a", '"Titel" prod. XY',
+            triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert MP4(p).tags["©nam"] == ['"Titel" prod. XY']
+
+    def test_execute_shares_lock_with_repair_flow(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+
+        rt.acquire_repair_lock()
+        try:
+            with pytest.raises(rt.RepairAlreadyRunningError):
+                ms.execute_title_edit(
+                    "Bausa", "Bausa/Singles/a.m4a", "Neuer Titel",
+                    triggered_by="test", library_root=lib,
+                )
+        finally:
+            rt.release_repair_lock()
