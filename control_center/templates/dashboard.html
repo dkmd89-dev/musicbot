@@ -182,6 +182,20 @@
       </section>
 
       <section class="panel">
+        <h2>Metadata bearbeiten: Genre setzen</h2>
+        <p class="empty-note">Setzt das Genre aller Tracks eines Artists aus dem bestehenden Mapping (mapping/artist_genre.yaml) — kein Freitext, nur bereits gemappte Artists (identisch zur bestehenden Telegram-Fähigkeit).</p>
+        <div class="retry-row">
+          <input type="text" id="genre-set-artist-input" placeholder="Artist-Name (Ordnername in der Library)">
+          <button id="genre-preview-btn" class="small">Vorschau laden</button>
+        </div>
+        <div id="genre-set-content" class="empty-note"></div>
+        <div class="retry-row">
+          <button id="genre-set-execute-btn" class="small" disabled>Genre setzen</button>
+        </div>
+        <div id="genre-set-result-content" class="empty-note"></div>
+      </section>
+
+      <section class="panel">
         <h2>Downloads (Verlauf)</h2>
         <div id="downloads-content" class="empty-note">Lädt…</div>
       </section>
@@ -758,6 +772,90 @@
     document.getElementById("metadata-tracks-btn").addEventListener("click", () => loadMetadataList("tracks"));
     document.getElementById("metadata-artists-btn").addEventListener("click", () => loadMetadataList("artists"));
     document.getElementById("metadata-albums-btn").addEventListener("click", () => loadMetadataList("albums"));
+
+    // ── Metadata bearbeiten: Genre setzen (erste schreibende Metadata-
+    // Management-Faehigkeit) - spiegelt die bestehende Telegram-"Genre
+    // setzen"-Faehigkeit (nur from_mapping, kein Freitext-Genre-Feld).
+    // Preview zeigt das vollstaendige Vorher/Nachher je Datei (Diff) vor
+    // jeder Bestaetigung.
+    let _genreSetArtist = null;
+
+    function renderGenreSetPreview(el, body) {
+      const startBtn = document.getElementById("genre-set-execute-btn");
+      if (!body.target_count) {
+        el.innerHTML = '<p class="empty-note">Keine Dateien für diesen Artist gefunden.</p>';
+        startBtn.disabled = true;
+        return;
+      }
+      if (!body.changed_count) {
+        el.innerHTML = `<p class="empty-note">${body.target_count} Datei(en) — keine Änderung nötig, Genre bereits korrekt.</p>`;
+        startBtn.disabled = true;
+        return;
+      }
+      const rows = body.outcomes.filter((o) => o.status === "DRY_RUN").map((o) => `
+        <div class="row-item">
+          <div class="row-main">${_escapeHtml(o.file)}</div>
+          <div class="row-count">${_escapeHtml(o.before.genre || "–")} → ${_escapeHtml(o.after.genre || "–")}</div>
+        </div>
+      `).join("");
+      el.innerHTML = `<p class="empty-note">${body.changed_count} von ${body.target_count} Datei(en) werden geändert:</p><div class="row-list">${rows}</div>`;
+      startBtn.disabled = false;
+    }
+
+    async function loadGenrePreview() {
+      const artist = document.getElementById("genre-set-artist-input").value.trim();
+      if (!artist) { window.alert("Bitte einen Artist-Namen eingeben."); return; }
+      _genreSetArtist = artist;
+      document.getElementById("genre-set-execute-btn").disabled = true;
+      document.getElementById("genre-set-result-content").innerHTML = "";
+      await _loadInto(
+        "genre-set-content",
+        `/api/v1/library/artists/${encodeURIComponent(artist)}/genre-preview`,
+        renderGenreSetPreview,
+      );
+    }
+
+    async function executeSetGenre() {
+      if (!_genreSetArtist) return;
+      const confirmed = window.confirm(
+        `Genre für "${_genreSetArtist}" wirklich setzen?\n\n` +
+        `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+        `aber es werden tatsächlich Dateien in der Library verändert.`
+      );
+      if (!confirmed) return;
+
+      const execBtn = document.getElementById("genre-set-execute-btn");
+      execBtn.disabled = true;
+      document.getElementById("genre-set-result-content").innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+
+      try {
+        const res = await fetch(`/api/v1/library/artists/${encodeURIComponent(_genreSetArtist)}/set-genre`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+        });
+        if (res.status === 401) { showOnly("login-view"); return; }
+        const body = await res.json();
+        if (!res.ok) {
+          document.getElementById("genre-set-result-content").innerHTML =
+            `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+          return;
+        }
+        document.getElementById("genre-set-result-content").innerHTML =
+          `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>`;
+        // Nach erfolgreicher Ausfuehrung erneut previewen - Diff sollte
+        // jetzt leer sein (Verifikation, dass die Aenderung ankam).
+        await loadGenrePreview();
+      } catch (err) {
+        document.getElementById("genre-set-result-content").innerHTML =
+          `<p><span class="dot dot-error"></span>Netzwerkfehler: ${_escapeHtml(err.message)}</p>`;
+      } finally {
+        execBtn.disabled = false;
+      }
+    }
+
+    document.getElementById("genre-preview-btn").addEventListener("click", loadGenrePreview);
+    document.getElementById("genre-set-execute-btn").addEventListener("click", executeSetGenre);
 
     function renderDownloads(el, body) {
       if (!body.entries.length) { el.innerHTML = '<p class="empty-note">Kein Download-Verlauf.</p>'; return; }

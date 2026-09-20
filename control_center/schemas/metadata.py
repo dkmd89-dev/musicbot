@@ -164,3 +164,67 @@ def albums_to_response(albums: list[dict], *, limit: int, offset: int) -> Albums
         total=total, limit=limit, offset=offset,
         albums=[_album_to_schema(a) for a in page],
     )
+
+
+class MaintenanceOutcomeSchema(BaseModel):
+    """Dünnes Mapping über services/library_repair/executor.py::ExecOutcome
+    hinweg — nur die für eine Preview/Diff-Ansicht relevanten Felder
+    (`issue_code`/`action`/`backup_path` sind interne Executor-Details,
+    für "Metadata bearbeiten" nicht Teil des API-Contracts)."""
+
+    file: str
+    status: str
+    before: dict
+    after: dict
+    reason: Optional[str]
+
+
+def _outcome_to_schema(o) -> MaintenanceOutcomeSchema:
+    return MaintenanceOutcomeSchema(
+        file=o.file, status=o.status, before=o.before, after=o.after, reason=o.reason,
+    )
+
+
+class GenrePreviewResponse(BaseModel):
+    artist: str
+    target_count: int
+    changed_count: int
+    outcomes: list[MaintenanceOutcomeSchema]
+
+
+def genre_preview_to_response(preview) -> GenrePreviewResponse:
+    """Reines Mapping über services/library_repair/maintenance_service.py::
+    MaintenancePreview hinweg."""
+    return GenrePreviewResponse(
+        artist=preview.artist,
+        target_count=preview.target_count,
+        changed_count=preview.changed_count,
+        outcomes=[_outcome_to_schema(o) for o in preview.outcomes],
+    )
+
+
+class GenreExecuteResponse(BaseModel):
+    run_id: str
+    artist: str
+    status: str
+    target_count: int
+    success_count: int
+    failed_count: int
+    skipped_count: int
+    affected_files: list[str]
+    error_message: Optional[str]
+
+
+def genre_execute_to_response(result) -> GenreExecuteResponse:
+    """Reines Mapping über MaintenanceRunResult hinweg."""
+    return GenreExecuteResponse(
+        run_id=result.run_id,
+        artist=result.artist,
+        status=result.status,
+        target_count=result.target_count,
+        success_count=result.success_count,
+        failed_count=result.failed_count,
+        skipped_count=result.skipped_count,
+        affected_files=result.affected_files,
+        error_message=result.error_message,
+    )
