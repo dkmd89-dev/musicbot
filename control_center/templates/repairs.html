@@ -89,7 +89,7 @@
 
   async function _pollRepairJob(jobId) {
     try {
-      const res = await fetch(`/api/v1/jobs/${encodeURIComponent(jobId)}`, { credentials: "same-origin" });
+      const res = await fetch(apiUrl(`/api/v1/jobs/${encodeURIComponent(jobId)}`), { credentials: "same-origin" });
       if (res.status === 401) { showOnly("login-view"); _stopRepairJobPolling(); return; }
       if (!res.ok) return;
       _renderRepairJobStatus(await res.json());
@@ -111,7 +111,7 @@
     document.getElementById("repair-job-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
 
     try {
-      const res = await fetch("/api/v1/jobs/repair-safe-automatic", {
+      const res = await fetch(apiUrl("/api/v1/jobs/repair-safe-automatic"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
@@ -139,7 +139,7 @@
     const cancelBtn = document.getElementById("repair-cancel-btn");
     cancelBtn.disabled = true;
     try {
-      await fetch(`/api/v1/jobs/${encodeURIComponent(_currentRepairJobId)}/cancel`, {
+      await fetch(apiUrl(`/api/v1/jobs/${encodeURIComponent(_currentRepairJobId)}/cancel`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
@@ -199,7 +199,7 @@
 
   async function _pollLevel23Job(jobId) {
     try {
-      const res = await fetch(`/api/v1/jobs/${encodeURIComponent(jobId)}`, { credentials: "same-origin" });
+      const res = await fetch(apiUrl(`/api/v1/jobs/${encodeURIComponent(jobId)}`), { credentials: "same-origin" });
       if (res.status === 401) { showOnly("login-view"); _stopLevel23JobPolling(); return; }
       if (!res.ok) return;
       _renderLevel23JobStatus(await res.json());
@@ -219,7 +219,7 @@
     document.getElementById("level23-job-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
 
     try {
-      const res = await fetch(`/api/v1/jobs/repair-level${level === "l2" ? "2" : "3"}`, {
+      const res = await fetch(apiUrl(`/api/v1/jobs/repair-level${level === "l2" ? "2" : "3"}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",

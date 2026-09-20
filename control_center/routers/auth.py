@@ -14,7 +14,7 @@ verwendet, niemals geloggt oder in einer Response zurueckgegeben.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from config import Config
 from handlers.menu.models import AccessLevel
@@ -34,7 +34,9 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
 @router.post("/telegram-callback", response_model=AuthStatusResponse)
-def telegram_callback(payload: TelegramLoginPayload, response: Response) -> AuthStatusResponse:
+def telegram_callback(
+    payload: TelegramLoginPayload, request: Request, response: Response
+) -> AuthStatusResponse:
     config = Config()
     data = payload.model_dump(exclude_none=True)
 
@@ -55,6 +57,11 @@ def telegram_callback(payload: TelegramLoginPayload, response: Response) -> Auth
         httponly=True,
         secure=True,
         samesite="strict",
+        # Subpath-Betrieb (siehe control_center/root_path.py): Cookie nur an
+        # den eigenen Prefix binden (z. B. "/controlcenter"), damit es nicht
+        # an andere Apps derselben Domain (Immich, Navidrome, ...) geht.
+        # Direktbetrieb (root_path == "") -> "/" wie bisher.
+        path=request.scope.get("root_path", "") or "/",
     )
     return AuthStatusResponse()
 

@@ -49,7 +49,14 @@ def _render(request: Request, template_name: str, page_id: str) -> HTMLResponse:
     config = Config()
     return _templates.TemplateResponse(
         template_name,
-        {"request": request, "bot_username": config.BOT_USERNAME or None, "page_id": page_id},
+        {
+            "request": request,
+            "bot_username": config.BOT_USERNAME or None,
+            "page_id": page_id,
+            # Subpath-Betrieb hinter nginx (siehe control_center/root_path.py):
+            # "" im Direktbetrieb, sonst z. B. "/controlcenter".
+            "base_path": request.scope.get("root_path", ""),
+        },
     )
 
 

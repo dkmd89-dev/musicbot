@@ -15,7 +15,7 @@
   async function loadNavidromeStatus() {
     const el = document.getElementById("navidrome-status");
     try {
-      const res = await fetch("/api/v1/navidrome/status", { credentials: "same-origin" });
+      const res = await fetch(apiUrl("/api/v1/navidrome/status"), { credentials: "same-origin" });
       if (res.status === 401) { showOnly("login-view"); return; }
       if (!res.ok) { el.textContent = "Navidrome: Status nicht abrufbar."; return; }
       const status = await res.json();
