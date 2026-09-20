@@ -1,0 +1,103 @@
+{% extends "_base.html" %}
+{% block title %}Artist – MusicBot Control Center{% endblock %}
+{% block content %}
+  <p class="breadcrumb">
+    <a href="{{ base_path }}/library">📚 Library</a>
+    <span class="breadcrumb-sep">›</span>
+    <span id="breadcrumb-artist">🎤 …</span>
+  </p>
+  <h1 id="artist-title">🎤 …</h1>
+  <p class="subtitle" id="artist-subtitle"></p>
+
+  <div id="artist-content">
+    <p class="empty-note">Artist wird geladen …</p>
+  </div>
+
+  <p class="retry-row"><a href="{{ base_path }}/library">◀️ Zurück zu Artists</a></p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Library Artist-Centric UX (CC-AC-1) — Artist-Detail. Bewusst KEIN
+  // serverseitig gerenderter Artist-Name (siehe ui.py::
+  // library_artist_detail_page()-Docstring): der Artist-Name kommt aus
+  // dem letzten Pfadsegment, ein unbekannter Artist bleibt ein sauberer
+  // API-404 statt eines Server-Renderfehlers. F5-tauglich, da derselbe
+  // Pfad bei jedem Laden identisch ausgewertet wird.
+  function currentArtistFromPath() {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    return decodeURIComponent(parts[parts.length - 1] || "");
+  }
+
+  function renderArtistDetail(el, body) {
+    document.getElementById("artist-title").textContent = `🎤 ${body.artist}`;
+    document.getElementById("breadcrumb-artist").textContent = `🎤 ${body.artist}`;
+    document.title = `${body.artist} – Library – MusicBot Control Center`;
+
+    const staleNote = body.stale
+      ? ` — <span class="hint">Stand: ${_escapeHtml(body.generated_at || "unbekannt")} (nicht mehr aktuell)</span>`
+      : (body.generated_at ? ` — <span class="hint">Stand: ${_escapeHtml(body.generated_at)}</span>` : "");
+    document.getElementById("artist-subtitle").innerHTML =
+      `${body.file_count} Dateien · ${body.album_count} Alben${staleNote}`;
+
+    const scoreClass = body.health_score >= 90 ? "status-EXCELLENT"
+      : body.health_score >= 70 ? "status-GOOD" : "status-CRITICAL";
+
+    const albumsHtml = body.albums.length
+      ? '<div class="row-list">' + body.albums.map((a) => `
+          <div class="row-item">
+            <div class="row-main">${_escapeHtml(a.album)}</div>
+            <div class="row-count">${a.file_count} Dateien — Score ${a.health_score}</div>
+          </div>
+        `).join("") + "</div>"
+      : '<p class="empty-note">Keine Alben vorhanden.</p>';
+
+    const tracksHtml = body.tracks.length
+      ? '<div class="row-list">' + body.tracks.map((t) => `
+          <div class="row-item" title="${_escapeHtml(t.relative_path)}">
+            <div class="row-main">${_escapeHtml(t.title || t.filename)}</div>
+            <div class="row-count">${_escapeHtml(t.album || "")}</div>
+          </div>
+        `).join("") + "</div>"
+      : '<p class="empty-note">Keine Tracks vorhanden.</p>';
+
+    el.innerHTML = `
+      <div class="tiles">
+        <div class="tile"><div class="tile-label">Health Score</div>
+          <div class="tile-value ${scoreClass}">${body.health_score}</div></div>
+        <div class="tile"><div class="tile-label">Dateien</div>
+          <div class="tile-value">${body.file_count}</div></div>
+        <div class="tile"><div class="tile-label">Alben</div>
+          <div class="tile-value">${body.album_count}</div></div>
+      </div>
+      <section class="panel">
+        <h2>💿 Alben</h2>
+        ${albumsHtml}
+      </section>
+      <section class="panel">
+        <h2>🎵 Tracks</h2>
+        ${tracksHtml}
+      </section>
+    `;
+  }
+
+  function loadArtistDetail() {
+    const artist = currentArtistFromPath();
+    if (!artist) {
+      document.getElementById("artist-content").innerHTML =
+        '<p class="empty-note">Kein Artist angegeben.</p>';
+      return;
+    }
+    return _loadInto(
+      "artist-content",
+      `/api/v1/library/artists-overview/${encodeURIComponent(artist)}`,
+      renderArtistDetail, loadArtistDetail,
+    );
+  }
+
+  function initPage() {
+    checkAuth().then((who) => { if (who) loadArtistDetail(); });
+  }
+  initPage();
+</script>
+{% endblock %}

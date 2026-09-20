@@ -75,6 +75,20 @@ def library_page(request: Request) -> HTMLResponse:
     return _render(request, "library.html", "library")
 
 
+@router.get("/library/{artist}", response_class=HTMLResponse)
+def library_artist_detail_page(request: Request, artist: str) -> HTMLResponse:
+    """Artist-Detail (Library Artist-Centric UX, CC-AC-1) — `artist` wird
+    hier bewusst NICHT serverseitig aufgeloest/validiert (dieselbe
+    Trennung wie alle anderen Seiten-Routen: unauthentifiziertes HTML-
+    Grundgerüst, die eigentlichen Daten inkl. 404-Behandlung holt die
+    Seite client-seitig über GET /api/v1/library/artists-overview/{artist}
+    — „unbekannter Artist" bleibt dadurch ein sauberer API-Fehler statt
+    eines Server-Renderfehlers). `page_id="library"` hält den
+    Sidebar-Eintrag „📚 Library" aktiv markiert, identisches Prinzip wie
+    Unterseiten in anderen Bereichen dieses Control Centers."""
+    return _render(request, "library_artist_detail.html", "library")
+
+
 @router.get("/metadata", response_class=HTMLResponse)
 def metadata_page(request: Request) -> HTMLResponse:
     return _render(request, "metadata.html", "metadata")

@@ -2,7 +2,15 @@
 {% block title %}Library – MusicBot Control Center{% endblock %}
 {% block content %}
   <h1>Library</h1>
-  <p class="subtitle">Tracks, Artists, Albums und Mapping-Übersicht.</p>
+  <p class="subtitle">Artists, Alben, Tracks und Mapping-Übersicht.</p>
+
+  <section class="panel">
+    <h2>🎤 Artists</h2>
+    <div class="retry-row" style="text-align: left; margin-top: 0; margin-bottom: 12px;">
+      <input type="text" id="artist-search" placeholder="🔎 Artist suchen …">
+    </div>
+    <div id="artists-overview-content" class="empty-note">Artists werden geladen …</div>
+  </section>
 
   <section class="panel">
     <h2>Library-Metadata</h2>
@@ -38,6 +46,60 @@
 
 {% block scripts %}
 <script>
+  // Library Artist-Centric UX (CC-AC-1, library_artist_centric_UX.txt):
+  // Artists werden beim Laden automatisch angezeigt (aus dem
+  // PERSISTENTEN Report, GET /api/v1/library/artists-overview - KEIN
+  // Scan-Trigger, Auftrag §7a). Bewusst getrennt von der bestehenden
+  // "Library-Metadata"-Sektion unten (Klick-gesteuerter Live-Scan ueber
+  // GET /api/v1/library/artists - unveraendert erhalten, Auftrag §39
+  // "alte Routen nicht ungeprueft entfernen").
+  let _artistsOverviewCache = [];
+
+  function _artistRowHtml(a) {
+    const href = `${CC_BASE}/library/${encodeURIComponent(a.artist)}`;
+    return `
+      <a class="row-item" href="${href}">
+        <div class="row-main">🎤 ${_escapeHtml(a.artist)}</div>
+        <div class="row-count">${a.file_count} Dateien · ${a.album_count} Alben — Score ${a.health_score}</div>
+      </a>
+    `;
+  }
+
+  function _renderArtistsOverviewList() {
+    const el = document.getElementById("artists-overview-content");
+    const query = (document.getElementById("artist-search").value || "").trim().toLowerCase();
+    const filtered = query
+      ? _artistsOverviewCache.filter((a) => a.artist.toLowerCase().includes(query))
+      : _artistsOverviewCache;
+    if (!filtered.length) {
+      el.innerHTML = query
+        ? '<p class="empty-note">Keine Artists für diese Suche gefunden.</p>'
+        : '<p class="empty-note">Keine Artists gefunden.</p>';
+      return;
+    }
+    el.innerHTML = '<div class="row-list">' + filtered.map(_artistRowHtml).join("") + "</div>";
+  }
+
+  function renderArtistsOverview(el, body) {
+    _artistsOverviewCache = body.artists;
+    if (body.stale) {
+      const note = document.createElement("p");
+      note.className = "hint";
+      note.textContent = `Stand: ${body.generated_at || "unbekannt"} (nicht mehr aktuell)`;
+      el.parentNode.insertBefore(note, el);
+    }
+    _renderArtistsOverviewList();
+  }
+
+  function loadArtistsOverview() {
+    return _loadInto(
+      "artists-overview-content", "/api/v1/library/artists-overview",
+      renderArtistsOverview, loadArtistsOverview,
+    );
+  }
+
+  document.getElementById("artist-search").addEventListener("input", _renderArtistsOverviewList);
+
   // Master-Prompt Abschnitt 7 "METADATA MANAGEMENT" / ui_prompt.txt
   // Abschnitt 14 "LIBRARY" - Tracks/Artists/Albums/Mapping-Browser.
   // Bewusst KEINE Weiter/Zurück-Pagination-Buttons: jede Server-Anfrage
@@ -123,7 +185,7 @@
   document.getElementById("metadata-mapping-btn").addEventListener("click", loadMappingSummary);
 
   function initPage() {
-    checkAuth();
+    checkAuth().then((who) => { if (who) loadArtistsOverview(); });
   }
   initPage();
 </script>

@@ -35,6 +35,7 @@ from .routers import (
     findings,
     health,
     jobs,
+    library_overview,
     logs,
     metadata,
     metadata_actions,
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(repair.router)
     app.include_router(metadata.router)
     app.include_router(metadata_actions.router)
+    app.include_router(library_overview.router)
     app.include_router(downloads.router)
     app.include_router(statistics.router)
     app.include_router(navidrome.router)

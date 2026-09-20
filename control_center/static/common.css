@@ -140,3 +140,20 @@ section.panel h2 {
   text-align: center;
 }
 .denied, .empty-note { color: var(--muted); font-size: 0.85rem; }
+
+/* ── Library Artist-Centric UX (CC-AC-1): Breadcrumb, klickbare
+   Listenzeilen, Sucheingabe — reine Ergaenzungen, keine neue
+   CSS-Architektur (Auftrag §30). ────────────────────────────────────── */
+.breadcrumb { color: var(--muted); font-size: 0.85rem; margin: 0 0 4px; }
+.breadcrumb a { color: var(--muted); text-decoration: none; }
+.breadcrumb a:hover { color: var(--accent); text-decoration: underline; }
+.breadcrumb-sep { margin: 0 6px; }
+a.row-item {
+  text-decoration: none; color: inherit; cursor: pointer;
+}
+a.row-item:hover { background: rgba(127,127,127,0.08); }
+input[type="text"], input[type="search"] {
+  background: var(--card-bg); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; font-size: 0.9rem; width: 100%;
+  max-width: 320px;
+}

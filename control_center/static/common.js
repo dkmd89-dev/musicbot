@@ -51,8 +51,20 @@ function _escapeHtml(value) {
 
 // Gemeinsamer Lade-/Fehlerbehandlungs-Pfad fuer read-only-Bereiche -
 // einheitliches Status-Handling (401/403/404/Netzwerkfehler) auf allen
-// Seiten.
-async function _loadInto(elementId, url, renderFn) {
+// Seiten. `retryFn` (optional, Library Artist-Centric UX CC-AC-1
+// nachgezogen) haengt bei echten Fehlern (5xx/Netzwerk - NICHT bei 403/
+// 404, die sind kein "einfach nochmal versuchen"-Fall) einen "Erneut
+// versuchen"-Button an - alle bestehenden Aufrufer ohne diesen Parameter
+// verhalten sich unveraendert (optionaler Parameter, `undefined` ist
+// falsy).
+function _retryButtonHtml(retryFn) {
+  if (!retryFn) return "";
+  window._ccRetryHandlers = window._ccRetryHandlers || {};
+  const key = "retry_" + Math.random().toString(36).slice(2);
+  window._ccRetryHandlers[key] = retryFn;
+  return `<div class="retry-row"><button class="small" type="button" onclick="window._ccRetryHandlers['${key}']()">Erneut versuchen</button></div>`;
+}
+async function _loadInto(elementId, url, renderFn, retryFn) {
   const el = document.getElementById(elementId);
   if (!el) return;
   try {
@@ -69,12 +81,12 @@ async function _loadInto(elementId, url, renderFn) {
     }
     if (!res.ok) {
       const body = await res.json().catch(() => null);
-      el.textContent = "Fehler: " + (body && body.error ? body.error.message : res.status);
+      el.innerHTML = `<span>Fehler: ${_escapeHtml(body && body.error ? body.error.message : String(res.status))}</span>${_retryButtonHtml(retryFn)}`;
       return;
     }
     renderFn(el, await res.json());
   } catch (err) {
-    el.textContent = "Netzwerkfehler: " + err.message;
+    el.innerHTML = `<span>Netzwerkfehler: ${_escapeHtml(err.message)}</span>${_retryButtonHtml(retryFn)}`;
   }
 }
 
