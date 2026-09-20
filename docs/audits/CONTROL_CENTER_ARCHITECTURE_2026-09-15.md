@@ -419,3 +419,77 @@ UX für die erste dateiverändernde Fähigkeit — vorab mit dem Nutzer abgestim
 **Nachtrag (2026-09-20, Live-Smoke-Test durch den Nutzer vor Merge):** erster echter End-to-End-Klick auf "SAFE_AUTOMATIC reparieren" gegen die Produktionsbibliothek — Job lief PENDING→RUNNING→SUCCEEDED sauber durch, aber 0 Kandidaten ausgeführt (Screenshot-Beleg: Panel zeigte vorher bereits korrekt "SAFE_AUTOMATIC reparieren (0)"). **Kein Bug**, sondern korrekte Konsequenz der bestehenden `services/library_repair/planner.py`-Kategorisierung: `actionable_total` (hier 1114) summiert **alle** `DISPOSITION_AUTO_REPAIR`-Level (`SAFE_AUTOMATIC` + `METADATA_REPROCESSING` + `EXTERNAL_METADATA` + `COVER` + `LOUDNESS` + `DUPLICATE`), während der Job bewusst nur `RepairLevel.SAFE_AUTOMATIC` ausführt (identische enge Grenze wie der bestehende Telegram-Doctor, siehe Phase-2-Eintrag oben). Bei diesem Bibliotheksstand lagen alle 1114 aktuell offenen Kandidaten in COVER/EXTERNAL_METADATA/METADATA_REPROCESSING — Level, die laut `doctor_runner.py` bewusst nur auf ausdrückliche `--level`/`--issue`-Anforderung laufen, nicht über SAFE_AUTOMATIC.
 
 Als kleine UX-Klarstellung (gleicher Branch, vor Merge, Nutzerfreigabe): der Vorschau-Text im Repair-Plan-Panel benennt jetzt explizit, dass `actionable_total` alle Level zusammenfasst und wie viele davon tatsächlich `SAFE_AUTOMATIC` (= per Button ausführbar) sind, statt nur die Gesamtzahl direkt über dem SAFE_AUTOMATIC-Button zu zeigen. `tests/test_control_center_ui.py` von 15 auf 16 Tests erweitert — alle grün, Regression `test_control_center_repair_api.py` (12) + `test_control_center_jobs_api.py` (12) weiterhin grün.
+
+---
+
+## Erweiterung — Level-2/Level-3-Reparatur, Pro-Artist API (2026-09-20, auf Nutzerfreigabe)
+
+Erste API-Ebene für die zweite Klasse dateiverändernder Fähigkeiten —
+Pendant zur bereits produktiven Telegram-Fähigkeit `l23rep:*`
+(`docs/LIBRARY_REPAIR.md` §12, ARCH-033). **Cover bleibt bewusst
+außen vor**, identisch zur ARCH-033-eigenen Scope-Entscheidung ("COVER/
+LOUDNESS/DUPLICATE bleiben CLI-only") — auf Nachfrage vom Nutzer
+ausdrücklich bestätigt, keine neue, in Telegram nirgends existierende
+Fähigkeit einzuführen.
+
+- **`GET /api/v1/library/repair-plan/by-artist`** (`control_center/routers/repair.py`) —
+  eigener, frischer Scan (wie `GET /repair-plan`), gruppiert per
+  `services/library_repair/planner.py::group_candidates_by_artist()`
+  (bereits vorhandene, reine Funktion, Default-Filter: nur L2/
+  METADATA_REPROCESSING + L3/EXTERNAL_METADATA) — identische
+  Gruppierungslogik wie die Telegram-Artist-Liste, keine eigene
+  Aggregation im Router.
+- **`POST /api/v1/jobs/repair-level2` / `POST /api/v1/jobs/repair-level3`**
+  (`control_center/routers/jobs.py`, Body: `{"artist": "..."}`, analog
+  `AcceptFindingRequest`) — neue Job-Kinds `repair_level2`/
+  `repair_level3`. Rufen **nicht** wie `repair_safe_automatic` die
+  rohen `doctor_runner.py`-Subprozessfunktionen auf, sondern
+  `services/library_repair/repair_service.py::execute_level2_repair()`/
+  `execute_level3_repair()` — dieselbe höhere Orchestrierungsebene, die
+  auch der Telegram-`l23rep:*`-Subflow nutzt (Health-Scan +
+  Stale-Plan-Schutz + Subprozess + Verification-Rescan +
+  Run-History-Eintrag, inkl. desselben prozessübergreifenden
+  `acquire_repair_lock()`/`release_repair_lock()` wie Telegram/CLI).
+  **Bewusste Abweichung vom SAFE_AUTOMATIC-Präzedenzfall**, weil beide
+  Telegram-Pfade selbst unterschiedliche Ebenen nutzen (Doctor ruft
+  `doctor_runner.py` direkt auf, `l23rep:*` ruft `repair_service.py`
+  auf) — hier wurde jeweils exakt der bestehende Pfad gespiegelt, nicht
+  vereinheitlicht.
+- **`RepairAlreadyRunningError`** (gemeinsamer Lock mit Telegram/CLI)
+  wird abgefangen und der Job kontrolliert als `FAILED` mit
+  verständlicher Fehlermeldung beendet, statt eines rohen 500ers oder
+  eines unbemerkt hängenden Jobs.
+- **Bewusst kein globaler Batch-Button** — identisch zu ARCH-033/
+  ADR-0003: L2/L3 sind ausschließlich pro Artist ausführbar, die
+  Artist-Auswahl kommt aus dem neuen `by-artist`-Endpoint.
+- **Kooperatives Abbrechen ist für diese beiden Job-Typen NICHT
+  wirksam** — `execute_level2_repair()`/`execute_level3_repair()` sind
+  ein einzelner atomarer `await` ohne Zwischen-Checkpoint (anders als
+  `repair_safe_automatic`, das Scan und Repair als zwei getrennte
+  Aufrufe mit einer `is_cancel_requested()`-Prüfung dazwischen hat).
+  Der generische `POST /{job_id}/cancel`-Endpunkt bleibt technisch
+  erreichbar, hat für `repair_level2`/`repair_level3` aber keine
+  Wirkung — im Router-Docstring explizit dokumentiert (Master-Prompt
+  Regel 39: keine vorgetäuschte Fähigkeit). Der UI-Folgeschritt zeigt
+  für diese Job-Typen konsequenterweise keinen Abbrechen-Button.
+- Test: `tests/test_control_center_repair_api.py` um 4 Tests erweitert
+  (by-artist-Gruppierung gegen eine echte, per ffmpeg erzeugte
+  Testdatei charakterisiert — L2/L3-Zahlen aus tatsächlichem
+  Scan-Ergebnis übernommen, nicht angenommen), `tests/test_control_center_jobs_api.py`
+  um 11 Tests erweitert (Erfolg, 0-Kandidaten-SKIPPED zählt als
+  Job-Erfolg, Fehlschlag mit Diagnosedaten, Lock-Konflikt, leerer
+  Artist-Name, CSRF, Initiator-Aufzeichnung — jeweils für L2 und L3
+  parametrisiert) — alle grün, Gesamt-Control-Center-Suite 176/176
+  grün. Regression: `tests/test_repair_service_level23.py` +
+  `tests/test_library_repair_planner.py` + `tests/test_repair_handler_level23.py`
+  + `tests/test_doctor_runner.py` (91 Tests, Telegram-/CLI-Pfad
+  unverändert) weiterhin grün.
+- **Kein Live-Smoke-Test gegen die echte Library** — ein echter Aufruf
+  würde sofort `--artist X --level METADATA_REPROCESSING/EXTERNAL_METADATA
+  --apply` gegen die Produktionsbibliothek auslösen. Nur gegen einen
+  echten laufenden Prozess sicher verifiziert: beide Routen sind
+  erreichbar, CSRF-Check greift.
+- **Kein UI in diesem Schritt** — Artist-Auswahl + L2/L3-Aktionswahl +
+  Bestätigung ist ein eigener, separat zu besprechender Folgeschritt
+  (analog zum SAFE_AUTOMATIC-Präzedenzfall: erst API, dann UI).
+- Keine neuen Dependencies.

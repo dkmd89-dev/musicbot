@@ -50,3 +50,12 @@ def job_to_schema(job: Job) -> JobSchema:
 
 def jobs_to_response(jobs: list[Job]) -> JobListResponse:
     return JobListResponse(jobs=[job_to_schema(j) for j in jobs])
+
+
+class ArtistLevelRepairRequest(BaseModel):
+    """Body für POST /repair-level2 und /repair-level3 — Artist als Body-
+    statt Pfad-Parameter (identisches Muster wie AcceptFindingRequest in
+    schemas/findings.py), da Artist-Namen beliebige Zeichen enthalten
+    können."""
+
+    artist: str

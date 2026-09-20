@@ -34,7 +34,12 @@ from services.library_repair.planner import plan_repairs
 
 from .._library_scan import run_library_scan
 from ..dependencies import require_min_access_level
-from ..schemas.repair import RepairPlanResponse, plan_to_response
+from ..schemas.repair import (
+    ArtistRepairPlanResponse,
+    RepairPlanResponse,
+    plan_to_artist_response,
+    plan_to_response,
+)
 
 router = APIRouter(
     prefix="/api/v1/library",
@@ -49,3 +54,15 @@ def get_repair_plan() -> RepairPlanResponse:
     report = run_library_scan(logger=_logger)
     plan = plan_repairs(report)
     return plan_to_response(plan)
+
+
+@router.get("/repair-plan/by-artist", response_model=ArtistRepairPlanResponse)
+def get_repair_plan_by_artist() -> ArtistRepairPlanResponse:
+    """Pendant zur Telegram-Pro-Artist-Auswahl (ARCH-033 §12) — L2/L3 sind
+    bewusst NICHT als globaler Batch wie SAFE_AUTOMATIC ausführbar,
+    sondern nur pro Artist (docs/adr/0003). Eigener, frischer Scan (wie
+    GET /repair-plan) statt Wiederverwendung eines evtl. veralteten
+    Client-Zustands."""
+    report = run_library_scan(logger=_logger)
+    plan = plan_repairs(report)
+    return plan_to_artist_response(plan)
