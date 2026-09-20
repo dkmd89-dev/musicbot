@@ -642,3 +642,30 @@ Statistics-Panel (kein neues Panel) um zwei zusätzliche Content-Bereiche.
 - Keine neuen Dependencies, keine neue API-Fläche (reine
   Frontend-Verdrahtung auf den im vorherigen Schritt hinzugefügten
   Endpunkten).
+
+---
+
+## Erweiterung — Cross-User-Statistik in der Admin-Übersicht (2026-09-20, auf Nutzerfreigabe)
+
+Letzter der drei seit dem ursprünglichen Statistics-Schritt offenen
+Punkte — macht den bereits fertigen `GET /api/v1/statistics/{navidrome_username}`-
+Endpunkt (Admin-only) tatsächlich im Web nutzbar, statt nur über
+Swagger/`curl` erreichbar zu sein.
+
+- Pro Admin-Nutzer-Zeile ein `Statistik`-Button, nur gerendert, wenn
+  `navidrome_user` gesetzt ist (kein Button ohne verknüpften
+  Navidrome-Account — der Endpunkt bräuchte sonst ohnehin einen leeren
+  Platzhalter-Namen).
+- **Bewusste Wiederverwendung von `renderStatistics()`** (der bereits
+  bestehenden Render-Funktion für das eigene `/me`-Panel) statt einer
+  neuen Render-Funktion — `GET /{navidrome_username}` liefert exakt
+  dasselbe `StatisticsResponse`-Schema wie `/me`, keine Duplikation
+  nötig.
+- Ergebnis erscheint in einem eigenen, initial verborgenen Bereich
+  (`#admin-user-stats-content`) unterhalb der Admin-Nutzerliste, nicht
+  in einem Modal/Overlay — konsistent mit dem übrigen, modal-freien
+  Dashboard-Stil.
+- Test: `tests/test_control_center_ui.py` von 21 auf 22 Tests erweitert
+  (Button-Präsenz, JS-Verdrahtung) — alle grün, Gesamt-Control-Center-Suite
+  197/197 grün. JS-Syntax mit `node --check` verifiziert.
+- Keine neuen Dependencies, keine neue API-Fläche.
