@@ -159,6 +159,39 @@ async def test_dashboard_repair_plan_has_dedicated_manual_trigger(client):
 
 
 @pytest.mark.asyncio
+async def test_dashboard_repair_job_start_button_disabled_until_plan_loaded(client):
+    """Nachtrag: der Start-Button fuer die erste dateiveraendernde
+    Faehigkeit (repair_safe_automatic) darf nicht klickbar sein, bevor
+    eine echte, aktuelle Kandidatenzahl fuer den Bestaetigungsdialog
+    vorliegt - deshalb serverseitig `disabled` im initialen Markup."""
+    html = (await client.get("/")).text
+
+    assert 'id="repair-start-btn" class="small" disabled' in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_repair_job_ui_wiring_present(client):
+    html = (await client.get("/")).text
+
+    assert "startRepairJob" in html
+    assert "cancelRepairJob" in html
+    assert "/api/v1/jobs/repair-safe-automatic" in html
+    assert 'id="repair-cancel-btn"' in html
+    assert 'id="repair-job-content"' in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_repair_job_confirm_dialog_mentions_backup_and_files(client):
+    """Master-Prompt Regel 11: Bestaetigung vor einer destruktiven
+    Operation muss verstaendlich machen, was passiert - nicht nur ein
+    generisches 'Sicher?'."""
+    html = (await client.get("/")).text
+
+    assert "Backup" in html
+    assert "Dateien in der Library" in html
+
+
+@pytest.mark.asyncio
 async def test_dashboard_shows_telegram_widget_when_bot_username_configured(client, monkeypatch):
     monkeypatch.setattr(Config, "BOT_USERNAME", property(lambda self: "MeinTestBot"))
 
