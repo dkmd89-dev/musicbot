@@ -283,6 +283,41 @@ async def test_dashboard_admin_users_panel_has_cross_user_statistics_wiring(clie
 
 
 @pytest.mark.asyncio
+async def test_dashboard_has_library_metadata_panel(client):
+    """Master-Prompt Abschnitt 7 "METADATA MANAGEMENT", erster Schritt:
+    Tracks/Artists/Albums-Browser, manueller Trigger (voller Scan, kein
+    Auto-Load, wie das Repair-Plan-Panel)."""
+    html = (await client.get("/")).text
+
+    assert "Library-Metadata" in html
+    assert 'id="metadata-tracks-btn"' in html
+    assert 'id="metadata-artists-btn"' in html
+    assert 'id="metadata-albums-btn"' in html
+    assert 'id="metadata-content"' in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_library_metadata_ui_wiring_present(client):
+    html = (await client.get("/")).text
+
+    assert "loadMetadataList" in html
+    assert "renderTracks" in html
+    assert "renderMetadataArtists" in html
+    assert "renderMetadataAlbums" in html
+    assert "/api/v1/library/${mode}" in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_library_metadata_has_no_repeated_rescan_pagination(client):
+    """Bewusste Entscheidung: keine Weiter/Zurück-Buttons, da jede Anfrage
+    einen vollen Library-Scan ausloest - stattdessen Trunkierungshinweis
+    wie beim Accepted-Findings-Panel."""
+    html = (await client.get("/")).text
+
+    assert "kein Auto-Rendern großer Listen" in html
+
+
+@pytest.mark.asyncio
 async def test_dashboard_shows_telegram_widget_when_bot_username_configured(client, monkeypatch):
     monkeypatch.setattr(Config, "BOT_USERNAME", property(lambda self: "MeinTestBot"))
 
