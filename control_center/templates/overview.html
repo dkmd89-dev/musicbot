@@ -1,0 +1,182 @@
+{% extends "_base.html" %}
+{% block title %}Overview – MusicBot Control Center{% endblock %}
+{% block content %}
+  <h1>Overview</h1>
+  <p class="subtitle">Systemübersicht — Details je Bereich über die Seitenleiste.</p>
+
+  <div id="navidrome-status">Navidrome: Lädt…</div>
+  <div id="health-tiles" class="tiles">Lädt…</div>
+
+  <div id="kpi-grid" class="kpi-grid">
+    <div class="tile"><div class="tile-label">Active Jobs</div><div class="tile-value" id="kpi-active-jobs">–</div></div>
+    <div class="tile"><div class="tile-label">Open Findings</div><div class="tile-value" id="kpi-open-findings">–</div></div>
+  </div>
+
+  <section class="panel" id="attention-panel" hidden>
+    <h2>Attention</h2>
+    <div id="attention-content"></div>
+    <div class="retry-row"><a href="/findings"><button class="small" type="button">Findings ansehen</button></a></div>
+  </section>
+
+  <section class="panel">
+    <h2>Active Jobs</h2>
+    <div id="active-jobs-summary" class="empty-note">Lädt…</div>
+    <div class="retry-row"><a href="/jobs"><button class="small" type="button">Alle Jobs ansehen</button></a></div>
+  </section>
+
+  <section class="panel">
+    <h2>Recent Activity</h2>
+    <div id="recent-activity-content" class="empty-note">Lädt…</div>
+    <div class="retry-row"><a href="/downloads"><button class="small" type="button">Download-Verlauf ansehen</button></a></div>
+  </section>
+
+  <section class="panel">
+    <h2>Quick Actions</h2>
+    <div class="retry-row">
+      <a href="/findings"><button class="small" type="button">Findings</button></a>
+      <a href="/repairs"><button class="small" type="button">Repairs</button></a>
+      <a href="/jobs"><button class="small" type="button">Jobs</button></a>
+      <a href="/library"><button class="small" type="button">Library</button></a>
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Overview ist bewusst kompakt (ui_prompt.txt Abschnitt 9/10) - nur
+  // Status/KPIs/Zusammenfassungen mit Links zu den Detailseiten, keine
+  // vollstaendigen Listen mehr (die lebten vorher alle auf einer
+  // einzigen Seite, siehe docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md,
+  // Abschnitt "UI Structure Redesign Phase 1").
+
+  function renderHealthTiles(data) {
+    const el = document.getElementById("health-tiles");
+    if (!data.library || !data.library.files) {
+      el.innerHTML = "<p>Keine Dateien in der Library gefunden.</p>";
+      return;
+    }
+    const score = data.health.score != null ? data.health.score : "–";
+    const status = data.health.status || "UNSCORED";
+    el.innerHTML = `
+      <div class="tile"><div class="tile-label">Health Score</div>
+        <div class="tile-value status-${status}">${score}</div>
+        <div class="hint">${status}</div></div>
+      <div class="tile"><div class="tile-label">Tracks</div>
+        <div class="tile-value">${data.library.files}</div></div>
+      <div class="tile"><div class="tile-label">Artists</div>
+        <div class="tile-value">${data.library.artists}</div></div>
+      <div class="tile"><div class="tile-label">Albums</div>
+        <div class="tile-value">${data.library.albums}</div></div>
+    `;
+  }
+
+  async function loadHealthForOverview() {
+    const el = document.getElementById("health-tiles");
+    try {
+      const res = await fetch("/api/v1/library/health", { credentials: "same-origin" });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (res.status === 403) { el.textContent = "Kein Zugriff (Berechtigung reicht nicht)."; return; }
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        el.textContent = "Fehler: " + (body && body.error ? body.error.message : res.status);
+        return;
+      }
+      renderHealthTiles(await res.json());
+    } catch (err) {
+      el.textContent = "Netzwerkfehler: " + err.message;
+    }
+  }
+
+  async function loadNavidromeStatus() {
+    const el = document.getElementById("navidrome-status");
+    try {
+      const res = await fetch("/api/v1/navidrome/status", { credentials: "same-origin" });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (!res.ok) { el.textContent = "Navidrome: Status nicht abrufbar."; return; }
+      const status = await res.json();
+      const dot = status.connected ? "dot-ok" : "dot-error";
+      const label = status.connected ? "Verbunden" : "Nicht erreichbar";
+      const count = status.connected && status.artist_count != null
+        ? ` (${status.artist_count} Artists)` : "";
+      el.innerHTML = `<span class="dot ${dot}"></span>Navidrome: ${label}${count}`;
+    } catch (err) {
+      el.textContent = "Navidrome: Netzwerkfehler.";
+    }
+  }
+
+  async function loadAttentionSummary() {
+    try {
+      const res = await fetch("/api/v1/library/findings/summary", { credentials: "same-origin" });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (!res.ok) return;
+      const summary = await res.json();
+      document.getElementById("kpi-open-findings").textContent = summary.open;
+      const panel = document.getElementById("attention-panel");
+      if (summary.open > 0) {
+        panel.hidden = false;
+        document.getElementById("attention-content").innerHTML =
+          `<p class="empty-note">${summary.open} Finding(s) erfordern Aufmerksamkeit.</p>`;
+      } else {
+        panel.hidden = true;
+      }
+    } catch (err) {
+      // Overview bleibt trotzdem nutzbar, wenn nur diese Kachel scheitert.
+    }
+  }
+
+  async function loadActiveJobsSummary() {
+    const el = document.getElementById("active-jobs-summary");
+    try {
+      const res = await fetch("/api/v1/jobs?limit=20", { credentials: "same-origin" });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (!res.ok) { el.textContent = "Jobs nicht abrufbar."; return; }
+      const body = await res.json();
+      const active = body.jobs.filter((j) => j.status === "PENDING" || j.status === "RUNNING");
+      document.getElementById("kpi-active-jobs").textContent = active.length;
+      if (!active.length) {
+        el.innerHTML = '<p class="empty-note">Keine aktiven Jobs.</p>';
+        return;
+      }
+      el.innerHTML = '<div class="row-list">' + active.map((j) => `
+        <div class="row-item">
+          <div class="row-main">${_escapeHtml(j.kind)}</div>
+          <div class="row-count">${_escapeHtml(j.status)} (${j.progress.toFixed(0)}%)</div>
+        </div>
+      `).join("") + "</div>";
+    } catch (err) {
+      el.textContent = "Netzwerkfehler: " + err.message;
+    }
+  }
+
+  async function loadRecentActivity() {
+    const el = document.getElementById("recent-activity-content");
+    try {
+      const res = await fetch("/api/v1/downloads/history?limit=5", { credentials: "same-origin" });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (!res.ok) { el.textContent = "Verlauf nicht abrufbar."; return; }
+      const body = await res.json();
+      if (!body.entries.length) { el.innerHTML = '<p class="empty-note">Keine Aktivität.</p>'; return; }
+      el.innerHTML = '<div class="row-list">' + body.entries.map((e) => `
+        <div class="row-item">
+          <div class="row-main"><span class="badge badge-status-${_escapeHtml(e.status)}">${_escapeHtml(e.status)}</span>${_escapeHtml(e.title)} — ${_escapeHtml(e.artist)}</div>
+          <div class="row-count">${new Date(e.timestamp).toLocaleString()}</div>
+        </div>
+      `).join("") + "</div>";
+    } catch (err) {
+      el.textContent = "Netzwerkfehler: " + err.message;
+    }
+  }
+
+  function initPage() {
+    checkAuth().then((who) => {
+      if (!who) return;
+      loadHealthForOverview();
+      loadNavidromeStatus();
+      loadAttentionSummary();
+      loadActiveJobsSummary();
+      loadRecentActivity();
+    });
+  }
+  initPage();
+</script>
+{% endblock %}

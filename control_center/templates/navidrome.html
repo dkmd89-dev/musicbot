@@ -1,0 +1,40 @@
+{% extends "_base.html" %}
+{% block title %}Navidrome – MusicBot Control Center{% endblock %}
+{% block content %}
+  <h1>Navidrome</h1>
+  <p class="subtitle">Navidrome bleibt für Playback/Streaming/Queue zuständig (ui_prompt.txt Abschnitt 24) — hier nur der Verbindungsstatus. Player folgt als späteres Feature.</p>
+
+  <section class="panel">
+    <h2>Status</h2>
+    <div id="navidrome-status" class="empty-note">Lädt…</div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function loadNavidromeStatus() {
+    const el = document.getElementById("navidrome-status");
+    try {
+      const res = await fetch("/api/v1/navidrome/status", { credentials: "same-origin" });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (!res.ok) { el.textContent = "Navidrome: Status nicht abrufbar."; return; }
+      const status = await res.json();
+      const dot = status.connected ? "dot-ok" : "dot-error";
+      const label = status.connected ? "Verbunden" : "Nicht erreichbar";
+      const count = status.connected && status.artist_count != null
+        ? ` (${status.artist_count} Artists)` : "";
+      el.innerHTML = `<span class="dot ${dot}"></span>Navidrome: ${label}${count}`;
+    } catch (err) {
+      el.textContent = "Navidrome: Netzwerkfehler.";
+    }
+  }
+
+  function initPage() {
+    checkAuth().then((who) => {
+      if (!who) return;
+      loadNavidromeStatus();
+    });
+  }
+  initPage();
+</script>
+{% endblock %}

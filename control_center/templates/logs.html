@@ -1,0 +1,25 @@
+{% extends "_base.html" %}
+{% block title %}Logs – MusicBot Control Center{% endblock %}
+{% block content %}
+  <h1>Logs</h1>
+  <p class="subtitle">Diagnose-Log-Ansicht.</p>
+
+  <section class="panel">
+    <h2>Noch nicht implementiert</h2>
+    <p class="empty-note">
+      Es existiert noch kein Log-Viewer-Backend (Master-Prompt Abschnitt 12
+      "LOGS &amp; DIAGNOSTICS", bisher nicht umgesetzt). Diese Seite ist
+      bewusst als Platzhalter angelegt, statt eine nicht vorhandene
+      Funktion vorzutäuschen (Master-Prompt Regel 38).
+    </p>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function initPage() {
+    checkAuth();
+  }
+  initPage();
+</script>
+{% endblock %}
