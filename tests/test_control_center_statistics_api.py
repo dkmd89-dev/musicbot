@@ -210,3 +210,128 @@ async def test_get_user_statistics_does_not_require_own_user_data_configured(cli
 
     assert response.status_code == 200
     assert response.json()["has_data"] is True
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# GET /api/v1/statistics/me/genres, GET /api/v1/statistics/me/music-dna
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_genre_stats_404_when_no_navidrome_user_configured(client, user_data_dir):
+    response = await client.get("/api/v1/statistics/me/genres")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NAVIDROME_USER_NOT_CONFIGURED"
+
+
+@pytest.mark.asyncio
+async def test_get_genre_stats_has_data_false_when_no_history(client, user_data_dir):
+    config = Config()
+    _write_user_data(user_data_dir, config.OWNER_USER_ID, "alice")
+
+    response = await client.get("/api/v1/statistics/me/genres")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["has_data"] is False
+    assert body["navidrome_username"] == "alice"
+
+
+@pytest.mark.asyncio
+async def test_get_genre_stats_counts_by_genre(client, user_data_dir):
+    config = Config()
+    _write_user_data(user_data_dir, config.OWNER_USER_ID, "alice")
+    service = StatistikService()
+    entry_a = _entry("Bausa", "Song A")
+    entry_a["tracks"][0]["genres"] = ["Hip-Hop"]
+    entry_b = _entry("Kollegah", "Song B")
+    entry_b["tracks"][0]["genres"] = ["Hip-Hop", "Deutschrap"]
+    service._save_history([entry_a, entry_b], "alice")
+
+    response = await client.get("/api/v1/statistics/me/genres")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["has_data"] is True
+    assert body["total_plays_with_genre"] == 2
+    by_genre = {e["label"]: e["count"] for e in body["top_genres"]}
+    assert by_genre == {"Hip-Hop": 2, "Deutschrap": 1}
+
+
+@pytest.mark.asyncio
+async def test_get_genre_stats_respects_top_n_query_param(client, user_data_dir):
+    config = Config()
+    _write_user_data(user_data_dir, config.OWNER_USER_ID, "alice")
+    service = StatistikService()
+    entries = []
+    for i in range(3):
+        e = _entry(f"Artist{i}", f"Song{i}")
+        e["tracks"][0]["genres"] = [f"Genre{i}"]
+        entries.append(e)
+    service._save_history(entries, "alice")
+
+    response = await client.get("/api/v1/statistics/me/genres", params={"top_n": 1})
+
+    assert response.status_code == 200
+    assert len(response.json()["top_genres"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_music_dna_404_when_no_navidrome_user_configured(client, user_data_dir):
+    response = await client.get("/api/v1/statistics/me/music-dna")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NAVIDROME_USER_NOT_CONFIGURED"
+
+
+@pytest.mark.asyncio
+async def test_get_music_dna_has_data_false_when_no_history(client, user_data_dir):
+    config = Config()
+    _write_user_data(user_data_dir, config.OWNER_USER_ID, "alice")
+
+    response = await client.get("/api/v1/statistics/me/music-dna")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["has_data"] is False
+    assert body["navidrome_username"] == "alice"
+
+
+@pytest.mark.asyncio
+async def test_get_music_dna_returns_profile(client, user_data_dir):
+    config = Config()
+    _write_user_data(user_data_dir, config.OWNER_USER_ID, "alice")
+    service = StatistikService()
+    entry_a = _entry("Bausa", "Song A")
+    entry_a["tracks"][0]["genres"] = ["Hip-Hop"]
+    entry_b = _entry("Bausa", "Song B")
+    entry_b["tracks"][0]["genres"] = ["Hip-Hop"]
+    service._save_history([entry_a, entry_b], "alice")
+
+    response = await client.get("/api/v1/statistics/me/music-dna")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["has_data"] is True
+    assert body["total_plays"] == 2
+    assert body["unique_songs"] == 2
+    by_artist = {e["label"]: e["pct"] for e in body["top_artists_pct"]}
+    assert by_artist == {"Bausa": 100.0}
+    by_genre = {e["label"]: e["pct"] for e in body["top_genres_pct"]}
+    assert by_genre == {"Hip-Hop": 100.0}
+    assert body["time_of_day_pct"].keys() == {"morgens", "nachmittags", "abends", "nachts"}
+
+
+@pytest.mark.asyncio
+async def test_get_music_dna_respects_top_n_query_param(client, user_data_dir):
+    config = Config()
+    _write_user_data(user_data_dir, config.OWNER_USER_ID, "alice")
+    service = StatistikService()
+    entries = [_entry(f"Artist{i}", f"Song{i}", days_ago=i) for i in range(8)]
+    service._save_history(entries, "alice")
+
+    response = await client.get("/api/v1/statistics/me/music-dna", params={"top_n": 2})
+
+    assert response.status_code == 200
+    assert len(response.json()["top_artists_pct"]) == 2
