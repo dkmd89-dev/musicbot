@@ -416,6 +416,10 @@ UX für die erste dateiverändernde Fähigkeit — vorab mit dem Nutzer abgestim
 - **Weiterhin kein Live-Smoke-Test gegen die echte Library** — nur sicher verifiziert, dass der Start-Button im initialen HTML tatsächlich `disabled` ist (keine versehentliche Ausführung durch einen Rendering-Fehler möglich).
 - Keine neuen Dependencies, keine neue API-Fläche (reine Frontend-Verdrahtung auf bereits vorhandenen Endpunkten).
 
+**Nachtrag (2026-09-20, Live-Smoke-Test durch den Nutzer vor Merge):** erster echter End-to-End-Klick auf "SAFE_AUTOMATIC reparieren" gegen die Produktionsbibliothek — Job lief PENDING→RUNNING→SUCCEEDED sauber durch, aber 0 Kandidaten ausgeführt (Screenshot-Beleg: Panel zeigte vorher bereits korrekt "SAFE_AUTOMATIC reparieren (0)"). **Kein Bug**, sondern korrekte Konsequenz der bestehenden `services/library_repair/planner.py`-Kategorisierung: `actionable_total` (hier 1114) summiert **alle** `DISPOSITION_AUTO_REPAIR`-Level (`SAFE_AUTOMATIC` + `METADATA_REPROCESSING` + `EXTERNAL_METADATA` + `COVER` + `LOUDNESS` + `DUPLICATE`), während der Job bewusst nur `RepairLevel.SAFE_AUTOMATIC` ausführt (identische enge Grenze wie der bestehende Telegram-Doctor, siehe Phase-2-Eintrag oben). Bei diesem Bibliotheksstand lagen alle 1114 aktuell offenen Kandidaten in COVER/EXTERNAL_METADATA/METADATA_REPROCESSING — Level, die laut `doctor_runner.py` bewusst nur auf ausdrückliche `--level`/`--issue`-Anforderung laufen, nicht über SAFE_AUTOMATIC.
+
+Als kleine UX-Klarstellung (gleicher Branch, vor Merge, Nutzerfreigabe): der Vorschau-Text im Repair-Plan-Panel benennt jetzt explizit, dass `actionable_total` alle Level zusammenfasst und wie viele davon tatsächlich `SAFE_AUTOMATIC` (= per Button ausführbar) sind, statt nur die Gesamtzahl direkt über dem SAFE_AUTOMATIC-Button zu zeigen. `tests/test_control_center_ui.py` von 15 auf 16 Tests erweitert — alle grün, Regression `test_control_center_repair_api.py` (12) + `test_control_center_jobs_api.py` (12) weiterhin grün.
+
 ---
 
 ## Erweiterung — Level-2/Level-3-Reparatur, Pro-Artist API (2026-09-20, auf Nutzerfreigabe)

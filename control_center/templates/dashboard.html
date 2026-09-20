@@ -407,7 +407,7 @@
         .map(([lvl, n]) => `<div><strong>${n}</strong><br>${lvl}</div>`).join("");
       el.innerHTML = `
         <div class="counts-grid">${counts || "<div>keine Kandidaten</div>"}</div>
-        <p class="empty-note">${plan.actionable_total} automatisch reparierbar, ${plan.manual_review_total} zur manuellen Prüfung (Health Score ${plan.health_score ?? "–"}). Reine Vorschau — es wird nichts ausgeführt.</p>
+        <p class="empty-note">${plan.actionable_total} automatisch reparierbar (alle Level zusammen), davon ${plan.counts_by_level.SAFE_AUTOMATIC || 0} SAFE_AUTOMATIC (per Button unten ausführbar) — der Rest (Cover/L2/L3 usw.) erfordert bewusste manuelle Auswahl. ${plan.manual_review_total} zur manuellen Prüfung (Health Score ${plan.health_score ?? "–"}). Reine Vorschau — es wird nichts ausgeführt.</p>
       `;
       _lastSafeAutomaticCount = plan.counts_by_level.SAFE_AUTOMATIC || 0;
       const startBtn = document.getElementById("repair-start-btn");

@@ -192,6 +192,20 @@ async def test_dashboard_repair_job_confirm_dialog_mentions_backup_and_files(cli
 
 
 @pytest.mark.asyncio
+async def test_dashboard_repair_plan_text_distinguishes_safe_automatic_from_total(client):
+    """Nachtrag (Live-Smoke-Test 2026-09-20): der SAFE_AUTOMATIC reparieren-
+    Button fuehrt nur ein enges Level aus, waehrend actionable_total alle
+    DISPOSITION_AUTO_REPAIR-Level (inkl. Cover/L2/L3) summiert. Der
+    Vorschau-Text muss diesen Unterschied explizit benennen, damit die
+    Zahl ueber dem Button nicht als Kandidatenzahl fuer den Button selbst
+    missverstanden wird."""
+    html = (await client.get("/")).text
+
+    assert "davon" in html
+    assert "SAFE_AUTOMATIC (per Button unten ausführbar)" in html
+
+
+@pytest.mark.asyncio
 async def test_dashboard_shows_telegram_widget_when_bot_username_configured(client, monkeypatch):
     monkeypatch.setattr(Config, "BOT_USERNAME", property(lambda self: "MeinTestBot"))
 
