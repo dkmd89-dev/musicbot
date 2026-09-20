@@ -1166,3 +1166,110 @@ Metadata-Management-Schritt 4).
   echte Library-Dateien, kein read-only Endpunkt wie bei Logs/Health;
   Verifikation ausschließlich gegen isolierte Testdaten.
 - Keine neuen Dependencies.
+
+## Library Artist-Centric UX — CC-AC-1 (2026-09-21, auf Nutzerfreigabe)
+
+Erster Schritt aus `library_artist_centric_UX.txt` (Master-Prompt v2,
+mehrere Folge-Tasks CC-AC-2..5 geplant, siehe Datei-Kopf). Macht aus der
+bisherigen, rein Klick-gesteuerten „Library-Metadata"-Seite eine
+Artist-zentrierte Navigation: `/library` zeigt beim Laden automatisch
+die Artist-Liste, ein Klick führt auf eine neue Artist-Detailseite
+(Overview/Alben/Tracks). **Bewusst READ-ONLY** — keine Maintenance-/
+Metadata-Actions (folgen in CC-AC-2/3/4).
+
+**Kernproblem, vor der Umsetzung verifiziert (Auftrag §7a):**
+`GET /api/v1/library/artists` (bestehend, `routers/metadata.py`) löst bei
+jedem Aufruf einen frischen `run_scan()` aus — auf der Produktionsbibliothek
+real gemessen unverändert das aus §7a bekannte Problem. Ein automatischer
+Seitenaufruf-Ladepfad darf diesen Scan nicht ungefragt mit auslösen.
+
+**Entscheidung: neuer, additiver Endpunkt statt Änderung des bestehenden.**
+Der Auftrag benennt zwar wörtlich `GET /api/v1/library/artists` als die
+Stelle, die „read-only bleibt und ausschließlich einen bereits vorhandenen
+Report liest" — Konsumenten-Analyse (`grep` über alle Templates) zeigt aber:
+der einzige Aufrufer von `/api/v1/library/artists`/`/tracks`/`/albums` ist
+die bestehende, bewusst beibehaltene „Library-Metadata"-Sektion
+(`library.html`, expliziter Warnhinweis „Führt einen vollständigen Scan
+aus … läuft nicht automatisch, nur auf Klick"). Diese drei Endpunkte
+unverändert zu lassen und stattdessen `GET /api/v1/library/artists-overview`
++ `GET /api/v1/library/artists-overview/{artist}` (neuer Router
+`control_center/routers/library_overview.py`) zu ergänzen, vermeidet ein
+Verhaltensänderungsrisiko für einen bereits funktionierenden, bewusst
+Klick-gesteuerten Legacy-Pfad (Auftrag §43 Hard-Stop-Geist „bestehende
+Funktionen nicht verändern, wenn reine Integration möglich ist") und
+respektiert §39 (alte Routen nicht ungeprüft anfassen).
+- `control_center/_library_scan.py::load_cached_report(max_age_hours=24)`
+  (neu, ergänzt `run_library_scan()`) liest ausschließlich
+  `Config.DATA_DIR/library_health_report.json` — denselben, bereits
+  bestehenden persistenten Report, den `scripts/library_health_check.py`
+  und der Telegram-„🩺 MusicBot Doctor"-Subprozess
+  (`services/library_repair/doctor_runner.py::run_health_scan()`, siehe
+  `LIBRARY_REPAIR.md` §9 „Report-Persistenz") bereits schreiben. Kein
+  Scan-Code dupliziert, keine neue Persistenzschicht.
+- Fehlt der Report komplett → `HTTPException(404,
+  code="LIBRARY_REPORT_MISSING")`, kein impliziter Scan aus dem GET heraus
+  (Auftrag §7a Punkt 2). Das Erzeugen eines fehlenden Reports bleibt
+  bewusst außerhalb dieses (READ-ONLY) Schritts — CLI/Telegram bleiben
+  unverändert nutzbar; ein Job-Trigger-Button in der neuen UI wurde
+  bewusst NICHT gebaut (der dafür naheliegende bestehende Job-Typ
+  `POST /api/v1/jobs/repair-safe-automatic` führt nebenbei eine echte
+  SAFE_AUTOMATIC-Reparatur aus, keinen reinen Scan — das würde die
+  READ-ONLY-Vorgabe dieses Schritts verletzen).
+- Report vorhanden, aber älter als 24 h → weiterhin nutzbar
+  (`stale: true` im Response, UI zeigt „Stand: …").
+- `schemas/metadata.py::ArtistsOverviewResponse`/`ArtistDetailResponse` +
+  `artists_overview_to_response()`/`artist_detail_to_response()` (neu) —
+  reine Wrapper um die bereits bestehenden `ArtistSummarySchema`/
+  `AlbumSummarySchema`/`TrackSchema`/`_artist_to_schema()`/
+  `_album_to_schema()`/`_track_to_schema()` (unverändert wiederverwendet,
+  keine zweite Feldliste). Artist-Detail filtert Alben/Tracks
+  **verzeichnisbasiert** (`entry["artist"]`/`file["artist_directory"]` —
+  identische Konvention wie `services/library_repair/library_artists.py`/
+  `maintenance_service.py::artist_targets()`, „Artist = stabiler Kontext",
+  Auftrag §10), nicht über den rohen `©ART`-Tag-Wert.
+- Router-Regel eingehalten (Auftrag §22): `library_overview.py` enthält
+  ausschließlich Request-Handling + 404-Mapping, keine Aggregations-/
+  Gruppierungslogik — die liegt vollständig in
+  `services/library_health/scoring.py` (unverändert, über den bereits
+  aggregierten Report).
+- UI: `library.html` bekommt eine neue „🎤 Artists"-Sektion oben
+  (Auto-Load beim Seitenaufruf, client-seitige Substring-Suche über die
+  bereits geladene Liste — keine neue Such-Infrastruktur, Auftrag §9) —
+  die bestehende „Library-Metadata"-Sektion bleibt unverändert darunter
+  erhalten. Neue Seite `library_artist_detail.html`
+  (`GET /library/{artist}`, `control_center/routers/ui.py`) zeigt
+  Overview-Kacheln + Alben + Tracks; der Artist-Name wird bewusst
+  client-seitig aus `window.location.pathname` gelesen (kein
+  Server-Template-Lookup) — ein unbekannter Artist bleibt dadurch ein
+  sauberer API-404 statt eines Server-Renderfehlers, die Seite ist
+  F5-tauglich. `common.js::_loadInto()` um einen optionalen `retryFn`-
+  Parameter erweitert (rückwärtskompatibel, alle bestehenden Aufrufer
+  unverändert) für das „[Erneut versuchen]"-Error-State (Auftrag §27).
+- **Performance (live gegen die echte Produktionsbibliothek gemessen):**
+  `GET /api/v1/library/artists-overview` ~0.02 s (statt ~37 s bei einem
+  Scan), `GET /api/v1/library/artists-overview/{artist}` ~0.02 s — weit
+  unter dem 2-s-Budget aus Auftrag §32/§43-6.
+- Test: `tests/test_control_center_library_overview.py` (11 Tests, echte
+  `run_scan()`-erzeugte Reports gegen isolierte ffmpeg-m4a-Testdaten,
+  keine echte Library berührt) + 10 neue UI-Tests in
+  `tests/test_control_center_ui.py` (Artists-Panel, Artist-Detail-Seite,
+  Legacy-Sektion unverändert) + 3 neue Auth-Schwellen-Tests in
+  `tests/test_control_center_auth.py`. Gesamte Control-Center-Suite
+  394/394 grün, Regression `tests/test_library_repair_maintenance_service.py`/
+  `tests/test_library_repair_library_artists.py`/
+  `tests/test_library_repair_executor.py`/`tests/test_library_health*.py`
+  499/499 grün. `node --check` für `common.js` und beide neuen/geänderten
+  Seiten-Skript-Blöcke grün; `tests/test_control_center_subpath_ui.py`
+  (führt `common.js` real mit `node` aus) unverändert 60/60 grün.
+  Live-Smoke-Test gegen die echte Produktionsbibliothek durchgeführt
+  (Library → Artist → Detail → Zurück, 41 Artists, kein Live-Browser
+  verfügbar, identischer Ersatz wie bei allen vorherigen UI-Schritten).
+- Keine neuen Dependencies.
+- **Nicht Teil dieses Schritts** (Folge-Tasks): Manual Metadata Editing
+  im Artist-Kontext (CC-AC-2/3), Library-Wartung im Artist-Kontext
+  (CC-AC-4), Navigation-Cleanup/Redundanz-Entfernung (CC-AC-5). Die
+  bestehende „Library-Metadata"-Sektion (`GET /api/v1/library/artists`/
+  `/tracks`/`/albums`, Klick-gesteuert) ist nach dieser Phase teilweise
+  redundant zur neuen Artist-Übersicht — bewusst nicht entfernt (Auftrag
+  §19/§39), Bewertung „behalten/redundant/späterer Cleanup" folgt in
+  CC-AC-5.

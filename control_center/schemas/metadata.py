@@ -166,6 +166,75 @@ def albums_to_response(albums: list[dict], *, limit: int, offset: int) -> Albums
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# GET /api/v1/library/artists-overview(/{artist}) — Library Artist-Centric
+# UX (CC-AC-1). Liest denselben Report wie oben, aber aus dem PERSISTENTEN
+# Report (control_center/_library_scan.py::load_cached_report(), Auftrag
+# §7a) statt aus einem frischen Scan — kein neues Datenmodell, dieselben
+# ArtistSummarySchema/AlbumSummarySchema/TrackSchema wie oben, nur ein
+# zusaetzlicher `generated_at`/`stale`-Rahmen, damit das UI den
+# Report-Stand anzeigen kann (Auftrag §7a Punkt 1: "Report lesen UND im
+# UI sichtbar kennzeichnen, wenn aelter").
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class ArtistsOverviewResponse(BaseModel):
+    total: int
+    artists: list[ArtistSummarySchema]
+    generated_at: Optional[str]
+    stale: bool
+
+
+def artists_overview_to_response(report: dict, *, stale: bool) -> ArtistsOverviewResponse:
+    artists = report.get("artists", [])
+    return ArtistsOverviewResponse(
+        total=len(artists),
+        artists=[_artist_to_schema(a) for a in artists],
+        generated_at=(report.get("scan") or {}).get("completed_at"),
+        stale=stale,
+    )
+
+
+class ArtistDetailResponse(BaseModel):
+    artist: str
+    file_count: int
+    album_count: int
+    health_score: float
+    issue_codes: list[str]
+    albums: list[AlbumSummarySchema]
+    tracks: list[TrackSchema]
+    generated_at: Optional[str]
+    stale: bool
+
+
+def artist_detail_to_response(
+    report: dict, *, artist: str, stale: bool,
+) -> Optional[ArtistDetailResponse]:
+    """Liefert None, wenn `artist` im Report nicht (mehr) vorkommt -
+    Aufrufer meldet dafuer HTTPException(404, code="ARTIST_NOT_FOUND").
+    Album-/Track-Zugehoerigkeit ist verzeichnisbasiert (`entry["artist"]`
+    fuer Alben, `file["artist_directory"]` fuer Tracks - identische
+    Konvention wie services/library_repair/library_artists.py/
+    maintenance_service.py::artist_targets(), "Artist = stabiler Kontext",
+    Auftrag §10), NICHT der rohe ©ART-Tag-Wert, der abweichen kann."""
+    summary = next((a for a in report.get("artists", []) if a["artist"] == artist), None)
+    if summary is None:
+        return None
+    albums = [a for a in report.get("albums", []) if a["artist"] == artist]
+    tracks = [f for f in report.get("files", []) if f.get("artist_directory") == artist]
+    return ArtistDetailResponse(
+        artist=summary["artist"],
+        file_count=summary["file_count"],
+        album_count=summary["album_count"],
+        health_score=summary["health_score"],
+        issue_codes=summary["issue_codes"],
+        albums=[_album_to_schema(a) for a in albums],
+        tracks=[_track_to_schema(f) for f in tracks],
+        generated_at=(report.get("scan") or {}).get("completed_at"),
+        stale=stale,
+    )
+
+
 class MappingSummaryResponse(BaseModel):
     """Übersicht über die Genre-/Artist-Mapping-Dateien (mapping/*.yaml/
     *.json) — Master-Prompt Abschnitt 7 "Mapping anzeigen". Reines Mapping

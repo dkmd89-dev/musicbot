@@ -679,6 +679,48 @@ async def test_admin_maintenance_endpoint_accessible_with_admin_session(client, 
 
 
 @pytest.mark.asyncio
+async def test_library_artists_overview_endpoint_requires_authentication(client):
+    """Library Artist-Centric UX (CC-AC-1) — dieselbe AccessLevel.ADMIN-
+    Schwelle wie GET /api/v1/library/artists (Fachlogik:
+    test_control_center_library_overview.py)."""
+    response = await client.get("/api/v1/library/artists-overview")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_library_artists_overview_endpoint_rejects_plain_user_session(client, monkeypatch):
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=999)
+    )
+
+    response = await client.get("/api/v1/library/artists-overview")
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_library_artists_overview_endpoint_accessible_with_admin_session(client, monkeypatch, tmp_path):
+    """Kein Report im isolierten Test-DATA_DIR vorhanden -> 404
+    LIBRARY_REPORT_MISSING statt 403/401 beweist, dass die Anfrage die
+    Auth-Schwelle passiert hat (Fachlogik/Report-Handling:
+    test_control_center_library_overview.py)."""
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: [777]))
+    monkeypatch.setattr(Config, "DATA_DIR", tmp_path)
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=777)
+    )
+
+    response = await client.get("/api/v1/library/artists-overview")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "LIBRARY_REPORT_MISSING"
+
+
+@pytest.mark.asyncio
 async def test_findings_accept_endpoint_requires_authentication(client):
     """Erster schreibender Endpunkt — Auth-Verdrahtung wie alle anderen
     ADMIN-Routen (Fachlogik/Origin-Check: test_control_center_findings_api.py)."""

@@ -266,6 +266,122 @@ async def test_library_page_has_missing_metadata_filter(client):
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# GET /library — Artist-Centric UX (CC-AC-1, library_artist_centric_UX.txt)
+# Bewusst getrennt von den obigen Metadata-Browser-Tests: alte Sektion
+# bleibt vollstaendig erhalten (Auftrag §39), die neue Artist-Sektion
+# kommt zusaetzlich hinzu.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_library_page_has_artists_overview_panel(client):
+    html = (await client.get("/library")).text
+
+    assert "🎤 Artists" in html
+    assert 'id="artist-search"' in html
+    assert 'id="artists-overview-content"' in html
+
+
+@pytest.mark.asyncio
+async def test_library_page_artists_overview_ui_wiring_present(client):
+    html = (await client.get("/library")).text
+
+    assert "loadArtistsOverview" in html
+    assert "renderArtistsOverview" in html
+    assert "/api/v1/library/artists-overview" in html
+    # Klickbarer Artist-Link führt in die neue Detailseite, nicht in
+    # eine JS-only-Umschaltung (F5-tauglich, Auftrag §10/§29):
+    assert "/library/${encodeURIComponent(a.artist)}" in html
+
+
+@pytest.mark.asyncio
+async def test_library_page_keeps_legacy_metadata_browser_unchanged(client):
+    """Auftrag §39: alte, Klick-gesteuerte Tracks/Artists/Albums/Mapping-
+    Sektion bleibt vollstaendig erreichbar, unveraendert."""
+    html = (await client.get("/library")).text
+
+    assert "Library-Metadata" in html
+    assert 'id="metadata-tracks-btn"' in html
+    assert 'id="metadata-artists-btn"' in html
+    assert 'id="metadata-albums-btn"' in html
+    assert 'id="metadata-mapping-btn"' in html
+    assert "kein Auto-Rendern großer Listen" in html
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# GET /library/{artist} — Artist Detail (CC-AC-1)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_renders_without_authentication(client):
+    response = await client.get("/library/Bausa")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "MusicBot Control Center" in response.text
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_contains_all_view_states(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'id="loading-view"' in html
+    assert 'id="login-view"' in html
+    assert 'id="dashboard-view"' in html
+    assert 'id="error-view"' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_loads_shared_static_assets(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert "/static/common.css" in html
+    assert "/static/common.js" in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_keeps_library_nav_active(client):
+    """page_id="library" haelt den Sidebar-Eintrag auf der Artist-
+    Detailseite aktiv (Auftrag: Artist ist eine Unterseite von Library,
+    kein eigener Sidebar-Eintrag)."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'href="/library" class="nav-link active"' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_has_breadcrumb_and_back_link(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'class="breadcrumb"' in html
+    assert 'href="/library">📚 Library' in html
+    assert "Zurück zu Artists" in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_ui_wiring_present(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert "loadArtistDetail" in html
+    assert "renderArtistDetail" in html
+    assert "currentArtistFromPath" in html
+    assert "/api/v1/library/artists-overview/${encodeURIComponent(artist)}" in html
+    assert 'id="artist-content"' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_resolves_artist_client_side_not_server_side(client):
+    """Auftrag: unbekannter Artist bleibt ein sauberer API-404, kein
+    Server-Renderfehler - die Seite selbst rendert fuer JEDEN
+    Pfad-Wert identisch (kein serverseitiges Nachschlagen in ui.py)."""
+    html_known = (await client.get("/library/Bausa")).text
+    html_unknown = (await client.get("/library/Does-Not-Exist-XYZ")).text
+
+    assert html_known == html_unknown
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # GET /metadata — Genre setzen (erste schreibende Metadata-Fähigkeit)
 # ─────────────────────────────────────────────────────────────────────────
 
