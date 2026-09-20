@@ -178,6 +178,7 @@
       <section class="panel">
         <h2>Admin: Nutzer &amp; Rollen</h2>
         <div id="admin-users-content" class="empty-note">Lädt…</div>
+        <div id="admin-user-stats-content" class="empty-note" hidden></div>
       </section>
     </div>
   </main>
@@ -703,6 +704,7 @@
             <span class="badge badge-${roleBadge[u.role] || "INFO"}">${_escapeHtml(u.role)}</span>
             #${u.telegram_id}${u.navidrome_user ? " — 🎵 " + _escapeHtml(u.navidrome_user) : ""}
           </div>
+          ${u.navidrome_user ? `<button class="small view-stats-btn" data-navidrome-user="${_escapeHtml(u.navidrome_user)}">Statistik</button>` : ""}
           <div class="row-count">${u.created_at ? new Date(u.created_at).toLocaleDateString() : "–"}</div>
         </div>
       `).join("") + "</div>";
@@ -710,6 +712,27 @@
     function loadAdminUsers() {
       return _loadInto("admin-users-content", "/api/v1/admin/users", renderAdminUsers);
     }
+
+    // Cross-User-Statistik (Admin-only, GET /api/v1/statistics/{navidrome_username}
+    // - Schritt "Statistics Cross-User-Admin-Ansicht") - nutzt dieselbe
+    // renderStatistics()-Funktion wie das eigene Statistics-Panel oben,
+    // da die Antwortform identisch ist (StatisticsResponse).
+    async function loadUserStatsForAdmin(navidromeUser) {
+      const el = document.getElementById("admin-user-stats-content");
+      el.hidden = false;
+      el.innerHTML = '<span class="empty-note">Lädt…</span>';
+      await _loadInto(
+        "admin-user-stats-content",
+        `/api/v1/statistics/${encodeURIComponent(navidromeUser)}?period=month`,
+        renderStatistics,
+      );
+    }
+
+    document.getElementById("admin-users-content").addEventListener("click", (event) => {
+      const btn = event.target.closest(".view-stats-btn");
+      if (!btn) return;
+      loadUserStatsForAdmin(btn.dataset.navidromeUser);
+    });
 
     function renderStatistics(el, stats) {
       if (!stats.has_data) {

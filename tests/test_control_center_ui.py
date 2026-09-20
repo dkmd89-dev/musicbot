@@ -270,6 +270,19 @@ async def test_dashboard_has_genre_stats_and_music_dna_panels(client):
 
 
 @pytest.mark.asyncio
+async def test_dashboard_admin_users_panel_has_cross_user_statistics_wiring(client):
+    """Cross-User-Admin-Ansicht: anklickbarer navidrome_user pro Zeile
+    zeigt dessen Statistik (GET /api/v1/statistics/{navidrome_username},
+    bereits vorhandener Endpunkt)."""
+    html = (await client.get("/")).text
+
+    assert 'id="admin-user-stats-content"' in html
+    assert "view-stats-btn" in html
+    assert "loadUserStatsForAdmin" in html
+    assert "data-navidrome-user" in html
+
+
+@pytest.mark.asyncio
 async def test_dashboard_shows_telegram_widget_when_bot_username_configured(client, monkeypatch):
     monkeypatch.setattr(Config, "BOT_USERNAME", property(lambda self: "MeinTestBot"))
 
