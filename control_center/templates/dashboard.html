@@ -178,6 +178,25 @@
           <button id="metadata-artists-btn" class="small">Artists</button>
           <button id="metadata-albums-btn" class="small">Albums</button>
         </div>
+        <div class="retry-row">
+          <label for="metadata-missing-filter" class="hint">Fehlende Metadata (nur Tracks):</label>
+          <select id="metadata-missing-filter">
+            <option value="">— kein Filter —</option>
+            <option value="META_ARTIST_MISSING">Artist fehlt</option>
+            <option value="META_ALBUM_MISSING">Album fehlt</option>
+            <option value="META_ALBUM_ARTIST_MISSING">Album-Artist fehlt</option>
+            <option value="META_TITLE_MISSING">Titel fehlt</option>
+            <option value="META_GENRE_MISSING">Genre fehlt</option>
+            <option value="META_YEAR_MISSING">Jahr fehlt</option>
+            <option value="META_TRACK_NUMBER_MISSING">Tracknummer fehlt</option>
+            <option value="META_ISRC_MISSING">ISRC fehlt</option>
+            <option value="META_MB_RECORDING_MISSING">MusicBrainz Recording-ID fehlt</option>
+            <option value="META_MB_RELEASE_MISSING">MusicBrainz Release-ID fehlt</option>
+            <option value="ARTWORK_MISSING">Cover fehlt</option>
+            <option value="LYRICS_MISSING">Lyrics fehlen</option>
+            <option value="LOUDNESS_TAG_MISSING">Loudness-Tag fehlt</option>
+          </select>
+        </div>
         <div id="metadata-content" class="empty-note"></div>
       </section>
 
@@ -748,11 +767,16 @@
     function loadMetadataList(mode) {
       document.getElementById("metadata-content").innerHTML =
         '<span class="empty-note">Scan läuft, kann eine Weile dauern…</span>';
-      return _loadInto(
-        "metadata-content",
-        `/api/v1/library/${mode}?limit=${_METADATA_PAGE_SIZE}&offset=0`,
-        _METADATA_RENDERERS[mode],
-      );
+      let url = `/api/v1/library/${mode}?limit=${_METADATA_PAGE_SIZE}&offset=0`;
+      // Der "Fehlende Metadata"-Filter gilt nur fuer Tracks (issue_code
+      // ist ein Track-Feld, siehe routers/metadata.py) - bei Artists/
+      // Albums wird die Auswahl ignoriert statt einen wirkungslosen
+      // Query-Parameter mitzuschicken.
+      if (mode === "tracks") {
+        const missing = document.getElementById("metadata-missing-filter").value;
+        if (missing) url += `&issue_code=${encodeURIComponent(missing)}`;
+      }
+      return _loadInto("metadata-content", url, _METADATA_RENDERERS[mode]);
     }
 
     document.getElementById("metadata-tracks-btn").addEventListener("click", () => loadMetadataList("tracks"));
