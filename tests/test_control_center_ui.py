@@ -206,6 +206,54 @@ async def test_dashboard_repair_plan_text_distinguishes_safe_automatic_from_tota
 
 
 @pytest.mark.asyncio
+async def test_dashboard_has_level23_panel_with_dedicated_manual_trigger(client):
+    """Pendant zum Repair-Plan-Panel: eigener manueller Trigger (voller
+    Library-Scan), nicht im 30s-Polling."""
+    html = (await client.get("/")).text
+
+    assert "L2/L3-Reparaturen" in html
+    assert 'id="level23-plan-btn"' in html
+    assert 'id="level23-artists-content"' in html
+    assert 'id="level23-job-content"' in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_level23_ui_wiring_present(client):
+    html = (await client.get("/")).text
+
+    assert "loadLevel23Artists" in html
+    assert "startLevel23Job" in html
+    assert "renderLevel23Artists" in html
+    assert "/api/v1/library/repair-plan/by-artist" in html
+    assert "/api/v1/jobs/repair-level" in html  # dynamisch ".../repair-level2"/"3" je nach Level
+    assert "level23-btn" in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_level23_has_no_cancel_button(client):
+    """Kooperatives Abbrechen ist fuer repair_level2/repair_level3
+    wirkungslos (execute_level2_repair()/execute_level3_repair() sind ein
+    einzelner atomarer await, siehe control_center/routers/jobs.py) - ein
+    Abbrechen-Button hier wuerde eine nicht existierende Faehigkeit
+    vortaeuschen (Master-Prompt Regel 39), deshalb bewusst nicht Teil
+    dieses Panels."""
+    html = (await client.get("/")).text
+
+    assert "cancelLevel23Job" not in html
+    assert 'id="level23-cancel-btn"' not in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_level23_confirm_dialog_mentions_backup_files_and_musicbrainz(client):
+    """Master-Prompt Regel 11: verstaendliche Bestaetigung, inkl.
+    levelspezifischer Warnung (L3 ruft MusicBrainz/Netzwerk auf)."""
+    html = (await client.get("/")).text
+
+    assert "wirklich starten für" in html
+    assert "MusicBrainz" in html
+
+
+@pytest.mark.asyncio
 async def test_dashboard_shows_telegram_widget_when_bot_username_configured(client, monkeypatch):
     monkeypatch.setattr(Config, "BOT_USERNAME", property(lambda self: "MeinTestBot"))
 
