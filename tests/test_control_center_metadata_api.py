@@ -168,6 +168,65 @@ async def test_get_tracks_rejects_invalid_limit(client, test_library, monkeypatc
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# GET /api/v1/library/tracks?issue_code=... — "fehlende Metadata finden"
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def test_library_missing_genre(tmp_path):
+    lib = tmp_path / "library"
+    # Vollstaendige Datei (kein META_GENRE_MISSING).
+    _make_m4a(lib / "Artist One" / "Album A" / "01 - Song A.m4a",
+              artist="Artist One", title="Song A", album="Album A",
+              genre="Pop", year="2021")
+    # Datei ohne Genre-Tag -> META_GENRE_MISSING (deterministisch bekannter
+    # Issue-Code, siehe services/library_health/issues.py Registry).
+    _make_m4a(lib / "Artist Two" / "Album B" / "01 - Song B.m4a",
+              artist="Artist Two", title="Song B", album="Album B",
+              year="2022")
+    return lib
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_get_tracks_filters_by_issue_code(client, test_library_missing_genre, monkeypatch):
+    monkeypatch.setattr(Config, "LIBRARY_DIR", test_library_missing_genre)
+
+    response = await client.get(
+        "/api/v1/library/tracks", params={"issue_code": "META_GENRE_MISSING"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["tracks"][0]["title"] == "Song B"
+    assert "META_GENRE_MISSING" in body["tracks"][0]["issue_codes"]
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_get_tracks_without_issue_code_filter_returns_all(client, test_library_missing_genre, monkeypatch):
+    monkeypatch.setattr(Config, "LIBRARY_DIR", test_library_missing_genre)
+
+    response = await client.get("/api/v1/library/tracks")
+
+    assert response.json()["total"] == 2
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_get_tracks_unknown_issue_code_returns_empty(client, test_library_missing_genre, monkeypatch):
+    monkeypatch.setattr(Config, "LIBRARY_DIR", test_library_missing_genre)
+
+    response = await client.get(
+        "/api/v1/library/tracks", params={"issue_code": "DOES_NOT_EXIST"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # GET /api/v1/library/artists
 # ─────────────────────────────────────────────────────────────────────────
 

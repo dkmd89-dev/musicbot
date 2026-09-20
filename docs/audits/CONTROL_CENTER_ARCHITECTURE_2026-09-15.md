@@ -750,6 +750,89 @@ Swagger/`curl`.
 
 ---
 
+## Erweiterung — Metadata Management, Schritt 2: Fehlende Metadata finden (2026-09-20, auf Nutzerfreigabe)
+
+Zweiter Schritt der Metadata-Management-Phase (Master-Prompt Abschnitt
+7, Punkt "fehlende Metadata finden") — auf Nutzerwunsch **ohne
+Merge-Wartepause zwischen den Schritten** umgesetzt: Implementierung →
+Test → Commit → Push → PR direkt hintereinander für die gesamte Phase;
+Prüfung/Merge der einzelnen PRs erfolgt gesammelt durch den Nutzer nach
+Abschluss der Phase (Abweichung vom bisherigen Ein-Schritt-pro-Merge-
+Vorgehen, explizit so entschieden). Getestet weiterhin nur gezielt/
+Regression/thematisch (CLAUDE.md §8.A) — die volle Suite führt wie immer
+der Nutzer selbst aus.
+
+- **`GET /api/v1/library/tracks?issue_code=...`** — filtert die bereits
+  vorhandene `issue_codes`-Liste je Track. **Keine neue Domänenlogik**,
+  reine Filterung bereits berechneter Daten (identisches Prinzip wie
+  `services/library_repair/planner.py::filter_plan(issue_code=...)` beim
+  Repair-Plan). Unbekannter Code liefert eine leere Liste statt eines
+  Fehlers (identisches Verhalten wie `filter_plan()`).
+- UI: Dropdown „Fehlende Metadata" im bestehenden Library-Metadata-Panel
+  mit den 13 bekannten `*_MISSING`-Issue-Codes aus der
+  `services/library_health/issues.py`-Registry (Artist/Album/Album-Artist/
+  Titel/Genre/Jahr/Tracknummer/ISRC/MusicBrainz Recording/Release/Cover/
+  Lyrics/Loudness-Tag) — gilt bewusst nur für den Tracks-Modus (Artists/
+  Albums ignorieren die Auswahl, kein wirkungsloser Query-Parameter).
+- Test: `tests/test_control_center_metadata_api.py` von 10 auf 13 Tests
+  erweitert (Filterung, kein Filter → alle, unbekannter Code → leer),
+  `tests/test_control_center_ui.py` von 25 auf 26 Tests — alle grün,
+  Regression `test_control_center_health_api.py`/`test_control_center_repair_api.py`
+  sowie `tests/test_library_health*.py` (297 Tests) weiterhin grün,
+  Gesamt-Control-Center-Suite 214/214 grün. JS-Syntax mit `node --check`
+  verifiziert.
+- Keine neuen Dependencies.
+
+---
+
+## Erweiterung — Metadata Management, Schritt 3: Mapping anzeigen (2026-09-20, auf Nutzerfreigabe)
+
+Dritter Schritt der Metadata-Management-Phase (Master-Prompt Abschnitt
+7, Punkt "Mapping anzeigen") — wie Schritt 2 **ohne Merge-Wartepause**
+direkt im Anschluss implementiert (auf demselben main-Stand wie Schritt
+1 verzweigt, nicht auf Schritt 2 gestapelt); Prüfung/Merge aller
+Schritte gesammelt durch den Nutzer am Ende der Phase.
+
+- **`GET /api/v1/library/mapping-summary`** (neu in
+  `control_center/routers/metadata.py`) — reine Übersicht (Anzahl
+  Einträge je Mapping-Kategorie: Artists/Channels/Hierarchy/Rules/
+  Aliases/Overrides, plus Anzahl eindeutiger primärer Genres). Mappt
+  `utils.genre_map.GenreMapper.get_statistics()["mappings"]`
+  unverändert — **keine eigene YAML-/JSON-Parsing-Logik**, keine neue
+  Bearbeitungsfläche (reine Lesefunktion, kein Editor).
+- Laufzeit-Cache-/Query-Statistiken (`queries`/`cache_hits`/
+  `fuzzy_matches`/`rule_matches`/`cache_hit_rate`) bewusst NICHT
+  durchgereicht — für eine frische Anfrage nicht aussagekräftig
+  (Prozess-Lebenszeit-Artefakt, kein Mapping-Inhalt).
+- `GenreMapper` ist `SingletonMixin`-basiert — identischer, bereits
+  etablierter Aufrufpfad wie `services/library_health/scanner.py`
+  (nutzt `GenreMapper` für `validate_genre()` in einem frischen
+  Prozess). Test-Isolation läuft bereits global über
+  `tests/conftest.py` (`SingletonMixin._instances` wird vor/nach jedem
+  Test geleert) — kein Zusatzaufwand in diesem Schritt nötig.
+- **Tests laufen bewusst gegen die ECHTEN Mapping-Dateien** in
+  `mapping/` statt gegen eine isolierte Kopie — identisches Prinzip wie
+  `tests/test_genre_processor.py`, das denselben `GenreMapper` bereits
+  so gegen `Config.GENRE_MAPPING_DIR` charakterisiert (CLAUDE.md
+  Abschnitt 10: Mapping-Dateien sind Fachlogik; `GenreMapper` verändert
+  beim Lesen nichts). Exakte Zahlen werden bewusst NICHT geprüft
+  (Mapping-Daten ändern sich im echten Projekt) — nur strukturelle
+  Eigenschaften (alle Felder int ≥ 0, Artists/Primäre-Genres > 0 gegen
+  die echte, nicht-leere Produktions-Registry).
+- UI: eigener „Mapping"-Button im Library-Metadata-Panel — **kein
+  voller Library-Scan** (anders als Tracks/Artists/Albums), eigener,
+  schneller Ladepfad ohne den „Scan läuft…"-Zwischenzustand.
+- Test: `tests/test_control_center_metadata_api.py` um 2 Tests
+  erweitert (Struktur/Nicht-Leer-Check gegen echte Mapping-Daten,
+  Ausschluss der Laufzeit-Cache-Felder), `tests/test_control_center_ui.py`
+  um 1 Test — alle grün, Regression `tests/test_genre_processor.py`
+  (42 Tests) sowie `tests/test_auto_learn*.py`/`tests/test_genre_canonical*.py`
+  (116 Tests) weiterhin grün, Gesamt-Control-Center-Suite 213/213 grün.
+  JS-Syntax mit `node --check` verifiziert.
+- Keine neuen Dependencies.
+
+---
+
 ## Erweiterung — Metadata Management, Schritt 4: Metadata bearbeiten (Genre setzen) (2026-09-20, auf Nutzerfreigabe)
 
 Vierter Schritt der Metadata-Management-Phase (Master-Prompt Abschnitt
