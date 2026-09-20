@@ -750,6 +750,41 @@ Swagger/`curl`.
 
 ---
 
+## Erweiterung — Metadata Management, Schritt 2: Fehlende Metadata finden (2026-09-20, auf Nutzerfreigabe)
+
+Zweiter Schritt der Metadata-Management-Phase (Master-Prompt Abschnitt
+7, Punkt "fehlende Metadata finden") — auf Nutzerwunsch **ohne
+Merge-Wartepause zwischen den Schritten** umgesetzt: Implementierung →
+Test → Commit → Push → PR direkt hintereinander für die gesamte Phase;
+Prüfung/Merge der einzelnen PRs erfolgt gesammelt durch den Nutzer nach
+Abschluss der Phase (Abweichung vom bisherigen Ein-Schritt-pro-Merge-
+Vorgehen, explizit so entschieden). Getestet weiterhin nur gezielt/
+Regression/thematisch (CLAUDE.md §8.A) — die volle Suite führt wie immer
+der Nutzer selbst aus.
+
+- **`GET /api/v1/library/tracks?issue_code=...`** — filtert die bereits
+  vorhandene `issue_codes`-Liste je Track. **Keine neue Domänenlogik**,
+  reine Filterung bereits berechneter Daten (identisches Prinzip wie
+  `services/library_repair/planner.py::filter_plan(issue_code=...)` beim
+  Repair-Plan). Unbekannter Code liefert eine leere Liste statt eines
+  Fehlers (identisches Verhalten wie `filter_plan()`).
+- UI: Dropdown „Fehlende Metadata" im bestehenden Library-Metadata-Panel
+  mit den 13 bekannten `*_MISSING`-Issue-Codes aus der
+  `services/library_health/issues.py`-Registry (Artist/Album/Album-Artist/
+  Titel/Genre/Jahr/Tracknummer/ISRC/MusicBrainz Recording/Release/Cover/
+  Lyrics/Loudness-Tag) — gilt bewusst nur für den Tracks-Modus (Artists/
+  Albums ignorieren die Auswahl, kein wirkungsloser Query-Parameter).
+- Test: `tests/test_control_center_metadata_api.py` von 10 auf 13 Tests
+  erweitert (Filterung, kein Filter → alle, unbekannter Code → leer),
+  `tests/test_control_center_ui.py` von 25 auf 26 Tests — alle grün,
+  Regression `test_control_center_health_api.py`/`test_control_center_repair_api.py`
+  sowie `tests/test_library_health*.py` (297 Tests) weiterhin grün,
+  Gesamt-Control-Center-Suite 214/214 grün. JS-Syntax mit `node --check`
+  verifiziert.
+- Keine neuen Dependencies.
+
+---
+
 ## Erweiterung — Metadata Management, Schritt 3: Mapping anzeigen (2026-09-20, auf Nutzerfreigabe)
 
 Dritter Schritt der Metadata-Management-Phase (Master-Prompt Abschnitt

@@ -331,6 +331,19 @@ async def test_dashboard_library_metadata_has_no_repeated_rescan_pagination(clie
 
 
 @pytest.mark.asyncio
+async def test_dashboard_library_metadata_has_missing_metadata_filter(client):
+    """"Fehlende Metadata finden" (Master-Prompt Abschnitt 7) - Dropdown
+    mit den bekannten *_MISSING-Issue-Codes, gilt nur fuer Tracks."""
+    html = (await client.get("/")).text
+
+    assert 'id="metadata-missing-filter"' in html
+    assert "META_GENRE_MISSING" in html
+    assert "ARTWORK_MISSING" in html
+    assert "LYRICS_MISSING" in html
+    assert "issue_code=" in html
+
+
+@pytest.mark.asyncio
 async def test_dashboard_shows_telegram_widget_when_bot_username_configured(client, monkeypatch):
     monkeypatch.setattr(Config, "BOT_USERNAME", property(lambda self: "MeinTestBot"))
 
