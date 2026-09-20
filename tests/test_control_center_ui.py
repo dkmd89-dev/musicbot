@@ -254,6 +254,22 @@ async def test_dashboard_level23_confirm_dialog_mentions_backup_files_and_musicb
 
 
 @pytest.mark.asyncio
+async def test_dashboard_has_genre_stats_and_music_dna_panels(client):
+    """Erweitert das bestehende Statistics-Panel um die zuletzt gebauten
+    API-only-Endpunkte /me/genres und /me/music-dna."""
+    html = (await client.get("/")).text
+
+    assert 'id="genre-stats-content"' in html
+    assert 'id="music-dna-content"' in html
+    assert "/api/v1/statistics/me/genres" in html
+    assert "/api/v1/statistics/me/music-dna" in html
+    assert "loadGenreStats" in html
+    assert "loadMusicDna" in html
+    assert "renderGenreStats" in html
+    assert "renderMusicDna" in html
+
+
+@pytest.mark.asyncio
 async def test_dashboard_shows_telegram_widget_when_bot_username_configured(client, monkeypatch):
     monkeypatch.setattr(Config, "BOT_USERNAME", property(lambda self: "MeinTestBot"))
 

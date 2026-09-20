@@ -131,6 +131,10 @@
       <section class="panel">
         <h2>Statistics (dieser Monat)</h2>
         <div id="statistics-content" class="empty-note">Lädt…</div>
+        <p class="hint" style="margin-top:12px;">Genres (All-Time)</p>
+        <div id="genre-stats-content" class="empty-note">Lädt…</div>
+        <p class="hint" style="margin-top:12px;">Music DNA (All-Time)</p>
+        <div id="music-dna-content" class="empty-note">Lädt…</div>
       </section>
 
       <section class="panel">
@@ -724,6 +728,43 @@
       return _loadInto("statistics-content", "/api/v1/statistics/me?period=month", renderStatistics);
     }
 
+    function renderGenreStats(el, body) {
+      if (!body.has_data || !body.top_genres.length) {
+        el.innerHTML = '<p class="empty-note">Keine Genre-Daten.</p>';
+        return;
+      }
+      const genres = body.top_genres.slice(0, 5).map((g) => `
+        <div class="row-item"><div class="row-main">${_escapeHtml(g.label)}</div><div class="row-count">${g.count}</div></div>
+      `).join("");
+      el.innerHTML = `<div class="row-list">${genres}</div>`;
+    }
+    function loadGenreStats() {
+      return _loadInto("genre-stats-content", "/api/v1/statistics/me/genres", renderGenreStats);
+    }
+
+    function renderMusicDna(el, body) {
+      if (!body.has_data) {
+        el.innerHTML = '<p class="empty-note">Keine Music-DNA-Daten.</p>';
+        return;
+      }
+      const tod = body.time_of_day_pct || {};
+      const genrePct = body.top_genres_pct.slice(0, 5).map((g) => `
+        <div class="row-item"><div class="row-main">${_escapeHtml(g.label)}</div><div class="row-count">${g.pct}%</div></div>
+      `).join("");
+      const artistPct = body.top_artists_pct.slice(0, 5).map((a) => `
+        <div class="row-item"><div class="row-main">${_escapeHtml(a.label)}</div><div class="row-count">${a.pct}%</div></div>
+      `).join("");
+      el.innerHTML = `
+        <p class="empty-note">${body.total_plays} Plays, ${body.unique_songs} eindeutige Songs, ${body.repeat_rate_pct}% Wiederholungsrate</p>
+        <p class="empty-note">Tageszeit: morgens ${tod.morgens ?? 0}% · nachmittags ${tod.nachmittags ?? 0}% · abends ${tod.abends ?? 0}% · nachts ${tod.nachts ?? 0}%</p>
+        <div class="row-list">${genrePct}</div>
+        <div class="row-list">${artistPct}</div>
+      `;
+    }
+    function loadMusicDna() {
+      return _loadInto("music-dna-content", "/api/v1/statistics/me/music-dna", renderMusicDna);
+    }
+
     async function loadNavidromeStatus() {
       const el = document.getElementById("navidrome-status");
       try {
@@ -755,7 +796,7 @@
         // kostet spuerbar Zeit) - nur auf expliziten Klick, siehe unten.
         await Promise.all([
           loadHealth(), loadFindings(), loadDownloads(), loadStatistics(),
-          loadNavidromeStatus(), loadAdminUsers(),
+          loadGenreStats(), loadMusicDna(), loadNavidromeStatus(), loadAdminUsers(),
         ]);
       } catch (err) {
         showError("Netzwerkfehler: " + err.message);
@@ -778,6 +819,8 @@
       loadFindings();
       loadDownloads();
       loadStatistics();
+      loadGenreStats();
+      loadMusicDna();
       loadNavidromeStatus();
       loadAdminUsers();
     });
@@ -796,6 +839,8 @@
           loadFindings();
           loadDownloads();
           loadStatistics();
+          loadGenreStats();
+          loadMusicDna();
           loadNavidromeStatus();
           loadAdminUsers();
         }
