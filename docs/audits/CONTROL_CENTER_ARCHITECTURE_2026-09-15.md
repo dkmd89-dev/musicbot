@@ -1082,3 +1082,83 @@ den Path-Traversal-Schutz (`resolve()` + `is_relative_to()`).
   `bot.log` strukturiert geparst (1317 Treffer), `autolearnmanager.log`
   korrekt als unstrukturiert erkannt statt falsch geparst.
 - Keine neuen Dependencies.
+
+## Administration: Library-Maintenance-Actions (2026-09-20, auf Nutzerfreigabe)
+
+Vierte Administration-Fähigkeit nach Nutzer/Rollen-Übersicht, Cross-User-
+Statistik und Logs/Diagnostics — ui_prompt.txt Abschnitt 22
+"ADMINISTRATION". Exponiert die bestehenden, bereits produktiven
+Telegram-Maintenance-Flows (ARCH-032 „🧹 Library-Wartung" + der neuere,
+von einer parallelen Session ergänzte „📝 Metadaten bearbeiten"-Zweig,
+`handlers/library_maintenance_handler.py`) im Web — **keine neue
+Ausführungslogik**, identisches Prinzip wie „Genre setzen"
+(`control_center/routers/metadata_actions.py`, bereits produktiv seit
+Metadata-Management-Schritt 4).
+
+- **Vier Aktionen, jede als eigenes Preview/Execute-Endpunktpaar**
+  (bewusst kein generischer `/maintenance/{action}`-Dispatcher — die
+  Aktionen unterscheiden sich in ihren Parametern, ein generischer
+  Endpunkt würde das verschleiern):
+  - `artist-casing` — Groß-/Kleinschreibung eines Artists aus
+    `mapping/artist_overrides.json` korrigieren (`artist`).
+  - `legacy-genre-cleanup` — entfernt veraltete Freeform-Genre-Atome
+    (`artist`).
+  - `artist-rename` — manueller Artist-Zielwert, KEIN Casing-Mapping/
+    keine Normalisierung — explizite Nutzerentscheidung, identisch zur
+    Telegram-Fähigkeit „📝 Metadaten bearbeiten → Artist" (`artist` +
+    `new_artist`).
+  - `title-edit` — manueller Titel-Zielwert für genau einen Track, KEIN
+    automatischer TitleCleaner (`artist` + `rel_path` + `new_title`,
+    `rel_path` wird aus der bestehenden Library-Track-Ansicht kopiert —
+    kein eigener Track-Picker in diesem Schritt).
+  - Alle vier rufen `services/library_repair/maintenance_service.py::
+    preview_*()`/`execute_*()` unverändert auf; Preview und Execute
+    nutzen denselben Executor-Pfad (`dry_run=True/False`) — identisches
+    Preview→Diff→Confirmation→Execution→Verification-Prinzip wie „Genre
+    setzen".
+- **Schema-Umbenennung statt Duplikation:** `GenrePreviewResponse`/
+  `GenreExecuteResponse`/`genre_preview_to_response`/
+  `genre_execute_to_response` aus `schemas/metadata.py` waren bereits rein
+  generisch (referenzieren nirgends genre-spezifische Felder) — nach
+  `control_center/schemas/maintenance.py` verschoben und in
+  `MaintenancePreviewResponse`/`MaintenanceExecuteResponse`/
+  `maintenance_preview_to_response`/`maintenance_execute_to_response`
+  umbenannt, damit `metadata_actions.py` UND `admin_maintenance.py`
+  dieselbe Datenform nutzen, ohne sie viermal zu duplizieren.
+- **Fehlerabbildung:** `MaintenanceServiceError` bedeutet hier (anders
+  als bei „Genre setzen", wo sie „Artist nicht in artist_genre.yaml"
+  bedeutet) i. d. R. eine ungültige manuelle Eingabe (leer/zu lang/
+  Zeilenumbruch, `_validate_manual_value()`) — als 422 gemeldet statt
+  404. `RepairAlreadyRunningError` (gemeinsamer Lock mit Telegram/CLI/
+  Repair/L2-L3/Genre setzen) wird wie überall als 409 gemeldet.
+- **`GET/POST /api/v1/admin/maintenance/{action}/preview|execute`**
+  (neues `control_center/routers/admin_maintenance.py`, 8 Endpunkte) —
+  reine Orchestrierung, mindestens `AccessLevel.ADMIN`, POST über
+  `verify_same_origin()` CSRF-geschützt (identisches Muster wie alle
+  bisherigen destruktiven Control-Center-Fähigkeiten). Bewusst synchron
+  (kein Job/Polling) — reine In-Process-Mutagen-Schreibvorgänge für die
+  Dateien eines Artists bzw. eine einzelne Datei, kein Subprozess, kein
+  Netzwerk (identische Begründung wie „Genre setzen").
+- UI: vier neue Panels auf der bestehenden `/admin`-Seite (kein neuer
+  Menüpunkt — Administration-Scope nach ui_prompt.txt), jedes mit
+  Eingabefeld(ern) + Vorschau-Button + generischer Vorher/Nachher-Diff-
+  Ansicht (`_diffSummary()`, feldunabhängig: iteriert die vom Backend
+  gelieferten `before`/`after`-Dicts statt pro Aktion einen eigenen
+  Renderer zu benötigen) + `window.confirm()`-Bestätigung + Ausführen-
+  Button + Ergebnisanzeige — identisches Interaktionsmuster wie „Genre
+  setzen" (`metadata.html`), nur generisch über alle vier Aktionen
+  parametrisiert statt viermal dupliziert.
+- Test: `tests/test_control_center_admin_maintenance_api.py` (9 Tests,
+  Preview-ist-read-only/Execute-schreibt-und-protokolliert/
+  Validierungsfehler-422/Lock-Konflikt-409/CSRF-403, gegen echte,
+  isolierte ffmpeg-m4a-Dateien) + 3 neue Auth-Schwellen-Tests in
+  `tests/test_control_center_auth.py` (401/403/200, repräsentativ für
+  `artist-casing/preview`) — alle grün. Regression
+  (`tests/test_library_repair_maintenance_service.py`,
+  `tests/test_control_center_metadata_actions_api.py`,
+  `tests/test_control_center_metadata_api.py`) 56/56 grün. Gesamte
+  Control-Center-Suite (`tests/test_control_center*.py`) 278/278 grün.
+- Live-Smoke-Test bewusst ausgelassen — alle vier Aktionen schreiben
+  echte Library-Dateien, kein read-only Endpunkt wie bei Logs/Health;
+  Verifikation ausschließlich gegen isolierte Testdaten.
+- Keine neuen Dependencies.
