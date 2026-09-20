@@ -43,6 +43,7 @@ from .routers import (
     statistics,
     ui,
 )
+from .root_path import ForwardedPrefixMiddleware
 from .schemas.errors import ErrorDetail
 
 _logger = get_module_logger("control_center.app")
@@ -55,6 +56,9 @@ def create_app() -> FastAPI:
     # frische create_app()-Aufruf (wie in allen Tests) automatisch eine
     # isolierte Registry bekommt.
     app.state.job_registry = JobRegistry()
+    # Subpath-Betrieb hinter nginx (X-Forwarded-Prefix -> scope["root_path"],
+    # siehe control_center/root_path.py) - ohne Header wirkungslos.
+    app.add_middleware(ForwardedPrefixMiddleware)
     app.include_router(health.router)
     app.include_router(findings.router)
     app.include_router(repair.router)
