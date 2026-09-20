@@ -725,3 +725,25 @@ Punkte als "perspektivisch", nicht als einen einzelnen Auftrag).
   Paginierung, evtl. Suchfeld) wäre ein eigener, separat zu
   besprechender Folgeschritt.
 - Keine neuen Dependencies.
+
+**Nachtrag (2026-09-20, noch vor Merge, auf Nutzerwunsch direkt im
+Anschluss):** UI doch im selben Schritt ergänzt, damit die Funktion vor
+dem Merge vollständig im Browser geprüft werden kann, statt nur über
+Swagger/`curl`.
+
+- Neues Panel „Library-Metadata" mit drei Buttons (Tracks/Artists/Albums)
+  — jeder Klick lädt genau eine Seite (`limit=50`) über den bereits
+  vorhandenen `_loadInto()`-Helper.
+- **Bewusst KEINE Weiter/Zurück-Pagination-Buttons**, obwohl die API
+  `limit`/`offset` unterstützt: jede Anfrage löst einen vollen
+  Library-Scan aus (identisch zu Repair-Plan/L2-L3) — wiederholtes
+  Blättern würde wiederholt neu scannen. Stattdessen dasselbe Muster wie
+  beim Accepted-Findings-Panel: erste Seite laden, Trunkierungshinweis
+  ("Zeige X von Y") bei mehr Ergebnissen, kein Auto-Rendern großer
+  Listen — bewusste, dokumentierte Einschränkung statt einer teuren
+  Scroll-/Blätter-Illusion.
+- Test: `tests/test_control_center_ui.py` von 22 auf 25 Tests erweitert
+  (Panel-Präsenz, JS-Verdrahtung, bewusste Abwesenheit von
+  Pagination-Buttons) — alle grün, Gesamt-Control-Center-Suite 210/210
+  grün. JS-Syntax mit `node --check` verifiziert.
+- Keine neuen Dependencies, keine neue API-Fläche.
