@@ -88,18 +88,56 @@ def test_lists_album_directories_sorted(tmp_path):
     ]
 
 
-def test_excludes_singles_case_insensitive(tmp_path):
+def test_empty_singles_folder_contributes_no_entries(tmp_path):
     (tmp_path / "Bausa" / "2020 - Album X").mkdir(parents=True)
     (tmp_path / "Bausa" / "Singles").mkdir(parents=True)
 
     assert list_artist_albums("Bausa", library_root=tmp_path) == ["2020 - Album X"]
 
 
-def test_excludes_singles_uppercase_variant(tmp_path):
+def test_singles_folder_case_insensitive_detection(tmp_path):
+    """"SINGLES" (Grossschreibung) wird trotzdem als Singles-Ordner
+    erkannt und dessen Inhalt individuell gelistet, nicht als normaler
+    Mehr-Track-Album-Ordner behandelt."""
     (tmp_path / "Bausa" / "2020 - Album X").mkdir(parents=True)
-    (tmp_path / "Bausa" / "SINGLES").mkdir(parents=True)
+    singles = tmp_path / "Bausa" / "SINGLES"
+    singles.mkdir(parents=True)
+    (singles / "2019 - Track.m4a").touch()
 
-    assert list_artist_albums("Bausa", library_root=tmp_path) == ["2020 - Album X"]
+    assert list_artist_albums("Bausa", library_root=tmp_path) == [
+        "2020 - Album X", "SINGLES/2019 - Track.m4a",
+    ]
+
+
+def test_singles_are_listed_individually_not_as_one_bulk_context(tmp_path):
+    """Nutzer-Fund 2026-09-20: ein Artist, der ausschliesslich Singles hat
+    (z. B. Apache 207), muss trotzdem editierbare Album-Kontexte liefern -
+    aber jede Single als EIGENER Ein-Track-Kontext, NICHT der gesamte
+    Singles-Ordner als EIN gemeinsamer Bulk-Kontext (Auftrag §24 bleibt in
+    Kraft: keine globale Aenderung aller Singles auf einmal)."""
+    singles = tmp_path / "Apache 207" / "Singles"
+    singles.mkdir(parents=True)
+    (singles / "2019 - Roller.m4a").touch()
+    (singles / "2020 - Powerbank.m4a").touch()
+
+    albums = list_artist_albums("Apache 207", library_root=tmp_path)
+    assert albums == ["Singles/2019 - Roller.m4a", "Singles/2020 - Powerbank.m4a"]
+    # "/" markiert eindeutig einen Single-Kontext, nie einen echten
+    # Mehr-Track-Album-Verzeichnisnamen:
+    assert all("/" in a for a in albums)
+
+
+def test_singles_folder_ignores_hidden_and_symlinked_files(tmp_path):
+    singles = tmp_path / "Bausa" / "Singles"
+    singles.mkdir(parents=True)
+    (singles / "2019 - Track.m4a").touch()
+    (singles / ".hidden.m4a").touch()
+    real = tmp_path.parent / "outside_single_file.m4a"
+    real.touch()
+    (singles / "Linked.m4a").symlink_to(real)
+    (singles / "notes.txt").touch()
+
+    assert list_artist_albums("Bausa", library_root=tmp_path) == ["Singles/2019 - Track.m4a"]
 
 
 def test_same_album_title_in_different_directories_stays_distinct(tmp_path):
@@ -118,7 +156,7 @@ def test_unknown_artist_returns_empty_list(tmp_path):
     assert list_artist_albums("Unknown", library_root=tmp_path) == []
 
 
-def test_no_albums_only_singles_returns_empty_list(tmp_path):
+def test_only_empty_singles_folder_returns_empty_list(tmp_path):
     (tmp_path / "Bausa" / "Singles").mkdir(parents=True)
     assert list_artist_albums("Bausa", library_root=tmp_path) == []
 
@@ -147,10 +185,24 @@ def test_resolve_album_by_index_out_of_range_returns_none(tmp_path):
     assert resolve_album_by_index("Bausa", -1, library_root=tmp_path) is None
 
 
-def test_resolve_album_by_index_never_returns_singles(tmp_path):
-    (tmp_path / "Bausa" / "Singles").mkdir(parents=True)
+def test_resolve_album_by_index_never_returns_bare_singles_folder(tmp_path):
+    """Der Singles-ORDNER selbst ist nie ein waehlbarer Eintrag - nur
+    einzelne Dateien darin (siehe list_artist_albums())."""
+    singles = tmp_path / "Bausa" / "Singles"
+    singles.mkdir(parents=True)
+    (singles / "2019 - Track.m4a").touch()
     (tmp_path / "Bausa" / "2020 - Album X").mkdir(parents=True)
 
-    result = resolve_album_by_index("Bausa", 0, library_root=tmp_path)
-    assert result == "2020 - Album X"
-    assert result.lower() != "singles"
+    albums = [
+        resolve_album_by_index("Bausa", i, library_root=tmp_path) for i in range(2)
+    ]
+    assert "Singles" not in albums
+    assert set(albums) == {"2020 - Album X", "Singles/2019 - Track.m4a"}
+
+
+def test_resolve_album_by_index_resolves_single(tmp_path):
+    singles = tmp_path / "Bausa" / "Singles"
+    singles.mkdir(parents=True)
+    (singles / "2019 - Track.m4a").touch()
+
+    assert resolve_album_by_index("Bausa", 0, library_root=tmp_path) == "Singles/2019 - Track.m4a"

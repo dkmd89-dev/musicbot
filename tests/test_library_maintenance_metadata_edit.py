@@ -726,7 +726,7 @@ class TestMetaAlbumStart:
              patch.object(lmh_module, "list_artist_albums", return_value=[]):
             run(handler.handle_meta_album_start(update, context, 0))
         text = update.callback_query.edit_message_text.call_args.args[0]
-        assert "Keine Album-Verzeichnisse" in text
+        assert "Keine Alben oder Singles" in text
 
     def test_lists_albums_as_index_based_buttons(self, handler, context):
         albums = ["2019 - Album A", "2020 - Album B"]
@@ -739,6 +739,41 @@ class TestMetaAlbumStart:
         assert "libmaint:meta:album:pick:3:0" in callback_datas
         assert "libmaint:meta:album:pick:3:1" in callback_datas
         assert "libmaint:meta:3" in callback_datas  # Zurück
+
+    def test_artist_with_only_singles_shows_pickable_buttons(self, handler, context):
+        """Nutzer-Fund 2026-09-20 (Apache 207): ein Artist ohne Mehr-
+        Track-Album-Ordner bekommt trotzdem einen nicht-leeren Picker -
+        jede Single als eigener Button."""
+        albums = ["Singles/2019 - Roller.m4a", "Singles/2020 - Powerbank.m4a"]
+        update = _mock_update(ADMIN_ID)
+        with patch.object(lmh_module, "resolve_artist_by_index", return_value="Apache 207"), \
+             patch.object(lmh_module, "list_artist_albums", return_value=albums):
+            run(handler.handle_meta_album_start(update, context, 0))
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        assert "Keine Alben oder Singles" not in text
+        keyboard = update.callback_query.edit_message_text.call_args.kwargs["reply_markup"]
+        callback_datas = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+        assert "libmaint:meta:album:pick:0:0" in callback_datas
+        assert "libmaint:meta:album:pick:0:1" in callback_datas
+
+    def test_single_button_label_differs_from_album_button_label(self, handler, context):
+        albums = ["2020 - Album X", "Singles/2019 - Roller.m4a"]
+        update = _mock_update(ADMIN_ID)
+        with patch.object(lmh_module, "resolve_artist_by_index", return_value="Bausa"), \
+             patch.object(lmh_module, "list_artist_albums", return_value=albums):
+            run(handler.handle_meta_album_start(update, context, 0))
+        keyboard = update.callback_query.edit_message_text.call_args.kwargs["reply_markup"]
+        labels = [b.text for row in keyboard.inline_keyboard for b in row]
+        assert any(label.startswith("💿") and "Album X" in label for label in labels)
+        assert any(label.startswith("🎵") and "Roller" in label and "Singles/" not in label for label in labels)
+
+
+class TestAlbumDisplayLabel:
+    def test_regular_album_unchanged(self, handler):
+        assert handler._album_display_label("2020 - Album X") == "2020 - Album X"
+
+    def test_single_gets_suffix_and_no_path_prefix(self, handler):
+        assert handler._album_display_label("Singles/2019 - Roller.m4a") == "2019 - Roller (Single)"
 
 
 class TestMetaAlbumPick:
@@ -776,6 +811,17 @@ class TestMetaAlbumPick:
             run(handler.handle_meta_album_pick(update, context, 0, 0))
         text = update.callback_query.edit_message_text.call_args.args[0]
         assert "Unerwarteter Fehler" in text
+
+    def test_picking_single_shows_friendly_label(self, handler, context):
+        update = _mock_update(ADMIN_ID)
+        with patch.object(lmh_module, "resolve_artist_by_index", return_value="Apache 207"), \
+             patch.object(lmh_module, "resolve_album_by_index", return_value="Singles/2019 - Roller.m4a"), \
+             patch.object(lmh_module, "current_album", return_value="Roller"):
+            run(handler.handle_meta_album_pick(update, context, 0, 0))
+        assert context.user_data["libmaint_meta_album"] == "Singles/2019 - Roller.m4a"
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        assert "2019 - Roller (Single)" in text
+        assert "Singles/" not in text
 
 
 class TestProcessPendingAlbumInput:

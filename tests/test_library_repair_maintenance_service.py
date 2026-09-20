@@ -526,6 +526,36 @@ class TestAlbumTargets:
         assert targets_2025 == ["Bausa/2025 - Album X/a.m4a"]
         assert set(targets_2024).isdisjoint(targets_2025)
 
+    def test_resolves_single_file_scope(self, lib):
+        """Nutzer-Fund 2026-09-20: ein 'album'-Wert im Format
+        'Singles/<Datei>' (aus list_artist_albums()) adressiert genau EINE
+        Datei, nicht ein Verzeichnis."""
+        p = lib / "Apache 207" / "Singles" / "2019 - Roller.m4a"
+        p.parent.mkdir(parents=True)
+        p.touch()
+        other = lib / "Apache 207" / "Singles" / "2020 - Powerbank.m4a"
+        other.touch()
+
+        targets = ms.album_targets("Apache 207", "Singles/2019 - Roller.m4a", library_root=lib)
+        assert targets == ["Apache 207/Singles/2019 - Roller.m4a"]
+
+    def test_single_file_scope_does_not_include_sibling_singles(self, lib):
+        singles = lib / "Apache 207" / "Singles"
+        singles.mkdir(parents=True)
+        (singles / "2019 - Roller.m4a").touch()
+        (singles / "2020 - Powerbank.m4a").touch()
+
+        targets_a = ms.album_targets("Apache 207", "Singles/2019 - Roller.m4a", library_root=lib)
+        targets_b = ms.album_targets("Apache 207", "Singles/2020 - Powerbank.m4a", library_root=lib)
+        assert targets_a == ["Apache 207/Singles/2019 - Roller.m4a"]
+        assert targets_b == ["Apache 207/Singles/2020 - Powerbank.m4a"]
+
+    def test_nonexistent_single_file_returns_empty(self, lib):
+        (lib / "Apache 207" / "Singles").mkdir(parents=True)
+        assert ms.album_targets(
+            "Apache 207", "Singles/does-not-exist.m4a", library_root=lib,
+        ) == []
+
 
 @requires_ffmpeg
 class TestCurrentAlbumAndAlbumArtist:
@@ -608,6 +638,25 @@ class TestAlbumEditFlow:
                 )
         finally:
             rt.release_repair_lock()
+
+    def test_execute_on_single_file_scope(self, lib):
+        """Nutzer-Fund 2026-09-20: Artists ohne Mehr-Track-Album-Ordner
+        (nur Singles) muessen ueber denselben Flow editierbar sein -
+        Scope = genau die eine Single-Datei."""
+        p = lib / "Apache 207" / "Singles" / "2019 - Roller.m4a"
+        _m4a(p, album="Roller")
+        other = lib / "Apache 207" / "Singles" / "2020 - Powerbank.m4a"
+        _m4a(other, album="Powerbank")
+
+        result = ms.execute_album_edit(
+            "Apache 207", "Singles/2019 - Roller.m4a", "Roller (Remix)",
+            triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert result.success_count == 1
+        assert MP4(p).tags["©alb"] == ["Roller (Remix)"]
+        # Die andere Single im selben Singles-Ordner bleibt unangetastet:
+        assert MP4(other).tags["©alb"] == ["Powerbank"]
 
 
 # ── Manual Album Artist Editing: Preview + Execute (Auftrag §10-13) ─────

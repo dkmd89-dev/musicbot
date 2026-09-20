@@ -62,31 +62,53 @@ def resolve_artist_by_index(idx: int, *, library_root: Optional[Path] = None) ->
 # ─────────────────────────────────────────────────────────────────────────
 
 
+_SUPPORTED_ALBUM_TRACK_EXTENSIONS = (".m4a",)
+
+
 def list_artist_albums(artist: str, *, library_root: Optional[Path] = None) -> List[str]:
-    """Sortierte Liste der Album-Verzeichnisnamen direkt unterhalb eines
+    """Sortierte Liste der Album-Kontexte direkt unterhalb eines
     Artist-Verzeichnisses — identische Klassifikation wie
     services/library_health/discovery.py::_classify_section_and_dirs()
     (LIBRARY_DIR/<Artist>/<Jahr> - <Album>/...): jedes direkte
     Unterverzeichnis AUSSER "Singles" (case-insensitiv) ist ein
-    Album-Kontext. Album-Scope ist damit verzeichnisbasiert, nicht
-    ©alb-tag-basiert (Auftrag §7/§22/§23 — zwei Ordner mit demselben
-    sichtbaren Albumnamen bleiben unabhängige Kontexte). "Singles" wird
-    bewusst ausgeschlossen (Auftrag §24 — keine globale Änderung aller
-    Singles eines Artists als "ein Album"). Nur echte Verzeichnisse
-    (keine Symlinks, keine versteckten Einträge) — identische Vorsicht
-    wie list_library_artist_dirs()."""
+    Mehr-Track-Album-Kontext (Rückgabewert = Verzeichnisname). Album-Scope
+    ist damit verzeichnisbasiert, nicht ©alb-tag-basiert (Auftrag §7/§22/
+    §23 — zwei Ordner mit demselben sichtbaren Albumnamen bleiben
+    unabhängige Kontexte).
+
+    "Singles" wird NICHT komplett ausgeschlossen (Nutzer-Fund
+    2026-09-20: Artists, die ausschließlich Singles haben, hatten sonst
+    gar keinen editierbaren Album-Kontext) — aber auch NICHT als EIN
+    gemeinsamer Bulk-Kontext behandelt (Auftrag §24 bleibt in Kraft:
+    keine globale Änderung aller Singles eines Artists als "ein Album").
+    Stattdessen wird JEDE einzelne Datei direkt unter "Singles/" als
+    eigener, exakt EIN Track umfassender Kontext gelistet
+    (Rückgabewert `"<Singles-Ordnername>/<Dateiname>"` — am "/" von
+    echten Mehr-Track-Alben unterscheidbar, siehe
+    maintenance_service.py::album_targets()).
+
+    Nur echte Verzeichnisse/Dateien (keine Symlinks, keine versteckten
+    Einträge) — identische Vorsicht wie list_library_artist_dirs()."""
     root = Path(library_root) if library_root is not None else Path(Config.LIBRARY_DIR)
     artist_dir = root / artist
     if not artist_dir.is_dir():
         return []
-    return sorted(
-        p.name
-        for p in artist_dir.iterdir()
-        if p.is_dir()
-        and not p.is_symlink()
-        and not p.name.startswith(".")
-        and p.name.strip().lower() != "singles"
-    )
+    result: List[str] = []
+    for p in artist_dir.iterdir():
+        if not p.is_dir() or p.is_symlink() or p.name.startswith("."):
+            continue
+        if p.name.strip().lower() == "singles":
+            for f in p.iterdir():
+                if (
+                    f.is_file()
+                    and not f.is_symlink()
+                    and not f.name.startswith(".")
+                    and f.suffix.lower() in _SUPPORTED_ALBUM_TRACK_EXTENSIONS
+                ):
+                    result.append(f"{p.name}/{f.name}")
+        else:
+            result.append(p.name)
+    return sorted(result)
 
 
 def resolve_album_by_index(
