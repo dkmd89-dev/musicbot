@@ -188,6 +188,10 @@ Getrennte Prozesse statt Einbettung in `bot.py` — Begründung: Lifecycle-Trenn
 
 **Neuer BLOCKER (klein, kein Showstopper, aber vor Phase 3 zu klären):** Wo/wie soll uvicorn dauerhaft laufen (systemd-Unit neu anlegen? manueller Start? vorhandener Supervisor außerhalb des Repos?) und existiert bereits ein Reverse-Proxy auf dem Zielhost? Das ist eine reine Infrastrukturfrage ohne Code-Auswirkung auf `control_center/` selbst — wird hier dokumentiert, aber nicht blockierend für die Implementierung des Vertical Slice selbst (lokal ohne TLS/Domain testbar, siehe Dev-Auth-Bypass in Abschnitt 3).
 
+### Nachtrag (2026-09-20): Reverse-Proxy-Subpath
+
+Betrieb hinter nginx unter `/controlcenter/` ist umgesetzt (`X-Forwarded-Prefix` → `scope["root_path"]`, `base_path`/`apiUrl()`, Cookie-Path). Konfiguration, Pflicht-Header und Verifikationsumfang: [`docs/CONTROL_CENTER_REVERSE_PROXY.md`](../CONTROL_CENTER_REVERSE_PROXY.md).
+
 ### Nachtrag (2026-09-15, während Schritt 1 entdeckt): geteiltes Python-Environment mit `spotdl`
 
 Bei der Implementierung von Schritt 1 hat sich gezeigt: MusicBot besitzt **kein eigenes, isoliertes virtualenv** — `python3` löst auf `/home/robin/python` auf, ein Environment, das der Nutzer offenbar auch für ein unabhängiges Tool namens `spotdl` (Spotify-Downloader, `pip show spotdl` → "Download your Spotify playlists...") nutzt. `spotdl==4.4.3` pinnt `fastapi<0.104,>=0.103.0` und `uvicorn<0.24,>=0.23.2`.

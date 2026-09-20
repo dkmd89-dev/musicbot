@@ -120,7 +120,7 @@ python3 bot.py
 
 ## Control Center starten (optional, Web-UI)
 
-Eigener Prozess neben dem Bot, nur für lokale Entwicklung ohne Reverse-Proxy/TLS gedacht (das Telegram-Login-Widget braucht produktiv eine bei BotFather hinterlegte HTTPS-Domain, siehe [`docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md`](docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md) Abschnitt 3/7):
+Eigener Prozess neben dem Bot. Lokal ohne Reverse-Proxy/TLS oder produktiv hinter nginx unter `/controlcenter/` (Konfiguration und Header: [`docs/CONTROL_CENTER_REVERSE_PROXY.md`](docs/CONTROL_CENTER_REVERSE_PROXY.md)) (das Telegram-Login-Widget braucht produktiv eine bei BotFather hinterlegte HTTPS-Domain, siehe [`docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md`](docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md) Abschnitt 3/7):
 
 ```bash
 CONTROL_CENTER_DEV_AUTH_BYPASS=true python3 -m uvicorn control_center.app:app --host 127.0.0.1 --port 8420
