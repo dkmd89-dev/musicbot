@@ -2,23 +2,112 @@
 {% block title %}Logs – MusicBot Control Center{% endblock %}
 {% block content %}
   <h1>Logs</h1>
-  <p class="subtitle">Diagnose-Log-Ansicht.</p>
+  <p class="subtitle">Diagnose-Log-Ansicht (Master-Prompt Abschnitt 12 "LOGS &amp; DIAGNOSTICS").</p>
+  <p class="hint">
+    Bewusst kein Zeitraum-/Job-/User-Filter: Logzeilen enthalten kein
+    Datum (nur Uhrzeit) und keine strukturierte Job-/User-Zuordnung —
+    stattdessen Auswahl der Log-Datei (aktuell/rotiert/modulspezifisch),
+    Level, Komponente und Volltextsuche.
+  </p>
 
   <section class="panel">
-    <h2>Noch nicht implementiert</h2>
-    <p class="empty-note">
-      Es existiert noch kein Log-Viewer-Backend (Master-Prompt Abschnitt 12
-      "LOGS &amp; DIAGNOSTICS", bisher nicht umgesetzt). Diese Seite ist
-      bewusst als Platzhalter angelegt, statt eine nicht vorhandene
-      Funktion vorzutäuschen (Master-Prompt Regel 38).
-    </p>
+    <h2>
+      Filter
+      <button id="logs-refresh-btn" class="small" type="button">Aktualisieren</button>
+    </h2>
+    <div class="retry-row">
+      <label for="logs-source-select" class="hint">Datei:</label>
+      <select id="logs-source-select"></select>
+      <label for="logs-level-select" class="hint">Level:</label>
+      <select id="logs-level-select">
+        <option value="">— alle —</option>
+        <option value="DEBUG">DEBUG</option>
+        <option value="INFO">INFO</option>
+        <option value="WARNING">WARNING</option>
+        <option value="ERROR">ERROR</option>
+        <option value="CRITICAL">CRITICAL</option>
+      </select>
+    </div>
+    <div class="retry-row">
+      <input type="text" id="logs-component-input" placeholder="Komponente (z. B. TELEGRAM_BOT)">
+      <input type="text" id="logs-search-input" placeholder="Volltextsuche">
+      <button id="logs-filter-btn" class="small" type="button">Filtern</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Log-Zeilen</h2>
+    <div id="logs-content" class="empty-note">Lädt…</div>
   </section>
 {% endblock %}
 
 {% block scripts %}
 <script>
+  // Master-Prompt Abschnitt 12 "LOGS & DIAGNOSTICS" - erster Schritt.
+  // Liest services/logs/reader.py::read_logs() ueber GET /api/v1/logs
+  // (siehe dortigen Docstring fuer die bewussten Einschraenkungen:
+  // kein Zeitraum-/Job-/User-Filter, da die Datenquelle das nicht
+  // zuverlaessig hergibt - Master-Prompt Regel 38).
+  const _LOG_LEVEL_BADGE = {
+    ERROR: "status-failed", CRITICAL: "status-failed", WARNING: "WARNING",
+  };
+
+  function renderLogs(el, body) {
+    // Quelle-Dropdown nur beim ersten Laden befuellen (sonst geht die
+    // Nutzerauswahl bei jedem Refresh verloren).
+    const sourceSelect = document.getElementById("logs-source-select");
+    if (!sourceSelect.options.length) {
+      sourceSelect.innerHTML = body.available_sources.map((s) =>
+        `<option value="${_escapeHtml(s)}">${_escapeHtml(s)}</option>`
+      ).join("");
+      sourceSelect.value = body.source;
+    }
+
+    if (!body.entries.length) {
+      el.innerHTML = '<p class="empty-note">Keine passenden Log-Zeilen.</p>';
+      return;
+    }
+    const trunc = body.total_matched > body.entries.length
+      ? `<p class="empty-note">Zeige ${body.entries.length} von ${body.total_matched} — weitere nicht geladen (kein Auto-Rendern großer Listen).</p>`
+      : "";
+    el.innerHTML = trunc + '<div class="row-list">' + body.entries.map((e) => {
+      const badgeClass = e.level ? (_LOG_LEVEL_BADGE[e.level] || "INFO") : null;
+      const levelHtml = badgeClass
+        ? `<span class="badge badge-${badgeClass}">${_escapeHtml(e.level)}</span>`
+        : "";
+      const componentHtml = e.component ? `[${_escapeHtml(e.component)}] ` : "";
+      return `
+        <div class="row-item">
+          <div class="row-main">${levelHtml}${componentHtml}${_escapeHtml(e.message)}</div>
+          <div class="row-count">${_escapeHtml(e.time)}</div>
+        </div>
+      `;
+    }).join("") + "</div>";
+  }
+
+  function loadLogs() {
+    const params = new URLSearchParams();
+    const source = document.getElementById("logs-source-select").value;
+    const level = document.getElementById("logs-level-select").value;
+    const component = document.getElementById("logs-component-input").value.trim();
+    const search = document.getElementById("logs-search-input").value.trim();
+    if (source) params.set("source", source);
+    if (level) params.set("level", level);
+    if (component) params.set("component", component);
+    if (search) params.set("search", search);
+    params.set("limit", "200");
+    return _loadInto("logs-content", `/api/v1/logs?${params.toString()}`, renderLogs);
+  }
+
+  document.getElementById("logs-refresh-btn").addEventListener("click", loadLogs);
+  document.getElementById("logs-filter-btn").addEventListener("click", loadLogs);
+  document.getElementById("logs-source-select").addEventListener("change", loadLogs);
+
   function initPage() {
-    checkAuth();
+    checkAuth().then((who) => {
+      if (!who) return;
+      loadLogs();
+    });
   }
   initPage();
 </script>

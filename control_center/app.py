@@ -34,6 +34,7 @@ from .routers import (
     findings,
     health,
     jobs,
+    logs,
     metadata,
     metadata_actions,
     navidrome,
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     app.include_router(navidrome.router)
     app.include_router(admin.router)
     app.include_router(jobs.router)
+    app.include_router(logs.router)
     app.include_router(auth.router)
     app.include_router(ui.router)
 

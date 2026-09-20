@@ -509,13 +509,32 @@ async def test_navidrome_page_has_status_panel(client):
 
 
 @pytest.mark.asyncio
-async def test_logs_page_is_honestly_marked_as_not_implemented(client):
-    """Master-Prompt Regel 38: keine Funktion vortaeuschen, die
-    Backend-seitig nicht existiert - klar als "Not implemented"
-    kennzeichnen."""
+async def test_logs_page_has_filter_and_content_panels(client):
     html = (await client.get("/logs")).text
 
-    assert "Noch nicht implementiert" in html
+    assert 'id="logs-source-select"' in html
+    assert 'id="logs-level-select"' in html
+    assert 'id="logs-component-input"' in html
+    assert 'id="logs-search-input"' in html
+    assert 'id="logs-filter-btn"' in html
+    assert 'id="logs-content"' in html
+    assert "/api/v1/logs" in html
+    assert "loadLogs" in html
+    assert "renderLogs" in html
+
+
+@pytest.mark.asyncio
+async def test_logs_page_has_no_time_range_job_or_user_filter(client):
+    """Master-Prompt Regel 38: kein Zeitraum-/Job-/User-Filter, da die
+    zugrundeliegenden Logzeilen weder ein Datum noch eine strukturierte
+    Job-/User-Korrelation enthalten (siehe services/logs/reader.py) -
+    ein solcher Filter wuerde eine nicht vorhandene Genauigkeit
+    vortaeuschen."""
+    html = (await client.get("/logs")).text
+
+    assert 'id="logs-job-select"' not in html
+    assert 'id="logs-user-select"' not in html
+    assert 'id="logs-date-range"' not in html
 
 
 # ─────────────────────────────────────────────────────────────────────────
