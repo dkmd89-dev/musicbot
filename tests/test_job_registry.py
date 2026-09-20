@@ -103,6 +103,16 @@ class TestLifecycleTransitions:
         assert updated.error == "kaputt"
         assert updated.finished_at is not None
 
+    def test_mark_failed_accepts_optional_diagnostic_result(self):
+        """Nachtrag Phase 2 (Repair-Execution): ein fehlgeschlagener Job
+        kann trotzdem Diagnosedaten liefern (z. B. Subprozess-stdout)."""
+        registry = JobRegistry()
+        job = registry.create(kind="demo_progress", initiator="1")
+        registry.mark_failed(job.job_id, "Exit-Code 1", result={"stdout_tail": "..."})
+
+        updated = registry.get(job.job_id)
+        assert updated.result == {"stdout_tail": "..."}
+
     def test_mark_cancelled_sets_status_and_finished_at(self):
         registry = JobRegistry()
         job = registry.create(kind="demo_progress", initiator="1")

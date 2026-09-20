@@ -87,12 +87,17 @@ class JobRegistry:
                 job.result = result
                 job.finished_at = now_iso()
 
-    def mark_failed(self, job_id: str, error: str) -> None:
+    def mark_failed(self, job_id: str, error: str, result: Optional[dict] = None) -> None:
+        """`result` optional (Nachtrag Phase 2/Repair-Execution): ein Job
+        kann fehlschlagen, aber trotzdem Diagnosedaten liefern (z. B.
+        Subprozess-stdout bei einem Exit-Code != 0) — Job.result ist
+        unabhängig vom Status bereits im Modell vorgesehen."""
         with self._lock:
             job = self._jobs.get(job_id)
             if job is not None:
                 job.status = JobStatus.FAILED
                 job.error = error
+                job.result = result
                 job.finished_at = now_iso()
 
     def mark_cancelled(self, job_id: str) -> None:
