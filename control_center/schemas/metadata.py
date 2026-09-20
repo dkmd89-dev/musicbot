@@ -228,3 +228,36 @@ def genre_execute_to_response(result) -> GenreExecuteResponse:
         affected_files=result.affected_files,
         error_message=result.error_message,
     )
+
+
+class MappingSummaryResponse(BaseModel):
+    """Übersicht über die Genre-/Artist-Mapping-Dateien (mapping/*.yaml/
+    *.json) — Master-Prompt Abschnitt 7 "Mapping anzeigen". Reines Mapping
+    über utils.genre_map.GenreMapper.get_statistics()["mappings"] hinweg
+    (bereits produktiv, u. a. von der Reprocessing-CLI genutzt) — keine
+    eigene YAML-/JSON-Parsing-Logik. Nur die reinen Mapping-Zählungen,
+    NICHT die Laufzeit-Cache-/Query-Statistiken (queries/cache_hits/
+    fuzzy_matches/rule_matches/cache_hit_rate) — die sind für eine frische
+    Control-Center-Anfrage nicht aussagekräftig (Prozess-Lebenszeit-
+    Artefakt, kein Mapping-Inhalt)."""
+
+    artists: int
+    channels: int
+    hierarchy: int
+    rules: int
+    aliases: int
+    overrides: int
+    unique_primary_genres: int
+
+
+def mapping_statistics_to_response(stats: dict) -> MappingSummaryResponse:
+    m = stats["mappings"]
+    return MappingSummaryResponse(
+        artists=m["artists"],
+        channels=m["channels"],
+        hierarchy=m["hierarchy"],
+        rules=m["rules"],
+        aliases=m["aliases"],
+        overrides=m["overrides"],
+        unique_primary_genres=stats["unique_primary_genres"],
+    )
