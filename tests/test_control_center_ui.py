@@ -344,6 +344,31 @@ async def test_dashboard_library_metadata_has_missing_metadata_filter(client):
 
 
 @pytest.mark.asyncio
+async def test_dashboard_has_genre_set_panel(client):
+    """"Metadata bearbeiten" (Master-Prompt Abschnitt 7) - erste
+    schreibende Metadata-Management-Faehigkeit, Preview vor Execute."""
+    html = (await client.get("/")).text
+
+    assert "Genre setzen" in html
+    assert 'id="genre-set-artist-input"' in html
+    assert 'id="genre-preview-btn"' in html
+    assert 'id="genre-set-content"' in html
+    assert 'id="genre-set-execute-btn" class="small" disabled' in html
+    assert "/genre-preview" in html
+    assert "/set-genre" in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_genre_set_confirm_dialog_mentions_backup_and_files(client):
+    """Master-Prompt Regel 11: verstaendliche Bestaetigung vor der ersten
+    Metadata-Bearbeitungs-Ausfuehrung."""
+    html = (await client.get("/")).text
+
+    assert "wirklich setzen" in html
+    assert "Dateien in der Library" in html
+
+
+@pytest.mark.asyncio
 async def test_dashboard_shows_telegram_widget_when_bot_username_configured(client, monkeypatch):
     monkeypatch.setattr(Config, "BOT_USERNAME", property(lambda self: "MeinTestBot"))
 
