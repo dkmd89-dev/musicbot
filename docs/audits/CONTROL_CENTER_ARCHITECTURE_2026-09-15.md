@@ -614,3 +614,31 @@ Punkte. Reines Mapping über bereits produktive `StatistikService`-Methoden.
   (71 Tests) sowie Gesamt-Control-Center-Suite (195/195) grün.
 - **Kein UI in diesem Schritt** (analog zum vorherigen Statistics-Schritt).
 - Keine neuen Dependencies.
+
+---
+
+## Erweiterung — Genre-Statistik & Music DNA UI (2026-09-20, auf Nutzerfreigabe)
+
+UI-Folgeschritt zum vorherigen Eintrag — erweitert das bestehende
+Statistics-Panel (kein neues Panel) um zwei zusätzliche Content-Bereiche.
+
+- `#genre-stats-content` (Top-5-Genres, Play-Zahl) und
+  `#music-dna-content` (Plays/eindeutige Songs/Wiederholungsrate,
+  Tageszeit-Verteilung, Top-5-Genre-/Artist-Anteile in %) direkt unter
+  dem bestehenden `#statistics-content` im selben Panel.
+- `loadGenreStats()`/`loadMusicDna()` nutzen den bereits vorhandenen
+  `_loadInto()`-Helper (identisches Lade-/Fehlerbehandlungs-Muster wie
+  `loadStatistics()`) — keine neue Fetch-Logik.
+- In `checkAuthAndLoad()`, dem `refresh-btn`-Handler und dem 30s-Polling
+  ergänzt — beide Endpunkte sind reine, günstige JSON-Reads (identische
+  Kategorie wie `/me`, anders als der volle Library-Scan des
+  Repair-Plans).
+- Test: `tests/test_control_center_ui.py` von 20 auf 21 Tests erweitert
+  (Panel-Präsenz, JS-Verdrahtung) — alle grün, Gesamt-Control-Center-Suite
+  196/196 grün. JS-Syntax mit `node --check` verifiziert.
+- Kein Live-Smoke-Test gegen die echte Library nötig (reine Lesefunktion,
+  kein Risiko) — dennoch nicht durchgeführt, da kein Browser verfügbar;
+  Wiring per HTTP-Test verifiziert.
+- Keine neuen Dependencies, keine neue API-Fläche (reine
+  Frontend-Verdrahtung auf den im vorherigen Schritt hinzugefügten
+  Endpunkten).
