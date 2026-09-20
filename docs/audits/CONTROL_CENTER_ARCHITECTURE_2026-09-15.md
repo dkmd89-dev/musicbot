@@ -892,3 +892,114 @@ verzweigt.
   würde sofort Dateien in der Produktionsbibliothek verändern. Nur
   gegen isolierte Testdaten verifiziert (siehe oben).
 - Keine neuen Dependencies.
+
+---
+
+## UI Structure Redesign — Phase 1 (2026-09-20, auf Nutzerfreigabe, `ui_prompt.txt`)
+
+**Zwischen-Schritt außerhalb des Master-Prompt-Backlogs** — auf
+Nutzerwunsch ein separates, priorisiertes Redesign-Dokument
+(`ui_prompt.txt`, "MUSICBOT CONTROL CENTER UI STRUCTURE REDESIGN")
+eingeschoben, bevor die Metadata-Management-Phase (bzw. der
+Gesamt-Master-Prompt) fortgesetzt wird — identisches Muster wie
+`ui_prompt.txt` selbst in Abschnitt 4 vorsieht ("konkretes UI-/
+Architekturproblem erkannt → begrenzter Verbesserungs-Schritt →
+Verification → Masterplan fortsetzen"). Das Problem war laut Auftrag
+explizit **Informationsarchitektur/Navigation**, nicht fehlende
+Funktionen — entsprechend wurde ausschließlich reorganisiert, keine
+Fachlogik verändert.
+
+### Ausgangslage
+
+Das bisherige Control Center bestand aus einer einzigen Seite
+(`dashboard.html`, ~1100 Zeilen), auf der alle Panels (Statistics,
+Findings, Repair-Plan, L2/L3, Library-Metadata, Genre setzen, Downloads,
+Admin) untereinander lagen — funktional vollständig, aber ohne
+Navigationsstruktur.
+
+### Neue Struktur
+
+12 Seiten mit gemeinsamer Sidebar/Header-Navigation, exakt wie
+`ui_prompt.txt` Abschnitt 8/11/50 vorgegeben:
+
+```
+Overview · Downloads · Library · Metadata · Statistics · Findings ·
+Repairs · Jobs · Health · Navidrome · Logs · Administration
+```
+
+**Zuordnung bestehender Panels** (unverändert verschoben, keine
+inhaltliche Neuerstellung — `ui_prompt.txt` Abschnitt 6/49 verbietet
+das ausdrücklich für Phase 1):
+
+| Seite | Inhalt (Herkunft) |
+|---|---|
+| Overview | NEU, kompakt: Health-/Navidrome-Status, KPIs (Active Jobs/Open Findings, aus bereits bestehenden Endpunkten `GET /api/v1/jobs`/`GET /api/v1/library/findings/summary`), Attention-Summary, Active-Jobs-Summary, Recent Activity (Downloads-Verlauf), Quick Actions |
+| Downloads | bisheriges „Downloads (Verlauf)"-Panel |
+| Library | bisheriges „Library-Metadata"-Panel (Tracks/Artists/Albums/Mapping/Missing-Metadata-Filter) |
+| Metadata | bisheriges „Genre setzen"-Panel |
+| Statistics | bisheriges Statistics-/Genre-Stats-/Music-DNA-Panel |
+| Findings | bisheriges Findings-Panel (+ Accepted-Findings-Toggle) |
+| Repairs | bisherige Repair-Plan- + L2/L3-Panels |
+| **Jobs** | **NEU** — erste dedizierte Job-Listen-Ansicht; nutzt die bereits bestehende `GET /api/v1/jobs`, die bisher nur implizit über die "aktueller Job"-Anzeige bei Repair-Plan/L2-L3 sichtbar war. Keine neue Backend-Logik. |
+| Health | bisherige Health-Kacheln + Navidrome-Status |
+| Navidrome | bisherige Navidrome-Status-Zeile |
+| **Logs** | **Platzhalter** — kein Backend vorhanden (Master-Prompt Abschnitt 12 "LOGS & DIAGNOSTICS", bisher nicht umgesetzt). Zeigt ehrlich „Noch nicht implementiert" statt eine nicht vorhandene Funktion vorzutäuschen (Master-Prompt Regel 38 / `ui_prompt.txt` Abschnitt 38). |
+| Administration | bisheriges Admin-Nutzer-Panel (+ Cross-User-Statistik) |
+
+### Technische Umsetzung
+
+- **`control_center/templates/_base.html`** (neu) — gemeinsames Layout
+  (Sidebar mit allen 12 Einträgen inkl. Active-State, Header, View-
+  State-Container `loading-view`/`login-view`/`error-view`/
+  `dashboard-view`), Jinja2-Vererbung (`{% block content %}`/
+  `{% block scripts %}`) für jede Seite. `dashboard.html` entfernt
+  (vollständig durch die 12 neuen Seiten-Templates + `_base.html`
+  ersetzt).
+- **`control_center/static/common.css`** + **`common.js`** (neu) —
+  gemeinsame Styles/JS-Helfer (`_escapeHtml`, `_loadInto`, `checkAuth`,
+  `onTelegramAuth`, Sidebar-Drawer-Toggle), unverändert aus dem
+  vorherigen Einzel-Dashboard extrahiert, um Duplikation über jetzt 12
+  Seiten hinweg zu vermeiden. **Bewusste, notwendige technische
+  Ergänzung** (FastAPI `StaticFiles`-Mount in `app.py`) — kein
+  Framework-Wechsel, weiterhin Vanilla JS/CSS ohne Build-Schritt
+  (Master-Prompt Abschnitt 7 bzw. `ui_prompt.txt` identisch).
+- **`control_center/routers/ui.py`** — von einer Route (`GET /`) auf 12
+  Routen erweitert, jede rendert ihr eigenes Template über einen
+  gemeinsamen `_render()`-Helper (übergibt `page_id` für die
+  Sidebar-Active-Markierung). Weiterhin bewusst unauthentifiziert (reines
+  HTML-Grundgerüst, echte Daten holt jede Seite client-seitig über die
+  bereits geschützten API-Endpunkte).
+- **Mobile Navigation** (`ui_prompt.txt` Abschnitt 12): Sidebar wird per
+  CSS + minimalem JS-Klassen-Toggle zum Drawer (`body.sidebar-open`),
+  kein horizontales Scrollen.
+- **Keine einzige API-Route, kein Schema, kein Service geändert** — reine
+  Frontend-Reorganisation, `git diff` betrifft ausschließlich
+  `control_center/templates/`, `control_center/static/` (neu),
+  `control_center/routers/ui.py`, `control_center/app.py`
+  (StaticFiles-Mount) und die UI-Testdatei.
+- Test: `tests/test_control_center_ui.py` komplett neu geschrieben (85
+  Tests, vorher 27) — jeder vorherige Test auf seine neue Seite
+  verschoben, plus neue Tests für gemeinsames Layout (Sidebar auf jeder
+  Seite vollständig, Active-State korrekt, View-States, Static-Assets
+  erreichbar), das neue Jobs-Panel und die ehrliche „Noch nicht
+  implementiert"-Kennzeichnung von Logs. Alle grün, Gesamt-Control-
+  Center-Suite 281/281 grün (keine Backend-Datei geändert, daher keine
+  gesonderte Backend-Regression nötig). JS-Syntax mit `node --check` für
+  `common.js` und jeden Seiten-Script-Block einzeln verifiziert (`node`
+  akzeptiert alle 12 extrahierten Blöcke fehlerfrei). Alle 12 Seiten +
+  beide statischen Assets per HTTP-Smoke-Test gegen den echten
+  ASGI-Stack abgerufen (200 OK, plausible Content-Länge) — kein
+  Live-Browser verfügbar, daher dieser Ersatz (identisches Vorgehen wie
+  bei allen vorherigen UI-Schritten dieser Session).
+- Verification-Checkliste aus `ui_prompt.txt` Abschnitt 51 vollständig
+  erfüllt (Dashboard/Sidebar/Navigation funktionsfähig, keine API-
+  Funktion verloren, keine Business-Logik ins Frontend verschoben,
+  responsive Grundstruktur, Loading/Empty/Error-States, relevante Tests,
+  `node --check`, Git Diff geprüft).
+- Keine neuen Dependencies (FastAPI `StaticFiles` ist Teil des bereits
+  installierten FastAPI-Pakets).
+
+**Zwischen-Schritt abgeschlossen** — Fortsetzung des Master-Plans
+(Metadata Management: Reprocessing/Cover verwalten, danach Logs &
+Diagnostics, siehe frühere Gap-Analyse) folgt gemäß `ui_prompt.txt`
+Abschnitt 52 als eigene, separat freizugebende Entscheidung.
