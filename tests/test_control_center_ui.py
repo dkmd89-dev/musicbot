@@ -308,6 +308,19 @@ async def test_dashboard_library_metadata_ui_wiring_present(client):
 
 
 @pytest.mark.asyncio
+async def test_dashboard_has_mapping_summary_wiring(client):
+    """"Mapping anzeigen" (Master-Prompt Abschnitt 7) - eigener Button im
+    Library-Metadata-Panel, kein voller Library-Scan (anders als Tracks/
+    Artists/Albums)."""
+    html = (await client.get("/")).text
+
+    assert 'id="metadata-mapping-btn"' in html
+    assert "loadMappingSummary" in html
+    assert "renderMappingSummary" in html
+    assert "/api/v1/library/mapping-summary" in html
+
+
+@pytest.mark.asyncio
 async def test_dashboard_library_metadata_has_no_repeated_rescan_pagination(client):
     """Bewusste Entscheidung: keine Weiter/Zurück-Buttons, da jede Anfrage
     einen vollen Library-Scan ausloest - stattdessen Trunkierungshinweis

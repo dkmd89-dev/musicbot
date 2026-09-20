@@ -177,6 +177,7 @@
           <button id="metadata-tracks-btn" class="small">Tracks</button>
           <button id="metadata-artists-btn" class="small">Artists</button>
           <button id="metadata-albums-btn" class="small">Albums</button>
+          <button id="metadata-mapping-btn" class="small">Mapping</button>
         </div>
         <div class="retry-row">
           <label for="metadata-missing-filter" class="hint">Fehlende Metadata (nur Tracks):</label>
@@ -782,6 +783,28 @@
     document.getElementById("metadata-tracks-btn").addEventListener("click", () => loadMetadataList("tracks"));
     document.getElementById("metadata-artists-btn").addEventListener("click", () => loadMetadataList("artists"));
     document.getElementById("metadata-albums-btn").addEventListener("click", () => loadMetadataList("albums"));
+
+    // "Mapping anzeigen" - anders als Tracks/Artists/Albums KEIN voller
+    // Library-Scan (GenreMapper liest nur mapping/*.yaml/*.json), daher
+    // eigener, schneller Ladepfad statt ueber loadMetadataList().
+    function renderMappingSummary(el, body) {
+      el.innerHTML = `
+        <div class="counts-grid">
+          <div><strong>${body.artists}</strong><br>Artists</div>
+          <div><strong>${body.channels}</strong><br>Channels</div>
+          <div><strong>${body.hierarchy}</strong><br>Hierarchy</div>
+          <div><strong>${body.rules}</strong><br>Rules</div>
+          <div><strong>${body.aliases}</strong><br>Aliases</div>
+          <div><strong>${body.overrides}</strong><br>Overrides</div>
+          <div><strong>${body.unique_primary_genres}</strong><br>Primäre Genres</div>
+        </div>
+      `;
+    }
+    function loadMappingSummary() {
+      document.getElementById("metadata-content").innerHTML = '<span class="empty-note">Lädt…</span>';
+      return _loadInto("metadata-content", "/api/v1/library/mapping-summary", renderMappingSummary);
+    }
+    document.getElementById("metadata-mapping-btn").addEventListener("click", loadMappingSummary);
 
     function renderDownloads(el, body) {
       if (!body.entries.length) { el.innerHTML = '<p class="empty-note">Kein Download-Verlauf.</p>'; return; }
