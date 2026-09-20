@@ -2,7 +2,7 @@
 {% block title %}Metadata – MusicBot Control Center{% endblock %}
 {% block content %}
   <h1>Metadata</h1>
-  <p class="subtitle">Metadata bearbeiten. Tracks/Artists/Albums/Mapping ansehen: <a href="/library">Library</a>.</p>
+  <p class="subtitle">Metadata bearbeiten. Tracks/Artists/Albums/Mapping ansehen: <a href="{{ base_path }}/library">Library</a>.</p>
 
   <section class="panel">
     <h2>Genre setzen</h2>
@@ -77,7 +77,7 @@
     document.getElementById("genre-set-result-content").innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
 
     try {
-      const res = await fetch(`/api/v1/library/artists/${encodeURIComponent(_genreSetArtist)}/set-genre`, {
+      const res = await fetch(apiUrl(`/api/v1/library/artists/${encodeURIComponent(_genreSetArtist)}/set-genre`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",

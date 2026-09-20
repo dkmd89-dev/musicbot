@@ -51,7 +51,7 @@
 
     buttonEl.disabled = true;
     try {
-      const res = await fetch(`/api/v1/library/findings/${encodeURIComponent(findingId)}/accept`, {
+      const res = await fetch(apiUrl(`/api/v1/library/findings/${encodeURIComponent(findingId)}/accept`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
@@ -111,7 +111,7 @@
 
     buttonEl.disabled = true;
     try {
-      const res = await fetch(`/api/v1/library/findings/${encodeURIComponent(findingId)}/unaccept`, {
+      const res = await fetch(apiUrl(`/api/v1/library/findings/${encodeURIComponent(findingId)}/unaccept`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",

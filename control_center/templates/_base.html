@@ -3,29 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="cc-base" content="{{ base_path }}">
   <title>{% block title %}MusicBot Control Center{% endblock %}</title>
-  <link rel="stylesheet" href="/static/common.css">
+  <link rel="stylesheet" href="{{ base_path }}/static/common.css">
   {% block extra_head %}{% endblock %}
 </head>
 <body>
   <div id="app-shell">
     <nav id="sidebar">
       <div class="sidebar-brand">🎵 MUSICBOT<br>CONTROL CENTER</div>
-      <a href="/" class="nav-link{{ ' active' if page_id == 'overview' else '' }}">🏠 Overview</a>
+      <a href="{{ base_path }}/" class="nav-link{{ ' active' if page_id == 'overview' else '' }}">🏠 Overview</a>
       <div class="nav-group">Music</div>
-      <a href="/downloads" class="nav-link{{ ' active' if page_id == 'downloads' else '' }}">📥 Downloads</a>
-      <a href="/library" class="nav-link{{ ' active' if page_id == 'library' else '' }}">📚 Library</a>
-      <a href="/metadata" class="nav-link{{ ' active' if page_id == 'metadata' else '' }}">🏷 Metadata</a>
-      <a href="/statistics" class="nav-link{{ ' active' if page_id == 'statistics' else '' }}">📊 Statistics</a>
+      <a href="{{ base_path }}/downloads" class="nav-link{{ ' active' if page_id == 'downloads' else '' }}">📥 Downloads</a>
+      <a href="{{ base_path }}/library" class="nav-link{{ ' active' if page_id == 'library' else '' }}">📚 Library</a>
+      <a href="{{ base_path }}/metadata" class="nav-link{{ ' active' if page_id == 'metadata' else '' }}">🏷 Metadata</a>
+      <a href="{{ base_path }}/statistics" class="nav-link{{ ' active' if page_id == 'statistics' else '' }}">📊 Statistics</a>
       <div class="nav-group">Maintenance</div>
-      <a href="/findings" class="nav-link{{ ' active' if page_id == 'findings' else '' }}">🔍 Findings</a>
-      <a href="/repairs" class="nav-link{{ ' active' if page_id == 'repairs' else '' }}">🔧 Repairs</a>
-      <a href="/jobs" class="nav-link{{ ' active' if page_id == 'jobs' else '' }}">📋 Jobs</a>
-      <a href="/health" class="nav-link{{ ' active' if page_id == 'health' else '' }}">🩺 Health</a>
+      <a href="{{ base_path }}/findings" class="nav-link{{ ' active' if page_id == 'findings' else '' }}">🔍 Findings</a>
+      <a href="{{ base_path }}/repairs" class="nav-link{{ ' active' if page_id == 'repairs' else '' }}">🔧 Repairs</a>
+      <a href="{{ base_path }}/jobs" class="nav-link{{ ' active' if page_id == 'jobs' else '' }}">📋 Jobs</a>
+      <a href="{{ base_path }}/health" class="nav-link{{ ' active' if page_id == 'health' else '' }}">🩺 Health</a>
       <div class="nav-group">System</div>
-      <a href="/navidrome" class="nav-link{{ ' active' if page_id == 'navidrome' else '' }}">🎵 Navidrome</a>
-      <a href="/logs" class="nav-link{{ ' active' if page_id == 'logs' else '' }}">📝 Logs</a>
-      <a href="/admin" class="nav-link{{ ' active' if page_id == 'admin' else '' }}">⚙ Administration</a>
+      <a href="{{ base_path }}/navidrome" class="nav-link{{ ' active' if page_id == 'navidrome' else '' }}">🎵 Navidrome</a>
+      <a href="{{ base_path }}/logs" class="nav-link{{ ' active' if page_id == 'logs' else '' }}">📝 Logs</a>
+      <a href="{{ base_path }}/admin" class="nav-link{{ ' active' if page_id == 'admin' else '' }}">⚙ Administration</a>
     </nav>
     <div id="main-area">
       <header id="app-header">
@@ -62,7 +63,7 @@
     </div>
   </div>
 
-  <script src="/static/common.js"></script>
+  <script src="{{ base_path }}/static/common.js"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

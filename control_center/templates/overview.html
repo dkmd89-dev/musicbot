@@ -15,28 +15,28 @@
   <section class="panel" id="attention-panel" hidden>
     <h2>Attention</h2>
     <div id="attention-content"></div>
-    <div class="retry-row"><a href="/findings"><button class="small" type="button">Findings ansehen</button></a></div>
+    <div class="retry-row"><a href="{{ base_path }}/findings"><button class="small" type="button">Findings ansehen</button></a></div>
   </section>
 
   <section class="panel">
     <h2>Active Jobs</h2>
     <div id="active-jobs-summary" class="empty-note">Lädt…</div>
-    <div class="retry-row"><a href="/jobs"><button class="small" type="button">Alle Jobs ansehen</button></a></div>
+    <div class="retry-row"><a href="{{ base_path }}/jobs"><button class="small" type="button">Alle Jobs ansehen</button></a></div>
   </section>
 
   <section class="panel">
     <h2>Recent Activity</h2>
     <div id="recent-activity-content" class="empty-note">Lädt…</div>
-    <div class="retry-row"><a href="/downloads"><button class="small" type="button">Download-Verlauf ansehen</button></a></div>
+    <div class="retry-row"><a href="{{ base_path }}/downloads"><button class="small" type="button">Download-Verlauf ansehen</button></a></div>
   </section>
 
   <section class="panel">
     <h2>Quick Actions</h2>
     <div class="retry-row">
-      <a href="/findings"><button class="small" type="button">Findings</button></a>
-      <a href="/repairs"><button class="small" type="button">Repairs</button></a>
-      <a href="/jobs"><button class="small" type="button">Jobs</button></a>
-      <a href="/library"><button class="small" type="button">Library</button></a>
+      <a href="{{ base_path }}/findings"><button class="small" type="button">Findings</button></a>
+      <a href="{{ base_path }}/repairs"><button class="small" type="button">Repairs</button></a>
+      <a href="{{ base_path }}/jobs"><button class="small" type="button">Jobs</button></a>
+      <a href="{{ base_path }}/library"><button class="small" type="button">Library</button></a>
     </div>
   </section>
 {% endblock %}
@@ -73,7 +73,7 @@
   async function loadHealthForOverview() {
     const el = document.getElementById("health-tiles");
     try {
-      const res = await fetch("/api/v1/library/health", { credentials: "same-origin" });
+      const res = await fetch(apiUrl("/api/v1/library/health"), { credentials: "same-origin" });
       if (res.status === 401) { showOnly("login-view"); return; }
       if (res.status === 403) { el.textContent = "Kein Zugriff (Berechtigung reicht nicht)."; return; }
       if (!res.ok) {
@@ -90,7 +90,7 @@
   async function loadNavidromeStatus() {
     const el = document.getElementById("navidrome-status");
     try {
-      const res = await fetch("/api/v1/navidrome/status", { credentials: "same-origin" });
+      const res = await fetch(apiUrl("/api/v1/navidrome/status"), { credentials: "same-origin" });
       if (res.status === 401) { showOnly("login-view"); return; }
       if (!res.ok) { el.textContent = "Navidrome: Status nicht abrufbar."; return; }
       const status = await res.json();
@@ -106,7 +106,7 @@
 
   async function loadAttentionSummary() {
     try {
-      const res = await fetch("/api/v1/library/findings/summary", { credentials: "same-origin" });
+      const res = await fetch(apiUrl("/api/v1/library/findings/summary"), { credentials: "same-origin" });
       if (res.status === 401) { showOnly("login-view"); return; }
       if (!res.ok) return;
       const summary = await res.json();
@@ -127,7 +127,7 @@
   async function loadActiveJobsSummary() {
     const el = document.getElementById("active-jobs-summary");
     try {
-      const res = await fetch("/api/v1/jobs?limit=20", { credentials: "same-origin" });
+      const res = await fetch(apiUrl("/api/v1/jobs?limit=20"), { credentials: "same-origin" });
       if (res.status === 401) { showOnly("login-view"); return; }
       if (!res.ok) { el.textContent = "Jobs nicht abrufbar."; return; }
       const body = await res.json();
@@ -151,7 +151,7 @@
   async function loadRecentActivity() {
     const el = document.getElementById("recent-activity-content");
     try {
-      const res = await fetch("/api/v1/downloads/history?limit=5", { credentials: "same-origin" });
+      const res = await fetch(apiUrl("/api/v1/downloads/history?limit=5"), { credentials: "same-origin" });
       if (res.status === 401) { showOnly("login-view"); return; }
       if (!res.ok) { el.textContent = "Verlauf nicht abrufbar."; return; }
       const body = await res.json();

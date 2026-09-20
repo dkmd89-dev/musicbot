@@ -11,6 +11,15 @@
 // ruft nach erfolgreichem Login dieselbe seiteneigene initPage() erneut
 // auf.
 
+// Subpath-Betrieb hinter nginx (z. B. /controlcenter): der Server rendert den
+// Prefix als <meta name="cc-base"> (leer im Direktbetrieb auf :8420).
+// Jeder API-Aufruf laeuft durch apiUrl() - nie einen root-absoluten Pfad
+// direkt an fetch() uebergeben.
+const CC_BASE = ((document.querySelector('meta[name="cc-base"]') || {}).content || "");
+function apiUrl(path) {
+  return CC_BASE + path;
+}
+
 const VIEWS = ["loading-view", "login-view", "dashboard-view", "error-view"];
 function showOnly(id) {
   VIEWS.forEach((v) => {
@@ -47,7 +56,7 @@ async function _loadInto(elementId, url, renderFn) {
   const el = document.getElementById(elementId);
   if (!el) return;
   try {
-    const res = await fetch(url, { credentials: "same-origin" });
+    const res = await fetch(apiUrl(url), { credentials: "same-origin" });
     if (res.status === 401) { showOnly("login-view"); return; }
     if (res.status === 403) {
       el.innerHTML = '<span class="denied">Keine Berechtigung (Rolle reicht nicht).</span>';
@@ -77,7 +86,7 @@ async function _loadInto(elementId, url, renderFn) {
 async function checkAuth() {
   showOnly("loading-view");
   try {
-    const res = await fetch("/api/v1/auth/whoami", { credentials: "same-origin" });
+    const res = await fetch(apiUrl("/api/v1/auth/whoami"), { credentials: "same-origin" });
     if (res.status === 401) { showOnly("login-view"); return null; }
     if (!res.ok) { showError("Anmeldestatus konnte nicht geprüft werden."); return null; }
     const who = await res.json();
@@ -92,7 +101,7 @@ async function checkAuth() {
 }
 
 function onTelegramAuth(user) {
-  fetch("/api/v1/auth/telegram-callback", {
+  fetch(apiUrl("/api/v1/auth/telegram-callback"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "same-origin",

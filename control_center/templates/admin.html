@@ -55,7 +55,7 @@
 
   <section class="panel">
     <h2>Titel bearbeiten</h2>
-    <p class="empty-note">Setzt ©nam auf einen manuellen Zielwert für genau einen Track — KEIN automatischer TitleCleaner. Den relativen Pfad aus der <a href="/library">Library</a>-Track-Ansicht kopieren.</p>
+    <p class="empty-note">Setzt ©nam auf einen manuellen Zielwert für genau einen Track — KEIN automatischer TitleCleaner. Den relativen Pfad aus der <a href="{{ base_path }}/library">Library</a>-Track-Ansicht kopieren.</p>
     <div class="retry-row">
       <input type="text" id="mnt-title-edit-artist" placeholder="Artist-Name">
       <input type="text" id="mnt-title-edit-rel-path" placeholder="Relativer Pfad (z. B. Artist/Album/Track.m4a)">
@@ -227,7 +227,7 @@
       } else {
         url += `?${new URLSearchParams(values).toString()}`;
       }
-      const res = await fetch(url, opts);
+      const res = await fetch(apiUrl(url), opts);
       if (res.status === 401) { showOnly("login-view"); return; }
       const body = await res.json();
       if (!res.ok) {
