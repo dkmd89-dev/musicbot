@@ -1,0 +1,162 @@
+{% extends "_base.html" %}
+{% block title %}Findings – MusicBot Control Center{% endblock %}
+{% block content %}
+  <h1>Findings</h1>
+  <p class="subtitle">Offene und akzeptierte Library-Health-Findings.</p>
+
+  <section class="panel">
+    <h2>Findings</h2>
+    <div id="findings-content" class="empty-note">Lädt…</div>
+    <div class="retry-row">
+      <button id="accepted-findings-toggle" class="small">Akzeptierte Findings anzeigen</button>
+    </div>
+    <div id="accepted-findings-content" class="empty-note" hidden></div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function _findingLabel(f) {
+    return f.path || [f.artist, f.album, f.title].filter(Boolean).join(" — ") || f.finding_id;
+  }
+
+  function renderFindings(el, groups) {
+    if (!groups.length) { el.innerHTML = '<p class="empty-note">Keine offenen Findings.</p>'; return; }
+    el.innerHTML = groups.map((g) => `
+      <div class="finding-group">
+        <div class="row-item">
+          <div class="row-main"><span class="badge badge-${g.tier}">${_escapeHtml(g.tier)}</span>${_escapeHtml(g.code)}</div>
+          <div class="row-count">${g.open_count}</div>
+        </div>
+        <div class="row-list finding-sublist">
+          ${g.findings.map((f) => `
+            <div class="row-item" data-finding-id="${_escapeHtml(f.finding_id)}">
+              <div class="row-main" title="${_escapeHtml(f.message)}">${_escapeHtml(_findingLabel(f))}</div>
+              <button class="small accept-btn" data-finding-id="${_escapeHtml(f.finding_id)}">Akzeptieren</button>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `).join("");
+  }
+  function loadFindings() {
+    return _loadInto("findings-content", "/api/v1/library/findings", renderFindings);
+  }
+
+  async function acceptFinding(findingId, buttonEl) {
+    const reason = window.prompt("Grund für die Akzeptanz (Pflichtfeld):", "");
+    if (reason === null) return;
+    if (!reason.trim()) { window.alert("Ein Grund ist erforderlich."); return; }
+    if (!window.confirm(`Finding wirklich als akzeptiert markieren?\n\n${reason}`)) return;
+
+    buttonEl.disabled = true;
+    try {
+      const res = await fetch(`/api/v1/library/findings/${encodeURIComponent(findingId)}/accept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ reason }),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        window.alert("Fehler: " + (body && body.error ? body.error.message : res.status));
+        buttonEl.disabled = false;
+        return;
+      }
+      await loadFindings();
+      if (!document.getElementById("accepted-findings-content").hidden) {
+        await loadAcceptedFindings();
+      }
+    } catch (err) {
+      window.alert("Netzwerkfehler: " + err.message);
+      buttonEl.disabled = false;
+    }
+  }
+
+  document.getElementById("findings-content").addEventListener("click", (event) => {
+    const btn = event.target.closest(".accept-btn");
+    if (!btn) return;
+    acceptFinding(btn.dataset.findingId, btn);
+  });
+
+  function renderAcceptedFindings(el, body) {
+    if (!body.findings.length) {
+      el.innerHTML = '<p class="empty-note">Keine akzeptierten Findings.</p>';
+      return;
+    }
+    const truncNote = body.total > body.findings.length
+      ? `<p class="empty-note">Zeige ${body.findings.length} von ${body.total} — ältere/weitere nicht geladen (kein Auto-Rendern großer Listen).</p>`
+      : "";
+    el.innerHTML = truncNote + '<div class="row-list">' + body.findings.map((f) => `
+      <div class="row-item" data-finding-id="${_escapeHtml(f.finding_id)}">
+        <div class="row-main" title="${_escapeHtml(f.message)}">
+          <span class="badge badge-INFO">${_escapeHtml(f.code)}</span>
+          ${_escapeHtml(_findingLabel(f))}
+          ${f.present_in_latest_scan === false ? '<span class="denied">(veraltet — nicht mehr erkannt)</span>' : ""}
+          <div class="hint">${_escapeHtml(f.review_note || "")}</div>
+        </div>
+        <button class="small unaccept-btn" data-finding-id="${_escapeHtml(f.finding_id)}">Reaktivieren</button>
+      </div>
+    `).join("") + "</div>";
+  }
+  function loadAcceptedFindings() {
+    return _loadInto(
+      "accepted-findings-content", "/api/v1/library/findings/accepted", renderAcceptedFindings
+    );
+  }
+
+  async function unacceptFinding(findingId, buttonEl) {
+    if (!window.confirm("Diese Akzeptanz wirklich zurücknehmen? Das Finding wird wieder als offen geführt.")) return;
+
+    buttonEl.disabled = true;
+    try {
+      const res = await fetch(`/api/v1/library/findings/${encodeURIComponent(findingId)}/unaccept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({}),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        window.alert("Fehler: " + (body && body.error ? body.error.message : res.status));
+        buttonEl.disabled = false;
+        return;
+      }
+      await loadAcceptedFindings();
+      await loadFindings();
+    } catch (err) {
+      window.alert("Netzwerkfehler: " + err.message);
+      buttonEl.disabled = false;
+    }
+  }
+
+  document.getElementById("accepted-findings-content").addEventListener("click", (event) => {
+    const btn = event.target.closest(".unaccept-btn");
+    if (!btn) return;
+    unacceptFinding(btn.dataset.findingId, btn);
+  });
+
+  document.getElementById("accepted-findings-toggle").addEventListener("click", async () => {
+    const content = document.getElementById("accepted-findings-content");
+    const toggleBtn = document.getElementById("accepted-findings-toggle");
+    const willShow = content.hidden;
+    content.hidden = !willShow;
+    toggleBtn.textContent = willShow ? "Akzeptierte Findings verbergen" : "Akzeptierte Findings anzeigen";
+    if (willShow) {
+      content.textContent = "Lädt…";
+      await loadAcceptedFindings();
+    }
+  });
+
+  function initPage() {
+    checkAuth().then((who) => {
+      if (!who) return;
+      loadFindings();
+      setInterval(() => { if (!document.getElementById("dashboard-view").hidden) loadFindings(); }, 30000);
+    });
+  }
+  initPage();
+</script>
+{% endblock %}

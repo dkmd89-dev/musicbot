@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}MusicBot Control Center{% endblock %}</title>
+  <link rel="stylesheet" href="/static/common.css">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <div id="app-shell">
+    <nav id="sidebar">
+      <div class="sidebar-brand">🎵 MUSICBOT<br>CONTROL CENTER</div>
+      <a href="/" class="nav-link{{ ' active' if page_id == 'overview' else '' }}">🏠 Overview</a>
+      <div class="nav-group">Music</div>
+      <a href="/downloads" class="nav-link{{ ' active' if page_id == 'downloads' else '' }}">📥 Downloads</a>
+      <a href="/library" class="nav-link{{ ' active' if page_id == 'library' else '' }}">📚 Library</a>
+      <a href="/metadata" class="nav-link{{ ' active' if page_id == 'metadata' else '' }}">🏷 Metadata</a>
+      <a href="/statistics" class="nav-link{{ ' active' if page_id == 'statistics' else '' }}">📊 Statistics</a>
+      <div class="nav-group">Maintenance</div>
+      <a href="/findings" class="nav-link{{ ' active' if page_id == 'findings' else '' }}">🔍 Findings</a>
+      <a href="/repairs" class="nav-link{{ ' active' if page_id == 'repairs' else '' }}">🔧 Repairs</a>
+      <a href="/jobs" class="nav-link{{ ' active' if page_id == 'jobs' else '' }}">📋 Jobs</a>
+      <a href="/health" class="nav-link{{ ' active' if page_id == 'health' else '' }}">🩺 Health</a>
+      <div class="nav-group">System</div>
+      <a href="/navidrome" class="nav-link{{ ' active' if page_id == 'navidrome' else '' }}">🎵 Navidrome</a>
+      <a href="/logs" class="nav-link{{ ' active' if page_id == 'logs' else '' }}">📝 Logs</a>
+      <a href="/admin" class="nav-link{{ ' active' if page_id == 'admin' else '' }}">⚙ Administration</a>
+    </nav>
+    <div id="main-area">
+      <header id="app-header">
+        <button id="sidebar-toggle" aria-label="Menü öffnen">☰</button>
+        <div id="current-user"></div>
+      </header>
+      <main>
+        <div id="loading-view">Lädt…</div>
+
+        <div id="login-view" hidden>
+          <p>Anmeldung über Telegram erforderlich.</p>
+          {% if bot_username %}
+            <script async src="https://telegram.org/js/telegram-widget.js?22"
+                    data-telegram-login="{{ bot_username }}"
+                    data-size="large"
+                    data-onauth="onTelegramAuth(user)"
+                    data-request-access="write"></script>
+          {% else %}
+            <p class="hint">
+              <code>BOT_USERNAME</code> ist serverseitig nicht konfiguriert — das
+              Telegram-Login-Widget kann nicht angezeigt werden.<br>
+              Für lokale Entwicklung stattdessen
+              <code>CONTROL_CENTER_DEV_AUTH_BYPASS=true</code> setzen.
+            </p>
+          {% endif %}
+        </div>
+
+        <div id="error-view" hidden></div>
+
+        <div id="dashboard-view" hidden>
+          {% block content %}{% endblock %}
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/common.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,37 @@
+{% extends "_base.html" %}
+{% block title %}Downloads – MusicBot Control Center{% endblock %}
+{% block content %}
+  <h1>Downloads</h1>
+  <p class="subtitle">Download-Verlauf.</p>
+
+  <section class="panel">
+    <h2>Verlauf</h2>
+    <div id="downloads-content" class="empty-note">Lädt…</div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function renderDownloads(el, body) {
+    if (!body.entries.length) { el.innerHTML = '<p class="empty-note">Kein Download-Verlauf.</p>'; return; }
+    el.innerHTML = '<div class="row-list">' + body.entries.map((e) => `
+      <div class="row-item">
+        <div class="row-main"><span class="badge badge-status-${_escapeHtml(e.status)}">${_escapeHtml(e.status)}</span>${_escapeHtml(e.title)} — ${_escapeHtml(e.artist)}</div>
+        <div class="row-count">${new Date(e.timestamp).toLocaleString()}</div>
+      </div>
+    `).join("") + "</div>";
+  }
+  function loadDownloads() {
+    return _loadInto("downloads-content", "/api/v1/downloads/history?limit=10", renderDownloads);
+  }
+
+  function initPage() {
+    checkAuth().then((who) => {
+      if (!who) return;
+      loadDownloads();
+      setInterval(() => { if (!document.getElementById("dashboard-view").hidden) loadDownloads(); }, 30000);
+    });
+  }
+  initPage();
+</script>
+{% endblock %}

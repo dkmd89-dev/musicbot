@@ -1,0 +1,84 @@
+{% extends "_base.html" %}
+{% block title %}Health – MusicBot Control Center{% endblock %}
+{% block content %}
+  <h1>Health</h1>
+  <p class="subtitle">Nur tatsächlich vorhandene Checks (keine vorgetäuschten Health-Werte, ui_prompt.txt Abschnitt 21).</p>
+
+  <section class="panel">
+    <h2>Library</h2>
+    <div id="health-tiles" class="tiles">Lädt…</div>
+  </section>
+
+  <section class="panel">
+    <h2>Navidrome</h2>
+    <div id="navidrome-status" class="empty-note">Lädt…</div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function renderHealth(data) {
+    const el = document.getElementById("health-tiles");
+    if (!data.library || !data.library.files) {
+      el.innerHTML = "<p>Keine Dateien in der Library gefunden.</p>";
+      return;
+    }
+    const score = data.health.score != null ? data.health.score : "–";
+    const status = data.health.status || "UNSCORED";
+    el.innerHTML = `
+      <div class="tile"><div class="tile-label">Health Score</div>
+        <div class="tile-value status-${status}">${score}</div>
+        <div class="hint">${status}</div></div>
+      <div class="tile"><div class="tile-label">Dateien</div>
+        <div class="tile-value">${data.library.files}</div></div>
+      <div class="tile"><div class="tile-label">Artists</div>
+        <div class="tile-value">${data.library.artists}</div></div>
+      <div class="tile"><div class="tile-label">Alben</div>
+        <div class="tile-value">${data.library.albums}</div></div>
+    `;
+  }
+
+  async function loadHealth() {
+    const el = document.getElementById("health-tiles");
+    try {
+      const res = await fetch("/api/v1/library/health", { credentials: "same-origin" });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (res.status === 403) { el.textContent = "Kein Zugriff (Berechtigung reicht nicht)."; return; }
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        el.textContent = "Fehler: " + (body && body.error ? body.error.message : res.status);
+        return;
+      }
+      renderHealth(await res.json());
+    } catch (err) {
+      el.textContent = "Netzwerkfehler: " + err.message;
+    }
+  }
+
+  async function loadNavidromeStatus() {
+    const el = document.getElementById("navidrome-status");
+    try {
+      const res = await fetch("/api/v1/navidrome/status", { credentials: "same-origin" });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (!res.ok) { el.textContent = "Navidrome: Status nicht abrufbar."; return; }
+      const status = await res.json();
+      const dot = status.connected ? "dot-ok" : "dot-error";
+      const label = status.connected ? "Verbunden" : "Nicht erreichbar";
+      const count = status.connected && status.artist_count != null
+        ? ` (${status.artist_count} Artists)` : "";
+      el.innerHTML = `<span class="dot ${dot}"></span>Navidrome: ${label}${count}`;
+    } catch (err) {
+      el.textContent = "Navidrome: Netzwerkfehler.";
+    }
+  }
+
+  function initPage() {
+    checkAuth().then((who) => {
+      if (!who) return;
+      loadHealth();
+      loadNavidromeStatus();
+    });
+  }
+  initPage();
+</script>
+{% endblock %}

@@ -17,9 +17,11 @@ docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md Abschnitt 7
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from logger import get_module_logger
 
@@ -63,6 +65,12 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router)
     app.include_router(auth.router)
     app.include_router(ui.router)
+
+    # Gemeinsame CSS/JS fuer die Mehrseiten-Navigation (ui_prompt.txt
+    # Phase 1) - statische Dateien, kein Build-Schritt, weiterhin
+    # Vanilla JS/CSS (Master-Prompt Abschnitt 7).
+    static_dir = Path(__file__).resolve().parent / "static"
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     @app.exception_handler(HTTPException)
     async def _http_exception_handler(
