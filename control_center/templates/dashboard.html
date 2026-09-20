@@ -171,6 +171,17 @@
       </section>
 
       <section class="panel">
+        <h2>Library-Metadata</h2>
+        <p class="empty-note">Führt einen vollständigen Library-Scan aus (kann eine Weile dauern) — läuft nicht automatisch, nur auf Klick.</p>
+        <div class="retry-row">
+          <button id="metadata-tracks-btn" class="small">Tracks</button>
+          <button id="metadata-artists-btn" class="small">Artists</button>
+          <button id="metadata-albums-btn" class="small">Albums</button>
+        </div>
+        <div id="metadata-content" class="empty-note"></div>
+      </section>
+
+      <section class="panel">
         <h2>Downloads (Verlauf)</h2>
         <div id="downloads-content" class="empty-note">Lädt…</div>
       </section>
@@ -681,6 +692,72 @@
       startLevel23Job(btn.dataset.level, btn.dataset.artist, btn.dataset.count);
     });
     document.getElementById("level23-plan-btn").addEventListener("click", loadLevel23Artists);
+
+    // ── Library-Metadata (Tracks/Artists/Albums, read-only) ────────────
+    // Master-Prompt Abschnitt 7 "METADATA MANAGEMENT", erster Schritt.
+    // Bewusst KEINE Weiter/Zurück-Pagination-Buttons: jede Server-Anfrage
+    // loest einen vollen Library-Scan aus (identisch zu Repair-Plan/L2-L3)
+    // - wiederholtes Blaettern wuerde wiederholt neu scannen. Stattdessen
+    // wie bei Accepted-Findings: erste Seite laden, Trunkierungshinweis
+    // bei mehr Ergebnissen, kein Auto-Rendern grosser Listen.
+    const _METADATA_PAGE_SIZE = 50;
+
+    function renderTracks(el, body) {
+      if (!body.tracks.length) { el.innerHTML = '<p class="empty-note">Keine Tracks.</p>'; return; }
+      const trunc = body.total > body.tracks.length
+        ? `<p class="empty-note">Zeige ${body.tracks.length} von ${body.total} — weitere nicht geladen (kein Auto-Rendern großer Listen).</p>`
+        : "";
+      el.innerHTML = trunc + '<div class="row-list">' + body.tracks.map((t) => `
+        <div class="row-item" title="${_escapeHtml(t.relative_path)}">
+          <div class="row-main">${_escapeHtml(t.artist || "?")} — ${_escapeHtml(t.title || t.filename)}</div>
+          <div class="row-count">${_escapeHtml(t.album || "")}</div>
+        </div>
+      `).join("") + "</div>";
+    }
+
+    function renderMetadataArtists(el, body) {
+      if (!body.artists.length) { el.innerHTML = '<p class="empty-note">Keine Artists.</p>'; return; }
+      const trunc = body.total > body.artists.length
+        ? `<p class="empty-note">Zeige ${body.artists.length} von ${body.total} — weitere nicht geladen (kein Auto-Rendern großer Listen).</p>`
+        : "";
+      el.innerHTML = trunc + '<div class="row-list">' + body.artists.map((a) => `
+        <div class="row-item">
+          <div class="row-main">${_escapeHtml(a.artist)}</div>
+          <div class="row-count">${a.file_count} Dateien, ${a.album_count} Alben — Score ${a.health_score}</div>
+        </div>
+      `).join("") + "</div>";
+    }
+
+    function renderMetadataAlbums(el, body) {
+      if (!body.albums.length) { el.innerHTML = '<p class="empty-note">Keine Alben.</p>'; return; }
+      const trunc = body.total > body.albums.length
+        ? `<p class="empty-note">Zeige ${body.albums.length} von ${body.total} — weitere nicht geladen (kein Auto-Rendern großer Listen).</p>`
+        : "";
+      el.innerHTML = trunc + '<div class="row-list">' + body.albums.map((a) => `
+        <div class="row-item">
+          <div class="row-main">${_escapeHtml(a.artist)} — ${_escapeHtml(a.album)}</div>
+          <div class="row-count">${a.file_count} Dateien — Score ${a.health_score}</div>
+        </div>
+      `).join("") + "</div>";
+    }
+
+    const _METADATA_RENDERERS = {
+      tracks: renderTracks, artists: renderMetadataArtists, albums: renderMetadataAlbums,
+    };
+
+    function loadMetadataList(mode) {
+      document.getElementById("metadata-content").innerHTML =
+        '<span class="empty-note">Scan läuft, kann eine Weile dauern…</span>';
+      return _loadInto(
+        "metadata-content",
+        `/api/v1/library/${mode}?limit=${_METADATA_PAGE_SIZE}&offset=0`,
+        _METADATA_RENDERERS[mode],
+      );
+    }
+
+    document.getElementById("metadata-tracks-btn").addEventListener("click", () => loadMetadataList("tracks"));
+    document.getElementById("metadata-artists-btn").addEventListener("click", () => loadMetadataList("artists"));
+    document.getElementById("metadata-albums-btn").addEventListener("click", () => loadMetadataList("albums"));
 
     function renderDownloads(el, body) {
       if (!body.entries.length) { el.innerHTML = '<p class="empty-note">Kein Download-Verlauf.</p>'; return; }

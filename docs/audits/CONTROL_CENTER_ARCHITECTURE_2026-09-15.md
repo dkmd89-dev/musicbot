@@ -669,3 +669,81 @@ Swagger/`curl` erreichbar zu sein.
   (Button-Präsenz, JS-Verdrahtung) — alle grün, Gesamt-Control-Center-Suite
   197/197 grün. JS-Syntax mit `node --check` verifiziert.
 - Keine neuen Dependencies, keine neue API-Fläche.
+
+---
+
+## Erweiterung — Metadata Management, erster Schritt: Tracks/Artists/Albums (2026-09-20, auf Nutzerfreigabe)
+
+Erste Erweiterung eines im Master-Prompt (Abschnitt 7 "METADATA
+MANAGEMENT") skizzierten, bis dahin komplett unbearbeiteten
+Funktionsbereichs — ausgelöst durch eine vollständige Gap-Analyse des
+2538-zeiligen Master-Prompts gegen den Ist-Stand (per Fork-Subagent),
+die zeigte: von 11 im Prompt skizzierten V1-Funktionsbereichen waren 5
+vollständig bearbeitet; Metadata Management und Logs/Diagnostics fehlten
+komplett, Admin Center nur zu einem kleinen Teil.
+
+Bewusst kleinster sinnvoller erster Schritt: **nur "Tracks anzeigen /
+Artists anzeigen / Albums anzeigen"** aus der zwölfteiligen
+Anforderungsliste des Prompts (Abschnitt 7) — Metadata bearbeiten,
+Reprocessing starten, Mapping anzeigen, Cover verwalten, der
+Preview→Diff→Confirmation→Execution→Verification-Zyklus sind eigene,
+separat freizugebende Folgeschritte (der Prompt selbst listet alle
+Punkte als "perspektivisch", nicht als einen einzelnen Auftrag).
+
+- **`GET /api/v1/library/tracks`**, **`GET /api/v1/library/artists`**,
+  **`GET /api/v1/library/albums`** (neues `control_center/routers/metadata.py`) —
+  identischer Aufrufpfad wie `routers/health.py`/`repair.py` über
+  `control_center/_library_scan.py::run_library_scan()` (ein frischer
+  Library-Health-Scan) — **keine neue Scan- oder Aggregationslogik**.
+  `report["files"]` (`services/library_health/models.py::FileHealth.to_dict()`)
+  und `report["artists"]`/`report["albums"]`
+  (`services/library_health/scoring.py::build_health_section()`) lieferten
+  bereits alle benötigten Felder (Artist/Title/Album/Genre/Jahr/
+  MusicBrainz-IDs/ISRC je Track; Datei-/Album-Anzahl + Health-Score je
+  Artist/Album) — bei der Recherche entdeckt, nicht neu gebaut.
+- **Pagination (`limit`/`offset`/`total`) von Anfang an** — diesmal
+  bewusst vorab eingeplant statt erst nach einem Live-Smoke-Test
+  nachgezogen (Lehre aus den beiden vorherigen Fällen: 1114
+  Reparatur-Kandidaten, 1173 akzeptierte Findings).
+- Bewusst NICHT durchgereicht: `states` (interner Analyse-Zustand pro
+  Dimension) und `path_classification` (interne Duplicate-Detection-
+  Klassifikation) — Implementierungsdetail ohne Nutzen für eine
+  Browser-Ansicht (Master-Prompt Regel 9, identisches Prinzip wie das
+  Weglassen von `library_root`).
+- Authentifiziert mit mindestens `AccessLevel.ADMIN` (identische
+  Schwelle wie Findings/Repair-Plan — granulare Pro-Datei-Daten inkl.
+  Pfaden, nicht nur aggregierte Kennzahlen wie `health.py`).
+- Test: neues `tests/test_control_center_metadata_api.py` (10 Tests:
+  Metadata-Korrektheit, Pagination je Endpunkt, 404 bei fehlendem
+  Library-Root, leere Library, Ungültiger-`limit`-422, Ausschluss
+  interner Felder) — alle grün, Regression `test_control_center_health_api.py`
+  + `test_control_center_repair_api.py` (13 Tests) sowie
+  `tests/test_library_health*.py` (297 Tests) weiterhin grün, Gesamt-
+  Control-Center-Suite 207/207 grün.
+- **Kein UI in diesem Schritt** (analog zu allen bisherigen API-first-
+  Schritten) — eine Browser-Ansicht (Track-/Artist-/Album-Liste mit
+  Paginierung, evtl. Suchfeld) wäre ein eigener, separat zu
+  besprechender Folgeschritt.
+- Keine neuen Dependencies.
+
+**Nachtrag (2026-09-20, noch vor Merge, auf Nutzerwunsch direkt im
+Anschluss):** UI doch im selben Schritt ergänzt, damit die Funktion vor
+dem Merge vollständig im Browser geprüft werden kann, statt nur über
+Swagger/`curl`.
+
+- Neues Panel „Library-Metadata" mit drei Buttons (Tracks/Artists/Albums)
+  — jeder Klick lädt genau eine Seite (`limit=50`) über den bereits
+  vorhandenen `_loadInto()`-Helper.
+- **Bewusst KEINE Weiter/Zurück-Pagination-Buttons**, obwohl die API
+  `limit`/`offset` unterstützt: jede Anfrage löst einen vollen
+  Library-Scan aus (identisch zu Repair-Plan/L2-L3) — wiederholtes
+  Blättern würde wiederholt neu scannen. Stattdessen dasselbe Muster wie
+  beim Accepted-Findings-Panel: erste Seite laden, Trunkierungshinweis
+  ("Zeige X von Y") bei mehr Ergebnissen, kein Auto-Rendern großer
+  Listen — bewusste, dokumentierte Einschränkung statt einer teuren
+  Scroll-/Blätter-Illusion.
+- Test: `tests/test_control_center_ui.py` von 22 auf 25 Tests erweitert
+  (Panel-Präsenz, JS-Verdrahtung, bewusste Abwesenheit von
+  Pagination-Buttons) — alle grün, Gesamt-Control-Center-Suite 210/210
+  grün. JS-Syntax mit `node --check` verifiziert.
+- Keine neuen Dependencies, keine neue API-Fläche.
