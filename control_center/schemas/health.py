@@ -56,6 +56,20 @@ class LibraryHealthResponse(BaseModel):
     statistics: dict[str, Any] = Field(default_factory=dict)
 
 
+class CachedLibraryHealthResponse(LibraryHealthResponse):
+    """Antwort von GET /api/v1/library/health/cached (Overview-Dashboard,
+    CONTROL_CENTER_OVERVIEW_V2.md Abschnitt 5) — identische Felder wie
+    LibraryHealthResponse, plus `stale`. Bewusst eigene Subklasse statt
+    Erweiterung von LibraryHealthResponse selbst: GET /health (Health-Seite,
+    frischer Scan) bleibt dadurch byte-identisch zu vorher, insbesondere
+    faellt tests/test_control_center_health_api.py::
+    test_get_library_health_response_omits_internal_details() (strikte
+    `set(body.keys())`-Pruefung) nicht durch ein neues, dort ungewolltes
+    Feld aus."""
+
+    stale: bool
+
+
 def report_to_health_response(report: dict) -> LibraryHealthResponse:
     """Mappt das volle run_scan()-Report-Dict auf die duenne API-Response.
 
@@ -88,3 +102,13 @@ def report_to_health_response(report: dict) -> LibraryHealthResponse:
         ),
         statistics=report["statistics"],
     )
+
+
+def report_to_cached_health_response(report: dict, *, stale: bool) -> CachedLibraryHealthResponse:
+    """Wie report_to_health_response(), zusaetzlich mit `stale`-Flag aus
+    _library_scan.py::load_cached_report(). Baut bewusst auf der
+    bestehenden Mapping-Funktion auf (kein zweites Feld-fuer-Feld-Mapping,
+    Master-Prompt Regel 7/CLAUDE.md Abschnitt 10 „keine unkontrollierten
+    Bulk-Aenderungen")."""
+    base = report_to_health_response(report)
+    return CachedLibraryHealthResponse(**base.model_dump(), stale=stale)
