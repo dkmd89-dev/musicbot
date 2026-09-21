@@ -35,7 +35,7 @@
     <h3>🎵 Titel bearbeiten</h3>
     <p class="empty-note">Setzt den Titel für genau einen Track — KEIN automatischer TitleCleaner. Relativen Pfad aus der Track-Liste unten übernehmen (Tooltip beim Überfahren).</p>
     <div class="retry-row">
-      <input type="text" id="title-edit-rel-path" placeholder="Relativer Pfad (z. B. Album/Track.m4a)">
+      <input type="text" id="title-edit-rel-path" placeholder="Relativer Pfad (z. B. Artist/Album/Track.m4a)">
       <input type="text" id="title-edit-new-title" placeholder="Neuer Titel">
       <button id="title-edit-preview-btn" class="small">Vorschau laden</button>
     </div>
@@ -168,7 +168,17 @@
       return;
     }
     if (!body.changed_count) {
-      el.innerHTML = `<p class="empty-note">${body.target_count} Datei(en) — keine Änderung nötig.</p>`;
+      // Gruende (z. B. "Artist-Tag entspricht nicht dem gewaehlten
+      // Ausgangswert", "Safety: ...") sichtbar machen statt zu
+      // verschlucken - sonst bleibt ein tag-/verzeichnis-abweichender
+      // Artist ohne jeden Hinweis bei "keine Aenderung noetig" haengen.
+      const reasons = [...new Set(body.outcomes.map((o) => o.reason).filter(Boolean))];
+      const reasonHtml = reasons.length
+        ? '<div class="row-list">' + reasons.map((r) => `
+            <div class="row-item"><div class="row-main">${_escapeHtml(r)}</div></div>
+          `).join("") + "</div>"
+        : "";
+      el.innerHTML = `<p class="empty-note">${body.target_count} Datei(en) — keine Änderung nötig.</p>${reasonHtml}`;
       startBtn.disabled = true;
       return;
     }
@@ -198,6 +208,14 @@
     );
   }
 
+  // Preview<->Execute-Kopplung: eine Feldaenderung NACH einer geladenen
+  // Preview macht deren Diff ungueltig (Nutzer wuerde sonst einen anderen
+  // Wert schreiben als angezeigt) - Execute-Button wird deshalb wieder
+  // deaktiviert, bis erneut "Vorschau laden" gedrueckt wurde.
+  document.getElementById("artist-edit-new-artist").addEventListener("input", () => {
+    document.getElementById("artist-edit-execute-btn").disabled = true;
+  });
+
   async function executeArtistEdit() {
     const artist = currentArtistFromPath();
     const newArtist = document.getElementById("artist-edit-new-artist").value.trim();
@@ -226,14 +244,19 @@
         resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
         return;
       }
-      resultEl.innerHTML = `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>`;
-      if (body.success_count > 0) {
-        // Artist-Ordner wurde umbenannt - der bisherige Pfad-Kontext ist
-        // ungueltig, Navigation folgt dem neuen Artist-Kontext (Auftrag §12).
-        window.location.href = `${CC_BASE}/library/${encodeURIComponent(newArtist)}`;
-      }
+      // KEINE Navigation: apply_artist_rename() ist tag-wert-getrieben
+      // (services/library_repair/executor.py::apply_artist_rename()) -
+      // es wird NUR der ©ART/ARTISTS-Tag geschrieben, der Artist-
+      // Verzeichnisname (der diese Seite adressiert) bleibt unveraendert.
+      // Ein Redirect auf /library/{newArtist} waere ein garantierter
+      // 404, da dieser Verzeichnisname nie existiert.
+      resultEl.innerHTML =
+        `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>` +
+        `<p class="hint">Nur die Tag-Werte wurden geschrieben — der Artist-Ordner „${_escapeHtml(artist)}" bleibt unverändert. ` +
+        `Diese Übersicht stammt aus dem zwischengespeicherten Health-Report; ein Neuscan (Telegram „🩺 MusicBot Doctor" oder CLI) zeigt den neuen Tag-Wert.</p>`;
+      await loadArtistEditPreview();
     } catch (err) {
-      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Netzwerkfehler: ${_escapeHtml(err.message)}</p>`;
+      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
     } finally {
       execBtn.disabled = false;
     }
@@ -244,11 +267,24 @@
 
   // -- Titel bearbeiten -----------------------------------------------------
 
+  // UX-Scope-Guard (KEINE Sicherheitsgrenze - services/library_repair/
+  // executor.py::safety_check() bleibt die tatsaechliche Schranke):
+  // verhindert, dass aus Versehen ein rel_path außerhalb des aktuellen
+  // Artist-Ordners eingetragen wird - der Artist-Kontext dieser Seite
+  // soll fuer alle drei Aktionen gelten (Auftrag §12).
+  function _titleEditRelPathInScope(artist, relPath) {
+    return relPath.startsWith(`${artist}/`);
+  }
+
   async function loadTitleEditPreview() {
     const artist = currentArtistFromPath();
     const relPath = document.getElementById("title-edit-rel-path").value.trim();
     const newTitle = document.getElementById("title-edit-new-title").value.trim();
     if (!relPath || !newTitle) { window.alert("Bitte relativen Pfad und neuen Titel eingeben."); return; }
+    if (!_titleEditRelPathInScope(artist, relPath)) {
+      window.alert(`Relativer Pfad muss innerhalb des Artist-Ordners "${artist}" liegen (z. B. "${artist}/Album/Track.m4a").`);
+      return;
+    }
     document.getElementById("title-edit-execute-btn").disabled = true;
     document.getElementById("title-edit-result-content").innerHTML = "";
     const params = new URLSearchParams({ artist, rel_path: relPath, new_title: newTitle }).toString();
@@ -264,6 +300,7 @@
     const relPath = document.getElementById("title-edit-rel-path").value.trim();
     const newTitle = document.getElementById("title-edit-new-title").value.trim();
     if (!relPath || !newTitle) return;
+    if (!_titleEditRelPathInScope(artist, relPath)) return;
     const confirmed = window.confirm(
       `Titel für "${relPath}" wirklich zu "${newTitle}" ändern?\n\n` +
       `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
@@ -288,11 +325,12 @@
         resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
         return;
       }
-      resultEl.innerHTML = `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>`;
+      resultEl.innerHTML =
+        `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>` +
+        `<p class="hint">Die Trackliste unten stammt aus dem zwischengespeicherten Health-Report und zeigt den neuen Titel erst nach einem Neuscan.</p>`;
       await loadTitleEditPreview();
-      await loadArtistDetail();
     } catch (err) {
-      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Netzwerkfehler: ${_escapeHtml(err.message)}</p>`;
+      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
     } finally {
       execBtn.disabled = false;
     }
@@ -300,6 +338,11 @@
 
   document.getElementById("title-edit-preview-btn").addEventListener("click", loadTitleEditPreview);
   document.getElementById("title-edit-execute-btn").addEventListener("click", executeTitleEdit);
+  ["title-edit-rel-path", "title-edit-new-title"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", () => {
+      document.getElementById("title-edit-execute-btn").disabled = true;
+    });
+  });
 
   // -- Genre-Verwaltung -------------------------------------------------------
 
@@ -341,7 +384,7 @@
       resultEl.innerHTML = `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>`;
       await loadGenreManagePreview();
     } catch (err) {
-      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Netzwerkfehler: ${_escapeHtml(err.message)}</p>`;
+      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
     } finally {
       execBtn.disabled = false;
     }

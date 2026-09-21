@@ -451,13 +451,84 @@ async def test_artist_detail_page_wires_existing_genre_endpoints(client):
 @pytest.mark.asyncio
 async def test_artist_detail_page_metadata_edit_uses_artist_context_not_free_text(client):
     """Auftrag §12: der Artist-Kontext (aus dem Pfad) wird implizit
-    mitgegeben - kein eigenes Freitext-Artist-Feld wie im generischen
-    admin.html-Formular."""
+    mitgegeben - alle sechs Aktionen (Preview+Execute je Artist/Titel/
+    Genre) lesen ihn ueber currentArtistFromPath(), kein eigenes
+    Freitext-Artist-Feld wie im generischen admin.html-Formular."""
     html = (await client.get("/library/Bausa")).text
 
-    assert 'id="mnt-artist-rename-artist"' not in html
-    assert "currentArtistFromPath()" in html
-    assert "artist, new_artist: newArtist" in html
+    assert html.count("currentArtistFromPath()") >= 6
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_artist_rename_does_not_navigate_away(client):
+    """Regression: apply_artist_rename() (services/library_repair/
+    executor.py) ist tag-wert-getrieben, benennt NIE das Artist-Verzeichnis
+    um - ein fruehrer Implementierungsstand navigierte nach Erfolg auf
+    /library/{new_artist}, was garantiert auf einen 404 lief (der neue
+    Verzeichnisname existiert nie) und dabei die Erfolgs-/Fehler-Zahlen
+    zerstoerte. Fix: keine Navigation, stattdessen dieselbe Vorschau neu
+    laden (siehe naechster Test)."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "window.location.href" not in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_reloads_own_preview_after_each_action(client):
+    """Nach Erfolg laedt jede der drei Aktionen ihre EIGENE Vorschau neu
+    (statt zu navigieren oder den laut CC-AC-1 nur zwischengespeicherten,
+    nicht live aktualisierten Artist-Report erneut zu laden)."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert html.count("loadArtistEditPreview()") >= 2
+    assert html.count("loadTitleEditPreview()") >= 2
+    assert html.count("loadGenreManagePreview()") >= 2
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_surfaces_skip_reasons_in_preview(client):
+    """Regression: SKIPPED/FAILED-Gruende (z. B. "Artist-Tag entspricht
+    nicht dem gewaehlten Ausgangswert") wurden zuvor im No-Op-Fall
+    verschluckt statt angezeigt."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "body.outcomes.map((o) => o.reason)" in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_disables_execute_after_input_changes(client):
+    """Preview<->Execute-Kopplung: eine Feldaenderung NACH einer geladenen
+    Vorschau deaktiviert den Ausfuehren-Button wieder, damit nie ein
+    anderer Wert geschrieben wird als der zuletzt angezeigte Diff."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'getElementById("artist-edit-new-artist").addEventListener("input"' in html
+    assert '["title-edit-rel-path", "title-edit-new-title"].forEach' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_title_edit_has_artist_scope_guard(client):
+    """UX-Scope-Guard (keine Sicherheitsgrenze): rel_path muss innerhalb
+    des aktuellen Artist-Ordners liegen, sonst koennte versehentlich ein
+    Track eines anderen Artists editiert werden."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "function _titleEditRelPathInScope(artist, relPath)" in html
+    assert html.count("_titleEditRelPathInScope(artist, relPath)") >= 3
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_execute_errors_do_not_claim_network_failure(client):
+    """Die drei schreibenden Aktionen sind synchrone Ganz-Artist-
+    Schreibvorgaenge hinter einem Reverse Proxy ohne explizites
+    proxy_read_timeout (docs/CONTROL_CENTER_REVERSE_PROXY.md) - ein
+    abgebrochener Request kann trotzdem serverseitig fertig geschrieben
+    worden sein. Der Fehlertext behauptet deshalb keinen Netzwerkfehler
+    mehr, sondern ein unbekanntes Ergebnis."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "Ergebnis unbekannt" in html
+    assert "Netzwerkfehler" not in html
 
 
 @pytest.mark.asyncio
