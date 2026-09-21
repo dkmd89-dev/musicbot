@@ -10,55 +10,246 @@
   {% block extra_head %}{% endblock %}
 </head>
 <body>
-  <div id="app-shell">
-    <nav id="sidebar">
-      <div class="sidebar-brand">🎵 MUSICBOT<br>CONTROL CENTER</div>
-      <a href="{{ base_path }}/" class="nav-link{{ ' active' if page_id == 'overview' else '' }}">🏠 Overview</a>
-      <div class="nav-group">Music</div>
-      <a href="{{ base_path }}/downloads" class="nav-link{{ ' active' if page_id == 'downloads' else '' }}">📥 Downloads</a>
-      <a href="{{ base_path }}/library" class="nav-link{{ ' active' if page_id == 'library' else '' }}">📚 Library</a>
-      <a href="{{ base_path }}/metadata" class="nav-link{{ ' active' if page_id == 'metadata' else '' }}">🏷 Metadata</a>
-      <a href="{{ base_path }}/statistics" class="nav-link{{ ' active' if page_id == 'statistics' else '' }}">📊 Statistics</a>
-      <div class="nav-group">Maintenance</div>
-      <a href="{{ base_path }}/findings" class="nav-link{{ ' active' if page_id == 'findings' else '' }}">🔍 Findings</a>
-      <a href="{{ base_path }}/repairs" class="nav-link{{ ' active' if page_id == 'repairs' else '' }}">🔧 Repairs</a>
-      <a href="{{ base_path }}/jobs" class="nav-link{{ ' active' if page_id == 'jobs' else '' }}">📋 Jobs</a>
-      <a href="{{ base_path }}/health" class="nav-link{{ ' active' if page_id == 'health' else '' }}">🩺 Health</a>
-      <div class="nav-group">System</div>
-      <a href="{{ base_path }}/navidrome" class="nav-link{{ ' active' if page_id == 'navidrome' else '' }}">🎵 Navidrome</a>
-      <a href="{{ base_path }}/logs" class="nav-link{{ ' active' if page_id == 'logs' else '' }}">📝 Logs</a>
-      <a href="{{ base_path }}/admin" class="nav-link{{ ' active' if page_id == 'admin' else '' }}">⚙ Administration</a>
-    </nav>
-    <div id="main-area">
-      <header id="app-header">
-        <button id="sidebar-toggle" aria-label="Menü öffnen">☰</button>
-        <div id="current-user"></div>
-      </header>
-      <main>
-        <div id="loading-view">Lädt…</div>
+  <div class="page">
+    <aside class="navbar navbar-vertical navbar-expand-md" id="sidebar">
+      <div class="container-fluid">
+        <button
+          id="sidebar-toggle"
+          class="navbar-toggler"
+          type="button"
+          aria-label="Menü öffnen"
+          aria-controls="sidebar"
+          aria-expanded="true"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
 
-        <div id="login-view" hidden>
-          <p>Anmeldung über Telegram erforderlich.</p>
-          {% if bot_username %}
-            <script async src="https://telegram.org/js/telegram-widget.js?22"
-                    data-telegram-login="{{ bot_username }}"
-                    data-size="large"
-                    data-onauth="onTelegramAuth(user)"
-                    data-request-access="write"></script>
-          {% else %}
-            <p class="hint">
-              <code>BOT_USERNAME</code> ist serverseitig nicht konfiguriert — das
-              Telegram-Login-Widget kann nicht angezeigt werden.<br>
-              Für lokale Entwicklung stattdessen
-              <code>CONTROL_CENTER_DEV_AUTH_BYPASS=true</code> setzen.
-            </p>
-          {% endif %}
+        <h1 class="navbar-brand navbar-brand-autodark">
+          <a href="{{ base_path }}/">
+            🎵 MusicBot
+          </a>
+        </h1>
+
+        <div class="navbar-nav pt-lg-3">
+
+          <div class="nav-item">
+            <a
+              href="{{ base_path }}/"
+              class="nav-link{{ ' active' if page_id == 'overview' else '' }}"
+            >
+              <span class="nav-link-icon d-md-none d-lg-inline-block">
+                <span>🏠</span>
+              </span>
+              <span class="nav-link-title">Overview</span>
+            </a>
+          </div>
+
+          <div class="mt-3 mb-2 px-3">
+            <div class="text-secondary text-uppercase small">
+              Music
+            </div>
+          </div>
+
+          <div class="nav-item">
+            <a
+              href="{{ base_path }}/downloads"
+              class="nav-link{{ ' active' if page_id == 'downloads' else '' }}"
+            >
+              <span class="nav-link-icon">
+                <span>📥</span>
+              </span>
+              <span class="nav-link-title">Downloads</span>
+            </a>
+          </div>
+
+          <div class="nav-item">
+            <a
+              href="{{ base_path }}/library"
+              class="nav-link{{ ' active' if page_id == 'library' else '' }}"
+            >
+              <span class="nav-link-icon">
+                <span>📚</span>
+              </span>
+              <span class="nav-link-title">Library</span>
+            </a>
+          </div>
+
+          <div class="nav-item">
+            <a
+              href="{{ base_path }}/metadata"
+              class="nav-link{{ ' active' if page_id == 'metadata' else '' }}"
+            >
+              <span class="nav-link-icon">
+                <span>🏷</span>
+              </span>
+              <span class="nav-link-title">Metadata</span>
+            </a>
+          </div>
+
+          <div class="nav-item">
+            <a
+              href="{{ base_path }}/statistics"
+              class="nav-link{{ ' active' if page_id == 'statistics' else '' }}"
+            >
+              <span class="nav-link-icon">
+                <span>📊</span>
+              </span>
+              <span class="nav-link-title">Statistics</span>
+            </a>
+          </div>
+
+          <div class="mt-3 mb-2 px-3">
+            <div class="text-secondary text-uppercase small">
+              Maintenance
+            </div>
+          </div>
+
+          <div class="nav-item">
+            <a
+              href="{{ base_path }}/findings"
+              class="nav-link{{ ' active' if page_id == 'findings' else '' }}"
+            >
+              <span class="nav-link-icon">
+                <span>🔍</span>
+              </span>
+              <span class="nav-link-title">Findings</span>
+            </a>
+          </div>
+
+          <div class="nav-item">
+            <a
+              href="{{ base_path }}/repairs"
+              class="nav-link{{ ' active' if page_id == 'repairs' else '' }}"
+            >
+              <span class="nav-link-icon">
+                <span>🔧</span>
+              </span>
+              <span class="nav-link-title">Repairs</span>
+            </a>
+          </div>
+
+          <div class="nav-item">
+            <a
+              href="{{ base_path }}/jobs"
+              class="nav-link{{ ' active' if page_id == 'jobs' else '' }}"
+            >
+              <span class="nav-link-icon">
+                <span>📋</span>
+              </span>
+              <span class="nav-link-title">Jobs</span>
+            </a>
+          </div>
+
+          <div class="nav-item">
+            <a
+              href="{{ base_path }}/health"
+              class="nav-link{{ ' active' if page_id == 'health' else '' }}"
+            >
+              <span class="nav-link-icon">
+                <span>🩺</span>
+              </span>
+              <span class="nav-link-title">Health</span>
+            </a>
+          </div>
+
+          <div class="mt-3 mb-2 px-3">
+            <div class="text-secondary text-uppercase small">
+              System
+            </div>
+          </div>
+
+          <div class="nav-item">
+            <a
+              href="{{ base_path }}/navidrome"
+              class="nav-link{{ ' active' if page_id == 'navidrome' else '' }}"
+            >
+              <span class="nav-link-icon">
+                <span>🎵</span>
+              </span>
+              <span class="nav-link-title">Navidrome</span>
+            </a>
+          </div>
+
+          <div class="nav-item">
+            <a
+              href="{{ base_path }}/logs"
+              class="nav-link{{ ' active' if page_id == 'logs' else '' }}"
+            >
+              <span class="nav-link-icon">
+                <span>📝</span>
+              </span>
+              <span class="nav-link-title">Logs</span>
+            </a>
+          </div>
+
+          <div class="nav-item">
+            <a
+              href="{{ base_path }}/admin"
+              class="nav-link{{ ' active' if page_id == 'admin' else '' }}"
+            >
+              <span class="nav-link-icon">
+                <span>⚙️</span>
+              </span>
+              <span class="nav-link-title">Administration</span>
+            </a>
+          </div>
+
         </div>
+      </div>
+    </aside>
 
-        <div id="error-view" hidden></div>
+    <div class="page-wrapper">
+      <header class="navbar navbar-expand-md d-print-none">
+        <div class="container-xl">
+          <div class="navbar-nav flex-row order-md-last">
+            <div id="current-user" class="nav-item"></div>
+          </div>
 
-        <div id="dashboard-view" hidden>
-          {% block content %}{% endblock %}
+          <div class="navbar-nav">
+            <div class="nav-item">
+              <span class="navbar-text">
+                MusicBot Control Center
+              </span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="page-body">
+        <div class="container-xl">
+
+          <div id="loading-view">
+            Lädt…
+          </div>
+
+          <div id="login-view" hidden>
+            <p>Anmeldung über Telegram erforderlich.</p>
+
+            {% if bot_username %}
+              <script
+                async
+                src="https://telegram.org/js/telegram-widget.js?22"
+                data-telegram-login="{{ bot_username }}"
+                data-size="large"
+                data-onauth="onTelegramAuth(user)"
+                data-request-access="write">
+              </script>
+            {% else %}
+              <p class="hint">
+                <code>BOT_USERNAME</code> ist serverseitig nicht konfiguriert —
+                das Telegram-Login-Widget kann nicht angezeigt werden.<br>
+                Für lokale Entwicklung stattdessen
+                <code>CONTROL_CENTER_DEV_AUTH_BYPASS=true</code> setzen.
+              </p>
+            {% endif %}
+          </div>
+
+          <div id="error-view" hidden></div>
+
+          <div id="dashboard-view" hidden>
+            {% block content %}{% endblock %}
+          </div>
+
         </div>
       </main>
     </div>
