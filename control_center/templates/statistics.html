@@ -1,81 +1,216 @@
 {% extends "_base.html" %}
 {% block title %}Statistics – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>Statistics</h1>
-  <p class="subtitle">Eigene Wiedergabestatistik (dieser Monat, All-Time-Genres, Music DNA).</p>
+  <h1>📊 Statistics</h1>
+  <p class="subtitle">Deine Hörstatistik</p>
 
+  <!-- KPI-Zeile ganz oben -->
+  <div class="kpi-grid-4" id="kpi-header">
+    <div class="empty-note" style="grid-column: 1/-1; text-align: center;">Lädt Kennzahlen…</div>
+  </div>
+
+  <!-- THIS MONTH -->
+  <div class="section-header">This Month</div>
   <section class="panel">
-    <h2>Statistics (dieser Monat)</h2>
-    <div id="statistics-content" class="empty-note">Lädt…</div>
-    <p class="hint" style="margin-top:12px;">Genres (All-Time)</p>
-    <div id="genre-stats-content" class="empty-note">Lädt…</div>
-    <p class="hint" style="margin-top:12px;">Music DNA (All-Time)</p>
+    <div id="monthly-artists" class="empty-note">Lädt…</div>
+  </section>
+
+  <!-- ALL-TIME GENRES -->
+  <div class="section-header">All-Time Genres</div>
+  <section class="panel">
+    <div id="all-time-genres" class="empty-note">Lädt…</div>
+  </section>
+
+  <!-- MUSIC DNA -->
+  <div class="section-header">Music DNA</div>
+  <section class="panel">
     <div id="music-dna-content" class="empty-note">Lädt…</div>
   </section>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  function renderStatistics(el, stats) {
-    if (!stats.has_data) {
-      el.innerHTML = `<p class="empty-note">Noch keine Wiedergabedaten für ${_escapeHtml(stats.navidrome_username)}.</p>`;
-      return;
-    }
-    const artists = stats.top_artists.slice(0, 5).map((a) => `
-      <div class="row-item"><div class="row-main">${_escapeHtml(a.label)}</div><div class="row-count">${a.count}</div></div>
-    `).join("");
-    el.innerHTML = `
-      <p class="empty-note">${stats.total_plays} Wiedergaben (${_escapeHtml(stats.navidrome_username)})</p>
-      <div class="row-list">${artists}</div>
+  // Gemeinsamer State für die KPI-Berechnung
+  const _statsState = { month: null, genres: null, dna: null };
+
+  // Hilfsfunktion für Fortschrittsbalken (mit Farbvariante)
+  function _renderProgressRow(label, count, maxCount, suffix = '', rank = null, variant = 'month') {
+    const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
+    const rankHtml = rank !== null ? `<span class="rank-number">${rank}</span>` : '';
+    return `
+      <div class="progress-row">
+        <div class="progress-label">
+          <span>${rankHtml}${_escapeHtml(label)}</span>
+          <span>${count}${suffix}</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill progress-fill--${variant}" style="width: ${pct}%"></div>
+        </div>
+      </div>
     `;
   }
-  function loadStatistics() {
-    return _loadInto("statistics-content", "/api/v1/statistics/me?period=month", renderStatistics);
+
+  // Verbessertes Emoji-Mapping für Genres
+  function _getGenreEmoji(label) {
+    const key = label.toLowerCase();
+    // Spezifische Genres zuerst prüfen (vor den generischen)
+    if (key.includes('deutschrap')) return '🇩🇪';
+    if (key.includes('alternative') && key.includes('hip')) return '🎧';
+    if (key.includes('deutschpop') || key.includes('deutsch') && key.includes('pop')) return '🇩🇪';
+    if (key.includes('hip hop') || key.includes('rap')) return '🎤';
+    if (key.includes('pop')) return '🎹';
+    if (key.includes('rock')) return '🎸';
+    if (key.includes('electronic') || key.includes('edm') || key.includes('house') || key.includes('techno')) return '🎧';
+    if (key.includes('jazz')) return '🎷';
+    if (key.includes('classical') || key.includes('klassik')) return '🎻';
+    if (key.includes('metal')) return '🤘';
+    if (key.includes('punk')) return '🎸';
+    if (key.includes('indie')) return '🎸';
+    if (key.includes('r&b') || key.includes('soul')) return '🎙️';
+    if (key.includes('reggae')) return '🌴';
+    if (key.includes('country')) return '🤠';
+    if (key.includes('folk')) return '🪕';
+    return '🎵';
   }
 
-  function renderGenreStats(el, body) {
-    if (!body.has_data || !body.top_genres.length) {
+  // KPI-Header aktualisieren
+  function _updateKpiHeader() {
+    const el = document.getElementById('kpi-header');
+    const m = _statsState.month;
+    const d = _statsState.dna;
+    
+    if (!m && !d) return;
+    
+    const plays = (m && m.total_plays) || 0;
+    const songs = (d && d.unique_songs) || 0;
+    const repeat = (d && d.repeat_rate_pct) || 0;
+    const genreCount = (d && d.top_genres_pct) ? d.top_genres_pct.length : 0;
+    
+    el.innerHTML = `
+      <div class="tile tile--plays">
+        <div class="tile-label">🎧 Plays</div>
+        <div class="tile-value">${plays}</div>
+      </div>
+      <div class="tile tile--songs">
+        <div class="tile-label">🎵 Songs</div>
+        <div class="tile-value">${songs}</div>
+      </div>
+      <div class="tile tile--repeat">
+        <div class="tile-label">🔁 Repeat Rate</div>
+        <div class="tile-value">${repeat}%</div>
+      </div>
+      <div class="tile tile--genres">
+        <div class="tile-label">🎼 Genres</div>
+        <div class="tile-value">${genreCount}</div>
+      </div>
+    `;
+  }
+
+  // 1. This Month Artists rendern (blaue Balken)
+  function renderMonthlyArtists(el, stats) {
+    _statsState.month = stats;
+    _updateKpiHeader();
+    
+    if (!stats.has_data || !stats.top_artists || !stats.top_artists.length) {
+      el.innerHTML = '<p class="empty-note">Keine Wiedergabedaten für diesen Monat.</p>';
+      return;
+    }
+    
+    const maxArtistCount = stats.top_artists[0].count;
+    const artistsHtml = stats.top_artists.slice(0, 5).map((a, i) => 
+      _renderProgressRow(a.label, a.count, maxArtistCount, '', i + 1, 'month')
+    ).join("");
+
+    el.innerHTML = `<div class="row-list">${artistsHtml}</div>`;
+  }
+
+  // 2. All-Time Genres rendern (lila Balken)
+  function renderAllTimeGenres(el, body) {
+    _statsState.genres = body;
+    
+    if (!body.has_data || !body.top_genres || !body.top_genres.length) {
       el.innerHTML = '<p class="empty-note">Keine Genre-Daten.</p>';
       return;
     }
-    const genres = body.top_genres.slice(0, 5).map((g) => `
-      <div class="row-item"><div class="row-main">${_escapeHtml(g.label)}</div><div class="row-count">${g.count}</div></div>
-    `).join("");
-    el.innerHTML = `<div class="row-list">${genres}</div>`;
-  }
-  function loadGenreStats() {
-    return _loadInto("genre-stats-content", "/api/v1/statistics/me/genres", renderGenreStats);
+    const maxGenreCount = body.top_genres[0].count;
+    const genresHtml = body.top_genres.slice(0, 5).map((g) => {
+      const emoji = _getGenreEmoji(g.label);
+      return _renderProgressRow(`${emoji} ${g.label}`, g.count, maxGenreCount, '', null, 'genres');
+    }).join("");
+    
+    el.innerHTML = `<div class="row-list">${genresHtml}</div>`;
   }
 
-  function renderMusicDna(el, body) {
-    if (!body.has_data) {
+  // 3. Music DNA rendern (orange + pink Balken, farbige Tageszeiten)
+  function renderMusicDna(el, dna) {
+    _statsState.dna = dna;
+    _updateKpiHeader();
+    
+    if (!dna.has_data) {
       el.innerHTML = '<p class="empty-note">Keine Music-DNA-Daten.</p>';
       return;
     }
-    const tod = body.time_of_day_pct || {};
-    const genrePct = body.top_genres_pct.slice(0, 5).map((g) => `
-      <div class="row-item"><div class="row-main">${_escapeHtml(g.label)}</div><div class="row-count">${g.pct}%</div></div>
-    `).join("");
-    const artistPct = body.top_artists_pct.slice(0, 5).map((a) => `
-      <div class="row-item"><div class="row-main">${_escapeHtml(a.label)}</div><div class="row-count">${a.pct}%</div></div>
-    `).join("");
+    
+    const tod = dna.time_of_day_pct || {};
+    
+    // Tageszeiten mit Farbvarianten
+    const todHtml = `
+      <div class="tod-grid">
+        <div class="tod-item tod-item--morning">
+          <span class="tod-label">🌅 Morgen</span>
+          <span class="tod-value">${tod.morgens ?? 0}%</span>
+        </div>
+        <div class="tod-item tod-item--afternoon">
+          <span class="tod-label">☀️ Nachmittag</span>
+          <span class="tod-value">${tod.nachmittags ?? 0}%</span>
+        </div>
+        <div class="tod-item tod-item--evening">
+          <span class="tod-label">🌇 Abend</span>
+          <span class="tod-value">${tod.abends ?? 0}%</span>
+        </div>
+        <div class="tod-item tod-item--night">
+          <span class="tod-label">🌙 Nacht</span>
+          <span class="tod-value">${tod.nachts ?? 0}%</span>
+        </div>
+      </div>
+    `;
+
+    // Top Genres (orange Balken)
+    const maxGenrePct = (dna.top_genres_pct && dna.top_genres_pct.length > 0) ? dna.top_genres_pct[0].pct : 1;
+    const genrePctHtml = (dna.top_genres_pct || []).slice(0, 5).map((g) => {
+      const emoji = _getGenreEmoji(g.label);
+      return _renderProgressRow(`${emoji} ${g.label}`, g.pct, maxGenrePct, '%', null, 'dna-genres');
+    }).join("");
+
+    // Top Artists (pinke Balken)
+    const maxArtistPct = (dna.top_artists_pct && dna.top_artists_pct.length > 0) ? dna.top_artists_pct[0].pct : 1;
+    const artistPctHtml = (dna.top_artists_pct || []).slice(0, 5).map((a) => 
+      _renderProgressRow(`🎤 ${a.label}`, a.pct, maxArtistPct, '%', null, 'dna-artists')
+    ).join("");
+
     el.innerHTML = `
-      <p class="empty-note">${body.total_plays} Plays, ${body.unique_songs} eindeutige Songs, ${body.repeat_rate_pct}% Wiederholungsrate</p>
-      <p class="empty-note">Tageszeit: morgens ${tod.morgens ?? 0}% · nachmittags ${tod.nachmittags ?? 0}% · abends ${tod.abends ?? 0}% · nachts ${tod.nachts ?? 0}%</p>
-      <div class="row-list">${genrePct}</div>
-      <div class="row-list">${artistPct}</div>
+      ${todHtml}
+      <div class="dna-grid">
+        <div>
+          <p style="margin:0 0 10px; font-weight:700; font-size:0.8rem; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted);">🎵 Top Genres</p>
+          <div class="row-list">${genrePctHtml}</div>
+        </div>
+        <div>
+          <p style="margin:0 0 10px; font-weight:700; font-size:0.8rem; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted);">🎤 Top Artists</p>
+          <div class="row-list">${artistPctHtml}</div>
+        </div>
+      </div>
     `;
   }
-  function loadMusicDna() {
-    return _loadInto("music-dna-content", "/api/v1/statistics/me/music-dna", renderMusicDna);
-  }
 
+  // Haupt-Initialisierung: _loadInto verwenden (bewährter Helper)
   function initPage() {
     checkAuth().then((who) => {
       if (!who) return;
-      loadStatistics();
-      loadGenreStats();
-      loadMusicDna();
+      
+      _loadInto("monthly-artists", "/api/v1/statistics/me?period=month", renderMonthlyArtists);
+      _loadInto("all-time-genres", "/api/v1/statistics/me/genres", renderAllTimeGenres);
+      _loadInto("music-dna-content", "/api/v1/statistics/me/music-dna", renderMusicDna);
     });
   }
   initPage();

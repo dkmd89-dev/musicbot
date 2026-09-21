@@ -10,12 +10,24 @@
   --card-bg: #ffffff; --border: #e2e2e2; --accent: #2f6fed;
   --error: #c0392b; --ok: #1f8a4c; --sidebar-bg: #1a1c20; --sidebar-fg: #d8d9dc;
   --sidebar-width: 220px; --header-height: 52px;
+
+  /* NEU: Farbpalette für Diagramme */
+  --chart-month: #2f6fed;
+  --chart-genres: #8b5cf6;
+  --chart-dna-genres: #f59e0b;
+  --chart-dna-artists: #ec4899;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #16171a; --fg: #eaeaea; --muted: #9a9a9a;
-    --card-bg: #202226; --border: #33353a; --accent: #6ea0ff;
+    --card-bg: #202226; --border: #3a3d45; --accent: #6ea0ff;
     --error: #ff6b5e; --ok: #4fd07a; --sidebar-bg: #101114;
+
+    /* Angepasste Diagrammfarben für Dark Mode */
+    --chart-month: #6ea0ff;
+    --chart-genres: #a78bfa;
+    --chart-dna-genres: #fbbf24;
+    --chart-dna-artists: #f472b6;
   }
 }
 * { box-sizing: border-box; }
@@ -62,7 +74,13 @@ code { background: var(--card-bg); border: 1px solid var(--border); padding: 1px
   display: none; background: none; border: none; color: var(--fg); font-size: 1.3rem;
   cursor: pointer; padding: 4px 8px;
 }
-main { max-width: 900px; margin: 0 auto; padding: 20px 16px 48px; }
+
+/* Optimierung: Mehr Platz für das Dashboard */
+main { 
+  max-width: 1200px; 
+  margin: 0 auto; 
+  padding: 24px 20px 48px; 
+}
 
 /* Mobile: Sidebar wird zum Drawer (Master-Prompt Abschnitt 12) */
 @media (max-width: 760px) {
@@ -87,9 +105,15 @@ button {
 }
 button.small { padding: 6px 12px; font-size: 0.8rem; }
 .retry-row { text-align: center; margin-top: 12px; }
+
+/* Panels: verbesserter Kontrast mit subtilem Schatten */
 section.panel {
-  background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
-  padding: 16px; margin-bottom: 16px;
+  background: var(--card-bg); 
+  border: 1px solid var(--border); 
+  border-radius: 12px;
+  padding: 16px; 
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 section.panel h2 {
   font-size: 1rem; margin: 0 0 12px; display: flex; align-items: center;
@@ -119,16 +143,45 @@ section.panel h2 {
 .badge-INFO { background: #6b6b6b; }
 .badge-status-success { background: var(--ok); }
 .badge-status-failed, .badge-status-cancelled { background: var(--error); }
+
+/* KPI-Tiles */
 .tiles, .kpi-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px; margin-bottom: 24px;
 }
 .tile {
-  background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
-  padding: 16px; text-align: center;
+  background: var(--card-bg); 
+  border: 1px solid var(--border); 
+  border-radius: 12px;
+  padding: 16px; 
+  text-align: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+  overflow: hidden;
 }
+/* Akzentstreifen oben an jeder KPI-Kachel */
+.tile::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--accent);
+}
+.tile--plays::before { background: var(--chart-month); }
+.tile--songs::before { background: var(--chart-genres); }
+.tile--repeat::before { background: var(--chart-dna-genres); }
+.tile--genres::before { background: var(--chart-dna-artists); }
+.tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+}
+/* KPI-Werte passend zum jeweiligen Akzentstreifen einfärben */
+.tile--plays .tile-value { color: var(--chart-month); }
+.tile--songs .tile-value { color: var(--chart-genres); }
+.tile--repeat .tile-value { color: var(--chart-dna-genres); }
+.tile--genres .tile-value { color: var(--chart-dna-artists); }
 .tile-label { color: var(--muted); font-size: 0.8rem; margin-bottom: 6px; }
-.tile-value { font-size: 1.6rem; font-weight: 600; }
+.tile-value { font-size: 2rem; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
 .status-EXCELLENT, .status-GOOD { color: var(--ok); }
 .status-CRITICAL, .status-POOR { color: var(--error); }
 .counts-grid {
@@ -141,19 +194,168 @@ section.panel h2 {
 }
 .denied, .empty-note { color: var(--muted); font-size: 0.85rem; }
 
-/* ── Library Artist-Centric UX (CC-AC-1): Breadcrumb, klickbare
-   Listenzeilen, Sucheingabe — reine Ergaenzungen, keine neue
-   CSS-Architektur (Auftrag §30). ────────────────────────────────────── */
+/* ── Library Artist-Centric UX (CC-AC-1) ────────────────────────────── */
 .breadcrumb { color: var(--muted); font-size: 0.85rem; margin: 0 0 4px; }
 .breadcrumb a { color: var(--muted); text-decoration: none; }
 .breadcrumb a:hover { color: var(--accent); text-decoration: underline; }
 .breadcrumb-sep { margin: 0 6px; }
-a.row-item {
-  text-decoration: none; color: inherit; cursor: pointer;
-}
+a.row-item { text-decoration: none; color: inherit; cursor: pointer; }
 a.row-item:hover { background: rgba(127,127,127,0.08); }
 input[type="text"], input[type="search"] {
   background: var(--card-bg); color: var(--fg); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 12px; font-size: 0.9rem; width: 100%;
   max-width: 320px;
+}
+
+/* ── Dashboard-Optimierungen (Analytics-Ansicht) ───────────────────── */
+
+/* Sektions-Header (THIS MONTH, ALL-TIME GENRES, MUSIC DNA) */
+.section-header {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin: 32px 0 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.section-header:first-of-type { margin-top: 0; }
+
+/* 4-Spalten KPI-Grid */
+.kpi-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 8px;
+}
+@media (max-width: 760px) {
+  .kpi-grid-4 { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Fortschrittsbalken */
+.progress-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.progress-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.progress-track {
+  background: var(--border);
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  width: 100%;
+}
+.progress-fill {
+  background: var(--accent);
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease-out;
+}
+
+/* NEU: Farbvarianten für Fortschrittsbalken */
+.progress-fill--month { background: var(--chart-month); }
+.progress-fill--genres { background: var(--chart-genres); }
+.progress-fill--dna-genres { background: var(--chart-dna-genres); }
+.progress-fill--dna-artists { background: var(--chart-dna-artists); }
+
+/* Ranking-Nummern für Top-Artists */
+.rank-number {
+  display: inline-block;
+  width: 20px;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.8rem;
+  margin-right: 8px;
+  text-align: right;
+}
+
+/* Music DNA - Tageszeiten Grid */
+.tod-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.tod-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 8px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: transform 0.2s;
+}
+.tod-item:hover {
+  transform: translateY(-2px);
+}
+/* NEU: Farbliche Differenzierung der Tageszeiten */
+.tod-item--morning {
+  background: linear-gradient(180deg, rgba(255, 165, 0, 0.10), var(--bg));
+  border-color: rgba(255, 165, 0, 0.3);
+}
+.tod-item--afternoon {
+  background: linear-gradient(180deg, rgba(255, 200, 50, 0.10), var(--bg));
+  border-color: rgba(255, 200, 50, 0.3);
+}
+.tod-item--evening {
+  background: linear-gradient(180deg, rgba(255, 100, 100, 0.10), var(--bg));
+  border-color: rgba(255, 100, 100, 0.3);
+}
+.tod-item--night {
+  background: linear-gradient(180deg, rgba(130, 130, 255, 0.10), var(--bg));
+  border-color: rgba(130, 130, 255, 0.3);
+}
+.tod-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.tod-value { font-size: 1.2rem; font-weight: 700; color: var(--accent); }
+.tod-item--morning .tod-value { color: #f59e0b; }
+.tod-item--afternoon .tod-value { color: #eab308; }
+.tod-item--evening .tod-value { color: #f87171; }
+.tod-item--night .tod-value { color: #a5b4fc; }
+
+/* Music DNA - 2-Spalten-Layout für Genres & Artists */
+.dna-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+@media (max-width: 760px) {
+  .dna-grid { grid-template-columns: 1fr; gap: 16px; }
+}
+
+/* Panels im Grid ohne Margin */
+.dashboard-grid section.panel {
+  margin-bottom: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Summary Badges */
+.dna-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.summary-badge {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
