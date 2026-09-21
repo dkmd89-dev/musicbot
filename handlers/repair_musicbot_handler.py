@@ -932,10 +932,24 @@ class RepairMusicBotHandler:
                 f"{html.escape(result.error_message)}"
             )
 
-        emoji = "✅" if result.status == "SUCCESS" and not result.failed else (
-            "⚠️" if result.failed and result.success else "❌"
-        )
-        header = "abgeschlossen" if not result.failed else "teilweise abgeschlossen"
+        # ARCH-033-F1 Fix (c): ❌ bleibt tatsächlichen FAILED-Läufen
+        # vorbehalten. Die ursprüngliche ⚠️-Semantik (failed UND success,
+        # ohne unresolved) bleibt unverändert erhalten (bestehende Tests) -
+        # ergänzt um eigene Zweige für UNRESOLVED (🟠) und einen reinen
+        # SKIPPED-Lauf (🟡 "nichts zu tun") statt beide auf ❌ fallen zu
+        # lassen.
+        if result.failed and result.success and not result.unresolved:
+            emoji, header = "⚠️", "teilweise abgeschlossen"
+        elif result.failed:
+            emoji, header = "❌", "teilweise abgeschlossen"
+        elif result.unresolved:
+            emoji, header = "🟠", "abgeschlossen – Überprüfung nötig"
+        elif result.success:
+            emoji, header = "✅", "abgeschlossen"
+        elif result.skipped:
+            emoji, header = "🟡", "nichts zu tun"
+        else:
+            emoji, header = "⚪", "leerer Lauf"
 
         lines = [
             f"{emoji} <b>{html.escape(_L23REP_LEVEL_LABELS[level])} {header}</b>",
@@ -943,9 +957,13 @@ class RepairMusicBotHandler:
             "",
             f"Erfolgreich: {result.success}",
             f"Übersprungen: {result.skipped}",
-            f"Fehlgeschlagen: {result.failed}",
+        ]
+        if result.unresolved:
+            lines.append(f"Überprüfen: {result.unresolved}")
+        lines.append(f"Fehlgeschlagen: {result.failed}")
+        lines += [
             "",
-            f"Geänderte Dateien: {len(result.affected_files)}",
+            f"Geänderte Dateien: {len(result.changed_files)}",
             f"Verifiziert behoben: {result.resolved_count}",
         ]
         if result.rescan_triggered:

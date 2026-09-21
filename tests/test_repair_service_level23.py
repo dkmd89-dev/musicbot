@@ -252,6 +252,90 @@ class TestExecuteLevelRepairArtistScope:
             rs.release_repair_lock()
 
 
+@pytest.mark.parametrize("case", [L2, L3], ids=["l2", "l3"])
+class TestChangedFilesVsAffectedFiles:
+    """ARCH-033-F1 Fix (b): affected_files zaehlt ALLE journalierten
+    Dateien (auch SKIPPED), changed_files NUR tatsaechlich geaenderte
+    (SUCCESS + UNRESOLVED) - affected_files bleibt dabei unveraendert
+    (andere Konsumenten, z. B. control_center/routers/jobs.py)."""
+
+    def test_skipped_file_counts_in_affected_but_not_changed(self, case):
+        issue_a = _issue(case.issue_code, path="Bausa/Singles/a.m4a", artist="Bausa")
+        issue_b = _issue(case.issue_code, path="Bausa/Singles/b.m4a", artist="Bausa")
+        pre_scan = DoctorScanResult(exit_code=0, report=_report([issue_a, issue_b]))
+        post_scan = DoctorScanResult(exit_code=0, report=_report([issue_b]))
+        repair_result = DoctorRepairResult(exit_code=0)
+
+        jpath = rs.journal_path()
+        jpath.parent.mkdir(parents=True, exist_ok=True)
+
+        def _fake_apply(*_a, **_kw):
+            with open(jpath, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "timestamp": "t", "file": "Bausa/Singles/a.m4a",
+                    "issue_code": case.issue_code, "action": "X", "status": "SUCCESS",
+                }) + "\n")
+                f.write(json.dumps({
+                    "timestamp": "t", "file": "Bausa/Singles/b.m4a",
+                    "issue_code": case.issue_code, "action": "X", "status": "SKIPPED",
+                }) + "\n")
+            return repair_result
+
+        with patch.object(rs, "run_health_scan", new=AsyncMock(side_effect=[pre_scan, post_scan])), \
+             patch.object(rs, case.run_attr, new=AsyncMock(side_effect=_fake_apply)):
+            result = run(case.repair_fn("Bausa", triggered_by="test"))
+
+        assert result.affected_files == ["Bausa/Singles/a.m4a", "Bausa/Singles/b.m4a"]
+        assert result.changed_files == ["Bausa/Singles/a.m4a"]
+
+    def test_pure_skipped_run_has_empty_changed_files(self, case):
+        issue = _issue(case.issue_code, path="Bausa/Singles/a.m4a", artist="Bausa")
+        pre_scan = DoctorScanResult(exit_code=0, report=_report([issue]))
+        repair_result = DoctorRepairResult(exit_code=0)
+
+        jpath = rs.journal_path()
+        jpath.parent.mkdir(parents=True, exist_ok=True)
+
+        def _fake_apply(*_a, **_kw):
+            with open(jpath, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "timestamp": "t", "file": "Bausa/Singles/a.m4a",
+                    "issue_code": case.issue_code, "action": "X", "status": "SKIPPED",
+                }) + "\n")
+            return repair_result
+
+        with patch.object(rs, "run_health_scan", new=AsyncMock(return_value=pre_scan)), \
+             patch.object(rs, case.run_attr, new=AsyncMock(side_effect=_fake_apply)):
+            result = run(case.repair_fn("Bausa", triggered_by="test"))
+
+        assert result.status == rs.STATUS_SKIPPED
+        assert result.affected_files == ["Bausa/Singles/a.m4a"]
+        assert result.changed_files == []
+
+    def test_unresolved_file_counts_as_changed(self, case):
+        issue = _issue(case.issue_code, path="Bausa/Singles/a.m4a", artist="Bausa")
+        pre_scan = DoctorScanResult(exit_code=0, report=_report([issue]))
+        repair_result = DoctorRepairResult(exit_code=0)
+
+        jpath = rs.journal_path()
+        jpath.parent.mkdir(parents=True, exist_ok=True)
+
+        def _fake_apply(*_a, **_kw):
+            with open(jpath, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "timestamp": "t", "file": "Bausa/Singles/a.m4a",
+                    "issue_code": case.issue_code, "action": "X", "status": "UNRESOLVED",
+                }) + "\n")
+            return repair_result
+
+        with patch.object(rs, "run_health_scan", new=AsyncMock(return_value=pre_scan)), \
+             patch.object(rs, case.run_attr, new=AsyncMock(side_effect=_fake_apply)):
+            result = run(case.repair_fn("Bausa", triggered_by="test"))
+
+        assert result.unresolved == 1
+        assert result.changed_files == ["Bausa/Singles/a.m4a"]
+
+
 class TestLevelRepairDoesNotAffectSafeAutomatic:
     def test_existing_safe_automatic_flow_untouched(self):
         """Reiner Schutz gegen versehentliche Kopplung: execute_level2_repair

@@ -415,6 +415,14 @@ class LevelRepairResult:
     resolved_count: int = 0
     entries: list = field(default_factory=list)
     affected_files: list = field(default_factory=list)
+    # ARCH-033-F1: affected_files zaehlt ALLE beruehrten Dateien (auch
+    # SKIPPED, siehe unten) - bewusst unveraendert, da handlers/
+    # repair_musicbot_handler.py der einzige bekannte Konsument mit
+    # "tatsaechlich geaendert"-Semantik ist, control_center/routers/
+    # jobs.py aber bereits denselben affected_files-Wert mit "beruehrt"-
+    # Semantik weiterreicht (repoweit verifiziert). changed_files ist
+    # additiv nur fuer den Telegram-Handler gedacht.
+    changed_files: list = field(default_factory=list)
     # Bewusst nie berechnet (ARCH-033): kein verlaessliches maschinenlesbares
     # Signal ueber die Subprozess-Grenze hinweg, wie viele Auto-Learn-
     # Mapping-Eintraege sich geaendert haben, ohne fragile Pfad-/Diff-
@@ -521,6 +529,15 @@ async def _execute_level_repair(
                     registry.save()
 
         affected_files = sorted({e.get("file") for e in entries if e.get("file")})
+        # ARCH-033-F1 Fix (b): changed_files zaehlt nur tatsaechlich
+        # geaenderte Dateien (SUCCESS + UNRESOLVED) - SKIPPED-Eintraege
+        # (beruehrt, aber nicht angefasst) zaehlen bewusst NICHT mit.
+        # affected_files bleibt oben unveraendert (andere Konsumenten,
+        # siehe LevelRepairResult-Docstring-Kommentar).
+        changed_files = sorted({
+            e.get("file") for e in entries
+            if e.get("file") and e.get("status") in (STATUS_SUCCESS, "UNRESOLVED")
+        })
 
         if repair_result.timed_out or repair_result.error_message:
             overall_status = STATUS_FAILED
@@ -556,7 +573,7 @@ async def _execute_level_repair(
             skipped=status_counts.get(STATUS_SKIPPED, 0),
             unresolved=status_counts.get("UNRESOLVED", 0),
             resolved_count=len(resolved_ids),
-            entries=entries, affected_files=affected_files,
+            entries=entries, affected_files=affected_files, changed_files=changed_files,
             rescan_triggered=rescan_triggered,
             error_message=repair_result.error_message,
         )
