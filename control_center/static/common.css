@@ -596,3 +596,107 @@ a.row-item:hover {
   color: var(--ok);
   font-weight: 600;
 }
+
+/* === CC-AC-10.1: Metadata-Action-Cards (Layout-Refinement) === */
+.action-card {
+  margin: 1.25rem 0;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 8px;
+}
+
+.action-card h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.action-hint {
+  margin: 0 0 1rem 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+/* CC-AC-10.1: Felder eine Zeile, Button eigene Zeile rechtsbündig */
+.action-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.action-form input,
+.action-form select {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.action-form .btn-secondary {
+  flex: 1 1 100%;
+  margin-left: auto;
+  margin-top: 0.25rem;
+  max-width: max-content;
+}
+
+.action-actions {
+  margin-top: 0.75rem;
+}
+
+.preview-area,
+.result-area {
+  margin-top: 0.75rem;
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  color: var(--fg);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.btn-secondary:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.btn-primary {
+  background: #4a90e2;
+  border: 1px solid #4a90e2;
+  color: #fff;
+  padding: 0.5rem 1.25rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+/* CC-AC-10.1: Disabled deutlicher ausgegraut */
+.btn-primary:disabled {
+  background: rgba(74, 144, 226, 0.12);
+  border-color: rgba(128, 128, 128, 0.2);
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.btn-primary:not(:disabled):hover {
+  filter: brightness(1.1);
+}
+
+@media (max-width: 480px) {
+  .action-form input,
+  .action-form select {
+    flex: 1 1 100%;
+  }
+  .action-form .btn-secondary {
+    max-width: 100%;
+    width: 100%;
+  }
+  .action-actions .btn-primary {
+    width: 100%;
+  }
+}
+/* === /CC-AC-10.1 === */

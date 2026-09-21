@@ -13,75 +13,89 @@
     <p class="empty-note">Artist wird geladen …</p>
   </div>
 
-  <section class="panel" id="artist-metadata-edit-panel" hidden>
+    <section class="panel" id="artist-metadata-edit-panel" hidden>
     <details>
-    <summary><h2>📝 Metadaten bearbeiten</h2></summary>
-    <p class="subtitle">Wiederverwendet die bestehenden Manual-Metadata-Editing-Endpunkte
-      (<code>admin/maintenance/artist-rename</code>, <code>admin/maintenance/title-edit</code>,
-      <code>library/artists/{artist}/set-genre</code>) im Kontext dieses Artists — keine neue
-      Business-Logik.</p>
+      <summary><h2>📝 Musik-Details anpassen</h2></summary>
 
-    <h3>🎤 Artist bearbeiten</h3>
-    <p class="empty-note">Setzt den Artist-Namen auf einen manuellen Zielwert — KEIN Casing-Mapping, keine Normalisierung.</p>
-    <div class="retry-row">
-      <input type="text" id="artist-edit-new-artist" placeholder="Neuer Artist-Name">
-      <button id="artist-edit-preview-btn" class="small">Vorschau laden</button>
-    </div>
-    <div id="artist-edit-content" class="empty-note"></div>
-    <div class="retry-row">
-      <button id="artist-edit-execute-btn" class="small" disabled>Artist umbenennen</button>
-    </div>
-    <div id="artist-edit-result-content" class="empty-note"></div>
+      <p class="subtitle">Ändere Künstler-Name, Songtitel, Album-Informationen oder Genre.
+        Jede Änderung wird dir zuerst als Vorschau gezeigt — erst nach deiner Bestätigung wird sie übernommen.</p>
 
-    <h3>🎵 Titel bearbeiten</h3>
-    <p class="empty-note">Setzt den Titel für genau einen Track — KEIN automatischer TitleCleaner. Relativen Pfad aus der Track-Liste unten übernehmen (Tooltip beim Überfahren).</p>
-    <div class="retry-row">
-      <input type="text" id="title-edit-rel-path" placeholder="Relativer Pfad (z. B. Artist/Album/Track.m4a)">
-      <input type="text" id="title-edit-new-title" placeholder="Neuer Titel">
-      <button id="title-edit-preview-btn" class="small">Vorschau laden</button>
-    </div>
-    <div id="title-edit-content" class="empty-note"></div>
-    <div class="retry-row">
-      <button id="title-edit-execute-btn" class="small" disabled>Titel setzen</button>
-    </div>
-    <div id="title-edit-result-content" class="empty-note"></div>
+      <div class="action-card">
+        <h3>🎤 Künstler-Name ändern</h3>
+        <p class="action-hint">Korrigiere den Namen des Künstlers. Die Änderung gilt für alle Songs dieses Künstlers.</p>
+        <div class="action-form">
+          <input type="text" id="artist-edit-new-artist" placeholder="Neuer Künstler-Name">
+          <button id="artist-edit-preview-btn" class="btn-secondary">Vorschau anzeigen</button>
+        </div>
+        <div id="artist-edit-content" class="preview-area"></div>
+        <div class="action-actions">
+          <button id="artist-edit-execute-btn" class="btn-primary" disabled>Änderung übernehmen</button>
+        </div>
+        <div id="artist-edit-result-content" class="result-area"></div>
+      </div>
 
-    <h3>💿 Album bearbeiten</h3>
-    <p class="empty-note">Setzt den Albumnamen (<code>©alb</code>) für alle Dateien des gewählten Albums — ändert weder Artist- noch Albuminterpret-Tag.</p>
-    <div class="retry-row">
-      <select id="album-edit-album-select"><option value="">Album wählen …</option></select>
-      <input type="text" id="album-edit-new-album" placeholder="Neuer Albumname">
-      <button id="album-edit-preview-btn" class="small">Vorschau laden</button>
-    </div>
-    <div id="album-edit-content" class="empty-note"></div>
-    <div class="retry-row">
-      <button id="album-edit-execute-btn" class="small" disabled>Album setzen</button>
-    </div>
-    <div id="album-edit-result-content" class="empty-note"></div>
+      <div class="action-card">
+        <h3>🎵 Songtitel ändern</h3>
+        <p class="action-hint">Wähle einen Song und gib den neuen Titel ein.</p>
+        <div class="action-form">
+          <select id="title-edit-rel-path"><option value="">Song auswählen…</option></select>
+          <input type="text" id="title-edit-new-title" placeholder="Neuer Titel">
+          <button id="title-edit-preview-btn" class="btn-secondary">Vorschau anzeigen</button>
+        </div>
+        <div id="title-edit-content" class="preview-area"></div>
+        <div class="action-actions">
+          <button id="title-edit-execute-btn" class="btn-primary" disabled>Änderung übernehmen</button>
+        </div>
+        <div id="title-edit-result-content" class="result-area"></div>
+      </div>
 
-    <h3>👤 Albuminterpret bearbeiten</h3>
-    <p class="empty-note">Setzt den Albuminterpret (<code>aART</code>) für alle Dateien des gewählten Albums — ändert weder Artist- noch Album-Tag.</p>
-    <div class="retry-row">
-      <select id="albumartist-edit-album-select"><option value="">Album wählen …</option></select>
-      <input type="text" id="albumartist-edit-new-albumartist" placeholder="Neuer Albuminterpret">
-      <button id="albumartist-edit-preview-btn" class="small">Vorschau laden</button>
-    </div>
-    <div id="albumartist-edit-content" class="empty-note"></div>
-    <div class="retry-row">
-      <button id="albumartist-edit-execute-btn" class="small" disabled>Albuminterpret setzen</button>
-    </div>
-    <div id="albumartist-edit-result-content" class="empty-note"></div>
+      <div class="action-card">
+        <h3>💿 Album-Name ändern</h3>
+        <p class="action-hint">Ändere den Namen eines Albums. Der Künstler-Name bleibt unverändert.</p>
+        <div class="action-form">
+          <select id="album-edit-album-select">
+            <option value="">Album auswählen…</option>
+          </select>
+          <input type="text" id="album-edit-new-album" placeholder="Neuer Album-Name">
+          <button id="album-edit-preview-btn" class="btn-secondary">Vorschau anzeigen</button>
+        </div>
+        <div id="album-edit-content" class="preview-area"></div>
+        <div class="action-actions">
+          <button id="album-edit-execute-btn" class="btn-primary" disabled>Änderung übernehmen</button>
+        </div>
+        <div id="album-edit-result-content" class="result-area"></div>
+      </div>
 
-    <h3>🎭 Genre-Verwaltung</h3>
-    <p class="empty-note">Setzt das Genre aller Tracks dieses Artists aus dem bestehenden Mapping (mapping/artist_genre.yaml) — kein Freitext.</p>
-    <div class="retry-row">
-      <button id="genre-manage-preview-btn" class="small">Vorschau laden</button>
-    </div>
-    <div id="genre-manage-content" class="empty-note"></div>
-    <div class="retry-row">
-      <button id="genre-manage-execute-btn" class="small" disabled>Genre setzen</button>
-    </div>
-    <div id="genre-manage-result-content" class="empty-note"></div>
+      <div class="action-card">
+        <h3>👤 Album-Künstler ändern</h3>
+        <p class="action-hint">Ändere, welcher Künstler für ein Album verantwortlich ist. Songtitel und Albumname bleiben unverändert.</p>
+        <div class="action-form">
+          <select id="albumartist-edit-album-select">
+            <option value="">Album auswählen…</option>
+          </select>
+          <input type="text" id="albumartist-edit-new-albumartist" placeholder="Neuer Album-Künstler">
+          <button id="albumartist-edit-preview-btn" class="btn-secondary">Vorschau anzeigen</button>
+        </div>
+        <div id="albumartist-edit-content" class="preview-area"></div>
+        <div class="action-actions">
+          <button id="albumartist-edit-execute-btn" class="btn-primary" disabled>Änderung übernehmen</button>
+        </div>
+        <div id="albumartist-edit-result-content" class="result-area"></div>
+      </div>
+
+      <div class="action-card">
+        <h3>🎭 Genre festlegen</h3>
+        <p class="action-hint">Lege das Genre für diesen Künstler fest. Es gilt für alle Songs dieses Künstlers.</p>
+        <div class="action-form">
+          <button id="genre-manage-preview-btn" class="btn-secondary">Vorschau anzeigen</button>
+        </div>
+        <div id="genre-manage-content" class="preview-area"></div>
+        <div class="action-actions">
+          <button id="genre-manage-execute-btn" class="btn-primary" disabled>Änderung übernehmen</button>
+        </div>
+        <div id="genre-manage-result-content" class="result-area"></div>
+      </div>
+
     </details>
   </section>
 
@@ -215,6 +229,7 @@
       : '<p class="empty-note">Keine Alben vorhanden.</p>';
 
     const tracksHtml = _renderTracksGroupedByAlbum(body.tracks);
+    _populateTitleEditSelect(body.tracks);
 
     el.innerHTML = `
       <div class="tiles">
@@ -436,6 +451,48 @@
   function _titleEditRelPathInScope(artist, relPath) {
     return relPath.startsWith(`${artist}/`);
   }
+
+  function _populateTitleEditSelect(tracks) {
+    // CC-AC-10.2: befüllt das Song-Dropdown aus bereits geladenen Track-Daten
+    // (body.tracks[i].relative_path). Keine neue Datenquelle, keine API.
+    const sel = document.getElementById("title-edit-rel-path");
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Song auswählen…</option>';
+    if (!tracks || !tracks.length) {
+      sel.disabled = true;
+      return;
+    }
+    sel.disabled = false;
+
+    // Gruppieren nach Album-Verzeichnis (gleiche Logik wie _renderTracksGroupedByAlbum).
+    const groups = new Map();
+    for (const t of tracks) {
+      const key = t.album_directory || "Ohne Album";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(t);
+    }
+    const sortedKeys = [...groups.keys()].sort((a, b) => a.localeCompare(b, "de"));
+
+    for (const key of sortedKeys) {
+      const group = document.createElement("optgroup");
+      group.label = key;
+      const items = groups.get(key).slice().sort((a, b) => {
+        const aNum = (typeof a.track_number === "number") ? a.track_number : 9999;
+        const bNum = (typeof b.track_number === "number") ? b.track_number : 9999;
+        if (aNum !== bNum) return aNum - bNum;
+        return (a.title || a.filename).localeCompare(b.title || b.filename, "de");
+      });
+      for (const t of items) {
+        const opt = document.createElement("option");
+        opt.value = t.relative_path;
+        const num = t.track_number ? `${t.track_number}. ` : "";
+        opt.textContent = `${num}${t.title || t.filename}`;
+        group.appendChild(opt);
+      }
+      sel.appendChild(group);
+    }
+  }
+
 
   async function loadTitleEditPreview() {
     const artist = currentArtistFromPath();
