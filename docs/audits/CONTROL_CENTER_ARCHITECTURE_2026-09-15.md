@@ -1508,3 +1508,56 @@ Dokumentation aktualisieren" — kein Teil des CC-AC-5-Scopes).
   Umbau/Umsortierung der oben als redundant identifizierten Seiten
   (Auftrag §19/§39 — explizit ausgeschlossen für diesen Lauf), Nachtrag
   der fehlenden CC-AC-3/CC-AC-4-Doku-Einträge.
+
+## Navigation Cleanup — Umsetzung (CC-AC-Cleanup) (2026-09-21)
+
+Folge-Task zu CC-AC-5 (`docs/prompts/cc-ac-cleanup.txt`). Consumer-Check
+vor Umsetzung zeigte: die im Task-Prompt referenzierten Testzeilen
+(`tests/test_control_center_ui.py:31-32,779-800,1057-1067`, siehe
+`[möglicher späterer Cleanup]` oben) waren durch zwischenzeitliche
+Testdatei-Erweiterungen (CC-AC-2/3/4) bereits veraltet — die
+tatsächlichen Fundstellen lagen bei 216-308, 419-793 bzw. 1056-1072.
+
+**Umgesetzt (nach Nutzerfreigabe der Consumer-Check-Ergebnisse):**
+- `admin.html`: die vier `[redundant]`-markierten Formulare (Artist
+  Casing, Legacy-Genre-Cleanup, Artist umbenennen, Titel bearbeiten)
+  durch einen Hinweis-Block mit Deep-Link auf `/library` ersetzt.
+  Zugehörige, jetzt tote JS-Logik (`MAINTENANCE_ACTIONS` +
+  Preview/Execute-Handler) mit entfernt — sonst hätte
+  `document.getElementById(...)` auf den entfernten Elementen beim
+  Seitenaufbau eine Exception geworfen und `initPage()`
+  (Nutzerliste laden) nie mehr ausgeführt.
+- `metadata.html`: die „Genre setzen"-Sektion analog auf einen
+  Hinweis-Block mit Deep-Link auf `/library` umgestellt, zugehörige
+  JS-Logik (`_genreSetArtist`, Preview/Execute) entfernt.
+- Endpunkte (`admin/maintenance/*`, `library/artists/{artist}/set-genre`)
+  und `library_artist_detail.html` (kanonische Stelle) unverändert.
+- `tests/test_control_center_ui.py`: `test_metadata_page_has_genre_set_panel`
+  → `test_metadata_page_has_genre_set_hint_block` (prüft Hinweis-Block +
+  Deep-Link statt Formular-Markup); `test_metadata_page_confirm_dialog_mentions_backup_and_files`
+  entfernt (prüfte einen jetzt nicht mehr vorhandenen `window.confirm()`-Text);
+  neuer Test `test_admin_page_has_library_maintenance_hint_block` (für die
+  vier `admin.html`-Formulare existierte zuvor keine dedizierte
+  UI-Testabdeckung). Alle bestehenden, nicht direkt betroffenen Tests
+  unverändert grün (128 passed, 2 vorbestehende, unabhängige Failures in
+  `test_overview_contains_kpi_and_summary_elements`/
+  `test_statistics_page_has_all_panels` — reproduziert auch am
+  ungeänderten Stand, nicht Teil dieses Cleanups).
+
+**Bewusst NICHT umgesetzt — HARD STOP (§7 des Task-Prompts):**
+`library.html` → „Artists"-Button (Live-Scan) wurde **nicht** entfernt.
+Drei bestehende Tests (`test_library_page_has_metadata_browser_panel`,
+`test_library_page_ui_wiring_present`, insbesondere
+`test_library_page_keeps_legacy_metadata_browser_unchanged` mit
+Docstring „Auftrag §39: alte, Klick-gesteuerte
+Tracks/Artists/Albums/Mapping-Sektion bleibt vollstaendig erreichbar,
+unveraendert") verankern einen früheren, expliziten
+Architekturentscheid aus CC-AC-1, der der aktuellen
+Redundanz-Annahme direkt widerspricht. Der bereits oben (Zeile
+1462-1471) dokumentierte verbleibende funktionale Unterschied
+(garantiert taufrische Live-Daten vs. ggf. veralteter Report) bestätigt
+diesen Konflikt. Nutzer hat auf Rückfrage entschieden: nur
+`admin.html`/`metadata.html` umsetzen, `library.html` unangetastet
+lassen. Bleibt offen für einen eigenen, gezielten Folge-Task mit
+expliziter Entscheidung, ob der frühere CC-AC-1-Entscheid revidiert
+werden soll.

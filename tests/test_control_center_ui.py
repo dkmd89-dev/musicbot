@@ -781,26 +781,19 @@ async def test_artist_detail_page_repair_job_polls_every_second(client):
 
 
 @pytest.mark.asyncio
-async def test_metadata_page_has_genre_set_panel(client):
+async def test_metadata_page_has_genre_set_hint_block(client):
+    """CC-AC-Cleanup: das Formular wurde durch einen Hinweis-Block mit
+    Deep-Link auf /library ersetzt (kanonisch jetzt im Artist-Kontext,
+    library_artist_detail.html::genre-manage-*). Der Endpunkt selbst
+    (/set-genre) bleibt unveraendert aktiv, nur hier nicht mehr verdrahtet."""
     html = (await client.get("/metadata")).text
 
     assert "Genre setzen" in html
-    assert 'id="genre-set-artist-input"' in html
-    assert 'id="genre-preview-btn"' in html
-    assert 'id="genre-set-content"' in html
-    assert 'id="genre-set-execute-btn" class="small" disabled' in html
-    assert "/genre-preview" in html
-    assert "/set-genre" in html
-
-
-@pytest.mark.asyncio
-async def test_metadata_page_confirm_dialog_mentions_backup_and_files(client):
-    """Master-Prompt Regel 11: verstaendliche Bestaetigung vor der ersten
-    Metadata-Bearbeitungs-Ausfuehrung."""
-    html = (await client.get("/metadata")).text
-
-    assert "wirklich setzen" in html
-    assert "Dateien in der Library" in html
+    assert "Genre-Verwaltung" in html
+    assert 'id="genre-set-artist-input"' not in html
+    assert 'id="genre-preview-btn"' not in html
+    assert 'id="genre-set-execute-btn"' not in html
+    assert '<a href="/library">→ Zu /library (Artist wählen)</a>' in html
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1070,3 +1063,23 @@ async def test_admin_page_has_cross_user_statistics_wiring(client):
     assert "view-stats-btn" in html
     assert "loadUserStatsForAdmin" in html
     assert "data-navidrome-user" in html
+
+
+@pytest.mark.asyncio
+async def test_admin_page_has_library_maintenance_hint_block(client):
+    """CC-AC-Cleanup: die vier vormals dupliziert vorhandenen
+    Library-Maintenance-Formulare (Artist Casing, Legacy Genre Cleanup,
+    Artist umbenennen, Titel bearbeiten) wurden durch einen Hinweis-Block
+    mit Deep-Link auf /library ersetzt (kanonisch jetzt im Artist-Kontext,
+    library_artist_detail.html). Die Endpunkte selbst
+    (admin/maintenance/*) bleiben unveraendert aktiv, nur hier nicht mehr
+    verdrahtet."""
+    html = (await client.get("/admin")).text
+
+    assert "Library-Maintenance" in html
+    assert 'id="mnt-artist-casing-artist"' not in html
+    assert 'id="mnt-legacy-genre-cleanup-artist"' not in html
+    assert 'id="mnt-artist-rename-artist"' not in html
+    assert 'id="mnt-title-edit-artist"' not in html
+    assert "MAINTENANCE_ACTIONS" not in html
+    assert '<a href="/library">→ Zu /library (Artist wählen)</a>' in html
