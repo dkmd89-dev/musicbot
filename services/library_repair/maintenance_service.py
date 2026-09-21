@@ -208,25 +208,30 @@ def album_targets(
     nebenbei einen mit `list_artist_albums()` inkonsistenten
     Symlink-Verzeichnis-Fall schliesst (dessen Verzeichnis-Zweig anders
     als der Datei-Zweig zuvor nicht auf `is_symlink()` prüfte). Bei
-    fehlendem Artist-/Album-Pfad (OSError durch `strict=False`-freies
-    Verhalten unten) oder ungueltiger Pfadform (ValueError) leere
-    Zielmenge - identisches Fehlerbild wie ein schlicht falscher
-    Albumname, kein neuer Fehlerpfad."""
+    fehlendem Artist-/Album-Pfad, ungueltiger Pfadform, zu langem
+    Pfadsegment (`OSError ENAMETOOLONG`) oder einer Symlink-Schleife
+    (`Path.resolve()` wirft dafuer unter Python 3.12 ein `RuntimeError`,
+    kein `OSError` - Adversarial-Review-Fund 2026-09-21, Runde 3: die
+    Runde-2-Fassung deckte nur den `resolve()`-Aufruf selbst ab, nicht
+    die nachfolgenden `is_dir()`/`is_file()`/`rglob()`-Aufrufe, die
+    denselben `OSError` erneut auf demselben zu langen Pfad auswerfen
+    koennen) leere Zielmenge - identisches Fehlerbild wie ein schlicht
+    falscher Albumname, kein neuer Fehlerpfad (HTTP 500 statt 422/200)."""
     root = _library_root(library_root)
     try:
         root_resolved = root.resolve()
         artist_scope = (root / artist).resolve()
         candidate = (root / artist / album).resolve()
-    except (OSError, ValueError):
+        if root_resolved == artist_scope or root_resolved not in artist_scope.parents:
+            return []
+        if artist_scope == candidate or artist_scope not in candidate.parents:
+            return []
+        if candidate.is_dir():
+            return sorted(str(p.relative_to(root_resolved)) for p in candidate.rglob("*.m4a"))
+        if candidate.is_file() and not candidate.is_symlink() and candidate.suffix.lower() == ".m4a":
+            return [str(candidate.relative_to(root_resolved))]
+    except (OSError, ValueError, RuntimeError):
         return []
-    if root_resolved == artist_scope or root_resolved not in artist_scope.parents:
-        return []
-    if artist_scope == candidate or artist_scope not in candidate.parents:
-        return []
-    if candidate.is_dir():
-        return sorted(str(p.relative_to(root_resolved)) for p in candidate.rglob("*.m4a"))
-    if candidate.is_file() and not candidate.is_symlink() and candidate.suffix.lower() == ".m4a":
-        return [str(candidate.relative_to(root_resolved))]
     return []
 
 
