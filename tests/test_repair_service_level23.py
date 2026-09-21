@@ -255,9 +255,12 @@ class TestExecuteLevelRepairArtistScope:
 @pytest.mark.parametrize("case", [L2, L3], ids=["l2", "l3"])
 class TestChangedFilesVsAffectedFiles:
     """ARCH-033-F1 Fix (b): affected_files zaehlt ALLE journalierten
-    Dateien (auch SKIPPED), changed_files NUR tatsaechlich geaenderte
-    (SUCCESS + UNRESOLVED) - affected_files bleibt dabei unveraendert
-    (andere Konsumenten, z. B. control_center/routers/jobs.py)."""
+    Dateien (auch SKIPPED), changed_files NUR tatsaechlich geaenderte:
+    SUCCESS/UNRESOLVED immer, ein SKIPPED-Eintrag zusaetzlich wenn
+    sha256_before != sha256_after (L2-Randfall, siehe
+    test_l2_skipped_entry_with_sha_diff_still_counts_as_changed unten) -
+    affected_files bleibt dabei unveraendert (andere Konsumenten, z. B.
+    control_center/routers/jobs.py)."""
 
     def test_skipped_file_counts_in_affected_but_not_changed(self, case):
         issue_a = _issue(case.issue_code, path="Bausa/Singles/a.m4a", artist="Bausa")

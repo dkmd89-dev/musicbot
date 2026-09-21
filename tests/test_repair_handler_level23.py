@@ -480,7 +480,9 @@ class TestFormatL23ResultErweiterungen:
 
     def test_mixed_run_failed_dominates(self, handler):
         """failed>0 gewinnt immer, auch wenn zusaetzlich success/skipped/
-        unresolved > 0 sind (docs/prompts/arch-033-f1-fix.txt §6)."""
+        unresolved > 0 sind - monotone Prioritaet failed > unresolved >
+        success > skipped > leer (docs/FINDINGS_INDEX.md ARCH-033-F1,
+        docs/LIBRARY_REPAIR.md §12)."""
         result = _result(
             status="FAILED", total=4, success=1, skipped=1, unresolved=1, failed=1,
         )

@@ -530,15 +530,18 @@ async def _execute_level_repair(
 
         affected_files = sorted({e.get("file") for e in entries if e.get("file")})
         # ARCH-033-F1 Fix (b): changed_files zaehlt tatsaechlich geaenderte
-        # Dateien - SUCCESS/UNRESOLVED IMMER, ein SKIPPED-Eintrag NUR wenn
-        # sha256_before != sha256_after (Adversarial-Review-Fund: L2
-        # (apply_level2(), executor.py) markiert pro Issue-Code SKIPPED,
-        # sobald NUR das Zielfeld DIESES Issues unveraendert blieb -
-        # reprocess() laeuft aber immer als volle Pipeline und kann dabei
-        # andere Felder geschrieben haben, siehe
-        # docs/LIBRARY_REPAIR.md §12/§5. Ein reiner Status-Filter wuerde
-        # solche real geschriebenen Dateien unterzaehlen). affected_files
-        # bleibt oben unveraendert (andere Konsumenten, siehe
+        # Dateien - SUCCESS/UNRESOLVED IMMER, jeder andere Status (v. a.
+        # SKIPPED) zusaetzlich wenn sha256_before != sha256_after
+        # (Adversarial-Review-Fund: L2 (apply_level2(), executor.py)
+        # markiert pro Issue-Code SKIPPED, sobald NUR das Zielfeld DIESES
+        # Issues unveraendert blieb - reprocess() laeuft aber immer als
+        # volle Pipeline und kann dabei andere Felder geschrieben haben,
+        # siehe docs/LIBRARY_REPAIR.md §12/§5. Ein reiner Status-Filter
+        # wuerde solche real geschriebenen Dateien unterzaehlen. Der
+        # sha-Vergleich faengt bewusst auch den Randfall FAILED-mit-
+        # fehlgeschlagenem-Rollback ab - korrekt, da die Datei dabei
+        # ebenfalls real veraendert bleibt). affected_files bleibt oben
+        # unveraendert (andere Konsumenten, siehe
         # LevelRepairResult-Docstring-Kommentar).
         def _wrote_to_disk(entry: dict) -> bool:
             if entry.get("status") in (STATUS_SUCCESS, "UNRESOLVED"):

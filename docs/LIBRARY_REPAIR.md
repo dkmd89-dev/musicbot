@@ -305,13 +305,14 @@ UNRESOLVED (für einen reinen Lyrics-/Genre-Fix nicht relevant). Bei
 mehreren Codes pro Datei bleibt `requested_issue=None` → volles
 Pipeline-Verhalten.
 
-> **Reichweite (Nachprüf-Durchgang 2026-09-09, präzisiert nach ARCH-033-F1-
-> Adversarial-Review 2026-09-21):** `apply_level2()` und damit
-> `requested_issue` sind **CLI-only** (`library_repair.py
-> --level METADATA_REPROCESSING` bzw. `--issue <L2-Code>`). Der
+> **Reichweite (Nachprüf-Durchgang 2026-09-09, korrigiert nach ARCH-033-F1-
+> Adversarial-Review 2026-09-21 — die vorherige Fassung dieses Absatzes
+> behauptete fälschlich, `apply_level2()` sei weiterhin CLI-only bzw. der
+> Telegram-Pfad erreiche `requested_issue` nie; beides war falsch und
+> widersprach dem `requested_issue`-Absatz oben):** der
 > SAFE_AUTOMATIC-Telegram-Pfad — „MusicBot Doctor" (`doctor_runner.py::
 > run_safe_automatic_repair()`) und „Repair MusicBot"s globale Aktion
-> (`repair_service.py::execute_safe_automatic_repair()`) — ruft weiterhin
+> (`repair_service.py::execute_safe_automatic_repair()`) — ruft
 > ausschliesslich `--level SAFE_AUTOMATIC --apply` auf; L2-Kandidaten
 > werden dort doppelt ausgeschlossen (Planner-Level-Filter
 > `filter_plan(level="SAFE_AUTOMATIC")` **und** das `l2_requested`-Gate in
@@ -320,12 +321,17 @@ Pipeline-Verhalten.
 > separaten, pro-Artist bestätigten L2/L3-Pfad
 > (`repair_service.py::execute_level2_repair()` →
 > `doctor_runner.py::run_level2_repair()` → `--level
-> METADATA_REPROCESSING --apply`) — dieser erreicht `apply_level2()`
-> absichtlich, `requested_issue` bleibt dabei aber weiterhin `None`
-> (kein Single-Issue-Hint über Telegram). Auch die Telegram-
-> „Reprocessing"-Ansicht erreicht `requested_issue` nicht — sie ruft
-> `process_file()` über `scripts/reprocess_artist_metadata.py` ohne den
-> Parameter (immer `None` → volles Pipeline-Verhalten).
+> METADATA_REPROCESSING --apply`, kein `--issue`-Flag) — dieser erreicht
+> `apply_level2()` absichtlich, genau wie ein manueller CLI-Aufruf mit
+> `--level METADATA_REPROCESSING` ohne `--issue`. `requested_issue` wird
+> in beiden Fällen identisch **pro Datei** aus den Kandidaten-Codes
+> abgeleitet (`executor.py`: `codes[0] if len(codes) == 1 else None`,
+> siehe Absatz oben) — nur der CLI-Flag `--issue` (erzwingt einen
+> einzelnen Code über alle Dateien hinweg) ist über Telegram nicht
+> setzbar. Auch die Telegram-„Reprocessing"-Ansicht erreicht
+> `requested_issue` nicht — sie ruft `process_file()` über
+> `scripts/reprocess_artist_metadata.py` ohne den Parameter (immer
+> `None` → volles Pipeline-Verhalten).
 
 **Option 2a (Nutzer-Entscheidung 2026-09-04):** Der Kern von
 `scripts/reprocess_artist_metadata.py` (`process_file()` + `snapshot()` +
@@ -977,8 +983,9 @@ Journal-Einträge mit `file`-Feld — auch nur berührte, nicht zwingend
 geänderte Dateien, unverändert seit ARCH-033, weiterer Konsument
 `control_center/routers/jobs.py`) additiv `changed_files` — nur Dateien,
 die tatsächlich auf die Platte geschrieben wurden: Status `SUCCESS`/
-`UNRESOLVED` **oder** ein `SKIPPED`-Eintrag mit
-`sha256_before != sha256_after`. Der zweite Fall ist bei L2
+`UNRESOLVED` **oder** jeder andere Status (v. a. `SKIPPED`, aber auch ein
+`FAILED` mit fehlgeschlagenem Rollback) mit
+`sha256_before != sha256_after`. Der `SKIPPED`-Fall ist bei L2
 (`apply_level2()`) nicht selten: `reprocess()` läuft immer als volle
 Pipeline und kann dabei andere Felder geschrieben haben, während das
 Zielfeld genau DIESES Issue-Codes unverändert blieb (Status bleibt dann
