@@ -1,79 +1,210 @@
 {% extends "_base.html" %}
 {% block title %}Library – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>Library</h1>
-  <p class="subtitle">Artists, Alben, Tracks und Mapping-Übersicht.</p>
-
-  <div class="tiles" id="library-kpi-tiles" hidden>
-    <div class="tile"><div class="tile-label">Tracks</div>
-      <div class="tile-value" id="library-kpi-tracks">–</div></div>
-    <div class="tile"><div class="tile-label">Artists</div>
-      <div class="tile-value" id="library-kpi-artists">–</div></div>
-    <div class="tile"><div class="tile-label">Alben</div>
-      <div class="tile-value" id="library-kpi-albums">–</div></div>
-    <div class="tile"><div class="tile-label">Health</div>
-      <div class="tile-value" id="library-kpi-health">–</div>
-      <div class="hint" id="library-kpi-health-status"></div></div>
-  </div>
-
-  <div class="library-dashboard-grid">
-    <section class="panel" id="library-health-panel">
-      <h2>🩺 Library Health</h2>
-      <div id="library-health-content" class="empty-note">Health wird geladen …</div>
-    </section>
-    <section class="panel" id="library-attention-panel">
-      <h2>⚠️ Aufmerksamkeit</h2>
-      <div id="library-attention-content" class="empty-note">Wird geladen …</div>
-    </section>
-  </div>
-
-  <section class="panel">
-    <h2>🎤 Artists</h2>
-    <div class="retry-row" style="text-align: left; margin-top: 0; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px;">
-      <input type="text" id="artist-search" placeholder="🔎 Artist suchen …" style="flex: 1; min-width: 160px;">
-      <select id="artist-sort" style="max-width: 180px;">
-        <option value="name">Sortieren: Name (A–Z)</option>
-        <option value="files">Sortieren: Dateien</option>
-        <option value="albums">Sortieren: Alben</option>
-        <option value="health">Sortieren: Health (hoch → niedrig)</option>
-        <option value="health_asc">Sortieren: Health (niedrig → hoch)</option>
-      </select>
-    </div>
-    <div id="artists-overview-content" class="empty-note">Artists werden geladen …</div>
-  </section>
-
-  <section class="panel">
-    <details id="library-metadata-details">
-      <summary><h2>Library-Metadata</h2></summary>
-      <p class="empty-note">Führt einen vollständigen Library-Scan aus (kann eine Weile dauern) — läuft nicht automatisch, nur auf Klick.</p>
-      <div class="retry-row">
-        <button id="metadata-tracks-btn" class="small">Tracks</button>
-        <button id="metadata-artists-btn" class="small">Artists</button>
-        <button id="metadata-albums-btn" class="small">Albums</button>
-        <button id="metadata-mapping-btn" class="small">Mapping</button>
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="page-title">📚 Library</h1>
+      <div class="text-secondary">
+        Artists, Alben, Tracks und Mapping-Übersicht.
       </div>
-      <div class="retry-row">
-        <label for="metadata-missing-filter" class="hint">Fehlende Metadata (nur Tracks):</label>
-        <select id="metadata-missing-filter">
-          <option value="">— kein Filter —</option>
-          <option value="META_ARTIST_MISSING">Artist fehlt</option>
-          <option value="META_ALBUM_MISSING">Album fehlt</option>
-          <option value="META_ALBUM_ARTIST_MISSING">Album-Artist fehlt</option>
-          <option value="META_TITLE_MISSING">Titel fehlt</option>
-          <option value="META_GENRE_MISSING">Genre fehlt</option>
-          <option value="META_YEAR_MISSING">Jahr fehlt</option>
-          <option value="META_TRACK_NUMBER_MISSING">Tracknummer fehlt</option>
-          <option value="META_ISRC_MISSING">ISRC fehlt</option>
-          <option value="META_MB_RECORDING_MISSING">MusicBrainz Recording-ID fehlt</option>
-          <option value="META_MB_RELEASE_MISSING">MusicBrainz Release-ID fehlt</option>
-          <option value="ARTWORK_MISSING">Cover fehlt</option>
-          <option value="LYRICS_MISSING">Lyrics fehlen</option>
-          <option value="LOUDNESS_TAG_MISSING">Loudness-Tag fehlt</option>
+    </div>
+  </div>
+</div>
+
+<!-- Library KPIs -->
+<div class="row row-cards mb-4" id="library-kpi-tiles" hidden>
+
+  <div class="col-sm-6 col-lg-3">
+    <div class="card tile h-100">
+      <div class="card-body">
+        <div class="text-secondary">Tracks</div>
+        <div class="h1 mb-0" id="library-kpi-tracks">–</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <div class="card tile h-100">
+      <div class="card-body">
+        <div class="text-secondary">Artists</div>
+        <div class="h1 mb-0" id="library-kpi-artists">–</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <div class="card tile h-100">
+      <div class="card-body">
+        <div class="text-secondary">Alben</div>
+        <div class="h1 mb-0" id="library-kpi-albums">–</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <div class="card tile h-100">
+      <div class="card-body">
+        <div class="text-secondary">Health</div>
+        <div class="h1 mb-0" id="library-kpi-health">–</div>
+        <div class="text-secondary mt-1" id="library-kpi-health-status"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Health + Aufmerksamkeit -->
+<div class="row row-cards mb-4">
+
+  <div class="col-lg-6">
+    <div class="card h-100" id="library-health-panel">
+      <div class="card-header">
+        <h3 class="card-title">🩺 Library Health</h3>
+      </div>
+      <div class="card-body">
+        <div id="library-health-content" class="text-secondary">
+          Health wird geladen …
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card h-100" id="library-attention-panel">
+      <div class="card-header">
+        <h3 class="card-title">⚠️ Aufmerksamkeit</h3>
+      </div>
+      <div class="card-body">
+        <div id="library-attention-content" class="text-secondary">
+          Wird geladen …
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Artists -->
+<div class="card mb-4">
+  <div class="card-header">
+    <h2 class="card-title">🎤 Artists</h2>
+  </div>
+
+  <div class="card-body">
+
+    <div class="row g-2 mb-3">
+      <div class="col">
+        <input
+          type="text"
+          id="artist-search"
+          class="form-control"
+          placeholder="🔎 Artist suchen …"
+        >
+      </div>
+
+      <div class="col-auto">
+        <select id="artist-sort" class="form-select">
+          <option value="name">Sortieren: Name (A–Z)</option>
+          <option value="files">Sortieren: Dateien</option>
+          <option value="albums">Sortieren: Alben</option>
+          <option value="health">Sortieren: Health (hoch → niedrig)</option>
+          <option value="health_asc">Sortieren: Health (niedrig → hoch)</option>
         </select>
       </div>
-      <div id="metadata-content" class="empty-note"></div>
-    </details>
-  </section>
+    </div>
+
+    <div id="artists-overview-content" class="text-secondary">
+      Artists werden geladen …
+    </div>
+
+  </div>
+</div>
+
+<!-- Library Metadata -->
+<div class="card mb-4">
+  <details id="library-metadata-details">
+
+    <summary class="card-header" style="cursor: pointer;">
+      <h2 class="card-title">Library-Metadata</h2>
+    </summary>
+
+    <div class="card-body">
+
+      <p class="text-secondary">
+        Führt einen vollständigen Library-Scan aus (kann eine Weile dauern)
+        — läuft nicht automatisch, nur auf Klick.
+      </p>
+
+      <div class="row g-2 mb-3">
+
+        <div class="col-auto">
+          <button id="metadata-tracks-btn" class="btn btn-primary">
+            Tracks
+          </button>
+        </div>
+
+        <div class="col-auto">
+          <button id="metadata-artists-btn" class="btn btn-primary">
+            Artists
+          </button>
+        </div>
+
+        <div class="col-auto">
+          <button id="metadata-albums-btn" class="btn btn-primary">
+            Albums
+          </button>
+        </div>
+
+        <div class="col-auto">
+          <button id="metadata-mapping-btn" class="btn btn-outline-primary">
+            Mapping
+          </button>
+        </div>
+
+      </div>
+
+      <div class="row align-items-center g-2 mb-3">
+
+        <div class="col-auto">
+          <label
+            for="metadata-missing-filter"
+            class="form-label mb-0"
+          >
+            Fehlende Metadata:
+          </label>
+        </div>
+
+        <div class="col-auto">
+          <select
+            id="metadata-missing-filter"
+            class="form-select"
+          >
+            <option value="">— kein Filter —</option>
+            <option value="META_ARTIST_MISSING">Artist fehlt</option>
+            <option value="META_ALBUM_MISSING">Album fehlt</option>
+            <option value="META_ALBUM_ARTIST_MISSING">Album-Artist fehlt</option>
+            <option value="META_TITLE_MISSING">Titel fehlt</option>
+            <option value="META_GENRE_MISSING">Genre fehlt</option>
+            <option value="META_YEAR_MISSING">Jahr fehlt</option>
+            <option value="META_TRACK_NUMBER_MISSING">Tracknummer fehlt</option>
+            <option value="META_ISRC_MISSING">ISRC fehlt</option>
+            <option value="META_MB_RECORDING_MISSING">MusicBrainz Recording-ID fehlt</option>
+            <option value="META_MB_RELEASE_MISSING">MusicBrainz Release-ID fehlt</option>
+            <option value="ARTWORK_MISSING">Cover fehlt</option>
+            <option value="LYRICS_MISSING">Lyrics fehlen</option>
+            <option value="LOUDNESS_TAG_MISSING">Loudness-Tag fehlt</option>
+          </select>
+        </div>
+
+      </div>
+
+      <div id="metadata-content" class="text-secondary"></div>
+
+    </div>
+
+  </details>
+</div>
 {% endblock %}
 
 {% block scripts %}
