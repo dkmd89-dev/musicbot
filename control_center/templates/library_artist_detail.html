@@ -477,7 +477,7 @@
       }
       resultEl.innerHTML =
         `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>` +
-        `<p class="hint">Nur der Album-Tag (©alb) wurde geschrieben — der Alben-Eintrag oben zeigt weiterhin den Verzeichnisnamen und bleibt auch nach einem Neuscan unverändert (©alb wird dort nicht angezeigt).</p>`;
+        `<p class="hint">Nur der Album-Tag (©alb) wurde geschrieben — der Alben-Eintrag oben zeigt weiterhin den Verzeichnisnamen und bleibt unverändert; die Track-Liste unten übernimmt den neuen Wert erst nach einem Neuscan.</p>`;
       await loadAlbumEditPreview();
     } catch (err) {
       resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;

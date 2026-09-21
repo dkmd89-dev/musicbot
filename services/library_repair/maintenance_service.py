@@ -187,27 +187,46 @@ def album_targets(
     Single individuell statt den gesamten Singles-Ordner als einen
     gemeinsamen Bulk-Kontext, Auftrag §24 bleibt dadurch respektiert).
 
-    Defense-in-Depth (Adversarial-Review-Fund 2026-09-21, CC-AC-3): seit
+    Defense-in-Depth (Adversarial-Review-Fund 2026-09-21, CC-AC-3, Runde 2
+    nach fehlgeschlagenem Blacklist-Versuch der Runde 1 - ".", "./",
+    ".//." umgingen `".." in Path(album).parts` vollstaendig, da
+    `root/artist/"."` zu `root/artist` kollabiert): seit
     control_center/routers/admin_maintenance.py::album-edit/albumartist-edit
-    ist `album` erstmals direkt per HTTP von einem authentifizierten
-    ADMIN-Client frei waehlbar (der bisherige Telegram-Pfad loest immer
-    ueber resolve_album_by_index() serverseitig gegen eine frisch
-    ermittelte Liste auf, nie aus rohem Nutzertext). Ein Wert wie ".."
-    wuerde ohne diesen Check `root/artist/".."` == `root` ergeben und
-    damit die GESAMTE Library statt nur des Artist-Scopes treffen; ein
-    absoluter Pfad wuerde `relative_to(root)` mit einem unbehandelten
-    ValueError abbrechen (HTTP 500 statt 422). Leere/absolute/".."-
-    haltige Werte werden deshalb wie "nicht gefunden" behandelt (leere
-    Zielmenge) - identisches Fehlerbild wie ein schlicht falscher
+    sind `artist` UND `album` erstmals direkt per HTTP von einem
+    authentifizierten ADMIN-Client frei waehlbar (der bisherige
+    Telegram-Pfad loest immer ueber resolve_album_by_index() serverseitig
+    gegen eine frisch ermittelte Liste auf, nie aus rohem Nutzertext).
+    Statt einzelne Traversal-Muster auszuschliessen (Blacklist, siehe
+    oben - unvollstaendig) wird deshalb eine positive Containment-Pruefung
+    verwendet, identisches Prinzip wie die bestehende
+    `_resolve_within_library()` weiter oben in diesem Modul, hier
+    zweistufig (Artist-Verzeichnis MUSS echt innerhalb der Library liegen,
+    Album-Ziel MUSS echt innerhalb des Artist-Verzeichnisses liegen -
+    "echt" == ungleich UND nicht nur zufaellig namensgleich, schliesst
+    `artist="."`/`""`/`".."` und `album="."`/`".."`/absolute Pfade
+    gleichermassen aus). `Path.resolve()` folgt dabei auch Symlinks, was
+    nebenbei einen mit `list_artist_albums()` inkonsistenten
+    Symlink-Verzeichnis-Fall schliesst (dessen Verzeichnis-Zweig anders
+    als der Datei-Zweig zuvor nicht auf `is_symlink()` prüfte). Bei
+    fehlendem Artist-/Album-Pfad (OSError durch `strict=False`-freies
+    Verhalten unten) oder ungueltiger Pfadform (ValueError) leere
+    Zielmenge - identisches Fehlerbild wie ein schlicht falscher
     Albumname, kein neuer Fehlerpfad."""
-    if not album or Path(album).is_absolute() or ".." in Path(album).parts:
-        return []
     root = _library_root(library_root)
-    candidate = root / artist / album
+    try:
+        root_resolved = root.resolve()
+        artist_scope = (root / artist).resolve()
+        candidate = (root / artist / album).resolve()
+    except (OSError, ValueError):
+        return []
+    if root_resolved == artist_scope or root_resolved not in artist_scope.parents:
+        return []
+    if artist_scope == candidate or artist_scope not in candidate.parents:
+        return []
     if candidate.is_dir():
-        return sorted(str(p.relative_to(root)) for p in candidate.rglob("*.m4a"))
+        return sorted(str(p.relative_to(root_resolved)) for p in candidate.rglob("*.m4a"))
     if candidate.is_file() and not candidate.is_symlink() and candidate.suffix.lower() == ".m4a":
-        return [str(candidate.relative_to(root))]
+        return [str(candidate.relative_to(root_resolved))]
     return []
 
 

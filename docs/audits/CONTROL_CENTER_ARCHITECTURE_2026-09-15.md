@@ -1119,12 +1119,19 @@ Metadata-Management-Schritt 4).
     — manueller Albumname (`©alb`) für den gesamten Album-Scope
     (`artist` + `album` + `new_album`). `album` MUSS ein exakter Wert
     aus `list_artist_albums()`/der artists-overview-Antwort sein — seit
-    dieser Aktion erstmals per HTTP direkt (nicht mehr ausschließlich
-    über die Telegram-seitige `resolve_album_by_index()`) erreichbar,
-    validiert `services/library_repair/maintenance_service.py::
-    album_targets()` seit dem Adversarial-Review-Fund 2026-09-21 defensiv
-    gegen absolute/`..`-haltige Werte (leere Zielmenge statt Traversal
-    über den Artist-Scope hinaus bzw. unbehandeltem 500).
+    dieser Aktion sind `artist` UND `album` erstmals per HTTP direkt
+    (nicht mehr ausschließlich über die Telegram-seitige
+    `resolve_album_by_index()`) erreichbar. `services/library_repair/
+    maintenance_service.py::album_targets()` prüft seit dem
+    Adversarial-Review-Fund 2026-09-21 (Runde 2, nach einer in Runde 1
+    unvollständigen Blacklist — `"."` kollabierte `root/artist/"."` zu
+    `root/artist`) beide Segmente über eine positive
+    Containment-Prüfung (Artist echt innerhalb der Library, Album echt
+    innerhalb des Artist-Verzeichnisses, `Path.resolve()`-basiert wie
+    das bestehende `_resolve_within_library()`) — leere Zielmenge statt
+    Traversal über den Artist-Scope hinaus, statt unbehandeltem 500 bei
+    absoluten Pfaden, und schließt nebenbei einen inkonsistenten
+    Symlink-Verzeichnis-Fall.
   - `albumartist-edit` (nachgezogen CC-AC-3) — manueller Albuminterpret
     (`aART`) für denselben Album-Scope wie `album-edit` (`artist` +
     `album` + `new_album_artist`), ändert nicht `©alb`/`©ART`.

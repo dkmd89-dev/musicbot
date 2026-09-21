@@ -394,17 +394,25 @@ async def test_album_edit_execute_409_when_lock_already_held(client, lib):
 @requires_ffmpeg
 @pytest.mark.asyncio
 async def test_album_edit_rejects_path_traversal_album_value(client, lib):
-    """Security-Regression (Adversarial-Review-Fund 2026-09-21): `album`
-    ist seit CC-AC-3 erstmals per HTTP frei waehlbar (nicht mehr
+    """Security-Regression (Adversarial-Review-Fund 2026-09-21, Runde 2):
+    `album` ist seit CC-AC-3 erstmals per HTTP frei waehlbar (nicht mehr
     ausschliesslich ueber die Telegram-seitige server-validierte
-    resolve_album_by_index()) — ein Wert wie ".." darf NICHT den
-    Artist-Scope verlassen und die gesamte Library treffen."""
-    own = lib / "A" / "2020 - Own Album" / "01 - a.m4a"
-    _m4a(own)
+    resolve_album_by_index()) — kein Wert darf den Artist-Scope
+    verlassen. Runde-1-Fix (Blacklist auf ".." /absolut) wurde in Runde 2
+    per "." umgangen (`root/artist/"."` kollabiert zu `root/artist` =
+    voller Own-Discography-Scope statt nur des gewaehlten Albums) — die
+    Dot-Varianten unten decken genau das ab, nicht nur die Runde-1-Fälle."""
+    own_a = lib / "A" / "2020 - Own Album" / "01 - a.m4a"
+    _m4a(own_a)
+    own_b = lib / "A" / "2021 - Other Own Album" / "01 - c.m4a"
+    _m4a(own_b)
     other = lib / "B" / "2021 - Other Album" / "01 - b.m4a"
     _m4a(other)
 
-    for traversal_album in ("..", "../B/2021 - Other Album", "/etc"):
+    for traversal_album in (
+        "..", "../B/2021 - Other Album", "/etc",
+        ".", "./", ".//.", "Singles/../..",
+    ):
         response = await client.post(
             "/api/v1/admin/maintenance/album-edit/execute",
             json={"artist": "A", "album": traversal_album, "new_album": "Pwned"},
@@ -412,6 +420,36 @@ async def test_album_edit_rejects_path_traversal_album_value(client, lib):
         )
         assert response.status_code == 200, traversal_album
         assert response.json()["success_count"] == 0, traversal_album
+
+    assert MP4(own_a).tags.get("\xa9alb") is None
+    assert MP4(own_b).tags.get("\xa9alb") is None
+    assert MP4(other).tags.get("\xa9alb") is None
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_album_edit_rejects_path_traversal_artist_value(client, lib):
+    """Security-Regression (Adversarial-Review-Fund 2026-09-21, Runde 2):
+    `artist` ist auf diesen beiden neuen Endpunkten ebenfalls erstmals
+    per HTTP frei waehlbar — `artist="."`/`""`/`".."` mit einem
+    passenden `album`-Wert darf nicht die gesamte Library treffen (die
+    vier bereits bestehenden, von diesem PR nicht beruehrten Endpunkte
+    artist-casing/legacy-genre-cleanup/artist-rename/title-edit teilen
+    dieselbe Schwaeche in artist_targets() - das bleibt ein separater,
+    bewusst zurueckgestellter Befund, siehe docs/FINDINGS_INDEX.md)."""
+    own = lib / "A" / "2020 - Own Album" / "01 - a.m4a"
+    _m4a(own)
+    other = lib / "B" / "2021 - Other Album" / "01 - b.m4a"
+    _m4a(other)
+
+    for traversal_artist in (".", "", ".."):
+        response = await client.post(
+            "/api/v1/admin/maintenance/album-edit/execute",
+            json={"artist": traversal_artist, "album": "2021 - Other Album", "new_album": "Pwned"},
+            headers=_SAME_ORIGIN,
+        )
+        assert response.status_code == 200, traversal_artist
+        assert response.json()["success_count"] == 0, traversal_artist
 
     assert MP4(own).tags.get("\xa9alb") is None
     assert MP4(other).tags.get("\xa9alb") is None
@@ -423,13 +461,13 @@ async def test_album_edit_preview_rejects_path_traversal_album_value(client, lib
     other = lib / "B" / "2021 - Other Album" / "01 - b.m4a"
     _m4a(other)
 
-    preview = await client.get(
-        "/api/v1/admin/maintenance/album-edit/preview",
-        params={"artist": "A", "album": "../B/2021 - Other Album", "new_album": "Pwned"},
-    )
-
-    assert preview.status_code == 200
-    assert preview.json()["target_count"] == 0
+    for traversal_album in ("../B/2021 - Other Album", "."):
+        preview = await client.get(
+            "/api/v1/admin/maintenance/album-edit/preview",
+            params={"artist": "A", "album": traversal_album, "new_album": "Pwned"},
+        )
+        assert preview.status_code == 200, traversal_album
+        assert preview.json()["target_count"] == 0, traversal_album
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -502,16 +540,37 @@ async def test_albumartist_edit_execute_409_when_lock_already_held(client, lib):
 @requires_ffmpeg
 @pytest.mark.asyncio
 async def test_albumartist_edit_rejects_path_traversal_album_value(client, lib):
-    """Security-Regression (Adversarial-Review-Fund 2026-09-21) — siehe
-    test_album_edit_rejects_path_traversal_album_value()."""
+    """Security-Regression (Adversarial-Review-Fund 2026-09-21, Runde 2)
+    — siehe test_album_edit_rejects_path_traversal_album_value()."""
     own = lib / "A" / "2020 - Own Album" / "01 - a.m4a"
     _m4a(own, artist="A")
     other = lib / "B" / "2021 - Other Album" / "01 - b.m4a"
     _m4a(other, artist="B")
 
+    for traversal_album in ("../B/2021 - Other Album", "."):
+        response = await client.post(
+            "/api/v1/admin/maintenance/albumartist-edit/execute",
+            json={"artist": "A", "album": traversal_album, "new_album_artist": "Pwned"},
+            headers=_SAME_ORIGIN,
+        )
+        assert response.status_code == 200, traversal_album
+        assert response.json()["success_count"] == 0, traversal_album
+
+    assert MP4(own).tags.get("aART") is None
+    assert MP4(other).tags.get("aART") is None
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_albumartist_edit_rejects_path_traversal_artist_value(client, lib):
+    """Security-Regression (Adversarial-Review-Fund 2026-09-21, Runde 2)
+    — siehe test_album_edit_rejects_path_traversal_artist_value()."""
+    other = lib / "B" / "2021 - Other Album" / "01 - b.m4a"
+    _m4a(other, artist="B")
+
     response = await client.post(
         "/api/v1/admin/maintenance/albumartist-edit/execute",
-        json={"artist": "A", "album": "../B/2021 - Other Album", "new_album_artist": "Pwned"},
+        json={"artist": ".", "album": "2021 - Other Album", "new_album_artist": "Pwned"},
         headers=_SAME_ORIGIN,
     )
 
