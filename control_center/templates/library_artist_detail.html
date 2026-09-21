@@ -83,6 +83,49 @@
     <div id="genre-manage-result-content" class="empty-note"></div>
   </section>
 
+  <section class="panel" id="artist-maintenance-panel" hidden>
+    <h2>🛠 Library-Wartung</h2>
+    <p class="subtitle">Wiederverwendet die bestehenden Maintenance-/Job-Endpunkte
+      (<code>admin/maintenance/artist-casing</code>, <code>admin/maintenance/legacy-genre-cleanup</code>,
+      <code>jobs/repair-level2</code>, <code>jobs/repair-level3</code>) im Kontext dieses Artists — keine
+      neue Ausführungslogik (CC-AC-4, library_artist_centric_UX.txt).</p>
+
+    <h3>🎤 Artist Casing korrigieren</h3>
+    <p class="empty-note">Normalisiert die Groß-/Kleinschreibung von ©ART/ARTISTS gegen das bestehende Mapping (mapping/artist_overrides.json) — identisch zur bestehenden Telegram-Fähigkeit "🧹 Library-Wartung".</p>
+    <div class="retry-row">
+      <button id="artist-casing-preview-btn" class="small">Vorschau laden</button>
+    </div>
+    <div id="artist-casing-content" class="empty-note"></div>
+    <div class="retry-row">
+      <button id="artist-casing-execute-btn" class="small" disabled>Casing korrigieren</button>
+    </div>
+    <div id="artist-casing-result-content" class="empty-note"></div>
+
+    <h3>🧹 Legacy Genre bereinigen</h3>
+    <p class="empty-note">Entfernt veraltete Freeform-Genre-Atome, sofern das kanonische Genre bereits gesetzt ist — identisch zur bestehenden Telegram-Fähigkeit.</p>
+    <div class="retry-row">
+      <button id="legacy-genre-cleanup-preview-btn" class="small">Vorschau laden</button>
+    </div>
+    <div id="legacy-genre-cleanup-content" class="empty-note"></div>
+    <div class="retry-row">
+      <button id="legacy-genre-cleanup-execute-btn" class="small" disabled>Legacy-Atome entfernen</button>
+    </div>
+    <div id="legacy-genre-cleanup-result-content" class="empty-note"></div>
+
+    <h3>🔄 Genre revalidieren</h3>
+    <p class="empty-note" title="Genre-Revalidierung existiert aktuell nur als Telegram-Flow (🧹 Library-Wartung → Genre revalidieren, services/library_repair/genre_revalidation_runner.py) — bewusst kein Control-Center-Endpunkt (library_artist_centric_UX.txt §17), deshalb hier kein Button statt eines toten Endpunkts.">
+      Nicht im Control Center verfügbar — nur in Telegram ("🧹 Library-Wartung → 🔄 Genre revalidieren").
+    </p>
+
+    <h3>🔧 L2 / L3 Reparatur</h3>
+    <p class="empty-note">Läuft als Hintergrund-Job (kann mehrere Minuten dauern) — deckt auch Reprocessing ab (L2 = METADATA_REPROCESSING). Kein Abbrechen-Button: kooperatives Abbrechen ist für diese beiden Job-Typen wirkungslos (control_center/routers/jobs.py), identische Einschränkung wie auf der Repairs-Seite.</p>
+    <div class="retry-row">
+      <button id="repair-l2-btn" class="small">🔧 L2-Reparatur (Metadaten-Reprocessing)</button>
+      <button id="repair-l3-btn" class="small">🔧 L3-Reparatur (MusicBrainz-IDs / ISRC)</button>
+    </div>
+    <div id="artist-repair-job-content" class="empty-note"></div>
+  </section>
+
   <p class="retry-row"><a href="{{ base_path }}/library">◀️ Zurück zu Artists</a></p>
 {% endblock %}
 
@@ -619,16 +662,227 @@
   document.getElementById("genre-manage-preview-btn").addEventListener("click", loadGenreManagePreview);
   document.getElementById("genre-manage-execute-btn").addEventListener("click", executeGenreManage);
 
+  // Library-Wartung (CC-AC-4, library_artist_centric_UX.txt) - reine
+  // Verdrahtung der bereits produktiven Endpunkte aus
+  // admin_maintenance.py (Artist-Casing, Legacy-Genre-Cleanup, identisches
+  // Preview->Diff->Confirmation->Execution-Muster wie oben/admin.html) und
+  // jobs.py (L2/L3, identisches Confirm->Start->1s-Polling-Muster wie
+  // repairs.html::startLevel23Job()/_pollLevel23Job()) - hier mit
+  // implizitem artist=currentArtistFromPath() statt Freitextfeld bzw.
+  // Artist-Auswahl aus einer Plan-Liste. Keine neue Ausfuehrungslogik.
+
+  // -- Artist Casing korrigieren -------------------------------------------
+
+  async function loadArtistCasingPreview() {
+    const artist = currentArtistFromPath();
+    document.getElementById("artist-casing-execute-btn").disabled = true;
+    document.getElementById("artist-casing-result-content").innerHTML = "";
+    const params = new URLSearchParams({ artist }).toString();
+    await _loadInto(
+      "artist-casing-content",
+      `/api/v1/admin/maintenance/artist-casing/preview?${params}`,
+      (el, body) => renderMetadataEditPreview(el, body, "artist-casing-execute-btn"),
+    );
+  }
+
+  async function executeArtistCasing() {
+    const artist = currentArtistFromPath();
+    const confirmed = window.confirm(
+      `Artist-Casing für "${artist}" wirklich korrigieren?\n\n` +
+      `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+      `aber es werden tatsächlich Dateien in der Library verändert.`
+    );
+    if (!confirmed) return;
+
+    const execBtn = document.getElementById("artist-casing-execute-btn");
+    const resultEl = document.getElementById("artist-casing-result-content");
+    execBtn.disabled = true;
+    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    try {
+      const params = new URLSearchParams({ artist }).toString();
+      const res = await fetch(apiUrl(`/api/v1/admin/maintenance/artist-casing/execute?${params}`), {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      const body = await res.json();
+      if (!res.ok) {
+        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        return;
+      }
+      resultEl.innerHTML = `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>`;
+      await loadArtistCasingPreview();
+    } catch (err) {
+      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+    } finally {
+      execBtn.disabled = false;
+    }
+  }
+
+  document.getElementById("artist-casing-preview-btn").addEventListener("click", loadArtistCasingPreview);
+  document.getElementById("artist-casing-execute-btn").addEventListener("click", executeArtistCasing);
+
+  // -- Legacy Genre bereinigen ----------------------------------------------
+
+  async function loadLegacyGenreCleanupPreview() {
+    const artist = currentArtistFromPath();
+    document.getElementById("legacy-genre-cleanup-execute-btn").disabled = true;
+    document.getElementById("legacy-genre-cleanup-result-content").innerHTML = "";
+    const params = new URLSearchParams({ artist }).toString();
+    await _loadInto(
+      "legacy-genre-cleanup-content",
+      `/api/v1/admin/maintenance/legacy-genre-cleanup/preview?${params}`,
+      (el, body) => renderMetadataEditPreview(el, body, "legacy-genre-cleanup-execute-btn"),
+    );
+  }
+
+  async function executeLegacyGenreCleanup() {
+    const artist = currentArtistFromPath();
+    const confirmed = window.confirm(
+      `Legacy-Genre-Atome für "${artist}" wirklich entfernen?\n\n` +
+      `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+      `aber es werden tatsächlich Dateien in der Library verändert.`
+    );
+    if (!confirmed) return;
+
+    const execBtn = document.getElementById("legacy-genre-cleanup-execute-btn");
+    const resultEl = document.getElementById("legacy-genre-cleanup-result-content");
+    execBtn.disabled = true;
+    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    try {
+      const params = new URLSearchParams({ artist }).toString();
+      const res = await fetch(apiUrl(`/api/v1/admin/maintenance/legacy-genre-cleanup/execute?${params}`), {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      const body = await res.json();
+      if (!res.ok) {
+        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        return;
+      }
+      resultEl.innerHTML = `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>`;
+      await loadLegacyGenreCleanupPreview();
+    } catch (err) {
+      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+    } finally {
+      execBtn.disabled = false;
+    }
+  }
+
+  document.getElementById("legacy-genre-cleanup-preview-btn").addEventListener("click", loadLegacyGenreCleanupPreview);
+  document.getElementById("legacy-genre-cleanup-execute-btn").addEventListener("click", executeLegacyGenreCleanup);
+
+  // -- L2 / L3 Reparatur (Job, dieser Artist) --------------------------------
+  // Identisches Muster wie repairs.html::startLevel23Job()/
+  // _pollLevel23Job()/_renderLevel23JobStatus() - dort Artist-Auswahl aus
+  // einer scangestuetzten Plan-Liste, hier fester Artist-Kontext dieser
+  // Seite. Eigener Timer/Job-Id-State (kein Namenskonflikt mit repairs.html,
+  // da separate Seite/Template).
+
+  const _ARTIST_REPAIR_LEVEL_LABELS = {
+    l2: "L2 (Neuverarbeitung — volle Metadaten-Pipeline erneut)",
+    l3: "L3 (MusicBrainz — Netzwerk, kann pro Datei fehlschlagen)",
+  };
+
+  let _artistRepairJobPollTimer = null;
+  let _artistRepairJobId = null;
+
+  function _stopArtistRepairJobPolling() {
+    if (_artistRepairJobPollTimer) { clearInterval(_artistRepairJobPollTimer); _artistRepairJobPollTimer = null; }
+  }
+
+  function _setArtistRepairButtonsDisabled(disabled) {
+    document.getElementById("repair-l2-btn").disabled = disabled;
+    document.getElementById("repair-l3-btn").disabled = disabled;
+  }
+
+  function _renderArtistRepairJobStatus(job) {
+    const el = document.getElementById("artist-repair-job-content");
+
+    if (job.status === "PENDING" || job.status === "RUNNING") {
+      el.innerHTML = `<p class="empty-note">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%) — ${_escapeHtml(job.message || "")}</p>`;
+      return;
+    }
+
+    _stopArtistRepairJobPolling();
+    _setArtistRepairButtonsDisabled(false);
+    const r = job.result || {};
+
+    if (job.status === "SUCCEEDED") {
+      if (r.status === "SKIPPED" || r.total === 0) {
+        el.innerHTML = `<p><span class="dot dot-ok"></span>Keine offenen ${_escapeHtml(_ARTIST_REPAIR_LEVEL_LABELS[r.level] || "")}-Befunde (mehr) vorhanden.</p>`;
+        return;
+      }
+      el.innerHTML = `<p><span class="dot dot-ok"></span>${_escapeHtml(r.level || "")} abgeschlossen: ` +
+        `${r.success} erfolgreich, ${r.skipped} übersprungen, ${r.failed} fehlgeschlagen, ` +
+        `${r.resolved_count} Finding(s) verifiziert behoben, ${(r.affected_files || []).length} Datei(en) geändert.</p>`;
+    } else {
+      el.innerHTML = `<p><span class="dot dot-error"></span>Fehlgeschlagen: ${_escapeHtml(job.error || "Unbekannter Fehler")}</p>`;
+    }
+  }
+
+  async function _pollArtistRepairJob(jobId) {
+    try {
+      const res = await fetch(apiUrl(`/api/v1/jobs/${encodeURIComponent(jobId)}`), { credentials: "same-origin" });
+      if (res.status === 401) { showOnly("login-view"); _stopArtistRepairJobPolling(); return; }
+      if (!res.ok) return;
+      _renderArtistRepairJobStatus(await res.json());
+    } catch (err) {}
+  }
+
+  async function startArtistRepairJob(level) {
+    const artist = currentArtistFromPath();
+    const confirmed = window.confirm(
+      `${_ARTIST_REPAIR_LEVEL_LABELS[level]} wirklich starten für "${artist}"?\n\n` +
+      `Kann einige Minuten dauern. Mit Backup abgesichert — aber es werden tatsächlich Dateien in der Library verändert.` +
+      (level === "l3" ? "\n\nL3 ruft MusicBrainz auf — einzelne Dateien können bei Netzwerk-/Rate-Limit-Fehlern fehlschlagen." : "")
+    );
+    if (!confirmed) return;
+
+    _setArtistRepairButtonsDisabled(true);
+    document.getElementById("artist-repair-job-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
+
+    try {
+      const res = await fetch(apiUrl(`/api/v1/jobs/repair-level${level === "l2" ? "2" : "3"}`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ artist }),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        window.alert("Fehler: " + (body && body.error ? body.error.message : res.status));
+        _setArtistRepairButtonsDisabled(false);
+        return;
+      }
+      const job = await res.json();
+      _artistRepairJobId = job.job_id;
+      _renderArtistRepairJobStatus(job);
+      _stopArtistRepairJobPolling();
+      _artistRepairJobPollTimer = setInterval(() => _pollArtistRepairJob(_artistRepairJobId), 1000);
+    } catch (err) {
+      window.alert("Netzwerkfehler: " + err.message);
+      _setArtistRepairButtonsDisabled(false);
+    }
+  }
+
+  document.getElementById("repair-l2-btn").addEventListener("click", () => startArtistRepairJob("l2"));
+  document.getElementById("repair-l3-btn").addEventListener("click", () => startArtistRepairJob("l3"));
+
   function initPage() {
     checkAuth().then((who) => {
       if (!who) return;
-      // Buttons nur sichtbar fuer Admin (Auftrag CC-AC-2-Scope) - die
+      // Buttons nur sichtbar fuer Admin (Auftrag CC-AC-2-Scope, fuer die
+      // Library-Wartung identisch fortgesetzt CC-AC-4-Scope) - die
       // zugrundeliegenden Endpunkte sind ohnehin serverseitig auf
       // AccessLevel.ADMIN gegated (Master-Prompt Regel 30, kein reiner
       // UI-Check als alleiniger Schutz), dies ist zusaetzlich die
       // sichtbare UX-Schranke.
       const isAdmin = who.access_level === "ADMIN" || who.access_level === "OWNER";
       document.getElementById("artist-metadata-edit-panel").hidden = !isAdmin;
+      document.getElementById("artist-maintenance-panel").hidden = !isAdmin;
       loadArtistDetail();
     });
   }
