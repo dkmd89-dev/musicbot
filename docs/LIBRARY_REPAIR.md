@@ -748,6 +748,18 @@ scripts/
                              CLI-Einstiegspunkt statt drei separater Scripts
 ```
 
+**Containment (CC-AC-6, 2026-09-21):** `maintenance_service.py::
+_resolve_within(base_path, candidate, *, must_exist=True)` ist der
+gemeinsame Helper für alle Control-Center-Endpunkte dieses Abschnitts —
+positive `Path.resolve()`-Containment-Prüfung statt Blacklist, liefert
+`None` statt zu werfen. `artist_targets()`/`album_targets()` nutzen ihn
+zur Auflösung von `artist`/`album`; `title-edit`s `rel_path` (root-
+relativ, wie `artist_targets()`s Rückgabeformat) wird zusätzlich über
+`_title_edit_targets()` gegen das aufgelöste Artist-Verzeichnis
+geprüft, damit ein fremder Artist-Präfix nicht akzeptiert wird. Bei
+Verletzung jeweils leere Zielmenge, siehe `docs/FINDINGS_INDEX.md`
+(vormals P1, jetzt CLOSED).
+
 **Verifikation:** `tags_fingerprint()` (SHA-256 über alle Nicht-Ziel-Atome)
 beweist zusätzlich zu Ziel-Atom-Werten und Audio-Essenz-MD5, dass NUR die
 beabsichtigten Atome verändert wurden — strenger als das bisherige

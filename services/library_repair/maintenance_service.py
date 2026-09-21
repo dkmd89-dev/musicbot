@@ -105,17 +105,73 @@ def _mapping_dir(mapping_dir: Optional[Path]) -> Path:
     return Path(mapping_dir) if mapping_dir is not None else Path(Config.GENRE_MAPPING_DIR)
 
 
+def _resolve_within(
+    base_path: Path, candidate: str, *, must_exist: bool = True,
+) -> Optional[Path]:
+    """Generalisierter Containment-Helper (CC-AC-6) — verallgemeinert die
+    zweistufige positive Containment-Pruefung, die album_targets() seit
+    CC-AC-3 (Commits bfb3529/8785c58/0ce1860) fuer `artist`+`album`
+    verwendet, zu einem einzelnen wiederverwendbaren Aufruf. Loest
+    `candidate` relativ zu `base_path` auf und liefert das Ergebnis NUR,
+    wenn es ECHT innerhalb von `base_path` liegt (ungleich `base_path`
+    selbst UND `base_path` ein echter Vorfahre) — positive Pruefung statt
+    Blacklist (Runde 1 scheiterte an "."/"./"/".//.": `root/artist/"."`
+    kollabiert zu `root/artist`).
+
+    Liefert None statt zu werfen, wenn:
+      - `candidate` leer/kein String/ein absoluter Pfad ist
+      - das aufgeloeste Ergebnis ausserhalb bzw. gleich `base_path` ist
+      - `Path.resolve()` an OSError/ValueError/RuntimeError scheitert
+        (Symlink-Schleife -> RuntimeError unter Python 3.12,
+        ENAMETOOLONG -> OSError, Runde 3)
+      - `must_exist=True` (Default) und das Ergebnis nicht existiert
+
+    Prueft NICHT, ob das Ergebnis eine Datei oder ein Verzeichnis ist -
+    das bleibt Aufgabe der Aufrufer (artist_targets()/album_targets()/
+    title-edit-Pfad). Wirft NIE nach aussen."""
+    if not isinstance(candidate, str) or not candidate:
+        return None
+    if Path(candidate).is_absolute():
+        return None
+    try:
+        base_resolved = base_path.resolve()
+        target = (base_path / candidate).resolve()
+        if base_resolved == target or base_resolved not in target.parents:
+            return None
+        if must_exist and not target.exists():
+            return None
+    except (OSError, ValueError, RuntimeError):
+        return None
+    return target
+
+
 def artist_targets(artist: str, *, library_root: Optional[Path] = None) -> list[str]:
     """Relative .m4a-Pfade unter <library>/<artist>/ — identische
     Semantik zu scripts/fix_artist_casing.py::collect_targets()
     (--artist-Zweig). Das Verzeichnis ist AUSSCHLIESSLICH der Datei-Scope
     (welche Dateien werden betrachtet) — die tatsächliche Aenderung ist
-    tag-wert-getrieben, nicht verzeichnisname-getrieben (ARCH-031 B.8)."""
+    tag-wert-getrieben, nicht verzeichnisname-getrieben (ARCH-031 B.8).
+
+    Containment-Haertung (CC-AC-6, Adversarial-Review-Fund CC-AC-3 Runde
+    3): `artist` ist seit den vier bereits vor CC-AC-3 gemergten
+    Control-Center-Endpunkten (artist-casing/legacy-genre-cleanup/
+    artist-rename/title-edit) per HTTP frei waehlbar. Vor diesem Fix
+    kollabierte `root/"."` zu `root` selbst (`artist="."` traf die
+    GESAMTE Library) und `root/".."` verliess die Library-Wurzel
+    (`artist=".."`). `_resolve_within()` nutzt dieselbe positive
+    Containment-Pruefung wie album_targets(), bei Verletzung leere
+    Zielmenge - identisches Fehlerbild wie ein unbekannter Artist."""
     root = _library_root(library_root)
-    artist_dir = root / artist
-    if not artist_dir.is_dir():
+    artist_dir = _resolve_within(root, artist)
+    if artist_dir is None:
         return []
-    return sorted(str(p.relative_to(root)) for p in artist_dir.rglob("*.m4a"))
+    try:
+        root_resolved = root.resolve()
+        if not artist_dir.is_dir():
+            return []
+        return sorted(str(p.relative_to(root_resolved)) for p in artist_dir.rglob("*.m4a"))
+    except (OSError, ValueError, RuntimeError):
+        return []
 
 
 def resolve_track_by_index(
@@ -216,16 +272,20 @@ def album_targets(
     die nachfolgenden `is_dir()`/`is_file()`/`rglob()`-Aufrufe, die
     denselben `OSError` erneut auf demselben zu langen Pfad auswerfen
     koennen) leere Zielmenge - identisches Fehlerbild wie ein schlicht
-    falscher Albumname, kein neuer Fehlerpfad (HTTP 500 statt 422/200)."""
+    falscher Albumname, kein neuer Fehlerpfad (HTTP 500 statt 422/200).
+
+    Seit CC-AC-6 auf den gemeinsamen `_resolve_within()`-Helper umgestellt
+    (reiner Refactor, siehe artist_targets()) - dieselbe zweistufige
+    Pruefung wie zuvor, nur nicht mehr lokal dupliziert."""
     root = _library_root(library_root)
+    artist_dir = _resolve_within(root, artist)
+    if artist_dir is None:
+        return []
+    candidate = _resolve_within(artist_dir, album)
+    if candidate is None:
+        return []
     try:
         root_resolved = root.resolve()
-        artist_scope = (root / artist).resolve()
-        candidate = (root / artist / album).resolve()
-        if root_resolved == artist_scope or root_resolved not in artist_scope.parents:
-            return []
-        if artist_scope == candidate or artist_scope not in candidate.parents:
-            return []
         if candidate.is_dir():
             return sorted(str(p.relative_to(root_resolved)) for p in candidate.rglob("*.m4a"))
         if candidate.is_file() and not candidate.is_symlink() and candidate.suffix.lower() == ".m4a":
@@ -606,18 +666,57 @@ def execute_artist_rename(
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def _title_edit_targets(
+    artist: str, rel_path: str, *, library_root: Optional[Path] = None,
+) -> list[str]:
+    """Bindet title-edit's `rel_path` an den ueber `artist` aufgeloesten
+    Artist-Scope (CC-AC-6, Adversarial-Review-Fund CC-AC-3 Runde 3:
+    `rel_path` hatte zuvor KEINE Artist-Bindung - `artist="A"` +
+    `rel_path="AndererArtist/Album/01.m4a"` schrieb erfolgreich bei einem
+    fremden Artist, da `rel_path` bis dahin direkt und ungeprueft an
+    apply_title_edit() durchgereicht wurde).
+
+    `rel_path` ist wie bei artist_targets()/resolve_track_by_index()
+    IMMER relativ zur Library-WURZEL (z. B. "Bausa/Singles/a.m4a", aus
+    GET /api/v1/library/tracks kopiert) - NICHT relativ zum
+    Artist-Verzeichnis. Die Artist-Bindung erfolgt deshalb zweistufig:
+    (1) `artist` wird ueber `_resolve_within()` gegen die Library-Wurzel
+    aufgeloest, (2) `rel_path` wird ueber `_resolve_within()` ebenfalls
+    gegen die Library-WURZEL aufgeloest und danach zusaetzlich geprueft,
+    dass das Ergebnis echt innerhalb des Artist-Verzeichnisses aus (1)
+    liegt. Bei Verletzung leere Zielmenge - identisches Fehlerbild wie
+    ein unbekannter Track, kein Fehler nach aussen."""
+    root = _library_root(library_root)
+    artist_dir = _resolve_within(root, artist)
+    if artist_dir is None or not artist_dir.is_dir():
+        return []
+    track_path = _resolve_within(root, rel_path)
+    if track_path is None:
+        return []
+    try:
+        if artist_dir == track_path or artist_dir not in track_path.parents:
+            return []
+        root_resolved = root.resolve()
+        if not track_path.is_file():
+            return []
+        return [str(track_path.relative_to(root_resolved))]
+    except (OSError, ValueError, RuntimeError):
+        return []
+
+
 def preview_title_edit(
     artist: str, rel_path: str, new_title: str, *,
     library_root: Optional[Path] = None,
 ) -> MaintenancePreview:
     new_title = _validate_manual_value(new_title, label="Titel")
+    targets = _title_edit_targets(artist, rel_path, library_root=library_root)
     journal = RepairJournal(journal_path())  # nie geflusht -> read-only
     outcomes = apply_title_edit(
-        [rel_path], _library_root(library_root), journal,
+        targets, _library_root(library_root), journal,
         new_title=new_title, dry_run=True,
     )
     return MaintenancePreview(
-        action=ACTION_TITLE_EDIT, artist=artist, target_count=1, outcomes=outcomes,
+        action=ACTION_TITLE_EDIT, artist=artist, target_count=len(targets), outcomes=outcomes,
     )
 
 
@@ -630,15 +729,16 @@ def execute_title_edit(
     try:
         started_at = now_iso()
         run_id = str(uuid.uuid4())
+        targets = _title_edit_targets(artist, rel_path, library_root=library_root)
         journal = RepairJournal(journal_path())
         outcomes = apply_title_edit(
-            [rel_path], _library_root(library_root), journal,
+            targets, _library_root(library_root), journal,
             new_title=new_title, dry_run=False,
         )
         journal.flush()
         result = _run_result_from_outcomes(
             run_id=run_id, action=ACTION_TITLE_EDIT, artist=artist,
-            started_at=started_at, target_count=1,
+            started_at=started_at, target_count=len(targets),
             outcomes=outcomes, dry_run=False,
         )
         _record_run(

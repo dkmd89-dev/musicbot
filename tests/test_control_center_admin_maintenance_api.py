@@ -145,6 +145,36 @@ async def test_artist_casing_execute_rejected_without_origin_header(client, lib,
     assert MP4(p).tags["\xa9ART"] == ["bausa"]
 
 
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_artist_casing_execute_rejects_path_traversal_artist_value(client, lib, mapping_dir):
+    """Security-Regression (CC-AC-6, P1-Fund aus CC-AC-3 Runde 3): vor
+    diesem Fix traf `artist="."` ueber artist_targets() die GESAMTE
+    Library (bestaetigter destruktiver Live-Schreibzugriff, siehe
+    docs/FINDINGS_INDEX.md) - `POST .../legacy-genre-cleanup/execute?
+    artist=.` entfernte das Legacy-Genre-Atom bei ALLEN Artists einer
+    Testbibliothek. Dieselbe Schwaeche galt fuer artist-casing/
+    artist-rename/title-edit, da alle vier artist_targets() teilen."""
+    own = lib / "A" / "Singles" / "a.m4a"
+    _m4a(own, artist="a")
+    other = lib / "Other" / "Singles" / "b.m4a"
+    _m4a(other, artist="other")
+    (mapping_dir / "artist_overrides.json").write_text(
+        json.dumps({"a": "A", "other": "Other"}), encoding="utf-8",
+    )
+
+    for traversal_artist in (".", "..", "", "/etc", "a/../../b"):
+        response = await client.post(
+            "/api/v1/admin/maintenance/artist-casing/execute",
+            params={"artist": traversal_artist}, headers=_SAME_ORIGIN,
+        )
+        assert response.status_code == 200, traversal_artist
+        assert response.json()["success_count"] == 0, traversal_artist
+
+    assert MP4(own).tags["\xa9ART"] == ["a"]
+    assert MP4(other).tags["\xa9ART"] == ["other"]
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # legacy-genre-cleanup
 # ─────────────────────────────────────────────────────────────────────────
@@ -170,6 +200,33 @@ async def test_legacy_genre_cleanup_preview_and_execute(client, lib):
     assert response.status_code == 200
     assert response.json()["status"] == "SUCCESS"
     assert MP4(p).tags.get("----:com.apple.iTunes:GENRE") is None
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_legacy_genre_cleanup_execute_rejects_path_traversal_artist_value(client, lib):
+    """Security-Regression (CC-AC-6) — siehe
+    test_artist_casing_execute_rejects_path_traversal_artist_value().
+    Dies ist der konkret reproduzierte Vektor aus
+    docs/FINDINGS_INDEX.md: `artist="."` entfernte vor diesem Fix das
+    Legacy-Genre-Atom bei ALLEN Artists statt nur beim gewaehlten."""
+    own = lib / "Filow" / "Singles" / "a.m4a"
+    _m4a(own, genre="Pop")
+    _set_legacy_genre(own, "Pop")
+    other = lib / "Other" / "Singles" / "b.m4a"
+    _m4a(other, genre="Rock")
+    _set_legacy_genre(other, "Rock")
+
+    for traversal_artist in (".", "..", "", "/etc", "a/../../b"):
+        response = await client.post(
+            "/api/v1/admin/maintenance/legacy-genre-cleanup/execute",
+            params={"artist": traversal_artist}, headers=_SAME_ORIGIN,
+        )
+        assert response.status_code == 200, traversal_artist
+        assert response.json()["success_count"] == 0, traversal_artist
+
+    assert MP4(own).tags.get("----:com.apple.iTunes:GENRE") is not None
+    assert MP4(other).tags.get("----:com.apple.iTunes:GENRE") is not None
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -237,6 +294,29 @@ async def test_artist_rename_execute_409_when_lock_already_held(client, lib):
     assert response.json()["error"]["code"] == "REPAIR_ALREADY_RUNNING"
 
 
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_artist_rename_execute_rejects_path_traversal_artist_value(client, lib):
+    """Security-Regression (CC-AC-6) — siehe
+    test_artist_casing_execute_rejects_path_traversal_artist_value()."""
+    own = lib / "Macloud" / "Singles" / "a.m4a"
+    _m4a(own, artist="Macloud")
+    other = lib / "Other" / "Singles" / "b.m4a"
+    _m4a(other, artist="Other")
+
+    for traversal_artist in (".", "..", "", "/etc", "a/../../b"):
+        response = await client.post(
+            "/api/v1/admin/maintenance/artist-rename/execute",
+            json={"artist": traversal_artist, "new_artist": "Pwned"},
+            headers=_SAME_ORIGIN,
+        )
+        assert response.status_code == 200, traversal_artist
+        assert response.json()["success_count"] == 0, traversal_artist
+
+    assert MP4(own).tags["\xa9ART"] == ["Macloud"]
+    assert MP4(other).tags["\xa9ART"] == ["Other"]
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # title-edit (manueller Zielwert, genau ein Track)
 # ─────────────────────────────────────────────────────────────────────────
@@ -297,6 +377,84 @@ async def test_title_edit_execute_rejected_without_origin_header(client, lib):
 
     assert response.status_code == 403
     assert MP4(p).tags["\xa9nam"] == ["T"]
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_title_edit_execute_rejects_path_traversal_artist_value(client, lib):
+    """Security-Regression (CC-AC-6) — siehe
+    test_artist_casing_execute_rejects_path_traversal_artist_value()."""
+    own = lib / "Bausa" / "Singles" / "a.m4a"
+    _m4a(own)
+    other = lib / "Other" / "Singles" / "b.m4a"
+    _m4a(other)
+
+    for traversal_artist in (".", "..", "", "/etc", "a/../../b"):
+        response = await client.post(
+            "/api/v1/admin/maintenance/title-edit/execute",
+            json={
+                "artist": traversal_artist,
+                "rel_path": "Bausa/Singles/a.m4a",
+                "new_title": "Pwned",
+            },
+            headers=_SAME_ORIGIN,
+        )
+        assert response.status_code == 200, traversal_artist
+        assert response.json()["success_count"] == 0, traversal_artist
+
+    assert MP4(own).tags["\xa9nam"] == ["T"]
+    assert MP4(other).tags["\xa9nam"] == ["T"]
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_title_edit_execute_rejects_rel_path_from_foreign_artist(client, lib):
+    """Security-Regression (CC-AC-6, P1-Fund aus CC-AC-3 Runde 3,
+    docs/FINDINGS_INDEX.md, konkret reproduziert): `artist="A"` +
+    `rel_path="AndererArtist/Album/01.m4a"` schrieb vor diesem Fix
+    erfolgreich bei einem fremden Artist - `rel_path` hatte KEINE
+    Bindung an den gewaehlten `artist`."""
+    own = lib / "A" / "Singles" / "a.m4a"
+    _m4a(own)
+    foreign = lib / "AndererArtist" / "Album" / "01.m4a"
+    _m4a(foreign)
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/title-edit/execute",
+        json={
+            "artist": "A",
+            "rel_path": "AndererArtist/Album/01.m4a",
+            "new_title": "Pwned",
+        },
+        headers=_SAME_ORIGIN,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success_count"] == 0
+    assert MP4(foreign).tags["\xa9nam"] == ["T"]
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_title_edit_execute_rejects_rel_path_outside_library(client, lib, tmp_path):
+    """Security-Regression (CC-AC-6) — `rel_path` darf die Library-Wurzel
+    nicht verlassen, auch nicht relativ ueber `..`."""
+    own = lib / "A" / "Singles" / "a.m4a"
+    _m4a(own)
+    outside = tmp_path / "outside" / "evil.m4a"
+    outside.parent.mkdir(parents=True)
+    _m4a(outside)
+
+    for traversal_rel_path in ("../outside/evil.m4a", str(outside)):
+        response = await client.post(
+            "/api/v1/admin/maintenance/title-edit/execute",
+            json={"artist": "A", "rel_path": traversal_rel_path, "new_title": "Pwned"},
+            headers=_SAME_ORIGIN,
+        )
+        assert response.status_code == 200, traversal_rel_path
+        assert response.json()["success_count"] == 0, traversal_rel_path
+
+    assert MP4(outside).tags["\xa9nam"] == ["T"]
 
 
 # ─────────────────────────────────────────────────────────────────────────
