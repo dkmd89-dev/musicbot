@@ -297,3 +297,124 @@ async def test_title_edit_execute_rejected_without_origin_header(client, lib):
 
     assert response.status_code == 403
     assert MP4(p).tags["\xa9nam"] == ["T"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# album-edit (manueller Zielwert, ©alb) — Manual Metadata Editing v2,
+# CC-AC-3 (library_artist_centric_UX.txt §13/§15)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_album_edit_preview_and_execute(client, lib):
+    p = lib / "Bausa" / "2020 - Old Album" / "01 - a.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["\xa9alb"] = ["Old Album"]
+    a.save()
+
+    preview = await client.get(
+        "/api/v1/admin/maintenance/album-edit/preview",
+        params={"artist": "Bausa", "album": "2020 - Old Album", "new_album": "New Album"},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["changed_count"] == 1
+    assert MP4(p).tags["\xa9alb"] == ["Old Album"]  # Preview veraendert nichts
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/album-edit/execute",
+        json={"artist": "Bausa", "album": "2020 - Old Album", "new_album": "New Album"},
+        headers=_SAME_ORIGIN,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "SUCCESS"
+    assert MP4(p).tags["\xa9alb"] == ["New Album"]
+    # Artist-/Titel-Tag bleiben unangetastet (Auftrag §15)
+    assert MP4(p).tags["\xa9nam"] == ["T"]
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_album_edit_works_for_single_track_scope(client, lib):
+    """Regression Auftrag §16: Singles-Scope (`"<Singles-Ordner>/<Datei>"`,
+    identisch zu list_artist_albums()) muss ebenfalls ein gueltiger
+    Album-Kontext sein — nicht nur Mehr-Track-Alben."""
+    p = lib / "1986zig" / "Singles" / "a.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["\xa9alb"] = ["Old Single Album"]
+    a.save()
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/album-edit/execute",
+        json={"artist": "1986zig", "album": "Singles/a.m4a", "new_album": "New Single Album"},
+        headers=_SAME_ORIGIN,
+    )
+    assert response.status_code == 200
+    assert response.json()["success_count"] == 1
+    assert MP4(p).tags["\xa9alb"] == ["New Single Album"]
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_album_edit_execute_rejected_without_origin_header(client, lib):
+    p = lib / "Bausa" / "2020 - Old Album" / "01 - a.m4a"
+    _m4a(p)
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/album-edit/execute",
+        json={"artist": "Bausa", "album": "2020 - Old Album", "new_album": "New Album"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "ORIGIN_CHECK_FAILED"
+    assert MP4(p).tags.get("\xa9alb") is None
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# albumartist-edit (manueller Zielwert, aART) — Manual Metadata Editing
+# v2, CC-AC-3 (library_artist_centric_UX.txt §13/§15)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_albumartist_edit_preview_and_execute(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p, artist="Bausa")
+
+    preview = await client.get(
+        "/api/v1/admin/maintenance/albumartist-edit/preview",
+        params={"artist": "Bausa", "album": "2020 - Album X", "new_album_artist": "Various Artists"},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["changed_count"] == 1
+    assert MP4(p).tags.get("aART") is None  # Preview veraendert nichts
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/albumartist-edit/execute",
+        json={"artist": "Bausa", "album": "2020 - Album X", "new_album_artist": "Various Artists"},
+        headers=_SAME_ORIGIN,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "SUCCESS"
+    assert MP4(p).tags["aART"] == ["Various Artists"]
+    # Artist-Tag (©ART) bleibt unangetastet (Auftrag §15)
+    assert MP4(p).tags["\xa9ART"] == ["Bausa"]
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_albumartist_edit_execute_rejected_without_origin_header(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p, artist="Bausa")
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/albumartist-edit/execute",
+        json={"artist": "Bausa", "album": "2020 - Album X", "new_album_artist": "Various Artists"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "ORIGIN_CHECK_FAILED"
+    assert MP4(p).tags.get("aART") is None

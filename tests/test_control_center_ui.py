@@ -542,6 +542,95 @@ async def test_artist_detail_page_confirms_before_write_actions(client):
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Album/Albuminterpret bearbeiten (CC-AC-3, library_artist_centric_UX.txt)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_has_album_edit_buttons(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'id="album-edit-preview-btn"' in html
+    assert 'id="album-edit-execute-btn"' in html
+    assert 'id="albumartist-edit-preview-btn"' in html
+    assert 'id="albumartist-edit-execute-btn"' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_wires_existing_album_edit_endpoints(client):
+    """Auftrag §13/§15 (CC-AC-3): Album bearbeiten ruft ausschliesslich
+    den bestehenden Endpunkt auf, keine neue Ausfuehrungslogik."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "/api/v1/admin/maintenance/album-edit/preview?" in html
+    assert '"/api/v1/admin/maintenance/album-edit/execute"' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_wires_existing_albumartist_edit_endpoints(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert "/api/v1/admin/maintenance/albumartist-edit/preview?" in html
+    assert '"/api/v1/admin/maintenance/albumartist-edit/execute"' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_has_album_pickers_not_free_text_path(client):
+    """Auftrag §63-67 (CC-AC-3): Album-Auswahl per Picker (<select>),
+    kein Freitext-Pfadfeld wie bei "Titel bearbeiten"."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert '<select id="album-edit-album-select">' in html
+    assert '<select id="albumartist-edit-album-select">' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_album_picker_reuses_artists_overview_data(client):
+    """Auftrag §7/§63-67: KEINE neue Datenquelle — der Album-Picker wird
+    aus derselben artists-overview/{artist}-Antwort befuellt, die auch
+    fuer die Alben-/Track-Anzeige laedt (kein zusaetzlicher Fetch)."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "function _artistAlbumOptions(artist, body)" in html
+    assert "_populateAlbumPickers(body)" in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_album_picker_includes_singles(client):
+    """Regression Auftrag §16: Artists mit ausschliesslich Singles
+    (album_directory fehlt) duerfen im Picker nicht leer bleiben —
+    Singles werden individuell aus body.tracks abgeleitet, nicht als
+    ein gemeinsamer Bulk-Kontext."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "t.album_directory" in html
+    assert 't.extension !== ".m4a"' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_album_edit_does_not_navigate_away(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert html.count("window.location.href") == 0
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_reloads_album_preview_after_execute(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert html.count("loadAlbumEditPreview()") >= 2
+    assert html.count("loadAlbumArtistEditPreview()") >= 2
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_album_edit_disables_execute_after_input_changes(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert '["album-edit-album-select", "album-edit-new-album"].forEach' in html
+    assert '["albumartist-edit-album-select", "albumartist-edit-new-albumartist"].forEach' in html
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # GET /metadata — Genre setzen (erste schreibende Metadata-Fähigkeit)
 # ─────────────────────────────────────────────────────────────────────────
 
