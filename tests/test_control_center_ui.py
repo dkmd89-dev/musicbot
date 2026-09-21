@@ -1153,3 +1153,57 @@ async def test_admin_page_has_library_maintenance_hint_block(client):
     assert 'id="mnt-title-edit-artist"' not in html
     assert "MAINTENANCE_ACTIONS" not in html
     assert '<a href="/library">→ Zu /library (Artist wählen)</a>' in html
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# GET /library — Library Dashboard UX (CC-AC-8): Health-KPI, Health-/
+# Attention-Panel, severity-getrennte Attention-Daten, Health-asc-
+# Sortierung.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_library_page_has_health_kpi_tile(client):
+    """CC-AC-8 Schritt 1: vierte KPI-Kachel 'Health' + Status-Label.
+    Nutzt health.score/health.status aus derselben /health/cached-Antwort
+    wie die drei bestehenden Kacheln - keine zusaetzliche Anfrage."""
+    html = (await client.get("/library")).text
+
+    assert 'id="library-kpi-health"' in html
+    assert 'id="library-kpi-health-status"' in html
+
+
+@pytest.mark.asyncio
+async def test_library_page_has_health_and_attention_panels(client):
+    """CC-AC-8 Schritt 2: zwei neue Panels unter der KPI-Zeile, in einem
+    2-Spalten-Grid (Desktop) / untereinander (Mobile)."""
+    html = (await client.get("/library")).text
+
+    assert "library-dashboard-grid" in html
+    assert 'id="library-health-panel"' in html
+    assert 'id="library-attention-panel"' in html
+
+
+@pytest.mark.asyncio
+async def test_library_page_attention_uses_severity_data(client):
+    """CC-AC-8 Schritt 3: Attention liest issues_by_severity (autoritative
+    Quelle) + filtert die Top-Warnungen gegen eine statische
+    _WARNING_CODES-Map (verifiziert gegen services/library_health/
+    issues.py, Severity.WARNING)."""
+    html = (await client.get("/library")).text
+
+    assert "_renderLibraryAttention" in html
+    assert "_renderLibraryHealthSnapshot" in html
+    assert "issues_by_severity" in html
+    assert "_WARNING_CODES" in html
+
+
+@pytest.mark.asyncio
+async def test_library_page_has_health_asc_sort_option(client):
+    """CC-AC-8 Schritt 4: Sortier-Option 'Health (niedrig -> hoch)' plus
+    Comparator. Bestehende health-Option bleibt (hoch -> niedrig)."""
+    html = (await client.get("/library")).text
+
+    assert 'value="health"' in html
+    assert 'value="health_asc"' in html
+    assert "health_asc:" in html  # Comparator-Eintrag

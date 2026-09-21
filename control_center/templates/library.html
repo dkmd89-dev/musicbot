@@ -5,12 +5,26 @@
   <p class="subtitle">Artists, Alben, Tracks und Mapping-Übersicht.</p>
 
   <div class="tiles" id="library-kpi-tiles" hidden>
-    <div class="tile"><div class="tile-label">Artists</div>
-      <div class="tile-value" id="library-kpi-artists">–</div></div>
     <div class="tile"><div class="tile-label">Tracks</div>
       <div class="tile-value" id="library-kpi-tracks">–</div></div>
+    <div class="tile"><div class="tile-label">Artists</div>
+      <div class="tile-value" id="library-kpi-artists">–</div></div>
     <div class="tile"><div class="tile-label">Alben</div>
       <div class="tile-value" id="library-kpi-albums">–</div></div>
+    <div class="tile"><div class="tile-label">Health</div>
+      <div class="tile-value" id="library-kpi-health">–</div>
+      <div class="hint" id="library-kpi-health-status"></div></div>
+  </div>
+
+  <div class="library-dashboard-grid">
+    <section class="panel" id="library-health-panel">
+      <h2>🩺 Library Health</h2>
+      <div id="library-health-content" class="empty-note">Health wird geladen …</div>
+    </section>
+    <section class="panel" id="library-attention-panel">
+      <h2>⚠️ Aufmerksamkeit</h2>
+      <div id="library-attention-content" class="empty-note">Wird geladen …</div>
+    </section>
   </div>
 
   <section class="panel">
@@ -21,7 +35,8 @@
         <option value="name">Sortieren: Name (A–Z)</option>
         <option value="files">Sortieren: Dateien</option>
         <option value="albums">Sortieren: Alben</option>
-        <option value="health">Sortieren: Health</option>
+        <option value="health">Sortieren: Health (hoch → niedrig)</option>
+        <option value="health_asc">Sortieren: Health (niedrig → hoch)</option>
       </select>
     </div>
     <div id="artists-overview-content" class="empty-note">Artists werden geladen …</div>
@@ -72,12 +87,21 @@
   // "alte Routen nicht ungeprueft entfernen").
   let _artistsOverviewCache = [];
 
+  // CC-AC-8 Schritt 3: Health farbig (Option B), Icon je Score-Bereich.
+  // Datei-/Album-Zahlen wandern als Sekundaerinfo neben den Namen;
+  // die rechte Spalte zeigt nur noch den Score als visuellen Anker.
   function _artistRowHtml(a) {
     const href = `${CC_BASE}/library/${encodeURIComponent(a.artist)}`;
+    const hs = a.health_score;
+    const cls = hs >= 90 ? "status-EXCELLENT"
+      : hs >= 70 ? "status-GOOD" : "status-CRITICAL";
+    const icon = hs >= 90 ? "✓" : hs >= 70 ? "⚠" : "✕";
     return `
       <a class="row-item" href="${href}">
-        <div class="row-main">🎤 ${_escapeHtml(a.artist)}<span class="hint" style="margin-left: 8px;">HEALTH ${a.health_score}</span></div>
-        <div class="row-count">${a.file_count} Dateien · ${a.album_count} Alben</div>
+        <div class="row-main">🎤 ${_escapeHtml(a.artist)}
+          <span class="hint" style="margin-left: 8px;">${a.file_count} Tracks · ${a.album_count} Alben</span>
+        </div>
+        <div class="row-count"><span class="${cls}">${hs} ${icon}</span></div>
       </a>
     `;
   }
@@ -91,6 +115,8 @@
     files: (a, b) => b.file_count - a.file_count || a.artist.localeCompare(b.artist),
     albums: (a, b) => b.album_count - a.album_count || a.artist.localeCompare(b.artist),
     health: (a, b) => b.health_score - a.health_score || a.artist.localeCompare(b.artist),
+    // CC-AC-8 Schritt 4: für "welcher Artist ist am schlechtesten?"
+    health_asc: (a, b) => a.health_score - b.health_score || a.artist.localeCompare(b.artist),
   };
 
   function _renderArtistsOverviewList() {
@@ -149,10 +175,173 @@
       document.getElementById("library-kpi-artists").textContent = lib.artists;
       document.getElementById("library-kpi-tracks").textContent = lib.files;
       document.getElementById("library-kpi-albums").textContent = lib.albums;
+
+      // CC-AC-8 Schritt 1: Health-Kachel (Variante B). Nutzt ausschliesslich
+      // den bereits geladenen health.score/health.status aus derselben
+      // Antwort — keine zusätzliche Anfrage, keine Schätzung.
+      // Farb-Klasse je nach Score-Bereich, analog library_artist_detail.html.
+      const _health = body.health || {};
+      const _healthScoreEl = document.getElementById("library-kpi-health");
+      const _healthStatusEl = document.getElementById("library-kpi-health-status");
+      if (typeof _health.score === "number") {
+        _healthScoreEl.textContent = _health.score;
+        const _healthCls = _health.score >= 90 ? "status-EXCELLENT"
+          : _health.score >= 70 ? "status-GOOD" : "status-CRITICAL";
+        _healthScoreEl.classList.add(_healthCls);
+        if (_health.status) _healthStatusEl.textContent = _health.status;
+      } else {
+        // Kein health.score in der Antwort -> Kachel verstecken statt
+        // Wert zu schätzen (CC-AC-7 §5). Restliche 3 KPIs bleiben nutzbar.
+        _healthScoreEl.closest(".tile").hidden = true;
+      }
+
       document.getElementById("library-kpi-tiles").hidden = false;
+
+      // CC-AC-8 Schritt 2: Health-Snapshot + Attention-Block aus derselben
+      // Antwort befüllen — kein zusätzlicher Request.
+      _renderLibraryHealthSnapshot(body);
+      _renderLibraryAttention(body);
     } catch (err) {
-      // Fehlerisolation: KPI-Zeile bleibt ausgeblendet, kein Page-Error.
+      // Fehlerisolation: KPI-Zeile + beide Blöcke bleiben ausgeblendet,
+      // kein Page-Error.
+      document.getElementById("library-health-panel").hidden = true;
+      document.getElementById("library-attention-panel").hidden = true;
     }
+  }
+
+  // CC-AC-8 Schritt 3: Health-Panel kompakter (Option 1).
+  // Die Health-Zahl steht bereits in der KPI-Kachel oben — hier nur noch
+  // Status-Label, Kernzahlen und Stand (aus scan.completed_at, dem
+  // einzigen autoritativen Zeitstempel in /health/cached).
+  function _renderLibraryHealthSnapshot(body) {
+    const el = document.getElementById("library-health-content");
+    const h = body.health || {};
+    const s = body.statistics || {};
+    const scan = body.scan || {};
+    if (typeof h.score !== "number") {
+      document.getElementById("library-health-panel").hidden = true;
+      return;
+    }
+    const cls = h.score >= 90 ? "status-EXCELLENT"
+      : h.score >= 70 ? "status-GOOD" : "status-CRITICAL";
+
+    const summary = (typeof s.total_files === "number")
+      ? `${s.total_files} Tracks · ${s.total_artists} Artists · ${s.total_albums} Alben`
+      : "";
+
+    const stats = [];
+    if (typeof s.healthy_files === "number") stats.push(`✓ ${s.healthy_files} fehlerfrei`);
+    if (typeof s.files_with_warnings === "number") stats.push(`⚠ ${s.files_with_warnings} Warn`);
+    if (typeof s.files_with_errors === "number") stats.push(`✕ ${s.files_with_errors} Error`);
+
+    const stand = scan.completed_at
+      ? `<p class="hint">Stand: ${_escapeHtml(_formatDateTime(scan.completed_at))}</p>` : "";
+
+    el.innerHTML = `
+      <div class="tile-label" style="margin-bottom: 4px;">Status</div>
+      <div class="${cls}" style="font-size: 1.4rem; font-weight: 600;">${_escapeHtml(h.status || "")}</div>
+      ${summary ? `<p class="hint" style="margin-top: 12px;">${summary}</p>` : ""}
+      ${stats.length ? `<p style="margin-top: 8px;">${stats.join(" &nbsp;·&nbsp; ")}</p>` : ""}
+      ${stand}
+      <p style="margin-top: 12px;"><a href="${CC_BASE}/health">→ Health öffnen</a></p>
+    `;
+  }
+
+  // CC-AC-8 Schritt 3: Attention severity-getrennt (Variante A).
+  // Primär aus statistics.issues_by_severity (autoritative Quelle),
+  // Detail-Liste der Warnungen aus statistics.issues_by_code + statischer
+  // WARNING-Codes-Map (erweiterbar, siehe FINDINGS_INDEX).
+  // Keine Schätzung: fehlende Felder werden ausgelassen.
+  // CC-AC-8 Schritt 3 Fix: autoritative Liste aller Severity.WARNING-Codes
+  // aus services/library_health/issues.py (Zeilen 48-199). Bei Ergänzungen
+  // dort mitpflegen. Alle anderen Codes sind Severity.INFO (oder ERROR,
+  // aktuell keiner).
+  const _WARNING_CODES = new Set([
+    "ALBUM_ARTIST_INCONSISTENT",
+    "ALBUM_NAME_INCONSISTENT",
+    "ALBUM_TRACK_GAP",
+    "ARTWORK_MISSING",
+    "AUDIO_LOW_BITRATE",
+    "DUPLICATE_EXACT",
+    "DUPLICATE_RECORDING",
+    "GENRE_EMPTY",
+    "LOUDNESS_TAG_INVALID",
+    "LYRICS_EMPTY",
+    "LYRICS_INVALID",
+    "META_ALBUM_ARTIST_MISSING",
+    "META_ALBUM_MISSING",
+    "META_GENRE_MISSING",
+    "META_TITLE_NOT_CLEAN",
+    "META_YEAR_INVALID",
+    "META_YEAR_MISSING",
+    "MULTI_ARTIST_SUSPICIOUS",
+    "STRUCTURE_FILE_OUTSIDE_HIERARCHY",
+    "STRUCTURE_INVALID_PATH",
+  ]);
+
+  // ISO-String -> "DD.MM.YYYY HH:MM" (lokale Zeit). Fallback: Original-String.
+  function _formatDateTime(iso) {
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ` +
+        `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch (e) { return iso; }
+  }
+
+  function _renderLibraryAttention(body) {
+    const el = document.getElementById("library-attention-content");
+    const s = body.statistics || {};
+    const bySev = s.issues_by_severity || {};
+    const byCode = s.issues_by_code || {};
+
+    const errors = (bySev.ERROR || 0) + (bySev.CRITICAL || 0);
+    const warnings = bySev.WARNING || 0;
+    const infos = bySev.INFO || 0;
+
+    // CC-AC-8 Schritt 4: Empty State — wenn wirklich alles 0 ist,
+    // einen grünen "Keine kritischen Probleme"-Hinweis zeigen statt
+    // drei Null-Zeilen. (Nur bei vollständig leerem Report.)
+    if (errors === 0 && warnings === 0 && infos === 0) {
+      el.innerHTML = '<p class="empty-note empty-note-ok">✓ Keine kritischen Probleme.</p>' +
+        `<p><a href="${CC_BASE}/findings">→ Findings öffnen</a></p>`;
+      return;
+    }
+
+    // CC-AC-8 Schritt 3 Fix: inline-Styles statt CSS-Klassen — die
+    // status-*-Klassen greifen nur auf .tile-value, nicht auf beliebige
+    // <span>. Farben aus den bestehenden CSS-Variablen (--error, --ok,
+    // --muted) plus neu ergänzter --warning für Warnings.
+    const sevRow = (icon, label, n, color) =>
+      `<div class="row-item"><div class="row-main">` +
+      `<span style="display:inline-block;width:1.2em;color:${color};font-weight:600;">${icon}</span>${label}</div>` +
+      `<div class="row-count" style="color:${color};font-weight:600;">${n}</div></div>`;
+
+    const rows = [
+      sevRow("✕", "Errors", errors, "var(--error)"),
+      sevRow("⚠", "Warnings", warnings, "var(--warning)"),
+      sevRow("ℹ", "Infos", infos, "var(--muted)"),
+    ];
+
+    // Top-Warnungen nur, wenn wirklich WARNING-Codes vorhanden sind.
+    const topWarnings = Object.entries(byCode)
+      .filter(([code, n]) => _WARNING_CODES.has(code) && n > 0)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    let detail = "";
+    if (topWarnings.length) {
+      detail = '<p class="hint" style="margin-top: 12px;">Häufigste Warnungen:</p>' +
+        '<div class="row-list">' +
+        topWarnings.map(([code, n]) =>
+          `<div class="row-item"><div class="row-main">${_escapeHtml(code)}</div>` +
+          `<div class="row-count">${n}</div></div>`
+        ).join("") + "</div>";
+    }
+
+    el.innerHTML = '<div class="row-list">' + rows.join("") + '</div>' + detail +
+      `<p><a href="${CC_BASE}/findings">→ Findings öffnen</a></p>`;
   }
 
   // Master-Prompt Abschnitt 7 "METADATA MANAGEMENT" / ui_prompt.txt

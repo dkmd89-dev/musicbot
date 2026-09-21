@@ -12,7 +12,7 @@
 :root {
   --bg: #f7f7f8; --fg: #1a1a1a; --muted: #6b6b6b;
   --card-bg: #ffffff; --border: #e2e2e2; --accent: #2f6fed;
-  --error: #c0392b; --ok: #1f8a4c; --sidebar-bg: #1a1c20; --sidebar-fg: #d8d9dc;
+  --error: #c0392b; --ok: #1f8a4c; --warning: #b8860b; --sidebar-bg: #1a1c20; --sidebar-fg: #d8d9dc;
   --sidebar-width: 220px; --header-height: 52px;
 
   /* Farbpalette für Diagramme */
@@ -25,7 +25,7 @@
   :root {
     --bg: #16171a; --fg: #eaeaea; --muted: #9a9a9a;
     --card-bg: #202226; --border: #3a3d45; --accent: #6ea0ff;
-    --error: #ff6b5e; --ok: #4fd07a; --sidebar-bg: #101114;
+    --error: #ff6b5e; --ok: #4fd07a; --warning: #f5b544; --sidebar-bg: #101114;
 
     /* Angepasste Diagrammfarben für Dark Mode */
     --chart-month: #6ea0ff;
@@ -567,4 +567,32 @@ input[type="text"], input[type="search"], select {
 }
 @media (max-width: 420px) {
   .quick-actions-grid { grid-template-columns: 1fr; }
+}
+
+/* CC-AC-8 Schritt 2: zwei Panels nebeneinander (Desktop), untereinander
+   (Mobile). Bricht bei < 720px auf eine Spalte um. Nutzt die bestehenden
+   .panel-Styles; diese Regel ergänzt nur das Grid. */
+.library-dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+@media (max-width: 720px) {
+  .library-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* CC-AC-8 Schritt 4: dezente Hover-Hervorhebung für klickbare
+   Artist-Zeilen (nicht für Info-Zeilen in den Panels, die keine
+   a.row-item-Links sind). Theme-neutral per rgba. */
+a.row-item:hover {
+  background: rgba(127, 127, 127, 0.08);
+}
+
+/* CC-AC-8 Schritt 4: grüner Empty State für "alles in Ordnung". */
+.empty-note-ok {
+  color: var(--ok);
+  font-weight: 600;
 }
