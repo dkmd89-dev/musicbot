@@ -160,12 +160,15 @@ async def test_page_shows_config_hint_when_bot_username_missing(client, monkeypa
 async def test_overview_contains_kpi_and_summary_elements(client):
     html = (await client.get("/")).text
 
-    assert 'id="health-tiles"' in html
-    assert 'id="navidrome-status"' in html
-    assert 'id="kpi-active-jobs"' in html
-    assert 'id="kpi-open-findings"' in html
+    # PR #285 (0337713) hat das Overview-Dashboard umgebaut:
+    # health-tiles, navidrome-status, kpi-grid und active-jobs-summary
+    # wurden durch die neue System-Status-Bar + 3-Spalten-Statuszeile
+    # ersetzt (kein Bug, beabsichtigtes Redesign).
+    assert 'id="system-status-bar"' in html
+    assert 'id="status-library-value"' in html
+    assert 'id="status-navidrome-value"' in html
+    assert 'id="status-jobs-value"' in html
     assert 'id="attention-panel"' in html
-    assert 'id="active-jobs-summary"' in html
     assert 'id="recent-activity-content"' in html
 
 
@@ -805,16 +808,22 @@ async def test_metadata_page_has_genre_set_hint_block(client):
 async def test_statistics_page_has_all_panels(client):
     html = (await client.get("/statistics")).text
 
-    assert 'id="statistics-content"' in html
-    assert 'id="genre-stats-content"' in html
+    # PR #285 (f3ab155) hat das Statistics-Dashboard umgebaut:
+    # statistics-content/genre-stats-content wurden umbenannt,
+    # die load*-Wrapper durch direkte _loadInto(...)-Aufrufe ersetzt,
+    # renderGenreStats -> renderAllTimeGenres, kpi-header neu.
+    # Kein Bug, beabsichtigtes Redesign.
+    assert 'id="kpi-header"' in html
+    assert 'id="monthly-artists"' in html
+    assert 'id="all-time-genres"' in html
     assert 'id="music-dna-content"' in html
     assert "/api/v1/statistics/me" in html
     assert "/api/v1/statistics/me/genres" in html
     assert "/api/v1/statistics/me/music-dna" in html
-    assert "loadGenreStats" in html
-    assert "loadMusicDna" in html
-    assert "renderGenreStats" in html
+    assert "renderMonthlyArtists" in html
+    assert "renderAllTimeGenres" in html
     assert "renderMusicDna" in html
+    assert "_loadInto(" in html
 
 
 # ─────────────────────────────────────────────────────────────────────────

@@ -123,7 +123,13 @@ async def test_prefixed_active_marker_and_inline_links(client):
     html = (await client.get("/findings", headers=PREFIX_HEADER)).text
     assert f'href="{PREFIX}/findings" class="nav-link active"' in html
     overview = (await client.get("/", headers=PREFIX_HEADER)).text
-    assert f'<a href="{PREFIX}/findings">' in overview
+    # PR #285 (0337713) hat den Inline-Link von <a href>...> auf
+    # <a href=... class="panel-link"> umgestellt — die alte Assertion
+    # war gegen die exakte Link-Form (ohne Attribute) gerichtet und
+    # brach dadurch. Jetzt wird ueber die class="panel-link" geprueft
+    # (stabiler Marker fuer Content-Inline-Links, distinkt von der
+    # Sidebar-Nav mit class="nav-link").
+    assert f'href="{PREFIX}/findings" class="panel-link"' in overview
 
 
 @pytest.mark.asyncio
