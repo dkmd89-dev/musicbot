@@ -1,88 +1,108 @@
-Ja — **genau diese Richtung würde ich jetzt einschlagen**. Und nach der Analyse des aktuellen `main` ist interessant: Ihr habt mit **CC-AC-1 bis CC-AC-7 bereits fast die richtige Grundlage gebaut**. Der nächste Schritt sollte nicht noch mehr einzelne Funktionen auf die Library-Seite packen, sondern die **Interaktionslogik von „Artist → Album → Track → Aktion“ konsequent fertigbauen**.
+CC-AC-9 — Track-Centric Library Actions
 
-[Repository / Control Center auf GitHub](https://github.com/dkmd89-dev/musicbot/tree/main/control_center?utm_source=chatgpt.com)
+Auftrag
 
-## 1. Aktueller Stand
+Entwickle das Control Center der Repository "dkmd89-dev/musicbot" von der bisherigen Artist-/Metadata-orientierten Oberfläche konsequent zu einer objektorientierten Library-Navigation weiter:
 
-Die letzten Commits zeigen eine klare Entwicklung:
+Library → Artist → Album → Track → Detail / Health / Action
 
-- **CC-AC-1:** Artist-zentrierte Library eingeführt.
-- **CC-AC-2:** manual metadata editing v1 in artist context.
-- **CC-AC-3:** manual metadata editing v2 (album/albumartist) in artist context.
-- **CC-AC-4:** Library-Wartung in den Artist-Kontext verschoben.
-- **CC-AC-Cleanup:** doppelte Wartungs-/Metadata-Formulare aus Admin und Metadata entfernt.
-- **CC-AC-7:** Library UI weiter konsolidiert.
-- **CC-AC-8:** Library UI library dashboard UX optimiert.
+Der zentrale UX-Schritt dieses Tickets:
 
-- Zuletzt wurde `library.html` auf eine klarere Informationsarchitektur gebracht: **Library → Artist → Album/Track → gezielte Aktion**. Der Commit `531fb554` beschreibt genau dieses Ziel.
+«Ein Benutzer soll einen Track direkt aus der Library auswählen können und anschließend einen zentralen Track-Kontext mit Informationen, Health/Findings und den bereits vorhandenen Aktionen erhalten.»
 
-Besonders wichtig: Der aktuelle Code verwendet bereits einen persistenten Health-Report für die normale Library-Anzeige, statt beim Seitenaufruf einen ca. 37-Sekunden-Live-Scan auszulösen. Das ist für eine Enterprise-artige Oberfläche eine wichtige Grundlage.
+Die bestehende Backend-/Service-Architektur soll dabei nicht neu erfunden oder umgebaut werden.
 
-Auch `MusicBot_ENGINEERING_BASELINE_v11.md` ist inzwischen auf dem Stand von ARCH-033 und beschreibt den aktuellen Architektur-/Repair-Stand. :chatgpt-content-reference{index="1"}
-     `MusicBot_ENGINEERING_BASELINE_v11.md`
+Dieses Ticket ist primär ein Control-Center-UI/UX- und Integrations-Ticket.
+
 ---
 
-# 2. Was mich an der aktuellen Library noch stört
+1. Zuerst analysieren — noch nichts ändern
 
-Auf deinem Screenshot sieht man das eigentliche Problem sehr gut:
+Bevor du Code änderst, analysiere das Repository und insbesondere:
 
-### Aktuell ungefähr:
+control_center/templates/library.html
+control_center/templates/library_artist_detail.html
+control_center/static/
+control_center/routers/
+control_center/schemas/
+services/
+tests/test_control_center_ui.py
+tests/test_control_center_admin_maintenance_api.py
+tests/test_library_repair_maintenance_service.py
+docs/FINDINGS_INDEX.md
+docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md
+MusicBot_ENGINEERING_BASELINE_v11.md
 
-```text
+Zusätzlich gezielt suchen nach:
+
+- Track-Datenmodellen / Schemas
+- Album-Datenmodellen / Schemas
+- Library-Health-Daten
+- "issue_codes"
+- Track-IDs / Pfade / Identifikatoren
+- bestehenden Track-/Album-Detail-Endpunkten
+- bestehenden Metadata-Edit-Endpunkten
+- bestehenden Preview-/Execute-Flows
+- bestehenden Maintenance-Aktionen
+- bestehenden Drawer-/Modal-/Dialog-Komponenten
+- bestehenden Accessibility-Mustern
+- bestehenden UI-Tests
+- vorhandenen Security-/Containment-Checks
+
+Entscheidende Regel
+
+Erfinde keinen neuen API-Endpunkt, bevor du zweifelsfrei festgestellt hast, dass die benötigten Daten über bestehende Endpunkte nicht verfügbar sind.
+
+Wenn ein bestehender Endpunkt die benötigten Daten bereits liefert:
+
+→ diesen verwenden.
+
+Wenn mehrere bestehende Endpunkte benötigt werden:
+
+→ vorhandene Endpunkte verwenden.
+
+Nur wenn eine Information nachweislich nicht verfügbar ist, darf ein neuer Endpoint als Option vorgeschlagen werden.
+
+Ein neuer Backend-Endpunkt darf in diesem Ticket nicht automatisch implementiert werden.
+
+---
+
+2. Ausgangspunkt
+
+CC-AC-7 hat bereits die Zielrichtung etabliert:
+
 Library
-│
-├── Artists
-│    ├── Artist A
-│    ├── Artist B
-│    └── ...
-│
-└── Library-Metadata
-     ├── Tracks
-     ├── Artists
-     ├── Albums
-     ├── Mapping
-     └── Missing Metadata
-```
-
-Und auf der Artist-Seite:
-
-```text
+   ↓
 Artist
-│
+   ↓
+Album / Track
+   ↓
+gezielte Aktion
+
+Die Library-Hauptseite besitzt bereits:
+
+- KPI-Kacheln
+- Artist-Suche
+- Artist-Sortierung
+- gecachten Library-Health-Report
+- kollabierte Library-Metadata-Funktionen
+
+Die Artist-Detailseite besitzt bereits:
+
+Artist
 ├── Alben
 ├── Tracks
-│
 ├── Metadaten bearbeiten
-│    ├── Artist
-│    ├── Titel
-│    ├── Album
-│    ├── Albuminterpret
-│    └── Genre
-│
 └── Library-Wartung
-     ├── Casing
-     ├── Legacy Genre
-     ├── L2
-     └── L3
-```
 
-Das ist funktional, aber noch **aktionsorientiert statt objektorientiert**.
-
-Der Benutzer denkt eigentlich:
-
-> „Ich sehe diesen Titel. Was kann ich mit diesem Titel machen?“
-
-und nicht:
-
-> „Ich muss zuerst in den Bereich Metadaten gehen und dort das richtige Formular finden.“
+Diese vorhandene Struktur soll jetzt nicht zerstört, sondern logisch weiterentwickelt werden.
 
 ---
 
-# 3. Deine Idee ist deshalb architektonisch sehr sinnvoll
+3. Zielarchitektur
 
-Ich würde die Library auf dieses Modell umstellen:
+Die Zielnavigation lautet:
 
-```text
 LIBRARY
 │
 ├── Search
@@ -93,600 +113,835 @@ LIBRARY
 │       │
 │       ├── Albums
 │       │
+│       │   └── Album
+│       │
 │       └── Tracks
 │           │
 │           └── Track
 │               │
-│               ├── Informationen
+│               ├── Information
 │               ├── Metadata
 │               ├── Health / Findings
-│               └── Aktionen
+│               └── Actions
 │
-└── Library Health
-```
+└── Library Diagnostics
 
-Der entscheidende Punkt:
+Der wichtigste Grundsatz:
 
-## **Metadata ist kein eigener Navigationsbereich mehr.**
+«Metadata ist kein primärer Navigationsbereich mehr, sondern eine Eigenschaft bzw. Aktion eines Library-Objekts.»
 
-Metadata wird eine **Eigenschaft bzw. Aktion eines Library-Objekts**.
-
-Das ist ein großer UX-Unterschied.
+Die bestehende Funktionalität bleibt jedoch erhalten.
 
 ---
 
-# 4. Beispiel für einen Track-Klick
+4. Track-Auswahl
 
-Nehmen wir:
+Auf der Artist-Detailseite sollen Tracks direkt auswählbar werden.
 
-```text
-🎵 03 – Sonne
-Album: Lieblingsalbum
-Artist: Casper
-```
+Beispiel:
 
-Der Track wird anklickbar.
+Tracks
 
-Dann öffnet sich beispielsweise rechts ein **Detail Drawer**:
+▶ 01 – Auf und davon
+   Casper · XOXO
 
-```text
-┌──────────────────────────────────────────────┐
-│  🎵 Sonne                              ×     │
-│  Casper · XOXO                              │
-├──────────────────────────────────────────────┤
-│                                              │
-│  TRACK                                       │
-│  Titel          Sonne                        │
-│  Artist         Casper                       │
-│  Album          XOXO                         │
-│  Album Artist   Casper                       │
-│  Genre          Hip-Hop                      │
-│  Jahr           2011                         │
-│  Track          03                           │
-│                                              │
-│  ──────────────────────────────────────────  │
-│                                              │
-│  HEALTH                                      │
-│  ✓ Metadata vollständig                     │
-│  ✓ Artwork vorhanden                        │
-│  ✓ MusicBrainz ID vorhanden                 │
-│                                              │
-├──────────────────────────────────────────────┤
-│  AKTIONEN                                    │
-│                                              │
-│  ✏️ Titel bearbeiten                         │
-│  🎤 Artist bearbeiten                        │
-│  💿 Album bearbeiten                         │
-│  👤 Albuminterpret bearbeiten               │
-│  🎭 Genre bearbeiten                         │
-│                                              │
-│  🔍 Metadata prüfen                           │
-│  🔄 Metadata neu verarbeiten                 │
-│                                              │
-│  ──────────────────────────────────────────  │
-│  🛠 Reparatur                                │
-│  🔗 Datei öffnen                             │
-└──────────────────────────────────────────────┘
-```
+▶ 02 – XOXO
+   Casper · XOXO
 
-**Das wäre für mich die eigentliche nächste Evolutionsstufe.**
+▶ 03 – So perfekt
+   Casper · XOXO
+
+Die gesamte Track-Zeile soll interaktiv sein.
+
+Nicht nur ein kleiner Button oder ein unsichtbarer Link.
+
+Anforderungen
+
+- sichtbarer Hover-State
+- sichtbarer Focus-State
+- Tastaturbedienung
+- "Enter" öffnet den Track
+- "Space" darf nicht zu unerwartetem Seitenverhalten führen
+- "Escape" schließt den Detailkontext
+- vorhandene Link-/Navigation-Semantik nicht unnötig zerstören
+- keine künstliche Keyboard-Implementierung, wenn native HTML-Semantik ausreicht
+
+Wenn die vorhandene Architektur einen echten "<button>" oder "<a>" für die Track-Zeile erlaubt, bevorzuge native Semantik.
+
+Keine "div onclick"-Pseudo-Buttons.
 
 ---
 
-# 5. Noch besser: Aktionen kontextabhängig machen
+5. Track Detail Drawer / Modal
 
-Nicht jeder Track sollte dieselben Aktionen anzeigen.
+Beim Auswählen eines Tracks soll ein zentraler Detailkontext erscheinen.
 
-Beispielsweise:
+Bevorzugt:
 
-```text
-Track
-│
-├── Titel bearbeiten
-├── Artist bearbeiten
-├── Album bearbeiten
-├── Albuminterpret bearbeiten
-├── Genre bearbeiten
-│
-├── Health
-│   ├── Metadata prüfen
-│   ├── fehlende Metadata anzeigen
-│   └── Finding anzeigen
-│
-└── Repair
-    ├── L2
-    └── L3
-```
+Detail Drawer
 
-Wenn aber der Track bereits sauber ist:
+und nicht eine zusätzliche vollständige Seite.
 
-```text
+Ziel:
+
+Artist
+  ↓
+Track auswählen
+  ↓
+Track Detail Drawer
+
+Die Artist-Seite bleibt darunter erhalten.
+
+---
+
+6. Drawer-Struktur
+
+Der Drawer soll ungefähr diese Informationsarchitektur besitzen:
+
+┌─────────────────────────────────────────────┐
+│ 🎵 Tracktitel                          ×    │
+│ Artist · Album                             │
+├─────────────────────────────────────────────┤
+│                                             │
+│ INFORMATION                                 │
+│                                             │
+│ Titel            ...                        │
+│ Artist           ...                        │
+│ Album            ...                        │
+│ Album Artist     ...                        │
+│ Genre            ...                        │
+│ Jahr             ...                        │
+│ Track            ...                        │
+│ Disc             ...                        │
+│                                             │
+├─────────────────────────────────────────────┤
+│ HEALTH                                      │
+│                                             │
+│ ✓ Metadata vollständig                     │
+│ ✓ Artwork vorhanden                        │
+│ ⚠ Genre fehlt                              │
+│                                             │
+├─────────────────────────────────────────────┤
+│ AKTIONEN                                    │
+│                                             │
+│ ✏ Titel bearbeiten                          │
+│ 🎤 Artist bearbeiten                        │
+│ 💿 Album bearbeiten                          │
+│ 👤 Albuminterpret bearbeiten               │
+│ 🎭 Genre bearbeiten                         │
+│                                             │
+│ 🔍 Metadata prüfen                           │
+│                                             │
+├─────────────────────────────────────────────┤
+│ REPAIR                                      │
+│                                             │
+│ vorhandene Repair-/Maintenance-Aktionen     │
+│                                             │
+└─────────────────────────────────────────────┘
+
+Dies ist ein UX-Ziel, keine Aufforderung, Daten zu erfinden.
+
+Zeige nur Felder, die tatsächlich verfügbar sind.
+
+---
+
+7. Keine erfundenen Health-Daten
+
+Sehr wichtig:
+
+Die UI darf nicht aus vorhandenen Feldern eigene Health-Behauptungen ableiten, wenn dafür keine bestehende Semantik existiert.
+
+Beispiel:
+
+Nicht einfach:
+
 ✓ Metadata vollständig
-✓ Artwork vorhanden
-✓ IDs vorhanden
-```
 
-muss die Oberfläche nicht fünf Warn-/Repair-Buttons zeigen.
+anzeigen, nur weil einige Felder gefüllt sind.
 
-Wenn dagegen:
+Stattdessen:
 
-```text
-⚠ Genre fehlt
-⚠ MusicBrainz Recording ID fehlt
-⚠ Artwork fehlt
-```
+1. vorhandene Health-/Issue-Daten verwenden
+2. bestehende "issue_codes" verwenden, falls deren Semantik dafür vorgesehen ist
+3. vorhandene Health-Schemas verwenden
+4. falls keine belastbare Track-Level-Health-Information vorhanden ist:
+   - neutral anzeigen
+   - oder Health-Sektion zunächst weglassen
 
-kann das Panel direkt anzeigen:
-
-```text
-PROBLEME
-
-⚠ Genre fehlt
-   → Genre bearbeiten
-
-⚠ MusicBrainz Recording ID fehlt
-   → L3-Reparatur
-```
-
-Damit wird das Control Center **diagnostisch statt formularorientiert**.
+Keine neue Health-Business-Logik in diesem Ticket.
 
 ---
 
-# 6. Der wichtige Architekturpunkt: vorhandene Backend-Funktionen weiterverwenden
+8. Track-Metadaten
 
-Das Schöne an deinem aktuellen Stand:
+Wenn die Daten verfügbar sind, sollen mindestens diese Informationen berücksichtigt werden:
 
-**Wir müssen dafür nicht die komplette Backend-Architektur neu bauen.**
+Title
+Artist
+Album
+Album Artist
+Genre
+Year
+Track Number
+Disc Number
+MusicBrainz Recording ID
+MusicBrainz Release ID
+ISRC
 
-Die bestehenden Endpunkte existieren bereits.
+Aber:
 
-Zum Beispiel:
+«Nur tatsächlich vorhandene und bereits unterstützte Felder anzeigen.»
 
-```text
+Keine neuen Backend-Felder nur für die UI einführen.
+
+---
+
+9. Aktionen
+
+Der Track-Kontext soll vorhandene Aktionen bündeln.
+
+Mindestens prüfen und — sofern bestehende Endpunkte bereits dafür existieren — integrieren:
+
+Titel bearbeiten
+Artist bearbeiten
+Album bearbeiten
+Albuminterpret bearbeiten
+Genre bearbeiten
+
+Zusätzlich prüfen:
+
+Metadata prüfen
+Repair / Maintenance
+
+Nur Aktionen integrieren, die über bestehende, getestete Backend-Flows sauber angebunden werden können.
+
+---
+
+10. Bestehende Preview → Execute Architektur erhalten
+
+Die wichtigste Sicherheits-/UX-Regel:
+
+Keine bestehende Preview-/Execute-Semantik entfernen.
+
+Eine Änderung soll weiterhin beispielsweise so funktionieren:
+
+Track Detail
+     ↓
+Titel bearbeiten
+     ↓
+aktueller Wert
+     ↓
+neuer Wert
+     ↓
+Preview
+     ↓
+Änderungsvorschau
+     ↓
+explizite Bestätigung
+     ↓
+Execute
+
+Nicht:
+
+Button klicken
+↓
+Datei sofort ändern
+
+Keine Aktion darf durch die neue UI versehentlich direkt schreibend werden.
+
+---
+
+11. Bestehende Backend-Endpunkte wiederverwenden
+
+Vorhandene Funktionen haben Vorrang.
+
+Gezielt prüfen:
+
 admin/maintenance/title-edit
 admin/maintenance/artist-rename
 admin/maintenance/album-edit
 admin/maintenance/albumartist-edit
-library/.../set-genre
-```
+library/artists/{artist}/genre-preview
+library/artists/{artist}/set-genre
 
-und die Services darunter existieren ebenfalls.
+sowie vorhandene:
 
-`admin_maintenance.py` delegiert bereits an:
+Preview
+Execute
+Repair
+Health
+Metadata
 
-```text
-preview_title_edit()
-execute_title_edit()
+Flows.
 
-preview_album_edit()
-execute_album_edit()
+Die genaue aktuelle API-Struktur ist aus dem Repository zu ermitteln.
 
-preview_album_artist_edit()
-execute_album_artist_edit()
-
-preview_artist_rename()
-execute_artist_rename()
-```
-
-Das ist sehr gut, weil die UI damit **keine neue Business-Logik bekommen muss**.
-
-Die Architektur sollte also sein:
-
-```text
-                 Control Center
-                       │
-                Track Detail UI
-                       │
-              ┌────────┴────────┐
-              │                 │
-          Information        Actions
-                                │
-                     existing API endpoints
-                                │
-                     maintenance_service
-                                │
-                     library_repair services
-```
-
-Nicht:
-
-```text
-Control Center
-     │
-     └── eigene Metadata-Logik
-```
+Keine URLs aus diesem Prompt blind übernehmen, wenn der aktuelle Code inzwischen anders strukturiert ist.
 
 ---
 
-# 7. Ich würde sogar noch einen Schritt weitergehen
+12. Scope-Trennung Artist / Album / Track
 
-Ich würde **nicht für jede Aktion eine neue Seite erstellen**.
+Die Library soll langfristig diese Objektstruktur abbilden:
 
-Also nicht:
-
-```text
-/library/artist/album/track
-/library/artist/album/track/edit-title
-/library/artist/album/track/edit-artist
-...
-```
-
-Sondern:
-
-```text
-/library
-    ↓
-/library/{artist}
-    ↓
-Track auswählen
-    ↓
-Track Detail Drawer / Modal
-    ↓
-Aktion
-```
-
-Die Aktion öffnet dann beispielsweise ein kleines Preview-Dialogfenster:
-
-```text
-Titel bearbeiten
-
-Aktuell:
-03 – Sonne
-
-Neu:
-[ Sonne (Album Version) ]
-
-        Abbrechen     Vorschau
-```
-
-Danach:
-
-```text
-Änderungsvorschau
-
-03.m4a
-
-Title:
-Sonne
-   ↓
-Sonne (Album Version)
-
-[ Abbrechen ]     [ Änderung anwenden ]
-```
-
-Damit bleibt die Seite selbst ruhig.
-
----
-
-# 8. Was mit „Metadaten“ auf der Haupt-Library passiert
-
-Hier würde ich deine Idee konsequent durchziehen.
-
-Der aktuelle Block:
-
-```text
-Library-Metadata
-
-[Tracks] [Artists] [Albums] [Mapping]
-
-Fehlende Metadata:
-[...]
-```
-
-ist aus UX-Sicht nicht mehr der primäre Weg.
-
-Ich würde ihn **nicht sofort komplett löschen**.
-
-Denn eure eigene Architektur dokumentiert, dass diese alten Metadata-Routen bewusst erhalten wurden und teilweise einen anderen Scanpfad haben.
-
-Stattdessen:
-
-### Phase 1
-
-```text
-Library
-
-[Search...]
-
-Artists
-...
-
-Library Health
-...
-```
-
-### Phase 2
-
-Den alten Metadata-Browser entweder:
-
-```text
-Advanced / Diagnostics
-```
-
-oder:
-
-```text
-Library Diagnostics
-```
-
-verschieben.
-
-Dann wäre die Informationsarchitektur:
-
-```text
-Library
-│
-├── Browse
-│    ├── Artists
-│    ├── Albums
-│    └── Tracks
-│
-└── Diagnostics
-     ├── Metadata
-     ├── Health
-     ├── Findings
-     └── Mapping
-```
-
-Das ist deutlich sauberer.
-
----
-
-# 9. Enterprise-Level Library
-
-Ich würde langfristig diese Struktur anstreben:
-
-```text
-┌───────────────────────────────────────────────────────────┐
-│ Library                                                   │
-│                                                           │
-│ Search library...                        Filter   Refresh  │
-├───────────────────────────────────────────────────────────┤
-│                                                           │
-│ 500 Tracks       41 Artists       59 Albums       99.9%  │
-│                                                           │
-├───────────────────────────────────────────────────────────┤
-│                                                           │
-│ Artists                                                   │
-│                                                           │
-│ 🔎 Search artists...                 Sort: Health / Name  │
-│                                                           │
-│ Casper                              97   7 Albums         │
-│ Cro                                 100  5 Albums         │
-│ ...                                                       │
-│                                                           │
-└───────────────────────────────────────────────────────────┘
-```
-
-Klick:
-
-```text
-Casper
-    ↓
-```
-
-```text
-┌───────────────────────────────────────────────────────────┐
-│ ← Library / Casper                                       │
-│                                                           │
-│ Casper                                                    │
-│ 97 Health · 100 Tracks · 7 Albums                        │
-├───────────────────────────────────────────────────────────┤
-│                                                           │
-│ Albums                                                    │
-│                                                           │
-│  XOXO                                      14 tracks      │
-│  Hinterland                                 12 tracks      │
-│                                                           │
-├───────────────────────────────────────────────────────────┤
-│ Tracks                                                    │
-│                                                           │
-│ 01 Auf und davon                         ✓               │
-│ 02 XOXO                                   ⚠               │
-│ 03 So perfekt                             ✓               │
-│                                                           │
-└───────────────────────────────────────────────────────────┘
-```
-
-Klick:
-
-```text
-02 XOXO
-```
-
-→ **Drawer**.
-
----
-
-# 10. Und genau dort würde ich auch die Health-Daten integrieren
-
-Das ist besonders interessant wegen eurer aktuellen Library-Health-Architektur.
-
-Der Track hat bereits:
-
-```text
-issue_codes
-artist
-album
-album_artist
-title
-year
-genre
-track_number
-disc_number
-mb_recording_id
-mb_release_id
-isrc
-integrated_lufs
-...
-```
-
-Das bedeutet:
-
-**Die Daten für einen hochwertigen Track-Inspector existieren bereits.**
-
-Der neue UI-Schritt ist hauptsächlich:
-
-```text
-TrackSchema
-      ↓
-Track Detail View
-      ↓
-Actions
-```
-
-statt neue Scan-/Business-Logik zu bauen.
-
----
-
-# 11. Ein wichtiger Punkt: „Titel anklicken“ sollte wirklich den Titel bedeuten
-
-Auf deinem Screenshot würde ich die komplette Zeile klickbar machen:
-
-```text
-▶ 03 – Sonne
-   Casper · XOXO
-```
-
-nicht nur einen kleinen Button.
-
-Aber zusätzlich:
-
-- `Enter` öffnet
-- `Space` öffnet nicht versehentlich die Seite, falls es kein Button ist
-- sichtbarer Fokus
-- `Esc` schließt Drawer
-- `←` / `→` könnte später zwischen Tracks navigieren
-
-Damit bekommt das Ganze eine richtige **Admin-/Operations-UI-Haptik**.
-
----
-
-# 12. Meine empfohlene nächste Phase
-
-Ich würde **noch nicht sofort programmieren**.
-
-Da ihr gerade CC-AC-8 abgeschlossen habt, würde ich zuerst einen neuen klar abgegrenzten Architektur-/UX-Schritt definieren:
-
-## **CC-AC-9 – Track-Centric Library Actions**
-
-Ziel:
-
-> Die Library wird von einer Artist-/Metadata-Browser-Oberfläche zu einer hierarchischen Library-Management-Oberfläche weiterentwickelt. Tracks werden direkt auswählbar. Ein Track öffnet einen zentralen Detail-/Action-Kontext. Bestehende Metadata- und Maintenance-Endpunkte werden ausschließlich wiederverwendet. Keine neue Business-Logik.
-
-### Scope
-
-**In Scope**
-
-- Track-Zeilen klickbar machen
-- Track Detail Drawer/Modal
-- vollständige aktuelle Track-Metadaten anzeigen
-- Health-/Issue-Status anzeigen
-- vorhandene Aktionen integrieren:
-  - Titel bearbeiten
-  - Artist bearbeiten
-  - Album bearbeiten
-  - Albuminterpret bearbeiten
-  - Genre
-- Preview → Confirmation → Execute beibehalten
-- Keyboard-/Accessibility-Verhalten
-- vorhandene API-Endpunkte wiederverwenden
-- Tests
-
-**Out of Scope**
-
-- neue Metadata-Service-Logik
-- neue Repair-Engine
-- neue Scan-Engine
-- neue Metadata-Felder im Backend
-- Änderung der bestehenden Telegram-Flows
-- Änderung der Library-Health-Berechnung
-- Änderung der bestehenden Sicherheitsmechanismen
-
----
-
-# 13. Wichtig: Album sollte ebenfalls klickbar werden
-
-Ich würde die Hierarchie nicht nur
-
-```text
-Artist → Track
-```
-
-machen.
-
-Sondern:
-
-```text
-Library
-   ↓
 Artist
-   ↓
+│
+├── Artist Actions
+│   ├── Artist Rename
+│   ├── Casing
+│   ├── Genre
+│   └── vorhandene Artist Maintenance
+│
 Album
-   ↓
+│
+├── Album Actions
+│   ├── Album Edit
+│   ├── Album Artist
+│   └── vorhandene Album Maintenance
+│
 Track
-```
+│
+├── Track Actions
+│   ├── Title
+│   ├── Metadata
+│   ├── Genre
+│   └── vorhandene Track Maintenance
+│
+Finding
+│
+└── Diagnose / Repair
 
-Denn dann können die Aktionen sauber nach Scope unterschieden werden:
+Aber:
 
-| Objekt | mögliche Aktionen |
-|---|---|
-| **Artist** | Artist umbenennen, Casing, Genre, L2/L3 |
-| **Album** | Album bearbeiten, Albuminterpret bearbeiten, Health |
-| **Track** | Titel, Genre, Tracknummer, Metadata, Health |
-| **Finding** | Diagnose / Reparatur |
+CC-AC-9 implementiert nur das, was für den Track-zentrierten Einstieg tatsächlich erforderlich ist.
 
-Das passt auch sehr gut zu euren bereits vorhandenen `artist_targets()` und `album_targets()`.
+Nicht versuchen, gleichzeitig eine komplette Album-Detailarchitektur zu bauen.
 
 ---
 
-# 14. Mein konkreter Zielzustand
+13. Album-Klickbarkeit
 
-Ich würde also **nicht**:
+Prüfe, ob die bestehende Album-Darstellung bereits eine sinnvolle Interaktionsmöglichkeit besitzt.
 
-> „Metadaten-Funktion entfernen“
+Wenn eine Album-Auswahl ohne Backend-Änderungen sauber möglich ist:
 
-sondern:
+→ Album klickbar machen bzw. als Objekt kontextualisieren.
 
-> **„Metadata aus der Navigation entfernen und in den Library-Objektkontext integrieren.“**
+Wenn dafür ein größerer neuer Daten-/Routing-Umbau nötig wäre:
 
-Das ist ein wichtiger Unterschied.
+→ NICHT in CC-AC-9 erzwingen.
 
-Die Funktion bleibt vollständig erhalten.
+CC-AC-9 ist primär:
 
-Sie wird nur dort angeboten, **wo das Objekt bereits bekannt ist**.
+Artist → Track → Track Context
 
-Damit entsteht:
+Album bleibt ein vorbereiteter nächster Evolutionsschritt.
 
-```text
-             LIBRARY
-                │
-             ARTIST
-                │
-             ALBUM
-                │
-             TRACK
-                │
-        ┌───────┴────────┐
-        │                │
-    INFORMATION       ACTIONS
-                         │
-          ┌──────────────┼──────────────┐
-          │              │              │
-       Metadata        Health         Repair
-          │
-    ┌─────┼─────┐
-    │     │     │
-  Title Artist Album
-          │
-     Album Artist
-     Genre
-```
+---
 
-**Das halte ich für die richtige Grundlage, wenn du das Control Center wirklich in Richtung einer professionellen Library-Management-Oberfläche weiterentwickeln willst.**
+14. Library-Metadata auf "/library"
 
-Und wichtig für euren bisherigen Refactoring-Stil: **CC-AC-9 kann komplett auf der bestehenden Service-/API-Schicht aufsetzen.** Dadurch bleibt der Scope sauber und wir müssen nicht gleichzeitig wieder Architektur im Backend umbauen.
+Den bestehenden Bereich:
 
-Die aktuelle Codebasis unterstützt diesen Weg bereits ziemlich gut; der CC-AC-7-Commit hat sogar explizit die Zielrichtung **„Library → Artist → Album/Track → gezielte Aktion“** festgelegt. :chatgpt-content-reference{index="2"}
+Library-Metadata
+├── Tracks
+├── Artists
+├── Albums
+├── Mapping
+└── Missing Metadata
 
-[Aktuellen CC-AC-7-Commit ansehen](https://github.com/dkmd89-dev/musicbot/commit/531fb55435c6161f22f388879a621325befa8ec0?utm_source=chatgpt.com)
+nicht einfach löschen.
+
+CC-AC-7 hat bewusst festgestellt, dass diese Funktionen unterschiedliche Scanpfade besitzen und teilweise weiterhin eigenständig benötigt werden.
+
+Für CC-AC-9 gilt:
+
+- bestehende Funktion erhalten
+- keine API entfernen
+- keine Scan-Funktion entfernen
+- keine Live-Scan-Funktion entfernen
+- keine "/metadata"-Stub-Navigation als Ersatz verwenden
+
+Eine spätere Umbenennung zu:
+
+Library Diagnostics
+
+kann als Folgearbeit dokumentiert werden, darf aber nicht ungeplant in CC-AC-9 mitgezogen werden.
+
+---
+
+15. Drawer technisch sauber implementieren
+
+Bevor du eine eigene Drawer-Komponente erstellst:
+
+Suche nach bestehenden Modal-/Dialog-/Overlay-Mustern im Repository.
+
+Wenn kein geeignetes Pattern existiert:
+
+→ eine kleine, lokale UI-Komponente für den Track-Drawer implementieren.
+
+Keine globale UI-Framework-Einführung.
+
+Keine neue Dependency nur für den Drawer.
+
+---
+
+16. Accessibility
+
+Der Drawer muss vollständig tastaturbedienbar sein.
+
+Mindestens:
+
+Track fokussieren
+↓
+Enter
+↓
+Drawer öffnet
+↓
+Focus sinnvoll setzen
+↓
+Tab innerhalb des Dialogs
+↓
+Escape
+↓
+Drawer schließt
+↓
+Focus kehrt zum auslösenden Track zurück
+
+Wenn ein echtes "<dialog>" verwendet wird, native Semantik bevorzugen.
+
+Falls "<dialog>" nicht zur bestehenden Browser-/CSS-Architektur passt, darf ein zugänglicher eigener Dialog implementiert werden.
+
+Dann erforderlich:
+
+- "role="dialog""
+- "aria-modal="true""
+- sinnvoller "aria-labelledby"
+- Escape
+- Focus Management
+- Rückgabe des Fokus
+- keine Focus-Traps ohne funktionierende Escape-/Close-Logik
+
+Keine künstliche "aria-expanded"-Logik für Dinge, die native Semantik bereits korrekt abbildet.
+
+---
+
+17. Responsive Verhalten
+
+Prüfen mindestens:
+
+360px
+390px
+412px
+1280px
+
+Anforderungen:
+
+- kein horizontaler Scroll
+- Drawer darf auf Mobile nicht breiter als der Viewport werden
+- Metadaten müssen umbrechen
+- lange Dateipfade/IDs dürfen die UI nicht sprengen
+- Buttons müssen erreichbar bleiben
+- Tracktitel dürfen nicht unkontrolliert Layout zerstören
+- vorhandene ".tiles"-Responsivität erhalten
+
+Keine neue globale Breakpoint-Architektur, wenn sie nicht zwingend notwendig ist.
+
+---
+
+18. Security
+
+Bestehende Security-/Containment-Mechanismen nicht verändern.
+
+Insbesondere nicht anfassen:
+
+_resolve_within
+artist_targets
+album_targets
+_title_edit_targets
+safety_check
+
+und die bestehenden Tests:
+
+tests/test_library_repair_maintenance_service.py
+tests/test_control_center_admin_maintenance_api.py
+
+nicht verändern, um neue UI-Tests „grün zu machen“.
+
+Das bestehende CC-AC-6 Finding:
+
+album_targets() dead is_symlink() check
+P3 / OPEN / DEFERRED
+
+bleibt unangetastet.
+
+---
+
+19. Tests
+
+Vorhandene UI-Tests nicht entfernen oder abschwächen.
+
+Neue Tests in:
+
+tests/test_control_center_ui.py
+
+hinzufügen.
+
+Mindestens abdecken:
+
+Track UI
+
+test_artist_detail_tracks_are_interactive
+
+Track Drawer
+
+test_artist_detail_has_track_detail_context
+
+Metadata
+
+test_track_detail_context_displays_available_metadata
+
+Actions
+
+test_track_detail_context_exposes_existing_actions
+
+Preview/Execute
+
+test_track_action_preserves_preview_execute_flow
+
+Accessibility
+
+test_track_detail_context_has_accessible_dialog_semantics
+
+Security / Regression
+
+Bestehende Security-Tests müssen unverändert grün bleiben.
+
+---
+
+20. Browser-Runtime-Test
+
+Nach den Unit-/UI-Tests unbedingt Playwright bzw. die vorhandene Browser-Testinfrastruktur verwenden.
+
+Manuell prüfen:
+
+Artist
+
+/library/{artist}
+
+Track
+
+- Track sichtbar
+- Track fokussierbar
+- Track anklicken
+- Drawer öffnet
+
+Keyboard
+
+- Tab
+- Enter
+- Space
+- Escape
+
+Drawer
+
+- korrekter Track
+- korrekter Artist
+- korrekter Albumname
+- verfügbare Metadaten
+- vorhandene Aktionen
+
+Preview
+
+Mindestens:
+
+Titel bearbeiten → Preview
+
+und falls vorhanden:
+
+Genre / Maintenance → Preview
+
+Nicht Execute ausführen, außer dies ist ausdrücklich beauftragt.
+
+---
+
+21. Tests zuerst analysieren, dann implementieren
+
+Vor Änderungen:
+
+python3 -m pytest tests/test_control_center_ui.py -q
+
+Danach Implementierung.
+
+Anschließend:
+
+python3 -m pytest tests/test_control_center_ui.py -q
+
+python3 -m pytest \
+  tests/test_control_center_admin_maintenance_api.py \
+  tests/test_library_repair_maintenance_service.py \
+  -q
+
+Wenn diese Tests grün sind:
+
+python3 -m pytest tests/ -q
+
+Falls die Full Suite wegen externer Voraussetzungen scheitert:
+
+- exakte Fehlermeldung dokumentieren
+- nicht als UI-Regression interpretieren
+- nicht durch Test-Manipulation beheben
+
+---
+
+22. Dokumentation
+
+Nach erfolgreicher Implementierung:
+
+docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md
+
+um einen Abschnitt ergänzen:
+
+Track-Centric Library Actions — CC-AC-9
+
+Dokumentieren:
+
+- Ausgangsproblem
+- neue Objekt-/Navigationsstruktur
+- Track-Detail-Kontext
+- verwendete bestehende APIs
+- Preview/Execute-Erhalt
+- Accessibility
+- Security-Unverändertheit
+- bewusste Nicht-Änderung von CC-AC-6
+- offene Folgearbeiten, falls vorhanden
+
+Keine neue Dokumentationsstruktur erfinden.
+
+---
+
+23. Strikte Out-of-Scope-Regeln
+
+NICHT durchführen:
+
+- keine neue Repair Engine
+- keine neue Metadata Engine
+- keine neue Scan Engine
+- keine Änderung der Library-Health-Berechnung
+- keine Änderung der Telegram-Flows
+- keine Änderung bestehender Security-Mechanismen
+- keine Entfernung bestehender Metadata-Scanfunktionen
+- keine Entfernung des Artists-Live-Scans
+- kein Ersatz von "/metadata" durch eine neue Fake-Navigation
+- keine neuen externen Dependencies nur für UI
+- keine globale CSS-Neuarchitektur
+- keine neuen globalen Breakpoints ohne zwingenden Grund
+- keine komplette Album-Detailseite erzwingen
+- keine komplette Library-Neuimplementierung
+- keine Änderung von CC-AC-6
+- keine Änderung an bestehenden Security-Tests
+- keine Änderung von "docs/prompts/"-Altänderungen aus vorherigen Sessions
+- keine unrelated cleanup commits
+
+---
+
+24. Git-Regeln
+
+Branch:
+
+feature/track-centric-library-actions
+
+Falls bereits ein dafür vorgesehener CC-AC-9-Branch existiert:
+
+→ diesen verwenden.
+
+Nicht auf "main" entwickeln.
+
+Vor Commit:
+
+git status
+git diff --check
+git diff
+
+Nur CC-AC-9-relevante Dateien committen.
+
+Ein atomarer Commit:
+
+feat(control-center): add track-centric library actions
+
+Nicht pushen und keinen PR erstellen, sofern dies nicht ausdrücklich beauftragt wurde.
+
+---
+
+25. Wichtig: Bestehende uncommittete Änderungen
+
+Es existieren möglicherweise bereits uncommittete Änderungen aus vorherigen Sessions, insbesondere unter:
+
+docs/prompts/
+
+Diese:
+
+- nicht überschreiben
+- nicht löschen
+- nicht formatieren
+- nicht committen
+
+Vor Beginn:
+
+git status --short
+
+prüfen.
+
+---
+
+26. Definition of Done
+
+CC-AC-9 ist erst fertig, wenn:
+
+- [ ] Repository vollständig analysiert
+- [ ] bestehende Track-/Album-/Health-Datenquellen identifiziert
+- [ ] keine unnötige neue API eingeführt
+- [ ] Tracks direkt auswählbar
+- [ ] Track Detail Drawer/Context funktioniert
+- [ ] relevante Metadaten werden korrekt angezeigt
+- [ ] Health/Issues nur aus belastbaren vorhandenen Daten angezeigt
+- [ ] bestehende Metadata-Aktionen erreichbar
+- [ ] bestehende Maintenance-Aktionen korrekt angebunden
+- [ ] Preview → Confirmation → Execute unverändert erhalten
+- [ ] keine Aktion versehentlich direkt schreibt
+- [ ] Keyboard-Navigation funktioniert
+- [ ] Escape funktioniert
+- [ ] Focus Management funktioniert
+- [ ] Responsive 360/390/412/1280 geprüft
+- [ ] bestehende UI-Tests grün
+- [ ] neue CC-AC-9-Tests grün
+- [ ] Security-Regressionstests grün
+- [ ] Full Suite ausgeführt oder sauber dokumentiert, falls extern blockiert
+- [ ] Dokumentation aktualisiert
+- [ ] CC-AC-6 unverändert offen
+- [ ] keine unrelated Änderungen
+- [ ] "git diff --check" sauber
+- [ ] atomarer Commit erstellt
+
+---
+
+27. Abschlussbericht
+
+Nach der Implementierung NICHT nur „fertig“ melden.
+
+Liefere einen strukturierten Bericht:
+
+CC-AC-9 Ergebnis
+
+1. Analyse
+
+Welche bestehenden Track-/Album-/Health-Datenquellen wurden gefunden?
+
+2. Geänderte Dateien
+
+Tabelle:
+
+Datei| Änderung| Zweck
+
+3. Vorher
+
+Konkrete bisherige UI-Struktur.
+
+4. Nachher
+
+Konkrete neue Struktur:
+
+Library
+ ↓
+Artist
+ ↓
+Track
+ ↓
+Detail
+ ↓
+Action
+
+5. Datenquellen
+
+Welche bestehenden Endpunkte/Schemas werden verwendet?
+
+6. Neue UI-Komponenten
+
+Drawer/Dialog/etc.
+
+7. Aktionen
+
+Welche bestehenden Aktionen wurden integriert?
+
+8. Preview/Execute
+
+Wie wurde sichergestellt, dass kein direkter Write ohne Bestätigung möglich ist?
+
+9. Accessibility
+
+Keyboard, Focus, Escape, Dialog-Semantik.
+
+10. Security
+
+Bestätigung, dass CC-AC-6 und bestehende Containment-Mechanismen unangetastet sind.
+
+11. Tests
+
+Mit exakten Ergebnissen:
+
+test_control_center_ui.py: X/X
+admin maintenance: X/X
+library repair service: X/X
+Playwright: X/X
+Full suite: X/X
+
+12. Responsive
+
+Ergebnisse für:
+
+360px
+390px
+412px
+1280px
+
+13. Dokumentation
+
+Welche Dokumentationsdateien wurden aktualisiert?
+
+14. Open Points
+
+Nur tatsächlich verbleibende Punkte.
+
+15. Git
+
+Branch:
+Commit:
+Commit message:
+Push:
+PR:
+
+---
+
+ABSCHLIESSENDE ARBEITSREGEL
+
+Arbeite nach diesem Prinzip:
+
+«Bestehende Architektur verstehen → bestehende Daten/API wiederverwenden → minimale UI-Erweiterung → bestehende Sicherheits-/Preview-/Execute-Mechanismen erhalten → testen → dokumentieren.»
+
+Nicht versuchen, CC-AC-9 größer zu machen als notwendig.
+
+Das Ziel ist nicht, das gesamte Control Center neu zu bauen.
+
+Das Ziel ist:
+
+Library
+  ↓
+Artist
+  ↓
+Track
+  ↓
+ein zentraler, sauberer Track-Kontext
+  ↓
+bestehende Funktionen gezielt erreichbar
+
+und damit die bisherige Architektur konsequent weiterzuführen.
