@@ -145,6 +145,26 @@
   </section>
 
   <p class="retry-row"><a href="{{ base_path }}/library">◀️ Zurück zu Artists</a></p>
+
+  <!-- CC-AC-10.4: Track-Detail-Drawer -->
+  <div id="track-drawer-overlay" hidden></div>
+  <aside id="track-drawer"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="track-drawer-title"
+         hidden>
+    <header class="drawer-header">
+      <h2 id="track-drawer-title">Track</h2>
+      <button id="track-drawer-close" class="drawer-close" aria-label="Schließen">✕</button>
+    </header>
+    <div id="track-drawer-body" class="drawer-body"></div>
+    <footer class="drawer-footer">
+      <button id="track-drawer-edit-title" class="btn-primary" disabled>
+        ✏️ Titel bearbeiten
+      </button>
+    </footer>
+  </aside>
+
 {% endblock %}
 
 {% block scripts %}
@@ -231,6 +251,7 @@
 
     const tracksHtml = _renderTracksGroupedByAlbum(body.tracks);
     _populateTitleEditSelect(body.tracks);
+    _storeTracksForDrawer(body.tracks);
 
     el.innerHTML = `
       <div class="tiles">
@@ -583,18 +604,173 @@
     }, 350);
   }
 
-  // Event-Delegation: Track-Rows werden dynamisch gerendert.
+  // CC-AC-10.4: Klick öffnet Track-Drawer (statt direkt den Titel-Editor).
+  // _selectTrackForTitleEdit (CC-AC-10.3) bleibt bestehen und wird vom
+  // Drawer-Button "✏️ Titel bearbeiten" aufgerufen.
+  function _storeTracksForDrawer(tracks) {
+    if (!window._trackMap) window._trackMap = new Map();
+    window._trackMap.clear();
+    for (const t of (tracks || [])) window._trackMap.set(t.relative_path, t);
+  }
+
+  function _formatBytes(n) {
+    if (typeof n !== "number" || n < 0) return "—";
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  function _formatLufs(v) {
+    if (typeof v !== "number") return null;
+    return `${v.toFixed(1)} LUFS`;
+  }
+
+  function _issueLabel(code) {
+    return code.replace(/_/g, " ").toLowerCase();
+  }
+
+  function _renderDrawerBody(t) {
+    const rows = [];
+    const add = (label, value) => {
+      if (value === null || value === undefined || value === "") return;
+      rows.push(
+        `<div class="drawer-row"><dt>${label}</dt><dd>${_escapeHtml(String(value))}</dd></div>`
+      );
+    };
+    add("Titel", t.title);
+    add("Artist", t.artist);
+    add("Album", t.album);
+    add("Album-Künstler", t.album_artist);
+    add("Genre", t.genre);
+    add("Jahr", t.year);
+    if (t.track_number !== null && t.track_number !== undefined) {
+      add("Track", String(t.track_number));
+    }
+    if (t.disc_number !== null && t.disc_number !== undefined) {
+      add("Disc", String(t.disc_number));
+    }
+    add("Datei", t.filename);
+    add("Größe", _formatBytes(t.file_size));
+    const lufs = _formatLufs(t.integrated_lufs);
+    if (lufs) add("Lautheit", lufs);
+    add("MB Recording-Id", t.mb_recording_id);
+    add("MB Release-Id", t.mb_release_id);
+    add("ISRC", t.isrc);
+
+    const issues = (t.issue_codes || []);
+    const issuesBlock = issues.length
+      ? `<section class="drawer-issues">
+           <h3>⚠️ Health-Hinweise</h3>
+           <ul>${issues.map((c) => `<li>${_escapeHtml(_issueLabel(c))}</li>`).join("")}</ul>
+         </section>`
+      : `<p class="drawer-ok">✅ Keine Health-Hinweise für diesen Track.</p>`;
+
+    return `<dl class="drawer-info">${rows.join("")}</dl>${issuesBlock}`;
+  }
+
+  window._drawerOpen = false;
+  window._lastFocusedRow = null;
+
+  function openTrackDrawer(relPath) {
+    const trackMap = window._trackMap;
+    if (!trackMap) return;
+    const t = trackMap.get(relPath);
+    if (!t) return;
+
+    window._lastFocusedRow = document.activeElement;
+
+    const drawer = document.getElementById("track-drawer");
+    const overlay = document.getElementById("track-drawer-overlay");
+    const title = document.getElementById("track-drawer-title");
+    const body = document.getElementById("track-drawer-body");
+    const editBtn = document.getElementById("track-drawer-edit-title");
+    if (!drawer || !overlay || !title || !body || !editBtn) return;
+
+    title.textContent = t.title || t.filename || "Track";
+    body.innerHTML = _renderDrawerBody(t);
+    editBtn.disabled = false;
+    editBtn.dataset.relPath = relPath;
+
+    overlay.hidden = false;
+    drawer.hidden = false;
+    void drawer.offsetHeight;
+    overlay.classList.add("is-open");
+    drawer.classList.add("is-open");
+    window._drawerOpen = true;
+
+    document.getElementById("track-drawer-close").focus();
+  }
+
+  function _closeDrawer() {
+    const drawer = document.getElementById("track-drawer");
+    const overlay = document.getElementById("track-drawer-overlay");
+    if (!drawer || !overlay || !window._drawerOpen) return;
+    window._drawerOpen = false;
+    overlay.classList.remove("is-open");
+    drawer.classList.remove("is-open");
+    setTimeout(() => {
+      overlay.hidden = true;
+      drawer.hidden = true;
+    }, 220);
+    if (window._lastFocusedRow && document.contains(window._lastFocusedRow)) {
+      window._lastFocusedRow.focus();
+    }
+    window._lastFocusedRow = null;
+  }
+
+  // Event-Delegation: Track-Rows öffnen den Drawer.
   document.addEventListener("click", (e) => {
     const row = e.target.closest(".track-row");
     if (!row) return;
-    _selectTrackForTitleEdit(row.dataset.relPath);
+    openTrackDrawer(row.dataset.relPath);
   });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
     const row = e.target.closest(".track-row");
     if (!row) return;
     e.preventDefault();
-    _selectTrackForTitleEdit(row.dataset.relPath);
+    openTrackDrawer(row.dataset.relPath);
+  });
+
+  // Drawer-Bindings erst nach DOMContentLoaded (defensiv — das Markup steht
+  // zwar VOR dem Skript, aber falls das Template mal anders gerendert wird).
+  function _initTrackDrawerBindings() {
+    const closeBtn = document.getElementById("track-drawer-close");
+    const overlay = document.getElementById("track-drawer-overlay");
+    const editBtn = document.getElementById("track-drawer-edit-title");
+    if (!closeBtn || !overlay || !editBtn) return;
+    closeBtn.addEventListener("click", _closeDrawer);
+    overlay.addEventListener("click", _closeDrawer);
+    editBtn.addEventListener("click", (e) => {
+      const relPath = e.currentTarget.dataset.relPath;
+      _closeDrawer();
+      setTimeout(() => _selectTrackForTitleEdit(relPath), 240);
+    });
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", _initTrackDrawerBindings);
+  } else {
+    _initTrackDrawerBindings();
+  }
+
+  // Escape schließt; Tab bleibt im Drawer
+  document.addEventListener("keydown", (e) => {
+    if (!window._drawerOpen) return;
+    if (e.key === "Escape") { e.preventDefault(); _closeDrawer(); return; }
+    if (e.key !== "Tab") return;
+    const drawer = document.getElementById("track-drawer");
+    if (!drawer) return;
+    const focusables = drawer.querySelectorAll(
+      'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault(); first.focus();
+    }
   });
 
   // -- Album bearbeiten (Manual Metadata Editing v2, CC-AC-3) --------------
