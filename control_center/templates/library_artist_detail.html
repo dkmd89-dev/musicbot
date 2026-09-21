@@ -45,6 +45,32 @@
     </div>
     <div id="title-edit-result-content" class="empty-note"></div>
 
+    <h3>💿 Album bearbeiten</h3>
+    <p class="empty-note">Setzt den Albumnamen (<code>©alb</code>) für alle Dateien des gewählten Albums — ändert weder Artist- noch Albuminterpret-Tag.</p>
+    <div class="retry-row">
+      <select id="album-edit-album-select"><option value="">Album wählen …</option></select>
+      <input type="text" id="album-edit-new-album" placeholder="Neuer Albumname">
+      <button id="album-edit-preview-btn" class="small">Vorschau laden</button>
+    </div>
+    <div id="album-edit-content" class="empty-note"></div>
+    <div class="retry-row">
+      <button id="album-edit-execute-btn" class="small" disabled>Album setzen</button>
+    </div>
+    <div id="album-edit-result-content" class="empty-note"></div>
+
+    <h3>👤 Albuminterpret bearbeiten</h3>
+    <p class="empty-note">Setzt den Albuminterpret (<code>aART</code>) für alle Dateien des gewählten Albums — ändert weder Artist- noch Album-Tag.</p>
+    <div class="retry-row">
+      <select id="albumartist-edit-album-select"><option value="">Album wählen …</option></select>
+      <input type="text" id="albumartist-edit-new-albumartist" placeholder="Neuer Albuminterpret">
+      <button id="albumartist-edit-preview-btn" class="small">Vorschau laden</button>
+    </div>
+    <div id="albumartist-edit-content" class="empty-note"></div>
+    <div class="retry-row">
+      <button id="albumartist-edit-execute-btn" class="small" disabled>Albuminterpret setzen</button>
+    </div>
+    <div id="albumartist-edit-result-content" class="empty-note"></div>
+
     <h3>🎭 Genre-Verwaltung</h3>
     <p class="empty-note">Setzt das Genre aller Tracks dieses Artists aus dem bestehenden Mapping (mapping/artist_genre.yaml) — kein Freitext.</p>
     <div class="retry-row">
@@ -123,6 +149,56 @@
         ${tracksHtml}
       </section>
     `;
+
+    _populateAlbumPickers(body);
+  }
+
+  // Album-Picker fuer "Album bearbeiten"/"Albuminterpret bearbeiten"
+  // (CC-AC-3, library_artist_centric_UX.txt §63-67): KEINE neue
+  // Datenquelle - Optionen kommen ausschliesslich aus der bereits
+  // geladenen artists-overview/{artist}-Antwort (body.albums/body.tracks).
+  // body.albums deckt nur Mehr-Track-Alben ab (services/library_health/
+  // scoring.py::build_health_section() gruppiert nur Dateien mit
+  // gesetztem album_directory - Singles haben album_directory=None,
+  // siehe services/library_health/discovery.py::
+  // _classify_section_and_dirs()). Damit Artists, die AUSSCHLIESSLICH
+  // Singles besitzen (Auftrag §16, Beispiel "1986zig" in §6-Mockup), im
+  // Picker nicht leer bleiben, werden Tracks OHNE album_directory
+  // zusaetzlich aus body.tracks abgeleitet (deckt sowohl echte Singles
+  // unter "Singles/<Datei>" als auch vereinzelte Dateien direkt im
+  // Artist-Ordner ab - bewusst weiter gefasst als services/
+  // library_repair/library_artists.py::list_artist_albums(), das NUR den
+  // "Singles"-Ordner speziell behandelt; beide Faelle sind fuer
+  // maintenance_service.py::album_targets() gueltige Ein-Track-Scopes,
+  // Wert = relativer Pfad ohne Artist-Praefix). Nur .m4a (identische
+  // Einschraenkung wie list_artist_albums() - ©alb/aART/©ART/©nam sind
+  // MP4-/iTunes-Atome, siehe LIBRARY_REPAIR.md §15/§16).
+  function _artistAlbumOptions(artist, body) {
+    const options = (body.albums || []).map((a) => ({
+      value: a.album, label: `💿 ${a.album} (${a.file_count} Dateien)`,
+    }));
+    const prefix = `${artist}/`;
+    (body.tracks || []).forEach((t) => {
+      if (t.album_directory || t.extension !== ".m4a") return;
+      if (!t.relative_path.startsWith(prefix)) return;
+      const value = t.relative_path.slice(prefix.length);
+      options.push({ value, label: `🎵 ${t.title || t.filename} (Single)` });
+    });
+    return options;
+  }
+
+  function _populateAlbumSelect(selectEl, options) {
+    const previous = selectEl.value;
+    selectEl.innerHTML = '<option value="">Album wählen …</option>' + options.map((o) => `
+      <option value="${_escapeHtml(o.value)}">${_escapeHtml(o.label)}</option>
+    `).join("");
+    if (options.some((o) => o.value === previous)) selectEl.value = previous;
+  }
+
+  function _populateAlbumPickers(body) {
+    const options = _artistAlbumOptions(body.artist, body);
+    _populateAlbumSelect(document.getElementById("album-edit-album-select"), options);
+    _populateAlbumSelect(document.getElementById("albumartist-edit-album-select"), options);
   }
 
   function loadArtistDetail() {
@@ -341,6 +417,156 @@
   ["title-edit-rel-path", "title-edit-new-title"].forEach((id) => {
     document.getElementById(id).addEventListener("input", () => {
       document.getElementById("title-edit-execute-btn").disabled = true;
+    });
+  });
+
+  // -- Album bearbeiten (Manual Metadata Editing v2, CC-AC-3) --------------
+  //
+  // Reine Verdrahtung der bestehenden Endpunkte
+  // POST /api/v1/admin/maintenance/album-edit/{preview,execute}
+  // (control_center/routers/admin_maintenance.py ->
+  // services/library_repair/maintenance_service.py::
+  // preview_album_edit()/execute_album_edit()) - identisches Preview-
+  // >Confirm->Execute-Muster wie Artist/Titel oben, Album-Auswahl ueber
+  // den Picker aus _artistAlbumOptions() statt eines Freitext-Pfads.
+
+  async function loadAlbumEditPreview() {
+    const artist = currentArtistFromPath();
+    const album = document.getElementById("album-edit-album-select").value;
+    const newAlbum = document.getElementById("album-edit-new-album").value.trim();
+    if (!album) { window.alert("Bitte zuerst ein Album auswählen."); return; }
+    if (!newAlbum) { window.alert("Bitte neuen Albumnamen eingeben."); return; }
+    document.getElementById("album-edit-execute-btn").disabled = true;
+    document.getElementById("album-edit-result-content").innerHTML = "";
+    const params = new URLSearchParams({ artist, album, new_album: newAlbum }).toString();
+    await _loadInto(
+      "album-edit-content",
+      `/api/v1/admin/maintenance/album-edit/preview?${params}`,
+      (el, body) => renderMetadataEditPreview(el, body, "album-edit-execute-btn"),
+    );
+  }
+
+  async function executeAlbumEdit() {
+    const artist = currentArtistFromPath();
+    const album = document.getElementById("album-edit-album-select").value;
+    const newAlbum = document.getElementById("album-edit-new-album").value.trim();
+    if (!album || !newAlbum) return;
+    const confirmed = window.confirm(
+      `Album "${album}" wirklich zu "${newAlbum}" ändern?\n\n` +
+      `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+      `aber es werden tatsächlich Dateien in der Library verändert.`
+    );
+    if (!confirmed) return;
+
+    const execBtn = document.getElementById("album-edit-execute-btn");
+    const resultEl = document.getElementById("album-edit-result-content");
+    execBtn.disabled = true;
+    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    try {
+      const res = await fetch(apiUrl("/api/v1/admin/maintenance/album-edit/execute"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ artist, album, new_album: newAlbum }),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      const body = await res.json();
+      if (!res.ok) {
+        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        return;
+      }
+      resultEl.innerHTML =
+        `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>` +
+        `<p class="hint">Nur der Album-Tag (©alb) wurde geschrieben — der Alben-Eintrag oben zeigt weiterhin den Verzeichnisnamen und bleibt unverändert; die Track-Liste unten übernimmt den neuen Wert erst nach einem Neuscan.</p>`;
+      await loadAlbumEditPreview();
+    } catch (err) {
+      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+    } finally {
+      execBtn.disabled = false;
+    }
+  }
+
+  document.getElementById("album-edit-preview-btn").addEventListener("click", loadAlbumEditPreview);
+  document.getElementById("album-edit-execute-btn").addEventListener("click", executeAlbumEdit);
+  ["album-edit-album-select", "album-edit-new-album"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", () => {
+      document.getElementById("album-edit-execute-btn").disabled = true;
+    });
+    document.getElementById(id).addEventListener("change", () => {
+      document.getElementById("album-edit-execute-btn").disabled = true;
+    });
+  });
+
+  // -- Albuminterpret bearbeiten (Manual Metadata Editing v2, CC-AC-3) -----
+  //
+  // POST /api/v1/admin/maintenance/albumartist-edit/{preview,execute} ->
+  // preview_album_artist_edit()/execute_album_artist_edit() - schreibt
+  // AUSSCHLIESSLICH aART (Auftrag §15), identisches Muster wie oben.
+
+  async function loadAlbumArtistEditPreview() {
+    const artist = currentArtistFromPath();
+    const album = document.getElementById("albumartist-edit-album-select").value;
+    const newAlbumArtist = document.getElementById("albumartist-edit-new-albumartist").value.trim();
+    if (!album) { window.alert("Bitte zuerst ein Album auswählen."); return; }
+    if (!newAlbumArtist) { window.alert("Bitte neuen Albuminterpret eingeben."); return; }
+    document.getElementById("albumartist-edit-execute-btn").disabled = true;
+    document.getElementById("albumartist-edit-result-content").innerHTML = "";
+    const params = new URLSearchParams({ artist, album, new_album_artist: newAlbumArtist }).toString();
+    await _loadInto(
+      "albumartist-edit-content",
+      `/api/v1/admin/maintenance/albumartist-edit/preview?${params}`,
+      (el, body) => renderMetadataEditPreview(el, body, "albumartist-edit-execute-btn"),
+    );
+  }
+
+  async function executeAlbumArtistEdit() {
+    const artist = currentArtistFromPath();
+    const album = document.getElementById("albumartist-edit-album-select").value;
+    const newAlbumArtist = document.getElementById("albumartist-edit-new-albumartist").value.trim();
+    if (!album || !newAlbumArtist) return;
+    const confirmed = window.confirm(
+      `Albuminterpret für Album "${album}" wirklich zu "${newAlbumArtist}" ändern?\n\n` +
+      `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+      `aber es werden tatsächlich Dateien in der Library verändert.`
+    );
+    if (!confirmed) return;
+
+    const execBtn = document.getElementById("albumartist-edit-execute-btn");
+    const resultEl = document.getElementById("albumartist-edit-result-content");
+    execBtn.disabled = true;
+    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    try {
+      const res = await fetch(apiUrl("/api/v1/admin/maintenance/albumartist-edit/execute"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ artist, album, new_album_artist: newAlbumArtist }),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      const body = await res.json();
+      if (!res.ok) {
+        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        return;
+      }
+      resultEl.innerHTML =
+        `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>` +
+        `<p class="hint">Nur der Albuminterpret-Tag (aART) wurde geschrieben — er wird in der Alben-/Track-Übersicht oben aktuell gar nicht angezeigt, auch nicht nach einem Neuscan.</p>`;
+      await loadAlbumArtistEditPreview();
+    } catch (err) {
+      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+    } finally {
+      execBtn.disabled = false;
+    }
+  }
+
+  document.getElementById("albumartist-edit-preview-btn").addEventListener("click", loadAlbumArtistEditPreview);
+  document.getElementById("albumartist-edit-execute-btn").addEventListener("click", executeAlbumArtistEdit);
+  ["albumartist-edit-album-select", "albumartist-edit-new-albumartist"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", () => {
+      document.getElementById("albumartist-edit-execute-btn").disabled = true;
+    });
+    document.getElementById(id).addEventListener("change", () => {
+      document.getElementById("albumartist-edit-execute-btn").disabled = true;
     });
   });
 

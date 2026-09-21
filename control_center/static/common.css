@@ -201,7 +201,7 @@ section.panel h2 {
 .breadcrumb-sep { margin: 0 6px; }
 a.row-item { text-decoration: none; color: inherit; cursor: pointer; }
 a.row-item:hover { background: rgba(127,127,127,0.08); }
-input[type="text"], input[type="search"] {
+input[type="text"], input[type="search"], select {
   background: var(--card-bg); color: var(--fg); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 12px; font-size: 0.9rem; width: 100%;
   max-width: 320px;

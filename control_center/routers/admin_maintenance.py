@@ -13,7 +13,7 @@ Prinzip wie control_center/routers/metadata_actions.py ("Genre setzen",
 bereits produktiv, nutzt dieselben Preview/Execute-Response-Schemas aus
 schemas/maintenance.py).
 
-Vier Aktionen, jede als eigenes Preview/Execute-Endpunktpaar (bewusst
+Sechs Aktionen, jede als eigenes Preview/Execute-Endpunktpaar (bewusst
 KEIN einzelner generischer "/maintenance/{action}"-Dispatcher — die
 Aktionen unterscheiden sich in ihren Parametern, ein generischer
 Endpunkt würde das nur verschleiern):
@@ -30,6 +30,17 @@ Endpunkt würde das nur verschleiern):
   (KEIN automatischer TitleCleaner). `artist` + `rel_path` (aus dem
   bereits vorhandenen Track-Browser, GET /api/v1/library/tracks, zu
   kopieren — kein eigener Track-Picker in diesem Schritt) + `new_title`.
+- **`album-edit`** — manueller Albumname (`©alb`) für den gesamten
+  (verzeichnisbasierten) Album-Scope eines Artists (Manual Metadata
+  Editing v2, CC-AC-3, `library_artist_centric_UX.txt` §15). `artist` +
+  `album` (exakter Wert aus dem bereits vorhandenen
+  GET /api/v1/library/artists-overview/{artist}, Feld `albums[].album`
+  bzw. für Singles der um den Artist-Präfix gekürzte `relative_path`
+  eines Tracks ohne `album_directory` — kein neuer Album-Picker-
+  Endpunkt) + `new_album`. Ändert NICHT `aART`/`©ART`.
+- **`albumartist-edit`** — manueller Albuminterpret (`aART`) für
+  denselben Album-Scope wie `album-edit`. `artist` + `album` +
+  `new_album_artist`. Ändert NICHT `©alb`/`©ART`.
 
 Preview und Execute rufen denselben Executor-Pfad auf (dry_run=True/
 False) — identisches Preview→Diff→Confirmation→Execution→Verification-
@@ -58,10 +69,14 @@ from handlers.menu.models import AccessLevel
 from logger import get_module_logger
 from services.library_repair.maintenance_service import (
     MaintenanceServiceError,
+    execute_album_artist_edit,
+    execute_album_edit,
     execute_artist_casing_fix,
     execute_artist_rename,
     execute_legacy_genre_cleanup,
     execute_title_edit,
+    preview_album_artist_edit,
+    preview_album_edit,
     preview_artist_casing,
     preview_artist_rename,
     preview_legacy_genre_cleanup,
@@ -71,6 +86,8 @@ from services.library_repair.run_tracking import RepairAlreadyRunningError
 
 from ..dependencies import get_current_user_id, require_min_access_level, verify_same_origin
 from ..schemas.admin_maintenance import (
+    AlbumArtistEditRequest,
+    AlbumEditRequest,
     ArtistRenameRequest,
     TitleEditRequest,
 )
@@ -208,6 +225,74 @@ def post_title_edit_execute(
     try:
         result = execute_title_edit(
             payload.artist, payload.rel_path, payload.new_title,
+            triggered_by=f"control_center:{user_id}",
+        )
+    except MaintenanceServiceError as e:
+        raise _validation_error(e) from e
+    except RepairAlreadyRunningError as e:
+        raise _lock_conflict_error(e) from e
+    return maintenance_execute_to_response(result)
+
+
+# ── Album bearbeiten (manueller Zielwert, ©alb) ─────────────────────────
+
+
+@router.get("/album-edit/preview", response_model=MaintenancePreviewResponse)
+def get_album_edit_preview(
+    artist: str = Query(...), album: str = Query(...), new_album: str = Query(...),
+) -> MaintenancePreviewResponse:
+    try:
+        preview = preview_album_edit(artist, album, new_album)
+    except MaintenanceServiceError as e:
+        raise _validation_error(e) from e
+    return maintenance_preview_to_response(preview)
+
+
+@router.post(
+    "/album-edit/execute",
+    response_model=MaintenanceExecuteResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+def post_album_edit_execute(
+    payload: AlbumEditRequest, user_id: int = Depends(get_current_user_id),
+) -> MaintenanceExecuteResponse:
+    try:
+        result = execute_album_edit(
+            payload.artist, payload.album, payload.new_album,
+            triggered_by=f"control_center:{user_id}",
+        )
+    except MaintenanceServiceError as e:
+        raise _validation_error(e) from e
+    except RepairAlreadyRunningError as e:
+        raise _lock_conflict_error(e) from e
+    return maintenance_execute_to_response(result)
+
+
+# ── Albuminterpret bearbeiten (manueller Zielwert, aART) ────────────────
+
+
+@router.get("/albumartist-edit/preview", response_model=MaintenancePreviewResponse)
+def get_album_artist_edit_preview(
+    artist: str = Query(...), album: str = Query(...), new_album_artist: str = Query(...),
+) -> MaintenancePreviewResponse:
+    try:
+        preview = preview_album_artist_edit(artist, album, new_album_artist)
+    except MaintenanceServiceError as e:
+        raise _validation_error(e) from e
+    return maintenance_preview_to_response(preview)
+
+
+@router.post(
+    "/albumartist-edit/execute",
+    response_model=MaintenanceExecuteResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+def post_album_artist_edit_execute(
+    payload: AlbumArtistEditRequest, user_id: int = Depends(get_current_user_id),
+) -> MaintenanceExecuteResponse:
+    try:
+        result = execute_album_artist_edit(
+            payload.artist, payload.album, payload.new_album_artist,
             triggered_by=f"control_center:{user_id}",
         )
     except MaintenanceServiceError as e:

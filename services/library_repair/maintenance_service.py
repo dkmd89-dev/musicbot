@@ -185,13 +185,53 @@ def album_targets(
     oder `"<Singles-Ordner>/<Dateiname>"` (Einzel-Track-Scope einer
     Single, Nutzer-Fund 2026-09-20 — list_artist_albums() listet jede
     Single individuell statt den gesamten Singles-Ordner als einen
-    gemeinsamen Bulk-Kontext, Auftrag §24 bleibt dadurch respektiert)."""
+    gemeinsamen Bulk-Kontext, Auftrag §24 bleibt dadurch respektiert).
+
+    Defense-in-Depth (Adversarial-Review-Fund 2026-09-21, CC-AC-3, Runde 2
+    nach fehlgeschlagenem Blacklist-Versuch der Runde 1 - ".", "./",
+    ".//." umgingen `".." in Path(album).parts` vollstaendig, da
+    `root/artist/"."` zu `root/artist` kollabiert): seit
+    control_center/routers/admin_maintenance.py::album-edit/albumartist-edit
+    sind `artist` UND `album` erstmals direkt per HTTP von einem
+    authentifizierten ADMIN-Client frei waehlbar (der bisherige
+    Telegram-Pfad loest immer ueber resolve_album_by_index() serverseitig
+    gegen eine frisch ermittelte Liste auf, nie aus rohem Nutzertext).
+    Statt einzelne Traversal-Muster auszuschliessen (Blacklist, siehe
+    oben - unvollstaendig) wird deshalb eine positive Containment-Pruefung
+    verwendet, identisches Prinzip wie die bestehende
+    `_resolve_within_library()` weiter oben in diesem Modul, hier
+    zweistufig (Artist-Verzeichnis MUSS echt innerhalb der Library liegen,
+    Album-Ziel MUSS echt innerhalb des Artist-Verzeichnisses liegen -
+    "echt" == ungleich UND nicht nur zufaellig namensgleich, schliesst
+    `artist="."`/`""`/`".."` und `album="."`/`".."`/absolute Pfade
+    gleichermassen aus). `Path.resolve()` folgt dabei auch Symlinks, was
+    nebenbei einen mit `list_artist_albums()` inkonsistenten
+    Symlink-Verzeichnis-Fall schliesst (dessen Verzeichnis-Zweig anders
+    als der Datei-Zweig zuvor nicht auf `is_symlink()` prüfte). Bei
+    fehlendem Artist-/Album-Pfad, ungueltiger Pfadform, zu langem
+    Pfadsegment (`OSError ENAMETOOLONG`) oder einer Symlink-Schleife
+    (`Path.resolve()` wirft dafuer unter Python 3.12 ein `RuntimeError`,
+    kein `OSError` - Adversarial-Review-Fund 2026-09-21, Runde 3: die
+    Runde-2-Fassung deckte nur den `resolve()`-Aufruf selbst ab, nicht
+    die nachfolgenden `is_dir()`/`is_file()`/`rglob()`-Aufrufe, die
+    denselben `OSError` erneut auf demselben zu langen Pfad auswerfen
+    koennen) leere Zielmenge - identisches Fehlerbild wie ein schlicht
+    falscher Albumname, kein neuer Fehlerpfad (HTTP 500 statt 422/200)."""
     root = _library_root(library_root)
-    candidate = root / artist / album
-    if candidate.is_dir():
-        return sorted(str(p.relative_to(root)) for p in candidate.rglob("*.m4a"))
-    if candidate.is_file() and not candidate.is_symlink() and candidate.suffix.lower() == ".m4a":
-        return [str(candidate.relative_to(root))]
+    try:
+        root_resolved = root.resolve()
+        artist_scope = (root / artist).resolve()
+        candidate = (root / artist / album).resolve()
+        if root_resolved == artist_scope or root_resolved not in artist_scope.parents:
+            return []
+        if artist_scope == candidate or artist_scope not in candidate.parents:
+            return []
+        if candidate.is_dir():
+            return sorted(str(p.relative_to(root_resolved)) for p in candidate.rglob("*.m4a"))
+        if candidate.is_file() and not candidate.is_symlink() and candidate.suffix.lower() == ".m4a":
+            return [str(candidate.relative_to(root_resolved))]
+    except (OSError, ValueError, RuntimeError):
+        return []
     return []
 
 

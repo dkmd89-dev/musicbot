@@ -558,6 +558,79 @@ class TestAlbumTargets:
 
 
 @requires_ffmpeg
+class TestAlbumTargetsContainment:
+    """Security-Regression (Adversarial-Review-Fund 2026-09-21, CC-AC-3):
+    `artist`/`album` sind seit den admin_maintenance.py-Endpunkten
+    album-edit/albumartist-edit erstmals per HTTP frei waehlbar. Runde 1
+    (Blacklist auf ".."/absolut) wurde in Runde 2 per "." umgangen; die
+    aktuelle Fassung nutzt eine positive Containment-Pruefung (siehe
+    album_targets()-Docstring)."""
+
+    @pytest.mark.parametrize("album", [
+        "..", "../Other/2021 - Album", "/etc", "", ".", "./", ".//.",
+        "Singles/../..",
+    ])
+    def test_traversal_album_values_return_empty(self, lib, album):
+        own = lib / "A" / "2020 - Own" / "01.m4a"
+        own.parent.mkdir(parents=True)
+        own.touch()
+        other = lib / "Other" / "2021 - Album" / "01.m4a"
+        other.parent.mkdir(parents=True)
+        other.touch()
+
+        assert ms.album_targets("A", album, library_root=lib) == []
+
+    @pytest.mark.parametrize("artist", [".", "", "..", "A/../Other"])
+    def test_traversal_artist_values_return_empty_or_stay_contained(self, lib, artist):
+        """`artist="A/../Other"` resolviert zwar auf "Other" - das ist
+        aber kein Privilegiensprung (ein Client koennte direkt
+        artist="Other" senden) und bleibt innerhalb der Library, siehe
+        Adversarial-Review-Runde-3-Verifikation."""
+        own = lib / "A" / "2020 - Own" / "01.m4a"
+        own.parent.mkdir(parents=True)
+        own.touch()
+        other = lib / "Other" / "2021 - Album" / "01.m4a"
+        other.parent.mkdir(parents=True)
+        other.touch()
+
+        result = ms.album_targets(artist, "2021 - Album", library_root=lib)
+        for rel in result:
+            assert (lib / rel).resolve().is_relative_to(lib.resolve())
+
+    def test_directory_symlink_escape_is_rejected(self, lib, tmp_path):
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "evil.m4a").touch()
+        (lib / "A").mkdir(parents=True)
+        (lib / "A" / "EscapeAlbum").symlink_to(outside)
+
+        assert ms.album_targets("A", "EscapeAlbum", library_root=lib) == []
+
+    def test_symlink_loop_returns_empty_instead_of_raising(self, lib):
+        (lib / "A").mkdir(parents=True)
+        loop = lib / "A" / "Loop"
+        loop.symlink_to(loop)
+
+        assert ms.album_targets("A", "Loop", library_root=lib) == []
+
+    def test_overlong_path_segment_returns_empty_instead_of_raising(self, lib):
+        (lib / "A").mkdir(parents=True)
+        assert ms.album_targets("A", "x" * 300, library_root=lib) == []
+
+    def test_album_name_with_dots_is_not_mistaken_for_traversal(self, lib):
+        """Legit Albumnamen mit Punkten duerfen nicht faelschlich als
+        Traversal-Versuch behandelt werden - nur ein Pfadsegment, das
+        EXAKT ".." ist, wird abgelehnt, kein Substring-Match."""
+        p = lib / "A" / "2020. Album. Dots.." / "01.m4a"
+        p.parent.mkdir(parents=True)
+        p.touch()
+
+        assert ms.album_targets("A", "2020. Album. Dots..", library_root=lib) == [
+            "A/2020. Album. Dots../01.m4a",
+        ]
+
+
+@requires_ffmpeg
 class TestCurrentAlbumAndAlbumArtist:
     def test_reads_representative_album_value(self, lib):
         p = lib / "Bausa" / "2020 - Album X" / "01.m4a"

@@ -297,3 +297,283 @@ async def test_title_edit_execute_rejected_without_origin_header(client, lib):
 
     assert response.status_code == 403
     assert MP4(p).tags["\xa9nam"] == ["T"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# album-edit (manueller Zielwert, ©alb) — Manual Metadata Editing v2,
+# CC-AC-3 (library_artist_centric_UX.txt §13/§15)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_album_edit_preview_and_execute(client, lib):
+    p = lib / "Bausa" / "2020 - Old Album" / "01 - a.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["\xa9alb"] = ["Old Album"]
+    a.save()
+
+    preview = await client.get(
+        "/api/v1/admin/maintenance/album-edit/preview",
+        params={"artist": "Bausa", "album": "2020 - Old Album", "new_album": "New Album"},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["changed_count"] == 1
+    assert MP4(p).tags["\xa9alb"] == ["Old Album"]  # Preview veraendert nichts
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/album-edit/execute",
+        json={"artist": "Bausa", "album": "2020 - Old Album", "new_album": "New Album"},
+        headers=_SAME_ORIGIN,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "SUCCESS"
+    assert MP4(p).tags["\xa9alb"] == ["New Album"]
+    # Artist-/Titel-Tag bleiben unangetastet (Auftrag §15)
+    assert MP4(p).tags["\xa9nam"] == ["T"]
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_album_edit_works_for_single_track_scope(client, lib):
+    """Regression Auftrag §16: Singles-Scope (`"<Singles-Ordner>/<Datei>"`,
+    identisch zu list_artist_albums()) muss ebenfalls ein gueltiger
+    Album-Kontext sein — nicht nur Mehr-Track-Alben."""
+    p = lib / "1986zig" / "Singles" / "a.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["\xa9alb"] = ["Old Single Album"]
+    a.save()
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/album-edit/execute",
+        json={"artist": "1986zig", "album": "Singles/a.m4a", "new_album": "New Single Album"},
+        headers=_SAME_ORIGIN,
+    )
+    assert response.status_code == 200
+    assert response.json()["success_count"] == 1
+    assert MP4(p).tags["\xa9alb"] == ["New Single Album"]
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_album_edit_execute_rejected_without_origin_header(client, lib):
+    p = lib / "Bausa" / "2020 - Old Album" / "01 - a.m4a"
+    _m4a(p)
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/album-edit/execute",
+        json={"artist": "Bausa", "album": "2020 - Old Album", "new_album": "New Album"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "ORIGIN_CHECK_FAILED"
+    assert MP4(p).tags.get("\xa9alb") is None
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_album_edit_execute_409_when_lock_already_held(client, lib):
+    p = lib / "Bausa" / "2020 - Old Album" / "01 - a.m4a"
+    _m4a(p)
+    rt.acquire_repair_lock()
+    try:
+        response = await client.post(
+            "/api/v1/admin/maintenance/album-edit/execute",
+            json={"artist": "Bausa", "album": "2020 - Old Album", "new_album": "New Album"},
+            headers=_SAME_ORIGIN,
+        )
+    finally:
+        rt.release_repair_lock()
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "REPAIR_ALREADY_RUNNING"
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_album_edit_rejects_path_traversal_album_value(client, lib):
+    """Security-Regression (Adversarial-Review-Fund 2026-09-21, Runde 2):
+    `album` ist seit CC-AC-3 erstmals per HTTP frei waehlbar (nicht mehr
+    ausschliesslich ueber die Telegram-seitige server-validierte
+    resolve_album_by_index()) — kein Wert darf den Artist-Scope
+    verlassen. Runde-1-Fix (Blacklist auf ".." /absolut) wurde in Runde 2
+    per "." umgangen (`root/artist/"."` kollabiert zu `root/artist` =
+    voller Own-Discography-Scope statt nur des gewaehlten Albums) — die
+    Dot-Varianten unten decken genau das ab, nicht nur die Runde-1-Fälle."""
+    own_a = lib / "A" / "2020 - Own Album" / "01 - a.m4a"
+    _m4a(own_a)
+    own_b = lib / "A" / "2021 - Other Own Album" / "01 - c.m4a"
+    _m4a(own_b)
+    other = lib / "B" / "2021 - Other Album" / "01 - b.m4a"
+    _m4a(other)
+
+    for traversal_album in (
+        "..", "../B/2021 - Other Album", "/etc",
+        ".", "./", ".//.", "Singles/../..",
+    ):
+        response = await client.post(
+            "/api/v1/admin/maintenance/album-edit/execute",
+            json={"artist": "A", "album": traversal_album, "new_album": "Pwned"},
+            headers=_SAME_ORIGIN,
+        )
+        assert response.status_code == 200, traversal_album
+        assert response.json()["success_count"] == 0, traversal_album
+
+    assert MP4(own_a).tags.get("\xa9alb") is None
+    assert MP4(own_b).tags.get("\xa9alb") is None
+    assert MP4(other).tags.get("\xa9alb") is None
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_album_edit_rejects_path_traversal_artist_value(client, lib):
+    """Security-Regression (Adversarial-Review-Fund 2026-09-21, Runde 2):
+    `artist` ist auf diesen beiden neuen Endpunkten ebenfalls erstmals
+    per HTTP frei waehlbar — `artist="."`/`""`/`".."` mit einem
+    passenden `album`-Wert darf nicht die gesamte Library treffen (die
+    vier bereits bestehenden, von diesem PR nicht beruehrten Endpunkte
+    artist-casing/legacy-genre-cleanup/artist-rename/title-edit teilen
+    dieselbe Schwaeche in artist_targets() - das bleibt ein separater,
+    bewusst zurueckgestellter Befund, siehe docs/FINDINGS_INDEX.md)."""
+    own = lib / "A" / "2020 - Own Album" / "01 - a.m4a"
+    _m4a(own)
+    other = lib / "B" / "2021 - Other Album" / "01 - b.m4a"
+    _m4a(other)
+
+    for traversal_artist in (".", "", ".."):
+        response = await client.post(
+            "/api/v1/admin/maintenance/album-edit/execute",
+            json={"artist": traversal_artist, "album": "2021 - Other Album", "new_album": "Pwned"},
+            headers=_SAME_ORIGIN,
+        )
+        assert response.status_code == 200, traversal_artist
+        assert response.json()["success_count"] == 0, traversal_artist
+
+    assert MP4(own).tags.get("\xa9alb") is None
+    assert MP4(other).tags.get("\xa9alb") is None
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_album_edit_preview_rejects_path_traversal_album_value(client, lib):
+    other = lib / "B" / "2021 - Other Album" / "01 - b.m4a"
+    _m4a(other)
+
+    for traversal_album in ("../B/2021 - Other Album", "."):
+        preview = await client.get(
+            "/api/v1/admin/maintenance/album-edit/preview",
+            params={"artist": "A", "album": traversal_album, "new_album": "Pwned"},
+        )
+        assert preview.status_code == 200, traversal_album
+        assert preview.json()["target_count"] == 0, traversal_album
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# albumartist-edit (manueller Zielwert, aART) — Manual Metadata Editing
+# v2, CC-AC-3 (library_artist_centric_UX.txt §13/§15)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_albumartist_edit_preview_and_execute(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p, artist="Bausa")
+
+    preview = await client.get(
+        "/api/v1/admin/maintenance/albumartist-edit/preview",
+        params={"artist": "Bausa", "album": "2020 - Album X", "new_album_artist": "Various Artists"},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["changed_count"] == 1
+    assert MP4(p).tags.get("aART") is None  # Preview veraendert nichts
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/albumartist-edit/execute",
+        json={"artist": "Bausa", "album": "2020 - Album X", "new_album_artist": "Various Artists"},
+        headers=_SAME_ORIGIN,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "SUCCESS"
+    assert MP4(p).tags["aART"] == ["Various Artists"]
+    # Artist-Tag (©ART) bleibt unangetastet (Auftrag §15)
+    assert MP4(p).tags["\xa9ART"] == ["Bausa"]
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_albumartist_edit_execute_rejected_without_origin_header(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p, artist="Bausa")
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/albumartist-edit/execute",
+        json={"artist": "Bausa", "album": "2020 - Album X", "new_album_artist": "Various Artists"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "ORIGIN_CHECK_FAILED"
+    assert MP4(p).tags.get("aART") is None
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_albumartist_edit_execute_409_when_lock_already_held(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p, artist="Bausa")
+    rt.acquire_repair_lock()
+    try:
+        response = await client.post(
+            "/api/v1/admin/maintenance/albumartist-edit/execute",
+            json={"artist": "Bausa", "album": "2020 - Album X", "new_album_artist": "Various Artists"},
+            headers=_SAME_ORIGIN,
+        )
+    finally:
+        rt.release_repair_lock()
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "REPAIR_ALREADY_RUNNING"
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_albumartist_edit_rejects_path_traversal_album_value(client, lib):
+    """Security-Regression (Adversarial-Review-Fund 2026-09-21, Runde 2)
+    — siehe test_album_edit_rejects_path_traversal_album_value()."""
+    own = lib / "A" / "2020 - Own Album" / "01 - a.m4a"
+    _m4a(own, artist="A")
+    other = lib / "B" / "2021 - Other Album" / "01 - b.m4a"
+    _m4a(other, artist="B")
+
+    for traversal_album in ("../B/2021 - Other Album", "."):
+        response = await client.post(
+            "/api/v1/admin/maintenance/albumartist-edit/execute",
+            json={"artist": "A", "album": traversal_album, "new_album_artist": "Pwned"},
+            headers=_SAME_ORIGIN,
+        )
+        assert response.status_code == 200, traversal_album
+        assert response.json()["success_count"] == 0, traversal_album
+
+    assert MP4(own).tags.get("aART") is None
+    assert MP4(other).tags.get("aART") is None
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_albumartist_edit_rejects_path_traversal_artist_value(client, lib):
+    """Security-Regression (Adversarial-Review-Fund 2026-09-21, Runde 2)
+    — siehe test_album_edit_rejects_path_traversal_artist_value()."""
+    other = lib / "B" / "2021 - Other Album" / "01 - b.m4a"
+    _m4a(other, artist="B")
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/albumartist-edit/execute",
+        json={"artist": ".", "album": "2021 - Other Album", "new_album_artist": "Pwned"},
+        headers=_SAME_ORIGIN,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success_count"] == 0
+    assert MP4(other).tags.get("aART") is None
