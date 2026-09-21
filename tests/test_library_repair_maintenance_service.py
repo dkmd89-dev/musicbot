@@ -117,11 +117,14 @@ class TestArtistTargetsContainment:
         """Adversarial-Review-Fund (CC-AC-6 Runde 1): die anderen
         Traversal-Werte ("/etc", "a/../../b") sind gegen den VOR-Fix-Code
         nicht diskriminierend, da das Zielverzeichnis dort schlicht nicht
-        existiert und `is_dir()` bereits False liefert. Ein absoluter
-        Pfad auf ein EXISTIERENDES Verzeichnis mit echten .m4a-Dateien
-        haette den Vor-Fix-Code dagegen tatsaechlich zum Verlassen der
-        Library gebracht (`root / artist` kollabiert bei einem absoluten
-        `artist`-Wert auf genau diesen Pfad, siehe Path.__truediv__)."""
+        existiert und `is_dir()` bereits False liefert. Ein absoluter Pfad
+        auf ein EXISTIERENDES Verzeichnis mit echten .m4a-Dateien war
+        gegen den Vor-Fix-Code dagegen tatsaechlich unterschiedlich (kein
+        stiller Fehlschlag): `root / artist` kollabiert bei einem
+        absoluten `artist`-Wert auf genau diesen Pfad (Path.__truediv__),
+        und das anschliessende `p.relative_to(root)` warf dort ohne
+        try/except einen unbehandelten ValueError (HTTP 500) statt leere
+        Ziele zu liefern - verifiziert gegen den Stand vor CC-AC-6."""
         outside = tmp_path / "outside_absolute"
         outside.mkdir()
         (outside / "evil.m4a").touch()
