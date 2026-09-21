@@ -163,14 +163,16 @@
   // siehe services/library_health/discovery.py::
   // _classify_section_and_dirs()). Damit Artists, die AUSSCHLIESSLICH
   // Singles besitzen (Auftrag §16, Beispiel "1986zig" in §6-Mockup), im
-  // Picker nicht leer bleiben, werden Singles zusaetzlich aus body.tracks
-  // abgeleitet (album_directory fehlt) - Wert = relativer Pfad ohne
-  // Artist-Praefix, identisches Format wie services/library_repair/
-  // library_artists.py::list_artist_albums() ("<Singles-Ordner>/<Datei>"),
-  // das maintenance_service.py::album_targets() erwartet. Nur .m4a
-  // (identische Einschraenkung wie list_artist_albums() -
-  // ©alb/aART/©ART/©nam sind MP4-/iTunes-Atome, siehe LIBRARY_REPAIR.md
-  // §15/§16).
+  // Picker nicht leer bleiben, werden Tracks OHNE album_directory
+  // zusaetzlich aus body.tracks abgeleitet (deckt sowohl echte Singles
+  // unter "Singles/<Datei>" als auch vereinzelte Dateien direkt im
+  // Artist-Ordner ab - bewusst weiter gefasst als services/
+  // library_repair/library_artists.py::list_artist_albums(), das NUR den
+  // "Singles"-Ordner speziell behandelt; beide Faelle sind fuer
+  // maintenance_service.py::album_targets() gueltige Ein-Track-Scopes,
+  // Wert = relativer Pfad ohne Artist-Praefix). Nur .m4a (identische
+  // Einschraenkung wie list_artist_albums() - ©alb/aART/©ART/©nam sind
+  // MP4-/iTunes-Atome, siehe LIBRARY_REPAIR.md §15/§16).
   function _artistAlbumOptions(artist, body) {
     const options = (body.albums || []).map((a) => ({
       value: a.album, label: `💿 ${a.album} (${a.file_count} Dateien)`,
@@ -475,7 +477,7 @@
       }
       resultEl.innerHTML =
         `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>` +
-        `<p class="hint">Die Albenliste oben stammt aus dem zwischengespeicherten Health-Report und zeigt den neuen Albumnamen erst nach einem Neuscan.</p>`;
+        `<p class="hint">Nur der Album-Tag (©alb) wurde geschrieben — der Alben-Eintrag oben zeigt weiterhin den Verzeichnisnamen und bleibt auch nach einem Neuscan unverändert (©alb wird dort nicht angezeigt).</p>`;
       await loadAlbumEditPreview();
     } catch (err) {
       resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
@@ -548,7 +550,7 @@
       }
       resultEl.innerHTML =
         `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>` +
-        `<p class="hint">Die Albenliste oben stammt aus dem zwischengespeicherten Health-Report und zeigt den neuen Albuminterpret erst nach einem Neuscan.</p>`;
+        `<p class="hint">Nur der Albuminterpret-Tag (aART) wurde geschrieben — er wird in der Alben-/Track-Übersicht oben aktuell gar nicht angezeigt, auch nicht nach einem Neuscan.</p>`;
       await loadAlbumArtistEditPreview();
     } catch (err) {
       resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;

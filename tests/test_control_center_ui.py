@@ -608,10 +608,19 @@ async def test_artist_detail_page_album_picker_includes_singles(client):
 
 
 @pytest.mark.asyncio
-async def test_artist_detail_page_album_edit_does_not_navigate_away(client):
+async def test_artist_detail_page_album_edit_confirms_before_write(client):
+    """Auftrag §25 (Preview->Confirm->Execute): die zwei neuen Aktionen
+    muessen jeweils ihre EIGENE window.confirm()-Bestaetigung vor dem
+    Execute-Request ausloesen, nicht nur irgendeine der bereits
+    bestehenden drei (test_..._confirms_before_write_actions oben zaehlt
+    nur pauschal >= 3, ohne die neuen Aktionen einzeln zu pruefen)."""
     html = (await client.get("/library/Bausa")).text
 
-    assert html.count("window.location.href") == 0
+    assert html.count("window.confirm(") >= 5
+    album_edit_fn = html.split("async function executeAlbumEdit()")[1].split("async function ")[0]
+    assert "window.confirm(" in album_edit_fn
+    albumartist_edit_fn = html.split("async function executeAlbumArtistEdit()")[1].split("async function ")[0]
+    assert "window.confirm(" in albumartist_edit_fn
 
 
 @pytest.mark.asyncio

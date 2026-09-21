@@ -185,7 +185,23 @@ def album_targets(
     oder `"<Singles-Ordner>/<Dateiname>"` (Einzel-Track-Scope einer
     Single, Nutzer-Fund 2026-09-20 — list_artist_albums() listet jede
     Single individuell statt den gesamten Singles-Ordner als einen
-    gemeinsamen Bulk-Kontext, Auftrag §24 bleibt dadurch respektiert)."""
+    gemeinsamen Bulk-Kontext, Auftrag §24 bleibt dadurch respektiert).
+
+    Defense-in-Depth (Adversarial-Review-Fund 2026-09-21, CC-AC-3): seit
+    control_center/routers/admin_maintenance.py::album-edit/albumartist-edit
+    ist `album` erstmals direkt per HTTP von einem authentifizierten
+    ADMIN-Client frei waehlbar (der bisherige Telegram-Pfad loest immer
+    ueber resolve_album_by_index() serverseitig gegen eine frisch
+    ermittelte Liste auf, nie aus rohem Nutzertext). Ein Wert wie ".."
+    wuerde ohne diesen Check `root/artist/".."` == `root` ergeben und
+    damit die GESAMTE Library statt nur des Artist-Scopes treffen; ein
+    absoluter Pfad wuerde `relative_to(root)` mit einem unbehandelten
+    ValueError abbrechen (HTTP 500 statt 422). Leere/absolute/".."-
+    haltige Werte werden deshalb wie "nicht gefunden" behandelt (leere
+    Zielmenge) - identisches Fehlerbild wie ein schlicht falscher
+    Albumname, kein neuer Fehlerpfad."""
+    if not album or Path(album).is_absolute() or ".." in Path(album).parts:
+        return []
     root = _library_root(library_root)
     candidate = root / artist / album
     if candidate.is_dir():

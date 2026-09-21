@@ -1099,7 +1099,7 @@ Ausführungslogik**, identisches Prinzip wie „Genre setzen"
 (`control_center/routers/metadata_actions.py`, bereits produktiv seit
 Metadata-Management-Schritt 4).
 
-- **Vier Aktionen, jede als eigenes Preview/Execute-Endpunktpaar**
+- **Sechs Aktionen, jede als eigenes Preview/Execute-Endpunktpaar**
   (bewusst kein generischer `/maintenance/{action}`-Dispatcher — die
   Aktionen unterscheiden sich in ihren Parametern, ein generischer
   Endpunkt würde das verschleiern):
@@ -1115,7 +1115,20 @@ Metadata-Management-Schritt 4).
     automatischer TitleCleaner (`artist` + `rel_path` + `new_title`,
     `rel_path` wird aus der bestehenden Library-Track-Ansicht kopiert —
     kein eigener Track-Picker in diesem Schritt).
-  - Alle vier rufen `services/library_repair/maintenance_service.py::
+  - `album-edit` (nachgezogen CC-AC-3, `library_artist_centric_UX.txt`)
+    — manueller Albumname (`©alb`) für den gesamten Album-Scope
+    (`artist` + `album` + `new_album`). `album` MUSS ein exakter Wert
+    aus `list_artist_albums()`/der artists-overview-Antwort sein — seit
+    dieser Aktion erstmals per HTTP direkt (nicht mehr ausschließlich
+    über die Telegram-seitige `resolve_album_by_index()`) erreichbar,
+    validiert `services/library_repair/maintenance_service.py::
+    album_targets()` seit dem Adversarial-Review-Fund 2026-09-21 defensiv
+    gegen absolute/`..`-haltige Werte (leere Zielmenge statt Traversal
+    über den Artist-Scope hinaus bzw. unbehandeltem 500).
+  - `albumartist-edit` (nachgezogen CC-AC-3) — manueller Albuminterpret
+    (`aART`) für denselben Album-Scope wie `album-edit` (`artist` +
+    `album` + `new_album_artist`), ändert nicht `©alb`/`©ART`.
+  - Alle sechs rufen `services/library_repair/maintenance_service.py::
     preview_*()`/`execute_*()` unverändert auf; Preview und Execute
     nutzen denselben Executor-Pfad (`dry_run=True/False`) — identisches
     Preview→Diff→Confirmation→Execution→Verification-Prinzip wie „Genre
@@ -1136,7 +1149,7 @@ Metadata-Management-Schritt 4).
   404. `RepairAlreadyRunningError` (gemeinsamer Lock mit Telegram/CLI/
   Repair/L2-L3/Genre setzen) wird wie überall als 409 gemeldet.
 - **`GET/POST /api/v1/admin/maintenance/{action}/preview|execute`**
-  (neues `control_center/routers/admin_maintenance.py`, 8 Endpunkte) —
+  (neues `control_center/routers/admin_maintenance.py`, 12 Endpunkte) —
   reine Orchestrierung, mindestens `AccessLevel.ADMIN`, POST über
   `verify_same_origin()` CSRF-geschützt (identisches Muster wie alle
   bisherigen destruktiven Control-Center-Fähigkeiten). Bewusst synchron
