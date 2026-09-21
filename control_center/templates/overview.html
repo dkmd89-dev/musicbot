@@ -4,43 +4,53 @@
   <h1>🎛️ Overview</h1>
   <p class="subtitle">Wie geht es deinem MusicBot gerade – und was braucht Aufmerksamkeit?</p>
 
-  <!-- Systemstatus-Bar -->
-  <div class="system-status-bar" id="system-status-bar">
-    <div class="system-status-label">Systemstatus</div>
-    <div class="system-status-pill status-UNKNOWN" id="system-status-pill">
-      <span class="dot"></span><span id="system-status-text">Lädt…</span>
+  <!-- ── KPI-Grid: Systemstatus primär (2 Spalten), Rest sekundär ── -->
+  <div class="kpi-grid">
+    <!-- Primär: Systemstatus -->
+    <div class="panel kpi-card kpi-primary">
+      <div class="kpi-label">🖥️ Systemstatus</div>
+      <div class="kpi-value" id="system-status-value">–</div>
+      <div class="kpi-hint" id="system-status-hint">Lädt…</div>
+      <span class="kpi-indicator" id="system-indicator"></span>
+    </div>
+
+    <!-- Sekundär: Library -->
+    <div class="panel kpi-card">
+      <div class="kpi-label">📚 Library</div>
+      <div class="kpi-value" id="status-library-value">–</div>
+      <div class="kpi-hint" id="status-library-hint">Lädt…</div>
+    </div>
+
+    <!-- Sekundär: Navidrome -->
+    <div class="panel kpi-card">
+      <div class="kpi-label">🌐 Navidrome</div>
+      <div class="kpi-value" id="status-navidrome-value">–</div>
+      <div class="kpi-hint" id="status-navidrome-hint">Lädt…</div>
+    </div>
+
+    <!-- Sekundär: Jobs -->
+    <div class="panel kpi-card">
+      <div class="kpi-label">⚙️ Jobs</div>
+      <div class="kpi-value" id="status-jobs-value">–</div>
+      <div class="kpi-hint" id="status-jobs-hint">Lädt…</div>
+      <div class="kpi-progress-track">
+        <div class="kpi-progress-fill" id="jobs-progress" hidden></div>
+      </div>
     </div>
   </div>
 
-  <!-- 3-Spalten-Statuszeile -->
-  <div class="status-row">
-    <div class="status-cell">
-      <div class="status-cell-label">📚 Library</div>
-      <div class="status-cell-value" id="status-library-value">–</div>
-      <div class="status-cell-hint" id="status-library-hint">Lädt…</div>
-    </div>
-    <div class="status-cell">
-      <div class="status-cell-label">🌐 Navidrome</div>
-      <div class="status-cell-value" id="status-navidrome-value">–</div>
-      <div class="status-cell-hint" id="status-navidrome-hint">Lädt…</div>
-    </div>
-    <div class="status-cell">
-      <div class="status-cell-label">⚙️ Jobs</div>
-      <div class="status-cell-value" id="status-jobs-value">–</div>
-      <div class="status-cell-hint" id="status-jobs-hint">Lädt…</div>
-    </div>
-  </div>
-
-  <!-- Attention (nur Findings) -->
-  <section class="panel attention-panel" id="attention-panel" hidden>
+  <!-- ── Attention (immer sichtbar, leerer Zustand bei 0 Findings) ── -->
+  <section class="panel attention-panel" id="attention-panel">
     <h2>⚠️ Aufmerksamkeit</h2>
-    <div class="attention-row" id="attention-content"></div>
+    <div class="attention-row" id="attention-content">
+      <span class="hint">Lädt…</span>
+    </div>
     <div class="panel-footer">
       <a href="{{ base_path }}/findings" class="panel-link">Findings ansehen →</a>
     </div>
   </section>
 
-  <!-- Zuletzt -->
+  <!-- ── Zuletzt ── -->
   <section class="panel">
     <h2>🕒 Zuletzt</h2>
     <div id="recent-activity-content" class="empty-note">Lädt…</div>
@@ -49,7 +59,7 @@
     </div>
   </section>
 
-  <!-- Schnellzugriff -->
+  <!-- ── Schnellzugriff ── -->
   <div class="section-header">Schnellzugriff</div>
   <div class="quick-actions-grid">
     <a href="{{ base_path }}/library" class="quick-action">
@@ -93,49 +103,83 @@
     jobsActive: 0,
   };
 
-  // ── Systemstatus-Pill aktualisieren ────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════
+  // Systemstatus
+  // ══════════════════════════════════════════════════════════════════
   function _updateSystemStatus() {
     const s = _overviewState;
-    const pill = document.getElementById("system-status-pill");
-    const text = document.getElementById("system-status-text");
-    if (!pill || !text) return;
+    const valueEl = document.getElementById("system-status-value");
+    const hintEl  = document.getElementById("system-status-hint");
+    const indEl   = document.getElementById("system-indicator");
+    if (!valueEl) return;
 
     let status = "HEALTHY";
-    let label = "Healthy";
+    let label  = "Healthy";
+    let hint   = "";
 
-    // CRITICAL: Navidrome offline oder Health kritisch
+    // 1. Navidrome offline → CRITICAL
     if (s.navidrome && !s.navidrome.connected) {
       status = "CRITICAL";
-      label = "Critical";
-    } else if (s.health && s.health.status === "CRITICAL") {
-      status = "CRITICAL";
-      label = "Critical";
+      label  = "Critical";
+      hint   = "Navidrome nicht erreichbar";
     }
-    // WARNING: offene Findings
+    // 2. Health CRITICAL → CRITICAL
+    else if (s.health && s.health.status === "CRITICAL") {
+      status = "CRITICAL";
+      label  = "Critical";
+      hint   = `Health: ${s.health.score != null ? s.health.score : "?"}`;
+    }
+    // 3. Offene Findings → WARNING
     else if (s.findings > 0) {
       status = "WARNING";
-      label = "Warning";
+      label  = "Warning";
+      hint   = `${s.findings} offene Finding${s.findings === 1 ? "" : "s"}`;
     }
-    // WARNING: Health nicht "gut"
-    else if (s.health && s.health.status && !["EXCELLENT", "GOOD"].includes(s.health.status)) {
+    // 4. Health nicht GOOD/EXCELLENT → WARNING
+    else if (s.health && s.health.status &&
+             !["EXCELLENT", "GOOD"].includes(s.health.status)) {
       status = "WARNING";
-      label = "Warning";
+      label  = "Warning";
+      hint   = `Health: ${s.health.status}`;
+    }
+    // 5. Laufende Jobs → nur Info-Hinweis (kein Warning)
+    else if (s.jobsActive > 0) {
+      hint = `${s.jobsActive} Job${s.jobsActive === 1 ? "" : "s"} aktiv`;
+    }
+    // 6. Alles OK
+    else {
+      hint = "Alle Systeme betriebsbereit";
     }
 
-    pill.className = `system-status-pill status-${status}`;
-    text.textContent = label;
+    valueEl.textContent = label;
+    valueEl.style.color =
+      status === "CRITICAL" ? "var(--error)" :
+      status === "WARNING"  ? "#f59e0b"      : "var(--ok)";
+
+    if (hintEl) hintEl.textContent = hint;
+
+    if (indEl) {
+      indEl.className = "kpi-indicator " +
+        (status === "CRITICAL" ? "error" :
+         status === "WARNING"  ? "warn"  : "ok");
+    }
   }
 
-  // ── Navidrome-Status ──────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════
+  // Navidrome-Status
+  // ══════════════════════════════════════════════════════════════════
   async function loadNavidromeStatus() {
     const valueEl = document.getElementById("status-navidrome-value");
-    const hintEl = document.getElementById("status-navidrome-hint");
+    const hintEl  = document.getElementById("status-navidrome-hint");
     try {
-      const res = await fetch(apiUrl("/api/v1/navidrome/status"), { credentials: "same-origin" });
+      const res = await fetch(
+        apiUrl("/api/v1/navidrome/status"),
+        { credentials: "same-origin" }
+      );
       if (res.status === 401) { showOnly("login-view"); return; }
       if (!res.ok) {
         valueEl.textContent = "—";
-        hintEl.textContent = "Nicht abrufbar";
+        hintEl.textContent  = "Nicht abrufbar";
         return;
       }
       const status = await res.json();
@@ -143,30 +187,36 @@
       if (status.connected) {
         valueEl.textContent = "Online";
         valueEl.style.color = "var(--ok)";
-        hintEl.textContent = status.artist_count != null
-          ? `${status.artist_count} Artists` : "Verbunden";
+        hintEl.textContent  = status.artist_count != null
+          ? `${status.artist_count} Artists`
+          : "Verbunden";
       } else {
         valueEl.textContent = "Offline";
         valueEl.style.color = "var(--error)";
-        hintEl.textContent = "Nicht erreichbar";
+        hintEl.textContent  = "Nicht erreichbar";
       }
       _updateSystemStatus();
     } catch (err) {
       valueEl.textContent = "—";
-      hintEl.textContent = "Netzwerkfehler";
+      hintEl.textContent  = "Netzwerkfehler";
     }
   }
 
-  // ── Library / Health ──────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════
+  // Library / Health
+  // ══════════════════════════════════════════════════════════════════
   async function loadHealth() {
     const valueEl = document.getElementById("status-library-value");
-    const hintEl = document.getElementById("status-library-hint");
+    const hintEl  = document.getElementById("status-library-hint");
     try {
-      const res = await fetch(apiUrl("/api/v1/library/health"), { credentials: "same-origin" });
+      const res = await fetch(
+        apiUrl("/api/v1/library/health"),
+        { credentials: "same-origin" }
+      );
       if (res.status === 401) { showOnly("login-view"); return; }
       if (!res.ok) {
         valueEl.textContent = "—";
-        hintEl.textContent = "Nicht abrufbar";
+        hintEl.textContent  = "Nicht abrufbar";
         return;
       }
       const data = await res.json();
@@ -184,19 +234,24 @@
         hintEl.textContent = parts.join(" · ") || "Tracks";
       } else {
         valueEl.textContent = "—";
-        hintEl.textContent = "Keine Library-Daten";
+        hintEl.textContent  = "Keine Library-Daten";
       }
       _updateSystemStatus();
     } catch (err) {
       valueEl.textContent = "—";
-      hintEl.textContent = "Netzwerkfehler";
+      hintEl.textContent  = "Netzwerkfehler";
     }
   }
 
-  // ── Open Findings (Attention) ─────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════
+  // Findings (Attention)
+  // ══════════════════════════════════════════════════════════════════
   async function loadFindings() {
     try {
-      const res = await fetch(apiUrl("/api/v1/library/findings/summary"), { credentials: "same-origin" });
+      const res = await fetch(
+        apiUrl("/api/v1/library/findings/summary"),
+        { credentials: "same-origin" }
+      );
       if (res.status === 401) { showOnly("login-view"); return; }
       if (!res.ok) return; // stiller Rückfall, Overview bleibt nutzbar
       const summary = await res.json();
@@ -209,66 +264,105 @@
   }
 
   function _renderAttention() {
-    const panel = document.getElementById("attention-panel");
+    const panel   = document.getElementById("attention-panel");
     const content = document.getElementById("attention-content");
     if (!panel || !content) return;
 
     const f = _overviewState.findings;
+
+    // Panel immer sichtbar — leerer Zustand wird explizit angezeigt,
+    // damit Nutzer zwischen "keine Findings" und "Request fehlgeschlagen"
+    // unterscheiden kann.
+    panel.hidden = false;
+
     if (f === 0) {
-      panel.hidden = true;
+      panel.classList.add("attention-panel--ok");
+      content.innerHTML = '<span class="attention-ok">✅ Keine offenen Findings</span>';
       return;
     }
-    panel.hidden = false;
+
+    panel.classList.remove("attention-panel--ok");
     content.innerHTML =
       `<strong>${f}</strong> Finding${f === 1 ? "" : "s"} erfordern Aufmerksamkeit`;
   }
 
-  // ── Jobs (3-Spalten-Zeile) ────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════
+  // Jobs (KPI-Kachel mit Progressbar)
+  // ══════════════════════════════════════════════════════════════════
   async function loadJobs() {
     const valueEl = document.getElementById("status-jobs-value");
-    const hintEl = document.getElementById("status-jobs-hint");
+    const hintEl  = document.getElementById("status-jobs-hint");
+    const bar     = document.getElementById("jobs-progress");
     try {
-      const res = await fetch(apiUrl("/api/v1/jobs?limit=20"), { credentials: "same-origin" });
+      const res = await fetch(
+        apiUrl("/api/v1/jobs?limit=20"),
+        { credentials: "same-origin" }
+      );
       if (res.status === 401) { showOnly("login-view"); return; }
       if (!res.ok) {
         valueEl.textContent = "—";
-        hintEl.textContent = "Nicht abrufbar";
+        hintEl.textContent  = "Nicht abrufbar";
         return;
       }
       const body = await res.json();
-      const active = body.jobs.filter((j) => j.status === "PENDING" || j.status === "RUNNING");
+      const active = body.jobs.filter(
+        (j) => j.status === "PENDING" || j.status === "RUNNING"
+      );
       _overviewState.jobsActive = active.length;
-      valueEl.textContent = active.length;
-      if (active.length === 0) {
-        hintEl.textContent = "Keine aktiven";
-      } else if (active.length === 1) {
-        hintEl.textContent = `${active[0].kind} läuft`;
+
+      if (active.length === 1) {
+        const j = active[0];
+        const pct = (j.progress != null) ? Math.round(j.progress * 100) : null;
+        valueEl.textContent = pct != null ? `${pct}%` : "1";
+        hintEl.textContent  = j.kind || "läuft";
+        if (bar && pct != null) {
+          bar.style.width = `${pct}%`;
+          bar.hidden = false;
+        } else if (bar) {
+          bar.hidden = true;
+        }
       } else {
-        hintEl.textContent = `${active.length} laufen`;
+        valueEl.textContent = active.length;
+        hintEl.textContent  = active.length === 0
+          ? "Keine aktiven"
+          : `${active.length} laufen`;
+        if (bar) bar.hidden = true;
       }
+      _updateSystemStatus();
     } catch (err) {
       valueEl.textContent = "—";
-      hintEl.textContent = "Netzwerkfehler";
+      hintEl.textContent  = "Netzwerkfehler";
     }
   }
 
-  // ── Recent Activity ───────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════
+  // Recent Activity (Download-Verlauf)
+  // ══════════════════════════════════════════════════════════════════
   async function loadRecentActivity() {
     const el = document.getElementById("recent-activity-content");
     try {
-      const res = await fetch(apiUrl("/api/v1/downloads/history?limit=5"), { credentials: "same-origin" });
+      const res = await fetch(
+        apiUrl("/api/v1/downloads/history?limit=5"),
+        { credentials: "same-origin" }
+      );
       if (res.status === 401) { showOnly("login-view"); return; }
       if (!res.ok) { el.textContent = "Verlauf nicht abrufbar."; return; }
+
       const body = await res.json();
       if (!body.entries.length) {
         el.innerHTML = '<p class="empty-note">Keine Aktivität.</p>';
         return;
       }
+
       el.innerHTML = '<div class="activity-list">' + body.entries.map((e) => {
         const ts = new Date(e.timestamp);
-        const timeStr = ts.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) +
-          " " + ts.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+        const timeStr =
+          ts.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) +
+          " " +
+          ts.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+
         const status = _escapeHtml(e.status);
+
         return `
           <div class="activity-item">
             <span class="badge badge-status-${status}">${status}</span>
@@ -280,11 +374,15 @@
           </div>
         `;
       }).join("") + "</div>";
+
     } catch (err) {
       el.textContent = "Netzwerkfehler: " + err.message;
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  // Init
+  // ══════════════════════════════════════════════════════════════════
   function initPage() {
     checkAuth().then((who) => {
       if (!who) return;
