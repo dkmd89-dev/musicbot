@@ -88,6 +88,88 @@ def test_artist_targets_unknown_artist_returns_empty(lib):
     assert ms.artist_targets("Unknown", library_root=lib) == []
 
 
+class TestArtistTargetsContainment:
+    """Security-Regression (CC-AC-6, P1-Fund aus dem Adversarial-Review
+    von CC-AC-3 Runde 3, docs/FINDINGS_INDEX.md): artist_targets() nutzte
+    vor diesem Fix `root / artist` gefolgt von `is_dir()` ohne jede
+    Containment-Pruefung. `artist="."` kollabierte auf `root` selbst -
+    bestaetigter destruktiver Live-Schreibzugriff ueber die GESAMTE
+    Library (POST .../legacy-genre-cleanup/execute?artist=. entfernte das
+    Legacy-Genre-Atom bei ALLEN Artists). `artist=".."` lieferte
+    Ziel-Pfade AUSSERHALB der Library-Wurzel zurueck."""
+
+    @pytest.mark.parametrize("artist", [".", "..", "", "/etc", "/abs/path", "a/../../b"])
+    def test_traversal_artist_values_return_empty(self, lib, artist):
+        own = lib / "A" / "01.m4a"
+        own.parent.mkdir(parents=True)
+        own.touch()
+        other = lib / "Other" / "01.m4a"
+        other.parent.mkdir(parents=True)
+        other.touch()
+
+        assert ms.artist_targets(artist, library_root=lib) == []
+
+    def test_overlong_artist_returns_empty_instead_of_raising(self, lib):
+        lib.mkdir()
+        assert ms.artist_targets("x" * 300, library_root=lib) == []
+
+    def test_absolute_path_to_existing_directory_with_files_is_rejected(self, lib, tmp_path):
+        """Adversarial-Review-Fund (CC-AC-6 Runde 1): die anderen
+        Traversal-Werte ("/etc", "a/../../b") sind gegen den VOR-Fix-Code
+        nicht diskriminierend, da das Zielverzeichnis dort schlicht nicht
+        existiert und `is_dir()` bereits False liefert. Ein absoluter Pfad
+        auf ein EXISTIERENDES Verzeichnis mit echten .m4a-Dateien war
+        gegen den Vor-Fix-Code dagegen tatsaechlich unterschiedlich (kein
+        stiller Fehlschlag): `root / artist` kollabiert bei einem
+        absoluten `artist`-Wert auf genau diesen Pfad (Path.__truediv__),
+        und das anschliessende `p.relative_to(root)` warf dort ohne
+        try/except einen unbehandelten ValueError (HTTP 500) statt leere
+        Ziele zu liefern - verifiziert gegen den Stand vor CC-AC-6."""
+        outside = tmp_path / "outside_absolute"
+        outside.mkdir()
+        (outside / "evil.m4a").touch()
+        lib.mkdir()
+
+        assert ms.artist_targets(str(outside), library_root=lib) == []
+
+    def test_directory_symlink_escape_is_rejected(self, lib, tmp_path):
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "evil.m4a").touch()
+        lib.mkdir()
+        (lib / "EscapeArtist").symlink_to(outside)
+
+        assert ms.artist_targets("EscapeArtist", library_root=lib) == []
+
+    def test_symlink_loop_returns_empty_instead_of_raising(self, lib):
+        lib.mkdir()
+        loop = lib / "Loop"
+        loop.symlink_to(loop)
+
+        assert ms.artist_targets("Loop", library_root=lib) == []
+
+    def test_artist_name_with_dots_is_not_mistaken_for_traversal(self, lib):
+        """Legit Artist-/Ordnernamen mit Punkten duerfen nicht faelschlich
+        als Traversal-Versuch behandelt werden - nur ein Pfadsegment, das
+        EXAKT ".." ist, wird abgelehnt, kein Substring-Match."""
+        p = lib / "2024 - Album ... Pt. 2" / "01.m4a"
+        p.parent.mkdir(parents=True)
+        p.touch()
+
+        assert ms.artist_targets("2024 - Album ... Pt. 2", library_root=lib) == [
+            "2024 - Album ... Pt. 2/01.m4a",
+        ]
+
+    def test_artist_name_with_umlauts_is_accepted(self, lib):
+        p = lib / "Böhse Onkelz" / "01.m4a"
+        p.parent.mkdir(parents=True)
+        p.touch()
+
+        assert ms.artist_targets("Böhse Onkelz", library_root=lib) == [
+            "Böhse Onkelz/01.m4a",
+        ]
+
+
 # ── resolve_target_genre() ───────────────────────────────────────────────
 
 
@@ -476,6 +558,125 @@ class TestTitleEditFlow:
             rt.release_repair_lock()
 
 
+@requires_ffmpeg
+class TestTitleEditRelPathContainment:
+    """Security-Regression (CC-AC-6, P1-Fund aus dem Adversarial-Review
+    von CC-AC-3 Runde 3, docs/FINDINGS_INDEX.md): title-edit's `rel_path`
+    hatte KEINE Bindung an den gewaehlten `artist` - bestaetigt
+    reproduziert mit artist="A" + rel_path="AndererArtist/Album/01.m4a",
+    das erfolgreich bei einem fremden Artist schrieb. `rel_path` ist wie
+    bei artist_targets() IMMER relativ zur Library-Wurzel (siehe
+    _title_edit_targets()-Docstring), die Bindung an `artist` erfolgt
+    ueber eine zusaetzliche Containment-Pruefung gegen das aufgeloeste
+    Artist-Verzeichnis."""
+
+    def test_rel_path_from_foreign_artist_is_rejected(self, lib):
+        own = lib / "A" / "Singles" / "a.m4a"
+        _m4a(own)
+        foreign = lib / "AndererArtist" / "Album" / "01.m4a"
+        _m4a(foreign)
+
+        preview = ms.preview_title_edit(
+            "A", "AndererArtist/Album/01.m4a", "Neuer Titel", library_root=lib,
+        )
+        assert preview.target_count == 0
+
+        result = ms.execute_title_edit(
+            "A", "AndererArtist/Album/01.m4a", "Neuer Titel",
+            triggered_by="test", library_root=lib,
+        )
+        assert result.target_count == 0
+        assert result.success_count == 0
+        assert MP4(foreign).tags["©nam"] == ["T"]
+
+    def test_rel_path_outside_library_is_rejected(self, lib, tmp_path):
+        own = lib / "A" / "Singles" / "a.m4a"
+        _m4a(own)
+        outside = tmp_path / "outside" / "evil.m4a"
+        outside.parent.mkdir(parents=True)
+        _m4a(outside)
+
+        result = ms.execute_title_edit(
+            "A", "../outside/evil.m4a", "Neuer Titel",
+            triggered_by="test", library_root=lib,
+        )
+        assert result.target_count == 0
+        assert result.success_count == 0
+        assert MP4(outside).tags["©nam"] == ["T"]
+
+    def test_absolute_rel_path_is_rejected(self, lib, tmp_path):
+        own = lib / "A" / "Singles" / "a.m4a"
+        _m4a(own)
+        outside = tmp_path / "evil.m4a"
+        _m4a(outside)
+
+        result = ms.execute_title_edit(
+            "A", str(outside), "Neuer Titel", triggered_by="test", library_root=lib,
+        )
+        assert result.target_count == 0
+        assert result.success_count == 0
+        assert MP4(outside).tags["©nam"] == ["T"]
+
+    def test_rel_path_dotdot_into_foreign_artist_is_rejected(self, lib):
+        own = lib / "A" / "Singles" / "a.m4a"
+        _m4a(own)
+        foreign = lib / "AndererArtist" / "Album" / "01.m4a"
+        _m4a(foreign)
+
+        result = ms.execute_title_edit(
+            "A", "A/../AndererArtist/Album/01.m4a", "Neuer Titel",
+            triggered_by="test", library_root=lib,
+        )
+        assert result.target_count == 0
+        assert result.success_count == 0
+        assert MP4(foreign).tags["©nam"] == ["T"]
+
+    def test_rel_path_with_dotdot_staying_within_artist_scope_is_accepted(self, lib):
+        p = lib / "A" / "Album" / "01.m4a"
+        _m4a(p)
+
+        result = ms.execute_title_edit(
+            "A", "A/Album/../Album/01.m4a", "Neuer Titel",
+            triggered_by="test", library_root=lib,
+        )
+        assert result.target_count == 1
+        assert result.success_count == 1
+        assert MP4(p).tags["©nam"] == ["Neuer Titel"]
+
+    def test_rel_path_pointing_at_symlink_is_still_rejected_by_safety_check(self, lib):
+        """Security-Regression (CC-AC-6 Runde 2, Adversarial-Review): eine
+        fruehere Fassung von `_title_edit_targets()` gab den ueber
+        `_resolve_within()` AUFGELOESTEN Pfad zurueck (statt des
+        unveraenderten `rel_path`) - ein per Symlink referenzierter Track
+        haette dadurch als sein aufgeloestes Realziel an
+        `apply_title_edit()` gemeldet, `executor.py::safety_check()`s
+        `path.is_symlink()`-Pruefung haette den Symlink dadurch nie mehr
+        gesehen (ein bereits per `resolve()` aufgeloester Pfad ist per
+        Definition kein Symlink mehr) - Vor-Fix (CC-AC-3/vor CC-AC-6) UND
+        die korrigierte Fassung lehnen einen Symlink-Track gleichermassen
+        ab (`_title_edit_targets()` liefert weiterhin `rel_path`
+        unveraendert zurueck, containment wird nur intern anhand des
+        aufgeloesten Pfads entschieden)."""
+        real = lib / "A" / "Album" / "real.m4a"
+        _m4a(real)
+        link = lib / "A" / "Album" / "link.m4a"
+        link.symlink_to(real)
+
+        preview = ms.preview_title_edit(
+            "A", "A/Album/link.m4a", "Neuer Titel", library_root=lib,
+        )
+        assert preview.target_count == 1
+        assert preview.outcomes[0].status == "SKIPPED"
+        assert preview.outcomes[0].reason == "Safety: Symlink"
+        assert preview.changed_count == 0
+
+        result = ms.execute_title_edit(
+            "A", "A/Album/link.m4a", "Neuer Titel", triggered_by="test", library_root=lib,
+        )
+        assert result.success_count == 0
+        assert MP4(real).tags["©nam"] == ["T"]
+
+
 # ── _resolve_within_library() (Defense-in-Depth) ─────────────────────────
 
 
@@ -490,6 +691,88 @@ class TestResolveWithinLibrary:
         outside.mkdir(exist_ok=True)
         with pytest.raises(ms.MaintenanceServiceError):
             ms._resolve_within_library("../outside_lib_test", tmp_path)
+
+
+# ── _resolve_within() (CC-AC-6, gemeinsamer Containment-Helper) ─────────
+
+
+class TestResolveWithin:
+    """Direkte Unit-Tests fuer den in CC-AC-6 eingefuehrten gemeinsamen
+    Helper, den artist_targets()/album_targets()/_title_edit_targets()
+    nutzen."""
+
+    def test_in_bounds_path_resolves(self, tmp_path):
+        base = tmp_path / "base"
+        (base / "sub").mkdir(parents=True)
+        (base / "sub" / "a.m4a").touch()
+
+        result = ms._resolve_within(base, "sub/a.m4a")
+        assert result == (base / "sub" / "a.m4a").resolve()
+
+    def test_base_path_itself_is_rejected(self, tmp_path):
+        base = tmp_path / "base"
+        base.mkdir()
+        assert ms._resolve_within(base, ".") is None
+
+    def test_parent_of_base_path_is_rejected(self, tmp_path):
+        base = tmp_path / "base"
+        base.mkdir()
+        assert ms._resolve_within(base, "..") is None
+
+    def test_empty_candidate_is_rejected(self, tmp_path):
+        base = tmp_path / "base"
+        base.mkdir()
+        assert ms._resolve_within(base, "") is None
+
+    def test_absolute_candidate_is_rejected(self, tmp_path):
+        base = tmp_path / "base"
+        base.mkdir()
+        assert ms._resolve_within(base, "/etc") is None
+
+    def test_dotdot_climb_outside_is_rejected(self, tmp_path):
+        base = tmp_path / "base"
+        base.mkdir()
+        assert ms._resolve_within(base, "a/../../b") is None
+
+    def test_must_exist_true_rejects_missing_target(self, tmp_path):
+        base = tmp_path / "base"
+        base.mkdir()
+        assert ms._resolve_within(base, "does-not-exist") is None
+
+    def test_must_exist_false_allows_missing_target(self, tmp_path):
+        base = tmp_path / "base"
+        base.mkdir()
+        result = ms._resolve_within(base, "does-not-exist", must_exist=False)
+        assert result == (base / "does-not-exist").resolve()
+
+    def test_overlong_path_segment_returns_none_instead_of_raising(self, tmp_path):
+        base = tmp_path / "base"
+        base.mkdir()
+        assert ms._resolve_within(base, "x" * 300) is None
+
+    def test_symlink_escape_returns_none(self, tmp_path):
+        base = tmp_path / "base"
+        base.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (base / "escape").symlink_to(outside)
+
+        assert ms._resolve_within(base, "escape") is None
+
+    def test_symlink_loop_returns_none_instead_of_raising(self, tmp_path):
+        base = tmp_path / "base"
+        base.mkdir()
+        loop = base / "loop"
+        loop.symlink_to(loop)
+
+        assert ms._resolve_within(base, "loop") is None
+
+    def test_dotted_name_is_not_mistaken_for_traversal(self, tmp_path):
+        base = tmp_path / "base"
+        (base / "2024 - Album Pt. 2").mkdir(parents=True)
+
+        result = ms._resolve_within(base, "2024 - Album Pt. 2")
+        assert result == (base / "2024 - Album Pt. 2").resolve()
 
 
 # ── album_targets() / current_album() / current_album_artist() ──────────

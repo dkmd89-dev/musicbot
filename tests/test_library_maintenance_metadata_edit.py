@@ -518,17 +518,42 @@ class TestTitleEditPreviewAndReport:
         text = message.edit_text.call_args.args[0]
         assert "entspricht bereits dem aktuellen Wert" in text
 
-    def test_file_gone_shows_distinct_message(self, handler):
-        """Datei zwischen Track-Auswahl und Eingabe verschwunden
-        (safety_check()-Ablehnung) - eigene, unterscheidbare Meldung statt
-        der generischen 'identischer Wert'-Nachricht (Auftrag §14)."""
+    def test_file_still_present_but_unsafe_shows_distinct_message(self, handler):
+        """Datei ist noch vorhanden, aber laut safety_check() aktuell
+        nicht schreibbar (z. B. leere Datei, nicht unterstuetztes Format
+        - target_count bleibt 1, ein SKIPPED-Outcome mit "Safety: ..."-
+        Grund kommt zurueck) - eigene, unterscheidbare Meldung statt der
+        generischen 'identischer Wert'-Nachricht (Auftrag §14). Seit
+        CC-AC-6 (Containment-Haertung) ist "Datei zwischen Track-Auswahl
+        und Eingabe komplett verschwunden" ein SEPARATER Fall mit
+        target_count == 0 statt target_count == 1 + SKIPPED-Outcome,
+        siehe test_target_count_zero_shows_file_gone_message() unten -
+        Adversarial-Review-Fund CC-AC-6 Runde 1/2, PR #287."""
         message = Mock()
         message.edit_text = AsyncMock()
         skipped = ExecOutcome(
             file="Bausa/a.m4a", issue_code="TITLE_MANUAL_EDIT", action="TITLE_MANUAL_EDIT",
-            status="SKIPPED", reason="Safety: nicht auflösbar (…)",
+            status="SKIPPED", reason="Safety: leere Datei",
         )
         with patch.object(lmh_module, "preview_title_edit", return_value=_preview(1, [skipped], action="title-edit")):
+            run(handler._run_title_edit_preview_and_report(message, "Bausa", "Bausa/a.m4a", "Alt", "Neu"))
+        text = message.edit_text.call_args.args[0]
+        assert "nicht mehr verfügbar" in text
+        assert "entspricht bereits dem aktuellen Wert" not in text
+
+    def test_target_count_zero_shows_file_gone_message(self, handler):
+        """Regression (Adversarial-Review-Fund CC-AC-6 Runde 1/2, PR #287):
+        seit der Containment-Haertung in `_title_edit_targets()` liefert
+        eine zwischen Track-Auswahl und Eingabe verschwundene Datei
+        `target_count == 0` UND `outcomes == []` (kein SKIPPED-Outcome
+        mehr, da `apply_title_edit()` mit einer leeren Zielmenge
+        aufgerufen wird) - vor dem Fix fiel dieser Fall faelschlich auf
+        die generische 'Wert entspricht bereits dem aktuellen Wert'-
+        Meldung durch, weil `skip = preview.outcomes[0] if ... else None`
+        dann `None` war."""
+        message = Mock()
+        message.edit_text = AsyncMock()
+        with patch.object(lmh_module, "preview_title_edit", return_value=_preview(0, [], action="title-edit")):
             run(handler._run_title_edit_preview_and_report(message, "Bausa", "Bausa/a.m4a", "Alt", "Neu"))
         text = message.edit_text.call_args.args[0]
         assert "nicht mehr verfügbar" in text
