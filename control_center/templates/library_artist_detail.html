@@ -146,6 +146,51 @@
     return decodeURIComponent(parts[parts.length - 1] || "");
   }
 
+  // Tracks werden nach album_directory gruppiert (nicht nach dem album-Tag:
+  // der Tag-Wert kann vom Verzeichnisnamen abweichen, z.B. "Skyr" vs.
+  // "2019 - Skyr"; die Gruppierung entspricht damit der Alben-Sektion oben).
+  // Innerhalb jedes Albums wird nach track_number sortiert. Alben und
+  // Tracks werden localeCompare-sortiert (deutsche Umlaute korrekt).
+  // <details>/<summary> nutzt dasselbe native Pattern wie die Admin-Accordions.
+  function _renderTracksGroupedByAlbum(tracks) {
+    if (!tracks.length) {
+      return '<p class="empty-note">Keine Tracks vorhanden.</p>';
+    }
+
+    // Gruppieren nach album_directory; Tracks ohne Verzeichnis (Singles
+    // direkt im Artist-Ordner) landen im Sammel-Bucket "Ohne Album".
+    const groups = new Map();
+    for (const t of tracks) {
+      const key = t.album_directory || "Ohne Album";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(t);
+    }
+
+    const sortedAlbumDirs = [...groups.keys()].sort((a, b) => a.localeCompare(b, "de"));
+
+    return '<div class="row-list">' + sortedAlbumDirs.map((albumDir) => {
+      const albumTracks = groups.get(albumDir).slice().sort((a, b) => {
+        const aNum = (typeof a.track_number === "number") ? a.track_number : 9999;
+        const bNum = (typeof b.track_number === "number") ? b.track_number : 9999;
+        if (aNum !== bNum) return aNum - bNum;
+        return (a.title || a.filename).localeCompare(b.title || b.filename, "de");
+      });
+
+      const trackList = albumTracks.map((t) => `
+        <div class="row-item" title="${_escapeHtml(t.relative_path)}">
+          <div class="row-main">${t.track_number ? _escapeHtml(String(t.track_number)) + ". " : ""}${_escapeHtml(t.title || t.filename)}</div>
+        </div>
+      `).join("");
+
+      return `
+        <details>
+          <summary>💿 ${_escapeHtml(albumDir)} (${albumTracks.length})</summary>
+          <div class="row-list">${trackList}</div>
+        </details>
+      `;
+    }).join("") + "</div>";
+  }
+
   function renderArtistDetail(el, body) {
     document.getElementById("artist-title").textContent = `🎤 ${body.artist}`;
     document.getElementById("breadcrumb-artist").textContent = `🎤 ${body.artist}`;
@@ -169,14 +214,7 @@
         `).join("") + "</div>"
       : '<p class="empty-note">Keine Alben vorhanden.</p>';
 
-    const tracksHtml = body.tracks.length
-      ? '<div class="row-list">' + body.tracks.map((t) => `
-          <div class="row-item" title="${_escapeHtml(t.relative_path)}">
-            <div class="row-main">${_escapeHtml(t.title || t.filename)}</div>
-            <div class="row-count">${_escapeHtml(t.album || "")}</div>
-          </div>
-        `).join("") + "</div>"
-      : '<p class="empty-note">Keine Tracks vorhanden.</p>';
+    const tracksHtml = _renderTracksGroupedByAlbum(body.tracks);
 
     el.innerHTML = `
       <div class="tiles">
