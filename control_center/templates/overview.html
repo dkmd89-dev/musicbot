@@ -1,153 +1,258 @@
 {% extends "_base.html" %}
 {% block title %}Overview – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>Overview</h1>
-  <p class="subtitle">Systemübersicht — Details je Bereich über die Seitenleiste.</p>
+  <h1>🎛️ Overview</h1>
+  <p class="subtitle">Wie geht es deinem MusicBot gerade – und was braucht Aufmerksamkeit?</p>
 
-  <div id="navidrome-status">Navidrome: Lädt…</div>
-  <div id="health-tiles" class="tiles">Lädt…</div>
-
-  <div id="kpi-grid" class="kpi-grid">
-    <div class="tile"><div class="tile-label">Active Jobs</div><div class="tile-value" id="kpi-active-jobs">–</div></div>
-    <div class="tile"><div class="tile-label">Open Findings</div><div class="tile-value" id="kpi-open-findings">–</div></div>
+  <!-- Systemstatus-Bar -->
+  <div class="system-status-bar" id="system-status-bar">
+    <div class="system-status-label">Systemstatus</div>
+    <div class="system-status-pill status-UNKNOWN" id="system-status-pill">
+      <span class="dot"></span><span id="system-status-text">Lädt…</span>
+    </div>
   </div>
 
-  <section class="panel" id="attention-panel" hidden>
-    <h2>Attention</h2>
-    <div id="attention-content"></div>
-    <div class="retry-row"><a href="{{ base_path }}/findings"><button class="small" type="button">Findings ansehen</button></a></div>
-  </section>
+  <!-- 3-Spalten-Statuszeile -->
+  <div class="status-row">
+    <div class="status-cell">
+      <div class="status-cell-label">📚 Library</div>
+      <div class="status-cell-value" id="status-library-value">–</div>
+      <div class="status-cell-hint" id="status-library-hint">Lädt…</div>
+    </div>
+    <div class="status-cell">
+      <div class="status-cell-label">🌐 Navidrome</div>
+      <div class="status-cell-value" id="status-navidrome-value">–</div>
+      <div class="status-cell-hint" id="status-navidrome-hint">Lädt…</div>
+    </div>
+    <div class="status-cell">
+      <div class="status-cell-label">⚙️ Jobs</div>
+      <div class="status-cell-value" id="status-jobs-value">–</div>
+      <div class="status-cell-hint" id="status-jobs-hint">Lädt…</div>
+    </div>
+  </div>
 
-  <section class="panel">
-    <h2>Active Jobs</h2>
-    <div id="active-jobs-summary" class="empty-note">Lädt…</div>
-    <div class="retry-row"><a href="{{ base_path }}/jobs"><button class="small" type="button">Alle Jobs ansehen</button></a></div>
-  </section>
-
-  <section class="panel">
-    <h2>Recent Activity</h2>
-    <div id="recent-activity-content" class="empty-note">Lädt…</div>
-    <div class="retry-row"><a href="{{ base_path }}/downloads"><button class="small" type="button">Download-Verlauf ansehen</button></a></div>
-  </section>
-
-  <section class="panel">
-    <h2>Quick Actions</h2>
-    <div class="retry-row">
-      <a href="{{ base_path }}/findings"><button class="small" type="button">Findings</button></a>
-      <a href="{{ base_path }}/repairs"><button class="small" type="button">Repairs</button></a>
-      <a href="{{ base_path }}/jobs"><button class="small" type="button">Jobs</button></a>
-      <a href="{{ base_path }}/library"><button class="small" type="button">Library</button></a>
+  <!-- Attention (nur Findings) -->
+  <section class="panel attention-panel" id="attention-panel" hidden>
+    <h2>⚠️ Aufmerksamkeit</h2>
+    <div class="attention-row" id="attention-content"></div>
+    <div class="panel-footer">
+      <a href="{{ base_path }}/findings" class="panel-link">Findings ansehen →</a>
     </div>
   </section>
+
+  <!-- Zuletzt -->
+  <section class="panel">
+    <h2>🕒 Zuletzt</h2>
+    <div id="recent-activity-content" class="empty-note">Lädt…</div>
+    <div class="panel-footer">
+      <a href="{{ base_path }}/downloads" class="panel-link">Download-Verlauf ansehen →</a>
+    </div>
+  </section>
+
+  <!-- Schnellzugriff -->
+  <div class="section-header">Schnellzugriff</div>
+  <div class="quick-actions-grid">
+    <a href="{{ base_path }}/library" class="quick-action">
+      <div class="quick-action-icon">📚</div>
+      <div class="quick-action-label">Library</div>
+    </a>
+    <a href="{{ base_path }}/metadata" class="quick-action">
+      <div class="quick-action-icon">🏷️</div>
+      <div class="quick-action-label">Metadata</div>
+    </a>
+    <a href="{{ base_path }}/repairs" class="quick-action">
+      <div class="quick-action-icon">🔧</div>
+      <div class="quick-action-label">Repairs</div>
+    </a>
+    <a href="{{ base_path }}/jobs" class="quick-action">
+      <div class="quick-action-icon">⚙️</div>
+      <div class="quick-action-label">Jobs</div>
+    </a>
+  </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  // Overview ist bewusst kompakt (ui_prompt.txt Abschnitt 9/10) - nur
-  // Status/KPIs/Zusammenfassungen mit Links zu den Detailseiten, keine
-  // vollstaendigen Listen mehr (die lebten vorher alle auf einer
-  // einzigen Seite, siehe docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md,
-  // Abschnitt "UI Structure Redesign Phase 1").
+  // Overview beantwortet die Leitfrage:
+  // "Wie geht es meinem MusicBot gerade und was braucht Aufmerksamkeit?"
+  // Siehe docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md.
+  //
+  // Hinweis: Es gibt KEINEN leichtgewichtigen Repair-Summary-Endpunkt.
+  // GET /api/v1/library/repair-plan loest einen vollen Library-Scan aus
+  // (~37s auf Produktion) und darf deshalb NICHT im Auto-Load laufen.
+  // Die Attention-Zeile beschraenkt sich daher bewusst auf Findings
+  // (GET /api/v1/library/findings/summary ist guenstig und persistent).
+  // Repair-Kandidaten bleiben dem /repairs-Panel mit manuellem Trigger
+  // vorbehalten.
 
-  function renderHealthTiles(data) {
-    const el = document.getElementById("health-tiles");
-    if (!data.library || !data.library.files) {
-      el.innerHTML = "<p>Keine Dateien in der Library gefunden.</p>";
-      return;
+  // Aggregierter State für Systemstatus-Berechnung
+  const _overviewState = {
+    health: null,     // { status, score, library: { files, artists, albums } }
+    navidrome: null,  // { connected, artist_count }
+    findings: 0,
+    jobsActive: 0,
+  };
+
+  // ── Systemstatus-Pill aktualisieren ────────────────────────────────
+  function _updateSystemStatus() {
+    const s = _overviewState;
+    const pill = document.getElementById("system-status-pill");
+    const text = document.getElementById("system-status-text");
+    if (!pill || !text) return;
+
+    let status = "HEALTHY";
+    let label = "Healthy";
+
+    // CRITICAL: Navidrome offline oder Health kritisch
+    if (s.navidrome && !s.navidrome.connected) {
+      status = "CRITICAL";
+      label = "Critical";
+    } else if (s.health && s.health.status === "CRITICAL") {
+      status = "CRITICAL";
+      label = "Critical";
     }
-    const score = data.health.score != null ? data.health.score : "–";
-    const status = data.health.status || "UNSCORED";
-    el.innerHTML = `
-      <div class="tile"><div class="tile-label">Health Score</div>
-        <div class="tile-value status-${status}">${score}</div>
-        <div class="hint">${status}</div></div>
-      <div class="tile"><div class="tile-label">Tracks</div>
-        <div class="tile-value">${data.library.files}</div></div>
-      <div class="tile"><div class="tile-label">Artists</div>
-        <div class="tile-value">${data.library.artists}</div></div>
-      <div class="tile"><div class="tile-label">Albums</div>
-        <div class="tile-value">${data.library.albums}</div></div>
-    `;
+    // WARNING: offene Findings
+    else if (s.findings > 0) {
+      status = "WARNING";
+      label = "Warning";
+    }
+    // WARNING: Health nicht "gut"
+    else if (s.health && s.health.status && !["EXCELLENT", "GOOD"].includes(s.health.status)) {
+      status = "WARNING";
+      label = "Warning";
+    }
+
+    pill.className = `system-status-pill status-${status}`;
+    text.textContent = label;
   }
 
-  async function loadHealthForOverview() {
-    const el = document.getElementById("health-tiles");
-    try {
-      const res = await fetch(apiUrl("/api/v1/library/health"), { credentials: "same-origin" });
-      if (res.status === 401) { showOnly("login-view"); return; }
-      if (res.status === 403) { el.textContent = "Kein Zugriff (Berechtigung reicht nicht)."; return; }
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        el.textContent = "Fehler: " + (body && body.error ? body.error.message : res.status);
-        return;
-      }
-      renderHealthTiles(await res.json());
-    } catch (err) {
-      el.textContent = "Netzwerkfehler: " + err.message;
-    }
-  }
-
+  // ── Navidrome-Status ──────────────────────────────────────────────
   async function loadNavidromeStatus() {
-    const el = document.getElementById("navidrome-status");
+    const valueEl = document.getElementById("status-navidrome-value");
+    const hintEl = document.getElementById("status-navidrome-hint");
     try {
       const res = await fetch(apiUrl("/api/v1/navidrome/status"), { credentials: "same-origin" });
       if (res.status === 401) { showOnly("login-view"); return; }
-      if (!res.ok) { el.textContent = "Navidrome: Status nicht abrufbar."; return; }
+      if (!res.ok) {
+        valueEl.textContent = "—";
+        hintEl.textContent = "Nicht abrufbar";
+        return;
+      }
       const status = await res.json();
-      const dot = status.connected ? "dot-ok" : "dot-error";
-      const label = status.connected ? "Verbunden" : "Nicht erreichbar";
-      const count = status.connected && status.artist_count != null
-        ? ` (${status.artist_count} Artists)` : "";
-      el.innerHTML = `<span class="dot ${dot}"></span>Navidrome: ${label}${count}`;
+      _overviewState.navidrome = status;
+      if (status.connected) {
+        valueEl.textContent = "Online";
+        valueEl.style.color = "var(--ok)";
+        hintEl.textContent = status.artist_count != null
+          ? `${status.artist_count} Artists` : "Verbunden";
+      } else {
+        valueEl.textContent = "Offline";
+        valueEl.style.color = "var(--error)";
+        hintEl.textContent = "Nicht erreichbar";
+      }
+      _updateSystemStatus();
     } catch (err) {
-      el.textContent = "Navidrome: Netzwerkfehler.";
+      valueEl.textContent = "—";
+      hintEl.textContent = "Netzwerkfehler";
     }
   }
 
-  async function loadAttentionSummary() {
+  // ── Library / Health ──────────────────────────────────────────────
+  async function loadHealth() {
+    const valueEl = document.getElementById("status-library-value");
+    const hintEl = document.getElementById("status-library-hint");
+    try {
+      const res = await fetch(apiUrl("/api/v1/library/health"), { credentials: "same-origin" });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (!res.ok) {
+        valueEl.textContent = "—";
+        hintEl.textContent = "Nicht abrufbar";
+        return;
+      }
+      const data = await res.json();
+      _overviewState.health = {
+        status: data.health && data.health.status,
+        score: data.health && data.health.score,
+        library: data.library || null,
+      };
+      if (data.library && data.library.files != null) {
+        valueEl.textContent = Number(data.library.files).toLocaleString("de-DE");
+        const parts = [];
+        if (data.library.artists != null) parts.push(`${data.library.artists} Artists`);
+        if (data.library.albums != null) parts.push(`${data.library.albums} Alben`);
+        if (data.health && data.health.status) parts.push(`Health: ${data.health.status}`);
+        hintEl.textContent = parts.join(" · ") || "Tracks";
+      } else {
+        valueEl.textContent = "—";
+        hintEl.textContent = "Keine Library-Daten";
+      }
+      _updateSystemStatus();
+    } catch (err) {
+      valueEl.textContent = "—";
+      hintEl.textContent = "Netzwerkfehler";
+    }
+  }
+
+  // ── Open Findings (Attention) ─────────────────────────────────────
+  async function loadFindings() {
     try {
       const res = await fetch(apiUrl("/api/v1/library/findings/summary"), { credentials: "same-origin" });
       if (res.status === 401) { showOnly("login-view"); return; }
-      if (!res.ok) return;
+      if (!res.ok) return; // stiller Rückfall, Overview bleibt nutzbar
       const summary = await res.json();
-      document.getElementById("kpi-open-findings").textContent = summary.open;
-      const panel = document.getElementById("attention-panel");
-      if (summary.open > 0) {
-        panel.hidden = false;
-        document.getElementById("attention-content").innerHTML =
-          `<p class="empty-note">${summary.open} Finding(s) erfordern Aufmerksamkeit.</p>`;
-      } else {
-        panel.hidden = true;
-      }
+      _overviewState.findings = summary.open || 0;
+      _updateSystemStatus();
+      _renderAttention();
     } catch (err) {
-      // Overview bleibt trotzdem nutzbar, wenn nur diese Kachel scheitert.
+      // stiller Rückfall
     }
   }
 
-  async function loadActiveJobsSummary() {
-    const el = document.getElementById("active-jobs-summary");
+  function _renderAttention() {
+    const panel = document.getElementById("attention-panel");
+    const content = document.getElementById("attention-content");
+    if (!panel || !content) return;
+
+    const f = _overviewState.findings;
+    if (f === 0) {
+      panel.hidden = true;
+      return;
+    }
+    panel.hidden = false;
+    content.innerHTML =
+      `<strong>${f}</strong> Finding${f === 1 ? "" : "s"} erfordern Aufmerksamkeit`;
+  }
+
+  // ── Jobs (3-Spalten-Zeile) ────────────────────────────────────────
+  async function loadJobs() {
+    const valueEl = document.getElementById("status-jobs-value");
+    const hintEl = document.getElementById("status-jobs-hint");
     try {
       const res = await fetch(apiUrl("/api/v1/jobs?limit=20"), { credentials: "same-origin" });
       if (res.status === 401) { showOnly("login-view"); return; }
-      if (!res.ok) { el.textContent = "Jobs nicht abrufbar."; return; }
-      const body = await res.json();
-      const active = body.jobs.filter((j) => j.status === "PENDING" || j.status === "RUNNING");
-      document.getElementById("kpi-active-jobs").textContent = active.length;
-      if (!active.length) {
-        el.innerHTML = '<p class="empty-note">Keine aktiven Jobs.</p>';
+      if (!res.ok) {
+        valueEl.textContent = "—";
+        hintEl.textContent = "Nicht abrufbar";
         return;
       }
-      el.innerHTML = '<div class="row-list">' + active.map((j) => `
-        <div class="row-item">
-          <div class="row-main">${_escapeHtml(j.kind)}</div>
-          <div class="row-count">${_escapeHtml(j.status)} (${j.progress.toFixed(0)}%)</div>
-        </div>
-      `).join("") + "</div>";
+      const body = await res.json();
+      const active = body.jobs.filter((j) => j.status === "PENDING" || j.status === "RUNNING");
+      _overviewState.jobsActive = active.length;
+      valueEl.textContent = active.length;
+      if (active.length === 0) {
+        hintEl.textContent = "Keine aktiven";
+      } else if (active.length === 1) {
+        hintEl.textContent = `${active[0].kind} läuft`;
+      } else {
+        hintEl.textContent = `${active.length} laufen`;
+      }
     } catch (err) {
-      el.textContent = "Netzwerkfehler: " + err.message;
+      valueEl.textContent = "—";
+      hintEl.textContent = "Netzwerkfehler";
     }
   }
 
+  // ── Recent Activity ───────────────────────────────────────────────
   async function loadRecentActivity() {
     const el = document.getElementById("recent-activity-content");
     try {
@@ -155,13 +260,26 @@
       if (res.status === 401) { showOnly("login-view"); return; }
       if (!res.ok) { el.textContent = "Verlauf nicht abrufbar."; return; }
       const body = await res.json();
-      if (!body.entries.length) { el.innerHTML = '<p class="empty-note">Keine Aktivität.</p>'; return; }
-      el.innerHTML = '<div class="row-list">' + body.entries.map((e) => `
-        <div class="row-item">
-          <div class="row-main"><span class="badge badge-status-${_escapeHtml(e.status)}">${_escapeHtml(e.status)}</span>${_escapeHtml(e.title)} — ${_escapeHtml(e.artist)}</div>
-          <div class="row-count">${new Date(e.timestamp).toLocaleString()}</div>
-        </div>
-      `).join("") + "</div>";
+      if (!body.entries.length) {
+        el.innerHTML = '<p class="empty-note">Keine Aktivität.</p>';
+        return;
+      }
+      el.innerHTML = '<div class="activity-list">' + body.entries.map((e) => {
+        const ts = new Date(e.timestamp);
+        const timeStr = ts.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) +
+          " " + ts.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+        const status = _escapeHtml(e.status);
+        return `
+          <div class="activity-item">
+            <span class="badge badge-status-${status}">${status}</span>
+            <div class="activity-main">
+              <div class="activity-title">${_escapeHtml(e.title)}</div>
+              <div class="activity-artist">${_escapeHtml(e.artist)}</div>
+            </div>
+            <div class="activity-time">${timeStr}</div>
+          </div>
+        `;
+      }).join("") + "</div>";
     } catch (err) {
       el.textContent = "Netzwerkfehler: " + err.message;
     }
@@ -170,10 +288,10 @@
   function initPage() {
     checkAuth().then((who) => {
       if (!who) return;
-      loadHealthForOverview();
+      loadHealth();
       loadNavidromeStatus();
-      loadAttentionSummary();
-      loadActiveJobsSummary();
+      loadFindings();
+      loadJobs();
       loadRecentActivity();
     });
   }
