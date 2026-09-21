@@ -359,3 +359,136 @@ input[type="text"], input[type="search"], select {
   align-items: center;
   gap: 4px;
 }
+
+/* ── Overview-Dashboard-Optimierungen ─────────────────────────────── */
+
+/* KPI-Tile-Varianten für Overview */
+.tile--navidrome::before { background: #10b981; }
+.tile--health::before { background: #22c55e; }
+.tile--error::before { background: var(--error) !important; }
+.tile--warning::before { background: #f59e0b !important; }
+.tile--ok::before { background: var(--ok) !important; }
+
+/* Library-Stats-Sub-Zeile */
+.library-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.lib-stat {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: center;
+}
+.lib-stat-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--fg);
+}
+.lib-stat-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+@media (max-width: 760px) {
+  .library-stats { grid-template-columns: 1fr; }
+}
+
+/* Panel-Footer mit Link statt Button */
+.panel-footer {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  text-align: right;
+}
+.panel-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.panel-link:hover {
+  text-decoration: underline;
+}
+
+/* Recent Activity: besseres Layout */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.activity-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.activity-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.activity-main {
+  min-width: 0;
+}
+.activity-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-artist {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-time {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Quick Actions als Icon-Kacheln */
+.quick-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 12px;
+  text-decoration: none;
+  color: var(--fg);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+.quick-action:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+  border-color: var(--accent);
+  text-decoration: none;
+  color: var(--fg);
+}
+.quick-action-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+.quick-action-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--fg);
+}
