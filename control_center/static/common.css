@@ -596,3 +596,56 @@ a.row-item:hover {
   color: var(--ok);
   font-weight: 600;
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   11. LIBRARY Track Detail Drawer (CC-AC-9)
+   ══════════════════════════════════════════════════════════════════ */
+/* Track-Zeilen sind jetzt native <button>-Elemente (Tastatursemantik
+   "gratis": Enter/Space, sichtbarer Fokus) statt reiner <div>-Anzeige -
+   .track-row setzt nur die generischen button-Grundstyles (Abschnitt 4)
+   zurueck, .row-item liefert weiterhin Layout/Trennlinie (Abschnitt 5). */
+button.track-row {
+  display: flex; width: 100%; background: none; color: inherit;
+  border: none; border-bottom: 1px solid var(--border); border-radius: 0;
+  padding: 6px 4px; font: inherit; text-align: left; cursor: pointer;
+}
+button.track-row:last-child { border-bottom: none; }
+button.track-row:hover { background: rgba(127, 127, 127, 0.08); }
+button.track-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.drawer-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45);
+  z-index: 30; display: flex; justify-content: flex-end;
+}
+.drawer-overlay[hidden] { display: none; }
+.track-drawer {
+  background: var(--card-bg); color: var(--fg); width: min(420px, 100vw);
+  height: 100vh; overflow-y: auto; padding: 20px;
+  border-left: 1px solid var(--border); box-shadow: -2px 0 16px rgba(0, 0, 0, 0.3);
+}
+.track-drawer-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 12px; margin-bottom: 4px;
+}
+.track-drawer-header h2 { margin: 0; font-size: 1.05rem; word-break: break-word; }
+#track-drawer-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.track-drawer-subtitle { word-break: break-word; margin: 0 0 20px; }
+.track-drawer-section { margin-bottom: 20px; }
+.track-drawer-section:last-child { margin-bottom: 0; }
+.track-drawer-section h3 {
+  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); margin: 0 0 8px;
+}
+.track-drawer-fields { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.85rem; margin: 0; }
+.track-drawer-fields dt { color: var(--muted); }
+.track-drawer-fields dd { margin: 0; word-break: break-word; }
+.track-drawer-actions-list { display: flex; flex-direction: column; gap: 6px; }
+.track-drawer-action-btn {
+  width: 100%; text-align: left; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border);
+}
+.track-drawer-action-btn:hover { border-color: var(--accent); }
+.track-drawer-action-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 480px) {
+  .track-drawer { width: 100vw; padding: 16px; }
+}

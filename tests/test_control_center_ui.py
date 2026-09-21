@@ -840,6 +840,136 @@ async def test_artist_detail_page_repair_job_polls_every_second(client):
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# GET /library/{artist} — Track Detail Drawer (CC-AC-9, Track-Centric
+# Library Actions)
+# ─────────────────────────────────────────────────────────────────────────
+#
+# Auftrag §19: mindestens Track UI, Track Drawer, Metadata, Actions,
+# Preview/Execute-Erhalt, Accessibility abdecken. Wie die uebrigen Tests
+# in dieser Datei rein string-basiert gegen das echte gerenderte Template
+# (kein Headless-Browser) - siehe Playwright-Hinweis im Abschlussbericht.
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_tracks_are_interactive(client):
+    """Auftrag §4: Track-Zeilen sind native <button>, keine <div
+    onclick>-Pseudo-Buttons - Enter/Space funktionieren ohne eigene
+    Tastatur-Nachbildung."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'class="row-item track-row"' in html
+    assert "data-track-path=" in html
+    assert "openTrackDrawer(track)" in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_has_track_detail_context(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'id="track-drawer-overlay" class="drawer-overlay" hidden' in html
+    assert 'id="track-drawer"' in html
+    assert 'id="track-drawer-title"' in html
+    assert 'id="track-drawer-info"' in html
+    assert 'id="track-drawer-health"' in html
+    assert 'id="track-drawer-actions"' in html
+
+
+@pytest.mark.asyncio
+async def test_track_detail_context_displays_available_metadata(client):
+    """Auftrag §8: nur tatsaechlich vorhandene, bereits unterstuetzte
+    TrackSchema-Felder - keine neuen Backend-Felder fuer die UI."""
+    html = (await client.get("/library/Bausa")).text
+
+    info_fn = html.split("function _trackDrawerFieldsHtml(t) {", 1)[1].split("\n  }", 1)[0]
+    for field in (
+        "t.title", "t.artist", "t.album", "t.album_artist", "t.genre",
+        "t.year", "t.track_number", "t.disc_number",
+        "t.mb_recording_id", "t.mb_release_id", "t.isrc",
+    ):
+        assert field in info_fn
+
+
+@pytest.mark.asyncio
+async def test_track_detail_context_shows_health_from_existing_issue_codes(client):
+    """Auftrag §7: Health kommt ausschliesslich aus dem vorhandenen
+    TrackSchema.issue_codes-Feld - keine erfundene "Metadata
+    vollstaendig"-Behauptung, neutrale Formulierung ohne offene Probleme."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "t.issue_codes.length" in html
+    assert "_TRACK_ISSUE_LABELS" in html
+    assert "Keine bekannten Probleme laut letztem Health-Scan" in html
+    assert "Metadata vollständig" not in html
+
+
+@pytest.mark.asyncio
+async def test_track_detail_context_exposes_existing_actions(client):
+    """Auftrag §9/§11: buendelt die bestehenden Manual-Metadata-Editing-
+    Aktionen (CC-AC-2/3) im Track-Kontext - keine neue Ausfuehrungslogik."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'data-track-action="${action}"' in html
+    assert "title: _trackDrawerEditTitle," in html
+    assert "artist: _trackDrawerEditArtist," in html
+    assert '"album-edit-album-select", "album-edit-new-album"' in html
+    assert '"albumartist-edit-album-select", "albumartist-edit-new-albumartist"' in html
+    assert "genre: _trackDrawerEditGenre," in html
+    assert "maintenance: _trackDrawerOpenMaintenance," in html
+
+
+@pytest.mark.asyncio
+async def test_track_action_preserves_preview_execute_flow(client):
+    """Auftrag §10: die Drawer-Aktionen fuehren selbst nichts aus - sie
+    befuellen die bestehenden Formularfelder und rufen ausschliesslich
+    die bereits vorhandenen, andernorts getesteten load*Preview()-
+    Funktionen auf. Keine neue fetch()/POST-Ausfuehrung im Drawer-Block."""
+    html = (await client.get("/library/Bausa")).text
+
+    drawer_block = html.split("const _TRACK_ISSUE_LABELS", 1)[1].split("function initPage()", 1)[0]
+    assert "loadTitleEditPreview();" in drawer_block
+    assert "loadGenreManagePreview();" in drawer_block
+    assert "fetch(" not in drawer_block
+    assert "method: \"POST\"" not in drawer_block
+
+
+@pytest.mark.asyncio
+async def test_track_detail_context_has_accessible_dialog_semantics(client):
+    """Auftrag §16: role=dialog/aria-modal nativ im Markup, Escape
+    schliesst, Tab-Fokus bleibt im Dialog, Fokus kehrt zur ausloesenden
+    Track-Zeile zurueck."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'role="dialog"' in html
+    assert 'aria-modal="true"' in html
+    assert 'aria-labelledby="track-drawer-title"' in html
+    assert 'event.key === "Escape"' in html
+    assert "closeTrackDrawer()" in html
+    assert 'event.key !== "Tab"' in html
+    assert "_trackDrawerTriggerEl.focus()" in html
+
+
+@pytest.mark.asyncio
+async def test_track_drawer_actions_gated_by_admin_access(client):
+    """Identische UX-Schranke wie die bestehenden Metadata-/Wartungs-
+    Panels (Auftrag CC-AC-2-Scope) - kein separater Admin-Check-Pfad."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "_trackDrawerIsAdmin = isAdmin;" in html
+    assert "Aktionen benötigen Admin-Berechtigung" in html
+
+
+@pytest.mark.asyncio
+async def test_track_drawer_album_actions_require_m4a_scope(client):
+    """Auftrag §11: Album-/Albuminterpret-Aktionen nur anbieten, wenn
+    album_targets() (services/library_repair/maintenance_service.py)
+    ueberhaupt einen Treffer liefern koennte - identische .m4a-
+    Einschraenkung wie der bestehende Album-Picker (_artistAlbumOptions())."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'extension === ".m4a"' in html
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # GET /metadata — Genre setzen (erste schreibende Metadata-Fähigkeit)
 # ─────────────────────────────────────────────────────────────────────────
 
