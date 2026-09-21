@@ -191,8 +191,9 @@
       });
 
       const trackList = albumTracks.map((t) => `
-        <div class="row-item" title="${_escapeHtml(t.relative_path)}">
+        <div class="row-item track-row" data-rel-path="${_escapeHtml(t.relative_path)}" role="button" tabindex="0" title="Songtitel bearbeiten">
           <div class="row-main">${t.track_number ? _escapeHtml(String(t.track_number)) + ". " : ""}${_escapeHtml(t.title || t.filename)}</div>
+          <span class="track-edit-icon" aria-hidden="true">✏️</span>
         </div>
       `).join("");
 
@@ -560,6 +561,40 @@
     document.getElementById(id).addEventListener("input", () => {
       document.getElementById("title-edit-execute-btn").disabled = true;
     });
+  });
+
+  // CC-AC-10.3: Direkt-Klick auf Track-Row öffnet das
+  // "Songtitel ändern"-Formular mit vorausgewähltem Track.
+  // Kein Backend-Aufruf, keine neue Datenquelle.
+  function _selectTrackForTitleEdit(relPath) {
+    const panel = document.getElementById("artist-metadata-edit-panel");
+    if (!panel || panel.hidden) return;  // Non-Admin oder Panel fehlt
+    const sel = document.getElementById("title-edit-rel-path");
+    const details = panel.querySelector("details");
+    if (sel) {
+      const exists = Array.from(sel.options).some((o) => o.value === relPath);
+      if (exists) sel.value = relPath;
+    }
+    if (details) details.open = true;
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => {
+      const titleInput = document.getElementById("title-edit-new-title");
+      if (titleInput) titleInput.focus();
+    }, 350);
+  }
+
+  // Event-Delegation: Track-Rows werden dynamisch gerendert.
+  document.addEventListener("click", (e) => {
+    const row = e.target.closest(".track-row");
+    if (!row) return;
+    _selectTrackForTitleEdit(row.dataset.relPath);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const row = e.target.closest(".track-row");
+    if (!row) return;
+    e.preventDefault();
+    _selectTrackForTitleEdit(row.dataset.relPath);
   });
 
   // -- Album bearbeiten (Manual Metadata Editing v2, CC-AC-3) --------------
