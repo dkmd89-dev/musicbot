@@ -529,17 +529,47 @@ async def _execute_level_repair(
                     registry.save()
 
         affected_files = sorted({e.get("file") for e in entries if e.get("file")})
-        # ARCH-033-F1 Fix (b): changed_files zaehlt nur tatsaechlich
-        # geaenderte Dateien (SUCCESS + UNRESOLVED) - SKIPPED-Eintraege
-        # (beruehrt, aber nicht angefasst) zaehlen bewusst NICHT mit.
-        # affected_files bleibt oben unveraendert (andere Konsumenten,
-        # siehe LevelRepairResult-Docstring-Kommentar).
+        # ARCH-033-F1 Fix (b): changed_files zaehlt tatsaechlich geaenderte
+        # Dateien - SUCCESS/UNRESOLVED IMMER, ein SKIPPED-Eintrag NUR wenn
+        # sha256_before != sha256_after (Adversarial-Review-Fund: L2
+        # (apply_level2(), executor.py) markiert pro Issue-Code SKIPPED,
+        # sobald NUR das Zielfeld DIESES Issues unveraendert blieb -
+        # reprocess() laeuft aber immer als volle Pipeline und kann dabei
+        # andere Felder geschrieben haben, siehe
+        # docs/LIBRARY_REPAIR.md §12/§5. Ein reiner Status-Filter wuerde
+        # solche real geschriebenen Dateien unterzaehlen). affected_files
+        # bleibt oben unveraendert (andere Konsumenten, siehe
+        # LevelRepairResult-Docstring-Kommentar).
+        def _wrote_to_disk(entry: dict) -> bool:
+            if entry.get("status") in (STATUS_SUCCESS, "UNRESOLVED"):
+                return True
+            sha_before, sha_after = entry.get("sha256_before"), entry.get("sha256_after")
+            return bool(sha_before) and bool(sha_after) and sha_before != sha_after
+
         changed_files = sorted({
-            e.get("file") for e in entries
-            if e.get("file") and e.get("status") in (STATUS_SUCCESS, "UNRESOLVED")
+            e.get("file") for e in entries if e.get("file") and _wrote_to_disk(e)
         })
 
-        if repair_result.timed_out or repair_result.error_message:
+        # ARCH-033-F1 Fix (c), Adversarial-Review-Fund: ein Subprozess, der
+        # VOR dem ersten Journal-Write abbricht (scripts/library_repair.py
+        # Exit-Code 2/3 - Report-Ladefehler/SCHWERER FEHLER), liefert
+        # weder einen Journal-Eintrag noch (anders als bei Start-/Timeout-
+        # Fehlern) ein doctor_runner-error_message - ohne diesen Zweig
+        # wuerde das als leerer, harmloser Lauf angezeigt statt als Fehler.
+        crashed_without_journal = (
+            not entries and not repair_result.timed_out and not repair_result.error_message
+            and repair_result.exit_code not in (0, None)
+        )
+        error_message = repair_result.error_message
+        if crashed_without_journal:
+            stderr_tail = (repair_result.stderr_tail or "").strip()
+            error_message = (
+                f"Repair-Subprozess beendete sich mit Exit-Code "
+                f"{repair_result.exit_code} ohne Journal-Einträge."
+                + (f" stderr: {stderr_tail[-500:]}" if stderr_tail else "")
+            )
+
+        if repair_result.timed_out or error_message:
             overall_status = STATUS_FAILED
         elif status_counts.get(STATUS_FAILED, 0) > 0 and status_counts.get(STATUS_SUCCESS, 0) == 0:
             overall_status = STATUS_FAILED
@@ -575,7 +605,7 @@ async def _execute_level_repair(
             resolved_count=len(resolved_ids),
             entries=entries, affected_files=affected_files, changed_files=changed_files,
             rescan_triggered=rescan_triggered,
-            error_message=repair_result.error_message,
+            error_message=error_message,
         )
     finally:
         release_repair_lock()

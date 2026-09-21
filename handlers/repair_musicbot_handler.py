@@ -932,16 +932,19 @@ class RepairMusicBotHandler:
                 f"{html.escape(result.error_message)}"
             )
 
-        # ARCH-033-F1 Fix (c): ❌ bleibt tatsächlichen FAILED-Läufen
-        # vorbehalten. Die ursprüngliche ⚠️-Semantik (failed UND success,
-        # ohne unresolved) bleibt unverändert erhalten (bestehende Tests) -
-        # ergänzt um eigene Zweige für UNRESOLVED (🟠) und einen reinen
-        # SKIPPED-Lauf (🟡 "nichts zu tun") statt beide auf ❌ fallen zu
-        # lassen.
-        if result.failed and result.success and not result.unresolved:
-            emoji, header = "⚠️", "teilweise abgeschlossen"
-        elif result.failed:
-            emoji, header = "❌", "teilweise abgeschlossen"
+        # ARCH-033-F1 Fix (c): failed dominiert immer (❌) - eigene Zweige
+        # für UNRESOLVED (🟠) und einen reinen SKIPPED-Lauf (🟡 "nichts zu
+        # tun") statt beide auf ❌ fallen zu lassen. Adversarial-Review-
+        # Fund: eine frühere Fassung behielt zusätzlich das alte ⚠️ für
+        # "failed UND success, ohne unresolved" bei - das war
+        # nicht-monoton (ein zusätzlicher UNRESOLVED-Fund ließ denselben
+        # Lauf von ⚠️ auf ❌ kippen) und widersprach der eigenen
+        # Begründung "❌ bleibt FAILED-Läufen vorbehalten". failed>0 ist
+        # jetzt unabhängig von success/unresolved immer ❌ (Header
+        # unterscheidet "teilweise"/"vollständig" fehlgeschlagen).
+        if result.failed:
+            emoji = "❌"
+            header = "teilweise abgeschlossen" if (result.success or result.unresolved) else "fehlgeschlagen"
         elif result.unresolved:
             emoji, header = "🟠", "abgeschlossen – Überprüfung nötig"
         elif result.success:

@@ -384,7 +384,11 @@ class TestL23Execute:
         assert "Verifiziert behoben: 2" in text
         assert "Auto-Learn" in text
 
-    def test_partial_success_shown_with_warning_emoji(self, handler, context):
+    def test_partial_success_shown_with_cross_mark(self, handler, context):
+        """ARCH-033-F1 Adversarial-Review-Fund: failed>0 dominiert IMMER
+        (❌), unabhaengig von success/unresolved - vorher gab es hierfuer
+        eine ⚠️-Ausnahme, die nicht-monoton war (ein zusaetzlicher
+        UNRESOLVED-Fund kippte denselben Lauf von ⚠️ auf ❌)."""
         message = Mock()
         message.edit_text = AsyncMock()
         result = _result(status="SUCCESS", success=1, failed=1, skipped=0)
@@ -392,7 +396,8 @@ class TestL23Execute:
             run(handler._run_l23_execute_and_report(message, "l2", "Bausa", ADMIN_ID))
         text = message.edit_text.call_args[0][0]
         assert "teilweise abgeschlossen" in text
-        assert "⚠️" in text
+        assert "❌" in text
+        assert "⚠️" not in text
 
     def test_no_open_findings_shows_resolved_message(self, handler, context):
         message = Mock()
@@ -451,6 +456,27 @@ class TestFormatL23ResultErweiterungen:
         text = handler._format_l23_result("l2", "Bausa", result)
         assert "❌" in text
         assert "Fehlgeschlagen: 1" in text
+
+    def test_wholly_failed_run_header_says_fehlgeschlagen_not_teilweise(self, handler):
+        """Adversarial-Review-Fund: ein Lauf ohne jeden Erfolg (success=0)
+        ist vollstaendig fehlgeschlagen, nicht 'teilweise abgeschlossen'."""
+        result = _result(
+            status="FAILED", total=1, success=0, skipped=0, unresolved=0, failed=1,
+        )
+        text = handler._format_l23_result("l2", "Bausa", result)
+        assert "fehlgeschlagen" in text
+        assert "teilweise abgeschlossen" not in text
+
+    def test_empty_run_shows_white_circle(self, handler):
+        """total > 0 (Kandidaten vorhanden), aber 0 in jeder Kategorie -
+        legitimer leerer Lauf (z. B. Subprozess fand beim eigenen Rescan
+        nichts mehr), kein ❌."""
+        result = _result(
+            status="SKIPPED", total=1, success=0, skipped=0, unresolved=0, failed=0,
+        )
+        text = handler._format_l23_result("l2", "Bausa", result)
+        assert "⚪" in text
+        assert "❌" not in text
 
     def test_mixed_run_failed_dominates(self, handler):
         """failed>0 gewinnt immer, auch wenn zusaetzlich success/skipped/
