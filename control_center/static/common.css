@@ -886,3 +886,31 @@ a.row-item:hover {
   .drawer-header { border-radius: 14px 14px 0 0; }
 }
 /* === /CC-AC-10.4 === */
+
+/* === CC-AC-10.5: Drawer-Action-Buttons === */
+.drawer-footer-multi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-start;
+}
+.drawer-footer-multi .btn-drawer-action {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drawer-footer-multi .btn-primary.btn-drawer-action {
+  flex: 1 1 100%;
+}
+@media (max-width: 480px) {
+  .drawer-footer-multi {
+    flex-direction: column;
+  }
+  .drawer-footer-multi .btn-drawer-action {
+    width: 100%;
+  }
+}

@@ -158,9 +158,18 @@
       <button id="track-drawer-close" class="drawer-close" aria-label="Schließen">✕</button>
     </header>
     <div id="track-drawer-body" class="drawer-body"></div>
-    <footer class="drawer-footer">
-      <button id="track-drawer-edit-title" class="btn-primary" disabled>
+    <footer class="drawer-footer drawer-footer-multi">
+      <button id="track-drawer-edit-title" class="btn-primary btn-drawer-action" disabled>
         ✏️ Titel bearbeiten
+      </button>
+      <button id="track-drawer-edit-artist" class="btn-secondary btn-drawer-action" disabled>
+        🎤 Artist bearbeiten
+      </button>
+      <button id="track-drawer-edit-album" class="btn-secondary btn-drawer-action" disabled>
+        💿 Album bearbeiten
+      </button>
+      <button id="track-drawer-edit-genre" class="btn-secondary btn-drawer-action" disabled>
+        🎭 Genre
       </button>
     </footer>
   </aside>
@@ -625,8 +634,45 @@
     return `${v.toFixed(1)} LUFS`;
   }
 
+  // CC-AC-10.5: Klartext-Labels für bekannte Health-Codes.
+  // Unbekannte Codes fallen auf das alte Verhalten zurück.
+  const _ISSUE_LABELS = {
+    "meta_isrc_missing":               "ISRC fehlt",
+    "meta_mb_recording_missing":       "MusicBrainz Recording-Id fehlt",
+    "meta_mb_release_missing":         "MusicBrainz Release-Id fehlt",
+    "meta_title_not_clean":            "Titel enthält unerwünschte Zusätze",
+    "meta_year_missing":               "Jahr fehlt",
+    "meta_genre_missing":              "Genre fehlt",
+    "genre_empty":                     "Genre ist leer",
+    "genre_invalid":                   "Genre-Format ungewöhnlich",
+    "genre_delimiter_inconsistent":    "Genre-Trenner inkonsistent",
+    "artwork_missing":                 "Cover fehlt",
+    "artwork_invalid":                 "Cover ist beschädigt",
+    "artwork_low_resolution":          "Cover-Auflösung niedrig",
+    "artwork_non_square":              "Cover ist nicht quadratisch",
+    "album_cover_inconsistent":        "Album-Cover nicht einheitlich",
+    "multi_artist_inconsistent":       "Artist-Schreibweise inkonsistent",
+    "multi_artist_duplicate":          "Artist mehrfach aufgeführt",
+    "filename_title_mismatch":         "Dateiname passt nicht zum Titel",
+    "filename_suspicious":             "Dateiname auffällig",
+    "lyrics_missing":                  "Keine Songtexte vorhanden",
+    "loudness_off_target":             "Lautheit weicht vom Ziel ab",
+    "loudness_tag_missing":            "Loudness-Tag fehlt",
+    "loudness_tag_invalid":            "Loudness-Tag ungültig",
+    "loudness_tag_partial":            "Loudness-Tag unvollständig",
+    "album_track_gap":                 "Track-Nummerierung hat Lücken",
+    "album_release_id_inconsistent":   "Verschiedene Release-IDs im Album",
+    "album_name_inconsistent":         "Album-Name nicht einheitlich",
+    "album_artist_inconsistent":       "Album-Künstler nicht einheitlich",
+    "audio_very_short":                "Datei ist sehr kurz",
+    "audio_silent":                    "Datei scheint still",
+  };
+
   function _issueLabel(code) {
-    return code.replace(/_/g, " ").toLowerCase();
+    const key = String(code || "").toLowerCase();
+    if (_ISSUE_LABELS[key]) return _ISSUE_LABELS[key];
+    // Fallback: code → "code with spaces" (bisheriges Verhalten)
+    return key.replace(/_/g, " ");
   }
 
   function _renderDrawerBody(t) {
@@ -691,6 +737,18 @@
     editBtn.disabled = false;
     editBtn.dataset.relPath = relPath;
 
+    // CC-AC-10.5: Action-Buttons aktivieren und mit Kontext befüllen
+    const artistBtn = document.getElementById("track-drawer-edit-artist");
+    const albumBtn = document.getElementById("track-drawer-edit-album");
+    const genreBtn = document.getElementById("track-drawer-edit-genre");
+    if (artistBtn) { artistBtn.disabled = false; }
+    if (albumBtn) { albumBtn.disabled = !(t.album_directory || t.album); }
+    if (genreBtn) { genreBtn.disabled = false; }
+    if (albumBtn) {
+      albumBtn.dataset.albumDir = t.album_directory || "";
+      albumBtn.dataset.albumName = t.album || "";
+    }
+
     overlay.hidden = false;
     drawer.hidden = false;
     void drawer.offsetHeight;
@@ -734,11 +792,65 @@
 
   // Drawer-Bindings erst nach DOMContentLoaded (defensiv — das Markup steht
   // zwar VOR dem Skript, aber falls das Template mal anders gerendert wird).
+  // CC-AC-10.5: Fokus-Helper für Artist-/Album-/Genre-Formulare.
+  // Kein Backend-Touch - sie öffnen nur das bestehende Accordion und
+  // setzen den Fokus, damit der Nutzer direkt tippen kann.
+  function _focusArtistEdit() {
+    const panel = document.getElementById("artist-metadata-edit-panel");
+    if (!panel || panel.hidden) return;
+    const details = panel.querySelector("details");
+    if (details) details.open = true;
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => {
+      const inp = document.getElementById("artist-edit-new-artist");
+      if (inp) inp.focus();
+    }, 350);
+  }
+
+  function _focusAlbumEdit(albumDir, albumName) {
+    const panel = document.getElementById("artist-metadata-edit-panel");
+    if (!panel || panel.hidden) return;
+    const details = panel.querySelector("details");
+    if (details) details.open = true;
+
+    // Album-Select vorauswählen: bevorzugt album_directory (deckt sich mit
+    // _artistAlbumOptions()), Fallback auf album-Tag-Wert.
+    const sel = document.getElementById("album-edit-album-select");
+    if (sel) {
+      const candidates = [albumDir, albumName].filter(Boolean);
+      for (const cand of candidates) {
+        const opt = Array.from(sel.options).find((o) => o.value === cand);
+        if (opt) { sel.value = cand; break; }
+      }
+    }
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => {
+      const inp = document.getElementById("album-edit-new-album");
+      if (inp) inp.focus();
+    }, 350);
+  }
+
+  function _focusGenreEdit() {
+    const panel = document.getElementById("artist-metadata-edit-panel");
+    if (!panel || panel.hidden) return;
+    const details = panel.querySelector("details");
+    if (details) details.open = true;
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => {
+      const btn = document.getElementById("genre-manage-preview-btn");
+      if (btn) btn.focus();
+    }, 350);
+  }
+
   function _initTrackDrawerBindings() {
     const closeBtn = document.getElementById("track-drawer-close");
     const overlay = document.getElementById("track-drawer-overlay");
     const editBtn = document.getElementById("track-drawer-edit-title");
+    const artistBtn = document.getElementById("track-drawer-edit-artist");
+    const albumBtn = document.getElementById("track-drawer-edit-album");
+    const genreBtn = document.getElementById("track-drawer-edit-genre");
     if (!closeBtn || !overlay || !editBtn) return;
+
     closeBtn.addEventListener("click", _closeDrawer);
     overlay.addEventListener("click", _closeDrawer);
     editBtn.addEventListener("click", (e) => {
@@ -746,6 +858,26 @@
       _closeDrawer();
       setTimeout(() => _selectTrackForTitleEdit(relPath), 240);
     });
+    if (artistBtn) {
+      artistBtn.addEventListener("click", () => {
+        _closeDrawer();
+        setTimeout(_focusArtistEdit, 240);
+      });
+    }
+    if (albumBtn) {
+      albumBtn.addEventListener("click", (e) => {
+        const dir = e.currentTarget.dataset.albumDir || "";
+        const name = e.currentTarget.dataset.albumName || "";
+        _closeDrawer();
+        setTimeout(() => _focusAlbumEdit(dir, name), 240);
+      });
+    }
+    if (genreBtn) {
+      genreBtn.addEventListener("click", () => {
+        _closeDrawer();
+        setTimeout(_focusGenreEdit, 240);
+      });
+    }
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", _initTrackDrawerBindings);
