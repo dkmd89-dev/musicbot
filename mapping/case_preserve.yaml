@@ -61,6 +61,7 @@ case_preserve:
   en6o: EN6O
   eno: ENO
   faber: FABER
+  fard: FARD
   fayan: FAYAN
   fee: FEE
   felly: FELLY
@@ -95,6 +96,7 @@ case_preserve:
   lx: LX
   majan: MAJAN
   mc: MC
+  mc bogy: MC Bogy
   mdmh: MDMH
   mero: MERO
   ml: ML
@@ -130,6 +132,7 @@ case_preserve:
   snp: SNP
   soab: SOAB
   somma: SOMMA
+  sophia: SOPHIA
   ss ultrabrutal: SS Ultrabrutal
   ssio: SSIO
   t.i.: T.I.
@@ -139,5 +142,6 @@ case_preserve:
   ufo361: UFO361
   undacava: UNDACAVA
   xaver: XAVER
+  xavi: XAVI
   yn: YN
   zuna: ZUNA

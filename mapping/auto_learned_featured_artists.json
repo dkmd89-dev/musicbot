@@ -465,8 +465,8 @@
     },
     "MACLOUD": {
       "canonical": "MACLOUD",
-      "last_observed_track": "CHAPO102 - OMG",
-      "observations": 6,
+      "last_observed_track": "Miksu & Macloud - “Abschied nehmen\"",
+      "observations": 7,
       "primary_artists": [
         "Miksu & Macloud",
         "makko",
@@ -675,6 +675,19 @@
       ],
       "status": "LEARNED"
     },
+    "SOPHIA": {
+      "canonical": "SOPHIA",
+      "last_observed_track": "Max Giesinger - Irgendwer Anders",
+      "observations": 1,
+      "primary_artists": [
+        "Max Giesinger"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
     "Sido": {
       "canonical": "Sido",
       "last_observed_track": "Montez - Glück",
@@ -733,6 +746,19 @@
       "observations": 1,
       "primary_artists": [
         "Zartmann"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
+    "UFO361": {
+      "canonical": "UFO361",
+      "last_observed_track": "Miksu & Macloud - “Abschied nehmen\"",
+      "observations": 1,
+      "primary_artists": [
+        "Miksu & Macloud"
       ],
       "role": "featured_artist",
       "sources": [

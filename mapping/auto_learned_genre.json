@@ -134,6 +134,31 @@
         "R&B"
       ]
     },
+    "Juju": {
+      "confidence": "OBSERVED",
+      "description": "Auto-learned via Last.fm (rule)",
+      "genre_counts": {
+        "Drum & Bass": 1
+      },
+      "locked_primary": null,
+      "observation_log": [
+        {
+          "primary": "Drum & Bass",
+          "secondary": [
+            "J-Pop",
+            "Electronic",
+            "Hip Hop"
+          ]
+        }
+      ],
+      "observations": 1,
+      "primary": "Drum & Bass",
+      "secondary": [
+        "J-Pop",
+        "Electronic",
+        "Hip Hop"
+      ]
+    },
     "Klangspiel": {
       "confidence": "LEARNED",
       "description": "Auto-learned via Last.fm (rule)",
