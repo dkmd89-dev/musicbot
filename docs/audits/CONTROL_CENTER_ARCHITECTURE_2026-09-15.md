@@ -1744,3 +1744,110 @@ Metadata-Edit-`<details>` ohne `open`, Maintenance-`<details>` ohne
 `tests/test_control_center_admin_maintenance_api.py` und
 `tests/test_library_repair_maintenance_service.py` unverändert grün
 (reine Bestätigung, keine Anpassung nötig).
+
+## Track-Centric Library Actions — CC-AC-9 (2026-09-21, `CC-AC-9.md`, auf Nutzerfreigabe)
+
+**Ausgangsproblem:** Die Track-Zeilen auf `/library/{artist}` (CC-AC-8:
+nach Album gruppiert, `<details>`-Akkordeon) waren reine `<div>`-Anzeige
+ohne Interaktion. Metadaten-Aktionen (Titel/Artist/Album/Albuminterpret/
+Genre bearbeiten) lebten ausschließlich als artistweite Formulare im
+separaten „📝 Metadaten bearbeiten"-Panel weiter unten auf derselben
+Seite — kein direkter Weg von einem konkreten Track zu einer auf ihn
+bezogenen Aktion oder seinem Health-Status.
+
+**Neue Objekt-/Navigationsstruktur:** Track-Zeilen sind jetzt native
+`<button class="row-item track-row" data-track-path="…">` (kein
+`<div onclick>`-Pseudo-Button, Auftrag §4) und öffnen per Klick/Enter/
+Space einen Track Detail Drawer (rechtsseitiges Panel, `#track-drawer-
+overlay`/`#track-drawer`) mit den Abschnitten Information/Health/
+Aktionen — Library → Artist → Track → Detail/Health/Action, wie im
+Auftrag als Zielarchitektur beschrieben. Album bleibt bewusst NICHT
+Teil dieses Tickets (Auftrag §13: „vorbereiteter nächster
+Evolutionsschritt") — nur die Track-Ebene wurde umgesetzt.
+
+**Track-Detail-Kontext:** Information/Health kommen ausschließlich aus
+den bereits über `GET /api/v1/library/artists-overview/{artist}`
+geladenen `TrackSchema`-Feldern (`_artistDetailTracksByPath`, keyed nach
+`relative_path`) — kein neuer API-Call. Information zeigt Titel, Artist,
+Album, Album Artist, Genre, Jahr, Track-/Disc-Nummer, MusicBrainz
+Recording-/Release-ID, ISRC (exakt die in Auftrag §8 gelisteten,
+bereits unterstützten Felder). Health zeigt `t.issue_codes` (Scope.FILE,
+`services/library_health/issues.py::REGISTRY`) über eine reine
+Anzeige-Label-Map (`_TRACK_ISSUE_LABELS`, keine neue Diagnoselogik,
+Auftrag §7) — bei leerer Liste ein neutraler Hinweis („Keine bekannten
+Probleme laut letztem Health-Scan"), nie eine erfundene „Metadata
+vollständig"-Behauptung.
+
+**Verwendete bestehende APIs — keine neue Business-Logik:** Die
+Drawer-Aktionen führen selbst nichts aus. Sie öffnen/befüllen
+ausschließlich die bereits vorhandenen, andernorts getesteten Formulare
+im „📝 Metadaten bearbeiten"-Panel (CC-AC-2/3) und rufen deren bereits
+bestehende `loadTitleEditPreview()`/`loadGenreManagePreview()` auf bzw.
+setzen Fokus auf das passende Eingabefeld (Artist/Album/Albuminterpret —
+dort fehlt der Zielwert, daher kein automatischer Preview-Aufruf).
+„Album bearbeiten"/„Albuminterpret bearbeiten" werden nur angeboten,
+wenn `_trackAlbumValue()` einen Wert liefert — identische `.m4a`-/
+Album-Directory-Semantik wie der bestehende Album-Picker
+(`_artistAlbumOptions()`) bzw. `maintenance_service.py::album_targets()`
+(nur `.m4a`, sonst leere Zielmenge). „🛠 Library-Wartung"-Verknüpfung
+öffnet unverändert das bestehende Maintenance-Panel. Kein neuer
+Endpunkt, keine neue `fetch()`/`POST`-Ausführung im Drawer-Code
+(verifiziert per Test, s. u.).
+
+**Preview/Execute-Erhalt:** Die Drawer-Aktionen springen in die
+bestehenden Formulare und lösen höchstens deren `load*Preview()` aus —
+der Execute-Button, `window.confirm()`-Bestätigungstext und die
+`POST .../execute`-Aufrufe selbst wurden nicht verändert. Preview→
+Confirm→Execute bleibt exakt der bestehende, in
+`test_control_center_admin_maintenance_api.py`/
+`test_library_repair_maintenance_service.py` unverändert grün getestete
+Pfad (Auftrag §10).
+
+**Accessibility:** `role="dialog"`/`aria-modal="true"`/
+`aria-labelledby="track-drawer-title"` statisch im Markup. Escape
+schließt den Drawer, Tab/Shift+Tab kreisen innerhalb des Dialogs
+(`_trackDrawerFocusableEls()`), Fokus wandert beim Öffnen auf den
+Schließen-Button und beim Schließen zurück auf die auslösende
+Track-Zeile (`_trackDrawerTriggerEl`). Sichtbarkeit über das bereits
+etablierte native `hidden`-Attribut (identisch zu
+`artist-metadata-edit-panel`) — kein zusätzliches `aria-hidden`, kein
+künstliches `aria-expanded`. Browser-/Playwright-Verifikation wurde
+NICHT durchgeführt (kein Headless-Browser in dieser Umgebung verfügbar)
+— siehe „Offene Folgearbeiten".
+
+**Security-Unveränderheit:** `services/library_repair/
+maintenance_service.py` (`_resolve_within()`, `artist_targets()`,
+`album_targets()`, `_title_edit_targets()`, `safety_check()` in
+`executor.py`) wurden nicht angefasst — kein Code-Diff außerhalb von
+`control_center/templates/library_artist_detail.html`,
+`control_center/static/common.css` und den Tests.
+`tests/test_control_center_admin_maintenance_api.py` (61 Tests) und
+`tests/test_library_repair_maintenance_service.py` (68 Tests)
+unverändert grün.
+
+**Bewusste Nicht-Änderung von CC-AC-6:** Das zurückgestellte Finding zu
+`album_targets()`s totem `is_symlink()`-Check
+(`docs/FINDINGS_INDEX.md`, OPEN/DEFER, P3) bleibt unverändert offen —
+kein Bezug zu diesem UI-Ticket.
+
+**Tests:** `tests/test_control_center_ui.py` um 9 neue Tests ergänzt
+(Track-Zeilen interaktiv, Drawer-Markup vorhanden, angezeigte Metadaten-
+Felder, Health aus `issue_codes` ohne erfundene Aussage, gebündelte
+bestehende Aktionen, Preview/Execute-Erhalt ohne neue `fetch()`/`POST`,
+Dialog-Accessibility-Semantik, Admin-Gating, `.m4a`-Scope für Album-
+Aktionen) — 148/148 in `tests/test_control_center_ui.py` grün, 129/129
+in den beiden Maintenance-/Sicherheits-Suiten unverändert grün, 500/500
+in allen `control_center`-Tests (`pytest tests/ -k control_center`)
+grün. Volle Suite (`pytest tests/ -q`) bewusst nicht durch den
+Implementierungsprozess ausgeführt (§8.A) — dem Nutzer empfohlen.
+
+**Offene Folgearbeiten:**
+- Playwright-/Browser-Runtime-Test (Auftrag §20) wurde nicht
+  durchgeführt — diese Umgebung hat keinen Headless-Browser verfügbar.
+  Manuelle Verifikation (Track anklicken/Tab/Enter/Escape, Drawer-Inhalt,
+  Responsive 360/390/412/1280px) steht noch aus.
+- Album-Klickbarkeit/eigener Album-Kontext bleibt wie in Auftrag §13
+  vorgesehen ein separater, nicht in CC-AC-9 erzwungener Folgeschritt.
+- Spätere Umbenennung „Library-Metadata" → „Library Diagnostics"
+  (CC-AC-9-Vorschlagsdokument, Abschnitt 8) bleibt wie dort beschrieben
+  eine bewusst nicht in diesem Ticket gezogene Folgearbeit.

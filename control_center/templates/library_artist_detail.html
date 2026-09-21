@@ -13,6 +13,36 @@
     <p class="empty-note">Artist wird geladen …</p>
   </div>
 
+  <!-- Track Detail Drawer (CC-AC-9, Track-Centric Library Actions) -
+       zeigt Information/Health/Aktionen fuer genau EINEN per Klick
+       gewaehlten Track, gefuellt ausschliesslich aus den bereits
+       geladenen Track-Daten (body.tracks aus derselben
+       artists-overview/{artist}-Antwort wie oben) - kein neuer
+       API-Call. Die Aktionen unten oeffnen/befuellen ausschliesslich
+       die bestehenden Formulare (Manual Metadata Editing, CC-AC-2/3) -
+       Preview->Confirm->Execute bleibt dort unveraendert (Auftrag §10). -->
+  <div id="track-drawer-overlay" class="drawer-overlay" hidden>
+    <div id="track-drawer" class="track-drawer" role="dialog" aria-modal="true" aria-labelledby="track-drawer-title">
+      <div class="track-drawer-header">
+        <h2 id="track-drawer-title">🎵 …</h2>
+        <button type="button" id="track-drawer-close" class="small" aria-label="Track-Detail schließen">✕</button>
+      </div>
+      <p class="track-drawer-subtitle hint" id="track-drawer-subtitle"></p>
+      <div class="track-drawer-section">
+        <h3>Information</h3>
+        <div id="track-drawer-info"></div>
+      </div>
+      <div class="track-drawer-section">
+        <h3>Health</h3>
+        <div id="track-drawer-health"></div>
+      </div>
+      <div class="track-drawer-section">
+        <h3>Aktionen</h3>
+        <div id="track-drawer-actions"></div>
+      </div>
+    </div>
+  </div>
+
   <section class="panel" id="artist-metadata-edit-panel" hidden>
     <details>
     <summary><h2>📝 Metadaten bearbeiten</h2></summary>
@@ -176,10 +206,14 @@
         return (a.title || a.filename).localeCompare(b.title || b.filename, "de");
       });
 
+      // CC-AC-9: natives <button> statt <div> - Enter/Space oeffnen den
+      // Track Detail Drawer ohne eigene Tastatur-Nachbildung (Auftrag
+      // §4), data-track-path adressiert den Track in
+      // _artistDetailTracksByPath (siehe Track Detail Drawer weiter unten).
       const trackList = albumTracks.map((t) => `
-        <div class="row-item" title="${_escapeHtml(t.relative_path)}">
+        <button type="button" class="row-item track-row" data-track-path="${_escapeHtml(t.relative_path)}" title="${_escapeHtml(t.relative_path)}">
           <div class="row-main">${t.track_number ? _escapeHtml(String(t.track_number)) + ". " : ""}${_escapeHtml(t.title || t.filename)}</div>
-        </div>
+        </button>
       `).join("");
 
       return `
@@ -191,7 +225,16 @@
     }).join("") + "</div>";
   }
 
+  // CC-AC-9: Nachschlagetabelle fuer den Track Detail Drawer - dieselben
+  // body.tracks wie _renderTracksGroupedByAlbum(), keyed nach
+  // relative_path (eindeutig je Track, bereits als Tooltip/Titel-Edit-
+  // Scope-Wert verwendet). KEIN neuer API-Call.
+  let _artistDetailTracksByPath = {};
+
   function renderArtistDetail(el, body) {
+    _artistDetailTracksByPath = {};
+    body.tracks.forEach((t) => { _artistDetailTracksByPath[t.relative_path] = t; });
+
     document.getElementById("artist-title").textContent = `🎤 ${body.artist}`;
     document.getElementById("breadcrumb-artist").textContent = `🎤 ${body.artist}`;
     document.title = `${body.artist} – Library – MusicBot Control Center`;
@@ -913,6 +956,259 @@
   document.getElementById("repair-l2-btn").addEventListener("click", () => startArtistRepairJob("l2"));
   document.getElementById("repair-l3-btn").addEventListener("click", () => startArtistRepairJob("l3"));
 
+  // -- Track Detail Drawer (CC-AC-9, Track-Centric Library Actions) -------
+  //
+  // Reine Praesentation/Navigation ueber die bereits geladenen Track-Daten
+  // (_artistDetailTracksByPath oben) - KEIN neuer API-Call, KEINE neue
+  // Health-/Business-Logik. issue_codes kommen unveraendert aus
+  // TrackSchema (services/library_health/issues.py::REGISTRY,
+  // ausschliesslich Scope.FILE - services/library_health/models.py::
+  // FileHealth.to_dict()) - die Labels unten sind reine Anzeige-
+  // Uebersetzung, keine neue Diagnose (Auftrag §7). Die Aktionen im
+  // Drawer fuehren selbst NICHTS aus: sie oeffnen/befuellen
+  // ausschliesslich die bestehenden Formulare oben (Manual Metadata
+  // Editing v1-3, CC-AC-2/3) und rufen deren bereits getestete
+  // load*Preview()-Funktionen auf - Preview->Confirm->Execute bleibt
+  // exakt der bestehende, unveraenderte Pfad (Auftrag §10).
+  const _TRACK_ISSUE_LABELS = {
+    META_NOT_ANALYZABLE: "Tags nicht lesbar",
+    META_ARTIST_MISSING: "Artist fehlt",
+    META_TITLE_MISSING: "Titel fehlt",
+    META_TITLE_NOT_CLEAN: "Titel enthält Parsing-/Formatierungsreste",
+    META_ALBUM_MISSING: "Album fehlt",
+    META_ALBUM_ARTIST_MISSING: "Album-Artist fehlt",
+    META_YEAR_MISSING: "Jahr fehlt",
+    META_YEAR_INVALID: "Jahr ungültig",
+    META_GENRE_MISSING: "Genre fehlt",
+    META_TRACK_NUMBER_MISSING: "Tracknummer fehlt",
+    META_MB_RECORDING_MISSING: "MusicBrainz Recording-ID fehlt",
+    META_MB_RELEASE_MISSING: "MusicBrainz Release-ID fehlt",
+    META_ISRC_MISSING: "ISRC fehlt",
+    ARTWORK_MISSING: "Cover fehlt",
+    ARTWORK_INVALID: "Cover nicht dekodierbar",
+    ARTWORK_LOW_RESOLUTION: "Cover-Auflösung niedrig",
+    ARTWORK_NON_SQUARE: "Cover nicht quadratisch",
+    LYRICS_MISSING: "Lyrics fehlen",
+    LYRICS_EMPTY: "Lyrics-Tag leer",
+    LYRICS_INVALID: "Lyrics-Tag wirkt nicht wie Liedtext",
+    AUDIO_NOT_ANALYZABLE: "Audio nicht analysierbar",
+    AUDIO_NO_STREAM: "Kein Audio-Stream",
+    AUDIO_CORRUPT: "Audio-Datei beschädigt",
+    AUDIO_LOW_BITRATE: "Bitrate niedrig",
+    AUDIO_VERY_SHORT: "Sehr kurze Laufzeit",
+    LOUDNESS_TAG_MISSING: "Kein Loudness-Tag",
+    LOUDNESS_OFF_TARGET: "Lautheit weicht vom Ziel ab",
+    LOUDNESS_TAG_INVALID: "Loudness-Tag ungültig",
+    LOUDNESS_TAG_PARTIAL: "Loudness-Tag unvollständig",
+    STRUCTURE_INVALID_PATH: "Ungewöhnliche Verzeichnisstruktur",
+    STRUCTURE_FILE_OUTSIDE_HIERARCHY: "Datei außerhalb der erwarteten Hierarchie",
+    FILENAME_TITLE_MISMATCH: "Dateiname passt nicht zum Titel",
+    FILENAME_SUSPICIOUS: "Dateiname wirkt fehlerhaft",
+    FILENAME_EXTENSION_UNEXPECTED: "Unerwartete Dateiendung",
+    MULTI_ARTIST_SUSPICIOUS: "Artist-Tag wirkt wie Mehrfach-Artist-Konkatenation",
+    MULTI_ARTIST_INCONSISTENT: "Artist-/Album-Artist-Felder widersprüchlich",
+    MULTI_ARTIST_DUPLICATE: "Artist mehrfach im Multi-Artist-Feld",
+    GENRE_EMPTY: "Genre-Tag leer",
+    GENRE_INVALID: "Genre außerhalb der Konvention",
+    GENRE_DELIMITER_INCONSISTENT: "Genre-Trennzeichen uneinheitlich",
+  };
+
+  let _trackDrawerIsAdmin = false;
+  let _trackDrawerCurrentArtist = null;
+  let _trackDrawerCurrentTrack = null;
+  let _trackDrawerTriggerEl = null;
+
+  function _trackDrawerFieldsHtml(t) {
+    const rows = [
+      ["Titel", t.title], ["Artist", t.artist], ["Album", t.album],
+      ["Album Artist", t.album_artist], ["Genre", t.genre], ["Jahr", t.year],
+      ["Track", t.track_number], ["Disc", t.disc_number],
+      ["MB Recording-ID", t.mb_recording_id], ["MB Release-ID", t.mb_release_id],
+      ["ISRC", t.isrc],
+    ];
+    return '<dl class="track-drawer-fields">' + rows.map(([label, value]) => `
+      <dt>${_escapeHtml(label)}</dt><dd>${_escapeHtml(value ?? "–")}</dd>
+    `).join("") + "</dl>";
+  }
+
+  function _trackDrawerHealthHtml(t) {
+    if (!t.issue_codes.length) {
+      return '<p class="empty-note">✓ Keine bekannten Probleme laut letztem Health-Scan.</p>';
+    }
+    return t.issue_codes.map((code) => `<p>⚠ ${_escapeHtml(_TRACK_ISSUE_LABELS[code] || code)}</p>`).join("");
+  }
+
+  // Album-Wert fuer diesen Track - identische Semantik wie
+  // _artistAlbumOptions() oben/album_targets() (services/library_repair/
+  // maintenance_service.py): Mehr-Track-Album -> album_directory,
+  // Single (kein album_directory, .m4a) -> relativer Pfad ohne
+  // Artist-Praefix. Liefert null, wenn album_targets() ohnehin leer
+  // bleiben wuerde (nicht .m4a) - dann keine Album-/Albuminterpret-
+  // Aktion anzeigen.
+  function _trackAlbumValue(artist, t) {
+    if (t.album_directory) return t.album_directory;
+    const prefix = `${artist}/`;
+    if (t.extension === ".m4a" && t.relative_path.startsWith(prefix)) {
+      return t.relative_path.slice(prefix.length);
+    }
+    return null;
+  }
+
+  function _openMetadataEditPanel() {
+    document.getElementById("artist-metadata-edit-panel").querySelector("details").open = true;
+  }
+  function _openMaintenancePanel() {
+    document.getElementById("artist-maintenance-panel").querySelector("details").open = true;
+  }
+
+  function _trackDrawerEditTitle() {
+    const t = _trackDrawerCurrentTrack;
+    closeTrackDrawer();
+    _openMetadataEditPanel();
+    const relInput = document.getElementById("title-edit-rel-path");
+    const titleInput = document.getElementById("title-edit-new-title");
+    relInput.value = t.relative_path;
+    titleInput.value = t.title || "";
+    document.getElementById("title-edit-execute-btn").disabled = true;
+    titleInput.scrollIntoView({ block: "center" });
+    titleInput.focus();
+    loadTitleEditPreview();
+  }
+
+  function _trackDrawerEditArtist() {
+    closeTrackDrawer();
+    _openMetadataEditPanel();
+    const input = document.getElementById("artist-edit-new-artist");
+    input.scrollIntoView({ block: "center" });
+    input.focus();
+  }
+
+  function _trackDrawerEditAlbumField(selectId, inputId) {
+    const albumValue = _trackAlbumValue(_trackDrawerCurrentArtist, _trackDrawerCurrentTrack);
+    closeTrackDrawer();
+    _openMetadataEditPanel();
+    const select = document.getElementById(selectId);
+    if (albumValue !== null && [...select.options].some((o) => o.value === albumValue)) {
+      select.value = albumValue;
+    }
+    const input = document.getElementById(inputId);
+    input.scrollIntoView({ block: "center" });
+    input.focus();
+  }
+
+  function _trackDrawerEditGenre() {
+    closeTrackDrawer();
+    _openMetadataEditPanel();
+    document.getElementById("genre-manage-content").scrollIntoView({ block: "center" });
+    loadGenreManagePreview();
+  }
+
+  function _trackDrawerOpenMaintenance() {
+    closeTrackDrawer();
+    _openMaintenancePanel();
+    document.getElementById("artist-maintenance-panel").scrollIntoView({ block: "center" });
+  }
+
+  const _TRACK_DRAWER_ACTION_HANDLERS = {
+    title: _trackDrawerEditTitle,
+    artist: _trackDrawerEditArtist,
+    album: () => _trackDrawerEditAlbumField("album-edit-album-select", "album-edit-new-album"),
+    albumartist: () => _trackDrawerEditAlbumField("albumartist-edit-album-select", "albumartist-edit-new-albumartist"),
+    genre: _trackDrawerEditGenre,
+    maintenance: _trackDrawerOpenMaintenance,
+  };
+
+  function _trackDrawerActionsHtml(artist, t) {
+    if (!_trackDrawerIsAdmin) {
+      return '<p class="empty-note">Aktionen benötigen Admin-Berechtigung.</p>';
+    }
+    const rows = [["title", "✏️ Titel bearbeiten"], ["artist", "🎤 Artist bearbeiten"]];
+    if (_trackAlbumValue(artist, t) !== null) {
+      rows.push(["album", "💿 Album bearbeiten"]);
+      rows.push(["albumartist", "👤 Albuminterpret bearbeiten"]);
+    }
+    rows.push(["genre", "🎭 Genre bearbeiten"]);
+    rows.push(["maintenance", "🛠 Library-Wartung (Artist-weit)"]);
+    return '<div class="track-drawer-actions-list">' + rows.map(([action, label]) => `
+      <button type="button" class="small track-drawer-action-btn" data-track-action="${action}">${label}</button>
+    `).join("") + '</div>' +
+      '<p class="hint" style="margin-top: 10px;">Öffnet die bestehende Vorschau unten auf dieser Seite — keine neue Ausführungslogik.</p>';
+  }
+
+  document.getElementById("track-drawer-actions").addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-track-action]");
+    if (!btn || !_trackDrawerCurrentTrack) return;
+    const handler = _TRACK_DRAWER_ACTION_HANDLERS[btn.dataset.trackAction];
+    if (handler) handler();
+  });
+
+  // Accessibility (Auftrag §16): Fokus auf den Schliessen-Button beim
+  // Oeffnen, Tab-Kreis innerhalb des Dialogs, Escape schliesst, Fokus
+  // kehrt zur ausloesenden Track-Zeile zurueck. role="dialog"/aria-modal
+  // stehen bereits statisch im Markup, "hidden" ist die bestehende
+  // native Sichtbarkeits-Konvention dieser Seite (siehe
+  // artist-metadata-edit-panel) - kein zusaetzliches aria-hidden noetig.
+  function _trackDrawerFocusableEls() {
+    return Array.from(document.getElementById("track-drawer").querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    ));
+  }
+
+  function _trackDrawerKeydown(event) {
+    if (event.key === "Escape") { event.preventDefault(); closeTrackDrawer(); return; }
+    if (event.key !== "Tab") return;
+    const focusable = _trackDrawerFocusableEls();
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault(); last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault(); first.focus();
+    }
+  }
+
+  function openTrackDrawer(t) {
+    const artist = currentArtistFromPath();
+    _trackDrawerCurrentArtist = artist;
+    _trackDrawerCurrentTrack = t;
+    _trackDrawerTriggerEl = document.activeElement;
+
+    document.getElementById("track-drawer-title").textContent = `🎵 ${t.title || t.filename}`;
+    document.getElementById("track-drawer-subtitle").textContent = `${t.artist || "?"} · ${t.album || "–"}`;
+    document.getElementById("track-drawer-info").innerHTML = _trackDrawerFieldsHtml(t);
+    document.getElementById("track-drawer-health").innerHTML = _trackDrawerHealthHtml(t);
+    document.getElementById("track-drawer-actions").innerHTML = _trackDrawerActionsHtml(artist, t);
+
+    document.getElementById("track-drawer-overlay").hidden = false;
+    document.addEventListener("keydown", _trackDrawerKeydown);
+    document.getElementById("track-drawer-close").focus();
+  }
+
+  function closeTrackDrawer() {
+    const overlay = document.getElementById("track-drawer-overlay");
+    if (overlay.hidden) return;
+    overlay.hidden = true;
+    document.removeEventListener("keydown", _trackDrawerKeydown);
+    _trackDrawerCurrentTrack = null;
+    if (_trackDrawerTriggerEl && document.body.contains(_trackDrawerTriggerEl)) {
+      _trackDrawerTriggerEl.focus();
+    }
+    _trackDrawerTriggerEl = null;
+  }
+
+  document.getElementById("track-drawer-close").addEventListener("click", closeTrackDrawer);
+  document.getElementById("track-drawer-overlay").addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) closeTrackDrawer();
+  });
+
+  document.getElementById("artist-content").addEventListener("click", (event) => {
+    const btn = event.target.closest(".track-row");
+    if (!btn) return;
+    const track = _artistDetailTracksByPath[btn.dataset.trackPath];
+    if (track) openTrackDrawer(track);
+  });
+
   function initPage() {
     checkAuth().then((who) => {
       if (!who) return;
@@ -925,6 +1221,7 @@
       const isAdmin = who.access_level === "ADMIN" || who.access_level === "OWNER";
       document.getElementById("artist-metadata-edit-panel").hidden = !isAdmin;
       document.getElementById("artist-maintenance-panel").hidden = !isAdmin;
+      _trackDrawerIsAdmin = isAdmin;
       loadArtistDetail();
     });
   }
