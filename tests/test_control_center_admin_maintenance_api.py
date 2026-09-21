@@ -298,7 +298,18 @@ async def test_artist_rename_execute_409_when_lock_already_held(client, lib):
 @pytest.mark.asyncio
 async def test_artist_rename_execute_rejects_path_traversal_artist_value(client, lib):
     """Security-Regression (CC-AC-6) — siehe
-    test_artist_casing_execute_rejects_path_traversal_artist_value()."""
+    test_artist_casing_execute_rejects_path_traversal_artist_value().
+
+    `apply_artist_rename()` ist tag-wert- statt verzeichnisname-getrieben
+    (nur Dateien, deren `©ART` casefold exakt `old_artist` entspricht,
+    werden ueberhaupt angefasst) — `success_count == 0` allein wuerde
+    daher bereits VOR diesem Fix fuer fast alle Vektoren gelten (kein
+    Fixture-Track traegt `©ART="."`/`".."`/etc.), waere also nicht
+    diskriminierend (Adversarial-Review-Fund CC-AC-6 Runde 1). Die
+    eigentliche Regression zeigt sich in `target_count`: vor dem Fix
+    lieferte `artist_targets(".")` ALLE Dateien der Library zurueck
+    (`target_count == 2`), `artist_targets("..")` Pfade ausserhalb der
+    Library."""
     own = lib / "Macloud" / "Singles" / "a.m4a"
     _m4a(own, artist="Macloud")
     other = lib / "Other" / "Singles" / "b.m4a"
@@ -311,7 +322,9 @@ async def test_artist_rename_execute_rejects_path_traversal_artist_value(client,
             headers=_SAME_ORIGIN,
         )
         assert response.status_code == 200, traversal_artist
-        assert response.json()["success_count"] == 0, traversal_artist
+        body = response.json()
+        assert body["target_count"] == 0, traversal_artist
+        assert body["success_count"] == 0, traversal_artist
 
     assert MP4(own).tags["\xa9ART"] == ["Macloud"]
     assert MP4(other).tags["\xa9ART"] == ["Other"]
@@ -592,9 +605,11 @@ async def test_album_edit_rejects_path_traversal_artist_value(client, lib):
     per HTTP frei waehlbar — `artist="."`/`""`/`".."` mit einem
     passenden `album`-Wert darf nicht die gesamte Library treffen (die
     vier bereits bestehenden, von diesem PR nicht beruehrten Endpunkte
-    artist-casing/legacy-genre-cleanup/artist-rename/title-edit teilen
-    dieselbe Schwaeche in artist_targets() - das bleibt ein separater,
-    bewusst zurueckgestellter Befund, siehe docs/FINDINGS_INDEX.md)."""
+    artist-casing/legacy-genre-cleanup/artist-rename/title-edit teilten
+    zum damaligen Zeitpunkt dieselbe Schwaeche in artist_targets() -
+    seit CC-AC-6 geschlossen, siehe docs/FINDINGS_INDEX.md und die
+    traversal-Tests fuer die vier Endpunkte weiter oben in dieser
+    Datei)."""
     own = lib / "A" / "2020 - Own Album" / "01 - a.m4a"
     _m4a(own)
     other = lib / "B" / "2021 - Other Album" / "01 - b.m4a"

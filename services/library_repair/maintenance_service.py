@@ -128,27 +128,48 @@ def _resolve_within(
 
     Prueft NICHT, ob das Ergebnis eine Datei oder ein Verzeichnis ist -
     das bleibt Aufgabe der Aufrufer (artist_targets()/album_targets()/
-    title-edit-Pfad). Wirft NIE nach aussen."""
+    title-edit-Pfad). Wirft NIE nach aussen.
+
+    Logging (CC-AC-6 Adversarial-Review, Runde 1): eine ECHTE Containment-
+    Verletzung (absoluter Pfad, Ergebnis verlaesst `base_path`) sowie eine
+    gescheiterte Pfadaufloesung (Symlink-Schleife/ENAMETOOLONG) werden
+    protokolliert (`%r`/`!r`-Formatierung, damit ein eingebetteter
+    Zeilenumbruch im Angreifer-Wert keine Log-Zeile faelschen kann) - ein
+    gewoehnlicher `must_exist`-Miss (z. B. Tippfehler im Artist-Namen,
+    bereits geloeschte Datei) bleibt bewusst still, um das Log nicht mit
+    Alltagsfaellen zu fluten."""
     if not isinstance(candidate, str) or not candidate:
         return None
     if Path(candidate).is_absolute():
+        logger.warning(
+            "Containment-Ablehnung: absoluter Pfad %r (base=%r)",
+            candidate, str(base_path),
+        )
         return None
     try:
         base_resolved = base_path.resolve()
         target = (base_path / candidate).resolve()
         if base_resolved == target or base_resolved not in target.parents:
+            logger.warning(
+                "Containment-Ablehnung: %r verlaesst %r", candidate, str(base_path),
+            )
             return None
         if must_exist and not target.exists():
             return None
     except (OSError, ValueError, RuntimeError):
+        logger.warning(
+            "Containment-Pruefung fehlgeschlagen fuer %r (base=%r)",
+            candidate, str(base_path), exc_info=True,
+        )
         return None
     return target
 
 
 def artist_targets(artist: str, *, library_root: Optional[Path] = None) -> list[str]:
-    """Relative .m4a-Pfade unter <library>/<artist>/ — identische
-    Semantik zu scripts/fix_artist_casing.py::collect_targets()
-    (--artist-Zweig). Das Verzeichnis ist AUSSCHLIESSLICH der Datei-Scope
+    """Relative .m4a-Pfade unter <library>/<artist>/ — historisch aus
+    scripts/fix_artist_casing.py::collect_targets() (--artist-Zweig)
+    extrahiert (das Skript selbst wurde in ARCH-032 entfernt, siehe
+    docs/FINDINGS_INDEX.md). Das Verzeichnis ist AUSSCHLIESSLICH der Datei-Scope
     (welche Dateien werden betrachtet) — die tatsächliche Aenderung ist
     tag-wert-getrieben, nicht verzeichnisname-getrieben (ARCH-031 B.8).
 
@@ -171,6 +192,7 @@ def artist_targets(artist: str, *, library_root: Optional[Path] = None) -> list[
             return []
         return sorted(str(p.relative_to(root_resolved)) for p in artist_dir.rglob("*.m4a"))
     except (OSError, ValueError, RuntimeError):
+        logger.warning("artist_targets() fehlgeschlagen fuer artist=%r", artist, exc_info=True)
         return []
 
 
@@ -291,6 +313,10 @@ def album_targets(
         if candidate.is_file() and not candidate.is_symlink() and candidate.suffix.lower() == ".m4a":
             return [str(candidate.relative_to(root_resolved))]
     except (OSError, ValueError, RuntimeError):
+        logger.warning(
+            "album_targets() fehlgeschlagen fuer artist=%r album=%r",
+            artist, album, exc_info=True,
+        )
         return []
     return []
 
@@ -685,7 +711,19 @@ def _title_edit_targets(
     gegen die Library-WURZEL aufgeloest und danach zusaetzlich geprueft,
     dass das Ergebnis echt innerhalb des Artist-Verzeichnisses aus (1)
     liegt. Bei Verletzung leere Zielmenge - identisches Fehlerbild wie
-    ein unbekannter Track, kein Fehler nach aussen."""
+    ein unbekannter Track, kein Fehler nach aussen.
+
+    WICHTIG (Adversarial-Review-Fund CC-AC-6 Runde 2): der AUFGELOESTE
+    `track_path` dient NUR der Containment-Entscheidung. Zurueckgegeben
+    wird das unveraenderte `rel_path` des Aufrufers, nicht die aufgeloeste
+    Form - sonst wuerde ein symlink-basierter Track (z. B.
+    "Bausa/Album/link.m4a" -> "real.m4a") als sein aufgeloestes Ziel
+    zurueckgeliefert und `executor.py::safety_check()`s
+    `path.is_symlink()`-Pruefung koennte den Symlink nie mehr sehen
+    (Pfad ist nach `resolve()` per Definition kein Symlink mehr) -
+    vor CC-AC-6 wurde `rel_path` unveraendert an apply_title_edit()
+    durchgereicht und ein Symlink dort korrekt mit "Safety: Symlink"
+    abgelehnt; dieses Verhalten bleibt damit erhalten."""
     root = _library_root(library_root)
     artist_dir = _resolve_within(root, artist)
     if artist_dir is None or not artist_dir.is_dir():
@@ -695,13 +733,20 @@ def _title_edit_targets(
         return []
     try:
         if artist_dir == track_path or artist_dir not in track_path.parents:
+            logger.warning(
+                "Containment-Ablehnung: rel_path %r gehoert nicht zu Artist %r",
+                rel_path, artist,
+            )
             return []
-        root_resolved = root.resolve()
         if not track_path.is_file():
             return []
-        return [str(track_path.relative_to(root_resolved))]
     except (OSError, ValueError, RuntimeError):
+        logger.warning(
+            "Containment-Pruefung fehlgeschlagen fuer rel_path %r (artist=%r)",
+            rel_path, artist, exc_info=True,
+        )
         return []
+    return [rel_path]
 
 
 def preview_title_edit(

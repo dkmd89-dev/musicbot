@@ -1875,14 +1875,32 @@ class LibraryMaintenanceHandler:
             )
             return
 
+        if preview.target_count == 0:
+            # Seit CC-AC-6 (Containment-Haertung, rel_path wird gegen den
+            # aufgeloesten Artist-Scope geprueft) liefert eine leere
+            # Zielmenge KEINEN Outcome mehr - weder bei "Datei zwischen
+            # Track-Auswahl und Eingabe verschwunden" noch bei anderen
+            # Containment-Randfaellen (z. B. ein Artist-Verzeichnis, das
+            # selbst ein die Library verlassender Symlink ist). Vorher
+            # war target_count bei Title-Edit immer 1 und dieser Fall lief
+            # ueber den `changed_count == 0`-Zweig unten (Review-Fund
+            # CC-AC-6 Runde 2 — ohne diesen Zweig faellt der Nutzer sonst
+            # faelschlich auf "Wert entspricht bereits dem aktuellen Wert").
+            await message.edit_text(
+                "📁 Datei nicht mehr verfügbar — bitte erneut wählen.",
+                reply_markup=self._back_keyboard("libmaint:start"),
+            )
+            return
+
         if preview.changed_count == 0:
-            # target_count ist bei Title-Edit immer 1 (Scope = genau eine
-            # Datei) - "keine Aenderung" kann daher entweder "identischer
-            # Wert" ODER "Datei zwischen Track-Auswahl und Eingabe
-            # verschwunden" bedeuten (safety_check() in apply_title_edit()
-            # liefert dafuer einen "Safety: ..."-Grund). Beide Faelle
-            # bleiben read-only-sicher (nichts wird geschrieben), aber
-            # verdienen unterschiedliche Rueckmeldungen (Auftrag §14).
+            # target_count ist hier immer 1 (Scope = genau eine Datei,
+            # target_count == 0 wird oben bereits behandelt) - "keine
+            # Aenderung" bedeutet daher: identischer Wert ODER die Datei
+            # ist zwar noch vorhanden, aber laut safety_check() aktuell
+            # nicht schreibbar (liefert dafuer einen "Safety: ..."-Grund).
+            # Beide Faelle bleiben read-only-sicher (nichts wird
+            # geschrieben), aber verdienen unterschiedliche Rueckmeldungen
+            # (Auftrag §14).
             skip = preview.outcomes[0] if preview.outcomes else None
             if skip is not None and skip.reason and skip.reason.startswith("Safety:"):
                 await message.edit_text(

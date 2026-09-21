@@ -113,6 +113,22 @@ class TestArtistTargetsContainment:
         lib.mkdir()
         assert ms.artist_targets("x" * 300, library_root=lib) == []
 
+    def test_absolute_path_to_existing_directory_with_files_is_rejected(self, lib, tmp_path):
+        """Adversarial-Review-Fund (CC-AC-6 Runde 1): die anderen
+        Traversal-Werte ("/etc", "a/../../b") sind gegen den VOR-Fix-Code
+        nicht diskriminierend, da das Zielverzeichnis dort schlicht nicht
+        existiert und `is_dir()` bereits False liefert. Ein absoluter
+        Pfad auf ein EXISTIERENDES Verzeichnis mit echten .m4a-Dateien
+        haette den Vor-Fix-Code dagegen tatsaechlich zum Verlassen der
+        Library gebracht (`root / artist` kollabiert bei einem absoluten
+        `artist`-Wert auf genau diesen Pfad, siehe Path.__truediv__)."""
+        outside = tmp_path / "outside_absolute"
+        outside.mkdir()
+        (outside / "evil.m4a").touch()
+        lib.mkdir()
+
+        assert ms.artist_targets(str(outside), library_root=lib) == []
+
     def test_directory_symlink_escape_is_rejected(self, lib, tmp_path):
         outside = tmp_path / "outside"
         outside.mkdir()
@@ -623,6 +639,39 @@ class TestTitleEditRelPathContainment:
         assert result.target_count == 1
         assert result.success_count == 1
         assert MP4(p).tags["©nam"] == ["Neuer Titel"]
+
+    def test_rel_path_pointing_at_symlink_is_still_rejected_by_safety_check(self, lib):
+        """Security-Regression (CC-AC-6 Runde 2, Adversarial-Review): eine
+        fruehere Fassung von `_title_edit_targets()` gab den ueber
+        `_resolve_within()` AUFGELOESTEN Pfad zurueck (statt des
+        unveraenderten `rel_path`) - ein per Symlink referenzierter Track
+        haette dadurch als sein aufgeloestes Realziel an
+        `apply_title_edit()` gemeldet, `executor.py::safety_check()`s
+        `path.is_symlink()`-Pruefung haette den Symlink dadurch nie mehr
+        gesehen (ein bereits per `resolve()` aufgeloester Pfad ist per
+        Definition kein Symlink mehr) - Vor-Fix (CC-AC-3/vor CC-AC-6) UND
+        die korrigierte Fassung lehnen einen Symlink-Track gleichermassen
+        ab (`_title_edit_targets()` liefert weiterhin `rel_path`
+        unveraendert zurueck, containment wird nur intern anhand des
+        aufgeloesten Pfads entschieden)."""
+        real = lib / "A" / "Album" / "real.m4a"
+        _m4a(real)
+        link = lib / "A" / "Album" / "link.m4a"
+        link.symlink_to(real)
+
+        preview = ms.preview_title_edit(
+            "A", "A/Album/link.m4a", "Neuer Titel", library_root=lib,
+        )
+        assert preview.target_count == 1
+        assert preview.outcomes[0].status == "SKIPPED"
+        assert preview.outcomes[0].reason == "Safety: Symlink"
+        assert preview.changed_count == 0
+
+        result = ms.execute_title_edit(
+            "A", "A/Album/link.m4a", "Neuer Titel", triggered_by="test", library_root=lib,
+        )
+        assert result.success_count == 0
+        assert MP4(real).tags["©nam"] == ["T"]
 
 
 # ── _resolve_within_library() (Defense-in-Depth) ─────────────────────────
