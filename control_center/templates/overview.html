@@ -1,89 +1,198 @@
 {% extends "_base.html" %}
 {% block title %}Overview – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>🎛️ Overview</h1>
-  <p class="subtitle">Wie geht es deinem MusicBot gerade – und was braucht Aufmerksamkeit?</p>
-
-  <!-- ── KPI-Grid: Systemstatus primär (2 Spalten), Rest sekundär ── -->
-  <div class="kpi-grid">
-    <!-- Primär: Systemstatus -->
-    <div class="panel kpi-card kpi-primary">
-      <div class="kpi-label">🖥️ Systemstatus</div>
-      <div class="kpi-value" id="system-status-value">–</div>
-      <div class="kpi-hint" id="system-status-hint">Lädt…</div>
-      <span class="kpi-indicator" id="system-indicator"></span>
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="page-title">🎛️ Overview</h1>
+      <div class="text-secondary">
+        Wie geht es deinem MusicBot gerade – und was braucht Aufmerksamkeit?
+      </div>
     </div>
+  </div>
+</div>
 
-    <!-- Sekundär: Library -->
-    <div class="panel kpi-card">
-      <div class="kpi-label">📚 Library</div>
-      <div class="kpi-value" id="status-library-value">–</div>
-      <div class="kpi-hint" id="status-library-hint">Lädt…</div>
-    </div>
+<!-- Systemstatus -->
+<div class="row row-cards mb-4">
 
-    <!-- Sekundär: Navidrome -->
-    <div class="panel kpi-card">
-      <div class="kpi-label">🌐 Navidrome</div>
-      <div class="kpi-value" id="status-navidrome-value">–</div>
-      <div class="kpi-hint" id="status-navidrome-hint">Lädt…</div>
-    </div>
+  <!-- System -->
+  <div class="col-sm-6 col-lg-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center mb-3">
+          <span class="avatar avatar-sm me-3">🖥️</span>
+          <div>
+            <div class="text-secondary">Systemstatus</div>
+            <div class="h3 mb-0" id="system-status-value">–</div>
+          </div>
+        </div>
 
-    <!-- Sekundär: Jobs -->
-    <div class="panel kpi-card">
-      <div class="kpi-label">⚙️ Jobs</div>
-      <div class="kpi-value" id="status-jobs-value">–</div>
-      <div class="kpi-hint" id="status-jobs-hint">Lädt…</div>
-      <div class="kpi-progress-track">
-        <div class="kpi-progress-fill" id="jobs-progress" hidden></div>
+        <div class="text-secondary" id="system-status-hint">Lädt…</div>
+        <span class="kpi-indicator" id="system-indicator"></span>
       </div>
     </div>
   </div>
 
-  <!-- ── Attention (immer sichtbar, leerer Zustand bei 0 Findings) ── -->
-  <section class="panel attention-panel" id="attention-panel">
-    <h2>⚠️ Aufmerksamkeit</h2>
-    <div class="attention-row" id="attention-content">
-      <span class="hint">Lädt…</span>
-    </div>
-    <div class="panel-footer">
-      <a href="{{ base_path }}/findings" class="panel-link">Findings ansehen →</a>
-    </div>
-  </section>
+  <!-- Library -->
+  <div class="col-sm-6 col-lg-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center mb-3">
+          <span class="avatar avatar-sm me-3">📚</span>
+          <div>
+            <div class="text-secondary">Library</div>
+            <div class="h3 mb-0" id="status-library-value">–</div>
+          </div>
+        </div>
 
-  <!-- ── Zuletzt ── -->
-  <section class="panel">
-    <h2>🕒 Zuletzt</h2>
-    <div id="recent-activity-content" class="empty-note">Lädt…</div>
-    <div class="panel-footer">
-      <a href="{{ base_path }}/downloads" class="panel-link">Download-Verlauf ansehen →</a>
+        <div class="text-secondary" id="status-library-hint">Lädt…</div>
+      </div>
     </div>
-  </section>
+  </div>
 
-  <!-- ── Schnellzugriff ──
-       Globale Control-Center-Einstiegspunkte (CONTROL_CENTER_OVERVIEW_V2.md
-       Abschnitt 14). Metadata/Repairs wurden NICHT entfernt — beide bleiben
-       vollstaendig ueber die Sidebar (_base.html) sowie ueber die
-       Library-/Artist-Kontexte erreichbar, hier priorisiert die Overview
-       nur die vier global wichtigsten Bereiche. -->
-  <div class="section-header">Schnellzugriff</div>
-  <div class="quick-actions-grid">
-    <a href="{{ base_path }}/library" class="quick-action">
-      <div class="quick-action-icon">📚</div>
-      <div class="quick-action-label">Library</div>
-    </a>
-    <a href="{{ base_path }}/downloads" class="quick-action">
-      <div class="quick-action-icon">📥</div>
-      <div class="quick-action-label">Downloads</div>
-    </a>
-    <a href="{{ base_path }}/findings" class="quick-action">
-      <div class="quick-action-icon">⚠️</div>
-      <div class="quick-action-label">Findings</div>
-    </a>
-    <a href="{{ base_path }}/jobs" class="quick-action">
-      <div class="quick-action-icon">⚙️</div>
-      <div class="quick-action-label">Jobs</div>
+  <!-- Navidrome -->
+  <div class="col-sm-6 col-lg-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center mb-3">
+          <span class="avatar avatar-sm me-3">🌐</span>
+          <div>
+            <div class="text-secondary">Navidrome</div>
+            <div class="h3 mb-0" id="status-navidrome-value">–</div>
+          </div>
+        </div>
+
+        <div class="text-secondary" id="status-navidrome-hint">Lädt…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Jobs -->
+  <div class="col-sm-6 col-lg-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center mb-3">
+          <span class="avatar avatar-sm me-3">⚙️</span>
+          <div>
+            <div class="text-secondary">Jobs</div>
+            <div class="h3 mb-0" id="status-jobs-value">–</div>
+          </div>
+        </div>
+
+        <div class="text-secondary" id="status-jobs-hint">Lädt…</div>
+
+        <div class="progress progress-sm mt-3">
+          <div
+            class="progress-bar"
+            id="jobs-progress"
+            hidden>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Aufmerksamkeit + Zuletzt -->
+<div class="row row-cards mb-4">
+
+  <!-- Aufmerksamkeit -->
+  <div class="col-lg-6">
+    <div class="card h-100" id="attention-panel">
+      <div class="card-header">
+        <h3 class="card-title">⚠️ Aufmerksamkeit</h3>
+      </div>
+
+      <div class="card-body">
+        <div id="attention-content">
+          <span class="text-secondary">Lädt…</span>
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <a href="{{ base_path }}/findings" class="btn btn-link p-0">
+          Findings ansehen →
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Zuletzt -->
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header">
+        <h3 class="card-title">🕒 Zuletzt</h3>
+      </div>
+
+      <div class="card-body">
+        <div id="recent-activity-content" class="text-secondary">
+          Lädt…
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <a href="{{ base_path }}/downloads" class="btn btn-link p-0">
+          Download-Verlauf ansehen →
+        </a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Schnellzugriff -->
+<div class="page-header mb-3">
+  <div class="row align-items-center">
+    <div class="col">
+      <h2 class="page-title">Schnellzugriff</h2>
+    </div>
+  </div>
+</div>
+
+<div class="row row-cards">
+
+  <div class="col-sm-6 col-lg-3">
+    <a href="{{ base_path }}/library" class="card card-link card-link-pop h-100">
+      <div class="card-body text-center">
+        <div class="avatar avatar-lg mx-auto mb-3">📚</div>
+        <div class="h3 mb-1">Library</div>
+        <div class="text-secondary">Musikbibliothek verwalten</div>
+      </div>
     </a>
   </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <a href="{{ base_path }}/downloads" class="card card-link card-link-pop h-100">
+      <div class="card-body text-center">
+        <div class="avatar avatar-lg mx-auto mb-3">📥</div>
+        <div class="h3 mb-1">Downloads</div>
+        <div class="text-secondary">Download-Verlauf</div>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <a href="{{ base_path }}/findings" class="card card-link card-link-pop h-100">
+      <div class="card-body text-center">
+        <div class="avatar avatar-lg mx-auto mb-3">⚠️</div>
+        <div class="h3 mb-1">Findings</div>
+        <div class="text-secondary">Offene Probleme</div>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <a href="{{ base_path }}/jobs" class="card card-link card-link-pop h-100">
+      <div class="card-body text-center">
+        <div class="avatar avatar-lg mx-auto mb-3">⚙️</div>
+        <div class="h3 mb-1">Jobs</div>
+        <div class="text-secondary">Hintergrundaufgaben</div>
+      </div>
+    </a>
+  </div>
+
+</div>
 {% endblock %}
 
 {% block scripts %}
