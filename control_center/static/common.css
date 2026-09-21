@@ -130,6 +130,11 @@ section.panel h2 {
   font-size: 1rem; margin: 0 0 12px; display: flex; align-items: center;
   justify-content: space-between; gap: 8px;
 }
+/* CC-AC-7: natives Accordion (kein Framework, keine JS-Nachbildung der
+   Tastatursemantik - Browser-Default fuer <details>/<summary> reicht,
+   siehe common.css Kopfkommentar "kein Build-System, kein Framework"). */
+summary { cursor: pointer; }
+summary h2 { display: inline-flex; }
 .row-list { display: flex; flex-direction: column; gap: 8px; }
 .finding-group { margin-bottom: 14px; }
 .finding-group:last-child { margin-bottom: 0; }

@@ -1650,3 +1650,97 @@ Berechnung, die der Auftrag explizit ausschließt.
 Vorher/Nachher-Screenshot: nicht möglich (keine Browser-Automatisierung
 in dieser Session verbunden) — stattdessen Code-Pfad-Beweis (Grep +
 Call-Path-Nachlese oben) und die o. g. Testabdeckung als Nachweis.
+
+## Library UI Consolidation — CC-AC-7 (2026-09-21, `docs/prompts/cc-ac-7.md`)
+
+**Problem:** `library.html` bündelte Artist-Browser (gecachter Report,
+CC-AC-1) und Metadata-Diagnose (Legacy-Live-Scan, Tracks/Artists/Albums/
+Mapping) gleichwertig nebeneinander; `library_artist_detail.html`
+bündelte Alben/Tracks-Browsing und 9 Preview/Execute-Formulare (CC-AC-2/
+CC-AC-3) plus 4 Maintenance-Aktionen (CC-AC-4) dauerhaft sichtbar auf
+einer Seite. Ziel: eindeutige Informationsarchitektur Library → Artist →
+Album/Track → gezielte Aktion, ohne neue Business-Logik/APIs/Security-
+Änderungen (reines UI-/UX-Konsolidierungs-Ticket).
+
+**Pflichtanalyse vor der Umsetzung (verifiziert, nicht angenommen):**
+- `/metadata` (`control_center/templates/metadata.html`, 24 Zeilen) ist
+  ein reiner Hinweis-Stub, der für Tracks/Artists/Albums/Mapping bereits
+  auf `/library` zurückverweist — die vier Legacy-Scan-Funktionen sind
+  **ausschließlich** in `library.html` erreichbar. Deep-Link-Verlagerung
+  dorthin (wie im Ticket als „möglicher Zielzustand" skizziert) wäre
+  daher irreführend; stattdessen Ticket-Option 3 gewählt: Funktion bleibt
+  auf der Library-Hauptseite, wandert aber in einen initial eingeklappten
+  Block.
+- CC-AC-5-Korrektur (`docs/FINDINGS_INDEX.md`, CLOSED 2026-09-21) erneut
+  am Code verifiziert: `GET /api/v1/library/artists` (Live-Scan, ~37s)
+  und `GET /api/v1/library/artists-overview` (gecachter Report, ~0.02s)
+  bleiben zwei unterschiedliche Datenquellen — der „Artists"-Button im
+  Legacy-Block bleibt Pflichtfunktion.
+- KPI-Datenquelle: `GET /api/v1/library/health/cached`
+  (`control_center/routers/health.py`, bereits für das Overview-Dashboard
+  eingeführt, s. o.) liefert `body.library.{files,artists,albums}` —
+  genau die für die Library-KPI-Zeile benötigten drei Zahlen. Nach der
+  Ticket-Vorgabe „falls ein bestehender Endpunkt die KPIs liefert, diesen
+  verwenden" wird dieser Endpunkt konsumiert — keine Client-Aggregation,
+  keine neue API.
+- Artist-Liste ist nicht paginiert (`/artists-overview` liefert immer
+  die volle Liste); aktuelle Artist-Anzahl im gecachten Report zum
+  Zeitpunkt der Umsetzung: 41 (`data/library_health_report.json`) —
+  deutlich unter der 200er-Schwelle des Tickets, client-seitige
+  Sortierung ist damit zulässig.
+- Kein Accordion-Pattern existierte im Projekt (`grep -rn "<details\|
+  <summary" control_center/` → keine Treffer) — nativ mit
+  `<details>/<summary>` neu gebaut, kein Framework, keine JS-Nachbildung
+  der Tastatursemantik.
+
+**Umgesetzte Änderungen:**
+- `library.html`: neue KPI-Kachelreihe (`.tiles`, Wiederverwendung der
+  bestehenden Kachel-Klasse aus `library_artist_detail.html`) aus
+  `/health/cached`, mit eigenständiger Fehlerisolation (eigener
+  try/catch-Fetch statt `_loadInto()`) — ein KPI-Fehler blendet nur die
+  Kachelreihe aus und beeinträchtigt Artist-Liste/restliche Seite nicht.
+  Neues Sortier-Dropdown (`#artist-sort`: Name/Dateien/Alben/Health) für
+  die bereits vollständig geladene Artist-Liste, deterministisch mit
+  Artistname (A–Z) als Tie-Breaker bei Gleichstand. Der bestehende
+  „Library-Metadata"-Block (4 Scan-Buttons, Missing-Filter, gemeinsamer
+  Ergebnis-Container — alle fünf Controls ausschließlich hier erreichbar,
+  s. o.) wandert unverändert in ein initial eingeklapptes `<details>` am
+  Ende der Seite; keine ID/kein JS-Funktionsname/keine Endpunkt-URL
+  geändert.
+- `library_artist_detail.html`: Grundreihenfolge (Header → Alben/Tracks →
+  Admin-Aktionen) war bereits korrekt. Die beiden admin-only
+  `<section>`-Panels („📝 Metadaten bearbeiten", „🛠 Library-Wartung")
+  bleiben als äußeres Element mit unverändertem `id`/`hidden`-Attribut
+  und unverändertem JS-Gating (`element.hidden = !isAdmin`) bestehen; ihr
+  Inhalt wandert in ein verschachteltes `<details>`, initial eingeklappt.
+  Keine der 9 Preview/Execute-Formulare bzw. 4 Maintenance-Aktionen
+  wurde verändert, verschoben oder umbenannt.
+- `common.css`: eine neue Regel (`summary { cursor: pointer; }`, plus
+  `summary h2 { display: inline-flex; }` für die Kopfzeilen-Darstellung).
+  Kein neuer Breakpoint, kein `outline: none` (Datei setzte dies
+  ohnehin nirgends — native Fokus-Ringe für `<details>/<summary>` bleiben
+  automatisch erhalten).
+
+**Accessibility:** ausschließlich native `<details>/<summary>`-Semantik
+verwendet — kein künstliches `aria-expanded` (nur für JS-gesteuerte
+Custom-Accordions nötig, der Browser verwaltet den Expanded-State bei
+nativen Elementen selbst), keine JS-Nachbildung von Tastatursteuerung
+(Enter/Space öffnen/schließen nativ). Sichtbarer Fokus-Zustand und
+vollständige Tastaturbedienbarkeit im Browser-Check verifiziert.
+
+**Bewusst unverändert:** `services/library_repair/maintenance_service.py`
+(`_resolve_within()`, `artist_targets()`, `album_targets()`,
+`_title_edit_targets()`) und `services/library_repair/executor.py::
+safety_check()` (CC-AC-6-Containment) — nicht angefasst, kein
+Code-Diff. Das zurückgestellte CC-AC-6-Finding zu `album_targets()`s
+totem `is_symlink()`-Check (`docs/FINDINGS_INDEX.md`, OPEN/DEFER, P3)
+bleibt unverändert offen — reines UI-Ticket, kein Bezug zu
+`services/library_repair/`.
+
+**Tests:** `tests/test_control_center_ui.py` um 5 neue Tests ergänzt
+(KPI-Tiles, Sortier-Control, Library-Metadata-`<details>` ohne `open`,
+Metadata-Edit-`<details>` ohne `open`, Maintenance-`<details>` ohne
+`open`) — bestehende Tests inhaltlich unverändert. Sicherheitsrelevant:
+`tests/test_control_center_admin_maintenance_api.py` und
+`tests/test_library_repair_maintenance_service.py` unverändert grün
+(reine Bestätigung, keine Anpassung nötig).
