@@ -519,16 +519,29 @@ async def test_artist_detail_page_title_edit_has_artist_scope_guard(client):
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_execute_errors_do_not_claim_network_failure(client):
-    """Die drei schreibenden Aktionen sind synchrone Ganz-Artist-
-    Schreibvorgaenge hinter einem Reverse Proxy ohne explizites
-    proxy_read_timeout (docs/CONTROL_CENTER_REVERSE_PROXY.md) - ein
-    abgebrochener Request kann trotzdem serverseitig fertig geschrieben
-    worden sein. Der Fehlertext behauptet deshalb keinen Netzwerkfehler
-    mehr, sondern ein unbekanntes Ergebnis."""
+    """Die sieben synchronen Ganz-Artist-/Ganz-Album-/Ganz-Track-
+    Schreibvorgaenge (Artist/Titel/Genre bearbeiten aus CC-AC-2,
+    Album/Albuminterpret bearbeiten aus CC-AC-3, Artist-Casing/Legacy-
+    Genre-Cleanup aus CC-AC-4) sind synchrone Schreibvorgaenge hinter
+    einem Reverse Proxy ohne explizites proxy_read_timeout
+    (docs/CONTROL_CENTER_REVERSE_PROXY.md) - ein abgebrochener Request
+    kann trotzdem serverseitig fertig geschrieben worden sein. Ihr
+    Fehlertext behauptet deshalb keinen Netzwerkfehler mehr, sondern ein
+    unbekanntes Ergebnis.
+
+    Der L2/L3-Job-Start (CC-AC-4) ist davon bewusst ausgenommen: er
+    erstellt nur einen Job und kehrt sofort zurueck (kein langer
+    synchroner Schreibvorgang wie oben) - identisches
+    "Netzwerkfehler"-Wording wie beim aequivalenten Job-Start auf
+    repairs.html::startLevel23Job()."""
     html = (await client.get("/library/Bausa")).text
 
-    assert "Ergebnis unbekannt" in html
-    assert "Netzwerkfehler" not in html
+    assert html.count("Ergebnis unbekannt") >= 7
+    assert html.count("Netzwerkfehler") == 1
+
+    start_job_fn = html.split("async function startArtistRepairJob(level) {", 1)[1]
+    start_job_fn_body = start_job_fn.split('document.getElementById("repair-l2-btn")', 1)[0]
+    assert "Netzwerkfehler" in start_job_fn_body
 
 
 @pytest.mark.asyncio
@@ -637,6 +650,129 @@ async def test_artist_detail_page_album_edit_disables_execute_after_input_change
 
     assert '["album-edit-album-select", "album-edit-new-album"].forEach' in html
     assert '["albumartist-edit-album-select", "albumartist-edit-new-albumartist"].forEach' in html
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# GET /library/{artist} — Library-Wartung (CC-AC-4)
+# ─────────────────────────────────────────────────────────────────────────
+#
+# Reine Verdrahtung der bereits produktiven Endpunkte aus
+# admin_maintenance.py (Artist-Casing, Legacy-Genre-Cleanup — eigene
+# Test-Suite: test_control_center_admin_maintenance_api.py) und jobs.py
+# (L2/L3 — eigene Test-Suite: test_control_center_jobs_api.py). Hier wird
+# nur geprueft, dass das Artist-Detail-Template sie tatsaechlich
+# verdrahtet, Genre-Revalidierung bewusst KEINEN Button bekommt (kein
+# CC-Endpunkt vorhanden), und die Buttons hinter derselben
+# Admin-Sichtbarkeitsschranke wie die CC-AC-2-/CC-AC-3-Panels stehen.
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_has_maintenance_panel_hidden_by_default(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'id="artist-maintenance-panel" hidden' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_maintenance_gated_by_access_level(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'getElementById("artist-maintenance-panel").hidden = !isAdmin' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_has_maintenance_buttons(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert 'id="artist-casing-preview-btn"' in html
+    assert 'id="artist-casing-execute-btn"' in html
+    assert 'id="legacy-genre-cleanup-preview-btn"' in html
+    assert 'id="legacy-genre-cleanup-execute-btn"' in html
+    assert 'id="repair-l2-btn"' in html
+    assert 'id="repair-l3-btn"' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_wires_existing_artist_casing_endpoints(client):
+    """Auftrag CC-AC-4 §17: ruft ausschliesslich den bestehenden
+    admin_maintenance-Endpunkt auf, keine neue Ausfuehrungslogik."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "/api/v1/admin/maintenance/artist-casing/preview?" in html
+    assert "/api/v1/admin/maintenance/artist-casing/execute?" in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_wires_existing_legacy_genre_cleanup_endpoints(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert "/api/v1/admin/maintenance/legacy-genre-cleanup/preview?" in html
+    assert "/api/v1/admin/maintenance/legacy-genre-cleanup/execute?" in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_wires_existing_repair_level_job_endpoints(client):
+    """L2/L3 laufen als bestehender Job-Typ (services/jobs/), kein
+    synchroner Preview->Execute wie die uebrigen Maintenance-Aktionen."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "/api/v1/jobs/repair-level${level" in html
+    assert "/api/v1/jobs/${encodeURIComponent(jobId)}" in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_maintenance_uses_artist_context_not_free_text(client):
+    """Auftrag §12: der Artist-Kontext (aus dem Pfad) wird implizit
+    mitgegeben - kein eigenes Freitext-Artist-Feld wie im generischen
+    admin.html-Formular bzw. der Plan-Liste auf repairs.html."""
+    html = (await client.get("/library/Bausa")).text
+
+    maintenance_section = html.split('id="artist-maintenance-panel"', 1)[1].split("</section>", 1)[0]
+    assert "<input" not in maintenance_section
+    assert html.count("currentArtistFromPath()") >= 17
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_genre_revalidation_has_no_dead_button(client):
+    """Auftrag CC-AC-4-SCOPE-HINWEIS: Genre-Revalidierung existiert nur
+    als Telegram-Flow, dafuer wird KEIN neuer Control-Center-Endpunkt
+    gebaut - Hinweistext statt totem Button."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "Genre revalidieren" in html
+    assert 'id="genre-revalidate-preview-btn"' not in html
+    assert 'id="genre-revalidate-execute-btn"' not in html
+    assert "nur in Telegram" in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_repair_jobs_have_no_cancel_button(client):
+    """Kooperatives Abbrechen ist fuer repair_level2/repair_level3
+    wirkungslos (control_center/routers/jobs.py) - identische
+    Einschraenkung wie repairs.html::test_repairs_page_level23_has_no_cancel_button."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "cancelArtistRepairJob" not in html
+    assert 'id="repair-l2-cancel-btn"' not in html
+    assert 'id="repair-l3-cancel-btn"' not in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_repair_job_confirm_mentions_duration_and_musicbrainz(client):
+    """SCOPE-HINWEIS: Confirm-Dialog muss auf laengere Laufzeit hinweisen
+    (L2/L3 laufen asynchron als Job, anders als die synchronen
+    Maintenance-Aktionen) sowie bei L3 auf MusicBrainz/Netzwerk."""
+    html = (await client.get("/library/Bausa")).text
+
+    assert "kann einige Minuten dauern" in html or "Kann einige Minuten dauern" in html
+    assert "MusicBrainz" in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_repair_job_polls_every_second(client):
+    html = (await client.get("/library/Bausa")).text
+
+    assert "setInterval(() => _pollArtistRepairJob(_artistRepairJobId), 1000)" in html
 
 
 # ─────────────────────────────────────────────────────────────────────────
