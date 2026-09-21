@@ -1561,3 +1561,92 @@ diesen Konflikt. Nutzer hat auf Rückfrage entschieden: nur
 lassen. Bleibt offen für einen eigenen, gezielten Folge-Task mit
 expliziter Entscheidung, ob der frühere CC-AC-1-Entscheid revidiert
 werden soll.
+
+## Overview Dashboard v2 — Health-Kachel ohne Full-Scan (2026-09-21, auf Nutzerfreigabe, `docs/prompts/CONTROL_CENTER_OVERVIEW_V2.md`)
+
+Folge-Task zu PR #285/#289 („Overview-Dashboard an Leitfrage
+ausgerichtet"). Jene Runde hatte Loading States, isolierte
+Fehlerbehandlung pro Kachel und die kombinierte Systemstatus-Logik
+bereits hergestellt — offen blieb genau ein Punkt, den dieser Task
+gezielt schließt.
+
+**Kernproblem, vor der Umsetzung verifiziert (Auftrag §4/§24):**
+`overview.html::loadHealth()` rief bislang `GET /api/v1/library/health`
+auf. Call-Path-Analyse: `routers/health.py::get_library_health()` →
+`_library_scan.py::run_library_scan()` → `services/library_health/
+scanner.py::run_scan()` — ein vollständiger Library-Scan (~37s auf
+Produktion, identischer Aufrufpfad wie bei `GET /api/v1/library/artists`
+vor CC-AC-1). Jeder Overview-Seitenaufruf löste diesen Scan ungefragt
+aus.
+
+**Entscheidung: identisches Muster wie CC-AC-1 (Zeile 1206 oben) —
+additiver Endpunkt statt Änderung des bestehenden.** `GET /api/v1/
+library/health` hat mit `control_center/templates/health.html` (der
+dedizierten Health-Seite) einen zweiten, bewusst weiterhin
+Live-Scan-erwartenden Aufrufer; ihn zu ändern wäre eine ungefragte
+Verhaltensänderung außerhalb des Auftrags. Stattdessen:
+
+- Neuer Endpoint `GET /api/v1/library/health/cached`
+  (`control_center/routers/health.py::get_cached_library_health()`) im
+  selben Router, gleiche Auth-Schwelle (`AccessLevel.USER`). Liest
+  ausschließlich `_library_scan.py::load_cached_report()` — denselben
+  bereits bestehenden persistenten Report
+  (`Config.DATA_DIR/library_health_report.json`), den CC-AC-1 bereits
+  für `/artists-overview` erschlossen hat. Kein Scan-Code dupliziert,
+  keine neue Persistenzschicht.
+- Fehlt der Report komplett → `HTTPException(404, code=
+  "LIBRARY_REPORT_MISSING")`, identisches Fehlerformat wie
+  `library_overview.py::_require_cached_report()` — kein impliziter
+  Scan aus dem GET heraus.
+- `schemas/health.py::CachedLibraryHealthResponse` (Subklasse von
+  `LibraryHealthResponse`, zusätzlich `stale: bool`) statt Erweiterung
+  der Basisklasse — `GET /health` bleibt dadurch byte-identisch zu
+  vorher, `tests/test_control_center_health_api.py`s strikte
+  `set(body.keys())`-Prüfung bricht nicht durch ein dort ungewolltes
+  neues Feld. `report_to_cached_health_response()` baut auf der
+  bestehenden `report_to_health_response()` auf (kein zweites
+  Feld-für-Feld-Mapping).
+- `overview.html::loadHealth()` ruft jetzt `/health/cached` auf, zeigt
+  bei `stale: true` „⚠️ Report veraltet" statt einer Zeitangabe, sonst
+  „geprüft vor X" (neuer lokaler `_timeAgo()`-Helfer, kein neuer
+  Eintrag in `common.js`, da nur hier gebraucht). 404 (kein Report)
+  wird als eigener, ehrlicher Zustand „Noch kein Report vorhanden"
+  angezeigt statt als „Netzwerkfehler" — Kachel blockiert die übrigen
+  Panels nicht (bereits bestehendes Isolationsmuster, unverändert).
+- Quick Actions von `Library/Metadata/Repairs/Jobs` auf
+  `Library/Downloads/Findings/Jobs` umgestellt (Auftrag §14). Metadata
+  und Repairs bleiben vollständig über die Sidebar (`_base.html`)
+  erreichbar — hier nur Priorisierung der vier global wichtigsten
+  Bereiche, keine Funktion entfernt.
+
+**Performance:** `GET /api/v1/library/health/cached` liest nur eine
+bereits vorhandene JSON-Datei (kein Scan) — identische Größenordnung
+wie das bereits gemessene `/artists-overview` (~0.02s statt ~37s bei
+einem Scan). `run_scan()` ist im Overview-Ladepfad nicht mehr
+erreichbar (per Code-Analyse UND per Test bewiesen, s. u. — nicht nur
+per UI-Beobachtung, Auftrag §24).
+
+Test: `tests/test_control_center_health_cached_api.py` (7 Tests:
+frischer Report, veralteter Report mit `stale: true`, fehlender Report
+→ 404, korrupter Report → 404, expliziter Beweis per Monkeypatch dass
+`run_scan()` bei diesem Endpoint nicht aufgerufen wird, Regressionstest
+dass `/health` unverändert bleibt). Regression:
+`tests/test_control_center_health_api.py` (4/4),
+`tests/test_control_center_library_overview.py` (11/11) unverändert
+grün. Gesamte Control-Center-Themensuite (`tests/test_control_center*.py`)
+450/452 grün — 2 bereits **vorbestehende, unabhängige** Failures
+(`test_every_fetch_goes_through_api_url[overview.html]`,
+`test_overview_contains_kpi_and_summary_elements`; Letztere bereits
+oben im CC-AC-Cleanup-Abschnitt als vorbestehend dokumentiert), per
+`git stash` gegen den ungeänderten Stand reproduziert — nicht Teil
+dieses Tasks, nicht angefasst.
+
+**Bewusst NICHT umgesetzt:** P1/P2/P3-Aufschlüsselung der offenen
+Findings auf der Overview (Auftrag §10, dort ausdrücklich optional) —
+`schemas/findings.py::FindingsSummaryResponse` liefert aktuell keine
+Prioritäts-/Kategorie-Verteilung, das anzulegen wäre eine neue
+Berechnung, die der Auftrag explizit ausschließt.
+
+Vorher/Nachher-Screenshot: nicht möglich (keine Browser-Automatisierung
+in dieser Session verbunden) — stattdessen Code-Pfad-Beweis (Grep +
+Call-Path-Nachlese oben) und die o. g. Testabdeckung als Nachweis.
