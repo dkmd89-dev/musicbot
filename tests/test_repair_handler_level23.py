@@ -312,6 +312,7 @@ def _result(**over):
         repair_id="r1", artist="Bausa", level="l2", status="SUCCESS",
         started_at="t0", finished_at="t1", total=2, success=2, failed=0,
         skipped=0, unresolved=0, resolved_count=1, entries=[], affected_files=["a.m4a"],
+        changed_files=["a.m4a"],
         rescan_triggered=True, error_message=None,
     )
     base.update(over)
@@ -369,7 +370,8 @@ class TestL23Execute:
         message.edit_text = AsyncMock()
         result = _result(
             status="SUCCESS", success=3, failed=0, skipped=1,
-            resolved_count=2, affected_files=["a.m4a", "b.m4a"], rescan_triggered=True,
+            resolved_count=2, affected_files=["a.m4a", "b.m4a"],
+            changed_files=["a.m4a", "b.m4a"], rescan_triggered=True,
         )
         with patch.object(repair_handler_module, "execute_level2_repair", AsyncMock(return_value=result)):
             run(handler._run_l23_execute_and_report(message, "l2", "Bausa", ADMIN_ID))
@@ -382,7 +384,11 @@ class TestL23Execute:
         assert "Verifiziert behoben: 2" in text
         assert "Auto-Learn" in text
 
-    def test_partial_success_shown_with_warning_emoji(self, handler, context):
+    def test_partial_success_shown_with_cross_mark(self, handler, context):
+        """ARCH-033-F1 Adversarial-Review-Fund: failed>0 dominiert IMMER
+        (❌), unabhaengig von success/unresolved - vorher gab es hierfuer
+        eine ⚠️-Ausnahme, die nicht-monoton war (ein zusaetzlicher
+        UNRESOLVED-Fund kippte denselben Lauf von ⚠️ auf ❌)."""
         message = Mock()
         message.edit_text = AsyncMock()
         result = _result(status="SUCCESS", success=1, failed=1, skipped=0)
@@ -390,7 +396,8 @@ class TestL23Execute:
             run(handler._run_l23_execute_and_report(message, "l2", "Bausa", ADMIN_ID))
         text = message.edit_text.call_args[0][0]
         assert "teilweise abgeschlossen" in text
-        assert "⚠️" in text
+        assert "❌" in text
+        assert "⚠️" not in text
 
     def test_no_open_findings_shows_resolved_message(self, handler, context):
         message = Mock()
@@ -400,3 +407,97 @@ class TestL23Execute:
             run(handler._run_l23_execute_and_report(message, "l2", "Bausa", ADMIN_ID))
         text = message.edit_text.call_args[0][0]
         assert "keine offenen" in text
+
+
+# ── ARCH-033-F1: unresolved-Anzeige / changed_files / SKIPPED-Emoji ───────
+
+
+class TestFormatL23ResultErweiterungen:
+    """Regressionstests fuer die drei Teil-Fixes aus ARCH-033-F1
+    (docs/FINDINGS_INDEX.md): (a) unresolved als vierte Summary-Zeile,
+    (b) 'Geaenderte Dateien' zaehlt changed_files statt affected_files,
+    (c) eigener SKIPPED-/UNRESOLVED-Zweig statt Fallback auf ❌."""
+
+    def test_success_run_shows_no_cross_mark(self, handler):
+        result = _result(
+            status="SUCCESS", total=2, success=2, skipped=0, unresolved=0, failed=0,
+        )
+        text = handler._format_l23_result("l2", "Bausa", result)
+        assert "Erfolgreich: 2" in text
+        assert "❌" not in text
+        assert "✅" in text
+
+    def test_pure_skipped_run_shows_yellow_not_cross_mark(self, handler):
+        """0 success / 3 skipped / 0 unresolved / 0 failed -> reiner
+        SKIPPED-Lauf: kein ❌, kein irrefuehrendes 'Erfolgreich'-Emoji."""
+        result = _result(
+            status="SKIPPED", total=3, success=0, skipped=3, unresolved=0, failed=0,
+        )
+        text = handler._format_l23_result("l2", "Bausa", result)
+        assert "❌" not in text
+        assert "🟡" in text
+        assert "Übersprungen: 3" in text
+
+    def test_unresolved_run_shows_review_line_and_orange_marker(self, handler):
+        """0 success / 0 skipped / 2 unresolved / 0 failed -> muss die
+        neue 'Ueberpruefen'-Zeile zeigen (vorher: verschwand spurlos)."""
+        result = _result(
+            status="SKIPPED", total=2, success=0, skipped=0, unresolved=2, failed=0,
+        )
+        text = handler._format_l23_result("l2", "Bausa", result)
+        assert "Überprüfen: 2" in text
+        assert "🟠" in text
+        assert "❌" not in text
+
+    def test_failed_run_shows_cross_mark(self, handler):
+        result = _result(
+            status="FAILED", total=1, success=0, skipped=0, unresolved=0, failed=1,
+        )
+        text = handler._format_l23_result("l2", "Bausa", result)
+        assert "❌" in text
+        assert "Fehlgeschlagen: 1" in text
+
+    def test_wholly_failed_run_header_says_fehlgeschlagen_not_teilweise(self, handler):
+        """Adversarial-Review-Fund: ein Lauf ohne jeden Erfolg (success=0)
+        ist vollstaendig fehlgeschlagen, nicht 'teilweise abgeschlossen'."""
+        result = _result(
+            status="FAILED", total=1, success=0, skipped=0, unresolved=0, failed=1,
+        )
+        text = handler._format_l23_result("l2", "Bausa", result)
+        assert "fehlgeschlagen" in text
+        assert "teilweise abgeschlossen" not in text
+
+    def test_empty_run_shows_white_circle(self, handler):
+        """total > 0 (Kandidaten vorhanden), aber 0 in jeder Kategorie -
+        legitimer leerer Lauf (z. B. Subprozess fand beim eigenen Rescan
+        nichts mehr), kein ❌."""
+        result = _result(
+            status="SKIPPED", total=1, success=0, skipped=0, unresolved=0, failed=0,
+        )
+        text = handler._format_l23_result("l2", "Bausa", result)
+        assert "⚪" in text
+        assert "❌" not in text
+
+    def test_mixed_run_failed_dominates(self, handler):
+        """failed>0 gewinnt immer, auch wenn zusaetzlich success/skipped/
+        unresolved > 0 sind - monotone Prioritaet failed > unresolved >
+        success > skipped > leer (docs/FINDINGS_INDEX.md ARCH-033-F1,
+        docs/LIBRARY_REPAIR.md §12)."""
+        result = _result(
+            status="FAILED", total=4, success=1, skipped=1, unresolved=1, failed=1,
+        )
+        text = handler._format_l23_result("l2", "Bausa", result)
+        assert "❌" in text
+        assert "🟠" not in text
+        assert "🟡" not in text
+
+    def test_changed_files_used_instead_of_affected_files(self, handler):
+        """'Geaenderte Dateien' zaehlt NUR tatsaechlich geaenderte Dateien
+        (changed_files), nicht alle beruehrten (affected_files) -
+        Kernbeispiel: eine uebersprungene Datei zaehlt nicht mit."""
+        result = _result(
+            status="SUCCESS", total=2, success=1, skipped=1, unresolved=0, failed=0,
+            affected_files=["a.m4a", "b.m4a"], changed_files=["a.m4a"],
+        )
+        text = handler._format_l23_result("l2", "Bausa", result)
+        assert "Geänderte Dateien: 1" in text

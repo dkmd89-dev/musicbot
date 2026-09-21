@@ -305,18 +305,33 @@ UNRESOLVED (für einen reinen Lyrics-/Genre-Fix nicht relevant). Bei
 mehreren Codes pro Datei bleibt `requested_issue=None` → volles
 Pipeline-Verhalten.
 
-> **Reichweite (Nachprüf-Durchgang 2026-09-09):** `apply_level2()` und
-> damit `requested_issue` sind **CLI-only** (`library_repair.py
-> --level METADATA_REPROCESSING` bzw. `--issue <L2-Code>`). Die
-> Telegram-Pfade — „MusicBot Doctor" (`doctor_runner.py`) und „Repair
-> MusicBot" (`repair_service.py`) — rufen ausschliesslich
-> `--level SAFE_AUTOMATIC --apply` auf; L2-Kandidaten werden dort doppelt
-> ausgeschlossen (Planner-Level-Filter `filter_plan(level="SAFE_AUTOMATIC")`
-> **und** das `l2_requested`-Gate in `main()`). Auch die Telegram-
-> „Reprocessing"-Ansicht erreicht `requested_issue` nicht — sie ruft
-> `process_file()` über `scripts/reprocess_artist_metadata.py` ohne den
-> Parameter (immer `None` → volles Pipeline-Verhalten). Gepinnt in
-> `tests/test_library_repair_cli_safe_automatic_scope.py`.
+> **Reichweite (Nachprüf-Durchgang 2026-09-09, korrigiert nach ARCH-033-F1-
+> Adversarial-Review 2026-09-21 — die vorherige Fassung dieses Absatzes
+> behauptete fälschlich, `apply_level2()` sei weiterhin CLI-only bzw. der
+> Telegram-Pfad erreiche `requested_issue` nie; beides war falsch und
+> widersprach dem `requested_issue`-Absatz oben):** der
+> SAFE_AUTOMATIC-Telegram-Pfad — „MusicBot Doctor" (`doctor_runner.py::
+> run_safe_automatic_repair()`) und „Repair MusicBot"s globale Aktion
+> (`repair_service.py::execute_safe_automatic_repair()`) — ruft
+> ausschliesslich `--level SAFE_AUTOMATIC --apply` auf; L2-Kandidaten
+> werden dort doppelt ausgeschlossen (Planner-Level-Filter
+> `filter_plan(level="SAFE_AUTOMATIC")` **und** das `l2_requested`-Gate in
+> `main()`), gepinnt in `tests/test_library_repair_cli_safe_automatic_scope.py`.
+> Seit ARCH-033 (§12 unten, 2026-09-14) gibt es daneben den bewusst
+> separaten, pro-Artist bestätigten L2/L3-Pfad
+> (`repair_service.py::execute_level2_repair()` →
+> `doctor_runner.py::run_level2_repair()` → `--level
+> METADATA_REPROCESSING --apply`, kein `--issue`-Flag) — dieser erreicht
+> `apply_level2()` absichtlich, genau wie ein manueller CLI-Aufruf mit
+> `--level METADATA_REPROCESSING` ohne `--issue`. `requested_issue` wird
+> in beiden Fällen identisch **pro Datei** aus den Kandidaten-Codes
+> abgeleitet (`executor.py`: `codes[0] if len(codes) == 1 else None`,
+> siehe Absatz oben) — nur der CLI-Flag `--issue` (erzwingt einen
+> einzelnen Code über alle Dateien hinweg) ist über Telegram nicht
+> setzbar. Auch die Telegram-„Reprocessing"-Ansicht erreicht
+> `requested_issue` nicht — sie ruft `process_file()` über
+> `scripts/reprocess_artist_metadata.py` ohne den Parameter (immer
+> `None` → volles Pipeline-Verhalten).
 
 **Option 2a (Nutzer-Entscheidung 2026-09-04):** Der Kern von
 `scripts/reprocess_artist_metadata.py` (`process_file()` + `snapshot()` +
@@ -962,14 +977,39 @@ künftige, eigene ARCH-Phasen (ARCH-034/035) ist in
 `handlers/repair_musicbot_handler.py` neben den `_L23REP_*`-Dicts
 dokumentiert (Phase 4, reine Vorbereitung, kein aktiver Code).
 
+**Ergebnis-Zusammenfassung (`_format_l23_result()`, Fix ARCH-033-F1,
+2026-09-21):** `LevelRepairResult` trägt neben `affected_files` (ALLE
+Journal-Einträge mit `file`-Feld — auch nur berührte, nicht zwingend
+geänderte Dateien, unverändert seit ARCH-033, weiterer Konsument
+`control_center/routers/jobs.py`) additiv `changed_files` — nur Dateien,
+die tatsächlich auf die Platte geschrieben wurden: Status `SUCCESS`/
+`UNRESOLVED` **oder** jeder andere Status (v. a. `SKIPPED`, aber auch ein
+`FAILED` mit fehlgeschlagenem Rollback) mit
+`sha256_before != sha256_after`. Der `SKIPPED`-Fall ist bei L2
+(`apply_level2()`) nicht selten: `reprocess()` läuft immer als volle
+Pipeline und kann dabei andere Felder geschrieben haben, während das
+Zielfeld genau DIESES Issue-Codes unverändert blieb (Status bleibt dann
+pro Issue-Code `SKIPPED`, obwohl die Datei geändert wurde) — L3
+(`apply_external_metadata()`) kennt diesen Fall dagegen nicht (`SKIPPED`
+schreibt dort nie). Die Telegram-Anzeige nutzt `changed_files` für
+„Geänderte Dateien" sowie eine vierte Summary-Zeile „Überprüfen:
+{unresolved}" (nur wenn > 0); die Emoji-/Header-Logik ist eine flache
+Priorität `failed → unresolved → success → skipped → leer`
+(❌/🟠/✅/🟡/⚪, `failed > 0` dominiert immer). Ein Subprozess-Absturz vor
+dem ersten Journal-Write (Exit-Code ≠ 0, keine Journal-Einträge) wird
+seitdem ebenfalls als Fehler erkannt statt als leerer Lauf angezeigt.
+Die schwesterliche SAFE_AUTOMATIC-Zusammenfassung (`_format_result()`,
+§9/§10) hat dieselben drei ursprünglichen Anzeigefehler weiterhin — bewusst
+nicht Teil dieses Fixes, siehe `docs/FINDINGS_INDEX.md`.
+
 **Tests:**
 
 | Datei | Deckt ab |
 |---|---|
 | `tests/test_library_repair_planner.py` | `group_candidates_by_artist()` — L2/L3 getrennt gezählt, andere Level ignoriert, Sortierung (Gesamtzahl absteigend, dann alphabetisch), Determinismus, Pfad-Präfix-Fallback |
 | `tests/test_doctor_runner.py` | `run_level2_repair()`/`run_level3_repair()` — Subprozess-Aufruf, Timeout, Fehlerfälle |
-| `tests/test_repair_service_level23.py` | `execute_level2_repair()`/`execute_level3_repair()` — Stale-Plan-Schutz, Verification-Gate, Lock-Sharing mit §10/§11, Run-Record `kind: "repair"` |
-| `tests/test_repair_handler_level23.py` | Telegram-Sub-Flow (Start/Artist-Liste inkl. Pagination-Cache/Aktions-Auswahl/Preview/Confirm/Execute), Admin-Re-Check je Schritt, Index-basierte Artist-Auswahl (kein Rohname in `callback_data`), kein Auto-Start, Lock-Konflikt-Anzeige, Teilerfolg-Anzeige |
+| `tests/test_repair_service_level23.py` | `execute_level2_repair()`/`execute_level3_repair()` — Stale-Plan-Schutz, Verification-Gate, Lock-Sharing mit §10/§11, Run-Record `kind: "repair"`, `changed_files` vs. `affected_files` (inkl. L2-SHA-Diff-Fall), Absturz ohne Journal-Einträge |
+| `tests/test_repair_handler_level23.py` | Telegram-Sub-Flow (Start/Artist-Liste inkl. Pagination-Cache/Aktions-Auswahl/Preview/Confirm/Execute), Admin-Re-Check je Schritt, Index-basierte Artist-Auswahl (kein Rohname in `callback_data`), kein Auto-Start, Lock-Konflikt-Anzeige, Teilerfolg-Anzeige, `_format_l23_result()`-Summary-Zeilen/Emoji-Priorität |
 
 ---
 

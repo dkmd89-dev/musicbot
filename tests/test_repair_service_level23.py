@@ -252,6 +252,188 @@ class TestExecuteLevelRepairArtistScope:
             rs.release_repair_lock()
 
 
+@pytest.mark.parametrize("case", [L2, L3], ids=["l2", "l3"])
+class TestChangedFilesVsAffectedFiles:
+    """ARCH-033-F1 Fix (b): affected_files zaehlt ALLE journalierten
+    Dateien (auch SKIPPED), changed_files NUR tatsaechlich geaenderte:
+    SUCCESS/UNRESOLVED immer, ein SKIPPED-Eintrag zusaetzlich wenn
+    sha256_before != sha256_after (L2-Randfall, siehe
+    test_l2_skipped_entry_with_sha_diff_still_counts_as_changed unten) -
+    affected_files bleibt dabei unveraendert (andere Konsumenten, z. B.
+    control_center/routers/jobs.py)."""
+
+    def test_skipped_file_counts_in_affected_but_not_changed(self, case):
+        issue_a = _issue(case.issue_code, path="Bausa/Singles/a.m4a", artist="Bausa")
+        issue_b = _issue(case.issue_code, path="Bausa/Singles/b.m4a", artist="Bausa")
+        pre_scan = DoctorScanResult(exit_code=0, report=_report([issue_a, issue_b]))
+        post_scan = DoctorScanResult(exit_code=0, report=_report([issue_b]))
+        repair_result = DoctorRepairResult(exit_code=0)
+
+        jpath = rs.journal_path()
+        jpath.parent.mkdir(parents=True, exist_ok=True)
+
+        def _fake_apply(*_a, **_kw):
+            with open(jpath, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "timestamp": "t", "file": "Bausa/Singles/a.m4a",
+                    "issue_code": case.issue_code, "action": "X", "status": "SUCCESS",
+                }) + "\n")
+                f.write(json.dumps({
+                    "timestamp": "t", "file": "Bausa/Singles/b.m4a",
+                    "issue_code": case.issue_code, "action": "X", "status": "SKIPPED",
+                }) + "\n")
+            return repair_result
+
+        with patch.object(rs, "run_health_scan", new=AsyncMock(side_effect=[pre_scan, post_scan])), \
+             patch.object(rs, case.run_attr, new=AsyncMock(side_effect=_fake_apply)):
+            result = run(case.repair_fn("Bausa", triggered_by="test"))
+
+        assert result.affected_files == ["Bausa/Singles/a.m4a", "Bausa/Singles/b.m4a"]
+        assert result.changed_files == ["Bausa/Singles/a.m4a"]
+
+    def test_pure_skipped_run_has_empty_changed_files(self, case):
+        issue = _issue(case.issue_code, path="Bausa/Singles/a.m4a", artist="Bausa")
+        pre_scan = DoctorScanResult(exit_code=0, report=_report([issue]))
+        repair_result = DoctorRepairResult(exit_code=0)
+
+        jpath = rs.journal_path()
+        jpath.parent.mkdir(parents=True, exist_ok=True)
+
+        def _fake_apply(*_a, **_kw):
+            with open(jpath, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "timestamp": "t", "file": "Bausa/Singles/a.m4a",
+                    "issue_code": case.issue_code, "action": "X", "status": "SKIPPED",
+                }) + "\n")
+            return repair_result
+
+        with patch.object(rs, "run_health_scan", new=AsyncMock(return_value=pre_scan)), \
+             patch.object(rs, case.run_attr, new=AsyncMock(side_effect=_fake_apply)):
+            result = run(case.repair_fn("Bausa", triggered_by="test"))
+
+        assert result.status == rs.STATUS_SKIPPED
+        assert result.affected_files == ["Bausa/Singles/a.m4a"]
+        assert result.changed_files == []
+
+    def test_unresolved_file_counts_as_changed(self, case):
+        issue = _issue(case.issue_code, path="Bausa/Singles/a.m4a", artist="Bausa")
+        pre_scan = DoctorScanResult(exit_code=0, report=_report([issue]))
+        repair_result = DoctorRepairResult(exit_code=0)
+
+        jpath = rs.journal_path()
+        jpath.parent.mkdir(parents=True, exist_ok=True)
+
+        def _fake_apply(*_a, **_kw):
+            with open(jpath, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "timestamp": "t", "file": "Bausa/Singles/a.m4a",
+                    "issue_code": case.issue_code, "action": "X", "status": "UNRESOLVED",
+                }) + "\n")
+            return repair_result
+
+        with patch.object(rs, "run_health_scan", new=AsyncMock(return_value=pre_scan)), \
+             patch.object(rs, case.run_attr, new=AsyncMock(side_effect=_fake_apply)):
+            result = run(case.repair_fn("Bausa", triggered_by="test"))
+
+        assert result.unresolved == 1
+        assert result.changed_files == ["Bausa/Singles/a.m4a"]
+
+    def test_l2_skipped_entry_with_sha_diff_still_counts_as_changed(self, case):
+        """Adversarial-Review-Fund: apply_level2() (executor.py) markiert
+        pro Issue-Code SKIPPED, sobald nur das Zielfeld DIESES Issues
+        unveraendert blieb - reprocess() laeuft aber immer als volle
+        Pipeline und kann dabei andere Felder geschrieben haben. Ein
+        SKIPPED-Journal-Eintrag mit sha256_before != sha256_after ist
+        also eine real geaenderte Datei und muss trotzdem in
+        changed_files landen (affected_files zaehlte diesen Fall bereits
+        vorher korrekt)."""
+        issue = _issue(case.issue_code, path="Bausa/Singles/a.m4a", artist="Bausa")
+        pre_scan = DoctorScanResult(exit_code=0, report=_report([issue]))
+        repair_result = DoctorRepairResult(exit_code=0)
+
+        jpath = rs.journal_path()
+        jpath.parent.mkdir(parents=True, exist_ok=True)
+
+        def _fake_apply(*_a, **_kw):
+            with open(jpath, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "timestamp": "t", "file": "Bausa/Singles/a.m4a",
+                    "issue_code": case.issue_code, "action": "X", "status": "SKIPPED",
+                    "sha256_before": "aaa", "sha256_after": "bbb",
+                }) + "\n")
+            return repair_result
+
+        with patch.object(rs, "run_health_scan", new=AsyncMock(return_value=pre_scan)), \
+             patch.object(rs, case.run_attr, new=AsyncMock(side_effect=_fake_apply)):
+            result = run(case.repair_fn("Bausa", triggered_by="test"))
+
+        assert result.affected_files == ["Bausa/Singles/a.m4a"]
+        assert result.changed_files == ["Bausa/Singles/a.m4a"]
+
+    def test_skipped_entry_with_identical_sha_stays_uncounted(self, case):
+        """Gegenprobe zum Test oben: SKIPPED mit identischer sha256 (Datei
+        wirklich unveraendert) zaehlt weiterhin NICHT als geaendert."""
+        issue = _issue(case.issue_code, path="Bausa/Singles/a.m4a", artist="Bausa")
+        pre_scan = DoctorScanResult(exit_code=0, report=_report([issue]))
+        repair_result = DoctorRepairResult(exit_code=0)
+
+        jpath = rs.journal_path()
+        jpath.parent.mkdir(parents=True, exist_ok=True)
+
+        def _fake_apply(*_a, **_kw):
+            with open(jpath, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "timestamp": "t", "file": "Bausa/Singles/a.m4a",
+                    "issue_code": case.issue_code, "action": "X", "status": "SKIPPED",
+                    "sha256_before": "aaa", "sha256_after": "aaa",
+                }) + "\n")
+            return repair_result
+
+        with patch.object(rs, "run_health_scan", new=AsyncMock(return_value=pre_scan)), \
+             patch.object(rs, case.run_attr, new=AsyncMock(side_effect=_fake_apply)):
+            result = run(case.repair_fn("Bausa", triggered_by="test"))
+
+        assert result.changed_files == []
+
+
+@pytest.mark.parametrize("case", [L2, L3], ids=["l2", "l3"])
+class TestCrashWithoutJournalEntries:
+    """Adversarial-Review-Fund: scripts/library_repair.py kann vor dem
+    ersten Journal-Write abbrechen (Exit-Code 2 = Report-Ladefehler,
+    3 = SCHWERER FEHLER) - anders als bei Start-/Timeout-Fehlern setzt
+    doctor_runner dabei KEIN error_message, nur einen Exit-Code != 0 bei
+    leeren entries. Ohne eigene Behandlung wuerde das als leerer,
+    harmloser Lauf angezeigt statt als Fehler."""
+
+    def test_nonzero_exit_without_journal_entries_is_reported_as_failed(self, case):
+        issue = _issue(case.issue_code, path="Bausa/Singles/a.m4a", artist="Bausa")
+        pre_scan = DoctorScanResult(exit_code=0, report=_report([issue]))
+        repair_result = DoctorRepairResult(exit_code=3, stderr_tail="SCHWERER FEHLER: xyz")
+
+        with patch.object(rs, "run_health_scan", new=AsyncMock(return_value=pre_scan)), \
+             patch.object(rs, case.run_attr, new=AsyncMock(return_value=repair_result)):
+            result = run(case.repair_fn("Bausa", triggered_by="test"))
+
+        assert result.status == rs.STATUS_FAILED
+        assert result.error_message
+        assert "3" in result.error_message
+
+    def test_zero_exit_without_journal_entries_stays_skipped(self, case):
+        """Gegenprobe: exit_code=0 mit 0 Journal-Eintraegen ist ein
+        legitimer leerer Lauf (kein Kandidat tatsaechlich angefasst),
+        kein Fehler."""
+        issue = _issue(case.issue_code, path="Bausa/Singles/a.m4a", artist="Bausa")
+        pre_scan = DoctorScanResult(exit_code=0, report=_report([issue]))
+        repair_result = DoctorRepairResult(exit_code=0)
+
+        with patch.object(rs, "run_health_scan", new=AsyncMock(return_value=pre_scan)), \
+             patch.object(rs, case.run_attr, new=AsyncMock(return_value=repair_result)):
+            result = run(case.repair_fn("Bausa", triggered_by="test"))
+
+        assert result.status == rs.STATUS_SKIPPED
+        assert not result.error_message
+
+
 class TestLevelRepairDoesNotAffectSafeAutomatic:
     def test_existing_safe_automatic_flow_untouched(self):
         """Reiner Schutz gegen versehentliche Kopplung: execute_level2_repair
