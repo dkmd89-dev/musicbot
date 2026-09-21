@@ -68,7 +68,19 @@ def test_template_has_no_unprefixed_root_absolute_attribute(path):
 @pytest.mark.parametrize("path", TEMPLATES + [COMMON_JS], ids=lambda p: p.name)
 def test_every_fetch_goes_through_api_url(path):
     text = path.read_text(encoding="utf-8")
-    bad = [m.group(0) for m in re.finditer(r"\bfetch\((?!apiUrl\()(?!\))[^\n]{0,60}", text)]
+    # Kommentarzeilen ausschliessen: ein Kommentar wie
+    # "// direkt an fetch() uebergeben" ist kein Aufruf und
+    # wuerde sonst als false positive matchen. Als Kommentarzeile
+    # gilt eine Zeile, die (nach optionalem Whitespace) mit "//"
+    # beginnt.
+    code_lines = [
+        line for line in text.splitlines()
+        if not line.lstrip().startswith("//")
+    ]
+    code = "\n".join(code_lines)
+    # Erlaubt auch mehrzeilige fetch(...)-Aufrufe: zwischen "fetch(" und
+    # "apiUrl(" darf Whitespace (inkl. Newline) stehen.
+    bad = [m.group(0) for m in re.finditer(r"\bfetch\s*\((?!\s*apiUrl\()", code)]
     assert not bad, f"{path.name}: fetch() ohne apiUrl(): {bad}"
 
 

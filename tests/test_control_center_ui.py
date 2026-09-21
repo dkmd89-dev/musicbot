@@ -164,7 +164,7 @@ async def test_overview_contains_kpi_and_summary_elements(client):
     # health-tiles, navidrome-status, kpi-grid und active-jobs-summary
     # wurden durch die neue System-Status-Bar + 3-Spalten-Statuszeile
     # ersetzt (kein Bug, beabsichtigtes Redesign).
-    assert 'id="system-status-bar"' in html
+    assert 'id="system-status-value"' in html
     assert 'id="status-library-value"' in html
     assert 'id="status-navidrome-value"' in html
     assert 'id="status-jobs-value"' in html
