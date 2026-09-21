@@ -5,13 +5,17 @@
  * jetzt 12 Seiten hinweg zu vermeiden - reine CSS-Datei, kein
  * Build-System, kein Framework (Master-Prompt Abschnitt 7).
  */
+
+/* ══════════════════════════════════════════════════════════════════
+   1. VARIABLEN (Light + Dark Mode)
+   ══════════════════════════════════════════════════════════════════ */
 :root {
   --bg: #f7f7f8; --fg: #1a1a1a; --muted: #6b6b6b;
   --card-bg: #ffffff; --border: #e2e2e2; --accent: #2f6fed;
   --error: #c0392b; --ok: #1f8a4c; --sidebar-bg: #1a1c20; --sidebar-fg: #d8d9dc;
   --sidebar-width: 220px; --header-height: 52px;
 
-  /* NEU: Farbpalette für Diagramme */
+  /* Farbpalette für Diagramme */
   --chart-month: #2f6fed;
   --chart-genres: #8b5cf6;
   --chart-dna-genres: #f59e0b;
@@ -30,6 +34,10 @@
     --chart-dna-artists: #f472b6;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   2. RESET / BASE
+   ══════════════════════════════════════════════════════════════════ */
 * { box-sizing: border-box; }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
@@ -42,7 +50,9 @@ h1 { font-size: 1.3rem; margin: 0 0 4px; }
 .hint { color: var(--muted); font-size: 0.85rem; }
 code { background: var(--card-bg); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; }
 
-/* ── App-Shell: Sidebar + Header + Content ─────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   3. APP-SHELL: Sidebar + Header + Content
+   ══════════════════════════════════════════════════════════════════ */
 #app-shell { display: flex; min-height: 100vh; }
 #sidebar {
   width: var(--sidebar-width); flex-shrink: 0; background: var(--sidebar-bg);
@@ -74,15 +84,11 @@ code { background: var(--card-bg); border: 1px solid var(--border); padding: 1px
   display: none; background: none; border: none; color: var(--fg); font-size: 1.3rem;
   cursor: pointer; padding: 4px 8px;
 }
-
-/* Optimierung: Mehr Platz für das Dashboard */
-main { 
-  max-width: 1200px; 
-  margin: 0 auto; 
-  padding: 24px 20px 48px; 
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
 }
-
-/* Mobile: Sidebar wird zum Drawer (Master-Prompt Abschnitt 12) */
 @media (max-width: 760px) {
   #sidebar {
     position: fixed; left: -100%; top: 0; z-index: 20; transition: left 0.15s ease;
@@ -95,6 +101,9 @@ main {
   #sidebar-toggle { display: inline-block; }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   4. BASISELEMENTE: Buttons, Dots, Inputs
+   ══════════════════════════════════════════════════════════════════ */
 #navidrome-status { color: var(--muted); font-size: 0.85rem; margin-bottom: 16px; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 .dot-ok { background: var(--ok); }
@@ -106,12 +115,14 @@ button {
 button.small { padding: 6px 12px; font-size: 0.8rem; }
 .retry-row { text-align: center; margin-top: 12px; }
 
-/* Panels: verbesserter Kontrast mit subtilem Schatten */
+/* ══════════════════════════════════════════════════════════════════
+   5. PANELS + ROW-ITEMS + BADGES
+   ══════════════════════════════════════════════════════════════════ */
 section.panel {
-  background: var(--card-bg); 
-  border: 1px solid var(--border); 
+  background: var(--card-bg);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 16px; 
+  padding: 16px;
   margin-bottom: 16px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
@@ -144,22 +155,23 @@ section.panel h2 {
 .badge-status-success { background: var(--ok); }
 .badge-status-failed, .badge-status-cancelled { background: var(--error); }
 
-/* KPI-Tiles */
-.tiles, .kpi-grid {
+/* ══════════════════════════════════════════════════════════════════
+   6. KPI-TILES (Legacy, weiterhin für Analytics-Seiten)
+   ══════════════════════════════════════════════════════════════════ */
+.tiles {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px; margin-bottom: 24px;
 }
 .tile {
-  background: var(--card-bg); 
-  border: 1px solid var(--border); 
+  background: var(--card-bg);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 16px; 
+  padding: 16px;
   text-align: center;
   transition: transform 0.2s, box-shadow 0.2s;
   position: relative;
   overflow: hidden;
 }
-/* Akzentstreifen oben an jeder KPI-Kachel */
 .tile::before {
   content: "";
   position: absolute;
@@ -175,7 +187,6 @@ section.panel h2 {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(0,0,0,0.08);
 }
-/* KPI-Werte passend zum jeweiligen Akzentstreifen einfärben */
 .tile--plays .tile-value { color: var(--chart-month); }
 .tile--songs .tile-value { color: var(--chart-genres); }
 .tile--repeat .tile-value { color: var(--chart-dna-genres); }
@@ -194,7 +205,9 @@ section.panel h2 {
 }
 .denied, .empty-note { color: var(--muted); font-size: 0.85rem; }
 
-/* ── Library Artist-Centric UX (CC-AC-1) ────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   7. LIBRARY Artist-Centric UX (CC-AC-1)
+   ══════════════════════════════════════════════════════════════════ */
 .breadcrumb { color: var(--muted); font-size: 0.85rem; margin: 0 0 4px; }
 .breadcrumb a { color: var(--muted); text-decoration: none; }
 .breadcrumb a:hover { color: var(--accent); text-decoration: underline; }
@@ -207,9 +220,9 @@ input[type="text"], input[type="search"] {
   max-width: 320px;
 }
 
-/* ── Dashboard-Optimierungen (Analytics-Ansicht) ───────────────────── */
-
-/* Sektions-Header (THIS MONTH, ALL-TIME GENRES, MUSIC DNA) */
+/* ══════════════════════════════════════════════════════════════════
+   8. ANALYTICS-DASHBOARD
+   ══════════════════════════════════════════════════════════════════ */
 .section-header {
   font-size: 0.75rem;
   font-weight: 700;
@@ -222,7 +235,6 @@ input[type="text"], input[type="search"] {
 }
 .section-header:first-of-type { margin-top: 0; }
 
-/* 4-Spalten KPI-Grid */
 .kpi-grid-4 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -233,7 +245,6 @@ input[type="text"], input[type="search"] {
   .kpi-grid-4 { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* Fortschrittsbalken */
 .progress-row {
   display: flex;
   flex-direction: column;
@@ -260,14 +271,11 @@ input[type="text"], input[type="search"] {
   border-radius: 3px;
   transition: width 0.4s ease-out;
 }
-
-/* NEU: Farbvarianten für Fortschrittsbalken */
 .progress-fill--month { background: var(--chart-month); }
 .progress-fill--genres { background: var(--chart-genres); }
 .progress-fill--dna-genres { background: var(--chart-dna-genres); }
 .progress-fill--dna-artists { background: var(--chart-dna-artists); }
 
-/* Ranking-Nummern für Top-Artists */
 .rank-number {
   display: inline-block;
   width: 20px;
@@ -278,7 +286,6 @@ input[type="text"], input[type="search"] {
   text-align: right;
 }
 
-/* Music DNA - Tageszeiten Grid */
 .tod-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -296,10 +303,7 @@ input[type="text"], input[type="search"] {
   gap: 4px;
   transition: transform 0.2s;
 }
-.tod-item:hover {
-  transform: translateY(-2px);
-}
-/* NEU: Farbliche Differenzierung der Tageszeiten */
+.tod-item:hover { transform: translateY(-2px); }
 .tod-item--morning {
   background: linear-gradient(180deg, rgba(255, 165, 0, 0.10), var(--bg));
   border-color: rgba(255, 165, 0, 0.3);
@@ -323,7 +327,6 @@ input[type="text"], input[type="search"] {
 .tod-item--evening .tod-value { color: #f87171; }
 .tod-item--night .tod-value { color: #a5b4fc; }
 
-/* Music DNA - 2-Spalten-Layout für Genres & Artists */
 .dna-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -333,7 +336,6 @@ input[type="text"], input[type="search"] {
   .dna-grid { grid-template-columns: 1fr; gap: 16px; }
 }
 
-/* Panels im Grid ohne Margin */
 .dashboard-grid section.panel {
   margin-bottom: 0;
   height: 100%;
@@ -341,7 +343,6 @@ input[type="text"], input[type="search"] {
   flex-direction: column;
 }
 
-/* Summary Badges */
 .dna-summary {
   display: flex;
   flex-wrap: wrap;
@@ -360,48 +361,98 @@ input[type="text"], input[type="search"] {
   gap: 4px;
 }
 
-/* ── Overview-Dashboard-Optimierungen ─────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   9. OVERVIEW-DASHBOARD
+   ══════════════════════════════════════════════════════════════════ */
 
-/* KPI-Tile-Varianten für Overview */
-.tile--navidrome::before { background: #10b981; }
-.tile--health::before { background: #22c55e; }
-.tile--error::before { background: var(--error) !important; }
-.tile--warning::before { background: #f59e0b !important; }
-.tile--ok::before { background: var(--ok) !important; }
-
-/* Library-Stats-Sub-Zeile */
-.library-stats {
+/* ── 9.1 KPI-Grid (Systemstatus + 3 sekundäre Kacheln) ───────────── */
+.kpi-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
   margin-bottom: 24px;
 }
-.lib-stat {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 16px;
+.kpi-primary {
+  grid-column: span 2;
+  border-left: 4px solid var(--accent);
+}
+.kpi-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  text-align: center;
+  gap: 4px;
+  min-height: 110px;
 }
-.lib-stat-value {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--fg);
-}
-.lib-stat-label {
-  font-size: 0.75rem;
+.kpi-label {
+  font-size: 0.8rem;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
-@media (max-width: 760px) {
-  .library-stats { grid-template-columns: 1fr; }
+.kpi-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--fg);
+  transition: color 0.2s ease;
+}
+.kpi-primary .kpi-value { font-size: 2.2rem; }
+.kpi-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: auto;
+}
+.kpi-indicator {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: background 0.2s ease;
+}
+.kpi-indicator.ok    { background: var(--ok); }
+.kpi-indicator.warn  { background: #f59e0b; }
+.kpi-indicator.error { background: var(--error); }
+
+.kpi-progress-track {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.kpi-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.4s ease-out;
 }
 
-/* Panel-Footer mit Link statt Button */
+/* ── 9.2 Attention-Panel ─────────────────────────────────────────── */
+.attention-panel { border-left: 4px solid #f59e0b; }
+.attention-panel--ok { border-left-color: var(--ok); }
+
+.attention-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  font-size: 0.9rem;
+  color: var(--fg);
+}
+.attention-row strong {
+  color: var(--error);
+  font-size: 1.1rem;
+}
+.attention-ok {
+  color: var(--ok);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* ── 9.3 Panel-Footer ────────────────────────────────────────────── */
 .panel-footer {
   margin-top: 12px;
   padding-top: 12px;
@@ -414,11 +465,9 @@ input[type="text"], input[type="search"] {
   font-size: 0.85rem;
   font-weight: 600;
 }
-.panel-link:hover {
-  text-decoration: underline;
-}
+.panel-link:hover { text-decoration: underline; }
 
-/* Recent Activity: besseres Layout */
+/* ── 9.4 Recent Activity ─────────────────────────────────────────── */
 .activity-list {
   display: flex;
   flex-direction: column;
@@ -436,9 +485,7 @@ input[type="text"], input[type="search"] {
   border-bottom: none;
   padding-bottom: 0;
 }
-.activity-main {
-  min-width: 0;
-}
+.activity-main { min-width: 0; }
 .activity-title {
   font-size: 0.85rem;
   font-weight: 500;
@@ -461,7 +508,13 @@ input[type="text"], input[type="search"] {
   flex-shrink: 0;
 }
 
-/* Quick Actions als Icon-Kacheln */
+/* ── 9.5 Quick Actions (Icon-Kacheln) ────────────────────────────── */
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
 .quick-action {
   display: flex;
   flex-direction: column;
@@ -491,4 +544,22 @@ input[type="text"], input[type="search"] {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--fg);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   10. RESPONSIVE
+   ══════════════════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .kpi-primary { grid-column: span 2; }
+}
+@media (max-width: 760px) {
+  .quick-actions-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 520px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+  .kpi-primary { grid-column: span 1; }
+}
+@media (max-width: 420px) {
+  .quick-actions-grid { grid-template-columns: 1fr; }
 }
