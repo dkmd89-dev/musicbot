@@ -1,168 +1,425 @@
 {% extends "_base.html" %}
 {% block title %}Artist – MusicBot Control Center{% endblock %}
 {% block content %}
-  <p class="breadcrumb">
-    <a href="{{ base_path }}/library">📚 Library</a>
-    <span class="breadcrumb-sep">›</span>
-    <span id="breadcrumb-artist">🎤 …</span>
-  </p>
-  <h1 id="artist-title">🎤 …</h1>
-  <p class="subtitle" id="artist-subtitle"></p>
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <div class="text-secondary mb-1">
+        <a href="{{ base_path }}/library">📚 Library</a>
+        <span class="mx-1">›</span>
+        <span id="breadcrumb-artist">🎤 …</span>
+      </div>
 
-  <div id="artist-content">
-    <p class="empty-note">Artist wird geladen …</p>
-  </div>
+      <h1 class="page-title" id="artist-title">🎤 …</h1>
+      <div class="text-secondary" id="artist-subtitle"></div>
+    </div>
 
-  <!-- Track Detail Drawer (CC-AC-9, Track-Centric Library Actions) -
-       zeigt Information/Health/Aktionen fuer genau EINEN per Klick
-       gewaehlten Track, gefuellt ausschliesslich aus den bereits
-       geladenen Track-Daten (body.tracks aus derselben
-       artists-overview/{artist}-Antwort wie oben) - kein neuer
-       API-Call. Die Aktionen unten oeffnen/befuellen ausschliesslich
-       die bestehenden Formulare (Manual Metadata Editing, CC-AC-2/3) -
-       Preview->Confirm->Execute bleibt dort unveraendert (Auftrag §10). -->
-  <div id="track-drawer-overlay" class="drawer-overlay" hidden>
-    <div id="track-drawer" class="track-drawer" role="dialog" aria-modal="true" aria-labelledby="track-drawer-title">
-      <div class="track-drawer-header">
-        <h2 id="track-drawer-title">🎵 …</h2>
-        <button type="button" id="track-drawer-close" class="small" aria-label="Track-Detail schließen">✕</button>
-      </div>
-      <p class="track-drawer-subtitle hint" id="track-drawer-subtitle"></p>
-      <div class="track-drawer-section">
-        <h3>Information</h3>
-        <div id="track-drawer-info"></div>
-      </div>
-      <div class="track-drawer-section">
-        <h3>Health</h3>
-        <div id="track-drawer-health"></div>
-      </div>
-      <div class="track-drawer-section">
-        <h3>Aktionen</h3>
-        <div id="track-drawer-actions"></div>
-      </div>
+    <div class="col-auto">
+      <a href="{{ base_path }}/library" class="btn btn-outline-secondary">
+        ◀️ Zurück zu Artists
+      </a>
     </div>
   </div>
+</div>
 
-  <section class="panel" id="artist-metadata-edit-panel" hidden>
-    <details>
-    <summary><h2>📝 Metadaten bearbeiten</h2></summary>
-    <p class="subtitle">Wiederverwendet die bestehenden Manual-Metadata-Editing-Endpunkte
-      (<code>admin/maintenance/artist-rename</code>, <code>admin/maintenance/title-edit</code>,
-      <code>library/artists/{artist}/set-genre</code>) im Kontext dieses Artists — keine neue
-      Business-Logik.</p>
+<!-- Artist overview / tracks -->
+<div id="artist-content">
+  <p class="empty-note">Artist wird geladen …</p>
+</div>
 
-    <h3>🎤 Artist bearbeiten</h3>
-    <p class="empty-note">Setzt den Artist-Namen auf einen manuellen Zielwert — KEIN Casing-Mapping, keine Normalisierung.</p>
-    <div class="retry-row">
-      <input type="text" id="artist-edit-new-artist" placeholder="Neuer Artist-Name">
-      <button id="artist-edit-preview-btn" class="small">Vorschau laden</button>
+<!-- Track Detail Drawer -->
+<div id="track-drawer-overlay" class="drawer-overlay" hidden>
+  <div
+    id="track-drawer"
+    class="track-drawer"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="track-drawer-title"
+  >
+    <div class="track-drawer-header">
+      <h2 id="track-drawer-title">🎵 …</h2>
+      <button
+        type="button"
+        id="track-drawer-close"
+        class="btn btn-sm btn-ghost-secondary"
+        aria-label="Track-Detail schließen"
+      >
+        ✕
+      </button>
     </div>
-    <div id="artist-edit-content" class="empty-note"></div>
-    <div class="retry-row">
-      <button id="artist-edit-execute-btn" class="small" disabled>Artist umbenennen</button>
-    </div>
-    <div id="artist-edit-result-content" class="empty-note"></div>
 
-    <h3>🎵 Titel bearbeiten</h3>
-    <p class="empty-note">Setzt den Titel für genau einen Track — KEIN automatischer TitleCleaner. Relativen Pfad aus der Track-Liste unten übernehmen (Tooltip beim Überfahren).</p>
-    <div class="retry-row">
-      <input type="text" id="title-edit-rel-path" placeholder="Relativer Pfad (z. B. Artist/Album/Track.m4a)">
-      <input type="text" id="title-edit-new-title" placeholder="Neuer Titel">
-      <button id="title-edit-preview-btn" class="small">Vorschau laden</button>
-    </div>
-    <div id="title-edit-content" class="empty-note"></div>
-    <div class="retry-row">
-      <button id="title-edit-execute-btn" class="small" disabled>Titel setzen</button>
-    </div>
-    <div id="title-edit-result-content" class="empty-note"></div>
+    <p class="track-drawer-subtitle hint" id="track-drawer-subtitle"></p>
 
-    <h3>💿 Album bearbeiten</h3>
-    <p class="empty-note">Setzt den Albumnamen (<code>©alb</code>) für alle Dateien des gewählten Albums — ändert weder Artist- noch Albuminterpret-Tag.</p>
-    <div class="retry-row">
-      <select id="album-edit-album-select"><option value="">Album wählen …</option></select>
-      <input type="text" id="album-edit-new-album" placeholder="Neuer Albumname">
-      <button id="album-edit-preview-btn" class="small">Vorschau laden</button>
+    <div class="track-drawer-section">
+      <h3>Information</h3>
+      <div id="track-drawer-info"></div>
     </div>
-    <div id="album-edit-content" class="empty-note"></div>
-    <div class="retry-row">
-      <button id="album-edit-execute-btn" class="small" disabled>Album setzen</button>
-    </div>
-    <div id="album-edit-result-content" class="empty-note"></div>
 
-    <h3>👤 Albuminterpret bearbeiten</h3>
-    <p class="empty-note">Setzt den Albuminterpret (<code>aART</code>) für alle Dateien des gewählten Albums — ändert weder Artist- noch Album-Tag.</p>
-    <div class="retry-row">
-      <select id="albumartist-edit-album-select"><option value="">Album wählen …</option></select>
-      <input type="text" id="albumartist-edit-new-albumartist" placeholder="Neuer Albuminterpret">
-      <button id="albumartist-edit-preview-btn" class="small">Vorschau laden</button>
+    <div class="track-drawer-section">
+      <h3>Health</h3>
+      <div id="track-drawer-health"></div>
     </div>
-    <div id="albumartist-edit-content" class="empty-note"></div>
-    <div class="retry-row">
-      <button id="albumartist-edit-execute-btn" class="small" disabled>Albuminterpret setzen</button>
-    </div>
-    <div id="albumartist-edit-result-content" class="empty-note"></div>
 
-    <h3>🎭 Genre-Verwaltung</h3>
-    <p class="empty-note">Setzt das Genre aller Tracks dieses Artists aus dem bestehenden Mapping (mapping/artist_genre.yaml) — kein Freitext.</p>
-    <div class="retry-row">
-      <button id="genre-manage-preview-btn" class="small">Vorschau laden</button>
+    <div class="track-drawer-section">
+      <h3>Aktionen</h3>
+      <div id="track-drawer-actions"></div>
     </div>
-    <div id="genre-manage-content" class="empty-note"></div>
-    <div class="retry-row">
-      <button id="genre-manage-execute-btn" class="small" disabled>Genre setzen</button>
-    </div>
-    <div id="genre-manage-result-content" class="empty-note"></div>
-    </details>
-  </section>
+  </div>
+</div>
 
-  <section class="panel" id="artist-maintenance-panel" hidden>
-    <details>
-    <summary><h2>🛠 Library-Wartung</h2></summary>
-    <p class="subtitle">Wiederverwendet die bestehenden Maintenance-/Job-Endpunkte
-      (<code>admin/maintenance/artist-casing</code>, <code>admin/maintenance/legacy-genre-cleanup</code>,
-      <code>jobs/repair-level2</code>, <code>jobs/repair-level3</code>) im Kontext dieses Artists — keine
-      neue Ausführungslogik (CC-AC-4, library_artist_centric_UX.txt).</p>
+<!-- Manual Metadata Editing -->
+<section class="card mb-4" id="artist-metadata-edit-panel" hidden>
+  <details>
+    <summary class="card-header" style="cursor: pointer;">
+      <h2 class="card-title">📝 Metadaten bearbeiten</h2>
+    </summary>
 
-    <h3>🎤 Artist Casing korrigieren</h3>
-    <p class="empty-note">Normalisiert die Groß-/Kleinschreibung von ©ART/ARTISTS gegen das bestehende Mapping (mapping/artist_overrides.json) — identisch zur bestehenden Telegram-Fähigkeit "🧹 Library-Wartung".</p>
-    <div class="retry-row">
-      <button id="artist-casing-preview-btn" class="small">Vorschau laden</button>
-    </div>
-    <div id="artist-casing-content" class="empty-note"></div>
-    <div class="retry-row">
-      <button id="artist-casing-execute-btn" class="small" disabled>Casing korrigieren</button>
-    </div>
-    <div id="artist-casing-result-content" class="empty-note"></div>
+    <div class="card-body">
 
-    <h3>🧹 Legacy Genre bereinigen</h3>
-    <p class="empty-note">Entfernt veraltete Freeform-Genre-Atome, sofern das kanonische Genre bereits gesetzt ist — identisch zur bestehenden Telegram-Fähigkeit.</p>
-    <div class="retry-row">
-      <button id="legacy-genre-cleanup-preview-btn" class="small">Vorschau laden</button>
-    </div>
-    <div id="legacy-genre-cleanup-content" class="empty-note"></div>
-    <div class="retry-row">
-      <button id="legacy-genre-cleanup-execute-btn" class="small" disabled>Legacy-Atome entfernen</button>
-    </div>
-    <div id="legacy-genre-cleanup-result-content" class="empty-note"></div>
+      <p class="text-secondary">
+        Wiederverwendet die bestehenden Manual-Metadata-Editing-Endpunkte
+        (<code>admin/maintenance/artist-rename</code>,
+        <code>admin/maintenance/title-edit</code>,
+        <code>library/artists/{artist}/set-genre</code>) im Kontext dieses
+        Artists — keine neue Business-Logik.
+      </p>
 
-    <h3>🔄 Genre revalidieren</h3>
-    <p class="empty-note" title="Genre-Revalidierung existiert aktuell nur als Telegram-Flow (🧹 Library-Wartung → Genre revalidieren, services/library_repair/genre_revalidation_runner.py) — bewusst kein Control-Center-Endpunkt (library_artist_centric_UX.txt §17), deshalb hier kein Button statt eines toten Endpunkts.">
-      Nicht im Control Center verfügbar — nur in Telegram ("🧹 Library-Wartung → 🔄 Genre revalidieren").
-    </p>
+      <!-- Artist -->
+      <div class="border-bottom pb-4 mb-4">
+        <h3 class="mb-2">🎤 Artist bearbeiten</h3>
+        <p class="text-secondary">
+          Setzt den Artist-Namen auf einen manuellen Zielwert — KEIN
+          Casing-Mapping, keine Normalisierung.
+        </p>
 
-    <h3>🔧 L2 / L3 Reparatur</h3>
-    <p class="empty-note">Läuft als Hintergrund-Job (kann mehrere Minuten dauern) — deckt auch Reprocessing ab (L2 = METADATA_REPROCESSING). Kein Abbrechen-Button: kooperatives Abbrechen ist für diese beiden Job-Typen wirkungslos (control_center/routers/jobs.py), identische Einschränkung wie auf der Repairs-Seite.</p>
-    <div class="retry-row">
-      <button id="repair-l2-btn" class="small">🔧 L2-Reparatur (Metadaten-Reprocessing)</button>
-      <button id="repair-l3-btn" class="small">🔧 L3-Reparatur (MusicBrainz-IDs / ISRC)</button>
+        <div class="row g-2 mb-2">
+          <div class="col-md">
+            <input
+              type="text"
+              id="artist-edit-new-artist"
+              class="form-control"
+              placeholder="Neuer Artist-Name"
+            >
+          </div>
+          <div class="col-auto">
+            <button id="artist-edit-preview-btn" class="btn btn-outline-primary">
+              Vorschau laden
+            </button>
+          </div>
+        </div>
+
+        <div id="artist-edit-content" class="empty-note"></div>
+
+        <div class="mt-2">
+          <button
+            id="artist-edit-execute-btn"
+            class="btn btn-primary"
+            disabled
+          >
+            Artist umbenennen
+          </button>
+        </div>
+
+        <div id="artist-edit-result-content" class="empty-note mt-2"></div>
+      </div>
+
+      <!-- Title -->
+      <div class="border-bottom pb-4 mb-4">
+        <h3 class="mb-2">🎵 Titel bearbeiten</h3>
+        <p class="text-secondary">
+          Setzt den Titel für genau einen Track — KEIN automatischer
+          TitleCleaner. Relativen Pfad aus der Track-Liste unten übernehmen
+          (Tooltip beim Überfahren).
+        </p>
+
+        <div class="row g-2 mb-2">
+          <div class="col-md">
+            <input
+              type="text"
+              id="title-edit-rel-path"
+              class="form-control"
+              placeholder="Relativer Pfad (z. B. Artist/Album/Track.m4a)"
+            >
+          </div>
+
+          <div class="col-md">
+            <input
+              type="text"
+              id="title-edit-new-title"
+              class="form-control"
+              placeholder="Neuer Titel"
+            >
+          </div>
+
+          <div class="col-auto">
+            <button id="title-edit-preview-btn" class="btn btn-outline-primary">
+              Vorschau laden
+            </button>
+          </div>
+        </div>
+
+        <div id="title-edit-content" class="empty-note"></div>
+
+        <div class="mt-2">
+          <button
+            id="title-edit-execute-btn"
+            class="btn btn-primary"
+            disabled
+          >
+            Titel setzen
+          </button>
+        </div>
+
+        <div id="title-edit-result-content" class="empty-note mt-2"></div>
+      </div>
+
+      <!-- Album -->
+      <div class="border-bottom pb-4 mb-4">
+        <h3 class="mb-2">💿 Album bearbeiten</h3>
+        <p class="text-secondary">
+          Setzt den Albumnamen (<code>©alb</code>) für alle Dateien des
+          gewählten Albums — ändert weder Artist- noch Albuminterpret-Tag.
+        </p>
+
+        <div class="row g-2 mb-2">
+          <div class="col-md">
+            <select id="album-edit-album-select" class="form-select">
+              <option value="">Album wählen …</option>
+            </select>
+          </div>
+
+          <div class="col-md">
+            <input
+              type="text"
+              id="album-edit-new-album"
+              class="form-control"
+              placeholder="Neuer Albumname"
+            >
+          </div>
+
+          <div class="col-auto">
+            <button id="album-edit-preview-btn" class="btn btn-outline-primary">
+              Vorschau laden
+            </button>
+          </div>
+        </div>
+
+        <div id="album-edit-content" class="empty-note"></div>
+
+        <div class="mt-2">
+          <button
+            id="album-edit-execute-btn"
+            class="btn btn-primary"
+            disabled
+          >
+            Album setzen
+          </button>
+        </div>
+
+        <div id="album-edit-result-content" class="empty-note mt-2"></div>
+      </div>
+
+      <!-- Album Artist -->
+      <div class="border-bottom pb-4 mb-4">
+        <h3 class="mb-2">👤 Albuminterpret bearbeiten</h3>
+        <p class="text-secondary">
+          Setzt den Albuminterpret (<code>aART</code>) für alle Dateien des
+          gewählten Albums — ändert weder Artist- noch Album-Tag.
+        </p>
+
+        <div class="row g-2 mb-2">
+          <div class="col-md">
+            <select id="albumartist-edit-album-select" class="form-select">
+              <option value="">Album wählen …</option>
+            </select>
+          </div>
+
+          <div class="col-md">
+            <input
+              type="text"
+              id="albumartist-edit-new-albumartist"
+              class="form-control"
+              placeholder="Neuer Albuminterpret"
+            >
+          </div>
+
+          <div class="col-auto">
+            <button
+              id="albumartist-edit-preview-btn"
+              class="btn btn-outline-primary"
+            >
+              Vorschau laden
+            </button>
+          </div>
+        </div>
+
+        <div id="albumartist-edit-content" class="empty-note"></div>
+
+        <div class="mt-2">
+          <button
+            id="albumartist-edit-execute-btn"
+            class="btn btn-primary"
+            disabled
+          >
+            Albuminterpret setzen
+          </button>
+        </div>
+
+        <div id="albumartist-edit-result-content" class="empty-note mt-2"></div>
+      </div>
+
+      <!-- Genre -->
+      <div>
+        <h3 class="mb-2">🎭 Genre-Verwaltung</h3>
+        <p class="text-secondary">
+          Setzt das Genre aller Tracks dieses Artists aus dem bestehenden
+          Mapping (<code>mapping/artist_genre.yaml</code>) — kein Freitext.
+        </p>
+
+        <div class="mb-2">
+          <button
+            id="genre-manage-preview-btn"
+            class="btn btn-outline-primary"
+          >
+            Vorschau laden
+          </button>
+        </div>
+
+        <div id="genre-manage-content" class="empty-note"></div>
+
+        <div class="mt-2">
+          <button
+            id="genre-manage-execute-btn"
+            class="btn btn-primary"
+            disabled
+          >
+            Genre setzen
+          </button>
+        </div>
+
+        <div id="genre-manage-result-content" class="empty-note mt-2"></div>
+      </div>
+
     </div>
-    <div id="artist-repair-job-content" class="empty-note"></div>
-    </details>
-  </section>
+  </details>
+</section>
 
-  <p class="retry-row"><a href="{{ base_path }}/library">◀️ Zurück zu Artists</a></p>
+<!-- Library Maintenance -->
+<section class="card mb-4" id="artist-maintenance-panel" hidden>
+  <details>
+    <summary class="card-header" style="cursor: pointer;">
+      <h2 class="card-title">🛠 Library-Wartung</h2>
+    </summary>
+
+    <div class="card-body">
+
+      <p class="text-secondary">
+        Wiederverwendet die bestehenden Maintenance-/Job-Endpunkte
+        (<code>admin/maintenance/artist-casing</code>,
+        <code>admin/maintenance/legacy-genre-cleanup</code>,
+        <code>jobs/repair-level2</code>,
+        <code>jobs/repair-level3</code>) im Kontext dieses Artists —
+        keine neue Ausführungslogik.
+      </p>
+
+      <!-- Artist Casing -->
+      <div class="border-bottom pb-4 mb-4">
+        <h3 class="mb-2">🎤 Artist Casing korrigieren</h3>
+        <p class="text-secondary">
+          Normalisiert die Groß-/Kleinschreibung von ©ART/ARTISTS gegen das
+          bestehende Mapping (<code>mapping/artist_overrides.json</code>).
+        </p>
+
+        <div class="mb-2">
+          <button
+            id="artist-casing-preview-btn"
+            class="btn btn-outline-primary"
+          >
+            Vorschau laden
+          </button>
+        </div>
+
+        <div id="artist-casing-content" class="empty-note"></div>
+
+        <div class="mt-2">
+          <button
+            id="artist-casing-execute-btn"
+            class="btn btn-primary"
+            disabled
+          >
+            Casing korrigieren
+          </button>
+        </div>
+
+        <div id="artist-casing-result-content" class="empty-note mt-2"></div>
+      </div>
+
+      <!-- Legacy Genre -->
+      <div class="border-bottom pb-4 mb-4">
+        <h3 class="mb-2">🧹 Legacy Genre bereinigen</h3>
+        <p class="text-secondary">
+          Entfernt veraltete Freeform-Genre-Atome, sofern das kanonische Genre
+          bereits gesetzt ist.
+        </p>
+
+        <div class="mb-2">
+          <button
+            id="legacy-genre-cleanup-preview-btn"
+            class="btn btn-outline-primary"
+          >
+            Vorschau laden
+          </button>
+        </div>
+
+        <div id="legacy-genre-cleanup-content" class="empty-note"></div>
+
+        <div class="mt-2">
+          <button
+            id="legacy-genre-cleanup-execute-btn"
+            class="btn btn-primary"
+            disabled
+          >
+            Legacy-Atome entfernen
+          </button>
+        </div>
+
+        <div id="legacy-genre-cleanup-result-content" class="empty-note mt-2"></div>
+      </div>
+
+      <!-- Genre Revalidation -->
+      <div class="border-bottom pb-4 mb-4">
+        <h3 class="mb-2">🔄 Genre revalidieren</h3>
+        <p class="text-secondary">
+          Nicht im Control Center verfügbar — nur in Telegram
+          („🧹 Library-Wartung → 🔄 Genre revalidieren“).
+        </p>
+      </div>
+
+      <!-- L2 / L3 -->
+      <div>
+        <h3 class="mb-2">🔧 L2 / L3 Reparatur</h3>
+        <p class="text-secondary">
+          Läuft als Hintergrund-Job …
+        </p>
+
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          <button id="repair-l2-btn" class="btn btn-outline-primary">
+            🔧 L2-Reparatur (Metadaten-Reprocessing)
+          </button>
+
+          <button id="repair-l3-btn" class="btn btn-outline-primary">
+            🔧 L3-Reparatur (MusicBrainz-IDs / ISRC)
+          </button>
+        </div>
+
+        <div id="artist-repair-job-content" class="empty-note"></div>
+      </div>
+
+    </div>
+  </details>
+</section>
+
 {% endblock %}
-
 {% block scripts %}
 <script>
   // Library Artist-Centric UX (CC-AC-1) — Artist-Detail. Bewusst KEIN
