@@ -162,18 +162,31 @@ async def test_corrupt_report_file_treated_as_missing(client, monkeypatch, tmp_p
 @pytest.mark.asyncio
 async def test_never_calls_run_scan(client, monkeypatch, tmp_path):
     """Performance-Kernanforderung Auftrag §4/§24: /health/cached darf
-    services/library_health/scanner.py::run_scan() unter keinen Umstaenden
-    erreichen — hart per Monkeypatch erzwungen (RuntimeError bei jedem
-    Aufruf), nicht nur durch Beobachtung der Laufzeit angenommen. Fehlender
-    Report reicht als Szenario, da load_cached_report() ohnehin nie
-    scannt — der Test bricht bereits beim Import/Call ab, sollte der
-    Call-Path sich jemals aendern."""
-    import services.library_health.scanner as scanner_module
+    run_scan()/run_library_scan() unter keinen Umstaenden erreichen — hart
+    per Monkeypatch erzwungen, nicht nur durch Beobachtung der Laufzeit
+    angenommen.
+
+    Patcht bewusst control_center._library_scan (nicht
+    services.library_health.scanner direkt!) — `from ... import run_scan`
+    in _library_scan.py bindet den Namen beim Modul-Import in dessen
+    EIGENEN Namensraum; ein Patch auf services.library_health.scanner.run_scan
+    aendert diese bereits kopierte Bindung nicht mehr (empirisch verifiziert:
+    `control_center._library_scan.run_scan is
+    services.library_health.scanner.run_scan` ist False nach einem Patch auf
+    Letzterem). Identisches, hier korrektes Patch-Ziel wie das bereits
+    bestehende tests/test_control_center_health_api.py::
+    test_get_library_health_500_on_scan_failure fuer denselben Grund nutzt.
+    Zusaetzlich run_library_scan() selbst gepatcht, da das die tatsaechliche
+    Funktion ist, die /health aufruft und die bei einer kuenftigen
+    Regression faelschlich auch aus /health/cached heraus erreichbar werden
+    koennte."""
+    import control_center._library_scan as library_scan
 
     def _boom(*args, **kwargs):
-        raise AssertionError("run_scan() darf im /health/cached-Pfad nicht aufgerufen werden")
+        raise AssertionError("run_scan()/run_library_scan() darf im /health/cached-Pfad nicht aufgerufen werden")
 
-    monkeypatch.setattr(scanner_module, "run_scan", _boom)
+    monkeypatch.setattr(library_scan, "run_scan", _boom)
+    monkeypatch.setattr(library_scan, "run_library_scan", _boom)
     monkeypatch.setattr(Config, "DATA_DIR", tmp_path / "data")
 
     response = await client.get("/api/v1/library/health/cached")

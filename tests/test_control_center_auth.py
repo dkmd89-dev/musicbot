@@ -367,6 +367,37 @@ async def test_health_endpoint_accessible_with_plain_user_session(client, monkey
 
 
 @pytest.mark.asyncio
+async def test_health_cached_endpoint_requires_authentication(client):
+    """Overview Dashboard v2 (docs/prompts/CONTROL_CENTER_OVERVIEW_V2.md) —
+    dieselbe AccessLevel.USER-Schwelle wie GET /api/v1/library/health,
+    da beide im selben Router mit gemeinsamer Depends-Deklaration liegen
+    (control_center/routers/health.py)."""
+    response = await client.get("/api/v1/library/health/cached")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_health_cached_endpoint_accessible_with_plain_user_session(client, monkeypatch, tmp_path):
+    """USER reicht fuer /health/cached (identische Schwelle wie /health).
+    Kein Report im isolierten Test-DATA_DIR vorhanden -> 404
+    LIBRARY_REPORT_MISSING statt 401/403 beweist, dass die Anfrage die
+    Auth-Schwelle passiert hat (identisches Beweismuster wie
+    test_library_artists_overview_endpoint_accessible_with_admin_session
+    oben; Fachlogik: tests/test_control_center_health_cached_api.py)."""
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 1))
+    monkeypatch.setattr(Config, "ADMIN_USER_IDS", property(lambda self: []))
+    monkeypatch.setattr(Config, "DATA_DIR", tmp_path)
+    await client.post(
+        "/api/v1/auth/telegram-callback", json=_signed_telegram_payload(user_id=999)
+    )
+
+    response = await client.get("/api/v1/library/health/cached")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "LIBRARY_REPORT_MISSING"
+
+
+@pytest.mark.asyncio
 async def test_findings_endpoint_rejects_plain_user_session(client, monkeypatch):
     """USER reicht NICHT fuer Findings (AccessLevel.ADMIN-Schwelle) —
     403, nicht 401 (Session ist gueltig, Berechtigung reicht nur nicht)."""
