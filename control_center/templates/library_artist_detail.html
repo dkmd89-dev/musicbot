@@ -13,6 +13,50 @@
     <p class="empty-note">Artist wird geladen …</p>
   </div>
 
+  <section class="panel" id="artist-metadata-edit-panel" hidden>
+    <h2>📝 Metadaten bearbeiten</h2>
+    <p class="subtitle">Wiederverwendet die bestehenden Manual-Metadata-Editing-Endpunkte
+      (<code>admin/maintenance/artist-rename</code>, <code>admin/maintenance/title-edit</code>,
+      <code>library/artists/{artist}/set-genre</code>) im Kontext dieses Artists — keine neue
+      Business-Logik.</p>
+
+    <h3>🎤 Artist bearbeiten</h3>
+    <p class="empty-note">Setzt den Artist-Namen auf einen manuellen Zielwert — KEIN Casing-Mapping, keine Normalisierung.</p>
+    <div class="retry-row">
+      <input type="text" id="artist-edit-new-artist" placeholder="Neuer Artist-Name">
+      <button id="artist-edit-preview-btn" class="small">Vorschau laden</button>
+    </div>
+    <div id="artist-edit-content" class="empty-note"></div>
+    <div class="retry-row">
+      <button id="artist-edit-execute-btn" class="small" disabled>Artist umbenennen</button>
+    </div>
+    <div id="artist-edit-result-content" class="empty-note"></div>
+
+    <h3>🎵 Titel bearbeiten</h3>
+    <p class="empty-note">Setzt den Titel für genau einen Track — KEIN automatischer TitleCleaner. Relativen Pfad aus der Track-Liste unten übernehmen (Tooltip beim Überfahren).</p>
+    <div class="retry-row">
+      <input type="text" id="title-edit-rel-path" placeholder="Relativer Pfad (z. B. Artist/Album/Track.m4a)">
+      <input type="text" id="title-edit-new-title" placeholder="Neuer Titel">
+      <button id="title-edit-preview-btn" class="small">Vorschau laden</button>
+    </div>
+    <div id="title-edit-content" class="empty-note"></div>
+    <div class="retry-row">
+      <button id="title-edit-execute-btn" class="small" disabled>Titel setzen</button>
+    </div>
+    <div id="title-edit-result-content" class="empty-note"></div>
+
+    <h3>🎭 Genre-Verwaltung</h3>
+    <p class="empty-note">Setzt das Genre aller Tracks dieses Artists aus dem bestehenden Mapping (mapping/artist_genre.yaml) — kein Freitext.</p>
+    <div class="retry-row">
+      <button id="genre-manage-preview-btn" class="small">Vorschau laden</button>
+    </div>
+    <div id="genre-manage-content" class="empty-note"></div>
+    <div class="retry-row">
+      <button id="genre-manage-execute-btn" class="small" disabled>Genre setzen</button>
+    </div>
+    <div id="genre-manage-result-content" class="empty-note"></div>
+  </section>
+
   <p class="retry-row"><a href="{{ base_path }}/library">◀️ Zurück zu Artists</a></p>
 {% endblock %}
 
@@ -95,8 +139,272 @@
     );
   }
 
+  // Manual Metadata Editing v1 (CC-AC-2, library_artist_centric_UX.txt) -
+  // reine Verdrahtung der bestehenden, bereits produktiven Endpunkte aus
+  // control_center/routers/admin_maintenance.py (Artist/Titel) und
+  // control_center/routers/metadata_actions.py (Genre) in den Artist-
+  // Kontext dieser Seite - identisches Preview->Confirm->Execute-Muster
+  // wie admin.html/metadata.html, hier mit implizitem
+  // artist=currentArtistFromPath() statt eines Freitextfelds (Auftrag
+  // §12 "Artist-Kontext ueber den gesamten Flow"). Keine neue
+  // Ausfuehrungslogik (Auftrag §14).
+
+  function _diffSummary(before, after) {
+    const parts = [];
+    for (const key of Object.keys(after)) {
+      const b = Array.isArray(before[key]) ? before[key].join(", ") : (before[key] ?? "–");
+      const a = Array.isArray(after[key]) ? after[key].join(", ") : (after[key] ?? "–");
+      if (String(b) === String(a)) continue;
+      parts.push(`${key}: ${b} → ${a}`);
+    }
+    return parts.join(" | ");
+  }
+
+  function renderMetadataEditPreview(el, body, execBtnId) {
+    const startBtn = document.getElementById(execBtnId);
+    if (!body.target_count) {
+      el.innerHTML = '<p class="empty-note">Keine Dateien gefunden.</p>';
+      startBtn.disabled = true;
+      return;
+    }
+    if (!body.changed_count) {
+      // Gruende (z. B. "Artist-Tag entspricht nicht dem gewaehlten
+      // Ausgangswert", "Safety: ...") sichtbar machen statt zu
+      // verschlucken - sonst bleibt ein tag-/verzeichnis-abweichender
+      // Artist ohne jeden Hinweis bei "keine Aenderung noetig" haengen.
+      const reasons = [...new Set(body.outcomes.map((o) => o.reason).filter(Boolean))];
+      const reasonHtml = reasons.length
+        ? '<div class="row-list">' + reasons.map((r) => `
+            <div class="row-item"><div class="row-main">${_escapeHtml(r)}</div></div>
+          `).join("") + "</div>"
+        : "";
+      el.innerHTML = `<p class="empty-note">${body.target_count} Datei(en) — keine Änderung nötig.</p>${reasonHtml}`;
+      startBtn.disabled = true;
+      return;
+    }
+    const rows = body.outcomes.filter((o) => o.status === "DRY_RUN").map((o) => `
+      <div class="row-item">
+        <div class="row-main">${_escapeHtml(o.file)}</div>
+        <div class="row-count">${_escapeHtml(_diffSummary(o.before, o.after))}</div>
+      </div>
+    `).join("");
+    el.innerHTML = `<p class="empty-note">${body.changed_count} von ${body.target_count} Datei(en) werden geändert:</p><div class="row-list">${rows}</div>`;
+    startBtn.disabled = false;
+  }
+
+  // -- Artist bearbeiten ---------------------------------------------------
+
+  async function loadArtistEditPreview() {
+    const artist = currentArtistFromPath();
+    const newArtist = document.getElementById("artist-edit-new-artist").value.trim();
+    if (!newArtist) { window.alert("Bitte neuen Artist-Namen eingeben."); return; }
+    document.getElementById("artist-edit-execute-btn").disabled = true;
+    document.getElementById("artist-edit-result-content").innerHTML = "";
+    const params = new URLSearchParams({ artist, new_artist: newArtist }).toString();
+    await _loadInto(
+      "artist-edit-content",
+      `/api/v1/admin/maintenance/artist-rename/preview?${params}`,
+      (el, body) => renderMetadataEditPreview(el, body, "artist-edit-execute-btn"),
+    );
+  }
+
+  // Preview<->Execute-Kopplung: eine Feldaenderung NACH einer geladenen
+  // Preview macht deren Diff ungueltig (Nutzer wuerde sonst einen anderen
+  // Wert schreiben als angezeigt) - Execute-Button wird deshalb wieder
+  // deaktiviert, bis erneut "Vorschau laden" gedrueckt wurde.
+  document.getElementById("artist-edit-new-artist").addEventListener("input", () => {
+    document.getElementById("artist-edit-execute-btn").disabled = true;
+  });
+
+  async function executeArtistEdit() {
+    const artist = currentArtistFromPath();
+    const newArtist = document.getElementById("artist-edit-new-artist").value.trim();
+    if (!newArtist) return;
+    const confirmed = window.confirm(
+      `Artist "${artist}" wirklich zu "${newArtist}" umbenennen?\n\n` +
+      `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+      `aber es werden tatsächlich Dateien in der Library verändert.`
+    );
+    if (!confirmed) return;
+
+    const execBtn = document.getElementById("artist-edit-execute-btn");
+    const resultEl = document.getElementById("artist-edit-result-content");
+    execBtn.disabled = true;
+    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    try {
+      const res = await fetch(apiUrl("/api/v1/admin/maintenance/artist-rename/execute"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ artist, new_artist: newArtist }),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      const body = await res.json();
+      if (!res.ok) {
+        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        return;
+      }
+      // KEINE Navigation: apply_artist_rename() ist tag-wert-getrieben
+      // (services/library_repair/executor.py::apply_artist_rename()) -
+      // es wird NUR der ©ART/ARTISTS-Tag geschrieben, der Artist-
+      // Verzeichnisname (der diese Seite adressiert) bleibt unveraendert.
+      // Ein Redirect auf /library/{newArtist} waere ein garantierter
+      // 404, da dieser Verzeichnisname nie existiert.
+      resultEl.innerHTML =
+        `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>` +
+        `<p class="hint">Nur die Tag-Werte wurden geschrieben — der Artist-Ordner „${_escapeHtml(artist)}" bleibt unverändert. ` +
+        `Diese Übersicht stammt aus dem zwischengespeicherten Health-Report; ein Neuscan (Telegram „🩺 MusicBot Doctor" oder CLI) zeigt den neuen Tag-Wert.</p>`;
+      await loadArtistEditPreview();
+    } catch (err) {
+      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+    } finally {
+      execBtn.disabled = false;
+    }
+  }
+
+  document.getElementById("artist-edit-preview-btn").addEventListener("click", loadArtistEditPreview);
+  document.getElementById("artist-edit-execute-btn").addEventListener("click", executeArtistEdit);
+
+  // -- Titel bearbeiten -----------------------------------------------------
+
+  // UX-Scope-Guard (KEINE Sicherheitsgrenze - services/library_repair/
+  // executor.py::safety_check() bleibt die tatsaechliche Schranke):
+  // verhindert, dass aus Versehen ein rel_path außerhalb des aktuellen
+  // Artist-Ordners eingetragen wird - der Artist-Kontext dieser Seite
+  // soll fuer alle drei Aktionen gelten (Auftrag §12).
+  function _titleEditRelPathInScope(artist, relPath) {
+    return relPath.startsWith(`${artist}/`);
+  }
+
+  async function loadTitleEditPreview() {
+    const artist = currentArtistFromPath();
+    const relPath = document.getElementById("title-edit-rel-path").value.trim();
+    const newTitle = document.getElementById("title-edit-new-title").value.trim();
+    if (!relPath || !newTitle) { window.alert("Bitte relativen Pfad und neuen Titel eingeben."); return; }
+    if (!_titleEditRelPathInScope(artist, relPath)) {
+      window.alert(`Relativer Pfad muss innerhalb des Artist-Ordners "${artist}" liegen (z. B. "${artist}/Album/Track.m4a").`);
+      return;
+    }
+    document.getElementById("title-edit-execute-btn").disabled = true;
+    document.getElementById("title-edit-result-content").innerHTML = "";
+    const params = new URLSearchParams({ artist, rel_path: relPath, new_title: newTitle }).toString();
+    await _loadInto(
+      "title-edit-content",
+      `/api/v1/admin/maintenance/title-edit/preview?${params}`,
+      (el, body) => renderMetadataEditPreview(el, body, "title-edit-execute-btn"),
+    );
+  }
+
+  async function executeTitleEdit() {
+    const artist = currentArtistFromPath();
+    const relPath = document.getElementById("title-edit-rel-path").value.trim();
+    const newTitle = document.getElementById("title-edit-new-title").value.trim();
+    if (!relPath || !newTitle) return;
+    if (!_titleEditRelPathInScope(artist, relPath)) return;
+    const confirmed = window.confirm(
+      `Titel für "${relPath}" wirklich zu "${newTitle}" ändern?\n\n` +
+      `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+      `aber es wird tatsächlich eine Datei in der Library verändert.`
+    );
+    if (!confirmed) return;
+
+    const execBtn = document.getElementById("title-edit-execute-btn");
+    const resultEl = document.getElementById("title-edit-result-content");
+    execBtn.disabled = true;
+    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    try {
+      const res = await fetch(apiUrl("/api/v1/admin/maintenance/title-edit/execute"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ artist, rel_path: relPath, new_title: newTitle }),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      const body = await res.json();
+      if (!res.ok) {
+        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        return;
+      }
+      resultEl.innerHTML =
+        `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>` +
+        `<p class="hint">Die Trackliste unten stammt aus dem zwischengespeicherten Health-Report und zeigt den neuen Titel erst nach einem Neuscan.</p>`;
+      await loadTitleEditPreview();
+    } catch (err) {
+      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+    } finally {
+      execBtn.disabled = false;
+    }
+  }
+
+  document.getElementById("title-edit-preview-btn").addEventListener("click", loadTitleEditPreview);
+  document.getElementById("title-edit-execute-btn").addEventListener("click", executeTitleEdit);
+  ["title-edit-rel-path", "title-edit-new-title"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", () => {
+      document.getElementById("title-edit-execute-btn").disabled = true;
+    });
+  });
+
+  // -- Genre-Verwaltung -------------------------------------------------------
+
+  async function loadGenreManagePreview() {
+    const artist = currentArtistFromPath();
+    document.getElementById("genre-manage-execute-btn").disabled = true;
+    document.getElementById("genre-manage-result-content").innerHTML = "";
+    await _loadInto(
+      "genre-manage-content",
+      `/api/v1/library/artists/${encodeURIComponent(artist)}/genre-preview`,
+      (el, body) => renderMetadataEditPreview(el, body, "genre-manage-execute-btn"),
+    );
+  }
+
+  async function executeGenreManage() {
+    const artist = currentArtistFromPath();
+    const confirmed = window.confirm(
+      `Genre für "${artist}" wirklich setzen?\n\n` +
+      `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+      `aber es werden tatsächlich Dateien in der Library verändert.`
+    );
+    if (!confirmed) return;
+
+    const execBtn = document.getElementById("genre-manage-execute-btn");
+    const resultEl = document.getElementById("genre-manage-result-content");
+    execBtn.disabled = true;
+    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    try {
+      const res = await fetch(apiUrl(`/api/v1/library/artists/${encodeURIComponent(artist)}/set-genre`), {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      const body = await res.json();
+      if (!res.ok) {
+        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        return;
+      }
+      resultEl.innerHTML = `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>`;
+      await loadGenreManagePreview();
+    } catch (err) {
+      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+    } finally {
+      execBtn.disabled = false;
+    }
+  }
+
+  document.getElementById("genre-manage-preview-btn").addEventListener("click", loadGenreManagePreview);
+  document.getElementById("genre-manage-execute-btn").addEventListener("click", executeGenreManage);
+
   function initPage() {
-    checkAuth().then((who) => { if (who) loadArtistDetail(); });
+    checkAuth().then((who) => {
+      if (!who) return;
+      // Buttons nur sichtbar fuer Admin (Auftrag CC-AC-2-Scope) - die
+      // zugrundeliegenden Endpunkte sind ohnehin serverseitig auf
+      // AccessLevel.ADMIN gegated (Master-Prompt Regel 30, kein reiner
+      // UI-Check als alleiniger Schutz), dies ist zusaetzlich die
+      // sichtbare UX-Schranke.
+      const isAdmin = who.access_level === "ADMIN" || who.access_level === "OWNER";
+      document.getElementById("artist-metadata-edit-panel").hidden = !isAdmin;
+      loadArtistDetail();
+    });
   }
   initPage();
 </script>

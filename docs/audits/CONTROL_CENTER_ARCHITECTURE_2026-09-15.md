@@ -1273,3 +1273,99 @@ respektiert §39 (alte Routen nicht ungeprüft anfassen).
   redundant zur neuen Artist-Übersicht — bewusst nicht entfernt (Auftrag
   §19/§39), Bewertung „behalten/redundant/späterer Cleanup" folgt in
   CC-AC-5.
+
+## Manual Metadata Editing v1 im Artist-Kontext — CC-AC-2 (2026-09-21, auf Nutzerfreigabe)
+
+Zweiter Schritt aus `library_artist_centric_UX.txt` (Folge-Task zu
+CC-AC-1). Ergänzt die READ-ONLY Artist-Detailseite
+(`control_center/templates/library_artist_detail.html`, `GET
+/library/{artist}`) um ein neues Panel „📝 Metadaten bearbeiten" mit drei
+Aktionen: 🎤 Artist bearbeiten, 🎵 Titel bearbeiten, 🎭 Genre-Verwaltung.
+
+**Reine Verdrahtung, keine neue Ausführungslogik** (Auftrag §14):
+verwendet ausschließlich die bereits produktiven Endpunkte
+- `GET /api/v1/admin/maintenance/artist-rename/preview` +
+  `POST .../execute` (`control_center/routers/admin_maintenance.py`,
+  unverändert seit dem vorherigen Maintenance-Schritt),
+- `GET /api/v1/admin/maintenance/title-edit/preview` +
+  `POST .../execute` (derselbe Router),
+- `GET /api/v1/library/artists/{artist}/genre-preview` +
+  `POST /api/v1/library/artists/{artist}/set-genre`
+  (`control_center/routers/metadata_actions.py`).
+
+Kein einziger neuer Router, kein neues Schema, keine neue Executor-/
+Backup-/Verification-Logik — identisches Preview→Confirm→Execute-Muster
+wie das bestehende generische Formular in `admin.html`
+(`window.confirm()` vor jeder schreibenden Aktion, Auftrag §25).
+
+**Unterschied zum generischen `admin.html`-Formular:** Der Artist ist
+hier nicht mehr ein Freitextfeld, sondern kommt implizit aus dem bereits
+etablierten `currentArtistFromPath()` (Auftrag §12 „Artist-Kontext über
+den gesamten Flow" — der Nutzer muss den Artist nicht erneut auswählen).
+
+**Korrektur nach Review (Adversarial Review vor Merge, siehe PR #282):**
+Ein erster Implementierungsstand navigierte nach „Artist bearbeiten"
+per `window.location.href` auf `/library/{new_artist}`, mit der
+(falschen) Begründung, der Artist-Ordner werde umbenannt. Tatsächlich
+ist `apply_artist_rename()` (`services/library_repair/executor.py`)
+**ausschließlich tag-wert-getrieben** — es schreibt nur die
+`©ART`/`ARTISTS`-Freeform-Atome der Dateien, deren aktueller Tag-Wert
+(casefold) `old_artist` entspricht; der Artist-**Verzeichnisname**, über
+den diese Seite adressiert wird (`artist_directory` aus dem
+zwischengespeicherten Health-Report, CC-AC-1), bleibt unverändert. Der
+Redirect führte deshalb garantiert auf eine `404 ARTIST_NOT_FOUND` und
+riss dabei die gerade angezeigten Erfolgs-/Fehler-Zahlen weg. Alle drei
+Aktionen laden nach Erfolg stattdessen ihre eigene Preview neu
+(„Artist bearbeiten"/„Titel bearbeiten": `loadArtistEditPreview()`/
+`loadTitleEditPreview()`; „Genre-Verwaltung":
+`loadGenreManagePreview()`) und zeigen zusätzlich einen Hinweis, dass
+die Artist-/Track-Übersicht dieser Seite aus dem zwischengespeicherten
+Health-Report stammt und erst nach einem Neuscan (Telegram „🩺 MusicBot
+Doctor" oder CLI) den neuen Wert zeigt — konsistent mit der in CC-AC-1
+etablierten Read-Pfad-Entscheidung (`load_cached_report()`, kein
+impliziter Scan). Ebenfalls aus dem Review: die per-Datei-`reason`
+(z. B. „Artist-Tag entspricht nicht dem gewählten Ausgangswert") wird
+jetzt auch im No-Op-Fall angezeigt statt verschluckt, und „Titel
+bearbeiten" bekam einen clientseitigen UX-Scope-Guard (`rel_path` muss
+mit `{artist}/` beginnen — keine Sicherheitsgrenze, `safety_check()`
+im Executor bleibt die eigentliche Schranke) sowie eine
+Preview→Execute-Kopplung (Eingabefeld-Änderung nach geladener Vorschau
+deaktiviert den Ausführen-Button wieder, bis erneut „Vorschau laden"
+gedrückt wurde).
+
+**Sichtbarkeitsschranke:** Das gesamte Panel ist standardmäßig
+`hidden` und wird nur eingeblendet, wenn `GET /api/v1/auth/whoami`
+`access_level` „ADMIN" oder „OWNER" liefert — zusätzlich zur ohnehin
+serverseitig auf `AccessLevel.ADMIN` gegateten API (Master-Prompt Regel
+30: kein reiner UI-Check als alleiniger Schutz, hier eine zusätzliche
+sichtbare UX-Schranke gemäß Task-Scope-Vorgabe).
+
+- Keine Änderung an `admin_maintenance.py`, `metadata_actions.py`,
+  `maintenance_service.py` oder den zugehörigen Schemas — reine
+  Template-/JS-Ergänzung.
+- Test: 14 neue UI-Tests in `tests/test_control_center_ui.py` (Panel
+  standardmäßig versteckt, Admin-Gating-Code vorhanden, alle sechs
+  Button-IDs vorhanden, Verdrahtung auf die drei bestehenden
+  Endpunktpaare, impliziter Artist-Kontext statt Freitextfeld,
+  `window.confirm()` vor jeder Aktion, sowie sechs Regressionstests aus
+  dem Review: kein `window.location.href` nach Artist-Rename, jede
+  Aktion laedt nach Erfolg ihre eigene Vorschau neu, SKIPPED/FAILED-
+  Gruende werden angezeigt, Preview↔Execute-Kopplung, Titel-Edit-Scope-
+  Guard, kein „Netzwerkfehler"-Text bei unbekanntem Ausgang). Gezielt:
+  21/21 grün (`test_control_center_ui.py -k artist_detail`). Regression:
+  `test_control_center_admin_maintenance_api.py` (15/15) +
+  `test_control_center_metadata_actions_api.py` (15/15) unverändert
+  grün — beide Endpunkte selbst wurden nicht angefasst. Thematische
+  Suite: gesamte `tests/test_control_center*.py` 408/408 grün.
+  `node --check` für den neuen/geänderten Skript-Block der
+  Artist-Detailseite grün. Vollständige Projekt-Suite bewusst nicht
+  durch den Implementierungsprozess ausgeführt (CLAUDE.md §8.A) — dem
+  Nutzer empfohlen.
+- Keine neuen Dependencies.
+- **Nicht Teil dieses Schritts** (Folge-Tasks): Album/Albuminterpret-
+  Editing (CC-AC-3), Library-Wartung wie Artist-Casing/Legacy-Genre-
+  Cleanup/Genre-Revalidierung/L2-L3-Reparatur im Artist-Kontext
+  (CC-AC-4), Navigation-Cleanup (CC-AC-5). Das generische
+  Maintenance-Formular in `admin.html` bleibt unverändert erhalten
+  (Auftrag §39) — mit dieser Phase teilweise redundant zu den neuen
+  Artist-kontextbezogenen Aktionen, Bewertung folgt in CC-AC-5.
