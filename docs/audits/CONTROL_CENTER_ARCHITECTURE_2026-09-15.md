@@ -1389,3 +1389,122 @@ sichtbare UX-Schranke gemäß Task-Scope-Vorgabe).
   Maintenance-Formular in `admin.html` bleibt unverändert erhalten
   (Auftrag §39) — mit dieser Phase teilweise redundant zu den neuen
   Artist-kontextbezogenen Aktionen, Bewertung folgt in CC-AC-5.
+
+## Navigation Cleanup — Analyse (CC-AC-5) (2026-09-21, auf Nutzerfreigabe)
+
+Fünfter und reiner Analyse-Schritt aus `library_artist_centric_UX.txt`
+(Folge-Task zu CC-AC-1..4). **Kein Code geändert** — nur diese
+Doku-Notiz, wie im Auftrag als optionaler Output vorgesehen (Auftrag
+§19/§39, SCOPE-HINWEIS des Master-Prompts). Sidebar
+(`control_center/templates/_base.html`) und die von CC-AC-1..4 direkt
+betroffenen Seiten wurden auf Redundanz gegen die neue
+Artist-zentrierte Library-/Wartungs-Oberfläche geprüft.
+
+**Ergebnis — drei Kategorien:**
+
+**[behalten]**
+- Sidebar-Eintrag „🏷 Metadata" (`/metadata`) als Seite bleibt — enthält
+  perspektivisch weitere globale Metadata-Funktionen und ist über die
+  Overview-Schnellzugriffe (`overview.html`, „Schnellzugriff"-Kachel
+  „Metadata") sowie über Routen-Existenz-/Inhalts-Tests
+  (`tests/test_control_center_ui.py:31-32,779-800`) verankert.
+- Sidebar-Eintrag „⚙ Administration" (`/admin`) bleibt vollständig —
+  Sektion „Nutzer & Rollen" ist genuin global/System (keine
+  Artist-Entsprechung) und hat keinen Ersatz im Artist-Kontext.
+- Sidebar-Eintrag „🔧 Repairs" (`/repairs`) bleibt vollständig — der
+  Panel „Repair-Plan (Vorschau)" (SAFE_AUTOMATIC) ist global, nicht
+  artist-spezifisch (SCOPE-HINWEIS des Master-Prompts, explizit
+  bestätigt: „L2/L3 globale Buttons bleiben gültig"). Auch der Panel
+  „L2/L3-Reparaturen (nach Artist)" ist trotz Pro-Artist-Ausführung
+  **keine** reine Redundanz zu Artist-Detail → 🔧 L2/L3 Reparatur: Er
+  übernimmt die **Discovery**-Funktion („welche Artists haben
+  überhaupt offene L2/L3-Befunde, gruppiert über die ganze Library")
+  über `GET /api/v1/library/repair-plan/by-artist`, die es im
+  Artist-Kontext nicht gibt (dort ist der Artist bereits bekannt,
+  keine Cross-Artist-Übersicht). Beide Einstiege lösen dieselben
+  Job-Endpunkte aus (`POST /api/v1/jobs/repair-level2`/`-level3`) —
+  komplementär, nicht redundant.
+- „🎭 Mapping"-Anzeige im Library-Panel (`GET
+  /api/v1/library/mapping-summary`) bleibt unverändert an ihrem
+  Platz — explizit durch Auftrag §20 ausgeschlossen von jeder
+  Umgruppierung in dieser oder einer künftigen Phase dieses
+  Master-Prompts.
+- „💿 Alben"/"🎵 Tracks"-Buttons im „Library-Metadata"-Panel
+  (`library.html`, `GET /api/v1/library/albums`/`/tracks`) bleiben —
+  sie liefern eine **globale**, scan-basierte Sicht mit dem
+  Fehlende-Metadata-Filter (`metadata-missing-filter`) über die
+  gesamte Library, die im Artist-Detail (nur ein Artist, kein
+  Filter) keine Entsprechung hat.
+
+**[redundant]** (nicht gelöscht, siehe Auftrag §19/§39 — Consumer nicht
+vollständig geprüft, siehe unten)
+- `admin.html` → „Artist Casing korrigieren" — funktional deckungsgleich
+  mit Artist-Detail → 🛠 Library-Wartung → 🎤 Artist Casing korrigieren
+  (CC-AC-4, identischer Endpunkt `admin/maintenance/artist-casing`),
+  jetzt nur noch mit Freitext-Artist-Feld statt implizitem Kontext.
+- `admin.html` → „Legacy-Genre-Cleanup" — funktional deckungsgleich mit
+  Artist-Detail → 🛠 Library-Wartung → 🧹 Legacy Genre bereinigen
+  (CC-AC-4, identischer Endpunkt `admin/maintenance/legacy-genre-cleanup`).
+- `admin.html` → „Artist umbenennen" — funktional deckungsgleich mit
+  Artist-Detail → 📝 Metadaten bearbeiten → 🎤 Artist bearbeiten
+  (CC-AC-2, identischer Endpunkt `admin/maintenance/artist-rename`).
+- `admin.html` → „Titel bearbeiten" — funktional deckungsgleich mit
+  Artist-Detail → 📝 Metadaten bearbeiten → 🎵 Titel bearbeiten (CC-AC-2,
+  identischer Endpunkt `admin/maintenance/title-edit`).
+- `metadata.html` → „Genre setzen" — funktional deckungsgleich mit
+  Artist-Detail → 📝 Metadaten bearbeiten → 🎭 Genre-Verwaltung (CC-AC-2,
+  identische Endpunkte `library/artists/{artist}/genre-preview` +
+  `/set-genre`), nur mit Freitext-Artist-Feld statt implizitem Kontext.
+  Seitentitel/Beschreibung sollten in einem Cleanup-Task angepasst
+  werden (auf globalen Kontext hinweisen bzw. auf Artist-Detail
+  verlinken), **nicht** löschen (Auftrag SCOPE-HINWEIS: „NICHT
+  löschen").
+- `library.html` → „Artists"-Button im „Library-Metadata"-Panel (`GET
+  /api/v1/library/artists`, Klick-gesteuerter Voll-Scan, ~37 s) ist
+  nach CC-AC-1 funktional durch die neue, automatisch geladene
+  „🎤 Artists"-Sektion (`GET /api/v1/library/artists-overview`, ~0.02 s,
+  persistenter Report) ersetzt worden — bereits in der CC-AC-1-Notiz
+  oben als „teilweise redundant" markiert. Einziger verbleibender
+  Unterschied: garantiert taufrische Live-Daten vs. ggf. veralteter
+  Report (im UI bereits als „Stand: …"/„nicht mehr aktuell" markiert,
+  CC-AC-1). Kein SCOPE-HINWEIS-Kandidat dieses Laufs, aber vom
+  gleichen Muster betroffen — wird hier ergänzend aufgeführt.
+
+**[möglicher späterer Cleanup]**
+- Eigener Cleanup-Task (Folge-Task, nicht Teil von CC-AC-5): die vier
+  `admin.html`-Formulare (Artist Casing, Legacy-Genre-Cleanup, Artist
+  umbenennen, Titel bearbeiten) sowie die `metadata.html`-„Genre
+  setzen"-Sektion auf einen reinen Verweis auf die jeweilige
+  Artist-Detail-Aktion umstellen (oder mit einem Deep-Link
+  `/library/{artist}` versehen), statt der Duplikat-Formulare mit
+  Freitext-Artist-Feld. Voraussetzung laut Auftrag §39: vollständige
+  Consumer-Prüfung (Links, Templates, Tests, Deep Links, evtl. externe
+  Bookmarks) — insbesondere die Routen-/Inhalts-Tests in
+  `tests/test_control_center_ui.py` (Zeilen 31-32, 779-800, 1057-1067)
+  referenzieren `/admin` und `/metadata` direkt und müssten mit
+  angepasst werden. Ebenfalls zu prüfen: ob die Freitext-Variante
+  (Artist noch nicht per Klick ausgewählt, z. B. bei Bulk-artigen
+  Werkzeugen/Skripten) einen eigenständigen Wert behält, der eine
+  vollständige Entfernung ohnehin ausschließt — dann bliebe nur die
+  Titel-/Beschreibungs-Anpassung aus dem SCOPE-HINWEIS als tatsächliche
+  Änderung.
+- `library.html` → „Artists"-Button (Live-Scan) könnte in einem
+  eigenen Cleanup-Task entweder entfernt oder zu einem expliziten
+  „Jetzt neu scannen"-Refresh für den bereits vorhandenen Report
+  umgebaut werden — ebenfalls nicht Teil dieses Laufs.
+
+**Zusätzliche Beobachtung (kein CC-AC-5-Scope, nur dokumentiert):** Diese
+Architektur-Doku enthält bislang keine eigenen Einträge für CC-AC-3
+(Album/Albuminterpret-Editing) und CC-AC-4 (Library-Wartung im
+Artist-Kontext) — beide PRs (#283, #286) haben ausschließlich
+`library_artist_detail.html` und `tests/test_control_center_ui.py`
+geändert, keine Doku-Aktualisierung. Nachtrag wäre ein eigener,
+separat freizugebender Schritt (Auftrag §45 „nur relevante
+Dokumentation aktualisieren" — kein Teil des CC-AC-5-Scopes).
+
+- Keine Code-/Template-/Router-/Test-Änderung in diesem Schritt (reine
+  Analyse, SCOPE-HINWEIS: „REINE ANALYSE, KEIN Code wird geändert").
+- **Nicht Teil dieses Schritts:** tatsächliche Löschung oder
+  Umbau/Umsortierung der oben als redundant identifizierten Seiten
+  (Auftrag §19/§39 — explizit ausgeschlossen für diesen Lauf), Nachtrag
+  der fehlenden CC-AC-3/CC-AC-4-Doku-Einträge.
