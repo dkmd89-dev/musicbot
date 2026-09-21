@@ -4,43 +4,60 @@
   <h1>Library</h1>
   <p class="subtitle">Artists, Alben, Tracks und Mapping-Übersicht.</p>
 
+  <div class="tiles" id="library-kpi-tiles" hidden>
+    <div class="tile"><div class="tile-label">Artists</div>
+      <div class="tile-value" id="library-kpi-artists">–</div></div>
+    <div class="tile"><div class="tile-label">Tracks</div>
+      <div class="tile-value" id="library-kpi-tracks">–</div></div>
+    <div class="tile"><div class="tile-label">Alben</div>
+      <div class="tile-value" id="library-kpi-albums">–</div></div>
+  </div>
+
   <section class="panel">
     <h2>🎤 Artists</h2>
-    <div class="retry-row" style="text-align: left; margin-top: 0; margin-bottom: 12px;">
-      <input type="text" id="artist-search" placeholder="🔎 Artist suchen …">
+    <div class="retry-row" style="text-align: left; margin-top: 0; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px;">
+      <input type="text" id="artist-search" placeholder="🔎 Artist suchen …" style="flex: 1; min-width: 160px;">
+      <select id="artist-sort" style="max-width: 180px;">
+        <option value="name">Sortieren: Name (A–Z)</option>
+        <option value="files">Sortieren: Dateien</option>
+        <option value="albums">Sortieren: Alben</option>
+        <option value="health">Sortieren: Health</option>
+      </select>
     </div>
     <div id="artists-overview-content" class="empty-note">Artists werden geladen …</div>
   </section>
 
   <section class="panel">
-    <h2>Library-Metadata</h2>
-    <p class="empty-note">Führt einen vollständigen Library-Scan aus (kann eine Weile dauern) — läuft nicht automatisch, nur auf Klick.</p>
-    <div class="retry-row">
-      <button id="metadata-tracks-btn" class="small">Tracks</button>
-      <button id="metadata-artists-btn" class="small">Artists</button>
-      <button id="metadata-albums-btn" class="small">Albums</button>
-      <button id="metadata-mapping-btn" class="small">Mapping</button>
-    </div>
-    <div class="retry-row">
-      <label for="metadata-missing-filter" class="hint">Fehlende Metadata (nur Tracks):</label>
-      <select id="metadata-missing-filter">
-        <option value="">— kein Filter —</option>
-        <option value="META_ARTIST_MISSING">Artist fehlt</option>
-        <option value="META_ALBUM_MISSING">Album fehlt</option>
-        <option value="META_ALBUM_ARTIST_MISSING">Album-Artist fehlt</option>
-        <option value="META_TITLE_MISSING">Titel fehlt</option>
-        <option value="META_GENRE_MISSING">Genre fehlt</option>
-        <option value="META_YEAR_MISSING">Jahr fehlt</option>
-        <option value="META_TRACK_NUMBER_MISSING">Tracknummer fehlt</option>
-        <option value="META_ISRC_MISSING">ISRC fehlt</option>
-        <option value="META_MB_RECORDING_MISSING">MusicBrainz Recording-ID fehlt</option>
-        <option value="META_MB_RELEASE_MISSING">MusicBrainz Release-ID fehlt</option>
-        <option value="ARTWORK_MISSING">Cover fehlt</option>
-        <option value="LYRICS_MISSING">Lyrics fehlen</option>
-        <option value="LOUDNESS_TAG_MISSING">Loudness-Tag fehlt</option>
-      </select>
-    </div>
-    <div id="metadata-content" class="empty-note"></div>
+    <details id="library-metadata-details">
+      <summary><h2>Library-Metadata</h2></summary>
+      <p class="empty-note">Führt einen vollständigen Library-Scan aus (kann eine Weile dauern) — läuft nicht automatisch, nur auf Klick.</p>
+      <div class="retry-row">
+        <button id="metadata-tracks-btn" class="small">Tracks</button>
+        <button id="metadata-artists-btn" class="small">Artists</button>
+        <button id="metadata-albums-btn" class="small">Albums</button>
+        <button id="metadata-mapping-btn" class="small">Mapping</button>
+      </div>
+      <div class="retry-row">
+        <label for="metadata-missing-filter" class="hint">Fehlende Metadata (nur Tracks):</label>
+        <select id="metadata-missing-filter">
+          <option value="">— kein Filter —</option>
+          <option value="META_ARTIST_MISSING">Artist fehlt</option>
+          <option value="META_ALBUM_MISSING">Album fehlt</option>
+          <option value="META_ALBUM_ARTIST_MISSING">Album-Artist fehlt</option>
+          <option value="META_TITLE_MISSING">Titel fehlt</option>
+          <option value="META_GENRE_MISSING">Genre fehlt</option>
+          <option value="META_YEAR_MISSING">Jahr fehlt</option>
+          <option value="META_TRACK_NUMBER_MISSING">Tracknummer fehlt</option>
+          <option value="META_ISRC_MISSING">ISRC fehlt</option>
+          <option value="META_MB_RECORDING_MISSING">MusicBrainz Recording-ID fehlt</option>
+          <option value="META_MB_RELEASE_MISSING">MusicBrainz Release-ID fehlt</option>
+          <option value="ARTWORK_MISSING">Cover fehlt</option>
+          <option value="LYRICS_MISSING">Lyrics fehlen</option>
+          <option value="LOUDNESS_TAG_MISSING">Loudness-Tag fehlt</option>
+        </select>
+      </div>
+      <div id="metadata-content" class="empty-note"></div>
+    </details>
   </section>
 {% endblock %}
 
@@ -59,24 +76,37 @@
     const href = `${CC_BASE}/library/${encodeURIComponent(a.artist)}`;
     return `
       <a class="row-item" href="${href}">
-        <div class="row-main">🎤 ${_escapeHtml(a.artist)}</div>
-        <div class="row-count">${a.file_count} Dateien · ${a.album_count} Alben — Score ${a.health_score}</div>
+        <div class="row-main">🎤 ${_escapeHtml(a.artist)}<span class="hint" style="margin-left: 8px;">HEALTH ${a.health_score}</span></div>
+        <div class="row-count">${a.file_count} Dateien · ${a.album_count} Alben</div>
       </a>
     `;
   }
 
+  // Nutzer-Ergänzung (CC-AC-7): deterministische Sortierung - jedes
+  // Kriterium verwendet den Artistnamen (A-Z) als sekundaeres
+  // Tie-Breaker-Kriterium, damit die Reihenfolge bei Gleichstand stabil
+  // bleibt statt sich unkontrolliert zu aendern.
+  const _ARTIST_SORT_COMPARATORS = {
+    name: (a, b) => a.artist.localeCompare(b.artist),
+    files: (a, b) => b.file_count - a.file_count || a.artist.localeCompare(b.artist),
+    albums: (a, b) => b.album_count - a.album_count || a.artist.localeCompare(b.artist),
+    health: (a, b) => b.health_score - a.health_score || a.artist.localeCompare(b.artist),
+  };
+
   function _renderArtistsOverviewList() {
     const el = document.getElementById("artists-overview-content");
     const query = (document.getElementById("artist-search").value || "").trim().toLowerCase();
+    const sortKey = document.getElementById("artist-sort").value || "name";
     const filtered = query
       ? _artistsOverviewCache.filter((a) => a.artist.toLowerCase().includes(query))
-      : _artistsOverviewCache;
+      : _artistsOverviewCache.slice();
     if (!filtered.length) {
       el.innerHTML = query
         ? '<p class="empty-note">Keine Artists für diese Suche gefunden.</p>'
         : '<p class="empty-note">Keine Artists gefunden.</p>';
       return;
     }
+    filtered.sort(_ARTIST_SORT_COMPARATORS[sortKey] || _ARTIST_SORT_COMPARATORS.name);
     el.innerHTML = '<div class="row-list">' + filtered.map(_artistRowHtml).join("") + "</div>";
   }
 
@@ -99,6 +129,31 @@
   }
 
   document.getElementById("artist-search").addEventListener("input", _renderArtistsOverviewList);
+  document.getElementById("artist-sort").addEventListener("change", _renderArtistsOverviewList);
+
+  // Library-KPI-Zeile (Nutzer-Ergänzung CC-AC-7): nutzt den bestehenden
+  // Cache-Read-Endpunkt GET /api/v1/library/health/cached (Auftrag §5 -
+  // "falls ein bestehender Endpunkt alle KPIs liefert, diesen verwenden"),
+  // KEINE neue API, KEINE Client-Aggregation. Fehlerisolation bewusst
+  // eigenstaendig (eigenes try/catch statt _loadInto()): ein Fehler hier
+  // darf die Artist-Liste/den Rest der Seite nicht beeintraechtigen - bei
+  // Fehler oder fehlenden Feldern bleibt die KPI-Zeile schlicht
+  // ausgeblendet, niemals geschaetzte Werte.
+  async function loadLibraryKpis() {
+    try {
+      const res = await fetch(apiUrl("/api/v1/library/health/cached"), { credentials: "same-origin" });
+      if (!res.ok) return;
+      const body = await res.json();
+      const lib = body.library || {};
+      if (typeof lib.artists !== "number" || typeof lib.files !== "number" || typeof lib.albums !== "number") return;
+      document.getElementById("library-kpi-artists").textContent = lib.artists;
+      document.getElementById("library-kpi-tracks").textContent = lib.files;
+      document.getElementById("library-kpi-albums").textContent = lib.albums;
+      document.getElementById("library-kpi-tiles").hidden = false;
+    } catch (err) {
+      // Fehlerisolation: KPI-Zeile bleibt ausgeblendet, kein Page-Error.
+    }
+  }
 
   // Master-Prompt Abschnitt 7 "METADATA MANAGEMENT" / ui_prompt.txt
   // Abschnitt 14 "LIBRARY" - Tracks/Artists/Albums/Mapping-Browser.
@@ -185,7 +240,11 @@
   document.getElementById("metadata-mapping-btn").addEventListener("click", loadMappingSummary);
 
   function initPage() {
-    checkAuth().then((who) => { if (who) loadArtistsOverview(); });
+    checkAuth().then((who) => {
+      if (!who) return;
+      loadArtistsOverview();
+      loadLibraryKpis();
+    });
   }
   initPage();
 </script>

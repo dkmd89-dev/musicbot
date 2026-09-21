@@ -14,7 +14,8 @@
   </div>
 
   <section class="panel" id="artist-metadata-edit-panel" hidden>
-    <h2>📝 Metadaten bearbeiten</h2>
+    <details>
+    <summary><h2>📝 Metadaten bearbeiten</h2></summary>
     <p class="subtitle">Wiederverwendet die bestehenden Manual-Metadata-Editing-Endpunkte
       (<code>admin/maintenance/artist-rename</code>, <code>admin/maintenance/title-edit</code>,
       <code>library/artists/{artist}/set-genre</code>) im Kontext dieses Artists — keine neue
@@ -81,10 +82,12 @@
       <button id="genre-manage-execute-btn" class="small" disabled>Genre setzen</button>
     </div>
     <div id="genre-manage-result-content" class="empty-note"></div>
+    </details>
   </section>
 
   <section class="panel" id="artist-maintenance-panel" hidden>
-    <h2>🛠 Library-Wartung</h2>
+    <details>
+    <summary><h2>🛠 Library-Wartung</h2></summary>
     <p class="subtitle">Wiederverwendet die bestehenden Maintenance-/Job-Endpunkte
       (<code>admin/maintenance/artist-casing</code>, <code>admin/maintenance/legacy-genre-cleanup</code>,
       <code>jobs/repair-level2</code>, <code>jobs/repair-level3</code>) im Kontext dieses Artists — keine
@@ -124,6 +127,7 @@
       <button id="repair-l3-btn" class="small">🔧 L3-Reparatur (MusicBrainz-IDs / ISRC)</button>
     </div>
     <div id="artist-repair-job-content" class="empty-note"></div>
+    </details>
   </section>
 
   <p class="retry-row"><a href="{{ base_path }}/library">◀️ Zurück zu Artists</a></p>

@@ -312,6 +312,44 @@ async def test_library_page_keeps_legacy_metadata_browser_unchanged(client):
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# GET /library — UI Consolidation (CC-AC-7): KPI-Zeile, Sortierung,
+# Library-Metadata als eingeklapptes Accordion.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_library_page_has_kpi_tiles(client):
+    """KPI-Zeile nutzt den bestehenden Cache-Read-Endpunkt
+    GET /api/v1/library/health/cached (Auftrag §5) - keine neue API,
+    keine Client-Aggregation."""
+    html = (await client.get("/library")).text
+
+    assert 'id="library-kpi-tiles"' in html
+    assert 'class="tiles" id="library-kpi-tiles"' in html
+    assert "loadLibraryKpis" in html
+    assert "/api/v1/library/health/cached" in html
+
+
+@pytest.mark.asyncio
+async def test_library_page_has_artist_sort_control(client):
+    html = (await client.get("/library")).text
+
+    assert 'id="artist-sort"' in html
+    assert "_ARTIST_SORT_COMPARATORS" in html
+
+
+@pytest.mark.asyncio
+async def test_library_page_metadata_panel_is_collapsed_details(client):
+    """Auftrag §10 (Option 3): Library-Metadata bleibt erreichbar, wird
+    aber in ein initial eingeklapptes <details>-Element verschoben, damit
+    es die Artist-Navigation nicht mehr dominiert."""
+    html = (await client.get("/library")).text
+
+    assert '<details id="library-metadata-details">' in html
+    assert '<details id="library-metadata-details" open>' not in html
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # GET /library/{artist} — Artist Detail (CC-AC-1)
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -411,6 +449,18 @@ async def test_artist_detail_page_metadata_edit_gated_by_access_level(client):
 
     assert 'who.access_level === "ADMIN" || who.access_level === "OWNER"' in html
     assert 'getElementById("artist-metadata-edit-panel").hidden = !isAdmin' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_metadata_panel_is_collapsed_details(client):
+    """CC-AC-7: Metadaten-Editing ist initial eingeklappt (natives
+    <details>, kein open-Attribut) statt eines dauerhaft sichtbaren
+    Formularblocks."""
+    html = (await client.get("/library/Bausa")).text
+
+    panel = html.split('id="artist-metadata-edit-panel"', 1)[1].split("</section>", 1)[0]
+    assert "<details>" in panel
+    assert "<details open>" not in panel
 
 
 @pytest.mark.asyncio
@@ -681,6 +731,17 @@ async def test_artist_detail_page_maintenance_gated_by_access_level(client):
     html = (await client.get("/library/Bausa")).text
 
     assert 'getElementById("artist-maintenance-panel").hidden = !isAdmin' in html
+
+
+@pytest.mark.asyncio
+async def test_artist_detail_page_maintenance_panel_is_collapsed_details(client):
+    """CC-AC-7: Library-Wartung ist initial eingeklappt (natives
+    <details>, kein open-Attribut)."""
+    html = (await client.get("/library/Bausa")).text
+
+    panel = html.split('id="artist-maintenance-panel"', 1)[1].split("</section>", 1)[0]
+    assert "<details>" in panel
+    assert "<details open>" not in panel
 
 
 @pytest.mark.asyncio
