@@ -1,55 +1,78 @@
 {% extends "_base.html" %}
 {% block title %}Navidrome – MusicBot Control Center{% endblock %}
+
 {% block content %}
-<div class="page-header d-print-none mb-4">
-  <div class="row align-items-center">
-    <div class="col">
-      <h1 class="page-title">🎵 Navidrome</h1>
-      <div class="text-secondary">
-        Navidrome bleibt für Playback, Streaming und Queue zuständig.
-        Hier wird nur der Verbindungsstatus angezeigt.
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col">
+        <h2 class="page-title">Navidrome</h2>
+        <div class="text-muted mt-1">
+          Verbindungsstatus und manueller Library-Scan.
+        </div>
+      </div>
+      <div class="col-auto ms-auto d-print-none">
+        <button id="navidrome-scan-btn" class="btn btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24"
+               viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+            <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" />
+            <path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" />
+          </svg>
+          Scan starten
+        </button>
       </div>
     </div>
   </div>
 </div>
 
-<div class="card">
-  <div class="card-header">
-    <h2 class="card-title">🔌 Status</h2>
-  </div>
-  <div class="card-body">
-    <div id="navidrome-status" class="empty-note">
-      Lädt…
+<div class="page-body">
+  <div class="container-xl">
+
+    <div class="row row-deck row-cards" id="navidrome-status-row"
+     data-status-endpoint="/api/v1/navidrome/status"
+     data-scan-endpoint="/api/v1/navidrome/scan">
+      <div class="col-sm-6 col-lg-3">
+        <div class="card">
+          <div class="card-body">
+            <div class="subheader">Verbindung</div>
+            <div class="h1 mb-0" id="navidrome-status">–</div>
+            <div class="mt-2">
+              <span class="status status-secondary" id="navidrome-connected-status">
+                Lädt…
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-lg-3">
+        <div class="card">
+          <div class="card-body">
+            <div class="subheader">Artists</div>
+            <div class="h1 mb-0" id="navidrome-artist-count">–</div>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <div class="row mt-3">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Scan-Ausgabe</h3>
+          </div>
+          <div class="card-body">
+            <pre id="navidrome-scan-output" class="text-muted">Noch kein Scan ausgeführt.</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script>
-  async function loadNavidromeStatus() {
-    const el = document.getElementById("navidrome-status");
-    try {
-      const res = await fetch(apiUrl("/api/v1/navidrome/status"), { credentials: "same-origin" });
-      if (res.status === 401) { showOnly("login-view"); return; }
-      if (!res.ok) { el.textContent = "Navidrome: Status nicht abrufbar."; return; }
-      const status = await res.json();
-      const dot = status.connected ? "dot-ok" : "dot-error";
-      const label = status.connected ? "Verbunden" : "Nicht erreichbar";
-      const count = status.connected && status.artist_count != null
-        ? ` (${status.artist_count} Artists)` : "";
-      el.innerHTML = `<span class="dot ${dot}"></span>Navidrome: ${label}${count}`;
-    } catch (err) {
-      el.textContent = "Navidrome: Netzwerkfehler.";
-    }
-  }
-
-  function initPage() {
-    checkAuth().then((who) => {
-      if (!who) return;
-      loadNavidromeStatus();
-    });
-  }
-  initPage();
-</script>
+<script src="{{ base_path }}/static/pages/navidrome.js"></script>
 {% endblock %}
