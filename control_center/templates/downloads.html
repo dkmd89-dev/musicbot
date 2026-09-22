@@ -1,13 +1,26 @@
 {% extends "_base.html" %}
 {% block title %}Downloads – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>Downloads</h1>
-  <p class="subtitle">Download-Verlauf.</p>
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="page-title">⬇️ Downloads</h1>
+      <div class="text-secondary">Download-Verlauf</div>
+    </div>
+  </div>
+</div>
 
-  <section class="panel">
-    <h2>Verlauf</h2>
-    <div id="downloads-content" class="empty-note">Lädt…</div>
-  </section>
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">📋 Verlauf</h2>
+  </div>
+
+  <div class="card-body">
+    <div id="downloads-content" class="empty-note">
+      Lädt…
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
