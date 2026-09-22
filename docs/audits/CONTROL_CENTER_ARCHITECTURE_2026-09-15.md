@@ -1851,3 +1851,98 @@ Implementierungsprozess ausgeführt (§8.A) — dem Nutzer empfohlen.
 - Spätere Umbenennung „Library-Metadata" → „Library Diagnostics"
   (CC-AC-9-Vorschlagsdokument, Abschnitt 8) bleibt wie dort beschrieben
   eine bewusst nicht in diesem Ticket gezogene Folgearbeit.
+
+## Health Center — MusicBot Doctor/Findings/Repair/Jobs-Konsolidierung (2026-09-22, `api_health.md`, auf Nutzerfreigabe)
+
+**Charakterisierungsbefund vor der Implementierung (Auftrag §1):** entgegen
+der im Auftrag unterstellten Ausgangslage ("komplett neu integrieren")
+existierten Backend UND ein funktionierendes Web-Frontend für MusicBot
+Doctor/Library Health Review/Repair MusicBot bereits praktisch vollständig
+— nur auf vier getrennten Seiten (`/health`, `/findings`, `/repairs`,
+`/jobs`) statt einer. Die Jobs-Seite hing ausschließlich an Repair-Jobs
+(`demo_progress`/`repair_safe_automatic`/`repair_level2`/`repair_level3`,
+`control_center/routers/jobs.py`) — keine fremde Fähigkeit war betroffen,
+was eine Konsolidierung risikoarm machte. Der reale Umbau war damit primär
+UI-Konsolidierung + drei echte, additive API-Lücken, kein Neubau. Fünf
+Phasen, je ein eigener Commit (CLAUDE.md Abschnitt 8 "kleinste sinnvolle
+Schritte"):
+
+**Phase 1 — additive Read-APIs** um bereits vorhandene Service-Funktionen,
+kein UI-Umbau:
+- `GET /api/v1/library/health/score-history` (`routers/health.py`,
+  AccessLevel.USER) — wrappt `services/library_health/score_history.py::
+  read_score_history()`, bereits von jedem Scan befüllt, bisher ohne
+  Web-API.
+- `GET /api/v1/library/repairs/history` + `.../repairs/statistics`
+  (`routers/repair.py`, AccessLevel.ADMIN, Auftrag §15 "Repair
+  History/Actions" == ADMIN) — wrappen `services/library_repair/
+  run_tracking.py::load_repair_history()`/`compute_repair_statistics()`.
+  Records aus vier verschiedenen Producern (`repair_service.py` ×2,
+  `maintenance_service.py`, `genre_revalidation.py`) haben nicht
+  identische Feldmengen (z. B. `artist`/`issue_codes` nur bei manchen) —
+  `RepairHistoryEntry` bildet das bewusst mit Optional-Feldern ab statt
+  eines für nur einen Producer passenden strikten Schemas.
+
+**Phase 2 — generischer Findings-Review-Endpunkt** (Auftrag §7):
+`POST /api/v1/library/findings/{id}/review` (`routers/findings.py`) ruft
+direkt `FindingsRegistry.review_finding()` auf. Additiv NEBEN den
+bestehenden `.../accept`/`.../unaccept`-Endpunkten, kein Ersatz — diese
+bleiben die spezialisierte FALSE_POSITIVE-Aktion mit Pflicht-Grund; der
+neue Endpunkt deckt zusätzlich den manuellen RESOLVED-Review ab, den
+`accept_finding()` (fest auf FALSE_POSITIVE) nicht ausdrücken kann.
+Erzwingt für FALSE_POSITIVE dieselbe Pflicht-Grund-Regel wie
+`accept_finding()`, damit dieser Endpunkt keinen laxeren Weg zum selben
+Ergebnis öffnet.
+
+**Phase 3 — Health-Scan als Job** (Auftrag §5 "Wenn der Scan länger läuft:
+als Job ausführen"): `POST /api/v1/jobs/health-scan` (Job-Kind
+`library_health_scan`, `routers/jobs.py`) ruft `services/library_repair/
+doctor_runner.py::run_health_scan()` auf — denselben Subprozess-Aufruf wie
+die erste Phase von `_run_safe_automatic_repair_job()`. Bewusst NICHT die
+leichtgewichtige `control_center/_library_scan.py::run_library_scan()`
+(Konsument: `GET /health`, `GET /repair-plan`): jene führt nur einen
+In-Memory-Scan für genau eine HTTP-Response aus und schreibt weder den
+persistenten Report noch die Score-History noch mergt sie die
+Findings-Registry (siehe deren Modul-Docstring) — `run_health_scan()`
+dagegen startet `scripts/library_health_check.py` als Subprozess, der
+genau diese drei Seiteneffekte auslöst, identisch zu einem Telegram
+„🩺 MusicBot Doctor"-Scan. `GET /health` bleibt unverändert (dort bereits
+dokumentierte Hard-Stop-Entscheidung, s. o. „Overview Dashboard v2") — nur
+additiv ein neuer Job-Typ ergänzt.
+
+**Phase 4 — UI-Konsolidierung:** `control_center/templates/health.html`
+wird zum Health Center mit vier Tabler-Cards (🩺 MusicBot Doctor — Score/
+Library-Kacheln/Score-Verlauf/Scan-Button; 🔎 Library Health Review —
+offene/akzeptierte Findings, neuer Severity-/Kategorie-Filter (Auftrag
+§8), neue „Repariert"-Aktion über den Phase-2-Review-Endpunkt; 🛠 Repair
+MusicBot — SAFE_AUTOMATIC + L2/L3 unverändert; Repair-History/-Statistik +
+kompakte Job-Liste). Sidebar (`_base.html`) hat jetzt genau einen
+🩺-Health-Eintrag (Auftrag §3) — `/findings`, `/repairs`, `/jobs` als
+eigene Seiten/Templates/Routen entfallen; ihre APIs bleiben unverändert.
+Fachlogik lebt komplett in `control_center/static/pages/health.js`
+(Auftrag §16 "kein riesiges Inline-JavaScript") statt inline in der
+Seite — reine Wiederverwendung der bestehenden `common.js`-Helfer
+(`apiUrl()`/`_loadInto()`/`_escapeHtml()`/`showOnly()`/`checkAuth()`),
+keine duplizierte Logik. `overview.html`s Quick-Access-Karten/Attention-
+Link zeigen jetzt auf `/health` statt getrennt auf `/findings`/`/jobs`.
+
+- Tests: 273 Tests über die betroffenen Testdateien (`test_control_center_
+  health_score_history_api.py` neu, `test_control_center_repair_history_
+  api.py` neu, `test_control_center_findings_api.py`/`_jobs_api.py`/
+  `_ui.py`/`_subpath_ui.py` erweitert) — alle grün, Findings/Repair/Jobs/
+  Health-API-Regression (`test_control_center_{findings,repair,jobs,
+  health,health_cached}_api.py`, `test_control_center_auth.py`)
+  unverändert grün.
+- Beim Anpassen der UI-Tests inzidentell mitkorrigiert (drei
+  vorbestehende, von dieser Phase unabhängige Test-vs-Markup-Drifts, nur
+  weil exakt dieselben Zeilen ohnehin geändert wurden): eine veraltete
+  `/repairs`-Quick-Action-Assertion in `test_overview_quick_actions_link_
+  to_detail_pages`, eine veraltete `class="panel-link"`-Assertion (die
+  Tabler-Migration von `overview.html` hatte sie durch Tabler-
+  Button-Klassen ersetzt), und mehrere `nav-link active`-Assertionen, die
+  Ein-Zeilen-Attribute annahmen, obwohl `_base.html` `href`/`class` als
+  eigene Zeilen rendert. Andere, im selben Testlauf sichtbare, von dieser
+  Phase unabhängige Fehlschläge (Library/Metadata/Admin/Artist-Detail-
+  Seiten — von dieser Phase nicht berührt) bleiben unangetastet
+  (CLAUDE.md Abschnitt 8.A).
+- Keine neuen Dependencies.
