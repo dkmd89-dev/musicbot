@@ -1,16 +1,38 @@
 {% extends "_base.html" %}
 {% block title %}Jobs – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>Jobs</h1>
-  <p class="subtitle">Alle Control-Center-Jobs (SAFE_AUTOMATIC-/L2-/L3-Reparaturen). Startknöpfe für neue Jobs bleiben bei ihrem jeweiligen Bereich (<a href="{{ base_path }}/repairs">Repairs</a>).</p>
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="page-title">⚙️ Jobs</h1>
+      <div class="text-secondary">
+        Alle Control-Center-Jobs für Reparaturen und Wartungsaufgaben.
+        Startknöpfe für neue Jobs befinden sich weiterhin im jeweiligen Bereich.
+      </div>
+    </div>
+  </div>
+</div>
 
-  <section class="panel">
-    <h2>
-      Job-Liste
-      <button id="jobs-refresh-btn" class="small">Aktualisieren</button>
-    </h2>
-    <div id="jobs-content" class="empty-note">Lädt…</div>
-  </section>
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">📋 Job-Liste</h2>
+    <div class="card-actions">
+      <button
+        id="jobs-refresh-btn"
+        type="button"
+        class="btn btn-outline-primary"
+      >
+        Aktualisieren
+      </button>
+    </div>
+  </div>
+
+  <div class="card-body">
+    <div id="jobs-content" class="empty-note">
+      Lädt…
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
