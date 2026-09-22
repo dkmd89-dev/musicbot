@@ -1,32 +1,84 @@
 {% extends "_base.html" %}
 {% block title %}Repairs – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>Repairs</h1>
-  <p class="subtitle">SAFE_AUTOMATIC-Reparatur (global) und L2/L3-Reparaturen (pro Artist).</p>
-
-  <section class="panel">
-    <h2>
-      Repair-Plan (Vorschau)
-      <button id="repair-plan-btn" class="small">Berechnen</button>
-    </h2>
-    <p class="empty-note">Führt einen vollständigen Library-Scan aus (kann eine Weile dauern) — läuft nicht automatisch, nur auf Klick.</p>
-    <div id="repair-plan-content" class="empty-note"></div>
-    <div class="retry-row">
-      <button id="repair-start-btn" class="small" disabled>SAFE_AUTOMATIC reparieren</button>
-      <button id="repair-cancel-btn" class="small" hidden>Abbrechen</button>
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="page-title">🛠 Repairs</h1>
+      <div class="text-secondary">
+        SAFE_AUTOMATIC-Reparatur global sowie L2/L3-Reparaturen pro Artist.
+      </div>
     </div>
-    <div id="repair-job-content" class="empty-note"></div>
-  </section>
+  </div>
+</div>
 
-  <section class="panel">
-    <h2>
-      L2/L3-Reparaturen (nach Artist)
-      <button id="level23-plan-btn" class="small">Laden</button>
-    </h2>
-    <p class="empty-note">Führt einen vollständigen Library-Scan aus und gruppiert L2 (Neuverarbeitung)/L3 (MusicBrainz) nach Artist — läuft nicht automatisch, nur auf Klick. Jede Reparatur ist nur pro Artist ausführbar, kein globaler Batch.</p>
+<!-- SAFE_AUTOMATIC -->
+<div class="card mb-4">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title">🔧 Repair-Plan</h2>
+      <div class="text-secondary small">
+        Vorschau und anschließend gezielte SAFE_AUTOMATIC-Reparatur.
+      </div>
+    </div>
+    <div class="card-actions">
+      <button id="repair-plan-btn" type="button" class="btn btn-primary">
+        Berechnen
+      </button>
+    </div>
+  </div>
+
+  <div class="card-body">
+    <p class="text-secondary">
+      Führt einen vollständigen Library-Scan aus (kann eine Weile dauern).
+      Der Scan läuft nicht automatisch, sondern nur auf Klick.
+    </p>
+
+    <div id="repair-plan-content" class="empty-note"></div>
+
+    <div class="mt-4 d-flex gap-2">
+      <button id="repair-start-btn" type="button" class="btn btn-warning" disabled>
+        SAFE_AUTOMATIC reparieren
+      </button>
+
+      <button id="repair-cancel-btn" type="button" class="btn btn-outline-secondary" hidden>
+        Abbrechen
+      </button>
+    </div>
+
+    <div id="repair-job-content" class="empty-note mt-3"></div>
+  </div>
+</div>
+
+<!-- L2 / L3 -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title">🎤 L2/L3-Reparaturen</h2>
+      <div class="text-secondary small">
+        Reparaturen gezielt pro Artist auswählen.
+      </div>
+    </div>
+    <div class="card-actions">
+      <button id="level23-plan-btn" type="button" class="btn btn-outline-primary">
+        Laden
+      </button>
+    </div>
+  </div>
+
+  <div class="card-body">
+    <p class="text-secondary">
+      Führt einen vollständigen Library-Scan aus und gruppiert L2
+      (Neuverarbeitung) und L3 (MusicBrainz) nach Artist.
+      Die Reparatur ist ausschließlich pro Artist ausführbar —
+      kein globaler Batch.
+    </p>
+
     <div id="level23-artists-content" class="empty-note"></div>
-    <div id="level23-job-content" class="empty-note"></div>
-  </section>
+
+    <div id="level23-job-content" class="empty-note mt-3"></div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
