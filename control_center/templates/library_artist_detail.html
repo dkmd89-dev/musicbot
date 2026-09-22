@@ -1009,7 +1009,8 @@
   // admin_maintenance.py (Artist-Casing, Legacy-Genre-Cleanup, identisches
   // Preview->Diff->Confirmation->Execution-Muster wie oben/admin.html) und
   // jobs.py (L2/L3, identisches Confirm->Start->1s-Polling-Muster wie
-  // repairs.html::startLevel23Job()/_pollLevel23Job()) - hier mit
+  // static/pages/health.js::startLevel23Job()/_pollLevel23Job(), vormals
+  // repairs.html) - hier mit
   // implizitem artist=currentArtistFromPath() statt Freitextfeld bzw.
   // Artist-Auswahl aus einer Plan-Liste. Keine neue Ausfuehrungslogik.
 
@@ -1116,11 +1117,11 @@
   document.getElementById("legacy-genre-cleanup-execute-btn").addEventListener("click", executeLegacyGenreCleanup);
 
   // -- L2 / L3 Reparatur (Job, dieser Artist) --------------------------------
-  // Identisches Muster wie repairs.html::startLevel23Job()/
-  // _pollLevel23Job()/_renderLevel23JobStatus() - dort Artist-Auswahl aus
-  // einer scangestuetzten Plan-Liste, hier fester Artist-Kontext dieser
-  // Seite. Eigener Timer/Job-Id-State (kein Namenskonflikt mit repairs.html,
-  // da separate Seite/Template).
+  // Identisches Muster wie static/pages/health.js::startLevel23Job()/
+  // _pollLevel23Job()/_renderLevel23JobStatus() (vormals repairs.html) -
+  // dort Artist-Auswahl aus einer scangestuetzten Plan-Liste, hier fester
+  // Artist-Kontext dieser Seite. Eigener Timer/Job-Id-State (kein
+  // Namenskonflikt, da separate Seite/Template).
 
   const _ARTIST_REPAIR_LEVEL_LABELS = {
     l2: "L2 (Neuverarbeitung — volle Metadaten-Pipeline erneut)",
