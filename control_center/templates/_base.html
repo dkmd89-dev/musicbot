@@ -12,155 +12,148 @@
 <body>
   <div class="page">
     <aside class="navbar navbar-vertical navbar-expand-md" id="sidebar">
-      <div class="container-fluid">
-        <button
-          id="sidebar-toggle"
-          class="navbar-toggler"
-          type="button"
-          aria-label="Menü öffnen"
-          aria-controls="sidebar"
-          aria-expanded="true"
+  <div class="container-fluid">
+
+    <button
+      id="sidebar-toggle"
+      class="navbar-toggler"
+      type="button"
+      aria-label="Menü öffnen"
+      aria-controls="sidebar"
+      aria-expanded="true"
+    >
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <h1 class="navbar-brand navbar-brand-autodark">
+      <a href="{{ base_path }}/">
+        🎵 MusicBot
+      </a>
+    </h1>
+
+    <div class="navbar-nav pt-lg-3">
+
+      <!-- Overview -->
+      <div class="nav-item">
+        <a
+          href="{{ base_path }}/"
+          class="nav-link{{ ' active' if page_id == 'overview' else '' }}"
         >
-          <span class="navbar-toggler-icon"></span>
-        </button>
+          <span class="nav-link-icon">
+            <span>🏠</span>
+          </span>
+          <span class="nav-link-title">Overview</span>
+        </a>
+      </div>
 
-        <h1 class="navbar-brand navbar-brand-autodark">
-          <a href="{{ base_path }}/">
-            🎵 MusicBot
-          </a>
-        </h1>
-
-        <div class="navbar-nav pt-lg-3">
-
-          <div class="nav-item">
-            <a
-              href="{{ base_path }}/"
-              class="nav-link{{ ' active' if page_id == 'overview' else '' }}"
-            >
-              <span class="nav-link-icon d-md-none d-lg-inline-block">
-                <span>🏠</span>
-              </span>
-              <span class="nav-link-title">Overview</span>
-            </a>
-          </div>
-
-          <div class="mt-3 mb-2 px-3">
-            <div class="text-secondary text-uppercase small">
-              Music
-            </div>
-          </div>
-
-          <div class="nav-item">
-            <a
-              href="{{ base_path }}/downloads"
-              class="nav-link{{ ' active' if page_id == 'downloads' else '' }}"
-            >
-              <span class="nav-link-icon">
-                <span>📥</span>
-              </span>
-              <span class="nav-link-title">Downloads</span>
-            </a>
-          </div>
-
-          <div class="nav-item">
-            <a
-              href="{{ base_path }}/library"
-              class="nav-link{{ ' active' if page_id == 'library' else '' }}"
-            >
-              <span class="nav-link-icon">
-                <span>📚</span>
-              </span>
-              <span class="nav-link-title">Library</span>
-            </a>
-          </div>
-
-          <div class="nav-item">
-            <a
-              href="{{ base_path }}/metadata"
-              class="nav-link{{ ' active' if page_id == 'metadata' else '' }}"
-            >
-              <span class="nav-link-icon">
-                <span>🏷</span>
-              </span>
-              <span class="nav-link-title">Metadata</span>
-            </a>
-          </div>
-
-          <div class="nav-item">
-            <a
-              href="{{ base_path }}/statistics"
-              class="nav-link{{ ' active' if page_id == 'statistics' else '' }}"
-            >
-              <span class="nav-link-icon">
-                <span>📊</span>
-              </span>
-              <span class="nav-link-title">Statistics</span>
-            </a>
-          </div>
-
-          <div class="mt-3 mb-2 px-3">
-            <div class="text-secondary text-uppercase small">
-              Maintenance
-            </div>
-          </div>
-
-          <div class="nav-item">
-            <a
-              href="{{ base_path }}/health"
-              class="nav-link{{ ' active' if page_id == 'health' else '' }}"
-            >
-              <span class="nav-link-icon">
-                <span>🩺</span>
-              </span>
-              <span class="nav-link-title">Health</span>
-            </a>
-          </div>
-
-          <div class="mt-3 mb-2 px-3">
-            <div class="text-secondary text-uppercase small">
-              System
-            </div>
-          </div>
-
-          <div class="nav-item">
-            <a
-              href="{{ base_path }}/navidrome"
-              class="nav-link{{ ' active' if page_id == 'navidrome' else '' }}"
-            >
-              <span class="nav-link-icon">
-                <span>🎵</span>
-              </span>
-              <span class="nav-link-title">Navidrome</span>
-            </a>
-          </div>
-
-          <div class="nav-item">
-            <a
-              href="{{ base_path }}/logs"
-              class="nav-link{{ ' active' if page_id == 'logs' else '' }}"
-            >
-              <span class="nav-link-icon">
-                <span>📝</span>
-              </span>
-              <span class="nav-link-title">Logs</span>
-            </a>
-          </div>
-
-          <div class="nav-item">
-            <a
-              href="{{ base_path }}/admin"
-              class="nav-link{{ ' active' if page_id == 'admin' else '' }}"
-            >
-              <span class="nav-link-icon">
-                <span>⚙️</span>
-              </span>
-              <span class="nav-link-title">Administration</span>
-            </a>
-          </div>
-
+      <!-- Music -->
+      <div class="mt-3 mb-2 px-3">
+        <div class="text-secondary text-uppercase small">
+          Music
         </div>
       </div>
-    </aside>
+
+      <div class="nav-item">
+        <a
+          href="{{ base_path }}/downloads"
+          class="nav-link{{ ' active' if page_id == 'downloads' else '' }}"
+        >
+          <span class="nav-link-icon">
+            <span>📥</span>
+          </span>
+          <span class="nav-link-title">Downloads</span>
+        </a>
+      </div>
+
+      <div class="nav-item">
+        <a
+          href="{{ base_path }}/library"
+          class="nav-link{{ ' active' if page_id == 'library' else '' }}"
+        >
+          <span class="nav-link-icon">
+            <span>📚</span>
+          </span>
+          <span class="nav-link-title">Library</span>
+        </a>
+      </div>
+
+      <div class="nav-item">
+        <a
+          href="{{ base_path }}/statistics"
+          class="nav-link{{ ' active' if page_id == 'statistics' else '' }}"
+        >
+          <span class="nav-link-icon">
+            <span>📊</span>
+          </span>
+          <span class="nav-link-title">Statistics</span>
+        </a>
+      </div>
+
+      <div class="nav-item">
+        <a
+          href="{{ base_path }}/navidrome"
+          class="nav-link{{ ' active' if page_id == 'navidrome' else '' }}"
+        >
+          <span class="nav-link-icon">
+            <span>🎵</span>
+          </span>
+          <span class="nav-link-title">Navidrome</span>
+        </a>
+      </div>
+
+      <!-- Maintenance -->
+      <div class="mt-3 mb-2 px-3">
+        <div class="text-secondary text-uppercase small">
+          Maintenance
+        </div>
+      </div>
+
+      <div class="nav-item">
+        <a
+          href="{{ base_path }}/health"
+          class="nav-link{{ ' active' if page_id == 'health' else '' }}"
+        >
+          <span class="nav-link-icon">
+            <span>🩺</span>
+          </span>
+          <span class="nav-link-title">Health</span>
+        </a>
+      </div>
+
+      <!-- System -->
+      <div class="mt-3 mb-2 px-3">
+        <div class="text-secondary text-uppercase small">
+          System
+        </div>
+      </div>
+
+      <div class="nav-item">
+        <a
+          href="{{ base_path }}/logs"
+          class="nav-link{{ ' active' if page_id == 'logs' else '' }}"
+        >
+          <span class="nav-link-icon">
+            <span>📝</span>
+          </span>
+          <span class="nav-link-title">Logs</span>
+        </a>
+      </div>
+
+      <div class="nav-item">
+        <a
+          href="{{ base_path }}/admin"
+          class="nav-link{{ ' active' if page_id == 'admin' else '' }}"
+        >
+          <span class="nav-link-icon">
+            <span>⚙️</span>
+          </span>
+          <span class="nav-link-title">Administration</span>
+        </a>
+      </div>
+
+    </div>
+  </div>
+</aside>
 
     <div class="page-wrapper">
       <header class="navbar navbar-expand-md d-print-none">
