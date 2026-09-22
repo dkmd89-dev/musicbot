@@ -200,7 +200,7 @@ const _statsState = {
 
       return `
         <div class="d-flex align-items-center gap-2">
-          <span class="fs-3" aria-hidden="true">${icon}</span>
+          <span class="fs-4" aria-hidden="true">${icon}</span>
           <div class="min-w-0">
             <div class="fw-semibold text-truncate">${_escapeHtml(value.label)}</div>
             <div class="text-secondary small">${count} ${count === 1 ? "Play" : "Plays"}</div>
@@ -210,7 +210,7 @@ const _statsState = {
     };
 
     el.innerHTML = `
-      <div class="row g-3 mb-4">
+      <div class="row g-2 mb-3">
         <div class="col-4">
           <div class="text-secondary small">Plays</div>
           <div class="h2 mb-0">${timeline.track_count ?? "–"}</div>
@@ -220,29 +220,29 @@ const _statsState = {
           <div class="h2 mb-0">${formatDuration(timeline.listening_seconds)}</div>
         </div>
         <div class="col-4">
-          <div class="text-secondary small">Neue Tracks</div>
+          <div class="text-secondary small">Neu</div>
           <div class="h2 mb-0">${timeline.new_track_count ?? "–"}</div>
         </div>
       </div>
 
-      <div class="row">
-        <div class="col-md-6 mb-4 mb-md-0">
-          <div class="text-secondary small mb-2">Top Künstler</div>
+      <div class="d-flex flex-column gap-3">
+        <div>
+          <div class="text-secondary small mb-1">Top Künstler</div>
           ${entry(timeline.top_artist, "🔥")}
         </div>
 
-        <div class="col-md-6">
-          <div class="text-secondary small mb-2">Top Album</div>
+        <div>
+          <div class="text-secondary small mb-1">Top Album</div>
           ${entry(timeline.top_album, "💿")}
         </div>
 
-        <div class="col-md-6 mt-4">
-          <div class="text-secondary small mb-2">Top Genre</div>
+        <div>
+          <div class="text-secondary small mb-1">Top Genre</div>
           ${entry(timeline.top_genre, "🎸")}
         </div>
 
-        <div class="col-md-6 mt-4">
-          <div class="text-secondary small mb-2">Meistgehört</div>
+        <div>
+          <div class="text-secondary small mb-1">Meistgehört</div>
           ${entry(timeline.most_replayed_track, "❤️", "Keine Daten")}
         </div>
       </div>
@@ -399,21 +399,6 @@ const _statsState = {
             artistPctHtml ||
             '<p class="empty-note mb-0">Keine Artist-Daten.</p>'
           }
-        </div>
-      </div>
-
-      <!-- DNA Summary -->
-      <div class="border-top mt-2 pt-3">
-        <div class="row align-items-center">
-          <div class="col-6">
-            <div class="text-secondary small">Repeat Rate</div>
-            <div class="h2 mb-0">${repeatRate}</div>
-          </div>
-
-          <div class="col-6 text-end">
-            <div class="text-secondary small">Unique Songs</div>
-            <div class="h2 mb-0">${dna.unique_songs ?? "–"}</div>
-          </div>
         </div>
       </div>
     `;

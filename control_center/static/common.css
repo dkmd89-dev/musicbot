@@ -663,3 +663,226 @@ button.track-row:focus-visible { outline: 2px solid var(--accent); outline-offse
 @media (max-width: 480px) {
   .track-drawer { width: 100vw; padding: 16px; }
 }
+
+/* === CC-AC-11: Compact Cards === */
+.card-compact {
+  margin-bottom: 0.75rem;
+}
+
+.card-compact .card-header-compact {
+  padding: 0.5rem 1rem;
+  min-height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.card-compact-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.card-compact-icon {
+  flex: 0 0 auto;
+  opacity: 0.8;
+}
+
+.card-compact-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--fg);
+}
+
+.card-compact-subtitle {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.card-compact .card-body-compact {
+  padding: 0.6rem 1rem;
+}
+
+@media (max-width: 480px) {
+  .card-compact .card-header-compact {
+    padding: 0.45rem 0.75rem;
+  }
+  .card-compact .card-body-compact {
+    padding: 0.5rem 0.75rem;
+  }
+  .card-compact-title {
+    font-size: 0.95rem;
+  }
+  .card-compact-subtitle {
+    font-size: 0.8rem;
+  }
+}
+
+
+/* === CC-AC-11.1: Body-Padding-Refinement === */
+/* Nachbesserung zu CC-AC-11: Body-Padding zurück auf Normal-Niveau,
+   damit die gefüllte Music-Timeline nicht gequetscht wirkt.
+   Header bleibt kompakt (eine Zeile statt zwei). */
+.card-compact .card-body,
+.card-compact .card-body-compact {
+  padding: 1rem 1.25rem;
+}
+@media (max-width: 480px) {
+  .card-compact .card-body,
+  .card-compact .card-body-compact {
+    padding: 0.75rem 1rem;
+  }
+}
+
+/* === CC-AC-12: Statistics-Layout === */
+/* Metriken-Band oben: echtes 4-Spalten-Grid statt row/col-Verteilung */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+/* Jede Karte füllt ihre Grid-Zelle, damit die Höhe einheitlich bleibt */
+.metrics-grid > .card {
+  height: 100%;
+  margin: 0;
+}
+
+@media (max-width: 768px) {
+  .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+
+@media (max-width: 400px) {
+  .metrics-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* === CC-AC-13.1: KPI-Icons (Fix) === */
+.kpi-icon {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  font-size: 1.4rem;
+  line-height: 1;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* Feste rgba-Farben statt color-mix() — robuster gegen ältere Browser.
+   Farbwerte aus Tablers Standard-Palette. */
+.kpi-icon.kpi-blue {
+  background: rgba(6, 111, 209, 0.15);
+  color: #066fd1;
+}
+.kpi-icon.kpi-purple {
+  background: rgba(174, 62, 201, 0.15);
+  color: #ae3ec9;
+}
+.kpi-icon.kpi-green {
+  background: rgba(47, 179, 68, 0.15);
+  color: #2fb344;
+}
+.kpi-icon.kpi-orange {
+  background: rgba(247, 103, 7, 0.15);
+  color: #f76707;
+}
+
+.metrics-grid > .card .h1 {
+  font-size: 1.5rem;
+  line-height: 1.1;
+}
+
+/* Tablet und große Handys: 2×2 */
+@media (max-width: 768px) {
+  .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+
+/* Nur sehr schmale Geräte (< 360px): 1 Spalte */
+@media (max-width: 360px) {
+  .metrics-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .kpi-icon {
+    width: 40px;
+    height: 40px;
+    font-size: 1.2rem;
+  }
+  .metrics-grid > .card .h1 {
+    font-size: 1.35rem;
+  }
+}
+
+/* === CC-AC-14: Header + Card-Akzente === */
+/* Header-Icon-Box: großes farbiges Quadrat links neben Titel */
+.page-header-icon {
+  width: 56px;
+  height: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(6, 111, 209, 0.15);
+  color: #066fd1;
+  flex-shrink: 0;
+}
+.page-header-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+/* Ranking-Cards: linker Farbstreifen + farbiges Header-Icon */
+.card-accent {
+  border-left-width: 3px;
+  border-left-style: solid;
+  border-left-color: transparent;
+}
+.card-accent-blue {
+  border-left-color: #066fd1;
+}
+.card-accent-purple {
+  border-left-color: #ae3ec9;
+}
+.card-accent-orange {
+  border-left-color: #f76707;
+}
+
+.card-accent-blue .card-header .icon {
+  color: #066fd1;
+}
+.card-accent-purple .card-header .icon {
+  color: #ae3ec9;
+}
+.card-accent-orange .card-header .icon {
+  color: #f76707;
+}
+
+/* Header-Icon etwas präsenter */
+.card-accent .card-header .icon {
+  width: 22px;
+  height: 22px;
+}
+
+@media (max-width: 576px) {
+  .page-header-icon {
+    width: 48px;
+    height: 48px;
+  }
+  .page-header-icon svg {
+    width: 24px;
+    height: 24px;
+  }
+}
