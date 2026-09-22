@@ -19,7 +19,7 @@ externen Aufrufe).
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from services.library_repair.models import PLAN_SCHEMA_VERSION, RepairCandidate, RepairPlan
 from services.library_repair.planner import (
@@ -113,6 +113,86 @@ def _artist_summary_to_schema(s: ArtistCandidateSummary) -> ArtistRepairSummaryS
     return ArtistRepairSummarySchema(
         artist=s.artist, l2_count=s.l2_count, l3_count=s.l3_count, total=s.total,
     )
+
+
+class RepairHistoryEntry(BaseModel):
+    """Ein Eintrag aus services/library_repair/run_tracking.py::
+    load_repair_history() — gemeinsamer Run-Index ueber beide Flows
+    (Finding-Repair aus repair_service.py UND Maintenance aus
+    maintenance_service.py/genre_revalidation.py, siehe dortige
+    append_run_record()-Aufrufstellen). Die vier Producer schreiben
+    nicht identische Feldmengen (z. B. `artist`/`finding_ids`/
+    `issue_codes` nur bei manchen Runs) — deshalb hier bewusst als
+    Optional statt eines strikten, nur fuer einen Producer passenden
+    Schemas."""
+
+    repair_id: str
+    kind: str
+    level: str
+    status: str
+    started_at: str
+    finished_at: str
+    triggered_by: str
+    artist: str | None = None
+    status_counts: dict[str, int] = Field(default_factory=dict)
+    affected_files: list[str] = Field(default_factory=list)
+    finding_ids: list[str] | None = None
+    resolved_finding_ids: list[str] | None = None
+    issue_codes: list[str] | None = None
+    regressed_issue_codes: list[str] | None = None
+    target_count: int | None = None
+
+
+class RepairHistoryResponse(BaseModel):
+    runs: list[RepairHistoryEntry]
+    total: int
+
+
+def repair_history_to_response(runs: list[dict], *, total: int) -> RepairHistoryResponse:
+    """Reines Mapping, keine Fachlogik — identisches Prinzip wie
+    plan_to_response(). `.get()` statt Direktzugriff, da die Feldmenge je
+    Producer variiert (siehe RepairHistoryEntry-Docstring)."""
+    return RepairHistoryResponse(
+        runs=[
+            RepairHistoryEntry(
+                repair_id=r["repair_id"],
+                kind=r["kind"],
+                level=r["level"],
+                status=r["status"],
+                started_at=r["started_at"],
+                finished_at=r["finished_at"],
+                triggered_by=r["triggered_by"],
+                artist=r.get("artist"),
+                status_counts=r.get("status_counts") or {},
+                affected_files=r.get("affected_files") or [],
+                finding_ids=r.get("finding_ids"),
+                resolved_finding_ids=r.get("resolved_finding_ids"),
+                issue_codes=r.get("issue_codes"),
+                regressed_issue_codes=r.get("regressed_issue_codes"),
+                target_count=r.get("target_count"),
+            )
+            for r in runs
+        ],
+        total=total,
+    )
+
+
+class RepairStatisticsResponse(BaseModel):
+    """Reines Passthrough-Schema fuer services/library_repair/
+    run_tracking.py::compute_repair_statistics() — Feldnamen 1:1
+    uebernommen (bereits eine duenne, versionslose Aggregat-Struktur,
+    kein internes Objekt)."""
+
+    total_runs: int
+    total: int
+    success: int
+    failed: int
+    skipped: int
+    most_common_issue_codes: list[tuple[str, int]]
+
+
+def repair_statistics_to_response(stats: dict) -> RepairStatisticsResponse:
+    return RepairStatisticsResponse(**stats)
 
 
 def plan_to_artist_response(plan: RepairPlan) -> ArtistRepairPlanResponse:

@@ -26,19 +26,24 @@ gehoeren).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from handlers.menu.models import AccessLevel
 from logger import get_module_logger
 from services.library_repair.planner import plan_repairs
+from services.library_repair.run_tracking import compute_repair_statistics, load_repair_history
 
 from .._library_scan import run_library_scan
 from ..dependencies import require_min_access_level
 from ..schemas.repair import (
     ArtistRepairPlanResponse,
+    RepairHistoryResponse,
     RepairPlanResponse,
+    RepairStatisticsResponse,
     plan_to_artist_response,
     plan_to_response,
+    repair_history_to_response,
+    repair_statistics_to_response,
 )
 
 router = APIRouter(
@@ -66,3 +71,25 @@ def get_repair_plan_by_artist() -> ArtistRepairPlanResponse:
     report = run_library_scan(logger=_logger)
     plan = plan_repairs(report)
     return plan_to_artist_response(plan)
+
+
+@router.get("/repairs/history", response_model=RepairHistoryResponse)
+def get_repair_history(
+    limit: int = Query(default=50, ge=1, le=500),
+) -> RepairHistoryResponse:
+    """Repair-/Maintenance-History (services/library_repair/run_tracking.py::
+    load_repair_history()) — gemeinsamer Run-Index ueber beide Flows,
+    neueste zuerst (bereits so sortiert von load_repair_history()). Read-only,
+    kein Scan. `total` ist die ungekuerzte Gesamtzahl alter Runs, `runs` die
+    auf `limit` gekuerzte Teilmenge — identisches Prinzip wie GET
+    .../findings/accepted (routers/findings.py)."""
+    all_runs = load_repair_history()
+    return repair_history_to_response(all_runs[:limit], total=len(all_runs))
+
+
+@router.get("/repairs/statistics", response_model=RepairStatisticsResponse)
+def get_repair_statistics() -> RepairStatisticsResponse:
+    """services/library_repair/run_tracking.py::compute_repair_statistics()
+    unveraendert uebernommen — reines Mapping, keine eigene Aggregation
+    hier (CLAUDE.md Abschnitt 4)."""
+    return repair_statistics_to_response(compute_repair_statistics())

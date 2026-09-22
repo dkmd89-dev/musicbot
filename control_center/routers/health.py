@@ -46,10 +46,11 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from handlers.menu.models import AccessLevel
 from logger import get_module_logger
+from services.library_health.score_history import read_score_history
 
 from .._library_scan import load_cached_report, run_library_scan
 from ..dependencies import require_min_access_level
@@ -57,8 +58,10 @@ from ..schemas.errors import ErrorDetail
 from ..schemas.health import (
     CachedLibraryHealthResponse,
     LibraryHealthResponse,
+    ScoreHistoryResponse,
     report_to_cached_health_response,
     report_to_health_response,
+    score_history_to_response,
 )
 
 router = APIRouter(
@@ -97,3 +100,18 @@ def get_cached_library_health() -> CachedLibraryHealthResponse:
             ).model_dump(),
         )
     return report_to_cached_health_response(report, stale=stale)
+
+
+@router.get("/health/score-history", response_model=ScoreHistoryResponse)
+def get_health_score_history(
+    limit: int = Query(default=50, ge=1, le=500),
+) -> ScoreHistoryResponse:
+    """Health-Score-Verlauf ueber mehrere Scans hinweg (services/
+    library_health/score_history.py — bereits von jedem Scan befuellt,
+    hier erstmals ueber die Web-API sichtbar gemacht). Read-only, kein
+    eigener Scan — identisches `limit`-Prinzip wie GET .../findings/accepted
+    (Default 50, neueste zuerst dem Frontend ueberlassen: read_score_history()
+    liefert chronologisch aufsteigend, das Frontend stellt fuer eine
+    Verlaufsgrafik i. d. R. genau diese Reihenfolge dar)."""
+    entries = read_score_history(limit=limit)
+    return score_history_to_response(entries)

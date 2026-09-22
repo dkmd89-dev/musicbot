@@ -112,3 +112,39 @@ def report_to_cached_health_response(report: dict, *, stale: bool) -> CachedLibr
     Bulk-Aenderungen")."""
     base = report_to_health_response(report)
     return CachedLibraryHealthResponse(**base.model_dump(), stale=stale)
+
+
+class ScoreHistoryEntry(BaseModel):
+    """Ein Eintrag aus services/library_health/score_history.py::
+    read_score_history() — identische Feldnamen wie dort geschrieben
+    (append_score_history()), reines Passthrough-Schema ohne Umbenennung."""
+
+    timestamp: str | None
+    score: float | None
+    status: str | None
+    total_issues: int | None
+    total_files: int | None
+
+
+class ScoreHistoryResponse(BaseModel):
+    entries: list[ScoreHistoryEntry]
+
+
+def score_history_to_response(entries: list[dict]) -> ScoreHistoryResponse:
+    """Reines Mapping, keine Fachlogik — identisches Prinzip wie
+    report_to_health_response(). Fehlt ein Feld in einem aelteren Eintrag
+    (Schema-Drift ueber die Zeit), liefert `.get()` `None` statt eines
+    KeyError — dieselbe defensive Haltung wie read_score_history() selbst
+    gegenueber nicht parsebaren Zeilen."""
+    return ScoreHistoryResponse(
+        entries=[
+            ScoreHistoryEntry(
+                timestamp=e.get("timestamp"),
+                score=e.get("score"),
+                status=e.get("status"),
+                total_issues=e.get("total_issues"),
+                total_files=e.get("total_files"),
+            )
+            for e in entries
+        ]
+    )
