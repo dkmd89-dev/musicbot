@@ -319,6 +319,108 @@ async def test_accept_finding_rejected_with_mismatched_origin_header(
 
 
 @pytest.mark.asyncio
+async def test_review_finding_resolved_marks_as_resolved(client, registry_path, monkeypatch):
+    """Generischer Review-Endpunkt (Nachtrag api_health.md Abschnitt 7) —
+    additiv neben accept/unaccept, deckt hier den manuellen RESOLVED-Review
+    ab, den accept_finding() (fest FALSE_POSITIVE) nicht kann."""
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 42))
+    finding_id = await _seed_open_finding(registry_path)
+
+    response = await client.post(
+        f"/api/v1/library/findings/{finding_id}/review",
+        json={"status": "RESOLVED", "note": "Manuell behoben"},
+        headers=_SAME_ORIGIN,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["finding_id"] == finding_id
+    assert body["status"] == "RESOLVED"
+    assert body["reviewed_by"] == "42"
+    assert body["review_note"] == "Manuell behoben"
+
+    open_findings = (await client.get("/api/v1/library/findings")).json()
+    assert open_findings == []
+
+
+@pytest.mark.asyncio
+async def test_review_finding_false_positive_behaves_like_accept(client, registry_path, monkeypatch):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    finding_id = await _seed_open_finding(registry_path)
+
+    response = await client.post(
+        f"/api/v1/library/findings/{finding_id}/review",
+        json={"status": "FALSE_POSITIVE", "note": "Bewusst so gewollt"},
+        headers=_SAME_ORIGIN,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "FALSE_POSITIVE"
+
+
+@pytest.mark.asyncio
+async def test_review_finding_false_positive_requires_non_empty_note(
+    client, registry_path, monkeypatch
+):
+    """Identische Pflicht-Grund-Regel wie accept_finding() (Auftrag §15) —
+    dieser generische Endpunkt darf dieselbe Zielaktion nicht laxer machen."""
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    finding_id = await _seed_open_finding(registry_path)
+
+    response = await client.post(
+        f"/api/v1/library/findings/{finding_id}/review",
+        json={"status": "FALSE_POSITIVE", "note": "   "},
+        headers=_SAME_ORIGIN,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "REASON_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_review_finding_rejects_invalid_status(client, registry_path, monkeypatch):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    finding_id = await _seed_open_finding(registry_path)
+
+    response = await client.post(
+        f"/api/v1/library/findings/{finding_id}/review",
+        json={"status": "OPEN"},
+        headers=_SAME_ORIGIN,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_REVIEW_STATUS"
+
+
+@pytest.mark.asyncio
+async def test_review_finding_404_for_unknown_id(client, registry_path, monkeypatch):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+
+    response = await client.post(
+        "/api/v1/library/findings/does-not-exist/review",
+        json={"status": "RESOLVED"},
+        headers=_SAME_ORIGIN,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "FINDING_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_review_finding_rejected_without_origin_header(client, registry_path, monkeypatch):
+    monkeypatch.setattr(Config, "DATA_DIR", registry_path.parent)
+    finding_id = await _seed_open_finding(registry_path)
+
+    response = await client.post(
+        f"/api/v1/library/findings/{finding_id}/review", json={"status": "RESOLVED"}
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "ORIGIN_CHECK_FAILED"
+
+
+@pytest.mark.asyncio
 async def test_unaccept_finding_reopens_and_reappears_in_open_list(
     client, registry_path, monkeypatch
 ):

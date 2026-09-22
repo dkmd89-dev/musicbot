@@ -23,14 +23,20 @@ neue Reparatur-/Review-Logik. `reviewed_by` wird auf die authentifizierte
 Telegram-ID gesetzt (Audit-Spur, Master-Prompt Regel 31 "Who/What/When/
 Result" — bereits vorhandenes Finding.history-Feld, kein neues
 Audit-System noetig). Zusaetzlich per verify_same_origin()-Dependency
-gegen CSRF abgesichert (siehe dortiger Docstring). Nur diese beiden
-Routen sind schreibend — GET .../findings und .../summary bleiben
-unveraendert seiteneffektfrei.
+gegen CSRF abgesichert (siehe dortiger Docstring).
 
-KEINE Reparatur-Ausfuehrung, KEIN Loeschen — accept/unaccept aendern
-ausschliesslich den Review-Status in der Findings-Registry (Metadaten
-ausserhalb der Library), niemals eine Library-Datei. Vollstaendig
-reversibel (unaccept_finding() existiert exakt fuer diesen Zweck).
+POST .../review (Nachtrag, api_health.md Abschnitt 7): generischer
+Review-Endpunkt fuer RESOLVED/FALSE_POSITIVE, ruft direkt
+FindingsRegistry.review_finding() auf — additiv NEBEN accept/unaccept,
+kein Ersatz (siehe dortiger Funktions-Docstring). GET .../findings und
+.../summary bleiben unveraendert seiteneffektfrei — accept/unaccept/
+review sind die einzigen schreibenden Routen.
+
+KEINE Reparatur-Ausfuehrung, KEIN Loeschen — accept/unaccept/review
+aendern ausschliesslich den Review-Status in der Findings-Registry
+(Metadaten ausserhalb der Library), niemals eine Library-Datei.
+Vollstaendig reversibel (unaccept_finding() existiert exakt fuer diesen
+Zweck).
 
 Authentifiziert seit Schritt 3 mit mindestens AccessLevel.ADMIN — spiegelt
 die bestehende Telegram-Schwelle 1:1 (Findings-Review ist dort bereits
@@ -50,6 +56,8 @@ from handlers.menu.models import AccessLevel
 from logger import get_module_logger
 from services.library_health.findings import (
     DEFAULT_FILENAME as FINDINGS_DEFAULT_FILENAME,
+    STATUS_FALSE_POSITIVE,
+    STATUS_RESOLVED,
     FindingsRegistry,
     FindingsRegistryError,
     accept_finding,
@@ -67,12 +75,15 @@ from ..schemas.findings import (
     FindingActionResponse,
     FindingCategoryGroup,
     FindingsSummaryResponse,
+    ReviewFindingRequest,
     UnacceptFindingRequest,
     accepted_findings_to_response,
     category_groups_to_schema,
     finding_to_action_response,
     review_summary_to_schema,
 )
+
+_REVIEWABLE_STATUSES = (STATUS_RESOLVED, STATUS_FALSE_POSITIVE)
 
 router = APIRouter(
     prefix="/api/v1/library",
@@ -168,6 +179,62 @@ def accept_finding_endpoint(
         raise HTTPException(
             status_code=422,
             detail=ErrorDetail(code="REASON_REQUIRED", message=str(e)).model_dump(),
+        ) from e
+    registry.save()
+    return finding_to_action_response(finding)
+
+
+@router.post(
+    "/findings/{finding_id}/review",
+    response_model=FindingActionResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+def review_finding_endpoint(
+    finding_id: str,
+    payload: ReviewFindingRequest,
+    user_id: int = Depends(get_current_user_id),
+) -> FindingActionResponse:
+    """Generischer Review-Endpunkt (api_health.md Abschnitt 7) — additiv
+    neben accept/unaccept, kein Ersatz: accept/unaccept bleiben die
+    bestehende, spezialisierte FALSE_POSITIVE-Aktion mit Pflicht-Grund
+    (siehe deren Docstrings/Tests); dieser Endpunkt deckt zusaetzlich den
+    manuellen RESOLVED-Review ab (z. B. eine Behebung ausserhalb der
+    automatisierten Reparatur, bevor der naechste Scan sie ohnehin als
+    RESOLVED_BY_SCAN erkennen wuerde). Ruft direkt
+    FindingsRegistry.review_finding() auf — identische Kernfunktion wie
+    accept_finding() (dort nur mit fest STATUS_FALSE_POSITIVE)."""
+    if payload.status not in _REVIEWABLE_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=ErrorDetail(
+                code="INVALID_REVIEW_STATUS",
+                message=(
+                    f"status muss einer von {_REVIEWABLE_STATUSES!r} sein, "
+                    f"nicht {payload.status!r}."
+                ),
+            ).model_dump(),
+        )
+    if payload.status == STATUS_FALSE_POSITIVE and not (payload.note or "").strip():
+        # Identische Pflicht-Grund-Regel wie accept_finding() (Auftrag §15) —
+        # dieser Endpunkt darf dieselbe Zielaktion nicht mit einer laxeren
+        # Regel erreichbar machen.
+        raise HTTPException(
+            status_code=422,
+            detail=ErrorDetail(
+                code="REASON_REQUIRED",
+                message="FALSE_POSITIVE verlangt einen nicht-leeren Grund (note).",
+            ).model_dump(),
+        )
+
+    registry = _load_registry()
+    try:
+        finding = registry.review_finding(
+            finding_id, payload.status, note=payload.note, reviewed_by=str(user_id)
+        )
+    except KeyError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=ErrorDetail(code="FINDING_NOT_FOUND", message=str(e)).model_dump(),
         ) from e
     registry.save()
     return finding_to_action_response(finding)

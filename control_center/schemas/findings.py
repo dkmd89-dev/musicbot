@@ -67,6 +67,18 @@ class UnacceptFindingRequest(BaseModel):
     note: str | None = None
 
 
+class ReviewFindingRequest(BaseModel):
+    """Payload fuer POST .../review (api_health.md Abschnitt 7) — generisches
+    Pendant zu accept_finding()/unaccept_finding(), akzeptiert dieselben
+    Zielstatus wie services/library_health/findings.py::review_finding()
+    (STATUS_RESOLVED oder STATUS_FALSE_POSITIVE; der Router validiert das,
+    kein Enum hier, um denselben Fehlertext/-code wie der Service bei
+    unerlaubten Werten zu vermeiden)."""
+
+    status: str
+    note: str | None = None
+
+
 class FindingActionResponse(BaseModel):
     finding_id: str
     status: str
