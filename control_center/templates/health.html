@@ -1,20 +1,43 @@
 {% extends "_base.html" %}
 {% block title %}Health – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>Health</h1>
-  <p class="subtitle">Nur tatsächlich vorhandene Checks (keine vorgetäuschten Health-Werte, ui_prompt.txt Abschnitt 21).</p>
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="page-title">🩺 Health</h1>
+      <div class="text-secondary">
+        Nur tatsächlich vorhandene Checks — keine vorgetäuschten Health-Werte.
+      </div>
+    </div>
+  </div>
+</div>
 
-  <section class="panel">
-    <h2>Library</h2>
-    <div id="health-tiles" class="tiles">Lädt…</div>
-  </section>
+<!-- Library Health -->
+<div class="card mb-4">
+  <div class="card-header">
+    <h2 class="card-title">📚 Library</h2>
+  </div>
 
-  <section class="panel">
-    <h2>Navidrome</h2>
-    <div id="navidrome-status" class="empty-note">Lädt…</div>
-  </section>
+  <div class="card-body">
+    <div id="health-tiles" class="row row-cards">
+      <div class="col-12 text-secondary">Lädt…</div>
+    </div>
+  </div>
+</div>
+
+<!-- Navidrome -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">🎵 Navidrome</h2>
+  </div>
+
+  <div class="card-body">
+    <div id="navidrome-status" class="empty-note">
+      Lädt…
+    </div>
+  </div>
+</div>
 {% endblock %}
-
 {% block scripts %}
 <script>
   function renderHealth(data) {
