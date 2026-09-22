@@ -4,9 +4,162 @@
 <div class="page-header d-print-none mb-4">
   <div class="row align-items-center">
     <div class="col">
-      <h1 class="page-title">⚙️ Administration</h1>
+      <h1 class="page-title">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+             viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+             class="icon me-2" aria-hidden="true">
+          <path d="M12 8m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/>
+          <path d="M12 2v3"/>
+          <path d="M12 19v3"/>
+          <path d="M4.6 4.6l2.1 2.1"/>
+          <path d="M17.3 17.3l2.1 2.1"/>
+          <path d="M2 12h3"/>
+          <path d="M19 12h3"/>
+          <path d="M4.6 19.4l2.1-2.1"/>
+          <path d="M17.3 6.7l2.1-2.1"/>
+        </svg>
+        Administration
+      </h1>
       <div class="text-secondary">
-        Nutzer, Rollen und administrative Library-Verwaltung.
+        Systemverwaltung und administrative Funktionen.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SYSTEM STATUS -->
+<div class="card mb-4">
+  <div class="card-header">
+    <h2 class="card-title">System Status</h2>
+  </div>
+  <div class="card-body">
+    <div id="admin-system-status" class="row row-cards">
+      <div class="col-6 col-lg-3">
+        <div class="card card-sm h-100">
+          <div class="card-body">
+            <div class="text-secondary small">CPU</div>
+            <div class="h2 mb-0" id="admin-system-cpu">–</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-6 col-lg-3">
+        <div class="card card-sm h-100">
+          <div class="card-body">
+            <div class="text-secondary small">RAM</div>
+            <div class="h2 mb-0" id="admin-system-memory">–</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-6 col-lg-3">
+        <div class="card card-sm h-100">
+          <div class="card-body">
+            <div class="text-secondary small">Disk</div>
+            <div class="h2 mb-0" id="admin-system-disk">–</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-6 col-lg-3">
+        <div class="card card-sm h-100">
+          <div class="card-body">
+            <div class="text-secondary small">Bot</div>
+            <div id="admin-system-bot" class="mt-1">
+              <span class="status">–</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="admin-system-status-error" class="alert alert-danger mt-3 mb-0" hidden></div>
+  </div>
+</div>
+
+<!-- OPERATIONS -->
+<div class="mb-4">
+  <h2 class="mb-3">Operations</h2>
+
+  <div class="row row-cards">
+    <!-- BACKUPS -->
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="card-header">
+          <h3 class="card-title">Backups</h3>
+        </div>
+        <div class="card-body">
+          <div class="text-secondary mb-3">
+            MusicBot-Backups erstellen und verwalten.
+          </div>
+
+          <div class="row g-2 align-items-end">
+            <div class="col-sm-5 col-md-4">
+              <label class="form-label" for="admin-backup-type">Backup-Typ</label>
+              <select id="admin-backup-type" class="form-select">
+                <option value="bot">Bot</option>
+                <option value="library">Library</option>
+              </select>
+            </div>
+            <div class="col-sm-auto">
+              <button id="admin-backup-create-btn" class="btn btn-primary">
+                Backup erstellen
+              </button>
+            </div>
+            <div class="col-sm-auto">
+              <button id="admin-backup-manage-btn" class="btn btn-outline-secondary">
+                Backups verwalten
+              </button>
+            </div>
+          </div>
+          <div id="admin-backup-status" class="mt-3 text-secondary small"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAINTENANCE -->
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="card-header">
+          <h3 class="card-title">Maintenance</h3>
+        </div>
+        <div class="card-body">
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <span id="admin-maintenance-status" class="status">–</span>
+            <span id="admin-maintenance-label">Wartungsmodus wird geladen…</span>
+          </div>
+
+          <button id="admin-maintenance-toggle-btn" class="btn btn-outline-warning">
+            Wartungsmodus ändern
+          </button>
+
+          <div id="admin-maintenance-message" class="mt-3 text-secondary small"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOT -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Bot</h3>
+        </div>
+        <div class="card-body">
+          <div class="row align-items-center">
+            <div class="col">
+              <div class="fw-medium">Bot-Service</div>
+              <div id="admin-bot-operation-status" class="text-secondary small">
+                Status wird geladen…
+              </div>
+            </div>
+            <div class="col-auto">
+              <button id="admin-bot-restart-btn" class="btn btn-outline-danger">
+                Bot neu starten
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -15,14 +168,12 @@
 <!-- USERS & ROLES -->
 <div class="card mb-4">
   <div class="card-header">
-    <h2 class="card-title">👥 Nutzer &amp; Rollen</h2>
+    <h2 class="card-title">Nutzer &amp; Rollen</h2>
   </div>
-
   <div class="card-body">
     <div id="admin-users-content" class="empty-note">
       Lädt…
     </div>
-
     <div
       id="admin-user-stats-content"
       class="empty-note mt-4"
@@ -34,22 +185,20 @@
 <!-- LIBRARY MAINTENANCE -->
 <div class="card">
   <div class="card-header">
-    <h2 class="card-title">🛠 Library-Maintenance</h2>
+    <h2 class="card-title">Library-Maintenance</h2>
   </div>
-
   <div class="card-body">
     <div class="alert alert-info mb-0" role="alert">
       <div>
-        <h4 class="alert-title">ℹ️ Wartung im Artist-Kontext</h4>
+        <h4 class="alert-title">Wartung im Artist-Kontext</h4>
         <div class="text-secondary">
           Die Library-Maintenance-Aktionen — Artist Casing korrigieren,
           Legacy-Genre-Cleanup, Artist umbenennen und Titel bearbeiten —
           sind im Artist-Kontext verfügbar.
-          Nutze dazu <strong>🛠 Library-Wartung</strong> bzw.
-          <strong>📝 Metadaten bearbeiten</strong> auf der jeweiligen
+          Nutze dazu <strong>Library-Wartung</strong> bzw.
+          <strong>Metadaten bearbeiten</strong> auf der jeweiligen
           Artist-Detailseite.
         </div>
-
         <div class="mt-3">
           <a href="{{ base_path }}/library" class="btn btn-outline-primary">
             Zur Library → Artist auswählen
@@ -60,64 +209,6 @@
   </div>
 </div>
 {% endblock %}
-
 {% block scripts %}
-<script>
-  function renderAdminUsers(el, body) {
-    if (!body.users.length) { el.innerHTML = '<p class="empty-note">Keine registrierten Nutzer.</p>'; return; }
-    const roleBadge = { owner: "CRITICAL", admin: "ERROR", moderator: "WARNING", user: "INFO" };
-    el.innerHTML = '<div class="row-list">' + body.users.map((u) => `
-      <div class="row-item">
-        <div class="row-main">
-          <span class="badge badge-${roleBadge[u.role] || "INFO"}">${_escapeHtml(u.role)}</span>
-          #${u.telegram_id}${u.navidrome_user ? " — 🎵 " + _escapeHtml(u.navidrome_user) : ""}
-        </div>
-        ${u.navidrome_user ? `<button class="small view-stats-btn" data-navidrome-user="${_escapeHtml(u.navidrome_user)}">Statistik</button>` : ""}
-        <div class="row-count">${u.created_at ? new Date(u.created_at).toLocaleDateString() : "–"}</div>
-      </div>
-    `).join("") + "</div>";
-  }
-  function loadAdminUsers() {
-    return _loadInto("admin-users-content", "/api/v1/admin/users", renderAdminUsers);
-  }
-
-  function renderStatistics(el, stats) {
-    if (!stats.has_data) {
-      el.innerHTML = `<p class="empty-note">Noch keine Wiedergabedaten für ${_escapeHtml(stats.navidrome_username)}.</p>`;
-      return;
-    }
-    const artists = stats.top_artists.slice(0, 5).map((a) => `
-      <div class="row-item"><div class="row-main">${_escapeHtml(a.label)}</div><div class="row-count">${a.count}</div></div>
-    `).join("");
-    el.innerHTML = `
-      <p class="empty-note">${stats.total_plays} Wiedergaben (${_escapeHtml(stats.navidrome_username)})</p>
-      <div class="row-list">${artists}</div>
-    `;
-  }
-
-  async function loadUserStatsForAdmin(navidromeUser) {
-    const el = document.getElementById("admin-user-stats-content");
-    el.hidden = false;
-    el.innerHTML = '<span class="empty-note">Lädt…</span>';
-    await _loadInto(
-      "admin-user-stats-content",
-      `/api/v1/statistics/${encodeURIComponent(navidromeUser)}?period=month`,
-      renderStatistics,
-    );
-  }
-
-  document.getElementById("admin-users-content").addEventListener("click", (event) => {
-    const btn = event.target.closest(".view-stats-btn");
-    if (!btn) return;
-    loadUserStatsForAdmin(btn.dataset.navidromeUser);
-  });
-
-  function initPage() {
-    checkAuth().then((who) => {
-      if (!who) return;
-      loadAdminUsers();
-    });
-  }
-  initPage();
-</script>
+<script src="{{ base_path }}/static/pages/admin.js"></script>
 {% endblock %}
