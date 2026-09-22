@@ -1,24 +1,64 @@
 {% extends "_base.html" %}
 {% block title %}Administration – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>Administration</h1>
-  <p class="subtitle">Nutzer &amp; Rollen.</p>
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="page-title">⚙️ Administration</h1>
+      <div class="text-secondary">
+        Nutzer, Rollen und administrative Library-Verwaltung.
+      </div>
+    </div>
+  </div>
+</div>
 
-  <section class="panel">
-    <h2>Nutzer &amp; Rollen</h2>
-    <div id="admin-users-content" class="empty-note">Lädt…</div>
-    <div id="admin-user-stats-content" class="empty-note" hidden></div>
-  </section>
+<!-- USERS & ROLES -->
+<div class="card mb-4">
+  <div class="card-header">
+    <h2 class="card-title">👥 Nutzer &amp; Rollen</h2>
+  </div>
 
-  <section class="panel">
-    <h2>Library-Maintenance</h2>
-    <p class="empty-note">
-      Die Library-Maintenance-Aktionen (Artist Casing korrigieren, Legacy-Genre-Cleanup,
-      Artist umbenennen, Titel bearbeiten) sind jetzt im Artist-Kontext verfügbar — unter
-      🛠 Library-Wartung bzw. 📝 Metadaten bearbeiten auf der jeweiligen Artist-Detailseite.
-    </p>
-    <p class="retry-row"><a href="{{ base_path }}/library">→ Zu /library (Artist wählen)</a></p>
-  </section>
+  <div class="card-body">
+    <div id="admin-users-content" class="empty-note">
+      Lädt…
+    </div>
+
+    <div
+      id="admin-user-stats-content"
+      class="empty-note mt-4"
+      hidden
+    ></div>
+  </div>
+</div>
+
+<!-- LIBRARY MAINTENANCE -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">🛠 Library-Maintenance</h2>
+  </div>
+
+  <div class="card-body">
+    <div class="alert alert-info mb-0" role="alert">
+      <div>
+        <h4 class="alert-title">ℹ️ Wartung im Artist-Kontext</h4>
+        <div class="text-secondary">
+          Die Library-Maintenance-Aktionen — Artist Casing korrigieren,
+          Legacy-Genre-Cleanup, Artist umbenennen und Titel bearbeiten —
+          sind im Artist-Kontext verfügbar.
+          Nutze dazu <strong>🛠 Library-Wartung</strong> bzw.
+          <strong>📝 Metadaten bearbeiten</strong> auf der jeweiligen
+          Artist-Detailseite.
+        </div>
+
+        <div class="mt-3">
+          <a href="{{ base_path }}/library" class="btn btn-outline-primary">
+            Zur Library → Artist auswählen
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
