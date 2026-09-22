@@ -30,10 +30,7 @@ TEMPLATES = sorted((CC_DIR / "templates").glob("*.html"))
 COMMON_JS = CC_DIR / "static" / "common.js"
 HEALTH_JS = CC_DIR / "static" / "pages" / "health.js"
 
-ALL_PAGES = [
-    "/", "/downloads", "/library", "/metadata", "/statistics",
-    "/health", "/navidrome", "/logs", "/admin",
-]
+ALL_PAGES = ["/", "/downloads", "/library", "/statistics", "/health", "/navidrome", "/logs", "/admin"]
 PREFIX = "/controlcenter"
 PREFIX_HEADER = {"X-Forwarded-Prefix": PREFIX}
 
