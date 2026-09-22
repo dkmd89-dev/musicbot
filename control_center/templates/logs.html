@@ -1,44 +1,105 @@
 {% extends "_base.html" %}
 {% block title %}Logs – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>Logs</h1>
-  <p class="subtitle">Diagnose-Log-Ansicht (Master-Prompt Abschnitt 12 "LOGS &amp; DIAGNOSTICS").</p>
-  <p class="hint">
-    Bewusst kein Zeitraum-/Job-/User-Filter: Logzeilen enthalten kein
-    Datum (nur Uhrzeit) und keine strukturierte Job-/User-Zuordnung —
-    stattdessen Auswahl der Log-Datei (aktuell/rotiert/modulspezifisch),
-    Level, Komponente und Volltextsuche.
-  </p>
-
-  <section class="panel">
-    <h2>
-      Filter
-      <button id="logs-refresh-btn" class="small" type="button">Aktualisieren</button>
-    </h2>
-    <div class="retry-row">
-      <label for="logs-source-select" class="hint">Datei:</label>
-      <select id="logs-source-select"></select>
-      <label for="logs-level-select" class="hint">Level:</label>
-      <select id="logs-level-select">
-        <option value="">— alle —</option>
-        <option value="DEBUG">DEBUG</option>
-        <option value="INFO">INFO</option>
-        <option value="WARNING">WARNING</option>
-        <option value="ERROR">ERROR</option>
-        <option value="CRITICAL">CRITICAL</option>
-      </select>
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="page-title">📋 Logs</h1>
+      <div class="text-secondary">
+        Diagnose-Log-Ansicht für die Analyse von MusicBot-Komponenten.
+      </div>
     </div>
-    <div class="retry-row">
-      <input type="text" id="logs-component-input" placeholder="Komponente (z. B. TELEGRAM_BOT)">
-      <input type="text" id="logs-search-input" placeholder="Volltextsuche">
-      <button id="logs-filter-btn" class="small" type="button">Filtern</button>
-    </div>
-  </section>
+  </div>
+</div>
 
-  <section class="panel">
-    <h2>Log-Zeilen</h2>
-    <div id="logs-content" class="empty-note">Lädt…</div>
-  </section>
+<div class="alert alert-info mb-4" role="alert">
+  <div>
+    <h4 class="alert-title">ℹ️ Verfügbare Filter</h4>
+    <div class="text-secondary">
+      Kein Zeitraum-, Job- oder User-Filter: Logzeilen enthalten kein Datum
+      (nur Uhrzeit) und keine strukturierte Job-/User-Zuordnung.
+      Stattdessen stehen Log-Datei, Level, Komponente und Volltextsuche zur Verfügung.
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">
+    <h2 class="card-title">🔎 Filter</h2>
+    <div class="card-actions">
+      <button
+        id="logs-refresh-btn"
+        type="button"
+        class="btn btn-outline-primary"
+      >
+        Aktualisieren
+      </button>
+    </div>
+  </div>
+
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-12 col-md-4">
+        <label for="logs-source-select" class="form-label">Log-Datei</label>
+        <select id="logs-source-select" class="form-select"></select>
+      </div>
+
+      <div class="col-12 col-md-3">
+        <label for="logs-level-select" class="form-label">Level</label>
+        <select id="logs-level-select" class="form-select">
+          <option value="">— alle —</option>
+          <option value="DEBUG">DEBUG</option>
+          <option value="INFO">INFO</option>
+          <option value="WARNING">WARNING</option>
+          <option value="ERROR">ERROR</option>
+          <option value="CRITICAL">CRITICAL</option>
+        </select>
+      </div>
+
+      <div class="col-12 col-md-5">
+        <label for="logs-component-input" class="form-label">Komponente</label>
+        <input
+          type="text"
+          id="logs-component-input"
+          class="form-control"
+          placeholder="z. B. TELEGRAM_BOT"
+        >
+      </div>
+
+      <div class="col-12 col-md-9">
+        <label for="logs-search-input" class="form-label">Volltextsuche</label>
+        <input
+          type="text"
+          id="logs-search-input"
+          class="form-control"
+          placeholder="Nach Logtext suchen"
+        >
+      </div>
+
+      <div class="col-12 col-md-3 d-flex align-items-end">
+        <button
+          id="logs-filter-btn"
+          type="button"
+          class="btn btn-primary w-100"
+        >
+          Filtern
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">📝 Log-Zeilen</h2>
+  </div>
+
+  <div class="card-body">
+    <div id="logs-content" class="empty-note">
+      Lädt…
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
