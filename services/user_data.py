@@ -22,11 +22,27 @@ Argument für handlers/menu/permissions.py::get_user_access_level()
 (dort bereits so geschrieben, siehe dortiger hasattr()-Check) —
 control_center/dependencies.py baut daher nur ein minimales
 Adapter-Objekt, ohne permissions.py selbst zu ändern.
+
+CC-AC-10B (Control Center Admin API, User Management Write-Parität):
+save_user_data() ist die Schreib-Entsprechung für den neuen
+Application-Layer (services/user_admin.py), der von
+control_center/routers/admin.py genutzt wird. Bewusst NICHT identisch
+mit UserManagementHandler._save_users() (Telegram-Seite) — jener bleibt
+unverändert, weil tests/test_user_management_atomic_persistence.py den
+Crash-Fall über einen Monkeypatch auf den exakten Modulpfad
+"handlers.admin.user_management_handler.json.dump" simuliert; ein
+Umleiten dieses Schreibpfads hierher würde diesen Regressionstest
+unbemerkt wirkungslos machen. Beide Implementierungen teilen denselben
+atomaren write-tmp+rename-Kern (analog zu MetadataCache.store()) —
+bewusste, kleine Duplikation statt eines riskanten Eingriffs in einen
+sicherheitskritischen, bereits getesteten Pfad (CC-AC-10G migriert die
+Telegram-Seite bei Bedarf später bewusst auf diese gemeinsame Funktion).
 """
 
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -68,3 +84,27 @@ def get_user_role(user_data: dict, telegram_id: int) -> Optional[str]:
     if entry:
         return entry.get("role")
     return None
+
+
+def save_user_data(
+    users: dict, path: "str | Path" = DEFAULT_USER_DATA_FILE, *, logger: Any = None
+) -> bool:
+    """Schreibt `data/user_data.json` atomar (write-tmp + rename) — siehe
+    Modul-Docstring, warum dies eine eigene Implementierung ist statt
+    einer Delegation an UserManagementHandler._save_users()."""
+    path = Path(path)
+    tmp_path = path.with_suffix(f".tmp_{int(time.time() * 1000)}")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(users, f, indent=2, ensure_ascii=False)
+        tmp_path.replace(path)
+        return True
+    except Exception as e:  # noqa: BLE001
+        if logger:
+            logger.error(f"❌ Fehler beim Speichern der User-Daten: {e}")
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
