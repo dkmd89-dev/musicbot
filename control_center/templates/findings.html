@@ -1,17 +1,44 @@
 {% extends "_base.html" %}
 {% block title %}Findings – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>Findings</h1>
-  <p class="subtitle">Offene und akzeptierte Library-Health-Findings.</p>
-
-  <section class="panel">
-    <h2>Findings</h2>
-    <div id="findings-content" class="empty-note">Lädt…</div>
-    <div class="retry-row">
-      <button id="accepted-findings-toggle" class="small">Akzeptierte Findings anzeigen</button>
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="page-title">🔎 Findings</h1>
+      <div class="text-secondary">
+        Offene und akzeptierte Library-Health-Findings.
+      </div>
     </div>
-    <div id="accepted-findings-content" class="empty-note" hidden></div>
-  </section>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">🔎 Offene Findings</h2>
+  </div>
+
+  <div class="card-body">
+    <div id="findings-content" class="empty-note">
+      Lädt…
+    </div>
+
+    <div class="mt-4">
+      <button
+        id="accepted-findings-toggle"
+        type="button"
+        class="btn btn-outline-secondary"
+      >
+        Akzeptierte Findings anzeigen
+      </button>
+    </div>
+
+    <div
+      id="accepted-findings-content"
+      class="empty-note mt-4"
+      hidden
+    ></div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
