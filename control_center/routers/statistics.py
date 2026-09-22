@@ -61,9 +61,11 @@ from ..schemas.statistics import (
     GenreStatsResponse,
     MusicDnaResponse,
     StatisticsResponse,
+    TimelineResponse,
     genre_stats_to_response,
     music_dna_to_response,
     stats_to_response,
+    timeline_to_response,
 )
 
 router = APIRouter(
@@ -122,6 +124,16 @@ def get_my_music_dna(
     service = StatistikService()
     stats = service.generate_music_dna(navidrome_username, top_n=top_n)
     return music_dna_to_response(navidrome_username, stats)
+
+
+@router.get("/me/timeline", response_model=TimelineResponse)
+def get_my_timeline(
+    user_id: int = Depends(get_current_user_id),
+) -> TimelineResponse:
+    navidrome_username = _resolve_own_navidrome_username(user_id)
+    service = StatistikService()
+    stats = service.generate_timeline_stats(navidrome_username=navidrome_username)
+    return timeline_to_response(stats)
 
 
 @router.get(

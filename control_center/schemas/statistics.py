@@ -110,6 +110,54 @@ class TimeOfDayPct(BaseModel):
     nachts: float
 
 
+class TimelineResponse(BaseModel):
+    has_data: bool
+    navidrome_username: Optional[str] = None
+    period_start: Optional[str] = None
+    period_end: Optional[str] = None
+    track_count: Optional[int] = None
+    listening_seconds: Optional[int] = None
+    top_artist: Optional[TopEntry] = None
+    top_album: Optional[TopEntry] = None
+    top_genre: Optional[TopEntry] = None
+    most_replayed_track: Optional[TopEntry] = None
+    new_track_count: Optional[int] = None
+
+
+def timeline_to_response(stats: Optional[dict]) -> TimelineResponse:
+    """Reines Mapping über StatistikService.generate_timeline_stats() hinweg."""
+    if stats is None:
+        return TimelineResponse(
+            has_data=False,
+            navidrome_username=None,
+        )
+
+    today = stats.get("today") or {}
+
+    def _entry(value):
+        if not value:
+            return None
+        label, count = value
+        return TopEntry(label=label, count=count)
+
+    period_start = today.get("period_start")
+    period_end = today.get("period_end")
+
+    return TimelineResponse(
+        has_data=True,
+        navidrome_username=stats.get("navidrome_username"),
+        period_start=period_start.isoformat() if period_start else None,
+        period_end=period_end.isoformat() if period_end else None,
+        track_count=today.get("track_count"),
+        listening_seconds=today.get("listening_seconds"),
+        top_artist=_entry(today.get("top_artist")),
+        top_album=_entry(today.get("top_album")),
+        top_genre=_entry(today.get("top_genre")),
+        most_replayed_track=_entry(today.get("most_replayed_track")),
+        new_track_count=today.get("new_track_count"),
+    )
+
+
 class MusicDnaResponse(BaseModel):
     has_data: bool
     navidrome_username: str

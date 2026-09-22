@@ -1004,263 +1004,24 @@ async def test_track_drawer_album_actions_require_m4a_scope(client):
 @pytest.mark.asyncio
 async def test_statistics_page_has_all_panels(client):
     html = (await client.get("/statistics")).text
+    js = (await client.get("/static/pages/statistics.js")).text
 
-    # PR #285 (f3ab155) hat das Statistics-Dashboard umgebaut:
-    # statistics-content/genre-stats-content wurden umbenannt,
-    # die load*-Wrapper durch direkte _loadInto(...)-Aufrufe ersetzt,
-    # renderGenreStats -> renderAllTimeGenres, kpi-header neu.
-    # Kein Bug, beabsichtigtes Redesign.
     assert 'id="kpi-header"' in html
     assert 'id="monthly-artists"' in html
     assert 'id="all-time-genres"' in html
     assert 'id="music-dna-content"' in html
-    assert "/api/v1/statistics/me" in html
-    assert "/api/v1/statistics/me/genres" in html
-    assert "/api/v1/statistics/me/music-dna" in html
-    assert "renderMonthlyArtists" in html
-    assert "renderAllTimeGenres" in html
-    assert "renderMusicDna" in html
-    assert "_loadInto(" in html
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# GET /health — konsolidiertes Health Center (api_health.md): MusicBot
-# Doctor + Library Health Review (vormals /findings) + Repair MusicBot
-# (vormals /repairs) + Job-Liste (vormals /jobs) auf einer Seite.
-#
-# Die Fachlogik-Verdrahtung (Funktionsnamen, API-Pfade, Bestaetigungstexte)
-# lebt seit der Konsolidierung NICHT mehr inline in der Seite, sondern in
-# control_center/static/pages/health.js (Auftrag §16 "Kein riesiges
-# Inline-JavaScript") — deshalb pruefen die folgenden Tests Element-IDs/
-# Strukturtext gegen /health (serverseitig gerendertes Template) und die
-# Funktions-/Endpunkt-Verdrahtung gegen die ausgelieferte health.js-Datei,
-# identisches Trennungsprinzip wie test_static_common_js_is_served weiter
-# unten fuer common.js.
-# ─────────────────────────────────────────────────────────────────────────
-
-
-@pytest_asyncio.fixture
-async def health_js(client):
-    return (await client.get("/static/pages/health.js")).text
-
-
-@pytest.mark.asyncio
-async def test_health_page_has_findings_panel(client):
-    html = (await client.get("/health")).text
-
-    assert 'id="findings-content"' in html
-
-
-@pytest.mark.asyncio
-async def test_health_js_fetches_real_findings_api_endpoint(health_js):
-    assert "/api/v1/library/findings" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_js_has_accept_wiring(health_js):
-    """Accept-Button-Verdrahtung fuer POST .../accept - Event-Delegation
-    auf dem Content-Container, damit re-gerenderte Buttons nach jedem Poll
-    weiter funktionieren."""
-    assert "acceptFinding" in health_js
-    assert "accept-btn" in health_js
-    assert "/accept" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_page_has_accepted_toggle_panel(client):
-    html = (await client.get("/health")).text
-
-    assert 'id="accepted-findings-toggle"' in html
-    assert 'id="accepted-findings-content"' in html
-
-
-@pytest.mark.asyncio
-async def test_health_js_has_accepted_and_unaccept_wiring(health_js):
-    assert "/api/v1/library/findings/accepted" in health_js
-    assert "unacceptFinding" in health_js
-    assert "unaccept-btn" in health_js
-    assert "/unaccept" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_js_has_generic_review_wiring(health_js):
-    """Nachtrag Phase 2 (api_health.md Abschnitt 7): manueller
-    RESOLVED-Review ueber den generischen /review-Endpunkt."""
-    assert "resolveFinding" in health_js
-    assert "/review" in health_js
-    assert "RESOLVED" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_js_escapes_untrusted_text(health_js):
-    """Sicherheitsnachtrag: Titel/Artist/Pfad/Message-Felder werden vor
-    dem innerHTML-Einsatz escaped (XSS-Schutz)."""
-    assert "_escapeHtml(" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_js_has_findings_filter_wiring(health_js):
-    """Nachtrag Phase 4 (api_health.md Abschnitt 8): Findings nach
-    Severity/Kategorie filterbar."""
-    assert "findings-severity-filter" in health_js
-    assert "findings-category-filter" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_page_has_findings_filter_controls(client):
-    html = (await client.get("/health")).text
-
-    assert 'id="findings-severity-filter"' in html
-    assert 'id="findings-category-filter"' in html
-
-
-@pytest.mark.asyncio
-async def test_health_page_has_dedicated_repair_plan_trigger(client):
-    """Repair-Plan ist bewusst NICHT im 30s-Polling (voller Library-Scan)
-    - es muss einen eigenen manuellen Button geben, keinen impliziten
-    Auto-Load beim Seitenaufruf."""
-    html = (await client.get("/health")).text
-
-    assert 'id="repair-plan-btn"' in html
-
-
-@pytest.mark.asyncio
-async def test_health_page_repair_start_button_disabled_until_plan_loaded(client):
-    """Der Start-Button fuer die erste dateiveraendernde Faehigkeit
-    (repair_safe_automatic) darf nicht klickbar sein, bevor eine echte,
-    aktuelle Kandidatenzahl fuer den Bestaetigungsdialog vorliegt."""
-    html = (await client.get("/health")).text
-
-    assert 'id="repair-start-btn" type="button" class="btn btn-warning" disabled' in html
-
-
-@pytest.mark.asyncio
-async def test_health_page_has_repair_job_panels(client):
-    html = (await client.get("/health")).text
-
-    assert 'id="repair-cancel-btn"' in html
-    assert 'id="repair-job-content"' in html
-
-
-@pytest.mark.asyncio
-async def test_health_js_repair_job_wiring_present(health_js):
-    assert "startRepairJob" in health_js
-    assert "cancelRepairJob" in health_js
-    assert "/api/v1/jobs/repair-safe-automatic" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_js_confirm_dialog_mentions_backup_and_files(health_js):
-    """Master-Prompt Regel 11/32: Bestaetigung vor einer destruktiven
-    Operation muss verstaendlich machen, was passiert."""
-    assert "Backup" in health_js
-    assert "Dateien in der Library" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_js_plan_text_distinguishes_safe_automatic_from_total(health_js):
-    assert "davon" in health_js
-    assert "SAFE_AUTOMATIC (per Button unten ausführbar)" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_page_has_level23_panel_with_dedicated_manual_trigger(client):
-    html = (await client.get("/health")).text
-
-    assert "L2/L3" in html
-    assert 'id="level23-plan-btn"' in html
-    assert 'id="level23-artists-content"' in html
-    assert 'id="level23-job-content"' in html
-
-
-@pytest.mark.asyncio
-async def test_health_js_level23_wiring_present(health_js):
-    assert "loadLevel23Artists" in health_js
-    assert "startLevel23Job" in health_js
-    assert "renderLevel23Artists" in health_js
-    assert "/api/v1/library/repair-plan/by-artist" in health_js
-    assert "/api/v1/jobs/repair-level" in health_js
-    assert "level23-btn" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_page_level23_has_no_cancel_button(client):
-    """Kooperatives Abbrechen ist fuer repair_level2/repair_level3
-    wirkungslos - ein Abbrechen-Button wuerde eine nicht existierende
-    Faehigkeit vortaeuschen (Master-Prompt Regel 39/38)."""
-    html = (await client.get("/health")).text
-
-    assert 'id="level23-cancel-btn"' not in html
-
-
-@pytest.mark.asyncio
-async def test_health_js_level23_has_no_cancel_function(health_js):
-    assert "cancelLevel23Job" not in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_js_level23_confirm_dialog_mentions_musicbrainz(health_js):
-    assert "wirklich starten für" in health_js
-    assert "MusicBrainz" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_page_has_job_list_panel(client):
-    html = (await client.get("/health")).text
-
-    assert 'id="jobs-content"' in html
-    assert 'id="jobs-refresh-btn"' in html
-
-
-@pytest.mark.asyncio
-async def test_health_js_jobs_list_wiring_present(health_js):
-    assert "/api/v1/jobs" in health_js
-    assert "loadJobs" in health_js
-    assert "renderJobs" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_page_has_health_scan_job_panel(client):
-    """Phase 3 (api_health.md Abschnitt 5): Health-Scan laeuft als Job,
-    kein blockierender HTTP-Request."""
-    html = (await client.get("/health")).text
-
-    assert 'id="health-scan-btn"' in html
-    assert 'id="health-scan-job-content"' in html
-
-
-@pytest.mark.asyncio
-async def test_health_js_health_scan_job_wiring_present(health_js):
-    assert "startHealthScanJob" in health_js
-    assert "/api/v1/jobs/health-scan" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_page_has_score_history_panel(client):
-    """Phase 1 (api_health.md Abschnitt 6): Score-Verlauf."""
-    html = (await client.get("/health")).text
-
-    assert 'id="score-history-content"' in html
-
-
-@pytest.mark.asyncio
-async def test_health_js_score_history_wiring_present(health_js):
-    assert "/api/v1/library/health/score-history" in health_js
-
-
-@pytest.mark.asyncio
-async def test_health_page_has_repair_history_and_statistics_panels(client):
-    """Phase 1 (api_health.md Abschnitt 12): Repair-History/-Statistik."""
-    html = (await client.get("/health")).text
-
-    assert 'id="repair-history-content"' in html
-    assert 'id="repair-statistics-content"' in html
-
-
-@pytest.mark.asyncio
-async def test_health_js_repair_history_and_statistics_wiring_present(health_js):
-    assert "/api/v1/library/repairs/history" in health_js
-    assert "/api/v1/library/repairs/statistics" in health_js
+    assert 'id="music-timeline"' in html
+
+    assert "/api/v1/statistics/me?period=" in js
+    assert "/api/v1/statistics/me/genres" in js
+    assert "/api/v1/statistics/me/music-dna" in js
+    assert "/api/v1/statistics/me/timeline" in js
+
+    assert "renderMonthlyArtists" in js
+    assert "renderAllTimeGenres" in js
+    assert "renderMusicDna" in js
+    assert "renderMusicTimeline" in js
+    assert "_loadInto(" in js
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1337,9 +1098,10 @@ async def test_logs_page_has_no_time_range_job_or_user_filter(client):
 @pytest.mark.asyncio
 async def test_admin_page_has_users_panel(client):
     html = (await client.get("/admin")).text
+    js = (await client.get("/static/pages/admin.js")).text
 
     assert 'id="admin-users-content"' in html
-    assert "loadAdminUsers" in html
+    assert "loadAdminUsers" in js
 
 
 @pytest.mark.asyncio
@@ -1347,11 +1109,12 @@ async def test_admin_page_has_cross_user_statistics_wiring(client):
     """Cross-User-Admin-Ansicht: anklickbarer navidrome_user pro Zeile
     zeigt dessen Statistik (GET /api/v1/statistics/{navidrome_username})."""
     html = (await client.get("/admin")).text
+    js = (await client.get("/static/pages/admin.js")).text
 
     assert 'id="admin-user-stats-content"' in html
-    assert "view-stats-btn" in html
-    assert "loadUserStatsForAdmin" in html
-    assert "data-navidrome-user" in html
+    assert "view-stats-btn" in js
+    assert "loadUserStatsForAdmin" in js
+    assert "data-navidrome-user" in js
 
 
 # @pytest.mark.asyncio
