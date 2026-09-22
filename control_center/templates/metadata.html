@@ -1,17 +1,42 @@
 {% extends "_base.html" %}
 {% block title %}Metadata – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>Metadata</h1>
-  <p class="subtitle">Metadata bearbeiten. Tracks/Artists/Albums/Mapping ansehen: <a href="{{ base_path }}/library">Library</a>.</p>
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="page-title">📝 Metadata</h1>
+      <div class="text-secondary">
+        Metadaten bearbeiten und Library-Inhalte verwalten.
+      </div>
+    </div>
+  </div>
+</div>
 
-  <section class="panel">
-    <h2>Genre setzen</h2>
-    <p class="empty-note">
-      Genre setzen ist jetzt im Artist-Kontext verfügbar — unter 📝 Metadaten bearbeiten →
-      🎭 Genre-Verwaltung auf der jeweiligen Artist-Detailseite.
-    </p>
-    <p class="retry-row"><a href="{{ base_path }}/library">→ Zu /library (Artist wählen)</a></p>
-  </section>
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">🎭 Genre-Verwaltung</h2>
+  </div>
+
+  <div class="card-body">
+    <div class="alert alert-info mb-0" role="alert">
+      <div>
+        <h4 class="alert-title">ℹ️ Verwaltung im Artist-Kontext</h4>
+        <div class="text-secondary">
+          Genre setzen ist jetzt direkt im Artist-Kontext verfügbar —
+          unter <strong>📝 Metadaten bearbeiten</strong> →
+          <strong>🎭 Genre-Verwaltung</strong> auf der jeweiligen
+          Artist-Detailseite.
+        </div>
+
+        <div class="mt-3">
+          <a href="{{ base_path }}/library" class="btn btn-outline-primary">
+            Zur Library → Artist auswählen
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
