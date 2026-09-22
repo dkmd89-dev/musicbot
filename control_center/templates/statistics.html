@@ -1,31 +1,61 @@
 {% extends "_base.html" %}
 {% block title %}Statistics – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>📊 Statistics</h1>
-  <p class="subtitle">Deine Hörstatistik</p>
-
-  <!-- KPI-Zeile ganz oben -->
-  <div class="kpi-grid-4" id="kpi-header">
-    <div class="empty-note" style="grid-column: 1/-1; text-align: center;">Lädt Kennzahlen…</div>
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="page-title">📊 Statistics</h1>
+      <div class="text-secondary">Deine Hörstatistik</div>
+    </div>
   </div>
+</div>
 
-  <!-- THIS MONTH -->
-  <div class="section-header">This Month</div>
-  <section class="panel">
-    <div id="monthly-artists" class="empty-note">Lädt…</div>
-  </section>
+<!-- KPI -->
+<div class="row row-cards mb-4" id="kpi-header">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body text-secondary">
+        Lädt Kennzahlen…
+      </div>
+    </div>
+  </div>
+</div>
 
-  <!-- ALL-TIME GENRES -->
-  <div class="section-header">All-Time Genres</div>
-  <section class="panel">
-    <div id="all-time-genres" class="empty-note">Lädt…</div>
-  </section>
+<!-- THIS MONTH -->
+<div class="card mb-4">
+  <div class="card-header">
+    <h2 class="card-title">📅 This Month</h2>
+  </div>
+  <div class="card-body">
+    <div id="monthly-artists" class="empty-note">
+      Lädt…
+    </div>
+  </div>
+</div>
 
-  <!-- MUSIC DNA -->
-  <div class="section-header">Music DNA</div>
-  <section class="panel">
-    <div id="music-dna-content" class="empty-note">Lädt…</div>
-  </section>
+<!-- ALL-TIME GENRES -->
+<div class="card mb-4">
+  <div class="card-header">
+    <h2 class="card-title">🎼 All-Time Genres</h2>
+  </div>
+  <div class="card-body">
+    <div id="all-time-genres" class="empty-note">
+      Lädt…
+    </div>
+  </div>
+</div>
+
+<!-- MUSIC DNA -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">🧬 Music DNA</h2>
+  </div>
+  <div class="card-body">
+    <div id="music-dna-content" class="empty-note">
+      Lädt…
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
