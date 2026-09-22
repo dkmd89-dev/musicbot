@@ -11,6 +11,11 @@ nicht real ansprechen) — identisches Mocking-Prinzip wie
 tests/test_navidrome_api_characterization.py (make_request() auf
 Instanzebene gepatcht, hier auf Klassenebene, da der Router seine eigene
 NavidromeAPI()-Instanz konstruiert).
+
+CC-AC-10C: POST /scan testet denselben Pfad über
+utils/navidrome_scan_trigger.py::NavidromeScanTrigger.run_scan() —
+ebenfalls gemockt (echter Subprozess-Aufruf ist externe Kommandoausführung,
+nicht Teil eines Unit-Tests).
 """
 
 from __future__ import annotations
@@ -21,6 +26,9 @@ import pytest_asyncio
 
 from config import Config
 from services.clients.navidrome_api import NavidromeAPI
+from utils.navidrome_scan_trigger import NavidromeScanTrigger, ScanRunResult, ScanTimeoutError
+
+_SAME_ORIGIN = {"Origin": "http://testserver"}
 
 _PING_OK = {"subsonic-response": {"status": "ok"}}
 _PING_FAILED = {"subsonic-response": {"status": "failed"}}
@@ -112,3 +120,62 @@ async def test_status_connected_but_artist_count_none_when_get_artists_fails(cli
 
     assert response.status_code == 200
     assert response.json() == {"connected": True, "artist_count": None}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# CC-AC-10C: POST /scan
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_scan_success(client, monkeypatch):
+    async def _fake_run_scan():
+        return ScanRunResult(success=True, returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(NavidromeScanTrigger, "run_scan", _fake_run_scan)
+
+    response = await client.post("/api/v1/navidrome/scan", headers=_SAME_ORIGIN)
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True, "returncode": 0, "stdout": "ok", "stderr": ""}
+
+
+@pytest.mark.asyncio
+async def test_scan_reports_config_error(client, monkeypatch):
+    async def _fake_run_scan():
+        raise AttributeError("NAVIDROME_SCAN_COMMAND ist nicht in Config definiert oder leer.")
+
+    monkeypatch.setattr(NavidromeScanTrigger, "run_scan", _fake_run_scan)
+
+    response = await client.post("/api/v1/navidrome/scan", headers=_SAME_ORIGIN)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_scan_reports_timeout(client, monkeypatch):
+    async def _fake_run_scan():
+        raise ScanTimeoutError(300)
+
+    monkeypatch.setattr(NavidromeScanTrigger, "run_scan", _fake_run_scan)
+
+    response = await client.post("/api/v1/navidrome/scan", headers=_SAME_ORIGIN)
+
+    assert response.status_code == 504
+
+
+@pytest.mark.asyncio
+async def test_scan_rejected_without_origin_header(client, monkeypatch):
+    called = False
+
+    async def _fake_run_scan():
+        nonlocal called
+        called = True
+        return ScanRunResult(success=True, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(NavidromeScanTrigger, "run_scan", _fake_run_scan)
+
+    response = await client.post("/api/v1/navidrome/scan")
+
+    assert response.status_code == 403
+    assert called is False

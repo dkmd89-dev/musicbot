@@ -12,3 +12,10 @@ from pydantic import BaseModel
 class NavidromeStatusResponse(BaseModel):
     connected: bool
     artist_count: Optional[int] = None
+
+
+class ScanTriggerResponse(BaseModel):
+    success: bool
+    returncode: int
+    stdout: str
+    stderr: str

@@ -30,6 +30,7 @@ from services.jobs.job_registry import JobRegistry
 from .routers import (
     admin,
     admin_maintenance,
+    admin_operations,
     auth,
     downloads,
     findings,
@@ -71,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(navidrome.router)
     app.include_router(admin.router)
     app.include_router(admin_maintenance.router)
+    app.include_router(admin_operations.router)
     app.include_router(jobs.router)
     app.include_router(logs.router)
     app.include_router(auth.router)
