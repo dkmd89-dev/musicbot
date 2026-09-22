@@ -1,13 +1,28 @@
 {% extends "_base.html" %}
 {% block title %}Navidrome – MusicBot Control Center{% endblock %}
 {% block content %}
-  <h1>Navidrome</h1>
-  <p class="subtitle">Navidrome bleibt für Playback/Streaming/Queue zuständig (ui_prompt.txt Abschnitt 24) — hier nur der Verbindungsstatus. Player folgt als späteres Feature.</p>
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="page-title">🎵 Navidrome</h1>
+      <div class="text-secondary">
+        Navidrome bleibt für Playback, Streaming und Queue zuständig.
+        Hier wird nur der Verbindungsstatus angezeigt.
+      </div>
+    </div>
+  </div>
+</div>
 
-  <section class="panel">
-    <h2>Status</h2>
-    <div id="navidrome-status" class="empty-note">Lädt…</div>
-  </section>
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">🔌 Status</h2>
+  </div>
+  <div class="card-body">
+    <div id="navidrome-status" class="empty-note">
+      Lädt…
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
