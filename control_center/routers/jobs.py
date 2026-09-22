@@ -75,10 +75,30 @@ beiden Kinds aber keine Wirkung — bewusst nicht verschleiert (Master-
 Prompt Regel 39), sondern hier UND im UI-Folgeschritt explizit
 dokumentiert statt eine funktionierende Abbrechen-Fähigkeit vorzutäuschen.
 
+Phase 4 (dieser Nachtrag, api_health.md Abschnitt 5): "library_health_scan"
+(POST /health-scan) — deckt den in api_health.md Abschnitt 5 geforderten
+asynchronen Health-Scan-Start ab ("Wenn der Scan länger läuft: als Job
+ausführen"). Ruft ausschließlich services/library_repair/doctor_runner.py::
+run_health_scan() auf — denselben Subprozess-Aufruf wie die erste Phase
+von _run_safe_automatic_repair_job() oben, nur ohne die anschließende
+Reparatur. Bewusst NICHT die leichtgewichtige, rein synchrone
+control_center/_library_scan.py::run_library_scan() (Konsument: GET
+/health, GET /repair-plan) — jene führt nur einen In-Memory-Scan für genau
+EINE HTTP-Response aus, schreibt weder den persistenten Report noch die
+Score-History noch mergt sie die Findings-Registry (siehe deren
+Modul-Docstring). run_health_scan() dagegen startet
+scripts/library_health_check.py als Subprozess, der genau diese drei
+Seiteneffekte auslöst (Report-Datei, services/library_health/
+score_history.py::append_score_history(), FindingsRegistry.
+merge_scan_issues()) — identischer Pfad wie ein Telegram-"🩺 MusicBot
+Doctor"-Scan. GET /health und GET /repair-plan bleiben davon unberührt
+(Auftrag §43-Hard-Stop-Geist, CLAUDE.md Abschnitt 20): kein bestehender
+Endpunkt wird umgestellt, nur additiv ein neuer Job-Typ ergänzt.
+
 POST /demo, POST /repair-safe-automatic, POST /repair-level2,
-POST /repair-level3 und POST /{job_id}/cancel sind schreibend — alle
-über verify_same_origin() CSRF-geschützt, identisches Muster wie
-Findings Accept/Unaccept.
+POST /repair-level3, POST /health-scan und POST /{job_id}/cancel sind
+schreibend — alle über verify_same_origin() CSRF-geschützt, identisches
+Muster wie Findings Accept/Unaccept.
 
 Authentifiziert mit mindestens AccessLevel.ADMIN.
 """
@@ -176,6 +196,56 @@ async def start_demo_job(
 ) -> JobSchema:
     job = registry.create(kind="demo_progress", initiator=str(user_id))
     asyncio.create_task(_run_demo_job(registry, job.job_id))
+    return job_to_schema(job)
+
+
+async def _run_health_scan_job(registry: JobRegistry, job_id: str) -> None:
+    """Reiner Health-Scan als Job (siehe Modul-Docstring, Phase 4) — der
+    Scan-Teil von _run_safe_automatic_repair_job() unten, isoliert ohne
+    anschliessende Reparatur. Kein Zwischen-Checkpoint fuer
+    is_cancel_requested() (der Subprozess selbst kann von hier aus nicht
+    unterbrochen werden, identische Einschraenkung wie beim Scan-Schritt
+    unten)."""
+    registry.mark_running(job_id)
+    try:
+        registry.update_progress(job_id, 10.0, "Health-Scan läuft…")
+        scan_result = await run_health_scan()
+        if not scan_result.success:
+            registry.mark_failed(
+                job_id,
+                "Health-Scan fehlgeschlagen.",
+                result={
+                    "exit_code": scan_result.exit_code,
+                    "stderr_tail": scan_result.stderr_tail,
+                },
+            )
+            return
+
+        report = scan_result.report or {}
+        registry.mark_succeeded(
+            job_id,
+            result={
+                "health": report.get("health", {}),
+                "library": report.get("library", {}),
+                "stdout_tail": scan_result.stdout_tail,
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        _logger.error(f"Health-Scan-Job {job_id} fehlgeschlagen: {e!r}")
+        registry.mark_failed(job_id, "Interner Fehler im Health-Scan-Job.")
+
+
+@router.post(
+    "/health-scan",
+    response_model=JobSchema,
+    dependencies=[Depends(verify_same_origin)],
+)
+async def start_health_scan_job(
+    user_id: int = Depends(get_current_user_id),
+    registry: JobRegistry = Depends(get_job_registry),
+) -> JobSchema:
+    job = registry.create(kind="library_health_scan", initiator=str(user_id))
+    asyncio.create_task(_run_health_scan_job(registry, job.job_id))
     return job_to_schema(job)
 
 

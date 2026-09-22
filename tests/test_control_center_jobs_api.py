@@ -223,6 +223,80 @@ def _timed_out_repair_result():
     return DoctorRepairResult(exit_code=None, timed_out=True, error_message="Timeout nach 900s")
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# POST /health-scan — reiner Health-Scan als Job (Phase 4, api_health.md
+# Abschnitt 5) — isolierter Scan-Teil von repair-safe-automatic oben, ohne
+# anschliessende Reparatur.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_health_scan_job_succeeds(client, monkeypatch):
+    import control_center.routers.jobs as jobs_router
+
+    async def _fake_scan():
+        return _ok_scan_result(report={"health": {"score": 87.5, "status": "GOOD"},
+                                        "library": {"files": 10, "artists": 2, "albums": 3}})
+
+    monkeypatch.setattr(jobs_router, "run_health_scan", _fake_scan)
+
+    job_id = (
+        await client.post("/api/v1/jobs/health-scan", headers=_SAME_ORIGIN)
+    ).json()["job_id"]
+    await asyncio.sleep(0.05)
+
+    body = (await client.get(f"/api/v1/jobs/{job_id}")).json()
+    assert body["kind"] == "library_health_scan"
+    assert body["status"] == "SUCCEEDED"
+    assert body["result"]["health"] == {"score": 87.5, "status": "GOOD"}
+    assert body["result"]["library"] == {"files": 10, "artists": 2, "albums": 3}
+
+
+@pytest.mark.asyncio
+async def test_health_scan_job_fails_when_scan_fails(client, monkeypatch):
+    import control_center.routers.jobs as jobs_router
+
+    async def _fake_scan():
+        return _failed_scan_result()
+
+    monkeypatch.setattr(jobs_router, "run_health_scan", _fake_scan)
+
+    job_id = (
+        await client.post("/api/v1/jobs/health-scan", headers=_SAME_ORIGIN)
+    ).json()["job_id"]
+    await asyncio.sleep(0.05)
+
+    body = (await client.get(f"/api/v1/jobs/{job_id}")).json()
+    assert body["status"] == "FAILED"
+    assert body["result"]["exit_code"] == 1
+
+
+@pytest.mark.asyncio
+async def test_health_scan_job_rejected_without_origin_header(client):
+    response = await client.post("/api/v1/jobs/health-scan")
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "ORIGIN_CHECK_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_health_scan_job_records_initiator(client, monkeypatch):
+    import control_center.routers.jobs as jobs_router
+
+    async def _fake_scan():
+        return _ok_scan_result()
+
+    monkeypatch.setattr(jobs_router, "run_health_scan", _fake_scan)
+    monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 77))
+
+    job_id = (
+        await client.post("/api/v1/jobs/health-scan", headers=_SAME_ORIGIN)
+    ).json()["job_id"]
+
+    body = (await client.get(f"/api/v1/jobs/{job_id}")).json()
+    assert body["initiator"] == "77"
+
+
 @pytest.mark.asyncio
 async def test_repair_job_succeeds_when_scan_and_repair_succeed(client, monkeypatch):
     import control_center.routers.jobs as jobs_router
