@@ -300,6 +300,209 @@ async function pollBackupJob(jobId, backupType) {
   throw new Error("Zeitüberschreitung beim Warten auf das Backup.");
 }
 
+async function loadMaintenanceStatus() {
+  const statusEl = document.getElementById("admin-maintenance-status");
+  const labelEl = document.getElementById("admin-maintenance-label");
+  const buttonEl = document.getElementById("admin-maintenance-toggle-btn");
+  const messageEl = document.getElementById("admin-maintenance-message");
+
+  try {
+    const res = await fetch(
+      apiUrl("/api/v1/admin/maintenance"),
+      { credentials: "same-origin" },
+    );
+
+    if (res.status === 401) {
+      showOnly("login-view");
+      return;
+    }
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      throw new Error(
+        data?.error?.message ||
+        data?.detail ||
+        `Fehler: ${res.status}`,
+      );
+    }
+
+    const active = data.active === true;
+
+    if (statusEl) {
+      statusEl.className = active
+        ? "status status-warning"
+        : "status status-success";
+      statusEl.textContent = active ? "Aktiv" : "Inaktiv";
+    }
+
+    if (labelEl) {
+      labelEl.textContent = active
+        ? "Wartungsmodus ist aktiv"
+        : "Wartungsmodus ist deaktiviert";
+    }
+
+    if (buttonEl) {
+      buttonEl.textContent = active
+        ? "Wartungsmodus deaktivieren"
+        : "Wartungsmodus aktivieren";
+      buttonEl.className = active
+        ? "btn btn-outline-success"
+        : "btn btn-outline-warning";
+    }
+
+    if (messageEl) {
+      messageEl.textContent = "";
+    }
+  } catch (err) {
+    if (labelEl) {
+      labelEl.textContent = "Wartungsstatus konnte nicht geladen werden.";
+    }
+
+    if (messageEl) {
+      messageEl.innerHTML =
+        `<span class="text-danger">${_escapeHtml(err.message)}</span>`;
+    }
+  }
+}
+
+async function toggleMaintenance() {
+  const buttonEl = document.getElementById("admin-maintenance-toggle-btn");
+  const messageEl = document.getElementById("admin-maintenance-message");
+
+  if (!buttonEl) return;
+
+  const currentlyActive =
+    buttonEl.textContent.includes("deaktivieren");
+
+  buttonEl.disabled = true;
+
+  if (messageEl) {
+    messageEl.textContent = "Wartungsmodus wird geändert…";
+  }
+
+  try {
+    const res = await fetch(apiUrl("/api/v1/admin/maintenance"), {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      body: JSON.stringify({ active: !currentlyActive }),
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      throw new Error(
+        data?.error?.message ||
+        data?.detail ||
+        `Fehler: ${res.status}`,
+      );
+    }
+
+    await loadMaintenanceStatus();
+  } catch (err) {
+    if (messageEl) {
+      messageEl.innerHTML =
+        `<span class="text-danger">${_escapeHtml(err.message)}</span>`;
+    }
+  } finally {
+    buttonEl.disabled = false;
+  }
+}
+
+async function loadBotOperationStatus() {
+  const statusEl = document.getElementById("admin-bot-operation-status");
+
+  if (!statusEl) return;
+
+  try {
+    const res = await fetch(
+      apiUrl("/api/v1/admin/system/status"),
+      { credentials: "same-origin" },
+    );
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      throw new Error(
+        data?.error?.message ||
+        data?.detail ||
+        `Fehler: ${res.status}`,
+      );
+    }
+
+    if (data.bot_service_active === true) {
+      statusEl.innerHTML =
+        '<span class="status status-success">Bot-Service aktiv</span>';
+    } else if (data.bot_service_active === false) {
+      statusEl.innerHTML =
+        '<span class="status status-danger">Bot-Service inaktiv</span>';
+    } else {
+      statusEl.innerHTML =
+        '<span class="status status-warning">Bot-Service-Status unbekannt</span>';
+    }
+  } catch (err) {
+    statusEl.innerHTML =
+      `<span class="text-danger">Status konnte nicht geladen werden: ${_escapeHtml(err.message)}</span>`;
+  }
+}
+
+async function restartBot() {
+  const statusEl = document.getElementById("admin-bot-operation-status");
+  const buttonEl = document.getElementById("admin-bot-restart-btn");
+
+  if (!buttonEl) return;
+
+  if (!window.confirm(
+    "Den Bot jetzt neu starten? Der Bot ist während des Neustarts kurz nicht erreichbar.",
+  )) {
+    return;
+  }
+
+  buttonEl.disabled = true;
+
+  if (statusEl) {
+    statusEl.textContent = "Bot-Neustart wird angefordert…";
+  }
+
+  try {
+    const res = await fetch(apiUrl("/api/v1/admin/system/restart"), {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "X-Requested-With": "XMLHttpRequest",
+      },
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      throw new Error(
+        data?.error?.message ||
+        data?.detail ||
+        `Fehler: ${res.status}`,
+      );
+    }
+
+    if (statusEl) {
+      statusEl.textContent =
+        data?.message || "Neustart wird in Kürze ausgeführt.";
+    }
+
+    buttonEl.disabled = true;
+  } catch (err) {
+    if (statusEl) {
+      statusEl.innerHTML =
+        `<span class="text-danger">${_escapeHtml(err.message)}</span>`;
+    }
+
+    buttonEl.disabled = false;
+  }
+}
+
 function renderAdminUsers(el, body) {
     if (!body.users.length) { el.innerHTML = '<p class="empty-note">Keine registrierten Nutzer.</p>'; return; }
     const roleBadge = { owner: "CRITICAL", admin: "ERROR", moderator: "WARNING", user: "INFO" };
@@ -353,9 +556,19 @@ function renderAdminUsers(el, body) {
     checkAuth().then((who) => {
       if (!who) return;
       loadSystemStatus();
-    loadAdminUsers();
+      loadBotOperationStatus();
+      loadMaintenanceStatus();
+      loadAdminUsers();
 
-    const backupTypeEl = document.getElementById("admin-backup-type");
+      document
+        .getElementById("admin-maintenance-toggle-btn")
+        ?.addEventListener("click", toggleMaintenance);
+
+      document
+        .getElementById("admin-bot-restart-btn")
+        ?.addEventListener("click", restartBot);
+
+      const backupTypeEl = document.getElementById("admin-backup-type");
     const getBackupType = () => backupTypeEl?.value || "bot";
 
     document
