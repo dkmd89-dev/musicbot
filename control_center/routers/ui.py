@@ -20,13 +20,17 @@ client-seitig über die bereits geschützten API-Endpunkte (GET
 /api/v1/auth/whoami zuerst — ein 401 dort schaltet clientseitig auf die
 Login-Ansicht um, siehe static/common.js::checkAuth()).
 
-"/jobs" (Job Center) und "/logs" (Platzhalter, kein Backend vorhanden)
-sind die einzigen beiden Seiten ohne direktes Vorbild im vorherigen
-Einzel-Dashboard — "/jobs" nutzt die bereits bestehende Jobs-API (GET
-/api/v1/jobs), die bisher nur implizit über die Repair-Job-Anzeige
-sichtbar war, keine neue Backend-Fläche. "/logs" zeigt ehrlich "Noch
-nicht implementiert" statt eine nicht vorhandene Funktion vorzutäuschen
-(Master-Prompt Regel 38).
+"/logs" ist die einzige Seite ohne direktes Vorbild im vorherigen
+Einzel-Dashboard und zeigt ehrlich "Noch nicht implementiert" statt eine
+nicht vorhandene Funktion vorzutäuschen (Master-Prompt Regel 38).
+
+"/findings", "/repairs" und "/jobs" existierten als eigene Seiten (siehe
+docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md), wurden aber im
+Zuge von api_health.md ("Sidebar enthält genau einen 🩺 Health
+Menüpunkt") vollständig in "/health" konsolidiert (control_center/
+templates/health.html + static/pages/health.js) — ihre APIs
+(routers/findings.py, routers/repair.py, routers/jobs.py) blieben dabei
+unveraendert, nur die drei Seiten-Routen und -Templates entfielen.
 """
 
 from __future__ import annotations
@@ -97,21 +101,6 @@ def metadata_page(request: Request) -> HTMLResponse:
 @router.get("/statistics", response_class=HTMLResponse)
 def statistics_page(request: Request) -> HTMLResponse:
     return _render(request, "statistics.html", "statistics")
-
-
-@router.get("/findings", response_class=HTMLResponse)
-def findings_page(request: Request) -> HTMLResponse:
-    return _render(request, "findings.html", "findings")
-
-
-@router.get("/repairs", response_class=HTMLResponse)
-def repairs_page(request: Request) -> HTMLResponse:
-    return _render(request, "repairs.html", "repairs")
-
-
-@router.get("/jobs", response_class=HTMLResponse)
-def jobs_page(request: Request) -> HTMLResponse:
-    return _render(request, "jobs.html", "jobs")
 
 
 @router.get("/health", response_class=HTMLResponse)

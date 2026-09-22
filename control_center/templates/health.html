@@ -6,22 +6,191 @@
     <div class="col">
       <h1 class="page-title">🩺 Health</h1>
       <div class="text-secondary">
-        Nur tatsächlich vorhandene Checks — keine vorgetäuschten Health-Werte.
+        MusicBot Doctor, Library Health Review und Repair MusicBot — an
+        einem Ort. Nur tatsächlich vorhandene Checks, keine vorgetäuschten
+        Health-Werte.
       </div>
+    </div>
+    <div class="col-auto">
+      <span id="health-score-badge" class="badge bg-secondary-lt fs-4">Lädt…</span>
     </div>
   </div>
 </div>
 
-<!-- Library Health -->
+<!-- A) MusicBot Doctor -->
 <div class="card mb-4">
   <div class="card-header">
-    <h2 class="card-title">📚 Library</h2>
+    <div>
+      <h2 class="card-title">🩺 MusicBot Doctor</h2>
+      <div class="text-secondary small">
+        Health-Score, Library-Übersicht und Score-Verlauf.
+      </div>
+    </div>
+    <div class="card-actions">
+      <button id="health-scan-btn" type="button" class="btn btn-primary">
+        Health Scan starten
+      </button>
+    </div>
   </div>
 
   <div class="card-body">
     <div id="health-tiles" class="row row-cards">
       <div class="col-12 text-secondary">Lädt…</div>
     </div>
+
+    <div id="health-scan-job-content" class="empty-note mt-3"></div>
+
+    <h3 class="mt-4">📈 Score-Verlauf</h3>
+    <div id="score-history-content" class="empty-note">Lädt…</div>
+  </div>
+</div>
+
+<!-- B) Library Health Review -->
+<div class="card mb-4">
+  <div class="card-header">
+    <h2 class="card-title">🔎 Library Health Review</h2>
+  </div>
+
+  <div class="card-body">
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-md-4">
+        <label for="findings-severity-filter" class="form-label">Severity</label>
+        <select id="findings-severity-filter" class="form-select">
+          <option value="">— alle —</option>
+          <option value="CRITICAL">CRITICAL</option>
+          <option value="ERROR">ERROR</option>
+          <option value="WARNING">WARNING</option>
+          <option value="SUSPECTED">SUSPECTED</option>
+          <option value="INFO">INFO</option>
+        </select>
+      </div>
+      <div class="col-12 col-md-4">
+        <label for="findings-category-filter" class="form-label">Kategorie</label>
+        <select id="findings-category-filter" class="form-select">
+          <option value="">— alle —</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="findings-content" class="empty-note">
+      Lädt…
+    </div>
+
+    <div class="mt-4">
+      <button
+        id="accepted-findings-toggle"
+        type="button"
+        class="btn btn-outline-secondary"
+      >
+        Akzeptierte Findings anzeigen
+      </button>
+    </div>
+
+    <div
+      id="accepted-findings-content"
+      class="empty-note mt-4"
+      hidden
+    ></div>
+  </div>
+</div>
+
+<!-- C) Repair MusicBot -->
+<div class="card mb-4">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title">🛠 Repair MusicBot — Repair-Plan</h2>
+      <div class="text-secondary small">
+        Vorschau und anschließend gezielte SAFE_AUTOMATIC-Reparatur.
+      </div>
+    </div>
+    <div class="card-actions">
+      <button id="repair-plan-btn" type="button" class="btn btn-primary">
+        Berechnen
+      </button>
+    </div>
+  </div>
+
+  <div class="card-body">
+    <p class="text-secondary">
+      Führt einen vollständigen Library-Scan aus (kann eine Weile dauern).
+      Der Scan läuft nicht automatisch, sondern nur auf Klick.
+    </p>
+
+    <div id="repair-plan-content" class="empty-note"></div>
+
+    <div class="mt-4 d-flex gap-2">
+      <button id="repair-start-btn" type="button" class="btn btn-warning" disabled>
+        SAFE_AUTOMATIC reparieren
+      </button>
+
+      <button id="repair-cancel-btn" type="button" class="btn btn-outline-secondary" hidden>
+        Abbrechen
+      </button>
+    </div>
+
+    <div id="repair-job-content" class="empty-note mt-3"></div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title">🎤 Repair MusicBot — L2/L3</h2>
+      <div class="text-secondary small">
+        Reparaturen gezielt pro Artist auswählen.
+      </div>
+    </div>
+    <div class="card-actions">
+      <button id="level23-plan-btn" type="button" class="btn btn-outline-primary">
+        Laden
+      </button>
+    </div>
+  </div>
+
+  <div class="card-body">
+    <p class="text-secondary">
+      Führt einen vollständigen Library-Scan aus und gruppiert L2
+      (Neuverarbeitung) und L3 (MusicBrainz) nach Artist.
+      Die Reparatur ist ausschließlich pro Artist ausführbar —
+      kein globaler Batch.
+    </p>
+
+    <div id="level23-artists-content" class="empty-note"></div>
+
+    <div id="level23-job-content" class="empty-note mt-3"></div>
+  </div>
+</div>
+
+<!-- Repair History / Statistics / Jobs -->
+<div class="card mb-4">
+  <div class="card-header">
+    <h2 class="card-title">🧾 Repair-Statistik</h2>
+  </div>
+  <div class="card-body">
+    <div id="repair-statistics-content" class="empty-note">Lädt…</div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">
+    <h2 class="card-title">🕘 Repair-History</h2>
+  </div>
+  <div class="card-body">
+    <div id="repair-history-content" class="empty-note">Lädt…</div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">
+    <h2 class="card-title">📋 Zuletzt ausgeführte Jobs</h2>
+    <div class="card-actions">
+      <button id="jobs-refresh-btn" type="button" class="btn btn-outline-primary">
+        Aktualisieren
+      </button>
+    </div>
+  </div>
+  <div class="card-body">
+    <div id="jobs-content" class="empty-note">Lädt…</div>
   </div>
 </div>
 
@@ -39,69 +208,5 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
-  function renderHealth(data) {
-    const el = document.getElementById("health-tiles");
-    if (!data.library || !data.library.files) {
-      el.innerHTML = "<p>Keine Dateien in der Library gefunden.</p>";
-      return;
-    }
-    const score = data.health.score != null ? data.health.score : "–";
-    const status = data.health.status || "UNSCORED";
-    el.innerHTML = `
-      <div class="tile"><div class="tile-label">Health Score</div>
-        <div class="tile-value status-${status}">${score}</div>
-        <div class="hint">${status}</div></div>
-      <div class="tile"><div class="tile-label">Dateien</div>
-        <div class="tile-value">${data.library.files}</div></div>
-      <div class="tile"><div class="tile-label">Artists</div>
-        <div class="tile-value">${data.library.artists}</div></div>
-      <div class="tile"><div class="tile-label">Alben</div>
-        <div class="tile-value">${data.library.albums}</div></div>
-    `;
-  }
-
-  async function loadHealth() {
-    const el = document.getElementById("health-tiles");
-    try {
-      const res = await fetch(apiUrl("/api/v1/library/health"), { credentials: "same-origin" });
-      if (res.status === 401) { showOnly("login-view"); return; }
-      if (res.status === 403) { el.textContent = "Kein Zugriff (Berechtigung reicht nicht)."; return; }
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        el.textContent = "Fehler: " + (body && body.error ? body.error.message : res.status);
-        return;
-      }
-      renderHealth(await res.json());
-    } catch (err) {
-      el.textContent = "Netzwerkfehler: " + err.message;
-    }
-  }
-
-  async function loadNavidromeStatus() {
-    const el = document.getElementById("navidrome-status");
-    try {
-      const res = await fetch(apiUrl("/api/v1/navidrome/status"), { credentials: "same-origin" });
-      if (res.status === 401) { showOnly("login-view"); return; }
-      if (!res.ok) { el.textContent = "Navidrome: Status nicht abrufbar."; return; }
-      const status = await res.json();
-      const dot = status.connected ? "dot-ok" : "dot-error";
-      const label = status.connected ? "Verbunden" : "Nicht erreichbar";
-      const count = status.connected && status.artist_count != null
-        ? ` (${status.artist_count} Artists)` : "";
-      el.innerHTML = `<span class="dot ${dot}"></span>Navidrome: ${label}${count}`;
-    } catch (err) {
-      el.textContent = "Navidrome: Netzwerkfehler.";
-    }
-  }
-
-  function initPage() {
-    checkAuth().then((who) => {
-      if (!who) return;
-      loadHealth();
-      loadNavidromeStatus();
-    });
-  }
-  initPage();
-</script>
+<script src="{{ base_path }}/static/pages/health.js"></script>
 {% endblock %}

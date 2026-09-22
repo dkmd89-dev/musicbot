@@ -28,10 +28,11 @@ import pytest_asyncio
 CC_DIR = Path(__file__).resolve().parent.parent / "control_center"
 TEMPLATES = sorted((CC_DIR / "templates").glob("*.html"))
 COMMON_JS = CC_DIR / "static" / "common.js"
+HEALTH_JS = CC_DIR / "static" / "pages" / "health.js"
 
 ALL_PAGES = [
-    "/", "/downloads", "/library", "/metadata", "/statistics", "/findings",
-    "/repairs", "/jobs", "/health", "/navidrome", "/logs", "/admin",
+    "/", "/downloads", "/library", "/metadata", "/statistics",
+    "/health", "/navidrome", "/logs", "/admin",
 ]
 PREFIX = "/controlcenter"
 PREFIX_HEADER = {"X-Forwarded-Prefix": PREFIX}
@@ -65,7 +66,7 @@ def test_template_has_no_unprefixed_root_absolute_attribute(path):
     )
 
 
-@pytest.mark.parametrize("path", TEMPLATES + [COMMON_JS], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", TEMPLATES + [COMMON_JS, HEALTH_JS], ids=lambda p: p.name)
 def test_every_fetch_goes_through_api_url(path):
     text = path.read_text(encoding="utf-8")
     # Kommentarzeilen ausschliessen: ein Kommentar wie
@@ -132,16 +133,22 @@ async def test_prefixed_sidebar_contains_all_nav_targets(client):
 
 @pytest.mark.asyncio
 async def test_prefixed_active_marker_and_inline_links(client):
-    html = (await client.get("/findings", headers=PREFIX_HEADER)).text
-    assert f'href="{PREFIX}/findings" class="nav-link active"' in html
+    html = (await client.get("/health", headers=PREFIX_HEADER)).text
+    # _base.html rendert href/class als eigene Attribut-Zeilen — deshalb
+    # hier tolerant gegenueber Whitespace zwischen beiden Attributen statt
+    # eines starren Ein-Zeilen-Substrings (unabhaengige, vorbestehende
+    # Drift derselben Art wie bei der panel-link-Assertion unten, hier
+    # nachgezogen, weil dieser Test ohnehin auf /health umgestellt wird).
+    assert re.search(rf'href="{re.escape(PREFIX)}/health"\s*\n\s*class="nav-link active"', html)
     overview = (await client.get("/", headers=PREFIX_HEADER)).text
-    # PR #285 (0337713) hat den Inline-Link von <a href>...> auf
-    # <a href=... class="panel-link"> umgestellt — die alte Assertion
-    # war gegen die exakte Link-Form (ohne Attribute) gerichtet und
-    # brach dadurch. Jetzt wird ueber die class="panel-link" geprueft
-    # (stabiler Marker fuer Content-Inline-Links, distinkt von der
-    # Sidebar-Nav mit class="nav-link").
-    assert f'href="{PREFIX}/findings" class="panel-link"' in overview
+    # PR adc1051 ("migrate overview to Tabler", nach PR #285) hat den
+    # Inline-Link auf Tabler-Button-Klassen umgestellt (class="panel-link"
+    # existiert seitdem nicht mehr, siehe control_center/templates/
+    # overview.html) — diese Assertion war seitdem unbemerkt gegen die
+    # alte Klasse gerichtet (unabhaengige, vorbestehende Drift, hier
+    # nachgezogen, weil dieser Test ohnehin auf /health statt /findings
+    # umgestellt wird, api_health.md).
+    assert f'href="{PREFIX}/health#findings-content" class="btn btn-link p-0"' in overview
 
 
 @pytest.mark.asyncio

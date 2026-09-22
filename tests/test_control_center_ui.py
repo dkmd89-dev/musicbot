@@ -21,6 +21,8 @@ test_control_center_health_api.py/test_control_center_findings_api.py).
 
 from __future__ import annotations
 
+import re
+
 import httpx
 import pytest
 import pytest_asyncio
@@ -28,8 +30,8 @@ import pytest_asyncio
 from config import Config
 
 ALL_PAGES = [
-    "/", "/downloads", "/library", "/metadata", "/statistics", "/findings",
-    "/repairs", "/jobs", "/health", "/navidrome", "/logs", "/admin",
+    "/", "/downloads", "/library", "/metadata", "/statistics",
+    "/health", "/navidrome", "/logs", "/admin",
 ]
 
 
@@ -92,13 +94,19 @@ async def test_overview_nav_link_is_marked_active_on_overview_page(client):
     assert 'href="/" class="nav-link active"' in html
 
 
-@pytest.mark.asyncio
-async def test_findings_nav_link_is_marked_active_on_findings_page(client):
-    html = (await client.get("/findings")).text
+_NAV_LINK_ACTIVE_RE = "href=\"{path}\"\\s*\\n\\s*class=\"nav-link active\""
 
-    assert 'href="/findings" class="nav-link active"' in html
-    # Andere Seiten bleiben auf der Findings-Seite nicht "active":
-    assert 'href="/" class="nav-link active"' not in html
+
+@pytest.mark.asyncio
+async def test_health_nav_link_is_marked_active_on_health_page(client):
+    """_base.html rendert href/class als eigene Attribut-Zeilen (siehe
+    <a>-Markup dort) - deshalb hier tolerant gegenueber Whitespace
+    zwischen beiden Attributen statt eines starren Ein-Zeilen-Substrings."""
+    html = (await client.get("/health")).text
+
+    assert re.search(_NAV_LINK_ACTIVE_RE.format(path="/health"), html)
+    # Andere Seiten bleiben auf der Health-Seite nicht "active":
+    assert not re.search(_NAV_LINK_ACTIVE_RE.format(path="/"), html)
 
 
 @pytest.mark.asyncio
@@ -188,11 +196,12 @@ async def test_overview_does_not_contain_full_panel_lists(client):
 
 @pytest.mark.asyncio
 async def test_overview_quick_actions_link_to_detail_pages(client):
+    """Findings/Repairs/Jobs sind seit der Health-Konsolidierung
+    (api_health.md) EIN gemeinsames Ziel (/health) statt drei getrennter
+    Seiten (siehe control_center/routers/ui.py-Docstring)."""
     html = (await client.get("/")).text
 
-    assert 'href="/findings"' in html
-    assert 'href="/repairs"' in html
-    assert 'href="/jobs"' in html
+    assert 'href="/health"' in html
     assert 'href="/library"' in html
 
 
@@ -585,8 +594,8 @@ async def test_artist_detail_page_execute_errors_do_not_claim_network_failure(cl
     Der L2/L3-Job-Start (CC-AC-4) ist davon bewusst ausgenommen: er
     erstellt nur einen Job und kehrt sofort zurueck (kein langer
     synchroner Schreibvorgang wie oben) - identisches
-    "Netzwerkfehler"-Wording wie beim aequivalenten Job-Start auf
-    repairs.html::startLevel23Job()."""
+    "Netzwerkfehler"-Wording wie beim aequivalenten Job-Start in
+    static/pages/health.js::startLevel23Job()."""
     html = (await client.get("/library/Bausa")).text
 
     assert html.count("Ergebnis unbekannt") >= 7
@@ -788,7 +797,7 @@ async def test_artist_detail_page_wires_existing_repair_level_job_endpoints(clie
 async def test_artist_detail_page_maintenance_uses_artist_context_not_free_text(client):
     """Auftrag §12: der Artist-Kontext (aus dem Pfad) wird implizit
     mitgegeben - kein eigenes Freitext-Artist-Feld wie im generischen
-    admin.html-Formular bzw. der Plan-Liste auf repairs.html."""
+    admin.html-Formular bzw. der Repair-Plan-Liste auf /health."""
     html = (await client.get("/library/Bausa")).text
 
     maintenance_section = html.split('id="artist-maintenance-panel"', 1)[1].split("</section>", 1)[0]
@@ -813,7 +822,7 @@ async def test_artist_detail_page_genre_revalidation_has_no_dead_button(client):
 async def test_artist_detail_page_repair_jobs_have_no_cancel_button(client):
     """Kooperatives Abbrechen ist fuer repair_level2/repair_level3
     wirkungslos (control_center/routers/jobs.py) - identische
-    Einschraenkung wie repairs.html::test_repairs_page_level23_has_no_cancel_button."""
+    Einschraenkung wie test_health_js_level23_has_no_cancel_function."""
     html = (await client.get("/library/Bausa")).text
 
     assert "cancelArtistRepairJob" not in html
@@ -1018,162 +1027,243 @@ async def test_statistics_page_has_all_panels(client):
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# GET /findings
+# GET /health — konsolidiertes Health Center (api_health.md): MusicBot
+# Doctor + Library Health Review (vormals /findings) + Repair MusicBot
+# (vormals /repairs) + Job-Liste (vormals /jobs) auf einer Seite.
+#
+# Die Fachlogik-Verdrahtung (Funktionsnamen, API-Pfade, Bestaetigungstexte)
+# lebt seit der Konsolidierung NICHT mehr inline in der Seite, sondern in
+# control_center/static/pages/health.js (Auftrag §16 "Kein riesiges
+# Inline-JavaScript") — deshalb pruefen die folgenden Tests Element-IDs/
+# Strukturtext gegen /health (serverseitig gerendertes Template) und die
+# Funktions-/Endpunkt-Verdrahtung gegen die ausgelieferte health.js-Datei,
+# identisches Trennungsprinzip wie test_static_common_js_is_served weiter
+# unten fuer common.js.
 # ─────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
-async def test_findings_page_fetches_real_api_endpoints(client):
-    html = (await client.get("/findings")).text
+@pytest_asyncio.fixture
+async def health_js(client):
+    return (await client.get("/static/pages/health.js")).text
 
-    assert "/api/v1/library/findings" in html
+
+@pytest.mark.asyncio
+async def test_health_page_has_findings_panel(client):
+    html = (await client.get("/health")).text
+
     assert 'id="findings-content"' in html
 
 
 @pytest.mark.asyncio
-async def test_findings_page_has_accept_wiring(client):
-    """Accept-Button-Verdrahtung fuer den ersten schreibenden Endpunkt
-    (POST .../accept) - Event-Delegation auf dem Content-Container,
-    damit re-gerenderte Buttons nach jedem Poll weiter funktionieren."""
-    html = (await client.get("/findings")).text
-
-    assert "acceptFinding" in html
-    assert "accept-btn" in html
-    assert "/accept" in html
+async def test_health_js_fetches_real_findings_api_endpoint(health_js):
+    assert "/api/v1/library/findings" in health_js
 
 
 @pytest.mark.asyncio
-async def test_findings_page_has_accepted_toggle_and_unaccept_wiring(client):
-    html = (await client.get("/findings")).text
+async def test_health_js_has_accept_wiring(health_js):
+    """Accept-Button-Verdrahtung fuer POST .../accept - Event-Delegation
+    auf dem Content-Container, damit re-gerenderte Buttons nach jedem Poll
+    weiter funktionieren."""
+    assert "acceptFinding" in health_js
+    assert "accept-btn" in health_js
+    assert "/accept" in health_js
+
+
+@pytest.mark.asyncio
+async def test_health_page_has_accepted_toggle_panel(client):
+    html = (await client.get("/health")).text
 
     assert 'id="accepted-findings-toggle"' in html
     assert 'id="accepted-findings-content"' in html
-    assert "/api/v1/library/findings/accepted" in html
-    assert "unacceptFinding" in html
-    assert "unaccept-btn" in html
-    assert "/unaccept" in html
 
 
 @pytest.mark.asyncio
-async def test_findings_page_escapes_untrusted_text(client):
+async def test_health_js_has_accepted_and_unaccept_wiring(health_js):
+    assert "/api/v1/library/findings/accepted" in health_js
+    assert "unacceptFinding" in health_js
+    assert "unaccept-btn" in health_js
+    assert "/unaccept" in health_js
+
+
+@pytest.mark.asyncio
+async def test_health_js_has_generic_review_wiring(health_js):
+    """Nachtrag Phase 2 (api_health.md Abschnitt 7): manueller
+    RESOLVED-Review ueber den generischen /review-Endpunkt."""
+    assert "resolveFinding" in health_js
+    assert "/review" in health_js
+    assert "RESOLVED" in health_js
+
+
+@pytest.mark.asyncio
+async def test_health_js_escapes_untrusted_text(health_js):
     """Sicherheitsnachtrag: Titel/Artist/Pfad/Message-Felder werden vor
     dem innerHTML-Einsatz escaped (XSS-Schutz)."""
-    html = (await client.get("/findings")).text
-
-    assert "_escapeHtml(" in html
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# GET /repairs — Repair-Plan (SAFE_AUTOMATIC) + L2/L3
-# ─────────────────────────────────────────────────────────────────────────
+    assert "_escapeHtml(" in health_js
 
 
 @pytest.mark.asyncio
-async def test_repairs_page_has_dedicated_manual_trigger(client):
+async def test_health_js_has_findings_filter_wiring(health_js):
+    """Nachtrag Phase 4 (api_health.md Abschnitt 8): Findings nach
+    Severity/Kategorie filterbar."""
+    assert "findings-severity-filter" in health_js
+    assert "findings-category-filter" in health_js
+
+
+@pytest.mark.asyncio
+async def test_health_page_has_findings_filter_controls(client):
+    html = (await client.get("/health")).text
+
+    assert 'id="findings-severity-filter"' in html
+    assert 'id="findings-category-filter"' in html
+
+
+@pytest.mark.asyncio
+async def test_health_page_has_dedicated_repair_plan_trigger(client):
     """Repair-Plan ist bewusst NICHT im 30s-Polling (voller Library-Scan)
     - es muss einen eigenen manuellen Button geben, keinen impliziten
     Auto-Load beim Seitenaufruf."""
-    html = (await client.get("/repairs")).text
+    html = (await client.get("/health")).text
 
     assert 'id="repair-plan-btn"' in html
 
 
 @pytest.mark.asyncio
-async def test_repairs_page_start_button_disabled_until_plan_loaded(client):
+async def test_health_page_repair_start_button_disabled_until_plan_loaded(client):
     """Der Start-Button fuer die erste dateiveraendernde Faehigkeit
     (repair_safe_automatic) darf nicht klickbar sein, bevor eine echte,
     aktuelle Kandidatenzahl fuer den Bestaetigungsdialog vorliegt."""
-    html = (await client.get("/repairs")).text
+    html = (await client.get("/health")).text
 
-    assert 'id="repair-start-btn" class="small" disabled' in html
+    assert 'id="repair-start-btn" type="button" class="btn btn-warning" disabled' in html
 
 
 @pytest.mark.asyncio
-async def test_repairs_page_job_ui_wiring_present(client):
-    html = (await client.get("/repairs")).text
+async def test_health_page_has_repair_job_panels(client):
+    html = (await client.get("/health")).text
 
-    assert "startRepairJob" in html
-    assert "cancelRepairJob" in html
-    assert "/api/v1/jobs/repair-safe-automatic" in html
     assert 'id="repair-cancel-btn"' in html
     assert 'id="repair-job-content"' in html
 
 
 @pytest.mark.asyncio
-async def test_repairs_page_confirm_dialog_mentions_backup_and_files(client):
+async def test_health_js_repair_job_wiring_present(health_js):
+    assert "startRepairJob" in health_js
+    assert "cancelRepairJob" in health_js
+    assert "/api/v1/jobs/repair-safe-automatic" in health_js
+
+
+@pytest.mark.asyncio
+async def test_health_js_confirm_dialog_mentions_backup_and_files(health_js):
     """Master-Prompt Regel 11/32: Bestaetigung vor einer destruktiven
     Operation muss verstaendlich machen, was passiert."""
-    html = (await client.get("/repairs")).text
-
-    assert "Backup" in html
-    assert "Dateien in der Library" in html
+    assert "Backup" in health_js
+    assert "Dateien in der Library" in health_js
 
 
 @pytest.mark.asyncio
-async def test_repairs_page_plan_text_distinguishes_safe_automatic_from_total(client):
-    html = (await client.get("/repairs")).text
-
-    assert "davon" in html
-    assert "SAFE_AUTOMATIC (per Button unten ausführbar)" in html
+async def test_health_js_plan_text_distinguishes_safe_automatic_from_total(health_js):
+    assert "davon" in health_js
+    assert "SAFE_AUTOMATIC (per Button unten ausführbar)" in health_js
 
 
 @pytest.mark.asyncio
-async def test_repairs_page_has_level23_panel_with_dedicated_manual_trigger(client):
-    html = (await client.get("/repairs")).text
+async def test_health_page_has_level23_panel_with_dedicated_manual_trigger(client):
+    html = (await client.get("/health")).text
 
-    assert "L2/L3-Reparaturen" in html
+    assert "L2/L3" in html
     assert 'id="level23-plan-btn"' in html
     assert 'id="level23-artists-content"' in html
     assert 'id="level23-job-content"' in html
 
 
 @pytest.mark.asyncio
-async def test_repairs_page_level23_ui_wiring_present(client):
-    html = (await client.get("/repairs")).text
-
-    assert "loadLevel23Artists" in html
-    assert "startLevel23Job" in html
-    assert "renderLevel23Artists" in html
-    assert "/api/v1/library/repair-plan/by-artist" in html
-    assert "/api/v1/jobs/repair-level" in html
-    assert "level23-btn" in html
+async def test_health_js_level23_wiring_present(health_js):
+    assert "loadLevel23Artists" in health_js
+    assert "startLevel23Job" in health_js
+    assert "renderLevel23Artists" in health_js
+    assert "/api/v1/library/repair-plan/by-artist" in health_js
+    assert "/api/v1/jobs/repair-level" in health_js
+    assert "level23-btn" in health_js
 
 
 @pytest.mark.asyncio
-async def test_repairs_page_level23_has_no_cancel_button(client):
+async def test_health_page_level23_has_no_cancel_button(client):
     """Kooperatives Abbrechen ist fuer repair_level2/repair_level3
     wirkungslos - ein Abbrechen-Button wuerde eine nicht existierende
     Faehigkeit vortaeuschen (Master-Prompt Regel 39/38)."""
-    html = (await client.get("/repairs")).text
+    html = (await client.get("/health")).text
 
-    assert "cancelLevel23Job" not in html
     assert 'id="level23-cancel-btn"' not in html
 
 
 @pytest.mark.asyncio
-async def test_repairs_page_level23_confirm_dialog_mentions_musicbrainz(client):
-    html = (await client.get("/repairs")).text
-
-    assert "wirklich starten für" in html
-    assert "MusicBrainz" in html
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# GET /jobs — neues Job Center (ui_prompt.txt Abschnitt 17), nutzt die
-# bereits bestehende Jobs-API (GET /api/v1/jobs), bisher ohne eigene
-# Listen-Darstellung.
-# ─────────────────────────────────────────────────────────────────────────
+async def test_health_js_level23_has_no_cancel_function(health_js):
+    assert "cancelLevel23Job" not in health_js
 
 
 @pytest.mark.asyncio
-async def test_jobs_page_has_job_list_panel(client):
-    html = (await client.get("/jobs")).text
+async def test_health_js_level23_confirm_dialog_mentions_musicbrainz(health_js):
+    assert "wirklich starten für" in health_js
+    assert "MusicBrainz" in health_js
+
+
+@pytest.mark.asyncio
+async def test_health_page_has_job_list_panel(client):
+    html = (await client.get("/health")).text
 
     assert 'id="jobs-content"' in html
     assert 'id="jobs-refresh-btn"' in html
-    assert "/api/v1/jobs" in html
-    assert "loadJobs" in html
-    assert "renderJobs" in html
+
+
+@pytest.mark.asyncio
+async def test_health_js_jobs_list_wiring_present(health_js):
+    assert "/api/v1/jobs" in health_js
+    assert "loadJobs" in health_js
+    assert "renderJobs" in health_js
+
+
+@pytest.mark.asyncio
+async def test_health_page_has_health_scan_job_panel(client):
+    """Phase 3 (api_health.md Abschnitt 5): Health-Scan laeuft als Job,
+    kein blockierender HTTP-Request."""
+    html = (await client.get("/health")).text
+
+    assert 'id="health-scan-btn"' in html
+    assert 'id="health-scan-job-content"' in html
+
+
+@pytest.mark.asyncio
+async def test_health_js_health_scan_job_wiring_present(health_js):
+    assert "startHealthScanJob" in health_js
+    assert "/api/v1/jobs/health-scan" in health_js
+
+
+@pytest.mark.asyncio
+async def test_health_page_has_score_history_panel(client):
+    """Phase 1 (api_health.md Abschnitt 6): Score-Verlauf."""
+    html = (await client.get("/health")).text
+
+    assert 'id="score-history-content"' in html
+
+
+@pytest.mark.asyncio
+async def test_health_js_score_history_wiring_present(health_js):
+    assert "/api/v1/library/health/score-history" in health_js
+
+
+@pytest.mark.asyncio
+async def test_health_page_has_repair_history_and_statistics_panels(client):
+    """Phase 1 (api_health.md Abschnitt 12): Repair-History/-Statistik."""
+    html = (await client.get("/health")).text
+
+    assert 'id="repair-history-content"' in html
+    assert 'id="repair-statistics-content"' in html
+
+
+@pytest.mark.asyncio
+async def test_health_js_repair_history_and_statistics_wiring_present(health_js):
+    assert "/api/v1/library/repairs/history" in health_js
+    assert "/api/v1/library/repairs/statistics" in health_js
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1189,8 +1279,10 @@ async def test_health_page_has_library_and_navidrome_checks(client):
 
     assert 'id="health-tiles"' in html
     assert 'id="navidrome-status"' in html
-    assert "/api/v1/library/health" in html
-    assert "/api/v1/navidrome/status" in html
+
+    health_js = (await client.get("/static/pages/health.js")).text
+    assert "/api/v1/library/health" in health_js
+    assert "/api/v1/navidrome/status" in health_js
 
 
 # ─────────────────────────────────────────────────────────────────────────
