@@ -31,8 +31,51 @@ Referenzpunkt: `docs/MusicBot_ENGINEERING_BASELINE_v10.md` (Freeze
 2026-09-14, 4250 passed). Kein laufender Zwischenstand (v11 noch nicht
 angelegt, Normalfall direkt nach einem Freeze) — dieser Index bleibt die
 einzige Stelle für den aktuellen Finding-Stand.
-**Aktueller Finding-Stand (dieses Dokument):** 2026-09-21 (zuletzt
-aktualisiert: CC-AC-6, Containment-Härtung (PR #287) — schließt den in
+**Aktueller Finding-Stand (dieses Dokument):** 2026-09-22 (zuletzt
+aktualisiert: CC-AC-10D — Diagnostics & Monitoring API, deutlich
+kleiner als geplant: Logger-Konfiguration UND Error-Administration
+komplett aus dem Slice zurückgestellt (neuer eigener OPEN-Punkt unten,
+s. u.) — beide hängen an Daten, die nur im Prozessspeicher des
+Bot-Prozesses existieren (Control Center läuft als separater Prozess,
+CLAUDE.md §4); Logger-Konfigurationsänderungen würden zusätzlich erst
+nach einem Bot-Neustart wirken (`ModuleLoggerManager` lädt
+`data/module_logger_config.json` nur einmal beim Start). Umgesetzt:
+nur `GET /api/v1/admin/system/status` (reine Host-Ressourcenmetriken +
+echter systemd-Check, `services/system_status.py`, bewusst OHNE
+Bot-eigene Laufzeitzähler). Details:
+`docs/audits/CC-AC-10D_DIAGNOSTICS_MONITORING_API_2026-09-22.md`. Davor:
+CC-AC-10C — Bot & Operations API (Backup + Bot-Neustart +
+Wartungsmodus + Navidrome-Scan) — schließt CC-AC-10A-Lücken #7–#12.
+Neuer Application-Layer `services/backup_admin.py` (Backup, wegen
+Telegram-Kopplung von `BackupHandler`); Wartungsmodus/Neustart/
+Navidrome-Scan riefen bereits Telegram-freie Bausteine
+(`services/bot_maintenance.py`, `utils/bot_restart_trigger.py`,
+`utils/navidrome_scan_trigger.py`) direkt auf, ohne neue Application-
+Layer-Datei. Schließt den CC-AC-10A-Bot-Neustart-Entscheidungspunkt
+(s. u.). Details:
+`docs/audits/CC-AC-10C_BOT_OPERATIONS_API_2026-09-22.md`. Davor:
+CC-AC-10B — User Management API, schließt die
+CC-AC-10A-Lücke #2–#6 (User anlegen/Navidrome bearbeiten/Rolle ändern/
+Berechtigungen ändern/löschen jetzt vollständig als Web-API verfügbar,
+inkl. SEC-005-Owner-Guard-Parität und CSRF-Schutz) — Telegram-Seite
+(`UserManagementHandler`) bewusst unverändert, Migration darauf ist
+CC-AC-10G. Neuer Application-Layer `services/user_admin.py`. Kein neuer
+offener Punkt, keine der beiden CC-AC-10A-Fragen betroffen. Details:
+`docs/audits/CC-AC-10B_USER_MANAGEMENT_API_2026-09-22.md`. Davor:
+CC-AC-10A — Admin Inventory + Architecture Contract, reine
+Analyse, keine Code-Änderung — im Rahmen der freigegebenen `CC-AC-10.md`-
+Master-Prompt ("Vollständige Administration API Integration", Ziel:
+volle Read/Write-Parität statt Read-only). 26 Admin-Funktionen über 7
+Bereiche inventarisiert; 12/26 haben bereits einen Web-Endpunkt (10/26
+volle Write/Execute) — Kernbefund: die Library-Administration-Domäne
+wurde seit dem 15.09.-Capability-Matrix-Stand still auf nahezu volle
+Web-Parität gebracht (Job-Registry + CSRF-geschützte Preview/Execute-
+Router), während User Management/Backup/Bot-Neustart/Wartungsmodus/
+Navidrome-Scan-Trigger/Logger-/Error-Administration unverändert 100%
+Telegram-only sind. Zwei neue OPEN-Punkte unten (Bot-Neustart-
+Web-Exposition-Widerspruch zur alten Matrix, Logger-Endpunkt-
+Granularität). Details: `docs/audits/CC-AC-10A_ADMIN_INVENTORY_ARCHITECTURE_CONTRACT_2026-09-22.md`.
+Davor: CC-AC-6, Containment-Härtung (PR #287) — schließt den in
 PR #283 (CC-AC-3 Adversarial Review, 3 Runden) entdeckten P1-Fund
 `artist_targets()` fehlender Containment-Check bei den vier
 vor-PR#283-bestehenden Maintenance-Endpunkten inkl. der zusätzlich
@@ -203,6 +246,9 @@ Library Repair Production Audit P1–P3 CLOSED, siehe
 
 | ID | Status | Prio | Kurzfassung | Quelle |
 |---|---|---|---|---|
+| — (CC-AC-10D, Logger-Konfiguration + Error-Administration ohne Web-API, Cross-Prozess-Blocker) | OPEN (zurückgestellt, 2026-09-22) | P2 | Control Center läuft als separater Prozess neben bot.py. `handlers/enhanced_error_handler.py::ExceptionMonitor` (Error-Statistiken) und die Modul-Statistiken hinter `_module_loggers` (`logger.py`) leben ausschließlich im Prozessspeicher des Bot-Prozesses — eine Control-Center-API dafür würde nur die eigenen, fast leeren Zähler des Control-Center-Prozesses zeigen, fälschlich als Bot-Zustand. Zusätzlich lädt `ModuleLoggerManager._load_module_configs()` `data/module_logger_config.json` nur einmal beim Bot-Start, ohne Laufzeit-Reload — ein Level-/Modul-Wechsel über eine künftige API würde die Datei korrekt schreiben, aber erst nach einem Bot-Neustart wirken. **Nutzer-Entscheidung (2026-09-22):** beide Bereiche bewusst NICHT gebaut, statt einer Web-API, die Live-Wirkung vortäuscht (CC-AC-10.md §39). Voraussetzung für eine künftige Umsetzung: Persistenz der Statistiken auf Platte (geteilter Zustand) ODER ein Reload-Trigger-Mechanismus für den Bot-Prozess — eigene, separat zu treffende Design-Entscheidung, nicht Teil der laufenden CC-AC-10-Migration. | `docs/audits/CC-AC-10D_DIAGNOSTICS_MONITORING_API_2026-09-22.md` |
+| — (CC-AC-10A, Bot-Neustart Web-Exposition-Widerspruch) | CLOSED (2026-09-22, umgesetzt in CC-AC-10C) | war P2 | Bei der CC-AC-10A-Admin-Inventur gefunden: die `CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md` stufte Bot-Neustart bewusst als ⚪ „nicht für Web vorgesehen" ein (hohes Blast-Radius-Risiko), die jetzt freigegebene `CC-AC-10.md`-Master-Prompt fordert dagegen explizit Restart als Pflichtfunktion (§26: „Read-only ist niemals das Abschlusskriterium"). **Nutzer-Entscheidung (2026-09-22):** Web-fähig machen, mit denselben Schutzmechanismen wie die bestehende Telegram-Seite (Owner-/Admin-Check) plus CSRF, keine zusätzliche Preview/Confirm-Stufe. Umgesetzt: `POST /api/v1/admin/system/restart` (`control_center/routers/admin_operations.py`), ruft `utils/bot_restart_trigger.py::BotRestartTrigger.trigger_restart()` direkt auf, identisches `call_later()`-Timing wie Telegram. | `docs/audits/CC-AC-10C_BOT_OPERATIONS_API_2026-09-22.md` |
+| — (CC-AC-10A, Logger-Konfiguration Endpunkt-Granularität) | OPEN (zu klären vor CC-AC-10D, 2026-09-22) | P3 | `EnhancedLoggerMenuHandler` deckt >15 Telegram-Callbacks ab (Modul-/globales Log-Level, Handler add/remove/reload, Log-Datei-Download/Stats, Cleanup). Der in CC-AC-10.md §7 vorgeschlagene einzelne `GET/PATCH /api/v1/admin/logger`-Endpunkt reicht dafür vermutlich nicht (CC-AC-10.md merkt selbst an, bei Bedarf aufzuteilen). Konkrete Endpunkt-/Command-Aufteilung vor CC-AC-10D (Diagnostics & Monitoring) festlegen statt auf einen Endpunkt zu pressen. | `docs/audits/CC-AC-10A_ADMIN_INVENTORY_ARCHITECTURE_CONTRACT_2026-09-22.md` |
 | — (ARCH-032, Library Maintenance Consolidation) | CLOSED (2026-09-14) | war P2 | Setzt die in ARCH-031 beschlossene Zielarchitektur vollständig um (Phasen 1–4): `services/library_repair/artist.py`/`genre.py` (Domain, rein), `executor.py` um `apply_artist_casing()`/`apply_legacy_genre_cleanup()`/`apply_set_genre()`/`tags_fingerprint()` erweitert, `run_tracking.py` (ADR-0004, aus `repair_service.py` extrahiert, geteilter Lock/Journal/Run-Index für Finding-Repair UND Maintenance), `maintenance_service.py` (Command-Flow, kein Health-Finding-Bezug), `library_artists.py` (index-basierte Artist-Auswahl), `scripts/library_repair.py --maintenance-action {artist-casing,legacy-genre-cleanup,set-genre}` (zentraler CLI-Einstiegspunkt), Telegram-Menüpunkt „🧹 Library-Wartung" (`handlers/library_maintenance_handler.py`, Callback-Präfix `libmaint:` — bewusst nicht `maint:`, echte Kollision mit dem Bot-Wartungsmodus gefunden und vermieden). `scripts/fix_artist_casing.py`/`remove_legacy_genre_atom.py`/`set_genre.py` nach Removal-Audit entfernt (keine funktionalen Aufrufer, kein dokumentierter Produktionslauf). 116 neue Tests, thematische Suite (321+ Tests über alle vier Phasen) grün, 0 Regressionen. Details: `docs/LIBRARY_REPAIR.md` §11. | `docs/MusicBot_ARCH-031_Library_Repair_Telegram_Integration_Characterization.md`, `docs/adr/0001`–`0004`, `docs/LIBRARY_REPAIR.md` §11 |
 | — (`services/duplicate/cache.py`/`services/metadata/cache.py`, kaputter Modul-Import) | CLOSED (2026-09-14, Nutzer-Auftrag im Anschluss an ARCH-032) | war P1 | Bei der ARCH-032-Verifikation entdeckt: vorbestehende uncommitted Änderungen versuchten `DUPLICATE_CACHE_DIR`/`METADATA_CACHE_DIR` per `from config import X` zu importieren — beide existieren nur als `Config`-Klassenattribute, nicht als Modul-Level-Namen. Brach jeden Import von `handlers/menu/rich_menu_system.py` (transitiv über `klassen/download_handler.py` → `services/duplicate/detector.py`/`services/metadata/__init__.py`). Fix: Import auf `from config import Config` korrigiert; `DuplicateCache.cache_dir`-Parameter wiederhergestellt (Entfernen hätte `detector.py`/`duplicate_handler.py` + 6 Testaufrufer gebrochen, die alle explizit `cache_dir=` übergeben — Default jetzt `None` → `Config.DUPLICATE_CACHE_DIR`, behebt nebenbei einen vorbestehenden toten Fallback-Zweig); `MetadataCacheHandler._video_id_index_path` wieder aus dem injizierten `metadata_cache.cache_path` abgeleitet statt aus einem fest verdrahteten zentralen Verzeichnis (sonst echte Test-Isolations-Regression, TESTENV-01-Fehlerklasse — isolierte Test-`MetadataCache`-Instanzen hätten den Index sonst im echten Produktionsverzeichnis abgelegt). 36 gezielte + 106 thematische Tests grün, voller ARCH-032-Regressionslauf (482 Tests) jetzt ohne Workaround grün. | `services/duplicate/cache.py`, `services/metadata/cache.py`, Commit `0f873e2` |
 | ARCH-031-Follow-up F2 (`tags_fingerprint()` rückwirkend für `apply_level1()`) | OPEN (DEFER, 2026-09-14) | P3 | Bei ARCH-031 bewusst zurückgestellt, mit Library Genre Management v2 (2026-09-15) bewusst weiterhin NICHT angefasst (explizit außerhalb des Scopes dieser Phase, Regressionsrisiko gegen 55 bestehende Executor-Tests). Eigene Characterization/Nutzerentscheidung weiterhin nötig, bevor umgesetzt wird. | `docs/LIBRARY_REPAIR.md` §11.4 |

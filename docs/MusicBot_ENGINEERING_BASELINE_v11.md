@@ -19,8 +19,8 @@
 |---|---|
 | Baseline | v11 (DRAFT) |
 | Vorgänger | `docs/MusicBot_ENGINEERING_BASELINE_v10.md` (Freeze 2026-09-14, 4250 passed / 1 skipped / 0 failed / 11 subtests passed) |
-| Letzte vom Nutzer gemeldete Full-Suite-Zahl (aktuell, nach ARCH-033 „Telegram Level-2/Level-3 Repair (Pro-Artist)") | **4310 passed, 1 skipped, 11 subtests passed, 0 failed** (272,15 s), 2026-09-14. +60 gegenüber der v10-Freeze-Zahl (4250) — exakt deckungsgleich mit den 60 neuen ARCH-033-Tests: `tests/test_repair_service_level23.py` (+19, neu), `tests/test_doctor_runner.py` (+7, erweitert), `tests/test_library_repair_planner.py` (+6, erweitert), `tests/test_repair_handler_level23.py` (+28, neu). 0 Regressionen, unverändertes Skip-/Subtest-Muster (1/11) seit v9 durchgehend. |
-| Zuwachs seit v10-Freeze | +60 passed (4250 → 4310), 0 failed |
+| Letzte vom Nutzer gemeldete Full-Suite-Zahl (aktuell, nach CC-AC-10A–D „Control Center Admin API Integration") | **5473 passed, 1 skipped, 11 subtests passed, 0 failed, 5 warnings** (305,85 s), 2026-09-22. +1163 gegenüber der zuletzt hier dokumentierten Zahl (4310, 2026-09-14) — deckt neben CC-AC-10A–D auch mehrere zwischenzeitliche, hier nicht einzeln nachgetragene CC-AC-Phasen (u. a. CC-AC-6/CC-AC-9) ab, deren jeweilige Einzelergebnisse in `docs/FINDINGS_INDEX.md` stehen (dort die laufend gepflegte Quelle, siehe Hinweis oben). Unverändertes Skip-/Subtest-Muster (1/11) seit v9 durchgehend. |
+| Zuwachs seit letztem hier dokumentiertem Stand | +1163 passed (4310 → 5473), 0 failed |
 
 ---
 
@@ -45,6 +45,8 @@ das Risiko, das den bestehenden Subprozess-Pfad von
 geklärt, Nutzer bestätigte „Subprozess statt in-process". Details:
 `docs/adr/0003-telegram-level2-level3-per-artist-confirmation.md`,
 Abschnitt „Implementierung".
+
+| **CC-AC-10A–D „Control Center Admin API Integration"** — Migration der bestehenden, bisher rein Telegram-basierten Administration auf client-unabhängige Application-Layer-Funktionen + Control-Center-API, gemäß freigegebener Master-Prompt `CC-AC-10.md`. 10A: vollständiges Admin-Inventar (26 Funktionen) + Architecture Contract (`ActorContext`-Vorschlag andockt an bereits Telegram-freie `permissions.py`-Logik). 10B: User Management (Create/Update/Delete) über neuen `services/user_admin.py`. 10C: Backup/Bot-Neustart/Wartungsmodus/Navidrome-Scan über `services/backup_admin.py` + Direktnutzung bereits Telegram-freier Bausteine (`bot_maintenance.py`, `bot_restart_trigger.py`, `navidrome_scan_trigger.py`). 10D: nur System-Status (`services/system_status.py`) — Logger-Konfiguration und Error-Administration bewusst zurückgestellt (Cross-Prozess-Blocker: beide Daten leben nur im Bot-Prozess-Speicher, Control Center läuft separat; Logger-Configs werden zusätzlich nur einmal beim Bot-Start geladen). Telegram-Seite in allen vier Phasen bewusst unverändert (Migration darauf ist eigener, späterer Slice CC-AC-10G). Admin-Web-Parität laut CC-AC-10A-Matrix: von 12/26 auf 24/26 (Artist-Metadata-Reprocessing #25 laut Nutzer-Entscheidung dauerhaft ⚪ ausgeschlossen, keine offene Lücke). Details: `docs/audits/CC-AC-10A_ADMIN_INVENTORY_ARCHITECTURE_CONTRACT_2026-09-22.md` bis `CC-AC-10D_DIAGNOSTICS_MONITORING_API_2026-09-22.md`. | siehe Einzel-PRs dieser Session | 87 neue/erweiterte Tests über die vier Phasen (Application-Layer-Unit-Tests + HTTP-API-Tests), 0 Regressionen, thematische Suiten je Phase grün |
 
 ---
 
