@@ -489,32 +489,26 @@ async function loadArtists(page = _navState.artistsPage) {
     if (!data.items.length) {
       _navEmpty(list, "Keine Artists gefunden.");
     } else {
-      const rows = data.items.map(a => `
-        <tr>
-          <td>
-            <a href="#" class="nav-artist-link d-flex align-items-center gap-2 text-reset text-decoration-none"
-               data-id="${_navEsc(a.id)}" data-name="${_navEsc(a.name)}">
-              <span class="avatar avatar-sm bg-primary-lt">
-                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24"
-                     viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" fill="none"
-                     stroke-linecap="round" stroke-linejoin="round">
-                  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                  <path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"/>
-                  <path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/>
-                </svg>
-              </span>
-              <span class="text-truncate">${_navEsc(a.name)}</span>
-            </a>
-          </td>
-          <td class="text-end text-muted">${a.album_count ?? ""}</td>
-        </tr>
-      `).join("");
-      list.innerHTML = `
-        <table class="table table-sm table-vcenter">
-          <thead><tr><th>Artist</th><th class="text-end">Alben</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      `;
+      const cards = data.items.map(a => {
+        // Navidrome-Cover-Fallback: artist_id funktioniert als Cover-ID,
+        // weil Navidrome artist.jpg im Artist-Verzeichnis automatisch ausliefert.
+        const coverId = a.cover_art || a.coverArt || a.id || null;
+        const initial = (a.name || "?").charAt(0).toUpperCase();
+        const avatarInner = coverId
+          ? _coverImg(coverId, 300)
+          : `<span class="artist-initial">${_navEsc(initial)}</span>`;
+        const albumCount = (a.album_count ?? 0);
+        const albumLabel = albumCount === 1 ? "Album" : "Alben";
+        return `
+          <a href="#" class="artist-card nav-artist-link"
+             data-id="${_navEsc(a.id)}" data-name="${_navEsc(a.name)}">
+            <div class="artist-avatar">${avatarInner}</div>
+            <div class="artist-name">${_navEsc(a.name)}</div>
+            <div class="artist-meta">${albumCount} ${albumLabel}</div>
+          </a>
+        `;
+      }).join("");
+      list.innerHTML = `<div class="artist-grid">${cards}</div>`;
     }
 
     if (pageEl) pageEl.textContent = `Seite ${page + 1} · insgesamt ${data.total}`;
