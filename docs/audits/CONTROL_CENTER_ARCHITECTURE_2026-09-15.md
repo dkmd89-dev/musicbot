@@ -2134,3 +2134,40 @@ Testergebnis: `86 passed` (4 Log-Suiten) + `529 passed` (gesamte
 - Keine UI (Prompt §12: UI ist L7).
 - Keine Änderung an `handlers/enhanced_logger_menu_handler.py`
   (Telegram-Pfad unverändert, Prompt §11/§12).
+
+---
+
+## Erweiterung — CC-LOGGER-L3: Runtime-Control Architecture Decision (2026-09-23)
+
+Analyse-Phase, kein Code. Architecture Decision Record für
+Logger-Runtime-Control im MusicBot. Vorgänger: L2-Read-API
+(`docs/audits/CC_LOGGER_L2_READ_API_2026-09-23.md`, gemergt als
+PR #300).
+
+**Kernbefund:** Es existiert heute **keine** Cross-Process-Runtime-
+Infrastruktur — keine IPC, kein Socket, kein File-Watcher, kein
+Reload-Trigger. Der einzige vorhandene Steuerungs-Mechanismus ist
+`sudo systemctl restart bot` über `utils/bot_restart_trigger.py` (aus
+CC-AC-10C über `POST /api/v1/admin/system/restart` erreichbar).
+
+**Zusätzlicher Architektur-Bug:** `ModuleLoggerManager._load_module_
+configs()` liest `data/module_logger_config.json` beim Bot-Start, ruft
+aber `_apply_module_config()` nicht auf — die persistente Config ist
+damit keine Runtime-Wahrheit.
+
+**Entscheidung:** Inkrementeller Pfad statt Big-Bang-IPC:
+
+| Stufe | Inhalt | Phase |
+|---|---|---|
+| 0 | Startup-Apply-Bugfix (harte Vorbedingung) | L4 |
+| 1 | E2 Persistent Config über CC (Semantik „nächster Start") | L4 |
+| 2 | Runtime Snapshot (read-only Observability) | L4 |
+| 3 | Kontrollierter Apply/Restart mit Preflight + Rate-Limit | L5 |
+| 4 | Unix-Socket Runtime Write | DEFERRED, nur bei belegtem Bedarf |
+
+**Verworfen:** File-Watcher als dauerhafte Runtime-Infrastruktur,
+Localhost-HTTP-Control-Server, jeder unnötige neue IPC-Stack.
+
+**Vollständige Begründung, Vergleichsmatrix, Failure Analysis,
+Security Threat Model:**
+`docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md`.
