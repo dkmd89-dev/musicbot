@@ -51,11 +51,16 @@ daher explizit NICHT in L2 enthalten.
 from __future__ import annotations
 
 import json
+import logging
+import threading
+import time
+import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
+from logger import _module_loggers
 from services.logs.reader import list_log_sources, read_logs
 from services.backup_admin import human_size
 
@@ -474,3 +479,333 @@ def update_logger_config(
         ) from e
 
     return current
+
+
+# =====================================================================
+# CC-LOGGER-L5.1 — Runtime Snapshot (Observability)
+# =====================================================================
+#
+# Der Snapshot beschreibt den *tatsaechlichen*, beim letzten
+# erfolgreichen Bot-Start effektiv angewendeten Logger-Zustand. Er ist
+# KEIN Live-Zustand: das Control Center kann ihn lesen, aber er wurde
+# einmalig beim Startup geschrieben (siehe L5.txt §B.1/B.2).
+#
+# Er wird NICHT aus der persistenten Config (module_logger_config.json)
+# rekonstruiert, sondern aus dem tatsaechlichen Python-logging-Zustand
+# gelesen (logging.getLogger(name).level/handlers/disabled) — Desired
+# und Actual bleiben sauber getrennt.
+#
+# Der Snapshot ist Observability, nicht Bot-Lifecycle-kritisch: ein
+# Schreib-Fehler darf den Bot nicht stoppen.
+
+SNAPSHOT_FILE_NAME = "logger_runtime_snapshot.json"
+SNAPSHOT_SCHEMA_VERSION = 1
+
+
+def _resolve_snapshot_path(config: Any) -> Path:
+    """Fester, serverseitig aufgeloester Pfad zum Runtime-Snapshot.
+    Kein Nutzer-Input fliesst ein — Path Traversal strukturell
+    ausgeschlossen."""
+    return Path(config.DATA_DIR) / SNAPSHOT_FILE_NAME
+
+
+def _collect_runtime_state() -> Dict[str, Any]:
+    """Liest den tatsaechlichen Logger-Zustand aus dem laufenden
+    Python-Prozess. Kein Config-Lesen — reine Runtime-Abfrage.
+
+    Rueckgabe-Form:
+        {
+            "root_level": "INFO",
+            "effective_levels": { "<module>": "<level>", ... },
+            "handlers": { "<module>": ["FileHandler", "StreamHandler"], ... },
+            "disabled": ["<module>", ...],
+        }
+
+    Nur Module aus `_module_loggers` (logger.py) werden erfasst — das
+    sind die EnhancedLogger-Instanzen, die der Bot tatsaechlich nutzt.
+    Reine `logging.getLogger(name)`-Logger ohne EnhancedLogger-Wrapper
+    werden bewusst NICHT erfasst (der Snapshot soll den Bot-Zustand
+    abbilden, nicht jeden beliebigen Logger im Prozess)."""
+    effective_levels: Dict[str, str] = {}
+    handlers: Dict[str, List[str]] = {}
+    disabled: List[str] = []
+
+    for module_name, enhanced_logger in _module_loggers.items():
+        real = getattr(enhanced_logger, "logger", None)
+        if real is None:
+            continue
+        effective_levels[module_name] = logging.getLevelName(real.level)
+        handlers[module_name] = sorted(
+            type(h).__name__ for h in real.handlers
+        )
+        if real.disabled:
+            disabled.append(module_name)
+
+    return {
+        "root_level": logging.getLevelName(logging.getLogger().level),
+        "effective_levels": dict(sorted(effective_levels.items())),
+        "handlers": dict(sorted(handlers.items())),
+        "disabled": sorted(disabled),
+    }
+
+
+def write_runtime_snapshot(config: Any) -> Optional[Path]:
+    """Schreibt den Runtime-Snapshot nach
+    `<DATA_DIR>/logger_runtime_snapshot.json`.
+
+    Wird vom Bot-Startup aufgerufen, nachdem alle Logger konfiguriert
+    sind. Fehler werden geloggt, aber NICHT propagiert — der Bot muss
+    auch ohne Snapshot laufen koennen (Snapshot ist Observability, nicht
+    Lifecycle-kritisch, siehe L5.txt §B.6).
+
+    Rueckgabe: Pfad bei Erfolg, None bei Fehler.
+    """
+    path = _resolve_snapshot_path(config)
+    try:
+        state = _collect_runtime_state()
+    except Exception as e:  # noqa: BLE001
+        # Fehler beim Sammeln — Bot laeuft weiter, wir haben nur keinen
+        # frischen Snapshot. Best-effort-Logging ohne Logger-Kontext
+        # (der Snapshot-Collector soll nicht selbst Logger-Abhaengigkeiten
+        # erzeugen, um keine rekursiven Effekte zu provozieren).
+        print(f"⚠️ Logger-Runtime-Snapshot konnte nicht erfasst werden: {e!r}")
+        return None
+
+    payload: Dict[str, Any] = {
+        "schema_version": SNAPSHOT_SCHEMA_VERSION,
+        "startup_id": uuid.uuid4().hex,
+        "runtime_applied_at": datetime.now(timezone.utc).isoformat(),
+        **state,
+    }
+
+    try:
+        _atomic_write_json(path, payload)
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️ Logger-Runtime-Snapshot konnte nicht geschrieben werden: {e!r}")
+        return None
+
+    return path
+
+
+def read_runtime_snapshot(config: Any) -> Dict[str, Any]:
+    """Liest den zuletzt geschriebenen Runtime-Snapshot.
+
+    Rueckgabe-Form:
+        {
+            "status": "available" | "missing" | "corrupt",
+            "snapshot": {...}   # nur bei status="available"
+            "message": "...",   # optionaler Klartext
+        }
+
+    Bewusst KEIN Fake-State: bei fehlendem Snapshot wird nichts
+    rekonstruiert, bei korruptem JSON wird die Korruption gemeldet.
+    Der Aufrufer entscheidet, wie er das darstellt."""
+    path = _resolve_snapshot_path(config)
+    if not path.exists():
+        return {
+            "status": "missing",
+            "message": (
+                "Noch kein Runtime-Snapshot vorhanden. Der Bot wurde "
+                "seit Einfuehrung dieser Funktion nicht erfolgreich "
+                "gestartet, oder der Snapshot-Write ist fehlgeschlagen."
+            ),
+        }
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as e:
+        return {
+            "status": "corrupt",
+            "message": f"Runtime-Snapshot nicht lesbar: {e!r}",
+        }
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        return {
+            "status": "corrupt",
+            "message": f"Runtime-Snapshot ist korruptes JSON: {e!r}",
+        }
+    if not isinstance(data, dict):
+        return {
+            "status": "corrupt",
+            "message": "Runtime-Snapshot ist kein JSON-Objekt.",
+        }
+    # Defensive Pflichtfeld-Pruefung: ein Snapshot ohne die minimal
+    # erwarteten Felder ist fuer Clients nicht sinnvoll lesbar — wir
+    # melden ihn als unvollstaendig, nicht als verfuegbar.
+    required = {"schema_version", "startup_id", "runtime_applied_at"}
+    missing = required - set(data.keys())
+    if missing:
+        return {
+            "status": "corrupt",
+            "message": (
+                "Runtime-Snapshot ist unvollstaendig; fehlende Felder: "
+                + ", ".join(sorted(missing))
+            ),
+        }
+    return {"status": "available", "snapshot": data}
+
+
+# =====================================================================
+# CC-LOGGER-L5.2 — Preflight
+# =====================================================================
+#
+# Dreistufige Preflight-Semantik (siehe L5-Entscheidung):
+#
+#   blocked    — Repair-Lock aktiv. Kein Apply, kein Restart, 409.
+#   unverified — Repair-Lock frei, ABER es existieren Aktivitaeten, deren
+#                Live-Zustand aus dem Control Center NICHT zuverlaessig
+#                pruefbar ist (laufende Downloads, laufende Backups).
+#                Apply wird fortgesetzt, aber die Response weist die
+#                nicht-pruefbaren Kategorien explizit aus.
+#   clear      — Repair-Lock frei UND keine unverifizierbaren
+#                Aktivitaetskategorien bekannt. In der aktuellen
+#                Implementierung NICHT erreichbar (Downloads/Backups
+#                sind grundsaetzlich unverifizierbar), aber als Status
+#                definiert, damit Clients sauber zwischen "sicher" und
+#                "nicht sicher pruefbar" unterscheiden koennen.
+#
+# Bewusste Nicht-Bestaetigung: `clear` darf NIE aus "repair_lock frei"
+# allein abgeleitet werden. Solange unverifizierbare Kategorien
+# existieren, ist der Status `unverified`, nie `clear`.
+
+# Kategorien von Aktivitaeten, deren Live-Zustand aus dem
+# CC-Prozess nicht zuverlaessig pruefbar ist (in-process Bot-Zustand
+# ohne IPC — siehe L3-Entscheidung und L5-Abbruchbedingung).
+UNVERIFIABLE_ACTIVITY_CATEGORIES: Tuple[str, ...] = ("downloads", "backups")
+
+PREFLIGHT_STATUS_CLEAR = "clear"
+PREFLIGHT_STATUS_BLOCKED = "blocked"
+PREFLIGHT_STATUS_UNVERIFIED = "unverified"
+
+
+def evaluate_apply_preflight() -> Dict[str, Any]:
+    """Fuehrt den Preflight fuer `POST /logger/apply` durch.
+
+    Datenquelle ist AUSSCHLIESSLICH der bestehende, atomare,
+    cross-process sichtbare Repair-Lock
+    (services/library_repair/run_tracking.py::is_repair_running()).
+
+    Bewusst NICHT verwendet:
+    - JobRegistry (CC-Prozess-lokal)
+    - ActiveDownloadRegistry (Bot-Prozess-lokal)
+    - DownloadHistoryStore (nur abgeschlossene Downloads)
+    - maintenance_mode.json (User-Gating, kein Aktivitaetsnachweis)
+    - eine neue zentrale State-Registry
+
+    Rueckgabe:
+        {
+            "status": "clear" | "blocked" | "unverified",
+            "checked": {"repair_lock": True},
+            "active": {"repair": <bool>},
+            "unverified": ["downloads", ...],
+            "message": "<Klartext>",
+        }
+    """
+    # Import hier, nicht am Modulkopf: haelt die Logger-Admin-Schicht
+    # unabhaengig vom library_repair-Paket, wenn nur Read-APIs genutzt
+    # werden (kein Import-Zyklus-Risiko, kein Zwangs-Load).
+    from services.library_repair.run_tracking import is_repair_running
+
+    try:
+        repair_active = is_repair_running()
+    except Exception as e:  # noqa: BLE001
+        # Lock-Pruefung fehlgeschlagen — konservativ als "blocked"
+        # behandeln. Ein nicht pruefbarer Repair-Lock darf NIEMALS als
+        # "clear" durchgehen.
+        return {
+            "status": PREFLIGHT_STATUS_BLOCKED,
+            "checked": {"repair_lock": False},
+            "active": {"repair": False},
+            "unverified": [],
+            "message": (
+                f"Repair-Lock-Status nicht pruefbar ({e!r}). Konservativ "
+                "als blockiert behandelt — Apply wird abgelehnt."
+            ),
+        }
+
+    if repair_active:
+        return {
+            "status": PREFLIGHT_STATUS_BLOCKED,
+            "checked": {"repair_lock": True},
+            "active": {"repair": True},
+            "unverified": [],
+            "message": (
+                "Es laeuft aktuell ein Repair-/Maintenance-/Genre-"
+                "Revalidation-/Duplicate-Lauf (Repair-Lock aktiv). "
+                "Bitte warten, bis der Lauf abgeschlossen ist."
+            ),
+        }
+
+    # Repair-Lock ist frei. Solange unverifizierbare Kategorien
+    # existieren, ist der Status `unverified`, NIEMALS `clear`.
+    if UNVERIFIABLE_ACTIVITY_CATEGORIES:
+        return {
+            "status": PREFLIGHT_STATUS_UNVERIFIED,
+            "checked": {"repair_lock": True},
+            "active": {"repair": False},
+            "unverified": list(UNVERIFIABLE_ACTIVITY_CATEGORIES),
+            "message": (
+                "Kein bekannter kritischer Repair-/Maintenance-Lauf "
+                "aktiv. Laufende Downloads oder Backups koennen aus dem "
+                "Control-Center-Prozess jedoch NICHT zuverlaessig "
+                "geprueft werden — ein Bot-Neustart wuerde diese "
+                "Aktivitaeten unterbrechen."
+            ),
+        }
+
+    # Zukunfts-Zweig: alle Kategorien pruefbar.
+    return {
+        "status": PREFLIGHT_STATUS_CLEAR,
+        "checked": {"repair_lock": True},
+        "active": {"repair": False},
+        "unverified": [],
+        "message": "Kein bekannter oder unverifizierbarer Lauf aktiv.",
+    }
+
+
+# =====================================================================
+# CC-LOGGER-L5.2 — Rate-Limiter + Single-Flight
+# =====================================================================
+#
+# In-memory, pro Prozess. Schuetzt vor schnellem wiederholtem
+# Apply-Triggern. Der Limiter wird nur bei ERFOLGREICHEN Applies
+# konsumiert (nach Preflight-Freigabe) — geblockte Preflights sind
+# billige Datei-Checks und sollen NICHT als DoS-Vektor missbraucht
+# werden koennen.
+
+
+class LoggerApplyRateLimiter:
+    """Rate-Limit + Single-Flight fuer `POST /logger/apply`.
+
+    Ein erfolgreicher Apply setzt einen Zeitstempel. Ein weiterer Apply
+    innerhalb von `min_interval_seconds` wird abgelehnt. Der Zugriff
+    laeuft unter `threading.Lock`, damit zwei gleichzeitig eintreffende
+    Requests nicht beide passieren koennen (Single-Flight).
+
+    Der Zustand ist prozesslokal und wird bei CC-Neustart zurueckgesetzt
+    — das ist die einzige semantisch akzeptable Variante ohne neue
+    persistente Infrastruktur."""
+
+    def __init__(self, min_interval_seconds: float = 60.0):
+        self.min_interval_seconds = min_interval_seconds
+        self._last_apply_at = 0.0
+        self._lock = threading.Lock()
+
+    def try_acquire(self) -> Tuple[bool, float]:
+        """Atomarer Acquire-Versuch.
+
+        Rueckgabe: (allowed, retry_after_seconds).
+        `allowed=False` -> Client soll `retry_after_seconds` warten."""
+        now = time.monotonic()
+        with self._lock:
+            if self._last_apply_at > 0.0:
+                elapsed = now - self._last_apply_at
+                if elapsed < self.min_interval_seconds:
+                    return False, self.min_interval_seconds - elapsed
+            self._last_apply_at = now
+            return True, 0.0
+
+    def reset(self) -> None:
+        """Nur fuer Tests — setzt den Limiter zurueck."""
+        with self._lock:
+            self._last_apply_at = 0.0

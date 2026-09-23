@@ -2211,3 +2211,59 @@ DEBUG-Level.
 
 **Vollständige Begründung, Validationstabelle, Security-Analyse:
 ** `docs/audits/CC-LOGGER-L4_STARTUP_CONFIG_API_2026-09-23.md`.
+
+
+---
+
+## Erweiterung — CC-LOGGER-L5: Runtime Snapshot + Controlled Apply/Restart (2026-09-23)
+
+Erste Umsetzung der Stufen 2 und 3 aus der L3-Architekturentscheidung.
+
+**Stufe 2 — Runtime Snapshot (Observability):**
+
+Der Bot schreibt beim erfolgreichen Startup
+\`data/logger_runtime_snapshot.json\`. Der Snapshot wird aus dem
+tatsaechlichen Python-Logger-Zustand gelesen (nicht aus der Config) und
+traegt einen \`startup_id\`, \`runtime_applied_at\`, \`root_level\`,
+\`effective_levels\`, \`handlers\`, \`disabled\`.
+
+Neuer Endpoint:
+
+| Route | Auth | Zweck |
+|---|---|---|
+| \`GET /api/v1/admin/logger/runtime-status\` | ADMIN | Snapshot-Read, drei Zustaende |
+
+Semantik explizit: \`state_after_last_successful_bot_start\` —
+kein Live-State. Bei fehlendem Snapshot \`status="missing"\`, bei
+korruptem/unvollstaendigem \`status="corrupt"\` — niemals Fake-State.
+
+**Stufe 3 — Controlled Apply/Restart:**
+
+Neuer Endpoint \`POST /api/v1/admin/logger/apply\` (ADMIN + CSRF +
+Rate-Limit).
+
+Dreistufige Preflight-Semantik (strukturiert, nicht Freitext):
+
+- \`blocked\` — Repair-Lock aktiv → HTTP 409, keine Mutation.
+- \`unverified\` — Lock frei, aber Downloads/Backups strukturell
+  unpruefbar → Restart mit Warnung.
+- \`clear\` — aktuell unerreichbar; definiert, damit Clients sauber
+  differenzieren.
+
+Restart ueber den bestehenden \`BotRestartTrigger.trigger_restart("bot")\`
+— unveraendert, Response-before-restart via \`call_later(2.0, ...)\`.
+
+**Rate-Limit:** \`LoggerApplyRateLimiter\` (60 s, Single-Flight via
+\`threading.Lock\`), in \`app.state\` pro \`create_app()\`-Instanz
+isoliert.
+
+**Bewusst NICHT implementiert:** IPC, Socket, neue
+ActiveOperationRegistry, Aenderungen an \`BotRestartTrigger\`, UI,
+Telegram-Migration, PID-/Stale-Lock-Reparatur.
+
+**Bugfix am bestehenden globalen HTTPException-Handler
+(\`control_center/app.py\`):** reicht jetzt \`exc.headers\` durch.
+Bestehender Bug, betrifft konkret \`Retry-After\` bei HTTP 429.
+
+Vollstaendige Begruendung, Preflight-Matrix, Failure Modes, Race
+Windows: \`docs/audits/CC-LOGGER-L5_RUNTIME_SNAPSHOT_CONTROLLED_APPLY_2026-09-23.md\`.
