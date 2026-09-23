@@ -33,19 +33,26 @@ from config import Config
 from handlers.menu.models import AccessLevel
 from services.logger_admin import (
     InvalidLogFilenameError,
+    LoggerConfigError,
     get_log_file,
     get_log_file_stats,
     list_log_files,
+    read_logger_config,
+    update_logger_config,
 )
 
-from ..dependencies import require_min_access_level
+from ..dependencies import require_min_access_level, verify_same_origin
 from ..schemas.logger import (
+    LoggerConfigPatchRequest,
+    LoggerConfigPatchResponse,
+    LoggerConfigResponse,
     LogFileDetailResponse,
     LogFileListResponse,
     LogFileStatsResponse,
     log_file_detail_to_response,
     log_file_list_to_response,
     log_file_stats_to_response,
+    logger_config_to_response,
 )
 
 router = APIRouter(
@@ -145,3 +152,90 @@ def get_log_file_detail(
     result["_file_modified_at"] = datetime.fromtimestamp(st.st_mtime).isoformat()
 
     return log_file_detail_to_response(result)
+
+
+# =====================================================================
+# CC-LOGGER-L4 Stufe 1 — Persistente Logger-Konfiguration
+# =====================================================================
+#
+# Reine Persistenz-API. Kein Runtime-Control — die Semantik ist "wirksam
+# beim naechsten Bot-Start" (siehe L3-Entscheidung). Der Router ruft
+# ausschliesslich services/logger_admin.py auf; keine Datei-I/O hier.
+
+_LOGGER_CONFIG_ERROR_TO_HTTP = {
+    "LOGGER_CONFIG_MISSING": 409,
+    "LOGGER_CONFIG_CORRUPT": 500,
+    "LOGGER_CONFIG_UNREADABLE": 500,
+    "LOGGER_CONFIG_WRITE_FAILED": 500,
+    "LOGGER_CONFIG_PATCH_INVALID": 422,
+    "LOGGER_CONFIG_UNKNOWN_MODULE": 422,
+    "LOGGER_CONFIG_UNKNOWN_FIELD": 422,
+    "LOGGER_CONFIG_INVALID_LEVEL": 422,
+    "LOGGER_CONFIG_INVALID_TYPE": 422,
+}
+
+
+def _map_logger_config_error(exc: LoggerConfigError) -> HTTPException:
+    status = _LOGGER_CONFIG_ERROR_TO_HTTP.get(exc.code, 500)
+    return HTTPException(
+        status_code=status,
+        detail={"code": exc.code, "message": str(exc)},
+    )
+
+
+@router.get("/config", response_model=LoggerConfigResponse)
+def get_logger_config() -> LoggerConfigResponse:
+    """Liefert die persistente Logger-Konfiguration
+    (data/module_logger_config.json).
+
+    **Das ist NICHT der Runtime-Zustand des laufenden Bots.** Die
+    Antwort beschreibt ausschliesslich die persistierte Absicht, die
+    beim naechsten Bot-Start angewendet wird (siehe L3-Entscheidung).
+    Fehlende Datei -> leeres `modules`-Objekt (kein Fehler)."""
+    try:
+        data = read_logger_config(Config())
+    except LoggerConfigError as e:
+        raise _map_logger_config_error(e) from e
+    return logger_config_to_response(data)
+
+
+@router.patch(
+    "/config",
+    response_model=LoggerConfigPatchResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+def patch_logger_config(body: LoggerConfigPatchRequest) -> LoggerConfigPatchResponse:
+    """Aktualisiert die persistente Logger-Konfiguration.
+
+    **Merge-by-module, merge-by-field.** Nur die im Body genannten
+    Module werden angefasst; innerhalb eines Moduls nur die genannten
+    Felder.
+
+    **Semantik: wirksam beim naechsten Bot-Start.** Diese API bestaetigt
+    ausdruecklich NICHT die Anwendung im laufenden Bot-Prozess — das
+    waere eine Fake-Live-API und ist nach L3-Entscheidung verboten
+    (siehe docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_
+    DECISION_2026-09-23.md).
+
+    Fehler-Codes:
+    - 409 `LOGGER_CONFIG_MISSING` — keine persistente Config vorhanden
+    - 422 `LOGGER_CONFIG_UNKNOWN_MODULE` / `LOGGER_CONFIG_UNKNOWN_FIELD`
+      / `LOGGER_CONFIG_INVALID_LEVEL` / `LOGGER_CONFIG_INVALID_TYPE` /
+      `LOGGER_CONFIG_PATCH_INVALID`
+    - 500 `LOGGER_CONFIG_CORRUPT` / `LOGGER_CONFIG_WRITE_FAILED`"""
+    cfg = Config()
+    try:
+        new_config = update_logger_config(cfg, body.modules)
+    except LoggerConfigError as e:
+        raise _map_logger_config_error(e) from e
+
+    return LoggerConfigPatchResponse(
+        success=True,
+        message=(
+            "Logger-Konfiguration wurde gespeichert und wird beim "
+            "naechsten Bot-Start wirksam. Der laufende Bot-Prozess "
+            "wurde NICHT veraendert."
+        ),
+        modules_updated=sorted(body.modules.keys()),
+        total=len(new_config),
+    )

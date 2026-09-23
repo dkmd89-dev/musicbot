@@ -2171,3 +2171,43 @@ Localhost-HTTP-Control-Server, jeder unnötige neue IPC-Stack.
 **Vollständige Begründung, Vergleichsmatrix, Failure Analysis,
 Security Threat Model:**
 `docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md`.
+
+---
+
+## Erweiterung — CC-LOGGER-L4: Startup Apply + Persistent Logger Configuration (2026-09-23)
+
+Erster Umsetzungsschritt nach der L3-Entscheidung
+(`docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md`).
+
+**Stufe 0 — Startup-Apply-Bugfix.** `ModuleLoggerManager._load_module_configs()`
+liest die persistente Konfiguration jetzt und wendet sie per
+`_apply_module_config()` auf die realen Logger an. Vorher war die
+persistierte JSON für den laufenden Prozess wirkungslos; nach jedem
+Neustart galten die Code-Defaults aus `logger.py`.
+
+**Stufe 1 — Persistent Config API.** Zwei Endpunkte unter
+`/api/v1/admin/logger/config`:
+
+| Route | Auth | Zweck |
+|---|---|---|
+| `GET /config` | ADMIN | persistierte Konfiguration, read-only |
+| `PATCH /config` | ADMIN + CSRF | Merge-by-module + merge-by-field, strikte Validierung |
+
+Application Layer: `services/logger_admin.py` erweitert um
+`read_logger_config()`, `validate_logger_config_patch()`,
+`update_logger_config()` (atomarer Write), `LoggerConfigError`.
+
+**Ehrliche Semantik:** PATCH bestätigt ausschließlich „gespeichert,
+wirksam beim nächsten Bot-Start". Der laufende Bot-Prozess wird nicht
+angefasst. Kein Fake-Live.
+
+**Bewusst nicht implementiert:** Stufe 2 (Runtime Snapshot), Stufe 3
+(kontrollierter Restart mit Preflight), IPC, Socket, UI,
+Telegram-Migration — diese sind L5/L6/L7.
+
+**Verhaltensänderung (quantifiziert):** ab dem ersten Neustart nach
+dem Fix legen 40 Module je eine Log-Datei an, 18 davon auf
+DEBUG-Level.
+
+**Vollständige Begründung, Validationstabelle, Security-Analyse:
+** `docs/audits/CC-LOGGER-L4_STARTUP_CONFIG_API_2026-09-23.md`.

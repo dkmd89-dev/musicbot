@@ -41,7 +41,22 @@ class ModuleLoggerManager:
         self._load_module_configs()
 
     def _load_module_configs(self):
-        """Laedt modul-spezifische Logger-Konfigurationen"""
+        """Laedt modul-spezifische Logger-Konfigurationen und wendet sie
+        auf die Runtime-Logger an (CC-LOGGER-L4 Stufe 0).
+
+        Vor L4 wurde die Konfiguration beim Bot-Start nur gelesen, aber
+        nicht angewendet — die persistierten Level/Handler waren dadurch
+        fuer den laufenden Prozess wirkungslos, es galten die Code-
+        Defaults aus logger.py. Nach dem Fix wird fuer jedes geladene
+        Modul _apply_module_config() aufgerufen; die persistierte
+        Konfiguration ist damit tatsaechlich die Basis des Runtime-
+        Zustands nach dem Bot-Start.
+
+        Verhaltensaenderung gegenueber vor-L4 (bewusst, siehe
+        docs/audits/CC-LOGGER-L4_STARTUP_CONFIG_API_2026-09-23.md):
+        bestehende Module mit file_handler=true erhalten beim ersten
+        Neustart eine eigene Log-Datei unter Config.LOG_DIR; Module mit
+        level=DEBUG loggen ab dann tatsaechlich auf DEBUG."""
         try:
             if self.config_file.exists():
                 with open(self.config_file, "r", encoding="utf-8") as f:
@@ -93,6 +108,16 @@ class ModuleLoggerManager:
                     },
                 }
                 self._save_module_configs()
+
+            # CC-LOGGER-L4 Stufe 0 — Startup-Apply:
+            # Die geladene (oder default-generierte) Konfiguration jetzt
+            # auch tatsaechlich auf die realen Logger anwenden. Ohne
+            # diesen Schritt blieben die persistierten Level/Handler fuer
+            # den laufenden Prozess wirkungslos. _apply_module_config()
+            # faengt Fehler pro Modul bereits intern ab; ein einzelnes
+            # problematisches Modul kann den Loop daher nicht sprengen.
+            for module_name in self.module_configs:
+                self._apply_module_config(module_name)
         except Exception as e:
             print(f"Fehler beim Laden der Modul-Konfigurationen: {e}")
 
