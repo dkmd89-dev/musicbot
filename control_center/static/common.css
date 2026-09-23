@@ -886,3 +886,160 @@ button.track-row:focus-visible { outline: 2px solid var(--accent); outline-offse
     height: 24px;
   }
 }
+
+/* === control_center_overview: Phase 4 Cards === */
+.overview-dominant .card {
+  border-left: 3px solid transparent;
+  transition: border-left-color 0.15s ease;
+}
+.overview-dominant > div:nth-child(1) .card { border-left-color: #066fd1; }
+.overview-dominant > div:nth-child(2) .card { border-left-color: #ae3ec9; }
+.overview-dominant > div:nth-child(3) .card { border-left-color: #f76707; }
+.overview-dominant .card-body { padding: 1.25rem 1.5rem; }
+
+.overview-compact .card-body { padding: 0.75rem 1rem; }
+.overview-compact .card .h3 { font-size: 1.1rem; }
+.overview-compact .card-header { padding: 0.6rem 1rem; }
+.overview-compact .card-header .card-title { font-size: 1rem; }
+.overview-compact .card-footer { padding: 0.5rem 1rem; }
+
+@media (max-width: 768px) {
+  .overview-dominant .card-body { padding: 1rem 1.15rem; }
+  .overview-compact .card-body { padding: 0.65rem 0.85rem; }
+}
+/* === /control_center_overview: Phase 4 Cards === */
+
+/* === control_center_overview: Health-Balken === */
+.health-bar-wrapper {
+  /* nutzt bestehende Karte-Hintergründe */
+}
+.health-bar {
+  height: 8px;
+  background: rgba(128, 128, 128, 0.15);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.health-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.35s ease;
+  width: 0;
+}
+.health-bar-fill.health-good { background: #2fb344; }
+.health-bar-fill.health-warn { background: #f59e0b; }
+.health-bar-fill.health-bad  { background: #d63939; }
+.health-bar-label {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted, #8a919a);
+}
+/* === /control_center_overview: Health-Balken === */
+
+/* === control_center_overview: Phase 6 === */
+/* Feinschliff Health-Balken: schlanker, runder, dunklerer Track */
+.health-bar {
+  height: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.health-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+.health-bar-label {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--muted, #8a919a);
+  letter-spacing: 0.02em;
+}
+/* === /control_center_overview: Phase 6 === */
+
+/* === control_center_overview: Phase 7 === */
+/* Page-Header-Icon (identisch zur Statistics-Seite) */
+.page-header-icon {
+  width: 56px;
+  height: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(6, 111, 209, 0.15);
+  color: #066fd1;
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* Aufmerksamkeit-Card */
+.attention-count,
+.attention-empty {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.attention-badge {
+  width: 56px;
+  height: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.attention-badge--ok {
+  background: rgba(47, 179, 68, 0.15);
+  color: #2fb344;
+  font-size: 1.6rem;
+}
+.attention-badge--warn {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+.attention-badge--critical {
+  background: rgba(214, 57, 57, 0.15);
+  color: #d63939;
+}
+
+.attention-headline {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--fg, #eaeaea);
+  margin-bottom: 0.15rem;
+}
+.attention-sub {
+  font-size: 0.85rem;
+  color: var(--muted, #9a9a9a);
+}
+
+/* Card-Hintergrund-Tönung je Severity */
+#attention-panel.attention-panel--warn {
+  border-left: 3px solid #f59e0b;
+}
+#attention-panel.attention-panel--critical {
+  border-left: 3px solid #d63939;
+}
+#attention-panel.attention-panel--ok {
+  border-left: 3px solid #2fb344;
+}
+
+@media (max-width: 480px) {
+  .page-header-icon {
+    width: 48px;
+    height: 48px;
+    font-size: 1.3rem;
+  }
+  .attention-badge {
+    width: 48px;
+    height: 48px;
+    font-size: 1.3rem;
+  }
+}
+/* === /control_center_overview: Phase 7 === */
