@@ -768,10 +768,18 @@ def evaluate_apply_preflight() -> Dict[str, Any]:
 # =====================================================================
 #
 # In-memory, pro Prozess. Schuetzt vor schnellem wiederholtem
-# Apply-Triggern. Der Limiter wird nur bei ERFOLGREICHEN Applies
-# konsumiert (nach Preflight-Freigabe) — geblockte Preflights sind
-# billige Datei-Checks und sollen NICHT als DoS-Vektor missbraucht
-# werden koennen.
+# Apply-Triggern.
+#
+# Konsumzeitpunkt: der Limiter wird beim EINGANG eines Apply-Versuchs
+# konsumiert — BEVOR Config-Validierung und Preflight laufen. Das ist
+# bewusst konservativ: ein wiederholter Request verbraucht einen Slot,
+# auch wenn er an Config-Validierung oder Preflight scheitert. Damit
+# kann ein Angreifer oder ein versehentlich mehrfach ausgeloester Klick
+# nicht unbegrenzt Config-Reads oder Lock-Checks triggern.
+#
+# Konsequenz fuer den Nutzer: nach einem `blocked`/invaliden Apply
+# wartet er 60s, bis der naechste Versuch erlaubt ist. Das ist im
+# Audit-Dokument als bewusste Policy dokumentiert (L5-Audit §9).
 
 
 class LoggerApplyRateLimiter:
