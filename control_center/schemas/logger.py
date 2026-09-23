@@ -16,9 +16,9 @@ docs/audits/CC_LOGGER_L2_READ_API_2026-09-23.md):
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from services.logger_admin import LogFileMeta, LogFileStats, human_size_str
 from services.logs.reader import LogEntry
@@ -119,3 +119,99 @@ def log_file_detail_to_response(result: dict) -> LogFileDetailResponse:
         limit=result.get("limit", 0),
         entries=[_entry_to_schema(e) for e in entries],
     )
+
+
+# =====================================================================
+# CC-LOGGER-L4 Stufe 1 — Persistente Logger-Konfiguration
+# =====================================================================
+#
+# Wichtig: alle Felder beschreiben ausschliesslich die *persistente*
+# Konfiguration (data/module_logger_config.json). Sie sind keine Aussage
+# ueber den laufenden Bot-Prozess. Aenderungen werden erst beim naechsten
+# Bot-Start wirksam — das ist im Response-Text explizit benannt.
+
+
+class ModuleConfigSchema(BaseModel):
+    """Ein einzelner Modul-Eintrag aus der persistenten Konfiguration.
+
+    Feldnamen identisch zur bestehenden JSON (enabled, level,
+    file_handler, console_handler, custom_format) — keine Umbenennung,
+    damit die Datei kompatibel bleibt."""
+
+    enabled: bool = True
+    level: str = "INFO"
+    file_handler: bool = True
+    console_handler: bool = True
+    custom_format: Optional[str] = None
+
+
+class LoggerConfigResponse(BaseModel):
+    """GET /api/v1/admin/logger/config — vollstaendige persistente
+    Logger-Konfiguration."""
+
+    modules: Dict[str, ModuleConfigSchema]
+    total: int
+    """Anzahl Module in der Konfiguration."""
+
+
+class LoggerConfigPatchRequest(BaseModel):
+    """PATCH-Body fuer die persistente Logger-Konfiguration.
+
+    Struktur: `{"modules": {"<module_name>": {"level": "DEBUG"}, ...}}`.
+
+    Nur der Top-Level-Key `modules` ist erlaubt (extra="forbid"). Die
+    Feinvalidierung der inneren Struktur (unbekannte Module, unbekannte
+    Felder, ungueltige Level-Werte) erfolgt bewusst NICHT in Pydantic,
+    sondern im Application Layer — dort koennen wir stabile Fehler-Codes
+    (LOGGER_CONFIG_UNKNOWN_MODULE, LOGGER_CONFIG_INVALID_LEVEL, ...)
+    liefern, die der Router auf HTTP-Codes mappt.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    modules: Dict[str, Dict[str, Any]] = Field(
+        ...,
+        description=(
+            "Dict von Modulname -> Partial-Update. Nur Felder aus "
+            "{enabled, level, file_handler, console_handler} sind "
+            "erlaubt. Unbekannte Module werden abgelehnt."
+        ),
+    )
+
+
+class LoggerConfigPatchResponse(BaseModel):
+    """PATCH /api/v1/admin/logger/config — Bestaetigung.
+
+    Der `message`-Text macht ausdruecklich klar, dass die Aenderung erst
+    beim naechsten Bot-Start wirksam wird — die API behauptet bewusst
+    NICHT die Anwendung im laufenden Prozess (L3-Entscheidung, siehe
+    docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md).
+    """
+
+    success: bool
+    message: str
+    modules_updated: List[str]
+    """Namen der Module, deren Konfiguration tatsaechlich veraendert wurde."""
+
+    total: int
+    """Anzahl Module in der Konfiguration nach dem Patch."""
+
+
+def logger_config_to_response(data: Dict[str, Any]) -> LoggerConfigResponse:
+    """Mappt das rohe dict aus services/logger_admin.py auf das
+    Response-Schema. Fehlende Felder in einem Modul-Eintrag werden durch
+    ModuleConfigSchema-Defaults ergaenzt."""
+    modules: Dict[str, ModuleConfigSchema] = {}
+    for name, fields in data.items():
+        if not isinstance(fields, dict):
+            # Sollte durch App-Layer-Validierung nicht passieren, aber
+            # defensiv: fehlerhafte Eintraege mit Defaults ueberspringen.
+            continue
+        modules[name] = ModuleConfigSchema(
+            enabled=fields.get("enabled", True),
+            level=fields.get("level", "INFO"),
+            file_handler=fields.get("file_handler", True),
+            console_handler=fields.get("console_handler", True),
+            custom_format=fields.get("custom_format"),
+        )
+    return LoggerConfigResponse(modules=modules, total=len(modules))

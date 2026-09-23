@@ -50,6 +50,7 @@ Abschnitt „Implementierung".
 | **`control-center-navidrome` (Navidrome Full Integration im Control Center)** — Erweiterung der bisherigen Navidrome-Status-Anbindung (2026-09-15) zur vollständigen REST-Parität mit dem Telegram-`NavidromeMenuHandler`. 18 neue Endpunkte (Browse/Detail/Suche/Entdecken/Playlist-CRUD/Cover-Proxy) in `control_center/routers/navidrome.py` (20 gesamt), ~25 neue Pydantic-Schemas in `control_center/schemas/navidrome.py`, neuer `fetch_cover_art()`-Helper in `services/clients/navidrome_api.py` (Subsonic `getCoverArt` liefert Bytes, nicht JSON). Frontend: 7 Tabs, Modal-Stack-Navigation mit Breadcrumb, Cover-Art-Cards. Telegram-Seite bewusst unverändert; beide Consumer teilen weiterhin nur den `NavidromeAPI`-Adapter, keinen gemeinsamen Zustand, keine Business-Logik, keine wechselseitigen Imports. Details: `docs/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md`. Volle Suite auf dem Branch: 5445 passed / 1 skipped / 6 warnings / 11 subtests passed (322,78 s, 2026-09-23). | siehe Branch `control-center-navidrome` | 20 Endpunkte (2 → 20), ~25 Schemas (2 → ~25), Frontend-Rewrite mit Modal-Stack; 0 Regressionen (bestehende Navidrome-Status-Tests unverändert grün) |
 | **CC-LOGGER-L2 (Logger Read API)** — erster Schritt aus dem Phasenplan `logge.txt` (L1–L7). Reine Read-API für die Klasse-A-Logger-Funktionen (shared filesystem). Neuer Application-Layer `services/logger_admin.py` (Telegram-frei, FastAPI-frei), neuer Router `control_center/routers/logger.py` unter `/api/v1/admin/logger/*`, ADMIN-gated, 3 Endpunkte (Dateiliste/Statistiken/Detail). **Klasse B (Runtime-Control) bewusst DEFERRED** — L1-Analyse ergab prozesslokalen Bot-Zustand ohne Inbound-Kanal (einziger Mechanismus: `systemctl restart`). `module_logger_config.json` bewusst nicht exponiert — L1-Fund: `ModuleLoggerManager._load_module_configs()` wendet die JSON beim Bot-Start nicht an. Route-Reihenfolge kritisch (`/files/stats` vor `/files/{name}`). Limit-Grenzen server-seitig (Default 200, Min 1, Max 2000, HTTP 422 bei Verletzung — kein stilles Clamping; zusätzlich defensiv im App-Layer). Details: `docs/audits/CC_LOGGER_L2_READ_API_2026-09-23.md`. Testergebnis: 86 passed (Log-Suiten) + 529 passed (`control_center`-Suite). | `docs/audits/CC_LOGGER_L2_READ_API_2026-09-23.md` | 3 Endpunkte, 1 neuer Application Layer, 1 neuer Router, 2 neue Schemas; 0 Regressionen (`/api/v1/logs` unverändert) |
 | **CC-LOGGER-L3 (Runtime-Control Architecture Decision)** — Analyse-Phase, kein Code. Architektur-Entscheidung für Logger-Runtime-Control im MusicBot. Kernbefund: es existiert heute KEIN Cross-Process-Runtime-Kanal (keine IPC, kein Socket, kein File-Watcher, kein Reload-Trigger); einziger Steuerungs-Mechanismus ist `systemctl restart bot`. Zusätzlich: `ModuleLoggerManager._load_module_configs()` wendet die JSON beim Bot-Start nicht an — persistente Config ist keine Runtime-Wahrheit. Empfohlener Pfad (verbindlich für L4–L6): Stufe 0 (Startup-Apply-Bugfix) → Stufe 1 (E2 Persistent Config über CC, Semantik „nächster Start“) → Stufe 2 (Runtime Snapshot, read-only Observability) → Stufe 3 (kontrollierter Apply/Restart mit Preflight + Rate-Limit). Stufe 4 (Unix-Socket Runtime Write) explizit DEFERRED, nur bei belegtem Bedarf. Verworfen: File-Watcher als dauerhafte Runtime-Infrastruktur, Localhost-HTTP, jeder unnötige neue IPC-Stack. Details: `docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md`. | `docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md` | Docs-only, 0 Code-Änderungen, 0 Regressionen |
+| **CC-LOGGER-L4 (Startup Apply + Persistent Logger Configuration)** — erster Umsetzungsschritt nach der L3-Entscheidung. Behebt den Startup-Apply-Bug in `ModuleLoggerManager._load_module_configs()` (JSON wurde geladen, aber nicht angewendet — persistierte Level/Handler waren fuer den laufenden Prozess wirkungslos). Neue Application-Layer-Funktionen in `services/logger_admin.py`: `read_logger_config()`, `validate_logger_config_patch()`, `update_logger_config()` (atomarer Write via .tmp+replace), `LoggerConfigError`. Neue Endpunkte unter `/api/v1/admin/logger/config`: `GET` (persistierte Konfiguration, ADMIN) + `PATCH` (merge-by-module + merge-by-field, ADMIN + CSRF, strikte Validierung). **Semantik ehrlich: „wirksam beim naechsten Bot-Start" — kein Runtime-Control, kein IPC, kein Restart.** Kein Schema-Bruch, keine neue Abhaengigkeit. **Verhaltensaenderung:** ab dem ersten Neustart nach dem Fix werden 40 Module je eine Log-Datei anlegen, 18 davon auf DEBUG. Details: `docs/audits/CC-LOGGER-L4_STARTUP_CONFIG_API_2026-09-23.md`. | `docs/audits/CC-LOGGER-L4_STARTUP_CONFIG_API_2026-09-23.md` | 2 Endpunkte (GET/PATCH), 1 Bug-Fix, 47 neue Tests (12 Startup-Apply + 35 App-Layer-/HTTP-Config); 131/540/168 passed ueber die drei Regressionssuiten, 0 Regressionen |
 ---
 
 ## 3. Recent Major Changes (seit v10-Freeze)
@@ -191,3 +192,42 @@ GO/NO-GO-Verdikt für v11.)*
   Runtime-Implementierung, keine Telegram-Migration, keine UI-Änderung,
   keine L2-Endpunkt-Änderung. Details:
   `docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md`.
+
+- **CC-LOGGER-L4 (Startup Apply + Persistent Logger Configuration):**
+  erster Umsetzungsschritt nach der L3-Entscheidung. Zwei Bausteine:
+
+  **Stufe 0 — Startup-Apply-Bugfix.** `ModuleLoggerManager._load_module_configs()`
+  liest die persistente Konfiguration jetzt und wendet sie per
+  `_apply_module_config()` auf die realen Logger an. Vor dem Fix galten
+  nach jedem Bot-Neustart die Code-Defaults aus `logger.py` — die
+  persistierte JSON war wirkungslos für den laufenden Prozess.
+
+  **Stufe 1 — Persistent Config API.** Neue Application-Layer-Funktionen
+  in `services/logger_admin.py` (`read_logger_config()`,
+  `validate_logger_config_patch()`, `update_logger_config()` mit
+  atomarem Write über `.tmp`+`replace()`, `LoggerConfigError` mit
+  stabilem `code`). Zwei Endpunkte unter
+  `/api/v1/admin/logger/config`:
+  - `GET` — persistierte Konfiguration, ADMIN, read-only.
+  - `PATCH` — Merge-by-module + merge-by-field, ADMIN + CSRF,
+    strikte Validierung (unbekannte Module → 422, unbekannte Felder
+    → 422, invalide Level → 422, Nicht-Bool → 422, fehlende Config
+    → 409). Kein stilles Schema-Anlegen.
+
+  **Ehrliche Semantik ohne Fake-Live:** die PATCH-Response bestätigt
+  ausschließlich „gespeichert, wirksam beim nächsten Bot-Start". Der
+  laufende Bot-Prozess wird nicht angefasst — zwei Tests pinnen das
+  explizit (App-Layer-Level und HTTP-Level).
+
+  **Verhaltensänderung (quantifiziert im Audit):** ab dem ersten
+  Neustart nach dem Fix legen 40 Module je eine Log-Datei an, 18 davon
+  schreiben tatsächlich auf DEBUG. Gewollt, im Audit-Dokument
+  dokumentiert, kein verstecktes Verhalten.
+
+  **Bewusst NICHT implementiert:** kein Runtime-Snapshot (Stufe 2),
+  kein kontrollierter Restart (Stufe 3), kein IPC, keine Socket, keine
+  UI, keine Telegram-Migration. Die bleiben L5/L6/L7.
+
+  **Keine Schema-Änderung**, keine neue Abhängigkeit, keine Migration.
+  Details:
+  `docs/audits/CC-LOGGER-L4_STARTUP_CONFIG_API_2026-09-23.md`.

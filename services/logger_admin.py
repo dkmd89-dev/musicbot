@@ -50,10 +50,11 @@ daher explizit NICHT in L2 enthalten.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from services.logs.reader import list_log_sources, read_logs
 from services.backup_admin import human_size
@@ -243,3 +244,233 @@ def human_size_str(size_bytes: int) -> str:
     Stelle greift (statt backup_admin direkt in schemas/ zu importieren,
     was die Schichtentrennung schemas→services kippen würde)."""
     return human_size(size_bytes)
+
+
+# =====================================================================
+# CC-LOGGER-L4 Stufe 1 — Persistente Logger-Konfiguration
+# =====================================================================
+#
+# Dies ist ausschliesslich die *persistente* Konfiguration
+# (data/module_logger_config.json). Sie ist keine Runtime-Wahrheit fuer
+# den laufenden Bot-Prozess: Aenderungen werden erst beim naechsten
+# Bot-Start wirksam (siehe docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_
+# ARCHITECTURE_DECISION_2026-09-23.md). Der Application Layer bestaetigt
+# nach einem Write ausdruecklich NICHT die Anwendung im laufenden
+# Prozess.
+#
+# Bewusst NICHT Teil dieser API:
+# - Globales Root-Log-Level (Config.LOG_LEVEL). Es existiert nur als
+#   Config-Eigenschaft und wird von setup_enhanced_logging() direkt auf
+#   den Root-Logger angewendet; es gibt keine Modul-Repraesentation in
+#   der JSON. Eine globale Level-Aenderung waere eine Schemaerweiterung
+#   (z.B. {"global": {...}, "modules": {...}}) — nicht Teil von L4.
+# - `custom_format`: wird in der bestehenden Config zwar mitgeschrieben,
+#   aber nirgends ausgewertet; aus dem Patch-Schema ausgeschlossen.
+
+# Erlaubte Felder im PATCH-Body. Bewusst NICHT `custom_format`.
+ALLOWED_PATCHABLE_FIELDS = frozenset(
+    {"enabled", "level", "file_handler", "console_handler"}
+)
+
+# Gueltige Log-Level (identisch zur Whitelist in
+# EnhancedLoggerMenuHandler.log_levels).
+ALLOWED_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+
+# Pfad-Konvention: ueber Config.DATA_DIR (identisch zu services/
+# user_data.py), NICHT relativ zum CWD. Der bestehende
+# ModuleLoggerManager nutzt weiterhin seinen relativen Pfad — die
+# Divergenz ist bewusst und im Audit-Dokument dokumentiert.
+CONFIG_FILE_NAME = "module_logger_config.json"
+
+
+class LoggerConfigError(LoggerAdminError):
+    """Fehler aus der persistenten Logger-Konfiguration.
+
+    Traegt einen stabilen `code`-String, den der Router auf HTTP-Codes
+    mappt (`LOGGER_CONFIG_CORRUPT` -> 500, alle anderen -> 422).
+    """
+
+    code = "LOGGER_CONFIG_ERROR"
+
+    def __init__(self, message: str, *, code: Optional[str] = None):
+        super().__init__(message)
+        if code is not None:
+            self.code = code
+
+
+def _resolve_config_path(config: Any) -> Path:
+    """Fester, serverseitig aufgeloester Pfad zur Logger-Konfiguration.
+    Kein Nutzer-Input fliesst ein — Path Traversal ist damit strukturell
+    ausgeschlossen."""
+    return Path(config.DATA_DIR) / CONFIG_FILE_NAME
+
+
+def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
+    """Atomares Schreiben ueber temp-Sibling + os.replace, identisches
+    Muster wie services/backup_admin.py und services/logger_admin.py
+    selbst fuer die (nicht-atomare) Modul-Config — hier explizit
+    atomar, damit ein abgebrochener Write die Datei nicht halbfertig
+    hinterlaesst."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        tmp.replace(path)
+    except OSError:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+        raise
+
+
+def read_logger_config(config: Any) -> Dict[str, Dict[str, Any]]:
+    """Liest die persistente Logger-Konfiguration.
+
+    Rueckgabe: dict {module_name: {enabled, level, file_handler,
+    console_handler, custom_format}}. Fehlende Datei -> leeres dict
+    (kein Fehler — die API meldet ehrlich „noch keine Konfiguration").
+    Korruptes JSON oder Nicht-Objekt -> LoggerConfigError mit
+    `code="LOGGER_CONFIG_CORRUPT"`.
+    """
+    path = _resolve_config_path(config)
+    if not path.exists():
+        return {}
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise LoggerConfigError(
+            f"Logger-Konfiguration nicht lesbar: {e}",
+            code="LOGGER_CONFIG_UNREADABLE",
+        ) from e
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise LoggerConfigError(
+            f"Logger-Konfiguration ist korruptes JSON: {e}",
+            code="LOGGER_CONFIG_CORRUPT",
+        ) from e
+    if not isinstance(data, dict):
+        raise LoggerConfigError(
+            "Logger-Konfiguration ist kein JSON-Objekt.",
+            code="LOGGER_CONFIG_CORRUPT",
+        )
+    return data
+
+
+def validate_logger_config_patch(
+    patch: Dict[str, Dict[str, Any]],
+    *,
+    existing_modules: set,
+) -> None:
+    """Validiert einen PATCH-Body gegen die bestehende Konfiguration.
+
+    Regeln:
+    - Patch muss ein Objekt sein.
+    - Unbekannte Module -> Fehler (kein stilles Anlegen).
+    - Unbekannte Felder -> Fehler (Whitelist, kein `custom_format`).
+    - `level` muss in ALLOWED_LOG_LEVELS sein.
+    - `enabled`/`file_handler`/`console_handler` muessen bool sein.
+    """
+    if not isinstance(patch, dict):
+        raise LoggerConfigError(
+            "Patch muss ein Objekt sein.", code="LOGGER_CONFIG_PATCH_INVALID"
+        )
+    for module_name, fields in patch.items():
+        if not isinstance(module_name, str) or not module_name:
+            raise LoggerConfigError(
+                f"Modulname muss ein nicht-leerer String sein: {module_name!r}",
+                code="LOGGER_CONFIG_PATCH_INVALID",
+            )
+        if module_name not in existing_modules:
+            raise LoggerConfigError(
+                f"Unbekanntes Modul im Patch: {module_name!r}. "
+                "Neue Module koennen ueber diese API nicht angelegt werden.",
+                code="LOGGER_CONFIG_UNKNOWN_MODULE",
+            )
+        if not isinstance(fields, dict):
+            raise LoggerConfigError(
+                f"Modul {module_name!r}: Wert muss ein Objekt sein.",
+                code="LOGGER_CONFIG_PATCH_INVALID",
+            )
+        if not fields:
+            raise LoggerConfigError(
+                f"Modul {module_name!r}: keine Felder im Patch angegeben.",
+                code="LOGGER_CONFIG_PATCH_INVALID",
+            )
+        for field, value in fields.items():
+            if field not in ALLOWED_PATCHABLE_FIELDS:
+                raise LoggerConfigError(
+                    f"Modul {module_name!r}: unbekanntes Feld {field!r}. "
+                    f"Erlaubt: {sorted(ALLOWED_PATCHABLE_FIELDS)}.",
+                    code="LOGGER_CONFIG_UNKNOWN_FIELD",
+                )
+            if field == "level":
+                if not isinstance(value, str) or value not in ALLOWED_LOG_LEVELS:
+                    raise LoggerConfigError(
+                        f"Modul {module_name!r}: ungueltiger Level {value!r}. "
+                        f"Erlaubt: {sorted(ALLOWED_LOG_LEVELS)}.",
+                        code="LOGGER_CONFIG_INVALID_LEVEL",
+                    )
+            else:  # enabled, file_handler, console_handler
+                if not isinstance(value, bool):
+                    raise LoggerConfigError(
+                        f"Modul {module_name!r}: Feld {field!r} muss bool sein.",
+                        code="LOGGER_CONFIG_INVALID_TYPE",
+                    )
+
+
+def update_logger_config(
+    config: Any, patch: Dict[str, Dict[str, Any]]
+) -> Dict[str, Dict[str, Any]]:
+    """Wendet einen validierten PATCH auf die persistente Konfiguration
+    an und schreibt sie atomar.
+
+    Semantik (identisch zur L3-Entscheidung):
+    - **Merge-by-module, merge-by-field**: nur die im Patch genannten
+      Module werden angefasst; innerhalb eines Moduls nur die im Patch
+      genannten Felder. Andere Felder des Moduls bleiben unveraendert.
+    - Kein Anlegen neuer Module (siehe validate_logger_config_patch).
+    - Kein Runtime-Control: die Funktion liest und schreibt nur die
+      Datei. Der laufende Bot-Prozess wird NICHT beeinflusst.
+
+    Rueckgabe: die vollstaendige, aktualisierte Konfiguration (fuer den
+    Response-Body).
+    """
+    path = _resolve_config_path(config)
+
+    # 1. Bestehende Konfiguration lesen.
+    # PATCH ist nur sinnvoll, wenn bereits eine persistente Konfiguration
+    # existiert (die der Bot beim ersten Start generiert). Ohne sie gaebe
+    # es keine "bekannten Module", gegen die der Patch validiert werden
+    # koennte — ein 422 UNKNOWN_MODULE waere hier irrefuehrend.
+    if not path.exists():
+        raise LoggerConfigError(
+            "Keine persistente Logger-Konfiguration vorhanden. "
+            "Der Bot muss mindestens einmal gestartet worden sein, damit "
+            "die Default-Konfiguration generiert wird.",
+            code="LOGGER_CONFIG_MISSING",
+        )
+    current = read_logger_config(config)
+
+    # 2. Validieren (gegen die tatsaechlich vorhandenen Module).
+    validate_logger_config_patch(patch, existing_modules=set(current.keys()))
+
+    # 3. Mergen.
+    for module_name, fields in patch.items():
+        # Modul existiert bereits (durch Validation garantiert).
+        current[module_name].update(fields)
+
+    # 4. Atomar schreiben.
+    try:
+        _atomic_write_json(path, current)
+    except OSError as e:
+        raise LoggerConfigError(
+            f"Logger-Konfiguration konnte nicht geschrieben werden: {e}",
+            code="LOGGER_CONFIG_WRITE_FAILED",
+        ) from e
+
+    return current
