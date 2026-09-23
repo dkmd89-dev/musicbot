@@ -2267,3 +2267,34 @@ Bestehender Bug, betrifft konkret \`Retry-After\` bei HTTP 429.
 
 Vollstaendige Begruendung, Preflight-Matrix, Failure Modes, Race
 Windows: \`docs/audits/CC-LOGGER-L5_RUNTIME_SNAPSHOT_CONTROLLED_APPLY_2026-09-23.md\`.
+
+
+---
+
+## Erweiterung — CC-LOGGER-L6: Logger-Verwaltungs-UI (2026-09-23)
+
+UI-only, keine Backend-Aenderung. Erste UI-Schicht auf den L4/L5-Endpunkten.
+
+**Neue Seite /logger** (Sidebar-Kategorie SYSTEM, unter Logs). Template
+control_center/templates/logger.html, JS
+control_center/static/pages/logger.js, Route in routers/ui.py.
+
+**Vier Panels** (Stack-Pattern wie statistics.html):
+
+1. **Runtime-Status** — GET /api/v1/admin/logger/runtime-status.
+   Zustand nach letztem Bot-Start, drei Zustaende (available/missing/corrupt).
+2. **Persistierte Konfiguration** — GET /api/v1/admin/logger/config.
+   Read-only. Semantik "wirksam beim naechsten Bot-Start".
+3. **Desired vs. Actual** — berechnet aus Panel 1 + 2, kein neuer Call.
+4. **Apply** — POST /api/v1/admin/logger/apply. Antwort bestimmt
+   Darstellung (unverified/clear/blocked/config_missing/429/403/401).
+   Live-Countdown aus Retry-After-Header.
+
+**Wiederverwendung:** common.js-Helper, common.css-Klassen, Tabler.
+Keine Aenderung an gemeinsamen Dateien.
+
+**Nicht Teil von L6:** Config-PATCH-UI, Log-Reader (ist L2, /logs),
+Telegram-Migration (L7), Parity-Audit (L8).
+
+Vollstaendige Spezifikation und Test-Liste:
+docs/audits/CC-LOGGER-L6_LOGGER_UI_2026-09-23.md.

@@ -118,6 +118,15 @@ def logs_page(request: Request) -> HTMLResponse:
     return _render(request, "logs.html", "logs")
 
 
+@router.get("/logger", response_class=HTMLResponse)
+def logger_page(request: Request) -> HTMLResponse:
+    """Logger-Verwaltung (CC-LOGGER-L6) — Runtime-Status, persistierte
+    Konfiguration, Desired-vs-Actual-Vergleich und kontrollierter
+    Bot-Neustart. Reine UI auf bestehenden L4/L5-Endpunkten, keine neuen
+    APIs, keine Backend-Änderung."""
+    return _render(request, "logger.html", "logger")
+
+
 @router.get("/admin", response_class=HTMLResponse)
 def admin_page(request: Request) -> HTMLResponse:
     return _render(request, "admin.html", "admin")

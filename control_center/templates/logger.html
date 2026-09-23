@@ -1,0 +1,101 @@
+{% extends "_base.html" %}
+{% block title %}Logger – MusicBot Control Center{% endblock %}
+
+{% block content %}
+<div class="page-header d-print-none mb-4">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="page-title">📋 Logger</h1>
+      <div class="text-secondary">
+        Runtime-Zustand, persistierte Konfiguration, Desired-vs-Actual-Vergleich
+        und kontrollierter Bot-Neustart zur Anwendung der Logger-Konfiguration.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Panel 1: Runtime Status -->
+<div class="card mb-4">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title">🟢 Runtime-Status</h2>
+      <div class="text-secondary small">
+        Zustand nach dem letzten erfolgreichen Bot-Start — kein Live-Zustand.
+      </div>
+    </div>
+    <div class="card-actions">
+      <button
+        id="logger-runtime-refresh-btn"
+        type="button"
+        class="btn btn-outline-primary"
+      >
+        Aktualisieren
+      </button>
+    </div>
+  </div>
+  <div class="card-body">
+    <div id="logger-runtime-kpi" class="metrics-grid mb-3"></div>
+    <div id="logger-runtime-content" class="empty-note">Lädt…</div>
+  </div>
+</div>
+
+<!-- Panel 2: Persistierte Konfiguration -->
+<div class="card mb-4">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title">💾 Persistierte Konfiguration</h2>
+      <div class="text-secondary small">
+        Gespeicherte Absicht (data/module_logger_config.json) —
+        wirksam beim nächsten Bot-Start.
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div id="logger-config-content" class="empty-note">Lädt…</div>
+  </div>
+</div>
+
+<!-- Panel 3: Desired vs. Actual -->
+<div class="card mb-4">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title">🔀 Desired vs. Actual</h2>
+      <div class="text-secondary small">
+        Abweichungen zwischen persistierter Konfiguration und Runtime-Zustand
+        (Zustand nach letztem Bot-Start).
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div id="logger-diff-content" class="empty-note">Lädt…</div>
+  </div>
+</div>
+
+<!-- Panel 4: Apply / Controlled Restart -->
+<div class="card mb-4">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title">🚀 Konfiguration anwenden</h2>
+      <div class="text-secondary small">
+        <strong>Administrativer Vorgang:</strong> startet den Bot neu.
+        Die persistierte Logger-Konfiguration wird beim Neustart angewendet.
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div id="logger-apply-status" class="empty-note mb-3"></div>
+    <button
+      id="logger-apply-btn"
+      type="button"
+      class="btn btn-outline-danger"
+      disabled
+    >
+      Konfiguration anwenden (Bot-Neustart)
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ base_path }}/static/pages/logger.js"></script>
+{% endblock %}
