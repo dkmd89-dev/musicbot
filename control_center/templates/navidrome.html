@@ -2,13 +2,14 @@
 {% block title %}Navidrome – MusicBot Control Center{% endblock %}
 
 {% block content %}
+
 <div class="page-header d-print-none">
   <div class="container-xl">
     <div class="row g-2 align-items-center">
       <div class="col">
         <h2 class="page-title">Navidrome</h2>
         <div class="text-muted mt-1">
-          Verbindungsstatus und manueller Library-Scan.
+          Vollständige Verwaltung: Browse, Suche, Playlists, Favoriten, Scan.
         </div>
       </div>
       <div class="col-auto ms-auto d-print-none">
@@ -30,9 +31,10 @@
 <div class="page-body">
   <div class="container-xl">
 
+    <!-- ===================== STATUS ===================== -->
     <div class="row row-deck row-cards" id="navidrome-status-row"
-     data-status-endpoint="/api/v1/navidrome/status"
-     data-scan-endpoint="/api/v1/navidrome/scan">
+         data-status-endpoint="/api/v1/navidrome/status"
+         data-scan-endpoint="/api/v1/navidrome/scan">
       <div class="col-sm-6 col-lg-3">
         <div class="card">
           <div class="card-body">
@@ -56,6 +58,151 @@
       </div>
     </div>
 
+    <!-- ===================== TABS ===================== -->
+    <div class="card mt-3">
+      <div class="card-header">
+        <ul class="nav nav-tabs card-header-tabs" data-bs-toggle="tabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <a href="#tab-artists" class="nav-link active" data-bs-toggle="tab" role="tab"
+               data-navtab="artists">🎤 Artists</a>
+          </li>
+          <li class="nav-item" role="presentation">
+            <a href="#tab-albums" class="nav-link" data-bs-toggle="tab" role="tab"
+               data-navtab="albums">💿 Alben</a>
+          </li>
+          <li class="nav-item" role="presentation">
+            <a href="#tab-genres" class="nav-link" data-bs-toggle="tab" role="tab"
+               data-navtab="genres">🎭 Genres</a>
+          </li>
+          <li class="nav-item" role="presentation">
+            <a href="#tab-search" class="nav-link" data-bs-toggle="tab" role="tab"
+               data-navtab="search">🔍 Suche</a>
+          </li>
+          <li class="nav-item" role="presentation">
+            <a href="#tab-playlists" class="nav-link" data-bs-toggle="tab" role="tab"
+               data-navtab="playlists">📋 Playlists</a>
+          </li>
+          <li class="nav-item" role="presentation">
+            <a href="#tab-favorites" class="nav-link" data-bs-toggle="tab" role="tab"
+               data-navtab="favorites">⭐ Favoriten</a>
+          </li>
+          <li class="nav-item" role="presentation">
+            <a href="#tab-discover" class="nav-link" data-bs-toggle="tab" role="tab"
+               data-navtab="discover">🎵 Entdecken</a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="card-body">
+        <div class="tab-content">
+
+          <!-- ---------- Artists ---------- -->
+          <div class="tab-pane active show" id="tab-artists" role="tabpanel">
+            <div id="nav-artists-list" class="text-muted">Lädt…</div>
+            <div class="mt-2 d-flex gap-2 align-items-center">
+              <button class="btn btn-sm" id="nav-artists-prev">← Zurück</button>
+              <span id="nav-artists-page" class="text-muted">Seite 1</span>
+              <button class="btn btn-sm" id="nav-artists-next">Weiter →</button>
+            </div>
+          </div>
+
+          <!-- ---------- Alben ---------- -->
+          <div class="tab-pane" id="tab-albums" role="tabpanel">
+            <div id="nav-albums-list" class="text-muted">Lädt…</div>
+            <div class="mt-2 d-flex gap-2 align-items-center">
+              <button class="btn btn-sm" id="nav-albums-prev">← Zurück</button>
+              <span id="nav-albums-page" class="text-muted">Seite 1</span>
+              <button class="btn btn-sm" id="nav-albums-next">Weiter →</button>
+            </div>
+          </div>
+
+          <!-- ---------- Genres ---------- -->
+          <div class="tab-pane" id="tab-genres" role="tabpanel">
+            <div id="nav-genres-list" class="text-muted">Lädt…</div>
+          </div>
+
+          <!-- ---------- Suche ---------- -->
+          <div class="tab-pane" id="tab-search" role="tabpanel">
+            <form id="nav-search-form" class="row g-2 mb-3">
+              <div class="col-auto">
+                <select id="nav-search-type" class="form-select">
+                  <option value="all">Alle</option>
+                  <option value="artists">Artists</option>
+                  <option value="albums">Alben</option>
+                  <option value="songs">Songs</option>
+                </select>
+              </div>
+              <div class="col">
+                <input type="text" id="nav-search-input" class="form-control"
+                       placeholder="Suchbegriff…" autocomplete="off">
+              </div>
+              <div class="col-auto">
+                <button type="submit" class="btn btn-primary">Suchen</button>
+              </div>
+            </form>
+            <div id="nav-search-results" class="text-muted"></div>
+          </div>
+
+          <!-- ---------- Playlists ---------- -->
+          <div class="tab-pane" id="tab-playlists" role="tabpanel">
+            <div class="mb-2">
+              <button class="btn btn-sm btn-primary" id="nav-playlist-new">
+                ➕ Neue Playlist
+              </button>
+            </div>
+            <div id="nav-playlists-list" class="text-muted">Lädt…</div>
+            <div class="mt-2 d-flex gap-2 align-items-center">
+              <button class="btn btn-sm" id="nav-playlists-prev">← Zurück</button>
+              <span id="nav-playlists-page" class="text-muted">Seite 1</span>
+              <button class="btn btn-sm" id="nav-playlists-next">Weiter →</button>
+            </div>
+          </div>
+
+          <!-- ---------- Favoriten ---------- -->
+          <div class="tab-pane" id="tab-favorites" role="tabpanel">
+            <div id="nav-favorites-list" class="text-muted">Lädt…</div>
+          </div>
+
+          <!-- ---------- Entdecken ---------- -->
+          <div class="tab-pane" id="tab-discover" role="tabpanel">
+            <div class="mb-3 d-flex gap-2">
+              <button class="btn btn-sm" id="nav-discover-random">🎲 Zufällige Songs</button>
+              <button class="btn btn-sm" id="nav-discover-newest">🆕 Neue Alben</button>
+            </div>
+            <div id="nav-discover-list" class="text-muted"></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== DETAIL-MODAL ===================== -->
+    <div class="modal modal-blur fade" id="nav-detail-modal" tabindex="-1"
+         role="dialog" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-md-down"
+           role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button"
+                    class="btn btn-sm btn-icon btn-ghost-secondary d-none me-2"
+                    id="nav-detail-back" title="Zurück" aria-label="Zurück">
+              <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24"
+                   viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                <path d="M15 6l-6 6l6 6" />
+              </svg>
+            </button>
+            <h5 class="modal-title text-truncate flex-grow-1" id="nav-detail-title">Details</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"
+                    aria-label="Schließen"></button>
+          </div>
+          <div class="modal-body" id="nav-detail-body">Lädt…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== SCAN-AUSGABE ===================== -->
     <div class="row mt-3">
       <div class="col-12">
         <div class="card">

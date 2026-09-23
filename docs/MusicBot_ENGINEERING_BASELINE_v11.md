@@ -47,7 +47,7 @@ geklärt, Nutzer bestätigte „Subprozess statt in-process". Details:
 Abschnitt „Implementierung".
 
 | **CC-AC-10A–D „Control Center Admin API Integration"** — Migration der bestehenden, bisher rein Telegram-basierten Administration auf client-unabhängige Application-Layer-Funktionen + Control-Center-API, gemäß freigegebener Master-Prompt `CC-AC-10.md`. 10A: vollständiges Admin-Inventar (26 Funktionen) + Architecture Contract (`ActorContext`-Vorschlag andockt an bereits Telegram-freie `permissions.py`-Logik). 10B: User Management (Create/Update/Delete) über neuen `services/user_admin.py`. 10C: Backup/Bot-Neustart/Wartungsmodus/Navidrome-Scan über `services/backup_admin.py` + Direktnutzung bereits Telegram-freier Bausteine (`bot_maintenance.py`, `bot_restart_trigger.py`, `navidrome_scan_trigger.py`). 10D: nur System-Status (`services/system_status.py`) — Logger-Konfiguration und Error-Administration bewusst zurückgestellt (Cross-Prozess-Blocker: beide Daten leben nur im Bot-Prozess-Speicher, Control Center läuft separat; Logger-Configs werden zusätzlich nur einmal beim Bot-Start geladen). Telegram-Seite in allen vier Phasen bewusst unverändert (Migration darauf ist eigener, späterer Slice CC-AC-10G). Admin-Web-Parität laut CC-AC-10A-Matrix: von 12/26 auf 24/26 (Artist-Metadata-Reprocessing #25 laut Nutzer-Entscheidung dauerhaft ⚪ ausgeschlossen, keine offene Lücke). Details: `docs/audits/CC-AC-10A_ADMIN_INVENTORY_ARCHITECTURE_CONTRACT_2026-09-22.md` bis `CC-AC-10D_DIAGNOSTICS_MONITORING_API_2026-09-22.md`. | siehe Einzel-PRs dieser Session | 87 neue/erweiterte Tests über die vier Phasen (Application-Layer-Unit-Tests + HTTP-API-Tests), 0 Regressionen, thematische Suiten je Phase grün |
-
+| **`control-center-navidrome` (Navidrome Full Integration im Control Center)** — Erweiterung der bisherigen Navidrome-Status-Anbindung (2026-09-15) zur vollständigen REST-Parität mit dem Telegram-`NavidromeMenuHandler`. 18 neue Endpunkte (Browse/Detail/Suche/Entdecken/Playlist-CRUD/Cover-Proxy) in `control_center/routers/navidrome.py` (20 gesamt), ~25 neue Pydantic-Schemas in `control_center/schemas/navidrome.py`, neuer `fetch_cover_art()`-Helper in `services/clients/navidrome_api.py` (Subsonic `getCoverArt` liefert Bytes, nicht JSON). Frontend: 7 Tabs, Modal-Stack-Navigation mit Breadcrumb, Cover-Art-Cards. Telegram-Seite bewusst unverändert; beide Consumer teilen weiterhin nur den `NavidromeAPI`-Adapter, keinen gemeinsamen Zustand, keine Business-Logik, keine wechselseitigen Imports. Details: `docs/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md`. Volle Suite auf dem Branch: 5445 passed / 1 skipped / 6 warnings / 11 subtests passed (322,78 s, 2026-09-23). | siehe Branch `control-center-navidrome` | 20 Endpunkte (2 → 20), ~25 Schemas (2 → ~25), Frontend-Rewrite mit Modal-Stack; 0 Regressionen (bestehende Navidrome-Status-Tests unverändert grün) |
 ---
 
 ## 3. Recent Major Changes (seit v10-Freeze)
@@ -91,7 +91,21 @@ Abschnitt „Implementierung".
   artist-gescoped, da kein artist-gescopter Scan-Modus existiert und
   ADR-0004 einen zweiten Scan-Mechanismus ausschließt), `docs/FINDINGS_INDEX.md`
   (ARCH-033 CLOSED, neuer OPEN-Eintrag für ARCH-034/035, P3), `docs/INDEX.md`.
-
+- **`control-center-navidrome` (Navidrome Full Integration):** der
+  `NavidromeMenuHandler` des Telegram-Bots ist jetzt vollständig auch
+  über die Web-API abgebildet — 20 Endpunkte in
+  `control_center/routers/navidrome.py`, ~25 Pydantic-Schemas in
+  `control_center/schemas/navidrome.py`, ein `fetch_cover_art()`-Helper
+  in `services/clients/navidrome_api.py`. Bewusste Architektur-Abgrenzung:
+  kein gemeinsamer Zustand, keine gemeinsame Business-Logik, keine
+  wechselseitigen Imports zwischen Telegram-Handler und Control-Center-
+  Router; beide Consumer teilen weiterhin denselben `NavidromeAPI`-Adapter
+  (`services/clients/navidrome_api.py`), wie durch `ARCH-009 Phase 8`
+  etabliert. Neue Frontend-Seite mit 7 Tabs und Modal-Stack-Navigation
+  (Breadcrumb, Back-Button, ESC). Behebt einen konkreten Navigationsbug
+  im Artist-Detail (Root-Cause: `d-none` auf dem Back-Button bei
+  Stack-Tiefe 1 plus unsichtbarer `.btn-close` im Dark-Theme).
+  Details: `docs/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md`.
 ---
 
 ## 4. Technical Debt — Snapshot

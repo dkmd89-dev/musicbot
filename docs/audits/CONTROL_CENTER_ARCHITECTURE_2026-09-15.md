@@ -1946,3 +1946,100 @@ Link zeigen jetzt auf `/health` statt getrennt auf `/findings`/`/jobs`.
   Seiten — von dieser Phase nicht berührt) bleiben unangetastet
   (CLAUDE.md Abschnitt 8.A).
 - Keine neuen Dependencies.
+
+
+---
+
+## Erweiterung — Navidrome: Vollständige Telegram-Parität (Branch `control-center-navidrome`, 2026-09-23, auf Nutzerfreigabe)
+
+Erweitert die ursprüngliche Navidrome-Status-Anbindung (2026-09-15, s. o.
+„Erweiterung — Navidrome-Status") zur vollständigen REST-Parität mit dem
+Telegram-`NavidromeMenuHandler` (`handlers/navidrome_menu_handler.py`).
+Keine neue Fachlogik — der bestehende, Telegram-freie Integrationsadapter
+`services/clients/navidrome_api.py::NavidromeAPI` wird unverändert
+weiterverwendet; ein neuer, dedizierter Reader-Helper `fetch_cover_art()`
+ergänzt ihn (Subsonic `getCoverArt` liefert Binaerdaten, nicht JSON —
+passte nicht in `make_request()`).
+
+**Umfang (20 Endpunkte statt der bisherigen 2):**
+
+| Kategorie | Endpunkte |
+|---|---|
+| Status/Scan | `GET /status`, `POST /scan` (unverändert) |
+| Browse | `GET /artists` (paginiert), `GET /artists/{id}`, `GET /albums` (paginiert, optional `artist_id`), `GET /albums/{id}`, `GET /genres`, `GET /genres/{name}`, `GET /songs/{id}` |
+| Suche/Entdecken | `GET /search?q&type`, `GET /random`, `GET /newest`, `GET /artists/{id}/top`, `GET /favorites` |
+| Playlists (CRUD) | `GET /playlists` (paginiert), `GET /playlists/{id}`, `POST /playlists`, `PUT /playlists/{id}`, `DELETE /playlists/{id}` |
+| Cover-Proxy | `GET /cover/{id}` (Bytes-Durchreichung, `Cache-Control: max-age=86400`) |
+
+**Architektur-Entscheidungen:**
+
+- **Serverseitige Pagination von Anfang an** (`page`/`page_size`/`total`/
+  `has_next` in jedem Listen-Response) — Lehre aus dem 1114-Kandidaten-/
+  1173-Accepted-Findings-Präzedenzfall, nicht erst nach einem Live-Fund
+  nachgezogen.
+- **Gemappte Pydantic-Schemas, kein 1:1-Subsonic-Passthrough** — camelCase-
+  Subsonic-Felder (`songCount`, `coverArt`, `artistId`) werden im Router
+  auf snake_case Control-Center-Schemas umgesetzt (identisches Prinzip
+  wie `schemas/health.py` vs. `services/library_health/models.py`).
+- **`async def`-Router mit lokalem `_req()`-Wrapper** für synchrone
+  `NavidromeAPI.make_request()`-Aufrufe (`asyncio.to_thread`) —
+  identisches Muster wie `handlers/navidrome_menu_handler.py`. Die
+  höherstufigen Methoden (`check_connection()`, `get_artists()`,
+  `search()`) sind bereits intern `asyncio.to_thread`-gewrappt und werden
+  direkt awaited.
+- **Cover-Proxy** (`GET /cover/{id}`) — der Browser kann `<img src>` nicht
+  direkt auf Navidrome zeigen lassen (Subsonic-Auth erfordert
+  Query-Parameter, die das Navidrome-Passwort im Klartext tragen); die
+  Bytes werden durch das Control Center geproxied. Der bestehende
+  Credential-Scrubbing-Pfad `navidrome_api.py::_scrub_credentials()` bleibt
+  unberührt.
+- **Schreibende Endpunkte** (Playlist-CRUD) sind USER-gated (identisch
+  zur Telegram-Seite, die keine Admin-Rolle für Playlists verlangt) und
+  zusätzlich CSRF-geschützt (`verify_same_origin`); `POST /scan` bleibt
+  ADMIN-only.
+- **Kein gemeinsamer Zustand, keine gemeinsamen Imports** zwischen
+  Telegram-Handler und Control-Center-Router — beide Consumer nutzen den
+  `NavidromeAPI`-Adapter, sonst nichts (bewusste Grenze, wie durch
+  `ARCH-009 Phase 8` etabliert).
+
+**Frontend** (`templates/navidrome.html` + `static/pages/navidrome.js`):
+
+- 7 Tabler-Tabs (Artists/Alben/Genres/Suche/Playlists/Favoriten/
+  Entdecken) mit Lazy-Loading pro Tab
+- Modal-Stack-Navigation für Detail-Ansichten (`_navView`-Objekt) mit
+  Breadcrumb, Back-Button und nativem `×`-Schließen; ESC und
+  Klick-außerhalb funktionieren ebenfalls. Behebt einen konkreten
+  Navigationsbug, bei dem man aus einem Artist-Detail-Modal nicht mehr
+  herauskam (Root-Cause: `d-none` auf dem Back-Button bei Stack-Tiefe 1
+  plus unsichtbarer `.btn-close` im Dark-Theme).
+- Cover-Art-Cards statt Text-Tabellen für Alben-Liste und Artist-Detail
+- Artist-Liste mit Avatar-Icon + Album-Count; Song-Tabellen mit
+  Track-Nummer und Dauer
+- Suche mit Ergebnis-Sektionen pro Typ
+
+**Bewusst NICHT umgesetzt (Folge-Scope):**
+
+- Kein Player/Streaming (Navidrome bleibt für Playback zuständig, s.
+  ursprünglichen Architecture-Proposal §8 „Future Player Integration")
+- Kein Live-„Now Playing"-Widget (der zugrunde liegende Zustand
+  `get_now_playing()` ist Abfrage-, nicht Push-basiert — ein sinnvolles
+  Widget bräuchte Polling-Infrastruktur, die nicht Teil dieses Schritts
+  war)
+- Kein „Song zu Playlist hinzufügen"-Picker (in Telegram ebenfalls nicht
+  vorhanden — bräuchte einen Mehrfachauswahl-Song-Picker, eigener
+  Folge-Scope laut ARCH-033/NAV-F18)
+
+**Tests:** Volle Suite auf dem Branch: **5445 passed, 1 skipped, 6
+warnings, 11 subtests passed** (322.78 s, 2026-09-23) — die Differenz von
+-28 Tests gegenüber dem zuletzt in `MusicBot_ENGINEERING_BASELINE_v11.md`
+dokumentierten `main`-Stand (5473 passed, 2026-09-22) ist auf den
+Branch-Vorsprung von `main` zurückzuführen (CC-AC-10-Arbeit), nicht auf
+diesen Branch — nach dem Merge werden die Tests wieder zusammengeführt.
+
+**Kein Live-Smoke-Test gegen den echten Navidrome-Server für die
+schreibenden Endpunkte** (Playlist-CRUD verändert echte Daten) — nur
+gegen isolierte Testdaten. Reine Lesefunktionen (Browse, Suche,
+Cover-Proxy) wurden manuell gegen den echten Server verifiziert.
+
+**Keine Telegram-Änderung:** `handlers/navidrome_menu_handler.py` bleibt
+vollständig unverändert.
