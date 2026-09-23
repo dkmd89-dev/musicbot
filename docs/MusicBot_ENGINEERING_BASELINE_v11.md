@@ -51,6 +51,7 @@ Abschnitt „Implementierung".
 | **CC-LOGGER-L2 (Logger Read API)** — erster Schritt aus dem Phasenplan `logge.txt` (L1–L7). Reine Read-API für die Klasse-A-Logger-Funktionen (shared filesystem). Neuer Application-Layer `services/logger_admin.py` (Telegram-frei, FastAPI-frei), neuer Router `control_center/routers/logger.py` unter `/api/v1/admin/logger/*`, ADMIN-gated, 3 Endpunkte (Dateiliste/Statistiken/Detail). **Klasse B (Runtime-Control) bewusst DEFERRED** — L1-Analyse ergab prozesslokalen Bot-Zustand ohne Inbound-Kanal (einziger Mechanismus: `systemctl restart`). `module_logger_config.json` bewusst nicht exponiert — L1-Fund: `ModuleLoggerManager._load_module_configs()` wendet die JSON beim Bot-Start nicht an. Route-Reihenfolge kritisch (`/files/stats` vor `/files/{name}`). Limit-Grenzen server-seitig (Default 200, Min 1, Max 2000, HTTP 422 bei Verletzung — kein stilles Clamping; zusätzlich defensiv im App-Layer). Details: `docs/audits/CC_LOGGER_L2_READ_API_2026-09-23.md`. Testergebnis: 86 passed (Log-Suiten) + 529 passed (`control_center`-Suite). | `docs/audits/CC_LOGGER_L2_READ_API_2026-09-23.md` | 3 Endpunkte, 1 neuer Application Layer, 1 neuer Router, 2 neue Schemas; 0 Regressionen (`/api/v1/logs` unverändert) |
 | **CC-LOGGER-L3 (Runtime-Control Architecture Decision)** — Analyse-Phase, kein Code. Architektur-Entscheidung für Logger-Runtime-Control im MusicBot. Kernbefund: es existiert heute KEIN Cross-Process-Runtime-Kanal (keine IPC, kein Socket, kein File-Watcher, kein Reload-Trigger); einziger Steuerungs-Mechanismus ist `systemctl restart bot`. Zusätzlich: `ModuleLoggerManager._load_module_configs()` wendet die JSON beim Bot-Start nicht an — persistente Config ist keine Runtime-Wahrheit. Empfohlener Pfad (verbindlich für L4–L6): Stufe 0 (Startup-Apply-Bugfix) → Stufe 1 (E2 Persistent Config über CC, Semantik „nächster Start“) → Stufe 2 (Runtime Snapshot, read-only Observability) → Stufe 3 (kontrollierter Apply/Restart mit Preflight + Rate-Limit). Stufe 4 (Unix-Socket Runtime Write) explizit DEFERRED, nur bei belegtem Bedarf. Verworfen: File-Watcher als dauerhafte Runtime-Infrastruktur, Localhost-HTTP, jeder unnötige neue IPC-Stack. Details: `docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md`. | `docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md` | Docs-only, 0 Code-Änderungen, 0 Regressionen |
 | **CC-LOGGER-L4 (Startup Apply + Persistent Logger Configuration)** — erster Umsetzungsschritt nach der L3-Entscheidung. Behebt den Startup-Apply-Bug in `ModuleLoggerManager._load_module_configs()` (JSON wurde geladen, aber nicht angewendet — persistierte Level/Handler waren fuer den laufenden Prozess wirkungslos). Neue Application-Layer-Funktionen in `services/logger_admin.py`: `read_logger_config()`, `validate_logger_config_patch()`, `update_logger_config()` (atomarer Write via .tmp+replace), `LoggerConfigError`. Neue Endpunkte unter `/api/v1/admin/logger/config`: `GET` (persistierte Konfiguration, ADMIN) + `PATCH` (merge-by-module + merge-by-field, ADMIN + CSRF, strikte Validierung). **Semantik ehrlich: „wirksam beim naechsten Bot-Start" — kein Runtime-Control, kein IPC, kein Restart.** Kein Schema-Bruch, keine neue Abhaengigkeit. **Verhaltensaenderung:** ab dem ersten Neustart nach dem Fix werden 40 Module je eine Log-Datei anlegen, 18 davon auf DEBUG. Details: `docs/audits/CC-LOGGER-L4_STARTUP_CONFIG_API_2026-09-23.md`. | `docs/audits/CC-LOGGER-L4_STARTUP_CONFIG_API_2026-09-23.md` | 2 Endpunkte (GET/PATCH), 1 Bug-Fix, 47 neue Tests (12 Startup-Apply + 35 App-Layer-/HTTP-Config); 131/540/168 passed ueber die drei Regressionssuiten, 0 Regressionen |
+| **CC-LOGGER-L5 (Runtime Snapshot + Controlled Apply/Restart)** — Stufe 2 + Stufe 3 aus der L3-Entscheidung. **Stufe 2 (Snapshot):** Bot schreibt beim erfolgreichen Startup `data/logger_runtime_snapshot.json` (atomic write, aus dem tatsaechlichen `logging.getLogger(name).level/handlers/disabled` — NICHT aus der Config). Neuer Endpoint `GET /api/v1/admin/logger/runtime-status` (ADMIN, read-only, 3 Zustaende: available/missing/corrupt, Semantik explizit "state_after_last_successful_bot_start"). **Stufe 3 (Apply):** Neuer Endpoint `POST /api/v1/admin/logger/apply` (ADMIN + CSRF + Rate-Limit 60s, Single-Flight via threading.Lock). Dreistufige Preflight-Semantik: `blocked` (Repair-Lock aktiv → HTTP 409, keine Mutation, kein Restart), `unverified` (Lock frei, aber Downloads/Backups unpruefbar → Restart mit strukturierter Warnung), `clear` (aktuell unerreichbar, da UNVERIFIABLE_ACTIVITY_CATEGORIES nicht leer). Restart ueber bestehenden `BotRestartTrigger.trigger_restart("bot")`, unveraendert. **Kein IPC, kein Socket, keine neue State-Registry.** Bugfix am globalen HTTPException-Handler in `control_center/app.py` (reicht jetzt `exc.headers` durch, betrifft `Retry-After` bei 429). Details: `docs/audits/CC-LOGGER-L5_RUNTIME_SNAPSHOT_CONTROLLED_APPLY_2026-09-23.md`. | `docs/audits/CC-LOGGER-L5_RUNTIME_SNAPSHOT_CONTROLLED_APPLY_2026-09-23.md` | 2 neue Endpunkte (runtime-status, apply), 2 neue App-Layer-Funktionen (write_runtime_snapshot/read_runtime_snapshot + evaluate_apply_preflight + LoggerApplyRateLimiter), 35 neue Tests; 103 + 552 + (Logger-Suite) passed, 0 Regressionen |
 ---
 
 ## 3. Recent Major Changes (seit v10-Freeze)
@@ -231,3 +232,58 @@ GO/NO-GO-Verdikt für v11.)*
   **Keine Schema-Änderung**, keine neue Abhängigkeit, keine Migration.
   Details:
   `docs/audits/CC-LOGGER-L4_STARTUP_CONFIG_API_2026-09-23.md`.
+
+
+- **CC-LOGGER-L5 (Runtime Snapshot + Controlled Apply/Restart):**
+  Stufe 2 + Stufe 3 aus der L3-Architekturentscheidung.
+
+  **Stufe 2 — Runtime Snapshot.** Bot schreibt beim erfolgreichen
+  Startup `data/logger_runtime_snapshot.json` (atomic write via
+  `Path.replace`). Der Snapshot wird aus dem tatsaechlichen
+  Python-Logger-Zustand gelesen (`logging.getLogger(name).level`,
+  `.handlers`, `.disabled`) — NICHT aus der persistenten Config.
+  Neuer Endpoint `GET /api/v1/admin/logger/runtime-status` (ADMIN,
+  read-only) mit drei Response-Zustaenden: `available` / `missing` /
+  `corrupt`. Semantik explizit: `state_after_last_successful_bot_start`
+  — kein Live-State, kein Fake-State bei fehlendem Snapshot.
+
+  **Stufe 3 — Controlled Apply/Restart.** Neuer Endpoint
+  `POST /api/v1/admin/logger/apply` (ADMIN + CSRF + Rate-Limit).
+  Dreistufige Preflight-Semantik:
+
+  - `blocked` — Repair-Lock aktiv → HTTP 409, keine Config-Mutation,
+    kein Restart.
+  - `unverified` — Lock frei, aber Downloads/Backups sind aus dem
+    CC-Prozess strukturell nicht pruefbar → Restart mit strukturierter
+    Warnung (`preflight.unverified=["downloads", "backups"]`).
+  - `clear` — aktuell nicht erreichbar, da
+    `UNVERIFIABLE_ACTIVITY_CATEGORIES` nicht leer ist. Als Status
+    definiert, damit Clients sauber differenzieren koennen.
+
+  Restart ueber den bestehenden `BotRestartTrigger.trigger_restart("bot")`
+  — unveraendert, fest verdrahteter Service-Name, Response-before-restart
+  via `call_later(2.0, ...)` wie `/system/restart`.
+
+  **Rate-Limit:** `LoggerApplyRateLimiter` (in `app.state`, pro
+  `create_app()`-Instanz isoliert), 60 s, mit Single-Flight-Semantik
+  ueber `threading.Lock` (20 parallele Threads → genau 1 Acquire).
+
+  **Kein IPC, kein Socket, keine neue State-Registry.** Der Preflight
+  nutzt ausschliesslich die bestehende, cross-process sichtbare
+  `library_repair.lock`.
+
+  **Bugfix am bestehenden globalen HTTPException-Handler**
+  (`control_center/app.py`): reicht jetzt `exc.headers` durch. Betrifft
+  konkret den neuen `Retry-After`-Header bei HTTP 429, war aber ein
+  bestehender Bug (Header wurden bei JEDER HTTPException verworfen).
+  Eine Zeile, keine Verhaltensaenderung fuer andere Endpunkte.
+
+  **Bekannte Einschraenkungen** (im Audit-Dokument als §13/§14):
+  Race-Fenster zwischen Preflight und Restart (~2s), Stale-Lock nach
+  Crash, Restart-Erfolg nicht verifizierbar (BotRestartTrigger
+  schluckt Exceptions), laufende Downloads/Backups unpruefbar.
+  Alle als Findings dokumentiert, nicht in L5 gefixt.
+
+  Tests: 103 passed (L5-Suiten + Logger-Suiten) + 552 passed
+  (`pytest -k control_center`). Details:
+  `docs/audits/CC-LOGGER-L5_RUNTIME_SNAPSHOT_CONTROLLED_APPLY_2026-09-23.md`.

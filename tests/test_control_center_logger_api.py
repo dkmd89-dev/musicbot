@@ -583,3 +583,312 @@ def _error_message(response) -> str:
     if isinstance(error, dict):
         return error.get("message", "")
     return ""
+
+
+# =====================================================================
+# CC-LOGGER-L5.1 — Runtime-Status
+# =====================================================================
+
+import json as _json_l5
+from config import Config as _ConfigL5
+
+
+@pytest.fixture
+def isolated_runtime_snapshot(tmp_path: _RealPath, monkeypatch: pytest.MonkeyPatch) -> _RealPath:
+    """Isoliertes DATA_DIR für Runtime-Snapshot-Tests. Startet mit
+    NICHT existierendem Snapshot (status="missing")."""
+    data_dir = tmp_path / "data_l5"
+    data_dir.mkdir()
+    monkeypatch.setattr(_ConfigL5, "DATA_DIR", data_dir)
+    return data_dir
+
+
+@pytest.mark.anyio
+async def test_runtime_status_missing(
+    isolated_logs: _RealPath, isolated_runtime_snapshot: _RealPath, dev_auth: None
+) -> None:
+    async with await _client() as c:
+        r = await c.get("/api/v1/admin/logger/runtime-status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "missing"
+    assert body["state_semantics"] == "state_after_last_successful_bot_start"
+    assert body["snapshot"] is None
+
+
+@pytest.mark.anyio
+async def test_runtime_status_available(
+    isolated_logs: _RealPath, isolated_runtime_snapshot: _RealPath, dev_auth: None
+) -> None:
+    payload = {
+        "schema_version": 1,
+        "startup_id": "abc123",
+        "runtime_applied_at": "2026-09-23T12:00:00+00:00",
+        "root_level": "INFO",
+        "effective_levels": {"CoverProcessor": "DEBUG"},
+        "handlers": {"CoverProcessor": ["FileHandler"]},
+        "disabled": [],
+    }
+    (isolated_runtime_snapshot / "logger_runtime_snapshot.json").write_text(
+        _json_l5.dumps(payload), encoding="utf-8"
+    )
+    async with await _client() as c:
+        r = await c.get("/api/v1/admin/logger/runtime-status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "available"
+    assert body["snapshot"]["startup_id"] == "abc123"
+    assert body["snapshot"]["effective_levels"]["CoverProcessor"] == "DEBUG"
+
+
+@pytest.mark.anyio
+async def test_runtime_status_corrupt(
+    isolated_logs: _RealPath, isolated_runtime_snapshot: _RealPath, dev_auth: None
+) -> None:
+    (isolated_runtime_snapshot / "logger_runtime_snapshot.json").write_text(
+        "{ not valid", encoding="utf-8"
+    )
+    async with await _client() as c:
+        r = await c.get("/api/v1/admin/logger/runtime-status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "corrupt"
+    assert body["snapshot"] is None
+    assert "message" in body
+
+
+@pytest.mark.anyio
+async def test_runtime_status_incomplete_snapshot_is_corrupt(
+    isolated_logs: _RealPath, isolated_runtime_snapshot: _RealPath, dev_auth: None
+) -> None:
+    (isolated_runtime_snapshot / "logger_runtime_snapshot.json").write_text(
+        _json_l5.dumps({"root_level": "INFO"}), encoding="utf-8"
+    )
+    async with await _client() as c:
+        r = await c.get("/api/v1/admin/logger/runtime-status")
+    assert r.status_code == 200
+    assert r.json()["status"] == "corrupt"
+
+
+@pytest.mark.anyio
+async def test_runtime_status_is_not_live_state(
+    isolated_logs: _RealPath, isolated_runtime_snapshot: _RealPath, dev_auth: None
+) -> None:
+    """Kernvertrag: die Response-Aussage ist 'state_after_last_successful_bot_start',
+    nicht 'live_state'. Wir pinnen das explizit."""
+    async with await _client() as c:
+        r = await c.get("/api/v1/admin/logger/runtime-status")
+    body = r.json()
+    assert body["state_semantics"] == "state_after_last_successful_bot_start"
+    # Kein Feld, das auf Live hindeutet
+    assert "live" not in body
+    assert "current" not in body
+
+
+# =====================================================================
+# CC-LOGGER-L5.3 — Apply / Restart
+# =====================================================================
+#
+# WICHTIG: der echte BotRestartTrigger wird pro Test gemockt — Tests
+# duerfen niemals einen echten `sudo systemctl restart bot` ausloesen.
+# Wir setzen _PRE_RESTART_DELAY_SECONDS auf 0.0 und verifizieren den
+# Trigger-Aufruf ueber einen Zaehler.
+
+import json as _json_apply
+from pathlib import Path as _RealPathApply
+from config import Config as _ConfigApply
+
+
+@pytest.fixture
+def isolated_apply_env(
+    tmp_path: _RealPathApply, monkeypatch: pytest.MonkeyPatch
+) -> dict:
+    """Isoliertes DATA_DIR mit vollstaendiger Config. `is_repair_running`
+    ist standardmaessig False; jeder Test kann das ueberschreiben."""
+    data_dir = tmp_path / "data_apply"
+    data_dir.mkdir()
+    (data_dir / "module_logger_config.json").write_text(
+        _json_apply.dumps(
+            {
+                "ModA": {
+                    "enabled": True,
+                    "level": "INFO",
+                    "file_handler": True,
+                    "console_handler": True,
+                    "custom_format": None,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(_ConfigApply, "DATA_DIR", data_dir)
+
+    # is_repair_running auf False (Default) — Tests koennen das patchen.
+    from services.library_repair import run_tracking
+    monkeypatch.setattr(run_tracking, "is_repair_running", lambda: False)
+
+    # Restart-Trigger mocken — KEINE echten systemctl-Aufrufe.
+    from utils import bot_restart_trigger
+    calls: list[str] = []
+
+    def _fake_trigger(service_name: str) -> None:
+        calls.append(service_name)
+
+    monkeypatch.setattr(
+        bot_restart_trigger.BotRestartTrigger, "trigger_restart",
+        staticmethod(_fake_trigger),
+    )
+
+    # Delay auf 0.0, damit der Timer im Test schnell feuert.
+    from control_center.routers import logger as cc_logger_router
+    monkeypatch.setattr(cc_logger_router, "_PRE_RESTART_DELAY_SECONDS", 0.0)
+
+    return {"data_dir": data_dir, "calls": calls}
+
+
+async def _post_apply(client):
+    return await client.post(
+        "/api/v1/admin/logger/apply",
+        headers={"Origin": "http://test"},
+    )
+
+
+# ---------------------------------------------------------------------
+# Happy Path (unverified)
+# ---------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_apply_unverified_succeeds_with_preflight_payload(
+    isolated_logs: _RealPathApply, isolated_apply_env: dict, dev_auth: None
+) -> None:
+    async with await _client() as c:
+        r = await _post_apply(c)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "applied"
+    assert body["preflight"]["status"] == "unverified"
+    assert "downloads" in body["preflight"]["unverified"]
+    assert "backups" in body["preflight"]["unverified"]
+    assert body["preflight"]["checked"]["repair_lock"] is True
+
+
+@pytest.mark.anyio
+async def test_apply_schedules_restart_trigger(
+    isolated_logs: _RealPathApply, isolated_apply_env: dict, dev_auth: None
+) -> None:
+    """Bei erfolgreichem Apply muss der Restart-Trigger geplant werden.
+    Delay=0.0 (Fixture), also feuert call_later sofort nach dem Response."""
+    import asyncio
+
+    async with await _client() as c:
+        r = await _post_apply(c)
+        assert r.status_code == 200
+        # Event-Loop kurz drehen lassen, damit call_later feuert.
+        await asyncio.sleep(0.05)
+
+    assert isolated_apply_env["calls"] == ["bot"]
+
+
+# ---------------------------------------------------------------------
+# blocked
+# ---------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_apply_blocked_when_repair_running(
+    isolated_logs: _RealPathApply, isolated_apply_env: dict, dev_auth: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.library_repair import run_tracking
+    monkeypatch.setattr(run_tracking, "is_repair_running", lambda: True)
+
+    async with await _client() as c:
+        r = await _post_apply(c)
+    assert r.status_code == 409
+    body = r.json()
+    # Nachrichtenformat wird vom ErrorDetail-Wrapper transportiert.
+    detail = body.get("detail") or body.get("error") or {}
+    if isinstance(detail, dict):
+        assert detail.get("code") == "LOGGER_APPLY_BLOCKED" or "blocked" in str(detail).lower()
+    assert isolated_apply_env["calls"] == []  # kein Restart
+
+
+@pytest.mark.anyio
+async def test_apply_blocked_does_not_mutate_config(
+    isolated_logs: _RealPathApply, isolated_apply_env: dict, dev_auth: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+    from services.library_repair import run_tracking
+    monkeypatch.setattr(run_tracking, "is_repair_running", lambda: True)
+
+    cfg_path = isolated_apply_env["data_dir"] / "module_logger_config.json"
+    before = hashlib.sha256(cfg_path.read_bytes()).hexdigest()
+
+    async with await _client() as c:
+        r = await _post_apply(c)
+    assert r.status_code == 409
+    after = hashlib.sha256(cfg_path.read_bytes()).hexdigest()
+    assert before == after
+
+
+# ---------------------------------------------------------------------
+# Config fehlt
+# ---------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_apply_missing_config_returns_409(
+    isolated_logs: _RealPathApply, tmp_path: _RealPathApply, dev_auth: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    empty = tmp_path / "empty_data_apply"
+    empty.mkdir()
+    monkeypatch.setattr(_ConfigApply, "DATA_DIR", empty)
+
+    from services.library_repair import run_tracking
+    monkeypatch.setattr(run_tracking, "is_repair_running", lambda: False)
+
+    from utils import bot_restart_trigger
+    calls: list[str] = []
+    monkeypatch.setattr(
+        bot_restart_trigger.BotRestartTrigger, "trigger_restart",
+        staticmethod(lambda svc: calls.append(svc)),
+    )
+
+    async with await _client() as c:
+        r = await _post_apply(c)
+    assert r.status_code == 409
+    assert calls == []
+
+
+# ---------------------------------------------------------------------
+# CSRF
+# ---------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_apply_requires_csrf_origin(
+    isolated_logs: _RealPathApply, isolated_apply_env: dict, dev_auth: None
+) -> None:
+    async with await _client() as c:
+        r = await c.post("/api/v1/admin/logger/apply")
+    assert r.status_code == 403
+    assert isolated_apply_env["calls"] == []
+
+
+# ---------------------------------------------------------------------
+# Rate-Limit
+# ---------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_apply_rate_limit_second_call_429(
+    isolated_logs: _RealPathApply, isolated_apply_env: dict, dev_auth: None
+) -> None:
+    async with await _client() as c:
+        r1 = await _post_apply(c)
+        r2 = await _post_apply(c)
+    assert r1.status_code == 200
+    assert r2.status_code == 429
+    body = r2.json()
+    detail = body.get("detail") or body.get("error") or {}
+    if isinstance(detail, dict):
+        assert detail.get("code") == "LOGGER_APPLY_RATE_LIMITED"
+    assert r2.headers.get("retry-after") is not None

@@ -215,3 +215,104 @@ def logger_config_to_response(data: Dict[str, Any]) -> LoggerConfigResponse:
             custom_format=fields.get("custom_format"),
         )
     return LoggerConfigResponse(modules=modules, total=len(modules))
+
+
+# =====================================================================
+# CC-LOGGER-L5.1 — Runtime-Status (Snapshot)
+# =====================================================================
+#
+# Beschreibt den zuletzt geschriebenen Runtime-Snapshot
+# (data/logger_runtime_snapshot.json). Explizite Semantik:
+#
+#     "state after last successful bot startup"
+#
+# Kein Live-State. Kein Fake-State bei fehlendem/korruptem Snapshot.
+
+
+class RuntimeSnapshotSchema(BaseModel):
+    """Der tatsaechlich gelesene Snapshot-Inhalt.
+
+    Wird nur bei `status="available"` befuellt."""
+
+    model_config = ConfigDict(extra="allow")
+    # extra="allow": der Snapshot ist ein vom Bot geschriebenes,
+    # versioniertes Dokument. Neue Felder in einer kuenftigen
+    # schema_version duerfen den Read-Client nicht brechen.
+
+
+class LoggerRuntimeStatusResponse(BaseModel):
+    """GET /api/v1/admin/logger/runtime-status.
+
+    `status`:
+      - "available" — Snapshot vorhanden und vollstaendig, `snapshot`
+        befuellt.
+      - "missing"   — kein Snapshot vorhanden (Bot seit Einfuehrung
+        nicht erfolgreich gestartet, oder Write ist fehlgeschlagen).
+      - "corrupt"   — Snapshot vorhanden, aber unlesbar/unvollstaendig.
+
+    `state_semantics` ist konstant und drueckt aus, dass der Snapshot
+    **kein Live-State** ist — er beschreibt den Zustand nach dem
+    letzten erfolgreichen Bot-Start."""
+
+    status: str
+    state_semantics: str = "state_after_last_successful_bot_start"
+    snapshot: Optional[RuntimeSnapshotSchema] = None
+    message: Optional[str] = None
+
+
+def runtime_snapshot_result_to_response(result: dict) -> LoggerRuntimeStatusResponse:
+    """Mappt das dict aus services/logger_admin.py::read_runtime_snapshot()
+    auf das Response-Schema. Kein Fake-State: bei `missing`/`corrupt`
+    ist `snapshot` None."""
+    status = result.get("status", "missing")
+    if status == "available":
+        return LoggerRuntimeStatusResponse(
+            status="available",
+            snapshot=RuntimeSnapshotSchema(**result["snapshot"]),
+        )
+    return LoggerRuntimeStatusResponse(
+        status=status,
+        message=result.get("message"),
+    )
+
+
+# =====================================================================
+# CC-LOGGER-L5.3 — Apply/Restart
+# =====================================================================
+#
+# Semantik: POST /logger/apply ist ein **administrativer Bot-Neustart**
+# mit Preflight, nicht eine "Logger live anwenden"-Aktion. Der
+# Preflight-Status wird strukturiert ausgewiesen, damit Clients nicht
+# versehentlich "unverified" als "clear" lesen.
+
+
+class PreflightStatusSchema(BaseModel):
+    """Strukturierter Preflight-Status (siehe
+    services/logger_admin.py::evaluate_apply_preflight).
+
+    - `status`: "clear" | "blocked" | "unverified"
+    - `checked`:  welche Quellen tatsaechlich geprueft wurden
+    - `active`:   erkannte aktive Kategorien (nur `repair` bekannt)
+    - `unverified`: nicht pruefbare Kategorien (z.B. downloads, backups)
+    - `message`:  Klartext-Erklaerung
+    """
+
+    status: str
+    checked: Dict[str, bool]
+    active: Dict[str, bool]
+    unverified: List[str]
+    message: str
+
+
+class LoggerApplyResponse(BaseModel):
+    """Erfolgs-Response von POST /api/v1/admin/logger/apply.
+
+    `status="applied"` bedeutet: Preflight freigegeben, Config validiert,
+    Restart wurde geplant. Der eigentliche Restart laeuft verzoegert
+    (Response-before-restart) und kann NICHT synchron bestaetigt werden
+    — die bestehende BotRestartTrigger-Semantik schluckt Fehler intern,
+    siehe L5-Audit 'Bekannte Einschraenkungen'."""
+
+    status: str  # "applied"
+    message: str
+    preflight: PreflightStatusSchema

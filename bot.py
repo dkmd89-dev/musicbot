@@ -29,6 +29,7 @@ from logger import setup_enhanced_logging, get_module_logger, EnhancedLogger
 from services.downloader.download_artifact_cleanup import (
     cleanup_download_artifacts,
 )
+from services.logger_admin import write_runtime_snapshot
 
 # Import der RichMenuSystem Komponenten
 from handlers.menu.rich_menu_handler import RichMenuHandler
@@ -177,6 +178,17 @@ class ExtendedBot:
                 )
 
         self.logger.info("✅ Bot-Komponenten vollständig initialisiert")
+
+        # CC-LOGGER-L5.1: Runtime-Snapshot schreiben, nachdem alle Logger
+        # konfiguriert sind. Der Snapshot ist Observability, nicht
+        # Lifecycle-kritisch — write_runtime_snapshot() fängt eigene
+        # Fehler intern (siehe services/logger_admin.py-Docstring), der
+        # Bot läuft auch ohne Snapshot weiter.
+        snapshot_path = write_runtime_snapshot(self.config)
+        if snapshot_path is not None:
+            self.logger.debug(
+                f"📸 Logger-Runtime-Snapshot geschrieben: {snapshot_path}"
+            )
 
     async def _setup_bot_commands(self):
         """Setzt Bot-Commands im Telegram-Menü"""

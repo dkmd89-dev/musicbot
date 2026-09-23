@@ -26,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from logger import get_module_logger
 
 from services.jobs.job_registry import JobRegistry
+from services.logger_admin import LoggerApplyRateLimiter
 
 from .routers import (
     admin,
@@ -59,6 +60,11 @@ def create_app() -> FastAPI:
     # frische create_app()-Aufruf (wie in allen Tests) automatisch eine
     # isolierte Registry bekommt.
     app.state.job_registry = JobRegistry()
+
+    # CC-LOGGER-L5.3: Rate-Limit + Single-Flight fuer /logger/apply.
+    # Pro App-Instanz (create_app()-Aufruf) isoliert, damit Tests
+    # keinen geteilten Zustand sehen. Kein Modul-Level-Singleton.
+    app.state.logger_apply_limiter = LoggerApplyRateLimiter(min_interval_seconds=60.0)
     # Subpath-Betrieb hinter nginx (X-Forwarded-Prefix -> scope["root_path"],
     # siehe control_center/root_path.py) - ohne Header wirkungslos.
     app.add_middleware(ForwardedPrefixMiddleware)
@@ -99,7 +105,17 @@ def create_app() -> FastAPI:
         detail = exc.detail
         if not isinstance(detail, dict):
             detail = ErrorDetail(code="HTTP_ERROR", message=str(detail)).model_dump()
-        return JSONResponse(status_code=exc.status_code, content={"error": detail})
+        # Header einer HTTPException durchreichen (z.B. Retry-After bei
+        # 429). FastAPI/Starlette setzt sie normalerweise am Response —
+        # ein eigener Exception-Handler umgeht das, deshalb hier explizit.
+        # None ist der Default (nichts zu setzen), leere Dicts behandeln
+        # wir als "nichts".
+        headers = exc.headers if getattr(exc, "headers", None) else None
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": detail},
+            headers=headers,
+        )
 
     @app.exception_handler(Exception)
     async def _unhandled_exception_handler(

@@ -23,36 +23,46 @@ Auth: mindestens AccessLevel.ADMIN (identische Schwelle wie
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from config import Config
 from handlers.menu.models import AccessLevel
+from logger import get_module_logger
 from services.logger_admin import (
     InvalidLogFilenameError,
+    LoggerApplyRateLimiter,
     LoggerConfigError,
+    evaluate_apply_preflight,
     get_log_file,
     get_log_file_stats,
     list_log_files,
     read_logger_config,
+    read_runtime_snapshot,
     update_logger_config,
 )
+from utils.bot_restart_trigger import BotRestartTrigger
 
-from ..dependencies import require_min_access_level, verify_same_origin
+from ..dependencies import get_current_user_id, require_min_access_level, verify_same_origin
 from ..schemas.logger import (
+    LoggerApplyResponse,
     LoggerConfigPatchRequest,
     LoggerConfigPatchResponse,
     LoggerConfigResponse,
+    LoggerRuntimeStatusResponse,
     LogFileDetailResponse,
     LogFileListResponse,
     LogFileStatsResponse,
+    PreflightStatusSchema,
     log_file_detail_to_response,
     log_file_list_to_response,
     log_file_stats_to_response,
     logger_config_to_response,
+    runtime_snapshot_result_to_response,
 )
 
 router = APIRouter(
@@ -60,6 +70,7 @@ router = APIRouter(
     tags=["admin-logger"],
     dependencies=[Depends(require_min_access_level(AccessLevel.ADMIN))],
 )
+_logger = get_module_logger("control_center.logger")
 
 
 def _log_dir() -> Path:
@@ -238,4 +249,156 @@ def patch_logger_config(body: LoggerConfigPatchRequest) -> LoggerConfigPatchResp
         ),
         modules_updated=sorted(body.modules.keys()),
         total=len(new_config),
+    )
+
+
+# =====================================================================
+# CC-LOGGER-L5.1 — Runtime-Status (Snapshot)
+# =====================================================================
+
+
+@router.get("/runtime-status", response_model=LoggerRuntimeStatusResponse)
+def get_logger_runtime_status() -> LoggerRuntimeStatusResponse:
+    """Liefert den zuletzt geschriebenen Runtime-Snapshot des Bots
+    (`data/logger_runtime_snapshot.json`).
+
+    **Das ist NICHT der Live-Zustand des laufenden Bots.** Der Snapshot
+    wird einmalig beim erfolgreichen Bot-Startup geschrieben und
+    beschreibt den Zustand *nach dem letzten Start*. Bei fehlendem
+    oder unvollstaendigem Snapshot wird kein Fake-State konstruiert
+    — der Aufrufer erhaelt `status="missing"` bzw. `status="corrupt"`.
+
+    Der Router delegiert vollstaendig an
+    services/logger_admin.py::read_runtime_snapshot()."""
+    result = read_runtime_snapshot(Config())
+    return runtime_snapshot_result_to_response(result)
+
+
+# =====================================================================
+# CC-LOGGER-L5.3 — Controlled Apply / Restart
+# =====================================================================
+
+_RESTART_SERVICE_NAME = "bot"
+# Identisch zu admin_operations.py::_PRE_RESTART_DELAY_SECONDS —
+# Response geht zuerst zurueck, Restart laeuft verzoegert.
+_PRE_RESTART_DELAY_SECONDS = 2.0
+
+
+def _get_apply_limiter(request: Request) -> LoggerApplyRateLimiter:
+    return request.app.state.logger_apply_limiter
+
+
+@router.post(
+    "/apply",
+    response_model=LoggerApplyResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+async def post_logger_apply(
+    request: Request,
+    user_id: int = Depends(get_current_user_id),
+) -> LoggerApplyResponse:
+    """Wendet die persistierte Logger-Konfiguration durch einen
+    kontrollierten Bot-Neustart an.
+
+    **Semantik:** das ist ein administrativer Bot-Restart, nicht
+    "Logger live aendern". Die persistierte Konfiguration ist der Anlass,
+    der eigentliche Vorgang ist der Restart. Die Response bestaetigt
+    ausdruecklich NICHT, dass der Bot danach erfolgreich neu gestartet
+    ist (Response-before-restart).
+
+    Ablauf:
+
+        Auth (Router-Dependency, ADMIN)
+            |
+        CSRF (verify_same_origin)
+            |
+        Rate-Limit (LoggerApplyRateLimiter, 60s)
+            |
+        Config validieren (persistierte Config muss lesbar und
+                           vollstaendig sein)
+            |
+        Preflight (Repair-Lock)
+            |
+            +-- blocked  -> HTTP 409, keine Mutation, kein Restart
+            |
+            +-- clear / unverified  -> Restart planen
+                                          |
+                                          -> Response 200
+
+    Bei `unverified` wird der Restart ausgeloest, aber die Response
+    weist die nicht pruefbaren Aktivitaeten strukturiert aus
+    (`preflight.status="unverified"`, `preflight.unverified=[...]`).
+    """
+    # --- 1. Rate-Limit ---
+    limiter = _get_apply_limiter(request)
+    allowed, retry_after = limiter.try_acquire()
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "LOGGER_APPLY_RATE_LIMITED",
+                "message": (
+                    f"Rate-Limit aktiv. Naechster Apply fruehestens in "
+                    f"{retry_after:.0f}s."
+                ),
+                "retry_after_seconds": int(retry_after) + 1,
+            },
+            headers={"Retry-After": str(int(retry_after) + 1)},
+        )
+
+    # --- 2. Config validieren ---
+    # Wir muessen sicher sein, dass die persistierte Config existiert und
+    # vollstaendig ist — sonst startet der Bot nach dem Restart mit
+    # Defaults, was der Nutzer nicht wollte. Wir schreiben die Config
+    # NICHT neu (das ist Aufgabe des PATCH-Endpoints).
+    try:
+        config = read_logger_config(Config())
+    except LoggerConfigError as e:
+        raise _map_logger_config_error(e) from e
+
+    if not config:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "LOGGER_CONFIG_MISSING",
+                "message": (
+                    "Keine persistierte Logger-Konfiguration vorhanden. "
+                    "Es gibt nichts anzuwenden — Restart abgebrochen."
+                ),
+            },
+        )
+
+    # --- 3. Preflight ---
+    preflight = evaluate_apply_preflight()
+    preflight_schema = PreflightStatusSchema(**preflight)
+
+    if preflight["status"] == "blocked":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "LOGGER_APPLY_BLOCKED",
+                "message": preflight["message"],
+                "preflight": preflight,
+            },
+        )
+
+    # --- 4. Restart planen (Response-before-restart) ---
+    _logger.warning(
+        f"🔄 [control_center] Logger-Apply (Restart) angefordert von "
+        f"User {user_id} — Preflight={preflight['status']}"
+    )
+    asyncio.get_running_loop().call_later(
+        _PRE_RESTART_DELAY_SECONDS,
+        BotRestartTrigger.trigger_restart,
+        _RESTART_SERVICE_NAME,
+    )
+
+    return LoggerApplyResponse(
+        status="applied",
+        message=(
+            "Konfiguration validiert, Preflight freigegeben. "
+            "Bot-Neustart wird in Kuerze ausgeloest. Der Bot wendet die "
+            "persistierte Logger-Konfiguration beim Neustart an."
+        ),
+        preflight=preflight_schema,
     )
