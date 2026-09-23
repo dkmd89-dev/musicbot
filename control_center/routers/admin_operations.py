@@ -114,6 +114,8 @@ def get_system_status() -> SystemStatusResponse:
     config = Config()
     resources = system_status.get_host_resources(str(config.BASE_DIR))
     active = system_status.get_bot_service_active(_RESTART_SERVICE_NAME)
+    platform_info = system_status.get_platform_info()
+    uptime = system_status.get_bot_service_uptime(_RESTART_SERVICE_NAME)
     return SystemStatusResponse(
         cpu_percent=resources.cpu_percent,
         cpu_count=resources.cpu_count,
@@ -125,6 +127,19 @@ def get_system_status() -> SystemStatusResponse:
         disk_total_gb=resources.disk_total_gb,
         bot_service_name=_RESTART_SERVICE_NAME,
         bot_service_active=active,
+        bot_started_at=uptime["bot_started_at"],
+        bot_uptime_seconds=uptime["bot_uptime_seconds"],
+        bot_uptime_formatted=uptime["bot_uptime_formatted"],
+        platform_os=platform_info["platform_os"],
+        platform_release=platform_info["platform_release"],
+        platform_python=platform_info["platform_python"],
+        platform_arch=platform_info["platform_arch"],
+        load_avg_1=resources.load_avg_1,
+        load_avg_5=resources.load_avg_5,
+        load_avg_15=resources.load_avg_15,
+        swap_percent=resources.swap_percent,
+        swap_used_gb=resources.swap_used_gb,
+        swap_total_gb=resources.swap_total_gb,
     )
 
 

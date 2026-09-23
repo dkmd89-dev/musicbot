@@ -163,18 +163,48 @@ async def test_page_shows_config_hint_when_bot_username_missing(client, monkeypa
 
 @pytest.mark.asyncio
 async def test_overview_contains_kpi_and_summary_elements(client):
+    """Das Overview entspricht dem aktuellen finalen Dashboard-Layout."""
+
     html = (await client.get("/")).text
 
-    # PR #285 (0337713) hat das Overview-Dashboard umgebaut:
-    # health-tiles, navidrome-status, kpi-grid und active-jobs-summary
-    # wurden durch die neue System-Status-Bar + 3-Spalten-Statuszeile
-    # ersetzt (kein Bug, beabsichtigtes Redesign).
-    assert 'id="system-status-value"' in html
+    # System-KPIs
+    assert 'id="metric-cpu-value"' in html
+    assert 'id="metric-cpu-sub"' in html
+    assert 'id="metric-ram-value"' in html
+    assert 'id="metric-ram-sub"' in html
+    assert 'id="metric-disk-value"' in html
+    assert 'id="metric-disk-sub"' in html
+    assert 'id="metric-bot-value"' in html
+    assert 'id="metric-bot-sub"' in html
+
+    # Library-Statuskarte
     assert 'id="status-library-value"' in html
+    assert 'id="status-library-hint"' in html
+    assert 'id="status-library-health-bar"' in html
+    assert 'id="status-library-health-fill"' in html
+    assert 'id="status-library-health-label"' in html
+
+    # Navidrome-Statuskarte
     assert 'id="status-navidrome-value"' in html
-    assert 'id="status-jobs-value"' in html
+    assert 'id="status-navidrome-hint"' in html
+
+    # System-Statuskarte
+    assert 'id="system-platform-os"' in html
+    assert 'id="system-platform-python"' in html
+    assert 'id="system-uptime-value"' in html
+    assert 'id="system-uptime-started"' in html
+    assert 'id="system-load-value"' in html
+    assert 'id="system-swap-value"' in html
+
+    # Aufmerksamkeit + zuletzt
     assert 'id="attention-panel"' in html
+    assert 'id="attention-content"' in html
     assert 'id="recent-activity-content"' in html
+
+    # Schnellzugriff
+    assert 'href="/library"' in html
+    assert 'href="/downloads"' in html
+    assert 'href="/health"' in html
 
 
 @pytest.mark.asyncio

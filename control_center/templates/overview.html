@@ -2,39 +2,80 @@
 {% block title %}Overview – MusicBot Control Center{% endblock %}
 {% block content %}
 <div class="page-header d-print-none mb-4">
-  <div class="row align-items-center">
+  <div class="row align-items-center g-3">
+    <div class="col-auto">
+      <span class="page-header-icon" aria-hidden="true">🎛️</span>
+    </div>
     <div class="col">
-      <h1 class="page-title">🎛️ Overview</h1>
-      <div class="text-secondary">
+      <div class="page-pretitle">SYSTEM</div>
+      <h1 class="page-title mb-0">Overview</h1>
+      <div class="text-secondary small">
         Wie geht es deinem MusicBot gerade – und was braucht Aufmerksamkeit?
       </div>
     </div>
   </div>
 </div>
 
-<!-- Systemstatus -->
-<div class="row row-cards mb-4">
-
-  <!-- System -->
-  <div class="col-sm-6 col-lg-6">
-    <div class="card h-100">
-      <div class="card-body">
-        <div class="d-flex align-items-center mb-3">
-          <span class="avatar avatar-sm me-3">🖥️</span>
-          <div>
-            <div class="text-secondary">Systemstatus</div>
-            <div class="h3 mb-0" id="system-status-value">–</div>
-          </div>
+<!-- System-Metriken (Zeile 1) -->
+<div class="metrics-grid mb-4">
+  <div class="card card-sm">
+    <div class="card-body py-3">
+      <div class="d-flex align-items-center gap-3">
+        <span class="metric-icon metric-blue" aria-hidden="true">🖥️</span>
+        <div class="min-w-0">
+          <div class="text-secondary small">CPU</div>
+          <div class="h2 mb-0" id="metric-cpu-value">–</div>
+          <div class="text-secondary small" id="metric-cpu-sub"></div>
         </div>
-
-        <div class="text-secondary" id="system-status-hint">Lädt…</div>
-        <span class="kpi-indicator" id="system-indicator"></span>
       </div>
     </div>
   </div>
 
+  <div class="card card-sm">
+    <div class="card-body py-3">
+      <div class="d-flex align-items-center gap-3">
+        <span class="metric-icon metric-purple" aria-hidden="true">💾</span>
+        <div class="min-w-0">
+          <div class="text-secondary small">RAM</div>
+          <div class="h2 mb-0" id="metric-ram-value">–</div>
+          <div class="text-secondary small" id="metric-ram-sub"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card card-sm">
+    <div class="card-body py-3">
+      <div class="d-flex align-items-center gap-3">
+        <span class="metric-icon metric-orange" aria-hidden="true">💿</span>
+        <div class="min-w-0">
+          <div class="text-secondary small">Disk</div>
+          <div class="h2 mb-0" id="metric-disk-value">–</div>
+          <div class="text-secondary small" id="metric-disk-sub"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card card-sm">
+    <div class="card-body py-3">
+      <div class="d-flex align-items-center gap-3">
+        <span class="metric-icon metric-green" aria-hidden="true">🤖</span>
+        <div class="min-w-0">
+          <div class="text-secondary small">Bot</div>
+          <div class="h2 mb-0" id="metric-bot-value">–</div>
+          <div class="text-secondary small" id="metric-bot-sub"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Kontext-Karten (Zeile 2) -->
+<div class="row row-cards mb-4 overview-dominant">
+
   <!-- Library -->
-  <div class="col-sm-6 col-lg-6">
+  <div class="col-sm-6 col-lg-4">
     <div class="card h-100">
       <div class="card-body">
         <div class="d-flex align-items-center mb-3">
@@ -46,48 +87,69 @@
         </div>
 
         <div class="text-secondary" id="status-library-hint">Lädt…</div>
+
+        <div class="health-bar-wrapper mt-3" id="status-library-health-bar" hidden>
+          <div class="health-bar">
+            <div class="health-bar-fill" id="status-library-health-fill"></div>
+          </div>
+          <div class="health-bar-label" id="status-library-health-label"></div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Navidrome -->
-  <div class="col-sm-6 col-lg-6">
+  <!-- Zuletzt -->
+  <div class="col-sm-6 col-lg-4">
     <div class="card h-100">
-      <div class="card-body">
-        <div class="d-flex align-items-center mb-3">
-          <span class="avatar avatar-sm me-3">🌐</span>
-          <div>
-            <div class="text-secondary">Navidrome</div>
-            <div class="h3 mb-0" id="status-navidrome-value">–</div>
-          </div>
-        </div>
+      <div class="card-header">
+        <h3 class="card-title">🕒 Zuletzt</h3>
+      </div>
 
-        <div class="text-secondary" id="status-navidrome-hint">Lädt…</div>
+      <div class="card-body">
+        <div id="recent-activity-content" class="text-secondary">
+          Lädt…
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <a href="{{ base_path }}/downloads" class="btn btn-link p-0">
+          Download-Verlauf ansehen →
+        </a>
       </div>
     </div>
   </div>
 
-  <!-- Jobs -->
-  <div class="col-sm-6 col-lg-6">
+  <!-- System (Platform + Uptime) -->
+  <div class="col-sm-6 col-lg-4">
     <div class="card h-100">
       <div class="card-body">
         <div class="d-flex align-items-center mb-3">
-          <span class="avatar avatar-sm me-3">⚙️</span>
+          <span class="avatar avatar-sm me-3">💻</span>
           <div>
-            <div class="text-secondary">Jobs</div>
-            <div class="h3 mb-0" id="status-jobs-value">–</div>
+            <div class="text-secondary">System</div>
+            <div class="h3 mb-0" id="system-platform-os">–</div>
           </div>
         </div>
 
-        <div class="text-secondary" id="status-jobs-hint">Lädt…</div>
+        
 
-        <div class="progress progress-sm mt-3">
-          <div
-            class="progress-bar"
-            id="jobs-progress"
-            hidden>
-          </div>
+        <div class="border-top pt-3">
+          <div class="text-secondary small">⏱️ Uptime</div>
+          <div class="h4 mb-0" id="system-uptime-value">–</div>
+          <div class="text-secondary small" id="system-uptime-started"></div>
         </div>
+
+        <div class="border-top pt-3 mt-3">
+          <div class="text-secondary small">⚡ Load Average</div>
+          <div class="small" id="system-load-value">–</div>
+        </div>
+
+        <div class="border-top pt-3 mt-3">
+          <div class="text-secondary small">💾 Swap</div>
+          <div class="small" id="system-swap-value">–</div>
+        </div>
+
+      <div class="border-top pt-3 mt-3 text-secondary small" id="system-platform-python">–</div>
       </div>
     </div>
   </div>
@@ -95,10 +157,10 @@
 </div>
 
 <!-- Aufmerksamkeit + Zuletzt -->
-<div class="row row-cards mb-4">
+<div class="row row-cards mb-4 overview-compact">
 
   <!-- Aufmerksamkeit -->
-  <div class="col-lg-6">
+  <div class="col-sm-12 col-lg-9">
     <div class="card h-100" id="attention-panel">
       <div class="card-header">
         <h3 class="card-title">⚠️ Aufmerksamkeit</h3>
@@ -118,26 +180,19 @@
     </div>
   </div>
 
-  <!-- Zuletzt -->
-  <div class="col-lg-6">
+  <!-- Navidrome (kompakt, 25%) -->
+  <div class="col-sm-12 col-lg-3">
     <div class="card h-100">
-      <div class="card-header">
-        <h3 class="card-title">🕒 Zuletzt</h3>
-      </div>
-
-      <div class="card-body">
-        <div id="recent-activity-content" class="text-secondary">
-          Lädt…
-        </div>
-      </div>
-
-      <div class="card-footer">
-        <a href="{{ base_path }}/downloads" class="btn btn-link p-0">
-          Download-Verlauf ansehen →
-        </a>
+      <div class="card-body d-flex flex-column justify-content-center text-center">
+        <div class="avatar avatar-md mx-auto mb-2">🌐</div>
+        <div class="text-secondary small mb-1">Navidrome</div>
+        <div class="h2 mb-1" id="status-navidrome-value">–</div>
+        <div class="text-secondary small" id="status-navidrome-hint">Lädt…</div>
       </div>
     </div>
   </div>
+
+
 
 </div>
 
@@ -186,354 +241,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-  // Overview beantwortet die Leitfrage:
-  // "Wie geht es meinem MusicBot gerade und was braucht Aufmerksamkeit?"
-  // Siehe docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md.
-  //
-  // Hinweis: Es gibt KEINEN leichtgewichtigen Repair-Summary-Endpunkt.
-  // GET /api/v1/library/repair-plan loest einen vollen Library-Scan aus
-  // (~37s auf Produktion) und darf deshalb NICHT im Auto-Load laufen.
-  // Die Attention-Zeile beschraenkt sich daher bewusst auf Findings
-  // (GET /api/v1/library/findings/summary ist guenstig und persistent).
-  // Repair-Kandidaten bleiben dem /repairs-Panel mit manuellem Trigger
-  // vorbehalten.
-  //
-  // Health-Kachel: GET /api/v1/library/health/cached (nicht /health!) —
-  // /health loest denselben ~37s-Scan aus wie /repair-plan und darf
-  // deshalb ebenfalls nicht im Auto-Load laufen. /health/cached liest
-  // stattdessen ausschliesslich den bereits vorhandenen persistenten
-  // Report (siehe control_center/routers/health.py), identisches Prinzip
-  // wie bei /artists-overview (CC-AC-1). /health selbst bleibt fuer die
-  // dedizierte Health-Seite (health.html) unveraendert.
-
-  // Aggregierter State für Systemstatus-Berechnung
-  const _overviewState = {
-    health: null,     // { status, score, library: { files, artists, albums } }
-    navidrome: null,  // { connected, artist_count }
-    findings: 0,
-    jobsActive: 0,
-  };
-
-  // Grobe relative Zeitangabe ("vor 2 Stunden") fuer den Health-Report-
-  // Zeitpunkt (CONTROL_CENTER_OVERVIEW_V2.md Abschnitt 5) — kein neuer
-  // Formatierungs-Helfer in common.js noetig, nur hier lokal gebraucht.
-  function _timeAgo(isoString) {
-    const then = new Date(isoString);
-    if (isNaN(then.getTime())) return null;
-    const diffMin = Math.round((Date.now() - then.getTime()) / 60000);
-    if (diffMin < 1) return "gerade eben";
-    if (diffMin < 60) return `vor ${diffMin} Minute${diffMin === 1 ? "" : "n"}`;
-    const diffHr = Math.round(diffMin / 60);
-    if (diffHr < 24) return `vor ${diffHr} Stunde${diffHr === 1 ? "" : "n"}`;
-    const diffDay = Math.round(diffHr / 24);
-    return `vor ${diffDay} Tag${diffDay === 1 ? "" : "en"}`;
-  }
-
-  // ══════════════════════════════════════════════════════════════════
-  // Systemstatus
-  // ══════════════════════════════════════════════════════════════════
-  function _updateSystemStatus() {
-    const s = _overviewState;
-    const valueEl = document.getElementById("system-status-value");
-    const hintEl  = document.getElementById("system-status-hint");
-    const indEl   = document.getElementById("system-indicator");
-    if (!valueEl) return;
-
-    let status = "HEALTHY";
-    let label  = "Healthy";
-    let hint   = "";
-
-    // 1. Navidrome offline → CRITICAL
-    if (s.navidrome && !s.navidrome.connected) {
-      status = "CRITICAL";
-      label  = "Critical";
-      hint   = "Navidrome nicht erreichbar";
-    }
-    // 2. Health CRITICAL → CRITICAL
-    else if (s.health && s.health.status === "CRITICAL") {
-      status = "CRITICAL";
-      label  = "Critical";
-      hint   = `Health: ${s.health.score != null ? s.health.score : "?"}`;
-    }
-    // 3. Offene Findings → WARNING
-    else if (s.findings > 0) {
-      status = "WARNING";
-      label  = "Warning";
-      hint   = `${s.findings} offene Finding${s.findings === 1 ? "" : "s"}`;
-    }
-    // 4. Health nicht GOOD/EXCELLENT → WARNING
-    else if (s.health && s.health.status &&
-             !["EXCELLENT", "GOOD"].includes(s.health.status)) {
-      status = "WARNING";
-      label  = "Warning";
-      hint   = `Health: ${s.health.status}`;
-    }
-    // 5. Laufende Jobs → nur Info-Hinweis (kein Warning)
-    else if (s.jobsActive > 0) {
-      hint = `${s.jobsActive} Job${s.jobsActive === 1 ? "" : "s"} aktiv`;
-    }
-    // 6. Alles OK
-    else {
-      hint = "Alle Systeme betriebsbereit";
-    }
-
-    valueEl.textContent = label;
-    valueEl.style.color =
-      status === "CRITICAL" ? "var(--error)" :
-      status === "WARNING"  ? "#f59e0b"      : "var(--ok)";
-
-    if (hintEl) hintEl.textContent = hint;
-
-    if (indEl) {
-      indEl.className = "kpi-indicator " +
-        (status === "CRITICAL" ? "error" :
-         status === "WARNING"  ? "warn"  : "ok");
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════
-  // Navidrome-Status
-  // ══════════════════════════════════════════════════════════════════
-  async function loadNavidromeStatus() {
-    const valueEl = document.getElementById("status-navidrome-value");
-    const hintEl  = document.getElementById("status-navidrome-hint");
-    try {
-      const res = await fetch(
-        apiUrl("/api/v1/navidrome/status"),
-        { credentials: "same-origin" }
-      );
-      if (res.status === 401) { showOnly("login-view"); return; }
-      if (!res.ok) {
-        valueEl.textContent = "—";
-        hintEl.textContent  = "Nicht abrufbar";
-        return;
-      }
-      const status = await res.json();
-      _overviewState.navidrome = status;
-      if (status.connected) {
-        valueEl.textContent = "Online";
-        valueEl.style.color = "var(--ok)";
-        hintEl.textContent  = status.artist_count != null
-          ? `${status.artist_count} Artists`
-          : "Verbunden";
-      } else {
-        valueEl.textContent = "Offline";
-        valueEl.style.color = "var(--error)";
-        hintEl.textContent  = "Nicht erreichbar";
-      }
-      _updateSystemStatus();
-    } catch (err) {
-      valueEl.textContent = "—";
-      hintEl.textContent  = "Netzwerkfehler";
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════
-  // Library / Health
-  // ══════════════════════════════════════════════════════════════════
-  async function loadHealth() {
-    const valueEl = document.getElementById("status-library-value");
-    const hintEl  = document.getElementById("status-library-hint");
-    try {
-      const res = await fetch(
-        apiUrl("/api/v1/library/health/cached"),
-        { credentials: "same-origin" }
-      );
-      if (res.status === 401) { showOnly("login-view"); return; }
-      if (res.status === 404) {
-        // Kein persistenter Report vorhanden — bewusst kein impliziter
-        // Scan aus der Overview heraus (Auftrag §4/§22).
-        valueEl.textContent = "—";
-        hintEl.textContent  = "Noch kein Report vorhanden";
-        return;
-      }
-      if (!res.ok) {
-        valueEl.textContent = "—";
-        hintEl.textContent  = "Nicht abrufbar";
-        return;
-      }
-      const data = await res.json();
-      _overviewState.health = {
-        status: data.health && data.health.status,
-        score: data.health && data.health.score,
-        library: data.library || null,
-      };
-      if (data.library && data.library.files != null) {
-        valueEl.textContent = Number(data.library.files).toLocaleString("de-DE");
-        const parts = [];
-        if (data.library.artists != null) parts.push(`${data.library.artists} Artists`);
-        if (data.library.albums != null) parts.push(`${data.library.albums} Alben`);
-        if (data.health && data.health.status) parts.push(`Health: ${data.health.status}`);
-        const scannedAt = data.scan && data.scan.completed_at
-          ? _timeAgo(data.scan.completed_at) : null;
-        if (data.stale) {
-          parts.push("⚠️ Report veraltet");
-        } else if (scannedAt) {
-          parts.push(`geprüft ${scannedAt}`);
-        }
-        hintEl.textContent = parts.join(" · ") || "Tracks";
-      } else {
-        valueEl.textContent = "—";
-        hintEl.textContent  = "Keine Library-Daten";
-      }
-      _updateSystemStatus();
-    } catch (err) {
-      valueEl.textContent = "—";
-      hintEl.textContent  = "Netzwerkfehler";
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════
-  // Findings (Attention)
-  // ══════════════════════════════════════════════════════════════════
-  async function loadFindings() {
-    try {
-      const res = await fetch(
-        apiUrl("/api/v1/library/findings/summary"),
-        { credentials: "same-origin" }
-      );
-      if (res.status === 401) { showOnly("login-view"); return; }
-      if (!res.ok) return; // stiller Rückfall, Overview bleibt nutzbar
-      const summary = await res.json();
-      _overviewState.findings = summary.open || 0;
-      _updateSystemStatus();
-      _renderAttention();
-    } catch (err) {
-      // stiller Rückfall
-    }
-  }
-
-  function _renderAttention() {
-    const panel   = document.getElementById("attention-panel");
-    const content = document.getElementById("attention-content");
-    if (!panel || !content) return;
-
-    const f = _overviewState.findings;
-
-    // Panel immer sichtbar — leerer Zustand wird explizit angezeigt,
-    // damit Nutzer zwischen "keine Findings" und "Request fehlgeschlagen"
-    // unterscheiden kann.
-    panel.hidden = false;
-
-    if (f === 0) {
-      panel.classList.add("attention-panel--ok");
-      content.innerHTML = '<span class="attention-ok">✅ Keine offenen Findings</span>';
-      return;
-    }
-
-    panel.classList.remove("attention-panel--ok");
-    content.innerHTML =
-      `<strong>${f}</strong> Finding${f === 1 ? "" : "s"} erfordern Aufmerksamkeit`;
-  }
-
-  // ══════════════════════════════════════════════════════════════════
-  // Jobs (KPI-Kachel mit Progressbar)
-  // ══════════════════════════════════════════════════════════════════
-  async function loadJobs() {
-    const valueEl = document.getElementById("status-jobs-value");
-    const hintEl  = document.getElementById("status-jobs-hint");
-    const bar     = document.getElementById("jobs-progress");
-    try {
-      const res = await fetch(
-        apiUrl("/api/v1/jobs?limit=20"),
-        { credentials: "same-origin" }
-      );
-      if (res.status === 401) { showOnly("login-view"); return; }
-      if (!res.ok) {
-        valueEl.textContent = "—";
-        hintEl.textContent  = "Nicht abrufbar";
-        return;
-      }
-      const body = await res.json();
-      const active = body.jobs.filter(
-        (j) => j.status === "PENDING" || j.status === "RUNNING"
-      );
-      _overviewState.jobsActive = active.length;
-
-      if (active.length === 1) {
-        const j = active[0];
-        const pct = (j.progress != null) ? Math.round(j.progress * 100) : null;
-        valueEl.textContent = pct != null ? `${pct}%` : "1";
-        hintEl.textContent  = j.kind || "läuft";
-        if (bar && pct != null) {
-          bar.style.width = `${pct}%`;
-          bar.hidden = false;
-        } else if (bar) {
-          bar.hidden = true;
-        }
-      } else {
-        valueEl.textContent = active.length;
-        hintEl.textContent  = active.length === 0
-          ? "Keine aktiven"
-          : `${active.length} laufen`;
-        if (bar) bar.hidden = true;
-      }
-      _updateSystemStatus();
-    } catch (err) {
-      valueEl.textContent = "—";
-      hintEl.textContent  = "Netzwerkfehler";
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════
-  // Recent Activity (Download-Verlauf)
-  // ══════════════════════════════════════════════════════════════════
-  async function loadRecentActivity() {
-    const el = document.getElementById("recent-activity-content");
-    try {
-      const res = await fetch(
-        apiUrl("/api/v1/downloads/history?limit=5"),
-        { credentials: "same-origin" }
-      );
-      if (res.status === 401) { showOnly("login-view"); return; }
-      if (!res.ok) { el.textContent = "Verlauf nicht abrufbar."; return; }
-
-      const body = await res.json();
-      if (!body.entries.length) {
-        el.innerHTML = '<p class="empty-note">Keine Aktivität.</p>';
-        return;
-      }
-
-      el.innerHTML = '<div class="activity-list">' + body.entries.map((e) => {
-        const ts = new Date(e.timestamp);
-        const timeStr =
-          ts.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) +
-          " " +
-          ts.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-
-        const status = _escapeHtml(e.status);
-
-        return `
-          <div class="activity-item">
-            <span class="badge badge-status-${status}">${status}</span>
-            <div class="activity-main">
-              <div class="activity-title">${_escapeHtml(e.title)}</div>
-              <div class="activity-artist">${_escapeHtml(e.artist)}</div>
-            </div>
-            <div class="activity-time">${timeStr}</div>
-          </div>
-        `;
-      }).join("") + "</div>";
-
-    } catch (err) {
-      el.textContent = "Netzwerkfehler: " + err.message;
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════
-  // Init
-  // ══════════════════════════════════════════════════════════════════
-  function initPage() {
-    checkAuth().then((who) => {
-      if (!who) return;
-      loadHealth();
-      loadNavidromeStatus();
-      loadFindings();
-      loadJobs();
-      loadRecentActivity();
-    });
-  }
-  initPage();
-</script>
+<script src="{{ base_path }}/static/pages/overview.js"></script>
 {% endblock %}
