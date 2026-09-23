@@ -265,3 +265,21 @@ class NavidromeAPI:
         params = {"query": query}
         response = await asyncio.to_thread(self.make_request, "search3", params)
         return response.get("subsonic-response", {}).get("searchResult3", {})
+
+    def fetch_cover_art(self, cover_id: str, size: int = 300) -> "tuple[bytes, str]":
+        """Holt Cover-Art-Bytes direkt von Navidrome (Subsonic getCoverArt).
+
+        Nutzt denselben Auth-/URL-Pfad wie make_request(), liefert aber
+        den rohen Response-Body (Bytes) statt JSON - Cover sind Binaerdaten.
+        Rueckgabe: (bytes, content_type).
+        """
+        url = self._build_url("getCoverArt")
+        full_params = {**self._auth_params, "id": cover_id, "size": size}
+        response = requests.get(
+            url,
+            params=full_params,
+            timeout=getattr(Config, "NAVIDROME_REQUEST_TIMEOUT", 15),
+        )
+        response.raise_for_status()
+        return response.content, response.headers.get("Content-Type", "image/jpeg")
+
