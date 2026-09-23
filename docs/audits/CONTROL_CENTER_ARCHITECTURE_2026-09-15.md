@@ -2043,3 +2043,94 @@ Cover-Proxy) wurden manuell gegen den echten Server verifiziert.
 
 **Keine Telegram-Änderung:** `handlers/navidrome_menu_handler.py` bleibt
 vollständig unverändert.
+---
+
+## Erweiterung — CC-LOGGER-L2: Logger Read API (2026-09-23, auf Nutzerfreigabe)
+
+Erster Schritt aus dem Phasenplan `logge.txt` (L1–L7) — **reine
+Read-API** für die Klasse-A-Logger-Funktionen (shared filesystem,
+prozessübergreifend gültig). Runtime-Control (Klasse B) ist bewusst
+DEFERRED bis L3-Architekturentscheid; siehe Audit-Doc
+`docs/audits/CC_LOGGER_L2_READ_API_2026-09-23.md`.
+
+### L1-Charakterisierung (aus dem Repo, nicht angenommen)
+
+`handlers/enhanced_logger_menu_handler.py::EnhancedLoggerMenuHandler`
+(1711 Zeilen) teilt sich in drei Klassen:
+
+- **A — shared filesystem** (Logdateien, `stat()`-Metadaten,
+  Datei-Inhalt): aus CC-Prozess unverändert lesbar.
+- **B — process-local** (`_module_loggers`, `loggerDict`,
+  `Logger.handlers`, `Logger.disabled`, `ExceptionMonitor`): nur im
+  Bot-Prozess. **Kein Inbound-Kanal** (einziger Mechanismus ist
+  `systemctl restart`) → DEFERRED.
+- **C — nicht implementiert** (`add_handler`/`remove_handler`/
+  `add_module`/`download_log_file` sind im Telegram-Handler selbst
+  Platzhalter ohne Funktion).
+
+**Kritischer L1-Fund:** `ModuleLoggerManager._load_module_configs()`
+liest die JSON beim Bot-Start, ruft aber `_apply_module_config()`
+**nicht** auf. Die Datei ist keine Runtime-Wahrheit. Konsequenz: sie
+wird in L2 **nicht** exponiert.
+
+### Umfang
+
+Neuer Application-Layer `services/logger_admin.py` (Telegram-frei,
+FastAPI-frei) — ruft ausschließlich `services/logs/reader.py` auf
+(kein zweiter Parser). Neuer Router
+`control_center/routers/logger.py` unter `/api/v1/admin/logger/*`,
+ADMIN-gated.
+
+| Route | Response |
+|---|---|
+| `GET /api/v1/admin/logger/files` | Liste aller Logdateien (nach mtime, neueste zuerst) |
+| `GET /api/v1/admin/logger/files/stats` | Aggregat: Anzahl/Gesamtgröße/größte/älteste Datei |
+| `GET /api/v1/admin/logger/files/{name}` | Datei-Detail + Inhalt (Filter: `level`/`component`/`search`/`limit`) |
+
+**Route-Reihenfolge** — `/files/stats` **vor** `/files/{name}`
+deklariert (Starlette-Matching in Deklarations-Reihenfolge — sonst
+wird `stats` als Dateiname interpretiert).
+
+### Architektur
+
+- **Application Layer (`services/logger_admin.py`)** — reine Funktionen
+  auf einem übergebenen `log_dir: Path`. Exceptions:
+  `LoggerAdminError`/`InvalidLogFilenameError`/`InvalidLimitError`.
+  Keine HTTPException, kein Telegram.
+- **Kein zweiter Parser** — `get_log_file()` ruft
+  `reader.read_logs()` unverändert auf. Redaktion (ANSI/Secrets),
+  Filter (Level/Component/Search), Truncation (`total_matched` >
+  `limit`) bleiben in der bestehenden Schicht.
+- **Security** — Whitelist (`list_log_sources()`) **plus**
+  Containment-Check (`resolve().is_relative_to(log_dir)`) als zweite
+  Verteidigungslinie. Identisch zum SEC-003-Fix in
+  `EnhancedLoggerMenuHandler.show_log_file_detail()`.
+- **Limit-Grenzen** — Default 200, Min 1, Max 2000. FastAPI lehnt
+  Werte außerhalb mit HTTP 422 ab (kein stilles Clamping);
+  `logger_admin.get_log_file()` validiert denselben Bereich defensiv
+  ein zweites Mal (`InvalidLimitError`), damit direkte Aufrufer ohne
+  HTTP-Durchlauf nicht umgangen werden.
+- **`/api/v1/logs` bleibt unverändert** — jene Route ist die
+  zeilenorientierte Live-Ansicht; die neue ist die dateiorientierte
+  Übersicht. Kein Ersatz, keine Migration.
+
+### Tests
+
+- `tests/test_logger_admin.py` — Application-Layer (ca. 25 Tests):
+  Liste/Stats/Detail/Traversal/Symlink/Limit-Grenzen.
+- `tests/test_control_center_logger_api.py` — HTTP (ca. 24 Tests):
+  Happy Path, Route-Reihenfolge, Traversal (`404`/`422` — nie `200`),
+  Limit-Grenzen (`422` bei `0`/`-1`/`2001`/…, `200` bei `1`/`100`/`2000`),
+  Auth, Regression `/api/v1/logs`.
+
+Testergebnis: `86 passed` (4 Log-Suiten) + `529 passed` (gesamte
+`control_center`-Suite).
+
+### Bewusst NICHT umgesetzt
+
+- Kein Runtime-Control (Klasse B).
+- Kein Config-Exposure (`module_logger_config.json` — L1-Fund).
+- Keine IPC-Infrastruktur (`logge.txt` §3C/§10).
+- Keine UI (Prompt §12: UI ist L7).
+- Keine Änderung an `handlers/enhanced_logger_menu_handler.py`
+  (Telegram-Pfad unverändert, Prompt §11/§12).

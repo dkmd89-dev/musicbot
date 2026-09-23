@@ -48,6 +48,7 @@ Abschnitt „Implementierung".
 
 | **CC-AC-10A–D „Control Center Admin API Integration"** — Migration der bestehenden, bisher rein Telegram-basierten Administration auf client-unabhängige Application-Layer-Funktionen + Control-Center-API, gemäß freigegebener Master-Prompt `CC-AC-10.md`. 10A: vollständiges Admin-Inventar (26 Funktionen) + Architecture Contract (`ActorContext`-Vorschlag andockt an bereits Telegram-freie `permissions.py`-Logik). 10B: User Management (Create/Update/Delete) über neuen `services/user_admin.py`. 10C: Backup/Bot-Neustart/Wartungsmodus/Navidrome-Scan über `services/backup_admin.py` + Direktnutzung bereits Telegram-freier Bausteine (`bot_maintenance.py`, `bot_restart_trigger.py`, `navidrome_scan_trigger.py`). 10D: nur System-Status (`services/system_status.py`) — Logger-Konfiguration und Error-Administration bewusst zurückgestellt (Cross-Prozess-Blocker: beide Daten leben nur im Bot-Prozess-Speicher, Control Center läuft separat; Logger-Configs werden zusätzlich nur einmal beim Bot-Start geladen). Telegram-Seite in allen vier Phasen bewusst unverändert (Migration darauf ist eigener, späterer Slice CC-AC-10G). Admin-Web-Parität laut CC-AC-10A-Matrix: von 12/26 auf 24/26 (Artist-Metadata-Reprocessing #25 laut Nutzer-Entscheidung dauerhaft ⚪ ausgeschlossen, keine offene Lücke). Details: `docs/audits/CC-AC-10A_ADMIN_INVENTORY_ARCHITECTURE_CONTRACT_2026-09-22.md` bis `CC-AC-10D_DIAGNOSTICS_MONITORING_API_2026-09-22.md`. | siehe Einzel-PRs dieser Session | 87 neue/erweiterte Tests über die vier Phasen (Application-Layer-Unit-Tests + HTTP-API-Tests), 0 Regressionen, thematische Suiten je Phase grün |
 | **`control-center-navidrome` (Navidrome Full Integration im Control Center)** — Erweiterung der bisherigen Navidrome-Status-Anbindung (2026-09-15) zur vollständigen REST-Parität mit dem Telegram-`NavidromeMenuHandler`. 18 neue Endpunkte (Browse/Detail/Suche/Entdecken/Playlist-CRUD/Cover-Proxy) in `control_center/routers/navidrome.py` (20 gesamt), ~25 neue Pydantic-Schemas in `control_center/schemas/navidrome.py`, neuer `fetch_cover_art()`-Helper in `services/clients/navidrome_api.py` (Subsonic `getCoverArt` liefert Bytes, nicht JSON). Frontend: 7 Tabs, Modal-Stack-Navigation mit Breadcrumb, Cover-Art-Cards. Telegram-Seite bewusst unverändert; beide Consumer teilen weiterhin nur den `NavidromeAPI`-Adapter, keinen gemeinsamen Zustand, keine Business-Logik, keine wechselseitigen Imports. Details: `docs/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md`. Volle Suite auf dem Branch: 5445 passed / 1 skipped / 6 warnings / 11 subtests passed (322,78 s, 2026-09-23). | siehe Branch `control-center-navidrome` | 20 Endpunkte (2 → 20), ~25 Schemas (2 → ~25), Frontend-Rewrite mit Modal-Stack; 0 Regressionen (bestehende Navidrome-Status-Tests unverändert grün) |
+| **CC-LOGGER-L2 (Logger Read API)** — erster Schritt aus dem Phasenplan `logge.txt` (L1–L7). Reine Read-API für die Klasse-A-Logger-Funktionen (shared filesystem). Neuer Application-Layer `services/logger_admin.py` (Telegram-frei, FastAPI-frei), neuer Router `control_center/routers/logger.py` unter `/api/v1/admin/logger/*`, ADMIN-gated, 3 Endpunkte (Dateiliste/Statistiken/Detail). **Klasse B (Runtime-Control) bewusst DEFERRED** — L1-Analyse ergab prozesslokalen Bot-Zustand ohne Inbound-Kanal (einziger Mechanismus: `systemctl restart`). `module_logger_config.json` bewusst nicht exponiert — L1-Fund: `ModuleLoggerManager._load_module_configs()` wendet die JSON beim Bot-Start nicht an. Route-Reihenfolge kritisch (`/files/stats` vor `/files/{name}`). Limit-Grenzen server-seitig (Default 200, Min 1, Max 2000, HTTP 422 bei Verletzung — kein stilles Clamping; zusätzlich defensiv im App-Layer). Details: `docs/audits/CC_LOGGER_L2_READ_API_2026-09-23.md`. Testergebnis: 86 passed (Log-Suiten) + 529 passed (`control_center`-Suite). | `docs/audits/CC_LOGGER_L2_READ_API_2026-09-23.md` | 3 Endpunkte, 1 neuer Application Layer, 1 neuer Router, 2 neue Schemas; 0 Regressionen (`/api/v1/logs` unverändert) |
 ---
 
 ## 3. Recent Major Changes (seit v10-Freeze)
@@ -106,6 +107,44 @@ Abschnitt „Implementierung".
   im Artist-Detail (Root-Cause: `d-none` auf dem Back-Button bei
   Stack-Tiefe 1 plus unsichtbarer `.btn-close` im Dark-Theme).
   Details: `docs/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md`.
+
+- **CC-LOGGER-L2 (Logger Read API):** erster Schritt aus dem Phasenplan
+  `logge.txt` (L1–L7). Neuer Application-Layer
+  `services/logger_admin.py` (Telegram-frei, FastAPI-frei) + neuer
+  Router `control_center/routers/logger.py` unter
+  `/api/v1/admin/logger/*` (ADMIN-gated). Drei Endpunkte:
+  `/files` (Dateiliste nach mtime), `/files/stats` (Aggregat),
+  `/files/{name}` (Detail + Filter + Limit). Ruft ausschließlich
+  `services/logs/reader.py` auf — kein zweiter Parser.
+
+  **Klasse B (Runtime-Control: Modul-/Global-Level, Enable/Disable,
+  Handler-Manipulation) bewusst DEFERRED.** L1-Analyse ergab:
+  `_module_loggers`/`loggerDict`/`Logger.handlers` sind ausschließlich
+  prozesslokal im Bot-Prozess; der einzige vorhandene
+  Steuerungs-Mechanismus ist `systemctl restart` (voller Neustart,
+  kein Skalpell). Kein Inbound-Kanal → keine ehrliche Write-API in L2
+  möglich (`logge.txt` §4/§15: keine Runtime-Control vortäuschen).
+
+  **`module_logger_config.json` bewusst nicht exponiert** — L1-Fund:
+  `ModuleLoggerManager._load_module_configs()` liest die JSON beim
+  Bot-Start, ruft aber `_apply_module_config()` **nicht** auf; die
+  Datei ist keine Runtime-Wahrheit. Ein Read-Endpoint würde eine
+  Genauigkeit vortäuschen, die die Datenquelle nicht hat.
+
+  **Limit-Grenzen server-seitig** — Default 200, Min 1, Max 2000.
+  FastAPI lehnt Werte außerhalb mit HTTP 422 ab (kein stilles
+  Clamping); `logger_admin.get_log_file()` validiert denselben Bereich
+  defensiv ein zweites Mal, damit direkte Aufrufer ohne HTTP-Durchlauf
+  nicht umgangen werden.
+
+  **Route-Reihenfolge kritisch** — `/files/stats` vor `/files/{name}`
+  (Starlette-Matching in Deklarations-Reihenfolge).
+
+  Tests: 86 passed (4 Log-Suiten: `test_logger_admin.py`,
+  `test_control_center_logger_api.py`, `test_logs_reader.py`,
+  `test_logger_menu_path_traversal.py`) + 529 passed (`pytest tests/
+  -k control_center`). Keine Telegram-Änderung.
+  Details: `docs/audits/CC_LOGGER_L2_READ_API_2026-09-23.md`.
 ---
 
 ## 4. Technical Debt — Snapshot
