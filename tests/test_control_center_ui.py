@@ -25,6 +25,11 @@ import re
 
 import httpx
 import pytest
+
+@pytest.fixture
+def anyio_backend() -> str:
+    """Beschraenkt pytest-anyio auf das asyncio-Backend (trio-Version hat in diesem Repo Kompatibilitaetsprobleme)."""
+    return "asyncio"
 import pytest_asyncio
 
 from config import Config
@@ -1219,3 +1224,87 @@ async def test_library_page_has_health_asc_sort_option(client):
     assert 'value="health"' in html
     assert 'value="health_asc"' in html
     assert "health_asc:" in html  # Comparator-Eintrag
+
+
+# =====================================================================
+# CC-LOGGER-L6 — Logger-Verwaltungs-Seite
+# =====================================================================
+#
+# Reine UI-Rendering-Tests: das Template und die Sidebar-Navigation
+# werden auf die erwarteten Marker geprüft. Die eigentliche Panel-Logik
+# lebt in logger.js und wird hier NICHT ausgeführt (kein Browser-
+# Runtime-Test verfügbar — identisches Vorgehen wie in allen anderen
+# UI-Tests dieser Suite).
+
+
+@pytest.mark.anyio
+async def test_logger_page_renders(client) -> None:
+    r = await client.get("/logger")
+    assert r.status_code == 200
+    html = r.text
+    assert "Logger" in html
+    assert "MusicBot Control Center" in html
+
+
+@pytest.mark.anyio
+async def test_logger_page_has_all_panel_markers(client) -> None:
+    r = await client.get("/logger")
+    html = r.text
+    # Panel 1 — Runtime
+    assert "logger-runtime-kpi" in html
+    assert "logger-runtime-content" in html
+    assert "logger-runtime-refresh-btn" in html
+    # Panel 2 — Config
+    assert "logger-config-content" in html
+    # Panel 3 — Diff
+    assert "logger-diff-content" in html
+    # Panel 4 — Apply
+    assert "logger-apply-btn" in html
+    assert "logger-apply-status" in html
+
+
+@pytest.mark.anyio
+async def test_logger_page_references_js_file(client) -> None:
+    r = await client.get("/logger")
+    assert "/static/pages/logger.js" in r.text
+
+
+@pytest.mark.anyio
+async def test_logger_sidebar_entry_present_on_all_pages(client) -> None:
+    # Der Sidebar-Eintrag „Logger" muss auf allen Seiten erscheinen.
+    for path in ("/", "/logs", "/admin", "/navidrome"):
+        r = await client.get(path)
+        assert r.status_code == 200, f"{path} lieferte {r.status_code}"
+        assert "/logger" in r.text, f"{path}: /logger-Link fehlt in Sidebar"
+        assert "Logger</span>" in r.text, f"{path}: Logger-Titel fehlt"
+
+
+@pytest.mark.anyio
+async def test_logger_sidebar_entry_active_only_on_logger_page(client) -> None:
+    r = await client.get("/logger")
+    # Der Eintrag muss die active-Klasse tragen.
+    html = r.text
+    # Suche den /logger-Link und prüfe auf active im selben nav-link.
+    idx = html.find('href="/logger"')
+    assert idx != -1, "/logger-Link nicht gefunden"
+    # Prüfe die nächste Zeile (class-Attribut folgt unmittelbar)
+    snippet = html[idx:idx + 200]
+    assert "nav-link active" in snippet, f"active-Klasse fehlt: {snippet!r}"
+
+    # Auf einer anderen Seite: /logger nicht active
+    r2 = await client.get("/logs")
+    html2 = r2.text
+    idx2 = html2.find('href="/logger"')
+    assert idx2 != -1
+    snippet2 = html2[idx2:idx2 + 200]
+    assert "nav-link active" not in snippet2, "Logger-Link ist faelschlich active auf /logs"
+
+
+@pytest.mark.anyio
+async def test_logger_page_warns_about_restart(client) -> None:
+    """Die Seite muss klar sagen, dass Apply ein Bot-Restart ist."""
+    r = await client.get("/logger")
+    html = r.text
+    assert "startet den Bot neu" in html
+    # Kein Live-Control-Versprechen:
+    assert "Logger live" not in html

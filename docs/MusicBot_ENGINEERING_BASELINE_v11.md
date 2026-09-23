@@ -52,6 +52,7 @@ Abschnitt „Implementierung".
 | **CC-LOGGER-L3 (Runtime-Control Architecture Decision)** — Analyse-Phase, kein Code. Architektur-Entscheidung für Logger-Runtime-Control im MusicBot. Kernbefund: es existiert heute KEIN Cross-Process-Runtime-Kanal (keine IPC, kein Socket, kein File-Watcher, kein Reload-Trigger); einziger Steuerungs-Mechanismus ist `systemctl restart bot`. Zusätzlich: `ModuleLoggerManager._load_module_configs()` wendet die JSON beim Bot-Start nicht an — persistente Config ist keine Runtime-Wahrheit. Empfohlener Pfad (verbindlich für L4–L6): Stufe 0 (Startup-Apply-Bugfix) → Stufe 1 (E2 Persistent Config über CC, Semantik „nächster Start“) → Stufe 2 (Runtime Snapshot, read-only Observability) → Stufe 3 (kontrollierter Apply/Restart mit Preflight + Rate-Limit). Stufe 4 (Unix-Socket Runtime Write) explizit DEFERRED, nur bei belegtem Bedarf. Verworfen: File-Watcher als dauerhafte Runtime-Infrastruktur, Localhost-HTTP, jeder unnötige neue IPC-Stack. Details: `docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md`. | `docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md` | Docs-only, 0 Code-Änderungen, 0 Regressionen |
 | **CC-LOGGER-L4 (Startup Apply + Persistent Logger Configuration)** — erster Umsetzungsschritt nach der L3-Entscheidung. Behebt den Startup-Apply-Bug in `ModuleLoggerManager._load_module_configs()` (JSON wurde geladen, aber nicht angewendet — persistierte Level/Handler waren fuer den laufenden Prozess wirkungslos). Neue Application-Layer-Funktionen in `services/logger_admin.py`: `read_logger_config()`, `validate_logger_config_patch()`, `update_logger_config()` (atomarer Write via .tmp+replace), `LoggerConfigError`. Neue Endpunkte unter `/api/v1/admin/logger/config`: `GET` (persistierte Konfiguration, ADMIN) + `PATCH` (merge-by-module + merge-by-field, ADMIN + CSRF, strikte Validierung). **Semantik ehrlich: „wirksam beim naechsten Bot-Start" — kein Runtime-Control, kein IPC, kein Restart.** Kein Schema-Bruch, keine neue Abhaengigkeit. **Verhaltensaenderung:** ab dem ersten Neustart nach dem Fix werden 40 Module je eine Log-Datei anlegen, 18 davon auf DEBUG. Details: `docs/audits/CC-LOGGER-L4_STARTUP_CONFIG_API_2026-09-23.md`. | `docs/audits/CC-LOGGER-L4_STARTUP_CONFIG_API_2026-09-23.md` | 2 Endpunkte (GET/PATCH), 1 Bug-Fix, 47 neue Tests (12 Startup-Apply + 35 App-Layer-/HTTP-Config); 131/540/168 passed ueber die drei Regressionssuiten, 0 Regressionen |
 | **CC-LOGGER-L5 (Runtime Snapshot + Controlled Apply/Restart)** — Stufe 2 + Stufe 3 aus der L3-Entscheidung. **Stufe 2 (Snapshot):** Bot schreibt beim erfolgreichen Startup `data/logger_runtime_snapshot.json` (atomic write, aus dem tatsaechlichen `logging.getLogger(name).level/handlers/disabled` — NICHT aus der Config). Neuer Endpoint `GET /api/v1/admin/logger/runtime-status` (ADMIN, read-only, 3 Zustaende: available/missing/corrupt, Semantik explizit "state_after_last_successful_bot_start"). **Stufe 3 (Apply):** Neuer Endpoint `POST /api/v1/admin/logger/apply` (ADMIN + CSRF + Rate-Limit 60s, Single-Flight via threading.Lock). Dreistufige Preflight-Semantik: `blocked` (Repair-Lock aktiv → HTTP 409, keine Mutation, kein Restart), `unverified` (Lock frei, aber Downloads/Backups unpruefbar → Restart mit strukturierter Warnung), `clear` (aktuell unerreichbar, da UNVERIFIABLE_ACTIVITY_CATEGORIES nicht leer). Restart ueber bestehenden `BotRestartTrigger.trigger_restart("bot")`, unveraendert. **Kein IPC, kein Socket, keine neue State-Registry.** Bugfix am globalen HTTPException-Handler in `control_center/app.py` (reicht jetzt `exc.headers` durch, betrifft `Retry-After` bei 429). Details: `docs/audits/CC-LOGGER-L5_RUNTIME_SNAPSHOT_CONTROLLED_APPLY_2026-09-23.md`. | `docs/audits/CC-LOGGER-L5_RUNTIME_SNAPSHOT_CONTROLLED_APPLY_2026-09-23.md` | 2 neue Endpunkte (runtime-status, apply), 2 neue App-Layer-Funktionen (write_runtime_snapshot/read_runtime_snapshot + evaluate_apply_preflight + LoggerApplyRateLimiter), 35 neue Tests; 103 + 552 + (Logger-Suite) passed, 0 Regressionen |
+| **CC-LOGGER-L6 (Logger-Verwaltungs-UI)** — UI-only, keine Backend-Aenderung. Neue Seite `/logger` (eigenes Template + eigene JS-Datei, Stack-Pattern wie /statistics) mit vier Panels: Runtime-Status (KPI + Tabelle, Zustaende available/missing/corrupt), Persistierte Konfiguration (Tabelle, Semantik "wirksam beim naechsten Start"), Desired-vs-Actual-Diff (berechnet aus State, kein neuer API-Call), Apply (einziger POST /api/v1/admin/logger/apply-Call, Antwort bestimmt die Darstellung: unverified/clear/blocked/config_missing/429/403). Rate-Limit-Countdown aus Retry-After-Header. Wiederverwendet: common.js-Helper (apiUrl/checkAuth/_loadInto/_escapeHtml/showOnly), common.css-Klassen, Tabler-Komponenten. Keine Aenderung an common.js/common.css. Kein Config-PATCH-UI (bewusst ausserhalb L6). Details: `docs/audits/CC-LOGGER-L6_LOGGER_UI_2026-09-23.md`. | `docs/audits/CC-LOGGER-L6_LOGGER_UI_2026-09-23.md` | 1 neue Seite, 1 neue JS-Datei, 4 Panels, 6 neue UI-Tests; 218 + 560 passed, 0 Regressionen |
 ---
 
 ## 3. Recent Major Changes (seit v10-Freeze)
@@ -287,3 +288,37 @@ GO/NO-GO-Verdikt für v11.)*
   Tests: 103 passed (L5-Suiten + Logger-Suiten) + 552 passed
   (`pytest -k control_center`). Details:
   `docs/audits/CC-LOGGER-L5_RUNTIME_SNAPSHOT_CONTROLLED_APPLY_2026-09-23.md`.
+
+
+- **CC-LOGGER-L6 (Logger-Verwaltungs-UI):** reine UI-Arbeit auf den
+  bestehenden L4/L5-Endpunkten. Neue Seite `/logger` (Template +
+  eigene JS-Datei, Stack-Pattern analog `statistics.html`) mit vier
+  Panels:
+
+  1. **Runtime-Status** — KPI-Kacheln (Root-Level, Modul-Anzahl, letzter
+     Startup) + Tabelle aus `GET /runtime-status`, Zustaende
+     available/missing/corrupt klar unterschieden. Semantik im UI
+     explizit: "Zustand nach letztem Bot-Start".
+  2. **Persistierte Konfiguration** — Tabelle aus `GET /config`,
+     Semantik "wirksam beim naechsten Bot-Start".
+  3. **Desired vs. Actual** — Diff aus den beiden Panels berechnet,
+     kein neuer API-Call. Sonderfaelle (nur in Config / nur im Snapshot /
+     kein Snapshot) ehrlich benannt. Kein Fake-Diff.
+  4. **Apply / Controlled Restart** — einziger Call `POST /apply`,
+     Antwort bestimmt Darstellung: unverified (gelb, unverifizierbare
+     Kategorien explizit), clear (gruen), blocked (rot, kein Restart),
+     config_missing (rot), 429 (orange mit Live-Countdown aus
+     `Retry-After`), 403/401 wie bestehende Patterns.
+
+  **Wiederverwendung:** `common.js`-Helper
+  (`apiUrl/checkAuth/_loadInto/_escapeHtml/showOnly`),
+  `common.css`-Klassen, Tabler-Komponenten. Keine Aenderung an
+  `common.js`, `common.css` oder anderen Page-Dateien.
+  Kein Config-PATCH-UI — der PATCH-Endpoint bleibt bewusst nicht
+  exponiert.
+
+  Tests: 6 neue UI-Tests in `tests/test_control_center_ui.py`.
+  Regressionsergebnis: 218 + 560 passed. Details:
+  `docs/audits/CC-LOGGER-L6_LOGGER_UI_2026-09-23.md`.
+
+
