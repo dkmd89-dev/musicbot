@@ -166,7 +166,7 @@ Regressionslauf: siehe §9.
 
 | Nicht implementiert | Warum |
 |---|---|
-| Config-PATCH-UI | Separater Scope; wuerde Validierungs-/Preview-Flow erfordern |
+| Config-PATCH-UI | Separater Scope; wuerde Validierungs-/Preview-Flow erfordern. **Nachtrag 2026-09-27:** fuer `file_handler` umgesetzt in CC-LOGGER-L6.1 (`docs/audits/CC-LOGGER-L6.1_FILE_HANDLER_CONTROL_2026-09-27.md`); `level`/`console_handler`/`enabled` weiterhin nicht exponiert. |
 | Log-Reader | Ist L2 (`/logs`) |
 | Neue CSS-Datei | common.css + Tabler reichen |
 | common.js-Aenderungen | Nur logger.js nutzt bestehende Helper |

@@ -1308,3 +1308,80 @@ async def test_logger_page_warns_about_restart(client) -> None:
     assert "startet den Bot neu" in html
     # Kein Live-Control-Versprechen:
     assert "Logger live" not in html
+
+
+# =====================================================================
+# CC-LOGGER-L6.1 — File Handler Control
+# =====================================================================
+#
+# Statische Marker-Tests (kein Browser-Runtime-Test verfuegbar, identisch
+# zum L6-Vorgehen): Template-Status-Container + logger.js nutzt den
+# bestehenden PATCH-Endpoint ausschliesslich fuer `file_handler`.
+
+
+@pytest.mark.anyio
+async def test_logger_page_has_file_handler_control_markers(client) -> None:
+    html = (await client.get("/logger")).text
+    assert "logger-config-status" in html
+    assert "logger-config-content" in html
+    # Klarer Hinweis: Schalten veraendert den laufenden Bot nicht.
+    assert "der laufende Bot wird" in html
+
+
+@pytest.mark.anyio
+async def test_logger_js_file_toggle_uses_existing_patch_endpoint(client) -> None:
+    js = (await client.get("/static/pages/logger.js")).text
+    assert "logger-file-toggle" in js
+    assert 'method: "PATCH"' in js
+    assert '"/api/v1/admin/logger/config"' in js
+    # Genau ein Feld, expliziter Zielwert (kein Toggle, kein `enabled`).
+    assert "{ file_handler: wanted }" in js
+    # Keine neue API-Flaeche: logger.js spricht nur die bestehenden
+    # L4/L5-Endpunkte an.
+    import re
+
+    endpoints = set(re.findall(r'"(/api/v1/admin/logger/[^"]*)"', js))
+    assert endpoints == {
+        "/api/v1/admin/logger/runtime-status",
+        "/api/v1/admin/logger/config",
+        "/api/v1/admin/logger/apply",
+    }
+
+
+# =====================================================================
+# CC-LOGGER-L6.2 — Level Control
+# =====================================================================
+
+
+def _js_logger_levels(js: str) -> list:
+    import json
+    import re
+
+    m = re.search(r"const LOGGER_LEVELS = (\[[^\]]*\]);", js)
+    assert m, "LOGGER_LEVELS-Konstante fehlt in logger.js"
+    return json.loads(m.group(1))
+
+
+@pytest.mark.anyio
+async def test_logger_js_levels_match_backend_whitelist(client) -> None:
+    """UI bietet exakt die Backend-Level an — keine erfundenen Werte —
+    in aufsteigender Schwere wie Telegrams log_levels."""
+    import logging
+
+    from services.logger_admin import ALLOWED_LOG_LEVELS
+
+    js = (await client.get("/static/pages/logger.js")).text
+    levels = _js_logger_levels(js)
+    assert set(levels) == set(ALLOWED_LOG_LEVELS)
+    assert len(levels) == len(ALLOWED_LOG_LEVELS)
+    assert levels == sorted(ALLOWED_LOG_LEVELS, key=logging.getLevelName)
+    assert levels == ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+
+@pytest.mark.anyio
+async def test_logger_js_level_select_patches_only_level(client) -> None:
+    js = (await client.get("/static/pages/logger.js")).text
+    assert "logger-level-select" in js
+    assert "{ level: wanted }" in js
+    # L6.1 unveraendert
+    assert "{ file_handler: wanted }" in js

@@ -46,11 +46,14 @@
       <h2 class="card-title">💾 Persistierte Konfiguration</h2>
       <div class="text-secondary small">
         Gespeicherte Absicht (data/module_logger_config.json) —
-        wirksam beim nächsten Bot-Start.
+        wirksam beim nächsten Bot-Start. Level und eigene Log-Datei
+        (Spalte „File“) sind hier pro Modul änderbar; der laufende Bot wird
+        dadurch nicht verändert.
       </div>
     </div>
   </div>
   <div class="card-body">
+    <div id="logger-config-status" class="mb-3"></div>
     <div id="logger-config-content" class="empty-note">Lädt…</div>
   </div>
 </div>

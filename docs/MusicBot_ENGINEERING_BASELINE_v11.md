@@ -54,6 +54,8 @@ Abschnitt „Implementierung".
 | **CC-LOGGER-L5 (Runtime Snapshot + Controlled Apply/Restart)** — Stufe 2 + Stufe 3 aus der L3-Entscheidung. **Stufe 2 (Snapshot):** Bot schreibt beim erfolgreichen Startup `data/logger_runtime_snapshot.json` (atomic write, aus dem tatsaechlichen `logging.getLogger(name).level/handlers/disabled` — NICHT aus der Config). Neuer Endpoint `GET /api/v1/admin/logger/runtime-status` (ADMIN, read-only, 3 Zustaende: available/missing/corrupt, Semantik explizit "state_after_last_successful_bot_start"). **Stufe 3 (Apply):** Neuer Endpoint `POST /api/v1/admin/logger/apply` (ADMIN + CSRF + Rate-Limit 60s, Single-Flight via threading.Lock). Dreistufige Preflight-Semantik: `blocked` (Repair-Lock aktiv → HTTP 409, keine Mutation, kein Restart), `unverified` (Lock frei, aber Downloads/Backups unpruefbar → Restart mit strukturierter Warnung), `clear` (aktuell unerreichbar, da UNVERIFIABLE_ACTIVITY_CATEGORIES nicht leer). Restart ueber bestehenden `BotRestartTrigger.trigger_restart("bot")`, unveraendert. **Kein IPC, kein Socket, keine neue State-Registry.** Bugfix am globalen HTTPException-Handler in `control_center/app.py` (reicht jetzt `exc.headers` durch, betrifft `Retry-After` bei 429). Details: `docs/audits/CC-LOGGER-L5_RUNTIME_SNAPSHOT_CONTROLLED_APPLY_2026-09-23.md`. | `docs/audits/CC-LOGGER-L5_RUNTIME_SNAPSHOT_CONTROLLED_APPLY_2026-09-23.md` | 2 neue Endpunkte (runtime-status, apply), 2 neue App-Layer-Funktionen (write_runtime_snapshot/read_runtime_snapshot + evaluate_apply_preflight + LoggerApplyRateLimiter), 35 neue Tests; 103 + 552 + (Logger-Suite) passed, 0 Regressionen |
 | **CC-LOGGER-L6 (Logger-Verwaltungs-UI)** — UI-only, keine Backend-Aenderung. Neue Seite `/logger` (eigenes Template + eigene JS-Datei, Stack-Pattern wie /statistics) mit vier Panels: Runtime-Status (KPI + Tabelle, Zustaende available/missing/corrupt), Persistierte Konfiguration (Tabelle, Semantik "wirksam beim naechsten Start"), Desired-vs-Actual-Diff (berechnet aus State, kein neuer API-Call), Apply (einziger POST /api/v1/admin/logger/apply-Call, Antwort bestimmt die Darstellung: unverified/clear/blocked/config_missing/429/403). Rate-Limit-Countdown aus Retry-After-Header. Wiederverwendet: common.js-Helper (apiUrl/checkAuth/_loadInto/_escapeHtml/showOnly), common.css-Klassen, Tabler-Komponenten. Keine Aenderung an common.js/common.css. Kein Config-PATCH-UI (bewusst ausserhalb L6). Details: `docs/audits/CC-LOGGER-L6_LOGGER_UI_2026-09-23.md`. | `docs/audits/CC-LOGGER-L6_LOGGER_UI_2026-09-23.md` | 1 neue Seite, 1 neue JS-Datei, 4 Panels, 6 neue UI-Tests; 218 + 560 passed, 0 Regressionen |
 | **CC-LOGGER-L7 (Telegram-Migration)** — migriert `EnhancedLoggerMenuHandler` (Telegram) auf dieselbe Fachlogik wie Control Center statt eigener Parallelimplementierung. `toggle_module`/`set_module_level`/`enable_all_modules`/`disable_all_modules` nutzen jetzt `services/logger_admin.py::update_logger_config()` (statt eigenem, nicht-atomarem Save-Pfad); `show_log_file_detail`/`show_log_files_list`/`show_log_files_stats` nutzen `get_log_file()`/`list_log_files()`/`get_log_file_stats()`. **Verifizierter Vorbefund:** 54 von 75 real aktiven Modulnamen fehlten in `data/module_logger_config.json` (41 real reaktivierbar, mehrheitlich P0). **Nutzerentscheidung:** neue, nicht per HTTP exponierte `ensure_module_config_entry()` schließt die Lücke, ohne die L4-Entscheidung für die öffentliche API aufzuweichen. Bewusste Verhaltensänderungen: korrekte statt naive Level-Zählung, konsolidierte Traversal-Fehlermeldung, Sortierung nach mtime statt Größe, rotierte Logs jetzt sichtbar, erweiterte Datei-Statistik. Kategorie-D-Funktionen (globales Log-Level, Modul-/Fehler-Statistiken, volle loggerDict-Introspektion, In-Process-Reload, Cleanup) bewusst nicht migriert, als OPEN-Findings dokumentiert. 2 vorbestehende Defekte gefunden (kaputte Cleanup-Callback-Verdrahtung, tote `logger_search_module`-Route). Details: `docs/audits/CC-LOGGER-L7_TELEGRAM_MIGRATION_2026-09-26.md`. | `docs/audits/CC-LOGGER-L7_TELEGRAM_MIGRATION_2026-09-26.md` | 1 neue App-Layer-Funktion (`ensure_module_config_entry`), 7 migrierte Telegram-Funktionen, 22 neue Tests über 4 Testdateien (2 davon neu); 245 + 336 passed (thematisch), volle Suite 5633 passed / 0 failed |
+| **CC-LOGGER-L6.1 (File Handler Control)** — UI-only-Nachtrag zu L6 (nicht L8, das bleibt Parity-Audit). Spalte „File" in Panel 2 von `/logger` schaltet `file_handler` bereits persistierter Module über das bestehende `PATCH /api/v1/admin/logger/config`; wirksam erst nach Apply/Restart (L5), kein Live-Control. Kein neuer Endpoint, keine Backend-Änderung, `ensure_module_config_entry()` unverändert. | Branch `feat/cc-logger-l6-1-file-handler-control` (noch nicht gemergt) | 11 neue Tests; 680 passed (thematisch), volle Suite steht beim Nutzer aus. Nachgezogener P3-Fix: Diff-Panel erkennt `EnhancedRotatingFileHandler` jetzt als Log-Datei (+5 node-Tests, 685 passed thematisch). Neuer OPEN-Befund (P3): `setup_module_logging()` übersteuert persistiertes `file_handler` |
+| **CC-LOGGER-L6.2 (Level Control)** — UI-only-Nachtrag zu L6/L6.1. Spalte „Level" in Panel 2 von `/logger` ist eine Auswahl mit exakt `ALLOWED_LOG_LEVELS` (Reihenfolge wie Telegram), sendet über das bestehende `PATCH /api/v1/admin/logger/config` nur `{level}`; wirksam erst nach Apply/Restart. Kein neuer Endpoint, keine Backend-Änderung. PATCH-Ablauf mit L6.1 gemeinsam (`_loggerPatchModuleConfig()`). | Branch `feat/cc-logger-l6-1-file-handler-control` (noch nicht gemergt) | 27 neue Tests; 712 passed (thematisch), volle Suite steht beim Nutzer aus. Bestehender OPEN-Befund `setup_module_logging()`-Übersteuerung um `level` ergänzt |
 ---
 
 ## 3. Recent Major Changes (seit v10-Freeze)
@@ -425,5 +427,47 @@ GO/NO-GO-Verdikt für v11.)*
   Regressionen. Volle Suite (Nutzer, 2026-09-26): 5633 passed / 1
   skipped / 11 subtests passed / 0 failed. Details:
   `docs/audits/CC-LOGGER-L7_TELEGRAM_MIGRATION_2026-09-26.md`.
+
+- **CC-LOGGER-L6.1 (File Handler Control):** UI-only-Nachtrag zu L6.
+  Die Spalte „File" in Panel 2 („Persistierte Konfiguration") der
+  `/logger`-Seite ist ein Schalter. `logger.js` sendet
+  `PATCH /api/v1/admin/logger/config` mit
+  `{"modules": {"<Modul>": {"file_handler": <bool>}}}` — nur dieses
+  Feld, expliziter Zielwert, `enabled` bewusst nicht mitgesetzt
+  (Abweichung zu Telegrams `toggle_module()`). Nur bereits in
+  `module_logger_config.json` stehende Module sind schaltbar (L4);
+  `ensure_module_config_entry()` bleibt In-Process-exklusiv (L7).
+  Wirksam erst nach „Konfiguration anwenden" (L5-Restart), kein
+  Live-Control (L3). Kein neuer Endpoint, keine neue Page, keine
+  Backend-Änderung. Tests: +9 API-Vertragstests
+  (`test_control_center_logger_api.py`), +2 UI-Marker-Tests
+  (`test_control_center_ui.py`). Regressionsergebnis (thematisch):
+  680 passed. Volle Suite: steht beim Nutzer aus. Vorbestehender
+  L6-Defekt nachgezogen (P3-Fix, Nutzerfreigabe): `renderDiff()`
+  erkannte `EnhancedRotatingFileHandler` nicht als Log-Datei;
+  `_loggerHandlerKind()` klassifiziert jetzt jedes `*FileHandler` als
+  Datei (+5 Tests, `logger.js` real per node ausgeführt; thematisch 685
+  passed). Neuer OPEN-Befund (P3): `setup_module_logging()` (u. a. in
+  `EnhancedMetadataProcessor.__init__`) übersteuert das persistierte
+  `file_handler` — für solche Module ist der L6.1-Schalter wirkungslos.
+  Details:
+  `docs/audits/CC-LOGGER-L6.1_FILE_HANDLER_CONTROL_2026-09-27.md`.
+
+- **CC-LOGGER-L6.2 (Level Control):** UI-only-Nachtrag zu L6/L6.1.
+  Die Spalte „Level" in Panel 2 der `/logger`-Seite ist eine
+  Auswahl mit exakt `services/logger_admin.py::ALLOWED_LOG_LEVELS`
+  (DEBUG/INFO/WARNING/ERROR/CRITICAL, Reihenfolge wie Telegrams
+  `log_levels`; Gleichlauf per Test gepinnt, da `GET /config` die
+  Liste nicht liefert). Änderung sendet über das bestehende
+  `PATCH /api/v1/admin/logger/config` ausschließlich `{level}`.
+  Nur persistierte Module, wirksam erst nach „Konfiguration anwenden"
+  (L5-Restart), kein Live-Control (L3). Der PATCH-Ablauf aus L6.1 ist
+  jetzt gemeinsam (`_loggerPatchModuleConfig()`), L6.1-Verhalten
+  unverändert (per node-Regressionstest belegt). Tests: +17 API,
+  +2 UI-Marker, +8 node-Ausführungstests
+  (`tests/test_logger_js_config_controls.py`); thematisch 712 passed.
+  Einschränkung: für Module mit `setup_module_logging()` im Konstruktor
+  wirkungslos (bestehender OPEN-Befund ergänzt). Details:
+  `docs/audits/CC-LOGGER-L6.2_LEVEL_CONTROL_2026-09-27.md`.
 
 
