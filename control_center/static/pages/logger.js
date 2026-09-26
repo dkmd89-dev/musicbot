@@ -2,8 +2,15 @@
 // Logger-Seite: Runtime-Status, persistierte Konfiguration,
 // Desired-vs-Actual-Vergleich und kontrollierter Bot-Neustart.
 //
-// L6.2: Runtime-Status + Config + Diff.
-// L6.3: Apply (kommt noch).
+// L6 (CC-LOGGER-L6): Runtime-Status + Config + Diff + Apply.
+// L6.1 (CC-LOGGER-L6.1 — File Handler Control): Spalte "File" in
+//       Panel 2 ist ein Schalter, der ausschliesslich `file_handler`
+//       eines bereits persistierten Moduls ueber das bestehende
+//       PATCH /api/v1/admin/logger/config setzt. Wirksam erst nach
+//       Panel 4 (Bot-Neustart) — kein Live-Control (L3).
+// L6.2 (CC-LOGGER-L6.2 — Level Control): Spalte "Level" in Panel 2 ist
+//       eine Auswahl, die ausschliesslich `level` ueber denselben PATCH
+//       setzt (gleicher Pfad wie L6.1).
 //
 // Nutzt die gemeinsamen Helfer aus common.js
 // (apiUrl(), _loadInto(), _escapeHtml(), checkAuth()).
@@ -36,7 +43,14 @@ function _loggerTimeAgo(isoString) {
 }
 
 function _loggerHandlerKind(handlerName) {
-  if (handlerName === "FileHandler") return "file";
+  // Der Snapshot enthaelt nur type(h).__name__, keine Klassenhierarchie.
+  // Alle logging.FileHandler-Unterklassen enden per Konvention auf
+  // "FileHandler" (RotatingFileHandler, TimedRotatingFileHandler,
+  // WatchedFileHandler, logger.py::EnhancedRotatingFileHandler) —
+  // identisch zur isinstance(h, logging.FileHandler)-Pruefung in
+  // ModuleLoggerManager._apply_module_config(). Muss vor dem
+  // StreamHandler-Zweig stehen (FileHandler erbt von StreamHandler).
+  if (/FileHandler$/.test(handlerName)) return "file";
   if (handlerName.indexOf("StreamHandler") !== -1) return "stream";
   return "other";
 }
@@ -138,14 +152,14 @@ function renderConfig(el, body) {
   const rows = names.map(function(name) {
     const m = modules[name] || {};
     const enabled = m.enabled !== false;
-    const fileH = m.file_handler ? "✓" : "—";
+    const fileH = _loggerFileToggleHtml(name, !!m.file_handler);
     const consoleH = m.console_handler ? "✓" : "—";
     const status = enabled
       ? '<span class="badge bg-success-lt">aktiv</span>'
       : '<span class="badge bg-secondary-lt">disabled</span>';
     return '<tr>' +
       '<td>' + _escapeHtml(name) + '</td>' +
-      '<td><code>' + _escapeHtml(m.level || "INFO") + '</code></td>' +
+      '<td>' + _loggerLevelSelectHtml(name, m.level || "INFO") + '</td>' +
       '<td class="text-center">' + fileH + '</td>' +
       '<td class="text-center">' + consoleH + '</td>' +
       '<td>' + status + '</td>' +
@@ -153,7 +167,8 @@ function renderConfig(el, body) {
   }).join("");
 
   el.innerHTML =
-    '<p class="text-secondary small mb-2">' + names.length + ' Module. Wirksam beim naechsten Bot-Start.</p>' +
+    '<p class="text-secondary small mb-2">' + names.length + ' Module. Wirksam beim naechsten Bot-Start. ' +
+      'Level und „File" (eigene Log-Datei) sind pro Modul aenderbar — nur gespeicherte Absicht, siehe „Konfiguration anwenden".</p>' +
     '<div class="table-responsive">' +
       '<table class="table table-sm table-vcenter">' +
         '<thead><tr><th>Modul</th><th>Level</th><th class="text-center">File</th><th class="text-center">Console</th><th>Status</th></tr></thead>' +
@@ -171,6 +186,196 @@ function loadConfig() {
     renderConfig,
     loadConfig,
   );
+}
+
+// ---------------------------------------------------------------------
+// CC-LOGGER-L6.1 / L6.2 — Persistierte Konfiguration bearbeiten
+// ---------------------------------------------------------------------
+//
+// Beide Controls setzen jeweils GENAU EIN Feld eines Moduls, das bereits
+// in module_logger_config.json steht, ueber das bestehende
+// PATCH /api/v1/admin/logger/config:
+//   L6.1 File-Schalter  -> { file_handler: <bool> }
+//   L6.2 Level-Auswahl  -> { level: <LEVEL> }
+// Es wird ein expliziter Zielwert gesendet (idempotentes Setzen), kein
+// serverseitiges Umschalten. `enabled`/`console_handler` werden nie
+// mitgesendet (anders als Telegrams toggle_module(), das `enabled`
+// mitsetzt). Unbekannte Module lehnt die API mit
+// LOGGER_CONFIG_UNKNOWN_MODULE ab (L4) — das Anlegen neuer Module
+// (ensure_module_config_entry) bleibt Telegram-/In-Process-exklusiv (L7).
+// Die Backend-Validierung bleibt autoritativ.
+
+// Exakt services/logger_admin.py::ALLOWED_LOG_LEVELS, in der Reihenfolge
+// von EnhancedLoggerMenuHandler.log_levels (aufsteigende Schwere).
+// GET /config liefert die Liste nicht mit; der Gleichlauf wird durch
+// tests/test_control_center_ui.py gepinnt.
+const LOGGER_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
+
+function _loggerFileToggleHtml(name, checked) {
+  return '<label class="form-check form-switch d-inline-block mb-0" ' +
+      'title="Eigene Log-Datei (file_handler) — wirksam nach Bot-Neustart">' +
+    '<input type="checkbox" class="form-check-input logger-config-control logger-file-toggle" ' +
+      'data-module="' + _escapeHtml(name) + '"' +
+      (checked ? ' checked' : '') +
+      ' aria-label="Eigene Log-Datei fuer ' + _escapeHtml(name) + '">' +
+  '</label>';
+}
+
+function _loggerLevelSelectHtml(name, current) {
+  const options = LOGGER_LEVELS.map(function(level) {
+    return '<option value="' + level + '"' + (level === current ? ' selected' : '') + '>' +
+      level + '</option>';
+  });
+  // Persistierter Wert ausserhalb der Whitelist (z. B. handeditierte
+  // Datei): ehrlich anzeigen, aber nicht auswaehlbar anbieten.
+  if (LOGGER_LEVELS.indexOf(current) === -1) {
+    options.unshift('<option value="" selected disabled>' +
+      _escapeHtml(current) + ' (ungueltig)</option>');
+  }
+  return '<select class="form-select form-select-sm logger-config-control logger-level-select" ' +
+      'style="min-width: 8rem;" ' +
+      'data-module="' + _escapeHtml(name) + '" ' +
+      'data-current="' + _escapeHtml(current) + '" ' +
+      'title="Persistiertes Level — wirksam nach Bot-Neustart" ' +
+      'aria-label="Level fuer ' + _escapeHtml(name) + '">' +
+    options.join("") +
+  '</select>';
+}
+
+function _loggerSetConfigControlsDisabled(disabled) {
+  document.querySelectorAll(".logger-config-control").forEach(function(el) {
+    el.disabled = disabled;
+  });
+}
+
+// Gemeinsamer PATCH-Pfad. `fields` enthaelt genau das eine zu setzende
+// Feld; `revert()` stellt bei Fehlschlag den vorherigen UI-Zustand her.
+async function _loggerPatchModuleConfig(moduleName, fields, labels, revert) {
+  // Waehrend eines laufenden Writes keine weiteren Controls bedienbar —
+  // verhindert konkurrierende PATCH-Requests auf dieselbe Datei.
+  _loggerSetConfigControlsDisabled(true);
+  _loggerRenderAlertInto("logger-config-status", "info", "Speichere…",
+    _escapeHtml(moduleName) + ": " + _escapeHtml(labels.pending));
+
+  const patch = {};
+  patch[moduleName] = fields;
+
+  let reload = false;
+  try {
+    const res = await fetch(apiUrl("/api/v1/admin/logger/config"), {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      body: JSON.stringify({ modules: patch }),
+    });
+
+    if (res.status === 200) {
+      _loggerRenderAlertInto(
+        "logger-config-status",
+        "success",
+        "Gespeichert — noch nicht aktiv",
+        labels.success + " " +
+          "Der laufende Bot wurde NICHT veraendert; wirksam erst nach " +
+          "„Konfiguration anwenden (Bot-Neustart)\"."
+      );
+      reload = true;
+      return;
+    }
+
+    // Fehlschlag: Control auf den gespeicherten Zustand zuruecksetzen.
+    revert();
+
+    if (res.status === 401) {
+      showOnly("login-view");
+      return;
+    }
+    if (res.status === 403) {
+      _loggerRenderAlertInto("logger-config-status", "danger", "Zugriff verweigert",
+        "CSRF- oder Auth-Pruefung fehlgeschlagen. Bitte Seite neu laden.");
+      return;
+    }
+
+    const body = await res.json().catch(function() { return null; });
+    const detail = (body && (body.detail || body.error)) || {};
+    const code = detail.code || "";
+    let title = "Nicht gespeichert";
+    if (code === "LOGGER_CONFIG_UNKNOWN_MODULE") {
+      title = "Modul nicht in der persistierten Konfiguration";
+    } else if (code === "LOGGER_CONFIG_MISSING") {
+      title = "Keine persistierte Konfiguration vorhanden";
+    } else if (code === "LOGGER_CONFIG_INVALID_LEVEL") {
+      title = "Ungueltiges Level";
+    }
+    _loggerRenderAlertInto("logger-config-status", "danger", title,
+      _escapeHtml(detail.message || ("HTTP " + res.status)));
+    reload = true;  // Tabelle mit dem echten Dateistand abgleichen
+  } catch (err) {
+    revert();
+    _loggerRenderAlertInto("logger-config-status", "danger", "Netzwerkfehler",
+      _escapeHtml(err.message || String(err)));
+  } finally {
+    _loggerSetConfigControlsDisabled(false);
+    // loadConfig() rendert Panel 2 neu und zieht darueber renderDiff()
+    // nach — die Aenderung erscheint sofort im Desired-vs-Actual-Panel.
+    if (reload) loadConfig();
+  }
+}
+
+function _loggerSetFileHandler(input) {
+  const moduleName = input.getAttribute("data-module");
+  const wanted = !!input.checked;
+  if (!moduleName) return;
+  return _loggerPatchModuleConfig(
+    moduleName,
+    { file_handler: wanted },
+    {
+      pending: "file_handler → " + (wanted ? "an" : "aus"),
+      success: "Eigene Log-Datei fuer <code>" + _escapeHtml(moduleName) + "</code> " +
+        (wanted ? "aktiviert" : "deaktiviert") + ".",
+    },
+    function() { input.checked = !wanted; },
+  );
+}
+
+function _loggerSetLevel(select) {
+  const moduleName = select.getAttribute("data-module");
+  const previous = select.getAttribute("data-current") || "";
+  const wanted = select.value;
+  if (!moduleName || !wanted || wanted === previous) return;
+  // Nur Werte aus der Whitelist senden (die Backend-Validierung bleibt
+  // trotzdem autoritativ).
+  if (LOGGER_LEVELS.indexOf(wanted) === -1) {
+    select.value = previous;
+    return;
+  }
+  return _loggerPatchModuleConfig(
+    moduleName,
+    { level: wanted },
+    {
+      pending: "level → " + wanted,
+      success: "Level fuer <code>" + _escapeHtml(moduleName) + "</code>: <code>" +
+        _escapeHtml(previous) + "</code> → <code>" + _escapeHtml(wanted) + "</code>.",
+    },
+    function() { select.value = previous; },
+  );
+}
+
+function _loggerInitConfigControls() {
+  // Event-Delegation: Panel 2 wird bei jedem loadConfig() neu gerendert.
+  const container = document.getElementById("logger-config-content");
+  if (!container) return;
+  container.addEventListener("change", function(ev) {
+    const target = ev.target;
+    if (!target || !target.classList) return;
+    if (target.classList.contains("logger-file-toggle")) {
+      _loggerSetFileHandler(target);
+    } else if (target.classList.contains("logger-level-select")) {
+      _loggerSetLevel(target);
+    }
+  });
 }
 
 // =====================================================================
@@ -224,7 +429,7 @@ function renderDiff() {
     const rtLevel = rtLevels[name];
     const cfgLevel = cfgM.level || "INFO";
     const handlerList = rtHandlers[name] || [];
-    const rtHasFile = handlerList.indexOf("FileHandler") !== -1;
+    const rtHasFile = handlerList.some(function(h) { return _loggerHandlerKind(h) === "file"; });
     const rtHasConsole = handlerList.some(function(h) { return _loggerHandlerKind(h) === "stream"; });
     const wantFile = !!cfgM.file_handler;
     const wantConsole = !!cfgM.console_handler;
@@ -296,8 +501,12 @@ function _loggerClearRateLimitTimer() {
 }
 
 function _loggerRenderAlert(kind, title, body) {
+  _loggerRenderAlertInto("logger-apply-status", kind, title, body);
+}
+
+function _loggerRenderAlertInto(elementId, kind, title, body) {
   // kind: "success" | "warning" | "danger" | "info"
-  const el = document.getElementById("logger-apply-status");
+  const el = document.getElementById(elementId);
   if (!el) return;
   el.innerHTML =
     '<div class="alert alert-' + kind + ' mb-0"><div>' +
@@ -499,6 +708,7 @@ function initPage() {
     }
 
     _loggerInitApplyPanel();
+    _loggerInitConfigControls();
 
     // Apply-Button erst aktivieren, wenn die Config geladen ist —
     // sonst waere ein Klick ein Blindflug ohne Diff-Kontext.

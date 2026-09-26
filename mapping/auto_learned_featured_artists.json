@@ -569,6 +569,19 @@
       ],
       "status": "OBSERVED"
     },
+    "Nina Chuba": {
+      "canonical": "Nina Chuba",
+      "last_observed_track": "Apache - Nur mich -",
+      "observations": 1,
+      "primary_artists": [
+        "Apache"
+      ],
+      "role": "featured_artist",
+      "sources": [
+        "metadata"
+      ],
+      "status": "OBSERVED"
+    },
     "OHO Bani": {
       "canonical": "OHO Bani",
       "last_observed_track": "01099 - Cider",

@@ -892,3 +892,230 @@ async def test_apply_rate_limit_second_call_429(
     if isinstance(detail, dict):
         assert detail.get("code") == "LOGGER_APPLY_RATE_LIMITED"
     assert r2.headers.get("retry-after") is not None
+
+
+# =====================================================================
+# CC-LOGGER-L6.1 — File Handler Control (Web-UI → bestehender PATCH)
+# =====================================================================
+#
+# Die /logger-Seite sendet fuer den File-Schalter exakt diesen Body:
+#     {"modules": {"<Modul>": {"file_handler": <bool>}}}
+# Keine neue API — diese Tests pinnen den Vertrag des bestehenden
+# PATCH-Endpoints fuer genau diese Nutzung.
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "module_name, wanted", [("ModA", False), ("ModB", True)]
+)
+async def test_l6_1_file_handler_patch_sets_only_file_handler(
+    isolated_logs: _RealPath,
+    isolated_data_dir: _RealPath,
+    dev_auth: None,
+    module_name: str,
+    wanted: bool,
+) -> None:
+    before = _read_repo_config(isolated_data_dir)
+    async with await _client() as c:
+        r = await c.patch(
+            "/api/v1/admin/logger/config",
+            json={"modules": {module_name: {"file_handler": wanted}}},
+            headers={"Origin": "http://test"},
+        )
+    assert r.status_code == 200
+    assert r.json()["modules_updated"] == [module_name]
+
+    after = _read_repo_config(isolated_data_dir)
+    assert after[module_name]["file_handler"] is wanted
+    # Alle anderen Felder des Moduls unveraendert — insbesondere
+    # `enabled` (anders als Telegrams toggle_module()).
+    for field in ("enabled", "level", "console_handler", "custom_format"):
+        assert after[module_name][field] == before[module_name][field]
+    # Anderes Modul komplett unveraendert.
+    other = "ModB" if module_name == "ModA" else "ModA"
+    assert after[other] == before[other]
+
+
+@pytest.mark.anyio
+async def test_l6_1_file_handler_patch_is_idempotent(
+    isolated_logs: _RealPath, isolated_data_dir: _RealPath, dev_auth: None
+) -> None:
+    """Expliziter Zielwert statt Toggle: zweimal derselbe Wert -> derselbe
+    Zustand (kein Hin-und-Her-Schalten)."""
+    async with await _client() as c:
+        for _ in range(2):
+            r = await c.patch(
+                "/api/v1/admin/logger/config",
+                json={"modules": {"ModA": {"file_handler": False}}},
+                headers={"Origin": "http://test"},
+            )
+            assert r.status_code == 200
+    assert _read_repo_config(isolated_data_dir)["ModA"]["file_handler"] is False
+
+
+@pytest.mark.anyio
+async def test_l6_1_file_handler_patch_does_not_touch_runtime_handlers(
+    isolated_logs: _RealPath, isolated_data_dir: _RealPath, dev_auth: None
+) -> None:
+    """Kein Live-Control (L3): der PATCH fuegt im Prozess keinen
+    FileHandler hinzu und entfernt keinen."""
+    import logging
+
+    real = logging.getLogger("ModB")
+    handlers_before = list(real.handlers)
+    async with await _client() as c:
+        r = await c.patch(
+            "/api/v1/admin/logger/config",
+            json={"modules": {"ModB": {"file_handler": True}}},
+            headers={"Origin": "http://test"},
+        )
+    assert r.status_code == 200
+    assert list(real.handlers) == handlers_before
+
+
+@pytest.mark.anyio
+async def test_l6_1_file_handler_patch_rejects_unknown_module_without_creating_it(
+    isolated_logs: _RealPath, isolated_data_dir: _RealPath, dev_auth: None
+) -> None:
+    """Nur bereits persistierte Module sind schaltbar. Das Web legt kein
+    Modul an (ensure_module_config_entry bleibt In-Process-exklusiv, L7)."""
+    import hashlib
+
+    path = isolated_data_dir / "module_logger_config.json"
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    async with await _client() as c:
+        r = await c.patch(
+            "/api/v1/admin/logger/config",
+            json={"modules": {"RealButUnknownModule": {"file_handler": True}}},
+            headers={"Origin": "http://test"},
+        )
+    assert r.status_code == 422
+    assert _error_code(r) == "LOGGER_CONFIG_UNKNOWN_MODULE"
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("bad_value", ["true", 1, None])
+async def test_l6_1_file_handler_patch_rejects_non_bool(
+    isolated_logs: _RealPath,
+    isolated_data_dir: _RealPath,
+    dev_auth: None,
+    bad_value,
+) -> None:
+    async with await _client() as c:
+        r = await c.patch(
+            "/api/v1/admin/logger/config",
+            json={"modules": {"ModA": {"file_handler": bad_value}}},
+            headers={"Origin": "http://test"},
+        )
+    assert r.status_code == 422
+    assert _error_code(r) == "LOGGER_CONFIG_INVALID_TYPE"
+    assert _read_repo_config(isolated_data_dir)["ModA"]["file_handler"] is True
+
+
+@pytest.mark.anyio
+async def test_l6_1_file_handler_patch_requires_csrf_origin(
+    isolated_logs: _RealPath, isolated_data_dir: _RealPath, dev_auth: None
+) -> None:
+    async with await _client() as c:
+        r = await c.patch(
+            "/api/v1/admin/logger/config",
+            json={"modules": {"ModA": {"file_handler": False}}},
+            headers={"Origin": "http://evil.example"},
+        )
+    assert r.status_code == 403
+    assert _read_repo_config(isolated_data_dir)["ModA"]["file_handler"] is True
+
+
+# =====================================================================
+# CC-LOGGER-L6.2 — Level Control (Web-UI → bestehender PATCH)
+# =====================================================================
+#
+# Die /logger-Seite sendet fuer die Level-Auswahl exakt diesen Body:
+#     {"modules": {"<Modul>": {"level": "<LEVEL>"}}}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("level", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+async def test_l6_2_level_patch_sets_only_level(
+    isolated_logs: _RealPath,
+    isolated_data_dir: _RealPath,
+    dev_auth: None,
+    level: str,
+) -> None:
+    before = _read_repo_config(isolated_data_dir)
+    async with await _client() as c:
+        r = await c.patch(
+            "/api/v1/admin/logger/config",
+            json={"modules": {"ModB": {"level": level}}},
+            headers={"Origin": "http://test"},
+        )
+    assert r.status_code == 200
+    assert r.json()["modules_updated"] == ["ModB"]
+
+    after = _read_repo_config(isolated_data_dir)
+    assert after["ModB"]["level"] == level
+    for field in ("enabled", "file_handler", "console_handler", "custom_format"):
+        assert after["ModB"][field] == before["ModB"][field]
+    assert after["ModA"] == before["ModA"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "bad_level", ["debug", "TRACE", "OFF", "ALL", "NOTSET", "WARN", "FATAL", 10, "", None]
+)
+async def test_l6_2_level_patch_rejects_values_outside_whitelist(
+    isolated_logs: _RealPath,
+    isolated_data_dir: _RealPath,
+    dev_auth: None,
+    bad_level,
+) -> None:
+    """Backend-Whitelist bleibt autoritativ: keine Aliase, keine
+    numerischen Level, kein Case-Folding."""
+    import hashlib
+
+    path = isolated_data_dir / "module_logger_config.json"
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    async with await _client() as c:
+        r = await c.patch(
+            "/api/v1/admin/logger/config",
+            json={"modules": {"ModA": {"level": bad_level}}},
+            headers={"Origin": "http://test"},
+        )
+    assert r.status_code == 422
+    assert _error_code(r) == "LOGGER_CONFIG_INVALID_LEVEL"
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+@pytest.mark.anyio
+async def test_l6_2_level_patch_does_not_touch_runtime_level(
+    isolated_logs: _RealPath, isolated_data_dir: _RealPath, dev_auth: None
+) -> None:
+    """Kein Live-Control (L3): der laufende Logger behaelt sein Level."""
+    import logging
+
+    real = logging.getLogger("ModA")
+    level_before = real.level
+    async with await _client() as c:
+        r = await c.patch(
+            "/api/v1/admin/logger/config",
+            json={"modules": {"ModA": {"level": "CRITICAL"}}},
+            headers={"Origin": "http://test"},
+        )
+    assert r.status_code == 200
+    assert real.level == level_before
+
+
+@pytest.mark.anyio
+async def test_l6_2_level_patch_rejects_unknown_module(
+    isolated_logs: _RealPath, isolated_data_dir: _RealPath, dev_auth: None
+) -> None:
+    async with await _client() as c:
+        r = await c.patch(
+            "/api/v1/admin/logger/config",
+            json={"modules": {"RealButUnknownModule": {"level": "DEBUG"}}},
+            headers={"Origin": "http://test"},
+        )
+    assert r.status_code == 422
+    assert _error_code(r) == "LOGGER_CONFIG_UNKNOWN_MODULE"
+    assert "RealButUnknownModule" not in _read_repo_config(isolated_data_dir)
