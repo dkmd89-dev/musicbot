@@ -481,6 +481,92 @@ def update_logger_config(
     return current
 
 
+# Default-Werte fuer ein neu angelegtes Modul — identisch zum
+# Default-Zweig in ModuleLoggerManager.get_module_config()
+# (handlers/enhanced_logger_menu_handler.py), damit ein per
+# ensure_module_config_entry() neu angelegtes Modul sich fuer den
+# aufrufenden Code nicht von einem bereits vorhandenen unterscheidet.
+DEFAULT_NEW_MODULE_CONFIG: Dict[str, Any] = {
+    "enabled": True,
+    "level": "INFO",
+    "file_handler": True,
+    "console_handler": True,
+    "custom_format": None,
+}
+
+
+def ensure_module_config_entry(
+    config: Any, module_name: str
+) -> Dict[str, Dict[str, Any]]:
+    """Legt ein unbekanntes Modul mit Default-Werten in der persistenten
+    Konfiguration an, falls es dort noch nicht existiert (CC-LOGGER-L7).
+
+    Hintergrund (siehe L7-Analyse): `validate_logger_config_patch()`/
+    `update_logger_config()` lehnen unbekannte Module bewusst ab (L4-
+    Entscheidung) — Control Center hat keine autoritative Quelle dafuer,
+    welche Module real aktiv sind. Telegram/der Bot-Prozess hat diese
+    Quelle sehr wohl (`_module_loggers`, prozesslokal). Diese Funktion
+    schliesst genau diese Luecke, OHNE die L4-Entscheidung fuer die
+    oeffentliche API aufzuweichen:
+
+    - **Nicht** ueber `PATCH /api/v1/admin/logger/config` erreichbar.
+      Es gibt dafuer keinen Router-Endpunkt und es soll keinen geben —
+      CC bekaeme sonst eine Moeglichkeit, beliebige unbekannte
+      Modulnamen anzulegen, ohne die reale Aktivitaet pruefen zu
+      koennen.
+    - Ausschliesslich fuer In-Process-Aufrufer gedacht, die die
+      Modul-Existenz bereits anderweitig kennen (Telegram ueber
+      `_module_loggers`).
+
+    Semantik:
+    - Modul bereits vorhanden -> keine Aenderung, kein Schreibvorgang
+      (idempotent), die aktuelle Konfiguration wird unveraendert
+      zurueckgegeben.
+    - Modul unbekannt -> wird mit `DEFAULT_NEW_MODULE_CONFIG` angelegt
+      und atomar geschrieben.
+    - Persistente Konfiguration fehlt komplett -> `LoggerConfigError`
+      (`LOGGER_CONFIG_MISSING`), identisch zu `update_logger_config()`:
+      der Bot muss mindestens einmal gestartet worden sein.
+
+    Diese Funktion validiert oder aendert NUR die Existenz des
+    Moduleintrags. Feldwerte (Level, Handler, ...) werden weiterhin
+    ausschliesslich ueber `update_logger_config()` mit
+    `validate_logger_config_patch()` gesetzt — Aufrufer rufen diese
+    Funktion also VOR einem `update_logger_config()`-Patch, wenn das
+    Zielmodul unbekannt sein koennte.
+    """
+    if not isinstance(module_name, str) or not module_name:
+        raise LoggerConfigError(
+            f"Modulname muss ein nicht-leerer String sein: {module_name!r}",
+            code="LOGGER_CONFIG_PATCH_INVALID",
+        )
+
+    path = _resolve_config_path(config)
+    if not path.exists():
+        raise LoggerConfigError(
+            "Keine persistente Logger-Konfiguration vorhanden. "
+            "Der Bot muss mindestens einmal gestartet worden sein, damit "
+            "die Default-Konfiguration generiert wird.",
+            code="LOGGER_CONFIG_MISSING",
+        )
+    current = read_logger_config(config)
+
+    if module_name in current:
+        return current
+
+    current[module_name] = dict(DEFAULT_NEW_MODULE_CONFIG)
+
+    try:
+        _atomic_write_json(path, current)
+    except OSError as e:
+        raise LoggerConfigError(
+            f"Logger-Konfiguration konnte nicht geschrieben werden: {e}",
+            code="LOGGER_CONFIG_WRITE_FAILED",
+        ) from e
+
+    return current
+
+
 # =====================================================================
 # CC-LOGGER-L5.1 — Runtime Snapshot (Observability)
 # =====================================================================

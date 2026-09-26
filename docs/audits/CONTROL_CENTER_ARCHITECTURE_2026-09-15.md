@@ -2298,3 +2298,62 @@ Telegram-Migration (L7), Parity-Audit (L8).
 
 Vollstaendige Spezifikation und Test-Liste:
 docs/audits/CC-LOGGER-L6_LOGGER_UI_2026-09-23.md.
+
+## Erweiterung — CC-LOGGER-L7: Telegram-Migration (2026-09-26, auf Nutzerfreigabe)
+
+Keine Backend-/API-Aenderung an Control Center selbst. Migriert
+`handlers/enhanced_logger_menu_handler.py::EnhancedLoggerMenuHandler`
+(Telegram) auf dieselbe Fachlogik wie Control Center, statt weiterhin
+eine eigene Parallelimplementierung zu pflegen.
+
+**Verifizierter Preflight-Befund:** statische Analyse aller
+`get_module_logger()`/`setup_module_logging()`-Aufrufstellen im
+gesamten Produktionscode gegen `data/module_logger_config.json` ergab
+54 von 75 real verwendeten Modulnamen fehlend in der JSON (41 davon
+real aktiv und Bot-prozess-erreichbar, mehrheitlich P0-relevant). Eine
+naive Migration von `toggle_module()`/`set_module_level()` auf
+`update_logger_config()` (lehnt unbekannte Module strikt ab, bewusste
+L4-Entscheidung) haette fuer die Mehrheit der Module eine
+Funktionsregression bedeutet.
+
+**Neue Application-Layer-Funktion** `services/logger_admin.py
+::ensure_module_config_entry()` — legt ein unbekanntes Modul mit den
+Default-Werten von `ModuleLoggerManager.get_module_config()` an.
+**Bewusst nicht ueber `PATCH /api/v1/admin/logger/config` erreichbar**
+— kein neuer Router-Endpunkt, Control Center bleibt bei der strikten
+L4-Semantik (kein Anlegen unbekannter Module ueber die oeffentliche
+API). Nur In-Process-Aufrufer (Telegram/Bot), die die reale
+Modul-Existenz ueber `_module_loggers` kennen, duerfen die Luecke
+schliessen.
+
+**Migrierte Telegram-Funktionen:** `toggle_module()`/
+`set_module_level()` (Persistenz ueber `ensure_module_config_entry()`
++ `update_logger_config()` statt `ModuleLoggerManager`s eigenem,
+nicht-atomarem Save-Pfad; Live-Apply unveraendert Bot-lokal),
+`enable_all_modules()`/`disable_all_modules()` (ein Multi-Modul-Patch
+statt N Einzel-Writes), `show_log_file_detail()` (ueber
+`get_log_file()`/`services/logs/reader.py`), `show_log_files_list()`/
+`show_log_files_stats()` (ueber `list_log_files()`/
+`get_log_file_stats()`).
+
+**Bewusste Verhaltensaenderungen:** korrekte statt naive
+Level-Zaehlung (strukturiertes Level-Feld statt Teilstring-Suche),
+konsolidierte Traversal-Fehlermeldung (identisch zu Control Center),
+Sortierung der Dateiliste nach mtime statt Groesse (Nutzerentscheidung),
+rotierte Logs jetzt sichtbar, erweiterte Datei-Statistik
+(groesste/aelteste Datei).
+
+**Kategorie D — bewusst nicht migriert** (kein zentrales Aequivalent
+vorhanden oder sinnvoll konstruierbar): globales Log-Level (kein
+Persistenz-Schema), Modul-/Fehler-Statistiken (Prozessspeicher,
+unveraenderter Cross-Process-Blocker, identisch zum bestehenden
+Error-Administration-Finding), volle `loggerDict`-Introspektion,
+In-Process-Reload, Cleanup-Funktionen. Als OPEN-Findings in
+`docs/FINDINGS_INDEX.md` dokumentiert.
+
+**Zwei vorbestehende Defekte gefunden** (ausserhalb des L7-Scopes,
+nicht behoben): Cleanup-Aktions-Buttons im Dispatcher nicht
+verdrahtet; tote Route `logger_search_module` ohne Zielmethode.
+
+Vollstaendige Analyse (L1–L6-Preflight, Modul-Taxonomie, Migration-
+Matrix) und Test-Liste: `docs/audits/CC-LOGGER-L7_TELEGRAM_MIGRATION_2026-09-26.md`.

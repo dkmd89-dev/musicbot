@@ -19,8 +19,8 @@
 |---|---|
 | Baseline | v11 (DRAFT) |
 | Vorgänger | `docs/MusicBot_ENGINEERING_BASELINE_v10.md` (Freeze 2026-09-14, 4250 passed / 1 skipped / 0 failed / 11 subtests passed) |
-| Letzte vom Nutzer gemeldete Full-Suite-Zahl (aktuell, nach CC-AC-10A–D „Control Center Admin API Integration") | **5473 passed, 1 skipped, 11 subtests passed, 0 failed, 5 warnings** (305,85 s), 2026-09-22. +1163 gegenüber der zuletzt hier dokumentierten Zahl (4310, 2026-09-14) — deckt neben CC-AC-10A–D auch mehrere zwischenzeitliche, hier nicht einzeln nachgetragene CC-AC-Phasen (u. a. CC-AC-6/CC-AC-9) ab, deren jeweilige Einzelergebnisse in `docs/FINDINGS_INDEX.md` stehen (dort die laufend gepflegte Quelle, siehe Hinweis oben). Unverändertes Skip-/Subtest-Muster (1/11) seit v9 durchgehend. |
-| Zuwachs seit letztem hier dokumentiertem Stand | +1163 passed (4310 → 5473), 0 failed |
+| Letzte vom Nutzer gemeldete Full-Suite-Zahl (aktuell, nach CC-LOGGER-L7 „Telegram-Migration") | **5633 passed, 1 skipped, 11 subtests passed, 0 failed, 6 warnings** (343,70 s), 2026-09-26. +160 gegenüber der zuletzt hier dokumentierten Zahl (5473, 2026-09-22) — deckt `control-center-navidrome` und CC-LOGGER-L2–L7 ab (Einzelergebnisse je Phase in `docs/FINDINGS_INDEX.md`). Unverändertes Skip-/Subtest-Muster (1/11) seit v9 durchgehend. |
+| Zuwachs seit letztem hier dokumentiertem Stand | +160 passed (5473 → 5633), 0 failed |
 
 ---
 
@@ -53,6 +53,7 @@ Abschnitt „Implementierung".
 | **CC-LOGGER-L4 (Startup Apply + Persistent Logger Configuration)** — erster Umsetzungsschritt nach der L3-Entscheidung. Behebt den Startup-Apply-Bug in `ModuleLoggerManager._load_module_configs()` (JSON wurde geladen, aber nicht angewendet — persistierte Level/Handler waren fuer den laufenden Prozess wirkungslos). Neue Application-Layer-Funktionen in `services/logger_admin.py`: `read_logger_config()`, `validate_logger_config_patch()`, `update_logger_config()` (atomarer Write via .tmp+replace), `LoggerConfigError`. Neue Endpunkte unter `/api/v1/admin/logger/config`: `GET` (persistierte Konfiguration, ADMIN) + `PATCH` (merge-by-module + merge-by-field, ADMIN + CSRF, strikte Validierung). **Semantik ehrlich: „wirksam beim naechsten Bot-Start" — kein Runtime-Control, kein IPC, kein Restart.** Kein Schema-Bruch, keine neue Abhaengigkeit. **Verhaltensaenderung:** ab dem ersten Neustart nach dem Fix werden 40 Module je eine Log-Datei anlegen, 18 davon auf DEBUG. Details: `docs/audits/CC-LOGGER-L4_STARTUP_CONFIG_API_2026-09-23.md`. | `docs/audits/CC-LOGGER-L4_STARTUP_CONFIG_API_2026-09-23.md` | 2 Endpunkte (GET/PATCH), 1 Bug-Fix, 47 neue Tests (12 Startup-Apply + 35 App-Layer-/HTTP-Config); 131/540/168 passed ueber die drei Regressionssuiten, 0 Regressionen |
 | **CC-LOGGER-L5 (Runtime Snapshot + Controlled Apply/Restart)** — Stufe 2 + Stufe 3 aus der L3-Entscheidung. **Stufe 2 (Snapshot):** Bot schreibt beim erfolgreichen Startup `data/logger_runtime_snapshot.json` (atomic write, aus dem tatsaechlichen `logging.getLogger(name).level/handlers/disabled` — NICHT aus der Config). Neuer Endpoint `GET /api/v1/admin/logger/runtime-status` (ADMIN, read-only, 3 Zustaende: available/missing/corrupt, Semantik explizit "state_after_last_successful_bot_start"). **Stufe 3 (Apply):** Neuer Endpoint `POST /api/v1/admin/logger/apply` (ADMIN + CSRF + Rate-Limit 60s, Single-Flight via threading.Lock). Dreistufige Preflight-Semantik: `blocked` (Repair-Lock aktiv → HTTP 409, keine Mutation, kein Restart), `unverified` (Lock frei, aber Downloads/Backups unpruefbar → Restart mit strukturierter Warnung), `clear` (aktuell unerreichbar, da UNVERIFIABLE_ACTIVITY_CATEGORIES nicht leer). Restart ueber bestehenden `BotRestartTrigger.trigger_restart("bot")`, unveraendert. **Kein IPC, kein Socket, keine neue State-Registry.** Bugfix am globalen HTTPException-Handler in `control_center/app.py` (reicht jetzt `exc.headers` durch, betrifft `Retry-After` bei 429). Details: `docs/audits/CC-LOGGER-L5_RUNTIME_SNAPSHOT_CONTROLLED_APPLY_2026-09-23.md`. | `docs/audits/CC-LOGGER-L5_RUNTIME_SNAPSHOT_CONTROLLED_APPLY_2026-09-23.md` | 2 neue Endpunkte (runtime-status, apply), 2 neue App-Layer-Funktionen (write_runtime_snapshot/read_runtime_snapshot + evaluate_apply_preflight + LoggerApplyRateLimiter), 35 neue Tests; 103 + 552 + (Logger-Suite) passed, 0 Regressionen |
 | **CC-LOGGER-L6 (Logger-Verwaltungs-UI)** — UI-only, keine Backend-Aenderung. Neue Seite `/logger` (eigenes Template + eigene JS-Datei, Stack-Pattern wie /statistics) mit vier Panels: Runtime-Status (KPI + Tabelle, Zustaende available/missing/corrupt), Persistierte Konfiguration (Tabelle, Semantik "wirksam beim naechsten Start"), Desired-vs-Actual-Diff (berechnet aus State, kein neuer API-Call), Apply (einziger POST /api/v1/admin/logger/apply-Call, Antwort bestimmt die Darstellung: unverified/clear/blocked/config_missing/429/403). Rate-Limit-Countdown aus Retry-After-Header. Wiederverwendet: common.js-Helper (apiUrl/checkAuth/_loadInto/_escapeHtml/showOnly), common.css-Klassen, Tabler-Komponenten. Keine Aenderung an common.js/common.css. Kein Config-PATCH-UI (bewusst ausserhalb L6). Details: `docs/audits/CC-LOGGER-L6_LOGGER_UI_2026-09-23.md`. | `docs/audits/CC-LOGGER-L6_LOGGER_UI_2026-09-23.md` | 1 neue Seite, 1 neue JS-Datei, 4 Panels, 6 neue UI-Tests; 218 + 560 passed, 0 Regressionen |
+| **CC-LOGGER-L7 (Telegram-Migration)** — migriert `EnhancedLoggerMenuHandler` (Telegram) auf dieselbe Fachlogik wie Control Center statt eigener Parallelimplementierung. `toggle_module`/`set_module_level`/`enable_all_modules`/`disable_all_modules` nutzen jetzt `services/logger_admin.py::update_logger_config()` (statt eigenem, nicht-atomarem Save-Pfad); `show_log_file_detail`/`show_log_files_list`/`show_log_files_stats` nutzen `get_log_file()`/`list_log_files()`/`get_log_file_stats()`. **Verifizierter Vorbefund:** 54 von 75 real aktiven Modulnamen fehlten in `data/module_logger_config.json` (41 real reaktivierbar, mehrheitlich P0). **Nutzerentscheidung:** neue, nicht per HTTP exponierte `ensure_module_config_entry()` schließt die Lücke, ohne die L4-Entscheidung für die öffentliche API aufzuweichen. Bewusste Verhaltensänderungen: korrekte statt naive Level-Zählung, konsolidierte Traversal-Fehlermeldung, Sortierung nach mtime statt Größe, rotierte Logs jetzt sichtbar, erweiterte Datei-Statistik. Kategorie-D-Funktionen (globales Log-Level, Modul-/Fehler-Statistiken, volle loggerDict-Introspektion, In-Process-Reload, Cleanup) bewusst nicht migriert, als OPEN-Findings dokumentiert. 2 vorbestehende Defekte gefunden (kaputte Cleanup-Callback-Verdrahtung, tote `logger_search_module`-Route). Details: `docs/audits/CC-LOGGER-L7_TELEGRAM_MIGRATION_2026-09-26.md`. | `docs/audits/CC-LOGGER-L7_TELEGRAM_MIGRATION_2026-09-26.md` | 1 neue App-Layer-Funktion (`ensure_module_config_entry`), 7 migrierte Telegram-Funktionen, 22 neue Tests über 4 Testdateien (2 davon neu); 245 + 336 passed (thematisch), volle Suite 5633 passed / 0 failed |
 ---
 
 ## 3. Recent Major Changes (seit v10-Freeze)
@@ -320,5 +321,109 @@ GO/NO-GO-Verdikt für v11.)*
   Tests: 6 neue UI-Tests in `tests/test_control_center_ui.py`.
   Regressionsergebnis: 218 + 560 passed. Details:
   `docs/audits/CC-LOGGER-L6_LOGGER_UI_2026-09-23.md`.
+
+
+- **CC-LOGGER-L7 (Telegram-Migration):** migriert
+  `handlers/enhanced_logger_menu_handler.py::EnhancedLoggerMenuHandler`
+  auf dieselbe Fachlogik wie Control Center, statt weiterhin eine
+  eigene Parallelimplementierung zu pflegen (L2–L6 hatten Telegram in
+  allen vier Phasen bewusst unverändert gelassen).
+
+  **Verifizierter Preflight-Befund vor der Migration:** ein naiver
+  Wechsel von `toggle_module()`/`set_module_level()` auf
+  `services/logger_admin.py::update_logger_config()` hätte diese
+  Funktion für die Mehrheit der real aktiven Module unbrauchbar
+  gemacht — `update_logger_config()` lehnt unbekannte Module strikt ab
+  (bewusste L4-Entscheidung), aber statische Analyse aller
+  `get_module_logger()`/`setup_module_logging()`-Aufrufstellen im
+  gesamten Produktionscode gegen `data/module_logger_config.json` ergab:
+  75 real verwendete Modulnamen, 40 JSON-Einträge, **54 fehlend**. Nach
+  vertiefter Prüfung (Prozesszugehörigkeit, tote Convenience-Wrapper in
+  `logger.py`, Namens-Drift): 3 nur in `scripts/*.py` (eigener Prozess,
+  für Telegram irrelevant), 10 tote `logger.py`-Wrapper ohne einen
+  einzigen externen Aufrufer, **41 real aktiv und mehrheitlich
+  P0-relevant** (Duplicate Detection: `DuplicateCache`,
+  `DuplicateRunner`; Metadata: `AlbumProcessor`,
+  `ArtistIdentityResolver`, `LyricsProcessor`, `MetadataCacheHandler`,
+  `ReprocessingRunner`; Genre: `GenreRevalidation`,
+  `GenreRevalidationRunner`; Library: `RepairService`,
+  `LibraryHealthFindings`, `MaintenanceService`; Download/File:
+  `DownloadHistoryStore`, `DownloadResultReporter`, `filename_fixer`).
+
+  **Nutzerentscheidung:** neue Application-Layer-Funktion
+  `services/logger_admin.py::ensure_module_config_entry()` — legt ein
+  unbekanntes Modul mit denselben Defaults an, die
+  `ModuleLoggerManager.get_module_config()` bereits für unbekannte
+  Module liefert. **Bewusst nicht über `PATCH /api/v1/admin/logger/config`
+  erreichbar** — kein Router-Endpunkt, Control Center bleibt bei der
+  strikten L4-Semantik. Nur In-Process-Aufrufer (Telegram/Bot), die die
+  reale Modul-Existenz über `_module_loggers` kennen, dürfen die Lücke
+  schließen.
+
+  **Migrierte Funktionen:**
+
+  - `toggle_module()`/`set_module_level()`: `ensure_module_config_entry()`
+    + `update_logger_config()` statt `ModuleLoggerManager`s eigenem,
+    nicht-atomarem `_save_module_configs()`. Live-Apply
+    (`_apply_module_config()`, Bot-lokal) unverändert.
+  - `enable_all_modules()`/`disable_all_modules()`: neue private
+    `_patch_all_known_modules()` — **ein** Multi-Modul-Patch statt N
+    sequenzieller Einzel-Writes. Beide Funktionen bekamen zusätzlich
+    `try/except`-Fehlerbehandlung (vorher praktisch nie eine Exception
+    möglich, da die alten Save-Pfade Fehler intern schluckten).
+  - `show_log_file_detail()`: liest jetzt über
+    `services/logger_admin.py::get_log_file()` →
+    `services/logs/reader.py::read_logs()` statt eigenem
+    `open()`/`readlines()`/`Counter()`. Neuer Helper
+    `_format_log_entry_preview()`.
+  - `show_log_files_list()`/`show_log_files_stats()`: nutzen
+    `list_log_files()`/`get_log_file_stats()`.
+
+  **Bewusste, dokumentierte Verhaltensänderungen** (keine stille
+  Drift):
+
+  1. Level-Zählung korrekt statt naiv — vorher zählte
+     `if level in line` eine Zeile unter dem ersten in fester
+     Scan-Reihenfolge gefundenen Level-Wort, auch wenn es nur im
+     Nachrichtentext vorkam. Jetzt strukturiertes Level-Feld aus
+     `reader.py`.
+  2. Traversal-Fehlermeldung vereinheitlicht: „Ungültiger Dateiname" →
+     „Log-Datei nicht gefunden: …" (identisch zu Control Center). Die
+     sicherheitskritische Eigenschaft (kein Datei-Inhalt wird je
+     ausgeliefert) ist unverändert.
+  3. Level-/Zeilenstatistik auf die neuesten 2000 Zeilen begrenzt
+     (`MAX_LIMIT` aus L2) statt unbegrenztem `readlines()`.
+  4. Sortierung der Log-Dateiliste: von „nach Dateigröße absteigend"
+     auf „nach mtime, neueste zuerst" (**explizite Nutzerentscheidung**),
+     konsistent mit Control Center.
+  5. Rotierte Logs (`*.log.1`, …) jetzt sichtbar (`list_log_files()`
+     nutzt `*.log*` statt vorher `*.log`).
+  6. Erweiterte Datei-Statistik: zusätzlich größte/älteste Datei.
+
+  **Zwei vorbestehende Defekte gefunden** (nicht in L7-Scope behoben,
+  als eigene Findings dokumentiert): die Cleanup-Aktions-Buttons
+  (`logger_cleanup_old`/`_large`/`_empty`/`_rotated`/`_all_confirm`/
+  `_archive`) sind im Dispatcher nicht verdrahtet; die Route
+  `logger_search_module` verweist auf eine nicht existierende Methode.
+
+  **Kategorie D (dokumentiert, nicht migriert):** globales Log-Level
+  (kein Persistenz-Schema), Modul-/Fehler-Statistiken (Prozessspeicher,
+  unveränderter Cross-Process-Blocker), volle `loggerDict`-
+  Introspektion, In-Process-Reload, Cleanup-Funktionen. Siehe
+  `docs/FINDINGS_INDEX.md` für die Einzeleinträge.
+
+  Tests: 22 neue Tests über 4 Testdateien (2 neue Dateien:
+  `test_enhanced_logger_menu_handler_file_detail.py`,
+  `test_enhanced_logger_menu_handler_files_list.py`; 2 erweiterte:
+  `test_logger_config_service.py`,
+  `test_enhanced_logger_menu_handler_module_toggle.py`), 3
+  Assertions in `test_logger_menu_path_traversal.py` an die neue
+  Fehlermeldung angepasst, Fehlerinjektion in
+  `test_enhanced_logger_menu_handler_error_handler.py` an den
+  geänderten internen Aufrufpfad angepasst. Regressionsergebnis
+  (thematisch, während der Implementierung): 245 + 336 passed, 0
+  Regressionen. Volle Suite (Nutzer, 2026-09-26): 5633 passed / 1
+  skipped / 11 subtests passed / 0 failed. Details:
+  `docs/audits/CC-LOGGER-L7_TELEGRAM_MIGRATION_2026-09-26.md`.
 
 

@@ -63,6 +63,15 @@ class TestPathTraversalBlocked:
         assert "nicht gefunden" not in text
 
     def test_double_dot_traversal_is_rejected(self, handler, tmp_path):
+        """CC-LOGGER-L7: der Traversal-Schutz laeuft jetzt ueber
+        services/logger_admin.py::get_log_file() (identische SEC-003-
+        Logik, bereits von Control Center genutzt) statt einer eigenen
+        Pruefung. Die konkrete Nutzertext-Formulierung ist dadurch
+        bewusst dieselbe wie bei Control Center ("Log-Datei nicht
+        gefunden" statt vormals "Ungueltiger Dateiname") - die
+        sicherheitskritische Eigenschaft (Datei-Inhalt wird NIE
+        ausgeliefert) bleibt unveraendert und ist der eigentliche
+        Regressionsschutz dieser Datei."""
         secret_file = tmp_path / "secret.txt"
         secret_file.write_text("top secret host content", encoding="utf-8")
         update = make_update()
@@ -72,7 +81,7 @@ class TestPathTraversalBlocked:
         )
 
         text = update.callback_query.edit_message_text.call_args[0][0]
-        assert "Ungültiger Dateiname" in text
+        assert "nicht gefunden" in text
         assert "top secret host content" not in text
 
     def test_absolute_path_is_rejected(self, handler, tmp_path):
@@ -85,7 +94,7 @@ class TestPathTraversalBlocked:
         )
 
         text = update.callback_query.edit_message_text.call_args[0][0]
-        assert "Ungültiger Dateiname" in text
+        assert "nicht gefunden" in text
         assert "another host secret" not in text
 
     def test_etc_passwd_style_traversal_is_rejected(self, handler):
@@ -96,4 +105,4 @@ class TestPathTraversalBlocked:
         )
 
         text = update.callback_query.edit_message_text.call_args[0][0]
-        assert "Ungültiger Dateiname" in text
+        assert "nicht gefunden" in text

@@ -39,8 +39,15 @@ from logger import get_module_logger
 
 
 class FakeConfig:
-    def __init__(self, log_dir):
+    def __init__(self, log_dir, data_dir=None):
         self.LOG_DIR = str(log_dir)
+        # CC-LOGGER-L7: toggle_module()/set_module_level() persistieren
+        # jetzt ueber services/logger_admin.py, das Config.DATA_DIR
+        # (nicht LOG_DIR) fuer den Pfad zu module_logger_config.json
+        # nutzt. Faellt auf log_dir zurueck, wenn kein eigenes
+        # data_dir uebergeben wird (z. B. fuer Tests, die diesen Pfad
+        # gar nicht durchlaufen).
+        self.DATA_DIR = str(data_dir) if data_dir is not None else str(log_dir)
 
 
 def _make_fake_path(tmp_path):
@@ -67,7 +74,11 @@ def handler(tmp_path, log_dir):
         "handlers.enhanced_logger_menu_handler.Path",
         side_effect=_make_fake_path(tmp_path),
     ):
-        h = EnhancedLoggerMenuHandler(FakeConfig(log_dir))
+        # data_dir=tmp_path, damit services/logger_admin.py (Config.DATA_DIR)
+        # auf dieselbe umgeleitete Datei zeigt wie ModuleLoggerManager's
+        # gepatchter Path("data/module_logger_config.json") - beide muessen
+        # in Produktion wie im Test dieselbe Datei meinen.
+        h = EnhancedLoggerMenuHandler(FakeConfig(log_dir, data_dir=tmp_path))
     return h
 
 
@@ -89,7 +100,7 @@ def _cleanup_real_logger():
     entfernt werden - sonst leaken sie über Testfälle hinweg (logging.Logger
     ist ein globales Singleton pro Name)."""
     yield
-    for name in ("RealTestModuleXYZ", "AlreadyConfiguredModule"):
+    for name in ("RealTestModuleXYZ", "AlreadyConfiguredModule", "NavidromeHandler"):
         logger = logging.getLogger(name)
         for h in logger.handlers[:]:
             logger.removeHandler(h)
@@ -180,6 +191,140 @@ class TestToggleModuleHealsAlreadyBrokenConfig:
         )
 
         assert real_logger.disabled is False
+
+
+class TestEnableDisableAllModules:
+    """CC-LOGGER-L7: enable_all_modules()/disable_all_modules()
+    persistieren jetzt als ein Multi-Modul-Patch statt N sequenzieller
+    Einzel-Writes. Regressionstest, da es dafuer bisher keinerlei Test
+    gab. Nutzt die 6 Default-Module, die ModuleLoggerManager beim
+    ersten Start ohne vorhandene Datei erzeugt (u. a. "NavidromeHandler",
+    real ueber logging.getLogger() ansprechbar)."""
+
+    def test_disable_all_sets_enabled_false_for_all_known_modules(
+        self, handler, log_dir
+    ):
+        update = make_update()
+        asyncio.run(handler.disable_all_modules(update, make_context()))
+
+        for name in handler.module_manager.module_configs:
+            assert handler.module_manager.get_module_config(name)["enabled"] is False
+
+    def test_enable_all_sets_enabled_true_for_all_known_modules(
+        self, handler, log_dir
+    ):
+        asyncio.run(handler.disable_all_modules(make_update(), make_context()))
+        asyncio.run(handler.enable_all_modules(make_update(), make_context()))
+
+        for name in handler.module_manager.module_configs:
+            assert handler.module_manager.get_module_config(name)["enabled"] is True
+
+    def test_other_fields_are_preserved_by_the_batch_patch(self, handler, log_dir):
+        assert (
+            handler.module_manager.get_module_config("NavidromeHandler")["level"]
+            == "DEBUG"
+        )
+        asyncio.run(handler.disable_all_modules(make_update(), make_context()))
+        assert (
+            handler.module_manager.get_module_config("NavidromeHandler")["level"]
+            == "DEBUG"
+        )
+
+    def test_disable_all_applies_live_and_stops_real_logger(self, handler, log_dir):
+        real_logger = logging.getLogger("NavidromeHandler")
+        assert real_logger.disabled is False
+
+        asyncio.run(handler.disable_all_modules(make_update(), make_context()))
+
+        assert real_logger.disabled is True
+
+    def test_enable_all_reenables_real_logger(self, handler, log_dir):
+        real_logger = logging.getLogger("NavidromeHandler")
+        asyncio.run(handler.disable_all_modules(make_update(), make_context()))
+        assert real_logger.disabled is True
+
+        asyncio.run(handler.enable_all_modules(make_update(), make_context()))
+
+        assert real_logger.disabled is False
+
+    def test_no_known_modules_is_a_noop(self, handler, log_dir):
+        handler.module_manager.module_configs.clear()
+        update = make_update()
+
+        asyncio.run(handler.enable_all_modules(update, make_context()))
+
+        update.callback_query.edit_message_text.assert_awaited_once()
+
+
+class TestSetModuleLevelPersistsAndAppliesLive:
+    """CC-LOGGER-L7: set_module_level() persistiert jetzt ueber
+    services/logger_admin.py statt ueber ModuleLoggerManager's eigenen
+    Save-Pfad - Regressionstest, da es dafuer bisher keinerlei
+    Erfolgspfad-Test gab."""
+
+    def test_first_set_level_applies_to_never_configured_module(
+        self, handler, log_dir
+    ):
+        get_module_logger("RealTestModuleXYZ")
+        real_logger = logging.getLogger("RealTestModuleXYZ")
+        assert real_logger.level != logging.DEBUG
+
+        update = make_update()
+        asyncio.run(
+            handler.set_module_level(
+                update, make_context(), "RealTestModuleXYZ", "DEBUG"
+            )
+        )
+
+        assert real_logger.level == logging.DEBUG
+
+    def test_level_change_is_persisted(self, handler, log_dir):
+        get_module_logger("RealTestModuleXYZ")
+
+        update = make_update()
+        asyncio.run(
+            handler.set_module_level(
+                update, make_context(), "RealTestModuleXYZ", "WARNING"
+            )
+        )
+
+        persisted = handler.module_manager.get_module_config("RealTestModuleXYZ")
+        assert persisted["level"] == "WARNING"
+
+    def test_repeated_level_changes_reapply_live(self, handler, log_dir):
+        get_module_logger("RealTestModuleXYZ")
+        real_logger = logging.getLogger("RealTestModuleXYZ")
+
+        update = make_update()
+        for level_name, level_value in (
+            ("WARNING", logging.WARNING),
+            ("ERROR", logging.ERROR),
+            ("DEBUG", logging.DEBUG),
+        ):
+            asyncio.run(
+                handler.set_module_level(
+                    update, make_context(), "RealTestModuleXYZ", level_name
+                )
+            )
+            assert real_logger.level == level_value
+
+    def test_invalid_level_shows_error_and_touches_nothing(self, handler, log_dir):
+        get_module_logger("RealTestModuleXYZ")
+        real_logger = logging.getLogger("RealTestModuleXYZ")
+        level_before = real_logger.level
+
+        update = make_update()
+        asyncio.run(
+            handler.set_module_level(
+                update, make_context(), "RealTestModuleXYZ", "NOT_A_LEVEL"
+            )
+        )
+
+        assert real_logger.level == level_before
+        text = _sent_text = update.callback_query.edit_message_text.call_args
+        args, kwargs = text
+        sent = args[0] if args else kwargs.get("text", "")
+        assert "Ungültiges Log-Level" in sent
 
 
 class TestModuleLoggerManagerFileHandlerHelper:
