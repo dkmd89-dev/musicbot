@@ -25,6 +25,15 @@ from logger import (
     MODULE_EMOJIS,
     LOG_LEVEL_EMOJIS,
 )
+from services.logger_admin import (
+    MAX_LIMIT,
+    InvalidLogFilenameError,
+    ensure_module_config_entry,
+    get_log_file,
+    get_log_file_stats,
+    list_log_files,
+    update_logger_config,
+)
 
 if TYPE_CHECKING:
     from handlers.enhanced_error_handler import EnhancedErrorHandler
@@ -649,17 +658,34 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
         dedizierten File-Logging immer normal weiterloggt.
         """
         try:
-            config = self.module_manager.get_module_config(module_name)
             real_logger = logging.getLogger(module_name)
             has_file_handler = any(
                 isinstance(h, logging.FileHandler) for h in real_logger.handlers
             )
             new_state = not has_file_handler
 
-            # Konfiguration aktualisieren
-            config["file_handler"] = new_state
-            config["enabled"] = True
-            self.module_manager.set_module_config(module_name, config)
+            # Konfiguration aktualisieren (CC-LOGGER-L7): Persistenz laeuft
+            # jetzt ueber die zentrale, validierte Application-Layer-
+            # Funktion aus services/logger_admin.py statt ueber
+            # ModuleLoggerManager's eigenen, nicht-atomaren Save-Pfad.
+            # ensure_module_config_entry() legt das Modul bei Bedarf mit
+            # Defaults an (Telegram kennt reale Module ueber
+            # _module_loggers, die zentrale Config oft noch nicht - siehe
+            # L7-Analyse); update_logger_config() persistiert die
+            # eigentlichen Feldwerte atomar + validiert. Der In-Memory-
+            # Cache des ModuleLoggerManager wird synchron nachgezogen,
+            # damit der anschliessende Live-Apply-Schritt (weiterhin
+            # Bot-lokal, unveraendert) nicht mit einem veralteten Stand
+            # arbeitet.
+            ensure_module_config_entry(self.config, module_name)
+            updated_config = update_logger_config(
+                self.config,
+                {module_name: {"file_handler": new_state, "enabled": True}},
+            )
+            self.module_manager.module_configs[module_name] = updated_config[
+                module_name
+            ]
+            self.module_manager._apply_module_config(module_name)
 
             action = "aktiviert" if new_state else "deaktiviert"
             self.logger.info(f"🔧 Log-Datei fuer {module_name} wurde {action}")
@@ -770,11 +796,19 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
                 )
                 return
 
-            # Konfiguration aktualisieren
-            config = self.module_manager.get_module_config(module_name)
-            old_level = config.get("level", "INFO")
-            config["level"] = level_name
-            self.module_manager.set_module_config(module_name, config)
+            # Konfiguration aktualisieren (CC-LOGGER-L7, siehe toggle_module()
+            # fuer die ausfuehrliche Begruendung des Persistenzpfads).
+            old_level = self.module_manager.get_module_config(module_name).get(
+                "level", "INFO"
+            )
+            ensure_module_config_entry(self.config, module_name)
+            updated_config = update_logger_config(
+                self.config, {module_name: {"level": level_name}}
+            )
+            self.module_manager.module_configs[module_name] = updated_config[
+                module_name
+            ]
+            self.module_manager._apply_module_config(module_name)
 
             self.logger.info(
                 f"📊 Log-Level für {module_name} geändert: {old_level} → {level_name}"
@@ -842,8 +876,16 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
                 )
                 return
 
-            # Sammle alle Log-Dateien
-            log_files = list(log_dir.glob("*.log"))
+            # CC-LOGGER-L7: Discovery + Sortierung jetzt ueber
+            # services/logger_admin.py::list_log_files() (identisch zu
+            # Control Center) statt eigenem log_dir.glob("*.log").
+            # Nutzerentscheidung: Sortierung wechselt bewusst von "nach
+            # Groesse absteigend" auf "nach mtime, neueste zuerst".
+            # Zusaetzliche Folge: rotierte Logs (bot.log.1, ...) werden
+            # jetzt ebenfalls gelistet (list_log_files() nutzt "*.log*",
+            # identisch zur bereits etablierten Control-Center-Discovery)
+            # - vorher zeigte diese Funktion nur "*.log" ohne Rotationen.
+            log_files = list_log_files(log_dir)
 
             if not log_files:
                 await update.callback_query.edit_message_text(
@@ -854,46 +896,32 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
             files_text = "📁 Verfügbare Log-Dateien:\n\n"
             keyboard = []
 
-            # Sortiere Dateien nach Größe
-            sorted_files = sorted(
-                log_files, key=lambda f: f.stat().st_size, reverse=True
-            )
-
             total_size = 0
-            for i, file_path in enumerate(sorted_files, 1):
-                try:
-                    stat = file_path.stat()
-                    size_mb = stat.st_size / (1024 * 1024)
-                    total_size += stat.st_size
-                    mod_time = datetime.fromtimestamp(stat.st_mtime).strftime(
-                        "%d.%m %H:%M"
-                    )
+            for i, meta in enumerate(log_files, 1):
+                size_mb = meta.size_bytes / (1024 * 1024)
+                total_size += meta.size_bytes
+                mod_time = meta.modified_at.strftime("%d.%m %H:%M")
 
-                    files_text += f"{i}. {file_path.name}\n"
-                    files_text += f"   {size_mb:.1f} MB • {mod_time}\n\n"
+                files_text += f"{i}. {meta.name}\n"
+                files_text += f"   {size_mb:.1f} MB • {mod_time}\n\n"
 
-                    # Button für jede Datei
-                    display_name = file_path.name
-                    if len(display_name) > 25:
-                        display_name = display_name[:22] + "..."
+                # Button für jede Datei
+                display_name = meta.name
+                if len(display_name) > 25:
+                    display_name = display_name[:22] + "..."
 
-                    keyboard.append(
-                        [
-                            InlineKeyboardButton(
-                                f"Datei: {display_name}",
-                                callback_data=f"logger_file_detail_{file_path.name}",
-                            )
-                        ]
-                    )
-
-                except Exception as e:
-                    self.logger.warning(
-                        f"⚠️ Fehler beim Lesen der Datei {file_path}: {e}"
-                    )
+                keyboard.append(
+                    [
+                        InlineKeyboardButton(
+                            f"Datei: {display_name}",
+                            callback_data=f"logger_file_detail_{meta.name}",
+                        )
+                    ]
+                )
 
             # Zusammenfassung
             total_size_mb = total_size / (1024 * 1024)
-            files_text += f"Gesamt: {len(sorted_files)} Dateien, {total_size_mb:.1f} MB"
+            files_text += f"Gesamt: {len(log_files)} Dateien, {total_size_mb:.1f} MB"
 
             # Navigation
             keyboard.extend(
@@ -940,56 +968,59 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
         """Zeigt Details zu einer spezifischen Log-Datei"""
         try:
             log_dir = Path(getattr(self.config, "LOG_DIR", "logs")).resolve()
-            # Sicherheit: filename kommt unvalidiert aus callback_data
-            # (logger_file_detail_<filename>). Ohne diese Pruefung wuerde
-            # ".."-Traversal oder ein absoluter Pfad (Path.__truediv__
-            # verwirft bei absoluten rechten Operanden den linken Teil
-            # komplett) beliebige lesbare Dateien auf dem Host preisgeben.
-            candidate_path = (log_dir / filename).resolve()
-            if not candidate_path.is_relative_to(log_dir):
-                self.logger.warning(
-                    f"🚨 [SECURITY] Log-Datei-Anfrage außerhalb von {log_dir}: {filename}"
-                )
-                await update.callback_query.edit_message_text(
-                    "❌ Ungültiger Dateiname"
-                )
-                return
-            file_path = candidate_path
 
-            if not file_path.exists():
+            # CC-LOGGER-L7: Datei-Zugriff (inkl. Path-Traversal-Schutz)
+            # und Level-Parsing laufen jetzt ueber services/logger_admin.py
+            # ::get_log_file() -> services/logs/reader.py::read_logs()
+            # statt ueber eine zweite, eigene Implementierung. Identischer
+            # SEC-003-Schutz (Whitelist gegen list_log_sources() PLUS
+            # Containment-Check), bereits von Control Center genutzt.
+            # limit=MAX_LIMIT (2000, servereitige Obergrenze aus L2) statt
+            # der bisherigen unbegrenzten readlines() - bei realen
+            # Dateigroessen (siehe L2-F1) kein praktischer Unterschied,
+            # bei sehr grossen Dateien (>2000 Zeilen) werden Zeilen-
+            # Statistik/Level-Verteilung nur ueber die neuesten 2000
+            # Zeilen berechnet statt ueber die komplette Datei.
+            try:
+                result = get_log_file(log_dir, name=filename, limit=MAX_LIMIT)
+            except InvalidLogFilenameError:
+                self.logger.warning(
+                    f"🚨 [SECURITY] Ungueltige oder nicht vorhandene "
+                    f"Log-Datei-Anfrage: {filename}"
+                )
                 await update.callback_query.edit_message_text(
                     f"❌ Log-Datei nicht gefunden: {filename}"
                 )
                 return
 
-            # Datei-Statistiken
+            entries = result["entries"]  # neueste zuerst
+            total_lines = result["total_matched"]
+
+            # Datei-Statistiken (reine Filesystem-Metadaten, unveraendert
+            # direkt vom Dateisystem - get_log_file() validiert die
+            # Existenz bereits, ein Race mit Rotation bliebe wie zuvor
+            # unbehandelt)
+            file_path = log_dir / filename
             stat = file_path.stat()
             size_mb = stat.st_size / (1024 * 1024)
             mod_time = datetime.fromtimestamp(stat.st_mtime).strftime(
                 "%d.%m.%Y %H:%M:%S"
             )
 
-            # Lese letzte Zeilen für Vorschau
-            try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    lines = f.readlines()
+            # Level-Verteilung aus den strukturiert geparsten Eintraegen
+            # (echtes Level-Feld statt der bisherigen naiven
+            # Teilstring-Suche `if level in line`, die z. B. eine
+            # INFO-Zeile mit dem Wort "ERROR" im Nachrichtentext
+            # faelschlich als ERROR gezaehlt haette). Zeilen in einem
+            # nicht auswertbaren Fremdformat (siehe reader.py-Docstring)
+            # bleiben unkategorisiert, wie bereits im Control Center.
+            level_counts = Counter(e.level for e in entries if e.level)
 
-                total_lines = len(lines)
-                preview_lines = lines[-5:] if len(lines) > 5 else lines
-
-                # Analysiere Log-Level Verteilung
-                level_counts = Counter()
-                for line in lines:
-                    for level in self.log_levels:
-                        if level in line:
-                            level_counts[level] += 1
-                            break
-
-            except Exception as e:
-                self.logger.warning(f"⚠️ Fehler beim Lesen der Datei {filename}: {e}")
-                total_lines = 0
-                preview_lines = []
-                level_counts = Counter()
+            # Vorschau der letzten 5 Zeilen in chronologischer Reihenfolge
+            # (entries sind neueste-zuerst sortiert).
+            preview_lines = [
+                self._format_log_entry_preview(e) for e in reversed(entries[:5])
+            ]
 
             # Formatiere Details
             detail_text = (
@@ -1308,6 +1339,22 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
         }
         return icons.get(level, "📝")
 
+    def _format_log_entry_preview(self, entry) -> str:
+        """Formatiert einen `services.logs.reader.LogEntry` fuer die
+        Vorschau in show_log_file_detail() (CC-LOGGER-L7).
+
+        entry.message enthaelt bei nicht auswertbaren Fremdformat-Zeilen
+        (leeres entry.time, siehe reader.py::_parse_line()) bereits die
+        vollstaendige Rohzeile - dann keine Rekonstruktion, sonst wuerde
+        ein irrefuehrendes "None [None] ..." entstehen."""
+        if not entry.time:
+            return entry.message.strip()[:100]
+        level_part = f"{entry.level} " if entry.level else ""
+        component_part = f"[{entry.component}] " if entry.component else ""
+        return f"{entry.time} {level_part}{component_part}{entry.message}".strip()[
+            :100
+        ]
+
     # === ZUSÄTZLICHE HILFSMETHODEN FÜR FEHLENDE CALLBACKS (PLAIN TEXT) ===
 
     async def add_module(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1327,33 +1374,85 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Aktiviert alle bekannten Module."""
-        self.logger.info("✅ Alle Module aktivieren")
-        for name in list(self.module_manager.module_configs.keys()):
-            cfg = self.module_manager.get_module_config(name)
-            cfg["enabled"] = True
-            self.module_manager.set_module_config(name, cfg)
-        await update.callback_query.edit_message_text(
-            text="✅ Alle Module wurden aktiviert.",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("Zurück", callback_data="logger_modules_list")]]
-            ),
-        )
+        try:
+            self.logger.info("✅ Alle Module aktivieren")
+            self._patch_all_known_modules(enabled=True)
+            await update.callback_query.edit_message_text(
+                text="✅ Alle Module wurden aktiviert.",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "Zurück", callback_data="logger_modules_list"
+                            )
+                        ]
+                    ]
+                ),
+            )
+        except Exception as e:
+            self.logger.error(f"❌ Fehler beim Aktivieren aller Module: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_enable_all", e
+                )
+            else:
+                await self._show_error_message(
+                    update, f"Fehler beim Aktivieren aller Module: {str(e)}"
+                )
 
     async def disable_all_modules(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Deaktiviert alle bekannten Module."""
-        self.logger.info("⛔ Alle Module deaktivieren")
-        for name in list(self.module_manager.module_configs.keys()):
-            cfg = self.module_manager.get_module_config(name)
-            cfg["enabled"] = False
-            self.module_manager.set_module_config(name, cfg)
-        await update.callback_query.edit_message_text(
-            text="⛔ Alle Module wurden deaktiviert.",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("Zurück", callback_data="logger_modules_list")]]
-            ),
+        try:
+            self.logger.info("⛔ Alle Module deaktivieren")
+            self._patch_all_known_modules(enabled=False)
+            await update.callback_query.edit_message_text(
+                text="⛔ Alle Module wurden deaktiviert.",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "Zurück", callback_data="logger_modules_list"
+                            )
+                        ]
+                    ]
+                ),
+            )
+        except Exception as e:
+            self.logger.error(f"❌ Fehler beim Deaktivieren aller Module: {e}")
+            if self.error_handler:
+                await self.error_handler.handle_callback_error(
+                    update, context, "logger_disable_all", e
+                )
+            else:
+                await self._show_error_message(
+                    update, f"Fehler beim Deaktivieren aller Module: {str(e)}"
+                )
+
+    def _patch_all_known_modules(self, *, enabled: bool) -> None:
+        """Setzt `enabled` fuer alle bereits in der persistenten
+        Konfiguration bekannten Module (CC-LOGGER-L7).
+
+        Ein Multi-Modul-Patch statt N sequenzieller, nicht-atomarer
+        Einzel-Writes (vorher: N x set_module_config() -> N x
+        _save_module_configs()). Reduziert das Risiko einer halb
+        geschriebenen Config bei einem Abbruch mitten in der Schleife
+        auf einen einzigen atomaren Schreibvorgang. Iteriert bewusst
+        nur ueber bereits bekannte Module (module_configs-Keys) - anders
+        als toggle_module()/set_module_level() gibt es hier keine
+        Einzelmodul-Eingabe, fuer die ein unbekanntes, real aktives
+        Modul (siehe L7-Analyse) angelegt werden muesste.
+        """
+        module_names = list(self.module_manager.module_configs.keys())
+        if not module_names:
+            return
+        updated_config = update_logger_config(
+            self.config, {name: {"enabled": enabled} for name in module_names}
         )
+        for name in module_names:
+            self.module_manager.module_configs[name] = updated_config[name]
+            self.module_manager._apply_module_config(name)
 
     async def show_log_files_stats(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -1369,14 +1468,26 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
                 ),
             )
             return
-        log_files = list(log_dir.glob("*.log*"))
-        total = len(log_files)
-        total_size = sum((f.stat().st_size for f in log_files), 0) / (1024 * 1024)
+        # CC-LOGGER-L7: identisches Aggregat wie Control Center
+        # (services/logger_admin.py::get_log_file_stats()) statt eigener
+        # Summierung. Bewusste Erweiterung um groesste/aelteste Datei
+        # (vorher nicht verfuegbar) - keine Entfernung bestehender Felder.
+        stats = get_log_file_stats(log_dir)
+        total_size_mb = stats.total_size_bytes / (1024 * 1024)
         text = (
             "📊 Datei-Statistiken\n\n"
-            f"Anzahl Dateien: {total}\n"
-            f"Gesamtgröße: {total_size:.1f} MB"
+            f"Anzahl Dateien: {stats.total_files}\n"
+            f"Gesamtgröße: {total_size_mb:.1f} MB\n"
         )
+        if stats.largest_file:
+            largest_mb = stats.largest_size_bytes / (1024 * 1024)
+            text += f"Größte Datei: {stats.largest_file} ({largest_mb:.1f} MB)\n"
+        if stats.oldest_file:
+            text += (
+                f"Älteste Datei: {stats.oldest_file} "
+                f"({stats.oldest_age_days} Tage)\n"
+            )
+        text = text.strip()
         await self._safe_edit_message(
             update,
             text,

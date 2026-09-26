@@ -18,7 +18,9 @@ from services.logger_admin import (
     ALLOWED_LOG_LEVELS,
     ALLOWED_PATCHABLE_FIELDS,
     CONFIG_FILE_NAME,
+    DEFAULT_NEW_MODULE_CONFIG,
     LoggerConfigError,
+    ensure_module_config_entry,
     read_logger_config,
     update_logger_config,
     validate_logger_config_patch,
@@ -260,3 +262,70 @@ class TestUpdate:
         assert ei.value.code == "LOGGER_CONFIG_UNKNOWN_MODULE"
         after = hashlib.sha256(path.read_bytes()).hexdigest()
         assert before == after
+
+
+# =====================================================================
+# ensure_module_config_entry (CC-LOGGER-L7)
+# =====================================================================
+
+class TestEnsureModuleConfigEntry:
+    def test_missing_file_raises_missing(self, cfg: FakeConfig) -> None:
+        with pytest.raises(LoggerConfigError) as ei:
+            ensure_module_config_entry(cfg, "NewMod")
+        assert ei.value.code == "LOGGER_CONFIG_MISSING"
+
+    def test_unknown_module_is_created_with_defaults(self, cfg: FakeConfig) -> None:
+        _seed(cfg, {"ModA": _default_module(level="DEBUG")})
+        result = ensure_module_config_entry(cfg, "NewMod")
+        assert result["NewMod"] == DEFAULT_NEW_MODULE_CONFIG
+        # bestehendes Modul bleibt unangetastet
+        assert result["ModA"]["level"] == "DEBUG"
+
+    def test_new_entry_is_persisted(self, cfg: FakeConfig) -> None:
+        _seed(cfg, {"ModA": _default_module()})
+        ensure_module_config_entry(cfg, "NewMod")
+        after = read_logger_config(cfg)
+        assert after["NewMod"] == DEFAULT_NEW_MODULE_CONFIG
+
+    def test_existing_module_is_left_unchanged(self, cfg: FakeConfig) -> None:
+        _seed(cfg, {"ModA": _default_module(level="ERROR", enabled=False)})
+        result = ensure_module_config_entry(cfg, "ModA")
+        assert result["ModA"] == _default_module(level="ERROR", enabled=False)
+
+    def test_existing_module_causes_no_write(self, cfg: FakeConfig) -> None:
+        """Idempotenz: fuer ein bereits bekanntes Modul wird die Datei
+        nicht angefasst (kein unnoetiger atomarer Write)."""
+        import hashlib
+
+        path = _seed(cfg, {"ModA": _default_module(level="WARNING")})
+        before_mtime = path.stat().st_mtime_ns
+        before_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        ensure_module_config_entry(cfg, "ModA")
+        after_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        assert before_hash == after_hash
+        assert path.stat().st_mtime_ns == before_mtime
+
+    def test_write_is_atomic_leaves_no_tmp(self, cfg: FakeConfig) -> None:
+        _seed(cfg, {"ModA": _default_module()})
+        ensure_module_config_entry(cfg, "NewMod")
+        tmp = Path(cfg.DATA_DIR) / (CONFIG_FILE_NAME + ".tmp")
+        assert not tmp.exists()
+
+    @pytest.mark.parametrize("bad_name", ["", None, 123])
+    def test_invalid_module_name_rejected(self, cfg: FakeConfig, bad_name) -> None:
+        _seed(cfg, {"ModA": _default_module()})
+        with pytest.raises(LoggerConfigError) as ei:
+            ensure_module_config_entry(cfg, bad_name)  # type: ignore[arg-type]
+        assert ei.value.code == "LOGGER_CONFIG_PATCH_INVALID"
+
+    def test_new_entry_then_patchable_via_update_logger_config(
+        self, cfg: FakeConfig
+    ) -> None:
+        """Der vorgesehene Aufrufpfad: erst ensure_module_config_entry()
+        (Existenz sicherstellen), danach update_logger_config() fuer die
+        eigentliche Feldaenderung — genau der Ablauf, den Telegram fuer
+        bisher unbekannte, aber real aktive Module braucht."""
+        _seed(cfg, {"ModA": _default_module()})
+        ensure_module_config_entry(cfg, "NewMod")
+        result = update_logger_config(cfg, {"NewMod": {"level": "DEBUG"}})
+        assert result["NewMod"]["level"] == "DEBUG"

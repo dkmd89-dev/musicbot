@@ -22,7 +22,8 @@ except-Varianten ab:
 """
 
 import asyncio
-from unittest.mock import AsyncMock, Mock
+from pathlib import Path
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from telegram.error import TelegramError
@@ -33,6 +34,13 @@ from handlers.enhanced_logger_menu_handler import EnhancedLoggerMenuHandler
 class FakeConfig:
     def __init__(self, log_dir):
         self.LOG_DIR = str(log_dir)
+        # CC-LOGGER-L7: toggle_module()/set_module_level()/
+        # enable_all_modules()/disable_all_modules() persistieren jetzt
+        # ueber services/logger_admin.py (Config.DATA_DIR statt
+        # ModuleLoggerManager's eigenem relativen Pfad). Beide muessen
+        # auf dieselbe isolierte Datei zeigen - siehe _make_fake_path()
+        # in der handler-Fixture.
+        self.DATA_DIR = str(log_dir)
 
 
 @pytest.fixture
@@ -42,9 +50,30 @@ def log_dir(tmp_path):
     return d
 
 
+def _make_fake_path(target_dir):
+    """Leitet ModuleLoggerManager's hartcodierten relativen Pfad
+    "data/module_logger_config.json" auf dieselbe isolierte Datei um,
+    die Config.DATA_DIR fuer services/logger_admin.py ergibt - identisches
+    Muster wie in tests/test_enhanced_logger_menu_handler_module_toggle.py."""
+
+    def _fake_path(arg=None, *args, **kwargs):
+        if arg == "data/module_logger_config.json":
+            return target_dir / "module_logger_config.json"
+        if arg is None:
+            return Path(*args, **kwargs)
+        return Path(arg, *args, **kwargs)
+
+    return _fake_path
+
+
 @pytest.fixture
 def handler(log_dir):
-    return EnhancedLoggerMenuHandler(FakeConfig(log_dir))
+    with patch(
+        "handlers.enhanced_logger_menu_handler.Path",
+        side_effect=_make_fake_path(log_dir),
+    ):
+        h = EnhancedLoggerMenuHandler(FakeConfig(log_dir))
+    return h
 
 
 def make_update():
@@ -148,7 +177,11 @@ class TestToggleModuleErrorHandling:
     def test_routes_through_error_handler_when_set(self, handler):
         handler.error_handler = Mock()
         handler.error_handler.handle_callback_error = AsyncMock()
-        handler.module_manager.get_module_config = Mock(
+        # CC-LOGGER-L7: toggle_module() ruft get_module_config() nicht
+        # mehr auf (Persistenz laeuft jetzt ueber
+        # services/logger_admin.py). Fehlerinjektion daher am neuen
+        # letzten Schritt vor der Erfolgs-Nachricht: dem Live-Apply.
+        handler.module_manager._apply_module_config = Mock(
             side_effect=RuntimeError("boom")
         )
         update = make_update()
@@ -164,7 +197,7 @@ class TestToggleModuleErrorHandling:
 
     def test_falls_back_to_local_message_without_error_handler(self, handler):
         assert handler.error_handler is None
-        handler.module_manager.get_module_config = Mock(
+        handler.module_manager._apply_module_config = Mock(
             side_effect=RuntimeError("boom")
         )
         update = make_update()
@@ -174,6 +207,76 @@ class TestToggleModuleErrorHandling:
 
         text = _sent_text(update.callback_query.edit_message_text)
         assert "Fehler beim Umschalten" in text
+
+
+class TestEnableAllModulesErrorHandling:
+    """enable_all_modules(): jetzt (CC-LOGGER-L7) ebenfalls Fallback ueber
+    _show_error_message() - vorher konnte die Funktion durch die
+    intern schluckenden Save-Pfade praktisch nie eine Exception werfen."""
+
+    def test_routes_through_error_handler_when_set(self, handler):
+        handler.error_handler = Mock()
+        handler.error_handler.handle_callback_error = AsyncMock()
+        handler.module_manager._apply_module_config = Mock(
+            side_effect=RuntimeError("boom")
+        )
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.enable_all_modules(update, context))
+
+        handler.error_handler.handle_callback_error.assert_awaited_once()
+        call_args = handler.error_handler.handle_callback_error.call_args[0]
+        assert call_args[2] == "logger_enable_all"
+        assert isinstance(call_args[3], RuntimeError)
+        update.callback_query.edit_message_text.assert_not_called()
+
+    def test_falls_back_to_local_message_without_error_handler(self, handler):
+        assert handler.error_handler is None
+        handler.module_manager._apply_module_config = Mock(
+            side_effect=RuntimeError("boom")
+        )
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.enable_all_modules(update, context))
+
+        text = _sent_text(update.callback_query.edit_message_text)
+        assert "Fehler beim Aktivieren aller Module" in text
+
+
+class TestDisableAllModulesErrorHandling:
+    """disable_all_modules(): analog zu enable_all_modules()."""
+
+    def test_routes_through_error_handler_when_set(self, handler):
+        handler.error_handler = Mock()
+        handler.error_handler.handle_callback_error = AsyncMock()
+        handler.module_manager._apply_module_config = Mock(
+            side_effect=RuntimeError("boom")
+        )
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.disable_all_modules(update, context))
+
+        handler.error_handler.handle_callback_error.assert_awaited_once()
+        call_args = handler.error_handler.handle_callback_error.call_args[0]
+        assert call_args[2] == "logger_disable_all"
+        assert isinstance(call_args[3], RuntimeError)
+        update.callback_query.edit_message_text.assert_not_called()
+
+    def test_falls_back_to_local_message_without_error_handler(self, handler):
+        assert handler.error_handler is None
+        handler.module_manager._apply_module_config = Mock(
+            side_effect=RuntimeError("boom")
+        )
+        update = make_update()
+        context = make_context()
+
+        asyncio.run(handler.disable_all_modules(update, context))
+
+        text = _sent_text(update.callback_query.edit_message_text)
+        assert "Fehler beim Deaktivieren aller Module" in text
 
 
 class TestSetGlobalLogLevelErrorHandling:
