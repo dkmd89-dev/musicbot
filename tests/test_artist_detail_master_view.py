@@ -100,7 +100,7 @@ global.fetch = async (url) => {
 };
 
 const src = fs.readFileSync(process.argv[2], "utf-8");
-const api = new Function(src + "\nreturn { renderArtistDetail };")();
+const api = new Function(src + "\nreturn { renderArtistDetail, renderMetadataEditPreview };")();
 
 (async () => {
   for (const op of scenario.ops || []) {
@@ -300,3 +300,107 @@ def test_album_edit_button_preselects_the_viewed_album(tmp_path: Path) -> None:
          "closest": {"#album-detail-edit-album-btn": {}}},
     ]})
     assert out["els"]["album-edit-album-select"]["value"] == "2020 - Powers"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# renderMetadataEditPreview(): keine widersprüchlichen Statusmeldungen
+# (Freigabe fix.txt 2026-09-27) - eine Zeile pro Panel darf nur EINEN
+# eindeutigen Zustand aussagen: "wird geändert" ODER "wird übersprungen,
+# weil <Grund>", nie "keine Änderung nötig" zusammen mit einem Grund, der
+# gerade KEINEN No-Op belegt (z. B. Artist-Rename ist tag-wert-getrieben,
+# executor.py::apply_artist_rename() - "Artist-Tag entspricht nicht dem
+# gewaehlten Ausgangswert" bedeutet Wert-Mismatch, nicht Wert-Gleichheit).
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _skip_outcome(file, reason, *, status="SKIPPED"):
+    return {"file": file, "status": status, "before": {}, "after": {}, "reason": reason}
+
+
+@needs_node
+def test_artist_rename_mismatch_shows_skip_not_noop(tmp_path: Path) -> None:
+    """Konkreter Fall aus dem Screenshot: Artist-Tag "Apache", Zielwert
+    "Apache 207" - passt der tatsaechliche ©ART-Tag nicht zum gewaehlten
+    Ausgangswert, wird die Datei uebersprungen. Die Kopfzeile darf dafuer
+    NICHT "keine Änderung nötig" sagen (das behauptet Wert-Gleichheit,
+    das Gegenteil des tatsaechlichen Grundes)."""
+    body = {
+        "target_count": 1, "changed_count": 0,
+        "outcomes": [_skip_outcome(
+            "Apache/Song.m4a", "Artist-Tag entspricht nicht dem gewaehlten Ausgangswert",
+        )],
+    }
+    out = _run(tmp_path, {"ops": [
+        {"op": "call", "fn": "renderMetadataEditPreview",
+         "args": ["@artist-edit-content", body, "artist-edit-execute-btn"]},
+    ]})
+    html = out["els"]["artist-edit-content"]["html"]
+    assert "keine Änderung nötig" not in html
+    assert "wird übersprungen" in html
+    assert "Artist-Tag entspricht nicht dem gewaehlten Ausgangswert" in html
+    assert out["els"]["artist-edit-execute-btn"]["disabled"] is True
+
+
+@needs_node
+def test_title_edit_genuine_noop_keeps_keine_aenderung_noetig(tmp_path: Path) -> None:
+    """Titel-Tag "Nur mich -", Zielwert "Nur mich": stimmt der tatsaechlich
+    gelesene ©nam-Tag exakt mit dem Zielwert ueberein (executor.py::
+    apply_title_edit()s einzige Skip-Begruendung "bereits korrekt"), bleibt
+    "keine Änderung nötig" - hier IST das die zutreffende, eindeutige
+    Aussage (kein Widerspruch, da nur dieser eine Grund vorliegt)."""
+    body = {
+        "target_count": 1, "changed_count": 0,
+        "outcomes": [_skip_outcome("Nur mich -.m4a", "bereits korrekt")],
+    }
+    out = _run(tmp_path, {"ops": [
+        {"op": "call", "fn": "renderMetadataEditPreview",
+         "args": ["@title-edit-content", body, "title-edit-execute-btn"]},
+    ]})
+    html = out["els"]["title-edit-content"]["html"]
+    assert "keine Änderung nötig" in html
+    assert "wird übersprungen" not in html
+    assert "bereits korrekt" in html
+    assert out["els"]["title-edit-execute-btn"]["disabled"] is True
+
+
+@needs_node
+def test_title_edit_real_change_still_shows_wird_geaendert(tmp_path: Path) -> None:
+    """Regressionsschutz: der eigentliche Aenderungsfall (DRY_RUN, echter
+    Diff) darf durch die Skip-Text-Unterscheidung oben nicht beeinflusst
+    werden - "Nur mich -" -> "Nur mich" muss weiterhin normal als
+    aktivierbare Aenderung angezeigt werden, wenn der Tag tatsaechlich
+    abweicht."""
+    body = {
+        "target_count": 1, "changed_count": 1,
+        "outcomes": [{
+            "file": "Nur mich -.m4a", "status": "DRY_RUN",
+            "before": {"title": "Nur mich -"}, "after": {"title": "Nur mich"},
+            "reason": None,
+        }],
+    }
+    out = _run(tmp_path, {"ops": [
+        {"op": "call", "fn": "renderMetadataEditPreview",
+         "args": ["@title-edit-content", body, "title-edit-execute-btn"]},
+    ]})
+    html = out["els"]["title-edit-content"]["html"]
+    assert "werden geändert" in html
+    assert "Nur mich -" in html and "Nur mich" in html
+    assert out["els"]["title-edit-execute-btn"]["disabled"] is False
+
+
+@needs_node
+def test_safety_skip_also_shown_as_wird_uebersprungen(tmp_path: Path) -> None:
+    """Ein Safety-Skip (z. B. Symlink) ist ebenfalls kein No-Op - auch
+    hier darf die Kopfzeile nicht "keine Änderung nötig" behaupten."""
+    body = {
+        "target_count": 1, "changed_count": 0,
+        "outcomes": [_skip_outcome("Album/Song.m4a", "Safety: Symlink")],
+    }
+    out = _run(tmp_path, {"ops": [
+        {"op": "call", "fn": "renderMetadataEditPreview",
+         "args": ["@album-edit-content", body, "album-edit-execute-btn"]},
+    ]})
+    html = out["els"]["album-edit-content"]["html"]
+    assert "keine Änderung nötig" not in html
+    assert "wird übersprungen" in html
+    assert "Safety: Symlink" in html
