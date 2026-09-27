@@ -13,8 +13,16 @@ Extraktion unverändertes Verhalten zeigen (dünne Delegatoren).
 from __future__ import annotations
 
 import json
+import threading
 
-from services.user_data import get_navidrome_user, get_user_role, load_user_data
+import pytest
+
+from services.user_data import (
+    get_navidrome_user,
+    get_user_role,
+    load_user_data,
+    update_user_data,
+)
 
 
 class TestLoadUserData:
@@ -67,3 +75,76 @@ class TestGetUserRole:
 
     def test_returns_none_for_unknown_telegram_id(self):
         assert get_user_role({}, 1) is None
+
+
+class TestUpdateUserData:
+    """A.7 (Client Consolidation Phase A, "Cross-Process-Persistenzstrategie"):
+    update_user_data() ist der einzige Weg, auf dem beide Clients
+    (UserManagementHandler._update_users(), control_center/routers/admin.py)
+    mutierende User-Management-Operationen ausführen — der ganze
+    Load->Mutator->Save-Zyklus läuft dabei hinter einem fcntl.flock auf
+    einer <path>.lock-Datei, damit bot.service und control-center.service
+    (zwei unabhängige, dauerhaft laufende Prozesse auf derselben
+    data/user_data.json) sich nicht gegenseitig ein Update überschreiben."""
+
+    def test_mutator_result_and_mutated_dict_are_saved(self, tmp_path):
+        path = tmp_path / "user_data.json"
+
+        def _mutate(users):
+            users["1"] = {"role": "user"}
+            return "created"
+
+        result, users, saved = update_user_data(_mutate, path)
+
+        assert result == "created"
+        assert saved is True
+        assert users == {"1": {"role": "user"}}
+        assert load_user_data(path) == {"1": {"role": "user"}}
+
+    def test_mutator_exception_aborts_cycle_without_saving(self, tmp_path):
+        """Ein Mutator, der eine UserAdminError-artige Exception wirft (z. B.
+        SEC-005-Owner-Guard), darf den bereits geladenen, in-memory
+        mutierten Zustand NICHT persistieren — sonst würde z. B. eine
+        abgelehnte Owner-Degradierung trotzdem geschrieben."""
+        path = tmp_path / "user_data.json"
+        path.write_text(json.dumps({"1": {"role": "owner"}}), encoding="utf-8")
+
+        class _OwnerGuardDenied(Exception):
+            pass
+
+        def _mutate(users):
+            users["1"]["role"] = "user"  # wuerde den Owner degradieren
+            raise _OwnerGuardDenied("abgelehnt")
+
+        with pytest.raises(_OwnerGuardDenied):
+            update_user_data(_mutate, path)
+
+        assert load_user_data(path) == {"1": {"role": "owner"}}
+
+    def test_concurrent_updates_do_not_lose_writes(self, tmp_path):
+        """Simuliert das Lost-Update-Race zwischen bot.service und
+        control-center.service über parallele Threads, die alle denselben
+        Zaehler in derselben Datei erhoehen. Ohne den Lock wuerden manche
+        Erhoehungen auf einem veralteten, bereits ueberholten Stand
+        aufsetzen und dadurch verloren gehen."""
+        path = tmp_path / "user_data.json"
+        path.write_text(json.dumps({"counter": {"n": 0}}), encoding="utf-8")
+
+        def _increment(users):
+            users["counter"]["n"] += 1
+
+        threads = [
+            threading.Thread(target=update_user_data, args=(_increment, path))
+            for _ in range(25)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert load_user_data(path)["counter"]["n"] == 25
+
+    def test_lock_file_created_next_to_data_file(self, tmp_path):
+        path = tmp_path / "user_data.json"
+        update_user_data(lambda users: None, path)
+        assert (tmp_path / "user_data.json.lock").exists()

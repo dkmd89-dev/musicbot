@@ -9,14 +9,19 @@ load_user_data() (dieselbe Common-Core-Extraktion, die auch
 control_center/dependencies.py fuer die MODERATOR-Aufloesung nutzt) —
 kein Schreibzugriff (Master-Prompt Regel 12: GET ohne Seiteneffekte).
 
-CC-AC-10B (User Management Write-Parität, freigegebene CC-AC-10.md):
-POST/PATCH/DELETE rufen services/user_admin.py auf — denselben
+CC-AC-10B/10G (User Management Write-Parität, Client Consolidation
+Phase A): POST/PATCH/DELETE rufen services/user_admin.py auf — denselben
 Telegram-freien Application-Layer, den handlers/admin/
-user_management_handler.py in einer künftigen Phase (CC-AC-10G laut
-CC-AC-10.md §20) ebenfalls nutzen könnte, bewusst in diesem Slice noch
-NICHT migriert (Telegram bleibt unverändert, kein Risiko für dessen
-Characterization-Tests). Dieselbe SEC-005-Owner-Guard-Logik wie die
-Telegram-Seite (nur config.OWNER_USER_ID darf die Owner-Rolle vergeben).
+user_management_handler.py (Telegram) inzwischen ebenfalls nutzt.
+Dieselbe SEC-005-Owner-Guard-Logik wie die Telegram-Seite (nur
+config.OWNER_USER_ID darf die Owner-Rolle vergeben).
+
+A.7 "Cross-Process-Persistenzstrategie": jeder mutierende Endpunkt läuft
+über services/user_data.py::update_user_data() — ein gegen
+bot.service (unabhängiger Prozess, dieselbe data/user_data.json)
+per fcntl.flock gesperrter Read-Modify-Write-Zyklus, statt load_user_data()
+und save_user_data() als getrennte, ungesperrte Aufrufe zu verwenden
+(Lost-Update-Race zwischen den beiden Prozessen sonst möglich).
 
 Authentifiziert mit mindestens AccessLevel.ADMIN — Rollen-/Navidrome-
 Zuordnung anderer Nutzer ist eindeutig Administrationsdaten, identische
@@ -35,7 +40,7 @@ from config import Config
 from handlers.menu.models import AccessLevel
 from logger import get_module_logger
 from services import user_admin
-from services.user_data import load_user_data, save_user_data
+from services.user_data import load_user_data, update_user_data
 
 from ..dependencies import get_current_user_id, require_min_access_level, verify_same_origin
 from ..schemas.admin import (
@@ -97,8 +102,8 @@ def _forbidden(e: user_admin.OwnerPromotionDeniedError) -> HTTPException:
     )
 
 
-def _save_or_500(config: Config, users: dict) -> None:
-    if not save_user_data(users, _user_data_path(config), logger=_logger):
+def _require_saved(saved: bool) -> None:
+    if not saved:
         raise HTTPException(
             status_code=500,
             detail=ErrorDetail(
@@ -134,17 +139,19 @@ def get_users() -> UsersResponse:
 )
 def post_create_user(payload: CreateUserRequest) -> UserDetailResponse:
     config = Config()
-    users = load_user_data(_user_data_path(config), logger=_logger)
     telegram_id = str(payload.telegram_id)
 
+    def _mutate(users: dict):
+        return user_admin.create_user(users, telegram_id, payload.navidrome_user)
+
     try:
-        entry = user_admin.create_user(users, telegram_id, payload.navidrome_user)
+        entry, _, saved = update_user_data(_mutate, _user_data_path(config), logger=_logger)
     except user_admin.UserAlreadyExistsError as e:
         raise _conflict(e) from e
     except user_admin.UserAdminError as e:
         raise _validation_error(e) from e
 
-    _save_or_500(config, users)
+    _require_saved(saved)
     _logger.info(f"✅ [control_center] Benutzer {telegram_id} angelegt")
     return _detail_response(telegram_id, entry)
 
@@ -156,16 +163,18 @@ def post_create_user(payload: CreateUserRequest) -> UserDetailResponse:
 )
 def patch_navidrome_user(telegram_id: str, payload: UpdateNavidromeRequest) -> UserDetailResponse:
     config = Config()
-    users = load_user_data(_user_data_path(config), logger=_logger)
+
+    def _mutate(users: dict):
+        return user_admin.update_navidrome_user(users, telegram_id, payload.navidrome_user)
 
     try:
-        entry = user_admin.update_navidrome_user(users, telegram_id, payload.navidrome_user)
+        entry, _, saved = update_user_data(_mutate, _user_data_path(config), logger=_logger)
     except user_admin.UserNotFoundError as e:
         raise _not_found(e) from e
     except user_admin.UserAdminError as e:
         raise _validation_error(e) from e
 
-    _save_or_500(config, users)
+    _require_saved(saved)
     _logger.info(f"✅ [control_center] Navidrome-User für {telegram_id} aktualisiert")
     return _detail_response(telegram_id, entry)
 
@@ -179,16 +188,18 @@ def patch_user_role(
     telegram_id: str, payload: UpdateRoleRequest, acting_user_id: int = Depends(get_current_user_id)
 ) -> UserDetailResponse:
     config = Config()
-    users = load_user_data(_user_data_path(config), logger=_logger)
 
-    try:
-        entry = user_admin.set_user_role(
+    def _mutate(users: dict):
+        return user_admin.set_user_role(
             users,
             telegram_id,
             payload.role,
             acting_user_id=acting_user_id,
             owner_user_id=getattr(config, "OWNER_USER_ID", None),
         )
+
+    try:
+        entry, _, saved = update_user_data(_mutate, _user_data_path(config), logger=_logger)
     except user_admin.OwnerPromotionDeniedError as e:
         _logger.warning(
             f"🚫 [control_center] Nicht-Owner {acting_user_id} versuchte, "
@@ -200,7 +211,7 @@ def patch_user_role(
     except user_admin.UserNotFoundError as e:
         raise _not_found(e) from e
 
-    _save_or_500(config, users)
+    _require_saved(saved)
     _logger.info(f"✅ [control_center] Rolle für {telegram_id} geändert: {payload.role}")
     return _detail_response(telegram_id, entry)
 
@@ -212,16 +223,18 @@ def patch_user_role(
 )
 def patch_user_permissions(telegram_id: str, payload: UpdatePermissionsRequest) -> UserDetailResponse:
     config = Config()
-    users = load_user_data(_user_data_path(config), logger=_logger)
+
+    def _mutate(users: dict):
+        return user_admin.set_user_permissions(users, telegram_id, payload.permissions)
 
     try:
-        entry = user_admin.set_user_permissions(users, telegram_id, payload.permissions)
+        entry, _, saved = update_user_data(_mutate, _user_data_path(config), logger=_logger)
     except user_admin.UserNotFoundError as e:
         raise _not_found(e) from e
     except user_admin.InvalidPermissionError as e:
         raise _validation_error(e) from e
 
-    _save_or_500(config, users)
+    _require_saved(saved)
     _logger.info(f"✅ [control_center] Berechtigungen für {telegram_id} aktualisiert")
     return _detail_response(telegram_id, entry)
 
@@ -233,13 +246,15 @@ def patch_user_permissions(telegram_id: str, payload: UpdatePermissionsRequest) 
 )
 def delete_user(telegram_id: str) -> DeleteUserResponse:
     config = Config()
-    users = load_user_data(_user_data_path(config), logger=_logger)
+
+    def _mutate(users: dict):
+        return user_admin.delete_user(users, telegram_id)
 
     try:
-        removed = user_admin.delete_user(users, telegram_id)
+        removed, _, saved = update_user_data(_mutate, _user_data_path(config), logger=_logger)
     except user_admin.UserNotFoundError as e:
         raise _not_found(e) from e
 
-    _save_or_500(config, users)
+    _require_saved(saved)
     _logger.info(f"🗑️ [control_center] Benutzer {telegram_id} gelöscht")
     return DeleteUserResponse(telegram_id=int(telegram_id), role=removed.get("role", "user"))

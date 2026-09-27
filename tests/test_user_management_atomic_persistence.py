@@ -16,6 +16,16 @@ user_management_handler.py wurde dort NICHT gelistet).
 Nutzt dieselbe _make_handler()-Fixture wie tests/test_user_management_handler.py
 (Path()-Patch waehrend der Konstruktion), damit KEIN Test jemals die reale
 data/user_data.json beruehrt - siehe dortiger Modul-Docstring.
+
+CC-AC-10G (Client Consolidation Phase A, A.3/A.9 "Single Write Path"):
+UserManagementHandler._save_users() delegiert seit dieser Migration an
+services/user_data.py::save_user_data() (siehe dortiger Docstring) - der
+tatsaechliche json.dump()-Aufruf, dessen Absturz hier simuliert wird,
+findet jetzt in services/user_data.py statt. Der Monkeypatch-Zielpfad
+wurde entsprechend von "handlers.admin.user_management_handler.json.dump"
+auf "services.user_data.json.dump" umgestellt - der simulierte Fehlerfall
+(Absturz waehrend json.dump(), Datei/Cache duerfen nicht korrumpiert
+werden) bleibt unveraendert.
 """
 
 from pathlib import Path
@@ -61,7 +71,7 @@ class TestSaveUsersAtomicWrite:
         # json.dump() - z.B. ein Rollenwechsel, der den Owner versehentlich
         # entfernt).
         monkeypatch.setattr(
-            "handlers.admin.user_management_handler.json.dump",
+            "services.user_data.json.dump",
             lambda *a, **kw: (_ for _ in ()).throw(OSError("disk full")),
         )
         result = handler._save_users({})  # wuerde den Owner "entfernen"
@@ -77,7 +87,7 @@ class TestSaveUsersAtomicWrite:
     ):
         handler, user_data_file = _make_handler(tmp_path)
         monkeypatch.setattr(
-            "handlers.admin.user_management_handler.json.dump",
+            "services.user_data.json.dump",
             lambda *a, **kw: (_ for _ in ()).throw(OSError("disk full")),
         )
         handler._save_users({"111": {"role": "owner"}})
@@ -100,7 +110,7 @@ class TestSaveUsersAtomicWrite:
         handler._save_users({"111": {"role": "owner"}})
 
         monkeypatch.setattr(
-            "handlers.admin.user_management_handler.json.dump",
+            "services.user_data.json.dump",
             lambda *a, **kw: (_ for _ in ()).throw(OSError("disk full")),
         )
         handler._save_users({})
