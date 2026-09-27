@@ -403,12 +403,20 @@ def _resolve_config_path(config: Any) -> Path:
     return Path(config.DATA_DIR) / CONFIG_FILE_NAME
 
 
-def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
-    """Atomares Schreiben ueber temp-Sibling + os.replace, identisches
-    Muster wie services/backup_admin.py und services/logger_admin.py
-    selbst fuer die (nicht-atomare) Modul-Config — hier explizit
-    atomar, damit ein abgebrochener Write die Datei nicht halbfertig
-    hinterlaesst."""
+def atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
+    """Atomares Schreiben ueber temp-Sibling + os.replace.
+
+    Oeffentlich (kein Leading-Underscore mehr seit Phase B/CC-LOGGER-
+    Findings-Bereinigung), da auch
+    handlers/enhanced_logger_menu_handler.py::ModuleLoggerManager
+    (`_save_module_configs()`) diese Funktion nutzt, statt weiterhin
+    eigenes, nicht-atomares `json.dump()` zu betreiben — derselbe
+    Single-Write-Path-Gedanke wie bei services/user_data.py aus
+    Phase A (User Management), hier ohne Cross-Process-Lock, da die
+    Logger-Konfiguration ausschliesslich ueber diese eine Funktion
+    (Bot-Prozess) bzw. update_logger_config()/ensure_module_config_entry()
+    (beide Prozesse) geschrieben wird und kein hochfrequenter
+    Schreibpfad ist."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     try:
@@ -564,7 +572,7 @@ def update_logger_config(
 
     # 4. Atomar schreiben.
     try:
-        _atomic_write_json(path, current)
+        atomic_write_json(path, current)
     except OSError as e:
         raise LoggerConfigError(
             f"Logger-Konfiguration konnte nicht geschrieben werden: {e}",
@@ -650,7 +658,7 @@ def ensure_module_config_entry(
     current[module_name] = dict(DEFAULT_NEW_MODULE_CONFIG)
 
     try:
-        _atomic_write_json(path, current)
+        atomic_write_json(path, current)
     except OSError as e:
         raise LoggerConfigError(
             f"Logger-Konfiguration konnte nicht geschrieben werden: {e}",
@@ -758,7 +766,7 @@ def write_runtime_snapshot(config: Any) -> Optional[Path]:
     }
 
     try:
-        _atomic_write_json(path, payload)
+        atomic_write_json(path, payload)
     except Exception as e:  # noqa: BLE001
         print(f"⚠️ Logger-Runtime-Snapshot konnte nicht geschrieben werden: {e!r}")
         return None

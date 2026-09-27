@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Any, Callable, TYPE_CHECKING
 from collections import Counter, defaultdict
 from datetime import datetime
-import json
 
 from config import Config
 from logger import (
@@ -28,6 +27,7 @@ from logger import (
 from services.logger_admin import (
     MAX_LIMIT,
     InvalidLogFilenameError,
+    atomic_write_json,
     cleanup_rotated_log_files,
     ensure_module_config_entry,
     get_log_file,
@@ -80,8 +80,13 @@ class ModuleLoggerManager:
         level=DEBUG loggen ab dann tatsaechlich auf DEBUG."""
         try:
             if self.config_file.exists():
-                with open(self.config_file, "r", encoding="utf-8") as f:
-                    self.module_configs = json.load(f)
+                # CC-LOGGER-Findings-Bereinigung (Phase B): Lesen jetzt ueber
+                # dieselbe zentrale Funktion wie services/logger_admin.py
+                # selbst statt eigenem json.load() - identisches Verhalten
+                # bei korruptem JSON (Exception, vom aeusseren try hier
+                # weiterhin abgefangen -> module_configs bleibt leer, kein
+                # Crash), nur ohne doppelte Parsing-Logik.
+                self.module_configs = read_logger_config(self.config)
             else:
                 # Standard-Konfiguration fuer bekannte Module
                 self.module_configs = {
@@ -143,11 +148,15 @@ class ModuleLoggerManager:
             print(f"Fehler beim Laden der Modul-Konfigurationen: {e}")
 
     def _save_module_configs(self):
-        """Speichert modul-spezifische Logger-Konfigurationen"""
+        """Speichert modul-spezifische Logger-Konfigurationen.
+
+        CC-LOGGER-Findings-Bereinigung (Phase B): atomarer Schreibvorgang
+        (temp-Sibling + os.replace) ueber services/logger_admin.py statt
+        eigenem, nicht-atomarem json.dump() - identisches Muster zu
+        toggle_module()/set_module_level()/_patch_all_known_modules(),
+        die bereits seit CC-LOGGER-L7 ueber diese Schicht schreiben."""
         try:
-            self.config_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.config_file, "w", encoding="utf-8") as f:
-                json.dump(self.module_configs, f, indent=2, ensure_ascii=False)
+            atomic_write_json(self.config_file, self.module_configs)
         except Exception as e:
             print(f"❌ Fehler beim Speichern der Modul-Konfigurationen: {e}")
 
