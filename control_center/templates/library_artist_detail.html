@@ -271,9 +271,76 @@
       <!-- Genre -->
       <div>
         <h3 class="mb-2">🎭 Genre-Verwaltung</h3>
+
+        <!-- 1) Mapping bearbeiten: Primary + Secondary (mapping/artist_genre.yaml) -->
+        <div id="genre-mapping-editor" class="border rounded p-3 mb-4">
+          <h4 class="mb-1">Genre-Mapping bearbeiten</h4>
+          <p class="text-secondary small">
+            Primary- und Secondary-Genres dieses Artists in
+            <code>mapping/artist_genre.yaml</code> — falsches Genre entfernen,
+            richtiges setzen. Das Mapping gilt für „Genre setzen“ weiter unten
+            und für neue Downloads (der laufende Bot lädt es beim Start, also
+            erst nach einem Bot-Neustart).
+          </p>
+
+          <div id="genre-mapping-status" class="empty-note">Lädt…</div>
+
+          <div id="genre-mapping-form" hidden>
+            <label class="form-label" for="genre-mapping-primary">Primary-Genre</label>
+            <input
+              type="text"
+              id="genre-mapping-primary"
+              class="form-control"
+              list="genre-mapping-datalist"
+              maxlength="100"
+              autocomplete="off"
+              placeholder="z. B. Hip Hop"
+            >
+
+            <label class="form-label mt-3" for="genre-mapping-add-input">Secondary-Genres</label>
+            <div id="genre-mapping-secondary" class="d-flex flex-wrap gap-2 mb-2"></div>
+            <div class="input-group">
+              <input
+                type="text"
+                id="genre-mapping-add-input"
+                class="form-control"
+                list="genre-mapping-datalist"
+                maxlength="100"
+                autocomplete="off"
+                placeholder="Secondary-Genre hinzufügen"
+              >
+              <button id="genre-mapping-add-btn" type="button" class="btn btn-outline-primary">
+                Hinzufügen
+              </button>
+            </div>
+            <datalist id="genre-mapping-datalist"></datalist>
+
+            <div class="mt-3 d-flex flex-wrap gap-2">
+              <button id="genre-mapping-preview-btn" type="button" class="btn btn-outline-primary">
+                Änderung prüfen
+              </button>
+              <button id="genre-mapping-reset-btn" type="button" class="btn btn-outline-secondary">
+                Zurücksetzen
+              </button>
+            </div>
+
+            <div id="genre-mapping-preview-content" class="mt-3"></div>
+
+            <div class="mt-2">
+              <button id="genre-mapping-save-btn" type="button" class="btn btn-primary" disabled>
+                Mapping speichern
+              </button>
+            </div>
+
+            <div id="genre-mapping-result-content" class="mt-2"></div>
+          </div>
+        </div>
+
+        <!-- 2) Tags aus dem Mapping setzen (bestehend) -->
+        <h4 class="mb-1">Tags aus dem Mapping setzen</h4>
         <p class="text-secondary">
-          Setzt das Genre aller Tracks dieses Artists aus dem bestehenden
-          Mapping (<code>mapping/artist_genre.yaml</code>) — kein Freitext.
+          Schreibt das Genre aller Tracks dieses Artists (Tag) aus dem
+          Mapping oben (<code>mapping/artist_genre.yaml</code>).
         </p>
 
         <div class="mb-2">
@@ -387,12 +454,28 @@
       </div>
 
       <!-- Genre Revalidation -->
-      <div class="border-bottom pb-4 mb-4">
+      <div class="border-bottom pb-4 mb-4" id="genre-revalidation-panel">
         <h3 class="mb-2">🔄 Genre revalidieren</h3>
         <p class="text-secondary">
-          Nicht im Control Center verfügbar — nur in Telegram
-          („🧹 Library-Wartung → 🔄 Genre revalidieren“).
+          Fragt Last.fm für diesen Artist erneut ab und wendet die bestehende
+          Overturn-Regel des Auto-Learnings an. Das verändert <strong>keine
+          Audio-Dateien</strong> und nicht <code>artist_genre.yaml</code> —
+          höchstens das gelernte Genre in
+          <code>mapping/auto_learned_genre.json</code> (für neue Downloads,
+          wirksam nach einem Bot-Neustart). Artists mit manuellem Mapping sind
+          immer blockiert; dort den Mapping-Editor oben verwenden.
         </p>
+
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          <button id="genre-revalidation-preview-btn" type="button" class="btn btn-outline-primary">
+            Last.fm prüfen (Vorschau)
+          </button>
+          <button id="genre-revalidation-apply-btn" type="button" class="btn btn-primary" disabled>
+            Änderung übernehmen
+          </button>
+        </div>
+
+        <div id="genre-revalidation-content" class="empty-note"></div>
       </div>
 
       <!-- L2 / L3 -->
@@ -1001,6 +1084,331 @@
     }
   }
 
+  // -- Genre-Mapping bearbeiten (Primary + Secondary) -------------------------
+  //
+  // Bearbeitet EINEN Eintrag in mapping/artist_genre.yaml ueber
+  // GET/POST-preview/PUT /api/v1/library/artists/{artist}/genre-mapping.
+  // Ablauf: laden -> bearbeiten -> "Aenderung pruefen" (Vorschau, schreibt
+  // nichts) -> "Mapping speichern" (Bestaetigung, Etag gegen veraltete Staende).
+  // Die Tags der Dateien setzt weiter "Genre setzen" (genre-preview/set-genre).
+
+  const _genreMap = { entry: null, etag: null, primary: "", secondary: [], previewed: null };
+
+  function genreChipsHtml(list) {
+    if (!list.length) return '<span class="text-secondary small">Keine Secondary-Genres.</span>';
+    return list.map((g) => `<span class="badge bg-blue-lt d-inline-flex align-items-center gap-1">${_escapeHtml(g)}<button type="button" class="btn-close genre-chip-remove" data-genre="${_escapeHtml(g)}" aria-label="${_escapeHtml(g)} entfernen"></button></span>`).join("");
+  }
+
+  function renderGenreMappingPreview(body) {
+    const changeText = {
+      create: "Neuer Mapping-Eintrag wird angelegt.",
+      update: "Bestehender Mapping-Eintrag wird aktualisiert.",
+      unchanged: "Keine Änderung — das Mapping ist bereits so gesetzt.",
+    }[body.change] || body.change;
+    const primaryLine = !body.existing
+      ? `Primary: <strong>${_escapeHtml(body.primary)}</strong>`
+      : (body.primary_changed
+        ? `Primary: ${_escapeHtml(body.existing.primary)} → <strong>${_escapeHtml(body.primary)}</strong>`
+        : `Primary: <strong>${_escapeHtml(body.primary)}</strong> (unverändert)`);
+    const removed = body.removed.map((g) => `<span class="badge bg-red-lt">− ${_escapeHtml(g)}</span>`).join(" ");
+    const added = body.added.map((g) => `<span class="badge bg-green-lt">+ ${_escapeHtml(g)}</span>`).join(" ");
+    const orderOnly = body.change === "update" && !body.removed.length && !body.added.length
+      ? '<div class="text-secondary small">Nur die Reihenfolge ändert sich.</div>' : "";
+    const warnings = body.warnings.map((w) => `<div class="alert alert-warning py-2 mb-2">${_escapeHtml(w)}</div>`).join("");
+    const result = [body.primary, ...body.secondary].map(_escapeHtml).join("; ");
+    return `
+      <div class="card card-sm"><div class="card-body">
+        <div class="fw-semibold mb-2">${_escapeHtml(changeText)}</div>
+        <div class="mb-1">${primaryLine}</div>
+        ${removed ? `<div class="mb-1">Entfernt: ${removed}</div>` : ""}
+        ${added ? `<div class="mb-1">Neu: ${added}</div>` : ""}
+        ${orderOnly}
+        <div class="text-secondary small mt-2">Ergebnis im Mapping: ${result}</div>
+      </div></div>
+      ${warnings ? `<div class="mt-2">${warnings}</div>` : ""}`;
+  }
+
+  function _genreMappingSyncForm() {
+    document.getElementById("genre-mapping-primary").value = _genreMap.primary;
+    document.getElementById("genre-mapping-secondary").innerHTML = genreChipsHtml(_genreMap.secondary);
+  }
+
+  function _genreMappingInvalidate() {
+    _genreMap.previewed = null;
+    document.getElementById("genre-mapping-save-btn").disabled = true;
+    document.getElementById("genre-mapping-preview-content").innerHTML = "";
+    document.getElementById("genre-mapping-result-content").innerHTML = "";
+  }
+
+  function applyGenreMapping(el, body) {
+    _genreMap.entry = body.entry;
+    _genreMap.etag = body.etag;
+    _genreMap.primary = body.entry ? body.entry.primary : "";
+    _genreMap.secondary = body.entry ? body.entry.secondary.slice() : [];
+    document.getElementById("genre-mapping-datalist").innerHTML =
+      body.known_genres.map((g) => `<option value="${_escapeHtml(g)}"></option>`).join("");
+    el.innerHTML = body.exists
+      ? `<span class="text-secondary small">Mapping-Key: <code>${_escapeHtml(body.entry.key)}</code></span>`
+      : '<span class="text-secondary small">Für diesen Artist gibt es noch kein Mapping — Genres eingeben, um eines anzulegen.</span>';
+    document.getElementById("genre-mapping-form").hidden = false;
+    _genreMappingSyncForm();
+    _genreMappingInvalidate();
+  }
+
+  async function loadGenreMapping() {
+    const artist = currentArtistFromPath();
+    await _loadInto(
+      "genre-mapping-status",
+      `/api/v1/library/artists/${encodeURIComponent(artist)}/genre-mapping`,
+      applyGenreMapping,
+    );
+  }
+
+  function _genreMappingAdd() {
+    const input = document.getElementById("genre-mapping-add-input");
+    const value = input.value.replace(/\s+/g, " ").trim();
+    if (!value) { input.value = ""; return; }
+    const fold = value.toLowerCase();
+    const exists = _genreMap.secondary.some((g) => g.toLowerCase() === fold) || _genreMap.primary.trim().toLowerCase() === fold;
+    if (!exists) _genreMap.secondary.push(value);
+    input.value = "";
+    _genreMappingSyncForm();
+    _genreMappingInvalidate();
+  }
+
+  function _genreMappingError(res, body) {
+    return (body && body.error && body.error.message) || String(res.status);
+  }
+
+  async function previewGenreMapping() {
+    const artist = currentArtistFromPath();
+    const previewEl = document.getElementById("genre-mapping-preview-content");
+    const saveBtn = document.getElementById("genre-mapping-save-btn");
+    _genreMappingInvalidate();
+    previewEl.innerHTML = '<p class="empty-note">Wird geprüft…</p>';
+    try {
+      const res = await fetch(apiUrl(`/api/v1/library/artists/${encodeURIComponent(artist)}/genre-mapping/preview`), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ primary: _genreMap.primary, secondary: _genreMap.secondary }),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        previewEl.innerHTML = `<div class="alert alert-danger mb-0">${_escapeHtml(_genreMappingError(res, body))}</div>`;
+        return;
+      }
+      previewEl.innerHTML = renderGenreMappingPreview(body);
+      _genreMap.previewed = { primary: body.primary, secondary: body.secondary, etag: body.etag, change: body.change };
+      saveBtn.disabled = body.change === "unchanged";
+    } catch (err) {
+      previewEl.innerHTML = `<div class="alert alert-danger mb-0">Vorschau fehlgeschlagen (${_escapeHtml(err.message)}).</div>`;
+    }
+  }
+
+  async function saveGenreMapping() {
+    const pv = _genreMap.previewed;
+    if (!pv) return;
+    const artist = currentArtistFromPath();
+    const confirmed = window.confirm(
+      `Genre-Mapping für "${artist}" wirklich ändern?\n\n` +
+      `Neu: ${[pv.primary, ...pv.secondary].join("; ")}\n\n` +
+      `Das schreibt mapping/artist_genre.yaml. Für neue Downloads wirkt es erst nach einem Bot-Neustart; ` +
+      `bereits getaggte Dateien ändern sich erst über "Genre setzen".`
+    );
+    if (!confirmed) return;
+
+    const saveBtn = document.getElementById("genre-mapping-save-btn");
+    const resultEl = document.getElementById("genre-mapping-result-content");
+    saveBtn.disabled = true;
+    resultEl.innerHTML = '<p class="empty-note">Wird gespeichert…</p>';
+    try {
+      const res = await fetch(apiUrl(`/api/v1/library/artists/${encodeURIComponent(artist)}/genre-mapping`), {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ primary: pv.primary, secondary: pv.secondary, etag: pv.etag }),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      const body = await res.json().catch(() => null);
+      if (res.status === 409) {
+        await loadGenreMapping();
+        document.getElementById("genre-mapping-result-content").innerHTML =
+          '<div class="alert alert-warning mb-0">Der Mapping-Eintrag wurde zwischenzeitlich geändert. Die aktuelle Fassung wurde geladen — bitte die Änderung erneut prüfen.</div>';
+        return;
+      }
+      if (!res.ok) {
+        resultEl.innerHTML = `<div class="alert alert-danger mb-0">${_escapeHtml(_genreMappingError(res, body))}</div>`;
+        saveBtn.disabled = false;
+        return;
+      }
+      await loadGenreMapping();
+      document.getElementById("genre-mapping-result-content").innerHTML =
+        `<div class="alert alert-${body.written ? "success" : "info"} mb-0">${_escapeHtml(body.message)}</div>`;
+      if (body.written) await loadGenreManagePreview();  // zeigt sofort, was "Genre setzen" jetzt aendern wuerde
+    } catch (err) {
+      resultEl.innerHTML = `<div class="alert alert-danger mb-0">Ergebnis unbekannt — bitte neu laden und prüfen (${_escapeHtml(err.message)}).</div>`;
+    }
+  }
+
+  document.getElementById("genre-mapping-primary").addEventListener("input", (event) => {
+    _genreMap.primary = event.target.value;
+    _genreMappingInvalidate();
+  });
+  document.getElementById("genre-mapping-add-btn").addEventListener("click", _genreMappingAdd);
+  document.getElementById("genre-mapping-add-input").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") { event.preventDefault(); _genreMappingAdd(); }
+  });
+  document.getElementById("genre-mapping-secondary").addEventListener("click", (event) => {
+    const btn = event.target.closest(".genre-chip-remove");
+    if (!btn) return;
+    _genreMap.secondary = _genreMap.secondary.filter((g) => g !== btn.dataset.genre);
+    _genreMappingSyncForm();
+    _genreMappingInvalidate();
+  });
+  document.getElementById("genre-mapping-reset-btn").addEventListener("click", () => {
+    _genreMap.primary = _genreMap.entry ? _genreMap.entry.primary : "";
+    _genreMap.secondary = _genreMap.entry ? _genreMap.entry.secondary.slice() : [];
+    _genreMappingSyncForm();
+    _genreMappingInvalidate();
+  });
+  document.getElementById("genre-mapping-preview-btn").addEventListener("click", previewGenreMapping);
+  document.getElementById("genre-mapping-save-btn").addEventListener("click", saveGenreMapping);
+  // Lazy: erst beim Oeffnen des Panels laden (kein Request pro Seitenaufruf).
+  document.getElementById("artist-metadata-edit-panel").querySelector("details").addEventListener("toggle", (event) => {
+    if (event.target.open && !_genreMap.etag) loadGenreMapping();
+  });
+
+  // -- Genre revalidieren (Last.fm + Overturn-Regel, als Job) -----------------
+  //
+  // POST /api/v1/jobs/genre-revalidation-preview | -apply (Job, Polling wie bei
+  // L2/L3). Die Entscheidung trifft der Service (dieselbe Overturn-Regel wie
+  // Telegram/CLI); die UI zeigt nur das Ergebnis. Kein Abbrechen (ein einzelner
+  // atomarer Lauf, siehe jobs.py).
+
+  const _GENRE_REVAL_OUTCOMES = {
+    BLOCKED_MANUAL: ["warning", "Blockiert — manuelles Mapping vorhanden"],
+    NO_CANDIDATE: ["warning", "Kein Kandidat"],
+    SAME_GENRE: ["success", "Last.fm bestätigt das aktuelle Genre — keine Änderung nötig"],
+    OVERTURN_REJECTED: ["warning", "Änderung abgelehnt — Overturn-Regel nicht erfüllt"],
+    OVERTURN_ALLOWED: ["info", "Änderung zulässig"],
+  };
+  let _genreRevalTimer = null;
+  let _genreRevalJobId = null;
+
+  function _genreLine(primary, secondary) {
+    if (!primary) return "(kein Genre)";
+    return [primary, ...(secondary || [])].map(_escapeHtml).join("; ");
+  }
+
+  function genreRevalidationResultHtml(r) {
+    const [kind, label] = _GENRE_REVAL_OUTCOMES[r.outcome] || ["secondary", r.outcome];
+    const rows = [
+      ["Aktuell", _genreLine(r.current_primary, r.current_secondary)],
+      ["Kandidat (Last.fm)", r.candidate_primary ? _genreLine(r.candidate_primary, r.candidate_secondary) : "—"],
+    ];
+    if (r.learning_status) rows.push(["Lernstatus", _escapeHtml(r.learning_status)]);
+    if (r.locked_primary) rows.push(["Gelocktes Primary", _escapeHtml(r.locked_primary)]);
+    rows.push(["Beobachtungen", _escapeHtml(String(r.observation_count))]);
+    const dl = rows.map(([k, v]) => `<dt class="col-5 col-md-3">${_escapeHtml(k)}</dt><dd class="col-7 col-md-9 mb-1 text-break">${v}</dd>`).join("");
+    const error = r.error_message
+      ? `<div class="alert alert-danger py-2 mb-2">Last.fm-Fehler: ${_escapeHtml(r.error_message)}</div>` : "";
+    let outcomeNote;
+    if (r.mode === "apply") {
+      outcomeNote = r.mutated
+        ? '<div class="alert alert-success py-2 mb-0">✅ Gelerntes Genre aktualisiert. Für neue Downloads wirksam nach einem Bot-Neustart; Audio-Dateien wurden nicht verändert.</div>'
+        : '<div class="text-secondary small">Keine Änderung geschrieben.</div>';
+    } else {
+      outcomeNote = '<div class="text-secondary small">Vorschau — es wurde nichts geschrieben.</div>';
+    }
+    return `
+      <div class="alert alert-${kind} py-2 mb-2"><div><div class="fw-semibold">${_escapeHtml(label)}</div><div class="small">${_escapeHtml(r.reason || "")}</div></div></div>
+      ${error}
+      <dl class="row gx-2 mb-2">${dl}</dl>
+      ${outcomeNote}`;
+  }
+
+  function _genreRevalSetBusy(busy) {
+    document.getElementById("genre-revalidation-preview-btn").disabled = busy;
+    if (busy) document.getElementById("genre-revalidation-apply-btn").disabled = true;
+  }
+
+  function _stopGenreRevalPolling() {
+    if (_genreRevalTimer) { clearInterval(_genreRevalTimer); _genreRevalTimer = null; }
+  }
+
+  function _renderGenreRevalidationJob(job) {
+    const el = document.getElementById("genre-revalidation-content");
+    if (job.status === "PENDING" || job.status === "RUNNING") {
+      el.innerHTML = `<p class="empty-note">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%) — ${_escapeHtml(job.message || "")}</p>`;
+      return;
+    }
+    _stopGenreRevalPolling();
+    _genreRevalSetBusy(false);
+    if (job.status !== "SUCCEEDED") {
+      el.innerHTML = `<div class="alert alert-danger mb-0">Fehlgeschlagen: ${_escapeHtml(job.error || "Unbekannter Fehler")}</div>`;
+      return;
+    }
+    const r = job.result || {};
+    el.innerHTML = genreRevalidationResultHtml(r);
+    // "Änderung übernehmen" nur nach einer Vorschau, die die Änderung zulässt.
+    document.getElementById("genre-revalidation-apply-btn").disabled =
+      !(r.mode === "preview" && r.outcome === "OVERTURN_ALLOWED" && !r.error_message);
+  }
+
+  async function _pollGenreRevalidationJob(jobId) {
+    try {
+      const res = await fetch(apiUrl(`/api/v1/jobs/${encodeURIComponent(jobId)}`), { credentials: "same-origin" });
+      if (res.status === 401) { showOnly("login-view"); _stopGenreRevalPolling(); return; }
+      if (!res.ok) return;
+      _renderGenreRevalidationJob(await res.json());
+    } catch (err) {}
+  }
+
+  async function startGenreRevalidation(mode) {
+    const artist = currentArtistFromPath();
+    if (mode === "apply") {
+      const confirmed = window.confirm(
+        `Genre-Revalidierung für "${artist}" anwenden?\n\n` +
+        `Last.fm wird erneut abgefragt; nur wenn die Overturn-Regel dann noch erfüllt ist, ` +
+        `wird das gelernte Genre in mapping/auto_learned_genre.json aktualisiert. ` +
+        `Für neue Downloads wirkt das erst nach einem Bot-Neustart. Audio-Dateien werden nicht verändert.`
+      );
+      if (!confirmed) return;
+    }
+    _genreRevalSetBusy(true);
+    document.getElementById("genre-revalidation-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
+    try {
+      const res = await fetch(apiUrl(`/api/v1/jobs/genre-revalidation-${mode}`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ artist }),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        document.getElementById("genre-revalidation-content").innerHTML =
+          `<div class="alert alert-danger mb-0">Job konnte nicht gestartet werden: ${_escapeHtml((body && body.error && body.error.message) || String(res.status))}</div>`;
+        _genreRevalSetBusy(false);
+        return;
+      }
+      const job = await res.json();
+      _genreRevalJobId = job.job_id;
+      _renderGenreRevalidationJob(job);
+      _stopGenreRevalPolling();
+      _genreRevalTimer = setInterval(() => _pollGenreRevalidationJob(_genreRevalJobId), 1000);
+    } catch (err) {
+      document.getElementById("genre-revalidation-content").innerHTML =
+        `<div class="alert alert-danger mb-0">Job konnte nicht gestartet werden (${_escapeHtml(err.message)}).</div>`;
+      _genreRevalSetBusy(false);
+    }
+  }
+
+  document.getElementById("genre-revalidation-preview-btn").addEventListener("click", () => startGenreRevalidation("preview"));
+  document.getElementById("genre-revalidation-apply-btn").addEventListener("click", () => startGenreRevalidation("apply"));
+
   document.getElementById("genre-manage-preview-btn").addEventListener("click", loadGenreManagePreview);
   document.getElementById("genre-manage-execute-btn").addEventListener("click", executeGenreManage);
 
@@ -1375,7 +1783,8 @@
   function _trackDrawerEditGenre() {
     closeTrackDrawer();
     _openMetadataEditPanel();
-    document.getElementById("genre-manage-content").scrollIntoView({ block: "center" });
+    document.getElementById("genre-mapping-editor").scrollIntoView({ block: "center" });
+    if (!_genreMap.etag) loadGenreMapping();
     loadGenreManagePreview();
   }
 

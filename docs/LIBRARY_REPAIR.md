@@ -1560,3 +1560,41 @@ Titel-/Album-/Albuminterpret-Editing.
 | `tests/test_library_repair_maintenance_service.py` | `album_targets()` (inkl. Scope-Trennung gleicher Albumnamen), `current_album()`/`current_album_artist()`, `_resolve_within_library()` (Pfad-Containment-Härtung), Preview/Execute für beide Flows |
 | `tests/test_library_maintenance_metadata_edit.py` | Vollständiger Album-/Albuminterpret-Zustandsautomat (Picker/Eingabe/Preview/Confirm/Execute), `TestCrossFlowStateReset` (Regressionstest für den v1-Review-Fund) |
 | `tests/test_rich_menu_library_maintenance.py` (`TestAlbumMetadataEditDispatchRouting`) | Dispatcher-Routing für `libmaint:meta:album:*`/`libmaint:meta:albumartist:*` |
+
+---
+
+## 17. Genre-Mapping im Control Center bearbeiten (Primary + Secondary)
+
+**Herkunft:** Nutzerauftrag 2026-09-27 („falsches Genre entfernen, richtiges setzen — Primary UND Secondary"). Die Fachlogik lag bereits in `services/library_repair/genre.py`, nur die Control-Center-Anbindung fehlte (Ziel: Web unabhängig von Telegram, Telegram nur noch Client derselben `services/`).
+
+**Zwei getrennte Schritte auf der Artist-Seite (🎭 Genre-Verwaltung):**
+
+1. **Mapping bearbeiten** — Primary (Eingabefeld) und Secondary (Chips, hinzufügen/entfernen) eines Artists in `mapping/artist_genre.yaml`. „Änderung prüfen" zeigt eine Vorschau (entfernt/neu/Primary-Wechsel, Warnung bei einem Genre, das sonst nirgends im Mapping steht), „Mapping speichern" schreibt nach Bestätigung. Kein Löschen eines Mappings (bewusst nicht Teil des Auftrags).
+2. **Tags aus dem Mapping setzen** — unverändert der bestehende `genre-preview`/`set-genre`-Flow. Nach dem Speichern lädt die UI dessen Vorschau automatisch, damit sichtbar wird, was „Genre setzen" jetzt ändern würde.
+
+**API (dünne Wrapper, ADMIN, Schreibendes mit `verify_same_origin`):**
+`GET /api/v1/library/artists/{artist}/genre-mapping` (Eintrag + Etag + bekannte Genres), `POST …/genre-mapping/preview` (schreibt nichts), `PUT …/genre-mapping` (Schreiben; Body enthält `etag`; veralteter Stand → HTTP 409 `GENRE_MAPPING_CHANGED`, ungültige Eingabe → 422 `GENRE_INPUT_INVALID`, Datei fehlt → 503).
+
+**Service (`genre.py`):** `get_genre_mapping()`, `plan_manual_genre_mapping()` (reine Vorschau), `apply_manual_genre_mapping()` (Check-and-Write unter Lock), `normalize_genre_fields()` (Whitespace, Duplikate casefold, kein `;`, keine Steuerzeichen, max. 100 Zeichen / 20 Secondary), `known_genres()`. Geschrieben wird weiterhin ausschließlich über `save_manual_genre_mapping()` (atomar, andere Einträge und deren Reihenfolge bleiben unverändert; der YAML-Round-Trip der Produktionsdatei ist byte-identisch, ein Edit ändert also nur die Zeilen des einen Eintrags).
+
+**Bugfix im gemeinsamen Writer (betrifft auch Telegram/CLI):** `save_manual_genre_mapping()` schrieb immer `artist.lower()`. Die Produktionsdatei enthält 9 Keys mit Großschreibung („Dua Lipa", „Billie Eilish", …) — dort entstand ein **zweiter, kleingeschriebener Key**: `genre_from_mapping()` (erster casefold-Treffer → alter Eintrag) und `GenreMapper` (lowercased Keys → neuer Eintrag) lösten unterschiedlich auf, die Korrektur blieb wirkungslos bzw. inkonsistent. Jetzt wird ein bestehender Eintrag unter seinem **tatsächlichen Key** aktualisiert; neue Einträge bekommen den lowercase-Key wie bisher. Neuer optionaler Parameter `default_description` (nur für neue Einträge; das Control Center setzt „Manuell gesetzt via Control Center").
+
+**Wichtig — Wirkung:** `GenreMapper` lädt `artist_genre.yaml` beim Bot-Start in den Speicher; `reload()` wird produktiv nirgends aufgerufen (siehe FINDINGS_INDEX, `GenreMapper.reload()`). Für **neue Downloads** wirkt eine Mapping-Änderung daher erst nach einem **Bot-Neustart** (bei Telegram unverändert). Die API meldet das ehrlich (`bot_reload_required`), die UI weist darauf hin. Bereits getaggte Dateien ändern sich nur über „Genre setzen". `mapping/artist_genre.yaml` ist git-getrackt: eine Änderung über das Control Center macht den Working Tree dirty und ist wie jede Mapping-Änderung (CLAUDE.md §10) zu committen.
+
+**Tests:** `tests/test_genre_mapping_edit.py` (Service inkl. Regression gemischte Schreibweise, Etag/Konflikt, Lock, Cross-Consistency gegen eine Kopie der echten `mapping/` mit `GenreMapper`), `tests/test_control_center_genre_mapping_api.py` (API, Auth, CSRF, 409/422/503), `tests/test_artist_genre_mapping_ui.py` (Markup + Render-/Zustandsfunktionen per node).
+
+---
+
+## 18. Genre revalidieren im Control Center (Job)
+
+**Herkunft:** Nutzerauftrag 2026-09-27 (Web unabhängig von Telegram). Die Fachlogik (`genre_revalidation.py`, `genre_revalidation_runner.py`, `scripts/revalidate_genre.py`) existierte bereits; im Control Center fehlte nur die Anbindung (Hinweis „nur in Telegram" auf der Artist-Seite).
+
+**Was eine Revalidierung tut — und was nicht:** Sie fragt Last.fm für EINEN Artist erneut ab und wendet die bestehende Overturn-Regel des Auto-Learnings an. Sie verändert **keine Audio-Datei** und **nicht** `artist_genre.yaml`; sie schreibt höchstens eine Beobachtung in `mapping/auto_learned_genre.json` (gelerntes Genre für künftige Downloads, vom Bot beim Start geladen → wirksam nach Bot-Neustart). Artists mit manuellem Mapping sind IMMER blockiert (`BLOCKED_MANUAL`); dort gilt der Mapping-Editor (§17).
+
+**API (ADMIN, CSRF, wie die L2/L3-Jobs):** `POST /api/v1/jobs/genre-revalidation-preview` (read-only) und `POST /api/v1/jobs/genre-revalidation-apply`, Body `{"artist": "…"}`. Zwei Job-Typen statt eines synchronen Requests, weil der Lauf Last.fm aufruft und bis zu 60 s dauern darf (Reverse-Proxy-Timeout). Das Job-Ergebnis ist das `RevalidationResult` des Skripts plus `mode`, `exit_code`, `bot_reload_required` (nur bei tatsächlicher Mutation). Der Artist-Name wird als Kommandozeilenargument weitergereicht und deshalb abgelehnt, wenn er mit `-` beginnt, Steuerzeichen enthält oder länger als 200 Zeichen ist (422 `ARTIST_INVALID`). Kein Abbrechen (ein einzelner atomarer Lauf, wie bei L2/L3).
+
+**UI (Artist-Seite → Metadaten bearbeiten → 🔄 Genre revalidieren):** „Last.fm prüfen (Vorschau)" zeigt Aktuell/Kandidat/Lernstatus/Begründung. „Änderung übernehmen" ist nur nach einer Vorschau aktiv, die `OVERTURN_ALLOWED` ohne Last.fm-Fehler meldet, und fragt vorher nach (Last.fm wird erneut abgefragt, geschrieben wird nur, wenn die Regel dann noch erfüllt ist).
+
+**Bugfix (betrifft auch Telegram):** Der Runner hält den globalen Repair-Lock für den gesamten Lauf und startet dann das Skript. Bei `--apply` nahm das Skript (`run_genre_revalidation`) denselben Lock ein zweites Mal → `RepairAlreadyRunningError`, Exit-Code 3, keine Ergebnisdatei: **jede Anwendung über den Runner scheiterte** (Telegram und damit auch eine CC-Anbindung); nur die Vorschau und der direkte CLI-Aufruf funktionierten (die Repair-History enthielt entsprechend nur `cli`-Läufe). Fix: `run_genre_revalidation(..., lock_held_by_caller=True)` / Skript-Flag `--lock-held-by-caller` — der Runner setzt es immer, der direkte CLI-Aufruf behält seinen eigenen Lock. Neu außerdem `--triggered-by` / `run_genre_revalidation_subprocess(triggered_by=…)`: das CC schreibt `control_center:<user_id>` in den History-Eintrag statt `cli` (Telegram-Aufrufer unverändert → weiterhin `cli`).
+
+**Tests:** `tests/test_genre_revalidation_lock_chain.py` (echte Kette Runner → Skript-`main()` → `run_genre_revalidation()`, nur Last.fm/Pfade ersetzt; am ungefixten Stand 3 rot), `tests/test_control_center_genre_revalidation_jobs.py` (Endpunkte, Fehlerpfade, Validierung, Auth/CSRF), `tests/test_artist_genre_revalidation_ui.py` (Markup + Render-/Zustandsfunktionen per node). Der Test `test_artist_detail_page_genre_revalidation_…` in `test_control_center_ui.py` wurde bewusst von „Hinweis, kein Endpunkt" auf „verdrahtet" umgestellt.

@@ -838,16 +838,21 @@ async def test_artist_detail_page_maintenance_uses_artist_context_not_free_text(
 
 
 @pytest.mark.asyncio
-async def test_artist_detail_page_genre_revalidation_has_no_dead_button(client):
-    """Auftrag CC-AC-4-SCOPE-HINWEIS: Genre-Revalidierung existiert nur
-    als Telegram-Flow, dafuer wird KEIN neuer Control-Center-Endpunkt
-    gebaut - Hinweistext statt totem Button."""
+async def test_artist_detail_page_genre_revalidation_is_wired_to_the_job_endpoints(client):
+    """Historie: CC-AC-4 hatte nur einen Hinweis "nur in Telegram" (kein Endpunkt).
+    Seit /api/v1/jobs/genre-revalidation-preview|apply gibt es echte Buttons — beide
+    muessen verdrahtet sein (kein toter Button), der alte Hinweis ist entfernt.
+    Wie bei L2/L3 gibt es kein Abbrechen (ein einzelner atomarer Lauf)."""
     html = (await client.get("/library/Bausa")).text
 
     assert "Genre revalidieren" in html
-    assert 'id="genre-revalidate-preview-btn"' not in html
-    assert 'id="genre-revalidate-execute-btn"' not in html
-    assert "nur in Telegram" in html
+    assert 'id="genre-revalidation-preview-btn"' in html
+    assert 'id="genre-revalidation-apply-btn"' in html
+    assert re.search(r'id="genre-revalidation-apply-btn"[^>]*disabled', html)   # erst nach zulaessiger Vorschau
+    assert "startGenreRevalidation(" in html
+    assert "/api/v1/jobs/genre-revalidation-${mode}" in html
+    assert "nur in Telegram" not in html
+    assert "cancelGenreRevalidation" not in html
 
 
 @pytest.mark.asyncio

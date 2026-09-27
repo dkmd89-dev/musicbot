@@ -54,10 +54,22 @@ Casing/Legacy-Genre-Cleanup/Artist-Rename/Titel bearbeiten).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
 
+from config import Config
 from handlers.menu.models import AccessLevel
 from logger import get_module_logger
+from services.library_repair.genre import (
+    GenreDomainError,
+    GenreMappingConflictError,
+    GenreMappingUnavailableError,
+    apply_manual_genre_mapping,
+    get_genre_mapping,
+    known_genres,
+    plan_manual_genre_mapping,
+)
 from services.library_repair.maintenance_service import (
     MaintenanceServiceError,
     execute_set_genre,
@@ -67,6 +79,16 @@ from services.library_repair.run_tracking import RepairAlreadyRunningError
 
 from ..dependencies import get_current_user_id, require_min_access_level, verify_same_origin
 from ..schemas.errors import ErrorDetail
+from ..schemas.genre_mapping import (
+    GenreMappingBody,
+    GenreMappingPreviewResponse,
+    GenreMappingResponse,
+    GenreMappingSaveBody,
+    GenreMappingSaveResponse,
+    entry_to_schema,
+    plan_to_preview,
+    save_to_response,
+)
 from ..schemas.maintenance import (
     MaintenanceExecuteResponse,
     MaintenancePreviewResponse,
@@ -117,3 +139,80 @@ def post_set_genre(
             detail=ErrorDetail(code="REPAIR_ALREADY_RUNNING", message=str(e)).model_dump(),
         ) from e
     return maintenance_execute_to_response(result)
+
+
+# ── Genre-Mapping bearbeiten (Primary + Secondary) ─────────────────────────
+#
+# Duenne Wrapper um services/library_repair/genre.py (get_genre_mapping /
+# plan_manual_genre_mapping / apply_manual_genre_mapping). Das Mapping
+# (mapping/artist_genre.yaml) ist Fachlogik (CLAUDE.md §10): erst Vorschau,
+# dann Schreiben mit Etag (Konflikt -> 409). Die Tags der Dateien werden NICHT
+# hier geaendert, sondern weiter ueber genre-preview/set-genre (aus dem
+# Mapping). Der laufende Bot laedt das Mapping beim Start (GenreMapper) —
+# `bot_reload_required` sagt das ehrlich.
+
+
+def _mapping_dir() -> Path:
+    return Path(Config.GENRE_MAPPING_DIR)
+
+
+def _genre_mapping_http_error(e: GenreDomainError) -> HTTPException:
+    if isinstance(e, GenreMappingUnavailableError):
+        status, code = 503, "GENRE_MAPPING_UNAVAILABLE"
+    elif isinstance(e, GenreMappingConflictError):
+        status, code = 409, "GENRE_MAPPING_CHANGED"
+    else:
+        status, code = 422, "GENRE_INPUT_INVALID"
+    return HTTPException(
+        status_code=status, detail=ErrorDetail(code=code, message=str(e)).model_dump(),
+    )
+
+
+@router.get("/artists/{artist}/genre-mapping", response_model=GenreMappingResponse)
+def get_artist_genre_mapping(artist: str) -> GenreMappingResponse:
+    try:
+        entry, etag = get_genre_mapping(artist, _mapping_dir())
+    except GenreDomainError as e:
+        raise _genre_mapping_http_error(e) from e
+    return GenreMappingResponse(
+        artist=artist, exists=entry is not None, entry=entry_to_schema(entry), etag=etag,
+        known_genres=known_genres(_mapping_dir() / "artist_genre.yaml"),
+    )
+
+
+@router.post(
+    "/artists/{artist}/genre-mapping/preview",
+    response_model=GenreMappingPreviewResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+def post_genre_mapping_preview(artist: str, body: GenreMappingBody) -> GenreMappingPreviewResponse:
+    """Reine Vorschau (schreibt nichts): was aendert sich im Mapping?"""
+    try:
+        plan = plan_manual_genre_mapping(artist, body.primary, body.secondary, _mapping_dir())
+    except GenreDomainError as e:
+        raise _genre_mapping_http_error(e) from e
+    return plan_to_preview(artist, plan)
+
+
+@router.put(
+    "/artists/{artist}/genre-mapping",
+    response_model=GenreMappingSaveResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+def put_artist_genre_mapping(
+    artist: str, body: GenreMappingSaveBody, user_id: int = Depends(get_current_user_id),
+) -> GenreMappingSaveResponse:
+    try:
+        plan, result = apply_manual_genre_mapping(
+            artist, body.primary, body.secondary, _mapping_dir(),
+            expected_etag=body.etag,
+            default_description="Manuell gesetzt via Control Center",
+        )
+        _, new_etag = get_genre_mapping(artist, _mapping_dir())
+    except GenreDomainError as e:
+        raise _genre_mapping_http_error(e) from e
+    _logger.info(
+        f"🎭 [control_center] Genre-Mapping {plan.change} für Artist-Key {plan.artist_key!r} "
+        f"von User {user_id} (geschrieben={result.written})"
+    )
+    return save_to_response(artist, plan, result, new_etag)
