@@ -4,15 +4,8 @@
 <div class="page-header d-print-none mb-4">
   <div class="row align-items-center">
     <div class="col">
-      <h1 class="page-title">
-        <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-library" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-          <path d="M7 4v16l-4 -2v-12z" />
-          <path d="M17 4v16l4 -2v-12z" />
-          <path d="M11 5h2v14h-2z" />
-        </svg>
-        Library
-      </h1>
+      <h1 class="page-title">📚 Library</h1>
+      <div class="text-secondary" id="library-last-scan"></div>
       <div class="text-secondary">
         Artists, Alben, Tracks und Mapping-Übersicht.
       </div>
@@ -25,7 +18,7 @@
   <div class="col-6 col-lg-3">
     <div class="card h-100">
       <div class="card-body py-3">
-        <div class="text-secondary small">Tracks</div>
+        <div class="text-secondary small">🎵 Tracks</div>
         <div class="h2 mb-0" id="library-kpi-tracks">–</div>
       </div>
     </div>
@@ -34,7 +27,7 @@
   <div class="col-6 col-lg-3">
     <div class="card h-100">
       <div class="card-body py-3">
-        <div class="text-secondary small">Artists</div>
+        <div class="text-secondary small">🎤 Artists</div>
         <div class="h2 mb-0" id="library-kpi-artists">–</div>
       </div>
     </div>
@@ -43,22 +36,25 @@
   <div class="col-6 col-lg-3">
     <div class="card h-100">
       <div class="card-body py-3">
-        <div class="text-secondary small">Alben</div>
+        <div class="text-secondary small">💿 Alben</div>
         <div class="h2 mb-0" id="library-kpi-albums">–</div>
       </div>
     </div>
   </div>
 
+  <!-- CC-LIB-FINAL Library-Home (Nutzer-Freigabe): Health-Zahl ist bereits
+       prominent in der "Library Health"-Karte direkt darunter (Score +
+       Trend + Sparkline) - hier stattdessen ein Schnellzugriff auf die
+       Library-Wartung (Scan/Mapping-Sektion unten). Reines Anchor-Link-
+       Verhalten (<details id="library-metadata-details"> oeffnet sich
+       nativ beim Anspringen seines :target-Fragments, kein JS noetig). -->
   <div class="col-6 col-lg-3">
-    <div class="card h-100">
+    <a href="#library-metadata-details" class="card h-100 text-reset text-decoration-none">
       <div class="card-body py-3">
-        <div class="text-secondary small">Health</div>
-        <div class="d-flex align-items-center gap-2">
-          <div class="h2 mb-0" id="library-kpi-health">–</div>
-          <span class="badge bg-green-lt text-green" id="library-kpi-health-status"></span>
-        </div>
+        <div class="text-secondary small">Schnellzugriff</div>
+        <div class="h2 mb-0">🛠 Wartung</div>
       </div>
-    </div>
+    </a>
   </div>
 </div>
 
@@ -451,30 +447,16 @@
       document.getElementById("library-kpi-tracks").textContent = lib.files;
       document.getElementById("library-kpi-albums").textContent = lib.albums;
 
-      // CC-AC-8: Health-KPI aus derselben Antwort wie die übrigen KPIs.
-      // Keine zusätzliche Anfrage und keine Schätzung.
-      const _health = body.health || {};
-      const _healthScoreEl = document.getElementById("library-kpi-health");
-      const _healthStatusEl = document.getElementById("library-kpi-health-status");
-
-      if (typeof _health.score === "number") {
-        _healthScoreEl.textContent = _health.score;
-
-        const _healthBadgeCls = _health.score >= 90
-          ? "bg-green-lt text-green"
-          : _health.score >= 70
-            ? "bg-yellow-lt text-yellow"
-            : "bg-red-lt text-red";
-
-        _healthStatusEl.className = `badge ${_healthBadgeCls}`;
-        _healthStatusEl.textContent = _health.status || "";
-      } else {
-        // Kein health.score -> Health-KPI ausblenden, ohne andere KPIs
-        // oder die restliche Library-Seite zu beeinflussen.
-        _healthScoreEl.closest(".col-6").hidden = true;
-      }
-
       document.getElementById("library-kpi-tiles").hidden = false;
+
+      // CC-LIB-FINAL Library-Home: "Zuletzt gescannt" prominent unter dem
+      // Seitentitel statt nur klein im Health-Panel — scan.completed_at
+      // kommt aus derselben bereits geladenen /health/cached-Antwort,
+      // kein zusätzlicher Request.
+      const _scan = body.scan || {};
+      document.getElementById("library-last-scan").textContent = _scan.completed_at
+        ? `Zuletzt gescannt: ${_formatDateTime(_scan.completed_at)}`
+        : "";
 
       // CC-AC-8 Schritt 2: Health-Snapshot + Attention-Block aus derselben
       // Antwort befüllen — kein zusätzlicher Request.
@@ -490,13 +472,13 @@
 
   // CC-AC-8 Schritt 3: Health-Panel kompakter (Option 1).
   // Die Health-Zahl steht bereits in der KPI-Kachel oben — hier nur noch
-  // Status-Label, Kernzahlen und Stand (aus scan.completed_at, dem
-  // einzigen autoritativen Zeitstempel in /health/cached).
+  // Status-Label, Kernzahlen und Trend. Der "Stand"-Zeitstempel (scan.
+  // completed_at) steht seit CC-LIB-FINAL prominent unter dem Seitentitel
+  // (loadLibraryKpis()) statt hier klein im Panel — keine Dopplung.
   function _renderLibraryHealthSnapshot(body) {
     const el = document.getElementById("library-health-content");
     const h = body.health || {};
     const s = body.statistics || {};
-    const scan = body.scan || {};
     if (typeof h.score !== "number") {
       document.getElementById("library-health-panel").hidden = true;
       return;
@@ -505,9 +487,6 @@
     const summary = (typeof s.total_files === "number")
       ? `${s.total_files} Tracks · ${s.total_artists} Artists · ${s.total_albums} Alben`
       : "";
-
-    const stand = scan.completed_at
-      ? `<div class="text-secondary small mt-2">Stand: ${_escapeHtml(_formatDateTime(scan.completed_at))}</div>` : "";
 
     // Phase E (CC-LIB-FINAL) Dashboard-Optimierung: derselbe Status<->Farbe-
     // Vertrag wie health.js's Health-Kachel (_HEALTH_STATUS_COLOR, seit
@@ -525,6 +504,7 @@
       <div class="d-flex align-items-baseline gap-2 mb-2">
         <div class="h1 mb-0">${h.score}</div>
         <span class="badge bg-${color}-lt">${_escapeHtml(h.status || "")}</span>
+        <span id="library-health-trend" class="text-secondary small"></span>
       </div>
 
       <div class="progress progress-sm mb-2">
@@ -532,7 +512,6 @@
       </div>
 
       ${summary ? `<div class="text-secondary small">${summary}</div>` : ""}
-      ${stand}
 
       <a href="${CC_BASE}/health" class="btn btn-outline-primary w-100 mt-3">Health öffnen →</a>
     `;
@@ -550,43 +529,29 @@
     return _loadInto(
       "library-health-sparkline", "/api/v1/library/health/score-history?limit=20",
       (el, body) => {
+        _renderLibraryHealthTrend(body.entries);
         if (!body.entries.length) { el.innerHTML = ""; return; }
         el.innerHTML = `<div class="subheader mt-3 mb-1">Score-Verlauf</div>${_sparklineSvg(body.entries)}`;
       },
     );
   }
 
-  // CC-AC-8 Schritt 3: Attention severity-getrennt (Variante A).
-  // Primär aus statistics.issues_by_severity (autoritative Quelle),
-  // Detail-Liste der Warnungen aus statistics.issues_by_code + statischer
-  // WARNING-Codes-Map (erweiterbar, siehe FINDINGS_INDEX).
-  // Keine Schätzung: fehlende Felder werden ausgelassen.
-  // CC-AC-8 Schritt 3 Fix: autoritative Liste aller Severity.WARNING-Codes
-  // aus services/library_health/issues.py (Zeilen 48-199). Bei Ergänzungen
-  // dort mitpflegen. Alle anderen Codes sind Severity.INFO (oder ERROR,
-  // aktuell keiner).
-  const _WARNING_CODES = new Set([
-    "ALBUM_ARTIST_INCONSISTENT",
-    "ALBUM_NAME_INCONSISTENT",
-    "ALBUM_TRACK_GAP",
-    "ARTWORK_MISSING",
-    "AUDIO_LOW_BITRATE",
-    "DUPLICATE_EXACT",
-    "DUPLICATE_RECORDING",
-    "GENRE_EMPTY",
-    "LOUDNESS_TAG_INVALID",
-    "LYRICS_EMPTY",
-    "LYRICS_INVALID",
-    "META_ALBUM_ARTIST_MISSING",
-    "META_ALBUM_MISSING",
-    "META_GENRE_MISSING",
-    "META_TITLE_NOT_CLEAN",
-    "META_YEAR_INVALID",
-    "META_YEAR_MISSING",
-    "MULTI_ARTIST_SUSPICIOUS",
-    "STRUCTURE_FILE_OUTSIDE_HIERARCHY",
-    "STRUCTURE_INVALID_PATH",
-  ]);
+  // CC-LIB-FINAL Library-Home: Trend als Differenz erster vs. letzter
+  // Score-Wert im sichtbaren score-history-Fenster (Auftrag: "GET
+  // /api/v1/health/score-history liefert die Reihe bereits" — kein neuer
+  // Endpunkt, keine neue Anfrage, dieselbe Antwort wie die Sparkline
+  // oben). API liefert aelteste zuerst (siehe _sparklineSvg()-Kommentar),
+  // erster Eintrag ist also der aelteste sichtbare, letzter der aktuellste
+  // Scan. Unter zwei gewerteten Laeufen gibt es keinen sinnvollen Trend.
+  function _renderLibraryHealthTrend(entries) {
+    const trendEl = document.getElementById("library-health-trend");
+    if (!trendEl) return;
+    const scored = entries.filter((e) => typeof e.score === "number");
+    if (scored.length < 2) { trendEl.textContent = ""; return; }
+    const delta = Math.round((scored[scored.length - 1].score - scored[0].score) * 10) / 10;
+    const deltaText = delta > 0 ? `+${delta}` : delta < 0 ? `${delta}` : "±0";
+    trendEl.textContent = `${deltaText} seit letztem Scan`;
+  }
 
   // ISO-String -> "DD.MM.YYYY HH:MM" (lokale Zeit). Fallback: Original-String.
   function _formatDateTime(iso) {
@@ -599,6 +564,18 @@
     } catch (e) { return iso; }
   }
 
+  // CC-LIB-FINAL Library-Home (Nutzer-Freigabe): Aufmerksamkeit-Karte als
+  // Zeilenliste der haeufigsten offenen Issue-Codes (Icon + Anzahl +
+  // Klartext-Label aus dem gemeinsamen _ISSUE_LABELS, common.js) statt
+  // Code-Badges. Kandidaten sind ALLE Codes aus statistics.issues_by_code
+  // (nicht mehr nur WARNING-Codes wie zuvor) - sortiert nach Severity-Tier
+  // absteigend (_ISSUE_SEVERITY_RANK, common.js), dann Anzahl absteigend,
+  // Top 3. Errors werden dadurch nicht mehr nur als Summe angezeigt: ein
+  // ERROR-/CRITICAL-Code mit offenen Treffern landet automatisch oben in
+  // der Liste. Der separate Errors-Hinweis bleibt zusaetzlich als
+  // Sicherheitsnetz erhalten (P0-Prioritaet, CLAUDE.md Abschnitt 23) fuer
+  // den Fall, dass ein zukuenftiger ERROR-Code hier noch nicht in
+  // _ISSUE_ERROR_CODES nachgepflegt wurde.
   function _renderLibraryAttention(body) {
     const el = document.getElementById("library-attention-content");
     const s = body.statistics || {};
@@ -608,55 +585,41 @@
     const errors = (bySev.ERROR || 0) + (bySev.CRITICAL || 0);
     const warnings = bySev.WARNING || 0;
     const infos = bySev.INFO || 0;
+    const total = errors + warnings + infos;
 
     // CC-AC-8 Schritt 4: Empty State — wenn wirklich alles 0 ist,
     // einen grünen "Keine kritischen Probleme"-Hinweis zeigen statt
     // drei Null-Zeilen. (Nur bei vollständig leerem Report.)
-    if (errors === 0 && warnings === 0 && infos === 0) {
+    if (total === 0) {
       el.innerHTML = '<p class="empty-note empty-note-ok">✓ Keine kritischen Probleme.</p>' +
         `<a href="${CC_BASE}/findings" class="btn btn-outline-primary w-100 mt-2">Findings öffnen →</a>`;
       return;
     }
 
-    // Phase E (CC-LIB-FINAL) Dashboard-Optimierung: EIN Kennzahl-Kopf
-    // (Warnings — häufigste tatsächlich behebbare Kategorie) statt einer
-    // dreiteiligen Errors/Warnings/Infos-Badgereihe. Errors werden dabei
-    // NIE verschwiegen (P0-Priorität, CLAUDE.md Abschnitt 23): sind welche
-    // vorhanden, erscheint zusätzlich ein roter Errors-Badge über der
-    // Warnings-Zahl — nur der (häufige) 0-Errors-Fall entfällt als eigene
-    // Zeile. Infos bleiben als kleine, unauffällige Zusatzzeile erhalten,
-    // statt komplett zu verschwinden.
     const errorBadge = errors > 0
       ? `<div class="mb-2"><span class="badge bg-red-lt text-red">${errors} Errors</span></div>`
       : "";
 
-    // Top-Warnungen: verkürzt von 5 auf 2 (Auftrag-Wireframe) — die
-    // vollständige Liste bleibt über den Findings-Button einen Klick
-    // entfernt, keine Daten gehen verloren.
-    const topWarnings = Object.entries(byCode)
-      .filter(([code, n]) => _WARNING_CODES.has(code) && n > 0)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 2);
+    const topIssues = Object.entries(byCode)
+      .filter(([, n]) => n > 0)
+      .sort((a, b) => {
+        const rankDiff = _ISSUE_SEVERITY_RANK[_issueSeverityTier(b[0])] - _ISSUE_SEVERITY_RANK[_issueSeverityTier(a[0])];
+        return rankDiff !== 0 ? rankDiff : b[1] - a[1];
+      })
+      .slice(0, 3);
 
-    let detail = "";
-    if (topWarnings.length) {
-      detail = '<div class="d-flex flex-wrap gap-2 mt-3">' +
-        topWarnings.map(([code, n]) =>
-          `<span class="badge bg-yellow-lt text-yellow">${_escapeHtml(code)} ${n}</span>`
-        ).join("") + '</div>';
-    }
-
-    const infoLine = infos > 0
-      ? `<div class="text-secondary small mt-2">+ ${infos} Infos</div>` : "";
+    const rows = topIssues.map(([code, n]) => `
+      <div class="d-flex align-items-center gap-2 py-1">
+        <span class="fw-bold" style="min-width: 1.5em;">${_escapeHtml(String(n))}</span>
+        <span>${_issueIcon(code)}</span>
+        <span class="text-secondary">${_escapeHtml(_ISSUE_LABELS[code] || code)}</span>
+      </div>
+    `).join("");
 
     el.innerHTML = `
       ${errorBadge}
-      <div class="d-flex align-items-baseline gap-2">
-        <div class="h1 mb-0">${warnings}</div>
-        <span class="text-secondary">Warnings</span>
-      </div>
-      ${detail}
-      ${infoLine}
+      ${rows}
+      <div class="text-secondary small mt-2">Top ${topIssues.length} nach Severity · ${total} offen insgesamt</div>
       <a href="${CC_BASE}/findings" class="btn btn-outline-primary w-100 mt-3">Findings öffnen →</a>
     `;
   }

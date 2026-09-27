@@ -953,7 +953,10 @@ async def test_track_detail_context_shows_health_from_existing_issue_codes(clien
     html = (await client.get("/library/Bausa")).text
 
     assert "t.issue_codes.length" in html
-    assert "_TRACK_ISSUE_LABELS" in html
+    # CC-LIB-FINAL Library-Home: das Label-Dict lebt jetzt zentral als
+    # _ISSUE_LABELS in common.js (zweiter Konsument: library.html's
+    # Aufmerksamkeit-Karte) - hier nur noch die Verwendungsstelle.
+    assert "_ISSUE_LABELS[code]" in html
     assert "Keine bekannten Probleme laut letztem Health-Scan" in html
     assert "Metadata vollständig" not in html
 
@@ -981,7 +984,7 @@ async def test_track_action_preserves_preview_execute_flow(client):
     Funktionen auf. Keine neue fetch()/POST-Ausfuehrung im Drawer-Block."""
     html = (await client.get("/library/Bausa")).text
 
-    drawer_block = html.split("const _TRACK_ISSUE_LABELS", 1)[1].split("function initPage()", 1)[0]
+    drawer_block = html.split("let _trackDrawerIsAdmin = false;", 1)[1].split("function initPage()", 1)[0]
     assert "loadTitleEditPreview();" in drawer_block
     assert "loadGenreManagePreview();" in drawer_block
     assert "fetch(" not in drawer_block
@@ -1195,14 +1198,17 @@ async def test_admin_page_has_cross_user_statistics_wiring(client):
 #
 #
 @pytest.mark.asyncio
-async def test_library_page_has_health_kpi_tile(client):
-    """CC-AC-8 Schritt 1: vierte KPI-Kachel 'Health' + Status-Label.
-    Nutzt health.score/health.status aus derselben /health/cached-Antwort
-    wie die drei bestehenden Kacheln - keine zusaetzliche Anfrage."""
+async def test_library_page_has_maintenance_quick_access_tile(client):
+    """CC-LIB-FINAL Library-Home (Nutzer-Freigabe): die vierte KPI-Kachel
+    zeigt nicht mehr die Health-Zahl (die steht bereits prominent in der
+    Library-Health-Karte darunter, samt Trend/Sparkline) - stattdessen ein
+    Schnellzugriff-Link auf die Library-Wartung-Sektion (natives Anchor-
+    Link-Verhalten auf <details id="library-metadata-details">, kein JS)."""
     html = (await client.get("/library")).text
 
-    assert 'id="library-kpi-health"' in html
-    assert 'id="library-kpi-health-status"' in html
+    assert 'id="library-kpi-health"' not in html
+    assert 'href="#library-metadata-details"' in html
+    assert "🛠 Wartung" in html
 
 
 # @pytest.mark.asyncio
@@ -1218,16 +1224,20 @@ async def test_library_page_has_health_kpi_tile(client):
 #
 @pytest.mark.asyncio
 async def test_library_page_attention_uses_severity_data(client):
-    """CC-AC-8 Schritt 3: Attention liest issues_by_severity (autoritative
-    Quelle) + filtert die Top-Warnungen gegen eine statische
-    _WARNING_CODES-Map (verifiziert gegen services/library_health/
-    issues.py, Severity.WARNING)."""
+    """CC-AC-8 Schritt 3 / CC-LIB-FINAL: Attention liest issues_by_severity
+    (autoritative Quelle) + rankt die Top-Issues ueber die gemeinsame
+    Severity-Klassifikation (verifiziert gegen services/library_health/
+    issues.py, siehe common.js::_ISSUE_ERROR_CODES/_ISSUE_WARNING_CODES -
+    seit CC-LIB-FINAL zentral dort statt einer library.html-lokalen Kopie)."""
     html = (await client.get("/library")).text
+    common_js = (await client.get("/static/common.js")).text
 
     assert "_renderLibraryAttention" in html
     assert "_renderLibraryHealthSnapshot" in html
     assert "issues_by_severity" in html
-    assert "_WARNING_CODES" in html
+    assert "_issueSeverityTier" in html
+    assert "_ISSUE_WARNING_CODES" in common_js
+    assert "_ISSUE_ERROR_CODES" in common_js
 
 
 @pytest.mark.asyncio

@@ -67,6 +67,114 @@ function _sparklineSvg(entries) {
     `<polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${dots}</svg>`;
 }
 
+// Issue-Codes -> Kurzlabel/Severity-Tier/Icon (CC-LIB-FINAL Library-Home:
+// hierher verschoben aus library_artist_detail.html's frueherem, nur
+// lokalem _TRACK_ISSUE_LABELS - zweiter Konsument ist jetzt library.html's
+// Aufmerksamkeit-Karte, dieselbe Quelle statt einer zweiten, driftenden
+// Kopie. Vollstaendig gegen services/library_health/issues.py::ISSUE_SPECS
+// abgeglichen (alle dort definierten Codes sind unten vertreten).
+const _ISSUE_LABELS = {
+  META_NOT_ANALYZABLE: "Tags nicht lesbar",
+  META_ARTIST_MISSING: "Artist fehlt",
+  META_TITLE_MISSING: "Titel fehlt",
+  META_TITLE_NOT_CLEAN: "Titel enthält Parsing-/Formatierungsreste",
+  META_ALBUM_MISSING: "Album fehlt",
+  META_ALBUM_ARTIST_MISSING: "Album-Artist fehlt",
+  META_YEAR_MISSING: "Jahr fehlt",
+  META_YEAR_INVALID: "Jahr ungültig",
+  META_GENRE_MISSING: "Genre fehlt",
+  META_TRACK_NUMBER_MISSING: "Tracknummer fehlt",
+  META_MB_RECORDING_MISSING: "MusicBrainz Recording-ID fehlt",
+  META_MB_RELEASE_MISSING: "MusicBrainz Release-ID fehlt",
+  META_ISRC_MISSING: "ISRC fehlt",
+  ARTWORK_MISSING: "Cover fehlt",
+  ARTWORK_INVALID: "Cover nicht dekodierbar",
+  ARTWORK_LOW_RESOLUTION: "Cover-Auflösung niedrig",
+  ARTWORK_NON_SQUARE: "Cover nicht quadratisch",
+  LYRICS_MISSING: "Lyrics fehlen",
+  LYRICS_EMPTY: "Lyrics-Tag leer",
+  LYRICS_INVALID: "Lyrics-Tag wirkt nicht wie Liedtext",
+  AUDIO_NOT_ANALYZABLE: "Audio nicht analysierbar",
+  AUDIO_NO_STREAM: "Kein Audio-Stream",
+  AUDIO_CORRUPT: "Audio-Datei beschädigt",
+  AUDIO_LOW_BITRATE: "Bitrate niedrig",
+  AUDIO_VERY_SHORT: "Sehr kurze Laufzeit",
+  LOUDNESS_TAG_MISSING: "Kein Loudness-Tag",
+  LOUDNESS_OFF_TARGET: "Lautheit weicht vom Ziel ab",
+  LOUDNESS_TAG_INVALID: "Loudness-Tag ungültig",
+  LOUDNESS_TAG_PARTIAL: "Loudness-Tag unvollständig",
+  STRUCTURE_INVALID_PATH: "Ungewöhnliche Verzeichnisstruktur",
+  STRUCTURE_FILE_OUTSIDE_HIERARCHY: "Datei außerhalb der erwarteten Hierarchie",
+  FILENAME_TITLE_MISMATCH: "Dateiname passt nicht zum Titel",
+  FILENAME_SUSPICIOUS: "Dateiname wirkt fehlerhaft",
+  FILENAME_EXTENSION_UNEXPECTED: "Unerwartete Dateiendung",
+  MULTI_ARTIST_SUSPICIOUS: "Artist-Tag wirkt wie Mehrfach-Artist-Konkatenation",
+  MULTI_ARTIST_INCONSISTENT: "Artist-/Album-Artist-Felder widersprüchlich",
+  MULTI_ARTIST_DUPLICATE: "Artist mehrfach im Multi-Artist-Feld",
+  GENRE_EMPTY: "Genre-Tag leer",
+  GENRE_INVALID: "Genre außerhalb der Konvention",
+  GENRE_DELIMITER_INCONSISTENT: "Genre-Trennzeichen uneinheitlich",
+  ALBUM_TRACK_GAP: "Lücke in der Tracknummerierung",
+  ALBUM_NAME_INCONSISTENT: "Albumname im Ordner uneinheitlich",
+  ALBUM_ARTIST_INCONSISTENT: "Album-Artist im Ordner uneinheitlich",
+  ALBUM_YEAR_INCONSISTENT: "Jahr im Album uneinheitlich",
+  ALBUM_GENRE_INCONSISTENT: "Genre im Album uneinheitlich",
+  ALBUM_RELEASE_ID_INCONSISTENT: "MusicBrainz Release-ID im Album uneinheitlich",
+  ALBUM_COVER_INCONSISTENT: "Cover im Album uneinheitlich",
+  ALBUM_DUPLICATE_TRACK_NUMBER: "Tracknummer im Album doppelt vergeben",
+  ARTIST_DIR_TAG_MISMATCH: "Artist-Ordner weicht vom Artist-Tag ab",
+  ARTIST_NAME_VARIANTS: "Artist-Ordner wirken wie Schreibvarianten",
+  DUPLICATE_EXACT: "Exaktes Duplikat (identische Datei)",
+  DUPLICATE_RECORDING: "Duplikat (gleiche Aufnahme/ISRC)",
+  DUPLICATE_SUSPECTED: "Vermutliches Duplikat (Artist+Titel)",
+};
+
+// Severity-Tier je Code, 1:1 aus services/library_health/issues.py::
+// ISSUE_SPECS uebernommen (bei neuen/geaenderten Codes dort mitpflegen -
+// dieselbe Pflicht wie zuvor bei der library.html-lokalen _WARNING_CODES,
+// jetzt nur vollstaendig inkl. ERROR/CRITICAL statt nur WARNING). Alle
+// nicht gelisteten Codes gelten als INFO.
+const _ISSUE_ERROR_CODES = new Set([
+  "META_NOT_ANALYZABLE", "META_ARTIST_MISSING", "META_TITLE_MISSING",
+  "ARTWORK_INVALID", "AUDIO_NOT_ANALYZABLE", "AUDIO_NO_STREAM",
+  "AUDIO_CORRUPT", "ALBUM_DUPLICATE_TRACK_NUMBER",
+]);
+const _ISSUE_WARNING_CODES = new Set([
+  "ALBUM_ARTIST_INCONSISTENT", "ALBUM_NAME_INCONSISTENT", "ALBUM_TRACK_GAP",
+  "ARTWORK_MISSING", "AUDIO_LOW_BITRATE", "DUPLICATE_EXACT",
+  "DUPLICATE_RECORDING", "GENRE_EMPTY", "LOUDNESS_TAG_INVALID",
+  "LYRICS_EMPTY", "LYRICS_INVALID", "META_ALBUM_ARTIST_MISSING",
+  "META_ALBUM_MISSING", "META_GENRE_MISSING", "META_TITLE_NOT_CLEAN",
+  "META_YEAR_INVALID", "META_YEAR_MISSING", "MULTI_ARTIST_SUSPICIOUS",
+  "STRUCTURE_FILE_OUTSIDE_HIERARCHY", "STRUCTURE_INVALID_PATH",
+]);
+function _issueSeverityTier(code) {
+  if (_ISSUE_ERROR_CODES.has(code)) return "ERROR";
+  if (_ISSUE_WARNING_CODES.has(code)) return "WARNING";
+  return "INFO";
+}
+const _ISSUE_SEVERITY_RANK = { ERROR: 3, WARNING: 2, INFO: 1 };
+
+// Grobe Icon-Zuordnung nach Code-Praefix - reine Praesentation (kein
+// fachlicher Ersatz fuer Severity/Label), fuer kompakte Listendarstellung
+// (library.html's Aufmerksamkeit-Karte).
+function _issueIcon(code) {
+  if (code.indexOf("META_MB_") === 0) return "🎵";
+  if (code.indexOf("META_") === 0) return "📋";
+  if (code.indexOf("ARTWORK_") === 0) return "🖼️";
+  if (code.indexOf("LYRICS_") === 0) return "📝";
+  if (code.indexOf("AUDIO_") === 0) return "🎚️";
+  if (code.indexOf("LOUDNESS_") === 0) return "🔊";
+  if (code.indexOf("FILENAME_") === 0) return "📄";
+  if (code.indexOf("STRUCTURE_") === 0) return "🗂️";
+  if (code.indexOf("MULTI_ARTIST") === 0) return "👥";
+  if (code.indexOf("ALBUM_") === 0) return "💿";
+  if (code.indexOf("ARTIST_") === 0) return "🎤";
+  if (code.indexOf("GENRE_") === 0) return "🎭";
+  if (code.indexOf("DUPLICATE_") === 0) return "🧬";
+  return "⚠️";
+}
+
 // Sicherheitshinweis (galt schon im vorherigen Einzel-Dashboard): Titel/
 // Artist/Pfad/Message-Felder stammen aus Library-/Download-Metadaten
 // (z. B. YouTube-Videotiteln) - nicht vertrauenswuerdig genug, um sie

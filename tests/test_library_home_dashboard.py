@@ -83,7 +83,7 @@ global.fetch = async (url) => {
 
 const src = fs.readFileSync(process.argv[2], "utf-8");
 const api = new Function(src + "\nreturn { renderArtistsOverview, _renderLibraryHealthSnapshot, " +
-  "_renderLibraryAttention, loadLibraryHealthSparkline };")();
+  "_renderLibraryAttention, loadLibraryHealthSparkline, loadLibraryKpis };")();
 
 (async () => {
   for (const op of scenario.ops || []) {
@@ -208,7 +208,11 @@ def test_health_snapshot_uses_shared_status_color_and_progress_bar(tmp_path: Pat
     assert 'bg-green-lt">EXCELLENT' in html  # _HEALTH_STATUS_COLOR.EXCELLENT == "green"
     assert 'class="progress-bar bg-green" style="width: 99.9%"' in html
     assert "501 Tracks · 42 Artists · 59 Alben" in html
-    assert "27.09.2026" in html
+    # CC-LIB-FINAL Library-Home: der "Stand"-Zeitstempel lebt seit dieser
+    # Phase prominent unter dem Seitentitel (library-last-scan, befuellt
+    # von loadLibraryKpis() - siehe test_last_scan_shown_under_page_title
+    # unten) statt hier klein im Panel - hier deshalb bewusst NICHT mehr
+    # geprueft.
     assert 'class="btn btn-outline-primary w-100' in html
     # Sparkline wird als eigener, isolierter Request geladen (nicht Teil
     # derselben /health/cached-Antwort).
@@ -252,12 +256,88 @@ def test_health_sparkline_empty_history_renders_nothing(tmp_path: Path) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# CC-LIB-FINAL Library-Home: "Zuletzt gescannt" prominent + Health-Trend
+# (Nutzer-Ergaenzung — score-history liefert die Reihe bereits, kein
+# neuer Endpunkt: Differenz erster vs. letzter gewerteter Score im
+# selben score-history-Fenster wie die Sparkline oben).
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@needs_node
+def test_last_scan_shown_under_page_title(tmp_path: Path) -> None:
+    out = _run(tmp_path, {
+        "routes": {
+            "health/cached": {
+                "library": {"files": 501, "artists": 42, "albums": 59},
+                "health": {"score": 99.9, "status": "EXCELLENT"},
+                "statistics": {"total_files": 501, "total_artists": 42, "total_albums": 59},
+                "scan": {"completed_at": "2026-09-27T05:47:00"},
+            },
+            "score-history": {"entries": []},
+        },
+        "ops": [{"op": "call", "fn": "loadLibraryKpis"}],
+    })
+    assert out["els"]["library-last-scan"]["text"] == "Zuletzt gescannt: 27.09.2026 05:47"
+
+
+@needs_node
+def test_health_trend_shows_positive_delta_since_first_visible_scan(tmp_path: Path) -> None:
+    out = _run(tmp_path, {
+        "routes": {"score-history": {"entries": [
+            {"score": 91.2, "status": "GOOD", "timestamp": "2026-09-20T10:00:00"},
+            {"score": 91.5, "status": "GOOD", "timestamp": "2026-09-27T05:47:00"},
+        ]}},
+        "ops": [{"op": "call", "fn": "loadLibraryHealthSparkline"}],
+    })
+    assert out["els"]["library-health-trend"]["text"] == "+0.3 seit letztem Scan"
+
+
+@needs_node
+def test_health_trend_shows_negative_delta(tmp_path: Path) -> None:
+    out = _run(tmp_path, {
+        "routes": {"score-history": {"entries": [
+            {"score": 95.0, "status": "EXCELLENT", "timestamp": "2026-09-20T10:00:00"},
+            {"score": 92.0, "status": "GOOD", "timestamp": "2026-09-27T05:47:00"},
+        ]}},
+        "ops": [{"op": "call", "fn": "loadLibraryHealthSparkline"}],
+    })
+    assert out["els"]["library-health-trend"]["text"] == "-3 seit letztem Scan"
+
+
+@needs_node
+def test_health_trend_unchanged_shows_plusminus_zero(tmp_path: Path) -> None:
+    out = _run(tmp_path, {
+        "routes": {"score-history": {"entries": [
+            {"score": 90.0, "status": "GOOD", "timestamp": "2026-09-20T10:00:00"},
+            {"score": 90.0, "status": "GOOD", "timestamp": "2026-09-27T05:47:00"},
+        ]}},
+        "ops": [{"op": "call", "fn": "loadLibraryHealthSparkline"}],
+    })
+    assert out["els"]["library-health-trend"]["text"] == "±0 seit letztem Scan"
+
+
+@needs_node
+def test_health_trend_hidden_with_fewer_than_two_scored_entries(tmp_path: Path) -> None:
+    out = _run(tmp_path, {
+        "routes": {"score-history": {"entries": [
+            {"score": 90.0, "status": "GOOD", "timestamp": "2026-09-27T05:47:00"},
+        ]}},
+        "ops": [{"op": "call", "fn": "loadLibraryHealthSparkline"}],
+    })
+    assert out["els"]["library-health-trend"]["text"] == ""
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Aufmerksamkeit-Karte: Warnings-Kennzahl, Errors nie verschwiegen
 # ─────────────────────────────────────────────────────────────────────────
 
 
 @needs_node
-def test_attention_shows_warnings_headline_and_hides_zero_errors(tmp_path: Path) -> None:
+def test_attention_shows_top_issues_as_labeled_rows(tmp_path: Path) -> None:
+    """CC-LIB-FINAL Library-Home (Nutzer-Freigabe): Zeilenliste statt
+    Code-Badges - Icon + Anzahl + Klartext-Label aus dem gemeinsamen
+    _ISSUE_LABELS (common.js), sortiert nach Severity-Tier dann Anzahl,
+    Top 3 (nicht mehr nur WARNING-Codes und nicht mehr auf 2 verkuerzt)."""
     out = _run(tmp_path, {"ops": [{"op": "call", "fn": "_renderLibraryAttention", "args": [{
         "statistics": {
             "issues_by_severity": {"ERROR": 0, "WARNING": 21, "INFO": 1223},
@@ -265,18 +345,19 @@ def test_attention_shows_warnings_headline_and_hides_zero_errors(tmp_path: Path)
         },
     }]}]})
     html = out["els"]["library-attention-content"]["html"]
-    assert '<div class="h1 mb-0">21</div>' in html
     assert "Errors" not in html  # 0 Errors -> keine eigene Zeile
-    assert "AUDIO_LOW_BITRATE" in html and "ALBUM_TRACK_GAP" in html
-    assert "GENRE_EMPTY" not in html  # auf Top 2 verkuerzt
-    assert "+ 1223 Infos" in html
+    assert ">13<" in html and "Bitrate niedrig" in html
+    assert ">7<" in html and "Lücke in der Tracknummerierung" in html
+    assert ">1<" in html and "Genre-Tag leer" in html  # Top 3 statt Top 2
+    assert "Top 3 nach Severity · 1244 offen insgesamt" in html
     assert 'class="btn btn-outline-primary w-100' in html
 
 
 @needs_node
 def test_attention_never_hides_nonzero_errors(tmp_path: Path) -> None:
     """P0-Prioritaet (CLAUDE.md Abschnitt 23): ein vorhandener Errors-Wert
-    darf durch die Dashboard-Verschlankung nie verschwinden."""
+    darf durch die Dashboard-Verschlankung nie verschwinden - auch wenn
+    issues_by_code (Detail-Rangliste) leer ist."""
     out = _run(tmp_path, {"ops": [{"op": "call", "fn": "_renderLibraryAttention", "args": [{
         "statistics": {
             "issues_by_severity": {"ERROR": 3, "WARNING": 5, "INFO": 0},
@@ -285,7 +366,25 @@ def test_attention_never_hides_nonzero_errors(tmp_path: Path) -> None:
     }]}]})
     html = out["els"]["library-attention-content"]["html"]
     assert "3 Errors" in html
-    assert '<div class="h1 mb-0">5</div>' in html
+    assert "Top 0 nach Severity · 8 offen insgesamt" in html
+
+
+@needs_node
+def test_attention_error_tier_code_ranks_above_higher_count_warning(tmp_path: Path) -> None:
+    """Neu seit CC-LIB-FINAL: ein ERROR-/CRITICAL-Code mit offenen Treffern
+    landet automatisch oben in der Rangliste, auch bei niedrigerer Anzahl
+    als ein WARNING-Code - nicht mehr nur als Summe im Errors-Badge sichtbar."""
+    out = _run(tmp_path, {"ops": [{"op": "call", "fn": "_renderLibraryAttention", "args": [{
+        "statistics": {
+            "issues_by_severity": {"ERROR": 2, "WARNING": 13, "INFO": 0},
+            "issues_by_code": {"AUDIO_LOW_BITRATE": 13, "AUDIO_CORRUPT": 2},
+        },
+    }]}]})
+    html = out["els"]["library-attention-content"]["html"]
+    first_row_pos = html.find("Audio-Datei beschädigt")  # AUDIO_CORRUPT (CRITICAL)
+    second_row_pos = html.find("Bitrate niedrig")  # AUDIO_LOW_BITRATE (WARNING, hoehere Anzahl)
+    assert first_row_pos != -1 and second_row_pos != -1
+    assert first_row_pos < second_row_pos
 
 
 @needs_node
