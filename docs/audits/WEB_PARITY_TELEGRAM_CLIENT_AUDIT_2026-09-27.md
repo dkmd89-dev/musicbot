@@ -1,7 +1,7 @@
 # Web-Parität und „Telegram als Client" — Audit
 
-**Datum:** 2026-09-27 (Ersterstellung 08:00 Uhr, PR #316; verifiziert und ergänzt 2026-09-27 nachmittags nach CC-LIB-FINAL, siehe Abschnitt 7; erneut aktualisiert 2026-09-27 abends nach Client-Consolidation-Phase A/B, siehe Abschnitt 8)
-**Status:** 🟡 ANALYSIS COMPLETE — DECISION PENDING (keine Implementierung, reines Dokument; zwei zuvor offene Doppelimplementierungs-Punkte inzwischen umgesetzt, siehe Abschnitt 8)
+**Datum:** 2026-09-27 (Ersterstellung 08:00 Uhr, PR #316; verifiziert und ergänzt 2026-09-27 nachmittags nach CC-LIB-FINAL, siehe Abschnitt 7; erneut aktualisiert 2026-09-27 abends nach Client-Consolidation-Phase A/B, siehe Abschnitt 8; erneut ergänzt nach Backlog-Abarbeitung Backups/Duplikat-Check/AccessLevel-Move, siehe Abschnitt 12)
+**Status:** 🟡 ANALYSIS COMPLETE — DECISION PENDING (keine Implementierung, reines Dokument; fünf zuvor offene Punkte inzwischen umgesetzt: User-Verwaltung/Logger siehe Abschnitt 8, Backups/Duplikat-Check-CC/AccessLevel-Move siehe Abschnitt 12)
 **Auftrag (Nutzer, 2026-09-27):** Das Control Center (CC) soll vollständig unabhängig von Telegram werden; Telegram ist am Ende nur noch ein Client neben dem Web.
 **Vorgehen:** CLAUDE.md §3.A — Ist-Zustand → Verantwortlichkeiten → Zielgrenzen → kleinster Schritt.
 **Ablösung:** Die Matrix in `CC-AC-10A_ADMIN_INVENTORY_ARCHITECTURE_CONTRACT_2026-09-22.md` („🔴 Telegram-only" für User-Verwaltung, Backups, Restart, Maintenance) ist durch CC-AC-10B/C/D überholt; dieses Dokument hat Vorrang.
@@ -36,9 +36,9 @@ Legende: ✅ geteilte `services/`-Logik, im CC erreichbar · 🟠 im CC vorhande
 | 🔎 Library Health Review | `services/library_health/findings.py` | `library/findings*` (inkl. accept/unaccept/review/details) | ✅ |
 | 🛠️ Repair MusicBot (Plan, L2/L3, Statistik, History) | `services/library_repair/*` | `repair-plan`, Jobs `repair-level2/3`, `repairs/*` | ✅ |
 | 🧹 Library-Wartung (Artist/Titel/Album/Albuminterpret, Casing, Legacy-Genre, Genre setzen, Genre-Mapping, Revalidierung) | `services/library_repair/maintenance_service.py`, `genre*.py` | `admin/maintenance/*`, `library/artists/{a}/genre-*`, Jobs `genre-revalidation-*` (seit 2026-09-27) | ✅ 🟡 („Fehlende Genres" nicht verifiziert) |
-| 🔁 Duplikat-Check (read-only Vorschläge) | `services/library_repair/duplicate_runner.py` (Subprozess, wie die Genre-Revalidierung) + `services/duplicate/*` | keine Route | 🔴 |
+| 🔁 Duplikat-Check (read-only Vorschläge) | `services/library_repair/duplicate_runner.py` (Subprozess, wie die Genre-Revalidierung) + `services/duplicate/*` | `POST /jobs/duplicate-check` (Job, identisches Muster wie `genre-revalidation-preview`) + Ergebnis-Panel auf der Artist-Detailseite (PR #334, siehe Abschnitt 12) | ✅ |
 | ♻️ Duplikat-Verwaltung (Statistik, Cache leeren) | `DuplicateDetector` mit In-Memory-Cache im Bot-Prozess; `handlers/duplicate_handler.py` löscht die Cache-Dateien (`url_cache`/`content_cache`) selbst und leert den Speicher | keine Route | 🔴 🟣 🟠 |
-| 💾 Backup-Verwaltung | `services/backup_admin.py` (nur CC); `handlers/admin/backup_handler.py` hat **eigene** tar-/Rotations-Logik | `admin/backups*` | 🟠 |
+| 💾 Backup-Verwaltung | `services/backup_admin.py` — seit PR #333 (siehe Abschnitt 12) die einzige Implementierung; `handlers/admin/backup_handler.py` delegiert dünn | `admin/backups*` | ✅ |
 | 🔄 Bot neu starten | `utils/bot_restart_trigger.py` | `admin/system/restart` | ✅ |
 | 🛠️ Wartungsmodus | `services/bot_maintenance.py` (geteilt) | `admin/maintenance` | ✅ (wirksam seit #313) |
 | 👥 Benutzerverwaltung | `services/user_admin.py` + `services/user_data.py::update_user_data()` (prozessübergreifend `fcntl.flock`-gesperrter Read-Modify-Write-Zyklus); Telegram (`UserManagementHandler._update_users()`) und CC (`admin.py`, alle 5 mutierenden Endpunkte) nutzen ausschließlich diesen Zyklus, keine eigene Mutations-/Owner-Guard-/Schreiblogik mehr | `admin/users*` | ✅ (seit Phase A, PR #326, siehe Abschnitt 8) |
@@ -53,17 +53,17 @@ Legende: ✅ geteilte `services/`-Logik, im CC erreichbar · 🟠 im CC vorhande
 ### 2.2 Korrektur früherer Aussagen
 - „User-Verwaltung, Backups, Neustart/Maintenance sind Telegram-only" (CC-AC-10A, 22.09.) ist **überholt**: alle vier existieren im CC. Das Problem hat sich verschoben — nicht „fehlt im Web", sondern „zwei Implementierungen" (🟠).
 - „Route existiert" ≠ „Parität": bei Wartungsmodus existierte die Route, war aber wirkungslos (P2, behoben in #313).
-- Von den in 2.3 B gelisteten „zwei Implementierungen"-Fällen (🟠) sind Benutzerverwaltung und Logger-Konfiguration seit Phase A/B geschlossen (→ ✅, Abschnitt 8); Backups bleibt 🟠.
+- Von den in 2.3 B gelisteten „zwei Implementierungen"-Fällen (🟠) sind Benutzerverwaltung und Logger-Konfiguration seit Phase A/B geschlossen (→ ✅, Abschnitt 8); Backups seit PR #333 ebenfalls geschlossen (→ ✅, Abschnitt 12). Duplikat-Cache und Error-Verwaltung bleiben offen.
 
 ### 2.3 Vier Arten von Lücken
 
 **A — Funktion fehlt im Web (Fachlogik ist schon in `services/`)**
-Familie (`services/family/*`) und Duplikat-Check (read-only Subprozess `duplicate_runner`, gleiches Muster wie die Genre-Revalidierung als Job). Reine CC-Anbindung nach dem etablierten Muster (dünner Router + Seite), kein Architekturproblem.
+Familie (`services/family/*`) — reine CC-Anbindung nach dem etablierten Muster (dünner Router + Seite), kein Architekturproblem. Duplikat-Check (read-only Subprozess `duplicate_runner`) ist seit PR #334 (Abschnitt 12) im CC angebunden — **CLOSED**.
 
 **B — Telegram hat Fachlogik selbst (Doppelimplementierung, Drift-Risiko)**
 Sicherheitsrelevant und der wichtigste Punkt für „Telegram nur noch Client". Von ursprünglich sechs Punkten sind zwei seit Phase A/B geschlossen (Abschnitt 8):
 1. ~~**Benutzerverwaltung**~~ — **CLOSED (Phase A, PR #326):** Owner-Guard, Rollen-/Rechteänderung und der Schreibvorgang auf `data/user_data.json` laufen jetzt ausschließlich über `services/user_data.py::update_user_data()`, das den kompletten Read-Modify-Write-Zyklus prozessübergreifend per `fcntl.flock` sperrt. Kein separater Telegram-Schreibpfad mehr.
-2. **Backups:** `services/backup_admin.py` (CC) vs. eigene tar-/Rotationslogik in `backup_handler.py`. Weiterhin offen (Backlog 2).
+2. ~~**Backups**~~ — **CLOSED (PR #333):** `handlers/admin/backup_handler.py` delegiert Archiv-Erstellung/Rotation/SEC-006-Pfadauflösung jetzt vollständig an `services/backup_admin.py` (Details Abschnitt 12). Kein separater Telegram-Implementierungspfad mehr.
 3. ~~**Logger-Konfiguration**~~ — **CLOSED (Phase B, PR #327):** `enhanced_logger_menu_handler.py` liest/schreibt `module_logger_config.json` nur noch über `services/logger_admin.py::read_logger_config()`/`atomic_write_json()`. Kein gemeinsames Lock ergänzt (bewusst — kein hochfrequenter, konkurrierender Schreibpfad identifiziert); globales Log-Level und Modul-Statistiken/Introspektion bleiben ein separates Cross-Prozess-/Schema-Thema (Findings 435/436, unverändert 🟣 DEFER).
 4. **Duplikat-Cache leeren:** `duplicate_handler.py` löscht die Cache-Dateien selbst (`unlink()`) und leert den In-Memory-Cache — Fachlogik im Handler und zugleich Cross-Prozess-Zustand (ein Löschen der Dateien aus dem CC ließe den Speicher des Bots unberührt). Betrifft **keine Audio-Dateien**; das Löschen echter Duplikate ist weiterhin nur per CLI (`--execute --confirm-production-execute`), die Telegram-Anbindung ist ein bewusst zurückgestellter Punkt (FINDINGS_INDEX).
 5. **Error-Verwaltung:** 2190 Zeilen Fachlogik + Zustand in `handlers/`.
@@ -74,7 +74,7 @@ Sicherheitsrelevant und der wichtigste Punkt für „Telegram nur noch Client". 
 
 **D — Identität und Paketstruktur**
 - Das CC meldet ausschließlich über das Telegram-Login-Widget an; Nutzer werden über die Telegram-ID identifiziert. „Unabhängig von Telegram" schließt damit den Login *nicht* ein.
-- Die CC-Router importieren `handlers.menu.models.AccessLevel` (12+ Module) und `handlers.menu.permissions`. Beide Module sind Telegram-frei (`handlers/menu/__init__.py` ist leer), liegen aber im „falschen" Paket — eine Struktur-, keine Laufzeitabhängigkeit.
+- ~~Die CC-Router importieren `handlers.menu.models.AccessLevel` (12+ Module) und `handlers.menu.permissions`.~~ — **CLOSED (PR #335):** `AccessLevel`/`is_admin_or_owner()`/`get_user_access_level()` liegen jetzt in `services/access_control.py` (Details Abschnitt 12); `control_center/` importiert für diesen Zweck nicht mehr aus `handlers/`. `handlers/menu/models.py`/`handlers/menu/permissions.py` re-exportieren unverändert für die bestehenden Telegram-seitigen Importstellen.
 
 ---
 
@@ -113,18 +113,18 @@ Leitregeln (aus den bisherigen Entscheidungen abgeleitet, nicht neu erfunden):
 | # | Thema | Art | Prio | Kleinster Schritt | Abhängigkeit |
 |---|---|---|---|---|---|
 | 1 | ~~User-Verwaltung: Telegram nutzt `services/user_admin` + `save_user_data`~~ | B | — | ✅ **DONE (Phase A, PR #326)** — siehe Abschnitt 8 | — |
-| 2 | Backups: Telegram nutzt `services/backup_admin` | B | P3 | analog 1 (jetzt: analog dem in Abschnitt 8 dokumentierten Muster) | — |
+| 2 | ~~Backups: Telegram nutzt `services/backup_admin`~~ | B | — | ✅ **DONE (PR #333)** — siehe Abschnitt 12 | — |
 | 3 | ~~Logger: verbleibende Datei-I/O im Telegram-Handler auf `logger_admin`~~ | B | — | ✅ **DONE (Phase B, PR #327)** — siehe Abschnitt 8 | — |
-| 4a | Duplikat-Check im CC (read-only Job über `run_duplicate_scan`) | A | P2 | dünner Job-Router + Ergebnisdarstellung, Muster wie `genre-revalidation-preview` | — |
+| 4a | ~~Duplikat-Check im CC (read-only Job über `run_duplicate_scan`)~~ | A | — | ✅ **DONE (PR #334)** — siehe Abschnitt 12 | — |
 | 4b | Duplikat-Verwaltung (Statistik, Cache leeren) | B + C | P3 | Cache-Löschlogik aus dem Handler nach `services/duplicate`; CC erst nach Entscheidung 1 | Entscheidung 1 |
 | 5 | Cross-Prozess-Snapshot (Error-Verwaltung E1, Logger-Zähler) | C | P2 | nach Entscheidung 1: `ExceptionMonitor` schreibt Snapshot, CC liest | Entscheidung 1 |
 | 6 | Downloads aus dem Web | B + C | P1 (groß) | ARCH-Phase: Ist-Analyse `klassen/download_handler.py`, Zielgrenzen, Extraktion | Entscheidungen 1, 2 |
 | 7 | Familie im Web | A | P3 | nach Entscheidung 4 | Entscheidung 4 |
-| 8 | `AccessLevel`/`permissions` aus `handlers/menu/` nach `services/` verschieben | D | P3 | reiner Move + Re-Export, keine Verhaltensänderung | — |
+| 8 | ~~`AccessLevel`/`permissions` aus `handlers/menu/` nach `services/` verschieben~~ | D | — | ✅ **DONE (PR #335)** — siehe Abschnitt 12 | — |
 | 9 | Login ohne Telegram | D | offen | nach Entscheidung 3 | Entscheidung 3 |
 | 10 | Test-System | ⚪ | offen | nach Entscheidung 5 | Entscheidung 5 |
 
-**Empfohlene Reihenfolge:** 1 und 3 sind erledigt (Phase A/B, siehe Abschnitt 8); verbleibend: 2 (Backups, analoge Doppelimplementierung, kein neues Feature, bestehende Tests als Netz) → 4a (schnell, risikoarm) → Entscheidung 1 → 5 → 4b → 8; 6 erst nach Entscheidungen 1 und 2. Layout B der Health-Seite ist davon unabhängig (reine UI).
+**Empfohlene Reihenfolge:** 1, 3, 2, 4a und 8 sind erledigt (Phase A/B siehe Abschnitt 8; Backups/Duplikat-Check/AccessLevel-Move siehe Abschnitt 12); verbleibend: Entscheidung 1 → 5 → 4b; 6 (Downloads-UI, Backend bereits per Client-Consolidation-Phase D verdrahtet, siehe `docs/audits/CLIENT_CONSOLIDATION_PHASE_D_DOWNLOAD_RUNTIME_2026-09-27.md`) ist unabhängig von Entscheidung 1 startbar (siehe dortige Präzisierung). Layout B der Health-Seite ist davon unabhängig (reine UI).
 
 Reprocessing (früher Punkt 10 hier) ist seit CC-LIB-FINAL kein Backlog-Punkt mehr — L2 wurde vollständig entfernt, siehe Abschnitt 7.
 
@@ -322,12 +322,42 @@ eine separat freizugebende Folgephase.
 
 ---
 
-## 12. Referenzen
+## 12. Verifikation nach Backlog-Abarbeitung: Backups, Duplikat-Check im CC, AccessLevel-Move (2026-09-27)
+
+Nach Freigabe der in Abschnitt 5 empfohlenen Reihenfolge (Backups → Duplikat-
+Check im CC → AccessLevel/permissions-Move) wurden diese drei Backlog-Punkte
+umgesetzt und die Matrix in Abschnitt 2.1 gegen den **aktuellen Code**
+verifiziert (nicht aus den PR-Beschreibungen übernommen, siehe Abschnitt 1).
+
+| PR | Inhalt | Verifikation | Wirkung auf dieses Audit |
+|---|---|---|---|
+| #333 Backups | `handlers/admin/backup_handler.py` delegiert Pfad-/Limit-Konstruktion, Archiv-Erstellung (`archive_filter()`), Rotation, Listing und den SEC-006-Path-Traversal-Schutz vollständig an `services/backup_admin.py` (neu: `BackupPaths.from_config()`-Nutzung, `archive_filter()` öffentlich statt `_archive_filter()`). Öffentliches/privates Interface unverändert (Attribute, Methodennamen, Rückgabeformen), keine Verhaltensänderung außer der internen Fehlerklasse bei `delete_backup()` (jetzt `BackupNotFoundError`, gleicher Nutzertext). | Code gelesen: `handlers/admin/backup_handler.py` (alle sieben betroffenen Methoden delegieren, keine eigene tar-/Rotationslogik mehr), `services/backup_admin.py` (`archive_filter()` als einzige Filterimplementierung). Tests: `test_backup_handler*.py` + `test_backup_admin_service.py` (40), `test_services_layer_boundary.py` (114), CC-Backup-Routen (`test_control_center_admin_api.py`/`_operations_api.py`/`_maintenance_api.py`, `test_menu_actions_admin_operations.py`, 74), repoweit `-k backup` (68) — alle grün. | Zeile „💾 Backup-Verwaltung" in 2.1: 🟠 → ✅. Abschnitt 2.3 B Punkt 2 CLOSED. Backlog Punkt 2 DONE. |
+| #334 Duplikat-Check im CC | Neuer Job-Typ `duplicate_check` (`POST /api/v1/jobs/duplicate-check`, `control_center/routers/jobs.py`) — dünner Router um `services/library_repair/duplicate_runner.py::run_duplicate_scan()`, identisches Muster wie `genre-revalidation-preview` (kein `-apply`-Gegenstück, Löschen bleibt CLI-only wie in Telegram). Neues Panel „🔁 Duplikat-Check" auf der Artist-Detailseite (`control_center/templates/library_artist_detail.html`) mit Job-Polling und Ergebnisdarstellung (Gruppen, Behalten/Vorschlag-entfernen mit Bitrate, Sicherheitswarnung bei `read_only_intact: false`). | Code gelesen: `jobs.py` (Job-Handler, `_require_artist()`-Validierung — kein zusätzlicher CLI-Zeichen-Check nötig, da `artist` in einen `--path`-Wert eingebettet wird statt als eigenständiges CLI-Argument, Pfad-Sicherheit liegt unabhängig davon in `scripts/resolve_duplicates.py::validate_scan_root()`), Template (Panel + Polling-JS). Tests (neu): `test_control_center_duplicate_check_job.py` (10), `test_artist_duplicate_check_ui.py` (10, Node-Harness wie beim Genre-Revalidierungs-Pendant). Regressions-/thematische Suite (Jobs-Router, Duplicate-Runner, Genre-Revalidierung, Artist-Detail-UI, CC-UI): 326 grün; repoweit `-k duplicate`: 463 passed, 1 skipped (bekannter umgebungsbedingter Skip). | Zeile „🔁 Duplikat-Check" in 2.1: 🔴 → ✅. Abschnitt 2.3 A: Duplikat-Check CLOSED, nur Familie bleibt offen. Backlog Punkt 4a DONE. |
+| #335 AccessLevel/permissions-Move | Neu `services/access_control.py`: kanonische Implementierung von `AccessLevel`, `is_admin_or_owner()`, `get_user_access_level()` (unverändert verschoben). `handlers/menu/models.py`/`handlers/menu/permissions.py` re-exportieren von dort (Shims für die 14+ bestehenden Telegram-seitigen Importstellen); `MenuState`/`MenuItem`/`MenuSession` bleiben unverändert in `handlers/menu/models.py` (an die Telegram-Menü-Baumstruktur gebunden). 18 `control_center/`-Dateien (`dependencies.py` + 17 Router) importieren `AccessLevel`/`get_user_access_level` jetzt direkt aus `services/access_control.py` — kein Import aus `handlers/` mehr für diesen Zweck. `CLAUDE.md` §4 korrigiert: die dort dokumentierte Ausnahme „control_center/ darf aus `handlers/menu/permissions.py` importieren" ist entfallen. | Identitätscheck: `handlers.menu.models.AccessLevel is services.access_control.AccessLevel` (und analog für `is_admin_or_owner`/`get_user_access_level`) — bestätigt, keine Verhaltensänderung. Tests: `test_menu_permissions_characterization.py` + `test_control_center_auth.py` + `test_services_layer_boundary.py` (195), thematisch `-k "menu or control_center"` (1519) — alle grün. | Zeile „Die CC-Router importieren `handlers.menu.models.AccessLevel`…" in 2.3 D CLOSED. Backlog Punkt 8 DONE. |
+
+**Nicht durch diese drei PRs verändert (verifiziert, nicht nur angenommen):**
+Duplikat-Verwaltung/-Cache (`handlers/menu/actions/duplicates.py`), Error-
+Verwaltung, Familie, Downloads-UI, Login/Identität — alle Zeilen aus 2.1 mit
+🔴/🟣/⚪ außerhalb der drei oben genannten sind unverändert gültig. Alle fünf
+Nutzerentscheidungen aus Abschnitt 4 bleiben unverändert offen.
+
+**Ergebnis:** Drei weitere der ursprünglich sechs unter 2.3 B geführten bzw.
+in Abschnitt 5 gelisteten Punkte sind geschlossen (Backups, Duplikat-Check im
+CC, AccessLevel-Move). Verbleibend offen: Duplikat-Verwaltung/-Cache,
+Error-Verwaltung, Downloads-UI, Familie im Web, Login ohne Telegram,
+Test-System sowie alle fünf Nutzerentscheidungen aus Abschnitt 4 — der
+Gesamtstatus des Dokuments bleibt daher 🟡 ANALYSIS COMPLETE — DECISION
+PENDING.
+
+---
+
+## 13. Referenzen
 - `docs/audits/CC-AC-10A…10D_*_2026-09-22.md` (historisch), `CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md`
 - `docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md` (Snapshot-Präzedenz)
 - `docs/audits/ERROR_ADMINISTRATION_ARCHITECTURE_ANALYSIS_2026-09-27.md` (Varianten A–E)
 - `docs/audits/CC-LIB-FINAL_PHASE_C_SERVICE_LAYER_AUDIT_2026-09-27.md` (Service-Layer-Vollständigkeit Library/Metadata)
 - `docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md` (Download-Center-Nachtrag, Scope-Entscheidung Verlauf statt Live-Status)
+- `docs/audits/CLIENT_CONSOLIDATION_PHASE_D_DOWNLOAD_RUNTIME_2026-09-27.md` (Downloads-Job-Verdrahtung, außerhalb des Scopes dieses Backlog-Durchlaufs)
 - `docs/LIBRARY_REPAIR.md` §17 (Genre-Mapping im CC), §18 (Genre revalidieren im CC)
-- `docs/FINDINGS_INDEX.md` (Zeile zu „Manual Metadata Editing v1/v2" bereits als OBSOLETE durch CC-LIB-FINAL geführt; Zeilen „User-Verwaltung: Doppelimplementierung" und „Logger: verbleibende Datei-I/O im Telegram-Handler" seit Phase A/B CLOSED, siehe Abschnitt 8; Zeile „Downloads nicht aus dem Control Center startbar" seit Phase D mit Architekturentscheidung versehen, siehe Abschnitt 11)
-- `/mnt/128ssd/client_consolidation.txt` (Auftrag Phase A–D), PR #326 (Phase A), PR #327 (Phase B), PR #328 (Phase C)
+- `docs/FINDINGS_INDEX.md` (Zeile zu „Manual Metadata Editing v1/v2" bereits als OBSOLETE durch CC-LIB-FINAL geführt; Zeilen „User-Verwaltung: Doppelimplementierung" und „Logger: verbleibende Datei-I/O im Telegram-Handler" seit Phase A/B CLOSED, siehe Abschnitt 8; Zeilen „Backups: Doppelimplementierung", „Duplikat-Check im CC" und „AccessLevel/permissions falsches Paket" seit Abschnitt 12 CLOSED; Zeile „Downloads nicht aus dem Control Center startbar" seit Phase D mit Architekturentscheidung versehen, siehe Abschnitt 11)
+- `/mnt/128ssd/client_consolidation.txt` (Auftrag Phase A–D), PR #326 (Phase A), PR #327 (Phase B), PR #328 (Phase C), PR #333 (Backups), PR #334 (Duplikat-Check im CC), PR #335 (AccessLevel-Move)
