@@ -14,6 +14,14 @@ Bot-Start der persistierten Konfiguration.
 als hartcodierten relativen Pfad (kein Config-Attribut). Wir leiten ihn
 per Path-Side-Effect um — identisches Muster wie in
 `tests/test_enhanced_logger_menu_handler_module_toggle.py`.
+
+**Seit Phase B (CC-LOGGER-Findings-Bereinigung):** `_load_module_configs()`
+liest ueber `services/logger_admin.py::read_logger_config()`, das
+`Config.DATA_DIR` (nicht den gepatchten `Path(...)`) fuer die Pfad-
+Aufloesung nutzt — `FakeConfig.DATA_DIR` muss deshalb auf dasselbe
+Verzeichnis zeigen wie `isolated_config`, identisches Muster wie bereits
+in `tests/test_enhanced_logger_menu_handler_module_toggle.py` fuer
+toggle_module()/set_module_level() etabliert.
 """
 from __future__ import annotations
 
@@ -28,8 +36,12 @@ from handlers.enhanced_logger_menu_handler import ModuleLoggerManager
 
 
 class FakeConfig:
-    def __init__(self, log_dir: Path):
+    def __init__(self, log_dir: Path, data_dir: Path | None = None):
         self.LOG_DIR = str(log_dir)
+        # read_logger_config() (services/logger_admin.py) loest den Pfad
+        # ueber DATA_DIR auf - muss auf dasselbe Verzeichnis zeigen wie
+        # der gepatchte Path("data/module_logger_config.json").
+        self.DATA_DIR = str(data_dir) if data_dir is not None else str(log_dir)
 
 
 def _make_fake_path(config_file: Path):
@@ -86,7 +98,10 @@ def _manager(isolated_config: Path, log_dir: Path) -> ModuleLoggerManager:
         "handlers.enhanced_logger_menu_handler.Path",
         side_effect=_make_fake_path(isolated_config),
     ):
-        return ModuleLoggerManager(FakeConfig(log_dir))
+        # data_dir=isolated_config.parent, damit read_logger_config()
+        # (Config.DATA_DIR) dieselbe Datei liest wie der gepatchte
+        # Path("data/module_logger_config.json") schreibt.
+        return ModuleLoggerManager(FakeConfig(log_dir, data_dir=isolated_config.parent))
 
 
 def _write_config(path: Path, data: dict) -> None:

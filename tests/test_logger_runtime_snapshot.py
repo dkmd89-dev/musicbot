@@ -174,7 +174,7 @@ class TestWriteRuntimeSnapshot:
         def _boom(path, data):
             raise OSError("simulated write failure")
 
-        monkeypatch.setattr(logger_admin, "_atomic_write_json", _boom)
+        monkeypatch.setattr(logger_admin, "atomic_write_json", _boom)
         _make_module_logger("SnapshotTest_ModA", level=logging.INFO)
         result = write_runtime_snapshot(cfg)
         assert result is None  # kein Raise
