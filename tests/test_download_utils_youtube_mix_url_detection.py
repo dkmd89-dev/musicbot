@@ -265,13 +265,17 @@ class TestProbeSetsNoplaylistForMixUrls:
 
 
 class TestBothProductionSitesShareTheSameDetectionMechanism:
-    def test_download_handler_imports_the_same_function_object(self):
-        """Stellt sicher, dass klassen/download_handler.py die Funktion aus
+    def test_download_pipeline_core_imports_the_same_function_object(self):
+        """Stellt sicher, dass die Duplikat-Vorab-Probe (Client
+        Consolidation Phase D/E: seit dem Move aus
+        klassen/download_handler.py in
+        services/downloader/download_pipeline_core.py::
+        probe_artist_title_for_duplicate_check()) die Funktion aus
         services/downloader/download_utils.py importiert statt eine eigene,
         potenziell abweichende Regex-/Parsing-Logik zu implementieren."""
-        import klassen.download_handler as dh_module
+        import services.downloader.download_pipeline_core as pipeline_core_module
 
-        assert dh_module.is_youtube_mix_url is is_youtube_mix_url
+        assert pipeline_core_module.is_youtube_mix_url is is_youtube_mix_url
 
 
 # ═══════════════════════════════════════════════════════════════════════════
