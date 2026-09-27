@@ -179,10 +179,11 @@ async def test_get_repair_plan_by_artist_groups_l3_candidates_only(client, test_
     entry = body["artists"][0]
     assert entry["artist"] == "Artist One"
     # Charakterisiert gegen die echte Registry (services/library_repair/
-    # planner.py): dieselbe Datei erzeugt neben META_ARTIST_MISSING/
-    # LYRICS_MISSING (seit CC-LIB-FINAL MANUAL_REVIEW, nicht mehr in der
-    # Pro-Artist-Auswahl) auch META_ISRC_MISSING/META_MB_RECORDING_MISSING/
-    # META_MB_RELEASE_MISSING (alle drei EXTERNAL_METADATA/L3).
+    # planner.py): dieselbe Datei erzeugt neben META_ARTIST_MISSING
+    # (MANUAL_REVIEW)/LYRICS_MISSING (NOT_REPAIRABLE, kein Lyrics-Editor,
+    # seit CC-LIB-FINAL keins von beidem in der Pro-Artist-Auswahl) auch
+    # META_ISRC_MISSING/META_MB_RECORDING_MISSING/META_MB_RELEASE_MISSING
+    # (alle drei EXTERNAL_METADATA/L3).
     assert "l2_count" not in entry
     assert entry["l3_count"] == 3
     assert entry["total"] == 3

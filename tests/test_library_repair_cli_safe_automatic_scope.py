@@ -11,7 +11,9 @@ ausgeführt.
 CC-LIB-FINAL: Die volle Neuverarbeitung (frueher `apply_level2()`, L2
 METADATA_REPROCESSING) wurde entfernt. Auch ein expliziter L2-Aufruf
 (`--level METADATA_REPROCESSING` bzw. `--issue LYRICS_MISSING`) darf
-KEINEN Executor mehr erreichen — die Findings sind MANUAL_REVIEW.
+KEINEN Executor mehr erreichen — die Findings sind MANUAL_REVIEW bzw.
+bei Lyrics NOT_REPAIRABLE (Korrektur 2026-09-27, kein Lyrics-Editor im
+Control Center).
 """
 
 import importlib.util
@@ -43,7 +45,7 @@ _REPORT = {
             "title": "x",
         },
         {
-            "issue_code": "LYRICS_MISSING",  # -> MANUAL_REVIEW (frueher L2)
+            "issue_code": "LYRICS_MISSING",  # -> NOT_REPAIRABLE (frueher L2, kein Lyrics-Editor)
             "severity": "INFO",
             "scope": "file",
             "path": "A/Singles/2020 - x.m4a",
@@ -130,8 +132,9 @@ def test_executor_has_no_level2_entrypoint():
 )
 def test_former_l2_selection_reaches_no_executor(report_file, spies, extra_args):
     """Auch ein ausdruecklicher Aufruf mit dem frueheren L2-Selektor darf
-    nichts mehr ausfuehren: die Codes sind MANUAL_REVIEW, der Plan enthaelt
-    fuer diesen Selektor keine ausfuehrbaren Reparaturen."""
+    nichts mehr ausfuehren: die Codes sind MANUAL_REVIEW bzw. bei Lyrics
+    NOT_REPAIRABLE, der Plan enthaelt fuer diesen Selektor keine
+    ausfuehrbaren Reparaturen."""
     exit_code = lr.main(
         [
             *extra_args,

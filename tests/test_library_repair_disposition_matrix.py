@@ -91,14 +91,17 @@ def test_every_repair_level_is_classified():
 def test_disposition_partition_sizes_snapshot():
     """Change-Detector (analog test_library_repair_planner.py
     ::test_plan_counts_and_determinism): 53 Codes, aufgeteilt in
-    19 AUTO_REPAIR / 32 MANUAL_REVIEW / 2 UNREPAIRABLE. Seit CC-LIB-FINAL
-    (L2 METADATA_REPROCESSING entfernt) sind die zehn frueheren L2-Codes
-    MANUAL_REVIEW (vorher 29 / 22 / 2). Aendert sich diese Verteilung,
-    muss die Coverage-Matrix-Doku mit angepasst werden."""
+    19 AUTO_REPAIR / 29 MANUAL_REVIEW / 5 UNREPAIRABLE. Seit CC-LIB-FINAL
+    (L2 METADATA_REPROCESSING entfernt) sind sieben der zehn frueheren
+    L2-Codes MANUAL_REVIEW (vorher 29 / 22 / 2); die restlichen drei
+    (LYRICS_MISSING/_EMPTY/_INVALID) sind seit der Korrektur 2026-09-27
+    (kein Lyrics-Editor im Control Center, Web-Parity-Audit §7/8)
+    UNREPAIRABLE statt MANUAL_REVIEW. Aendert sich diese Verteilung, muss
+    die Coverage-Matrix-Doku mit angepasst werden."""
     assert len(ALL_CODES) == 53
     assert len(_codes_with_disposition(DISPOSITION_AUTO_REPAIR)) == 19
-    assert len(_codes_with_disposition(DISPOSITION_MANUAL_REVIEW)) == 32
-    assert len(_codes_with_disposition(DISPOSITION_UNREPAIRABLE)) == 2
+    assert len(_codes_with_disposition(DISPOSITION_MANUAL_REVIEW)) == 29
+    assert len(_codes_with_disposition(DISPOSITION_UNREPAIRABLE)) == 5
 
 
 # ── AUTO_REPAIR: genau eine ausfuehrende Komponente ─────────────────────
