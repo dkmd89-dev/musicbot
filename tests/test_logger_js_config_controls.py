@@ -103,9 +103,17 @@ const api = new Function(src + "\nreturn { _loggerState, renderConfig, renderRun
   out.drafts = api._loggerState.drafts;
   out.persisted = api._loggerState.config && api._loggerState.config.modules;
   out.calls = calls;
-  console.log(JSON.stringify(out));
-  process.exit(0);
-})().catch((e) => { console.log(JSON.stringify({ crash: String(e && e.stack || e) })); process.exit(1); });
+  // Bugfix (Harness): console.log() gefolgt von process.exit() kann bei
+  // groesserem Output stdout abschneiden, wenn stdout eine Pipe ist
+  // (subprocess.run(capture_output=True) nutzt Pipes) - der Write ist dort
+  // asynchron, process.exit() beendet den Prozess ohne auf den Abschluss
+  // zu warten (bekanntes Node.js-Verhalten). process.stdout.write() mit
+  // Callback erzwingt: erst wenn der Write bestaetigt abgeschlossen ist,
+  // wird beendet.
+  process.stdout.write(JSON.stringify(out) + "\n", () => process.exit(0));
+})().catch((e) => {
+  process.stdout.write(JSON.stringify({ crash: String(e && e.stack || e) }) + "\n", () => process.exit(1));
+});
 """
 
 pytestmark = pytest.mark.skipif(_NODE is None, reason="node nicht verfuegbar")
