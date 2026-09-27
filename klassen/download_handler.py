@@ -47,6 +47,7 @@ from services.downloader.models import DuplicateEntry
 from logger import get_module_logger
 from services.downloader.downloader import YoutubeDownloader
 from services.downloader.active_downloads import ActiveDownloadRegistry
+from services.downloader.download_concurrency import download_slot
 from services.downloader.download_history import DownloadHistoryStore
 from services.downloader.download_utils import is_youtube_mix_url
 from services.metadata.enhanced_metadata_processor import (
@@ -91,22 +92,18 @@ def _is_supported_download_url(url: str) -> bool:
 # CONCURRENCY-LIMIT (Ressourcen-Schutz)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# DownloadHandler wird pro Telegram-Update NEU instanziiert (siehe
-# RichMenuHandler._create_download_handler: "Erstellt eine neue
-# DownloadHandler-Instanz"). Ein Semaphore als Instanzattribut wuerde also
-# NICHT prozessweit begrenzen - jede neue Instanz haette ihr eigenes,
-# volles Kontingent. Config.MAX_CONCURRENT_DOWNLOADS war zwar definiert,
-# wurde aber nirgends gelesen/durchgesetzt. Der Semaphore lebt daher auf
-# Modul-Ebene, geteilt über alle DownloadHandler-Instanzen hinweg.
-_download_semaphore: Optional[asyncio.Semaphore] = None
-
-
-def _get_download_semaphore(config) -> asyncio.Semaphore:
-    global _download_semaphore
-    if _download_semaphore is None:
-        max_concurrent = getattr(config, "MAX_CONCURRENT_DOWNLOADS", 3) or 3
-        _download_semaphore = asyncio.Semaphore(max_concurrent)
-    return _download_semaphore
+# Client Consolidation Phase D/E (Nachtrag
+# docs/audits/WEB_PARITY_TELEGRAM_CLIENT_AUDIT_2026-09-27.md Abschnitt 11):
+# war bis hierhin ein modulglobales asyncio.Semaphore - faktisch nur
+# prozessglobal, weil bislang nur der Bot-Prozess Downloads ausführte.
+# Mit dem Control-Center als zweitem, eigenständigen Download-Pfad
+# (JobRegistry-Job, services/-Aufruf ohne diese Datei) würde ein
+# eigenständiges Semaphore MAX_CONCURRENT_DOWNLOADS nicht mehr
+# durchsetzen. Ersetzt durch services/downloader/download_concurrency.py::
+# download_slot() - denselben, jetzt cross-process wirksamen Mechanismus,
+# den ein künftiger Download-Job im Control-Center-Prozess ebenfalls
+# aufruft. Verhalten bewusst unverändert: wartend statt Fail-Fast (siehe
+# dortiger Modul-Docstring, Regel 2).
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -885,8 +882,8 @@ class DownloadHandler:
             )
             return
 
-        semaphore = _get_download_semaphore(self.config)
-        async with semaphore:
+        max_concurrent = getattr(self.config, "MAX_CONCURRENT_DOWNLOADS", 3) or 3
+        async with download_slot(max_concurrent):
             self.logger.info("📤 [DISPATCH] → YouTube-URL erkannt → YT-Pipeline")
             await self.handle_youtube_links(update, context)
 

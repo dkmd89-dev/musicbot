@@ -176,7 +176,10 @@ class DuplicateDetector:
         # komplette Download+Verarbeitungsdauer (Sekunden bis Minuten) -
         # ein zweiter, paralleler Request fuer denselben Content sah in
         # dieser Zeit ebenfalls "kein Duplikat" (Check-then-Register-Race,
-        # begrenzt auf maximal _download_semaphore gleichzeitige Downloads).
+        # begrenzt auf maximal MAX_CONCURRENT_DOWNLOADS gleichzeitige
+        # Downloads, seit Client Consolidation Phase D/E cross-process
+        # durchgesetzt ueber services/downloader/download_concurrency.py::
+        # download_slot() statt eines prozesslokalen Semaphore).
         # Minimaler Fix wie im Audit vorgeschlagen: In-Memory-Set "aktuell
         # in Bearbeitung befindlicher" Hashes, zusaetzlich zum persistenten
         # Cache geprueft. TTL-basierter Ablauf (statt zwingendem
