@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """CC-LOGGER-L6 Diff-Fix (Befund aus CC-LOGGER-L6.1 §7).
 
-`control_center/static/pages/logger.js::renderDiff()` erkannte eine
+`control_center/static/pages/logger.js` (Diff-Berechnung, seit dem
+Dashboard-Umbau `_loggerComputeModuleDiff()`) erkannte eine
 Runtime-Log-Datei nur am exakten Typnamen "FileHandler". Module mit
 eigener Datei ueber `logger.py::setup_module_logging()` tragen im
 Snapshot aber "EnhancedRotatingFileHandler" (Unterklasse von
@@ -47,7 +48,7 @@ global._escapeHtml = (v) => (v == null ? "" : String(v));
 
 const src = fs.readFileSync(process.argv[2], "utf-8");
 const cases = JSON.parse(process.argv[3]);
-const api = new Function(src + "\nreturn { _loggerState, renderDiff, _loggerHandlerKind };")();
+const api = new Function(src + "\nreturn { _loggerComputeModuleDiff, _loggerHandlerKind };")();
 
 const out = { kinds: {}, diffs: [] };
 for (const name of ["FileHandler", "RotatingFileHandler", "TimedRotatingFileHandler",
@@ -56,7 +57,7 @@ for (const name of ["FileHandler", "RotatingFileHandler", "TimedRotatingFileHand
   out.kinds[name] = api._loggerHandlerKind(name);
 }
 for (const c of cases) {
-  api._loggerState.runtime = {
+  const runtime = {
     status: "available",
     snapshot: {
       effective_levels: { Mod: "INFO" },
@@ -64,12 +65,11 @@ for (const c of cases) {
       disabled: [],
     },
   };
-  api._loggerState.config = {
+  const config = {
     modules: { Mod: { enabled: true, level: "INFO",
                       file_handler: c.file_handler, console_handler: c.console_handler } },
   };
-  api.renderDiff();
-  out.diffs.push(document.getElementById("logger-diff-content").innerHTML);
+  out.diffs.push(api._loggerComputeModuleDiff("Mod", runtime, config));
 }
 console.log(JSON.stringify(out));
 """
@@ -87,7 +87,6 @@ def _run(tmp_path: Path, cases: list) -> dict:
 
 pytestmark = pytest.mark.skipif(_NODE is None, reason="node nicht verfuegbar")
 
-_IDENTICAL = "identisch"
 
 
 def test_handler_kind_classifies_all_file_handler_subclasses(tmp_path: Path) -> None:
@@ -105,8 +104,7 @@ def test_rotating_file_handler_with_config_true_is_not_reported(tmp_path: Path) 
         "handlers": ["EnhancedRotatingFileHandler", "StreamHandler"],
         "file_handler": True, "console_handler": True,
     }])
-    assert _IDENTICAL in out["diffs"][0]
-    assert "file_handler" not in out["diffs"][0]
+    assert out["diffs"][0] == {"status": "identical", "changes": []}
 
 
 def test_rotating_file_handler_with_config_false_is_reported(tmp_path: Path) -> None:
@@ -115,7 +113,8 @@ def test_rotating_file_handler_with_config_false_is_reported(tmp_path: Path) -> 
         "handlers": ["EnhancedRotatingFileHandler", "StreamHandler"],
         "file_handler": False, "console_handler": True,
     }])
-    assert "file_handler: an → aus" in out["diffs"][0]
+    assert out["diffs"][0]["status"] == "differs"
+    assert "file_handler: an → aus" in out["diffs"][0]["changes"]
 
 
 def test_plain_file_handler_behaviour_unchanged(tmp_path: Path) -> None:
@@ -124,9 +123,9 @@ def test_plain_file_handler_behaviour_unchanged(tmp_path: Path) -> None:
         {"handlers": ["StreamHandler"], "file_handler": True, "console_handler": True},
         {"handlers": ["FileHandler", "StreamHandler"], "file_handler": False, "console_handler": True},
     ])
-    assert _IDENTICAL in out["diffs"][0]
-    assert "file_handler: aus → an" in out["diffs"][1]
-    assert "file_handler: an → aus" in out["diffs"][2]
+    assert out["diffs"][0]["status"] == "identical"
+    assert "file_handler: aus → an" in out["diffs"][1]["changes"]
+    assert "file_handler: an → aus" in out["diffs"][2]["changes"]
 
 
 def test_rotating_file_handler_is_not_counted_as_console(tmp_path: Path) -> None:
@@ -135,5 +134,4 @@ def test_rotating_file_handler_is_not_counted_as_console(tmp_path: Path) -> None
         "handlers": ["EnhancedRotatingFileHandler"],
         "file_handler": True, "console_handler": True,
     }])
-    assert "console_handler: aus → an" in out["diffs"][0]
-    assert "file_handler" not in out["diffs"][0]
+    assert out["diffs"][0]["changes"] == ["console_handler: aus → an"]
