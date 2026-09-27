@@ -84,188 +84,244 @@
         Artists — keine neue Business-Logik.
       </p>
 
+      <!-- CC-LIB-FINAL Metadaten-Workspace (Layout A): Artist/Titel/Album/
+           Albuminterpret/Genre als Tabs statt einer langen gestapelten
+           Liste. Native Tabler/Bootstrap-Tabs (data-bs-toggle="tab", wie
+           bereits health.html's Findings/Repair/Verlauf) - kein eigenes
+           JS fuer das Umschalten noetig. Jedes Formular/jede Funktion
+           bleibt unveraendert (gleiche IDs, gleiche preview/execute-
+           Funktionen), nur die Anordnung im DOM aendert sich. -->
+      <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item" role="presentation">
+          <a href="#meta-tab-artist" class="nav-link active" data-bs-toggle="tab"
+             role="tab" aria-selected="true">🎤 Artist</a>
+        </li>
+        <li class="nav-item" role="presentation">
+          <a href="#meta-tab-title" class="nav-link" data-bs-toggle="tab"
+             role="tab" aria-selected="false" tabindex="-1">🎵 Titel</a>
+        </li>
+        <li class="nav-item" role="presentation">
+          <a href="#meta-tab-album" class="nav-link" data-bs-toggle="tab"
+             role="tab" aria-selected="false" tabindex="-1">💿 Album</a>
+        </li>
+        <li class="nav-item" role="presentation">
+          <a href="#meta-tab-albumartist" class="nav-link" data-bs-toggle="tab"
+             role="tab" aria-selected="false" tabindex="-1">👤 Albuminterpret</a>
+        </li>
+        <li class="nav-item" role="presentation">
+          <a href="#meta-tab-genre" class="nav-link" data-bs-toggle="tab"
+             role="tab" aria-selected="false" tabindex="-1">🎭 Genre</a>
+        </li>
+      </ul>
+
+      <div class="tab-content">
+
       <!-- Artist -->
-      <div class="border-bottom pb-4 mb-4">
-        <h3 class="mb-2">🎤 Artist bearbeiten</h3>
+      <div class="tab-pane active show" id="meta-tab-artist" role="tabpanel">
         <p class="text-secondary">
           Setzt den Artist-Namen auf einen manuellen Zielwert — KEIN
           Casing-Mapping, keine Normalisierung.
         </p>
 
-        <div class="row g-2 mb-2">
-          <div class="col-md">
-            <input
-              type="text"
-              id="artist-edit-new-artist"
-              class="form-control"
-              placeholder="Neuer Artist-Name"
-            >
+        <div class="md-edit-grid">
+          <div>
+            <div class="row g-2 mb-2">
+              <div class="col-md">
+                <input
+                  type="text"
+                  id="artist-edit-new-artist"
+                  class="form-control"
+                  placeholder="Neuer Artist-Name"
+                >
+              </div>
+              <div class="col-auto">
+                <button id="artist-edit-preview-btn" class="btn btn-outline-primary">
+                  Vorschau laden
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-2">
+              <button
+                id="artist-edit-execute-btn"
+                class="btn btn-primary"
+                disabled
+              >
+                Artist umbenennen
+              </button>
+            </div>
+
+            <div id="artist-edit-result-content" class="empty-note mt-2"></div>
           </div>
-          <div class="col-auto">
-            <button id="artist-edit-preview-btn" class="btn btn-outline-primary">
-              Vorschau laden
-            </button>
+
+          <div class="md-edit-side">
+            <div class="md-edit-side-title">ℹ️ Änderungsumfang</div>
+            <div id="artist-edit-content" class="empty-note">Noch keine Vorschau geladen.</div>
           </div>
         </div>
-
-        <div id="artist-edit-content" class="empty-note"></div>
-
-        <div class="mt-2">
-          <button
-            id="artist-edit-execute-btn"
-            class="btn btn-primary"
-            disabled
-          >
-            Artist umbenennen
-          </button>
-        </div>
-
-        <div id="artist-edit-result-content" class="empty-note mt-2"></div>
       </div>
 
       <!-- Title -->
-      <div class="border-bottom pb-4 mb-4">
-        <h3 class="mb-2">🎵 Titel bearbeiten</h3>
+      <div class="tab-pane" id="meta-tab-title" role="tabpanel">
         <p class="text-secondary">
           Setzt den Titel für genau einen Track — KEIN automatischer
           TitleCleaner. Track aus der Liste wählen (nach Album gruppiert).
         </p>
 
-        <div class="row g-2 mb-2">
-          <div class="col-md">
-            <select id="title-edit-track-select" class="form-select">
-              <option value="">Track wählen …</option>
-            </select>
+        <div class="md-edit-grid">
+          <div>
+            <div class="row g-2 mb-2">
+              <div class="col-md">
+                <select id="title-edit-track-select" class="form-select">
+                  <option value="">Track wählen …</option>
+                </select>
+              </div>
+
+              <div class="col-md">
+                <input
+                  type="text"
+                  id="title-edit-new-title"
+                  class="form-control"
+                  placeholder="Neuer Titel"
+                >
+              </div>
+
+              <div class="col-auto">
+                <button id="title-edit-preview-btn" class="btn btn-outline-primary">
+                  Vorschau laden
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-2">
+              <button
+                id="title-edit-execute-btn"
+                class="btn btn-primary"
+                disabled
+              >
+                Titel setzen
+              </button>
+            </div>
+
+            <div id="title-edit-result-content" class="empty-note mt-2"></div>
           </div>
 
-          <div class="col-md">
-            <input
-              type="text"
-              id="title-edit-new-title"
-              class="form-control"
-              placeholder="Neuer Titel"
-            >
-          </div>
-
-          <div class="col-auto">
-            <button id="title-edit-preview-btn" class="btn btn-outline-primary">
-              Vorschau laden
-            </button>
+          <div class="md-edit-side">
+            <div class="md-edit-side-title">ℹ️ Änderungsumfang</div>
+            <div id="title-edit-content" class="empty-note">Noch keine Vorschau geladen.</div>
           </div>
         </div>
-
-        <div id="title-edit-content" class="empty-note"></div>
-
-        <div class="mt-2">
-          <button
-            id="title-edit-execute-btn"
-            class="btn btn-primary"
-            disabled
-          >
-            Titel setzen
-          </button>
-        </div>
-
-        <div id="title-edit-result-content" class="empty-note mt-2"></div>
       </div>
 
       <!-- Album -->
-      <div class="border-bottom pb-4 mb-4">
-        <h3 class="mb-2">💿 Album bearbeiten</h3>
+      <div class="tab-pane" id="meta-tab-album" role="tabpanel">
         <p class="text-secondary">
           Setzt den Albumnamen (<code>©alb</code>) für alle Dateien des
           gewählten Albums — ändert weder Artist- noch Albuminterpret-Tag.
         </p>
 
-        <div class="row g-2 mb-2">
-          <div class="col-md">
-            <select id="album-edit-album-select" class="form-select">
-              <option value="">Album wählen …</option>
-            </select>
+        <div class="md-edit-grid">
+          <div>
+            <div class="row g-2 mb-2">
+              <div class="col-md">
+                <select id="album-edit-album-select" class="form-select">
+                  <option value="">Album wählen …</option>
+                </select>
+              </div>
+
+              <div class="col-md">
+                <input
+                  type="text"
+                  id="album-edit-new-album"
+                  class="form-control"
+                  placeholder="Neuer Albumname"
+                >
+              </div>
+
+              <div class="col-auto">
+                <button id="album-edit-preview-btn" class="btn btn-outline-primary">
+                  Vorschau laden
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-2">
+              <button
+                id="album-edit-execute-btn"
+                class="btn btn-primary"
+                disabled
+              >
+                Album setzen
+              </button>
+            </div>
+
+            <div id="album-edit-result-content" class="empty-note mt-2"></div>
           </div>
 
-          <div class="col-md">
-            <input
-              type="text"
-              id="album-edit-new-album"
-              class="form-control"
-              placeholder="Neuer Albumname"
-            >
-          </div>
-
-          <div class="col-auto">
-            <button id="album-edit-preview-btn" class="btn btn-outline-primary">
-              Vorschau laden
-            </button>
+          <div class="md-edit-side">
+            <div class="md-edit-side-title">ℹ️ Änderungsumfang</div>
+            <div id="album-edit-content" class="empty-note">Noch keine Vorschau geladen.</div>
           </div>
         </div>
-
-        <div id="album-edit-content" class="empty-note"></div>
-
-        <div class="mt-2">
-          <button
-            id="album-edit-execute-btn"
-            class="btn btn-primary"
-            disabled
-          >
-            Album setzen
-          </button>
-        </div>
-
-        <div id="album-edit-result-content" class="empty-note mt-2"></div>
       </div>
 
       <!-- Album Artist -->
-      <div class="border-bottom pb-4 mb-4">
-        <h3 class="mb-2">👤 Albuminterpret bearbeiten</h3>
+      <div class="tab-pane" id="meta-tab-albumartist" role="tabpanel">
         <p class="text-secondary">
           Setzt den Albuminterpret (<code>aART</code>) für alle Dateien des
           gewählten Albums — ändert weder Artist- noch Album-Tag.
         </p>
 
-        <div class="row g-2 mb-2">
-          <div class="col-md">
-            <select id="albumartist-edit-album-select" class="form-select">
-              <option value="">Album wählen …</option>
-            </select>
+        <div class="md-edit-grid">
+          <div>
+            <div class="row g-2 mb-2">
+              <div class="col-md">
+                <select id="albumartist-edit-album-select" class="form-select">
+                  <option value="">Album wählen …</option>
+                </select>
+              </div>
+
+              <div class="col-md">
+                <input
+                  type="text"
+                  id="albumartist-edit-new-albumartist"
+                  class="form-control"
+                  placeholder="Neuer Albuminterpret"
+                >
+              </div>
+
+              <div class="col-auto">
+                <button
+                  id="albumartist-edit-preview-btn"
+                  class="btn btn-outline-primary"
+                >
+                  Vorschau laden
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-2">
+              <button
+                id="albumartist-edit-execute-btn"
+                class="btn btn-primary"
+                disabled
+              >
+                Albuminterpret setzen
+              </button>
+            </div>
+
+            <div id="albumartist-edit-result-content" class="empty-note mt-2"></div>
           </div>
 
-          <div class="col-md">
-            <input
-              type="text"
-              id="albumartist-edit-new-albumartist"
-              class="form-control"
-              placeholder="Neuer Albuminterpret"
-            >
-          </div>
-
-          <div class="col-auto">
-            <button
-              id="albumartist-edit-preview-btn"
-              class="btn btn-outline-primary"
-            >
-              Vorschau laden
-            </button>
+          <div class="md-edit-side">
+            <div class="md-edit-side-title">ℹ️ Änderungsumfang</div>
+            <div id="albumartist-edit-content" class="empty-note">Noch keine Vorschau geladen.</div>
           </div>
         </div>
-
-        <div id="albumartist-edit-content" class="empty-note"></div>
-
-        <div class="mt-2">
-          <button
-            id="albumartist-edit-execute-btn"
-            class="btn btn-primary"
-            disabled
-          >
-            Albuminterpret setzen
-          </button>
-        </div>
-
-        <div id="albumartist-edit-result-content" class="empty-note mt-2"></div>
       </div>
 
       <!-- Genre -->
-      <div>
+      <div class="tab-pane" id="meta-tab-genre" role="tabpanel">
         <h3 class="mb-2">🎭 Genre-Verwaltung</h3>
 
         <!-- 1) Mapping bearbeiten: Primary + Secondary (mapping/artist_genre.yaml) -->
@@ -339,30 +395,38 @@
           Mapping oben (<code>mapping/artist_genre.yaml</code>).
         </p>
 
-        <div class="mb-2">
-          <button
-            id="genre-manage-preview-btn"
-            class="btn btn-outline-primary"
-          >
-            Vorschau laden
-          </button>
+        <div class="md-edit-grid">
+          <div>
+            <div class="mb-2">
+              <button
+                id="genre-manage-preview-btn"
+                class="btn btn-outline-primary"
+              >
+                Vorschau laden
+              </button>
+            </div>
+
+            <div class="mt-2">
+              <button
+                id="genre-manage-execute-btn"
+                class="btn btn-primary"
+                disabled
+              >
+                Genre setzen
+              </button>
+            </div>
+
+            <div id="genre-manage-result-content" class="empty-note mt-2"></div>
+          </div>
+
+          <div class="md-edit-side">
+            <div class="md-edit-side-title">ℹ️ Änderungsumfang</div>
+            <div id="genre-manage-content" class="empty-note">Noch keine Vorschau geladen.</div>
+          </div>
         </div>
-
-        <div id="genre-manage-content" class="empty-note"></div>
-
-        <div class="mt-2">
-          <button
-            id="genre-manage-execute-btn"
-            class="btn btn-primary"
-            disabled
-          >
-            Genre setzen
-          </button>
-        </div>
-
-        <div id="genre-manage-result-content" class="empty-note mt-2"></div>
       </div>
 
+      </div>
     </div>
   </details>
 </section>
@@ -1794,48 +1858,9 @@
   // Editing v1-3, CC-AC-2/3) und rufen deren bereits getestete
   // load*Preview()-Funktionen auf - Preview->Confirm->Execute bleibt
   // exakt der bestehende, unveraenderte Pfad (Auftrag §10).
-  const _TRACK_ISSUE_LABELS = {
-    META_NOT_ANALYZABLE: "Tags nicht lesbar",
-    META_ARTIST_MISSING: "Artist fehlt",
-    META_TITLE_MISSING: "Titel fehlt",
-    META_TITLE_NOT_CLEAN: "Titel enthält Parsing-/Formatierungsreste",
-    META_ALBUM_MISSING: "Album fehlt",
-    META_ALBUM_ARTIST_MISSING: "Album-Artist fehlt",
-    META_YEAR_MISSING: "Jahr fehlt",
-    META_YEAR_INVALID: "Jahr ungültig",
-    META_GENRE_MISSING: "Genre fehlt",
-    META_TRACK_NUMBER_MISSING: "Tracknummer fehlt",
-    META_MB_RECORDING_MISSING: "MusicBrainz Recording-ID fehlt",
-    META_MB_RELEASE_MISSING: "MusicBrainz Release-ID fehlt",
-    META_ISRC_MISSING: "ISRC fehlt",
-    ARTWORK_MISSING: "Cover fehlt",
-    ARTWORK_INVALID: "Cover nicht dekodierbar",
-    ARTWORK_LOW_RESOLUTION: "Cover-Auflösung niedrig",
-    ARTWORK_NON_SQUARE: "Cover nicht quadratisch",
-    LYRICS_MISSING: "Lyrics fehlen",
-    LYRICS_EMPTY: "Lyrics-Tag leer",
-    LYRICS_INVALID: "Lyrics-Tag wirkt nicht wie Liedtext",
-    AUDIO_NOT_ANALYZABLE: "Audio nicht analysierbar",
-    AUDIO_NO_STREAM: "Kein Audio-Stream",
-    AUDIO_CORRUPT: "Audio-Datei beschädigt",
-    AUDIO_LOW_BITRATE: "Bitrate niedrig",
-    AUDIO_VERY_SHORT: "Sehr kurze Laufzeit",
-    LOUDNESS_TAG_MISSING: "Kein Loudness-Tag",
-    LOUDNESS_OFF_TARGET: "Lautheit weicht vom Ziel ab",
-    LOUDNESS_TAG_INVALID: "Loudness-Tag ungültig",
-    LOUDNESS_TAG_PARTIAL: "Loudness-Tag unvollständig",
-    STRUCTURE_INVALID_PATH: "Ungewöhnliche Verzeichnisstruktur",
-    STRUCTURE_FILE_OUTSIDE_HIERARCHY: "Datei außerhalb der erwarteten Hierarchie",
-    FILENAME_TITLE_MISMATCH: "Dateiname passt nicht zum Titel",
-    FILENAME_SUSPICIOUS: "Dateiname wirkt fehlerhaft",
-    FILENAME_EXTENSION_UNEXPECTED: "Unerwartete Dateiendung",
-    MULTI_ARTIST_SUSPICIOUS: "Artist-Tag wirkt wie Mehrfach-Artist-Konkatenation",
-    MULTI_ARTIST_INCONSISTENT: "Artist-/Album-Artist-Felder widersprüchlich",
-    MULTI_ARTIST_DUPLICATE: "Artist mehrfach im Multi-Artist-Feld",
-    GENRE_EMPTY: "Genre-Tag leer",
-    GENRE_INVALID: "Genre außerhalb der Konvention",
-    GENRE_DELIMITER_INCONSISTENT: "Genre-Trennzeichen uneinheitlich",
-  };
+  // CC-LIB-FINAL Library-Home: Label-Dict lebt jetzt zentral als
+  // _ISSUE_LABELS in common.js (zweiter Konsument ist library.html's
+  // Aufmerksamkeit-Karte) - hier keine eigene, driftende Kopie mehr.
 
   let _trackDrawerIsAdmin = false;
   let _trackDrawerCurrentArtist = null;
@@ -1859,7 +1884,7 @@
     if (!t.issue_codes.length) {
       return '<p class="empty-note">✓ Keine bekannten Probleme laut letztem Health-Scan.</p>';
     }
-    return t.issue_codes.map((code) => `<p>⚠ ${_escapeHtml(_TRACK_ISSUE_LABELS[code] || code)}</p>`).join("");
+    return t.issue_codes.map((code) => `<p>⚠ ${_escapeHtml(_ISSUE_LABELS[code] || code)}</p>`).join("");
   }
 
   // Album-Wert fuer diesen Track - identische Semantik wie
@@ -1878,8 +1903,21 @@
     return null;
   }
 
-  function _openMetadataEditPanel() {
+  // CC-LIB-FINAL Metadaten-Workspace (Layout A): Artist/Titel/Album/
+  // Albuminterpret/Genre sind jetzt Tabs (Bootstrap .tab-pane), nicht mehr
+  // gleichzeitig sichtbar. Die Track-Drawer-/Album-Detail-Quick-Edit-Links
+  // unten muessen deshalb zusaetzlich zum Aufklappen des Panels den
+  // passenden Tab aktivieren, sonst scrollIntoView()/focus() liefen ins
+  // Leere (Ziel-Feld waere durch einen anderen aktiven Tab verdeckt).
+  function _activateMetaTab(tabId) {
+    const link = document.querySelector(`#artist-metadata-edit-panel a[href="#${tabId}"]`);
+    if (link && window.bootstrap?.Tab) {
+      new window.bootstrap.Tab(link).show();
+    }
+  }
+  function _openMetadataEditPanel(tabId) {
     document.getElementById("artist-metadata-edit-panel").querySelector("details").open = true;
+    if (tabId) _activateMetaTab(tabId);
   }
   function _openMaintenancePanel() {
     document.getElementById("artist-maintenance-panel").querySelector("details").open = true;
@@ -1891,7 +1929,7 @@
   // (siehe #artist-content-Klick-Delegation weiter unten), der keinen
   // Drawer zu schliessen hat.
   function _quickEditTitleForTrack(t) {
-    _openMetadataEditPanel();
+    _openMetadataEditPanel("meta-tab-title");
     const trackSelect = document.getElementById("title-edit-track-select");
     const titleInput = document.getElementById("title-edit-new-title");
     trackSelect.value = t.relative_path;
@@ -1910,7 +1948,7 @@
 
   function _trackDrawerEditArtist() {
     closeTrackDrawer();
-    _openMetadataEditPanel();
+    _openMetadataEditPanel("meta-tab-artist");
     const input = document.getElementById("artist-edit-new-artist");
     input.scrollIntoView({ block: "center" });
     input.focus();
@@ -1924,7 +1962,7 @@
   // albumValue bereits der ausgewaehlte Album-Schluessel (kein Track
   // noetig, der aufloest werden muesste).
   function _quickEditAlbumField(albumValue, selectId, inputId) {
-    _openMetadataEditPanel();
+    _openMetadataEditPanel(selectId === "albumartist-edit-album-select" ? "meta-tab-albumartist" : "meta-tab-album");
     const select = document.getElementById(selectId);
     if (albumValue !== null && [...select.options].some((o) => o.value === albumValue)) {
       select.value = albumValue;
@@ -1942,7 +1980,7 @@
 
   function _trackDrawerEditGenre() {
     closeTrackDrawer();
-    _openMetadataEditPanel();
+    _openMetadataEditPanel("meta-tab-genre");
     document.getElementById("genre-mapping-editor").scrollIntoView({ block: "center" });
     if (!_genreMap.etag) loadGenreMapping();
     loadGenreManagePreview();
