@@ -28,6 +28,7 @@ from logger import (
 from services.logger_admin import (
     MAX_LIMIT,
     InvalidLogFilenameError,
+    cleanup_rotated_log_files,
     ensure_module_config_entry,
     get_log_file,
     get_log_file_stats,
@@ -38,6 +39,16 @@ from services.logger_admin import (
 
 if TYPE_CHECKING:
     from handlers.enhanced_error_handler import EnhancedErrorHandler
+
+
+# Finding #31: einzige gültige Cleanup-Modi (Whitelist für Callback-Daten)
+# -> older_than_days für services/logger_admin.py::cleanup_rotated_log_files().
+CLEANUP_OLD_DAYS = 30
+CLEANUP_MODES = {"old": CLEANUP_OLD_DAYS, "rotated": None}
+CLEANUP_MODE_LABELS = {
+    "old": f"Alte rotierte Logs (>{CLEANUP_OLD_DAYS} Tage)",
+    "rotated": "Alle rotierten Logs",
+}
 
 
 class ModuleLoggerManager:
@@ -943,8 +954,7 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
                 [
                     [
                         InlineKeyboardButton(
-                            "Alle bereinigen",
-                            callback_data="logger_cleanup_all_files",
+                            "Bereinigung", callback_data="logger_cleanup_menu",
                         ),
                         InlineKeyboardButton(
                             "Datei-Statistiken", callback_data="logger_files_stats"
@@ -1236,29 +1246,23 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
                 "Bereinigungsoptionen:"
             )
 
+            # Finding #31: nur Aktionen mit sicherer, prozessübergreifend
+            # gültiger Semantik (services/logger_admin.py::
+            # cleanup_rotated_log_files(), nur rotierte Backups). Die
+            # früheren Buttons "Große Dateien"/"Leere Dateien"/"Alle
+            # bereinigen"/"Archivieren" waren nie geroutet und hätten nur
+            # aktive (von Bot/Control Center offen gehaltene) Dateien
+            # treffen können bzw. hatten kein definiertes Archivziel.
             keyboard = [
                 [
                     InlineKeyboardButton(
-                        "Alte Logs (>30 Tage)", callback_data="logger_cleanup_old"
-                    ),
-                    InlineKeyboardButton(
-                        "Große Dateien (>10MB)", callback_data="logger_cleanup_large"
+                        f"Alte rotierte Logs (>{CLEANUP_OLD_DAYS} Tage)",
+                        callback_data="logger_cleanup_old",
                     ),
                 ],
                 [
                     InlineKeyboardButton(
-                        "Leere Dateien", callback_data="logger_cleanup_empty"
-                    ),
-                    InlineKeyboardButton(
-                        "Rotierte Logs", callback_data="logger_cleanup_rotated"
-                    ),
-                ],
-                [
-                    InlineKeyboardButton(
-                        "Alle bereinigen", callback_data="logger_cleanup_all_confirm"
-                    ),
-                    InlineKeyboardButton(
-                        "Archivieren", callback_data="logger_cleanup_archive"
+                        "Alle rotierten Logs", callback_data="logger_cleanup_rotated"
                     ),
                 ],
                 [InlineKeyboardButton("Zurück", callback_data="logger_main_menu")],
@@ -1279,6 +1283,75 @@ Gesamt: {stats.get('total_logs', 0)} Logs"""
                 await self._show_error_message(
                     update, f"Fehler beim Laden des Cleanup-Menüs: {str(e)}"
                 )
+
+    def _cleanup_log_dir(self) -> Path:
+        return Path(getattr(self.config, "LOG_DIR", "/mnt/media/musiccenter/logs"))
+
+    async def show_cleanup_preview(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str
+    ):
+        """Finding #31: Vorschau (Dry-Run) vor dem Löschen - zeigt, welche
+        rotierten Backups betroffen wären, und verlangt Bestätigung."""
+        if mode not in CLEANUP_MODES:
+            await self._show_error_message(update, "Unbekannte Bereinigungsaktion.")
+            return
+        result = cleanup_rotated_log_files(
+            self._cleanup_log_dir(), older_than_days=CLEANUP_MODES[mode], dry_run=True,
+        )
+        label = CLEANUP_MODE_LABELS[mode]
+        back = [InlineKeyboardButton("Zurück", callback_data="logger_cleanup_menu")]
+        if not result.matched:
+            await self._safe_edit_message(
+                update, f"🧹 {label}\n\nKeine passenden Dateien vorhanden.",
+                InlineKeyboardMarkup([back]),
+            )
+            return
+        shown = "\n".join(f"• {name}" for name in result.matched[:15])
+        more = len(result.matched) - 15
+        text = (
+            f"🧹 {label}\n\n"
+            f"{len(result.matched)} Datei(en), {result.freed_bytes / (1024 * 1024):.1f} MB "
+            f"würden gelöscht:\n{shown}"
+            + (f"\n… und {more} weitere" if more > 0 else "")
+            + "\n\nAktive Logdateien werden nie angefasst."
+        )
+        keyboard = [
+            [InlineKeyboardButton(
+                "✅ Löschen bestätigen", callback_data=f"logger_cleanup_{mode}_confirm",
+            )],
+            back,
+        ]
+        await self._safe_edit_message(update, text, InlineKeyboardMarkup(keyboard))
+
+    async def execute_cleanup(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str
+    ):
+        """Finding #31: tatsächliches Löschen nach Bestätigung. Ermittelt
+        die Treffer frisch (keine veraltete Vorschau-Liste)."""
+        if mode not in CLEANUP_MODES:
+            await self._show_error_message(update, "Unbekannte Bereinigungsaktion.")
+            return
+        try:
+            result = cleanup_rotated_log_files(
+                self._cleanup_log_dir(), older_than_days=CLEANUP_MODES[mode],
+            )
+        except Exception as e:
+            self.logger.error(f"❌ Log-Bereinigung ({mode}) fehlgeschlagen: {e}")
+            await self._show_error_message(update, f"Bereinigung fehlgeschlagen: {e}")
+            return
+        self.logger.info(
+            f"🧹 Log-Bereinigung ({mode}): {len(result.deleted)} gelöscht, "
+            f"{len(result.failed)} fehlgeschlagen"
+        )
+        text = (
+            f"🧹 {CLEANUP_MODE_LABELS[mode]}\n\n"
+            f"Gelöscht: {len(result.deleted)} Datei(en), "
+            f"{result.freed_bytes / (1024 * 1024):.1f} MB freigegeben"
+        )
+        if result.failed:
+            text += f"\nFehlgeschlagen: {', '.join(result.failed)}"
+        keyboard = [[InlineKeyboardButton("Zurück", callback_data="logger_cleanup_menu")]]
+        await self._safe_edit_message(update, text, InlineKeyboardMarkup(keyboard))
 
     async def _get_cleanup_statistics(self, log_dir: Path) -> Dict[str, Any]:
         """Sammelt Cleanup-relevante Statistiken"""

@@ -1140,6 +1140,25 @@
     document.getElementById("repair-l3-btn").disabled = disabled;
   }
 
+  // Findings #4/#6: gleiche Semantik wie Telegram (_result_headline()) und
+  // static/pages/health.js - "geändert" nur aus changed_files.
+  function _repairOutcomeText(r) {
+    if (r.failed) return (r.success || r.unresolved) ? "teilweise abgeschlossen" : "fehlgeschlagen";
+    if (r.status === "UNRESOLVED" || r.unresolved) return "abgeschlossen – Überprüfung nötig";
+    if (r.success) return "abgeschlossen";
+    if (r.skipped) return "nichts zu tun";
+    return "leerer Lauf";
+  }
+  function _repairCountsText(r) {
+    const exitNote = (r.exit_code != null && r.exit_code !== 0)
+      ? ` Repair-Subprozess meldete Exit-Code ${_escapeHtml(String(r.exit_code))} (Verification-Regression oder Abbruch) – Ergebnis bitte prüfen.`
+      : "";
+    return `${r.success} erfolgreich, ${r.skipped} übersprungen, ` +
+      (r.unresolved ? `${r.unresolved} zu überprüfen, ` : "") +
+      `${r.failed} fehlgeschlagen, ${r.resolved_count} Finding(s) verifiziert behoben, ` +
+      `${(r.changed_files || []).length} Datei(en) geändert.` + exitNote;
+  }
+
   function _renderArtistRepairJobStatus(job) {
     const el = document.getElementById("artist-repair-job-content");
 
@@ -1153,13 +1172,12 @@
     const r = job.result || {};
 
     if (job.status === "SUCCEEDED") {
-      if (r.status === "SKIPPED" || r.total === 0) {
+      if (r.total === 0) {
         el.innerHTML = `<p><span class="dot dot-ok"></span>Keine offenen ${_escapeHtml(_ARTIST_REPAIR_LEVEL_LABELS[r.level] || "")}-Befunde (mehr) vorhanden.</p>`;
         return;
       }
-      el.innerHTML = `<p><span class="dot dot-ok"></span>${_escapeHtml(r.level || "")} abgeschlossen: ` +
-        `${r.success} erfolgreich, ${r.skipped} übersprungen, ${r.failed} fehlgeschlagen, ` +
-        `${r.resolved_count} Finding(s) verifiziert behoben, ${(r.affected_files || []).length} Datei(en) geändert.</p>`;
+      el.innerHTML = `<p><span class="dot ${r.status === "SUCCESS" ? "dot-ok" : "dot-warn"}"></span>${_escapeHtml(r.level || "")} ${_escapeHtml(_repairOutcomeText(r))}: ` +
+        _repairCountsText(r) + "</p>";
     } else {
       el.innerHTML = `<p><span class="dot dot-error"></span>Fehlgeschlagen: ${_escapeHtml(job.error || "Unbekannter Fehler")}</p>`;
     }

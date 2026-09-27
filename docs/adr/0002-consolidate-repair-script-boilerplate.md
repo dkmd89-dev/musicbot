@@ -1,5 +1,5 @@
 ---
-status: PROPOSED (Nutzerentscheidung 2026-09-14, noch nicht implementiert)
+status: IMPLEMENTED (ARCH-032 Phase 3, 2026-09-14)
 ---
 
 # ADR-0002: Konsolidierung der Safety-/Backup-/Verify-Boilerplate
@@ -77,3 +77,18 @@ bisherige Laeufe dieser drei Scripts sind dort **unsichtbar**.
   `tests/test_library_repair_executor.py` um `apply_artist_casing()`/
   `apply_legacy_genre_cleanup()`/`apply_set_genre()` (Safety/Backup/
   Verify/Rollback-Pfade, analog zu den bestehenden `apply_level1()`-Tests).
+
+## Implementierungsstatus (Nachtrag 2026-09-27)
+
+Umgesetzt mit ARCH-032 (Commit `c6e0a42`, 2026-09-14):
+`apply_artist_casing()`/`apply_legacy_genre_cleanup()`/`apply_set_genre()`
+liegen in `services/library_repair/executor.py` und nutzen dort die
+gemeinsamen `safety_check()`/`_sha256()`/`_audio_essence_md5()` sowie das
+nach `executor.py` übernommene `tags_fingerprint()`; reine Logik in
+`services/library_repair/artist.py`/`genre.py`. Die drei Scripts
+(`fix_artist_casing.py`, `remove_legacy_genre_atom.py`, `set_genre.py`)
+sind mit demselben Commit entfallen (Konsequenzen-Option (b)). Die in
+Entscheidung 2 erwähnte künftige L1-Nutzung von `tags_fingerprint()` ist
+**nicht** Teil dieser Umsetzung und bleibt als eigenes Finding offen
+(ARCH-031-Follow-up F2, `docs/FINDINGS_INDEX.md`). Der Status-Header war
+bis 2026-09-27 versehentlich auf PROPOSED stehen geblieben.

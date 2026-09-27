@@ -491,6 +491,25 @@ function _setLevel23ButtonsDisabled(disabled) {
   document.querySelectorAll(".level23-btn").forEach((btn) => { btn.disabled = disabled; });
 }
 
+// Findings #4/#6: gleiche Semantik wie Telegram (_result_headline()) -
+// "geändert" nur aus changed_files, nie aus affected_files.
+function _repairOutcomeText(r) {
+  if (r.failed) return (r.success || r.unresolved) ? "teilweise abgeschlossen" : "fehlgeschlagen";
+  if (r.status === "UNRESOLVED" || r.unresolved) return "abgeschlossen – Überprüfung nötig";
+  if (r.success) return "abgeschlossen";
+  if (r.skipped) return "nichts zu tun";
+  return "leerer Lauf";
+}
+function _repairCountsText(r) {
+  const exitNote = (r.exit_code != null && r.exit_code !== 0)
+    ? ` Repair-Subprozess meldete Exit-Code ${_escapeHtml(String(r.exit_code))} (Verification-Regression oder Abbruch) – Ergebnis bitte prüfen.`
+    : "";
+  return `${r.success} erfolgreich, ${r.skipped} übersprungen, ` +
+    (r.unresolved ? `${r.unresolved} zu überprüfen, ` : "") +
+    `${r.failed} fehlgeschlagen, ${r.resolved_count} Finding(s) verifiziert behoben, ` +
+    `${(r.changed_files || []).length} Datei(en) geändert.` + exitNote;
+}
+
 function _renderLevel23JobStatus(job) {
   const el = document.getElementById("level23-job-content");
 
@@ -504,12 +523,11 @@ function _renderLevel23JobStatus(job) {
   const r = job.result || {};
 
   if (job.status === "SUCCEEDED") {
-    if (r.status === "SKIPPED" || r.total === 0) {
+    if (r.total === 0) {
       el.innerHTML = `<p><span class="dot dot-ok"></span>${_escapeHtml(r.artist || "")}: keine offenen ${_escapeHtml(_LEVEL23_LABELS[r.level] || "")}-Befunde (mehr) vorhanden.</p>`;
     } else {
-      el.innerHTML = `<p><span class="dot dot-ok"></span>${_escapeHtml(r.artist || "")} — ${_escapeHtml(r.level || "")} abgeschlossen: ` +
-        `${r.success} erfolgreich, ${r.skipped} übersprungen, ${r.failed} fehlgeschlagen, ` +
-        `${r.resolved_count} Finding(s) verifiziert behoben, ${(r.affected_files || []).length} Datei(en) geändert.</p>`;
+      el.innerHTML = `<p><span class="dot ${r.status === "SUCCESS" ? "dot-ok" : "dot-warn"}"></span>${_escapeHtml(r.artist || "")} — ${_escapeHtml(r.level || "")} ${_escapeHtml(_repairOutcomeText(r))}: ` +
+        _repairCountsText(r) + "</p>";
     }
     loadRepairHistory();
     loadRepairStatistics();
@@ -621,7 +639,7 @@ function renderRepairHistory(el, body) {
   el.innerHTML = truncNote + '<div class="row-list">' + body.runs.map((r) => `
     <div class="row-item">
       <div class="row-main">
-        <span class="badge badge-${r.status === "SUCCESS" ? "status-success" : "status-failed"}">${_escapeHtml(r.status)}</span>
+        <span class="badge badge-${r.status === "SUCCESS" ? "status-success" : (r.status === "FAILED" ? "status-failed" : "status-warn")}">${_escapeHtml(r.status)}</span>
         ${_escapeHtml(r.level)}${r.artist ? " · " + _escapeHtml(r.artist) : ""}
         <div class="hint">${_escapeHtml(r.kind)} · ${_escapeHtml(r.triggered_by)}</div>
       </div>

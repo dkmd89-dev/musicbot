@@ -99,6 +99,46 @@ _L23REP_WARNING_TEXT = {
     ),
 }
 
+# ── Gemeinsame Ergebnis-Semantik (Findings #4/#5/#6) ──────────────────────
+# Einzige Stelle, die aus den Rohdaten eines Repair-Laufs (Gesamtstatus aus
+# repair_service._overall_status() + Per-Eintrag-Zaehler) Emoji und
+# Kopfzeile ableitet - geteilt von _format_result() (SAFE_AUTOMATIC) und
+# _format_l23_result() (L2/L3). Ursprung: ARCH-033-F1 Fix (c) fuer L2/L3.
+
+
+def _result_headline(
+    status: str, *, success: int, failed: int, unresolved: int, skipped: int,
+) -> tuple[str, str]:
+    # failed>0 dominiert immer (❌) - monoton, unabhaengig von success/
+    # unresolved; der Text unterscheidet "teilweise"/"vollstaendig".
+    if failed:
+        return "❌", "teilweise abgeschlossen" if (success or unresolved) else "fehlgeschlagen"
+    if status == "FAILED":
+        return "❌", "fehlgeschlagen"
+    # UNRESOLVED (🟠) ist weder Erfolg noch harter Fehler: geschrieben,
+    # aber nicht verifiziert behoben, oder der Subprozess meldete trotz
+    # Journal-Eintraegen Exit-Code != 0 (Finding #5).
+    if unresolved or status == "UNRESOLVED":
+        return "🟠", "abgeschlossen – Überprüfung nötig"
+    if success:
+        return "✅", "abgeschlossen"
+    if skipped:
+        return "🟡", "nichts zu tun"
+    return "⚪", "leerer Lauf"
+
+
+def _exit_code_warning(result) -> Optional[str]:
+    """Finding #5: Exit-Code != 0 trotz Journal-Eintraegen sichtbar machen
+    (bei error_message wird ohnehin der Fehlerblock gezeigt)."""
+    exit_code = getattr(result, "exit_code", None)
+    if exit_code in (0, None) or result.error_message:
+        return None
+    return (
+        f"⚠️ Repair-Subprozess meldete Exit-Code {exit_code} "
+        "(Verification-Regression oder Abbruch) – Ergebnis bitte prüfen."
+    )
+
+
 # ── Registry-Vorbereitung (ARCH-033 Phase 4) ────────────────────────────
 # Erweiterungspunkt fuer zukuenftige, EIGENE ARCH-Phasen (ARCH-034/035) -
 # COVER, LOUDNESS und DUPLICATE bleiben bis dahin bewusst CLI-only (siehe
@@ -460,11 +500,7 @@ class RepairMusicBotHandler:
         await message.edit_text(text, parse_mode="HTML", reply_markup=self._back_keyboard("repair:start"))
 
     def _format_result(self, result) -> str:
-        from services.library_repair.repair_service import (
-            STATUS_FAILED,
-            STATUS_SKIPPED,
-            STATUS_SUCCESS,
-        )
+        from services.library_repair.repair_service import STATUS_SKIPPED
 
         if result.status == STATUS_SKIPPED and result.candidates_total == 0:
             return "✅ Keine offenen SAFE_AUTOMATIC-Reparaturen (mehr) vorhanden."
@@ -475,26 +511,37 @@ class RepairMusicBotHandler:
                 f"{html.escape(result.error_message)}"
             )
 
+        # Finding #4: dieselben Rohdaten und dieselbe Kopfzeilen-Logik wie
+        # _format_l23_result(); "Geänderte Dateien" aus changed_files
+        # (tatsächlich geschrieben), nicht aus affected_files (berührt).
         counts = result.status_counts or {}
         success = counts.get("SUCCESS", 0)
         failed = counts.get("FAILED", 0)
         skipped = counts.get("SKIPPED", 0)
-
-        emoji = "✅" if result.status == STATUS_SUCCESS else (
-            "⚠️" if failed and success else "❌"
+        unresolved = counts.get("UNRESOLVED", 0)
+        emoji, header = _result_headline(
+            result.status, success=success, failed=failed,
+            unresolved=unresolved, skipped=skipped,
         )
-        header = "Reparatur abgeschlossen" if not failed else "Reparatur teilweise abgeschlossen"
 
         lines = [
-            f"{emoji} <b>{header}</b>",
+            f"{emoji} <b>SAFE_AUTOMATIC-Reparatur {header}</b>",
             "",
             f"Erfolgreich: {success}",
             f"Übersprungen: {skipped}",
+        ]
+        if unresolved:
+            lines.append(f"Überprüfen: {unresolved}")
+        lines += [
             f"Fehlgeschlagen: {failed}",
             "",
-            f"Geänderte Dateien: {len(result.affected_files)}",
+            f"Geänderte Dateien: {len(result.changed_files)}",
             f"Verifiziert behoben: {result.resolved_count}",
         ]
+        warning = _exit_code_warning(result)
+        if warning:
+            lines.append("")
+            lines.append(warning)
         regressed = getattr(result, "regressed_issue_codes", None) or []
         if regressed:
             lines.append("")
@@ -528,7 +575,9 @@ class RepairMusicBotHandler:
             counts = run.get("status_counts") or {}
             total = sum(counts.values())
             status = run.get("status", "?")
-            emoji = {"SUCCESS": "✅", "FAILED": "⚠️", "SKIPPED": "⏭️"}.get(status, "•")
+            emoji = {
+                "SUCCESS": "✅", "FAILED": "⚠️", "SKIPPED": "⏭️", "UNRESOLVED": "🟠",
+            }.get(status, "•")
             started = run.get("started_at", "-")
             lines.append(f"{emoji} {html.escape(started)}")
             lines.append(
@@ -932,27 +981,12 @@ class RepairMusicBotHandler:
                 f"{html.escape(result.error_message)}"
             )
 
-        # ARCH-033-F1 Fix (c): failed dominiert immer (❌) - eigene Zweige
-        # für UNRESOLVED (🟠) und einen reinen SKIPPED-Lauf (🟡 "nichts zu
-        # tun") statt beide auf ❌ fallen zu lassen. Adversarial-Review-
-        # Fund: eine frühere Fassung behielt zusätzlich das alte ⚠️ für
-        # "failed UND success, ohne unresolved" bei - das war
-        # nicht-monoton (ein zusätzlicher UNRESOLVED-Fund ließ denselben
-        # Lauf von ⚠️ auf ❌ kippen) und widersprach der eigenen
-        # Begründung "❌ bleibt FAILED-Läufen vorbehalten". failed>0 ist
-        # jetzt unabhängig von success/unresolved immer ❌ (Header
-        # unterscheidet "teilweise"/"vollständig" fehlgeschlagen).
-        if result.failed:
-            emoji = "❌"
-            header = "teilweise abgeschlossen" if (result.success or result.unresolved) else "fehlgeschlagen"
-        elif result.unresolved:
-            emoji, header = "🟠", "abgeschlossen – Überprüfung nötig"
-        elif result.success:
-            emoji, header = "✅", "abgeschlossen"
-        elif result.skipped:
-            emoji, header = "🟡", "nichts zu tun"
-        else:
-            emoji, header = "⚪", "leerer Lauf"
+        # ARCH-033-F1 Fix (c) - Kopfzeilen-Logik seit Finding #4 mit
+        # _format_result() geteilt (_result_headline()).
+        emoji, header = _result_headline(
+            result.status, success=result.success, failed=result.failed,
+            unresolved=result.unresolved, skipped=result.skipped,
+        )
 
         lines = [
             f"{emoji} <b>{html.escape(_L23REP_LEVEL_LABELS[level])} {header}</b>",
@@ -969,6 +1003,10 @@ class RepairMusicBotHandler:
             f"Geänderte Dateien: {len(result.changed_files)}",
             f"Verifiziert behoben: {result.resolved_count}",
         ]
+        warning = _exit_code_warning(result)
+        if warning:
+            lines.append("")
+            lines.append(warning)
         if result.rescan_triggered:
             lines.append("")
             lines.append(

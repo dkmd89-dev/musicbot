@@ -1409,7 +1409,9 @@ verifiziert).
 - `utils/artist_map.py` (INV-02, Atomaritaet - bereits Lock-geschuetzt) - P2,
   unveraendert DEFER.
 - `play_history_repository.py`, `lyrics_cache.py` (INV-02) - P2, unveraendert
-  DEFER.
+  DEFER. **Nachtrag 2026-09-27:** geschlossen (Finding #17, write-tmp +
+  `Path.replace()`, `tests/test_atomic_persistence_finding17.py`, siehe
+  `docs/FINDINGS_INDEX.md`).
 - Cover-Cache-Metadaten-JSON (`_cache_best_cover`), Logger-Config - P3,
   unveraendert DEFER.
 - `handlers/test_menu_handler.py` (INV-01) - reklassifiziert P2, DEFER (siehe

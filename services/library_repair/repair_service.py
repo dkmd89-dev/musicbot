@@ -85,6 +85,7 @@ from services.library_repair.run_tracking import (
     STATUS_SUCCESS,
     STATUS_FAILED,
     STATUS_SKIPPED,
+    STATUS_UNRESOLVED,
     RepairAlreadyRunningError,
     RepairServiceError,
     acquire_repair_lock,
@@ -210,10 +211,96 @@ def build_preview(candidates: list[RepairCandidate], *, level: str = "SAFE_AUTOM
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def _wrote_to_disk(entry: dict) -> bool:
+    """ARCH-033-F1 Fix (b), seit Finding #4/#6 für SAFE_AUTOMATIC und
+    L2/L3 gemeinsam: ein Journal-Eintrag zählt als tatsächliche Änderung
+    auf der Platte bei SUCCESS/UNRESOLVED IMMER, bei jedem anderen Status
+    (v. a. SKIPPED) zusätzlich wenn sha256_before != sha256_after
+    (L2 (apply_level2()) markiert pro Issue-Code SKIPPED, sobald NUR das
+    Zielfeld DIESES Issues unverändert blieb - reprocess() läuft aber als
+    volle Pipeline und kann andere Felder geschrieben haben, siehe
+    docs/LIBRARY_REPAIR.md §12/§5. Der sha-Vergleich fängt bewusst auch
+    FAILED-mit-fehlgeschlagenem-Rollback ab - die Datei bleibt dabei real
+    verändert). UNRESOLVED zählt als geändert, weil die Datei geschrieben
+    wurde - nur die Verifikation schlug fehl (identische Definition wie
+    scripts/library_repair.py::wrote_to_disk für den Navidrome-Scan)."""
+    if entry.get("status") in (STATUS_SUCCESS, STATUS_UNRESOLVED):
+        return True
+    sha_before, sha_after = entry.get("sha256_before"), entry.get("sha256_after")
+    return bool(sha_before) and bool(sha_after) and sha_before != sha_after
+
+
+def _changed_files(entries: list) -> list:
+    """Tatsächlich geänderte Dateien (siehe _wrote_to_disk()) - bewusst
+    getrennt von affected_files (alle berührten Dateien, auch SKIPPED)."""
+    return sorted({e.get("file") for e in entries if e.get("file") and _wrote_to_disk(e)})
+
+
+def _process_error_message(repair_result, entries: list) -> Optional[str]:
+    """ARCH-033-F1 Fix (c), seit Finding #5 auch für SAFE_AUTOMATIC: ein
+    Subprozess, der VOR dem ersten Journal-Write abbricht
+    (scripts/library_repair.py Exit-Code 2/3 - Report-Ladefehler/SCHWERER
+    FEHLER), liefert weder Journal-Eintrag noch doctor_runner-
+    error_message - ohne diesen Zweig würde das als leerer, harmloser
+    Lauf angezeigt statt als Fehler."""
+    if repair_result.error_message:
+        return repair_result.error_message
+    crashed_without_journal = (
+        not entries and not repair_result.timed_out
+        and repair_result.exit_code not in (0, None)
+    )
+    if not crashed_without_journal:
+        return None
+    stderr_tail = (repair_result.stderr_tail or "").strip()
+    return (
+        f"Repair-Subprozess beendete sich mit Exit-Code "
+        f"{repair_result.exit_code} ohne Journal-Einträge."
+        + (f" stderr: {stderr_tail[-500:]}" if stderr_tail else "")
+    )
+
+
+def _overall_status(
+    status_counts: dict, *, exit_code: Optional[int], timed_out: bool,
+    error_message: Optional[str],
+) -> str:
+    """Gemeinsamer Gesamtstatus für SAFE_AUTOMATIC und L2/L3 (Findings
+    #4/#5/#6): Prozess-Exit-Code + Journal-Einträge (+ Verifikation, die
+    sich pro Eintrag bereits als UNRESOLVED niederschlägt) ergeben den
+    Status. Ein vorhandenes Journal bedeutet NICHT automatisch Erfolg.
+
+    - FAILED:     Timeout/Start-/Absturzfehler (error_message), ODER nur
+                  FAILED ohne SUCCESS, ODER Exit-Code != 0 ohne jede
+                  geschriebene Datei.
+    - UNRESOLVED: Exit-Code != 0 (scripts/library_repair.py: 1 =
+                  Verification-Regression - neue/gestiegene Issue-Codes -
+                  oder Abbruch mitten im Lauf) trotz geschriebener
+                  Einträge, ODER geschriebene Einträge ohne verifizierten
+                  SUCCESS (nur UNRESOLVED). "Überprüfung nötig".
+    - SUCCESS:    mindestens ein verifizierter SUCCESS bei Exit-Code 0
+                  (einzelne FAILED/UNRESOLVED/SKIPPED bleiben in den
+                  Zählern sichtbar - Partial-Success wie bisher).
+    - SKIPPED:    nichts geschrieben, nichts fehlgeschlagen.
+    """
+    if timed_out or error_message:
+        return STATUS_FAILED
+    success = status_counts.get(STATUS_SUCCESS, 0)
+    failed = status_counts.get(STATUS_FAILED, 0)
+    unresolved = status_counts.get(STATUS_UNRESOLVED, 0)
+    if exit_code not in (0, None):
+        return STATUS_UNRESOLVED if (success or unresolved) else STATUS_FAILED
+    if failed and not success:
+        return STATUS_FAILED
+    if success:
+        return STATUS_SUCCESS
+    if unresolved:
+        return STATUS_UNRESOLVED
+    return STATUS_SKIPPED
+
+
 @dataclass
 class RepairRunResult:
     repair_id: str
-    status: str  # SUCCESS | FAILED | SKIPPED
+    status: str  # SUCCESS | UNRESOLVED | FAILED | SKIPPED (_overall_status())
     started_at: str
     finished_at: str
     candidates_total: int
@@ -229,6 +316,17 @@ class RepairRunResult:
     # ::_verification_scan()'s regressed-Erkennung, hier zusätzlich pro
     # Issue-Code statt nur aggregiert über die ganze Library.
     regressed_issue_codes: list = field(default_factory=list)
+    # Finding #4: tatsächlich geänderte Dateien (_changed_files()) - im
+    # Gegensatz zu affected_files (alle berührten, auch SKIPPED).
+    changed_files: list = field(default_factory=list)
+    # Finding #5: Exit-Code des Repair-Subprozesses (None = kein Prozess
+    # gestartet/kein Code verfügbar) - Präsentation weist bei != 0 auf
+    # Verification-Regression/Abbruch hin.
+    exit_code: Optional[int] = None
+
+    @property
+    def unresolved(self) -> int:
+        return (self.status_counts or {}).get(STATUS_UNRESOLVED, 0)
 
 
 async def execute_safe_automatic_repair(
@@ -334,15 +432,12 @@ async def execute_safe_automatic_repair(
 
         repair_id = str(uuid.uuid4())
         affected_files = sorted({e.get("file") for e in entries if e.get("file")})
-
-        if repair_result.timed_out or repair_result.error_message:
-            overall_status = STATUS_FAILED
-        elif status_counts.get(STATUS_FAILED, 0) > 0 and status_counts.get(STATUS_SUCCESS, 0) == 0:
-            overall_status = STATUS_FAILED
-        elif status_counts.get(STATUS_SUCCESS, 0) > 0:
-            overall_status = STATUS_SUCCESS
-        else:
-            overall_status = STATUS_SKIPPED
+        changed_files = _changed_files(entries)
+        error_message = _process_error_message(repair_result, entries)
+        overall_status = _overall_status(
+            status_counts, exit_code=repair_result.exit_code,
+            timed_out=repair_result.timed_out, error_message=error_message,
+        )
 
         append_run_record({
             "repair_id": repair_id,
@@ -358,6 +453,7 @@ async def execute_safe_automatic_repair(
             "issue_codes": issue_codes,
             "status_counts": status_counts,
             "affected_files": affected_files,
+            "changed_files": changed_files,
             "regressed_issue_codes": regressed_issue_codes,
         })
 
@@ -366,8 +462,9 @@ async def execute_safe_automatic_repair(
             started_at=started_at, finished_at=finished_at,
             candidates_total=len(pre_finding_ids), resolved_count=len(resolved_ids),
             status_counts=status_counts, affected_files=affected_files, entries=entries,
-            error_message=repair_result.error_message,
+            error_message=error_message,
             regressed_issue_codes=regressed_issue_codes,
+            changed_files=changed_files, exit_code=repair_result.exit_code,
         )
     finally:
         release_repair_lock()
@@ -404,7 +501,7 @@ class LevelRepairResult:
     repair_id: str
     artist: str
     level: str  # "l2" | "l3"
-    status: str  # SUCCESS | FAILED | SKIPPED
+    status: str  # SUCCESS | UNRESOLVED | FAILED | SKIPPED (_overall_status())
     started_at: str
     finished_at: str
     total: int
@@ -416,12 +513,9 @@ class LevelRepairResult:
     entries: list = field(default_factory=list)
     affected_files: list = field(default_factory=list)
     # ARCH-033-F1: affected_files zaehlt ALLE beruehrten Dateien (auch
-    # SKIPPED, siehe unten) - bewusst unveraendert, da handlers/
-    # repair_musicbot_handler.py der einzige bekannte Konsument mit
-    # "tatsaechlich geaendert"-Semantik ist, control_center/routers/
-    # jobs.py aber bereits denselben affected_files-Wert mit "beruehrt"-
-    # Semantik weiterreicht (repoweit verifiziert). changed_files ist
-    # additiv nur fuer den Telegram-Handler gedacht.
+    # SKIPPED) und bleibt aus Kompatibilitaet unveraendert erhalten.
+    # changed_files (_changed_files()) ist seit Finding #6 die einzige
+    # "geaendert"-Quelle fuer Telegram UND Control Center (Job-Ergebnis).
     changed_files: list = field(default_factory=list)
     # Bewusst nie berechnet (ARCH-033): kein verlaessliches maschinenlesbares
     # Signal ueber die Subprozess-Grenze hinweg, wie viele Auto-Learn-
@@ -432,6 +526,8 @@ class LevelRepairResult:
     auto_learn_changed: Optional[int] = None
     rescan_triggered: bool = False
     error_message: Optional[str] = None
+    # Finding #5: siehe RepairRunResult.exit_code.
+    exit_code: Optional[int] = None
 
 
 async def _execute_level_repair(
@@ -529,57 +625,14 @@ async def _execute_level_repair(
                     registry.save()
 
         affected_files = sorted({e.get("file") for e in entries if e.get("file")})
-        # ARCH-033-F1 Fix (b): changed_files zaehlt tatsaechlich geaenderte
-        # Dateien - SUCCESS/UNRESOLVED IMMER, jeder andere Status (v. a.
-        # SKIPPED) zusaetzlich wenn sha256_before != sha256_after
-        # (Adversarial-Review-Fund: L2 (apply_level2(), executor.py)
-        # markiert pro Issue-Code SKIPPED, sobald NUR das Zielfeld DIESES
-        # Issues unveraendert blieb - reprocess() laeuft aber immer als
-        # volle Pipeline und kann dabei andere Felder geschrieben haben,
-        # siehe docs/LIBRARY_REPAIR.md §12/§5. Ein reiner Status-Filter
-        # wuerde solche real geschriebenen Dateien unterzaehlen. Der
-        # sha-Vergleich faengt bewusst auch den Randfall FAILED-mit-
-        # fehlgeschlagenem-Rollback ab - korrekt, da die Datei dabei
-        # ebenfalls real veraendert bleibt). affected_files bleibt oben
-        # unveraendert (andere Konsumenten, siehe
-        # LevelRepairResult-Docstring-Kommentar).
-        def _wrote_to_disk(entry: dict) -> bool:
-            if entry.get("status") in (STATUS_SUCCESS, "UNRESOLVED"):
-                return True
-            sha_before, sha_after = entry.get("sha256_before"), entry.get("sha256_after")
-            return bool(sha_before) and bool(sha_after) and sha_before != sha_after
-
-        changed_files = sorted({
-            e.get("file") for e in entries if e.get("file") and _wrote_to_disk(e)
-        })
-
-        # ARCH-033-F1 Fix (c), Adversarial-Review-Fund: ein Subprozess, der
-        # VOR dem ersten Journal-Write abbricht (scripts/library_repair.py
-        # Exit-Code 2/3 - Report-Ladefehler/SCHWERER FEHLER), liefert
-        # weder einen Journal-Eintrag noch (anders als bei Start-/Timeout-
-        # Fehlern) ein doctor_runner-error_message - ohne diesen Zweig
-        # wuerde das als leerer, harmloser Lauf angezeigt statt als Fehler.
-        crashed_without_journal = (
-            not entries and not repair_result.timed_out and not repair_result.error_message
-            and repair_result.exit_code not in (0, None)
+        # ARCH-033-F1 Fix (b)/(c) - seit Findings #4/#5 als gemeinsame
+        # Helfer mit execute_safe_automatic_repair() geteilt.
+        changed_files = _changed_files(entries)
+        error_message = _process_error_message(repair_result, entries)
+        overall_status = _overall_status(
+            status_counts, exit_code=repair_result.exit_code,
+            timed_out=repair_result.timed_out, error_message=error_message,
         )
-        error_message = repair_result.error_message
-        if crashed_without_journal:
-            stderr_tail = (repair_result.stderr_tail or "").strip()
-            error_message = (
-                f"Repair-Subprozess beendete sich mit Exit-Code "
-                f"{repair_result.exit_code} ohne Journal-Einträge."
-                + (f" stderr: {stderr_tail[-500:]}" if stderr_tail else "")
-            )
-
-        if repair_result.timed_out or error_message:
-            overall_status = STATUS_FAILED
-        elif status_counts.get(STATUS_FAILED, 0) > 0 and status_counts.get(STATUS_SUCCESS, 0) == 0:
-            overall_status = STATUS_FAILED
-        elif status_counts.get(STATUS_SUCCESS, 0) > 0:
-            overall_status = STATUS_SUCCESS
-        else:
-            overall_status = STATUS_SKIPPED
 
         append_run_record({
             "repair_id": repair_id,
@@ -596,6 +649,7 @@ async def _execute_level_repair(
             "issue_codes": issue_codes,
             "status_counts": status_counts,
             "affected_files": affected_files,
+            "changed_files": changed_files,
         })
 
         return LevelRepairResult(
@@ -604,11 +658,11 @@ async def _execute_level_repair(
             success=status_counts.get(STATUS_SUCCESS, 0),
             failed=status_counts.get(STATUS_FAILED, 0),
             skipped=status_counts.get(STATUS_SKIPPED, 0),
-            unresolved=status_counts.get("UNRESOLVED", 0),
+            unresolved=status_counts.get(STATUS_UNRESOLVED, 0),
             resolved_count=len(resolved_ids),
             entries=entries, affected_files=affected_files, changed_files=changed_files,
             rescan_triggered=rescan_triggered,
-            error_message=error_message,
+            error_message=error_message, exit_code=repair_result.exit_code,
         )
     finally:
         release_repair_lock()
