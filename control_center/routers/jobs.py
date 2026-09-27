@@ -113,6 +113,7 @@ from handlers.menu.models import AccessLevel
 from logger import get_module_logger
 from services.jobs.job_registry import JobRegistry
 from services.library_repair.doctor_runner import run_health_scan, run_safe_automatic_repair
+from services.library_repair.genre_revalidation_runner import run_genre_revalidation_subprocess
 from services.library_repair.repair_service import (
     RepairAlreadyRunningError,
     execute_level2_repair,
@@ -424,4 +425,127 @@ async def start_level3_repair_job(
 def cancel_job(job_id: str, registry: JobRegistry = Depends(get_job_registry)) -> JobSchema:
     job = _get_job_or_404(registry, job_id)
     registry.request_cancel(job_id)
+    return job_to_schema(job)
+
+
+# ── Genre-Revalidierung (Last.fm erneut abfragen, Overturn-Regel) ──────────
+#
+# Bildet den bereits produktiven Telegram-Flow nach
+# (handlers/library_maintenance_handler.py: gr_preview -> Bestaetigung ->
+# gr_apply) ueber dieselbe Service-Funktion
+# services/library_repair/genre_revalidation_runner.py::
+# run_genre_revalidation_subprocess() — keine eigene Fachlogik, keine zweite
+# Overturn-Regel. Zwei Job-Typen statt einem synchronen Request: der Lauf
+# ruft Last.fm auf und darf bis zu 60 s dauern (Reverse-Proxy-Timeout-Risiko,
+# siehe docs/CONTROL_CENTER_REVERSE_PROXY.md).
+#
+# WICHTIG (Semantik): eine Revalidierung veraendert KEINE Audio-Datei und NICHT
+# artist_genre.yaml. Sie schreibt hoechstens eine Beobachtung in
+# mapping/auto_learned_genre.json (gelerntes Genre fuer kuenftige Downloads) und
+# ist fuer Artists mit manuellem Mapping IMMER blockiert (BLOCKED_MANUAL).
+# Kooperatives Abbrechen ist wirkungslos (ein einzelner atomarer await).
+
+_GENRE_REVALIDATION_STDERR_TAIL = 500
+
+
+def _require_revalidation_artist(payload: ArtistLevelRepairRequest) -> str:
+    artist = _require_artist(payload)
+    # Der Name wird als Kommandozeilenargument an scripts/revalidate_genre.py
+    # gereicht: ein fuehrendes "-" wuerde dort als Option gelesen.
+    if artist.startswith("-") or len(artist) > 200 or any(ord(c) < 32 or ord(c) == 127 for c in artist):
+        raise HTTPException(
+            status_code=422,
+            detail=ErrorDetail(
+                code="ARTIST_INVALID",
+                message="Artist-Name ungültig (führendes '-', Steuerzeichen oder länger als 200 Zeichen).",
+            ).model_dump(),
+        )
+    return artist
+
+
+async def _run_genre_revalidation_job(
+    registry: JobRegistry, job_id: str, *, artist: str, apply: bool, user_id: str,
+) -> None:
+    registry.mark_running(job_id)
+    registry.update_progress(
+        job_id, 10.0,
+        f"Last.fm wird für {artist} abgefragt…" if not apply
+        else f"Genre-Revalidierung wird für {artist} angewendet…",
+    )
+    try:
+        run = await run_genre_revalidation_subprocess(
+            artist, apply=apply, triggered_by=f"control_center:{user_id}",
+        )
+    except RepairAlreadyRunningError as e:
+        registry.mark_failed(job_id, str(e))
+        return
+    except Exception as e:  # noqa: BLE001
+        _logger.error(f"Genre-Revalidierungs-Job {job_id} fehlgeschlagen: {e!r}")
+        registry.mark_failed(job_id, "Interner Fehler bei der Genre-Revalidierung.")
+        return
+
+    if run.timed_out or run.error_message:
+        registry.mark_failed(job_id, run.error_message or "Timeout bei der Genre-Revalidierung.")
+        return
+    if not run.success:
+        registry.mark_failed(
+            job_id, f"Genre-Revalidierung beendet mit Exit-Code {run.exit_code}.",
+            result={
+                "mode": "apply" if apply else "preview",
+                "exit_code": run.exit_code,
+                "stderr_tail": run.stderr_tail[-_GENRE_REVALIDATION_STDERR_TAIL:],
+            },
+        )
+        return
+
+    registry.mark_succeeded(
+        job_id,
+        result={
+            **run.data,
+            "mode": "apply" if apply else "preview",
+            "exit_code": run.exit_code,
+            # gelernte Genres liest der laufende Bot beim Start (GenreMapper)
+            "bot_reload_required": bool(run.mutated),
+        },
+    )
+
+
+@router.post(
+    "/genre-revalidation-preview",
+    response_model=JobSchema,
+    dependencies=[Depends(verify_same_origin)],
+)
+async def start_genre_revalidation_preview_job(
+    payload: ArtistLevelRepairRequest,
+    user_id: int = Depends(get_current_user_id),
+    registry: JobRegistry = Depends(get_job_registry),
+) -> JobSchema:
+    """Read-only: fragt Last.fm ab und zeigt, ob die Overturn-Regel eine
+    Aenderung zuliesse. Schreibt nichts."""
+    artist = _require_revalidation_artist(payload)
+    job = registry.create(kind="genre_revalidation_preview", initiator=str(user_id))
+    asyncio.create_task(
+        _run_genre_revalidation_job(registry, job.job_id, artist=artist, apply=False, user_id=str(user_id))
+    )
+    return job_to_schema(job)
+
+
+@router.post(
+    "/genre-revalidation-apply",
+    response_model=JobSchema,
+    dependencies=[Depends(verify_same_origin)],
+)
+async def start_genre_revalidation_apply_job(
+    payload: ArtistLevelRepairRequest,
+    user_id: int = Depends(get_current_user_id),
+    registry: JobRegistry = Depends(get_job_registry),
+) -> JobSchema:
+    """Fragt Last.fm erneut ab und schreibt die Beobachtung NUR, wenn die
+    Overturn-Regel erfuellt ist (sonst keine Mutation). Die Entscheidung
+    trifft der Service, nicht dieser Endpunkt."""
+    artist = _require_revalidation_artist(payload)
+    job = registry.create(kind="genre_revalidation_apply", initiator=str(user_id))
+    asyncio.create_task(
+        _run_genre_revalidation_job(registry, job.job_id, artist=artist, apply=True, user_id=str(user_id))
+    )
     return job_to_schema(job)
