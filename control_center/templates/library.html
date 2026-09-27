@@ -80,6 +80,7 @@
         <div id="library-health-content" class="text-secondary">
           Health wird geladen …
         </div>
+        <div id="library-health-sparkline"></div>
       </div>
     </div>
   </div>
@@ -267,18 +268,25 @@
   // "alte Routen nicht ungeprueft entfernen").
   let _artistsOverviewCache = [];
 
+  // Phase E (CC-LIB-FINAL) Dashboard-Optimierung: progressive Anzeige
+  // statt einer einzigen langen Tabelle (Auftrag §9/§11 "Progressive
+  // Disclosure") - reines Client-seitiges Slicing des bereits geladenen
+  // artists-overview-Caches, kein zusaetzlicher Request. Wird bei jeder
+  // neuen Suche/Sortierung auf die erste Seite zurueckgesetzt, bleibt bei
+  // "Weitere laden" erhalten.
+  const _ARTISTS_PAGE_SIZE = 15;
+  let _artistsVisibleCount = _ARTISTS_PAGE_SIZE;
+
   // CC-AC-8 Schritt 3: Kompakte Tabler-Artist-Zeile.
   // Artist, Track-/Album-Zahlen und Health werden als getrennte,
   // kompakt ausgerichtete Spalten dargestellt.
   function _artistRowHtml(a) {
     const href = `${CC_BASE}/library/${encodeURIComponent(a.artist)}`;
     const hs = a.health_score;
-    const badgeClass = hs >= 90
-      ? "bg-green-lt text-green"
-      : hs >= 70
-        ? "bg-yellow-lt text-yellow"
-        : "bg-red-lt text-red";
-    const icon = hs >= 90 ? "✓" : hs >= 70 ? "⚠" : "✕";
+    // Phase E (CC-LIB-FINAL) Dashboard-Optimierung: Punkt statt Pille+Symbol
+    // (dieselben .dot-ok/.dot-warn/.dot-error-Klassen wie Repair-History
+    // in health.js - keine neue Farbkonvention).
+    const dotClass = hs >= 90 ? "dot-ok" : hs >= 70 ? "dot-warn" : "dot-error";
 
     return `
       <tr
@@ -315,9 +323,7 @@
           ${a.album_count}
         </td>
         <td class="py-2 text-end">
-          <span class="badge ${badgeClass}">
-            ${hs} ${icon}
-          </span>
+          <span class="dot ${dotClass}"></span>${hs}
         </td>
       </tr>
     `;
@@ -349,6 +355,16 @@
       return;
     }
     filtered.sort(_ARTIST_SORT_COMPARATORS[sortKey] || _ARTIST_SORT_COMPARATORS.name);
+
+    const shown = filtered.slice(0, _artistsVisibleCount);
+    const rest = filtered.length - shown.length;
+    const loadMore = rest > 0
+      ? `<div class="text-center mt-3">
+           <p class="text-secondary small mb-2">${shown.length} von ${filtered.length} Artists</p>
+           <button type="button" class="btn btn-outline-secondary btn-sm" id="artists-load-more-btn">Weitere laden</button>
+         </div>`
+      : "";
+
     el.innerHTML = `
       <div class="table-responsive">
         <table class="table table-vcenter table-hover table-striped mb-0">
@@ -361,10 +377,11 @@
             </tr>
           </thead>
           <tbody>
-            ${filtered.map((a) => _artistRowHtml(a)).join("")}
+            ${shown.map((a) => _artistRowHtml(a)).join("")}
           </tbody>
         </table>
       </div>
+      ${loadMore}
     `;
 
     const artistTable = el.querySelector("table");
@@ -382,10 +399,16 @@
       event.preventDefault();
       window.location.href = row.dataset.href;
     });
+
+    document.getElementById("artists-load-more-btn")?.addEventListener("click", () => {
+      _artistsVisibleCount += _ARTISTS_PAGE_SIZE;
+      _renderArtistsOverviewList();
+    });
   }
 
   function renderArtistsOverview(el, body) {
     _artistsOverviewCache = body.artists;
+    _artistsVisibleCount = _ARTISTS_PAGE_SIZE;
     if (body.stale) {
       const note = document.createElement("p");
       note.className = "hint";
@@ -402,8 +425,12 @@
     );
   }
 
-  document.getElementById("artist-search").addEventListener("input", _renderArtistsOverviewList);
-  document.getElementById("artist-sort").addEventListener("change", _renderArtistsOverviewList);
+  function _resetArtistsPagingAndRender() {
+    _artistsVisibleCount = _ARTISTS_PAGE_SIZE;
+    _renderArtistsOverviewList();
+  }
+  document.getElementById("artist-search").addEventListener("input", _resetArtistsPagingAndRender);
+  document.getElementById("artist-sort").addEventListener("change", _resetArtistsPagingAndRender);
 
   // Library-KPI-Zeile (Nutzer-Ergänzung CC-AC-7): nutzt den bestehenden
   // Cache-Read-Endpunkt GET /api/v1/library/health/cached (Auftrag §5 -
@@ -479,53 +506,54 @@
       ? `${s.total_files} Tracks · ${s.total_artists} Artists · ${s.total_albums} Alben`
       : "";
 
-
     const stand = scan.completed_at
-      ? `<p class="hint">Stand: ${_escapeHtml(_formatDateTime(scan.completed_at))}</p>` : "";
+      ? `<div class="text-secondary small mt-2">Stand: ${_escapeHtml(_formatDateTime(scan.completed_at))}</div>` : "";
 
-    const healthBadgeClass = h.score >= 90
-      ? "bg-green-lt text-green"
-      : h.score >= 70
-        ? "bg-yellow-lt text-yellow"
-        : "bg-red-lt text-red";
+    // Phase E (CC-LIB-FINAL) Dashboard-Optimierung: derselbe Status<->Farbe-
+    // Vertrag wie health.js's Health-Kachel (_HEALTH_STATUS_COLOR, seit
+    // dieser Phase in common.js) statt einer eigenen, gröberen
+    // Schwellenwert-Logik - identisches Aussehen auf beiden Seiten.
+    const color = _HEALTH_STATUS_COLOR[h.status] || "secondary";
+    const pct = Math.max(0, Math.min(100, Number(h.score)));
 
-    const statBadges = [
-      typeof s.healthy_files === "number"
-        ? `<span class="badge bg-green-lt text-green">✓ ${s.healthy_files} fehlerfrei</span>`
-        : "",
-      typeof s.files_with_warnings === "number"
-        ? `<span class="badge bg-yellow-lt text-yellow">⚠ ${s.files_with_warnings} Warn</span>`
-        : "",
-      typeof s.files_with_errors === "number"
-        ? `<span class="badge bg-red-lt text-red">✕ ${s.files_with_errors} Error</span>`
-        : "",
-    ].filter(Boolean).join(" ");
-
+    // Die fruehere ✓/⚠/✕-Badgereihe (fehlerfrei/Warn/Error) ist in die
+    // "Aufmerksamkeit"-Karte gewandert (_renderLibraryAttention, dort mit
+    // demselben issues_by_severity - keine doppelte Zahl auf dieser Karte
+    // mehr) - diese Karte beantwortet nur noch "wie gesund ist die Library
+    // insgesamt", nicht mehr zusaetzlich "was genau ist kaputt".
     el.innerHTML = `
-      <div class="d-flex align-items-center justify-content-between gap-3 mb-2">
-        <div>
-          <div class="text-secondary small">Status</div>
-          <div class="h2 mb-0">${_escapeHtml(h.status || "")}</div>
-        </div>
-        <span class="badge ${healthBadgeClass}">${h.score}</span>
+      <div class="d-flex align-items-baseline gap-2 mb-2">
+        <div class="h1 mb-0">${h.score}</div>
+        <span class="badge bg-${color}-lt">${_escapeHtml(h.status || "")}</span>
       </div>
 
-      ${summary
-        ? `<div class="text-secondary small mb-2">${summary}</div>`
-        : ""}
-
-      ${statBadges
-        ? `<div class="d-flex flex-wrap gap-2">${statBadges}</div>`
-        : ""}
-
-      ${stand
-        ? stand.replace('<p class="hint">', '<div class="text-secondary small mt-2">').replace('</p>', '</div>')
-        : ""}
-
-      <div class="mt-2">
-        <a href="${CC_BASE}/health" class="small">Health öffnen →</a>
+      <div class="progress progress-sm mb-2">
+        <div class="progress-bar bg-${color}" style="width: ${pct}%" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div>
       </div>
+
+      ${summary ? `<div class="text-secondary small">${summary}</div>` : ""}
+      ${stand}
+
+      <a href="${CC_BASE}/health" class="btn btn-outline-primary w-100 mt-3">Health öffnen →</a>
     `;
+
+    loadLibraryHealthSparkline();
+  }
+
+  // Phase E (CC-LIB-FINAL): eigener, isolierter Request fuer den
+  // Score-Verlauf (GET /api/v1/library/health/score-history, derselbe
+  // Endpunkt/dieselbe _sparklineSvg() wie health.js) - unabhaengig von
+  // /health/cached, damit ein Fehler hier nie die restliche Health-Karte
+  // beeintraechtigt (identisches Fehlerisolationsprinzip wie
+  // loadLibraryKpis()).
+  function loadLibraryHealthSparkline() {
+    return _loadInto(
+      "library-health-sparkline", "/api/v1/library/health/score-history?limit=20",
+      (el, body) => {
+        if (!body.entries.length) { el.innerHTML = ""; return; }
+        el.innerHTML = `<div class="subheader mt-3 mb-1">Score-Verlauf</div>${_sparklineSvg(body.entries)}`;
+      },
+    );
   }
 
   // CC-AC-8 Schritt 3: Attention severity-getrennt (Variante A).
@@ -586,36 +614,51 @@
     // drei Null-Zeilen. (Nur bei vollständig leerem Report.)
     if (errors === 0 && warnings === 0 && infos === 0) {
       el.innerHTML = '<p class="empty-note empty-note-ok">✓ Keine kritischen Probleme.</p>' +
-        `<p><a href="${CC_BASE}/findings">→ Findings öffnen</a></p>`;
+        `<a href="${CC_BASE}/findings" class="btn btn-outline-primary w-100 mt-2">Findings öffnen →</a>`;
       return;
     }
 
-    const sevBadge = (label, n, badgeClass) =>
-      `<span class="badge ${badgeClass}">${label} ${n}</span>`;
+    // Phase E (CC-LIB-FINAL) Dashboard-Optimierung: EIN Kennzahl-Kopf
+    // (Warnings — häufigste tatsächlich behebbare Kategorie) statt einer
+    // dreiteiligen Errors/Warnings/Infos-Badgereihe. Errors werden dabei
+    // NIE verschwiegen (P0-Priorität, CLAUDE.md Abschnitt 23): sind welche
+    // vorhanden, erscheint zusätzlich ein roter Errors-Badge über der
+    // Warnings-Zahl — nur der (häufige) 0-Errors-Fall entfällt als eigene
+    // Zeile. Infos bleiben als kleine, unauffällige Zusatzzeile erhalten,
+    // statt komplett zu verschwinden.
+    const errorBadge = errors > 0
+      ? `<div class="mb-2"><span class="badge bg-red-lt text-red">${errors} Errors</span></div>`
+      : "";
 
-    const rows = [
-      sevBadge("Errors", errors, "bg-red-lt text-red"),
-      sevBadge("Warnings", warnings, "bg-yellow-lt text-yellow"),
-      sevBadge("Infos", infos, "bg-secondary-lt text-secondary"),
-    ];
-
-    // Top-Warnungen nur, wenn wirklich WARNING-Codes vorhanden sind.
+    // Top-Warnungen: verkürzt von 5 auf 2 (Auftrag-Wireframe) — die
+    // vollständige Liste bleibt über den Findings-Button einen Klick
+    // entfernt, keine Daten gehen verloren.
     const topWarnings = Object.entries(byCode)
       .filter(([code, n]) => _WARNING_CODES.has(code) && n > 0)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
+      .slice(0, 2);
 
     let detail = "";
     if (topWarnings.length) {
-      detail = '<div class="text-secondary small mt-3 mb-2">Häufigste Warnungen</div>' +
-        '<div class="d-flex flex-wrap gap-2">' +
+      detail = '<div class="d-flex flex-wrap gap-2 mt-3">' +
         topWarnings.map(([code, n]) =>
           `<span class="badge bg-yellow-lt text-yellow">${_escapeHtml(code)} ${n}</span>`
         ).join("") + '</div>';
     }
 
-    el.innerHTML = '<div class="row-list">' + rows.join("") + '</div>' + detail +
-      `<p><a href="${CC_BASE}/findings">→ Findings öffnen</a></p>`;
+    const infoLine = infos > 0
+      ? `<div class="text-secondary small mt-2">+ ${infos} Infos</div>` : "";
+
+    el.innerHTML = `
+      ${errorBadge}
+      <div class="d-flex align-items-baseline gap-2">
+        <div class="h1 mb-0">${warnings}</div>
+        <span class="text-secondary">Warnings</span>
+      </div>
+      ${detail}
+      ${infoLine}
+      <a href="${CC_BASE}/findings" class="btn btn-outline-primary w-100 mt-3">Findings öffnen →</a>
+    `;
   }
 
   // Master-Prompt Abschnitt 7 "METADATA MANAGEMENT" / ui_prompt.txt

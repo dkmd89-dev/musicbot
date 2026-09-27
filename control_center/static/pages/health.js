@@ -15,9 +15,9 @@
 
 // ── A) MusicBot Doctor ──────────────────────────────────────────────────
 
-const _HEALTH_STATUS_COLOR = {
-  EXCELLENT: "green", GOOD: "lime", FAIR: "yellow", POOR: "orange", CRITICAL: "red",
-};
+// _HEALTH_STATUS_COLOR lebt seit Phase E (CC-LIB-FINAL) in common.js
+// (zweiter Konsument: library.html's Library-Health-Karte) - reine
+// Verschiebung, keine Verhaltensaenderung.
 
 function _healthNumber(n) {
   return typeof n === "number" ? n.toLocaleString("de-DE") : _escapeHtml(String(n));
@@ -55,26 +55,9 @@ function loadHealth() {
   return _loadInto("health-tiles", "/api/v1/library/health/cached", renderHealth);
 }
 
-// Score-Verlauf als Sparkline (statt Textliste). Reihenfolge der API:
-// aelteste zuerst. Gleichbleibende Scores werden als flache Linie gezeichnet.
-function _sparklineSvg(entries) {
-  const W = 240, H = 32, PAD = 4;
-  const scored = entries.filter((e) => typeof e.score === "number");
-  if (!scored.length) return "";
-  const vals = scored.map((e) => e.score);
-  const min = Math.min.apply(null, vals);
-  const max = Math.max.apply(null, vals);
-  const x = (i) => scored.length === 1 ? W / 2 : PAD + i * (W - 2 * PAD) / (scored.length - 1);
-  const y = (v) => max === min ? H / 2 : PAD + (max - v) * (H - 2 * PAD) / (max - min);
-  const pts = scored.map((e, i) => x(i).toFixed(1) + "," + y(e.score).toFixed(1)).join(" ");
-  const last = scored[scored.length - 1];
-  const dots = scored.map((e, i) => {
-    const when = e.timestamp ? new Date(e.timestamp).toLocaleString() : "";
-    return `<circle cx="${x(i).toFixed(1)}" cy="${y(e.score).toFixed(1)}" r="${e === last ? 3.5 : 2}" fill="currentColor"><title>${_escapeHtml(String(e.score))} · ${_escapeHtml(e.status || "UNSCORED")} · ${_escapeHtml(when)}</title></circle>`;
-  }).join("");
-  return `<svg class="text-primary" viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="max-width:${W}px" role="img" aria-label="Score-Verlauf der letzten ${scored.length} Läufe">` +
-    `<polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${dots}</svg>`;
-}
+// _sparklineSvg() lebt seit Phase E (CC-LIB-FINAL) in common.js (zweiter
+// Konsument: library.html's Library-Health-Karte) - reine Verschiebung,
+// keine Verhaltensaenderung.
 
 function renderScoreHistory(el, body) {
   if (!body.entries.length) {
