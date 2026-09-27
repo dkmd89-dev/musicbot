@@ -32,6 +32,11 @@ kein Ersatz (siehe dortiger Funktions-Docstring). GET .../findings und
 .../summary bleiben unveraendert seiteneffektfrei — accept/unaccept/
 review sind die einzigen schreibenden Routen.
 
+GET .../findings/{finding_id}/details (Nachtrag): Belege zu EINEM Finding
+(read-only) — duenner Wrapper um services/library_health/finding_explain.py::
+explain_finding(); Tags werden bei Bedarf frisch gelesen, nichts wird
+geschrieben.
+
 KEINE Reparatur-Ausfuehrung, KEIN Loeschen — accept/unaccept/review
 aendern ausschliesslich den Review-Status in der Findings-Registry
 (Metadaten ausserhalb der Library), niemals eine Library-Datei.
@@ -54,6 +59,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from config import Config
 from handlers.menu.models import AccessLevel
 from logger import get_module_logger
+from services.library_health.finding_explain import explain_finding
 from services.library_health.findings import (
     DEFAULT_FILENAME as FINDINGS_DEFAULT_FILENAME,
     STATUS_FALSE_POSITIVE,
@@ -74,11 +80,13 @@ from ..schemas.findings import (
     AcceptFindingRequest,
     FindingActionResponse,
     FindingCategoryGroup,
+    FindingDetailsResponse,
     FindingsSummaryResponse,
     ReviewFindingRequest,
     UnacceptFindingRequest,
     accepted_findings_to_response,
     category_groups_to_schema,
+    finding_explanation_to_response,
     finding_to_action_response,
     review_summary_to_schema,
 )
@@ -153,6 +161,34 @@ def get_accepted_findings_endpoint(
     registry = _load_registry()
     findings = get_accepted_findings(registry)
     return accepted_findings_to_response(findings, limit=limit)
+
+
+@router.get("/findings/{finding_id}/details", response_model=FindingDetailsResponse)
+def get_finding_details(finding_id: str) -> FindingDetailsResponse:
+    """Belege zu EINEM Finding (read-only): warum ist es offen?
+
+    Duenner Wrapper um services/library_health/finding_explain.py::
+    explain_finding() — die Fachlogik (frisches Lesen der Tags,
+    Vergleich, Diff) liegt im Service, nicht hier. Nur `finding_id` kommt vom
+    Client; der Dateipfad stammt aus der Registry und wird im Service gegen die
+    Library-Wurzel geprueft. Kein Schreibzugriff (weder Registry noch Datei),
+    kein Scan. Mindestens AccessLevel.ADMIN wie alle Findings-Routen.
+
+    404 FINDING_NOT_FOUND bei unbekannter ID. Alle anderen Zustaende (Code ohne
+    Analyse, Datei fehlt, Tags nicht lesbar) sind HTTP 200 mit
+    `supported`/`file_status`/`message` — sie sind Daten, keine Fehler."""
+    registry = _load_registry()
+    finding = registry.get(finding_id)
+    if finding is None:
+        raise HTTPException(
+            status_code=404,
+            detail=ErrorDetail(
+                code="FINDING_NOT_FOUND", message=f"Finding nicht gefunden: {finding_id}"
+            ).model_dump(),
+        )
+    return finding_explanation_to_response(
+        explain_finding(finding, Path(Config().LIBRARY_DIR))
+    )
 
 
 @router.post(

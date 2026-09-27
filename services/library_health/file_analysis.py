@@ -128,6 +128,34 @@ def _normalize_for_compare(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def compare_filename_to_title(stem: str, title: str) -> dict:
+    """Der Dateiname-vs-Titel-Vergleich hinter FILENAME_TITLE_MISMATCH als
+    reine Funktion — EINZIGE Quelle der Wahrheit: der Scanner
+    (`_analyze_structure_and_filename`) und die Finding-Erklaerung
+    (`finding_explain.explain_finding`) rufen beide diese Funktion auf, damit
+    die Erklaerung nie eine andere Entscheidung trifft als der Scan.
+
+    `stem` = Dateiname ohne Endung, `title` = Titel-Tag. Rueckgabe:
+      - prefix / remainder: der abgetrennte Struktur-Praefix ("03 - ",
+        "2021 - ", "Artist - ") und der verbleibende Titel-Teil
+      - normalized_remainder / normalized_title: die Werte, die tatsaechlich
+        verglichen werden (siehe `_normalize_for_compare`)
+      - matches: True == KEIN Finding
+    Kein I/O, kein Seiteneffekt."""
+    remainder = _FILENAME_PREFIX_PATTERN.sub("", stem, count=1)
+    normalized_remainder = _normalize_for_compare(remainder)
+    normalized_title = _normalize_for_compare(title)
+    return {
+        "stem": stem,
+        "prefix": stem[: len(stem) - len(remainder)],
+        "remainder": remainder,
+        "title": title,
+        "normalized_remainder": normalized_remainder,
+        "normalized_title": normalized_title,
+        "matches": normalized_remainder == normalized_title,
+    }
+
+
 def _split_genres(genre: str) -> list[str]:
     for sep in _GENRE_SEPARATORS:
         if sep in genre:
@@ -862,8 +890,8 @@ def _analyze_structure_and_filename(
 
     # Titel-Abgleich nur, wenn ein Titel-Tag existiert.
     if not _blank(tags.title):
-        remainder = _FILENAME_PREFIX_PATTERN.sub("", stem, count=1)
-        if _normalize_for_compare(remainder) != _normalize_for_compare(tags.title):
+        comparison = compare_filename_to_title(stem, tags.title)
+        if not comparison["matches"]:
             fh.issues.append(
                 make_issue(
                     "FILENAME_TITLE_MISMATCH",
@@ -872,6 +900,6 @@ def _analyze_structure_and_filename(
                     title=tags.title,
                     message=f"Dateiname-Stamm {stem!r} passt nicht zum Titel-Tag "
                     f"{tags.title!r}",
-                    details={"stem": stem, "title": tags.title, "compared": remainder},
+                    details={"stem": stem, "title": tags.title, "compared": comparison["remainder"]},
                 )
             )

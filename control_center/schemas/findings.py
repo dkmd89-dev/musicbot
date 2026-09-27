@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from services.library_health.finding_explain import FindingExplanation
 from services.library_health.findings import CategoryGroup, Finding, ReviewSummary
 
 
@@ -41,6 +42,46 @@ class FindingSchema(BaseModel):
     occurrences: int
     first_seen: str
     last_seen: str
+
+
+class DiffSegmentSchema(BaseModel):
+    """Ein Abschnitt des Zeichen-Diffs: op = equal | replace | delete | insert."""
+
+    op: str
+    a: str
+    b: str
+
+
+class FilenameTitleEvidence(BaseModel):
+    """Belege zu FILENAME_TITLE_MISMATCH (frisch von der Platte gelesen).
+    `matches=True` heisst: aktuell kein Unterschied mehr (Finding veraltet)."""
+
+    stem: str
+    prefix: str
+    remainder: str
+    title: str
+    normalized_remainder: str
+    normalized_title: str
+    matches: bool
+    segments: list[DiffSegmentSchema]
+    title_at_scan: str | None = None
+
+
+class FindingDetailsResponse(BaseModel):
+    """GET /api/v1/library/findings/{finding_id}/details (read-only).
+
+    `supported=False`: fuer den Code gibt es keine Detailanalyse.
+    `file_status != "ok"`: die Belege konnten nicht gelesen werden, `message`
+    erklaert warum (Datei fehlt, Tags nicht lesbar, kein Titel-Tag, ...)."""
+
+    finding_id: str
+    code: str
+    supported: bool
+    file_status: str
+    path: str | None = None
+    message: str | None = None
+    evidence_kind: str | None = None
+    evidence: FilenameTitleEvidence | None = None
 
 
 class FindingCategoryGroup(BaseModel):
@@ -196,4 +237,20 @@ def accepted_findings_to_response(
     return AcceptedFindingsResponse(
         findings=[_finding_to_accepted_schema(f) for f in findings[:limit]],
         total=len(findings),
+    )
+
+
+def finding_explanation_to_response(exp: FindingExplanation) -> FindingDetailsResponse:
+    evidence = None
+    if exp.evidence is not None:
+        evidence = FilenameTitleEvidence(**exp.evidence)
+    return FindingDetailsResponse(
+        finding_id=exp.finding_id,
+        code=exp.code,
+        supported=exp.supported,
+        file_status=exp.file_status,
+        path=exp.path,
+        message=exp.message,
+        evidence_kind=exp.evidence_kind,
+        evidence=evidence,
     )
