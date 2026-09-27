@@ -289,6 +289,32 @@ def test_attention_never_hides_nonzero_errors(tmp_path: Path) -> None:
 
 
 @needs_node
+def test_similarly_named_artist_rows_get_distinct_hrefs_and_tooltips(tmp_path: Path) -> None:
+    """Freigabe fix.txt 2026-09-27: bei aehnlichen/nahezu gleichen Artist-
+    Namen (hier: ein Name mit unsichtbarem Trailing-Space, der beim
+    HTML-Rendering visuell verschwindet) muss jede Zeile trotzdem
+    eindeutig einem Verzeichnis zuzuordnen sein. `a.artist` ist bereits
+    der stabile, verzeichnisbasierte Schluessel (services/library_health/
+    scoring.py, artist_directory) - jede Zeile bekommt deshalb zusaetzlich
+    ein `title`-Attribut mit dem exakten Wert (Tooltip deckt Whitespace-
+    /Aehnlichkeits-Unterschiede auf, die der sichtbare Zeilentext allein
+    nicht zeigt)."""
+    out = _run(tmp_path, {"ops": [
+        {"op": "call", "fn": "renderArtistsOverview", "args": ["@artists-overview-content",
+                                                                {"artists": [
+                                                                    {"artist": "Apache", "file_count": 3, "album_count": 1, "health_score": 90},
+                                                                    {"artist": "Apache ", "file_count": 2, "album_count": 1, "health_score": 90},
+                                                                ], "stale": False}]},
+    ]})
+    html = out["els"]["artists-overview-content"]["html"]
+    assert html.count('class="artist-row"') == 2
+    assert 'title="Apache"' in html
+    assert 'title="Apache "' in html
+    assert "/library/Apache" in html
+    assert "/library/Apache%20" in html  # encodeURIComponent(a.artist) - Trailing-Space bleibt im href erhalten
+
+
+@needs_node
 def test_attention_empty_state_unchanged(tmp_path: Path) -> None:
     out = _run(tmp_path, {"ops": [{"op": "call", "fn": "_renderLibraryAttention", "args": [{
         "statistics": {"issues_by_severity": {}, "issues_by_code": {}},

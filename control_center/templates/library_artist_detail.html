@@ -827,6 +827,20 @@
     return parts.join(" | ");
   }
 
+  // Gruende, die einen echten No-Op belegen (Ziel-/Ist-Wert stimmen
+  // bereits ueberein - executor.py's "bereits korrekt"/"nichts zu tun /
+  // bereits korrekt"). Jeder andere Skip-Grund (z. B. "Artist-Tag
+  // entspricht nicht dem gewaehlten Ausgangswert" bei einem tag-wert-
+  // getriebenen Rename, oder "Safety: ...") bedeutet das Gegenteil: der
+  // Wert stimmt NICHT ueberein, es wird deshalb NICHTS geschrieben - "keine
+  // Aenderung noetig" waere hier eine falsche, sich selbst widersprechende
+  // Aussage neben einer Skip-Begruendung (Freigabe fix.txt 2026-09-27).
+  // Identisches Unterscheidungsprinzip wie Telegram
+  // (handlers/library_maintenance_handler.py, preview.changed_count==0-
+  // Zweige bei Artist-Rename/Titel-Edit), hier bewusst weiter als EINE
+  // generische Funktion belassen (von 4 Aktionen gemeinsam genutzt).
+  const _NOOP_SKIP_REASONS = new Set(["bereits korrekt", "nichts zu tun / bereits korrekt"]);
+
   function renderMetadataEditPreview(el, body, execBtnId) {
     const startBtn = document.getElementById(execBtnId);
     if (!body.target_count) {
@@ -840,12 +854,16 @@
       // verschlucken - sonst bleibt ein tag-/verzeichnis-abweichender
       // Artist ohne jeden Hinweis bei "keine Aenderung noetig" haengen.
       const reasons = [...new Set(body.outcomes.map((o) => o.reason).filter(Boolean))];
+      const isGenuineNoop = reasons.length > 0 && reasons.every((r) => _NOOP_SKIP_REASONS.has(r));
       const reasonHtml = reasons.length
         ? '<div class="row-list">' + reasons.map((r) => `
             <div class="row-item"><div class="row-main">${_escapeHtml(r)}</div></div>
           `).join("") + "</div>"
         : "";
-      el.innerHTML = `<p class="empty-note">${body.target_count} Datei(en) — keine Änderung nötig.</p>${reasonHtml}`;
+      const headline = isGenuineNoop
+        ? `${body.target_count} Datei(en) — keine Änderung nötig.`
+        : `${body.target_count} Datei(en) — wird übersprungen:`;
+      el.innerHTML = `<p class="empty-note">${headline}</p>${reasonHtml}`;
       startBtn.disabled = true;
       return;
     }
