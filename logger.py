@@ -791,9 +791,21 @@ def setup_module_logging(
     level: str = "DEBUG",
     use_colors: bool = False,
     use_emojis: bool = True,
+    enable_file_handler: bool = True,
+    enable_console_handler: bool = True,
 ):
     """
-    Richtet eine separate Log-Datei für ein spezifisches Modul ein
+    Richtet eine separate Log-Datei für ein spezifisches Modul ein.
+
+    CC-LOGGER-L7.1: additive Parameter `enable_file_handler` und
+    `enable_console_handler`. Die Defaults (True/True) erhalten das
+    bisherige Verhalten für alle bestehenden Aufrufer. Bei False wird
+    der jeweilige Handler NICHT angehängt - bestehende Handler werden
+    weiterhin vorab entfernt, damit die Semantik eindeutig ist
+    ("False = am Ende kein solcher Handler am Logger").
+
+    Rotation (EnhancedRotatingFileHandler, 2 MB x 3 Backups) bleibt
+    unverändert, wenn `enable_file_handler=True`.
     """
     if log_file is None:
         log_file = f"logs/{module_name.lower()}.log"
@@ -810,28 +822,29 @@ def setup_module_logging(
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
 
-    # File Handler mit Rotation für separate Datei
-    file_handler = EnhancedRotatingFileHandler(
-        log_path, maxBytes=2 * 1024 * 1024, backupCount=3, encoding="utf-8"  # 2MB
-    )
+    # File Handler mit Rotation für separate Datei (nur wenn aktiviert)
+    if enable_file_handler:
+        file_handler = EnhancedRotatingFileHandler(
+            log_path, maxBytes=2 * 1024 * 1024, backupCount=3, encoding="utf-8"  # 2MB
+        )
 
-    # Spezieller Formatter für Datei (ohne Farb-Codes)
-    file_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    file_handler.setFormatter(file_formatter)
-    file_handler.setLevel(getattr(logging, level.upper()))
+        # Spezieller Formatter für Datei (ohne Farb-Codes)
+        file_formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        file_handler.setFormatter(file_formatter)
+        file_handler.setLevel(getattr(logging, level.upper()))
+        logger.addHandler(file_handler)
 
-    # Console Handler für Debug-Ausgabe (optional)
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_formatter = ColoredFormatter(use_colors=use_colors, use_emojis=use_emojis)
-    console_handler.setFormatter(console_formatter)
-    console_handler.setLevel(logging.DEBUG)  # Zeige ALLES in Console
+    # Console Handler für Debug-Ausgabe (nur wenn aktiviert)
+    if enable_console_handler:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_formatter = ColoredFormatter(use_colors=use_colors, use_emojis=use_emojis)
+        console_handler.setFormatter(console_formatter)
+        console_handler.setLevel(logging.DEBUG)  # Zeige ALLES in Console
+        logger.addHandler(console_handler)
 
-    # Handler zum Logger hinzufügen
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
     logger.propagate = False  # WICHTIG: Verhindert doppelte Logs im Haupt-Logger
 
     # Enhanced Logger erstellen

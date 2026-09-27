@@ -32,6 +32,7 @@ from services.logger_admin import (
     get_log_file,
     get_log_file_stats,
     list_log_files,
+    read_logger_config,
     update_logger_config,
 )
 
@@ -253,15 +254,29 @@ class EnhancedLoggerMenuHandler:
         self.config = config
         self.logger_factory = logger_factory or get_module_logger
 
-        # Setup separates Logging für dieses Modul
+        # Setup separates Logging für dieses Modul.
+        # CC-LOGGER-L7.1: Level/File-Handler/Console-Handler kommen aus
+        # der persistenten Logger-Config (data/module_logger_config.json),
+        # nicht mehr aus hartkodierten Defaults. Fallback-Werte bleiben
+        # identisch zum bisherigen Verhalten (DEBUG/True/True) fuer den
+        # Fall, dass das Modul nicht in der Config steht oder die Config
+        # (noch) nicht lesbar ist.
         log_path = (
             Path(getattr(self.config, "LOG_DIR", "logs"))
             / "enhanced_logger_handler.log"
         )
+        try:
+            _logger_cfg = read_logger_config(self.config).get(
+                "EnhancedLoggerHandler", {}
+            )
+        except Exception:
+            _logger_cfg = {}
         self.logger = setup_module_logging(
             "EnhancedLoggerHandler",
             str(log_path),
-            "DEBUG",
+            level=_logger_cfg.get("level", "DEBUG"),
+            enable_file_handler=_logger_cfg.get("file_handler", True),
+            enable_console_handler=_logger_cfg.get("console_handler", True),
             use_colors=True,
             use_emojis=True,
         )
