@@ -192,10 +192,11 @@ rein Opt-in/manuell ausgelöste Optionen — die ARCH-022-Entscheidung
 (kein automatisches Revalidieren im Download-Pfad) bleibt in beiden
 Fällen unangetastet:
 
-- `scripts/reprocess_artist_metadata.py` (siehe
+- ~~`scripts/reprocess_artist_metadata.py` (siehe
   `docs/METADATA_REPROCESSING.md`) — volle Metadaten-Neuverarbeitung
-  eines Artists (nicht nur Genre), ruft dieselben `learn_genre()`/
-  `preview_genre_learning()`-Methoden manuell auf.
+  eines Artists (nicht nur Genre)~~ **entfernt (CC-LIB-FINAL,
+  2026-09-27)** — hätte manuell gesetzte Genre-/Artist-/Titel-/Album-Tags
+  überschreiben können.
 - **Controlled Genre Revalidation** (Library Genre Management v2, Chat-
   Charakterisierung 2026-09-15, siehe `docs/LIBRARY_REPAIR.md` §14.3) —
   gezielt NUR für Genre, mit eigenem Dry-Run/Preview/Confirm/Execute und

@@ -17,7 +17,6 @@ Jeder Registry-Eintrag benennt die BESTEHENDE Komponente, die die
 Reparatur spaeter ausfuehrt (Prompt Abschnitt 21 — keine Duplizierung):
   SAFE_AUTOMATIC        -> services/metadata/tag_writer.py::TagWriter (atomar)
                           + utils/artist_map.py::split_main_and_featuring
-  METADATA_REPROCESSING -> services/metadata/track_reprocessor.py::process_file
   EXTERNAL_METADATA     -> services/clients/musicbrainz_client.py::MusicBrainzClient
   COVER                 -> services/metadata/cover_processor.py::CoverProcessor
   LOUDNESS              -> services/library_repair/replaygain_repairs.py
@@ -53,41 +52,38 @@ def _spec(code, action, level, component, *, approval=True, external=False,
 # tests/test_library_repair_planner.py verifiziert die Vollstaendigkeit
 # gegen services.library_health.issues.ALL_CODES.
 #
-# Production-Audit 2026-09-08: METADATA_REPROCESSING-Eintraege nennen als
-# reuses_component durchgehend "track_reprocessor.process_file()" (nicht
-# "reprocess_artist_metadata.py") — der automatisierte Repair-Pfad
-# (executor.py::apply_level2) ruft ausschliesslich diese Funktion direkt
-# in-process auf. scripts/reprocess_artist_metadata.py ist ein davon
-# unabhaengiges, auf /tmp/musicbot_test beschraenktes CLI-Testwerkzeug fuer
-# denselben Kern, kein Bestandteil dieses Pfades (siehe LIBRARY_REPAIR.md).
+# CC-LIB-FINAL: Die frueher hier registrierte Stufe METADATA_REPROCESSING
+# (L2, volle Pipeline erneut auf Bestandsdateien via track_reprocessor.
+# process_file) wurde ersatzlos entfernt — sie haette manuell gesetzte
+# Artist-/Titel-/Album-/Genre-Tags durch eine Neuableitung ueberschreiben
+# koennen. Die zehn davon betroffenen Issue-Codes (META_ARTIST/TITLE/
+# ALBUM/GENRE_MISSING, META_TITLE_NOT_CLEAN, GENRE_EMPTY/INVALID,
+# LYRICS_MISSING/EMPTY/INVALID) sind jetzt MANUAL_REVIEW: sie bleiben als
+# Findings sichtbar und werden ueber die kontextbezogenen Edit-Aktionen des
+# Control Centers (services/library_repair/maintenance_service.py) behoben.
 # ─────────────────────────────────────────────────────────────────────────
 
 _SPECS: tuple[RepairSpec, ...] = (
     # ── Metadata ────────────────────────────────────────────────────────
     _spec("META_NOT_ANALYZABLE", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW,
           "-", approval=True, change="Tag-Container defekt — manuell pruefen / neu laden"),
-    _spec("META_ARTIST_MISSING", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "track_reprocessor.process_file()", external=True,
-          change="Artist-Tag aus Pipeline neu bestimmen (Before/After-Diff)"),
-    _spec("META_TITLE_MISSING", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "track_reprocessor.process_file()", external=True,
-          change="Titel-Tag aus Pipeline neu bestimmen"),
-    _spec("META_TITLE_NOT_CLEAN", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "track_reprocessor.process_file()", external=True,
-          change="Titel-Tag ueber die reale Pipeline bereinigen "
-                 "(Anfuehrungszeichen/prod.-Credit/Marketing-Suffix entfernen; "
-                 "Before/After-Diff, Audio unveraendert)"),
-    _spec("META_ALBUM_MISSING", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "track_reprocessor.process_file()", external=True,
-          change="Album-Tag aus Pipeline neu bestimmen"),
+    _spec("META_ARTIST_MISSING", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
+          change="Artist-Tag fehlt — im Control Center ueber 'Artist bearbeiten' setzen"),
+    _spec("META_TITLE_MISSING", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
+          change="Titel-Tag fehlt — im Control Center ueber 'Titel bearbeiten' setzen"),
+    _spec("META_TITLE_NOT_CLEAN", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
+          change="Titel enthaelt Anfuehrungszeichen/prod.-Credit/Marketing-Suffix — "
+                 "im Control Center ueber 'Titel bearbeiten' bereinigen"),
+    _spec("META_ALBUM_MISSING", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
+          change="Album-Tag fehlt — im Control Center ueber 'Album bearbeiten' setzen"),
     _spec("META_ALBUM_ARTIST_MISSING", _A.MULTI_ARTIST_SPLIT, _L.SAFE_AUTOMATIC,
           "TagWriter", approval=False,
           change="Album-Artist = Haupt-Artist des Tracks (deterministisch)"),
     # Production-Audit 2026-09-08: hier stand vorher EXTERNAL_METADATA /
     # "MusicBrainzClient" — es existiert aber in keinem Modul ein
-    # Jahr-Fetch (services/metadata/track_reprocessor.py::process_file
-    # uebernimmt "year" nachweislich nur als Passthrough des bereits
-    # vorhandenen Tags, ruft dafuer nie MusicBrainz auf). Der Planner
+    # Jahr-Fetch (die Pipeline uebernahm "year" nachweislich nur als
+    # Passthrough des bereits vorhandenen Tags, rief dafuer nie
+    # MusicBrainz auf). Der Planner
     # kuendigte damit eine Reparatur an, die kein Executor je ausfuehren
     # konnte (0 reale Kandidaten seit Einfuehrung). MANUAL_REVIEW ist
     # ausserdem konsistent zum direkten Nachbarn META_YEAR_INVALID.
@@ -95,16 +91,12 @@ _SPECS: tuple[RepairSpec, ...] = (
           change="Jahr fehlt — keine Fetch-Implementierung vorhanden, manuell nachtragen"),
     _spec("META_YEAR_INVALID", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
           change="Jahr-Tag ist unplausibel — manuell korrigieren"),
-    # Production-Audit 2026-09-08: von EXTERNAL_METADATA nach
-    # METADATA_REPROCESSING verschoben — GenreProcessor laeuft bereits
-    # unveraendert als Teil von track_reprocessor.process_file() (identisch
-    # zum Nachbarn GENRE_INVALID unten), eine gesonderte EXTERNAL_METADATA-
-    # Ausfuehrung dafuer existierte nie (external_metadata.py deckt nur
-    # MusicBrainz-ID-/ISRC-Codes ab, HANDLED_ISSUE_CODES enthielt diesen
-    # Code nie).
-    _spec("META_GENRE_MISSING", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "track_reprocessor.process_file() (GenreProcessor)", external=True,
-          change="Genre per GenreProcessor-Fallback-Kette ueber die volle Pipeline bestimmen"),
+    # Production-Audit 2026-09-08: von EXTERNAL_METADATA verschoben (kein
+    # Executor dafuer, external_metadata.py deckt nur MusicBrainz-ID-/ISRC-
+    # Codes ab). CC-LIB-FINAL: jetzt MANUAL_REVIEW (siehe Registry-Kommentar).
+    _spec("META_GENRE_MISSING", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
+          change="Genre fehlt — im Control Center ueber Genre-Mapping / "
+                 "'Genre setzen' des Artists nachtragen"),
     _spec("META_TRACK_NUMBER_MISSING", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
           change="Tracknummer nicht sicher ableitbar — manuell / aus Album-Kontext"),
     _spec("META_MB_RECORDING_MISSING", _A.EXTERNAL_ID_LOOKUP, _L.EXTERNAL_METADATA,
@@ -128,13 +120,14 @@ _SPECS: tuple[RepairSpec, ...] = (
           change="quadratisches Cover suchen; nur ersetzen wenn eindeutig passend"),
 
     # ── Lyrics ──────────────────────────────────────────────────────────
-    _spec("LYRICS_MISSING", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "track_reprocessor.process_file()", external=True,
-          change="Lyrics ueber LyricsProcessor-Fallback nachtragen"),
-    _spec("LYRICS_EMPTY", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "track_reprocessor.process_file()", external=True, change="Lyrics neu holen"),
-    _spec("LYRICS_INVALID", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "track_reprocessor.process_file()", external=True, change="Lyrics neu holen"),
+    # CC-LIB-FINAL: kein automatischer Lyrics-Fetch mehr (fruehere L2-
+    # Neuverarbeitung entfernt); Lyrics werden beim Download gesetzt.
+    _spec("LYRICS_MISSING", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
+          change="Lyrics fehlen — kein automatischer Nachtrag (Track ggf. neu laden)"),
+    _spec("LYRICS_EMPTY", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
+          change="Lyrics-Tag leer — kein automatischer Nachtrag (Track ggf. neu laden)"),
+    _spec("LYRICS_INVALID", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
+          change="Lyrics-Tag ungueltig — kein automatischer Nachtrag (Track ggf. neu laden)"),
 
     # ── Audio ───────────────────────────────────────────────────────────
     _spec("AUDIO_NOT_ANALYZABLE", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
@@ -206,14 +199,13 @@ _SPECS: tuple[RepairSpec, ...] = (
           change="doppelten Artist-Namen aus dem Multi-Artist-Feld entfernen"),
 
     # ── Genre ──────────────────────────────────────────────────────────
-    # Production-Audit 2026-09-08: dieselbe Umstufung wie META_GENRE_MISSING
-    # oben (gleicher Grund) — GENRE_EMPTY war identisch betroffen.
-    _spec("GENRE_EMPTY", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "track_reprocessor.process_file() (GenreProcessor)", external=True,
-          change="Genre per GenreProcessor ueber die volle Pipeline bestimmen"),
-    _spec("GENRE_INVALID", _A.METADATA_REPROCESS, _L.METADATA_REPROCESSING,
-          "track_reprocessor.process_file()", external=True,
-          change="Genre neu bestimmen / durch GenreMapper normalisieren"),
+    # Dieselbe Einstufung wie META_GENRE_MISSING oben (CC-LIB-FINAL).
+    _spec("GENRE_EMPTY", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
+          change="Genre-Tag leer — im Control Center ueber Genre-Mapping / "
+                 "'Genre setzen' des Artists nachtragen"),
+    _spec("GENRE_INVALID", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
+          change="Genre ausserhalb der Konvention — im Control Center ueber "
+                 "Genre-Mapping / 'Genre setzen' des Artists korrigieren"),
     _spec("GENRE_DELIMITER_INCONSISTENT", _A.GENRE_DELIMITER_NORMALIZE, _L.SAFE_AUTOMATIC,
           "TagWriter", approval=False,
           change="Genre-Separator ' / ' -> '; ' (deterministisch, kein Wertverlust)"),
@@ -271,7 +263,7 @@ REGISTRY: dict[str, RepairSpec] = {s.issue_code: s for s in _SPECS}
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Disposition (Library-Closure-Phase, Auftrag Abschnitt 4/5): die acht
+# Disposition (Library-Closure-Phase, Auftrag Abschnitt 4/5): die sieben
 # internen RepairLevel-Stufen rollen auf genau EINE von drei Grob-
 # Dispositionen hoch. Der Planner bleibt die Single Source of Truth — die
 # Disposition wird ausschliesslich aus dem bereits vorhandenen
@@ -291,7 +283,6 @@ DISPOSITION_UNREPAIRABLE = "UNREPAIRABLE"
 
 _LEVEL_DISPOSITION: dict[RepairLevel, str] = {
     RepairLevel.SAFE_AUTOMATIC: DISPOSITION_AUTO_REPAIR,
-    RepairLevel.METADATA_REPROCESSING: DISPOSITION_AUTO_REPAIR,
     RepairLevel.EXTERNAL_METADATA: DISPOSITION_AUTO_REPAIR,
     RepairLevel.COVER: DISPOSITION_AUTO_REPAIR,
     RepairLevel.LOUDNESS: DISPOSITION_AUTO_REPAIR,
@@ -392,8 +383,8 @@ def registry_covers_all_health_codes() -> tuple[bool, set[str]]:
 # ─────────────────────────────────────────────────────────────────────────
 # Artist-Gruppierung fuer die Telegram-Pro-Artist-Auswahl (ARCH-033,
 # ADR-0003) — reine Funktion, kein I/O. Bildet einen bereits vorhandenen
-# RepairPlan auf "welcher Artist hat wie viele L2-/L3-Kandidaten" ab, fuer
-# die Artist-Liste im Telegram-Sub-Flow (services/library_repair/
+# RepairPlan auf "welcher Artist hat wie viele L3-Kandidaten" ab, fuer
+# die Artist-Liste im Telegram-/Web-Sub-Flow (services/library_repair/
 # level_summary.py wurde bewusst NICHT als eigenes Modul angelegt - die
 # Funktion ist klein genug, um hier neben der Registry zu leben, die sie
 # konsumiert).
@@ -402,15 +393,16 @@ def registry_covers_all_health_codes() -> tuple[bool, set[str]]:
 
 @dataclass
 class ArtistCandidateSummary:
-    """Aggregierte L2-/L3-Kandidaten-Anzahl fuer genau einen Artist."""
+    """Aggregierte L3-Kandidaten-Anzahl (EXTERNAL_METADATA) fuer genau
+    einen Artist. (Frueher zusaetzlich l2_count — L2 wurde in CC-LIB-FINAL
+    entfernt.)"""
 
     artist: str
-    l2_count: int = 0
     l3_count: int = 0
 
     @property
     def total(self) -> int:
-        return self.l2_count + self.l3_count
+        return self.l3_count
 
 
 def _candidate_artist(candidate: RepairCandidate) -> Optional[str]:
@@ -428,8 +420,7 @@ def _candidate_artist(candidate: RepairCandidate) -> Optional[str]:
     return None
 
 
-_ARTIST_GROUPING_LEVELS: tuple[RepairLevel, RepairLevel] = (
-    RepairLevel.METADATA_REPROCESSING,
+_ARTIST_GROUPING_LEVELS: tuple[RepairLevel, ...] = (
     RepairLevel.EXTERNAL_METADATA,
 )
 
@@ -438,8 +429,8 @@ def group_candidates_by_artist(
     plan: RepairPlan,
     levels: tuple[RepairLevel, ...] = _ARTIST_GROUPING_LEVELS,
 ) -> dict[str, ArtistCandidateSummary]:
-    """Gruppiert die Plan-Kandidaten der gegebenen Level (Default: L2 +
-    L3) nach Artist, fuer die Telegram-Artist-Auswahl (ARCH-033).
+    """Gruppiert die Plan-Kandidaten der gegebenen Level (Default: L3)
+    nach Artist, fuer die Telegram-/Web-Artist-Auswahl (ARCH-033).
 
     Deterministisch sortiert: absteigend nach Gesamt-Kandidaten-Anzahl,
     bei Gleichstand alphabetisch (case-insensitive) — Python-Dicts
@@ -453,9 +444,7 @@ def group_candidates_by_artist(
         if not artist:
             continue
         summary = counts.setdefault(artist, ArtistCandidateSummary(artist=artist))
-        if c.level == RepairLevel.METADATA_REPROCESSING:
-            summary.l2_count += 1
-        elif c.level == RepairLevel.EXTERNAL_METADATA:
+        if c.level == RepairLevel.EXTERNAL_METADATA:
             summary.l3_count += 1
 
     ordered = sorted(counts.values(), key=lambda s: (-s.total, s.artist.lower()))

@@ -20,10 +20,9 @@ tests/test_enhanced_metadata_processor_loudness_blocking.py). Dieses
 Script ist ein eigenstaendiger, einmalig gestarteter Batch-Prozess ohne
 geteilten Event-Loop - es gibt nichts, das durch einen synchronen Aufruf
 blockiert werden koennte. Eine async-Huelle waere hier unnoetige
-Komplexitaet ohne Nutzen (anders als scripts/reprocess_artist_metadata.py,
-das ECHTE async Produktions-Subprozessoren wie GenreProcessor/
-LyricsProcessor/CoverProcessor wiederverwendet und deshalb selbst async
-sein muss).
+Komplexitaet ohne Nutzen (anders als ein Tool, das ECHTE async Produktions-
+Subprozessoren wie GenreProcessor/LyricsProcessor/CoverProcessor
+wiederverwendet und deshalb selbst async sein muss).
 
 WICHTIGER UNTERSCHIED zur Produktionspipeline: dort laeuft die Loudness-
 Normalisierung VOR dem Tag-Schreiben (Schritt 15b von 17) - ein
@@ -183,8 +182,7 @@ def validate_scan_root(path: Path) -> Path:
 
     # Denylist zuerst und unabhaengig von der Allowlist-Pruefung unten -
     # ein Treffer hier ist immer ein harter Stopp mit eindeutiger, benannter
-    # Fehlermeldung (Defense-in-Depth, analog zum Produktions-Guard in
-    # scripts/reprocess_artist_metadata.py::validate_input_path()).
+    # Fehlermeldung (Defense-in-Depth).
     for forbidden in FORBIDDEN_ROOTS:
         try:
             forbidden_resolved = forbidden.resolve()
@@ -252,9 +250,7 @@ def measure_loudness(path: Path, target_lufs: float = TARGET_LUFS) -> dict:
         # zu einem UnicodeDecodeError und liesse die Messung fuer die
         # betroffene Datei faelschlich als MEASUREMENT_FAILED erscheinen,
         # obwohl die eigentliche loudnorm-Analyse erfolgreich war. Bytes
-        # roh einlesen und mit errors="replace" dekodieren - dasselbe
-        # bereits im Repository etablierte Muster wie
-        # scripts/reprocess_artist_metadata.py::_freeform_str()
+        # roh einlesen und mit errors="replace" dekodieren
         # (bytes(v).decode("utf-8", errors="replace")).
         stderr_text = result.stderr.decode("utf-8", errors="replace")
         match = re.search(r'\{[^{}]*"input_i"[^{}]*\}', stderr_text)

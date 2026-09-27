@@ -57,6 +57,9 @@ _SAFE_AUTOMATIC_RUN = {
     "status_counts": {"SUCCESS": 1, "FAILED": 0, "SKIPPED": 0}, "affected_files": ["/a.m4a"],
     "regressed_issue_codes": [],
 }
+# Historischer Run: Level 2 (METADATA_REPROCESSING) wurde in CC-LIB-FINAL
+# entfernt, alte Eintraege im Run-Index bleiben aber lesbar (das Level ist
+# dort ein freier String, kein Enum).
 _L2_RUN = {
     "repair_id": "r2", "started_at": "2026-09-02T00:00:00+00:00",
     "finished_at": "2026-09-02T00:02:00+00:00", "triggered_by": "control_center:1",

@@ -7,9 +7,7 @@ Telegram-Oberfläche für scripts/library_health_check.py (Health-Scan) und
 scripts/library_repair.py --level SAFE_AUTOMATIC --apply (verlustfreie
 Tag-/Rename-Fixes). Ruft beide Skripte ausschließlich als eigenständige
 Subprozesse auf (services/library_repair/doctor_runner.py) - importiert
-sie nie direkt, exakt dasselbe Muster wie
-handlers/menu/reprocessing_menu_handler.py für
-scripts/reprocess_artist_metadata.py.
+sie nie direkt.
 
 Nur für Admins sichtbar/nutzbar (Config.OWNER_USER_ID/ADMIN_USER_IDS) -
 der Apply-Zweig schreibt echte Tag-/Dateinamen-Änderungen in die
@@ -24,7 +22,7 @@ verhindert, dass ein mehrminütiger Lauf alle anderen Telegram-Updates
 blockiert (die Application läuft ohne concurrent_updates=True).
 
 Bewusst NUR SAFE_AUTOMATIC über diesen Weg erreichbar - alle externen/
-destruktiven Repair-Level (COVER/EXTERNAL_METADATA/METADATA_REPROCESSING/
+destruktiven Repair-Level (COVER/EXTERNAL_METADATA/
 LOUDNESS/DUPLICATE) bleiben CLI-only, siehe docs/LIBRARY_REPAIR.md §3.
 """
 
@@ -112,7 +110,7 @@ class LibraryDoctorHandler:
     ) -> None:
         """Einstiegspunkt: startet einen Health-Scan. Admin-Check hier UND
         im Callback-Dispatcher (Defense-in-Depth, analog zum
-        Reprocessing-/Wartungsmodus-Muster in rich_menu_system.py)."""
+        Wartungsmodus-Muster in rich_menu_system.py)."""
         query = update.callback_query
         user_id = update.effective_user.id
         if not self._is_admin(user_id):
@@ -305,7 +303,7 @@ class LibraryDoctorHandler:
         """Zeigt die Bestätigung vor dem tatsächlichen Apply-Lauf -
         SAFE_AUTOMATIC ist verlustfrei, aber eine echte Library-Mutation
         bleibt es trotzdem (Nutzer-Entscheidung: keine Ausführung ohne
-        expliziten zweiten Tap, analog zum Reprocessing-Live-Lauf)."""
+        expliziten zweiten Tap)."""
         query = update.callback_query
         user_id = update.effective_user.id
         if not self._is_admin(user_id):
@@ -384,7 +382,7 @@ class LibraryDoctorHandler:
         return text, self._back_to_admin_keyboard()
 
     def _log_background_task_exception(self, task) -> None:
-        """Sicherheitsnetz analog zu ReprocessingMenuHandler - fängt eine
+        """Sicherheitsnetz - fängt eine
         Exception ab, die NICHT bereits innerhalb von _run_*_and_report()
         selbst behandelt wurde (dort ist bereits ein try/except um den
         eigentlichen Subprozess-Aufruf)."""

@@ -375,7 +375,7 @@ def build_menu_tree(system) -> MenuItem:
         title="Bibliothek & Navidrome",
         emoji="🎵",
         access_level=AccessLevel.ADMIN,
-        description="Library-Diagnose, Reprocessing und Navidrome-Scan",
+        description="Library-Diagnose, Reparatur und Navidrome-Scan",
     )
     admin_group_operations = MenuItem(
         id="admin_group_operations",
@@ -686,23 +686,6 @@ def build_menu_tree(system) -> MenuItem:
         )
     )
     # ====== ENDE WARTUNGSMODUS ======
-
-    # ====== NEU: METADATA-REPROCESSING ======
-    # Nutzer-Entscheidung: nur Owner (nicht Admin) - greift auf
-    # Metadata-/Auto-Learn-Dateien zu, siehe docs/FINDINGS_INDEX.md.
-    admin_group_library.add_child(
-        MenuItem(
-            id="admin_reprocessing",
-            title="Reprocessing",
-            emoji="🔧",
-            access_level=AccessLevel.OWNER,
-            callback_data="reprocess:show",
-            handler=system._handle_reprocessing_show,
-            is_action=True,
-            description="Metadata eines Test-Artists erneut verarbeiten",
-        )
-    )
-    # ====== ENDE METADATA-REPROCESSING ======
 
     # ====== NEU: MUSICBOT DOCTOR (Phase 3, P1.3) ======
     admin_group_library.add_child(

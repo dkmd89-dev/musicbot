@@ -26,9 +26,7 @@ Manuelles Mapping (artist_genre.yaml) wird IMMER geschuetzt - eine
 Revalidierung fuer einen manuell gemappten Artist mutiert nie etwas
 (outcome=BLOCKED_MANUAL), unabhaengig von --apply.
 
-Nutzt config.Config (ECHTE Produktions-mapping/ - anders als z. B.
-scripts/reprocess_artist_metadata.py, das auf einer isolierten
-Testbibliothek arbeitet): dieses Script schreibt ausschliesslich in
+Nutzt config.Config (ECHTE Produktions-mapping/): dieses Script schreibt ausschliesslich in
 mapping/auto_learned_genre.json (eine Config-/Mapping-Datei, identisch
 zur bereits etablierten Argumentation fuer
 --update-manual-mapping/scripts/library_repair.py), NIE in eine

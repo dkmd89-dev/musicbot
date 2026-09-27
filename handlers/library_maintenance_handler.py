@@ -18,7 +18,7 @@ Bot-Wartungsmodus/MaintenanceModeStore belegt, siehe
 handlers/menu/rich_menu_system.py::_handle_maintenance_callback()).
 
 Artist-Auswahl ausschließlich index-basiert (ARCH-031 B.8, identisches
-Muster wie handlers/menu/reprocessing_menu_handler.py) - niemals ein
+bewährtes Muster) - niemals ein
 Rohpfad/String aus Telegram-`callback_data`.
 
 Library Genre Management v2 (Chat-Charakterisierung 2026-09-15) - erweitert
@@ -65,9 +65,9 @@ v1") - erweitert die Aktions-Auswahl um "📝 Metadaten bearbeiten"
     (`libmaint:meta:title:pick:<idx>:<tidx>`, resolve_track_by_index()),
     dieselbe Datei-Zielmenge wie artist_targets() (Auftrag Abschnitt 16).
     KEIN automatischer TitleCleaner (Auftrag Abschnitt 8/9) - der manuell
-    eingegebene Zielwert wird unveraendert geschrieben, die automatische
-    Title-Cleanup-/Reprocessing-Pipeline
-    (services/metadata/track_reprocessor.py) bleibt komplett unberuehrt.
+    eingegebene Zielwert wird unveraendert geschrieben, es gibt keine
+    automatische Neuableitung, die diesen Wert spaeter ueberschreiben
+    wuerde (Metadata-Reprocessing wurde in CC-LIB-FINAL entfernt).
   - 🎭 Genre-Verwaltung: KEINE Duplizierung - der Button unter
     "📝 Metadaten bearbeiten" fuehrt in denselben, bereits bestehenden
     genremenu:*-Flow (handle_genre_menu() oben) wie der direkte Button auf

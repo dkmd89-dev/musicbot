@@ -857,7 +857,7 @@ async def test_artist_detail_page_genre_revalidation_is_wired_to_the_job_endpoin
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_repair_jobs_have_no_cancel_button(client):
-    """Kooperatives Abbrechen ist fuer repair_level2/repair_level3
+    """Kooperatives Abbrechen ist fuer repair_level3
     wirkungslos (control_center/routers/jobs.py) - identische
     Einschraenkung wie test_health_js_level23_has_no_cancel_function."""
     html = (await client.get("/library/Bausa")).text

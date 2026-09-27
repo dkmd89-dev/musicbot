@@ -22,9 +22,6 @@ nichts und ruft keinen externen Dienst. Der Health-Scan selbst
     --apply --dry-run     Vorschau aller ausfuehrbaren Reparaturen
     --level COVER         zusaetzlich Cover-Executor (extern, langsam)
     --level EXTERNAL_METADATA   zusaetzlich L3 MusicBrainz-IDs (extern)
-    --level METADATA_REPROCESSING   zusaetzlich L2 volle Neuverarbeitung
-                          ueber die echte Pipeline (extern, langsam,
-                          aktualisiert Auto-Learn-Mappings)
     --level LOUDNESS      zusaetzlich Loudness-Executor — schreibt einen
                           verlustfreien replaygain_track_gain-Tag (Ziel -16
                           LUFS, Audio byte-identisch), setzt einen
@@ -36,7 +33,7 @@ nichts und ruft keinen externen Dienst. Der Health-Scan selbst
                           --execute/--confirm-production-execute-Modell).
                           Ohne --artist abgelehnt (nie der ganze Root).
 
-Cover / L3 / L2 / Loudness laufen NIE im Default-`--apply`, nur auf
+Cover / L3 / Loudness laufen NIE im Default-`--apply`, nur auf
 ausdrueckliche Anforderung per --level bzw. --issue. --allow-delete ist
 ein eigener, von --apply unabhaengiger Pfad (siehe oben).
 
@@ -132,7 +129,7 @@ def _run_duplicate_resolution(args) -> int:
 # Library-Maintenance-Actions (ARCH-032 Phase 3D) — Command-getrieben,
 # KEIN Health-Scan/Planner-Bezug (ARCH-031 B.1). Ruft services/library_repair/
 # artist.py + genre.py (Domain) und executor.py (Mutation) DIREKT auf -
-# genau wie der Rest dieses Scripts fuer L1/L2/L3/Cover/Loudness bereits
+# genau wie der Rest dieses Scripts fuer L1/L3/Cover/Loudness bereits
 # tut (kein Lock/Run-Index hier, identische Asymmetrie CLI-vs-Telegram
 # wie beim bestehenden Health-Finding-Flow: nur der Telegram-Pfad
 # (services/library_repair/maintenance_service.py) nutzt den geteilten
@@ -490,14 +487,12 @@ def main(argv=None) -> int:
         EXTERNAL_MB_CODES,
         L1_RENAME_CODES,
         L1_TAG_CODES,
-        L2_CODES,
         LOUDNESS_ISSUE_CODES,
         apply_album_cover_unify,
         apply_cover_repairs,
         apply_external_metadata,
         apply_level1,
         apply_level1_rename,
-        apply_level2,
         apply_replaygain,
     )
     from services.library_repair.journal import RepairJournal
@@ -531,13 +526,6 @@ def main(argv=None) -> int:
         if mb_requested
         else []
     )
-    # L2 volle Neuverarbeitung: langsam (Genius/MusicBrainz/Cover pro Datei) und
-    # mit breitem Effekt (Titel/Album/Genre/Lyrics/Cover/MB-IDs/Rename +
-    # Auto-Learn-Mapping-Update) -> nur auf ausdrueckliche Anforderung.
-    l2_requested = _lvl == "METADATA_REPROCESSING" or args.issue_code in L2_CODES
-    l2_cands = (
-        [c for c in plan.candidates if c.issue_code in L2_CODES] if l2_requested else []
-    )
     # Loudness: verlustfreier RG-Tag -> nur auf ausdrueckliche Anforderung
     # (setzt einen --measure-loudness-Report voraus)
     loudness_requested = _lvl == "LOUDNESS" or args.issue_code in LOUDNESS_ISSUE_CODES
@@ -553,7 +541,6 @@ def main(argv=None) -> int:
         or cover_cands
         or album_cover_cands
         or mb_cands
-        or l2_cands
         or loudness_cands
     ):
         print("\nKeine ausfuehrbaren Reparaturen im (gefilterten) Plan.")
@@ -564,15 +551,8 @@ def main(argv=None) -> int:
         f"\n{'=' * 70}\nREPAIR {mode} — {len(l1_tags)} Tag-Fixes + "
         f"{len(l1_rename)} Renames + {len(cover_cands)} Cover + "
         f"{len(album_cover_cands)} Album-Cover + {len(mb_cands)} MB-IDs + "
-        f"{len({c.path for c in l2_cands})} L2-Neuverarbeitung + "
         f"{len(loudness_cands)} Loudness\n{'=' * 70}"
     )
-    if l2_cands and not execute_dry:
-        print(
-            "⚠️  L2 EXECUTE: die volle Pipeline aktualisiert dabei auch die "
-            "Auto-Learn-Mappings (mapping/auto_learned_*) mit den beobachteten "
-            "Feature-Artists/Genres der Tracks — wie bei einem frischen Download."
-        )
     if loudness_cands and not execute_dry:
         print(
             "ℹ️  LOUDNESS EXECUTE: schreibt einen verlustfreien "
@@ -611,15 +591,6 @@ def main(argv=None) -> int:
             library_root,
             journal,
             _build_mb_lookup(logger),
-            dry_run=execute_dry,
-            backup_dir=backup_dir,
-        )
-    if l2_cands:
-        outcomes += apply_level2(
-            l2_cands,
-            library_root,
-            journal,
-            _build_reprocess(config, logger),
             dry_run=execute_dry,
             backup_dir=backup_dir,
         )
@@ -680,11 +651,6 @@ def main(argv=None) -> int:
         o.status in _wrote for o in outcomes if o.issue_code in EXTERNAL_MB_CODES
     ):
         touched |= set(EXTERNAL_MB_CODES)
-    if l2_cands and any(
-        o.status == "SUCCESS" for o in outcomes if o.action == "METADATA_REPROCESS"
-    ):
-        # eine L2-Neuverarbeitung berührt potenziell jeden METADATA_REPROCESSING-Code
-        touched |= set(L2_CODES)
     if loudness_cands and any(
         o.status in _wrote for o in outcomes if o.action == "LOUDNESS_NORMALIZE"
     ):
@@ -772,42 +738,6 @@ def _build_mb_lookup(logger):
             return {}
 
     return _lookup
-
-
-def _build_reprocess(config, logger):
-    """Injiziert die echte Pro-Datei-Pipeline (track_reprocessor.process_file)
-    als Callable (path, artist_root, dry_run) -> result-dict. Konstruiert
-    EnhancedMetadataProcessor + MB-/LastFM-Client EINMAL mit der echten
-    config.Config (dieses CLI ist ein eigener Prozess — First-Mover-Singleton
-    ist damit die reale Instanz, identisch zum Health-Scan in derselben
-    Ausführung)."""
-    import asyncio
-
-    from services.clients.lastfm_client import LastFMClient
-    from services.clients.musicbrainz_client import MusicBrainzClient
-    from services.metadata.enhanced_metadata_processor import EnhancedMetadataProcessor
-    from services.metadata.track_reprocessor import NullReprocessLog, process_file
-
-    processor = EnhancedMetadataProcessor(config=config)
-    mb_client = MusicBrainzClient(logger=get_module_logger("library_repair.l2.mb"))
-    lfm_client = LastFMClient(logger=get_module_logger("library_repair.l2.lfm"))
-    log = NullReprocessLog()
-
-    def _reprocess(path, artist_root, dry_run, requested_issue=None):
-        return asyncio.run(
-            process_file(
-                path,
-                artist_root,
-                processor,
-                mb_client,
-                lfm_client,
-                log,
-                dry_run=dry_run,
-                requested_issue=requested_issue,
-            )
-        )
-
-    return _reprocess
 
 
 def _build_lufs_measure():

@@ -637,7 +637,7 @@ document.getElementById("accepted-findings-toggle").addEventListener("click", as
 let _lastSafeAutomaticCount = null;
 
 // Schrittanzeige (reine Orientierung, kein Zustandsautomat): 1 Plan, 2 SAFE_AUTOMATIC,
-// 3 L2/L3. Markiert den zuletzt begonnenen Schritt.
+// 3 L3. Markiert den zuletzt begonnenen Schritt.
 function _setRepairStep(n) {
   const list = document.getElementById("repair-steps");
   if (!list) return;
@@ -651,7 +651,7 @@ function renderRepairPlan(el, plan) {
     .map(([lvl, n]) => `<div class="col-6 col-sm-4"><div class="subheader">${_escapeHtml(lvl)}</div><div class="h3 mb-0">${n}</div></div>`).join("");
   el.innerHTML = `
     <div class="row g-3 mb-3">${counts || '<div class="col-12">keine Kandidaten</div>'}</div>
-    <p class="small mb-0">${plan.actionable_total} automatisch reparierbar (alle Level zusammen), davon ${plan.counts_by_level.SAFE_AUTOMATIC || 0} SAFE_AUTOMATIC (per Button unten ausführbar) — der Rest (Cover/L2/L3 usw.) erfordert bewusste manuelle Auswahl. ${plan.manual_review_total} zur manuellen Prüfung (Health Score ${plan.health_score ?? "–"}). Reine Vorschau — es wird nichts ausgeführt.</p>
+    <p class="small mb-0">${plan.actionable_total} automatisch reparierbar (alle Level zusammen), davon ${plan.counts_by_level.SAFE_AUTOMATIC || 0} SAFE_AUTOMATIC (per Button unten ausführbar) — der Rest (Cover/L3 usw.) erfordert bewusste manuelle Auswahl. ${plan.manual_review_total} zur manuellen Prüfung (Health Score ${plan.health_score ?? "–"}). Reine Vorschau — es wird nichts ausgeführt.</p>
   `;
   _lastSafeAutomaticCount = plan.counts_by_level.SAFE_AUTOMATIC || 0;
   const startBtn = document.getElementById("repair-start-btn");
@@ -774,9 +774,8 @@ document.getElementById("repair-start-btn").addEventListener("click", startRepai
 document.getElementById("repair-cancel-btn").addEventListener("click", cancelRepairJob);
 document.getElementById("repair-plan-btn").addEventListener("click", loadRepairPlan);
 
-// ── L2/L3-Reparatur (Pro-Artist) ─────────────────────────────────────────
+// ── L3-Reparatur (Pro-Artist; L2 in CC-LIB-FINAL entfernt) ─────────────────────────────────────────
 const _LEVEL23_LABELS = {
-  l2: "L2 (Neuverarbeitung — volle Metadaten-Pipeline erneut)",
   l3: "L3 (MusicBrainz — Netzwerk, kann pro Datei fehlschlagen)",
 };
 
@@ -859,7 +858,7 @@ async function startLevel23Job(level, artist, count) {
   document.getElementById("level23-job-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
 
   try {
-    const res = await fetch(apiUrl(`/api/v1/jobs/repair-level${level === "l2" ? "2" : "3"}`), {
+    const res = await fetch(apiUrl("/api/v1/jobs/repair-level3"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
@@ -885,7 +884,7 @@ async function startLevel23Job(level, artist, count) {
 
 function renderLevel23Artists(el, plan) {
   if (!plan.artists.length) {
-    el.innerHTML = '<p class="mb-0">Keine L2/L3-Kandidaten.</p>';
+    el.innerHTML = '<p class="mb-0">Keine L3-Kandidaten.</p>';
     return;
   }
   _setRepairStep(3);
@@ -893,7 +892,6 @@ function renderLevel23Artists(el, plan) {
     <div class="list-group-item d-flex align-items-center gap-2">
       <span class="health-path text-truncate">${_escapeHtml(a.artist)}</span>
       <div class="btn-list flex-nowrap">
-        ${a.l2_count > 0 ? `<button type="button" class="btn btn-sm btn-outline-primary level23-btn" data-level="l2" data-artist="${_escapeHtml(a.artist)}" data-count="${a.l2_count}">L2 (${a.l2_count})</button>` : ""}
         ${a.l3_count > 0 ? `<button type="button" class="btn btn-sm btn-outline-primary level23-btn" data-level="l3" data-artist="${_escapeHtml(a.artist)}" data-count="${a.l3_count}">L3 (${a.l3_count})</button>` : ""}
       </div>
     </div>

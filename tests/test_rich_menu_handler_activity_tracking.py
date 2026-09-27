@@ -174,7 +174,6 @@ class TestRecordInitialHandlerStatuses:
         handler.backup_handler = Mock()
         handler.restart_handler = None  # simuliert fehlgeschlagene Konstruktion
         handler.metadata_processor = Mock()
-        handler.reprocessing_handler = Mock()
         handler.doctor_handler = None  # simuliert fehlgeschlagene Konstruktion
 
         handler._record_initial_handler_statuses()
@@ -189,14 +188,14 @@ class TestRecordInitialHandlerStatuses:
         assert calls["family_chat_handler"] == "error"
         assert calls["restart_handler"] == "error"
         assert calls["metadata_processor"] == "active"
-        assert calls["reprocessing_handler"] == "active"
+        assert "reprocessing_handler" not in calls  # CC-LIB-FINAL: entfernt
         assert calls["doctor_handler"] == "error"
         assert calls["review_handler"] == "error"  # nicht explizit gesetzt -> Default None
         assert calls["repair_handler"] == "error"  # nicht explizit gesetzt -> Default None
         assert calls["family_challenge_handler"] == "error"  # nicht explizit gesetzt -> Default None
         assert calls["library_maintenance_handler"] == "error"  # nicht explizit gesetzt -> Default None (ARCH-032)
         assert calls["duplicate_check_handler"] == "error"  # nicht explizit gesetzt -> Default None (Chat-Charakterisierung 2026-09-15)
-        assert len(calls) == 19
+        assert len(calls) == 18
 
     def test_missing_status_handler_is_noop(self, tmp_path):
         handler = _make_handler(tmp_path)

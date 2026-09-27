@@ -216,7 +216,7 @@ class TestPrivilegedMenuItemsAreGatedTGPERM001:
     # Praefixe, die handle_callback() vor dem Dispatch bereits selbst
     # gated - entweder zentral ueber _ADMIN_ONLY_PREFIXES oder durch einen
     # eigenen Admin-/Owner-Check im jeweiligen "_handle_*_callback()"
-    # (erradmin:/restart:/maint:/reprocess:/doctor:/review:/repair:/
+    # (erradmin:/restart:/maint:/doctor:/review:/repair:/
     # libmaint:, siehe docs/MusicBot_TELEGRAM_MENU_SYSTEM.md). "dl:" ist
     # bewusst NICHT gelistet - es ist absichtlich ungegated
     # (chat_id-skopiert, siehe CLAUDE.md/Telegram-Menue-Doku), traegt
@@ -230,7 +230,6 @@ class TestPrivilegedMenuItemsAreGatedTGPERM001:
         "erradmin:",
         "restart:",
         "maint:",
-        "reprocess:",
         "doctor:",
         "review:",
         "repair:",
@@ -384,7 +383,7 @@ class TestPrivilegedMenuItemsActuallyDenyNonAdminTGPERM001:
                 # bzw. der zentralen _ADMIN_ONLY_PREFIXES-Pruefung
                 # abgedeckt, nicht vom Menu-Fallback-Gate. Das deckt
                 # TestAdminOnlyCallbacksRejectNonAdmin/die uebrigen
-                # doctor:/review:/repair:/reprocess:/restart:/maint:-Tests
+                # doctor:/review:/repair:/restart:/maint:-Tests
                 # bereits ab.
                 continue
 

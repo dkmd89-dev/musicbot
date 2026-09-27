@@ -36,12 +36,10 @@ execution.py::build_execution_plan()) - `--execute` kann sie daher nicht
 löschen, unabhängig von allen anderen Prüfungen.
 
 Sicherheitsmodell: identisches ALLOWED_ROOT/FORBIDDEN_ROOTS-Muster wie
-scripts/reprocess_artist_metadata.py und
 scripts/normalize_test_library_loudness.py (Denylist zuerst geprüft,
 Symlink-Auflösung, Containment-Check). ALLOWED_ROOT ist laut Auftrag
 Abschnitt 3 ausschließlich /tmp/musicbot_test/library - NICHT
-/tmp/musicbot_test/metadaten (das ist der Sandbox-Root von
-reprocess_artist_metadata.py, ein anderes Tool).
+/tmp/musicbot_test/metadaten (Sandbox-Root eines entfernten Tools).
 
 Der bestehende DuplicateDetector/DuplicateCache (services/duplicate/
 detector.py, cache.py) wird an KEINER Stelle importiert oder aufgerufen -

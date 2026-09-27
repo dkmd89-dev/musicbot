@@ -53,7 +53,7 @@ def jobs_to_response(jobs: list[Job]) -> JobListResponse:
 
 
 class ArtistLevelRepairRequest(BaseModel):
-    """Body für POST /repair-level2 und /repair-level3 — Artist als Body-
+    """Body für POST /repair-level3 (und die Genre-Revalidierung) — Artist als Body-
     statt Pfad-Parameter (identisches Muster wie AcceptFindingRequest in
     schemas/findings.py), da Artist-Namen beliebige Zeichen enthalten
     können."""

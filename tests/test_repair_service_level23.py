@@ -1,11 +1,14 @@
 # tests/test_repair_service_level23.py
 # -*- coding: utf-8 -*-
-"""services/library_repair/repair_service.py::execute_level2_repair()/
-execute_level3_repair() — Pro-Artist L2/L3-Reparatur (ARCH-033).
+"""services/library_repair/repair_service.py::execute_level3_repair() —
+Pro-Artist L3-Reparatur (ARCH-033). Die frueher parametrisiert mitgetestete
+L2-Variante (METADATA_REPROCESSING) wurde in CC-LIB-FINAL entfernt; die
+Klassen bleiben parametrisiert ueber `_LevelCase`, damit ein kuenftiger
+Level ohne Umbau ergaenzt werden koennte.
 
 Testmuster identisch zu TestExecuteSafeAutomaticRepair in
 test_repair_service.py: doctor_runner.run_health_scan()/
-run_level2_repair()/run_level3_repair() werden gemockt (eigene Tests in
+run_level3_repair() werden gemockt (eigene Tests in
 tests/test_doctor_runner.py), hier wird ausschliesslich die
 Orchestrierungslogik getestet (Artist-Scope-Filterung, Lock, Rescan,
 Finding-Resolve, Run-Record)."""
@@ -65,20 +68,19 @@ def _seed_registry_and_scan(issue):
 
 
 class _LevelCase:
-    """Buendelt die je Level (l2/l3) unterschiedlichen Test-Fixtures."""
+    """Buendelt die je Level (aktuell nur l3) unterschiedlichen Test-Fixtures."""
 
     def __init__(self, level, issue_code, run_attr, repair_fn):
         self.level = level
         self.issue_code = issue_code
         self.run_attr = run_attr  # rs-Attributname des gemockten Runners
-        self.repair_fn = repair_fn  # rs.execute_level2_repair / execute_level3_repair
+        self.repair_fn = repair_fn  # rs.execute_level3_repair
 
 
-L2 = _LevelCase("l2", "META_TITLE_NOT_CLEAN", "run_level2_repair", rs.execute_level2_repair)
 L3 = _LevelCase("l3", "META_MB_RECORDING_MISSING", "run_level3_repair", rs.execute_level3_repair)
 
 
-@pytest.mark.parametrize("case", [L2, L3], ids=["l2", "l3"])
+@pytest.mark.parametrize("case", [L3], ids=["l3"])
 class TestExecuteLevelRepairArtistScope:
     def test_empty_plan_for_artist_returns_skipped_without_lock_left(self, case):
         scan_result = DoctorScanResult(exit_code=0, report=_report([]))
@@ -239,11 +241,11 @@ class TestExecuteLevelRepairArtistScope:
         assert len(history) == 1
         assert history[0]["kind"] == rs.KIND_REPAIR
         assert history[0]["artist"] == "Bausa"
-        assert history[0]["level"] in ("METADATA_REPROCESSING", "EXTERNAL_METADATA")
+        assert history[0]["level"] == "EXTERNAL_METADATA"
 
     def test_shares_lock_with_safe_automatic_repair(self, case):
         """ADR-0004: ein gemeinsamer Lock ueber alle Repair-/Maintenance-
-        Flows - ein laufender SAFE_AUTOMATIC-Lauf blockiert auch L2/L3."""
+        Flows - ein laufender SAFE_AUTOMATIC-Lauf blockiert auch L3."""
         rs.acquire_repair_lock()
         try:
             with pytest.raises(rs.RepairAlreadyRunningError):
@@ -252,13 +254,13 @@ class TestExecuteLevelRepairArtistScope:
             rs.release_repair_lock()
 
 
-@pytest.mark.parametrize("case", [L2, L3], ids=["l2", "l3"])
+@pytest.mark.parametrize("case", [L3], ids=["l3"])
 class TestChangedFilesVsAffectedFiles:
     """ARCH-033-F1 Fix (b): affected_files zaehlt ALLE journalierten
     Dateien (auch SKIPPED), changed_files NUR tatsaechlich geaenderte:
     SUCCESS/UNRESOLVED immer, ein SKIPPED-Eintrag zusaetzlich wenn
-    sha256_before != sha256_after (L2-Randfall, siehe
-    test_l2_skipped_entry_with_sha_diff_still_counts_as_changed unten) -
+    sha256_before != sha256_after (defensiver Randfall, siehe
+    test_skipped_entry_with_sha_diff_still_counts_as_changed unten) -
     affected_files bleibt dabei unveraendert (andere Konsumenten, z. B.
     control_center/routers/jobs.py)."""
 
@@ -338,15 +340,13 @@ class TestChangedFilesVsAffectedFiles:
         assert result.unresolved == 1
         assert result.changed_files == ["Bausa/Singles/a.m4a"]
 
-    def test_l2_skipped_entry_with_sha_diff_still_counts_as_changed(self, case):
-        """Adversarial-Review-Fund: apply_level2() (executor.py) markiert
-        pro Issue-Code SKIPPED, sobald nur das Zielfeld DIESES Issues
-        unveraendert blieb - reprocess() laeuft aber immer als volle
-        Pipeline und kann dabei andere Felder geschrieben haben. Ein
-        SKIPPED-Journal-Eintrag mit sha256_before != sha256_after ist
-        also eine real geaenderte Datei und muss trotzdem in
-        changed_files landen (affected_files zaehlte diesen Fall bereits
-        vorher korrekt)."""
+    def test_skipped_entry_with_sha_diff_still_counts_as_changed(self, case):
+        """Adversarial-Review-Fund (urspruenglich am inzwischen entfernten
+        L2-Executor gefunden): ein SKIPPED-Journal-Eintrag mit
+        sha256_before != sha256_after ist eine real geaenderte Datei und
+        muss trotzdem in changed_files landen (affected_files zaehlte
+        diesen Fall bereits vorher korrekt). Der defensive sha-Vergleich
+        bleibt bewusst erhalten."""
         issue = _issue(case.issue_code, path="Bausa/Singles/a.m4a", artist="Bausa")
         pre_scan = DoctorScanResult(exit_code=0, report=_report([issue]))
         repair_result = DoctorRepairResult(exit_code=0)
@@ -396,7 +396,7 @@ class TestChangedFilesVsAffectedFiles:
         assert result.changed_files == []
 
 
-@pytest.mark.parametrize("case", [L2, L3], ids=["l2", "l3"])
+@pytest.mark.parametrize("case", [L3], ids=["l3"])
 class TestCrashWithoutJournalEntries:
     """Adversarial-Review-Fund: scripts/library_repair.py kann vor dem
     ersten Journal-Write abbrechen (Exit-Code 2 = Report-Ladefehler,
@@ -436,9 +436,14 @@ class TestCrashWithoutJournalEntries:
 
 class TestLevelRepairDoesNotAffectSafeAutomatic:
     def test_existing_safe_automatic_flow_untouched(self):
-        """Reiner Schutz gegen versehentliche Kopplung: execute_level2_repair
+        """Reiner Schutz gegen versehentliche Kopplung: execute_level3_repair
         importieren/aufrufen darf execute_safe_automatic_repair() nicht
         beruehren (kein geteilter globaler State ausser Lock/Journal)."""
         assert rs.execute_safe_automatic_repair.__name__ == "execute_safe_automatic_repair"
-        assert callable(rs.execute_level2_repair)
         assert callable(rs.execute_level3_repair)
+
+    def test_level2_metadata_reprocessing_is_removed(self):
+        """Regression (CC-LIB-FINAL): kein L2-Einstieg mehr im Service."""
+        assert not hasattr(rs, "execute_level2_repair")
+        assert not hasattr(rs, "run_level2_repair")
+        assert "l2" not in rs._LEVEL_LABELS

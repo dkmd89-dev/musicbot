@@ -50,9 +50,9 @@ _SPECS: tuple[IssueSpec, ...] = (
               "Download-Pipeline entfernt haette (umschliessende Anfuehrungs"
               "zeichen, 'prod.'-Credit, haengende Klammer, Marketing-Suffix, "
               "Artist-Praefix). Ermittelt read-only ueber "
-              "TitleCleaner.light_title_cleanup() — verlustfrei per L2 "
-              "(METADATA_REPROCESSING) behebbar; blockiert bis dahin u. a. "
-              "externe MusicBrainz-Zuordnung (META_MB_*)."),
+              "TitleCleaner.light_title_cleanup() — manuell ueber "
+              "'Titel bearbeiten' im Control Center behebbar; blockiert bis "
+              "dahin u. a. externe MusicBrainz-Zuordnung (META_MB_*)."),
     IssueSpec("META_ALBUM_MISSING", Severity.WARNING, Scope.FILE,
               "Kein Album-Tag (©alb / TALB)."),
     IssueSpec("META_ALBUM_ARTIST_MISSING", Severity.WARNING, Scope.FILE,

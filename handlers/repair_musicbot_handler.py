@@ -22,18 +22,19 @@ SAFE_AUTOMATIC (Level 1) bleibt der primäre, ohne Vorschau-Umweg direkt
 über "Reparaturvorschläge" ausführbare Weg - identische Sicherheitsgrenze
 wie MusicBot Doctor (siehe handlers/library_doctor_handler.py,
 docs/LIBRARY_REPAIR.md §3). Seit ARCH-033 sind zusätzlich Level 2
-(METADATA_REPROCESSING) und Level 3 (EXTERNAL_METADATA) über Telegram
+Level 3 (EXTERNAL_METADATA: MusicBrainz-IDs/ISRC) über Telegram
 erreichbar - aber bewusst NUR pro Artist, mit eigener Vorschau und
 eigener Bestätigung je Artist (ADR-0003, docs/LIBRARY_REPAIR.md §12) über
-den separaten "🛠️ L2/L3-Reparaturen (nach Artist)"-Sub-Flow
-(`l23rep:*`-Callbacks unten). COVER/LOUDNESS/DUPLICATE bleiben weiterhin
+den separaten "🛠️ L3-Reparaturen (nach Artist)"-Sub-Flow
+(`l23rep:*`-Callbacks unten; das Präfix ist historisch, Level 2
+METADATA_REPROCESSING wurde in CC-LIB-FINAL entfernt). COVER/LOUDNESS/DUPLICATE bleiben weiterhin
 CLI-only (spätere, eigene Phasen ARCH-034/035).
 
 Öffnen dieses Menüs, "Reparaturen analysieren", "Reparaturvorschläge"
-oder der L2/L3-Artist-/Aktions-Auswahl starten NIEMALS automatisch eine
+oder der L3-Artist-/Aktions-Auswahl starten NIEMALS automatisch eine
 Reparatur (Abschnitt 27/33) - nur der explizit bestätigte
 "JA, REPARIEREN"-bzw. "✅ Jetzt ausführen"-Tap tut das, und niemals für
-mehr als einen Artist auf einmal (keine globale L2/L3-Batch-Freigabe).
+mehr als einen Artist auf einmal (keine globale L3-Batch-Freigabe).
 
 Nur für Admins sichtbar/nutzbar (Config.OWNER_USER_ID/ADMIN_USER_IDS),
 identisches Muster wie handlers/library_doctor_handler.py. Die
@@ -63,7 +64,6 @@ from services.library_repair.repair_service import (
     build_preview,
     build_repair_plan,
     compute_repair_statistics,
-    execute_level2_repair,
     execute_level3_repair,
     execute_safe_automatic_repair,
     get_safe_automatic_candidates,
@@ -75,23 +75,16 @@ if TYPE_CHECKING:
 
 _BACK_TO_ADMIN = "menu:admin_group_library"
 
-# ── L2/L3 Pro-Artist-Sub-Flow (ARCH-033) ────────────────────────────────
+# ── L3 Pro-Artist-Sub-Flow (ARCH-033) ────────────────────────────────
 _L23REP_SESSION_KEY = "l23rep_session"
 _L23REP_ARTISTS_PER_PAGE = 8
 _L23REP_LEVEL_LABELS = {
-    "l2": "L2 · Metadata Reprocessing",
     "l3": "L3 · External Metadata",
 }
 _L23REP_REPAIR_LEVEL_VALUES = {
-    "l2": RepairLevel.METADATA_REPROCESSING.value,
     "l3": RepairLevel.EXTERNAL_METADATA.value,
 }
 _L23REP_WARNING_TEXT = {
-    "l2": (
-        "Metadata Reprocessing durchläuft die volle Metadaten-Pipeline "
-        "erneut (Genre/Lyrics/Cover-Logik inklusive). Dabei können sich "
-        "auch Auto-Learn-Mappings ändern."
-    ),
     "l3": (
         "External Metadata ruft MusicBrainz und weitere externe Dienste "
         "auf. Netzwerk-/Rate-Limit-Fehler sind möglich und werden je "
@@ -103,7 +96,7 @@ _L23REP_WARNING_TEXT = {
 # Einzige Stelle, die aus den Rohdaten eines Repair-Laufs (Gesamtstatus aus
 # repair_service._overall_status() + Per-Eintrag-Zaehler) Emoji und
 # Kopfzeile ableitet - geteilt von _format_result() (SAFE_AUTOMATIC) und
-# _format_l23_result() (L2/L3). Ursprung: ARCH-033-F1 Fix (c) fuer L2/L3.
+# _format_l23_result() (L3). Ursprung: ARCH-033-F1 Fix (c).
 
 
 def _result_headline(
@@ -334,17 +327,16 @@ class RepairMusicBotHandler:
         if len(safe_candidates) > 10:
             lines.append(f"  … {len(safe_candidates) - 10} weitere")
 
-        l2l3_count = sum(
-            1 for c in other_actionable
-            if c.level in (RepairLevel.METADATA_REPROCESSING, RepairLevel.EXTERNAL_METADATA)
+        l3_count = sum(
+            1 for c in other_actionable if c.level is RepairLevel.EXTERNAL_METADATA
         )
         if other_actionable:
             lines.append("")
             lines.append(f"{len(other_actionable)} weitere Reparatur(en) — 🟡 REVIEW "
                          "(nur über die CLI ausführbar, siehe docs/LIBRARY_REPAIR.md)")
-            if l2l3_count:
+            if l3_count:
                 lines.append(
-                    f"  davon {l2l3_count}× L2/L3 — jetzt auch pro Artist über "
+                    f"  davon {l3_count}× L3 — jetzt auch pro Artist über "
                     "Telegram ausführbar (Button unten)."
                 )
 
@@ -353,9 +345,9 @@ class RepairMusicBotHandler:
             buttons.append([InlineKeyboardButton(
                 f"🔍 Preview ({len(safe_candidates)} SAFE)", callback_data="repair:preview",
             )])
-        if l2l3_count:
+        if l3_count:
             buttons.append([InlineKeyboardButton(
-                "🛠️ L2/L3-Reparaturen (nach Artist)", callback_data="l23rep:start",
+                "🛠️ L3-Reparaturen (nach Artist)", callback_data="l23rep:start",
             )])
         buttons.append([InlineKeyboardButton("◀️ Zurück", callback_data="repair:start")])
 
@@ -617,17 +609,17 @@ class RepairMusicBotHandler:
             "\n".join(lines), parse_mode="HTML", reply_markup=self._back_keyboard("repair:start")
         )
 
-    # ── L2/L3 Pro-Artist-Reparatur (ARCH-033) ─────────────────────────────
+    # ── L3 Pro-Artist-Reparatur (ARCH-033) ─────────────────────────────
     #
     # Findings-getrieben (ADR-0001) wie "Reparaturvorschläge" oben, aber
     # bewusst NUR pro Artist mit eigener Vorschau/Bestätigung (ADR-0003).
-    # Die Artist-Liste (inkl. L2-/L3-Kandidatenzahl) wird pro
+    # Die Artist-Liste (inkl. L3-Kandidatenzahl) wird pro
     # Telegram-Session in context.user_data gecacht (identisches Muster
     # zu handlers/library_health_review_handler.py::_SESSION_KEY) - ein
     # frischer Health-Scan bei JEDEM Button-Tap (Seitenwechsel,
     # Aktions-Auswahl) wäre für eine große Library nicht praktikabel.
-    # Unmittelbar vor der tatsächlichen Ausführung (execute_level2_repair/
-    # execute_level3_repair) baut der Service selbst ohnehin immer einen
+    # Unmittelbar vor der tatsächlichen Ausführung (execute_level3_repair)
+    # baut der Service selbst ohnehin immer einen
     # frischen Plan (Stale-Plan-Schutz, siehe repair_service.py) - der
     # Cache hier dient ausschließlich der Navigation, nie der Ausführung.
 
@@ -652,11 +644,11 @@ class RepairMusicBotHandler:
         await query.answer()
 
         text = (
-            "🛠️ <b>L2/L3-Reparaturen (nach Artist)</b>\n\n"
-            "Metadata Reprocessing (L2) und External Metadata (L3) sind "
-            "weitreichender als die automatischen SAFE-Reparaturen und "
-            "werden deshalb nur pro Artist mit eigener Vorschau und "
-            "eigener Bestätigung ausgeführt (nie global).\n\n"
+            "🛠️ <b>L3-Reparaturen (nach Artist)</b>\n\n"
+            "External Metadata (L3: MusicBrainz-IDs/ISRC nachtragen) ruft "
+            "externe Dienste auf und wird deshalb nur pro Artist mit "
+            "eigener Vorschau und eigener Bestätigung ausgeführt (nie "
+            "global). Manuell gesetzte Tags werden nicht überschrieben.\n\n"
             "Wähle zuerst einen Artist."
         )
         keyboard = InlineKeyboardMarkup([
@@ -701,14 +693,14 @@ class RepairMusicBotHandler:
 
         groups = group_candidates_by_artist(plan)
         artists = [
-            (summary.artist, summary.l2_count, summary.l3_count)
+            (summary.artist, summary.l3_count)
             for summary in groups.values()
         ]
         context.user_data[_L23REP_SESSION_KEY] = {"artists": artists}
 
         if not artists:
             await message.edit_text(
-                "✅ Keine offenen L2/L3-Befunde (mehr) gefunden.",
+                "✅ Keine offenen L3-Befunde (mehr) gefunden.",
                 reply_markup=self._back_keyboard("l23rep:start"),
             )
             return
@@ -725,13 +717,13 @@ class RepairMusicBotHandler:
         page_artists = artists[start:start + _L23REP_ARTISTS_PER_PAGE]
 
         text = (
-            f"👤 <b>Artist wählen</b> (L2/L3-Kandidaten)\n\n"
+            f"👤 <b>Artist wählen</b> (L3-Kandidaten)\n\n"
             f"{len(artists)} Artist(en), Seite {page + 1}/{total_pages}:"
         )
         buttons = []
-        for offset, (name, l2_count, l3_count) in enumerate(page_artists):
+        for offset, (name, l3_count) in enumerate(page_artists):
             idx = start + offset
-            label = f"🎵 {name} (L2:{l2_count} L3:{l3_count})"
+            label = f"🎵 {name} (L3:{l3_count})"
             buttons.append([InlineKeyboardButton(label, callback_data=f"l23rep:pick:{idx}")])
 
         nav_row = []
@@ -763,14 +755,9 @@ class RepairMusicBotHandler:
             )
             return
 
-        artist, l2_count, l3_count = entry
+        artist, l3_count = entry
         text = f"👤 <b>{html.escape(artist)}</b>\n\nWähle eine Aktion:"
         buttons = []
-        if l2_count:
-            buttons.append([InlineKeyboardButton(
-                f"L2 · Metadata Reprocessing ({l2_count})",
-                callback_data=f"l23rep:preview:l2:{idx}",
-            )])
         if l3_count:
             buttons.append([InlineKeyboardButton(
                 f"L3 · External Metadata ({l3_count})",
@@ -898,7 +885,7 @@ class RepairMusicBotHandler:
     async def handle_l23_execute(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, level: str, idx: int
     ) -> None:
-        """Einzige Stelle, die tatsächlich eine L2/L3-Reparatur startet -
+        """Einzige Stelle, die tatsächlich eine L3-Reparatur startet -
         Berechtigung wird HIER erneut geprüft (Defense-in-Depth,
         identisch zu handle_execute() oben)."""
         query = update.callback_query
@@ -936,7 +923,7 @@ class RepairMusicBotHandler:
         # gebundenes Dict ignoriert unittest.mock.patch.object() in
         # Tests und würde einen echten Subprozess gegen die
         # Produktionslibrary starten).
-        execute_fn = globals()["execute_level2_repair" if level == "l2" else "execute_level3_repair"]
+        execute_fn = globals()["execute_level3_repair"]
         try:
             result = await execute_fn(artist, triggered_by=f"telegram:{user_id}")
         except RepairAlreadyRunningError as e:
@@ -946,7 +933,7 @@ class RepairMusicBotHandler:
             )
             return
         except Exception as e:  # noqa: BLE001
-            self.logger.error(f"💥 Unerwarteter Fehler bei der L2/L3-Reparatur: {e}", exc_info=True)
+            self.logger.error(f"💥 Unerwarteter Fehler bei der L3-Reparatur: {e}", exc_info=True)
             await self._report_error(e, f"execute_{level}")
             await message.edit_text(
                 f"❌ Unerwarteter Fehler: {html.escape(str(e))}",
@@ -1009,10 +996,5 @@ class RepairMusicBotHandler:
             lines.append(warning)
         if result.rescan_triggered:
             lines.append("")
-            lines.append(
-                "ℹ️ Ein Verifikations-Scan wurde durchgeführt. Möglicherweise "
-                "haben sich dabei auch Auto-Learn-Mappings geändert "
-                "(mapping/auto_learned_*.json) - unabhängig davon manuell "
-                "prüfbar."
-            )
+            lines.append("ℹ️ Ein Verifikations-Scan wurde durchgeführt.")
         return "\n".join(lines)

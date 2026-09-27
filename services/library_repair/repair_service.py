@@ -40,7 +40,7 @@ Bewusst NUR SAFE_AUTOMATIC über diesen Weg ausführbar - identische
 Sicherheitsgrenze wie MusicBot Doctor (siehe
 handlers/library_doctor_handler.py, docs/LIBRARY_REPAIR.md §3): alle
 externen/destruktiven Level (COVER/EXTERNAL_METADATA/
-METADATA_REPROCESSING/LOUDNESS/DUPLICATE) bleiben CLI-only. Repair
+LOUDNESS/DUPLICATE) bleiben CLI-only. Repair
 MusicBot ist KEINE Ausweitung dieser Grenze, sondern eine reichhaltigere
 Oberfläche (Plan/Preview/History/Statistik) für denselben, bereits
 etablierten Ausführungspfad.
@@ -71,7 +71,6 @@ from services.library_health.findings import (
 from services.library_health.findings import DEFAULT_FILENAME as FINDINGS_DEFAULT_FILENAME
 from services.library_repair.doctor_runner import (
     run_health_scan,
-    run_level2_repair,
     run_level3_repair,
     run_safe_automatic_repair,
 )
@@ -213,13 +212,13 @@ def build_preview(candidates: list[RepairCandidate], *, level: str = "SAFE_AUTOM
 
 def _wrote_to_disk(entry: dict) -> bool:
     """ARCH-033-F1 Fix (b), seit Finding #4/#6 für SAFE_AUTOMATIC und
-    L2/L3 gemeinsam: ein Journal-Eintrag zählt als tatsächliche Änderung
+    L3 gemeinsam: ein Journal-Eintrag zählt als tatsächliche Änderung
     auf der Platte bei SUCCESS/UNRESOLVED IMMER, bei jedem anderen Status
     (v. a. SKIPPED) zusätzlich wenn sha256_before != sha256_after
-    (L2 (apply_level2()) markiert pro Issue-Code SKIPPED, sobald NUR das
-    Zielfeld DIESES Issues unverändert blieb - reprocess() läuft aber als
-    volle Pipeline und kann andere Felder geschrieben haben, siehe
-    docs/LIBRARY_REPAIR.md §12/§5. Der sha-Vergleich fängt bewusst auch
+    (der frühere L2-Pfad markierte pro Issue-Code SKIPPED, obwohl die
+    volle Pipeline andere Felder geschrieben haben konnte; L2 ist seit
+    CC-LIB-FINAL entfernt, der defensive sha-Vergleich bleibt erhalten,
+    siehe docs/LIBRARY_REPAIR.md §12/§5. Der sha-Vergleich fängt bewusst auch
     FAILED-mit-fehlgeschlagenem-Rollback ab - die Datei bleibt dabei real
     verändert). UNRESOLVED zählt als geändert, weil die Datei geschrieben
     wurde - nur die Verifikation schlug fehl (identische Definition wie
@@ -263,7 +262,7 @@ def _overall_status(
     status_counts: dict, *, exit_code: Optional[int], timed_out: bool,
     error_message: Optional[str],
 ) -> str:
-    """Gemeinsamer Gesamtstatus für SAFE_AUTOMATIC und L2/L3 (Findings
+    """Gemeinsamer Gesamtstatus für SAFE_AUTOMATIC und L3 (Findings
     #4/#5/#6): Prozess-Exit-Code + Journal-Einträge (+ Verifikation, die
     sich pro Eintrag bereits als UNRESOLVED niederschlägt) ergeben den
     Status. Ein vorhandenes Journal bedeutet NICHT automatisch Erfolg.
@@ -471,36 +470,31 @@ async def execute_safe_automatic_repair(
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Level 2 / Level 3 — Pro-Artist-Reparatur (ARCH-033, ADR-0003/ADR-0004)
+# Level 3 — Pro-Artist-Reparatur (ARCH-033, ADR-0003/ADR-0004)
 #
-# Bewusst getrennte Funktionen je Level statt eines gemeinsamen
-# "execute_level_repair(level=...)" (ADR-0003: L2/L3 werden pro Artist
-# GETRENNT bestaetigt - unterschiedliche Blast-Radien/Nebeneffekte,
-# siehe docs/adr/0003). execute_safe_automatic_repair() oben bleibt
-# unveraendert - diese beiden neuen Funktionen sind eigenstaendige
-# Geschwister, kein Refactor der bestehenden Funktion.
+# Level 2 (METADATA_REPROCESSING) wurde in CC-LIB-FINAL entfernt (siehe
+# docs/audits/CC-LIB-FINAL_2026-09-27.md); geblieben ist die Pro-Artist-
+# Ausfuehrung von L3 (EXTERNAL_METADATA: nur MusicBrainz-IDs/ISRC
+# nachtragen, ueberschreibt keine manuellen Tags). execute_safe_automatic_
+# repair() oben bleibt unveraendert.
 #
-# Subprozess-Ausfuehrung (doctor_runner.run_level2_repair()/
-# run_level3_repair()) statt direktem In-Process-Aufruf von
-# executor.py::apply_level2()/apply_external_metadata() - waehrend der
-# Implementierung als echter Architekturkonflikt erkannt und mit dem
-# Nutzer geklaert (EnhancedMetadataProcessor-Singleton-Risiko, siehe
-# doctor_runner.py::_run_level_repair_subprocess()-Docstring). apply_level2()
-# und apply_external_metadata() selbst bleiben dadurch komplett
-# unveraendert - sie laufen weiterhin (wie schon vor ARCH-033) nur
-# innerhalb des scripts/library_repair.py-Subprozesses.
+# Subprozess-Ausfuehrung (doctor_runner.run_level3_repair()) statt direktem
+# In-Process-Aufruf von executor.py::apply_external_metadata() - bewusst
+# beibehalten: gleicher, bereits gehaerteter Subprozess-Pfad wie
+# run_safe_automatic_repair(); apply_external_metadata() laeuft weiterhin
+# nur innerhalb des scripts/library_repair.py-Subprozesses.
 # ─────────────────────────────────────────────────────────────────────────
 
-_LEVEL_LABELS = {"l2": "METADATA_REPROCESSING", "l3": "EXTERNAL_METADATA"}
+_LEVEL_LABELS = {"l3": "EXTERNAL_METADATA"}
 
 
 @dataclass
 class LevelRepairResult:
-    """Ergebnis eines Pro-Artist L2/L3-Laufs (ARCH-033)."""
+    """Ergebnis eines Pro-Artist L3-Laufs (ARCH-033; L2 in CC-LIB-FINAL entfernt)."""
 
     repair_id: str
     artist: str
-    level: str  # "l2" | "l3"
+    level: str  # "l3"
     status: str  # SUCCESS | UNRESOLVED | FAILED | SKIPPED (_overall_status())
     started_at: str
     finished_at: str
@@ -533,20 +527,21 @@ class LevelRepairResult:
 async def _execute_level_repair(
     level: str, artist: str, *, triggered_by: str, scan_timeout: float = 900.0,
 ) -> LevelRepairResult:
-    """Gemeinsame Implementierung fuer execute_level2_repair()/
-    execute_level3_repair() - siehe dort fuer die oeffentliche API.
-    `level` ist "l2" oder "l3" (intern gemappt auf den echten
-    RepairLevel-Wert fuer filter_plan())."""
+    """Implementierung fuer execute_level3_repair() - siehe dort fuer die
+    oeffentliche API. `level` ist "l3" (intern gemappt auf den echten
+    RepairLevel-Wert fuer filter_plan()). Die Parametrisierung nach Level
+    bleibt bewusst erhalten (kleinster Schritt); L2 wurde in CC-LIB-FINAL
+    entfernt."""
     repair_level = _LEVEL_LABELS[level]
     # Namens-Lookup im Modul-Globalstate zur AUFRUFZEIT (nicht ein beim
     # Import einmalig gebautes Dict!) - nur so wirkt
-    # patch.object(rs, "run_level2_repair"/"run_level3_repair", ...) in
+    # patch.object(rs, "run_level3_repair", ...) in
     # Tests (identisches Prinzip wie der bare-name-Aufruf von
     # run_safe_automatic_repair() oben in execute_safe_automatic_repair()).
     # Ein Dict mit frueh gebundenen Funktionsreferenzen wuerde Mocks
     # stillschweigend ignorieren und stattdessen den echten Subprozess
     # gegen die Produktions-Library starten.
-    run_repair = globals()["run_level2_repair" if level == "l2" else "run_level3_repair"]
+    run_repair = globals()["run_level3_repair"]
 
     acquire_repair_lock()
     try:
@@ -668,28 +663,17 @@ async def _execute_level_repair(
         release_repair_lock()
 
 
-async def execute_level2_repair(
-    artist: str, *, triggered_by: str, scan_timeout: float = 900.0,
-) -> LevelRepairResult:
-    """Pro-Artist L2-Reparatur (METADATA_REPROCESSING, ARCH-033/ADR-0003).
-    Ruft scripts/library_repair.py --artist <artist> --level
-    METADATA_REPROCESSING --apply als Subprozess auf (doctor_runner.
-    run_level2_repair()) - apply_level2() selbst bleibt unveraendert.
-    Nutzt denselben Lock/Journal/Run-Index wie SAFE_AUTOMATIC und die
-    Library-Wartung (run_tracking.py, ADR-0004); Run-Record-`kind` bleibt
-    "repair" (nicht "maintenance") - dies ist Finding-getriebene
-    Reparatur, keine Command-getriebene Maintenance-Action."""
-    return await _execute_level_repair(
-        "l2", artist, triggered_by=triggered_by, scan_timeout=scan_timeout,
-    )
-
-
 async def execute_level3_repair(
     artist: str, *, triggered_by: str, scan_timeout: float = 900.0,
 ) -> LevelRepairResult:
     """Pro-Artist L3-Reparatur (EXTERNAL_METADATA, ARCH-033/ADR-0003).
-    Analog execute_level2_repair() - ruft
-    doctor_runner.run_level3_repair() auf. Netzwerk-/Rate-Limit-Fehler
+    Ruft scripts/library_repair.py --artist <artist> --level
+    EXTERNAL_METADATA --apply als Subprozess auf (doctor_runner.
+    run_level3_repair()) und nutzt denselben Lock/Journal/Run-Index wie
+    SAFE_AUTOMATIC und die Library-Wartung (run_tracking.py, ADR-0004);
+    Run-Record-`kind` bleibt "repair" (nicht "maintenance") - dies ist
+    Finding-getriebene Reparatur, keine Command-getriebene Maintenance-
+    Action. Netzwerk-/Rate-Limit-Fehler
     gegen MusicBrainz schlagen sichtbar als FAILED nieder (im Journal-
     Eintrag der jeweiligen Datei dokumentiert durch
     apply_external_metadata() selbst) - kein stilles SKIPPED."""

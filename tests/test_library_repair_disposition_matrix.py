@@ -41,7 +41,6 @@ _EXECUTOR_CODE_SETS: dict[str, frozenset] = {
     "apply_cover_repairs": executor.COVER_ISSUE_CODES,
     "apply_album_cover_unify": executor.ALBUM_COVER_CODES,
     "apply_external_metadata": executor.EXTERNAL_MB_CODES,
-    "apply_level2": executor.L2_CODES,
     "apply_replaygain": executor.LOUDNESS_ISSUE_CODES,
 }
 
@@ -92,11 +91,13 @@ def test_every_repair_level_is_classified():
 def test_disposition_partition_sizes_snapshot():
     """Change-Detector (analog test_library_repair_planner.py
     ::test_plan_counts_and_determinism): 53 Codes, aufgeteilt in
-    29 AUTO_REPAIR / 22 MANUAL_REVIEW / 2 UNREPAIRABLE. Aendert sich diese
-    Verteilung, muss die Coverage-Matrix-Doku mit angepasst werden."""
+    19 AUTO_REPAIR / 32 MANUAL_REVIEW / 2 UNREPAIRABLE. Seit CC-LIB-FINAL
+    (L2 METADATA_REPROCESSING entfernt) sind die zehn frueheren L2-Codes
+    MANUAL_REVIEW (vorher 29 / 22 / 2). Aendert sich diese Verteilung,
+    muss die Coverage-Matrix-Doku mit angepasst werden."""
     assert len(ALL_CODES) == 53
-    assert len(_codes_with_disposition(DISPOSITION_AUTO_REPAIR)) == 29
-    assert len(_codes_with_disposition(DISPOSITION_MANUAL_REVIEW)) == 22
+    assert len(_codes_with_disposition(DISPOSITION_AUTO_REPAIR)) == 19
+    assert len(_codes_with_disposition(DISPOSITION_MANUAL_REVIEW)) == 32
     assert len(_codes_with_disposition(DISPOSITION_UNREPAIRABLE)) == 2
 
 

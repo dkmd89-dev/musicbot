@@ -89,12 +89,16 @@ async def test_get_repair_plan_maps_known_issue_to_candidate(client, test_librar
     assert "META_ARTIST_MISSING" in codes
 
     candidate = next(c for c in body["candidates"] if c["issue_code"] == "META_ARTIST_MISSING")
-    assert candidate["action"] == "METADATA_REPROCESS"
-    assert candidate["level"] == "METADATA_REPROCESSING"
-    assert candidate["disposition"] == "AUTO_REPAIR"
-    assert candidate["requires_external"] is True
-    assert candidate["reuses_component"]  # nennt die wiederverwendete Komponente
+    # CC-LIB-FINAL: L2 METADATA_REPROCESSING entfernt -> das Finding bleibt
+    # sichtbar, wird aber nicht mehr automatisch repariert.
+    assert candidate["action"] == "MANUAL_REVIEW"
+    assert candidate["level"] == "MANUAL_REVIEW"
+    assert candidate["disposition"] == "MANUAL_REVIEW"
+    assert candidate["requires_external"] is False
+    assert candidate["reuses_component"]  # nennt die (Platzhalter-)Komponente
     assert candidate["is_destructive"] is False
+    assert "METADATA_REPROCESS" not in {c["action"] for c in body["candidates"]}
+    assert "METADATA_REPROCESSING" not in body["counts_by_level"]
 
 
 @requires_ffmpeg
@@ -157,13 +161,13 @@ async def test_get_repair_plan_500_on_scan_failure(client, test_library, monkeyp
 
 # ─────────────────────────────────────────────────────────────────────────
 # GET /api/v1/library/repair-plan/by-artist — Pendant zur Telegram-Pro-
-# Artist-L2/L3-Auswahl (ARCH-033 §12)
+# Artist-L3-Auswahl (ARCH-033 §12; L2 in CC-LIB-FINAL entfernt)
 # ─────────────────────────────────────────────────────────────────────────
 
 
 @requires_ffmpeg
 @pytest.mark.asyncio
-async def test_get_repair_plan_by_artist_groups_l2_candidate(client, test_library, monkeypatch):
+async def test_get_repair_plan_by_artist_groups_l3_candidates_only(client, test_library, monkeypatch):
     monkeypatch.setattr(Config, "LIBRARY_DIR", test_library)
 
     response = await client.get("/api/v1/library/repair-plan/by-artist")
@@ -175,13 +179,13 @@ async def test_get_repair_plan_by_artist_groups_l2_candidate(client, test_librar
     entry = body["artists"][0]
     assert entry["artist"] == "Artist One"
     # Charakterisiert gegen die echte Registry (services/library_repair/
-    # planner.py): dieselbe Datei erzeugt neben META_ARTIST_MISSING auch
-    # LYRICS_MISSING (beide METADATA_REPROCESSING/L2) sowie
-    # META_ISRC_MISSING/META_MB_RECORDING_MISSING/META_MB_RELEASE_MISSING
-    # (alle drei EXTERNAL_METADATA/L3).
-    assert entry["l2_count"] == 2
+    # planner.py): dieselbe Datei erzeugt neben META_ARTIST_MISSING/
+    # LYRICS_MISSING (seit CC-LIB-FINAL MANUAL_REVIEW, nicht mehr in der
+    # Pro-Artist-Auswahl) auch META_ISRC_MISSING/META_MB_RECORDING_MISSING/
+    # META_MB_RELEASE_MISSING (alle drei EXTERNAL_METADATA/L3).
+    assert "l2_count" not in entry
     assert entry["l3_count"] == 3
-    assert entry["total"] == 5
+    assert entry["total"] == 3
 
 
 @pytest.mark.asyncio

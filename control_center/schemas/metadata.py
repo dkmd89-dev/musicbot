@@ -239,7 +239,7 @@ class MappingSummaryResponse(BaseModel):
     """Übersicht über die Genre-/Artist-Mapping-Dateien (mapping/*.yaml/
     *.json) — Master-Prompt Abschnitt 7 "Mapping anzeigen". Reines Mapping
     über utils.genre_map.GenreMapper.get_statistics()["mappings"] hinweg
-    (bereits produktiv, u. a. von der Reprocessing-CLI genutzt) — keine
+    (bereits produktiv) — keine
     eigene YAML-/JSON-Parsing-Logik. Nur die reinen Mapping-Zählungen,
     NICHT die Laufzeit-Cache-/Query-Statistiken (queries/cache_hits/
     fuzzy_matches/rule_matches/cache_hit_rate) — die sind für eine frische

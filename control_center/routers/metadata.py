@@ -12,8 +12,8 @@ oder Aggregationslogik. `report["files"]`/`report["artists"]`/
 `report["albums"]` (services/library_health/report.py bzw. scoring.py)
 liefern bereits alle benötigten Felder.
 
-Bewusst NUR lesend in diesem Schritt — Metadata bearbeiten, Reprocessing
-starten, Cover verwalten sind eigene, separat freizugebende
+Bewusst NUR lesend in diesem Schritt — Metadata bearbeiten
+(inzwischen über admin_maintenance.py/metadata_actions.py), Cover verwalten sind eigene, separat freizugebende
 Folgeschritte (Master-Prompt Abschnitt 7 nennt alle als "perspektivisch",
 nicht als ein einzelner Schritt). "Mapping anzeigen" ist per
 GET /mapping-summary unten bereits Teil dieses Routers.
