@@ -5,6 +5,26 @@
 **Auftrag:** Abschnitt 4/5/32 — vollständige, eindeutige Abdeckung jedes
 `services.library_health.issues.ALL_CODES`-Eintrags.
 
+> **Hinweis (2026-09-27):** Dieses Dokument ist ein **eingefrorener
+> Snapshot** vom 2026-09-09 und wird nicht mehr aktualisiert. Seit seiner
+> Erstellung haben sich die Repair-Level-Zuordnungen geändert:
+>
+> - **PR #317** (Phase B, Metadata-Reprocessing entfernt): die
+>   `METADATA_REPROCESSING`-Codes (10 Codes) wurden auf `MANUAL_REVIEW`
+>   umgestellt.
+> - **PR #325** (Lyrics-Korrektur): `LYRICS_MISSING` / `LYRICS_EMPTY` /
+>   `LYRICS_INVALID` wurden von `MANUAL_REVIEW` auf `NOT_REPAIRABLE`
+>   (RepairAction.NONE) umgestellt.
+>
+> Aktuelle Verteilung: **19 AUTO_REPAIR / 29 MANUAL_REVIEW /
+> 5 UNREPAIRABLE** (statt der unten dokumentierten 29/22/2).
+> Maßgebliche Quelle: `services/library_repair/planner.py::REGISTRY`.
+> Aktuell gepinnt in `tests/test_library_repair_disposition_matrix.py`
+> (Snapshot-Test auf die 19/29/5-Verteilung).
+
+Die folgende Verteilungs- und Code-Tabelle dokumentiert den historischen
+Stand vom 2026-09-09 und wird bewusst **nicht** rückwirkend angepasst.
+
 Maschinell gepinnt in `tests/test_library_repair_disposition_matrix.py`
 (ergänzt `tests/test_library_repair_planner.py`). Ändert sich die
 Klassifikation, schlägt der Test fehl und dieses Dokument wird im selben PR
@@ -46,7 +66,7 @@ Post-Repair-Verifikation  (siehe Spalte „Verifikation")
 > identische Grenze wie `scripts/library_repair.py --apply` auf der CLI
 > (`docs/LIBRARY_REPAIR.md` §3/§9/§10).
 
-**Verteilung (Snapshot 2026-09-09):** 53 Codes — **29 AUTO_REPAIR**,
+**Verteilung (Snapshot 2026-09-09, historisch — siehe Hinweis oben):** 53 Codes — **29 AUTO_REPAIR**,
 **22 MANUAL_REVIEW**, **2 UNREPAIRABLE**.
 
 ---
