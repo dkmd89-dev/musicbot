@@ -250,11 +250,84 @@ und keine der fünf Nutzerentscheidungen getroffen wurde.
 
 ---
 
-## 10. Referenzen
+## 11. Nachtrag — Client Consolidation Phase D (2026-09-28, Architekturentscheidung Downloads)
+
+Phase D (`/mnt/128ssd/client_consolidation.txt`) war eine **reine
+Analyse-/Architekturphase — kein Code-Change**. Sie beantwortet
+Entscheidung 2 (Abschnitt 4) und **präzisiert** Entscheidung 1 speziell
+für Downloads — Entscheidung 1 selbst (Snapshot-Mechanismus für
+Error-Verwaltung/Logger-Zähler/Live-Downloads-Anzeige) bleibt für die
+übrigen betroffenen Bereiche unverändert offen.
+
+**Entscheidung 2 (Downloads aus dem Web starten?): JA.**
+
+**Wichtige Präzisierung von Entscheidung 1 für Downloads:** Die
+ursprüngliche Annahme in Abschnitt 3 (Zeile 73) war, dass Live-Downloads
+denselben Cross-Prozess-Snapshot-Mechanismus wie Error-Verwaltung/
+Logger-Zähler brauchen. Der Code-Befund in Phase D widerlegt das für den
+Anwendungsfall „CC startet eigene Downloads": `services/downloader/
+downloader.py::YoutubeDownloader`, `services/duplicate/detector.py::
+DuplicateDetector` und `services/metadata/enhanced_metadata_processor.py`
+sind bereits vollständig Telegram-frei und nehmen Fortschritt über einen
+injizierbaren `status_callback` entgegen (`services/downloader/download/
+interfaces.py::DownloadCoordinator`-Protocol) — `klassen/
+download_handler.py` ist nur der Telegram-Orchestrator darüber. Ein vom
+CC selbst gestarteter Download kann diese Services direkt im CC-Prozess
+aufrufen, ohne den Bot-Prozess-Zustand (`ActiveDownloadRegistry`) lesen zu
+müssen. Entscheidung 1 bleibt daher **nur noch** Voraussetzung für den
+separaten, unverändert offenen Anwendungsfall „CC sieht Telegram-
+initiierte Live-Downloads" — nicht mehr für Downloads-Start aus dem Web.
+
+**Beschlossene Architektur:**
+
+- CC-lokaler Job-Typ über das bestehende `services/jobs/job_registry.py::
+  JobRegistry`-Muster (identisch zu `repair_safe_automatic`/
+  `repair_level3`, `control_center/routers/jobs.py`) statt eines neuen
+  IPC-Mechanismus.
+- Direkter Aufruf von `YoutubeDownloader`/`DuplicateDetector`/
+  `EnhancedMetadataProcessor` im CC-Prozess — keine neue
+  Download-Implementierung, keine Duplizierung der Telegram-Pipeline.
+- Fortschritt über `JobRegistry.update_progress()` statt
+  Telegram-spezifischer Anzeige.
+- Persistenz ausschließlich über den bestehenden
+  `services/downloader/download_history.py::DownloadHistoryStore` — kein
+  neuer Persistenzpfad, keine zweite History-Datenquelle.
+- `JobStatus`-Semantik unverändert (`PENDING/RUNNING/SUCCEEDED/FAILED/
+  CANCELLED`), kein Fake-Erfolg vor tatsächlichem Abschluss.
+- `klassen/download_handler.py` und Telegram-Verhalten bleiben
+  unangetastet, sofern technisch nicht zwingend erforderlich.
+
+**Concurrency-Entscheidung (globale Download-Grenze über beide
+Prozesse):** `MAX_CONCURRENT_DOWNLOADS` wird heute durch ein
+modulglobales `asyncio.Semaphore` in `klassen/download_handler.py`
+durchgesetzt — faktisch prozessglobal, weil bisher nur ein
+downloadfähiger Prozess existiert. Mit einem CC-eigenen Download-Pfad
+entstehen zwei unabhängige Prozesse; ohne Gegenmaßnahme könnte die Summe
+der parallelen Downloads die konfigurierte Grenze überschreiten.
+Beschlossen: **Option B** — N Slot-Dateien (`N = MAX_CONCURRENT_DOWNLOADS`)
+unter `Config.DATA_DIR`, atomar belegt/freigegeben per
+`os.open(O_CREAT|O_EXCL|O_WRONLY)` — Erweiterung des bereits produktiven
+Mutex-Musters aus `services/library_repair/run_tracking.py::
+acquire_repair_lock()` von 1 Slot auf N Slots, von Bot- und CC-Prozess
+gemeinsam genutzt. Verwaiste Slots nach einem Prozessabsturz: **nur
+Diagnose** (PID+Timestamp im Slot-Inhalt, wie beim bestehenden
+Repair-Lock), **kein** automatisches Freigeben — identisches Verhalten
+zum bestehenden Repair-Lock, keine neue Fehlerklasse (PID-Wiederverwendung,
+falsches TTL-Timing) eingeführt. Aufräumen eines verwaisten Slots bleibt
+eine manuelle/Admin-Aufgabe.
+
+**Status:** Architektur vollständig entschieden, **keine Implementierung
+in Phase D**. Die Implementierung (neuer Job-Typ, Slot-Helfer, Tests) ist
+eine separat freizugebende Folgephase.
+
+---
+
+## 12. Referenzen
 - `docs/audits/CC-AC-10A…10D_*_2026-09-22.md` (historisch), `CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md`
 - `docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md` (Snapshot-Präzedenz)
 - `docs/audits/ERROR_ADMINISTRATION_ARCHITECTURE_ANALYSIS_2026-09-27.md` (Varianten A–E)
 - `docs/audits/CC-LIB-FINAL_PHASE_C_SERVICE_LAYER_AUDIT_2026-09-27.md` (Service-Layer-Vollständigkeit Library/Metadata)
+- `docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md` (Download-Center-Nachtrag, Scope-Entscheidung Verlauf statt Live-Status)
 - `docs/LIBRARY_REPAIR.md` §17 (Genre-Mapping im CC), §18 (Genre revalidieren im CC)
-- `docs/FINDINGS_INDEX.md` (Zeile zu „Manual Metadata Editing v1/v2" bereits als OBSOLETE durch CC-LIB-FINAL geführt; Zeilen „User-Verwaltung: Doppelimplementierung" und „Logger: verbleibende Datei-I/O im Telegram-Handler" seit Phase A/B CLOSED, siehe Abschnitt 8)
-- `/mnt/128ssd/client_consolidation.txt` (Auftrag Phase A–D), PR #326 (Phase A), PR #327 (Phase B)
+- `docs/FINDINGS_INDEX.md` (Zeile zu „Manual Metadata Editing v1/v2" bereits als OBSOLETE durch CC-LIB-FINAL geführt; Zeilen „User-Verwaltung: Doppelimplementierung" und „Logger: verbleibende Datei-I/O im Telegram-Handler" seit Phase A/B CLOSED, siehe Abschnitt 8; Zeile „Downloads nicht aus dem Control Center startbar" seit Phase D mit Architekturentscheidung versehen, siehe Abschnitt 11)
+- `/mnt/128ssd/client_consolidation.txt` (Auftrag Phase A–D), PR #326 (Phase A), PR #327 (Phase B), PR #328 (Phase C)
