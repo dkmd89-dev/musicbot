@@ -128,18 +128,14 @@
         <h3 class="mb-2">🎵 Titel bearbeiten</h3>
         <p class="text-secondary">
           Setzt den Titel für genau einen Track — KEIN automatischer
-          TitleCleaner. Relativen Pfad aus der Track-Liste unten übernehmen
-          (Tooltip beim Überfahren).
+          TitleCleaner. Track aus der Liste wählen (nach Album gruppiert).
         </p>
 
         <div class="row g-2 mb-2">
           <div class="col-md">
-            <input
-              type="text"
-              id="title-edit-rel-path"
-              class="form-control"
-              placeholder="Relativer Pfad (z. B. Artist/Album/Track.m4a)"
-            >
+            <select id="title-edit-track-select" class="form-select">
+              <option value="">Track wählen …</option>
+            </select>
           </div>
 
           <div class="col-md">
@@ -619,6 +615,7 @@
     `;
 
     _populateAlbumPickers(body);
+    _populateTrackPickers(body);
   }
 
   // Album-Picker fuer "Album bearbeiten"/"Albuminterpret bearbeiten"
@@ -667,6 +664,55 @@
     const options = _artistAlbumOptions(body.artist, body);
     _populateAlbumSelect(document.getElementById("album-edit-album-select"), options);
     _populateAlbumSelect(document.getElementById("albumartist-edit-album-select"), options);
+  }
+
+  // Track-Picker fuer "Titel bearbeiten" (Auftrag §6.2 CC-LIB-FINAL): der
+  // Benutzer waehlt einen Track aus dem bestehenden Library-Kontext
+  // (Album-Gruppierung, Trackname) statt einen technischen relativen
+  // Dateipfad manuell einzutippen. KEINE neue Datenquelle - dieselben
+  // body.tracks wie _renderTracksGroupedByAlbum()/_artistDetailTracksByPath
+  // oben, der Options-Wert ist weiterhin relative_path (das erwartet die
+  // bestehende API unveraendert), nur nicht mehr als Freitext sichtbar/
+  // editierbar. Der Server bleibt die eigentliche Schranke
+  // (maintenance_service.py::_title_edit_targets() Containment-Pruefung,
+  // Auftrag §12/CC-LIB-FINAL Phase C) - ein Client-seitiger "Scope Guard"
+  // ist strukturell nicht mehr noetig, da die Auswahl ausschliesslich aus
+  // den bereits geladenen Tracks DIESES Artists gespeist wird.
+  function _artistTrackOptionGroups(body) {
+    const groups = new Map();
+    (body.tracks || []).forEach((t) => {
+      const key = t.album_directory || "Ohne Album";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(t);
+    });
+    const sortedKeys = [...groups.keys()].sort((a, b) => a.localeCompare(b, "de"));
+    return sortedKeys.map((key) => ({
+      label: key,
+      options: groups.get(key).slice().sort((a, b) => {
+        const aNum = (typeof a.track_number === "number") ? a.track_number : 9999;
+        const bNum = (typeof b.track_number === "number") ? b.track_number : 9999;
+        if (aNum !== bNum) return aNum - bNum;
+        return (a.title || a.filename).localeCompare(b.title || b.filename, "de");
+      }).map((t) => ({
+        value: t.relative_path,
+        label: (t.track_number ? `${t.track_number}. ` : "") + (t.title || t.filename),
+      })),
+    }));
+  }
+
+  function _populateTrackSelect(selectEl, groups) {
+    const previous = selectEl.value;
+    selectEl.innerHTML = '<option value="">Track wählen …</option>' + groups.map((g) => `
+      <optgroup label="${_escapeHtml(g.label)}">
+        ${g.options.map((o) => `<option value="${_escapeHtml(o.value)}">${_escapeHtml(o.label)}</option>`).join("")}
+      </optgroup>
+    `).join("");
+    if (groups.some((g) => g.options.some((o) => o.value === previous))) selectEl.value = previous;
+  }
+
+  function _populateTrackPickers(body) {
+    const groups = _artistTrackOptionGroups(body);
+    _populateTrackSelect(document.getElementById("title-edit-track-select"), groups);
   }
 
   function loadArtistDetail() {
@@ -810,25 +856,28 @@
   document.getElementById("artist-edit-execute-btn").addEventListener("click", executeArtistEdit);
 
   // -- Titel bearbeiten -----------------------------------------------------
+  //
+  // Auftrag §6.2 CC-LIB-FINAL: kein manuell einzutippender technischer
+  // relativer Dateipfad mehr - der Track kommt aus dem bestehenden
+  // Library-Kontext (title-edit-track-select, siehe
+  // _artistTrackOptionGroups()/_populateTrackPickers() oben). Der
+  // Options-Wert bleibt intern relative_path (unveraendertes API-
+  // Vertrag), die Anzeige (Auswahlliste + Bestaetigungsdialog) zeigt
+  // ausschliesslich Tracknamen/Album-Kontext. Der Server bleibt die
+  // eigentliche Schranke (maintenance_service.py::_title_edit_targets()
+  // Containment-Pruefung) - kein Client-seitiger Scope-Guard mehr noetig,
+  // da die Auswahl strukturell nur Tracks dieses Artists enthaelt.
 
-  // UX-Scope-Guard (KEINE Sicherheitsgrenze - services/library_repair/
-  // executor.py::safety_check() bleibt die tatsaechliche Schranke):
-  // verhindert, dass aus Versehen ein rel_path außerhalb des aktuellen
-  // Artist-Ordners eingetragen wird - der Artist-Kontext dieser Seite
-  // soll fuer alle drei Aktionen gelten (Auftrag §12).
-  function _titleEditRelPathInScope(artist, relPath) {
-    return relPath.startsWith(`${artist}/`);
+  function _titleEditTrackLabel(relPath) {
+    const t = _artistDetailTracksByPath[relPath];
+    return t ? (t.title || t.filename) : relPath;
   }
 
   async function loadTitleEditPreview() {
     const artist = currentArtistFromPath();
-    const relPath = document.getElementById("title-edit-rel-path").value.trim();
+    const relPath = document.getElementById("title-edit-track-select").value;
     const newTitle = document.getElementById("title-edit-new-title").value.trim();
-    if (!relPath || !newTitle) { window.alert("Bitte relativen Pfad und neuen Titel eingeben."); return; }
-    if (!_titleEditRelPathInScope(artist, relPath)) {
-      window.alert(`Relativer Pfad muss innerhalb des Artist-Ordners "${artist}" liegen (z. B. "${artist}/Album/Track.m4a").`);
-      return;
-    }
+    if (!relPath || !newTitle) { window.alert("Bitte Track wählen und neuen Titel eingeben."); return; }
     document.getElementById("title-edit-execute-btn").disabled = true;
     document.getElementById("title-edit-result-content").innerHTML = "";
     const params = new URLSearchParams({ artist, rel_path: relPath, new_title: newTitle }).toString();
@@ -841,12 +890,11 @@
 
   async function executeTitleEdit() {
     const artist = currentArtistFromPath();
-    const relPath = document.getElementById("title-edit-rel-path").value.trim();
+    const relPath = document.getElementById("title-edit-track-select").value;
     const newTitle = document.getElementById("title-edit-new-title").value.trim();
     if (!relPath || !newTitle) return;
-    if (!_titleEditRelPathInScope(artist, relPath)) return;
     const confirmed = window.confirm(
-      `Titel für "${relPath}" wirklich zu "${newTitle}" ändern?\n\n` +
+      `Titel für "${_titleEditTrackLabel(relPath)}" wirklich zu "${newTitle}" ändern?\n\n` +
       `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
       `aber es wird tatsächlich eine Datei in der Library verändert.`
     );
@@ -882,7 +930,7 @@
 
   document.getElementById("title-edit-preview-btn").addEventListener("click", loadTitleEditPreview);
   document.getElementById("title-edit-execute-btn").addEventListener("click", executeTitleEdit);
-  ["title-edit-rel-path", "title-edit-new-title"].forEach((id) => {
+  ["title-edit-track-select", "title-edit-new-title"].forEach((id) => {
     document.getElementById(id).addEventListener("input", () => {
       document.getElementById("title-edit-execute-btn").disabled = true;
     });
@@ -1749,9 +1797,9 @@
     const t = _trackDrawerCurrentTrack;
     closeTrackDrawer();
     _openMetadataEditPanel();
-    const relInput = document.getElementById("title-edit-rel-path");
+    const trackSelect = document.getElementById("title-edit-track-select");
     const titleInput = document.getElementById("title-edit-new-title");
-    relInput.value = t.relative_path;
+    trackSelect.value = t.relative_path;
     titleInput.value = t.title || "";
     document.getElementById("title-edit-execute-btn").disabled = true;
     titleInput.scrollIntoView({ block: "center" });
