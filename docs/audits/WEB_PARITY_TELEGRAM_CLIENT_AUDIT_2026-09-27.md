@@ -1,7 +1,7 @@
 # Web-Parität und „Telegram als Client" — Audit
 
-**Datum:** 2026-09-27 (Ersterstellung 08:00 Uhr, PR #316; verifiziert und ergänzt 2026-09-27 nachmittags nach CC-LIB-FINAL, siehe Abschnitt 7)
-**Status:** 🟡 ANALYSIS COMPLETE — DECISION PENDING (keine Implementierung, reines Dokument)
+**Datum:** 2026-09-27 (Ersterstellung 08:00 Uhr, PR #316; verifiziert und ergänzt 2026-09-27 nachmittags nach CC-LIB-FINAL, siehe Abschnitt 7; erneut aktualisiert 2026-09-27 abends nach Client-Consolidation-Phase A/B, siehe Abschnitt 8)
+**Status:** 🟡 ANALYSIS COMPLETE — DECISION PENDING (keine Implementierung, reines Dokument; zwei zuvor offene Doppelimplementierungs-Punkte inzwischen umgesetzt, siehe Abschnitt 8)
 **Auftrag (Nutzer, 2026-09-27):** Das Control Center (CC) soll vollständig unabhängig von Telegram werden; Telegram ist am Ende nur noch ein Client neben dem Web.
 **Vorgehen:** CLAUDE.md §3.A — Ist-Zustand → Verantwortlichkeiten → Zielgrenzen → kleinster Schritt.
 **Ablösung:** Die Matrix in `CC-AC-10A_ADMIN_INVENTORY_ARCHITECTURE_CONTRACT_2026-09-22.md` („🔴 Telegram-only" für User-Verwaltung, Backups, Restart, Maintenance) ist durch CC-AC-10B/C/D überholt; dieses Dokument hat Vorrang.
@@ -41,10 +41,10 @@ Legende: ✅ geteilte `services/`-Logik, im CC erreichbar · 🟠 im CC vorhande
 | 💾 Backup-Verwaltung | `services/backup_admin.py` (nur CC); `handlers/admin/backup_handler.py` hat **eigene** tar-/Rotations-Logik | `admin/backups*` | 🟠 |
 | 🔄 Bot neu starten | `utils/bot_restart_trigger.py` | `admin/system/restart` | ✅ |
 | 🛠️ Wartungsmodus | `services/bot_maintenance.py` (geteilt) | `admin/maintenance` | ✅ (wirksam seit #313) |
-| 👥 Benutzerverwaltung | `services/user_admin.py` + `services/user_data.py::save_user_data` (nur CC); `handlers/admin/user_management_handler.py` hat **eigene** Mutations-/Owner-Guard-/Schreiblogik (`_save_users`) | `admin/users*` | 🟠 |
+| 👥 Benutzerverwaltung | `services/user_admin.py` + `services/user_data.py::update_user_data()` (prozessübergreifend `fcntl.flock`-gesperrter Read-Modify-Write-Zyklus); Telegram (`UserManagementHandler._update_users()`) und CC (`admin.py`, alle 5 mutierenden Endpunkte) nutzen ausschließlich diesen Zyklus, keine eigene Mutations-/Owner-Guard-/Schreiblogik mehr | `admin/users*` | ✅ (seit Phase A, PR #326, siehe Abschnitt 8) |
 | 📊 System-Status | `services/system_status.py` (beide) | `admin/system/status` | ✅ |
 | 📄 System-Logs | `services/logs/*` | `logs`, `admin/logger/files*` | ✅ |
-| 📈 Logger-Verwaltung | `services/logger_admin.py` (seit CC-LOGGER-L7 teilweise geteilt); `enhanced_logger_menu_handler.py` schreibt `module_logger_config.json` noch selbst (`_save_module_configs`) | `admin/logger/config`, `runtime-status`, `apply`, `files*` | ✅ 🟠; globales Level, Modul-Statistiken, Handler-Verwaltung 🟣 (DEFER) |
+| 📈 Logger-Verwaltung | `services/logger_admin.py` (seit CC-LOGGER-L7/Phase B vollständig geteilt); `enhanced_logger_menu_handler.py` liest/schreibt `module_logger_config.json` seit Phase B (PR #327) nur noch über `read_logger_config()`/`atomic_write_json()`, keine eigene Datei-I/O mehr | `admin/logger/config`, `runtime-status`, `apply`, `files*` | ✅; globales Level, Modul-Statistiken, Handler-Verwaltung weiterhin 🟣 (DEFER, Findings 435/436 unverändert, kein Doppelimplementierungsthema) |
 | 🚨 Error-Verwaltung | `handlers/enhanced_error_handler.py` (2190 Z., **kein** `services/`-Import; `ExceptionMonitor` im Bot-Speicher) | keine | 🔴 🟣 🟠 |
 | 🧪 Test-System (Unit/Integration/Performance per Telegram) | `handlers/test_menu_handler.py` | keine | ⚪ |
 | 🎵 Navidrome (Durchsuchen, Suche, Playlists, Favoriten, Zuletzt gespielt, Entdecken, Link-Stats) | `services/clients/navidrome_api.py` (geteilt) | `navidrome/*` (20 Routen: Browse, Suche, Playlists-CRUD, Favoriten, Random, Newest, Scan, Cover) | ✅ 🟡 („Zuletzt gespielt", „Link-Stats" nicht verifiziert) |
@@ -53,6 +53,7 @@ Legende: ✅ geteilte `services/`-Logik, im CC erreichbar · 🟠 im CC vorhande
 ### 2.2 Korrektur früherer Aussagen
 - „User-Verwaltung, Backups, Neustart/Maintenance sind Telegram-only" (CC-AC-10A, 22.09.) ist **überholt**: alle vier existieren im CC. Das Problem hat sich verschoben — nicht „fehlt im Web", sondern „zwei Implementierungen" (🟠).
 - „Route existiert" ≠ „Parität": bei Wartungsmodus existierte die Route, war aber wirkungslos (P2, behoben in #313).
+- Von den in 2.3 B gelisteten „zwei Implementierungen"-Fällen (🟠) sind Benutzerverwaltung und Logger-Konfiguration seit Phase A/B geschlossen (→ ✅, Abschnitt 8); Backups bleibt 🟠.
 
 ### 2.3 Vier Arten von Lücken
 
@@ -60,10 +61,10 @@ Legende: ✅ geteilte `services/`-Logik, im CC erreichbar · 🟠 im CC vorhande
 Familie (`services/family/*`) und Duplikat-Check (read-only Subprozess `duplicate_runner`, gleiches Muster wie die Genre-Revalidierung als Job). Reine CC-Anbindung nach dem etablierten Muster (dünner Router + Seite), kein Architekturproblem.
 
 **B — Telegram hat Fachlogik selbst (Doppelimplementierung, Drift-Risiko)**
-Sicherheitsrelevant und der wichtigste Punkt für „Telegram nur noch Client":
-1. **Benutzerverwaltung:** Owner-Guard, Rollen-/Rechteänderung und der atomare Schreibvorgang auf `data/user_data.json` existieren zweimal (`services/user_admin.py` + `save_user_data` für das CC, `_save_users` im Telegram-Handler). Beide schreiben atomar (tmp + rename), aber als read-modify-write ohne gegenseitigen Schutz (kein gemeinsames Lock in `services/user_data.py`).
-2. **Backups:** `services/backup_admin.py` (CC) vs. eigene tar-/Rotationslogik in `backup_handler.py`.
-3. **Logger-Konfiguration:** `enhanced_logger_menu_handler.py` liest/schreibt `module_logger_config.json` in Teilen weiterhin selbst.
+Sicherheitsrelevant und der wichtigste Punkt für „Telegram nur noch Client". Von ursprünglich sechs Punkten sind zwei seit Phase A/B geschlossen (Abschnitt 8):
+1. ~~**Benutzerverwaltung**~~ — **CLOSED (Phase A, PR #326):** Owner-Guard, Rollen-/Rechteänderung und der Schreibvorgang auf `data/user_data.json` laufen jetzt ausschließlich über `services/user_data.py::update_user_data()`, das den kompletten Read-Modify-Write-Zyklus prozessübergreifend per `fcntl.flock` sperrt. Kein separater Telegram-Schreibpfad mehr.
+2. **Backups:** `services/backup_admin.py` (CC) vs. eigene tar-/Rotationslogik in `backup_handler.py`. Weiterhin offen (Backlog 2).
+3. ~~**Logger-Konfiguration**~~ — **CLOSED (Phase B, PR #327):** `enhanced_logger_menu_handler.py` liest/schreibt `module_logger_config.json` nur noch über `services/logger_admin.py::read_logger_config()`/`atomic_write_json()`. Kein gemeinsames Lock ergänzt (bewusst — kein hochfrequenter, konkurrierender Schreibpfad identifiziert); globales Log-Level und Modul-Statistiken/Introspektion bleiben ein separates Cross-Prozess-/Schema-Thema (Findings 435/436, unverändert 🟣 DEFER).
 4. **Duplikat-Cache leeren:** `duplicate_handler.py` löscht die Cache-Dateien selbst (`unlink()`) und leert den In-Memory-Cache — Fachlogik im Handler und zugleich Cross-Prozess-Zustand (ein Löschen der Dateien aus dem CC ließe den Speicher des Bots unberührt). Betrifft **keine Audio-Dateien**; das Löschen echter Duplikate ist weiterhin nur per CLI (`--execute --confirm-production-execute`), die Telegram-Anbindung ist ein bewusst zurückgestellter Punkt (FINDINGS_INDEX).
 5. **Error-Verwaltung:** 2190 Zeilen Fachlogik + Zustand in `handlers/`.
 6. **Downloads:** die gesamte Orchestrierung liegt in `klassen/download_handler.py`, das bewusst Telegram-Objekte hält (CLAUDE.md §4, „Sonderfall").
@@ -111,9 +112,9 @@ Leitregeln (aus den bisherigen Entscheidungen abgeleitet, nicht neu erfunden):
 
 | # | Thema | Art | Prio | Kleinster Schritt | Abhängigkeit |
 |---|---|---|---|---|---|
-| 1 | User-Verwaltung: Telegram nutzt `services/user_admin` + `save_user_data` | B | P2 | Characterization der Telegram-Rollen-/Owner-Guard-Tests prüfen, dann Handler delegiert; ein Schreibpfad | — |
-| 2 | Backups: Telegram nutzt `services/backup_admin` | B | P3 | analog 1 | — |
-| 3 | Logger: verbleibende Datei-I/O im Telegram-Handler auf `logger_admin` | B | P3 | `_load/_save_module_configs` ersetzen | — |
+| 1 | ~~User-Verwaltung: Telegram nutzt `services/user_admin` + `save_user_data`~~ | B | — | ✅ **DONE (Phase A, PR #326)** — siehe Abschnitt 8 | — |
+| 2 | Backups: Telegram nutzt `services/backup_admin` | B | P3 | analog 1 (jetzt: analog dem in Abschnitt 8 dokumentierten Muster) | — |
+| 3 | ~~Logger: verbleibende Datei-I/O im Telegram-Handler auf `logger_admin`~~ | B | — | ✅ **DONE (Phase B, PR #327)** — siehe Abschnitt 8 | — |
 | 4a | Duplikat-Check im CC (read-only Job über `run_duplicate_scan`) | A | P2 | dünner Job-Router + Ergebnisdarstellung, Muster wie `genre-revalidation-preview` | — |
 | 4b | Duplikat-Verwaltung (Statistik, Cache leeren) | B + C | P3 | Cache-Löschlogik aus dem Handler nach `services/duplicate`; CC erst nach Entscheidung 1 | Entscheidung 1 |
 | 5 | Cross-Prozess-Snapshot (Error-Verwaltung E1, Logger-Zähler) | C | P2 | nach Entscheidung 1: `ExceptionMonitor` schreibt Snapshot, CC liest | Entscheidung 1 |
@@ -123,7 +124,7 @@ Leitregeln (aus den bisherigen Entscheidungen abgeleitet, nicht neu erfunden):
 | 9 | Login ohne Telegram | D | offen | nach Entscheidung 3 | Entscheidung 3 |
 | 10 | Test-System | ⚪ | offen | nach Entscheidung 5 | Entscheidung 5 |
 
-**Empfohlene Reihenfolge:** 1 → 2 → 3 (Doppelimplementierungen, kein neues Feature, bestehende Tests als Netz) → 4a (schnell, risikoarm) → Entscheidung 1 → 5 → 4b → 8; 6 erst nach Entscheidungen 1 und 2. Layout B der Health-Seite ist davon unabhängig (reine UI).
+**Empfohlene Reihenfolge:** 1 und 3 sind erledigt (Phase A/B, siehe Abschnitt 8); verbleibend: 2 (Backups, analoge Doppelimplementierung, kein neues Feature, bestehende Tests als Netz) → 4a (schnell, risikoarm) → Entscheidung 1 → 5 → 4b → 8; 6 erst nach Entscheidungen 1 und 2. Layout B der Health-Seite ist davon unabhängig (reine UI).
 
 Reprocessing (früher Punkt 10 hier) ist seit CC-LIB-FINAL kein Backlog-Punkt mehr — L2 wurde vollständig entfernt, siehe Abschnitt 7.
 
@@ -190,10 +191,70 @@ entfallenen Reprocessing-Punkt und den neuen Lyrics-Befund oben.
 
 ---
 
-## 8. Referenzen
+## 8. Verifikation nach Client Consolidation Phase A/B (2026-09-27, abends)
+
+Nach Freigabe von Phase A und Phase B (`/mnt/128ssd/client_consolidation.txt`)
+wurde diese Matrix gegen den **aktuellen Code** neu geprüft (nicht aus den
+PR-Beschreibungen übernommen), wie in Abschnitt 1 gefordert.
+
+| PR | Inhalt | Verifikation | Wirkung auf dieses Audit |
+|---|---|---|---|
+| #326 Phase A | `services/user_data.py::update_user_data(mutator)` neu: sperrt Load→Mutator→Save prozessübergreifend per `fcntl.flock` auf `<path>.lock`. `handlers/admin/user_management_handler.py::_save_users()`/`_update_users()` delegieren vollständig; `control_center/routers/admin.py` nutzt für alle 5 mutierenden Endpunkte ausschließlich `update_user_data()` (nur GET liest weiterhin per `load_user_data()`, unlocked, wie in Abschnitt 3 Leitregel 1 vorgesehen). | Code gelesen: `handlers/admin/user_management_handler.py:56-97` (Delegation bestätigt), `services/user_data.py` (`update_user_data`, `fcntl.flock`, `LOCK_EX` bestätigt), `control_center/routers/admin.py` (`update_user_data`-Import + 5 Aufrufstellen bestätigt, `load_user_data` nur bei einem reinen GET). | Zeile „👥 Benutzerverwaltung" in 2.1: 🟠 → ✅. Abschnitt 2.3 B Punkt 1 CLOSED. Backlog Punkt 1 DONE. |
+| #327 Phase B | `services/logger_admin.py::atomic_write_json()` öffentlich gemacht. `handlers/enhanced_logger_menu_handler.py::ModuleLoggerManager._load_module_configs()`/`_save_module_configs()` nutzen jetzt `read_logger_config()`/`atomic_write_json()` statt eigenem `json.load`/`json.dump`. `data/module_logger_config.json`: 42 → 113 Module (71 zuvor fehlende Module nachgetragen, u. a. alle 11 `control_center.*`-Module). | Code gelesen: `handlers/enhanced_logger_menu_handler.py:64-161` (`read_logger_config`/`atomic_write_json`-Aufrufe bestätigt, kein `json.load`/`json.dump` mehr). Datei geprüft: `data/module_logger_config.json` enthält aktuell 113 Einträge (bestätigt per Skript). | Zeile „📈 Logger-Verwaltung" in 2.1: 🟠-Anteil entfällt → ✅ (🟣 DEFER für globales Level/Introspektion bleibt unverändert, siehe Findings 435/436). Abschnitt 2.3 B Punkt 3 CLOSED. Backlog Punkt 3 DONE. |
+
+**Bewusste Verhaltensänderung durch Phase A** (dokumentiert in PR #326 und
+`docs/FINDINGS_INDEX.md`): `process_new_navidrome_user()` überschreibt einen
+zwischen Telegram-Schritt 1 und 2 parallel angelegten User nicht mehr still,
+sondern lehnt ihn über `UserAlreadyExistsError` ab. Betrifft nur den
+Telegram-eigenen Zwei-Schritt-Dialog, keine CC-Route — keine Matrixänderung
+über die Zeile selbst hinaus.
+
+**Nicht durch Phase A/B verändert (verifiziert, nicht nur angenommen):**
+Backups (`backup_handler.py` hat weiterhin eigene tar-/Rotationslogik, war
+nicht Teil von Phase A/B), Duplikat-Cache, Error-Verwaltung, Downloads,
+Familie, Test-System, Identität — alle Zeilen aus 2.1 mit 🔴/🟣/⚪ außerhalb
+User-Verwaltung/Logger sind unverändert gültig. Findings 435/436 (globales
+Log-Level, Modul-Statistiken/Introspektion) wurden gegen den Code erneut
+geprüft und bleiben unverändert OPEN (DEFER) — Phase B hat ausschließlich die
+Datei-I/O migriert, keine neue Cross-Prozess-Fähigkeit geschaffen.
+
+**Ergebnis:** Zwei der sechs unter 2.3 B geführten Doppelimplementierungen
+sind geschlossen. Die übrigen vier (Backups, Duplikat-Cache, Error-
+Verwaltung, Downloads) sowie alle fünf Nutzerentscheidungen aus Abschnitt 4
+bleiben unverändert offen — der Gesamtstatus des Dokuments bleibt daher
+🟡 ANALYSIS COMPLETE — DECISION PENDING.
+
+---
+
+## 9. Verifikation nach Client Consolidation Phase C (2026-09-28)
+
+Phase C (`/mnt/128ssd/client_consolidation.txt`) ist eine **reine
+Dokumentations-Phase** — kein Code-Change. Sie hat die Matrix in
+Abschnitt 2.1 gegen den **aktuellen Code** (nicht aus PR-Beschreibungen)
+neu verifiziert.
+
+| Zeile in 2.1 | Vorher | Nachher | Beleg |
+|---|---|---|---|
+| 👥 Benutzerverwaltung | 🟠 | ✅ | `handlers/admin/user_management_handler.py::_save_users()`/`_update_users()` delegieren vollständig; `services/user_data.py::update_user_data()` sperrt per `fcntl.flock` (LOCK_EX); `control_center/routers/admin.py` nutzt sie an allen 5 mutierenden Endpunkten |
+| 📈 Logger-Verwaltung | 🟠 | ✅ | `handlers/enhanced_logger_menu_handler.py::ModuleLoggerManager._load/_save_module_configs()` nutzen `read_logger_config()`/`atomic_write_json()`; `data/module_logger_config.json` enthält 113 Module (Backfill aus Phase B bestätigt) |
+
+**Nicht betroffen:** Backups, Duplikat-Cache, Error-Verwaltung, Downloads
+bleiben in Abschnitt 2.3 B und im Backlog unverändert offen. Alle fünf
+Nutzerentscheidungen aus Abschnitt 4 bleiben unverändert offen.
+
+**Ergebnis:** Der Gesamtstatus des Audits bleibt
+🟡 ANALYSIS COMPLETE — DECISION PENDING, da zwei weitere
+Doppelimplementierungen aus der ursprünglichen Sechs-Liste (Backups,
+Duplikat-Cache, Error-Verwaltung, Downloads) noch nicht abgearbeitet sind
+und keine der fünf Nutzerentscheidungen getroffen wurde.
+
+---
+
+## 10. Referenzen
 - `docs/audits/CC-AC-10A…10D_*_2026-09-22.md` (historisch), `CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md`
 - `docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md` (Snapshot-Präzedenz)
 - `docs/audits/ERROR_ADMINISTRATION_ARCHITECTURE_ANALYSIS_2026-09-27.md` (Varianten A–E)
 - `docs/audits/CC-LIB-FINAL_PHASE_C_SERVICE_LAYER_AUDIT_2026-09-27.md` (Service-Layer-Vollständigkeit Library/Metadata)
 - `docs/LIBRARY_REPAIR.md` §17 (Genre-Mapping im CC), §18 (Genre revalidieren im CC)
-- `docs/FINDINGS_INDEX.md` (Zeile zu „Manual Metadata Editing v1/v2" bereits als OBSOLETE durch CC-LIB-FINAL geführt)
+- `docs/FINDINGS_INDEX.md` (Zeile zu „Manual Metadata Editing v1/v2" bereits als OBSOLETE durch CC-LIB-FINAL geführt; Zeilen „User-Verwaltung: Doppelimplementierung" und „Logger: verbleibende Datei-I/O im Telegram-Handler" seit Phase A/B CLOSED, siehe Abschnitt 8)
+- `/mnt/128ssd/client_consolidation.txt` (Auftrag Phase A–D), PR #326 (Phase A), PR #327 (Phase B)
