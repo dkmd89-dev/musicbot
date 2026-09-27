@@ -55,8 +55,9 @@ Abschnitt „Implementierung".
 | **CC-LOGGER-L6 (Logger-Verwaltungs-UI)** — UI-only, keine Backend-Aenderung. Neue Seite `/logger` (eigenes Template + eigene JS-Datei, Stack-Pattern wie /statistics) mit vier Panels: Runtime-Status (KPI + Tabelle, Zustaende available/missing/corrupt), Persistierte Konfiguration (Tabelle, Semantik "wirksam beim naechsten Start"), Desired-vs-Actual-Diff (berechnet aus State, kein neuer API-Call), Apply (einziger POST /api/v1/admin/logger/apply-Call, Antwort bestimmt die Darstellung: unverified/clear/blocked/config_missing/429/403). Rate-Limit-Countdown aus Retry-After-Header. Wiederverwendet: common.js-Helper (apiUrl/checkAuth/_loadInto/_escapeHtml/showOnly), common.css-Klassen, Tabler-Komponenten. Keine Aenderung an common.js/common.css. Kein Config-PATCH-UI (bewusst ausserhalb L6). Details: `docs/audits/CC-LOGGER-L6_LOGGER_UI_2026-09-23.md`. | `docs/audits/CC-LOGGER-L6_LOGGER_UI_2026-09-23.md` | 1 neue Seite, 1 neue JS-Datei, 4 Panels, 6 neue UI-Tests; 218 + 560 passed, 0 Regressionen |
 | **CC-LOGGER-L7.1 (Setup-Module-Logging Config-Respekt)** — behebt einen Folgebefund aus dem L6.1/L6.2-Browser-Test. `logger.py::setup_module_logging()` hat `level` hart gesetzt und IMMER einen FileHandler + ConsoleHandler angehaengt, unabhaengig von der Config. Zwei Aufrufer (`EnhancedMetadataProcessor`, `EnhancedLoggerMenuHandler`) haben dadurch die Config-Werte ueberschrieben, wenn sie NACH dem `_load_module_configs()`-Lauf konstruiert wurden. Fix: zwei additive Parameter (`enable_file_handler`, `enable_console_handler`, Default True); Config-Aufloesung in beiden Aufrufern ueber `read_logger_config()`; Fallback-Werte identisch zum bisherigen harten Aufruf. Rotation (EnhancedRotatingFileHandler, 2 MB x 3) bleibt unveraendert. 9 neue Tests. Details: `docs/audits/CC-LOGGER-L7.1_SETUP_MODULE_LOGGING_CONFIG_2026-09-27.md`. | `docs/audits/CC-LOGGER-L7.1_SETUP_MODULE_LOGGING_CONFIG_2026-09-27.md` | 1 Kernfunktion + 2 Aufrufer + 9 neue Tests, 0 Regressionen |
 | **CC-LOGGER-L7 (Telegram-Migration)** — migriert `EnhancedLoggerMenuHandler` (Telegram) auf dieselbe Fachlogik wie Control Center statt eigener Parallelimplementierung. `toggle_module`/`set_module_level`/`enable_all_modules`/`disable_all_modules` nutzen jetzt `services/logger_admin.py::update_logger_config()` (statt eigenem, nicht-atomarem Save-Pfad); `show_log_file_detail`/`show_log_files_list`/`show_log_files_stats` nutzen `get_log_file()`/`list_log_files()`/`get_log_file_stats()`. **Verifizierter Vorbefund:** 54 von 75 real aktiven Modulnamen fehlten in `data/module_logger_config.json` (41 real reaktivierbar, mehrheitlich P0). **Nutzerentscheidung:** neue, nicht per HTTP exponierte `ensure_module_config_entry()` schließt die Lücke, ohne die L4-Entscheidung für die öffentliche API aufzuweichen. Bewusste Verhaltensänderungen: korrekte statt naive Level-Zählung, konsolidierte Traversal-Fehlermeldung, Sortierung nach mtime statt Größe, rotierte Logs jetzt sichtbar, erweiterte Datei-Statistik. Kategorie-D-Funktionen (globales Log-Level, Modul-/Fehler-Statistiken, volle loggerDict-Introspektion, In-Process-Reload, Cleanup) bewusst nicht migriert, als OPEN-Findings dokumentiert. 2 vorbestehende Defekte gefunden (kaputte Cleanup-Callback-Verdrahtung, tote `logger_search_module`-Route). Details: `docs/audits/CC-LOGGER-L7_TELEGRAM_MIGRATION_2026-09-26.md`. | `docs/audits/CC-LOGGER-L7_TELEGRAM_MIGRATION_2026-09-26.md` | 1 neue App-Layer-Funktion (`ensure_module_config_entry`), 7 migrierte Telegram-Funktionen, 22 neue Tests über 4 Testdateien (2 davon neu); 245 + 336 passed (thematisch), volle Suite 5633 passed / 0 failed |
-| **CC-LOGGER-L6.1 (File Handler Control)** — UI-only-Nachtrag zu L6 (nicht L8, das bleibt Parity-Audit). Spalte „File" in Panel 2 von `/logger` schaltet `file_handler` bereits persistierter Module über das bestehende `PATCH /api/v1/admin/logger/config`; wirksam erst nach Apply/Restart (L5), kein Live-Control. Kein neuer Endpoint, keine Backend-Änderung, `ensure_module_config_entry()` unverändert. | Branch `feat/cc-logger-l6-1-file-handler-control` (noch nicht gemergt) | 11 neue Tests; 680 passed (thematisch), volle Suite steht beim Nutzer aus. Nachgezogener P3-Fix: Diff-Panel erkennt `EnhancedRotatingFileHandler` jetzt als Log-Datei (+5 node-Tests, 685 passed thematisch). Neuer OPEN-Befund (P3): `setup_module_logging()` übersteuert persistiertes `file_handler` |
-| **CC-LOGGER-L6.2 (Level Control)** — UI-only-Nachtrag zu L6/L6.1. Spalte „Level" in Panel 2 von `/logger` ist eine Auswahl mit exakt `ALLOWED_LOG_LEVELS` (Reihenfolge wie Telegram), sendet über das bestehende `PATCH /api/v1/admin/logger/config` nur `{level}`; wirksam erst nach Apply/Restart. Kein neuer Endpoint, keine Backend-Änderung. PATCH-Ablauf mit L6.1 gemeinsam (`_loggerPatchModuleConfig()`). | Branch `feat/cc-logger-l6-1-file-handler-control` (noch nicht gemergt) | 27 neue Tests; 712 passed (thematisch), volle Suite steht beim Nutzer aus. Bestehender OPEN-Befund `setup_module_logging()`-Übersteuerung um `level` ergänzt |
+| **CC-LOGGER-L6.1 (File Handler Control)** — UI-only-Nachtrag zu L6 (nicht L8, das bleibt Parity-Audit). Spalte „File" in Panel 2 von `/logger` schaltet `file_handler` bereits persistierter Module über das bestehende `PATCH /api/v1/admin/logger/config`; wirksam erst nach Apply/Restart (L5), kein Live-Control. Kein neuer Endpoint, keine Backend-Änderung, `ensure_module_config_entry()` unverändert. | PR #307 (`dc2886e`, Branch `feat/cc-logger-l6-1-file-handler-control`) | 11 neue Tests; 680 passed (thematisch), volle Suite steht beim Nutzer aus. Nachgezogener P3-Fix: Diff-Panel erkennt `EnhancedRotatingFileHandler` jetzt als Log-Datei (+5 node-Tests, 685 passed thematisch). Neuer Befund (P3): `setup_module_logging()` übersteuert persistiertes `file_handler` — inzwischen durch L7.1 (PR #308) geschlossen |
+| **CC-LOGGER-L6.2 (Level Control)** — UI-only-Nachtrag zu L6/L6.1. Spalte „Level" in Panel 2 von `/logger` ist eine Auswahl mit exakt `ALLOWED_LOG_LEVELS` (Reihenfolge wie Telegram), sendet über das bestehende `PATCH /api/v1/admin/logger/config` nur `{level}`; wirksam erst nach Apply/Restart. Kein neuer Endpoint, keine Backend-Änderung. PATCH-Ablauf mit L6.1 gemeinsam (`_loggerPatchModuleConfig()`). | PR #307 (`dc2886e`, Branch `feat/cc-logger-l6-1-file-handler-control`) | 27 neue Tests; 712 passed (thematisch), volle Suite steht beim Nutzer aus. Bestehender Befund `setup_module_logging()`-Übersteuerung um `level` ergänzt — inzwischen durch L7.1 (PR #308) geschlossen |
+| **Findings-Closure (#17, #4/#5/#6, #31/#32) + Doku-Konsistenz-Audit** — atomare Persistenz Lyrics/Play-History; einheitliche Repair-Ergebnissemantik (Core/Telegram/CC-Job/UI, neuer Run-Status `UNRESOLVED`, Exit-Code ≠ 0 nie mehr SUCCESS); Logger-Cleanup (nur rotierte Backups) + tote Route entfernt; ADR-0001/0002-Status, `resolve_duplicates.py`-Kommentar, Findings-Index-Lifecycle bereinigt. Details: `docs/FINDINGS_INDEX.md`, `docs/LIBRARY_REPAIR.md` („Einheitliche Ergebnissemantik"). | Branches `fix/findings-17-atomic-persistence`, `fix/findings-4-5-6-repair-result-semantics`, `fix/findings-31-32-logger-callbacks`, `docs/findings-consistency-audit` (noch nicht gemergt) | 3 neue Testdateien (12 + 56 + 37 Tests); thematisch 293 / 1387 / 641 passed; volle Suite steht beim Nutzer aus |
 ---
 
 ## 3. Recent Major Changes (seit v10-Freeze)
@@ -153,26 +154,6 @@ Abschnitt „Implementierung".
   `test_logger_menu_path_traversal.py`) + 529 passed (`pytest tests/
   -k control_center`). Keine Telegram-Änderung.
   Details: `docs/audits/CC_LOGGER_L2_READ_API_2026-09-23.md`.
----
-
-## 4. Technical Debt — Snapshot
-
-*(Platzhalter — wird beim v11-Freeze befüllt. Laufender Stand aller
-offenen/zurückgestellten Punkte: `docs/FINDINGS_INDEX.md`.)*
-
----
-
-## 5. Security-Baseline
-
-*(Platzhalter — wird beim v11-Freeze befüllt.)*
-
----
-
-## 6. Architecture Freeze
-
-*(Platzhalter — Freeze-Gate-Audit noch nicht durchgeführt, kein
-GO/NO-GO-Verdikt für v11.)*
-
 - **CC-LOGGER-L3 (Runtime-Control Architecture Decision):** reine
   Analyse-Phase, kein Code. Erstes echtes Architecture Decision Record
   für das Control Center. Zentrale Befunde: (1) es existiert heute
@@ -471,4 +452,43 @@ GO/NO-GO-Verdikt für v11.)*
   wirkungslos (bestehender OPEN-Befund ergänzt). Details:
   `docs/audits/CC-LOGGER-L6.2_LEVEL_CONTROL_2026-09-27.md`.
 
+- **Findings-Closure + Dokumentations-Konsistenz-Audit (2026-09-27):**
+  alle 32 zu diesem Zeitpunkt offenen Zeilen des Findings-Index einzeln
+  gegen den Code geprüft (Details und Einzelbelege ausschließlich in
+  `docs/FINDINGS_INDEX.md`). Code-Fixes: atomare Persistenz für
+  `LyricsCache.store()`/`PlayHistoryRepository.save()` (INV-02);
+  einheitliche Repair-Ergebnissemantik SUCCESS/UNRESOLVED/SKIPPED/FAILED
+  über Core (`repair_service._overall_status()`/`_changed_files()`,
+  Exit-Code wird nicht mehr durch Journal-Einträge verdeckt, neuer
+  Run-Status `UNRESOLVED`), Telegram (`_result_headline()` für
+  SAFE_AUTOMATIC und L2/L3), Control-Center-Job-Ergebnis und UI
+  („geändert" nur noch aus `changed_files`); Logger-Cleanup über neue
+  `services/logger_admin.py::cleanup_rotated_log_files()` (nur rotierte
+  Backups, Vorschau → Bestätigung), tote Route `logger_search_module`
+  entfernt. Doku: ADR-0001/0002 → IMPLEMENTED, veralteter
+  `resolve_duplicates.py`-Kommentar korrigiert, `setup_module_logging()`-
+  Zeile als durch L7.1 geschlossen markiert, Status-Vokabular
+  vereinheitlicht. Error-Administration (CC-AC-10D) als separate
+  Architekturphase analysiert: `docs/audits/ERROR_ADMINISTRATION_ARCHITECTURE_ANALYSIS_2026-09-27.md`
+  (DECISION PENDING). Neue Tests: 12 + 56 + 37 (alle mit
+  Vor-Fix-Diskriminierung). Volle Suite: steht beim Nutzer aus.
 
+---
+
+## 4. Technical Debt — Snapshot
+
+*(Platzhalter — wird beim v11-Freeze befüllt. Laufender Stand aller
+offenen/zurückgestellten Punkte: `docs/FINDINGS_INDEX.md`.)*
+
+---
+
+## 5. Security-Baseline
+
+*(Platzhalter — wird beim v11-Freeze befüllt.)*
+
+---
+
+## 6. Architecture Freeze
+
+*(Platzhalter — Freeze-Gate-Audit noch nicht durchgeführt, kein
+GO/NO-GO-Verdikt für v11.)*

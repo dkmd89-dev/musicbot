@@ -101,12 +101,13 @@ from services.duplicate.execution import (  # noqa: E402
 
 ALLOWED_ROOT = Path("/tmp/musicbot_test/library")
 
-# Read-Only-Produktions-Roots (Auftrag "Freigabe Schritt 3" - Production
-# Read-Only Dry-Run Enablement): AUSSCHLIESSLICH Dry-Run-Scan erlaubt.
-# --execute gegen einen dieser Pfade wird in validate_scan_root()
-# unbedingt und vor jeder anderen Prüfung abgelehnt (siehe dort) - es
-# gibt keinen Codepfad, der Mutation gegen einen ALLOWED_READONLY_ROOTS-
-# Eintrag zulässt. config.py::Config.LIBRARY_DIR zeigt seit dem
+# Read-Only-Produktions-Roots (ursprünglich Production Read-Only Dry-Run
+# Enablement, seit "Freigabe Schritt 3" um einen gezielten Execute-Pilot
+# erweitert): Dry-Run-Scan ist uneingeschränkt erlaubt. --execute gegen
+# einen dieser Pfade ist nur mit dem zusätzlichen, separaten Flag
+# --confirm-production-execute UND nur für ein konkretes Unterverzeichnis
+# (nie für den Root selbst) zulässig - Details und Reihenfolge der
+# Prüfungen in validate_scan_root(). config.py::Config.LIBRARY_DIR zeigt seit dem
 # 2026-09-01-Commit "Konfiguration: library/ Verzeichnis in config.py
 # angepasst" auf /mnt/musik_bilder/library (vormals /mnt/4tb/library).
 ALLOWED_READONLY_ROOTS = [
@@ -134,7 +135,11 @@ class PathSafetyError(Exception):
 def validate_scan_root(
     path: Path, allow_execute: bool = True, production_execute_confirmed: bool = False
 ) -> Path:
-    """Denylist zuerst (Defense-in-Depth), dann Containment-Check.
+    """Allowlist zuerst (Test-Root, dann Read-Only-Produktions-Roots),
+    danach die Denylist als Defense-in-Depth für alle übrigen Pfade. Die
+    Reihenfolge ist zwingend: die Read-Only-Roots liegen selbst unterhalb
+    eines FORBIDDEN_ROOTS-Eintrags (/mnt/musik_bilder/library unter
+    /mnt/musik_bilder) und wären bei Denylist-zuerst nie erreichbar.
 
     `allow_execute` MUSS von main() exakt auf `args.execute` gesetzt
     werden. Liegt der Pfad in ALLOWED_READONLY_ROOTS UND allow_execute

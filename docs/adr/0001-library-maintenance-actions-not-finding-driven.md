@@ -1,5 +1,5 @@
 ---
-status: PROPOSED (Nutzerentscheidung 2026-09-14, noch nicht implementiert)
+status: IMPLEMENTED (ARCH-032 Phase 3, 2026-09-14)
 ---
 
 # ADR-0001: Library-Maintenance-Actions als eigener, nicht Finding-getriebener Flow
@@ -104,3 +104,13 @@ Datei im selben Journal-Lauf sichtbar.
    sollen wie L1, ist eine echte In-Process-Integration in
    `services/library_repair/` konsistenter als drei weitere Subprozess-
    Andockstellen.
+
+## Implementierungsstatus (Nachtrag 2026-09-27)
+
+Umgesetzt mit ARCH-032 Phase 3 (Commit `c6e0a42`, 2026-09-14): eigener,
+nicht Finding-getriebener Maintenance-Flow über
+`services/library_repair/{artist,genre,library_artists,maintenance_service}.py`
+und `handlers/library_maintenance_handler.py`; Run-Tracking gemeinsam mit
+dem Repair-Flow (`kind: "maintenance"`, ADR-0004). Der Status-Header war
+bis 2026-09-27 versehentlich auf PROPOSED stehen geblieben
+(`docs/FINDINGS_INDEX.md`, Doku-Nachpflege-Finding).
