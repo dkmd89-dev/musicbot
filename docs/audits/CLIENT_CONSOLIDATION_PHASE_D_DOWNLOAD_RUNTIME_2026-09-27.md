@@ -2,7 +2,7 @@
 
 **Auftrag:** `/mnt/128ssd/client_consolidation.txt` ("MUSICBOT — client consolidation & NEXT PARITY PHASE").
 **Ziel:** Telegram = Client, Control Center = Client, `services/` = zentrale Fachlogik.
-**Stand dieses Dokuments:** 2026-09-27 (CC-Job-Verdrahtung für Downloads implementiert, CC-UI noch offen).
+**Stand dieses Dokuments:** 2026-09-28 (CC-Job-Verdrahtung für Downloads implementiert, CC-Download-UI (D.11) implementiert und getestet — Commit ausstehend; Cross-Process-Schreibzugriffs-Risiko aus Abschnitt 5.6 bleibt unverändert offen).
 
 ---
 
@@ -18,7 +18,7 @@
 | D.8 | Concurrency-Slot-Mechanismus (Option B) | ✅ IMPLEMENTED | PR #329 (`c27dbf1`), PR #330 (`03965b8`) |
 | D.9 | Telegram-freie Pipeline-Extraktion | ✅ IMPLEMENTED | PR #331 (`e5650bd`) |
 | D.10 | **CC Job-Verdrahtung (Download starten/Status/Cancel)** | ✅ IMPLEMENTED | Abschnitt 5.4 (Commit ausstehend, siehe dort) |
-| D.11 | **CC Download-UI** (Dashboard/Downloads → Download starten → Jobstatus → Fortschritt/Ergebnis → Cancel) | 🔲 OPEN — **nächster Schritt** | Abschnitt 6 |
+| D.11 | **CC Download-UI** (Dashboard/Downloads → Download starten → Jobstatus → Fortschritt/Ergebnis → Cancel) | ✅ IMPLEMENTED | Abschnitt 6, `plans/control-center-download-ui/` |
 | — | Cross-Process-Schreibzugriff Duplicate-/History-Dateien | ⚠️ **RISIKO, NICHT VALIDIERT** | Abschnitt 5.6 |
 
 ---
@@ -109,19 +109,27 @@ Mit 5.5 sind `services/duplicate/detector.py::DuplicateDetector` (Duplikat-Cache
 
 ---
 
-## 6. Nächster Schritt (eindeutig)
+## 6. CC Download-UI (D.11, ✅ IMPLEMENTED, 2026-09-28)
 
-**Nicht mehr Job-Verdrahtung — CC Download-UI:**
+**Umgesetzt** (Plan: `plans/control-center-download-ui/`, vollständig Zero-Ambiguity-gated):
 
 ```
-Dashboard/Downloads
+/downloads (Control Center)
     → Download starten (URL-Eingabe, POST /api/v1/jobs/download)
-    → Jobstatus (Polling GET /api/v1/jobs/download/{job_id})
-    → Fortschritt/Ergebnis (progress/message/result aus JobSchema)
+    → Jobstatus (Polling GET /api/v1/jobs/download/{job_id}, 1s-Intervall)
+    → Fortschritt/Ergebnis (progress/message/result aus JobSchema, 1:1 aus DownloadResultReporter)
     → Cancel (POST /api/v1/jobs/download/{job_id}/cancel)
+    → Verlaufstabelle erweitert um Metadaten-Checkliste (genre_ok/lyrics_ok/cover_ok/mb_ok/loudness_ok)
+    → "🔁 Erneut versuchen" pro Verlaufszeile (Telegram-Parität zu handlers/menu/actions/download.py::handle_download_retry())
 ```
 
-Separat freizugebender Schritt, eigene Tests (`tests/test_control_center_ui.py`-Erweiterung, analog zum bestehenden Downloads-Panel). Die Cross-Process-Schreibzugriffs-Frage (5.6) bleibt unabhängig davon offen und wird durch die UI nicht mitgelöst.
+- `control_center/templates/downloads.html`: Start-Formular-Card ergänzt, Inline-Script entfernt.
+- `control_center/static/pages/downloads.js` (neu): Job-Start/Poll/Cancel, Verlaufs-Rendering inkl. Metadaten-Badges und Retry-Wiring — reiner Client, keine zweite Fachlogik (keine Duplizierung der SSRF-Domain-Allowlist, keine erfundenen Pipeline-Optionen).
+- Kein Backend-/Service-/Schema-Change nötig — alle konsumierten Endpunkte/Felder existierten bereits vollständig aus D.10.
+- Tests: `tests/test_control_center_ui.py` um 14 Tests erweitert (String-Matching gegen ausgeliefertes HTML/JS, identisches Verfahren wie bei allen anderen CC-Seiten — kein Browser-Runtime verfügbar). Volle thematische Regression (`-k "control_center or download"`): 1115 passed, 0 failed.
+- **Commit-Status:** Im Arbeitsverzeichnis implementiert und getestet, Commit-Zeitpunkt vom Nutzer am Ende der Ausführungsplan-Session gewählt (siehe `plans/control-center-download-ui/99-execution-plan.md`).
+
+Die Cross-Process-Schreibzugriffs-Frage (Abschnitt 5.6) bleibt unabhängig davon **weiterhin offen** und wurde durch diese UI-Phase bewusst nicht mitgelöst.
 
 ---
 

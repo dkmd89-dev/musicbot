@@ -5,8 +5,34 @@
   <div class="row align-items-center">
     <div class="col">
       <h1 class="page-title">⬇️ Downloads</h1>
-      <div class="text-secondary">Download-Verlauf</div>
+      <div class="text-secondary">Download starten, Fortschritt beobachten, Verlauf einsehen</div>
     </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">
+    <h2 class="card-title">⬇️ Download starten</h2>
+  </div>
+  <div class="card-body">
+    <form id="download-start-form" class="row g-2 align-items-center mb-3">
+      <div class="col-auto flex-fill">
+        <input
+          type="text"
+          id="download-url-input"
+          class="form-control"
+          placeholder="YouTube-URL (Video oder Playlist)"
+          autocomplete="off"
+          required
+        />
+      </div>
+      <div class="col-auto">
+        <button type="submit" id="download-start-btn" class="btn btn-primary">
+          Download starten
+        </button>
+      </div>
+    </form>
+    <div id="download-status-content"></div>
   </div>
 </div>
 
@@ -24,27 +50,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-  function renderDownloads(el, body) {
-    if (!body.entries.length) { el.innerHTML = '<p class="empty-note">Kein Download-Verlauf.</p>'; return; }
-    el.innerHTML = '<div class="row-list">' + body.entries.map((e) => `
-      <div class="row-item">
-        <div class="row-main"><span class="badge badge-status-${_escapeHtml(e.status)}">${_escapeHtml(e.status)}</span>${_escapeHtml(e.title)} — ${_escapeHtml(e.artist)}</div>
-        <div class="row-count">${new Date(e.timestamp).toLocaleString()}</div>
-      </div>
-    `).join("") + "</div>";
-  }
-  function loadDownloads() {
-    return _loadInto("downloads-content", "/api/v1/downloads/history?limit=10", renderDownloads);
-  }
-
-  function initPage() {
-    checkAuth().then((who) => {
-      if (!who) return;
-      loadDownloads();
-      setInterval(() => { if (!document.getElementById("dashboard-view").hidden) loadDownloads(); }, 30000);
-    });
-  }
-  initPage();
-</script>
+<script src="{{ base_path }}/static/pages/downloads.js"></script>
 {% endblock %}
