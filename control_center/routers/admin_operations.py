@@ -10,12 +10,12 @@ werden — Cross-Prozess-Problem, analog zur Nutzer-Entscheidung, Logger-
 Konfiguration und Error-Administration komplett aus CC-AC-10D
 zurückzustellen).
 
-Backup ruft services/backup_admin.py auf (neuer, Telegram-freier
-Application-Layer, siehe dortiger Docstring — eigenständige
-Implementierung statt Import aus handlers/admin/backup_handler.py, da
-control_center/ laut CLAUDE.md §4 keine Fachlogik aus Telegram-
-gekoppelten handlers/-Modulen importieren darf, nur aus services/ bzw.
-der bereits Telegram-freien Auth-Logik in handlers/menu/permissions.py).
+Backup ruft services/backup_admin.py auf (Telegram-freier
+Application-Layer, siehe dortiger Docstring — control_center/ darf laut
+CLAUDE.md §4 keine Fachlogik aus Telegram-gekoppelten handlers/-Modulen
+importieren, nur aus services/; seit Backlog-Punkt "AccessLevel/
+permissions nach services/ verschieben" gilt das jetzt auch für die
+Auth-Logik selbst, siehe services/access_control.py).
 Backup-Erstellung läuft als asynchroner Job (services/jobs/job_registry.py,
 identisches Muster wie routers/jobs.py) — gemessene Dauer ~9,5s+
 (CC-AC-10A-Audit), blockierendes tarfile-I/O läuft über
@@ -58,7 +58,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from config import Config
-from handlers.menu.models import AccessLevel
+from services.access_control import AccessLevel
 from logger import get_module_logger
 from services import backup_admin, system_status
 from services.bot_maintenance import MaintenanceModeStore

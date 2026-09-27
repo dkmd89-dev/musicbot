@@ -50,7 +50,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from config import Config
-from handlers.menu.models import AccessLevel
+from services.access_control import AccessLevel
 from logger import get_module_logger
 from services.statistik_service import StatistikService
 from services.user_data import get_navidrome_user, load_user_data

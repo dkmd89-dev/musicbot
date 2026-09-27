@@ -126,9 +126,11 @@ control_center/
     → Benutzerinteraktion / Web-Präsentation (Gegenstück zu handlers/ für
       das Web-Control-Center, FastAPI, eigener Prozess neben bot.py):
       app.py (App-Factory), routers/ (dünne Orchestrierung — ruft
-      ausschließlich services/-Funktionen bzw. bereits Telegram-freie
-      Auth-Logik aus handlers/menu/permissions.py auf, keine eigene
-      Fachlogik), schemas/ (dünne Pydantic-Response-Modelle, kein
+      ausschließlich services/-Funktionen auf, keine eigene Fachlogik;
+      die AccessLevel-/Permission-Auflösung lag früher als Ausnahme in
+      handlers/menu/permissions.py, liegt seit Backlog-Punkt "AccessLevel/
+      permissions nach services/ verschieben" in services/access_control.py
+      — keine Ausnahme mehr nötig), schemas/ (dünne Pydantic-Response-Modelle, kein
       1:1-Durchreichen interner Report-/Dataclass-Felder),
       dependencies.py (Telegram-Login-Widget-Auth, Session-Cookies),
       templates/ (Jinja2 + Vanilla-JS, kein SPA-Framework). Wie

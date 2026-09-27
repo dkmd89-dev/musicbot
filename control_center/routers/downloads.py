@@ -32,7 +32,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from config import Config
-from handlers.menu.models import AccessLevel
+from services.access_control import AccessLevel
 from logger import get_module_logger
 from services.downloader.download_history import DownloadHistoryStore
 

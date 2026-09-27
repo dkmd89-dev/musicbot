@@ -50,7 +50,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 
 from config import Config
-from handlers.menu.models import AccessLevel
+from services.access_control import AccessLevel
 from logger import get_module_logger
 from utils.genre_map import GenreMapper
 

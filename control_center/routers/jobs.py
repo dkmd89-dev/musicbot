@@ -113,7 +113,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from config import Config
 from cookie_handler import CookieHandler
-from handlers.menu.models import AccessLevel
+from services.access_control import AccessLevel
 from logger import get_module_logger
 from services.downloader import download_pipeline_core as pipeline_core
 from services.downloader.active_downloads import ActiveDownload
