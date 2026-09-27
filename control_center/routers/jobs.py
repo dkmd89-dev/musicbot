@@ -111,8 +111,17 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from config import Config
+from cookie_handler import CookieHandler
 from handlers.menu.models import AccessLevel
 from logger import get_module_logger
+from services.downloader import download_pipeline_core as pipeline_core
+from services.downloader.active_downloads import ActiveDownload
+from services.downloader.download_concurrency import download_slot
+from services.downloader.download_history import DownloadHistoryStore
+from services.downloader.download_result_reporter import DownloadResultReporter
+from services.downloader.downloader import YoutubeDownloader
+from services.duplicate.detector import DuplicateDetector
 from services.jobs.job_registry import JobRegistry
 from services.library_repair.doctor_runner import run_health_scan, run_safe_automatic_repair
 from services.library_repair.genre_revalidation_runner import run_genre_revalidation_subprocess
@@ -125,6 +134,7 @@ from ..dependencies import get_current_user_id, require_min_access_level, verify
 from ..schemas.errors import ErrorDetail
 from ..schemas.jobs import (
     ArtistLevelRepairRequest,
+    DownloadJobRequest,
     JobListResponse,
     JobSchema,
     job_to_schema,
@@ -406,6 +416,330 @@ async def start_level3_repair_job(
 )
 def cancel_job(job_id: str, registry: JobRegistry = Depends(get_job_registry)) -> JobSchema:
     job = _get_job_or_404(registry, job_id)
+    registry.request_cancel(job_id)
+    return job_to_schema(job)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DOWNLOAD-JOB (Client Consolidation Phase D/E, "download_track")
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Erster CC-eigener Download-Weg (docs/FINDINGS_INDEX.md "Downloads nicht
+# aus dem Control Center startbar", Architekturentscheidung siehe
+# docs/audits/WEB_PARITY_TELEGRAM_CLIENT_AUDIT_2026-09-27.md Abschnitt 11):
+# CC-lokaler JobRegistry-Job (identisches Muster wie repair_safe_automatic/
+# repair_level3 oben), der die bereits Telegram-freien
+# services/downloader/downloader.py::YoutubeDownloader +
+# services/duplicate/detector.py::DuplicateDetector +
+# services/downloader/download_pipeline_core.py (Move aus
+# klassen/download_handler.py, siehe dortigen Modul-Docstring) DIREKT
+# aufruft - kein Cross-Prozess-Zugriff auf die Telegram-eigene
+# ActiveDownloadRegistry (die bleibt bewusst Bot-Prozess-lokal, siehe
+# services/downloader/active_downloads.py-Docstring), keine zweite
+# Download-Implementierung.
+#
+# Eigener Router mit AccessLevel.USER (statt des ADMIN-Floors von `router`
+# oben) - Parität zu Telegram: jeder authentifizierte Nutzer darf für sich
+# selbst einen Download starten, nicht nur Admins. Die generischen
+# GET/POST-{job_id}-Endpunkte oben bleiben bewusst ADMIN-only (sie filtern
+# nicht nach initiator - ein Repair-/Health-Scan-Job ist admin-only
+# Fachlogik). Für USER-Downloads gibt es daher eigene, auf den eigenen
+# initiator beschränkte Status-/Cancel-Endpunkte unten
+# (_get_own_download_job_or_404()) statt der generischen.
+#
+# chat_id für ActiveDownload/DownloadHistoryStore/DuplicateDetector.
+# register_download() ist die eigene Telegram-ID des eingeloggten Nutzers
+# (get_current_user_id() - Telegram-Login-Widget-Auth, siehe
+# control_center/dependencies.py) - dieselbe ID, unter der ein Download
+# in der Telegram-eigenen "📋 Download-Verlauf"-Ansicht erscheinen würde
+# (private Chats: chat_id == user_id), keine synthetische ID.
+user_router = APIRouter(
+    prefix="/api/v1/jobs",
+    tags=["jobs"],
+    dependencies=[Depends(require_min_access_level(AccessLevel.USER))],
+)
+
+_DOWNLOAD_JOB_KIND = "download_track"
+
+
+def _get_own_download_job_or_404(registry: JobRegistry, job_id: str, user_id: int):
+    """Wie _get_job_or_404(), zusätzlich auf den eigenen Download-Job
+    beschränkt (kind + initiator) - ohne diese Prüfung könnte ein Nutzer
+    per erratener/hochgezählter job_id den Status oder Cancel-Button eines
+    FREMDEN Jobs (auch eines ADMIN-only Repair-Jobs) erreichen."""
+    job = registry.get(job_id)
+    if job is None or job.kind != _DOWNLOAD_JOB_KIND or job.initiator != str(user_id):
+        raise HTTPException(
+            status_code=404,
+            detail=ErrorDetail(code="JOB_NOT_FOUND", message="Unbekannte Job-ID.").model_dump(),
+        )
+    return job
+
+
+async def _cancel_bridge(
+    registry: JobRegistry, job_id: str, active_download: ActiveDownload, poll_interval: float = 0.5
+) -> None:
+    """Bridged JobRegistry.request_cancel(job_id) (der generische, auf den
+    eigenen Job beschränkte Cancel-Endpunkt unten) zum
+    ActiveDownload.cancel_event, das YoutubeDownloader tatsächlich prüft
+    (services/downloader/active_downloads.py) - ohne diese Brücke wäre
+    Cancel für Download-Jobs nur zwischen den Pipeline-Schritten wirksam
+    (analog zur dokumentierten Einschränkung von repair_safe_automatic),
+    nicht während eines laufenden yt-dlp-Tracks/einer Playlist. Endet von
+    selbst, sobald der Download fertig ist (finally im Aufrufer bricht ab)."""
+    try:
+        while not active_download.is_cancel_requested():
+            if registry.is_cancel_requested(job_id):
+                active_download.request_cancel()
+                return
+            await asyncio.sleep(poll_interval)
+    except asyncio.CancelledError:
+        pass
+
+
+async def _run_download_job(
+    registry: JobRegistry,
+    job_id: str,
+    *,
+    url: str,
+    chat_id: int,
+    config: Config,
+    duplicate_detector: DuplicateDetector,
+    cookie_handler: CookieHandler,
+    download_history: DownloadHistoryStore,
+) -> None:
+    """Bildet klassen/download_handler.py::handle_youtube_links() nach
+    (Sequenzierung: Duplikat-Check -> Download -> Datei-Konflikt ->
+    Metadaten-Pass-Through -> Registrierung/History -> Zusammenfassung),
+    ruft dafür aber ausschliesslich die extrahierten, Telegram-freien
+    Bausteine aus services/downloader/download_pipeline_core.py sowie
+    YoutubeDownloader/DownloadResultReporter direkt auf - siehe
+    Sektions-Docstring oben. Die SEQUENZ selbst ist hier (analog zu einem
+    eigenen Client) neu geschrieben, weil sie in
+    klassen/download_handler.py mit Telegram-Statusnachrichten verzahnt
+    ist (siehe dortigen Docstring von handle_youtube_links()) - jede
+    einzelne Fachregel darin (Duplikat-Ebenen, Datei-Konflikt-Erkennung,
+    Playlist-Wrapper, dreiwertige Metadata-Checkliste) ruft aber exakt
+    dieselbe, einzige Implementierung auf wie der Telegram-Pfad.
+
+    logger = get_module_logger() statt self.logger (kein Handler-Objekt
+    hier) - _logger (Modul-Ebene) wird verwendet."""
+    registry.mark_running(job_id)
+    result_reporter = DownloadResultReporter(logger=_logger)
+    download_type = "playlist" if "list=" in url else "single"
+    active_download = ActiveDownload(chat_id=chat_id, url=url, download_type=download_type)
+    bridge_task = asyncio.create_task(_cancel_bridge(registry, job_id, active_download))
+
+    async def _status_callback(tracker) -> None:
+        total = tracker.total_items or 0
+        registry.update_progress(
+            job_id,
+            30.0,
+            f"Download läuft… {tracker.processed_items}/{total}" if total else "Download läuft…",
+        )
+
+    def _fail_with_history(message: str) -> None:
+        pipeline_core.record_history_entry(
+            download_history, chat_id, url=url, title="Unbekannt", artist="Unbekannt",
+            status="failed", logger=_logger,
+        )
+        registry.mark_failed(job_id, message)
+
+    try:
+        max_concurrent = getattr(config, "MAX_CONCURRENT_DOWNLOADS", 3) or 3
+        async with download_slot(max_concurrent):
+            if registry.is_cancel_requested(job_id):
+                registry.mark_cancelled(job_id)
+                return
+
+            registry.update_progress(job_id, 5.0, "Duplikat-Prüfung…")
+            downloader = YoutubeDownloader(
+                chat_id=chat_id,
+                update_id=0,
+                config=config,
+                cookie_handler=cookie_handler,
+                duplicate_detector=duplicate_detector,
+                status_callback=_status_callback,
+                active_download=active_download,
+            )
+
+            is_dup, entry, dup_type = await pipeline_core.check_duplicates_before_download(
+                duplicate_detector, downloader, config, url, _logger
+            )
+            if is_dup and entry:
+                message = result_reporter.build_duplicate_message(entry, dup_type)
+                registry.mark_succeeded(job_id, result={"outcome": "duplicate", "message": message})
+                return
+
+            registry.update_progress(job_id, 20.0, "Download läuft…")
+            try:
+                download_result = await downloader.download_audio(url)
+            except asyncio.CancelledError as ce:
+                partial_results = getattr(ce, "partial_playlist_results", None)
+                if partial_results:
+                    pipeline_core.register_playlist_track_duplicates(
+                        duplicate_detector, download_history, chat_id, partial_results, _logger
+                    )
+                raise
+
+            if not download_result:
+                _fail_with_history("Download-Ergebnis war leer oder ungültig.")
+                return
+
+            if download_result.get("cancelled") and not download_result.get("tracks"):
+                pipeline_core.record_history_entry(
+                    download_history, chat_id, url=url, title="Unbekannt", artist="Unbekannt",
+                    status="cancelled", logger=_logger,
+                )
+                registry.mark_cancelled(job_id)
+                return
+
+            if not download_result.get("success"):
+                _fail_with_history(download_result.get("error", "Unbekannter Fehler."))
+                return
+
+            registry.update_progress(job_id, 70.0, "Metadaten werden verarbeitet…")
+            results_list = download_result if isinstance(download_result, list) else [download_result]
+            processed_results = []
+            for res in results_list:
+                if not (isinstance(res, dict) and res.get("success")):
+                    continue
+                if res.get("renamed_due_to_conflict"):
+                    conflict_entry = pipeline_core.resolve_file_conflict_as_duplicate(res, url, _logger)
+                    message = result_reporter.build_duplicate_message(conflict_entry, "file_conflict")
+                    registry.mark_succeeded(job_id, result={"outcome": "duplicate", "message": message})
+                    return
+                res["original_url"] = url
+                processed_results.append(await pipeline_core.process_single_download_result(res, _logger))
+
+            if not processed_results:
+                # Charakterisierungsfund (Client Consolidation Phase D/E):
+                # der Telegram-Pfad (handle_youtube_links()) bleibt in
+                # diesem Fall stumm (nur Log-Warnung, keine Nutzer-
+                # Rückmeldung) - für einen Job MUSS ein Terminalstatus
+                # gesetzt werden, ein für immer "RUNNING" bleibender Job
+                # wäre irreführend. Bewusste, kleine Abweichung: FAILED
+                # statt stillem Nichts-Tun.
+                registry.mark_failed(job_id, "Keine erfolgreichen Ergebnisse.")
+                return
+
+            registry.update_progress(job_id, 90.0, "Zusammenfassung wird erstellt…")
+            dup_stats = getattr(duplicate_detector, "get_statistics", lambda: {})()
+
+            if len(processed_results) == 1 and processed_results[0].get("type") == "playlist":
+                playlist_result = processed_results[0]
+                tracks = playlist_result.get("tracks", [])
+                total = len(tracks)
+                ok = sum(1 for t in tracks if t.get("success"))
+                if total > 0 and ok == 0:
+                    _fail_with_history(f"Alle {total} Tracks der Playlist sind fehlgeschlagen.")
+                    return
+                pipeline_core.register_playlist_track_duplicates(
+                    duplicate_detector, download_history, chat_id, tracks, _logger
+                )
+                stats = result_reporter.extract_stats_from_result(playlist_result, [])
+                message = result_reporter.build_final_summary_message(playlist_result, stats, dup_stats)
+                registry.mark_succeeded(job_id, result={"outcome": "success", "message": message})
+                return
+
+            if len(processed_results) == 1:
+                single = processed_results[0]
+                title = single.get("title", "?")
+                artist = single.get("artist", "?")
+                url_for_entry = single.get("original_url") or single.get("url") or ""
+                pipeline_core.record_history_entry(
+                    download_history, chat_id, url=url_for_entry, title=title, artist=artist,
+                    status="success",
+                    genre_ok=bool(single.get("genres")),
+                    lyrics_ok=bool(single.get("lyrics_available")),
+                    cover_ok=bool(single.get("cover_embedded")),
+                    mb_ok=bool(single.get("mb_ids_present")),
+                    loudness_ok=bool(single.get("loudness_normalized")),
+                    logger=_logger,
+                )
+                pipeline_core.register_single_track_duplicate(
+                    duplicate_detector, url=url_for_entry, artist=artist, title=title,
+                    path=single.get("library_path") or single.get("filepath") or "",
+                    album=single.get("album"), year=single.get("year"), logger=_logger,
+                )
+                stats = result_reporter.extract_stats_from_result(single, [])
+                message = result_reporter.build_final_summary_message(single, stats, dup_stats)
+                registry.mark_succeeded(job_id, result={"outcome": "success", "message": message})
+                return
+
+            # Mehrere, nicht als Playlist-Wrapper gebündelte Ergebnisse -
+            # bewusst identisch zu handle_playlist_success()'s letztem
+            # Zweig: KEINE Registrierung/History hier (Charakterisierung
+            # aus klassen/download_handler.py, kein eigener Entscheid).
+            successful = [r for r in processed_results if r.get("success")]
+            if not successful:
+                registry.mark_failed(job_id, "Keine erfolgreichen Tracks.")
+                return
+            message = result_reporter.build_playlist_summary_message(processed_results, successful)
+            registry.mark_succeeded(job_id, result={"outcome": "success", "message": message})
+
+    except Exception as e:  # noqa: BLE001
+        _logger.error(f"Download-Job {job_id} fehlgeschlagen: {e!r}")
+        registry.mark_failed(job_id, "Interner Fehler im Download-Job.")
+    finally:
+        bridge_task.cancel()
+
+
+@user_router.post(
+    "/download", response_model=JobSchema, dependencies=[Depends(verify_same_origin)]
+)
+async def start_download_job(
+    payload: DownloadJobRequest,
+    user_id: int = Depends(get_current_user_id),
+    registry: JobRegistry = Depends(get_job_registry),
+) -> JobSchema:
+    url = payload.url.strip()
+    if not pipeline_core.is_supported_download_url(url):
+        raise HTTPException(
+            status_code=422,
+            detail=ErrorDetail(
+                code="URL_NOT_SUPPORTED",
+                message="Diese URL wird nicht unterstützt. Nur YouTube-Links.",
+            ).model_dump(),
+        )
+
+    config = Config()
+    job = registry.create(kind=_DOWNLOAD_JOB_KIND, initiator=str(user_id))
+    asyncio.create_task(
+        _run_download_job(
+            registry,
+            job.job_id,
+            url=url,
+            chat_id=user_id,
+            config=config,
+            duplicate_detector=DuplicateDetector(config),
+            cookie_handler=CookieHandler(),
+            download_history=DownloadHistoryStore(cache_dir=str(config.DOWNLOAD_HISTORY_DIR)),
+        )
+    )
+    return job_to_schema(job)
+
+
+@user_router.get("/download/{job_id}", response_model=JobSchema)
+def get_own_download_job(
+    job_id: str,
+    user_id: int = Depends(get_current_user_id),
+    registry: JobRegistry = Depends(get_job_registry),
+) -> JobSchema:
+    return job_to_schema(_get_own_download_job_or_404(registry, job_id, user_id))
+
+
+@user_router.post(
+    "/download/{job_id}/cancel",
+    response_model=JobSchema,
+    dependencies=[Depends(verify_same_origin)],
+)
+def cancel_own_download_job(
+    job_id: str,
+    user_id: int = Depends(get_current_user_id),
+    registry: JobRegistry = Depends(get_job_registry),
+) -> JobSchema:
+    job = _get_own_download_job_or_404(registry, job_id, user_id)
     registry.request_cancel(job_id)
     return job_to_schema(job)
 

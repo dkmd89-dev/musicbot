@@ -29,7 +29,6 @@ docs/archive/arch/MusicBot_ARCH-020_Download_Pipeline_Characterization.md, Absch
 """
 
 import asyncio
-import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
@@ -62,28 +61,14 @@ if TYPE_CHECKING:
 # URL-VALIDIERUNG (SEC: Domain-Allowlist vor yt-dlp)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# handle_url() leitete frueher JEDE nicht-Spotify http(s)://-URL ungeprueft
-# an yt-dlp weiter. yt-dlp unterstuetzt hunderte Extractors und macht
-# serverseitige HTTP-Requests - ohne Domain-Allowlist kann jeder Telegram-
-# Nutzer, der den Bot anschreiben kann, den Server beliebige URLs abrufen
-# lassen (SSRF-artiges Risiko). Nur tatsaechlich unterstuetzte YouTube-
-# Domains werden akzeptiert; alles andere bekommt eine normale
-# Fehlermeldung statt stillschweigend verarbeitet zu werden.
-_SUPPORTED_YOUTUBE_DOMAINS = re.compile(
-    r"(?:^|\.)(?:youtube\.com|youtu\.be|music\.youtube\.com)(?:/|$)",
-    re.IGNORECASE,
-)
-
-
-def _is_supported_download_url(url: str) -> bool:
-    """Prüft, ob eine URL von einer unterstützten YouTube-Domain stammt."""
-    try:
-        from urllib.parse import urlparse
-
-        netloc = urlparse(url.strip()).netloc.lower()
-    except Exception:
-        return False
-    return bool(_SUPPORTED_YOUTUBE_DOMAINS.search(netloc))
+# Client Consolidation Phase D/E: Move nach
+# services/downloader/download_pipeline_core.py (Move) - ein künftiger
+# Control-Center-Download-Job braucht dieselbe SSRF-Allowlist, ohne sie
+# zweit zu implementieren. Aliase hier erhalten, damit bestehende Tests
+# (tests/test_download_url_validation.py: `from klassen.download_handler
+# import _is_supported_download_url`) unverändert funktionieren.
+_SUPPORTED_YOUTUBE_DOMAINS = pipeline_core.SUPPORTED_YOUTUBE_DOMAINS
+_is_supported_download_url = pipeline_core.is_supported_download_url
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

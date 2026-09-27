@@ -30,14 +30,42 @@ Stelle statt in `klassen/download_handler.py` eingebettet.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 from services.downloader.download_history import DownloadHistoryStore
 from services.downloader.download_utils import is_youtube_mix_url
 from services.downloader.models import DuplicateEntry
 from services.duplicate.detector import DuplicateDetector
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# URL-VALIDIERUNG (SEC: Domain-Allowlist vor yt-dlp) — Move aus
+# klassen/download_handler.py::_is_supported_download_url() (Client
+# Consolidation Phase D/E). handle_url() leitete frueher JEDE nicht-
+# Spotify http(s)://-URL ungeprueft an yt-dlp weiter. yt-dlp unterstuetzt
+# hunderte Extractors und macht serverseitige HTTP-Requests - ohne
+# Domain-Allowlist kann jeder Aufrufer (Telegram-Nutzer, oder ein
+# zukuenftiger Control-Center-Download-Job) den Server beliebige URLs
+# abrufen lassen (SSRF-artiges Risiko). Nur tatsaechlich unterstuetzte
+# YouTube-Domains werden akzeptiert.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SUPPORTED_YOUTUBE_DOMAINS = re.compile(
+    r"(?:^|\.)(?:youtube\.com|youtu\.be|music\.youtube\.com)(?:/|$)",
+    re.IGNORECASE,
+)
+
+
+def is_supported_download_url(url: str) -> bool:
+    """Prüft, ob eine URL von einer unterstützten YouTube-Domain stammt."""
+    try:
+        netloc = urlparse(url.strip()).netloc.lower()
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(SUPPORTED_YOUTUBE_DOMAINS.search(netloc))
 
 
 async def process_single_download_result(

@@ -27,6 +27,20 @@ def make_logger():
     return Mock()
 
 
+class TestIsSupportedDownloadUrl:
+    def test_youtube_com_is_supported(self):
+        assert core.is_supported_download_url("https://www.youtube.com/watch?v=abc")
+
+    def test_youtu_be_is_supported(self):
+        assert core.is_supported_download_url("https://youtu.be/abc")
+
+    def test_random_domain_is_rejected(self):
+        assert not core.is_supported_download_url("https://example.com/video.mp4")
+
+    def test_domain_confusion_is_rejected(self):
+        assert not core.is_supported_download_url("https://youtube.com.evil.com/x")
+
+
 class TestProcessSingleDownloadResult:
     def test_playlist_wrapper_is_passed_through_unchanged(self):
         result = {"type": "playlist", "tracks": []}

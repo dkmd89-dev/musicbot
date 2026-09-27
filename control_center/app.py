@@ -81,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_maintenance.router)
     app.include_router(admin_operations.router)
     app.include_router(jobs.router)
+    app.include_router(jobs.user_router)
     app.include_router(logs.router)
     app.include_router(logger.router)
     app.include_router(auth.router)
