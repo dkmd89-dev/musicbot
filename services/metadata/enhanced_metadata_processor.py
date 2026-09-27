@@ -9,6 +9,7 @@ from typing import Dict, List, Any, Optional, Callable, Tuple
 
 from logger import get_module_logger, setup_module_logging
 from config import Config
+from services.logger_admin import read_logger_config
 
 from utils.artist_map import ArtistNormalizer, ArtistConfig
 from utils.genre_map import GenreMapper
@@ -67,10 +68,23 @@ class EnhancedMetadataProcessor(SingletonMixin):
             Path(getattr(self.config, "LOG_DIR", "logs"))
             / "enhanced_metadata_processor.log"
         )
+        # CC-LOGGER-L7.1: Level/File-Handler/Console-Handler kommen aus
+        # der persistenten Logger-Config. Fallback-Werte (DEBUG/True/True)
+        # sind identisch zum bisherigen harten Aufruf fuer den Fall, dass
+        # das Modul nicht in der Config steht oder die Config nicht
+        # lesbar ist.
+        try:
+            _logger_cfg = read_logger_config(self.config).get(
+                "EnhancedMetadataProcessor", {}
+            )
+        except Exception:
+            _logger_cfg = {}
         self.logger = setup_module_logging(
             "EnhancedMetadataProcessor",
             log_file=str(log_file_path),
-            level="DEBUG",
+            level=_logger_cfg.get("level", "DEBUG"),
+            enable_file_handler=_logger_cfg.get("file_handler", True),
+            enable_console_handler=_logger_cfg.get("console_handler", True),
             use_colors=True,
             use_emojis=True,
         )
