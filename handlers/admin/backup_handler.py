@@ -3,6 +3,15 @@
 """
 💾 BackupHandler – Sicherung von Bot-Verzeichnis und Musikbibliothek
 Integriert in das RichMenuSystem als Admin-Untermenü.
+
+Fachlogik (Archiv-Erstellung, Rotation, SEC-006-Path-Traversal-Schutz)
+delegiert seit Client Consolidation ("Backups", Backlog-Punkt aus
+docs/audits/WEB_PARITY_TELEGRAM_CLIENT_AUDIT_2026-09-27.md §2.3 B.2) an
+services/backup_admin.py — dieselbe Fachlogik, die auch das Control
+Center nutzt (control_center/routers/admin_operations.py). Diese Klasse
+bleibt der Telegram-Client: Präsentation, Callback-Routing, Nachrichten-
+versand, unverändertes öffentliches/privates Interface für bestehende
+Tests (tests/test_backup_handler*.py).
 """
 
 import os
@@ -17,6 +26,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from logger import get_module_logger
+from services import backup_admin
 
 if TYPE_CHECKING:
     from handlers.enhanced_error_handler import EnhancedErrorHandler
@@ -40,41 +50,15 @@ class BackupHandler:
         self.config = config
         self.logger = (logger_factory or get_module_logger)("BackupHandler")
 
-        # Quellpfade
-        self.bot_source: Path = Path(
-            getattr(config, "BACKUP_BOT_SOURCE_DIR", "/mnt/900gb/entwickeln/rich")
-        )
-        self.lib_source: Path = Path(
-            getattr(
-                config,
-                "BACKUP_LIBRARY_SOURCE_DIR",
-                "/mnt/900gb/entwickeln/rich/library",
-            )
-        )
-
-        # Zielverzeichnis für Backups
-        self.dest_dir: Path = Path(
-            getattr(config, "BACKUP_DEST_DIR", "/mnt/250gb/Musikserver")
-        )
-        self.dest_dir.mkdir(parents=True, exist_ok=True)
-
-        # Aufbewahrungsanzahl
-        self.max_keep: int = int(getattr(config, "BACKUP_MAX_KEEP", 5))
-
-        # Ausgeschlossene Pfad-Fragmente beim Bot-Backup
-        self.exclude_patterns: List[str] = getattr(
-            config,
-            "BACKUP_EXCLUDE_PATTERNS",
-            [
-                "library",  # Musikbibliothek separat sichern
-                "__pycache__",
-                ".git",
-                "*.pyc",
-                "import/downloads",
-                "import/temp",
-                "cache",
-            ],
-        )
+        # Pfade/Limits: geteilte Fachlogik aus services/backup_admin.py
+        # (identische Defaults/Konstanten wie zuvor hier, siehe
+        # BackupPaths.from_config()). from_config() legt dest_dir bereits an.
+        self._paths = backup_admin.BackupPaths.from_config(config)
+        self.bot_source: Path = self._paths.bot_source
+        self.lib_source: Path = self._paths.lib_source
+        self.dest_dir: Path = self._paths.dest_dir
+        self.max_keep: int = self._paths.max_keep
+        self.exclude_patterns: List[str] = self._paths.exclude_patterns
 
         # Wird von RichMenuHandler nach der Konstruktion zugewiesen
         # (self.backup_handler.error_handler = self.error_handler)
@@ -406,20 +390,18 @@ class BackupHandler:
 
         SEC-006: filename kommt unvalidiert aus callback_data
         (backup_delete_<filename> / backup_delete_confirm_<filename>).
-        Ohne diese Prüfung würde ".."-Traversal oder ein absoluter Pfad
-        (Path.__truediv__ verwirft bei absoluten rechten Operanden den
-        linken Teil komplett - dest_dir / "/etc/passwd" == "/etc/passwd")
-        beliebige, vom Bot-Prozess beschreibbare Dateien löschbar machen,
-        nicht nur Backups. Gibt None zurück, wenn der aufgelöste Pfad
-        außerhalb von dest_dir liegt.
+        Dünner Delegator auf services/backup_admin.py::resolve_backup_path()
+        (identischer .resolve()/is_relative_to()-Schutz) — gibt weiterhin
+        None statt einer Exception zurück, unverändertes Verhalten für
+        tests/test_backup_handler.py.
         """
-        candidate = (self.dest_dir / filename).resolve()
-        if not candidate.is_relative_to(self.dest_dir.resolve()):
+        try:
+            return backup_admin.resolve_backup_path(self._paths, filename)
+        except backup_admin.InvalidBackupFilenameError:
             self.logger.warning(
                 f"🚨 [SECURITY] Backup-Anfrage außerhalb von {self.dest_dir}: {filename}"
             )
             return None
-        return candidate
 
     async def confirm_delete(
         self,
@@ -476,12 +458,11 @@ class BackupHandler:
             return
 
         try:
-            if filepath.exists():
-                filepath.unlink()
-                self.logger.info(f"🗑️ Backup gelöscht: {filepath}")
-                msg = f"✅ **Backup gelöscht**\n\n`{filename}`"
-            else:
-                msg = f"⚠️ Datei nicht gefunden: `{filename}`"
+            deleted_name = backup_admin.delete_backup(self._paths, filename)
+            self.logger.info(f"🗑️ Backup gelöscht: {filepath}")
+            msg = f"✅ **Backup gelöscht**\n\n`{deleted_name}`"
+        except backup_admin.BackupNotFoundError:
+            msg = f"⚠️ Datei nicht gefunden: `{filename}`"
         except Exception as e:
             self.logger.error(f"❌ Löschen fehlgeschlagen: {e}", exc_info=True)
             msg = f"❌ **Fehler beim Löschen**\n\n`{e}`"
@@ -507,79 +488,60 @@ class BackupHandler:
         """
         Erstellt ein tar.gz-Archiv von `source`.
         Gibt den Pfad zur fertigen Archivdatei zurück.
+
+        `source`/`exclude` kommen explizit vom Aufrufer (start_bot_backup/
+        start_lib_backup) statt aus self._paths, da Bot- und Library-Backup
+        unterschiedliche Ausschlussregeln haben. Der tarfile-Filter selbst
+        ist auf services/backup_admin.py::archive_filter() ausgelagert
+        (identische Logik, vorher hier dupliziert).
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         archive_name = f"{backup_type}_backup_{timestamp}.tar.gz"
         archive_path = self.dest_dir / archive_name
 
-        def _filter(tarinfo: tarfile.TarInfo) -> Optional[tarfile.TarInfo]:
-            for pattern in exclude:
-                if pattern.startswith("*."):
-                    # Dateiendung-Match
-                    if tarinfo.name.endswith(pattern[1:]):
-                        return None
-                elif pattern in tarinfo.name:
-                    return None
-            return tarinfo
-
         self.logger.info(f"📦 Erstelle Archiv: {archive_path} | Quelle: {source}")
         with tarfile.open(archive_path, "w:gz") as tar:
-            tar.add(str(source), arcname=source.name, filter=_filter)
+            tar.add(str(source), arcname=source.name, filter=backup_admin.archive_filter(exclude))
 
         return archive_path
 
     def _list_backups(self, backup_type: str) -> List[Dict[str, Any]]:
-        """Listet vorhandene Backups eines Typs, sortiert nach Datum (neueste zuerst)."""
-        prefix = f"{backup_type}_backup_"
-        backups = []
-        for f in self.dest_dir.glob(f"{prefix}*.tar.gz"):
-            try:
-                stat = f.stat()
-                backups.append(
-                    {
-                        "name": f.name,
-                        "path": f,
-                        "size": stat.st_size,
-                        "date": datetime.fromtimestamp(stat.st_mtime),
-                    }
-                )
-            except Exception:
-                pass
-        return sorted(backups, key=lambda x: x["date"], reverse=True)
+        """Listet vorhandene Backups eines Typs, sortiert nach Datum (neueste zuerst).
+
+        Dünner Delegator auf services/backup_admin.py::list_backups() —
+        Rückgabeform (List[Dict] mit "date" statt "created_at") bleibt
+        unverändert für _show_backup_list()/_rotate_backups() sowie
+        tests/test_backup_handler.py."""
+        entries = backup_admin.list_backups(self._paths, backup_type)
+        return [
+            {"name": e.name, "path": e.path, "size": e.size, "date": e.created_at}
+            for e in entries
+        ]
 
     def _rotate_backups(self, backup_type: str) -> None:
-        """Entfernt älteste Backups wenn max_keep überschritten."""
-        backups = self._list_backups(backup_type)
-        while len(backups) > self.max_keep:
-            oldest = backups.pop()
-            try:
-                oldest["path"].unlink()
-                self.logger.info(
-                    f"♻️ Altes Backup gelöscht (Rotation): {oldest['name']}"
-                )
-            except Exception as e:
-                self.logger.warning(f"⚠️ Konnte {oldest['name']} nicht löschen: {e}")
+        """Entfernt älteste Backups wenn max_keep überschritten.
+
+        Dünner Delegator auf services/backup_admin.py::rotate_backups();
+        das Info-Log pro entfernter Datei bleibt hier (Service loggt nur
+        Fehlschläge als Warnung, siehe dortiger logger-Parameter)."""
+        removed = backup_admin.rotate_backups(self._paths, backup_type, logger=self.logger)
+        for name in removed:
+            self.logger.info(f"♻️ Altes Backup gelöscht (Rotation): {name}")
 
     @staticmethod
     def _dir_size(path: Path) -> int:
-        """Berechnet die Gesamtgröße eines Verzeichnisses in Bytes."""
-        total = 0
-        try:
-            for f in path.rglob("*"):
-                if f.is_file():
-                    try:
-                        total += f.stat().st_size
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        return total
+        """Berechnet die Gesamtgröße eines Verzeichnisses in Bytes.
+
+        Dünner Delegator auf services/backup_admin.py::dir_size() — bleibt
+        eine eigene BackupHandler-Methode (statt eines Direktaufrufs in
+        show_main_menu()), da tests/test_backup_handler_event_loop_blocking.py
+        genau dieses Klassenattribut für run_in_executor()-Assertions
+        monkeypatcht."""
+        return backup_admin.dir_size(path)
 
     @staticmethod
     def _human_size(size_bytes: int) -> str:
-        """Gibt eine lesbare Größenangabe zurück."""
-        for unit in ("B", "KB", "MB", "GB", "TB"):
-            if size_bytes < 1024:
-                return f"{size_bytes:.1f} {unit}"
-            size_bytes /= 1024
-        return f"{size_bytes:.1f} PB"
+        """Gibt eine lesbare Größenangabe zurück.
+
+        Dünner Delegator auf services/backup_admin.py::human_size()."""
+        return backup_admin.human_size(size_bytes)

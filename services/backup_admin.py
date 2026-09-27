@@ -4,20 +4,17 @@
 CC-AC-10C (Control Center Admin API, Bot & Operations) — Telegram-freier
 Application-Layer für Backup-Operationen (Bot-Verzeichnis + Musikbibliothek).
 
-Bildet dieselbe Fachlogik nach, die
-handlers/admin/backup_handler.py::BackupHandler bereits für den
-Telegram-Bot implementiert (Archiv-Erstellung, Rotation, SEC-006
-Path-Traversal-Schutz in resolve_backup_path()) — **eigenständige
-Implementierung statt Import**, weil services/ laut
-tests/test_services_layer_boundary.py niemals aus handlers/ importieren
-darf (BackupHandler hält Telegram-Objekte). Identische Konstanten/
-Defaults wie BackupHandler.__init__() (siehe dortige Werte).
-
-Persistenz-/Prozessmechanik (tarfile, Path.glob/.unlink) ist hier
-identisch zur Telegram-Seite dupliziert — CC-AC-10.md §20 sieht die
-Telegram-Migration selbst bewusst erst in CC-AC-10G vor (siehe
-services/user_admin.py-Docstring für dieselbe Begründung bei User
-Management). BackupHandler bleibt in diesem Slice unverändert.
+Ursprünglich (CC-AC-10C) als eigenständige Nachbildung der Fachlogik aus
+handlers/admin/backup_handler.py::BackupHandler entstanden, weil services/
+laut tests/test_services_layer_boundary.py niemals aus handlers/
+importieren darf. Seit Client Consolidation Phase (Backlog-Punkt "Backups",
+docs/audits/WEB_PARITY_TELEGRAM_CLIENT_AUDIT_2026-09-27.md §2.3 B.2) ist
+diese Richtung aufgelöst: BackupHandler importiert jetzt umgekehrt aus
+diesem Modul (services/ → handlers/ bleibt weiterhin verboten, handlers/ →
+services/ ist die etablierte, zulässige Richtung — analog zu
+services/user_data.py für die Benutzerverwaltung). Archiv-Erstellung,
+Rotation und der SEC-006-Path-Traversal-Schutz leben nur noch hier;
+BackupHandler delegiert dünn.
 """
 
 from __future__ import annotations
@@ -131,7 +128,10 @@ def list_backups(paths: BackupPaths, backup_type: str) -> List[BackupEntry]:
     return sorted(backups, key=lambda b: b.created_at, reverse=True)
 
 
-def _archive_filter(exclude: List[str]):
+def archive_filter(exclude: List[str]):
+    """tarfile-Filterfabrik, von BackupHandler._create_archive() (handlers/)
+    und create_backup() (hier) gemeinsam genutzt."""
+
     def _filter(tarinfo: tarfile.TarInfo) -> Optional[tarfile.TarInfo]:
         for pattern in exclude:
             if pattern.startswith("*."):
@@ -177,7 +177,7 @@ def create_backup(paths: BackupPaths, backup_type: str, *, logger: Any = None) -
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive_path = paths.dest_dir / f"{backup_type}_backup_{timestamp}.tar.gz"
     with tarfile.open(archive_path, "w:gz") as tar:
-        tar.add(str(source), arcname=source.name, filter=_archive_filter(exclude))
+        tar.add(str(source), arcname=source.name, filter=archive_filter(exclude))
 
     rotate_backups(paths, backup_type, logger=logger)
 
