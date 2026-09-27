@@ -157,7 +157,8 @@ Health-Issue-Code genau ein Mapping hat und kein Mapping veraltet ist.
 | `META_ALBUM_ARTIST_MISSING` | SAFE_AUTOMATIC | Album-Artist = Haupt-Artist |
 | `ALBUM_ARTIST_INCONSISTENT` | SAFE_AUTOMATIC | Album-Artist aller Tracks vereinheitlichen |
 | `FILENAME_TITLE_MISMATCH` / `FILENAME_SUSPICIOUS` | SAFE_AUTOMATIC | Dateiname im selben Verzeichnis neu bilden |
-| `META_ARTIST_MISSING` / `_TITLE_MISSING` / `_ALBUM_MISSING` / `META_TITLE_NOT_CLEAN` / `GENRE_INVALID` / `LYRICS_*` / `META_GENRE_MISSING` / `GENRE_EMPTY` | MANUAL_REVIEW *(vor CC-LIB-FINAL: METADATA_REPROCESSING)* | Kein automatischer Fix mehr — im Control Center über Artist/Titel/Album/Genre bearbeiten manuell setzen |
+| `META_ARTIST_MISSING` / `_TITLE_MISSING` / `_ALBUM_MISSING` / `META_TITLE_NOT_CLEAN` / `GENRE_INVALID` / `META_GENRE_MISSING` / `GENRE_EMPTY` | MANUAL_REVIEW *(vor CC-LIB-FINAL: METADATA_REPROCESSING)* | Kein automatischer Fix mehr — im Control Center über Artist/Titel/Album/Genre bearbeiten manuell setzen |
+| `LYRICS_MISSING` / `_EMPTY` / `_INVALID` | NOT_REPAIRABLE *(vor CC-LIB-FINAL: METADATA_REPROCESSING; 2026-09-27 kurzzeitig MANUAL_REVIEW, dann korrigiert)* | Kein automatischer Fix, **kein Lyrics-Editor im Control Center** — MANUAL_REVIEW wäre irreführend, solange es keine Behebungs-Aktion gibt |
 | `META_MB_*_MISSING` / `META_ISRC_MISSING` | EXTERNAL_METADATA | MusicBrainz-Match (nur bei Eindeutigkeit) |
 | `META_YEAR_MISSING` | MANUAL_REVIEW | keine Jahr-Fetch-Implementierung vorhanden (Production-Audit 2026-09-08: vorher fälschlich `EXTERNAL_METADATA` ohne Executor) |
 | `ALBUM_RELEASE_ID_INCONSISTENT` | MANUAL_REVIEW | mehrere Release-IDs im Album — welche kanonisch ist, manuell entscheiden (würde bestehende Werte überschreiben müssen statt nur fehlende zu ergänzen; Production-Audit 2026-09-08: vorher fälschlich `EXTERNAL_METADATA` ohne Executor) |
@@ -288,12 +289,19 @@ Keine offenen Executoren mehr — Phase 2 ist mit §6d (Duplicate) komplett.
 > die volle Neuverarbeitung lief automatisch ueber die Pipeline und
 > konnte dabei manuell gesetzte Artist-/Titel-/Album-/Genre-Tags
 > ueberschreiben — nicht vereinbar mit der Zielarchitektur, in der
-> manuelle Metadaten-Aenderungen dauerhaft erhalten bleiben. Die zehn
-> betroffenen Issue-Codes (`META_ARTIST_MISSING`, `META_TITLE_MISSING`,
+> manuelle Metadaten-Aenderungen dauerhaft erhalten bleiben. Sieben der
+> zehn betroffenen Issue-Codes (`META_ARTIST_MISSING`, `META_TITLE_MISSING`,
 > `META_TITLE_NOT_CLEAN`, `META_ALBUM_MISSING`, `META_GENRE_MISSING`,
-> `GENRE_EMPTY`, `GENRE_INVALID`, `LYRICS_MISSING`, `LYRICS_EMPTY`,
-> `LYRICS_INVALID`) sind seitdem `MANUAL_REVIEW` (§3/§4) und werden ueber
-> die Control-Center-Metadata-Edit-Aktionen (§11/§15/§16) behoben. Die
+> `GENRE_EMPTY`, `GENRE_INVALID`) sind seitdem `MANUAL_REVIEW` (§3/§4) und
+> werden ueber die Control-Center-Metadata-Edit-Aktionen (§11/§15/§16)
+> behoben. Die restlichen drei (`LYRICS_MISSING`, `LYRICS_EMPTY`,
+> `LYRICS_INVALID`) sind **`NOT_REPAIRABLE`**, nicht `MANUAL_REVIEW`
+> (Nutzer-Entscheidung 2026-09-27, Web-Parity-Audit §7/8): `MANUAL_REVIEW`
+> darf nur vergeben werden, wenn es im Control Center tatsaechlich eine
+> Behebungs-Aktion gibt — der Metadata-Workspace kennt Artist/Titel/Album/
+> Albuminterpret/Genre, aber keinen Lyrics-Editor. Bleibt bewusst so, bis
+> ein eigener Lyrics-Editor als zukuenftige Funktion beschlossen wird; im
+> Rahmen dieser Entscheidung wird kein Lyrics-UI/-Fachlogik gebaut. Die
 > urspruengliche, ausfuehrliche Beschreibung dieses Abschnitts (Betrieb,
 > Produktionslaeufe, `requested_issue`-Hint) bleibt in der Git-Historie
 > dieser Datei nachvollziehbar.

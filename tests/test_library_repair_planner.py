@@ -99,11 +99,13 @@ def test_structure_and_audio_route_to_manual_review():
 
 # ── CC-LIB-FINAL: Metadata-Reprocessing (L2) ist entfernt ──────────────
 
-# Die zehn Codes, die bis CC-LIB-FINAL auf L2 METADATA_REPROCESSING zeigten.
+# Sieben der zehn Codes, die bis CC-LIB-FINAL auf L2 METADATA_REPROCESSING
+# zeigten, sind MANUAL_REVIEW (behebbar ueber die Edit-UI). Die restlichen
+# drei (LYRICS_MISSING/EMPTY/INVALID) sind NOT_REPAIRABLE, siehe
+# test_lyrics_codes_are_not_repairable_without_editor unten.
 _FORMER_L2_CODES = (
     "META_ARTIST_MISSING", "META_TITLE_MISSING", "META_TITLE_NOT_CLEAN",
     "META_ALBUM_MISSING", "META_GENRE_MISSING", "GENRE_EMPTY", "GENRE_INVALID",
-    "LYRICS_MISSING", "LYRICS_EMPTY", "LYRICS_INVALID",
 )
 
 
@@ -125,6 +127,19 @@ def test_former_l2_codes_are_manual_review_and_not_actionable():
         c = plan.candidates[0]
         assert c.level is RepairLevel.MANUAL_REVIEW, code
         assert c.expected_change, f"{code}: MANUAL_REVIEW braucht einen dokumentierten Grund"
+        assert c not in plan.actionable(), code
+
+
+def test_lyrics_codes_are_not_repairable_without_editor():
+    """Nutzer-Entscheidung 2026-09-27 (Web-Parity-Audit §7/8): MANUAL_REVIEW
+    darf nur vergeben werden, wenn der Nutzer im Control Center tatsaechlich
+    eine konkrete Aktion zur Behebung hat. Der Metadata-Workspace hat keinen
+    Lyrics-Editor, also sind die drei Lyrics-Codes NOT_REPAIRABLE, nicht
+    MANUAL_REVIEW (anders als die uebrigen sieben ehemaligen L2-Codes)."""
+    for code in ("LYRICS_MISSING", "LYRICS_EMPTY", "LYRICS_INVALID"):
+        plan = plan_repairs(_report(_issue(code)))
+        c = plan.candidates[0]
+        assert c.level is RepairLevel.NOT_REPAIRABLE, code
         assert c not in plan.actionable(), code
 
 
@@ -229,8 +244,9 @@ def test_group_candidates_by_artist_counts_l3_candidates():
 
 
 def test_group_candidates_by_artist_ignores_former_l2_codes():
-    """Ehemalige L2-Codes sind MANUAL_REVIEW und tauchen in der
-    Pro-Artist-Reparatur-Auswahl nicht mehr auf."""
+    """Ehemalige L2-Codes (MANUAL_REVIEW bzw. bei Lyrics NOT_REPAIRABLE)
+    tauchen in der Pro-Artist-Reparatur-Auswahl nicht mehr auf (die zaehlt
+    nur EXTERNAL_METADATA/L3)."""
     r = _report(
         _issue("META_TITLE_NOT_CLEAN", artist="Bausa", path="Bausa/Singles/a.m4a"),
         _issue("LYRICS_MISSING", artist="Bausa", path="Bausa/Singles/a.m4a"),

@@ -56,11 +56,18 @@ def _spec(code, action, level, component, *, approval=True, external=False,
 # (L2, volle Pipeline erneut auf Bestandsdateien via track_reprocessor.
 # process_file) wurde ersatzlos entfernt — sie haette manuell gesetzte
 # Artist-/Titel-/Album-/Genre-Tags durch eine Neuableitung ueberschreiben
-# koennen. Die zehn davon betroffenen Issue-Codes (META_ARTIST/TITLE/
-# ALBUM/GENRE_MISSING, META_TITLE_NOT_CLEAN, GENRE_EMPTY/INVALID,
-# LYRICS_MISSING/EMPTY/INVALID) sind jetzt MANUAL_REVIEW: sie bleiben als
-# Findings sichtbar und werden ueber die kontextbezogenen Edit-Aktionen des
-# Control Centers (services/library_repair/maintenance_service.py) behoben.
+# koennen. Sieben der zehn davon betroffenen Issue-Codes (META_ARTIST/
+# TITLE/ALBUM/GENRE_MISSING, META_TITLE_NOT_CLEAN, GENRE_EMPTY/INVALID)
+# sind jetzt MANUAL_REVIEW: sie bleiben als Findings sichtbar und werden
+# ueber die kontextbezogenen Edit-Aktionen des Control Centers
+# (services/library_repair/maintenance_service.py) behoben. Die restlichen
+# drei (LYRICS_MISSING/EMPTY/INVALID) sind NOT_REPAIRABLE, nicht
+# MANUAL_REVIEW (Nutzer-Entscheidung 2026-09-27, Web-Parity-Audit §7/8):
+# MANUAL_REVIEW darf nur vergeben werden, wenn es im Control Center eine
+# konkrete Behebungs-Aktion gibt — der Metadata-Workspace (CC-LIB-FINAL
+# Polish, #324) hat Tabs fuer Artist/Titel/Album/Albuminterpret/Genre,
+# aber keinen Lyrics-Editor. Bleibt so, bis ein Lyrics-Editor als eigene
+# Funktion beschlossen wird.
 # ─────────────────────────────────────────────────────────────────────────
 
 _SPECS: tuple[RepairSpec, ...] = (
@@ -122,12 +129,18 @@ _SPECS: tuple[RepairSpec, ...] = (
     # ── Lyrics ──────────────────────────────────────────────────────────
     # CC-LIB-FINAL: kein automatischer Lyrics-Fetch mehr (fruehere L2-
     # Neuverarbeitung entfernt); Lyrics werden beim Download gesetzt.
-    _spec("LYRICS_MISSING", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
-          change="Lyrics fehlen — kein automatischer Nachtrag (Track ggf. neu laden)"),
-    _spec("LYRICS_EMPTY", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
-          change="Lyrics-Tag leer — kein automatischer Nachtrag (Track ggf. neu laden)"),
-    _spec("LYRICS_INVALID", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",
-          change="Lyrics-Tag ungueltig — kein automatischer Nachtrag (Track ggf. neu laden)"),
+    # NOT_REPAIRABLE statt MANUAL_REVIEW (Nutzer-Entscheidung 2026-09-27):
+    # der Metadata-Workspace hat keinen Lyrics-Editor, also gibt es aktuell
+    # keine Aktion, die der Nutzer im Control Center ausfuehren koennte.
+    # Kein Lyrics-UI/-Fachlogik-Aufbau im Rahmen dieser Entscheidung — nur
+    # falls ein eigener Lyrics-Editor kuenftig beschlossen wird, aendert
+    # sich das wieder.
+    _spec("LYRICS_MISSING", _A.NONE, _L.NOT_REPAIRABLE, "-", approval=False,
+          change="Lyrics fehlen — kein automatischer Nachtrag, kein Lyrics-Editor im Control Center"),
+    _spec("LYRICS_EMPTY", _A.NONE, _L.NOT_REPAIRABLE, "-", approval=False,
+          change="Lyrics-Tag leer — kein automatischer Nachtrag, kein Lyrics-Editor im Control Center"),
+    _spec("LYRICS_INVALID", _A.NONE, _L.NOT_REPAIRABLE, "-", approval=False,
+          change="Lyrics-Tag ungueltig — kein automatischer Nachtrag, kein Lyrics-Editor im Control Center"),
 
     # ── Audio ───────────────────────────────────────────────────────────
     _spec("AUDIO_NOT_ANALYZABLE", _A.MANUAL_REVIEW, _L.MANUAL_REVIEW, "-",

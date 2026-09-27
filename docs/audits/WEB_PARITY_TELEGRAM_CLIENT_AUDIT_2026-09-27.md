@@ -1,6 +1,6 @@
 # Web-Parität und „Telegram als Client" — Audit
 
-**Datum:** 2026-09-27
+**Datum:** 2026-09-27 (Ersterstellung 08:00 Uhr, PR #316; verifiziert und ergänzt 2026-09-27 nachmittags nach CC-LIB-FINAL, siehe Abschnitt 7)
 **Status:** 🟡 ANALYSIS COMPLETE — DECISION PENDING (keine Implementierung, reines Dokument)
 **Auftrag (Nutzer, 2026-09-27):** Das Control Center (CC) soll vollständig unabhängig von Telegram werden; Telegram ist am Ende nur noch ein Client neben dem Web.
 **Vorgehen:** CLAUDE.md §3.A — Ist-Zustand → Verantwortlichkeiten → Zielgrenzen → kleinster Schritt.
@@ -31,7 +31,7 @@ Legende: ✅ geteilte `services/`-Logik, im CC erreichbar · 🟠 im CC vorhande
 | 📥 Downloads (Track, Playlist) | `klassen/download_handler.py` (1183 Z., hält Telegram-Objekte) + `services/downloader/*`; `ActiveDownloadRegistry` im Bot-Speicher | nur `GET /downloads/history` (Verlauf) — kein Start, kein Live-Status | 🔴 🟣 |
 | 📊 Statistiken (Rückblicke, Rankings, Timeline, Music DNA, Meine Library) | `services/statistik*` | `/statistics/me`, `/me/genres`, `/me/music-dna`, `/me/timeline`, `/statistics/{user}`, Library-Übersicht | ✅ 🟡 |
 | 👨‍👩‍👧‍👦 Familie (Statistik, Chat, Challenge) | `services/family/*` (Services existieren) | keine Route, keine Seite | 🔴 |
-| 🔧 Reprocessing (nur OWNER) | Subprozess `scripts/reprocess_artist_metadata.py` über `services/metadata/reprocessing_runner.py`, arbeitet auf einer Test-Sandbox | nur lesende Metadata-Seite (L2-Job ist ein anderes Werkzeug) | ⚪ |
+| 🔧 Reprocessing (Level 2, nur OWNER) | **entfernt** (siehe Abschnitt 7): `scripts/reprocess_artist_metadata.py`, `services/metadata/reprocessing_runner.py`/`track_reprocessor.py`, Telegram-Menü „🔧 Reprocessing" | nie vorhanden; L3 (`EXTERNAL_METADATA`) bleibt unverändert unter `repair-plan`/Jobs `repair-level3` | OBSOLETE |
 | 🩺 MusicBot Doctor | `services/library_repair/doctor_runner.py` | Jobs `health-scan`, `repair-safe-automatic` | ✅ |
 | 🔎 Library Health Review | `services/library_health/findings.py` | `library/findings*` (inkl. accept/unaccept/review/details) | ✅ |
 | 🛠️ Repair MusicBot (Plan, L2/L3, Statistik, History) | `services/library_repair/*` | `repair-plan`, Jobs `repair-level2/3`, `repairs/*` | ✅ |
@@ -103,7 +103,7 @@ Leitregeln (aus den bisherigen Entscheidungen abgeleitet, nicht neu erfunden):
 2. **Downloads aus dem Web starten?** Ja/Nein. Ja bedeutet: Extraktion der Orchestrierung aus `klassen/download_handler.py` in `services/` plus ein Ausführungsweg im Bot-Prozess (Entscheidung 1 ist Voraussetzung). Größter Einzelposten, eigene ARCH-Phase.
 3. **Login ohne Telegram?** Nur relevant, wenn Telegram komplett entfallen darf. Sonst bleibt Telegram der Identitätsanbieter des Web (dann ist „Client" fachlich erreicht, der Login nicht).
 4. **Familie (Statistik, Chat, Challenge) ins Web?** Fachlogik ist da; die Frage ist Nutzen.
-5. **Test-System (Unit/Integration/Performance per Telegram) und Reprocessing (OWNER, Sandbox):** bewusst Telegram-only/entfallen lassen oder ins Web?
+5. **Test-System (Unit/Integration/Performance per Telegram):** bewusst Telegram-only/entfallen lassen oder ins Web? (Reprocessing ist durch CC-LIB-FINAL erledigt, siehe Abschnitt 7 — keine offene Entscheidung mehr.)
 
 ---
 
@@ -121,15 +121,79 @@ Leitregeln (aus den bisherigen Entscheidungen abgeleitet, nicht neu erfunden):
 | 7 | Familie im Web | A | P3 | nach Entscheidung 4 | Entscheidung 4 |
 | 8 | `AccessLevel`/`permissions` aus `handlers/menu/` nach `services/` verschieben | D | P3 | reiner Move + Re-Export, keine Verhaltensänderung | — |
 | 9 | Login ohne Telegram | D | offen | nach Entscheidung 3 | Entscheidung 3 |
-| 10 | Test-System / Reprocessing | ⚪ | offen | nach Entscheidung 5 | Entscheidung 5 |
+| 10 | Test-System | ⚪ | offen | nach Entscheidung 5 | Entscheidung 5 |
 
 **Empfohlene Reihenfolge:** 1 → 2 → 3 (Doppelimplementierungen, kein neues Feature, bestehende Tests als Netz) → 4a (schnell, risikoarm) → Entscheidung 1 → 5 → 4b → 8; 6 erst nach Entscheidungen 1 und 2. Layout B der Health-Seite ist davon unabhängig (reine UI).
 
+Reprocessing (früher Punkt 10 hier) ist seit CC-LIB-FINAL kein Backlog-Punkt mehr — L2 wurde vollständig entfernt, siehe Abschnitt 7.
+
 ---
 
-## 6. Referenzen
+## 7. Verifikation nach CC-LIB-FINAL (2026-09-27, nachmittags)
+
+Dieses Audit (PR #316) wurde um 08:00 Uhr gemergt. Direkt danach liefen fünf
+weitere PRs auf `main`, alle im Library-/Metadata-Bereich, den Abschnitt 2.1
+bereits als ✅ geführt hatte:
+
+| PR | Inhalt | Wirkung auf dieses Audit |
+|---|---|---|
+| #317 CC-LIB-FINAL Phase A/B | Level 2 (`METADATA_REPROCESSING`) **vollständig entfernt**: `services/metadata/track_reprocessor.py`, `reprocessing_runner.py`, `scripts/reprocess_artist_metadata.py`, Telegram-Menü „🔧 Reprocessing", CC-Job `repair-level2` | löst die bisher offene ⚪-Zeile „Reprocessing" auf → **OBSOLETE** (Zeile in 2.1 aktualisiert). Die zehn zuvor auf L2 zeigenden Health-Issue-Codes (`META_ARTIST/TITLE/ALBUM/GENRE_MISSING`, `META_TITLE_NOT_CLEAN`, `GENRE_EMPTY/INVALID`, `LYRICS_MISSING/EMPTY/INVALID`) sind jetzt `MANUAL_REVIEW` statt einer automatischen Neuverarbeitung |
+| #319 Phase C | Service-Layer-Audit (nur Dokumentation): prüfte alle elf Metadata-Funktionen im CC gegen `services/`, fand **einen** Gap (Titel-Bearbeiten verlangte einen manuellen Dateipfad) | bestätigt unabhängig die ✅-Einstufung „Library-Wartung" aus 2.1 |
+| #320 Phase D | Der Gap aus Phase C behoben: Freitext-Pfad durch `<select>` (nach Album gruppiert) ersetzt | reine UI, keine neue Route — Parität unverändert, jetzt lückenlos |
+| #321 Phase E | Library-Home-Dashboard + Artist-Detail neu gestaltet | laut Commit-Message „reine Frontend-Änderung, keine neue API" — verifiziert, keine Matrix-Änderung |
+| #322/#323 | UI-Text-/Datenbindungs-Fixes im Artist-Detail | keine Matrix-Änderung |
+| #324 Polish | Metadaten-Workspace als Tabs (Artist/Titel/Album/Albuminterpret/Genre), „Attention-Card", zentrale Issue-Label-Tabelle in `common.js` | reine DOM-Umsortierung + Labels laut Commit; **eine Diskrepanz gefunden**, siehe unten |
+
+**Befund — Lyrics-Findings ohne Editor: entschieden und behoben (2026-09-27).**
+Der Auftrag zu diesem Audit ging davon aus, dass Lyrics-Issue-Codes auf
+`NOT_REPAIRABLE` stehen sollen, „solange kein Lyrics-Editor existiert".
+Tatsächlich standen `LYRICS_MISSING`/`LYRICS_EMPTY`/`LYRICS_INVALID` seit
+PR #317 auf `MANUAL_REVIEW`, gemeinsam mit den anderen neun ehemaligen
+L2-Codes — der Metadaten-Workspace (PR #324) hat aber nur Tabs für
+Artist/Titel/Album/Albuminterpret/Genre, keinen Lyrics-Tab. Ein Nutzer
+hätte einen als „manuell behebbar" markierten Fund gesehen, für den es im
+CC keine Handlungsmöglichkeit gab — Widerspruch zur Konvention, dass
+`MANUAL_REVIEW` = „behebbar über eine bestehende Edit-Aktion" bedeutet.
+
+**Nutzer-Entscheidung (2026-09-27):** `LYRICS_MISSING`/`_EMPTY`/`_INVALID`
+zurück auf `NOT_REPAIRABLE`. Kein Lyrics-Editor, keine neue Lyrics-UI/
+-Fachlogik im Rahmen dieser Entscheidung. Lyrics bleiben bewusst
+`NOT_REPAIRABLE`, bis ein eigener Lyrics-Editor als zukünftige Funktion
+beschlossen wird.
+
+Umgesetzt: `services/library_repair/planner.py` (drei Specs auf
+`RepairAction.NONE`/`RepairLevel.NOT_REPAIRABLE`, `approval=False`,
+analog zu `ALBUM_GENRE_INCONSISTENT`), `docs/LIBRARY_REPAIR.md` §4/§6a,
+`docs/FINDINGS_INDEX.md` (Zeile „Manual Metadata Editing v1/v2"). Von den
+zehn ehemaligen L2-Codes sind damit sieben `MANUAL_REVIEW` und drei
+(Lyrics) `NOT_REPAIRABLE`. Tests: `tests/test_library_repair_planner.py`
+(`_FORMER_L2_CODES` auf sieben Codes reduziert, neuer Test
+`test_lyrics_codes_are_not_repairable_without_editor`),
+`tests/test_library_repair_disposition_matrix.py::test_disposition_partition_sizes_snapshot`
+(Snapshot 19/29/5 statt 19/32/2), `tests/test_library_repair_cli_safe_automatic_scope.py`
+und `tests/test_control_center_repair_api.py` (Kommentare korrigiert, keine
+Assertion hing am konkreten Level). Alle vier Dateien + die thematische
+Suite (`tests/test_library_repair*.py tests/test_library_health*.py`,
+753 Tests) grün. **Nicht angefasst:** `docs/audits/LIBRARY_CLOSURE_COVERAGE_MATRIX_2026-09-09.md`
+— dieser eingefrorene Snapshot vom 09.09. war bereits durch PR #317 (L2
+komplett entfernt) veraltet, unabhängig von dieser Lyrics-Korrektur; das
+Nachziehen dieses historischen Dokuments ist ein eigener, hier nicht
+angeforderter Schritt (CLAUDE.md §8.A: bereits bestehende, unabhängige
+Abweichungen werden nicht ungefragt mitbehoben).
+
+**Ergebnis:** Keine der fünf Nach-Audit-PRs ändert etwas an den bereits als
+🔴/🟠/🟣 geführten Bereichen (Downloads, Familie, Duplicate, Backup,
+User-Verwaltung, Error-Verwaltung, Logger-Reste, Test-System, Identität) —
+alle betrafen ausschließlich Library/Metadata, das bereits ✅ war. Backlog
+(Abschnitt 5) und Priorisierung bleiben unverändert gültig, bis auf den
+entfallenen Reprocessing-Punkt und den neuen Lyrics-Befund oben.
+
+---
+
+## 8. Referenzen
 - `docs/audits/CC-AC-10A…10D_*_2026-09-22.md` (historisch), `CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md`
 - `docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md` (Snapshot-Präzedenz)
 - `docs/audits/ERROR_ADMINISTRATION_ARCHITECTURE_ANALYSIS_2026-09-27.md` (Varianten A–E)
+- `docs/audits/CC-LIB-FINAL_PHASE_C_SERVICE_LAYER_AUDIT_2026-09-27.md` (Service-Layer-Vollständigkeit Library/Metadata)
 - `docs/LIBRARY_REPAIR.md` §17 (Genre-Mapping im CC), §18 (Genre revalidieren im CC)
-- `docs/FINDINGS_INDEX.md`
+- `docs/FINDINGS_INDEX.md` (Zeile zu „Manual Metadata Editing v1/v2" bereits als OBSOLETE durch CC-LIB-FINAL geführt)
