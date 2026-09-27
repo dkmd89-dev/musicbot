@@ -17,6 +17,16 @@ unveraendert weiter (sonst kein Weg zurueck zum Ausschalten), alle
 anderen Nutzer bekommen an jedem Einstiegspunkt eine Wartungsmeldung
 statt der eigentlichen Funktion.
 
+Prozessuebergreifend (Bot <-> Control Center): Der Bot haelt eine langlebige
+Store-Instanz, das Control Center erzeugt pro Request eine neue
+(control_center/routers/admin_operations.py::_maintenance_store()). Damit ein
+Umschalten im Control Center auch im laufenden Bot wirkt, prueft jede Instanz
+vor dem Lesen per stat(), ob sich die Datei geaendert hat (mtime/Groesse/
+Inode - der atomare Write ersetzt die Datei), und laedt sie dann neu. Ohne
+Aenderung kostet ein Check nur den stat()-Aufruf. Der Sicherheitsdefault
+bleibt: fehlende/korrupte Datei == nicht aktiv (niemand wird versehentlich
+ausgesperrt).
+
 Reine Persistenzlogik ohne Telegram-Bezug, struktureller Zwilling zu
 services/downloader/download_history.py (atomares Schreiben: write-tmp +
 Path.replace(), analog INV-02). Datei unter data/ (nicht cache/) - folgt
@@ -67,11 +77,39 @@ class MaintenanceModeStore:
         self.logger = logger or get_module_logger("MaintenanceModeStore")
         self.state_file = Path(state_file)
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        self._file_signature = self._stat_signature()
         self._state = self._load()
         self.logger.info(
             f"🛠️ MaintenanceModeStore initialisiert: {self.state_file} "
             f"(aktiv={self._state.active})"
         )
+
+    def _stat_signature(self) -> Optional[tuple]:
+        """Identitaet des aktuellen Dateistands (mtime_ns, Groesse, Inode).
+        Der atomare Write (tmp + replace) legt einen neuen Inode an - damit
+        wird auch ein Wechsel innerhalb derselben mtime-Aufloesung erkannt.
+        None == Datei fehlt/nicht lesbar."""
+        try:
+            st = self.state_file.stat()
+        except OSError:
+            return None
+        return (st.st_mtime_ns, st.st_size, st.st_ino)
+
+    def _refresh_if_changed(self) -> None:
+        """Laedt den Zustand neu, wenn die Datei seit dem letzten Lesen/Schreiben
+        dieser Instanz veraendert wurde (z. B. durch das Control Center)."""
+        signature = self._stat_signature()
+        if signature == self._file_signature:
+            return
+        self._file_signature = signature
+        previous = self._state.active
+        self._state = self._load()
+        if self._state.active != previous:
+            self.logger.warning(
+                f"🛠️ Wartungsmodus extern geändert: "
+                f"{'AKTIV' if self._state.active else 'nicht aktiv'} "
+                f"(von User {self._state.changed_by_user_id})"
+            )
 
     def _load(self) -> MaintenanceState:
         try:
@@ -90,6 +128,9 @@ class MaintenanceModeStore:
     def _save(self) -> None:
         try:
             self._write_json_atomic(self.state_file, self._state.to_dict())
+            # Eigener Write: Signatur nachziehen, damit er nicht als externe
+            # Aenderung erneut geladen wird.
+            self._file_signature = self._stat_signature()
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Speichern des Wartungsmodus-Zustands: {e}")
 
@@ -110,6 +151,7 @@ class MaintenanceModeStore:
             raise
 
     def is_active(self) -> bool:
+        self._refresh_if_changed()
         return self._state.active
 
     def set_active(self, active: bool, changed_by_user_id: Optional[int] = None) -> None:
@@ -125,4 +167,5 @@ class MaintenanceModeStore:
         )
 
     def get_state(self) -> MaintenanceState:
+        self._refresh_if_changed()
         return self._state
