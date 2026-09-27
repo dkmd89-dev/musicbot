@@ -14,6 +14,7 @@ Extrahiert aus services/statistik_service.py (ARCH-003, P-6) - 1:1
 
 import json
 import re
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -83,8 +84,7 @@ class PlayHistoryRepository:
         history_file = self.history_file_for_user(navidrome_username)
 
         try:
-            with open(history_file, "w", encoding="utf-8") as f:
-                json.dump(history, f, indent=2, ensure_ascii=False)
+            self._write_json_atomic(history_file, history)
             self.logger.debug(
                 f"💾 Verlauf für '{navidrome_username}' gespeichert: {len(history)} Einträge"
             )
@@ -94,6 +94,27 @@ class PlayHistoryRepository:
                 f"❌ Konnte Verlaufsdatei ({history_file}) nicht speichern: {e}",
                 exc_info=True,
             )
+
+    @staticmethod
+    def _write_json_atomic(path: Path, data: List[Dict[str, Any]]) -> None:
+        """write-tmp + os.replace() (INV-02, Finding #17), analog zu
+        DownloadHistory._write_json_atomic(). Ein Abbruch/Fehler während
+        des Schreibens lässt die bisherige Verlaufsdatei unverändert; die
+        Corrupt-Recovery in load() bleibt als zweite Verteidigungslinie
+        bestehen. Der versteckte Temp-Name matcht nicht
+        "play_history_*.json". Fehler werden nach Aufräumen der
+        Temp-Datei weitergereicht (save() behandelt OSError wie bisher)."""
+        tmp_path = path.with_name(f".{path.name}.tmp_{uuid.uuid4().hex}")
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            tmp_path.replace(path)
+        except BaseException:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
 
     def cleanup_old_entries(
         self, navidrome_username: str, retention_days: Optional[int] = None

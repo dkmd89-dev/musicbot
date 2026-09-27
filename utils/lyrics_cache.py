@@ -2,6 +2,7 @@
 import json
 import hashlib
 import time
+import uuid
 from pathlib import Path
 from typing import Optional, Dict, Callable, Union
 from logger import get_module_logger
@@ -66,11 +67,31 @@ class LyricsCache:
         metadata["_cached_at"] = time.time()
         metadata["_cache_ttl"] = self.cache_ttl
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            self._write_json_atomic(path, metadata)
             self.logger.debug(f"💾 Cache gespeichert: {artist} - {title}")
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Speichern: {e}")
+
+    @staticmethod
+    def _write_json_atomic(path: Path, data: Dict) -> None:
+        """write-tmp + os.replace() (INV-02, Finding #17), analog zu
+        MetadataCache.store(). Die Zieldatei wird nie teilweise
+        überschrieben; bei einem Fehler bleibt die alte Datei erhalten
+        und die Temp-Datei wird entfernt. Der versteckte Temp-Name
+        (".<name>.tmp_<uuid>") matcht nicht das "*.json"-Muster von
+        cleanup(). Kein fsync(): abgesichert wird Prozessabbruch, nicht
+        Stromausfall (wie bei allen anderen Atomic-Writern im Projekt)."""
+        tmp_path = path.with_name(f".{path.name}.tmp_{uuid.uuid4().hex}")
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            tmp_path.replace(path)
+        except BaseException:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
 
     def invalidate(self, artist: str, title: str) -> None:
         key = self._get_key(artist, title)
