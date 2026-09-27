@@ -124,6 +124,7 @@ from services.downloader.downloader import YoutubeDownloader
 from services.duplicate.detector import DuplicateDetector
 from services.jobs.job_registry import JobRegistry
 from services.library_repair.doctor_runner import run_health_scan, run_safe_automatic_repair
+from services.library_repair.duplicate_runner import run_duplicate_scan
 from services.library_repair.genre_revalidation_runner import run_genre_revalidation_subprocess
 from services.library_repair.repair_service import (
     RepairAlreadyRunningError,
@@ -863,5 +864,93 @@ async def start_genre_revalidation_apply_job(
     job = registry.create(kind="genre_revalidation_apply", initiator=str(user_id))
     asyncio.create_task(
         _run_genre_revalidation_job(registry, job.job_id, artist=artist, apply=True, user_id=str(user_id))
+    )
+    return job_to_schema(job)
+
+
+# ── Duplikat-Check (read-only Vorschlag, kein Execute/Delete) ──────────────
+#
+# Backlog-Punkt "Duplikat-Check im CC" (docs/audits/
+# WEB_PARITY_TELEGRAM_CLIENT_AUDIT_2026-09-27.md §2.3 A / §5 Nr. 4a).
+# Bildet den bereits produktiven Telegram-Flow nach
+# (handlers/duplicate_check_handler.py) über dieselbe Service-Funktion
+# services/library_repair/duplicate_runner.py::run_duplicate_scan() —
+# keine eigene Duplikat-Erkennung hier, keine zweite Fachlogik.
+#
+# Bewusst NUR dieser eine, read-only Job-Typ (kein "-apply"-Gegenstück wie
+# bei der Genre-Revalidierung): das tatsächliche Löschen bleibt CLI-only
+# (scripts/library_repair.py --allow-delete --artist <Name> --apply, siehe
+# duplicate_runner.py-Docstring) — dieselbe bewusste Sicherheitsgrenze wie
+# in Telegram, hier nur additiv eine zweite Tür zum bestehenden Preview.
+#
+# Anders als bei der Genre-Revalidierung wird `artist` hier NICHT als
+# eigenständiges CLI-Argument übergeben, sondern von duplicate_runner.py in
+# einen Pfad eingebettet (Path(Config.LIBRARY_DIR) / artist, als EIN
+# "--path"-Wert) — eine führende "-" im Artist-Namen erzeugt daher keine
+# CLI-Flag-Verwechslung (kein zusätzlicher Zeichen-Check wie bei
+# _require_revalidation_artist nötig, `_require_artist` wie bei
+# repair-level3 reicht). Die eigentliche Pfad-Sicherheit (Traversal)
+# liegt ohnehin unabhängig vom Aufrufer in
+# scripts/resolve_duplicates.py::validate_scan_root() (Allowlist/
+# Denylist, siehe dortiger Docstring) — identisches Verteidigungsprinzip
+# wie SEC-006 in services/backup_admin.py, nur eine Schicht tiefer im
+# aufgerufenen Skript selbst.
+#
+# Kooperatives Abbrechen ist wirkungslos (ein einzelner atomarer await,
+# identisch zur Genre-Revalidierung).
+
+_DUPLICATE_CHECK_STDERR_TAIL = 500
+
+
+async def _run_duplicate_check_job(
+    registry: JobRegistry, job_id: str, *, artist: str, user_id: str,
+) -> None:
+    registry.mark_running(job_id)
+    registry.update_progress(job_id, 10.0, f"Duplikat-Scan läuft für {artist}…")
+    try:
+        result = await run_duplicate_scan(artist)
+    except RepairAlreadyRunningError as e:
+        registry.mark_failed(job_id, str(e))
+        return
+    except Exception as e:  # noqa: BLE001
+        _logger.error(f"Duplikat-Check-Job {job_id} fehlgeschlagen: {e!r}")
+        registry.mark_failed(job_id, "Interner Fehler beim Duplikat-Check.")
+        return
+
+    if result.report is None:
+        message = result.error_message or f"Duplikat-Scan beendet mit Exit-Code {result.exit_code}."
+        registry.mark_failed(
+            job_id, message,
+            result={
+                "exit_code": result.exit_code,
+                "timed_out": result.timed_out,
+                "stderr_tail": result.stderr_tail[-_DUPLICATE_CHECK_STDERR_TAIL:],
+            },
+        )
+        return
+
+    # report enthält ggf. read_only_intact=False (Exit-Code 3, vom Skript
+    # SELBST erkannte Safety-Violation) — bewusst trotzdem SUCCEEDED, wie
+    # in Telegram: es liegt ein gültiges, auswertbares Ergebnis vor, die
+    # UI zeigt dafür die Sicherheitswarnung statt der Vorschlagsliste an.
+    registry.mark_succeeded(job_id, result=result.report)
+
+
+@router.post(
+    "/duplicate-check",
+    response_model=JobSchema,
+    dependencies=[Depends(verify_same_origin)],
+)
+async def start_duplicate_check_job(
+    payload: ArtistLevelRepairRequest,
+    user_id: int = Depends(get_current_user_id),
+    registry: JobRegistry = Depends(get_job_registry),
+) -> JobSchema:
+    """Read-only Dry-Run-Scan: sucht Duplikate für EINEN Artist und zeigt
+    einen Vorschlag, löscht/schreibt nichts."""
+    artist = _require_artist(payload)
+    job = registry.create(kind="duplicate_check", initiator=str(user_id))
+    asyncio.create_task(
+        _run_duplicate_check_job(registry, job.job_id, artist=artist, user_id=str(user_id))
     )
     return job_to_schema(job)
