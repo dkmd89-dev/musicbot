@@ -57,7 +57,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from handlers.menu.models import AccessLevel
+from services.access_control import AccessLevel
 from logger import get_module_logger
 from services.clients.navidrome_api import NavidromeAPI
 from utils.navidrome_scan_trigger import NavidromeScanTrigger, ScanTimeoutError

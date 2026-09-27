@@ -37,7 +37,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 
 from config import Config
-from handlers.menu.models import AccessLevel
+from services.access_control import AccessLevel
 from logger import get_module_logger
 from services import user_admin
 from services.user_data import load_user_data, update_user_data

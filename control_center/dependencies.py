@@ -6,13 +6,13 @@ Telegram-Login-Widget-Verifikation + signierte Session-Cookies +
 Dev-Auth-Bypass, gemäß docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md
 Abschnitt 3.
 
-Reuse: Die AccessLevel-Auflösung nutzt denselben, bereits Telegram-freien
-Auth-Kern wie der Bot selbst (handlers/menu/permissions.py::
-get_user_access_level(), handlers/menu/models.py::AccessLevel) — beide
-Module erklären in ihrem eigenen Docstring ausdrücklich, keine Abhängigkeit
-auf Telegram-Infrastruktur zu haben. Das ist Wiederverwendung von bereits
-isolierter, Telegram-freier Auth-Logik (Master-Prompt Regel 51 "Common
-Core"), kein Bruch der handlers/-Schichtgrenze im Sinne von CLAUDE.md §4.
+Reuse: Die AccessLevel-Auflösung nutzt denselben Auth-Kern wie der Bot
+selbst (services/access_control.py::get_user_access_level()/AccessLevel)
+— seit Backlog-Punkt "AccessLevel/permissions nach services/ verschieben"
+(docs/audits/WEB_PARITY_TELEGRAM_CLIENT_AUDIT_2026-09-27.md §2.3 D / §5
+Nr. 8) die kanonische Stelle; handlers/menu/permissions.py und
+handlers/menu/models.py re-exportieren von dort für die bestehenden
+Telegram-seitigen Importstellen. Kein Import aus handlers/ mehr hier.
 
 MODERATOR-Auflösung (Nachtrag): get_user_access_level() nimmt ein Objekt
 mit `.user_data_cache`-Attribut als `user_mgmt_handler` entgegen (siehe
@@ -21,7 +21,7 @@ gekoppelte handlers/admin/user_management_handler.py::UserManagementHandler
 zu importieren, baut _UserDataCacheAdapter unten ein minimales
 Adapter-Objekt um services/user_data.py::load_user_data() (dieselbe,
 jetzt geteilte Telegram-freie Kernlogik, Master-Prompt Regel 51 "Common
-Core"). permissions.py selbst bleibt dabei unverändert.
+Core"). services/access_control.py selbst bleibt dabei unverändert.
 """
 
 from __future__ import annotations
@@ -37,9 +37,8 @@ from typing import Optional
 from fastapi import Cookie, Depends, HTTPException, Request
 
 from config import Config
-from handlers.menu.models import AccessLevel
-from handlers.menu.permissions import get_user_access_level
 from logger import get_module_logger
+from services.access_control import AccessLevel, get_user_access_level
 from services.user_data import load_user_data
 
 from .schemas.errors import ErrorDetail

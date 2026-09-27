@@ -48,7 +48,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from handlers.menu.models import AccessLevel
+from services.access_control import AccessLevel
 from logger import get_module_logger
 from services.library_health.score_history import read_score_history
 

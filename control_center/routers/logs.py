@@ -37,7 +37,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 
 from config import Config
-from handlers.menu.models import AccessLevel
+from services.access_control import AccessLevel
 from services.logs.reader import read_logs
 
 from ..dependencies import require_min_access_level

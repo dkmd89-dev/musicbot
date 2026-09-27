@@ -17,7 +17,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from config import Config
-from handlers.menu.models import AccessLevel
+from services.access_control import AccessLevel
 
 from ..dependencies import (
     SESSION_COOKIE_NAME,

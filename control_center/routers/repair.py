@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from handlers.menu.models import AccessLevel
+from services.access_control import AccessLevel
 from logger import get_module_logger
 from services.library_repair.planner import plan_repairs
 from services.library_repair.run_tracking import compute_repair_statistics, load_repair_history

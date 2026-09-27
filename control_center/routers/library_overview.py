@@ -45,7 +45,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from handlers.menu.models import AccessLevel
+from services.access_control import AccessLevel
 from config import Config
 from logger import get_module_logger
 

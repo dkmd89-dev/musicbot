@@ -9,6 +9,15 @@ hierher verschoben (reine Move-Operation, siehe P-1-Abschlussbericht
 Abschnitt 4/13 - diese vier Modelle sind Telegram-unabhängige
 Datenmodelle ohne Abhängigkeit auf RichMenuSystem/RichMenuHandler).
 
+AccessLevel selbst ist seit Backlog-Punkt "AccessLevel/permissions nach
+services/ verschieben" (docs/audits/WEB_PARITY_TELEGRAM_CLIENT_AUDIT_2026-09-27.md
+§2.3 D / §5 Nr. 8) nach services/access_control.py umgezogen (control_center/
+nutzte dieses Modul nur für AccessLevel, keine eigene Fachlogik) - Re-Export
+hier, damit bestehende `from handlers.menu.models import AccessLevel`-Stellen
+in handlers/ unverändert funktionieren. MenuState/MenuItem/MenuSession
+bleiben hier, da sie an die Telegram-Menü-Baumstruktur gebunden sind
+(callback_data, Callable-Handler) und von services/ nicht gebraucht werden.
+
 Dieses Modul darf keine Abhängigkeit auf rich_menu_system.py,
 rich_menu_handler.py oder Telegram-Infrastruktur haben.
 """
@@ -17,6 +26,10 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Callable, Any
 from enum import Enum
 from datetime import datetime
+
+from services.access_control import AccessLevel
+
+__all__ = ["MenuState", "AccessLevel", "MenuItem", "MenuSession"]
 
 
 class MenuState(Enum):
@@ -32,16 +45,6 @@ class MenuState(Enum):
     PROCESSING = "processing"
     WAITING_INPUT = "waiting_input"
     ERROR = "error"
-
-
-class AccessLevel(Enum):
-    """Zugriffsebenen für Menüpunkte"""
-
-    PUBLIC = 0
-    USER = 1
-    MODERATOR = 2
-    ADMIN = 3
-    OWNER = 4
 
 
 @dataclass

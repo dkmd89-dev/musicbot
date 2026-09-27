@@ -31,7 +31,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from config import Config
-from handlers.menu.models import AccessLevel
+from services.access_control import AccessLevel
 from logger import get_module_logger
 from services.logger_admin import (
     InvalidLogFilenameError,
