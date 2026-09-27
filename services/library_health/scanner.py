@@ -14,8 +14,7 @@ file_analysis/report auf. Der einzige Zusatz-Import mit potenziellem
 Zustand ist utils.genre_map.GenreMapper — nur dessen reine Lese-Methode
 validate_genre() wird verwendet, kein auto_learn. Als eigenstaendiger
 CLI-Subprozess ist das SingletonMixin-Verhalten unkritisch (First Mover,
-frischer Prozess) — identisch zur etablierten Begruendung in
-scripts/reprocess_artist_metadata.py Abschnitt 2a.
+frischer Prozess).
 """
 
 from __future__ import annotations

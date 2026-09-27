@@ -328,27 +328,14 @@ class TestRunSafeAutomaticRepairSimulatedSuccess:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# run_level2_repair() / run_level3_repair() (ARCH-033) - Pro-Artist-
-# Gegenstuecke zu run_safe_automatic_repair(), identisches Testmuster.
-# Bewusst Subprozess statt In-Process-Aufruf (EnhancedMetadataProcessor-
-# Singleton-Risiko, siehe doctor_runner.py::_run_level_repair_subprocess()
-# Docstring) - bestaetigt hier ueber die tatsaechliche cmd-Konstruktion.
+# run_level3_repair() (ARCH-033) - Pro-Artist-Gegenstueck zu
+# run_safe_automatic_repair(), identisches Testmuster. Bestaetigt hier
+# ueber die tatsaechliche cmd-Konstruktion. run_level2_repair() wurde in
+# CC-LIB-FINAL entfernt (siehe test_run_level2_repair_is_removed).
 # ─────────────────────────────────────────────────────────────────────────
 
 
-class TestRunLevel2And3RepairMockedFailures:
-    @pytest.mark.asyncio
-    async def test_level2_oserror_on_subprocess_start_is_reported_not_raised(self):
-        with patch(
-            "asyncio.create_subprocess_exec",
-            new=AsyncMock(side_effect=OSError("no such file")),
-        ):
-            result = await dr.run_level2_repair("Bausa", timeout=5)
-
-        assert result.exit_code is None
-        assert not result.success
-        assert "konnte nicht gestartet werden" in result.error_message
-
+class TestRunLevel3RepairMockedFailures:
     @pytest.mark.asyncio
     async def test_level3_oserror_on_subprocess_start_is_reported_not_raised(self):
         with patch(
@@ -362,19 +349,7 @@ class TestRunLevel2And3RepairMockedFailures:
         assert "konnte nicht gestartet werden" in result.error_message
 
 
-class TestRunLevel2And3RepairSimulatedSuccess:
-    @pytest.mark.asyncio
-    async def test_level2_success_result(self):
-        fake_proc = Mock()
-        fake_proc.communicate = AsyncMock(return_value=(b"3 success \xc2\xb7 0 failed", b""))
-        fake_proc.returncode = 0
-
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=fake_proc)):
-            result = await dr.run_level2_repair("Bausa", timeout=5)
-
-        assert result.success
-        assert "3 success" in result.stdout_tail
-
+class TestRunLevel3RepairSimulatedSuccess:
     @pytest.mark.asyncio
     async def test_level3_success_result(self):
         fake_proc = Mock()
@@ -386,29 +361,6 @@ class TestRunLevel2And3RepairSimulatedSuccess:
 
         assert result.success
         assert "1 success" in result.stdout_tail
-
-    @pytest.mark.asyncio
-    async def test_level2_uses_artist_and_metadata_reprocessing_level_only(self):
-        captured_cmd = {}
-
-        async def fake_create_subprocess_exec(*cmd, **kwargs):
-            captured_cmd["cmd"] = cmd
-            fake_proc = Mock()
-            fake_proc.communicate = AsyncMock(return_value=(b"", b""))
-            fake_proc.returncode = 0
-            return fake_proc
-
-        with patch("asyncio.create_subprocess_exec", new=fake_create_subprocess_exec):
-            await dr.run_level2_repair("Bausa", timeout=5)
-
-        cmd = captured_cmd["cmd"]
-        assert "--artist" in cmd
-        assert cmd[cmd.index("--artist") + 1] == "Bausa"
-        assert "--level" in cmd
-        assert cmd[cmd.index("--level") + 1] == "METADATA_REPROCESSING"
-        assert "--apply" in cmd
-        for forbidden in ("SAFE_AUTOMATIC", "COVER", "EXTERNAL_METADATA", "LOUDNESS"):
-            assert forbidden not in cmd
 
     @pytest.mark.asyncio
     async def test_level3_uses_artist_and_external_metadata_level_only(self):
@@ -434,10 +386,9 @@ class TestRunLevel2And3RepairSimulatedSuccess:
             assert forbidden not in cmd
 
     @pytest.mark.asyncio
-    async def test_level2_and_level3_use_different_artists_correctly(self):
-        """Zwei unterschiedliche Artists duerfen sich nicht vermischen -
-        einfacher aber wichtiger Regressionsschutz gegen einen
-        Copy-Paste-Fehler zwischen den beiden Funktionen."""
+    async def test_level3_calls_use_different_artists_correctly(self):
+        """Zwei aufeinanderfolgende Aufrufe mit unterschiedlichen Artists
+        duerfen sich nicht vermischen."""
         captured = []
 
         async def fake_create_subprocess_exec(*cmd, **kwargs):
@@ -448,8 +399,14 @@ class TestRunLevel2And3RepairSimulatedSuccess:
             return fake_proc
 
         with patch("asyncio.create_subprocess_exec", new=fake_create_subprocess_exec):
-            await dr.run_level2_repair("Bausa", timeout=5)
+            await dr.run_level3_repair("Bausa", timeout=5)
             await dr.run_level3_repair("Filow", timeout=5)
 
         assert captured[0][captured[0].index("--artist") + 1] == "Bausa"
         assert captured[1][captured[1].index("--artist") + 1] == "Filow"
+
+
+def test_run_level2_repair_is_removed():
+    """Regression (CC-LIB-FINAL): kein Subprozess-Pfad fuer die entfernte
+    Metadaten-Neuverarbeitung (--level METADATA_REPROCESSING)."""
+    assert not hasattr(dr, "run_level2_repair")

@@ -105,9 +105,6 @@ class RichMenuSystem:
         # MaintenanceModeStore-Instanz (services/bot_maintenance.py), von
         # RichMenuHandler injiziert - siehe set_maintenance_store().
         self.maintenance_store = None
-        # Metadata-Reprocessing ("🔧 Reprocessing"): von RichMenuHandler
-        # injiziert - siehe set_reprocessing_handler().
-        self.reprocessing_handler = None
         # MusicBot Doctor ("🩺 Doctor", Phase 3 P1.3): von RichMenuHandler
         # injiziert - siehe set_doctor_handler().
         self.doctor_handler = None
@@ -224,11 +221,6 @@ class RichMenuSystem:
         """Setzt den geteilten MaintenanceModeStore (Wartungsmodus-Feature)."""
         self.maintenance_store = store
         self.logger.info("✅ MaintenanceModeStore verknüpft")
-
-    def set_reprocessing_handler(self, handler) -> None:
-        """Setzt den ReprocessingMenuHandler (Metadata-Reprocessing-Feature)."""
-        self.reprocessing_handler = handler
-        self.logger.info("✅ Reprocessing-Handler verknüpft")
 
     def set_doctor_handler(self, handler) -> None:
         """Setzt den LibraryDoctorHandler (MusicBot-Doctor-Feature, Phase 3 P1.3)."""
@@ -358,38 +350,12 @@ class RichMenuSystem:
 
     # ====== ENDE WARTUNGSMODUS ======
 
-    # ====== METADATA-REPROCESSING ======
-
-    async def _handle_reprocessing_show(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        """Einstiegspunkt aus dem Menü-System - Wrapper analog zu den
-        _handle_navidrome_*-Methoden."""
-        await library_actions.handle_reprocessing_show(
-            update, context, self.reprocessing_handler
-        )
-
-    async def _handle_reprocessing_callback(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        callback_data: str,
-    ) -> None:
-        """Dispatcher für alle reprocess:* Callbacks - siehe
-        handlers/menu/actions/library.py::handle_reprocessing_callback()."""
-        await library_actions.handle_reprocessing_callback(
-            update, context, callback_data, self.reprocessing_handler, self.config, self.logger
-        )
-
-    # ====== ENDE METADATA-REPROCESSING ======
-
     # ====== MUSICBOT DOCTOR (Phase 3, P1.3) ======
 
     async def _handle_doctor_scan(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Einstiegspunkt aus dem Menü-System - Wrapper analog zu
-        _handle_reprocessing_show()."""
+        """Einstiegspunkt aus dem Menü-System."""
         await library_actions.handle_doctor_scan(update, context, self.doctor_handler)
 
     async def _handle_doctor_callback(
@@ -778,11 +744,6 @@ class RichMenuSystem:
                 await self._handle_maintenance_callback(update, context, callback_data)
                 return
 
-            # ── NEU: Metadata-Reprocessing ────────────────────────────
-            if callback_data.startswith("reprocess:"):
-                await self._handle_reprocessing_callback(update, context, callback_data)
-                return
-
             # ── NEU: MusicBot Doctor (Phase 3, P1.3) ──────────────────
             if callback_data.startswith("doctor:"):
                 await self._handle_doctor_callback(update, context, callback_data)
@@ -1074,8 +1035,6 @@ class RichMenuSystem:
     # persistenten Verlaufsspeicher, der als eigener Folgeschritt kam
     # (seit 2026-09-03 umgesetzt, siehe handle_download_history() in
     # actions/download.py und docs/FINDINGS_INDEX.md).
-    # 🔄 Reprocessing (Priorität 5) ist laut Nutzer-Entscheidung ein
-    # eigener Bereich, bewusst NICHT Teil dieses Menüs.
 
     async def _handle_download_menu(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE

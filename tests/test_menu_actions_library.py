@@ -3,7 +3,7 @@
 """
 Characterization/Regressionstests für handlers/menu/actions/library.py
 (ARCH-024/P-2, Actions Extraction) - 1:1 verschoben aus
-RichMenuSystem._handle_reprocessing_*/_handle_doctor_*/_handle_review_*/
+RichMenuSystem._handle_doctor_*/_handle_review_*/
 _handle_repair_*.
 """
 
@@ -20,58 +20,68 @@ def _make_update(user_id: int = 111):
     return update
 
 
-# ---- Reprocessing (Owner-only) ----
+# ---- Reprocessing: in CC-LIB-FINAL entfernt ----
 
 
-@pytest.mark.asyncio
-async def test_reprocessing_callback_denies_non_owner():
-    update = _make_update(user_id=999)
-    config = Mock(OWNER_USER_ID=1)
-    await lib_actions.handle_reprocessing_callback(
-        update, Mock(), "reprocess:show", Mock(), config, Mock()
-    )
-    update.callback_query.answer.assert_awaited_once_with(
-        "⛔ Keine Berechtigung", show_alert=True
-    )
+def test_reprocessing_menu_actions_are_removed():
+    """Regression: das Telegram-Reprocessing-Menue (reprocess:*) existiert
+    nicht mehr — es haette die Metadaten-Neuableitung als Bedienweg
+    angeboten."""
+    assert not hasattr(lib_actions, "handle_reprocessing_show")
+    assert not hasattr(lib_actions, "handle_reprocessing_callback")
 
 
-@pytest.mark.asyncio
-async def test_reprocessing_callback_allows_owner_show():
-    update = _make_update(user_id=1)
-    config = Mock(OWNER_USER_ID=1)
+# ---- L3 Pro-Artist-Reparatur (l23rep:*, L2 entfernt) ----
+
+
+def _l23_handler():
     handler = Mock()
-    handler.show_artist_list = AsyncMock()
-    await lib_actions.handle_reprocessing_callback(
-        update, Mock(), "reprocess:show", handler, config, Mock()
-    )
-    handler.show_artist_list.assert_awaited_once()
+    for name in ("handle_l23_preview", "handle_l23_confirm_prompt", "handle_l23_execute"):
+        setattr(handler, name, AsyncMock())
+    return handler
 
 
 @pytest.mark.asyncio
-async def test_reprocessing_callback_pick_parses_index():
+@pytest.mark.parametrize("verb,method", [
+    ("preview", "handle_l23_preview"),
+    ("confirm", "handle_l23_confirm_prompt"),
+    ("execute", "handle_l23_execute"),
+])
+async def test_l23rep_l3_callbacks_are_routed(verb, method):
     update = _make_update(user_id=1)
-    config = Mock(OWNER_USER_ID=1)
-    handler = Mock()
-    handler.handle_pick = AsyncMock()
-    await lib_actions.handle_reprocessing_callback(
-        update, Mock(), "reprocess:pick:3", handler, config, Mock()
+    handler = _l23_handler()
+    await lib_actions.handle_l23rep_callback(
+        update, Mock(), f"l23rep:{verb}:l3:4", handler, lambda uid: True, Mock()
     )
-    handler.handle_pick.assert_awaited_once()
-    args, _ = handler.handle_pick.call_args
-    assert args[2] == 3
+    getattr(handler, method).assert_awaited_once()
+    assert getattr(handler, method).call_args.args[2:] == ("l3", 4)
 
 
 @pytest.mark.asyncio
-async def test_reprocessing_callback_invalid_index_shows_alert():
+@pytest.mark.parametrize("verb", ["preview", "confirm", "execute"])
+async def test_l23rep_stale_l2_callback_is_rejected_and_never_executes(verb):
+    """Eine noch im Chat stehende Alt-Nachricht mit l23rep:*:l2:<idx>
+    (vor CC-LIB-FINAL) darf nichts mehr ausloesen."""
     update = _make_update(user_id=1)
-    config = Mock(OWNER_USER_ID=1)
-    handler = Mock()
-    await lib_actions.handle_reprocessing_callback(
-        update, Mock(), "reprocess:pick:notanumber", handler, config, Mock()
+    handler = _l23_handler()
+    await lib_actions.handle_l23rep_callback(
+        update, Mock(), f"l23rep:{verb}:l2:0", handler, lambda uid: True, Mock()
     )
-    update.callback_query.answer.assert_awaited_once_with(
-        "⚠️ Ungültiger Callback", show_alert=True
+    update.callback_query.answer.assert_awaited_once_with("⚠️ Ungültiges Level", show_alert=True)
+    handler.handle_l23_preview.assert_not_awaited()
+    handler.handle_l23_confirm_prompt.assert_not_awaited()
+    handler.handle_l23_execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_l23rep_denies_non_admin():
+    update = _make_update(user_id=5)
+    handler = _l23_handler()
+    await lib_actions.handle_l23rep_callback(
+        update, Mock(), "l23rep:execute:l3:0", handler, lambda uid: False, Mock()
     )
+    update.callback_query.answer.assert_awaited_once_with("⛔ Keine Berechtigung", show_alert=True)
+    handler.handle_l23_execute.assert_not_awaited()
 
 
 # ---- Doctor (admin-gated, via is_admin_check callable) ----

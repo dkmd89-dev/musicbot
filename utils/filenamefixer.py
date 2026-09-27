@@ -374,9 +374,9 @@ class FilenameFixerTool(SingletonMixin):
         # Pruefung vor dem spaeteren Path.replace() konnte das Fenster
         # zwischen Pruefung und tatsaechlichem Schreiben nicht schliessen -
         # bei zwei Prozessen, die zufaellig denselben Zielnamen berechnen
-        # (z.B. der laufende Bot + ein gleichzeitig manuell gestarteter
-        # scripts/reprocess_artist_metadata.py-Lauf, der bewusst dieselbe
-        # move_to_library()-Implementierung wiederverwendet), konnten beide
+        # (z.B. der laufende Bot + ein gleichzeitig manuell gestartetes
+        # Wartungsscript, das dieselbe move_to_library()-Implementierung
+        # wiederverwendet), konnten beide
         # die Pruefung passieren, bevor einer geschrieben hatte - der
         # Verlierer wurde durch das anschliessende Path.replace() dann
         # stillschweigend ueberschrieben (Datenverlust, keine Korruption -

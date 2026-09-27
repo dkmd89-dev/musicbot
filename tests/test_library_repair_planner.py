@@ -97,15 +97,40 @@ def test_structure_and_audio_route_to_manual_review():
 
 # ── Production-Audit 2026-09-08: vormals tote EXTERNAL_METADATA-Codes ──
 
-def test_no_registry_entry_claims_reprocess_artist_metadata_script():
-    """Production-Audit 2026-09-08: der automatisierte Repair-Pfad ruft
-    NIE scripts/reprocess_artist_metadata.py auf (weder als Subprozess
-    noch sonst), sondern track_reprocessor.process_file() in-process.
-    Kein Registry-Eintrag darf das Skript als reuses_component behaupten -
-    das waere ein irrefuehrendes Signal ueber den tatsaechlichen
-    Ausfuehrungspfad."""
+# ── CC-LIB-FINAL: Metadata-Reprocessing (L2) ist entfernt ──────────────
+
+# Die zehn Codes, die bis CC-LIB-FINAL auf L2 METADATA_REPROCESSING zeigten.
+_FORMER_L2_CODES = (
+    "META_ARTIST_MISSING", "META_TITLE_MISSING", "META_TITLE_NOT_CLEAN",
+    "META_ALBUM_MISSING", "META_GENRE_MISSING", "GENRE_EMPTY", "GENRE_INVALID",
+    "LYRICS_MISSING", "LYRICS_EMPTY", "LYRICS_INVALID",
+)
+
+
+def test_reprocessing_level_and_action_no_longer_exist():
+    """Regression: weder RepairLevel noch RepairAction duerfen die
+    entfernte Neuverarbeitung noch kennen — sonst koennte ein Planner-
+    Eintrag wieder eine automatische Neuableitung ankuendigen, die manuelle
+    Tag-Edits ueberschreibt."""
+    from services.library_repair.models import RepairAction
+
+    assert not hasattr(RepairLevel, "METADATA_REPROCESSING")
+    assert not hasattr(RepairAction, "METADATA_REPROCESS")
+    assert "METADATA_REPROCESSING" not in {lvl.value for lvl in RepairLevel}
+
+
+def test_former_l2_codes_are_manual_review_and_not_actionable():
+    for code in _FORMER_L2_CODES:
+        plan = plan_repairs(_report(_issue(code)))
+        c = plan.candidates[0]
+        assert c.level is RepairLevel.MANUAL_REVIEW, code
+        assert c.expected_change, f"{code}: MANUAL_REVIEW braucht einen dokumentierten Grund"
+        assert c not in plan.actionable(), code
+
+
+def test_no_registry_entry_references_the_removed_reprocessor():
     misleading = [s.issue_code for s in REGISTRY.values()
-                  if "reprocess_artist_metadata.py" in s.reuses_component]
+                  if "reprocess" in s.reuses_component.lower()]
     assert misleading == []
 
 
@@ -134,15 +159,15 @@ def test_filename_title_mismatch_signal_warns_about_skip_rate():
     assert "SKIPPED" in c.expected_change
 
 
-def test_genre_missing_and_genre_empty_are_metadata_reprocessing():
+def test_genre_missing_and_genre_empty_are_manual_review():
     """Production-Audit 2026-09-08: von EXTERNAL_METADATA nach
-    METADATA_REPROCESSING verschoben — GenreProcessor laeuft bereits
-    identisch zu GENRE_INVALID als Teil der vollen Pipeline."""
+    METADATA_REPROCESSING verschoben; seit CC-LIB-FINAL (L2 entfernt)
+    MANUAL_REVIEW — Behebung ueber Genre-Mapping / 'Genre setzen'."""
     for code in ("META_GENRE_MISSING", "GENRE_EMPTY"):
         plan = plan_repairs(_report(_issue(code)))
         c = plan.candidates[0]
-        assert c.level is RepairLevel.METADATA_REPROCESSING, code
-        assert c in plan.actionable()
+        assert c.level is RepairLevel.MANUAL_REVIEW, code
+        assert c not in plan.actionable()
 
 
 # ── Plan-Aggregation ────────────────────────────────────────────────────
@@ -191,15 +216,26 @@ def test_filter_by_artist_matches_path_prefix():
 # ── Artist-Gruppierung (ARCH-033) ────────────────────────────────────────
 
 
-def test_group_candidates_by_artist_counts_l2_and_l3_separately():
+def test_group_candidates_by_artist_counts_l3_candidates():
     r = _report(
-        _issue("META_TITLE_NOT_CLEAN", artist="Bausa", path="Bausa/Singles/a.m4a"),
-        _issue("META_TITLE_NOT_CLEAN", artist="Bausa", path="Bausa/Singles/b.m4a"),
         _issue("META_MB_RECORDING_MISSING", artist="Bausa", path="Bausa/Singles/a.m4a"),
+        _issue("META_MB_RELEASE_MISSING", artist="Bausa", path="Bausa/Singles/a.m4a"),
+        _issue("META_ISRC_MISSING", artist="Bausa", path="Bausa/Singles/b.m4a"),
     )
     groups = group_candidates_by_artist(plan_repairs(r))
-    assert groups["Bausa"] == ArtistCandidateSummary(artist="Bausa", l2_count=2, l3_count=1)
+    assert groups["Bausa"] == ArtistCandidateSummary(artist="Bausa", l3_count=3)
     assert groups["Bausa"].total == 3
+    assert not hasattr(groups["Bausa"], "l2_count")
+
+
+def test_group_candidates_by_artist_ignores_former_l2_codes():
+    """Ehemalige L2-Codes sind MANUAL_REVIEW und tauchen in der
+    Pro-Artist-Reparatur-Auswahl nicht mehr auf."""
+    r = _report(
+        _issue("META_TITLE_NOT_CLEAN", artist="Bausa", path="Bausa/Singles/a.m4a"),
+        _issue("LYRICS_MISSING", artist="Bausa", path="Bausa/Singles/a.m4a"),
+    )
+    assert group_candidates_by_artist(plan_repairs(r)) == {}
 
 
 def test_group_candidates_by_artist_ignores_other_levels():
@@ -213,11 +249,11 @@ def test_group_candidates_by_artist_ignores_other_levels():
 
 def test_group_candidates_by_artist_sorted_by_total_descending_then_alpha():
     r = _report(
-        _issue("META_TITLE_NOT_CLEAN", artist="Zeeba", path="Zeeba/Singles/a.m4a"),
-        _issue("META_TITLE_NOT_CLEAN", artist="Aymen", path="Aymen/Singles/a.m4a"),
-        _issue("META_TITLE_NOT_CLEAN", artist="Aymen", path="Aymen/Singles/b.m4a"),
-        _issue("META_TITLE_NOT_CLEAN", artist="Bausa", path="Bausa/Singles/a.m4a"),
-        _issue("META_TITLE_NOT_CLEAN", artist="Bausa", path="Bausa/Singles/b.m4a"),
+        _issue("META_ISRC_MISSING", artist="Zeeba", path="Zeeba/Singles/a.m4a"),
+        _issue("META_ISRC_MISSING", artist="Aymen", path="Aymen/Singles/a.m4a"),
+        _issue("META_ISRC_MISSING", artist="Aymen", path="Aymen/Singles/b.m4a"),
+        _issue("META_ISRC_MISSING", artist="Bausa", path="Bausa/Singles/a.m4a"),
+        _issue("META_ISRC_MISSING", artist="Bausa", path="Bausa/Singles/b.m4a"),
     )
     groups = group_candidates_by_artist(plan_repairs(r))
     # Aymen und Bausa haben beide 2 Kandidaten (Gleichstand -> alphabetisch),
@@ -227,7 +263,7 @@ def test_group_candidates_by_artist_sorted_by_total_descending_then_alpha():
 
 def test_group_candidates_by_artist_deterministic():
     r = _report(
-        _issue("META_TITLE_NOT_CLEAN", artist="Bausa", path="Bausa/Singles/a.m4a"),
+        _issue("META_ISRC_MISSING", artist="Bausa", path="Bausa/Singles/a.m4a"),
         _issue("META_MB_RECORDING_MISSING", artist="Filow", path="Filow/Singles/a.m4a"),
     )
     plan = plan_repairs(r)

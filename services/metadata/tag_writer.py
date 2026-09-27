@@ -254,9 +254,8 @@ class TagWriter:
         if primary and secondary:
             combined = [primary] + secondary[:3]
             # "; " statt " / " als Genre-Separator (2026-09, auf
-            # ausdruecklichen Wunsch) - zunaechst kontrolliert nur ueber
-            # das isolierte Reprocessing-Script validiert
-            # (scripts/reprocess_artist_metadata.py), Phase 2: hier direkt
+            # ausdruecklichen Wunsch) - zunaechst kontrolliert in einer
+            # isolierten Testumgebung validiert, danach hier direkt
             # uebernommen.
             genre_string = "; ".join(combined)
             audio["©gen"] = [genre_string]

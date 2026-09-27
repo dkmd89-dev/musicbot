@@ -472,7 +472,7 @@ def test_accepted_findings_use_tabler_list_and_keep_unaccept_hook(tmp_path: Path
 
 @needs_node
 def test_repair_plan_enables_start_hides_hint_and_advances_step(tmp_path: Path) -> None:
-    plan = {"counts_by_level": {"SAFE_AUTOMATIC": 12, "L2": 4}, "actionable_total": 16,
+    plan = {"counts_by_level": {"SAFE_AUTOMATIC": 12, "EXTERNAL_METADATA": 4}, "actionable_total": 16,
             "manual_review_total": 3, "health_score": 99.9}
     out = _run(tmp_path, {"ops": [{"op": "call", "fn": "renderRepairPlan", "args": ["@repair-plan-content", plan]}]})
     assert out["els"]["repair-start-btn"]["disabled"] is False
@@ -486,16 +486,17 @@ def test_repair_plan_enables_start_hides_hint_and_advances_step(tmp_path: Path) 
 
 @needs_node
 def test_level23_artist_list_keeps_button_contract(tmp_path: Path) -> None:
-    plan = {"artists": [{"artist": 'Kygo "K"', "l2_count": 2, "l3_count": 0},
-                        {"artist": "t-low", "l2_count": 0, "l3_count": 1}]}
+    plan = {"artists": [{"artist": 'Kygo "K"', "l3_count": 2},
+                        {"artist": "t-low", "l3_count": 1}]}
     out = _run(tmp_path, {"ops": [{"op": "call", "fn": "renderLevel23Artists", "args": ["@level23-artists-content", plan]}]})
     html = out["els"]["level23-artists-content"]["html"]
-    assert html.count("level23-btn") == 2  # nur vorhandene Level als Button
-    assert 'data-level="l2" data-artist="Kygo &quot;K&quot;" data-count="2"' in html
+    assert html.count("level23-btn") == 2  # ein L3-Button je Artist
+    assert 'data-level="l3" data-artist="Kygo &quot;K&quot;" data-count="2"' in html
     assert 'data-level="l3" data-artist="t-low" data-count="1"' in html
+    assert 'data-level="l2"' not in html  # CC-LIB-FINAL: L2 entfernt
     assert out["steps"] == [False, False, True]
     empty = _run(tmp_path, {"ops": [{"op": "call", "fn": "renderLevel23Artists", "args": ["@level23-artists-content", {"artists": []}]}]})
-    assert "Keine L2/L3-Kandidaten." in empty["els"]["level23-artists-content"]["html"]
+    assert "Keine L3-Kandidaten." in empty["els"]["level23-artists-content"]["html"]
 
 
 def _runs(n: int) -> list:

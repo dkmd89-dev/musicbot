@@ -132,7 +132,7 @@ class TestChangedFiles:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Core: echte Orchestrierung (SAFE_AUTOMATIC + L2), Subprozess gemockt
+# Core: echte Orchestrierung (SAFE_AUTOMATIC + L3), Subprozess gemockt
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -162,11 +162,11 @@ def isolated_data_dir(tmp_path, monkeypatch):
 
 
 SAFE = ("safe", "META_ALBUM_ARTIST_MISSING", "run_safe_automatic_repair")
-L2 = ("l2", "META_TITLE_NOT_CLEAN", "run_level2_repair")
+L3 = ("l3", "META_MB_RECORDING_MISSING", "run_level3_repair")
 
 
 def _run_service(kind, *, exit_code, entries, issues_open_after=None):
-    """Führt execute_safe_automatic_repair()/execute_level2_repair() mit
+    """Führt execute_safe_automatic_repair()/execute_level3_repair() mit
     gemocktem Scan/Subprozess aus; der Fake-Subprozess schreibt `entries`
     ins echte Journal (dasselbe Muster wie tests/test_repair_service.py)."""
     level, code, run_attr = kind
@@ -197,7 +197,7 @@ def _run_service(kind, *, exit_code, entries, issues_open_after=None):
         if level == "safe":
             result = run(rs.execute_safe_automatic_repair(triggered_by="test"))
         else:
-            result = run(rs.execute_level2_repair("Bausa", triggered_by="test"))
+            result = run(rs.execute_level3_repair("Bausa", triggered_by="test"))
     return result, fid
 
 
@@ -211,7 +211,7 @@ def _success(result):
     return result.success
 
 
-@pytest.mark.parametrize("kind", [SAFE, L2], ids=["safe_automatic", "l2"])
+@pytest.mark.parametrize("kind", [SAFE, L3], ids=["safe_automatic", "l3"])
 class TestServiceCases:
     def test_case_a(self, kind):
         result, _ = _run_service(kind, exit_code=0, entries=_entries(success=5))
@@ -297,7 +297,7 @@ def _safe_result(status, counts, *, exit_code=0, changed=None, affected=None):
 def _l23_result(status, counts, *, exit_code=0):
     entries = _entries(**{k.lower(): v for k, v in counts.items()})
     return LevelRepairResult(
-        repair_id="r", artist="Bausa", level="l2", status=status,
+        repair_id="r", artist="Bausa", level="l3", status=status,
         started_at="t0", finished_at="t1", total=sum(counts.values()),
         success=counts.get("SUCCESS", 0), failed=counts.get("FAILED", 0),
         skipped=counts.get("SKIPPED", 0), unresolved=counts.get("UNRESOLVED", 0),
@@ -369,13 +369,13 @@ class TestTelegramL23SharesSemantics:
     def test_same_emoji_as_safe_automatic(self, handler, status, counts, emoji):
         exit_code = 1 if (status == "UNRESOLVED" and "SUCCESS" in counts) else 0
         safe = handler._format_result(_safe_result(status, counts, exit_code=exit_code))
-        l23 = handler._format_l23_result("l2", "Bausa", _l23_result(status, counts, exit_code=exit_code))
+        l23 = handler._format_l23_result("l3", "Bausa", _l23_result(status, counts, exit_code=exit_code))
         assert safe.startswith(emoji)
         assert l23.startswith(emoji)
 
     def test_l23_exit_code_warning(self, handler):
         text = handler._format_l23_result(
-            "l2", "Bausa", _l23_result("UNRESOLVED", _counts(success=5), exit_code=1),
+            "l3", "Bausa", _l23_result("UNRESOLVED", _counts(success=5), exit_code=1),
         )
         assert "Exit-Code 1" in text
 
@@ -389,14 +389,14 @@ def _run_job(result):
     import control_center.routers.jobs as jobs_router
 
     registry = JobRegistry()
-    job = registry.create(kind="repair_level2", initiator="1")
+    job = registry.create(kind="repair_level3", initiator="1")
 
     async def _fake_execute(artist, *, triggered_by):
         return result
 
-    with patch.object(jobs_router, "execute_level2_repair", _fake_execute):
+    with patch.object(jobs_router, "execute_level3_repair", _fake_execute):
         run(jobs_router._run_level_repair_job(
-            registry, job.job_id, level="l2", artist="Bausa", user_id="1",
+            registry, job.job_id, level="l3", artist="Bausa", user_id="1",
         ))
     return registry.get(job.job_id)
 
@@ -490,7 +490,7 @@ def _render(path: Path, render_fn: str, result: dict, tmp_path: Path) -> str:
 def _job_result(status, counts, exit_code=0):
     entries = _entries(**{k.lower(): v for k, v in counts.items()})
     return {
-        "artist": "Bausa", "level": "l2", "status": status, "total": len(entries),
+        "artist": "Bausa", "level": "l3", "status": status, "total": len(entries),
         "success": counts.get("SUCCESS", 0), "failed": counts.get("FAILED", 0),
         "skipped": counts.get("SKIPPED", 0), "unresolved": counts.get("UNRESOLVED", 0),
         "resolved_count": 0, "affected_files": [e["file"] for e in entries],

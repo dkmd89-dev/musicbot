@@ -456,8 +456,9 @@ async def test_repair_job_records_initiator(client, monkeypatch):
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# POST /repair-level2, POST /repair-level3 — Pro-Artist L2/L3 (Phase 3,
-# Pendant zu ARCH-033 §12 Telegram-Flow)
+# POST /repair-level3 — Pro-Artist L3 (Phase 3, Pendant zu ARCH-033 §12
+# Telegram-Flow). POST /repair-level2 (METADATA_REPROCESSING) wurde in
+# CC-LIB-FINAL entfernt.
 # ─────────────────────────────────────────────────────────────────────────
 
 from dataclasses import dataclass, field  # noqa: E402
@@ -467,7 +468,7 @@ from dataclasses import dataclass, field  # noqa: E402
 class _FakeLevelRepairResult:
     repair_id: str = "repair-1"
     artist: str = "Kygo"
-    level: str = "l2"
+    level: str = "l3"
     status: str = "SUCCESS"
     started_at: str = "2026-09-20T00:00:00+00:00"
     finished_at: str = "2026-09-20T00:01:00+00:00"
@@ -488,7 +489,6 @@ class _FakeLevelRepairResult:
 
 
 @pytest.mark.parametrize("level,endpoint,kind", [
-    ("l2", "repair-level2", "repair_level2"),
     ("l3", "repair-level3", "repair_level3"),
 ])
 @pytest.mark.asyncio
@@ -503,7 +503,7 @@ async def test_level_repair_job_succeeds(client, monkeypatch, level, endpoint, k
         return _FakeLevelRepairResult(level=level, artist=artist)
 
     monkeypatch.setattr(
-        jobs_router, "execute_level2_repair" if level == "l2" else "execute_level3_repair",
+        jobs_router, "execute_level3_repair",
         _fake_execute,
     )
 
@@ -525,7 +525,7 @@ async def test_level_repair_job_succeeds(client, monkeypatch, level, endpoint, k
     assert captured["triggered_by"].startswith("control_center:")
 
 
-@pytest.mark.parametrize("level,endpoint", [("l2", "repair-level2"), ("l3", "repair-level3")])
+@pytest.mark.parametrize("level,endpoint", [("l3", "repair-level3")])
 @pytest.mark.asyncio
 async def test_level_repair_job_skipped_when_no_candidates_counts_as_success(
     client, monkeypatch, level, endpoint
@@ -538,7 +538,7 @@ async def test_level_repair_job_skipped_when_no_candidates_counts_as_success(
         )
 
     monkeypatch.setattr(
-        jobs_router, "execute_level2_repair" if level == "l2" else "execute_level3_repair",
+        jobs_router, "execute_level3_repair",
         _fake_execute,
     )
 
@@ -554,7 +554,7 @@ async def test_level_repair_job_skipped_when_no_candidates_counts_as_success(
     assert body["result"]["status"] == "SKIPPED"
 
 
-@pytest.mark.parametrize("level,endpoint", [("l2", "repair-level2"), ("l3", "repair-level3")])
+@pytest.mark.parametrize("level,endpoint", [("l3", "repair-level3")])
 @pytest.mark.asyncio
 async def test_level_repair_job_fails_with_diagnostic_result(client, monkeypatch, level, endpoint):
     import control_center.routers.jobs as jobs_router
@@ -566,7 +566,7 @@ async def test_level_repair_job_fails_with_diagnostic_result(client, monkeypatch
         )
 
     monkeypatch.setattr(
-        jobs_router, "execute_level2_repair" if level == "l2" else "execute_level3_repair",
+        jobs_router, "execute_level3_repair",
         _fake_execute,
     )
 
@@ -583,7 +583,7 @@ async def test_level_repair_job_fails_with_diagnostic_result(client, monkeypatch
     assert body["result"]["failed"] == 3
 
 
-@pytest.mark.parametrize("level,endpoint", [("l2", "repair-level2"), ("l3", "repair-level3")])
+@pytest.mark.parametrize("level,endpoint", [("l3", "repair-level3")])
 @pytest.mark.asyncio
 async def test_level_repair_job_fails_when_lock_already_held(client, monkeypatch, level, endpoint):
     """Teilt sich den prozessübergreifenden Lock mit Telegram/CLI
@@ -597,7 +597,7 @@ async def test_level_repair_job_fails_when_lock_already_held(client, monkeypatch
         raise RepairAlreadyRunningError("Es läuft bereits eine Reparatur.")
 
     monkeypatch.setattr(
-        jobs_router, "execute_level2_repair" if level == "l2" else "execute_level3_repair",
+        jobs_router, "execute_level3_repair",
         _fake_execute,
     )
 
@@ -613,7 +613,7 @@ async def test_level_repair_job_fails_when_lock_already_held(client, monkeypatch
     assert "bereits eine Reparatur" in body["error"]
 
 
-@pytest.mark.parametrize("endpoint", ["repair-level2", "repair-level3"])
+@pytest.mark.parametrize("endpoint", ["repair-level3"])
 @pytest.mark.asyncio
 async def test_level_repair_job_rejects_empty_artist(client, endpoint):
     response = await client.post(
@@ -624,7 +624,7 @@ async def test_level_repair_job_rejects_empty_artist(client, endpoint):
     assert response.json()["error"]["code"] == "ARTIST_REQUIRED"
 
 
-@pytest.mark.parametrize("endpoint", ["repair-level2", "repair-level3"])
+@pytest.mark.parametrize("endpoint", ["repair-level3"])
 @pytest.mark.asyncio
 async def test_level_repair_job_rejected_without_origin_header(client, endpoint):
     response = await client.post(f"/api/v1/jobs/{endpoint}", json={"artist": "Kygo"})
@@ -640,12 +640,28 @@ async def test_level_repair_job_records_initiator(client, monkeypatch):
     async def _fake_execute(artist, *, triggered_by):
         return _FakeLevelRepairResult(artist=artist)
 
-    monkeypatch.setattr(jobs_router, "execute_level2_repair", _fake_execute)
+    monkeypatch.setattr(jobs_router, "execute_level3_repair", _fake_execute)
     monkeypatch.setattr(Config, "OWNER_USER_ID", property(lambda self: 999))
 
     body = (
         await client.post(
-            "/api/v1/jobs/repair-level2", json={"artist": "Kygo"}, headers=_SAME_ORIGIN,
+            "/api/v1/jobs/repair-level3", json={"artist": "Kygo"}, headers=_SAME_ORIGIN,
         )
     ).json()
     assert body["initiator"] == "999"
+
+
+@pytest.mark.asyncio
+async def test_repair_level2_job_endpoint_is_removed(client):
+    """Regression (CC-LIB-FINAL): kein Job-Endpunkt mehr fuer die entfernte
+    Metadaten-Neuverarbeitung (L2). Der Aufruf darf keinen Job anlegen."""
+    import control_center.routers.jobs as jobs_router
+
+    assert not hasattr(jobs_router, "execute_level2_repair")
+    assert not hasattr(jobs_router, "start_level2_repair_job")
+
+    response = await client.post(
+        "/api/v1/jobs/repair-level2", json={"artist": "Kygo"}, headers=_SAME_ORIGIN,
+    )
+    assert response.status_code in (404, 405)
+    assert "job_id" not in response.json()

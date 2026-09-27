@@ -1,5 +1,19 @@
 # MusicBot — Smart Library Repair (Phase 2)
 
+> **CC-LIB-FINAL (2026-09-27):** Level 2 (`METADATA_REPROCESSING`, volle
+> Metadaten-Neuverarbeitung ueber `track_reprocessor.process_file()`) und
+> das isolierte Test-Werkzeug `scripts/reprocess_artist_metadata.py`
+> wurden ersatzlos entfernt — beide haetten manuell gesetzte Artist-/
+> Titel-/Album-/Genre-Tags durch eine automatische Neuableitung
+> ueberschreiben koennen. Die betroffenen Health-Issue-Codes sind jetzt
+> `MANUAL_REVIEW` und werden ueber die kontextbezogenen Metadata-Edit-
+> Aktionen des Control Centers (Artist/Titel/Album/Albuminterpret/Genre
+> bearbeiten, `services/library_repair/maintenance_service.py`) behoben.
+> Abschnitte, die `METADATA_REPROCESSING`/L2 als aktuell ausfuehrbare
+> Faehigkeit beschreiben (§3/§4/§6a/§12), sind historische Dokumentation
+> des vor CC-LIB-FINAL bestehenden Verhaltens. Level 3 (`EXTERNAL_METADATA`,
+> nur MusicBrainz-IDs/ISRC nachtragen) bleibt unveraendert bestehen.
+
 Leitet aus den Findings des [Library Health Scanners](LIBRARY_HEALTH.md)
 konkrete, sichere, nachvollziehbare Reparaturaktionen ab.
 
@@ -33,7 +47,7 @@ Verification-Scan; alle bereits gegen die Produktions-Library gelaufen.
 | **Cover** (`CoverProcessor`, only-if-better) | ✅ | makko-Album 6× 300→3000px |
 | **`ALBUM_COVER_INCONSISTENT`** (offline, best-existing) | ✅ | 198 SUCCESS, `19→0`, Health 97.9→98.0 |
 | **Level 3 — MusicBrainz-IDs / ISRC** | ✅ | DRY-RUN 01099: 6 Nachträge; Prod-Lauf: 0 sichere Treffer (MB-Abdeckung für Deutschrap/2Pac-Bootlegs gering) |
-| **Level 2 — volle Neuverarbeitung** (`track_reprocessor.process_file`) | ✅ | makko 19/19 SUCCESS (`META_TITLE_NOT_CLEAN 19→0`); Cover-Nebeneffekt via Album-Cover-Executor 4/4 |
+| **Level 2 — volle Neuverarbeitung** | ❌ entfernt (CC-LIB-FINAL, 2026-09-27) | historisch: makko 19/19 SUCCESS (`META_TITLE_NOT_CLEAN 19→0`); Cover-Nebeneffekt via Album-Cover-Executor 4/4 |
 | **Loudness** (`apply_replaygain`, verlustfreier RG-Tag) | ✅ | 133/133 SUCCESS (99 SET + 34 CLEAR), `LOUDNESS_OFF_TARGET 133→0`, Health 98.0 |
 | **Duplicate** (`resolve_duplicates.py`, andockt) | ✅ | Prod-Scan: 388 Dateien, 2 Gruppen, 0 auto-resolvable (beide korrekt MANUAL_REVIEW) |
 
@@ -110,7 +124,7 @@ später ausführt.
 | Level | Bedeutung | Ausführende Komponente | Freigabe | Extern | Destruktiv |
 |---|---|---|---|---|---|
 | `SAFE_AUTOMATIC` | Ergebnis deterministisch aus vorhandenen Daten | `TagWriter` (atomar) + `split_main_and_featuring` + `sanitize_filename` | nein (nur `--apply`) | nein | nein |
-| `METADATA_REPROCESSING` | volle Neuverarbeitung über die echte Pipeline | `services/metadata/track_reprocessor.py::process_file` (in-process, echte config.Config — **nicht** `scripts/reprocess_artist_metadata.py`, siehe Kasten unten) | ja | ja | nein |
+| ~~`METADATA_REPROCESSING`~~ | **entfernt (CC-LIB-FINAL, 2026-09-27)** — siehe Hinweis oben | — | — | — | — |
 | `EXTERNAL_METADATA` | fehlende MB-IDs / ISRC | `MusicBrainzClient` | ja | ja | nein |
 | `COVER` | fehlendes / schlechtes / uneinheitliches Cover | `CoverProcessor` | ja | ja | nein |
 | `LOUDNESS` | gemessene Lautheit > 2 dB neben −16 LUFS (`LOUDNESS_OFF_TARGET`) | `replaygain_repairs` — verlustfreier `replaygain_track_gain`-Tag | ja | ja | nein (Audio byte-identisch) |
@@ -143,10 +157,7 @@ Health-Issue-Code genau ein Mapping hat und kein Mapping veraltet ist.
 | `META_ALBUM_ARTIST_MISSING` | SAFE_AUTOMATIC | Album-Artist = Haupt-Artist |
 | `ALBUM_ARTIST_INCONSISTENT` | SAFE_AUTOMATIC | Album-Artist aller Tracks vereinheitlichen |
 | `FILENAME_TITLE_MISMATCH` / `FILENAME_SUSPICIOUS` | SAFE_AUTOMATIC | Dateiname im selben Verzeichnis neu bilden |
-| `META_ARTIST_MISSING` / `_TITLE_MISSING` / `_ALBUM_MISSING` | METADATA_REPROCESSING | `track_reprocessor.process_file()` |
-| `META_TITLE_NOT_CLEAN` | METADATA_REPROCESSING | Titel über die reale Pipeline bereinigen (Anführungszeichen/`prod.`/Marketing-Suffix raus), Audio unverändert |
-| `GENRE_INVALID` / `LYRICS_*` | METADATA_REPROCESSING | Genre/Lyrics neu bestimmen |
-| `META_GENRE_MISSING` / `GENRE_EMPTY` | METADATA_REPROCESSING | GenreProcessor läuft bereits identisch zu `GENRE_INVALID` als Teil der vollen Pipeline (Production-Audit 2026-09-08: vorher fälschlich `EXTERNAL_METADATA` ohne Executor) |
+| `META_ARTIST_MISSING` / `_TITLE_MISSING` / `_ALBUM_MISSING` / `META_TITLE_NOT_CLEAN` / `GENRE_INVALID` / `LYRICS_*` / `META_GENRE_MISSING` / `GENRE_EMPTY` | MANUAL_REVIEW *(vor CC-LIB-FINAL: METADATA_REPROCESSING)* | Kein automatischer Fix mehr — im Control Center über Artist/Titel/Album/Genre bearbeiten manuell setzen |
 | `META_MB_*_MISSING` / `META_ISRC_MISSING` | EXTERNAL_METADATA | MusicBrainz-Match (nur bei Eindeutigkeit) |
 | `META_YEAR_MISSING` | MANUAL_REVIEW | keine Jahr-Fetch-Implementierung vorhanden (Production-Audit 2026-09-08: vorher fälschlich `EXTERNAL_METADATA` ohne Executor) |
 | `ALBUM_RELEASE_ID_INCONSISTENT` | MANUAL_REVIEW | mehrere Release-IDs im Album — welche kanonisch ist, manuell entscheiden (würde bestehende Werte überschreiben müssen statt nur fehlende zu ergänzen; Production-Audit 2026-09-08: vorher fälschlich `EXTERNAL_METADATA` ohne Executor) |
@@ -267,121 +278,25 @@ ist extern/Netzwerk und langsam): `apply_cover_repairs()` für
 
 Keine offenen Executoren mehr — Phase 2 ist mit §6d (Duplicate) komplett.
 
-## 6a. Level-2-Executor — volle Neuverarbeitung (implementiert)
+## 6a. Level-2-Executor — volle Neuverarbeitung (CC-LIB-FINAL: entfernt)
 
-`--level METADATA_REPROCESSING` bzw. `--issue META_TITLE_NOT_CLEAN` /
-`GENRE_INVALID` / `LYRICS_*` / `META_{ARTIST,TITLE,ALBUM}_MISSING` /
-`META_GENRE_MISSING` / `GENRE_EMPTY` (extern, langsam — **nie** im
-Default-`--apply`): `apply_level2(reprocess)`.
-
-> **Klarstellung (Production-Audit 2026-09-08):** `apply_level2()` ruft
-> `services/metadata/track_reprocessor.py::process_file()` **direkt
-> in-process** auf — **nie** `scripts/reprocess_artist_metadata.py` als
-> Subprozess oder sonst wie. Das Skript ist ein davon unabhängiges,
-> eigenständiges CLI-Testwerkzeug mit eigenem `ALLOWED_ROOT =
-> /tmp/musicbot_test`-Guard, das denselben Kern importiert, aber
-> strukturell nicht gegen die Produktionslibrary laufen kann (siehe unten)
-> und ausschließlich manuell/per Telegram-„Reprocessing"-Menü
-> (`reprocessing_runner.py`, §6a unten) ausgelöst wird — unabhängig vom
-> Finding→Repair-Flow dieses Dokuments.
-
-`apply_level2()` behandelt **je Issue-Code** einer Datei ein eigenes
-`ExecOutcome` (Production-Audit 2026-09-08, Fix 2026-09-08): `SUCCESS`
-gilt nur, wenn das für den jeweiligen Code relevante Zielfeld (z. B.
-`lyrics_present` für `LYRICS_MISSING`) sich laut Pipeline-Diff tatsächlich
-geändert hat — nicht schon, wenn irgendein anderes Feld der Datei sich
-änderte (`process_file()` läuft immer als volle Pipeline, ändert daher oft
-mehrere Felder gleichzeitig).
-
-**Issue-spezifischer Hint (PR #177/#178):** betrifft genau **ein**
-Issue-Code eine Datei, reicht `apply_level2()` diesen als
-`process_file(requested_issue=…)` durch — in **beiden** Zweigen (DRY-RUN
-*und* EXECUTE; die Execute-Durchreichung fehlte in PR #177 und wurde in
-PR #178 nachgezogen, sonst wich die Vorschau vom `--apply`-Ergebnis ab).
-Für `LYRICS_MISSING` / `GENRE_INVALID` unterdrückt `process_file()` dann
-den Artist-`normalize()`-Nebeneffekt (bestehende, bereits kanonische
-©ART-Tags bleiben unangetastet) und das „ReplayGain/Loudness fehlt"-
-UNRESOLVED (für einen reinen Lyrics-/Genre-Fix nicht relevant). Bei
-mehreren Codes pro Datei bleibt `requested_issue=None` → volles
-Pipeline-Verhalten.
-
-> **Reichweite (Nachprüf-Durchgang 2026-09-09, korrigiert nach ARCH-033-F1-
-> Adversarial-Review 2026-09-21 — die vorherige Fassung dieses Absatzes
-> behauptete fälschlich, `apply_level2()` sei weiterhin CLI-only bzw. der
-> Telegram-Pfad erreiche `requested_issue` nie; beides war falsch und
-> widersprach dem `requested_issue`-Absatz oben):** der
-> SAFE_AUTOMATIC-Telegram-Pfad — „MusicBot Doctor" (`doctor_runner.py::
-> run_safe_automatic_repair()`) und „Repair MusicBot"s globale Aktion
-> (`repair_service.py::execute_safe_automatic_repair()`) — ruft
-> ausschliesslich `--level SAFE_AUTOMATIC --apply` auf; L2-Kandidaten
-> werden dort doppelt ausgeschlossen (Planner-Level-Filter
-> `filter_plan(level="SAFE_AUTOMATIC")` **und** das `l2_requested`-Gate in
-> `main()`), gepinnt in `tests/test_library_repair_cli_safe_automatic_scope.py`.
-> Seit ARCH-033 (§12 unten, 2026-09-14) gibt es daneben den bewusst
-> separaten, pro-Artist bestätigten L2/L3-Pfad
-> (`repair_service.py::execute_level2_repair()` →
-> `doctor_runner.py::run_level2_repair()` → `--level
-> METADATA_REPROCESSING --apply`, kein `--issue`-Flag) — dieser erreicht
-> `apply_level2()` absichtlich, genau wie ein manueller CLI-Aufruf mit
-> `--level METADATA_REPROCESSING` ohne `--issue`. `requested_issue` wird
-> in beiden Fällen identisch **pro Datei** aus den Kandidaten-Codes
-> abgeleitet (`executor.py`: `codes[0] if len(codes) == 1 else None`,
-> siehe Absatz oben) — nur der CLI-Flag `--issue` (erzwingt einen
-> einzelnen Code über alle Dateien hinweg) ist über Telegram nicht
-> setzbar. Auch die Telegram-„Reprocessing"-Ansicht erreicht
-> `requested_issue` nicht — sie ruft `process_file()` über
-> `scripts/reprocess_artist_metadata.py` ohne den Parameter (immer
-> `None` → volles Pipeline-Verhalten).
-
-**Option 2a (Nutzer-Entscheidung 2026-09-04):** Der Kern von
-`scripts/reprocess_artist_metadata.py` (`process_file()` + `snapshot()` +
-alle Helfer, ~925 Zeilen) liegt jetzt in
-`services/metadata/track_reprocessor.py` — **verhaltensgleich**, die
-importlib-geladenen `tests/test_reprocess_artist_metadata*.py` (87) sind
-die Charakterisierung. Das Script behält `ALLOWED_ROOT = /tmp/musicbot_test`,
-seine Path-Safety, den `ReprocessLogger` und die Post-Run-Snapshots und
-importiert den Kern nur noch. Das Telegram-Menü
-(`services/metadata/reprocessing_runner.py`, Subprozess, test-only) ist
-unberührt.
-
-- Ein `reprocess()`-Lauf pro Datei (die L2-Codes treffen oft dieselbe
-  Datei). `_build_reprocess()` im CLI konstruiert `EnhancedMetadataProcessor`
-  + MB-/LastFM-Client **einmal** mit der echten `config.Config`.
-- `process_file()` schreibt **in-place ohne eigenes Backup** → der Executor
-  legt VOR dem Aufruf eine Per-Datei-Kopie außerhalb der Library an und
-  prüft danach verbindlich, dass die **Audio-Essenz** (dekodierter Stream,
-  container-unabhängig) byte-identisch ist. Jede Abweichung, ein
-  Pipeline-`status == "error"` oder ein von der Pipeline selbst gemeldetes
-  `audio_essence_changed` / `audio_stream_changed` → **Rollback** (inkl.
-  Rücknahme eines evtl. schon erfolgten Renames).
-- `unresolved`-Hinweise der Pipeline (z. B. „ReplayGain fehlt") werden in
-  `ExecOutcome.reason` **durchgereicht**, nicht verschluckt.
-- **Nebeneffekt, bewusst = echtes Pipeline-Verhalten:** im EXECUTE-Modus
-  aktualisiert `process_file()` die Auto-Learn-Mappings
-  (`mapping/auto_learned_*`) mit den beobachteten Feature-Artists/Genres —
-  wie bei einem frischen Download. Das CLI weist im EXECUTE-Modus darauf hin.
-- DRY-RUN: `process_file(dry_run=True)` schreibt nichts, liefert eine
-  Vorhersage; `ExecOutcome` = `DRY_RUN` mit Before/After aus dieser
-  Vorhersage.
-
-> **Betriebs-Hinweis — Cover + Teil-Album-Läufe:** `process_file()` ersetzt
-> das eingebettete Cover, **sobald** die Pipeline ein abweichendes Cover
-> liefert — nicht „nur wenn besser" wie der Cover-Executor (§5a). Betrifft
-> ein L2-Lauf nur *einen Teil* der Tracks eines Albums (z. B. `--issue
-> META_TITLE_NOT_CLEAN` traf nur 5 von 20 Tracks), können danach im Album
-> unterschiedliche Cover-Abmessungen stehen → neuer `ALBUM_COVER_INCONSISTENT`
-> (INFO). Der Verification-Scan meldet das (Exit 1). **Nacharbeit:** direkt
-> `library_repair.py --artist <A> --issue ALBUM_COVER_INCONSISTENT --apply`
-> — der Album-Cover-Executor hebt alle Tracks offline auf das je vorhandene
-> beste Cover (nie Downscale).
-
-**Produktionslauf 2026-09-04 (`--artist makko --issue META_TITLE_NOT_CLEAN`):**
-19/19 SUCCESS, Audio byte-identisch. Titel `"X"` / `"X" prod. Y` → `X` (alle
-19), 2 Renames (`ADLIBS`, `WEIN`), 1 Rename korrekt blockiert (`Echt/Nie…`
-mit `/` im Titel → unresolved), 7 Dateien MB-IDs ergänzt, 1× Lyrics,
-`META_TITLE_NOT_CLEAN 19→0`, `LYRICS_MISSING 12→11`, Health 97,8→98,0.
-Anschließend `ALBUM_COVER_INCONSISTENT` (Cover-Nebeneffekt, s. o.) mit dem
-Album-Cover-Executor behoben: 4/4 SUCCESS, `2→0`, Verification grün.
+> **Entfernt am 2026-09-27 (CC-LIB-FINAL).** `apply_level2()`
+> (`services/library_repair/executor.py`), `L2_CODES`,
+> `services/metadata/track_reprocessor.py`,
+> `services/metadata/reprocessing_runner.py` und
+> `scripts/reprocess_artist_metadata.py` existieren nicht mehr. Grund:
+> die volle Neuverarbeitung lief automatisch ueber die Pipeline und
+> konnte dabei manuell gesetzte Artist-/Titel-/Album-/Genre-Tags
+> ueberschreiben — nicht vereinbar mit der Zielarchitektur, in der
+> manuelle Metadaten-Aenderungen dauerhaft erhalten bleiben. Die zehn
+> betroffenen Issue-Codes (`META_ARTIST_MISSING`, `META_TITLE_MISSING`,
+> `META_TITLE_NOT_CLEAN`, `META_ALBUM_MISSING`, `META_GENRE_MISSING`,
+> `GENRE_EMPTY`, `GENRE_INVALID`, `LYRICS_MISSING`, `LYRICS_EMPTY`,
+> `LYRICS_INVALID`) sind seitdem `MANUAL_REVIEW` (§3/§4) und werden ueber
+> die Control-Center-Metadata-Edit-Aktionen (§11/§15/§16) behoben. Die
+> urspruengliche, ausfuehrliche Beschreibung dieses Abschnitts (Betrieb,
+> Produktionslaeufe, `requested_issue`-Hint) bleibt in der Git-Historie
+> dieser Datei nachvollziehbar.
 
 ## 6b. Loudness-Executor — verlustfreier ReplayGain-Tag (implementiert)
 
@@ -543,8 +458,8 @@ services/library_repair/doctor_runner.py reine Subprozess-Orchestrierung
 Ruft `scripts/library_health_check.py` bzw. `scripts/library_repair.py
 --level SAFE_AUTOMATIC --apply` ausschließlich als eigenständige
 Subprozesse auf (`asyncio.create_subprocess_exec`) — importiert sie nie,
-exakt dasselbe Muster wie `services/metadata/reprocessing_runner.py` für
-`scripts/reprocess_artist_metadata.py`. Jeder Lauf läuft als
+dasselbe Prinzip wie der fruehere, in CC-LIB-FINAL entfernte
+Reprocessing-Subprozess-Aufruf. Jeder Lauf läuft als
 Hintergrund-Task (`asyncio.create_task`), damit ein mehrminütiger Scan
 nicht die gesamte Telegram-Application blockiert (die läuft ohne
 `concurrent_updates=True`).
@@ -565,7 +480,7 @@ Prozentanteil an der Library bei datei-bezogenen Codes.
 
 **Bewusst nur `SAFE_AUTOMATIC` über diesen Weg erreichbar** — alle
 externen/destruktiven Level (`COVER`/`EXTERNAL_METADATA`/
-`METADATA_REPROCESSING`/`LOUDNESS`/`DUPLICATE`) bleiben CLI-only, exakt
+`LOUDNESS`/`DUPLICATE`) bleiben CLI-only, exakt
 dieselbe Grenze wie beim Default-`--apply` auf der Kommandozeile (§3).
 Profitiert automatisch von der Navidrome-Auto-Scan-Automatik aus §8, da
 beide denselben `scripts/library_repair.py`-Subprozess aufrufen.
@@ -643,9 +558,9 @@ Repair History (library_repair_runs.json + bestehendes Journal)
 
 **Sicherheitsgrenze, erweitert seit ARCH-033:** ohne Vorschau-Umweg
 direkt ausführbar bleibt nur `SAFE_AUTOMATIC` (verlustfrei, kein
-Netzwerk, kein Re-Encode). `METADATA_REPROCESSING` (L2) und
-`EXTERNAL_METADATA` (L3) sind seit ARCH-033 zusätzlich über Telegram
-erreichbar, aber ausschließlich pro Artist mit eigener Vorschau und
+Netzwerk, kein Re-Encode). `EXTERNAL_METADATA` (L3) ist seit ARCH-033
+zusätzlich über Telegram erreichbar, aber ausschließlich pro Artist mit
+eigener Vorschau und
 eigener Bestätigung (siehe §12) — nie als globaler Batch wie
 SAFE_AUTOMATIC. `COVER`/`LOUDNESS`/`DUPLICATE` werden im Plan/in den
 Reparaturvorschlägen weiterhin nur angezeigt (🟡 REVIEW, zur
@@ -823,7 +738,7 @@ Produktionslauf der drei Scripts existierte (ARCH-031 E).
 `Hauptmenü → Administration → Bibliothek & Navidrome → 🧹 Library-Wartung`:
 
 ```text
-Artist wählen (index-basierter Picker, wie beim Reprocessing-Menü)
+Artist wählen (index-basierter Picker, ARCH-031 B.8-Muster)
    ↓
 Aktion wählen (🎤 Artist Casing / 🧹 Legacy Genre / 🎼 Genre setzen)
    ↓
@@ -871,8 +786,9 @@ Management v2 (§14, Chat-Charakterisierung 2026-09-15) geschlossen:
 
 - ~~`GENRE_EMPTY`/`META_GENRE_MISSING` künftig über den leichteren
   `set-genre --from-mapping`-Pfad statt voller `METADATA_REPROCESSING`?~~
-  **CLOSED (§14):** Planner-Routing selbst bleibt bewusst unverändert
-  (weiterhin `METADATA_REPROCESSING`) — zusätzlich dazu findet der neue
+  **CLOSED (§14, damals):** Planner-Routing selbst blieb zum
+  Entscheidungszeitpunkt bewusst unverändert (`METADATA_REPROCESSING`,
+  seit CC-LIB-FINAL `MANUAL_REVIEW`) — zusätzlich dazu fand der neue
   Telegram-Einstieg „🧹 Fehlende Genres" (`libmaint:missing`) betroffene
   Artists read-only über den bestehenden Health-Scan/Planner und führt
   in den leichteren `set-genre`-Flow (§14.1), ohne den Finding-Status
@@ -893,10 +809,19 @@ Management v2 (§14, Chat-Charakterisierung 2026-09-15) geschlossen:
 
 ---
 
-## 12. Telegram Level-2/Level-3-Reparatur (Pro-Artist, ARCH-033, implementiert)
+## 12. Telegram Level-3-Reparatur (Pro-Artist, ARCH-033, implementiert)
 
-**Erweitert §10 (Repair MusicBot) um zwei weitere, tatsächlich
-ausführbare Level** — bewusst NICHT als globale Batch-Aktion wie
+> **CC-LIB-FINAL (2026-09-27):** dieser Abschnitt beschrieb urspruenglich
+> Level 2 UND Level 3 gemeinsam (`l23rep:*`-Callback-Praefix, historisch
+> beibehalten). Level 2 (`METADATA_REPROCESSING`) ist entfernt (§6a) —
+> `execute_level2_repair()`/`run_level2_repair()` existieren nicht mehr,
+> der Telegram-Flow bietet pro Artist ausschliesslich noch L3 an. Die
+> ausfuehrliche L2-spezifische Beschreibung (Subprozess-Begruendung,
+> `requested_issue`-Nebeneffekte, Auto-Learn-Hinweis) bleibt in der
+> Git-Historie dieser Datei nachvollziehbar.
+
+**Erweitert §10 (Repair MusicBot) um ein weiteres, tatsächlich
+ausführbares Level** — bewusst NICHT als globale Batch-Aktion wie
 SAFE_AUTOMATIC, sondern ausschließlich pro Artist mit eigener Vorschau
 und eigener Bestätigung (`docs/adr/0003-telegram-level2-level3-per-artist-confirmation.md`):
 
@@ -905,24 +830,23 @@ Findings (wie §10, nur OPEN)
    ↓
 plan_repairs() / group_candidates_by_artist()   (services/library_repair/planner.py)
    ↓
-Artist-Liste (L2-/L3-Kandidatenzahl je Artist, index-basiert, paginiert,
+Artist-Liste (L3-Kandidatenzahl je Artist, index-basiert, paginiert,
               pro Telegram-Session gecacht — kein Health-Scan bei jedem
               Button-Tap)
    ↓
-Artist wählen → Aktion wählen (L2 und/oder L3, je nach Kandidatenzahl)
+Artist wählen → L3 (einziges verbleibendes Level je Kandidatenzahl)
    ↓
 Preview (read-only, filter_plan(artist=, level=) + build_preview(),
-         level-spezifischer Warnhinweis)
+         Warnhinweis: MusicBrainz-Aufruf, Netzwerk-/Rate-Limit-Fehler
+         je Datei sichtbar statt still übersprungen)
    ↓
 [Telegram: explizite Bestätigung "✅ Jetzt ausführen"]
    ↓
-execute_level2_repair()/execute_level3_repair()   (services/library_repair/
-                                                    repair_service.py)
+execute_level3_repair()   (services/library_repair/repair_service.py)
    ↓
-run_level2_repair()/run_level3_repair()            (services/library_repair/
-                                                     doctor_runner.py, Subprozess:
-                                                     scripts/library_repair.py
-                                                     --artist X --level <L> --apply)
+run_level3_repair()       (services/library_repair/doctor_runner.py, Subprozess:
+                           scripts/library_repair.py --artist X --level
+                           EXTERNAL_METADATA --apply)
    ↓
 Verification: erneuter run_health_scan() (nur wenn mind. 1 Erfolg)
    ↓
@@ -931,51 +855,41 @@ Finding → RESOLVED   NUR für tatsächlich nicht mehr erkannte Findings
 Repair History (dasselbe library_repair_runs.json wie §10/§11, "kind": "repair")
 ```
 
-**L2 (`METADATA_REPROCESSING`) vs. L3 (`EXTERNAL_METADATA`):** beide
-laufen als eigener Subprozess (siehe unten), unterscheiden sich nur in
-`--level` und im Warnhinweis vor der Bestätigung — L2 durchläuft die
-volle Metadaten-Pipeline erneut (auch Genre/Lyrics/Cover-Logik,
-möglicherweise geänderte Auto-Learn-Mappings), L3 ruft zusätzlich
-MusicBrainz auf und macht Netzwerk-/Rate-Limit-Fehler je Datei als
-FEHLGESCHLAGEN sichtbar statt sie still zu überspringen.
-
 **Bewusste Abweichung von der ursprünglichen Implementierungsvorgabe
 (Subprozess statt in-process, nutzerbestätigt):** der ursprüngliche
-Auftrag sah vor, `apply_level2()`/`apply_external_metadata()` in-process
-über `asyncio.to_thread()` aufzurufen. `EnhancedMetadataProcessor`
+Auftrag sah vor, `apply_external_metadata()` in-process über
+`asyncio.to_thread()` aufzurufen. `EnhancedMetadataProcessor`
 (`SingletonMixin`) wird jedoch bereits beim Bot-Start
 (`handlers/menu/rich_menu_handler.py`) für die Live-Download-Pipeline
 konstruiert — ein `asyncio.to_thread()`-Aufruf hätte denselben Singleton
 gleichzeitig aus einem separaten OS-Thread heraus verwendet, während der
 Event-Loop des Bots (potenziell während eines laufenden Downloads durch
-dieselbe Instanz) weiterläuft. Genau diese Klasse von Risiko begründet
-bereits den bestehenden Subprozess-Pfad von `reprocessing_runner.py`.
-Nach Rücksprache mit dem Nutzer laufen `execute_level2_repair()`/
-`execute_level3_repair()` deshalb identisch zu
-`execute_safe_automatic_repair()` als Subprozess
-(`doctor_runner.run_level2_repair()`/`run_level3_repair()`) —
-`apply_level2()`/`apply_external_metadata()` selbst bleiben dabei
-unverändert.
+dieselbe Instanz) weiterläuft. `execute_level3_repair()` läuft deshalb
+identisch zu `execute_safe_automatic_repair()` als Subprozess
+(`doctor_runner.run_level3_repair()`) — `apply_external_metadata()`
+selbst bleibt dabei unverändert.
 
-**Bewusst NIE global:** anders als bei SAFE_AUTOMATIC gibt es für L2/L3
+**Bewusst NIE global:** anders als bei SAFE_AUTOMATIC gibt es für L3
 keinen "alle Artists auf einmal"-Button — jede Ausführung ist an genau
 einen zuvor über den Index-Picker gewählten Artist gebunden (ADR-0003).
 
 **Navigation:** `🛠️ Repair MusicBot → Reparaturvorschläge` zeigt einen
-zusätzlichen Button „🛠️ L2/L3-Reparaturen (nach Artist)“, sobald der
-aktuelle Plan L2- oder L3-Kandidaten enthält (zusätzlich zum
-bestehenden SAFE-Preview-Button, nicht anstelle). Callback-Präfix
-`l23rep:` — lebt auf demselben `RepairMusicBotHandler` wie `repair:*`
-(kein eigener Handler, da L2/L3 wie SAFE_AUTOMATIC Findings-getrieben
-sind, ADR-0001). Öffnen des Menüs, der Artist-Liste oder der
-Aktions-Auswahl startet niemals automatisch eine Reparatur. Berechtigung
-(Admin) wird am tatsächlichen Ausführungs-Handler erneut geprüft.
+zusätzlichen Button „🛠️ L3-Reparaturen (nach Artist)“, sobald der
+aktuelle Plan L3-Kandidaten enthält (zusätzlich zum bestehenden
+SAFE-Preview-Button, nicht anstelle). Callback-Präfix `l23rep:` — der
+Name ist historisch (vor CC-LIB-FINAL gab es L2 UND L3), lebt weiterhin
+auf demselben `RepairMusicBotHandler` wie `repair:*` (kein eigener
+Handler, da L3 wie SAFE_AUTOMATIC Findings-getrieben ist, ADR-0001).
+Öffnen des Menüs, der Artist-Liste oder der Aktions-Auswahl startet
+niemals automatisch eine Reparatur. Berechtigung (Admin) wird am
+tatsächlichen Ausführungs-Handler erneut geprüft.
 
 **COVER/LOUDNESS/DUPLICATE bleiben CLI-only** — ARCH-033 deckt
-ausdrücklich nur L2/L3 ab (Scope-Option A). Ein Erweiterungspunkt für
-künftige, eigene ARCH-Phasen (ARCH-034/035) ist in
-`handlers/repair_musicbot_handler.py` neben den `_L23REP_*`-Dicts
-dokumentiert (Phase 4, reine Vorbereitung, kein aktiver Code).
+ausdrücklich nur L2/L3 ab (Scope-Option A), L2 ist seit CC-LIB-FINAL
+entfernt. Ein Erweiterungspunkt für künftige, eigene ARCH-Phasen
+(ARCH-034/035) ist in `handlers/repair_musicbot_handler.py` neben den
+`_L23REP_*`-Dicts dokumentiert (Phase 4, reine Vorbereitung, kein
+aktiver Code).
 
 **Ergebnis-Zusammenfassung (`_format_l23_result()`, Fix ARCH-033-F1,
 2026-09-21):** `LevelRepairResult` trägt neben `affected_files` (ALLE
@@ -983,25 +897,21 @@ Journal-Einträge mit `file`-Feld — auch nur berührte, nicht zwingend
 geänderte Dateien, unverändert seit ARCH-033, weiterer Konsument
 `control_center/routers/jobs.py`) additiv `changed_files` — nur Dateien,
 die tatsächlich auf die Platte geschrieben wurden: Status `SUCCESS`/
-`UNRESOLVED` **oder** jeder andere Status (v. a. `SKIPPED`, aber auch ein
-`FAILED` mit fehlgeschlagenem Rollback) mit
-`sha256_before != sha256_after`. Der `SKIPPED`-Fall ist bei L2
-(`apply_level2()`) nicht selten: `reprocess()` läuft immer als volle
-Pipeline und kann dabei andere Felder geschrieben haben, während das
-Zielfeld genau DIESES Issue-Codes unverändert blieb (Status bleibt dann
-pro Issue-Code `SKIPPED`, obwohl die Datei geändert wurde) — L3
-(`apply_external_metadata()`) kennt diesen Fall dagegen nicht (`SKIPPED`
-schreibt dort nie). Die Telegram-Anzeige nutzt `changed_files` für
-„Geänderte Dateien" sowie eine vierte Summary-Zeile „Überprüfen:
-{unresolved}" (nur wenn > 0); die Emoji-/Header-Logik ist eine flache
-Priorität `failed → unresolved → success → skipped → leer`
+`UNRESOLVED` **oder** jeder andere Status mit
+`sha256_before != sha256_after` (defensiver Vergleich, urspruenglich fuer
+einen L2-Randfall eingefuehrt — `apply_external_metadata()` kennt einen
+`SKIPPED`-mit-Aenderung-Fall selbst nicht, `SKIPPED` schreibt dort nie).
+Die Telegram-Anzeige nutzt `changed_files` für „Geänderte Dateien" sowie
+eine vierte Summary-Zeile „Überprüfen: {unresolved}" (nur wenn > 0); die
+Emoji-/Header-Logik ist eine flache Priorität
+`failed → unresolved → success → skipped → leer`
 (❌/🟠/✅/🟡/⚪, `failed > 0` dominiert immer). Ein Subprozess-Absturz vor
 dem ersten Journal-Write (Exit-Code ≠ 0, keine Journal-Einträge) wird
 seitdem ebenfalls als Fehler erkannt statt als leerer Lauf angezeigt.
 
 **Einheitliche Ergebnissemantik (Findings #4/#5/#6, 2026-09-27):** Seit
-diesem Fix gilt dieselbe Semantik für SAFE_AUTOMATIC (§9/§10) und L2/L3
-in allen Schichten; die Einzelhelfer liegen in
+diesem Fix gilt dieselbe Semantik für SAFE_AUTOMATIC (§9/§10) und L3 in
+allen Schichten; die Einzelhelfer liegen in
 `services/library_repair/repair_service.py` und werden von
 `execute_safe_automatic_repair()` UND `_execute_level_repair()` geteilt:
 
@@ -1046,11 +956,11 @@ separat aus (`docs/FINDINGS_INDEX.md`).
 
 | Datei | Deckt ab |
 |---|---|
-| `tests/test_library_repair_planner.py` | `group_candidates_by_artist()` — L2/L3 getrennt gezählt, andere Level ignoriert, Sortierung (Gesamtzahl absteigend, dann alphabetisch), Determinismus, Pfad-Präfix-Fallback |
-| `tests/test_doctor_runner.py` | `run_level2_repair()`/`run_level3_repair()` — Subprozess-Aufruf, Timeout, Fehlerfälle |
-| `tests/test_repair_service_level23.py` | `execute_level2_repair()`/`execute_level3_repair()` — Stale-Plan-Schutz, Verification-Gate, Lock-Sharing mit §10/§11, Run-Record `kind: "repair"`, `changed_files` vs. `affected_files` (inkl. L2-SHA-Diff-Fall), Absturz ohne Journal-Einträge |
-| `tests/test_repair_result_semantics.py` | Findings #4/#5/#6 — Fälle A–F (`_overall_status()`, `_changed_files()`, echte Orchestrierung SAFE_AUTOMATIC + L2, Telegram `_format_result()`/`_format_l23_result()` gleiche Emoji-Semantik, CC-Job-Ergebnis, `health.js`/`library_artist_detail.html` per node real ausgeführt) |
-| `tests/test_repair_handler_level23.py` | Telegram-Sub-Flow (Start/Artist-Liste inkl. Pagination-Cache/Aktions-Auswahl/Preview/Confirm/Execute), Admin-Re-Check je Schritt, Index-basierte Artist-Auswahl (kein Rohname in `callback_data`), kein Auto-Start, Lock-Konflikt-Anzeige, Teilerfolg-Anzeige, `_format_l23_result()`-Summary-Zeilen/Emoji-Priorität |
+| `tests/test_library_repair_planner.py` | `group_candidates_by_artist()` — L3 gezählt, andere Level ignoriert (auch die frueheren L2-Codes, seit CC-LIB-FINAL MANUAL_REVIEW), Sortierung (Gesamtzahl absteigend, dann alphabetisch), Determinismus, Pfad-Präfix-Fallback |
+| `tests/test_doctor_runner.py` | `run_level3_repair()` — Subprozess-Aufruf, Timeout, Fehlerfälle; `run_level2_repair` existiert nicht mehr (Regressionstest) |
+| `tests/test_repair_service_level23.py` | `execute_level3_repair()` — Stale-Plan-Schutz, Verification-Gate, Lock-Sharing mit §10/§11, Run-Record `kind: "repair"`, `changed_files` vs. `affected_files`, Absturz ohne Journal-Einträge; `execute_level2_repair` existiert nicht mehr (Regressionstest) |
+| `tests/test_repair_result_semantics.py` | Findings #4/#5/#6 — Fälle A–F (`_overall_status()`, `_changed_files()`, echte Orchestrierung SAFE_AUTOMATIC + L3, Telegram `_format_result()`/`_format_l23_result()` gleiche Emoji-Semantik, CC-Job-Ergebnis, `health.js`/`library_artist_detail.html` per node real ausgeführt) |
+| `tests/test_repair_handler_level23.py` | Telegram-Sub-Flow (Start/Artist-Liste inkl. Pagination-Cache/Aktions-Auswahl/Preview/Confirm/Execute), Admin-Re-Check je Schritt, Index-basierte Artist-Auswahl (kein Rohname in `callback_data`), kein Auto-Start, Lock-Konflikt-Anzeige, Teilerfolg-Anzeige, `_format_l23_result()`-Summary-Zeilen/Emoji-Priorität, kein L2-Ausführungspfad mehr |
 
 ---
 
@@ -1386,10 +1296,10 @@ identische Zielmenge/Anti-Injection-Muster wie
 `callback_data`). `executor.py::apply_title_edit()` schreibt **nur**
 ©nam — **kein automatischer TitleCleaner** (Auftrag §8/9): der manuell
 eingegebene Zielwert wird unverändert übernommen, die automatische
-Title-Cleanup-/Reprocessing-Pipeline
-(`services/metadata/track_reprocessor.py`, `META_TITLE_NOT_CLEAN` →
-`METADATA_REPROCESSING`, §6a) bleibt vollständig unberührt — beide Pfade
-sind bewusst getrennt.
+Title-Cleanup-/Reprocessing-Pipeline (frueher `META_TITLE_NOT_CLEAN` →
+`METADATA_REPROCESSING`, §6a) existiert seit CC-LIB-FINAL nicht mehr —
+es gibt daher keine zweite Stelle mehr, die einen manuell gesetzten
+Titel spaeter automatisch ueberschreiben koennte.
 
 ```text
 🎵 Titel bearbeiten (libmaint:meta:title:<idx>)

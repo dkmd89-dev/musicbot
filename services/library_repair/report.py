@@ -10,7 +10,6 @@ from .models import RepairLevel, RepairPlan
 
 _LEVEL_ORDER = [
     RepairLevel.SAFE_AUTOMATIC,
-    RepairLevel.METADATA_REPROCESSING,
     RepairLevel.EXTERNAL_METADATA,
     RepairLevel.COVER,
     RepairLevel.LOUDNESS,
@@ -21,8 +20,7 @@ _LEVEL_ORDER = [
 
 _LEVEL_LABEL = {
     RepairLevel.SAFE_AUTOMATIC: "Safe (Level 1 — deterministisch, kein --allow-delete)",
-    RepairLevel.METADATA_REPROCESSING: "Metadata Reprocessing (Level 2)",
-    RepairLevel.EXTERNAL_METADATA: "External Metadata (Level 3 — MusicBrainz/Pipeline)",
+    RepairLevel.EXTERNAL_METADATA: "External Metadata (Level 3 — MusicBrainz-IDs)",
     RepairLevel.COVER: "Cover",
     RepairLevel.LOUDNESS: "Loudness / ReplayGain",
     RepairLevel.DUPLICATE: "Duplicates (destruktiv — Freigabe + --allow-delete)",

@@ -1,7 +1,7 @@
 # handlers/menu/actions/library.py
 # -*- coding: utf-8 -*-
 """
-Admin > Bibliothek & Navidrome-Actions: Reprocessing, MusicBot Doctor,
+Admin > Bibliothek & Navidrome-Actions: MusicBot Doctor,
 Library Health Review, Repair MusicBot - entspricht der bestehenden
 "admin_group_library"-Gruppierung in initialize_menu_structure()
 (Navidrome-Scan selbst liegt in actions/admin_operations.py, da dort
@@ -11,8 +11,8 @@ ARCH-024/P-2 (Actions Extraction): 1:1 aus
 handlers/menu/rich_menu_system.py verschoben (reine Move-Operation).
 Jede Callback-Dispatcher-Funktion behält ihre eigene, historisch
 bewusst unterschiedliche Defense-in-Depth-Berechtigungsprüfung
-(Reprocessing: reiner Owner-Check gegen config.OWNER_USER_ID; Doctor/
-Review/Repair: is_admin_check-Callable, siehe ARCH-023/P-3) -
+(Doctor/Review/Repair: is_admin_check-Callable, siehe ARCH-023/P-3;
+das frühere Metadata-Reprocessing-Menü wurde in CC-LIB-FINAL entfernt) -
 keine Vereinheitlichung, das war ARCH-023-Scope und ist abgeschlossen.
 """
 
@@ -37,87 +37,11 @@ from services.library_repair.maintenance_service import ALL_ACTIONS as _ALL_MAIN
 _MAINTENANCE_ACTIONS = tuple(a for a in _ALL_MAINTENANCE_ACTIONS if a != ACTION_SET_GENRE)
 
 
-# ====== METADATA-REPROCESSING ======
-
-
-async def handle_reprocessing_show(update: Update, context: ContextTypes.DEFAULT_TYPE, reprocessing_handler):
-    """Einstiegspunkt aus dem Menü-System - Wrapper analog zu den
-    Navidrome-Actions."""
-    if reprocessing_handler:
-        await reprocessing_handler.show_artist_list(update, context)
-    else:
-        await show_handler_not_available(update, "Reprocessing-Handler")
-
-
-async def handle_reprocessing_callback(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    callback_data: str,
-    reprocessing_handler,
-    config,
-    logger,
-) -> None:
-    """
-    Dispatcher für alle reprocess:* Callbacks.
-
-    Routing:
-      reprocess:show        → Artist-Liste anzeigen
-      reprocess:pick:<idx>  → Dry-Run für Artist <idx> starten
-      reprocess:live:<idx>  → LIVE-Lauf für Artist <idx> starten
-
-    Eigener Owner-Check hier (Defense-in-Depth, analog zu maint: -
-    bewusst NICHT in _ADMIN_ONLY_PREFIXES aufgenommen, da OWNER
-    strenger als ADMIN ist und dieser Dispatcher seinen eigenen,
-    passenden Check macht statt sich auf den ADMIN-Check zu verlassen).
-    """
-    query = update.callback_query
-    user_id = update.effective_user.id
-
-    if user_id != getattr(config, "OWNER_USER_ID", None):
-        logger.warning(
-            f"🚨 [SECURITY] Nicht-Owner {user_id} versuchte "
-            f"Reprocessing-Callback: {callback_data}"
-        )
-        await query.answer("⛔ Keine Berechtigung", show_alert=True)
-        return
-
-    if not reprocessing_handler:
-        await query.answer("⚠️ Reprocessing-Handler nicht verfügbar", show_alert=True)
-        return
-
-    if callback_data == "reprocess:show":
-        await reprocessing_handler.show_artist_list(update, context)
-        return
-
-    if callback_data.startswith("reprocess:pick:"):
-        idx_str = callback_data[len("reprocess:pick:") :]
-        try:
-            idx = int(idx_str)
-        except ValueError:
-            await query.answer("⚠️ Ungültiger Callback", show_alert=True)
-            return
-        await reprocessing_handler.handle_pick(update, context, idx)
-        return
-
-    if callback_data.startswith("reprocess:live:"):
-        idx_str = callback_data[len("reprocess:live:") :]
-        try:
-            idx = int(idx_str)
-        except ValueError:
-            await query.answer("⚠️ Ungültiger Callback", show_alert=True)
-            return
-        await reprocessing_handler.handle_live(update, context, idx)
-        return
-
-    await query.answer("⚠️ Unbekannter Reprocessing-Callback")
-
-
 # ====== MUSICBOT DOCTOR (Phase 3, P1.3) ======
 
 
 async def handle_doctor_scan(update: Update, context: ContextTypes.DEFAULT_TYPE, doctor_handler):
-    """Einstiegspunkt aus dem Menü-System - Wrapper analog zu
-    handle_reprocessing_show()."""
+    """Einstiegspunkt aus dem Menü-System."""
     if doctor_handler:
         await doctor_handler.handle_scan(update, context)
     else:
@@ -143,7 +67,7 @@ async def handle_doctor_callback(
       doctor:score_history        → Health-Score-Verlauf anzeigen (read-only)
 
     Eigener Admin-Check hier (Defense-in-Depth, analog zu maint:/
-    reprocess: - callback_data ist frei sendbar, siehe SEC-003).
+    callback_data ist frei sendbar, siehe SEC-003).
     """
     query = update.callback_query
     user_id = update.effective_user.id
@@ -219,7 +143,7 @@ async def handle_review_callback(
       review:unaccept:<finding_id>    → Acceptance zurücknehmen (→ OPEN)
 
     Eigener Admin-Check hier (Defense-in-Depth, analog zu doctor:/
-    maint:/reprocess: - callback_data ist frei sendbar, siehe SEC-003).
+    maint: - callback_data ist frei sendbar, siehe SEC-003).
     """
     query = update.callback_query
     user_id = update.effective_user.id
@@ -305,7 +229,7 @@ async def handle_repair_callback(
       repair:stats      → Repair-Statistik
 
     Eigener Admin-Check hier (Defense-in-Depth, analog zu doctor:/
-    review:/maint:/reprocess: - callback_data ist frei sendbar, siehe
+    review:/maint: - callback_data ist frei sendbar, siehe
     SEC-003).
     """
     query = update.callback_query
@@ -397,7 +321,7 @@ async def handle_library_maintenance_callback(
                                           Duplizierung)
 
     Eigener Admin-Check hier (Defense-in-Depth, analog zu doctor:/review:/
-    repair:/reprocess: - callback_data ist frei sendbar, siehe SEC-003).
+    repair: - callback_data ist frei sendbar, siehe SEC-003).
     Bewusst NICHT "maint:" (bereits durch den Bot-Wartungsmodus belegt,
     siehe rich_menu_system.py::_handle_maintenance_callback()).
     """
@@ -636,7 +560,7 @@ async def handle_library_maintenance_callback(
     await query.answer("⚠️ Unbekannter Library-Wartung-Callback")
 
 
-# ====== L2/L3 PRO-ARTIST-REPARATUR (ARCH-033) ======
+# ====== L3 PRO-ARTIST-REPARATUR (ARCH-033; L2 in CC-LIB-FINAL entfernt) ======
 
 
 async def handle_l23rep_callback(
@@ -654,13 +578,13 @@ async def handle_l23rep_callback(
       l23rep:start                → Einstieg (aus "Reparaturvorschläge")
       l23rep:artists               → Artist-Liste, Seite 0, frischer Scan
       l23rep:artists:<page>        → Artist-Liste, Seite <page> (gecacht)
-      l23rep:pick:<idx>            → Aktions-Auswahl (L2/L3) für Artist
-      l23rep:preview:<l2|l3>:<idx> → Preview (read-only)
-      l23rep:confirm:<l2|l3>:<idx> → explizite Bestätigung
-      l23rep:execute:<l2|l3>:<idx> → tatsächliche Ausführung
+      l23rep:pick:<idx>            → Aktions-Auswahl (L3) für Artist
+      l23rep:preview:l3:<idx>      → Preview (read-only)
+      l23rep:confirm:l3:<idx>      → explizite Bestätigung
+      l23rep:execute:l3:<idx>      → tatsächliche Ausführung
 
     Lebt bewusst auf demselben RepairMusicBotHandler wie repair:* (kein
-    neuer Handler) - L2/L3 sind Findings-getrieben wie SAFE_AUTOMATIC
+    neuer Handler) - L3 ist Findings-getrieben wie SAFE_AUTOMATIC
     (ADR-0001), nur mit Pro-Artist-Bestätigung (ADR-0003). Eigener
     Admin-Check hier (Defense-in-Depth, analog zu repair:/libmaint:/
     doctor:/review: - callback_data ist frei sendbar, siehe SEC-003).
@@ -671,7 +595,7 @@ async def handle_l23rep_callback(
     if not is_admin_check(user_id):
         logger.warning(
             f"🚨 [SECURITY] Nicht-Admin {user_id} versuchte "
-            f"L2/L3-Repair-Callback: {callback_data}"
+            f"L3-Repair-Callback: {callback_data}"
         )
         await query.answer("⛔ Keine Berechtigung", show_alert=True)
         return
@@ -709,7 +633,7 @@ async def handle_l23rep_callback(
 
     if len(parts) == 4 and parts[1] in ("preview", "confirm", "execute"):
         level, idx_str = parts[2], parts[3]
-        if level not in ("l2", "l3"):
+        if level != "l3":
             await query.answer("⚠️ Ungültiges Level", show_alert=True)
             return
         try:
@@ -725,7 +649,7 @@ async def handle_l23rep_callback(
             await repair_handler.handle_l23_execute(update, context, level, idx)
         return
 
-    await query.answer("⚠️ Unbekannter L2/L3-Repair-Callback")
+    await query.answer("⚠️ Unbekannter L3-Repair-Callback")
 
 
 # ====== DUPLIKAT-CHECK (Chat-Charakterisierung 2026-09-15) ======

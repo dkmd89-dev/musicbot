@@ -1,5 +1,18 @@
 # MusicBot — Metadata Reprocessing Tool
 
+> **ENTFERNT (CC-LIB-FINAL, 2026-09-27).** Dieses Tool
+> (`scripts/reprocess_artist_metadata.py`) sowie der zugehörige
+> Repair-Level 2 (`METADATA_REPROCESSING`, `services/library_repair/
+> executor.py::apply_level2()`), `services/metadata/track_reprocessor.py`,
+> `services/metadata/reprocessing_runner.py` und das Telegram-Menü
+> „🔧 Reprocessing" existieren im aktuellen Code nicht mehr. Grund: die
+> volle Neuverarbeitung lief automatisch über die Pipeline und konnte
+> dabei manuell gesetzte Artist-/Titel-/Album-/Genre-Tags überschreiben —
+> nicht vereinbar mit der Zielarchitektur, in der manuelle
+> Metadaten-Änderungen dauerhaft erhalten bleiben (siehe
+> `docs/LIBRARY_REPAIR.md` §6a). Dieses Dokument bleibt unverändert als
+> historische Referenz auf das entfernte Sicherheitsmodell/CLI erhalten.
+
 `scripts/reprocess_artist_metadata.py` ist das offizielle, wiederverwendbare
 Werkzeug, um bestehende, bereits in der Produktions-Library vorhandene
 Audiodateien eines Artists erneut durch die aktuelle MusicBot-Metadata-

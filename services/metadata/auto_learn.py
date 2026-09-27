@@ -507,9 +507,7 @@ class AutoLearnManager:
     def preview_genre_learning(self, canonical_name: str, genre_result) -> Dict[str, Any]:
         """
         Reine Dry-Run-Vorschau der Genre-Auto-Learn-Entscheidung - identische
-        Logik wie learn_genre(), aber ohne jegliches Schreiben. Fuer
-        scripts/reprocess_artist_metadata.py --dry-run (Auto-Learn-Auftrag
-        Abschnitt 21).
+        Logik wie learn_genre(), aber ohne jegliches Schreiben.
         """
         return self._compute_genre_decision(canonical_name, genre_result)
 
@@ -867,8 +865,7 @@ class AutoLearnManager:
     ) -> List[Dict[str, Any]]:
         """
         Reine Dry-Run-Vorschau (kein Schreiben) - identische
-        Entscheidungslogik wie observe_featured_artists(), für
-        scripts/reprocess_artist_metadata.py --dry-run.
+        Entscheidungslogik wie observe_featured_artists()
         """
         return [
             self._compute_featured_artist_decision(

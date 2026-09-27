@@ -98,7 +98,6 @@ def plan_to_response(plan: RepairPlan) -> RepairPlanResponse:
 
 class ArtistRepairSummarySchema(BaseModel):
     artist: str
-    l2_count: int
     l3_count: int
     total: int
 
@@ -111,7 +110,7 @@ class ArtistRepairPlanResponse(BaseModel):
 
 def _artist_summary_to_schema(s: ArtistCandidateSummary) -> ArtistRepairSummarySchema:
     return ArtistRepairSummarySchema(
-        artist=s.artist, l2_count=s.l2_count, l3_count=s.l3_count, total=s.total,
+        artist=s.artist, l3_count=s.l3_count, total=s.total,
     )
 
 
@@ -200,7 +199,7 @@ def plan_to_artist_response(plan: RepairPlan) -> ArtistRepairPlanResponse:
     Artist-Auswahl (ARCH-033 §12, `docs/LIBRARY_REPAIR.md`) — nutzt
     dieselbe reine Gruppierungsfunktion wie der Telegram-Handler
     (`services/library_repair/planner.py::group_candidates_by_artist()`,
-    Default: nur L2/METADATA_REPROCESSING + L3/EXTERNAL_METADATA), bereits
+    Default: nur L3/EXTERNAL_METADATA), bereits
     deterministisch sortiert (absteigend nach Gesamtzahl, dann
     alphabetisch) — reines Mapping, keine eigene Gruppierungslogik hier."""
     groups = group_candidates_by_artist(plan)

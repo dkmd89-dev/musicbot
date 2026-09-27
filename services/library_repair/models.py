@@ -24,8 +24,12 @@ class RepairLevel(str, Enum):
     """Sicherheitsstufe einer Reparatur (Prompt Abschnitt 6-11)."""
 
     SAFE_AUTOMATIC = "SAFE_AUTOMATIC"          # L1: deterministisch aus vorhandenen Daten
-    METADATA_REPROCESSING = "METADATA_REPROCESSING"  # L2: reprocess_artist_metadata.py
-    EXTERNAL_METADATA = "EXTERNAL_METADATA"    # L3: MusicBrainz-/Metadata-Pipeline
+    # Die frühere Stufe L2 "METADATA_REPROCESSING" (volle Pipeline erneut auf
+    # Bestandsdateien) wurde in CC-LIB-FINAL entfernt: manuelle Metadaten-
+    # Änderungen (Artist/Titel/Album/Genre) dürfen nie durch eine spätere
+    # automatische Neuableitung überschrieben werden. Entsprechende Findings
+    # sind MANUAL_REVIEW und werden über die kontextbezogene Edit-UI behoben.
+    EXTERNAL_METADATA = "EXTERNAL_METADATA"    # L3: MusicBrainz-IDs/ISRC nachtragen
     COVER = "COVER"                            # CoverProcessor
     LOUDNESS = "LOUDNESS"                      # normalize_test_library_loudness.py
     DUPLICATE = "DUPLICATE"                    # resolve_duplicates.py
@@ -41,7 +45,6 @@ class RepairAction(str, Enum):
     MULTI_ARTIST_SPLIT = "MULTI_ARTIST_SPLIT"
     FILENAME_RENAME_IN_PLACE = "FILENAME_RENAME_IN_PLACE"
     TRACK_NUMBER_FIX = "TRACK_NUMBER_FIX"
-    METADATA_REPROCESS = "METADATA_REPROCESS"
     EXTERNAL_ID_LOOKUP = "EXTERNAL_ID_LOOKUP"
     COVER_FETCH = "COVER_FETCH"
     LOUDNESS_NORMALIZE = "LOUDNESS_NORMALIZE"

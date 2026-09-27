@@ -106,8 +106,10 @@ RichMenuSystem          zentraler Callback-Router
   │   ├── admin_diagnostics.py   (Logger/Status/ErrorAdmin/System-Logs —
   │   │                           entspricht "🩺 Diagnose & Monitoring")
   │   ├── usermgmt.py
-  │   ├── library.py             (Reprocessing/Doctor/Review/Repair —
-  │   │                           entspricht "🎵 Bibliothek & Navidrome")
+  │   ├── library.py             (Doctor/Review/Repair — entspricht
+  │   │                           "🎵 Bibliothek & Navidrome"; das
+  │   │                           frühere Reprocessing-Menü wurde in
+  │   │                           CC-LIB-FINAL entfernt)
   │   ├── admin_operations.py    (Backup/Neustart/Wartungsmodus/
   │   │                           Navidrome-Scan — entspricht
   │   │                           "🤖 Bot & Betrieb")
@@ -198,7 +200,6 @@ Hauptmenü
 ├── ⚙️ Administration                (ADMIN-Level)
 │   ├── 🎵 Bibliothek & Navidrome
 │   │   ├── MusicBot Doctor (Health-Scan + SAFE_AUTOMATIC-Repair)
-│   │   ├── Reprocessing (OWNER-only)
 │   │   ├── Navidrome Scan
 │   │   ├── 🔎 Library Health Review (Findings nach Kategorie prüfen)
 │   │   │      Vokabular seit 2026-09-09: 🔴 Offen / 🟢 Repariert / ⚪ Akzeptiert
@@ -505,6 +506,16 @@ Volle Suite: 2146 passed, 1 skipped, 0 Regressionen.
 ---
 
 ## 5. Metadata-Reprocessing (Telegram-Integration, 2026-09-03)
+
+> **CC-LIB-FINAL (2026-09-27): ENTFERNT.** Das gesamte in diesem
+> Abschnitt beschriebene Feature — `scripts/reprocess_artist_metadata.py`,
+> `services/metadata/reprocessing_runner.py`,
+> `handlers/menu/reprocessing_menu_handler.py`, der Menüpunkt
+> „🔧 Reprocessing" (`reprocess:*`-Callbacks) — existiert nicht mehr. Es
+> hätte manuell gesetzte Artist-/Titel-/Album-/Genre-Tags durch eine
+> automatische Neuableitung überschreiben können, was der Zielarchitektur
+> widerspricht (siehe `docs/LIBRARY_REPAIR.md` §6a). Der Rest dieses
+> Abschnitts ist historische Dokumentation der 2026-09-03-Integration.
 
 Nutzer-Auftrag: `scripts/reprocess_artist_metadata.py` (bisher reines
 CLI-Werkzeug, siehe `docs/METADATA_REPROCESSING.md`) über Telegram-Inline-
@@ -1997,8 +2008,9 @@ ergänzt). Thematische Suite (`-k "statistik or statistics or menu or stats"`,
   [`archive/MusicBot_ENGINEERING_BASELINE_v9.md`](archive/MusicBot_ENGINEERING_BASELINE_v9.md)
   durch [`MusicBot_ENGINEERING_BASELINE_v10.md`](MusicBot_ENGINEERING_BASELINE_v10.md)
   (Freeze 2026-09-14) als aktuelle Baseline abgelöst).
-- [`docs/METADATA_REPROCESSING.md`](METADATA_REPROCESSING.md) — vollständige
-  Doku des Reprocessing-Tools selbst (Sicherheitsmodell, CLI, Abschnitt 2a
+- [`docs/METADATA_REPROCESSING.md`](METADATA_REPROCESSING.md) — Doku des
+  in CC-LIB-FINAL (2026-09-27) entfernten Reprocessing-Tools, als
+  historische Referenz erhalten (Sicherheitsmodell, CLI, Abschnitt 2a
   zum Subprozess-Aufrufmodell).
 - [`docs/FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — die beiden zurückgestellten
   Challenge-Typen aus Abschnitt 6.12 (Family Hub, F4).

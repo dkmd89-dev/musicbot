@@ -1,18 +1,17 @@
 # tests/test_library_repair_cli_safe_automatic_scope.py
 # -*- coding: utf-8 -*-
-"""Nachprüf-Durchgang 2026-09-09: der Telegram-Doctor-/Repair-MusicBot-Pfad
-ruft `scripts/library_repair.py` ausschliesslich mit
-`--level SAFE_AUTOMATIC --apply` auf (services/library_repair/doctor_runner.py::
-run_safe_automatic_repair, services/library_repair/repair_service.py::
-execute_safe_automatic_repair). Diese Tests pinnen die Sicherheitsgrenze:
-über diesen Weg wird NIE `apply_level2()` (die volle Neuverarbeitung inkl.
-`process_file(requested_issue=…)`) erreicht — weder über den
-Planner-Level-Filter noch über das `l2_requested`-Gate in `main()`.
+"""Nachprüf-Durchgang 2026-09-09 (aktualisiert in CC-LIB-FINAL): der
+Telegram-Doctor-/Repair-MusicBot-Pfad ruft `scripts/library_repair.py`
+ausschliesslich mit `--level SAFE_AUTOMATIC --apply` auf
+(services/library_repair/doctor_runner.py::run_safe_automatic_repair,
+services/library_repair/repair_service.py::execute_safe_automatic_repair).
+Diese Tests pinnen die Sicherheitsgrenze: über diesen Weg wird nur L1
+ausgeführt.
 
-Doppelte Absicherung, deshalb zwei Ebenen:
-  1. `filter_plan(level="SAFE_AUTOMATIC")` lässt L2-Kandidaten nicht durch.
-  2. `l2_requested` in `main()` ist nur bei `--level METADATA_REPROCESSING`
-     oder einem L2-`--issue` wahr — nicht bei `--level SAFE_AUTOMATIC`.
+CC-LIB-FINAL: Die volle Neuverarbeitung (frueher `apply_level2()`, L2
+METADATA_REPROCESSING) wurde entfernt. Auch ein expliziter L2-Aufruf
+(`--level METADATA_REPROCESSING` bzw. `--issue LYRICS_MISSING`) darf
+KEINEN Executor mehr erreichen — die Findings sind MANUAL_REVIEW.
 """
 
 import importlib.util
@@ -44,7 +43,7 @@ _REPORT = {
             "title": "x",
         },
         {
-            "issue_code": "LYRICS_MISSING",  # -> METADATA_REPROCESSING (L2)
+            "issue_code": "LYRICS_MISSING",  # -> MANUAL_REVIEW (frueher L2)
             "severity": "INFO",
             "scope": "file",
             "path": "A/Singles/2020 - x.m4a",
@@ -52,7 +51,7 @@ _REPORT = {
             "title": "x",
         },
         {
-            "issue_code": "GENRE_INVALID",  # -> METADATA_REPROCESSING (L2)
+            "issue_code": "GENRE_INVALID",  # -> MANUAL_REVIEW (frueher L2)
             "severity": "INFO",
             "scope": "file",
             "path": "A/Singles/2020 - y.m4a",
@@ -74,7 +73,7 @@ def report_file(tmp_path):
 def spies(monkeypatch):
     """Ersetzt die echten Executoren durch Aufruf-Spione und neutralisiert
     Verification-Scan + Navidrome-Trigger (kein echter Datei-/Netzwerk-I/O)."""
-    calls = {"level1": 0, "level1_rename": 0, "level2": 0}
+    calls = {"level1": 0, "level1_rename": 0}
 
     import services.library_repair.executor as executor
 
@@ -86,19 +85,14 @@ def spies(monkeypatch):
         calls["level1_rename"] += 1
         return []
 
-    def _spy_l2(*a, **k):
-        calls["level2"] += 1
-        return []
-
     monkeypatch.setattr(executor, "apply_level1", _spy_l1)
     monkeypatch.setattr(executor, "apply_level1_rename", _spy_l1_rename)
-    monkeypatch.setattr(executor, "apply_level2", _spy_l2)
     monkeypatch.setattr(lr, "_verification_scan", lambda *a, **k: 0)
     monkeypatch.setattr(lr, "_trigger_navidrome_scan", lambda *a, **k: None)
     return calls
 
 
-def test_doctor_cli_args_never_invoke_level2(report_file, spies):
+def test_doctor_cli_args_run_only_level1(report_file, spies):
     """Die exakten Doctor-/Repair-MusicBot-Argumente."""
     exit_code = lr.main(
         [
@@ -112,20 +106,35 @@ def test_doctor_cli_args_never_invoke_level2(report_file, spies):
         ]
     )
     assert exit_code == 0
-    assert spies["level2"] == 0
     # L1-Executoren laufen weiterhin (der Doctor repariert die
     # verlustfreien Tag-/Rename-Fixes).
     assert spies["level1"] == 1
     assert spies["level1_rename"] == 1
 
 
-def test_explicit_l2_issue_still_reaches_level2(report_file, spies):
-    """Gegenprobe: der CLI-only-Weg über einen L2-`--issue` erreicht
-    `apply_level2()` weiterhin — die Grenze gilt nur für SAFE_AUTOMATIC."""
+def test_executor_has_no_level2_entrypoint():
+    """CC-LIB-FINAL: es gibt keinen L2-Executor mehr, den ein Spy oder die
+    CLI erreichen koennte."""
+    import services.library_repair.executor as executor
+
+    assert not hasattr(executor, "apply_level2")
+
+
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        ["--issue", "LYRICS_MISSING"],
+        ["--issue", "GENRE_INVALID"],
+        ["--level", "METADATA_REPROCESSING"],
+    ],
+)
+def test_former_l2_selection_reaches_no_executor(report_file, spies, extra_args):
+    """Auch ein ausdruecklicher Aufruf mit dem frueheren L2-Selektor darf
+    nichts mehr ausfuehren: die Codes sind MANUAL_REVIEW, der Plan enthaelt
+    fuer diesen Selektor keine ausfuehrbaren Reparaturen."""
     exit_code = lr.main(
         [
-            "--issue",
-            "LYRICS_MISSING",
+            *extra_args,
             "--apply",
             "--report",
             str(report_file),
@@ -134,4 +143,5 @@ def test_explicit_l2_issue_still_reaches_level2(report_file, spies):
         ]
     )
     assert exit_code == 0
-    assert spies["level2"] == 1
+    assert spies["level1"] == 0
+    assert spies["level1_rename"] == 0

@@ -153,7 +153,7 @@ def _sha256(path: Path) -> Optional[str]:
 def _audio_essence_md5(path: Path) -> str:
     """Hasht NUR den dekodierten Audio-Stream (kein Container/Tags) —
     verbindlicher Beweis, dass der Tag-Schreibvorgang den Ton nicht
-    verändert hat (identisch zu reprocess_artist_metadata.py)."""
+    verändert hat."""
     try:
         r = subprocess.run(
             ["ffmpeg", "-v", "error", "-i", str(path), "-map", "0:a", "-f", "md5", "-"],
@@ -444,16 +444,9 @@ def apply_level1_rename(
             journal.record(_je(c, oc, dry_run))
             continue
 
-        # Production-Audit 2026-09-08: dieselbe Invariante ("kein
-        # Verzeichniswechsel") existiert unabhaengig auch in
-        # services/metadata/track_reprocessor.py::process_file()
-        # (dortiger Vergleich: rename_target.parent != path.parent).
-        # Bewusst NICHT zu einer gemeinsamen Funktion extrahiert - beide
-        # Pruefungen sind bereits so trivial (ein Vergleich), dass eine
-        # Extraktion mehr Kopplung zwischen den unabhaengigen Paketen
-        # services/library_repair/ und services/metadata/ einfuehren wuerde,
-        # als sie an Divergenzrisiko beseitigt. Bei einer inhaltlichen
-        # Aenderung dieser Regel: die jeweils andere Stelle mitpruefen.
+        # Production-Audit 2026-09-08: Invariante "kein
+        # Verzeichniswechsel" (Vergleich rename_target.parent != path.parent).
+
         if not new_name or "/" in new_name or "\\" in new_name:
             oc.reason = "kein sicherer neuer Name / nicht eindeutig"
             outcomes.append(oc)
@@ -1142,9 +1135,8 @@ def apply_title_edit(
     backup_dir: Optional[Path] = None,
 ) -> list[ExecOutcome]:
     """Manual Title Editing (Auftrag Abschnitt 8/9): setzt ©nam auf einen
-    expliziten Nutzer-Zielwert - KEIN TitleCleaner/Reprocessing (die
-    automatische Pipeline in services/metadata/track_reprocessor.py bleibt
-    unberuehrt, Auftrag Abschnitt 9). `targets` enthaelt in der Praxis
+    expliziten Nutzer-Zielwert - KEIN TitleCleaner/keine automatische
+    Neuableitung (Auftrag Abschnitt 9). `targets` enthaelt in der Praxis
     IMMER genau eine Datei (Title-Edit ist track-spezifisch, Auftrag
     Abschnitt 8) - Listen-Signatur nur fuer Konsistenz mit den uebrigen
     apply_*()-Funktionen dieses Moduls."""
@@ -2151,357 +2143,13 @@ def apply_external_metadata(
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Level 2 — METADATA_REPROCESSING (die echte Pipeline, Prompt Abschnitt 6/10)
+# Level 2 (METADATA_REPROCESSING) wurde in CC-LIB-FINAL ersatzlos entfernt:
+# apply_level2()/L2_CODES liefen die volle Metadaten-Pipeline erneut ueber
+# Bestandsdateien und haetten manuelle Tag-Aenderungen ueberschreiben
+# koennen. Manuelle Aenderungen laufen ausschliesslich ueber die
+# apply_*-Funktionen oben (Artist/Titel/Album/Albuminterpret/Genre) via
+# maintenance_service.py.
 # ─────────────────────────────────────────────────────────────────────────
-
-# Issue-Codes, die per voller Neuverarbeitung durch die Produktions-Pipeline
-# behoben werden — deckungsgleich zu den METADATA_REPROCESSING-Einträgen in
-# planner.REGISTRY. Mehrere dieser Codes treffen oft dieselbe Datei; ein
-# reprocess()-Lauf pro Datei behebt sie gemeinsam.
-L2_CODES = frozenset(
-    {
-        "META_TITLE_NOT_CLEAN",
-        "META_ARTIST_MISSING",
-        "META_TITLE_MISSING",
-        "META_ALBUM_MISSING",
-        "GENRE_INVALID",
-        "LYRICS_MISSING",
-        "LYRICS_EMPTY",
-        "LYRICS_INVALID",
-        # Production-Audit 2026-09-08: von EXTERNAL_METADATA hierher verschoben
-        # (planner.py) — GenreProcessor laeuft bereits identisch zu GENRE_INVALID
-        # als Teil von process_file(), kein separater Executor noetig.
-        "META_GENRE_MISSING",
-        "GENRE_EMPTY",
-    }
-)
-
-# Snapshot-Felder, die als Before/After ins Journal übernommen werden
-# (stream_info/audio_essence_md5 sind separat als Integritätsmarker geprüft).
-_L2_REPORTED_FIELDS = (
-    "filename",
-    "relative_path",
-    "title",
-    "album",
-    "album_artist",
-    "artist",
-    "artists_freeform",
-    "year",
-    "genre_tag",
-    "genre_freeform",
-    "mb_ids",
-    "lyrics_present",
-    "cover_present",
-    "cover_sha256",
-)
-# Production-Audit 2026-09-08, bewusste Entscheidung (kein Fix): Lyrics und
-# Cover landen absichtlich NICHT im Klartext/Binaerformat im Journal —
-# "lyrics_present" (bool) und "cover_sha256" (Hash) genuegen, um zu
-# erkennen, DASS sich etwas geaendert hat. Ein dauerhaft in einer
-# Append-Only-JSONL-Datei gespeicherter Lyrics-Volltext waere ein
-# Urheberrechts-/Speicherplatz-Risiko ohne entsprechenden Nutzen (die
-# inhaltliche Korrektheit von Lyrics/Cover ist ohnehin nicht automatisiert
-# pruefbar - nur ihre Anwesenheit). Alle anderen Felder (Titel/Artist/
-# Album/Genre-Wortlaut) sind bereits vollstaendig im Klartext enthalten.
-
-# Welches `changes`-Feld (track_reprocessor.diff_snapshots()) tatsächlich
-# belegt, dass GENAU DIESER Issue-Code behoben wurde — nicht nur, dass die
-# Pipeline irgendein beliebiges Feld der Datei verändert hat.
-#
-# Production-Audit 2026-09-08 (Root Cause des realen LYRICS_MISSING-Fundes):
-# `process_file()` läuft immer als volle Pipeline (Artist/Genre/Lyrics/Cover
-# gemeinsam) — ohne diese Bindung wurde SUCCESS bereits gesetzt, sobald
-# IRGENDEIN Feld sich änderte, unabhängig vom auslösenden Issue. Real waren
-# 11/11 LYRICS_MISSING-Repairs als SUCCESS markiert, aber nur 6/11 hatten
-# tatsächlich Lyrics gefunden (die übrigen 5 blieben nach Re-Scan offen).
-_L2_ISSUE_TARGET_FIELDS: dict[str, tuple[str, ...]] = {
-    "META_ARTIST_MISSING": ("artist",),
-    "META_TITLE_MISSING": ("title",),
-    "META_TITLE_NOT_CLEAN": ("title",),
-    "META_ALBUM_MISSING": ("album",),
-    "GENRE_INVALID": ("genre_tag", "genre_freeform"),
-    "LYRICS_MISSING": ("lyrics_present",),
-    "LYRICS_EMPTY": ("lyrics_present",),
-    "LYRICS_INVALID": ("lyrics_present",),
-    "META_GENRE_MISSING": ("genre_tag", "genre_freeform"),
-    "GENRE_EMPTY": ("genre_tag", "genre_freeform"),
-}
-
-
-def _l2_issue_resolved(issue_code: str, changes: dict) -> bool:
-    """Ob das für DIESEN Issue-Code relevante Zielfeld laut `changes`
-    tatsächlich verändert wurde."""
-    fields = _L2_ISSUE_TARGET_FIELDS.get(issue_code, ())
-    return any(f in changes for f in fields)
-
-
-def _l2_fanout_outcomes(
-    rel: str,
-    codes: list[str],
-    status: str,
-    *,
-    reason: Optional[str] = None,
-    before: Optional[dict] = None,
-    after: Optional[dict] = None,
-    backup_path: Optional[str] = None,
-) -> list[ExecOutcome]:
-    """Ein `reprocess()`-Lauf kann mehrere Issue-Codes derselben Datei
-    gleichzeitig betreffen — je EIN ExecOutcome pro betroffenem Code, damit
-    keiner für Journal/Verification verloren geht (vorher: nur der
-    alphabetisch erste Code wurde zum `issue_code` des einzigen Outcomes)."""
-    return [
-        ExecOutcome(
-            file=rel,
-            issue_code=code,
-            action="METADATA_REPROCESS",
-            status=status,
-            reason=reason,
-            before=dict(before or {}),
-            after=dict(after or {}),
-            backup_path=backup_path,
-        )
-        for code in codes
-    ]
-
-
-def apply_level2(
-    candidates: list[RepairCandidate],
-    library_root: Path,
-    journal: RepairJournal,
-    reprocess,
-    *,
-    dry_run: bool = True,
-    backup_dir: Optional[Path] = None,
-) -> list[ExecOutcome]:
-    """Volle Metadaten-Neuverarbeitung über die ECHTE Produktions-Pipeline
-    (`services/metadata/track_reprocessor.process_file`, wie sie auch
-    `scripts/reprocess_artist_metadata.py` fährt).
-
-    `reprocess(path, artist_root, dry_run) -> result-dict` wird injiziert
-    (der Aufrufer konstruiert `EnhancedMetadataProcessor` + MB-/LastFM-Client
-    mit der echten Config und kapselt den `asyncio.run`).
-
-    Sicherheitsmodell wie L1, aber um die Pipeline gelegt: `process_file`
-    schreibt IN-PLACE ohne eigenes Backup — deshalb hier VOR dem Aufruf eine
-    Per-Datei-Sicherung ausserhalb der Library, danach die verbindliche
-    Prüfung, dass die Audio-Essenz (dekodierter Stream, container-unabhängig)
-    unverändert ist. Jede Abweichung / jeder Pipeline-Fehler → Rollback.
-
-    Nebeneffekt (bewusst, = echtes Pipeline-Verhalten): im Nicht-Dry-Run
-    aktualisiert `process_file` die Auto-Learn-Mappings
-    (`mapping/auto_learned_*`) mit den beobachteten Feature-Artists/Genres
-    des Tracks — identisch dazu, als wäre der Track frisch heruntergeladen
-    worden. Der Aufrufer weist im EXECUTE-Modus darauf hin.
-    """
-    library_root = Path(library_root)
-    if backup_dir is None:
-        backup_dir = library_root.parent / ".library_repair_backups"
-    backup_dir = Path(backup_dir)
-    outcomes: list[ExecOutcome] = []
-
-    candidates_per_path: dict[str, list[RepairCandidate]] = {}
-    for c in candidates:
-        if c.issue_code in L2_CODES and c.path:
-            candidates_per_path.setdefault(c.path, []).append(c)
-
-    for rel, cs in sorted(candidates_per_path.items()):
-        path = library_root / rel
-        codes = sorted({c.issue_code for c in cs})
-        codes_str = ", ".join(codes)
-
-        reason = safety_check(path, library_root)
-        if reason:
-            for oc in _l2_fanout_outcomes(
-                rel, codes, "SKIPPED", reason=f"Safety: {reason}"
-            ):
-                outcomes.append(oc)
-                journal.record(_je_named(rel, oc, dry_run))
-            continue
-
-        artist_parts = Path(rel).parts
-        if len(artist_parts) < 2:
-            for oc in _l2_fanout_outcomes(
-                rel,
-                codes,
-                "SKIPPED",
-                reason="Datei nicht in einer <Artist>/…-Hierarchie",
-            ):
-                outcomes.append(oc)
-                journal.record(_je_named(rel, oc, dry_run))
-            continue
-        artist_root = library_root / artist_parts[0]
-
-        # ── DRY-RUN: process_file schreibt nichts, liefert eine Vorhersage ──
-        if dry_run:
-            try:
-                result = reprocess(
-                    path,
-                    artist_root,
-                    True,
-                    requested_issue=codes[0] if len(codes) == 1 else None,
-                )
-            except Exception as e:  # noqa: BLE001
-                for oc in _l2_fanout_outcomes(
-                    rel, codes, "FAILED", reason=f"Pipeline (dry-run): {e!r}"
-                ):
-                    outcomes.append(oc)
-                    journal.record(_je_named(rel, oc, dry_run))
-                continue
-
-            before, after = _l2_before_after(result)
-            if result.get("status") == "error":
-                for oc in _l2_fanout_outcomes(
-                    rel,
-                    codes,
-                    "FAILED",
-                    reason=f"Pipeline: {result.get('error')}",
-                    before=before,
-                    after=after,
-                ):
-                    outcomes.append(oc)
-                    journal.record(_je_named(rel, oc, dry_run))
-                continue
-
-            ch = result.get("changes") or {}
-            unresolved_reason = _l2_unresolved(result)
-            for code in codes:
-                resolved = _l2_issue_resolved(code, ch)
-                status = "DRY_RUN" if resolved else "SKIPPED"
-                if unresolved_reason:
-                    code_reason = unresolved_reason
-                elif resolved:
-                    code_reason = f"betrifft: {codes_str}"
-                else:
-                    code_reason = "Zielfeld dieses Issues bliebe unverändert (Pipeline ändert andere Felder)"
-                oc = ExecOutcome(
-                    file=rel,
-                    issue_code=code,
-                    action="METADATA_REPROCESS",
-                    status=status,
-                    reason=code_reason,
-                    before=before,
-                    after=after,
-                )
-                outcomes.append(oc)
-                journal.record(_je_named(rel, oc, dry_run))
-            continue
-
-        # ── EXECUTE ────────────────────────────────────────────────────────
-        sha_before = _sha256(path)
-        audio_before = _audio_essence_md5(path)
-        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
-        final_path = path
-        per_code_outcomes: list[ExecOutcome] = []
-        try:
-            backup.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, backup)
-
-            # Denselben issue-spezifischen Hint wie im DRY-RUN durchreichen —
-            # sonst wuerde die Vorschau (kein Artist-Renormalisieren /
-            # kein Loudness-UNRESOLVED bei LYRICS_MISSING/GENRE_INVALID)
-            # nicht zum tatsaechlich geschriebenen Ergebnis passen.
-            result = reprocess(
-                path,
-                artist_root,
-                False,
-                requested_issue=codes[0] if len(codes) == 1 else None,
-            )
-
-            ch = result.get("changes") or {}
-            rel_change = ch.get("relative_path")
-            if rel_change and rel_change.get("after"):
-                final_path = library_root / rel_change["after"]
-
-            if result.get("status") == "error":
-                raise RuntimeError(f"Pipeline: {result.get('error')}")
-            if result.get("audio_essence_changed") or result.get(
-                "audio_stream_changed"
-            ):
-                raise RuntimeError(
-                    "Pipeline meldet Audio-Änderung "
-                    f"(essence={result.get('audio_essence_changed')}, "
-                    f"stream={result.get('audio_stream_changed')})"
-                )
-            audio_after = _audio_essence_md5(final_path)
-            if audio_after != audio_before or audio_after.startswith("ERROR"):
-                raise RuntimeError(
-                    f"Audio-Essenz verändert ({audio_before} -> {audio_after})"
-                )
-
-            before, after = _l2_before_after(result)
-            unresolved_reason = _l2_unresolved(result)
-            for code in codes:
-                resolved = _l2_issue_resolved(code, ch)
-                status = "SUCCESS" if resolved else "SKIPPED"
-                if resolved:
-                    code_reason = unresolved_reason
-                else:
-                    base_reason = (
-                        "Pipeline ließ die Datei unverändert"
-                        if not ch
-                        else "Zielfeld dieses Issues blieb unverändert "
-                        "(Pipeline änderte andere Felder)"
-                    )
-                    code_reason = (
-                        f"{base_reason}; {unresolved_reason}"
-                        if unresolved_reason
-                        else base_reason
-                    )
-                per_code_outcomes.append(
-                    ExecOutcome(
-                        file=rel,
-                        issue_code=code,
-                        action="METADATA_REPROCESS",
-                        status=status,
-                        reason=code_reason,
-                        before=before,
-                        after=after,
-                        backup_path=str(backup),
-                    )
-                )
-        except Exception as e:  # noqa: BLE001
-            per_code_outcomes = _l2_fanout_outcomes(
-                rel, codes, "FAILED", reason=repr(e)
-            )
-            try:
-                if final_path != path and Path(final_path).exists():
-                    Path(final_path).unlink()
-                if Path(backup).exists():
-                    Path(backup).replace(path)
-                final_path = path
-            except OSError:
-                pass
-            try:
-                Path(backup).unlink(missing_ok=True)
-            except OSError:
-                pass
-
-        any_success = any(oc.status == "SUCCESS" for oc in per_code_outcomes)
-        for oc in per_code_outcomes:
-            je = _je_named(rel, oc, dry_run)
-            je.sha256_before = sha_before
-            je.sha256_after = _sha256(final_path)
-            je.audio_sha256_before = audio_before
-            je.audio_sha256_after = (
-                _audio_essence_md5(final_path) if any_success else audio_before
-            )
-            je.backup_path = oc.backup_path
-            journal.record(je)
-            outcomes.append(oc)
-
-    return outcomes
-
-
-def _l2_before_after(result: dict) -> tuple[dict, dict]:
-    ch = result.get("changes") or {}
-    before = {k: v.get("before") for k, v in ch.items() if k in _L2_REPORTED_FIELDS}
-    after = {k: v.get("after") for k, v in ch.items() if k in _L2_REPORTED_FIELDS}
-    return before, after
-
-
-def _l2_unresolved(result: dict) -> Optional[str]:
-    items = result.get("unresolved") or []
-    return ("UNRESOLVED: " + " | ".join(items)) if items else None
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -2700,8 +2348,6 @@ def apply_replaygain(
 #   - LOUDNESS_OFF_TARGET: der RG-Tag bringt die effektive Lautheit per
 #     Konstruktion aufs Ziel, die Atom-/Audio-Verifikation im Executor
 #     deckt den Rest; die LUFS-Ebene prueft der --measure-loudness-Scan.
-#   - apply_level2() hat seine eigene, feinere Zielfeld-Bindung
-#     (_l2_issue_resolved).
 # ─────────────────────────────────────────────────────────────────────────
 
 STATUS_UNRESOLVED = "UNRESOLVED"

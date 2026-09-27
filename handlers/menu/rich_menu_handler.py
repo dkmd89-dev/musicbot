@@ -47,7 +47,6 @@ from handlers.menu.activity_tracking import record_activity
 from handlers.test_menu_handler import TestMenuHandler
 from handlers.enhanced_logger_menu_handler import EnhancedLoggerMenuHandler
 from handlers.navidrome_menu_handler import NavidromeMenuHandler
-from handlers.menu.reprocessing_menu_handler import ReprocessingMenuHandler
 from handlers.library_doctor_handler import LibraryDoctorHandler
 from handlers.library_health_review_handler import LibraryHealthReviewHandler
 from handlers.repair_musicbot_handler import RepairMusicBotHandler
@@ -130,7 +129,6 @@ class RichMenuHandler:
         self.status_handler: Optional[EnhancedStatusHandler] = None
         self.backup_handler: Optional[BackupHandler] = None
         self.restart_handler: Optional[BotRestartHandler] = None
-        self.reprocessing_handler: Optional[ReprocessingMenuHandler] = None
         self.doctor_handler: Optional[LibraryDoctorHandler] = None
         self.review_handler: Optional[LibraryHealthReviewHandler] = None
         self.repair_handler: Optional[RepairMusicBotHandler] = None
@@ -366,27 +364,10 @@ class RichMenuHandler:
             self.logger.error(f"❌ Metadata-Processor Fehler: {e}", exc_info=True)
             self.metadata_processor = None
 
-        # 12. Reprocessing-Handler (ruft scripts/reprocess_artist_metadata.py
-        # ausschliesslich als eigenstaendigen Subprozess auf, siehe
-        # docs/METADATA_REPROCESSING.md Abschnitt 2a - genau deshalb
-        # unproblematisch, obwohl Schritt 11 oben bereits real beweist,
-        # dass EnhancedMetadataProcessor in diesem Bot-Prozess laengst mit
-        # der echten config.Config konstruiert ist)
-        try:
-            self.reprocessing_handler = ReprocessingMenuHandler(
-                self.config, self.logger_factory
-            )
-            self.reprocessing_handler.error_handler = self.error_handler
-            self.logger.info("✅ ReprocessingMenuHandler initialisiert")
-        except Exception as e:
-            self.logger.error(f"❌ Reprocessing-Handler Fehler: {e}", exc_info=True)
-            self.reprocessing_handler = None
-
         # 13. MusicBot-Doctor-Handler (Phase 3, P1.3) - ruft
         # scripts/library_health_check.py und scripts/library_repair.py
         # ausschliesslich als eigenstaendige Subprozesse auf (services/
-        # library_repair/doctor_runner.py), analog zum Reprocessing-Handler
-        # oben.
+        # library_repair/doctor_runner.py).
         try:
             self.doctor_handler = LibraryDoctorHandler(
                 self.config, self.logger_factory
@@ -488,8 +469,6 @@ class RichMenuHandler:
         self.menu_system.set_download_history(self.download_history)
         self.menu_system.set_url_retry_callback(self._process_url)
         self.menu_system.set_maintenance_store(self.maintenance_store)
-        if self.reprocessing_handler:
-            self.menu_system.set_reprocessing_handler(self.reprocessing_handler)
         if self.doctor_handler:
             self.menu_system.set_doctor_handler(self.doctor_handler)
         if self.review_handler:
@@ -542,7 +521,6 @@ class RichMenuHandler:
             ("backup_handler", self.backup_handler),
             ("restart_handler", self.restart_handler),
             ("metadata_processor", self.metadata_processor),
-            ("reprocessing_handler", self.reprocessing_handler),
             ("doctor_handler", self.doctor_handler),
             ("review_handler", self.review_handler),
             ("repair_handler", self.repair_handler),
@@ -760,39 +738,33 @@ class RichMenuHandler:
             # komplett (kein Handler-Match), daher weder Log-Eintrag noch
             # Exception.
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^dl:"),
-            # Metadata-Reprocessing 2026-09-03: derselbe "Bug B"-Fall wie
-            # bei maint:/dl: oben - ohne diesen Handler verpuffte jeder
-            # reprocess:-Callback stillschweigend, obwohl das interne
-            # reprocess:-Routing in RichMenuSystem.handle_callback()
-            # bereits korrekt ist.
-            CallbackQueryHandler(self.menu_system.handle_callback, pattern="^reprocess:"),
             # MusicBot Doctor (Phase 3, P1.3): derselbe "Bug B"-Fall wie bei
-            # maint:/dl:/reprocess: oben - ohne diesen Handler verpuffte
+            # maint:/dl: oben - ohne diesen Handler verpuffte
             # jeder doctor:-Callback stillschweigend, obwohl das interne
             # doctor:-Routing in RichMenuSystem.handle_callback() bereits
             # korrekt ist.
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^doctor:"),
             # Library Health Review: derselbe "Bug B"-Fall wie bei
-            # maint:/dl:/reprocess:/doctor: oben - ohne diesen Handler
+            # maint:/dl:/doctor: oben - ohne diesen Handler
             # verpuffte jeder review:-Callback stillschweigend.
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^review:"),
             # Repair MusicBot: derselbe "Bug B"-Fall wie bei maint:/dl:/
-            # reprocess:/doctor:/review: oben - ohne diesen Handler
+            # doctor:/review: oben - ohne diesen Handler
             # verpuffte jeder repair:-Callback stillschweigend.
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^repair:"),
-            # L2/L3 Pro-Artist-Reparatur (ARCH-033): derselbe "Bug B"-Fall
-            # wie bei maint:/dl:/reprocess:/doctor:/review:/repair: oben -
+            # L3 Pro-Artist-Reparatur (ARCH-033): derselbe "Bug B"-Fall
+            # wie bei maint:/dl:/doctor:/review:/repair: oben -
             # ohne diesen Handler verpuffte jeder l23rep:-Callback
             # stillschweigend.
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^l23rep:"),
             # Library-Wartung (ARCH-032 Phase 4): derselbe "Bug B"-Fall wie
-            # bei maint:/dl:/reprocess:/doctor:/review:/repair: oben - ohne
+            # bei maint:/dl:/doctor:/review:/repair: oben - ohne
             # diesen Handler verpuffte jeder libmaint:-Callback
             # stillschweigend. Bewusst "libmaint:" statt "maint:" (bereits
             # durch den Bot-Wartungsmodus belegt).
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^libmaint:"),
             # Duplikat-Check (Chat-Charakterisierung 2026-09-15): derselbe
-            # "Bug B"-Fall wie bei maint:/dl:/reprocess:/doctor:/review:/
+            # "Bug B"-Fall wie bei maint:/dl:/doctor:/review:/
             # repair:/libmaint: oben - ohne diesen Handler verpuffte jeder
             # dupcheck:-Callback stillschweigend.
             CallbackQueryHandler(self.menu_system.handle_callback, pattern="^dupcheck:"),

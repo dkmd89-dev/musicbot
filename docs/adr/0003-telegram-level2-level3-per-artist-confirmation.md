@@ -1,8 +1,14 @@
 ---
-status: IMPLEMENTED (ARCH-033, 2026-09-14)
+status: IMPLEMENTED (ARCH-033, 2026-09-14); Level 2 seit CC-LIB-FINAL (2026-09-27) ENTFERNT
 ---
 
 # ADR-0003: Level 2/Level 3 über Telegram — Pro-Artist-Bestätigung
+
+> **CC-LIB-FINAL (2026-09-27):** Level 2 (`METADATA_REPROCESSING`) wurde
+> vollständig entfernt (siehe `docs/LIBRARY_REPAIR.md` §6a) — es hätte
+> manuell gesetzte Tags überschreiben können. Diese ADR bleibt als
+> historische Begründung der Pro-Artist-Bestätigungsarchitektur gültig;
+> der noch aktive Teil ist Level 3 (`EXTERNAL_METADATA`).
 
 ## Kontext
 

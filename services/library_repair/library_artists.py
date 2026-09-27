@@ -5,10 +5,9 @@ Library-Artist-Auswahl (ARCH-032 Phase 3C, ARCH-031 B.8).
 
 Listet die Artist-Verzeichnisse der PRODUKTIONS-Library
 (Config.LIBRARY_DIR) für die index-basierte Telegram-Auswahl. Spiegelt
-das bereits etablierte, gehärtete Muster aus
-services/metadata/reprocessing_runner.py::list_available_artist_dirs()
-(dort gegen die Test-Sandbox /tmp/musicbot_test/metadaten) — hier gegen
-die echte Library, read-only, keine Mutation.
+ein gehärtetes Index-Picker-Muster (historisch: das entfernte
+Reprocessing-Menü) — hier gegen die echte Library, read-only, keine
+Mutation.
 
 Das Verzeichnis ist ausschließlich der Datei-Scope-Selektor; die
 tatsächliche Tag-Änderung ist bei allen Maintenance-Actions
@@ -44,8 +43,7 @@ def list_library_artist_dirs(library_root: Optional[Path] = None) -> List[str]:
 def resolve_artist_by_index(idx: int, *, library_root: Optional[Path] = None) -> Optional[str]:
     """Löst einen Button-Index gegen eine frisch geholte Artist-Liste auf
     — KEIN Rohpfad/String aus Telegram-`callback_data` (ARCH-031 B.8,
-    identisches Anti-Injection-Muster wie
-    reprocessing_menu_handler.py::_resolve_artist_by_index()). Re-globbt
+    bewährtes Anti-Injection-Muster). Re-globbt
     bewusst bei jedem Aufruf statt eine Liste über mehrere Schritte im
     Speicher zu halten (kein Session-State nötig, Admin-only-Tool ohne
     nennenswerte gleichzeitige Schreibzugriffe auf die Verzeichnisstruktur

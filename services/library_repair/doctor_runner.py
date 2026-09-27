@@ -5,9 +5,7 @@ Reine Subprozess-Orchestrierung fuer scripts/library_health_check.py und
 scripts/library_repair.py (Phase 3, P1.3 "MusicBot Doctor").
 
 Ruft beide Skripte AUSSCHLIESSLICH als eigenstaendige Subprozesse auf,
-importiert sie nie - gleiches Muster wie
-services/metadata/reprocessing_runner.py fuer
-scripts/reprocess_artist_metadata.py. Beide Ziel-Skripte sind rein
+importiert sie nie. Beide Ziel-Skripte sind rein
 synchron (kein `async def`); der Subprozess-Weg haelt den Bot-Event-Loop
 frei und isoliert einen Scanner-/Executor-Absturz vom Bot-Prozess.
 
@@ -184,7 +182,7 @@ async def run_safe_automatic_repair(
     Subprozess - bewusst NUR dieser eine, verlustfreie Level (siehe
     docs/LIBRARY_REPAIR.md §3: kein Netzwerk, kein Re-Encode). Alle
     externen/destruktiven Level (COVER/EXTERNAL_METADATA/
-    METADATA_REPROCESSING/LOUDNESS/DUPLICATE) bleiben ueber diesen Weg
+    LOUDNESS/DUPLICATE) bleiben ueber diesen Weg
     bewusst unerreichbar - das ist keine Vereinfachung, sondern dieselbe
     Sicherheitsgrenze, die --apply auch auf der Kommandozeile hat."""
     cmd = [
@@ -217,29 +215,18 @@ async def run_safe_automatic_repair(
 async def _run_level_repair_subprocess(
     *, level: str, artist: str, timeout: float, log_label: str,
 ) -> DoctorRepairResult:
-    """Gemeinsame Subprozess-Mechanik fuer run_level2_repair()/
-    run_level3_repair() (ARCH-033) - `scripts/library_repair.py --artist
-    <artist> --level <level> --apply`. `filter_plan(artist=, level=)` in
-    der CLI selbst sorgt dafuer, dass NUR die Kandidaten dieses Levels
-    fuer diesen Artist ausgefuehrt werden (kein L1/Cover/Loudness-
-    Seiteneffekt, siehe scripts/library_repair.py::main()).
+    """Subprozess-Mechanik fuer run_level3_repair() (ARCH-033) -
+    `scripts/library_repair.py --artist <artist> --level <level> --apply`.
+    `filter_plan(artist=, level=)` in der CLI selbst sorgt dafuer, dass NUR
+    die Kandidaten dieses Levels fuer diesen Artist ausgefuehrt werden
+    (kein L1/Cover/Loudness-Seiteneffekt, siehe scripts/library_repair.py::
+    main()). Die Parametrisierung nach Level ist ein Erbe von ARCH-033
+    (frueher zusaetzlich L2, seit CC-LIB-FINAL entfernt).
 
     Bewusst Subprozess statt In-Process-Aufruf von
-    executor.py::apply_level2()/apply_external_metadata() (ARCH-033,
-    Architekturentscheidung waehrend der Implementierung): beide brauchen
-    fuer L2 services/metadata/enhanced_metadata_processor.py::
-    EnhancedMetadataProcessor, das SingletonMixin ist und bereits beim
-    Bot-Start in handlers/menu/rich_menu_handler.py fuer die Live-
-    Download-Pipeline konstruiert wird. Ein In-Process-Aufruf via
-    asyncio.to_thread() (urspruenglich vorgesehen) haette denselben,
-    nicht als thread-safe dokumentierten Objektzustand auf einem
-    separaten OS-Thread parallel zu einer moeglicherweise laufenden
-    Live-Download-Verarbeitung angefasst - ein neues Race-Condition-
-    Risiko, das es bisher nirgends im Code gibt. Exakt dasselbe,
-    dokumentierte Argument wie bei
-    services/metadata/reprocessing_runner.py (Subprozess-Isolation macht
-    das Singleton-Risiko irrelevant) - hier bewusst auf den bereits
-    etablierten run_safe_automatic_repair()-Subprozess-Pfad uebertragen."""
+    executor.py::apply_external_metadata(): gleicher, bereits etablierter
+    Pfad wie run_safe_automatic_repair() - ein Executor-Absturz bleibt vom
+    Bot-Prozess isoliert."""
     cmd = [
         sys.executable, str(REPAIR_SCRIPT),
         "--artist", artist, "--level", level, "--apply",
@@ -266,19 +253,6 @@ async def _run_level_repair_subprocess(
     return DoctorRepairResult(
         exit_code=returncode,
         stdout_tail=stdout_text[-2000:], stderr_tail=stderr_text[-2000:],
-    )
-
-
-async def run_level2_repair(
-    artist: str, timeout: float = DEFAULT_TIMEOUT_SECONDS,
-) -> DoctorRepairResult:
-    """Startet scripts/library_repair.py --artist <artist> --level
-    METADATA_REPROCESSING --apply als Subprozess (ARCH-033) - Pro-Artist-
-    Gegenstueck zu run_safe_automatic_repair(). Siehe
-    _run_level_repair_subprocess() fuer die Begruendung der
-    Subprozess-Isolation (EnhancedMetadataProcessor-Singleton-Risiko)."""
-    return await _run_level_repair_subprocess(
-        level="METADATA_REPROCESSING", artist=artist, timeout=timeout, log_label="L2",
     )
 
 

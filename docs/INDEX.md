@@ -63,7 +63,7 @@ historischen Dokument.
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| [METADATA_REPROCESSING.md](METADATA_REPROCESSING.md) | CURRENT | `scripts/reprocess_artist_metadata.py` — bestehende Library-Tracks erneut durch die Metadaten-Pipeline laufen lassen (Tags/Cover/Lyrics/Genre/Multi-Artist/MusicBrainz), ohne Download, ohne Produktionszugriff (read-only), ohne Audio-Reencoding. Abschnitt 2a: verbindliches Subprozess-Aufrufmodell (SingletonMixin-Risiko bei in-process-Aufruf) — inzwischen per Telegram-Menü nutzbar, siehe MusicBot_TELEGRAM_MENU_SYSTEM.md Abschnitt 5 |
+| [METADATA_REPROCESSING.md](METADATA_REPROCESSING.md) | REMOVED (CC-LIB-FINAL, 2026-09-27) | `scripts/reprocess_artist_metadata.py` und der zugehörige Repair-Level 2 wurden vollständig entfernt — hätten manuell gesetzte Tags überschreiben können. Dokument als historische Referenz erhalten. |
 | [archive/METADATA_REPROCESSING_TEST_CHAPO102.md](archive/METADATA_REPROCESSING_TEST_CHAPO102.md) | HISTORICAL (Validierungsprotokoll) | Erster Live-Validierungslauf des Tools gegen echten Artist-Bestand (CHAPO102), inkl. Post-Run Safety Check |
 | [archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md](archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md) | HISTORICAL (Validierungsprotokoll) | Zweiter Validierungslauf (Nina Chuba) + Final-Audit-Nachtrag zu Genre-Mapping-Konsistenz und UNRESOLVED-Praezisierung |
 
