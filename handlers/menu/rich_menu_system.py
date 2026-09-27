@@ -729,9 +729,11 @@ class RichMenuSystem:
                 await query.answer("ℹ️ Verwende ⬅️➡️ zum Navigieren")
                 return
 
-            if callback_data == "logger_search_module":
-                await self.logger_handler.search_module(update, context)
-                return
+            # Finding #32: die frühere Route "logger_search_module" rief
+            # logger_handler.search_module() auf - eine Methode, die seit
+            # dem Initial-Commit nie existierte, ohne erzeugenden Button.
+            # Entfernt; der Callback fällt jetzt in den gegateten
+            # logger_-Präfixpfad ("Funktion nicht implementiert").
 
             # ── Präfix-basiertes Routing ──────────────────────────────
             if callback_data.startswith("logger_"):

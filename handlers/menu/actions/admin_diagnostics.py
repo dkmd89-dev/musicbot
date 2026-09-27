@@ -89,6 +89,18 @@ async def handle_logger_callback(
         await logger_handler.show_log_file_detail(update, context, filename)
         return
 
+    # Finding #31: Cleanup - explizite Whitelist statt Präfix-Parsing,
+    # alles andere fällt unten in "Funktion nicht implementiert".
+    if callback_data in ("logger_cleanup_old", "logger_cleanup_rotated"):
+        mode = callback_data[len("logger_cleanup_"):]
+        await logger_handler.show_cleanup_preview(update, context, mode)
+        return
+
+    if callback_data in ("logger_cleanup_old_confirm", "logger_cleanup_rotated_confirm"):
+        mode = callback_data[len("logger_cleanup_"):-len("_confirm")]
+        await logger_handler.execute_cleanup(update, context, mode)
+        return
+
     if callback_data.startswith("logger_file_download_"):
         filename = callback_data.replace("logger_file_download_", "")
         await logger_handler.download_log_file(update, context, filename)

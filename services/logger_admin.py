@@ -252,6 +252,99 @@ def human_size_str(size_bytes: int) -> str:
 
 
 # =====================================================================
+# Finding #31 — Logdatei-Bereinigung (nur rotierte Backups)
+# =====================================================================
+#
+# Einzige Cleanup-Fachlogik (vorher existierte keine: die Telegram-
+# Cleanup-Buttons liefen ins Leere). Bewusst NUR rotierte Backups
+# (`<name>.log.<N>`, vom RotatingFileHandler erzeugt): ein aktiver
+# FileHandler hält ausschliesslich die unnummerierte `<name>.log` offen.
+# Das gilt prozessübergreifend — Bot UND Control Center schreiben in
+# dasselbe Log-Verzeichnis, der aufrufende Prozess kann fremde offene
+# Handler nicht sehen. Eine gelöschte, noch offene Datei würde vom
+# Handler weiterbeschrieben (unlinked inode) und die Logs gingen bis
+# zum Neustart verloren. Deshalb gibt es bewusst KEIN Löschen aktiver,
+# leerer oder "grosser" Dateien und kein "alles löschen".
+
+ROTATED_LOG_PATTERN = "*.log.*"
+
+
+@dataclass(frozen=True)
+class LogCleanupResult:
+    """Ergebnis von cleanup_rotated_log_files() (auch im Dry-Run)."""
+
+    matched: List[str]
+    deleted: List[str]
+    failed: List[str]
+    freed_bytes: int
+    dry_run: bool
+
+
+def _is_rotated_backup(path: Path) -> bool:
+    # bot.log.1, bot.log.2 ... — Suffix nach ".log." muss eine Zahl sein.
+    name = path.name
+    head, sep, tail = name.rpartition(".log.")
+    return bool(head) and bool(sep) and tail.isdigit()
+
+
+def cleanup_rotated_log_files(
+    log_dir: Path, *, older_than_days: Optional[int] = None, dry_run: bool = False,
+) -> LogCleanupResult:
+    """Löscht rotierte Log-Backups in `log_dir` (nicht rekursiv, keine
+    Symlinks, Containment-Check wie _require_safe_name()).
+
+    `older_than_days=None` → alle rotierten Backups; sonst nur solche mit
+    mtime älter als N Tage. `dry_run=True` liefert nur die Treffer
+    (Telegram-Vorschau vor der Bestätigung). Einzelne Löschfehler werden
+    gesammelt, nicht geworfen."""
+    if older_than_days is not None and older_than_days < 0:
+        raise ValueError("older_than_days darf nicht negativ sein")
+    if not log_dir.is_dir():
+        return LogCleanupResult([], [], [], 0, dry_run)
+
+    cutoff = None
+    if older_than_days is not None:
+        cutoff = time.time() - older_than_days * 86400
+
+    matched: List[Tuple[Path, int]] = []
+    for path in sorted(log_dir.glob(ROTATED_LOG_PATTERN)):
+        if path.is_symlink() or not path.is_file() or not _is_rotated_backup(path):
+            continue
+        if not _is_within(path, log_dir):
+            continue
+        try:
+            st = path.stat()
+        except OSError:
+            continue  # Race mit Rotation
+        if cutoff is not None and st.st_mtime >= cutoff:
+            continue
+        matched.append((path, st.st_size))
+
+    deleted: List[str] = []
+    failed: List[str] = []
+    freed = 0
+    if not dry_run:
+        for path, size in matched:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                continue  # zwischenzeitlich wegrotiert — nichts zu tun
+            except OSError:
+                failed.append(path.name)
+                continue
+            deleted.append(path.name)
+            freed += size
+
+    return LogCleanupResult(
+        matched=[p.name for p, _ in matched],
+        deleted=deleted,
+        failed=failed,
+        freed_bytes=freed if not dry_run else sum(size for _, size in matched),
+        dry_run=dry_run,
+    )
+
+
+# =====================================================================
 # CC-LOGGER-L4 Stufe 1 — Persistente Logger-Konfiguration
 # =====================================================================
 #
