@@ -166,6 +166,7 @@ dokumentiert (Commit `14f40b3`).
 | [archive/MusicBot_MB01_ARTIST_MISMATCH_AUDIT.md](archive/MusicBot_MB01_ARTIST_MISMATCH_AUDIT.md) | HISTORICAL (committed) | MB-01 — MusicBrainz-Artist-Mismatch durch Titel-dominierte Gewichtung |
 | [archive/MusicBot_TAG01_MULTI_ARTIST_TAG_AUDIT.md](archive/MusicBot_TAG01_MULTI_ARTIST_TAG_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | TAG-01 — Multi-Artist-`ARTISTS`-Tag wird als separate Werte statt als String geschrieben |
 | [archive/MusicBot_TESTENV01_ISOLATION_AUDIT.md](archive/MusicBot_TESTENV01_ISOLATION_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | TESTENV-01 — `config_test.py` vollständig von Produktionspfaden isoliert |
+| [audits/CC-LIB-FINAL_PHASE_C_SERVICE_LAYER_AUDIT_2026-09-27.md](audits/CC-LIB-FINAL_PHASE_C_SERVICE_LAYER_AUDIT_2026-09-27.md) | CURRENT (committed, read-only Audit) | CC-LIB-FINAL Phase C — Funktionsmatrix aller Library-/Metadata-Aktionen (Artist/Titel/Album/Albuminterpret/Genre bearbeiten, Genre-Mapping, Artist Casing, Legacy Genre Cleanup, Genre-Revalidierung, Library Repair/Health): Service-Layer bereits vollständig, keine Code-Änderung nötig. Ein UX-Gap (Titel bearbeiten verlangt bei Direktzugriff ohne Track-Drawer weiterhin manuellen relativen Pfad) auf Phase D verschoben. |
 
 ## ARCH – Architektur-Entscheidungsprotokoll (Historie, in [`docs/archive/arch/`](archive/arch/))
 
