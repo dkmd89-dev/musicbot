@@ -281,3 +281,22 @@ class TestSystemStatus:
         response = await client.get("/api/v1/admin/system/status")
 
         assert response.json()["bot_service_active"] is None
+
+
+class TestMaintenanceModeReachesTheRunningBot:
+    """Regression: POST /api/v1/admin/maintenance schrieb nur in eine frische,
+    pro Request erzeugte Store-Instanz; die langlebige Bot-Instanz
+    (handlers/menu/rich_menu_handler.py) sah die Aenderung nie."""
+
+    @pytest.mark.asyncio
+    async def test_cc_toggle_is_seen_by_a_long_lived_bot_store(self, client, maintenance_data_dir):
+        from services.bot_maintenance import MaintenanceModeStore
+
+        bot_store = MaintenanceModeStore(state_file=str(maintenance_data_dir / "maintenance_mode.json"))
+        assert bot_store.is_active() is False
+
+        await client.post("/api/v1/admin/maintenance", json={"active": True}, headers=_SAME_ORIGIN)
+        assert bot_store.is_active() is True
+
+        await client.post("/api/v1/admin/maintenance", json={"active": False}, headers=_SAME_ORIGIN)
+        assert bot_store.is_active() is False

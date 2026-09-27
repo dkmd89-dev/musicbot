@@ -152,3 +152,36 @@ class TestMissingStore:
 
         assert blocked is False
         update.message.reply_text.assert_not_called()
+
+
+class TestGateSeesChangesFromControlCenter:
+    """Regression: der Gate-Check liest den langlebigen Bot-Store. Ein Umschalten
+    durch das Control Center (andere Instanz, dieselbe Datei) muss ohne Neustart
+    greifen - Nicht-Admins werden blockiert, Admins nie."""
+
+    def test_control_center_activation_blocks_non_admins_of_the_running_bot(self, tmp_path):
+        from services.bot_maintenance import MaintenanceModeStore
+
+        path = str(tmp_path / "maintenance_mode.json")
+        bot_store = MaintenanceModeStore(state_file=path)
+        cc_store = MaintenanceModeStore(state_file=path)
+
+        def gate(user_id):
+            update = make_update(user_id, as_callback=False)
+            blocked = run_async(is_blocked_by_maintenance(
+                update, Mock(), maintenance_store=bot_store, config=FakeConfig(), logger=Mock()))
+            return blocked, update
+
+        assert gate(999)[0] is False                      # vorher: alle duerfen
+
+        cc_store.set_active(True, changed_by_user_id=111)
+
+        blocked, update = gate(999)
+        assert blocked is True                            # Nicht-Admin: gesperrt
+        update.message.reply_text.assert_called_once()
+        assert gate(222)[0] is False                      # Admin nie blockiert
+        assert gate(111)[0] is False                      # Owner nie blockiert
+
+        cc_store.set_active(False, changed_by_user_id=111)
+
+        assert gate(999)[0] is False                      # wieder frei, ohne Neustart
