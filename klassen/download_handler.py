@@ -30,8 +30,6 @@ docs/archive/arch/MusicBot_ARCH-020_Download_Pipeline_Characterization.md, Absch
 
 import asyncio
 import re
-import os
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
@@ -49,7 +47,7 @@ from services.downloader.downloader import YoutubeDownloader
 from services.downloader.active_downloads import ActiveDownloadRegistry
 from services.downloader.download_concurrency import download_slot
 from services.downloader.download_history import DownloadHistoryStore
-from services.downloader.download_utils import is_youtube_mix_url
+from services.downloader import download_pipeline_core as pipeline_core
 from services.metadata.enhanced_metadata_processor import (
     EnhancedMetadataProcessor,
 )
@@ -397,34 +395,25 @@ class DownloadHandler:
         (kein einzelner Songtitel), wird (None, None) zurückgegeben - die
         URL-Ebene in check_for_duplicates() bleibt davon unberührt, es
         wird nichts blockiert.
+
+        Client Consolidation Phase D/E: reine Delegation an
+        services/downloader/download_pipeline_core.py (Move, siehe dortigen
+        Modul-Docstring) - identische Signatur/Verhalten, damit bestehende
+        Tests, die diese Methode direkt aufrufen oder patchen, unveraendert
+        funktionieren. `getattr(self, "config", None)` statt `self.config`
+        (wie active_downloads/downloader/download_history in dieser Klasse):
+        die try/except-Huelle in probe_artist_title_for_duplicate_check()
+        faengt ein fehlendes Config-Attribut nur ab, wenn der Zugriff selbst
+        INNERHALB dieser Huelle liegt - ein direkter `self.config`-Zugriff
+        hier im Aufrufer (vor dem Funktionsaufruf ausgewertet) wuerde bei
+        Test-Instanzen ohne echten Konstruktor (object.__new__(), siehe
+        tests/test_download_handler_youtube_pipeline_failure_reporting.py)
+        stattdessen unkontrolliert durchschlagen - Charakterisierungsfund
+        dieser Extraktion, keine beabsichtigte Verhaltensaenderung.
         """
-        try:
-            download_executor = (
-                self.downloader.enhanced_download_processor.download_executor
-            )
-            ydl_opts = download_executor.build_ydl_opts(self.config)
-            _is_mix = is_youtube_mix_url(url)
-            if _is_mix:
-                # DUP-06: siehe services/downloader/download_utils.py -
-                # verhindert, dass diese Vorab-Probe fuer eine Mix-/Radio-
-                # Liste (list=RD...) faelschlich ein entries-Ergebnis erhaelt
-                # und dadurch die Content-/Parser-Duplicate-Ebene ueberspringt.
-                ydl_opts = {**ydl_opts, "noplaylist": True}
-            # H1: für Nicht-Mix-URLs teilt sich diese Probe den yt-dlp-
-            # Roundtrip mit dem gleich folgenden Download (use_cache). Bei
-            # Mix-URLs weichen die `ydl_opts` ab (noplaylist) → kein Cache.
-            info = await download_executor.extract_info_async(
-                url, ydl_opts, download=False, use_cache=not _is_mix
-            )
-            if not info or info.get("entries"):
-                return None, None
-            return info.get("uploader") or info.get("channel"), info.get("title")
-        except Exception as e:
-            self.logger.warning(
-                f"⚠️ [DUPE] Vorab-Metadaten-Abruf fehlgeschlagen — "
-                f"nur URL-Ebene aktiv: {e}"
-            )
-            return None, None
+        return await pipeline_core.probe_artist_title_for_duplicate_check(
+            self.downloader, getattr(self, "config", None), url, self.logger
+        )
 
     async def _check_duplicates_before_download(
         self, url: str
@@ -433,28 +422,19 @@ class DownloadHandler:
         Prüft auf Duplikate: URL-Ebene immer, zusätzlich Artist/Titel/
         Parser/Library-Ebenen sofern der Vorab-Metadaten-Abruf gelang.
         Gibt (is_duplicate, entry, type) zurück.
+
+        Client Consolidation Phase D/E: reine Delegation an
+        services/downloader/download_pipeline_core.py (Move) - identische
+        Signatur/Verhalten. `getattr(self, "config", None)` - siehe
+        Begründung in _probe_artist_title_for_duplicate_check() oben.
         """
-        self.logger.info(f"🔍 [DUPE] Starte Duplikat-Prüfung für URL: {url[:80]}...")
-
-        raw_artist, raw_title = await self._probe_artist_title_for_duplicate_check(url)
-
-        is_dup, entry, dup_type = self.duplicate_detector.check_for_duplicates(
-            url=url, raw_artist=raw_artist, raw_title=raw_title
+        return await pipeline_core.check_duplicates_before_download(
+            self.duplicate_detector,
+            self.downloader,
+            getattr(self, "config", None),
+            url,
+            self.logger,
         )
-
-        if is_dup and entry:
-            self.logger.warning(
-                f"🔍 [DUPE] ⚠️ DUPLIKAT GEFUNDEN:\n"
-                f"   Typ       : {dup_type}\n"
-                f"   Titel     : {entry.title}\n"
-                f"   Künstler  : {entry.artist}\n"
-                f"   Datum     : {entry.download_date.strftime('%d.%m.%Y %H:%M')}\n"
-                f"   Pfad      : {entry.file_path}"
-            )
-        else:
-            self.logger.info("🔍 [DUPE] ✅ Kein Duplikat — Download wird fortgesetzt")
-
-        return is_dup, entry, dup_type
 
     async def _send_report_message(
         self, msg: str, error_log_msg: str, success_log_msg: Optional[str] = None
@@ -510,91 +490,12 @@ class DownloadHandler:
           B) Doppelverarbeitungs-Schutz (already processed)
           C) filepath-Fallback-Suche
           F) Cover-Art-Transparenz
+
+        Client Consolidation Phase D/E: reine Delegation an
+        services/downloader/download_pipeline_core.py (Move) - identische
+        Signatur/Verhalten.
         """
-        title = result.get("title", "Unbekannt")
-        self.logger.info(
-            f"🚀 [PROCESS] ═══ Starte Metadaten-Anreicherung für '{title}' ═══"
-        )
-
-        try:
-            # ── A: Playlist-Wrapper-Schutz ────────────────────────────────────
-            if result.get("type") == "playlist":
-                self.logger.info(
-                    f"📋 [PROCESS-A] Playlist-Wrapper erkannt → "
-                    "MetadataProcessor wird übersprungen, Rohdaten direkt weitergegeben"
-                )
-                return result
-
-            # ── B: Doppelverarbeitungs-Schutz ─────────────────────────────────
-            already_processed = result.get("library_path") and not result.get(
-                "filepath"
-            )
-            if already_processed:
-                self.logger.debug(
-                    f"✅ [PROCESS-B] '{title}' bereits fertig verarbeitet "
-                    f"(library_path='{result.get('library_path')}') — überspringe"
-                )
-                return result
-
-            # ── C: filepath-Fallback ──────────────────────────────────────────
-            if not result.get("filepath"):
-                self.logger.debug(
-                    f"📂 [PROCESS-C] 'filepath' fehlt — suche Fallback..."
-                )
-                fallback = (
-                    result.get("filename")
-                    or result.get("file_path")
-                    or result.get("_filename")
-                )
-                if not fallback and isinstance(result.get("requested_downloads"), list):
-                    entries = result["requested_downloads"]
-                    if entries:
-                        fallback = entries[0].get("filepath")
-                        if fallback:
-                            self.logger.debug(
-                                f"📂 [PROCESS-C] filepath via requested_downloads gefunden: {fallback}"
-                            )
-                if not fallback and result.get("library_path"):
-                    fallback = str(result["library_path"])
-                    self.logger.debug(
-                        f"📂 [PROCESS-C] filepath via library_path gesetzt: {fallback}"
-                    )
-                if fallback:
-                    result["filepath"] = str(fallback)
-                else:
-                    self.logger.warning(
-                        f"⚠️ [PROCESS-C] Kein filepath gefunden für '{title}' — "
-                        "Verarbeitung wird trotzdem versucht"
-                    )
-
-            # ── Titel-Fallback (verhindert 'Playlist' als Titel) ──────────────
-            if result.get("title") in ("Playlist", None, ""):
-                echter = result.get("fulltitle") or result.get("track")
-                if echter:
-                    self.logger.debug(
-                        f"🎵 [PROCESS-C] Titel '{result.get('title')}' → '{echter}' (fulltitle)"
-                    )
-                    result["title"] = echter
-                    title = echter
-
-            # ── F: Cover-Art-Transparenz ───────────────────────────────────────
-            cover_bytes = result.get("cover_art")
-            if cover_bytes:
-                self.logger.info(
-                    f"🖼️ [PROCESS-F] Cover-Art bereits im Ergebnis vorhanden "
-                    f"({len(cover_bytes):,} Bytes)"
-                )
-            else:
-                self.logger.debug("🖼️ [PROCESS-F] Kein eingebettetes Cover im Ergebnis")
-
-            return result
-
-        except Exception as e:
-            self.logger.error(
-                f"❌ [PROCESS] Unerwarteter Fehler bei '{title}': {e}",
-                exc_info=True,
-            )
-            return result
+        return await pipeline_core.process_single_download_result(result, self.logger)
 
     # ──────────────────────────────────────────────────────────────────────────
     def _has_lyrics(self, file_path: Path) -> bool:
@@ -637,28 +538,28 @@ class DownloadHandler:
 
         Die fünf *_ok-Parameter (Phase 3, P2.2, Metadata-Checkliste) bleiben
         bewusst `None` ("keine Aussage möglich"), wenn der Aufrufer kein
-        DownloadResult hat (status 'cancelled'/'failed') - niemals `False`."""
+        DownloadResult hat (status 'cancelled'/'failed') - niemals `False`.
+
+        Client Consolidation Phase D/E: reine Delegation an
+        services/downloader/download_pipeline_core.py (Move) - identische
+        Signatur/Verhalten, chat_id/download_history weiterhin über
+        getattr() ermittelt (bestehende Tests bypassen __init__())."""
         download_history = getattr(self, "download_history", None)
-        if download_history is None:
-            return
         chat_id = getattr(getattr(self.update, "effective_chat", None), "id", None)
-        if chat_id is None:
-            return
-        try:
-            download_history.add_entry(
-                chat_id,
-                url=url or "",
-                title=title or "Unbekannt",
-                artist=artist or "Unbekannt",
-                status=status,
-                genre_ok=genre_ok,
-                lyrics_ok=lyrics_ok,
-                cover_ok=cover_ok,
-                mb_ok=mb_ok,
-                loudness_ok=loudness_ok,
-            )
-        except Exception as e:
-            self.logger.warning(f"⚠️ [HISTORY] Verlaufseintrag fehlgeschlagen: {e}")
+        pipeline_core.record_history_entry(
+            download_history,
+            chat_id,
+            url=url,
+            title=title,
+            artist=artist,
+            status=status,
+            genre_ok=genre_ok,
+            lyrics_ok=lyrics_ok,
+            cover_ok=cover_ok,
+            mb_ok=mb_ok,
+            loudness_ok=loudness_ok,
+            logger=self.logger,
+        )
 
     async def handle_single_track_success(self, result: Dict[str, Any]) -> None:
         """Registriert Download im Duplikat-Cache und sendet Abschluss-Zusammenfassung."""
@@ -687,36 +588,20 @@ class DownloadHandler:
                 loudness_ok=bool(result.get("loudness_normalized")),
             )
 
-        # Duplikat-Registrierung
-        try:
-            url = result.get("original_url") or result.get("url") or ""
-            path = result.get("library_path") or result.get("filepath") or ""
-            if artist and title and artist not in ("?", "Unbekannt", "Unknown Artist"):
-                self.duplicate_detector.register_download(
-                    url=url,
-                    artist=artist,
-                    title=title,
-                    file_path=Path(path) if path else None,
-                    metadata={
-                        "artist": artist,
-                        "title": title,
-                        "album": result.get("album"),
-                        "year": result.get("year"),
-                    },
-                )
-                self.logger.info(
-                    f"📝 [SUCCESS] Im Duplikat-Cache registriert: '{artist} - {title}'"
-                )
-            else:
-                self.logger.warning(
-                    f"⚠️ [SUCCESS] Duplikat-Registrierung übersprungen "
-                    f"(artist='{artist}', title='{title}')"
-                )
-        except Exception as e:
-            self.logger.error(
-                f"❌ [SUCCESS] Duplikat-Registrierung fehlgeschlagen: {e}",
-                exc_info=True,
-            )
+        # Duplikat-Registrierung (Client Consolidation Phase D/E: Move nach
+        # services/downloader/download_pipeline_core.py::register_single_track_duplicate())
+        url = result.get("original_url") or result.get("url") or ""
+        path = result.get("library_path") or result.get("filepath") or ""
+        pipeline_core.register_single_track_duplicate(
+            self.duplicate_detector,
+            url=url,
+            artist=artist,
+            title=title,
+            path=path,
+            album=result.get("album"),
+            year=result.get("year"),
+            logger=self.logger,
+        )
 
         stats = self.result_reporter.extract_stats_from_result(result, [])
         dup_stats = getattr(self.duplicate_detector, "get_statistics", lambda: {})()
@@ -745,76 +630,16 @@ class DownloadHandler:
         einzelnen Track betrifft ausschließlich diesen Track - die Schleife
         läuft für alle übrigen Tracks unverändert weiter (kein Abbruch, kein
         Einfluss auf bereits verarbeitete oder noch folgende Tracks).
+
+        Client Consolidation Phase D/E: reine Delegation an
+        services/downloader/download_pipeline_core.py (Move) - identische
+        Signatur/Verhalten.
         """
-        for track in tracks:
-            if not (isinstance(track, dict) and track.get("success")):
-                continue
-
-            artist = track.get("artist", "?")
-            title = track.get("title", "?")
-            library_path = track.get("library_path")
-
-            if track.get("renamed_due_to_conflict"):
-                self.logger.warning(
-                    f"📄 [PLAYLIST] Dateikonflikt erkannt (Track '{artist} - {title}') "
-                    f"— lösche: {library_path}"
-                )
-                try:
-                    if library_path and Path(library_path).exists():
-                        os.remove(library_path)
-                        self.logger.info(
-                            f"✅ [PLAYLIST] Duplikat-Datei gelöscht: {library_path}"
-                        )
-                except OSError as oe:
-                    self.logger.error(f"❌ [PLAYLIST] Löschen fehlgeschlagen: {oe}")
-                # Die kollidierte Kopie repräsentiert denselben Content wie
-                # der bereits vorhandene Cache-Eintrag - keine eigene
-                # Registrierung nötig, andere Tracks bleiben unberührt.
-                continue
-
-            if not (
-                artist and title and artist not in ("?", "Unbekannt", "Unknown Artist")
-            ):
-                self.logger.warning(
-                    f"⚠️ [PLAYLIST] Duplikat-Registrierung übersprungen "
-                    f"(artist='{artist}', title='{title}')"
-                )
-                continue
-
-            try:
-                self.duplicate_detector.register_download(
-                    url=track.get("url") or "",
-                    artist=artist,
-                    title=title,
-                    file_path=Path(library_path) if library_path else None,
-                    metadata={
-                        "artist": artist,
-                        "title": title,
-                        "album": track.get("album"),
-                        "year": track.get("year"),
-                    },
-                )
-                self.logger.info(
-                    f"📝 [PLAYLIST] Im Duplikat-Cache registriert: '{artist} - {title}'"
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"❌ [PLAYLIST] Duplikat-Registrierung fehlgeschlagen "
-                    f"('{artist} - {title}'): {e}",
-                    exc_info=True,
-                )
-
-            self._record_history_entry(
-                url=track.get("url") or "",
-                title=title,
-                artist=artist,
-                status="success",
-                genre_ok=bool(track.get("genres")),
-                lyrics_ok=bool(track.get("lyrics_available")),
-                cover_ok=bool(track.get("cover_embedded")),
-                mb_ok=bool(track.get("mb_ids_present")),
-                loudness_ok=bool(track.get("loudness_normalized")),
-            )
+        download_history = getattr(self, "download_history", None)
+        chat_id = getattr(getattr(self.update, "effective_chat", None), "id", None)
+        pipeline_core.register_playlist_track_duplicates(
+            self.duplicate_detector, download_history, chat_id, tracks, self.logger
+        )
 
     async def handle_playlist_success(self, results: List[dict]) -> None:
         """Abschluss-Meldung für Playlists oder Playlist-Wrapper."""
@@ -1028,29 +853,12 @@ class DownloadHandler:
                     )
                     continue
 
-                # Dateikonflikt → Duplikat
+                # Dateikonflikt → Duplikat (Client Consolidation Phase D/E:
+                # Move nach services/downloader/download_pipeline_core.py::
+                # resolve_file_conflict_as_duplicate())
                 if res.get("renamed_due_to_conflict"):
-                    final_path = res.get("library_path")
-                    self.logger.warning(
-                        f"📄 [YT-PIPELINE] Dateikonflikt erkannt — lösche: {final_path}"
-                    )
-                    try:
-                        if final_path and Path(final_path).exists():
-                            os.remove(final_path)
-                            self.logger.info(
-                                f"✅ [YT-PIPELINE] Duplikat-Datei gelöscht: {final_path}"
-                            )
-                    except OSError as oe:
-                        self.logger.error(
-                            f"❌ [YT-PIPELINE] Löschen fehlgeschlagen: {oe}"
-                        )
-
-                    conflict_entry = DuplicateEntry(
-                        title=res.get("title", "Unbekannt"),
-                        artist=res.get("artist", "Unbekannt"),
-                        file_path=Path(str(final_path).replace(" (1)", "")),
-                        download_date=datetime.now(),
-                        url=url,
+                    conflict_entry = pipeline_core.resolve_file_conflict_as_duplicate(
+                        res, url, self.logger
                     )
                     await self._handle_duplicate_found(conflict_entry, "file_conflict")
                     return
