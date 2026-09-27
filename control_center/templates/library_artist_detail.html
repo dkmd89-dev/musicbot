@@ -537,6 +537,26 @@
         <div id="genre-revalidation-content" class="empty-note"></div>
       </div>
 
+      <!-- Duplikat-Check (read-only Vorschlag, kein Execute/Delete) -->
+      <div class="border-bottom pb-4 mb-4" id="duplicate-check-panel">
+        <h3 class="mb-2">🔁 Duplikat-Check</h3>
+        <p class="text-secondary">
+          Sucht pro Artist nach höher-bitratigen Duplikaten und zeigt einen
+          Vorschlag, welche Version behalten werden sollte — rein lesend,
+          es wird nichts gelöscht. Tatsächliches Löschen bleibt bewusst der
+          CLI vorbehalten:
+          <code>scripts/library_repair.py --allow-delete --artist &lt;Name&gt; --apply</code>
+        </p>
+
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          <button id="duplicate-check-btn" type="button" class="btn btn-outline-primary">
+            Duplikate prüfen
+          </button>
+        </div>
+
+        <div id="duplicate-check-content" class="empty-note"></div>
+      </div>
+
       <!-- L3 (L2/METADATA_REPROCESSING wurde in CC-LIB-FINAL Phase B
            entfernt - siehe docs/LIBRARY_REPAIR.md §6a. Dieser Button war
            bis zur Phase-E-Durchsicht als toter Rest stehengeblieben, sein
@@ -1615,6 +1635,119 @@
 
   document.getElementById("genre-revalidation-preview-btn").addEventListener("click", () => startGenreRevalidation("preview"));
   document.getElementById("genre-revalidation-apply-btn").addEventListener("click", () => startGenreRevalidation("apply"));
+
+  // -- Duplikat-Check (read-only Vorschlag, als Job) ---------------------------
+  //
+  // POST /api/v1/jobs/duplicate-check (Job, Polling wie bei der
+  // Genre-Revalidierung). Bewusst KEIN Apply/Execute aus dem Web - identische
+  // Sicherheitsgrenze wie Telegram (handlers/duplicate_check_handler.py):
+  // Löschen bleibt CLI-only.
+
+  let _dupCheckTimer = null;
+  let _dupCheckJobId = null;
+
+  function _shortPath(path) {
+    if (!path) return "?";
+    const parts = String(path).split("/");
+    return parts[parts.length - 1];
+  }
+
+  function duplicateCheckResultHtml(r) {
+    if (r.read_only_intact === false) {
+      return '<div class="alert alert-danger mb-0">🚨 Sicherheitswarnung: Das Dateisystem hat sich während des Scans verändert — Ergebnis verworfen, bitte erneut versuchen.</div>';
+    }
+    const groups = r.duplicate_groups || 0;
+    if (groups === 0) {
+      return `<div class="alert alert-success mb-0">Keine Duplikat-Gruppen gefunden (${_escapeHtml(String(r.files_scanned || 0))} Dateien geprüft).</div>`;
+    }
+    const resolved = r.resolved_groups || 0;
+    const manual = r.manual_review_groups || 0;
+    const decisions = r.decisions || [];
+    const groupsHtml = decisions.map((d) => {
+      const title = _escapeHtml(d.title || "?");
+      const candidates = d.candidates || [];
+      if (d.action === "RESOLVED") {
+        const keepCandidate = candidates.find((c) => c.path === d.keep);
+        const keepBitrate = keepCandidate && keepCandidate.bitrate ? ` (${keepCandidate.bitrate} kbps)` : "";
+        const removeLines = (d.remove_proposal || []).map((rp) => {
+          const rpCandidate = candidates.find((c) => c.path === rp);
+          const rpBitrate = rpCandidate && rpCandidate.bitrate ? ` (${rpCandidate.bitrate} kbps)` : "";
+          return `<div class="small">🗑️ Vorschlag entfernen: ${_escapeHtml(_shortPath(rp))}${rpBitrate}</div>`;
+        }).join("");
+        return `<div class="mb-2"><div class="fw-semibold">🎵 ${title}</div><div class="small">✅ Behalten: ${_escapeHtml(_shortPath(d.keep))}${keepBitrate}</div>${removeLines}</div>`;
+      }
+      return `<div class="mb-2"><div class="fw-semibold">🎵 ${title}</div><div class="small">⚠️ ${_escapeHtml(d.action || "MANUAL_REVIEW")}: ${_escapeHtml(d.reason || "kein Grund angegeben")}</div></div>`;
+    }).join("");
+    return `
+      <div class="alert alert-info py-2 mb-2">${groups} Duplikat-Gruppe(n) — ${resolved} mit Vorschlag, ${manual} zur manuellen Prüfung</div>
+      ${groupsHtml}
+      <div class="text-secondary small mt-2">Löschen nur über die CLI: <code>scripts/library_repair.py --allow-delete --artist ${_escapeHtml(currentArtistFromPath())} --apply</code></div>`;
+  }
+
+  function _dupCheckSetBusy(busy) {
+    document.getElementById("duplicate-check-btn").disabled = busy;
+  }
+
+  function _stopDupCheckPolling() {
+    if (_dupCheckTimer) { clearInterval(_dupCheckTimer); _dupCheckTimer = null; }
+  }
+
+  function _renderDuplicateCheckJob(job) {
+    const el = document.getElementById("duplicate-check-content");
+    if (job.status === "PENDING" || job.status === "RUNNING") {
+      el.innerHTML = `<p class="empty-note">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%) — ${_escapeHtml(job.message || "")}</p>`;
+      return;
+    }
+    _stopDupCheckPolling();
+    _dupCheckSetBusy(false);
+    if (job.status !== "SUCCEEDED") {
+      el.innerHTML = `<div class="alert alert-danger mb-0">Fehlgeschlagen: ${_escapeHtml(job.error || "Unbekannter Fehler")}</div>`;
+      return;
+    }
+    el.innerHTML = duplicateCheckResultHtml(job.result || {});
+  }
+
+  async function _pollDuplicateCheckJob(jobId) {
+    try {
+      const res = await fetch(apiUrl(`/api/v1/jobs/${encodeURIComponent(jobId)}`), { credentials: "same-origin" });
+      if (res.status === 401) { showOnly("login-view"); _stopDupCheckPolling(); return; }
+      if (!res.ok) return;
+      _renderDuplicateCheckJob(await res.json());
+    } catch (err) {}
+  }
+
+  async function startDuplicateCheck() {
+    const artist = currentArtistFromPath();
+    _dupCheckSetBusy(true);
+    document.getElementById("duplicate-check-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
+    try {
+      const res = await fetch(apiUrl("/api/v1/jobs/duplicate-check"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ artist }),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        document.getElementById("duplicate-check-content").innerHTML =
+          `<div class="alert alert-danger mb-0">Job konnte nicht gestartet werden: ${_escapeHtml((body && body.error && body.error.message) || String(res.status))}</div>`;
+        _dupCheckSetBusy(false);
+        return;
+      }
+      const job = await res.json();
+      _dupCheckJobId = job.job_id;
+      _renderDuplicateCheckJob(job);
+      _stopDupCheckPolling();
+      _dupCheckTimer = setInterval(() => _pollDuplicateCheckJob(_dupCheckJobId), 1000);
+    } catch (err) {
+      document.getElementById("duplicate-check-content").innerHTML =
+        `<div class="alert alert-danger mb-0">Job konnte nicht gestartet werden (${_escapeHtml(err.message)}).</div>`;
+      _dupCheckSetBusy(false);
+    }
+  }
+
+  document.getElementById("duplicate-check-btn").addEventListener("click", startDuplicateCheck);
 
   document.getElementById("genre-manage-preview-btn").addEventListener("click", loadGenreManagePreview);
   document.getElementById("genre-manage-execute-btn").addEventListener("click", executeGenreManage);
