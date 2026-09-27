@@ -153,6 +153,13 @@ global.document = {
   addEventListener() {},
 };
 global.window = { alert() {}, confirm: () => true, prompt: () => "" };
+global.__copied = null;
+// Node >= 21 hat ein eigenes (nicht zuweisbares) global.navigator.
+Object.defineProperty(global, "navigator", { configurable: true, value: { clipboard: { writeText: async (t) => {
+  if (JSON.parse(process.argv[3]).clipboardFails) throw new Error("denied");
+  global.__copied = t;
+} } } });
+const fired = [];
 
 const scenario = JSON.parse(process.argv[3]);
 global.fetch = async (url) => {
@@ -181,12 +188,14 @@ const api = new Function(src + "\nreturn { loadHealth, renderHealth, renderScore
       document.getElementById(op.id)[op.prop] = op.value;
     } else if (op.op === "fire") {
       const closest = op.closest || {};
+      Object.values(closest).forEach((o) => fired.push(o));
       document.getElementById(op.id).listeners[op.type]({
         target: { closest: (sel) => closest[sel] || null },
       });
+      await new Promise((r) => setImmediate(r));  // async Listener (Kopieren) abwarten
     }
   }
-  const out = { fetchCalls, steps: lis.map((l) => l.active), els: {} };
+  const out = { fetchCalls, steps: lis.map((l) => l.active), els: {}, copied: global.__copied, fired: fired.map((o) => o.textContent) };
   Object.keys(els).forEach((id) => {
     out.els[id] = { html: els[id].innerHTML, text: els[id].textContent, hidden: els[id].hidden,
                     disabled: els[id].disabled, cls: els[id].className };
@@ -532,3 +541,241 @@ def test_repair_statistics_and_jobs_render_without_legacy_markup(tmp_path: Path)
     assert "<b>boom" not in jhtml and "&lt;b&gt;boom" in jhtml
     empty = _run(tmp_path, {"ops": [{"op": "call", "fn": "renderJobs", "args": ["@jobs-content", {"jobs": []}]}]})
     assert "Keine Jobs." in empty["els"]["jobs-content"]["html"]
+
+
+# ── Finding-Details (Schritt 2: message sichtbar statt nur Tooltip) ──────
+
+_MISMATCH = {
+    "code": "FILENAME_TITLE_MISMATCH", "tier": "INFO",
+    "findings": [{
+        "finding_id": "fm1", "code": "FILENAME_TITLE_MISMATCH", "scope": "FILE", "status": "OPEN",
+        "path": "01099/2019 - Skyr/01 - Intro feat. Mioso.m4a", "artist": "01099", "album": "Skyr",
+        "title": "Intro (feat. Mioso)", "severity": "INFO", "confidence": "HIGH", "occurrences": 3,
+        "first_seen": "2026-09-20", "last_seen": "2026-09-27",
+        "message": "Dateiname-Stamm '01 - Intro feat. Mioso' passt nicht zum Titel-Tag 'Intro (feat. Mioso)'",
+    }],
+}
+
+
+def _toggle(fid: str) -> dict:
+    return {"op": "fire", "id": "findings-content", "type": "click",
+            "closest": {".finding-toggle": {"dataset": {"findingId": fid}}}}
+
+
+@needs_node
+def test_finding_details_are_collapsed_by_default(tmp_path: Path) -> None:
+    html = _findings(tmp_path, [_MISMATCH])["els"]["findings-content"]["html"]
+    assert 'class="finding-toggle health-path font-monospace small text-truncate"' in html
+    assert 'aria-expanded="false"' in html
+    assert "health-finding-detail" not in html
+    assert "Dateiname-Stamm" not in html  # Meldung erst nach Aufklappen sichtbar
+
+
+@needs_node
+def test_finding_toggle_shows_message_and_api_fields(tmp_path: Path) -> None:
+    html = _findings(tmp_path, [_MISMATCH], ops_after=[_toggle("fm1")])["els"]["findings-content"]["html"]
+    assert 'aria-expanded="true"' in html
+    detail = html.split('class="health-finding-detail', 1)[1]
+    # Meldung sichtbar (Dateiname-Stamm + Titel-Tag stehen in message)
+    assert "Dateiname-Stamm '01 - Intro feat. Mioso' passt nicht zum Titel-Tag 'Intro (feat. Mioso)'".replace("'", "&#39;") in detail
+    for label, value in (("Pfad", "01099/2019 - Skyr/01 - Intro feat. Mioso.m4a"), ("Artist", "01099"),
+                         ("Album", "Skyr"), ("Severity", "INFO · HIGH"), ("Auftreten", "3"),
+                         ("Erstmals gesehen", "2026-09-20"), ("Zuletzt gesehen", "2026-09-27")):
+        assert f">{label}</dt>" in detail, label
+        assert value in detail, value
+    assert "finding-copy-btn" in detail
+
+
+@needs_node
+def test_finding_toggle_twice_closes_and_open_state_survives_rerender(tmp_path: Path) -> None:
+    closed = _findings(tmp_path, [_MISMATCH], ops_after=[_toggle("fm1"), _toggle("fm1")])
+    assert "health-finding-detail" not in closed["els"]["findings-content"]["html"]
+    # weiterer Render (z. B. Filter/Suche) behaelt den geoeffneten Zustand
+    reopened = _findings(tmp_path, [_MISMATCH], ops_after=[
+        _toggle("fm1"),
+        {"op": "call", "fn": "renderFindings", "args": ["@findings-content", [_MISMATCH]]},
+    ])
+    assert "health-finding-detail" in reopened["els"]["findings-content"]["html"]
+
+
+@needs_node
+def test_open_detail_does_not_change_row_count_or_remove_actions(tmp_path: Path) -> None:
+    html = _findings(tmp_path, [_MISMATCH], ops_after=[_toggle("fm1")])["els"]["findings-content"]["html"]
+    assert html.count("health-finding-row") == 1
+    assert 'class="dropdown-item resolve-btn" data-finding-id="fm1"' in html
+    assert 'class="dropdown-item accept-btn" data-finding-id="fm1"' in html
+
+
+@needs_node
+def test_finding_detail_escapes_message_and_fields(tmp_path: Path) -> None:
+    evil = {"code": "X", "tier": "INFO", "findings": [{
+        "finding_id": "e1", "path": "<img src=x>/a.m4a", "artist": "<b>a</b>", "album": None,
+        "title": '"><script>t</script>', "severity": "INFO", "confidence": None, "occurrences": 1,
+        "first_seen": "", "last_seen": "", "message": "<script>alert(1)</script> & 'q'"}]}
+    html = _findings(tmp_path, [evil], ops_after=[_toggle("e1")])["els"]["findings-content"]["html"]
+    assert "<script>" not in html and "<img" not in html and "<b>a" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt; &amp; &#39;q&#39;" in html
+
+
+@needs_node
+def test_finding_detail_without_message_or_optional_fields(tmp_path: Path) -> None:
+    bare = {"code": "X", "tier": "INFO", "findings": [{
+        "finding_id": "b1", "path": "a/b.m4a", "artist": None, "album": None, "title": None,
+        "severity": None, "confidence": None, "occurrences": None, "first_seen": "", "last_seen": "", "message": ""}]}
+    html = _findings(tmp_path, [bare], ops_after=[_toggle("b1")])["els"]["findings-content"]["html"]
+    assert "Keine Meldung gespeichert." in html
+    detail = html.split('class="health-finding-detail', 1)[1]
+    assert ">Pfad</dt>" in detail
+    for absent in ("Artist", "Album", "Titel", "Severity", "Auftreten", "Erstmals", "Zuletzt"):
+        assert f">{absent}" not in detail, absent
+
+
+@needs_node
+def test_finding_copy_puts_code_message_and_path_on_clipboard(tmp_path: Path) -> None:
+    copy = {"op": "fire", "id": "findings-content", "type": "click",
+            "closest": {".finding-copy-btn": {"dataset": {"findingId": "fm1"}, "textContent": "Kopieren"}}}
+    out = _findings(tmp_path, [_MISMATCH], ops_after=[copy])
+    f = _MISMATCH["findings"][0]
+    assert out["copied"] == f"FILENAME_TITLE_MISMATCH\n{f['message']}\n{f['path']}"
+    assert out["fired"] == ["Kopiert ✓"]
+
+
+@needs_node
+def test_finding_copy_reports_failure_honestly(tmp_path: Path) -> None:
+    copy = {"op": "fire", "id": "findings-content", "type": "click",
+            "closest": {".finding-copy-btn": {"dataset": {"findingId": "fm1"}, "textContent": "Kopieren"}}}
+    out = _run(tmp_path, {"clipboardFails": True, "ops": [
+        {"op": "call", "fn": "renderFindings", "args": ["@findings-content", [_MISMATCH]]}, copy]})
+    assert out["copied"] is None
+    assert out["fired"] == ["Kopieren nicht möglich"]
+
+
+def test_health_js_detail_uses_only_findings_api_fields() -> None:
+    """Keine erfundenen Vergleichswerte: die Detailzeile darf nur FindingSchema-Felder
+    zeigen (Normalisierung/Diff braucht eine Backend-Entscheidung, Schritt 3)."""
+    js = HEALTH_JS.read_text(encoding="utf-8")
+    detail_fn = js.split("function _findingDetailHtml(f) {", 1)[1].split("function _findingRowHtml", 1)[0]
+    used = set(re.findall(r"\bf\.(\w+)", detail_fn))
+    assert used <= {"path", "artist", "album", "title", "severity", "confidence",
+                    "occurrences", "first_seen", "last_seen", "message", "finding_id"}, used
+
+
+# ── Finding-Analyse (Schritt 3: /findings/{id}/details) ──────────────────
+
+_DETAILS_URL = "/api/v1/library/findings/fm1/details"
+
+
+def _details(**over) -> dict:
+    base = {
+        "finding_id": "fm1", "code": "FILENAME_TITLE_MISMATCH", "supported": True, "file_status": "ok",
+        "path": "01099/2019 - Skyr/01 - Intro feat. Mioso.m4a", "message": None,
+        "evidence_kind": "filename_title",
+        "evidence": {
+            "stem": "01 - Intro feat. Mioso", "prefix": "01 - ", "remainder": "Intro feat. Mioso",
+            "title": "Intro (Mioso)", "normalized_remainder": "intro feat. mioso",
+            "normalized_title": "intro mioso", "matches": False, "title_at_scan": "Intro (Mioso)",
+            "segments": [{"op": "equal", "a": "intro ", "b": "intro "},
+                         {"op": "delete", "a": "feat. ", "b": ""},
+                         {"op": "equal", "a": "mioso", "b": "mioso"}],
+        },
+    }
+    base.update(over)
+    return base
+
+
+def _explain(tmp_path: Path, body, extra_ops=None, route=True) -> dict:
+    scenario = {"routes": {_DETAILS_URL: body} if route else {},
+                "ops": [{"op": "call", "fn": "renderFindings", "args": ["@findings-content", [_MISMATCH]]},
+                        _toggle("fm1")] + list(extra_ops or [])}
+    return _run(tmp_path, scenario)
+
+
+@needs_node
+def test_collapsed_findings_do_not_request_details(tmp_path: Path) -> None:
+    out = _findings(tmp_path, [_MISMATCH])
+    assert out["fetchCalls"] == []
+
+
+@needs_node
+def test_opening_a_finding_requests_details_via_api_url_and_shows_loading(tmp_path: Path) -> None:
+    out = _explain(tmp_path, _details())
+    assert out["fetchCalls"] == [_DETAILS_URL]
+    assert "Analyse lädt…" in out["els"]["findings-content"]["html"]  # Zustand direkt nach dem Aufklappen
+    assert 'id="finding-explain-fm1"' in out["els"]["findings-content"]["html"]
+
+
+@needs_node
+def test_details_evidence_is_rendered_with_highlighted_difference(tmp_path: Path) -> None:
+    html = _explain(tmp_path, _details())["els"]["finding-explain-fm1"]["html"]
+    assert "Analyse (frisch von der Platte gelesen)" in html
+    assert "01 - Intro feat. Mioso" in html                         # Dateiname (Platte)
+    assert "„01 - “" in html                                          # abgetrennter Praefix
+    assert "Intro (Mioso)" in html                                    # Titel-Tag (Platte)
+    assert '<mark class="bg-red-lt text-reset px-0">feat. </mark>' in html   # nur links vorhanden
+    assert "bg-green-lt" not in html.split("Verglichen: Titel-Tag", 1)[1].split("Ergebnis", 1)[0]  # rechts nichts eingefuegt
+    assert "unterschiedlich" in html and "bg-red-lt" in html
+    assert "Normalisierung des Scanners" in html
+
+
+@needs_node
+def test_details_insertions_are_highlighted_on_the_title_side(tmp_path: Path) -> None:
+    body = _details()
+    body["evidence"]["segments"] = [{"op": "equal", "a": "song", "b": "song"},
+                                    {"op": "insert", "a": "", "b": " (live)"}]
+    html = _explain(tmp_path, body)["els"]["finding-explain-fm1"]["html"]
+    assert '<mark class="bg-green-lt text-reset px-0"> (live)</mark>' in html
+
+
+@needs_node
+def test_details_stale_finding_and_title_at_scan_note(tmp_path: Path) -> None:
+    body = _details()
+    body["evidence"].update(matches=True, title="Song", title_at_scan="Alter Titel",
+                            segments=[{"op": "equal", "a": "song", "b": "song"}])
+    html = _explain(tmp_path, body)["els"]["finding-explain-fm1"]["html"]
+    assert 'badge bg-green-lt">gleich' in html and "veraltet" in html
+    assert "beim Scan: Alter Titel" in html
+    assert "<mark" not in html
+
+
+@needs_node
+def test_details_unsupported_and_unavailable_states(tmp_path: Path) -> None:
+    unsupported = _explain(tmp_path, _details(supported=False, file_status="not_applicable", evidence=None,
+                                              evidence_kind=None))["els"]["finding-explain-fm1"]["html"]
+    assert "keine Detailanalyse" in unsupported and "Analyse (frisch" not in unsupported
+    missing = _explain(tmp_path, _details(file_status="missing", evidence=None, evidence_kind=None,
+                                          message="Datei nicht mehr vorhanden (verschoben)."))["els"]["finding-explain-fm1"]["html"]
+    assert "Datei nicht mehr vorhanden (verschoben)." in missing
+
+
+@needs_node
+def test_details_http_error_is_shown_not_swallowed(tmp_path: Path) -> None:
+    html = _explain(tmp_path, {}, route=False)["els"]["finding-explain-fm1"]["html"]
+    assert "Analyse nicht verfügbar: HTTP 404" in html
+
+
+@needs_node
+def test_details_evidence_is_escaped(tmp_path: Path) -> None:
+    body = _details()
+    body["evidence"].update(stem="<script>s</script>", title='"><img src=x>', prefix="<b>",
+                            title_at_scan="<i>x</i>",
+                            segments=[{"op": "replace", "a": "<u>", "b": "<s>"}])
+    body["message"] = None
+    html = _explain(tmp_path, body)["els"]["finding-explain-fm1"]["html"]
+    for raw in ("<script>", "<img", "<b>", "<i>", "<u>", "<s>"):
+        assert raw not in html, raw
+    assert "&lt;script&gt;" in html
+
+
+@needs_node
+def test_details_are_cached_while_open_and_refetched_after_reopening(tmp_path: Path) -> None:
+    rerender = {"op": "call", "fn": "renderFindings", "args": ["@findings-content", [_MISMATCH]]}
+    out = _explain(tmp_path, _details(), extra_ops=[rerender])
+    assert out["fetchCalls"] == [_DETAILS_URL]                       # Re-Render: kein zweiter Request
+    assert "Analyse (frisch von der Platte gelesen)" in out["els"]["findings-content"]["html"]  # aus dem Cache
+    reopened = _explain(tmp_path, _details(), extra_ops=[_toggle("fm1"), _toggle("fm1")])
+    assert reopened["fetchCalls"] == [_DETAILS_URL, _DETAILS_URL]    # zu + auf = frisch lesen
+
+
+def test_health_js_explain_fetch_goes_through_api_url() -> None:
+    js = HEALTH_JS.read_text(encoding="utf-8")
+    assert "fetch(apiUrl(`/api/v1/library/findings/${encodeURIComponent(fid)}/details`)" in js

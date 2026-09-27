@@ -247,19 +247,170 @@ function _populateCategoryFilterOptions(groups) {
   if (codes.includes(previous)) select.value = previous;
 }
 
+// Aufgeklappte Detailzeilen (finding_id) ueber Re-Renders hinweg.
+const _findingsOpenDetails = new Set();
+
+// ── Finding-Analyse (GET /findings/{id}/details, read-only) ─────────────
+// Belege werden beim Aufklappen frisch geladen (Tags von der Platte). Cache nur,
+// solange die Zeile offen ist; Zuklappen verwirft ihn (naechstes Oeffnen = frisch).
+const _findingExplainCache = new Map();
+const _findingExplainErrors = new Map();
+const _findingExplainPending = new Set();
+
+function _diffLineHtml(segments, side) {
+  const key = side === "a" ? "a" : "b";
+  const cls = side === "a" ? "bg-red-lt" : "bg-green-lt";
+  return segments.map((seg) => {
+    const text = _escapeHtml(seg[key]);
+    if (!text) return "";
+    return seg.op === "equal" ? text : `<mark class="${cls} text-reset px-0">${text}</mark>`;
+  }).join("");
+}
+
+function _renderFindingExplain(b) {
+  if (!b.supported) {
+    return '<span class="text-secondary">Für diesen Finding-Code gibt es keine Detailanalyse.</span>';
+  }
+  if (b.file_status !== "ok" || !b.evidence) {
+    return `<span class="text-secondary">${_escapeHtml(b.message || "Analyse nicht möglich.")}</span>`;
+  }
+  const ev = b.evidence;
+  const scanNote = ev.title_at_scan && ev.title_at_scan !== ev.title
+    ? ` <span class="text-secondary">(beim Scan: ${_escapeHtml(ev.title_at_scan)})</span>` : "";
+  const result = ev.matches
+    ? '<span class="badge bg-green-lt">gleich</span> <span class="text-secondary">Datei wurde seit dem Scan angepasst — das Finding ist veraltet.</span>'
+    : '<span class="badge bg-red-lt">unterschiedlich</span>';
+  return `
+    <div class="subheader mb-1">Analyse (frisch von der Platte gelesen)</div>
+    <dl class="row gx-2 mb-1">
+      ${_findingDetailRow("Dateiname", `<span class="font-monospace">${_escapeHtml(ev.stem)}</span>`)}
+      ${ev.prefix ? _findingDetailRow("Abgetrennt", `<span class="font-monospace">„${_escapeHtml(ev.prefix)}“</span> <span class="text-secondary">(Nummer/Artist-Präfix)</span>`) : ""}
+      ${_findingDetailRow("Titel-Tag", `<span class="font-monospace">${_escapeHtml(ev.title)}</span>${scanNote}`)}
+      ${_findingDetailRow("Verglichen: Dateiname", `<span class="font-monospace">${_diffLineHtml(ev.segments, "a")}</span>`)}
+      ${_findingDetailRow("Verglichen: Titel-Tag", `<span class="font-monospace">${_diffLineHtml(ev.segments, "b")}</span>`)}
+      ${_findingDetailRow("Ergebnis", result)}
+    </dl>
+    <div class="text-secondary">„Verglichen“ = nach der Normalisierung des Scanners (Groß/Klein, Leerzeichen, ungültige Dateinamenzeichen, feat.-Klammern, Klammern ohne Zusatz wie Remix/Live).</div>`;
+}
+
+function _findingExplainInnerHtml(fid) {
+  if (_findingExplainCache.has(fid)) return _renderFindingExplain(_findingExplainCache.get(fid));
+  if (_findingExplainErrors.has(fid)) {
+    return `<span class="text-danger">Analyse nicht verfügbar: ${_escapeHtml(_findingExplainErrors.get(fid))}</span>`;
+  }
+  return '<span class="text-secondary">Analyse lädt…</span>';
+}
+
+async function _loadFindingExplain(fid) {
+  if (_findingExplainCache.has(fid) || _findingExplainPending.has(fid)) return;
+  _findingExplainPending.add(fid);
+  try {
+    const res = await fetch(apiUrl(`/api/v1/library/findings/${encodeURIComponent(fid)}/details`), { credentials: "same-origin" });
+    if (res.status === 401) { showOnly("login-view"); return; }
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      const detail = body && (body.error || body.detail);
+      _findingExplainErrors.set(fid, (detail && detail.message) || ("HTTP " + res.status));
+    } else {
+      _findingExplainCache.set(fid, await res.json());
+    }
+  } catch (err) {
+    _findingExplainErrors.set(fid, "Netzwerkfehler: " + err.message);
+  } finally {
+    _findingExplainPending.delete(fid);
+  }
+  // Nur noch anzeigen, wenn die Zeile inzwischen nicht wieder zugeklappt wurde.
+  const target = document.getElementById("finding-explain-" + fid);
+  if (target && _findingsOpenDetails.has(fid)) target.innerHTML = _findingExplainInnerHtml(fid);
+}
+
+function _findingDetailRow(label, valueHtml) {
+  return `<dt class="col-4 col-md-3">${_escapeHtml(label)}</dt><dd class="col-8 col-md-9 mb-1 text-break">${valueHtml}</dd>`;
+}
+
+// Nur Felder, die die Findings-API tatsaechlich liefert (FindingSchema) —
+// keine abgeleiteten/erfundenen Vergleichswerte.
+function _findingDetailHtml(f) {
+  const rows = [];
+  if (f.path) rows.push(_findingDetailRow("Pfad", `<span class="font-monospace">${_escapeHtml(f.path)}</span>`));
+  if (f.artist) rows.push(_findingDetailRow("Artist", _escapeHtml(f.artist)));
+  if (f.album) rows.push(_findingDetailRow("Album", _escapeHtml(f.album)));
+  if (f.title) rows.push(_findingDetailRow("Titel", _escapeHtml(f.title)));
+  const sev = [f.severity, f.confidence].filter(Boolean).join(" · ");
+  if (sev) rows.push(_findingDetailRow("Severity", _escapeHtml(sev)));
+  if (f.occurrences != null) rows.push(_findingDetailRow("Auftreten", _escapeHtml(String(f.occurrences))));
+  if (f.first_seen) rows.push(_findingDetailRow("Erstmals gesehen", _escapeHtml(f.first_seen)));
+  if (f.last_seen) rows.push(_findingDetailRow("Zuletzt gesehen", _escapeHtml(f.last_seen)));
+  return `
+      <div class="health-finding-detail small mt-1 mb-2">
+        <div class="text-break mb-2">${f.message ? _escapeHtml(f.message) : '<span class="text-secondary">Keine Meldung gespeichert.</span>'}</div>
+        <dl class="row gx-2 mb-2 text-secondary">${rows.join("")}</dl>
+        <div class="mb-2" id="finding-explain-${_escapeHtml(f.finding_id)}">${_findingExplainInnerHtml(f.finding_id)}</div>
+        <button type="button" class="btn btn-sm btn-outline-secondary finding-copy-btn" data-finding-id="${_escapeHtml(f.finding_id)}">Kopieren</button>
+      </div>`;
+}
+
 function _findingRowHtml(f) {
   const id = _escapeHtml(f.finding_id);
+  const open = _findingsOpenDetails.has(f.finding_id);
   return `
-    <div class="list-group-item d-flex align-items-center gap-2 py-1 health-finding-row" data-finding-id="${id}">
-      <span class="health-path font-monospace small text-truncate" title="${_escapeHtml(f.message)}">${_escapeHtml(_findingLabel(f))}</span>
-      <div class="dropdown">
-        <button type="button" class="btn btn-sm btn-ghost-secondary" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Aktionen für dieses Finding">⋮</button>
-        <div class="dropdown-menu dropdown-menu-end">
-          <button type="button" class="dropdown-item resolve-btn" data-finding-id="${id}">Als repariert markieren</button>
-          <button type="button" class="dropdown-item accept-btn" data-finding-id="${id}">Akzeptieren …</button>
+    <div class="list-group-item py-1 health-finding-row" data-finding-id="${id}">
+      <div class="d-flex align-items-center gap-2">
+        <button type="button" class="finding-toggle health-path font-monospace small text-truncate" data-finding-id="${id}" aria-expanded="${open}" title="Details ${open ? "ausblenden" : "anzeigen"}">${_escapeHtml(_findingLabel(f))}</button>
+        <div class="dropdown">
+          <button type="button" class="btn btn-sm btn-ghost-secondary" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Aktionen für dieses Finding">⋮</button>
+          <div class="dropdown-menu dropdown-menu-end">
+            <button type="button" class="dropdown-item resolve-btn" data-finding-id="${id}">Als repariert markieren</button>
+            <button type="button" class="dropdown-item accept-btn" data-finding-id="${id}">Akzeptieren …</button>
+          </div>
         </div>
-      </div>
+      </div>${open ? _findingDetailHtml(f) : ""}
     </div>`;
+}
+
+// Text fuer "Kopieren": Code, Meldung, Pfad — genau das, was im Detail steht.
+function _findingCopyText(finding, code) {
+  return [code, finding.message, finding.path].filter(Boolean).join("\n");
+}
+
+async function _copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (err) {
+    // Fallback (kein Secure Context / Berechtigung verweigert).
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch (err2) {
+      return false;
+    }
+  }
+}
+
+function _findFindingById(findingId) {
+  for (const g of _lastFindingGroups) {
+    for (const f of g.findings) {
+      if (f.finding_id === findingId) return { finding: f, code: g.code };
+    }
+  }
+  return null;
+}
+
+async function _copyFinding(btn) {
+  const hit = _findFindingById(btn.dataset.findingId);
+  if (!hit) return;
+  const ok = await _copyToClipboard(_findingCopyText(hit.finding, hit.code));
+  btn.textContent = ok ? "Kopiert ✓" : "Kopieren nicht möglich";
+  setTimeout(() => { btn.textContent = "Kopieren"; }, 1500);
 }
 
 function _findingGroupHtml(g, searching) {
@@ -380,6 +531,24 @@ document.getElementById("findings-content").addEventListener("click", (event) =>
     _rerenderFindings();
     return;
   }
+  const toggleBtn = event.target.closest(".finding-toggle");
+  if (toggleBtn) {
+    const fid = toggleBtn.dataset.findingId;
+    if (_findingsOpenDetails.has(fid)) {
+      _findingsOpenDetails.delete(fid);
+      _findingExplainCache.delete(fid);  // naechstes Oeffnen liest wieder frisch
+      _findingExplainErrors.delete(fid);
+      _rerenderFindings();
+    } else {
+      _findingsOpenDetails.add(fid);
+      _findingExplainErrors.delete(fid);
+      _rerenderFindings();
+      _loadFindingExplain(fid);
+    }
+    return;
+  }
+  const copyBtn = event.target.closest(".finding-copy-btn");
+  if (copyBtn) { _copyFinding(copyBtn); return; }
   const acceptBtn = event.target.closest(".accept-btn");
   if (acceptBtn) { acceptFinding(acceptBtn.dataset.findingId, acceptBtn); return; }
   const resolveBtn = event.target.closest(".resolve-btn");
