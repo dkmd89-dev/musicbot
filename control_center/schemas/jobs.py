@@ -59,3 +59,12 @@ class ArtistLevelRepairRequest(BaseModel):
     können."""
 
     artist: str
+
+
+class DownloadJobRequest(BaseModel):
+    """Body für POST /download (Client Consolidation Phase D/E) — die
+    URL, die heruntergeladen werden soll (YouTube-Domain-Allowlist wird
+    serverseitig geprüft, siehe
+    services/downloader/download_pipeline_core.py::is_supported_download_url())."""
+
+    url: str
