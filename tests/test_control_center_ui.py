@@ -597,18 +597,27 @@ async def test_artist_detail_page_disables_execute_after_input_changes(client):
     html = (await client.get("/library/Bausa")).text
 
     assert 'getElementById("artist-edit-new-artist").addEventListener("input"' in html
-    assert '["title-edit-rel-path", "title-edit-new-title"].forEach' in html
+    assert '["title-edit-track-select", "title-edit-new-title"].forEach' in html
 
 
 @pytest.mark.asyncio
-async def test_artist_detail_page_title_edit_has_artist_scope_guard(client):
-    """UX-Scope-Guard (keine Sicherheitsgrenze): rel_path muss innerhalb
-    des aktuellen Artist-Ordners liegen, sonst koennte versehentlich ein
-    Track eines anderen Artists editiert werden."""
+async def test_artist_detail_page_title_edit_uses_track_picker_not_free_text_path(client):
+    """CC-LIB-FINAL Phase D (Auftrag §6.2): kein manuell einzutippender
+    technischer relativer Dateipfad mehr fuer 'Titel bearbeiten' - der
+    Track kommt aus einem <select>, gespeist ausschliesslich aus den
+    bereits geladenen Tracks dieses Artists (kein Freitextfeld, in dem ein
+    Pfad eines fremden Artists eingegeben werden koennte). Der Server
+    bleibt trotzdem die eigentliche Schranke
+    (maintenance_service.py::_title_edit_targets(), CC-LIB-FINAL Phase C)."""
     html = (await client.get("/library/Bausa")).text
 
-    assert "function _titleEditRelPathInScope(artist, relPath)" in html
-    assert html.count("_titleEditRelPathInScope(artist, relPath)") >= 3
+    assert '<select id="title-edit-track-select" class="form-select">' in html
+    assert 'id="title-edit-rel-path"' not in html
+    assert "function _artistTrackOptionGroups(body)" in html
+    assert "function _populateTrackPickers(body)" in html
+    assert "_populateTrackPickers(body)" in html
+    # Bestaetigungsdialog zeigt den Tracknamen, nicht den technischen Pfad.
+    assert "_titleEditTrackLabel(relPath)" in html
 
 
 @pytest.mark.asyncio
