@@ -244,11 +244,108 @@ async def test_overview_quick_actions_link_to_detail_pages(client):
 
 @pytest.mark.asyncio
 async def test_downloads_page_has_history_panel(client):
+    """Client Consolidation D.11: die bisherige Inline-Logik wandert nach
+    static/pages/downloads.js (Konsistenz zu health.js/statistics.js/
+    admin.js/overview.js/navidrome.js/logger.js)."""
     html = (await client.get("/downloads")).text
 
     assert 'id="downloads-content"' in html
-    assert "/api/v1/downloads/history" in html
-    assert "loadDownloads" in html
+    assert re.search(r'<script[^>]+src="[^"]*/static/pages/downloads\.js"', html)
+    assert "function loadDownloads" not in html
+
+    downloads_js = (await client.get("/static/pages/downloads.js")).text
+    assert "function loadDownloads" in downloads_js
+    assert "function renderDownloads" in downloads_js
+    assert "/api/v1/downloads/history" in downloads_js
+
+
+@pytest.mark.asyncio
+async def test_downloads_page_has_start_form(client):
+    html = (await client.get("/downloads")).text
+
+    assert 'id="download-start-form"' in html
+    assert 'id="download-url-input"' in html
+    assert 'id="download-start-btn"' in html
+    assert 'id="download-status-content"' in html
+
+
+@pytest.mark.asyncio
+async def test_downloads_js_has_job_functions(client):
+    downloads_js = (await client.get("/static/pages/downloads.js")).text
+
+    assert "startDownload" in downloads_js
+    assert "cancelDownload" in downloads_js
+    assert "/api/v1/jobs/download" in downloads_js
+    assert "setInterval" in downloads_js
+    assert "1000" in downloads_js
+
+
+@pytest.mark.asyncio
+async def test_downloads_js_escapes_dynamic_values(client):
+    """AR #10 — jeder dynamische Wert (Job-Message/-Error, Verlaufs-Titel/
+    Artist/URL) muss vor dem Einfuegen ins DOM durch _escapeHtml() laufen."""
+    downloads_js = (await client.get("/static/pages/downloads.js")).text
+
+    assert downloads_js.count("_escapeHtml(") >= 3
+
+
+@pytest.mark.asyncio
+async def test_downloads_js_has_metadata_checklist(client):
+    """AR #4 — die Verlaufstabelle zeigt zusaetzlich die bereits vom
+    Backend gelieferte Metadaten-Checkliste an."""
+    downloads_js = (await client.get("/static/pages/downloads.js")).text
+
+    for field in ("genre_ok", "lyrics_ok", "cover_ok", "mb_ok", "loudness_ok"):
+        assert field in downloads_js
+
+
+@pytest.mark.asyncio
+async def test_downloads_js_has_retry_wiring(client):
+    """AR #11 — "Erneut versuchen" pro Verlaufszeile, Telegram-Paritaet
+    zu handlers/menu/actions/download.py::handle_download_retry()."""
+    downloads_js = (await client.get("/static/pages/downloads.js")).text
+
+    assert "download-retry-btn" in downloads_js
+    assert "dataset.url" in downloads_js
+
+
+@pytest.mark.asyncio
+async def test_downloads_js_does_not_duplicate_url_validation(client):
+    """Architekturregel: keine Fachlogik in downloads.js — die
+    SSRF-Domain-Allowlist bleibt serverseitig alleinige Quelle der
+    Wahrheit (download_pipeline_core.is_supported_download_url)."""
+    downloads_js = (await client.get("/static/pages/downloads.js")).text
+
+    assert "is_supported_download_url" not in downloads_js
+
+
+@pytest.mark.asyncio
+async def test_downloads_page_stays_public_like_other_pages(client):
+    """Regressionstest: das neue Start-Formular darf die bestehende
+    Architekturentscheidung (control_center/routers/ui.py: alle Seiten-
+    Routen bewusst unauthentifiziert, siehe test_page_renders_without_
+    any_authentication) nicht aendern - Auth wird ausschliesslich
+    clientseitig ueber checkAuth()/die Job-APIs durchgesetzt, nicht auf
+    Ebene der Seiten-Route."""
+    response = await client.get("/downloads")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_downloads_js_progress_bar_uses_job_progress_field(client):
+    downloads_js = (await client.get("/static/pages/downloads.js")).text
+
+    assert "job.progress" in downloads_js
+
+
+@pytest.mark.asyncio
+async def test_downloads_js_cancel_button_only_for_active_states(client):
+    downloads_js = (await client.get("/static/pages/downloads.js")).text
+
+    assert "PENDING" in downloads_js
+    assert "RUNNING" in downloads_js
+    assert "download-cancel-btn" in downloads_js
 
 
 # ─────────────────────────────────────────────────────────────────────────
