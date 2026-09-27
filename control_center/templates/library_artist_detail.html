@@ -380,7 +380,6 @@
         Wiederverwendet die bestehenden Maintenance-/Job-Endpunkte
         (<code>admin/maintenance/artist-casing</code>,
         <code>admin/maintenance/legacy-genre-cleanup</code>,
-        <code>jobs/repair-level2</code>,
         <code>jobs/repair-level3</code>) im Kontext dieses Artists —
         keine neue Ausführungslogik.
       </p>
@@ -474,18 +473,17 @@
         <div id="genre-revalidation-content" class="empty-note"></div>
       </div>
 
-      <!-- L2 / L3 -->
+      <!-- L3 (L2/METADATA_REPROCESSING wurde in CC-LIB-FINAL Phase B
+           entfernt - siehe docs/LIBRARY_REPAIR.md §6a. Dieser Button war
+           bis zur Phase-E-Durchsicht als toter Rest stehengeblieben, sein
+           Klick haette einen inzwischen entfernten Endpunkt getroffen.) -->
       <div>
-        <h3 class="mb-2">🔧 L2 / L3 Reparatur</h3>
+        <h3 class="mb-2">🔧 L3-Reparatur</h3>
         <p class="text-secondary">
           Läuft als Hintergrund-Job …
         </p>
 
         <div class="d-flex flex-wrap gap-2 mb-2">
-          <button id="repair-l2-btn" class="btn btn-outline-primary">
-            🔧 L2-Reparatur (Metadaten-Reprocessing)
-          </button>
-
           <button id="repair-l3-btn" class="btn btn-outline-primary">
             🔧 L3-Reparatur (MusicBrainz-IDs / ISRC)
           </button>
@@ -512,64 +510,142 @@
     return decodeURIComponent(parts[parts.length - 1] || "");
   }
 
-  // Tracks werden nach album_directory gruppiert (nicht nach dem album-Tag:
-  // der Tag-Wert kann vom Verzeichnisnamen abweichen, z.B. "Skyr" vs.
-  // "2019 - Skyr"; die Gruppierung entspricht damit der Alben-Sektion oben).
-  // Innerhalb jedes Albums wird nach track_number sortiert. Alben und
-  // Tracks werden localeCompare-sortiert (deutsche Umlaute korrekt).
-  // <details>/<summary> nutzt dasselbe native Pattern wie die Admin-Accordions.
-  function _renderTracksGroupedByAlbum(tracks) {
-    if (!tracks.length) {
-      return '<p class="empty-note">Keine Tracks vorhanden.</p>';
-    }
+  // Master-Detail (Phase E, CC-LIB-FINAL, Freigabe-Layout "Final —
+  // Hybrid"): ein Album links auswaehlen, dessen Tracks + album-weite
+  // Aktionen rechts - ersetzt die vorherige "alle Alben mit allen Tracks
+  // untereinander aufgeklappt"-Ansicht. Gruppierung bleibt
+  // verzeichnisbasiert (album_directory, NICHT der ©alb-Tag-Wert, der
+  // abweichen kann, z.B. "Skyr" vs. "2019 - Skyr") - identische
+  // Konvention wie body.albums[].album (beide stammen aus demselben
+  // album_dir, siehe services/library_health/scoring.py), Tracks und
+  // Alben lassen sich damit verlustfrei ueber denselben Schluessel
+  // zuordnen.
+  let _selectedAlbumKey = null;
 
-    // Gruppieren nach album_directory; Tracks ohne Verzeichnis (Singles
-    // direkt im Artist-Ordner) landen im Sammel-Bucket "Ohne Album".
-    const groups = new Map();
-    for (const t of tracks) {
-      const key = t.album_directory || "Ohne Album";
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(t);
-    }
-
-    const sortedAlbumDirs = [...groups.keys()].sort((a, b) => a.localeCompare(b, "de"));
-
-    return '<div class="row-list">' + sortedAlbumDirs.map((albumDir) => {
-      const albumTracks = groups.get(albumDir).slice().sort((a, b) => {
-        const aNum = (typeof a.track_number === "number") ? a.track_number : 9999;
-        const bNum = (typeof b.track_number === "number") ? b.track_number : 9999;
-        if (aNum !== bNum) return aNum - bNum;
-        return (a.title || a.filename).localeCompare(b.title || b.filename, "de");
+  // Reine Datenfunktion (kein Rendering) - liefert je Album (inkl. der
+  // "Ohne Album"/Singles-Sammelgruppe) einen stabilen Schluessel, eine
+  // Anzeige-Bezeichnung, die Dateizahl und - falls vorhanden - den
+  // Health-Score aus body.albums (Singles haben keinen eigenen
+  // Alben-Score). Sortierung wie zuvor: alphabetisch, "de"-Locale.
+  function _artistDetailAlbumEntries(body) {
+    const entries = (body.albums || []).slice()
+      .sort((a, b) => a.album.localeCompare(b.album, "de"))
+      .map((a) => ({
+        key: a.album, label: a.album, fileCount: a.file_count,
+        healthScore: a.health_score, isSingles: false,
+      }));
+    const singles = (body.tracks || []).filter((t) => !t.album_directory);
+    if (singles.length) {
+      entries.push({
+        key: "__singles__", label: "Ohne Album", fileCount: singles.length,
+        healthScore: null, isSingles: true,
       });
+    }
+    return entries;
+  }
 
-      // CC-AC-9: natives <button> statt <div> - Enter/Space oeffnen den
-      // Track Detail Drawer ohne eigene Tastatur-Nachbildung (Auftrag
-      // §4), data-track-path adressiert den Track in
-      // _artistDetailTracksByPath (siehe Track Detail Drawer weiter unten).
-      const trackList = albumTracks.map((t) => `
-        <button type="button" class="row-item track-row" data-track-path="${_escapeHtml(t.relative_path)}" title="${_escapeHtml(t.relative_path)}">
-          <div class="row-main">${t.track_number ? _escapeHtml(String(t.track_number)) + ". " : ""}${_escapeHtml(t.title || t.filename)}</div>
-        </button>
-      `).join("");
+  // Tracks eines Albums, sortiert nach Tracknummer dann Titel (de) -
+  // identische Sortierlogik wie zuvor.
+  function _tracksForAlbumKey(body, key) {
+    const tracks = (body.tracks || []).filter((t) =>
+      key === "__singles__" ? !t.album_directory : t.album_directory === key);
+    return tracks.slice().sort((a, b) => {
+      const aNum = (typeof a.track_number === "number") ? a.track_number : 9999;
+      const bNum = (typeof b.track_number === "number") ? b.track_number : 9999;
+      if (aNum !== bNum) return aNum - bNum;
+      return (a.title || a.filename).localeCompare(b.title || b.filename, "de");
+    });
+  }
 
-      return `
-        <details>
-          <summary>💿 ${_escapeHtml(albumDir)} (${albumTracks.length})</summary>
-          <div class="row-list">${trackList}</div>
-        </details>
-      `;
-    }).join("") + "</div>";
+  function _renderAlbumListHtml(entries) {
+    if (!entries.length) return '<p class="empty-note">Keine Alben vorhanden.</p>';
+    return '<div class="row-list">' + entries.map((e) => `
+      <button type="button" class="select-row${e.key === _selectedAlbumKey ? " active" : ""}" data-album-key="${_escapeHtml(e.key)}">
+        <span class="row-main">${e.isSingles ? "🎵" : "💿"} ${_escapeHtml(e.label)}</span>
+        <span class="row-count">${e.fileCount}${e.healthScore != null ? " · " + e.healthScore : ""}</span>
+      </button>
+    `).join("") + "</div>";
+  }
+
+  // CC-AC-9-Muster (natives <button>, keine eigene Tastatur-Nachbildung)
+  // fortgesetzt: pro Track ZWEI Geschwister-Buttons - der bestehende
+  // .track-row (oeffnet den Track-Drawer, unveraendertes Verhalten ueber
+  // die bereits vorhandene #artist-content-Klick-Delegation weiter unten)
+  // und ein neuer, IMMER sichtbarer (nicht nur bei Hover - Touch hat kein
+  // Hover, Auftrag §15) Quick-Edit-Button fuer "Titel bearbeiten" (Auftrag
+  // §12 Context-First: das einzige echte Track-Feld - Genre/Artist/
+  // Album/Albuminterpret sind Artist- bzw. Album-weite Aktionen und
+  // bleiben dort, siehe unten bzw. den Track-Drawer fuer den
+  // vollstaendigen Aktions-Umfang).
+  function _renderAlbumDetailHtml(body, entries) {
+    const selected = entries.find((e) => e.key === _selectedAlbumKey);
+    if (!selected) return '<p class="empty-note">Kein Album ausgewählt.</p>';
+    const tracks = _tracksForAlbumKey(body, selected.key);
+
+    const trackRows = tracks.length
+      ? tracks.map((t) => `
+          <div class="track-row-wrap">
+            <button type="button" class="row-item track-row" data-track-path="${_escapeHtml(t.relative_path)}" title="${_escapeHtml(t.relative_path)}">
+              <span class="row-main">${t.track_number ? _escapeHtml(String(t.track_number)) + ". " : ""}${_escapeHtml(t.title || t.filename)}</span>
+              ${t.issue_codes.length ? `<span class="row-count">⚠ ${t.issue_codes.length}</span>` : ""}
+            </button>
+            <button type="button" class="quick-edit-btn" data-quick-edit-title="${_escapeHtml(t.relative_path)}" title="Titel bearbeiten" aria-label="Titel bearbeiten: ${_escapeHtml(t.title || t.filename)}">✏️</button>
+          </div>
+        `).join("")
+      : '<p class="empty-note">Keine Tracks in diesem Album.</p>';
+
+    // Album-/Albuminterpret-Aktionen nur fuer echte Mehr-Track-Alben
+    // (identische Einschraenkung wie der bestehende Track-Drawer via
+    // _trackAlbumValue() weiter unten - die "Ohne Album"-Sammelgruppe
+    // mischt mehrere voneinander unabhaengige Singles, hat also keinen
+    // gemeinsamen Album-/Albuminterpret-Scope).
+    const toolbar = selected.isSingles ? "" : `
+      <div class="d-flex gap-2 flex-wrap">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="album-detail-edit-album-btn">💿 Album bearbeiten</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="album-detail-edit-albumartist-btn">👤 Albuminterpret</button>
+      </div>
+    `;
+
+    return `
+      <div class="d-flex align-items-start justify-content-between gap-2 flex-wrap mb-2">
+        <div>
+          <div class="fw-medium">${selected.isSingles ? "🎵" : "💿"} ${_escapeHtml(selected.label)}</div>
+          <div class="text-secondary small">${tracks.length} Titel${selected.healthScore != null ? " · Score " + selected.healthScore : ""}</div>
+        </div>
+        ${toolbar}
+      </div>
+      <div class="segment-nav">
+        <span class="current">🎵 Tracks</span>
+        <a href="#" id="artist-detail-open-metadata">📝 Metadaten</a>
+        <a href="#" id="artist-detail-open-wartung">🛠 Wartung</a>
+      </div>
+      <div class="row-list">${trackRows}</div>
+    `;
+  }
+
+  // Nach Album-Wahl (Klick auf einen Eintrag der linken Liste) beide
+  // Haelften neu rendern - kein neuer API-Call, dieselben bereits
+  // geladenen body.tracks/body.albums.
+  function _rerenderAlbumMasterDetail() {
+    if (!_artistDetailLastBody) return;
+    const entries = _artistDetailAlbumEntries(_artistDetailLastBody);
+    document.getElementById("artist-album-list").innerHTML = _renderAlbumListHtml(entries);
+    document.getElementById("artist-album-detail").innerHTML = _renderAlbumDetailHtml(_artistDetailLastBody, entries);
   }
 
   // CC-AC-9: Nachschlagetabelle fuer den Track Detail Drawer - dieselben
-  // body.tracks wie _renderTracksGroupedByAlbum(), keyed nach
-  // relative_path (eindeutig je Track, bereits als Tooltip/Titel-Edit-
-  // Scope-Wert verwendet). KEIN neuer API-Call.
+  // body.tracks wie oben, keyed nach relative_path (eindeutig je Track,
+  // bereits als Tooltip/Titel-Edit-Scope-Wert verwendet). KEIN neuer
+  // API-Call.
   let _artistDetailTracksByPath = {};
+  // Letzte artists-overview/{artist}-Antwort - fuer den Album-Wechsel
+  // (kein neuer Request pro Klick auf einen Album-Listeneintrag).
+  let _artistDetailLastBody = null;
 
   function renderArtistDetail(el, body) {
     _artistDetailTracksByPath = {};
     body.tracks.forEach((t) => { _artistDetailTracksByPath[t.relative_path] = t; });
+    _artistDetailLastBody = body;
 
     document.getElementById("artist-title").textContent = `🎤 ${body.artist}`;
     document.getElementById("breadcrumb-artist").textContent = `🎤 ${body.artist}`;
@@ -584,16 +660,14 @@
     const scoreClass = body.health_score >= 90 ? "status-EXCELLENT"
       : body.health_score >= 70 ? "status-GOOD" : "status-CRITICAL";
 
-    const albumsHtml = body.albums.length
-      ? '<div class="row-list">' + body.albums.map((a) => `
-          <div class="row-item">
-            <div class="row-main">${_escapeHtml(a.album)}</div>
-            <div class="row-count">${a.file_count} Dateien — Score ${a.health_score}</div>
-          </div>
-        `).join("") + "</div>"
-      : '<p class="empty-note">Keine Alben vorhanden.</p>';
+    // 4. KPI-Kachel "Offene Findings" (Auftrag §9/§10 Dashboard) - Summe
+    // der bereits geladenen Track-issue_codes, kein zusaetzlicher Request.
+    const openFindings = body.tracks.reduce((sum, t) => sum + (t.issue_codes || []).length, 0);
 
-    const tracksHtml = _renderTracksGroupedByAlbum(body.tracks);
+    const entries = _artistDetailAlbumEntries(body);
+    if (!_selectedAlbumKey || !entries.some((e) => e.key === _selectedAlbumKey)) {
+      _selectedAlbumKey = entries.length ? entries[0].key : null;
+    }
 
     el.innerHTML = `
       <div class="tiles">
@@ -603,15 +677,18 @@
           <div class="tile-value">${body.file_count}</div></div>
         <div class="tile"><div class="tile-label">Alben</div>
           <div class="tile-value">${body.album_count}</div></div>
+        <div class="tile"><div class="tile-label">Offene Findings</div>
+          <div class="tile-value">${openFindings}</div></div>
       </div>
-      <section class="panel">
-        <h2>💿 Alben</h2>
-        ${albumsHtml}
-      </section>
-      <section class="panel">
-        <h2>🎵 Tracks</h2>
-        ${tracksHtml}
-      </section>
+      <div class="artist-master-detail">
+        <section class="panel">
+          <h2>💿 Alben</h2>
+          <div id="artist-album-list">${_renderAlbumListHtml(entries)}</div>
+        </section>
+        <section class="panel">
+          <div id="artist-album-detail">${_renderAlbumDetailHtml(body, entries)}</div>
+        </section>
+      </div>
     `;
 
     _populateAlbumPickers(body);
@@ -1580,7 +1657,6 @@
   // Namenskonflikt, da separate Seite/Template).
 
   const _ARTIST_REPAIR_LEVEL_LABELS = {
-    l2: "L2 (Neuverarbeitung — volle Metadaten-Pipeline erneut)",
     l3: "L3 (MusicBrainz — Netzwerk, kann pro Datei fehlschlagen)",
   };
 
@@ -1592,7 +1668,6 @@
   }
 
   function _setArtistRepairButtonsDisabled(disabled) {
-    document.getElementById("repair-l2-btn").disabled = disabled;
     document.getElementById("repair-l3-btn").disabled = disabled;
   }
 
@@ -1652,8 +1727,8 @@
     const artist = currentArtistFromPath();
     const confirmed = window.confirm(
       `${_ARTIST_REPAIR_LEVEL_LABELS[level]} wirklich starten für "${artist}"?\n\n` +
-      `Kann einige Minuten dauern. Mit Backup abgesichert — aber es werden tatsächlich Dateien in der Library verändert.` +
-      (level === "l3" ? "\n\nL3 ruft MusicBrainz auf — einzelne Dateien können bei Netzwerk-/Rate-Limit-Fehlern fehlschlagen." : "")
+      `Kann einige Minuten dauern. Mit Backup abgesichert — aber es werden tatsächlich Dateien in der Library verändert.\n\n` +
+      `L3 ruft MusicBrainz auf — einzelne Dateien können bei Netzwerk-/Rate-Limit-Fehlern fehlschlagen.`
     );
     if (!confirmed) return;
 
@@ -1661,7 +1736,7 @@
     document.getElementById("artist-repair-job-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
 
     try {
-      const res = await fetch(apiUrl(`/api/v1/jobs/repair-level${level === "l2" ? "2" : "3"}`), {
+      const res = await fetch(apiUrl("/api/v1/jobs/repair-level3"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
@@ -1685,7 +1760,6 @@
     }
   }
 
-  document.getElementById("repair-l2-btn").addEventListener("click", () => startArtistRepairJob("l2"));
   document.getElementById("repair-l3-btn").addEventListener("click", () => startArtistRepairJob("l3"));
 
   // -- Track Detail Drawer (CC-AC-9, Track-Centric Library Actions) -------
@@ -1793,9 +1867,12 @@
     document.getElementById("artist-maintenance-panel").querySelector("details").open = true;
   }
 
-  function _trackDrawerEditTitle() {
-    const t = _trackDrawerCurrentTrack;
-    closeTrackDrawer();
+  // Extrahiert aus _trackDrawerEditTitle() (Phase E, CC-LIB-FINAL): reiner
+  // Refactor, kein Verhaltensunterschied fuer den Drawer-Pfad - zweiter
+  // Aufrufer ist jetzt der Quick-Edit-Stift direkt in der Track-Zeile
+  // (siehe #artist-content-Klick-Delegation weiter unten), der keinen
+  // Drawer zu schliessen hat.
+  function _quickEditTitleForTrack(t) {
     _openMetadataEditPanel();
     const trackSelect = document.getElementById("title-edit-track-select");
     const titleInput = document.getElementById("title-edit-new-title");
@@ -1807,6 +1884,12 @@
     loadTitleEditPreview();
   }
 
+  function _trackDrawerEditTitle() {
+    const t = _trackDrawerCurrentTrack;
+    closeTrackDrawer();
+    _quickEditTitleForTrack(t);
+  }
+
   function _trackDrawerEditArtist() {
     closeTrackDrawer();
     _openMetadataEditPanel();
@@ -1815,9 +1898,14 @@
     input.focus();
   }
 
-  function _trackDrawerEditAlbumField(selectId, inputId) {
-    const albumValue = _trackAlbumValue(_trackDrawerCurrentArtist, _trackDrawerCurrentTrack);
-    closeTrackDrawer();
+  // Extrahiert aus _trackDrawerEditAlbumField() (Phase E, CC-LIB-FINAL):
+  // reiner Refactor, kein Verhaltensunterschied fuer den Drawer-Pfad -
+  // zweiter Aufrufer sind jetzt die "Album bearbeiten"/"Albuminterpret
+  // bearbeiten"-Buttons im Album-Detail-Header (siehe
+  // #artist-content-Klick-Delegation weiter unten), dort ist
+  // albumValue bereits der ausgewaehlte Album-Schluessel (kein Track
+  // noetig, der aufloest werden muesste).
+  function _quickEditAlbumField(albumValue, selectId, inputId) {
     _openMetadataEditPanel();
     const select = document.getElementById(selectId);
     if (albumValue !== null && [...select.options].some((o) => o.value === albumValue)) {
@@ -1826,6 +1914,12 @@
     const input = document.getElementById(inputId);
     input.scrollIntoView({ block: "center" });
     input.focus();
+  }
+
+  function _trackDrawerEditAlbumField(selectId, inputId) {
+    const albumValue = _trackAlbumValue(_trackDrawerCurrentArtist, _trackDrawerCurrentTrack);
+    closeTrackDrawer();
+    _quickEditAlbumField(albumValue, selectId, inputId);
   }
 
   function _trackDrawerEditGenre() {
@@ -1935,7 +2029,48 @@
     if (event.target === event.currentTarget) closeTrackDrawer();
   });
 
+  // Eine einzige delegierte Klick-Behandlung fuer #artist-content (Phase
+  // E, CC-LIB-FINAL) - die Track-Row-Oeffnung (Track-Drawer) war bereits
+  // delegiert, hier um die vier neuen Master-Detail-Interaktionen
+  // ergaenzt (Album waehlen, Titel-Quick-Edit, Album-/Albuminterpret-
+  // Toolbar, Metadaten-/Wartung-Sprungmarken). Alle vier rufen
+  // ausschliesslich bereits bestehende Funktionen auf (siehe oben) -
+  // keine neue Ausfuehrungslogik.
   document.getElementById("artist-content").addEventListener("click", (event) => {
+    const albumBtn = event.target.closest("[data-album-key]");
+    if (albumBtn) {
+      _selectedAlbumKey = albumBtn.dataset.albumKey;
+      _rerenderAlbumMasterDetail();
+      return;
+    }
+    const quickEditBtn = event.target.closest("[data-quick-edit-title]");
+    if (quickEditBtn) {
+      const track = _artistDetailTracksByPath[quickEditBtn.dataset.quickEditTitle];
+      if (track) _quickEditTitleForTrack(track);
+      return;
+    }
+    if (event.target.closest("#album-detail-edit-album-btn")) {
+      _openMetadataEditPanel();
+      _quickEditAlbumField(_selectedAlbumKey, "album-edit-album-select", "album-edit-new-album");
+      return;
+    }
+    if (event.target.closest("#album-detail-edit-albumartist-btn")) {
+      _openMetadataEditPanel();
+      _quickEditAlbumField(_selectedAlbumKey, "albumartist-edit-album-select", "albumartist-edit-new-albumartist");
+      return;
+    }
+    if (event.target.closest("#artist-detail-open-metadata")) {
+      event.preventDefault();
+      _openMetadataEditPanel();
+      document.getElementById("artist-metadata-edit-panel").scrollIntoView({ block: "start" });
+      return;
+    }
+    if (event.target.closest("#artist-detail-open-wartung")) {
+      event.preventDefault();
+      _openMaintenancePanel();
+      document.getElementById("artist-maintenance-panel").scrollIntoView({ block: "start" });
+      return;
+    }
     const btn = event.target.closest(".track-row");
     if (!btn) return;
     const track = _artistDetailTracksByPath[btn.dataset.trackPath];

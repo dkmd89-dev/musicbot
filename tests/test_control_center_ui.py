@@ -643,7 +643,7 @@ async def test_artist_detail_page_execute_errors_do_not_claim_network_failure(cl
     assert html.count("Netzwerkfehler") == 1
 
     start_job_fn = html.split("async function startArtistRepairJob(level) {", 1)[1]
-    start_job_fn_body = start_job_fn.split('document.getElementById("repair-l2-btn")', 1)[0]
+    start_job_fn_body = start_job_fn.split('document.getElementById("repair-l3-btn")', 1)[0]
     assert "Netzwerkfehler" in start_job_fn_body
 
 
@@ -802,8 +802,8 @@ async def test_artist_detail_page_has_maintenance_buttons(client):
     assert 'id="artist-casing-execute-btn"' in html
     assert 'id="legacy-genre-cleanup-preview-btn"' in html
     assert 'id="legacy-genre-cleanup-execute-btn"' in html
-    assert 'id="repair-l2-btn"' in html
     assert 'id="repair-l3-btn"' in html
+    assert 'id="repair-l2-btn"' not in html  # CC-LIB-FINAL Phase B: entfernt
 
 
 @pytest.mark.asyncio
@@ -826,11 +826,12 @@ async def test_artist_detail_page_wires_existing_legacy_genre_cleanup_endpoints(
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_wires_existing_repair_level_job_endpoints(client):
-    """L2/L3 laufen als bestehender Job-Typ (services/jobs/), kein
-    synchroner Preview->Execute wie die uebrigen Maintenance-Aktionen."""
+    """L3 laeuft als bestehender Job-Typ (services/jobs/), kein
+    synchroner Preview->Execute wie die uebrigen Maintenance-Aktionen.
+    L2 (Metadata-Reprocessing) wurde in CC-LIB-FINAL Phase B entfernt."""
     html = (await client.get("/library/Bausa")).text
 
-    assert "/api/v1/jobs/repair-level${level" in html
+    assert '"/api/v1/jobs/repair-level3"' in html
     assert "/api/v1/jobs/${encodeURIComponent(jobId)}" in html
 
 
