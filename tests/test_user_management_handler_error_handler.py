@@ -21,6 +21,18 @@ Fehlerbehandlung).
 Isolation: analog zu tests/test_user_management_handler.py wird Path()
 waehrend der Konstruktion auf ein tmp_path-Verzeichnis gepatcht, damit KEIN
 Test die reale data/user_data.json beruehrt.
+
+CC-AC-10G (Client Consolidation Phase A, A.3/A.7 "Single Write Path" /
+"Cross-Process-Persistenzstrategie"): process_new_navidrome_user() und
+process_edit_navidrome_user() lesen/schreiben nicht mehr direkt ueber
+self._load_users()/self._save_users(), sondern ueber den gesperrten
+Read-Modify-Write-Zyklus self._update_users() (services/user_data.py::
+update_user_data()). Die beiden betroffenen Testklassen simulieren den
+unerwarteten I/O-Fehler deshalb ueber einen Mock auf self._update_users()
+statt auf das dort nicht mehr aufgerufene self._load_users() - der
+charakterisierte Fehlerfall (unerwartete Exception waehrend des
+User-Daten-Zugriffs wird vom aeusseren Exception-Handler abgefangen)
+bleibt unveraendert.
 """
 
 import asyncio
@@ -107,7 +119,7 @@ class TestProcessNewNavidromeUserErrorHandling:
         handler, _ = _make_handler(tmp_path)
         handler.error_handler = Mock()
         handler.error_handler.handle_callback_error = AsyncMock()
-        handler._load_users = Mock(side_effect=RuntimeError("boom"))
+        handler._update_users = Mock(side_effect=RuntimeError("boom"))
         update = make_update()
         context = make_context()
         context.user_data["pending_user_id"] = "555"
@@ -123,7 +135,7 @@ class TestProcessNewNavidromeUserErrorHandling:
     def test_falls_back_to_local_message_without_error_handler(self, tmp_path):
         handler, _ = _make_handler(tmp_path)
         assert handler.error_handler is None
-        handler._load_users = Mock(side_effect=RuntimeError("boom"))
+        handler._update_users = Mock(side_effect=RuntimeError("boom"))
         update = make_update()
         context = make_context()
         context.user_data["pending_user_id"] = "555"
@@ -139,7 +151,7 @@ class TestProcessEditNavidromeUserErrorHandling:
         handler, _ = _make_handler(tmp_path)
         handler.error_handler = Mock()
         handler.error_handler.handle_callback_error = AsyncMock()
-        handler._load_users = Mock(side_effect=RuntimeError("boom"))
+        handler._update_users = Mock(side_effect=RuntimeError("boom"))
         update = make_update()
         context = make_context()
         context.user_data["target_user_id"] = "555"
@@ -155,7 +167,7 @@ class TestProcessEditNavidromeUserErrorHandling:
     def test_falls_back_to_local_message_without_error_handler(self, tmp_path):
         handler, _ = _make_handler(tmp_path)
         assert handler.error_handler is None
-        handler._load_users = Mock(side_effect=RuntimeError("boom"))
+        handler._update_users = Mock(side_effect=RuntimeError("boom"))
         update = make_update()
         context = make_context()
         context.user_data["target_user_id"] = "555"

@@ -9,12 +9,13 @@ from telegram.ext import ContextTypes
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
-import json
-import time
 
 from logger import get_module_logger
+from services import user_admin
 from services.user_data import get_navidrome_user as _shared_get_navidrome_user
 from services.user_data import load_user_data as _shared_load_user_data
+from services.user_data import save_user_data as _shared_save_user_data
+from services.user_data import update_user_data as _shared_update_user_data
 
 # PARSE-MODE-AUDIT 2026-09-13, Hotfix 1: navidrome_user ist admin-
 # eingegebener Freitext, der unescaped in parse_mode="Markdown"-Texte
@@ -65,30 +66,35 @@ class UserManagementHandler:
         """
         Speichert User-Daten und aktualisiert Cache.
 
-        INV-02 (docs/MusicBot_ARCHITECTURE_EVOLUTION.md, Abschnitt 27, P0-C):
-        vorher direktes open(mode="w") - ein Prozessabbruch waehrend
-        json.dump() konnte data/user_data.json (Rollen/Berechtigungen,
-        sicherheitsrelevant) leeren oder korrumpieren, mit dem Risiko eines
-        Admin-/Owner-Lockouts. Jetzt: write-tmp + atomarer rename, analog zu
-        MetadataCache.store() (utils/metadata_cache.py).
+        CC-AC-10G (Client Consolidation Phase A, A.3/A.9 "Single Write
+        Path"): duenner Delegator auf services/user_data.py::save_user_data()
+        (dieselbe atomare write-tmp+rename-Implementierung, die zuvor hier
+        dupliziert war, siehe INV-02/docs/MusicBot_ARCHITECTURE_EVOLUTION.md
+        Abschnitt 27, P0-C). Cache wird weiterhin nur bei Erfolg aktualisiert
+        - unveraendertes Verhalten fuer tests/test_user_management_atomic_persistence.py.
         """
-        tmp_path = self.user_data_file.with_suffix(f".tmp_{int(time.time() * 1000)}")
-        try:
-            self.user_data_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(users, f, indent=2, ensure_ascii=False)
-            tmp_path.replace(self.user_data_file)
-
-            # Cache aktualisieren
+        ok = _shared_save_user_data(users, self.user_data_file, logger=self.logger)
+        if ok:
             self.user_data_cache = users
-            return True
-        except Exception as e:
-            self.logger.error(f"❌ Fehler beim Speichern der User-Daten: {e}")
-            try:
-                tmp_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-            return False
+        return ok
+
+    def _update_users(self, mutator):
+        """
+        Fuehrt einen Read-Modify-Write-Zyklus prozessuebergreifend gesperrt
+        aus (A.7 "Cross-Process-Persistenzstrategie", CC-AC-10G) - duenner
+        Delegator auf services/user_data.py::update_user_data().
+
+        `mutator(users)` mutiert das geladene Dict in-place und darf eine
+        services.user_admin.UserAdminError-Subklasse werfen, um den Zyklus
+        ohne Schreiben abzubrechen (propagiert an den Aufrufer). Cache wird
+        wie bei _save_users() nur bei Erfolg aktualisiert.
+        """
+        result, users, saved = _shared_update_user_data(
+            mutator, self.user_data_file, logger=self.logger
+        )
+        if saved:
+            self.user_data_cache = users
+        return result, saved
 
     # ==================== NEU: NAVIDROME-USER MANAGEMENT ====================
 
@@ -259,17 +265,27 @@ Aktionen:"""
                 )
                 return
 
-            users = self._load_users()
+            # CC-AC-10G: Anlage zentral ueber services/user_admin.py::create_user()
+            # (identische Feldbelegung wie zuvor hier). UserAlreadyExistsError
+            # kann hier nur bei einer Race zwischen Schritt 1 und Schritt 2
+            # auftreten (Existenz wurde in process_new_user_id() bereits
+            # geprueft) - bewusst kein stilles Ueberschreiben mehr. A.7:
+            # Zyklus gesperrt via _update_users().
+            def _mutate(users):
+                user_admin.create_user(users, pending_user_id, navidrome_username)
 
-            # Neuen Benutzer erstellen
-            users[pending_user_id] = {
-                "role": "user",
-                "permissions": ["all"],
-                "navidrome_user": navidrome_username,  # NEU!
-                "created_at": datetime.now().isoformat(),
-            }
+            try:
+                _, saved = self._update_users(_mutate)
+            except user_admin.UserAdminError as e:
+                self.logger.error(
+                    f"Fehler beim Anlegen von User {pending_user_id}: {e}"
+                )
+                await update.message.reply_text(
+                    "❌ **Fehler**\n\nBenutzer konnte nicht gespeichert werden."
+                )
+                return
 
-            if self._save_users(users):
+            if saved:
                 self.logger.info(
                     f"✅ User {pending_user_id} mit Navidrome-User '{navidrome_username}' hinzugefügt."
                 )
@@ -326,19 +342,28 @@ Aktionen:"""
                 )
                 return
 
-            users = self._load_users()
+            # CC-AC-10G: Aktualisierung zentral ueber
+            # services/user_admin.py::update_navidrome_user() (identische
+            # Fachlogik wie zuvor hier). A.7: Zyklus gesperrt via
+            # _update_users().
+            def _mutate(users):
+                old_nav_user = users.get(target_user_id, {}).get(
+                    "navidrome_user", "Nicht gesetzt"
+                )
+                user_admin.update_navidrome_user(
+                    users, target_user_id, navidrome_username
+                )
+                return old_nav_user
 
-            if target_user_id not in users:
+            try:
+                old_nav_user, saved = self._update_users(_mutate)
+            except user_admin.UserNotFoundError:
                 await update.message.reply_text(
                     f"❌ **Fehler**\n\nBenutzer {target_user_id} nicht gefunden."
                 )
                 return
 
-            # Navidrome-User aktualisieren
-            old_nav_user = users[target_user_id].get("navidrome_user", "Nicht gesetzt")
-            users[target_user_id]["navidrome_user"] = navidrome_username
-
-            if self._save_users(users):
+            if saved:
                 self.logger.info(
                     f"✅ Navidrome-User für {target_user_id} aktualisiert: "
                     f"'{old_nav_user}' → '{navidrome_username}'"
@@ -520,50 +545,45 @@ Wähle neue Rolle:"""
     ):
         """Setzt die Rolle eines Benutzers"""
         query = update.callback_query
-        users = self._load_users()
 
-        # SEC-005-Fix: new_role kommt aus callback_data (clientseitig frei
-        # sendbar, siehe SEC-003) - ohne Validierung gegen self.ROLES koennte
-        # ein beliebiger String als Rolle gesetzt werden. toggle_user_permission()
-        # validiert bereits analog gegen self.PERMISSIONS.
-        if new_role not in self.ROLES:
+        # CC-AC-10G: Rollen-Whitelist, SEC-005-Owner-Guard und
+        # Rolle->Standard-Berechtigungen laufen jetzt zentral ueber
+        # services/user_admin.py::set_user_role() (identische Fachlogik
+        # wie zuvor hier, siehe dortiger Docstring) - Telegram liefert nur
+        # noch die Aktion und uebersetzt die Fehlerfaelle in Nutzertexte.
+        # A.7: der komplette Load->Aendern->Save-Zyklus laeuft prozess-
+        # uebergreifend gesperrt ueber _update_users().
+        acting_user_id = update.effective_user.id
+        owner_id = getattr(self.config, "OWNER_USER_ID", None)
+
+        def _mutate(users):
+            old_role = users.get(user_id, {}).get("role", "user")
+            user_admin.set_user_role(
+                users,
+                user_id,
+                new_role,
+                acting_user_id=acting_user_id,
+                owner_user_id=owner_id,
+            )
+            return old_role
+
+        try:
+            old_role, saved = self._update_users(_mutate)
+        except user_admin.InvalidRoleError:
             await query.answer("❌ Unbekannte Rolle")
             return
-
-        # SEC-005-Fix: der Aufrufer muss laut RichMenuSystem._is_admin_check()
-        # nur "Owner ODER in ADMIN_USER_IDS" sein - ADMIN_USER_IDS ist in
-        # config.py explizit als eigene, vom Owner getrennte Liste vorgesehen.
-        # Ohne diese Sperre koennte JEDER konfigurierte Admin sich selbst oder
-        # andere zum Owner befoerdern, obwohl "Owner" die hoechste, eigentlich
-        # nur einmalig vergebene Autoritaet darstellt (permissions=["all"]).
-        if new_role == "owner":
-            acting_user_id = update.effective_user.id
-            owner_id = getattr(self.config, "OWNER_USER_ID", None)
-            if acting_user_id != owner_id:
-                self.logger.warning(
-                    f"🚫 Nicht-Owner {acting_user_id} versuchte, User {user_id} "
-                    f"zum Owner zu befördern - abgelehnt"
-                )
-                await query.answer("❌ Nur der Owner darf die Owner-Rolle vergeben")
-                return
-
-        if user_id not in users:
+        except user_admin.OwnerPromotionDeniedError:
+            self.logger.warning(
+                f"🚫 Nicht-Owner {acting_user_id} versuchte, User {user_id} "
+                f"zum Owner zu befördern - abgelehnt"
+            )
+            await query.answer("❌ Nur der Owner darf die Owner-Rolle vergeben")
+            return
+        except user_admin.UserNotFoundError:
             await query.answer("❌ Benutzer nicht gefunden")
             return
 
-        old_role = users[user_id].get("role", "user")
-        users[user_id]["role"] = new_role
-
-        if new_role == "owner":
-            users[user_id]["permissions"] = ["all"]
-        elif new_role == "admin":
-            users[user_id]["permissions"] = ["admin", "moderate", "download"]
-        elif new_role == "moderator":
-            users[user_id]["permissions"] = ["moderate", "download"]
-        else:
-            users[user_id]["permissions"] = ["download"]
-
-        if self._save_users(users):
+        if saved:
             self.logger.info(
                 f"✅ Rolle geändert: User {user_id}: {old_role} → {new_role}"
             )
@@ -653,37 +673,25 @@ Wähle Berechtigungen zum Umschalten:"""
     ):
         """Schaltet eine Berechtigung für einen Benutzer um"""
         query = update.callback_query
-        users = self._load_users()
 
-        if user_id not in users:
+        # CC-AC-10G: Toggle-Validierung/-Semantik zentral in
+        # services/user_admin.py::toggle_user_permission() (identische
+        # Fachlogik wie zuvor hier). A.7: Zyklus gesperrt via _update_users().
+        def _mutate(users):
+            return user_admin.toggle_user_permission(users, user_id, permission)
+
+        try:
+            updated_permissions, saved = self._update_users(_mutate)
+        except user_admin.UserNotFoundError:
             await query.answer("❌ Benutzer nicht gefunden")
             return
-
-        if permission not in self.PERMISSIONS:
+        except user_admin.InvalidPermissionError:
             await query.answer("❌ Unbekannte Berechtigung")
             return
 
-        current_permissions = set(users[user_id].get("permissions", []))
-
-        if permission == "all":
-            if "all" in current_permissions:
-                current_permissions.remove("all")
-            else:
-                current_permissions = {"all"}
-        else:
-            if "all" in current_permissions:
-                current_permissions.remove("all")
-
-            if permission in current_permissions:
-                current_permissions.remove(permission)
-            else:
-                current_permissions.add(permission)
-
-        users[user_id]["permissions"] = list(current_permissions)
-
-        if self._save_users(users):
+        if saved:
             self.logger.info(
-                f"Berechtigungen für {user_id} aktualisiert: {list(current_permissions)}"
+                f"Berechtigungen für {user_id} aktualisiert: {updated_permissions}"
             )
             await query.answer("✅ Berechtigungen aktualisiert")
             await self.show_permission_menu(update, context, user_id)
@@ -763,16 +771,21 @@ Diese Aktion kann nicht rückgängig gemacht werden!"""
     ):
         """Löscht einen Benutzer"""
         query = update.callback_query
-        users = self._load_users()
 
-        if user_id not in users:
+        # CC-AC-10G: Loeschen zentral ueber services/user_admin.py::delete_user()
+        # (identische Fachlogik wie zuvor hier — kein zusaetzlicher
+        # Owner-Schutz, bewusste Paritaet, siehe dortiger Docstring). A.7:
+        # Zyklus gesperrt via _update_users().
+        def _mutate(users):
+            return user_admin.delete_user(users, user_id)
+
+        try:
+            user_data, saved = self._update_users(_mutate)
+        except user_admin.UserNotFoundError:
             await query.answer("❌ Benutzer nicht gefunden")
             return
 
-        user_data = users[user_id]
-        del users[user_id]
-
-        if self._save_users(users):
+        if saved:
             self.logger.info(
                 f"🗑️ Benutzer gelöscht: {user_id} ({user_data.get('role', 'user')})"
             )

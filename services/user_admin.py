@@ -158,6 +158,37 @@ def set_user_permissions(users: dict, telegram_id: str, permissions: list[str]) 
     return users[telegram_id]
 
 
+def toggle_user_permission(users: dict, telegram_id: str, permission: str) -> list[str]:
+    """Schaltet eine einzelne Berechtigung um (Toggle-Semantik, nicht
+    REST-PATCH wie set_user_permissions()) — 1:1 dieselbe Logik wie
+    UserManagementHandler.toggle_user_permission(): "all" schließt alle
+    anderen Berechtigungen aus und umgekehrt."""
+    if telegram_id not in users:
+        raise UserNotFoundError(f"Benutzer {telegram_id} nicht gefunden.")
+
+    if permission not in PERMISSIONS:
+        raise InvalidPermissionError(f"Unbekannte Berechtigung: {permission}")
+
+    current_permissions = set(users[telegram_id].get("permissions", []))
+
+    if permission == "all":
+        if "all" in current_permissions:
+            current_permissions.remove("all")
+        else:
+            current_permissions = {"all"}
+    else:
+        if "all" in current_permissions:
+            current_permissions.remove("all")
+        if permission in current_permissions:
+            current_permissions.remove(permission)
+        else:
+            current_permissions.add(permission)
+
+    resolved = list(current_permissions)
+    users[telegram_id]["permissions"] = resolved
+    return resolved
+
+
 def delete_user(users: dict, telegram_id: str) -> dict:
     """Löscht einen Benutzer und gibt den entfernten Eintrag zurück —
     identisch zu UserManagementHandler.delete_user(). Keine zusätzliche
