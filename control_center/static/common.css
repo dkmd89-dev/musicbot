@@ -1167,3 +1167,34 @@ button.logger-module-item:focus-visible {
   outline-offset: -2px;
 }
 /* === /Logger: Modulliste === */
+
+/* === Health: Findings-Gruppen (Layout A, Tabs) === */
+/* Klappbare Gruppen sind native <details>; Zeilen-Text darf im Flex-Layout
+   schrumpfen (Ellipsis) statt die Karte zu verbreitern. */
+.health-path {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+details.health-group > summary {
+  list-style: none;
+  cursor: pointer;
+}
+details.health-group > summary::-webkit-details-marker {
+  display: none;
+}
+details.health-group > summary::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+details.health-group[open] > summary::before {
+  content: "▾";
+}
+details.health-group:not([open]) > summary {
+  border-bottom: 0;
+}
+details.health-group > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* === /Health: Findings-Gruppen === */
