@@ -79,12 +79,22 @@ def _json_path() -> Path:
 
 async def run_genre_revalidation_subprocess(
     artist: str, *, apply: bool = False, timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    triggered_by: str = "cli",
 ) -> GenreRevalidationRunResult:
     """Read-only Preview (apply=False) oder tatsaechliche Mutation
     (apply=True, nur wenn die Overturn-Regel erfuellt ist - siehe
-    genre_revalidation.run_genre_revalidation()) fuer EINEN Artist."""
+    genre_revalidation.run_genre_revalidation()) fuer EINEN Artist.
+
+    Der Runner haelt den globalen Repair-Lock fuer den gesamten Lauf; das
+    Kind bekommt `--lock-held-by-caller`, damit es ihn nicht ein zweites Mal
+    nimmt (sonst scheiterte jedes apply=True mit Exit-Code 3).
+    `triggered_by` landet im Repair-History-Eintrag (Default "cli" wie bisher;
+    das Control Center setzt `control_center:<user_id>`)."""
     json_path = _json_path()
-    cmd = [sys.executable, str(REVALIDATE_SCRIPT), "--artist", artist, "--json", str(json_path)]
+    cmd = [
+        sys.executable, str(REVALIDATE_SCRIPT), "--artist", artist,
+        "--json", str(json_path), "--lock-held-by-caller", "--triggered-by", triggered_by,
+    ]
     if apply:
         cmd.append("--apply")
 

@@ -125,6 +125,18 @@ def main(argv=None) -> int:
              "vom Telegram-Subprozess-Wrapper "
              "(services/library_repair/genre_revalidation_runner.py).",
     )
+    parser.add_argument(
+        "--lock-held-by-caller", action="store_true",
+        help="Nur fuer den Runner (genre_revalidation_runner.py): der Aufrufer "
+             "haelt den globalen Repair-Lock bereits fuer den gesamten Lauf, "
+             "dieses Skript nimmt/gibt ihn nicht. Direkte CLI-Aufrufe nutzen "
+             "das nicht.",
+    )
+    parser.add_argument(
+        "--triggered-by", dest="triggered_by", type=str, default="cli",
+        help="Herkunft fuer den Repair-History-Eintrag (Default: cli); der "
+             "Runner setzt z. B. control_center:<user_id>.",
+    )
     for forbidden_flag in ("--fix", "--repair", "--force", "--execute"):
         parser.add_argument(forbidden_flag, action="store_true", help=argparse.SUPPRESS)
 
@@ -145,7 +157,8 @@ def main(argv=None) -> int:
     try:
         result = asyncio.run(
             run_genre_revalidation(
-                args.artist, apply=args.apply, triggered_by="cli", config=Config,
+                args.artist, apply=args.apply, triggered_by=args.triggered_by,
+                config=Config, lock_held_by_caller=args.lock_held_by_caller,
             )
         )
     except Exception as e:  # noqa: BLE001

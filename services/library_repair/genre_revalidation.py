@@ -132,7 +132,7 @@ def _build_dependencies(config):
 
 async def run_genre_revalidation(
     artist: str, *, apply: bool = False, triggered_by: str = "cli",
-    config: Any = None, lfm_client: Any = None,
+    config: Any = None, lfm_client: Any = None, lock_held_by_caller: bool = False,
 ) -> RevalidationResult:
     """Fuehrt EINE Revalidierung fuer `artist` durch - Last.fm-Fetch +
     Overturn-Entscheidung IMMER (auch im reinen Preview-Fall, um die
@@ -142,7 +142,16 @@ async def run_genre_revalidation(
 
     `lfm_client` optional injizierbar fuer Tests (sonst wird ein echter
     LastFMClient() konstruiert - ECHTER externer API-Call, siehe
-    scripts/revalidate_genre.py fuer den CLI-Aufrufer)."""
+    scripts/revalidate_genre.py fuer den CLI-Aufrufer).
+
+    `lock_held_by_caller`: der globale Repair-Lock wird sonst hier um den
+    Schreibvorgang genommen (direkter CLI-Aufruf). Startet der Runner
+    (genre_revalidation_runner.py) dieses Modul als Subprozess, hat ER den
+    Lock bereits fuer den gesamten Lauf (inkl. Ergebnisdatei) — ein zweites
+    acquire_repair_lock() im Kind scheitert dann IMMER mit
+    RepairAlreadyRunningError (Exit-Code 3, jede Anwendung ueber Telegram/
+    Control Center scheiterte). Mit True nimmt/gibt dieses Modul den Lock
+    NICHT; er bleibt beim Aufrufer."""
     config = config or Config
     artist = artist.strip()
 
@@ -226,7 +235,8 @@ async def run_genre_revalidation(
         return result
 
     started_at = now_iso()
-    acquire_repair_lock()
+    if not lock_held_by_caller:
+        acquire_repair_lock()
     try:
         written = await auto_learn.learn_genre(artist, lfm_result)
         result.mutated = written
@@ -244,4 +254,5 @@ async def run_genre_revalidation(
         })
         return result
     finally:
-        release_repair_lock()
+        if not lock_held_by_caller:
+            release_repair_lock()
