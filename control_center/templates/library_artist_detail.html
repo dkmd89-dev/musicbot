@@ -454,12 +454,28 @@
       </div>
 
       <!-- Genre Revalidation -->
-      <div class="border-bottom pb-4 mb-4">
+      <div class="border-bottom pb-4 mb-4" id="genre-revalidation-panel">
         <h3 class="mb-2">🔄 Genre revalidieren</h3>
         <p class="text-secondary">
-          Nicht im Control Center verfügbar — nur in Telegram
-          („🧹 Library-Wartung → 🔄 Genre revalidieren“).
+          Fragt Last.fm für diesen Artist erneut ab und wendet die bestehende
+          Overturn-Regel des Auto-Learnings an. Das verändert <strong>keine
+          Audio-Dateien</strong> und nicht <code>artist_genre.yaml</code> —
+          höchstens das gelernte Genre in
+          <code>mapping/auto_learned_genre.json</code> (für neue Downloads,
+          wirksam nach einem Bot-Neustart). Artists mit manuellem Mapping sind
+          immer blockiert; dort den Mapping-Editor oben verwenden.
         </p>
+
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          <button id="genre-revalidation-preview-btn" type="button" class="btn btn-outline-primary">
+            Last.fm prüfen (Vorschau)
+          </button>
+          <button id="genre-revalidation-apply-btn" type="button" class="btn btn-primary" disabled>
+            Änderung übernehmen
+          </button>
+        </div>
+
+        <div id="genre-revalidation-content" class="empty-note"></div>
       </div>
 
       <!-- L2 / L3 -->
@@ -1263,6 +1279,135 @@
   document.getElementById("artist-metadata-edit-panel").querySelector("details").addEventListener("toggle", (event) => {
     if (event.target.open && !_genreMap.etag) loadGenreMapping();
   });
+
+  // -- Genre revalidieren (Last.fm + Overturn-Regel, als Job) -----------------
+  //
+  // POST /api/v1/jobs/genre-revalidation-preview | -apply (Job, Polling wie bei
+  // L2/L3). Die Entscheidung trifft der Service (dieselbe Overturn-Regel wie
+  // Telegram/CLI); die UI zeigt nur das Ergebnis. Kein Abbrechen (ein einzelner
+  // atomarer Lauf, siehe jobs.py).
+
+  const _GENRE_REVAL_OUTCOMES = {
+    BLOCKED_MANUAL: ["warning", "Blockiert — manuelles Mapping vorhanden"],
+    NO_CANDIDATE: ["warning", "Kein Kandidat"],
+    SAME_GENRE: ["success", "Last.fm bestätigt das aktuelle Genre — keine Änderung nötig"],
+    OVERTURN_REJECTED: ["warning", "Änderung abgelehnt — Overturn-Regel nicht erfüllt"],
+    OVERTURN_ALLOWED: ["info", "Änderung zulässig"],
+  };
+  let _genreRevalTimer = null;
+  let _genreRevalJobId = null;
+
+  function _genreLine(primary, secondary) {
+    if (!primary) return "(kein Genre)";
+    return [primary, ...(secondary || [])].map(_escapeHtml).join("; ");
+  }
+
+  function genreRevalidationResultHtml(r) {
+    const [kind, label] = _GENRE_REVAL_OUTCOMES[r.outcome] || ["secondary", r.outcome];
+    const rows = [
+      ["Aktuell", _genreLine(r.current_primary, r.current_secondary)],
+      ["Kandidat (Last.fm)", r.candidate_primary ? _genreLine(r.candidate_primary, r.candidate_secondary) : "—"],
+    ];
+    if (r.learning_status) rows.push(["Lernstatus", _escapeHtml(r.learning_status)]);
+    if (r.locked_primary) rows.push(["Gelocktes Primary", _escapeHtml(r.locked_primary)]);
+    rows.push(["Beobachtungen", _escapeHtml(String(r.observation_count))]);
+    const dl = rows.map(([k, v]) => `<dt class="col-5 col-md-3">${_escapeHtml(k)}</dt><dd class="col-7 col-md-9 mb-1 text-break">${v}</dd>`).join("");
+    const error = r.error_message
+      ? `<div class="alert alert-danger py-2 mb-2">Last.fm-Fehler: ${_escapeHtml(r.error_message)}</div>` : "";
+    let outcomeNote;
+    if (r.mode === "apply") {
+      outcomeNote = r.mutated
+        ? '<div class="alert alert-success py-2 mb-0">✅ Gelerntes Genre aktualisiert. Für neue Downloads wirksam nach einem Bot-Neustart; Audio-Dateien wurden nicht verändert.</div>'
+        : '<div class="text-secondary small">Keine Änderung geschrieben.</div>';
+    } else {
+      outcomeNote = '<div class="text-secondary small">Vorschau — es wurde nichts geschrieben.</div>';
+    }
+    return `
+      <div class="alert alert-${kind} py-2 mb-2"><div><div class="fw-semibold">${_escapeHtml(label)}</div><div class="small">${_escapeHtml(r.reason || "")}</div></div></div>
+      ${error}
+      <dl class="row gx-2 mb-2">${dl}</dl>
+      ${outcomeNote}`;
+  }
+
+  function _genreRevalSetBusy(busy) {
+    document.getElementById("genre-revalidation-preview-btn").disabled = busy;
+    if (busy) document.getElementById("genre-revalidation-apply-btn").disabled = true;
+  }
+
+  function _stopGenreRevalPolling() {
+    if (_genreRevalTimer) { clearInterval(_genreRevalTimer); _genreRevalTimer = null; }
+  }
+
+  function _renderGenreRevalidationJob(job) {
+    const el = document.getElementById("genre-revalidation-content");
+    if (job.status === "PENDING" || job.status === "RUNNING") {
+      el.innerHTML = `<p class="empty-note">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%) — ${_escapeHtml(job.message || "")}</p>`;
+      return;
+    }
+    _stopGenreRevalPolling();
+    _genreRevalSetBusy(false);
+    if (job.status !== "SUCCEEDED") {
+      el.innerHTML = `<div class="alert alert-danger mb-0">Fehlgeschlagen: ${_escapeHtml(job.error || "Unbekannter Fehler")}</div>`;
+      return;
+    }
+    const r = job.result || {};
+    el.innerHTML = genreRevalidationResultHtml(r);
+    // "Änderung übernehmen" nur nach einer Vorschau, die die Änderung zulässt.
+    document.getElementById("genre-revalidation-apply-btn").disabled =
+      !(r.mode === "preview" && r.outcome === "OVERTURN_ALLOWED" && !r.error_message);
+  }
+
+  async function _pollGenreRevalidationJob(jobId) {
+    try {
+      const res = await fetch(apiUrl(`/api/v1/jobs/${encodeURIComponent(jobId)}`), { credentials: "same-origin" });
+      if (res.status === 401) { showOnly("login-view"); _stopGenreRevalPolling(); return; }
+      if (!res.ok) return;
+      _renderGenreRevalidationJob(await res.json());
+    } catch (err) {}
+  }
+
+  async function startGenreRevalidation(mode) {
+    const artist = currentArtistFromPath();
+    if (mode === "apply") {
+      const confirmed = window.confirm(
+        `Genre-Revalidierung für "${artist}" anwenden?\n\n` +
+        `Last.fm wird erneut abgefragt; nur wenn die Overturn-Regel dann noch erfüllt ist, ` +
+        `wird das gelernte Genre in mapping/auto_learned_genre.json aktualisiert. ` +
+        `Für neue Downloads wirkt das erst nach einem Bot-Neustart. Audio-Dateien werden nicht verändert.`
+      );
+      if (!confirmed) return;
+    }
+    _genreRevalSetBusy(true);
+    document.getElementById("genre-revalidation-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
+    try {
+      const res = await fetch(apiUrl(`/api/v1/jobs/genre-revalidation-${mode}`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ artist }),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        document.getElementById("genre-revalidation-content").innerHTML =
+          `<div class="alert alert-danger mb-0">Job konnte nicht gestartet werden: ${_escapeHtml((body && body.error && body.error.message) || String(res.status))}</div>`;
+        _genreRevalSetBusy(false);
+        return;
+      }
+      const job = await res.json();
+      _genreRevalJobId = job.job_id;
+      _renderGenreRevalidationJob(job);
+      _stopGenreRevalPolling();
+      _genreRevalTimer = setInterval(() => _pollGenreRevalidationJob(_genreRevalJobId), 1000);
+    } catch (err) {
+      document.getElementById("genre-revalidation-content").innerHTML =
+        `<div class="alert alert-danger mb-0">Job konnte nicht gestartet werden (${_escapeHtml(err.message)}).</div>`;
+      _genreRevalSetBusy(false);
+    }
+  }
+
+  document.getElementById("genre-revalidation-preview-btn").addEventListener("click", () => startGenreRevalidation("preview"));
+  document.getElementById("genre-revalidation-apply-btn").addEventListener("click", () => startGenreRevalidation("apply"));
 
   document.getElementById("genre-manage-preview-btn").addEventListener("click", loadGenreManagePreview);
   document.getElementById("genre-manage-execute-btn").addEventListener("click", executeGenreManage);

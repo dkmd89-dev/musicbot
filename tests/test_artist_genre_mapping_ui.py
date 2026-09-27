@@ -86,14 +86,6 @@ async def test_save_requires_a_preview_and_a_confirmation_and_sends_the_etag(cli
     assert "res.status === 409" in save_fn                      # veralteter Stand wird behandelt
 
 
-@pytest.mark.asyncio
-async def test_existing_genre_revalidation_hint_is_untouched_until_the_next_step(client):
-    """Revalidierung ist ein eigener Schritt: der Hinweis bleibt vorerst stehen."""
-    html = (await client.get("/library/Bausa")).text
-    assert "Nicht im Control Center verfügbar — nur in Telegram" in html
-    assert 'id="genre-revalidate-preview-btn"' not in html
-
-
 # ── node: reine Funktionen aus dem Template ───────────────────────────────
 
 pytestmark_node = pytest.mark.skipif(_NODE is None, reason="node nicht verfuegbar")
