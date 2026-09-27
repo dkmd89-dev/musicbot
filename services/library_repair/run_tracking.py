@@ -38,6 +38,12 @@ JOURNAL_FILENAME = "library_repair_journal.jsonl"
 STATUS_SUCCESS = "SUCCESS"
 STATUS_FAILED = "FAILED"
 STATUS_SKIPPED = "SKIPPED"
+# Run-Gesamtstatus (Findings #4/#5/#6): mindestens eine Datei wurde
+# geschrieben, aber kein Eintrag ist verifiziert erfolgreich bzw. der
+# Repair-Subprozess meldete trotz Journal-Einträgen Exit-Code != 0 -
+# "Überprüfung nötig", weder Erfolg noch harter Fehler. Gleicher Wert
+# wie der Per-Eintrag-Status executor.py::STATUS_UNRESOLVED.
+STATUS_UNRESOLVED = "UNRESOLVED"
 
 # Run-Record "kind" (ARCH-031 B.6/ADR-0004): additiv. Alte Records ohne
 # dieses Feld gelten als "repair" (Rueckwaertskompatibilitaet) — keine

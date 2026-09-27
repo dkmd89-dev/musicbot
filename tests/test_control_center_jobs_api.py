@@ -479,6 +479,10 @@ class _FakeLevelRepairResult:
     resolved_count: int = 2
     entries: list = field(default_factory=list)
     affected_files: list = field(default_factory=list)
+    # Findings #4/#5/#6: spiegelt die neuen LevelRepairResult-Felder, die
+    # _run_level_repair_job() jetzt ins Job-Ergebnis übernimmt.
+    changed_files: list = field(default_factory=list)
+    exit_code: int | None = 0
     rescan_triggered: bool = True
     error_message: str | None = None
 

@@ -998,9 +998,49 @@ Priorität `failed → unresolved → success → skipped → leer`
 (❌/🟠/✅/🟡/⚪, `failed > 0` dominiert immer). Ein Subprozess-Absturz vor
 dem ersten Journal-Write (Exit-Code ≠ 0, keine Journal-Einträge) wird
 seitdem ebenfalls als Fehler erkannt statt als leerer Lauf angezeigt.
-Die schwesterliche SAFE_AUTOMATIC-Zusammenfassung (`_format_result()`,
-§9/§10) hat dieselben drei ursprünglichen Anzeigefehler weiterhin — bewusst
-nicht Teil dieses Fixes, siehe `docs/FINDINGS_INDEX.md`.
+
+**Einheitliche Ergebnissemantik (Findings #4/#5/#6, 2026-09-27):** Seit
+diesem Fix gilt dieselbe Semantik für SAFE_AUTOMATIC (§9/§10) und L2/L3
+in allen Schichten; die Einzelhelfer liegen in
+`services/library_repair/repair_service.py` und werden von
+`execute_safe_automatic_repair()` UND `_execute_level_repair()` geteilt:
+
+- `_changed_files(entries)` — „geändert" (Definition oben; `UNRESOLVED`
+  zählt mit, weil die Datei geschrieben wurde — identisch zu
+  `scripts/library_repair.py::wrote_to_disk` für den Navidrome-Scan).
+  `affected_files` bleibt als „berührt" erhalten, ist aber in keiner
+  Anzeige mehr die „geändert"-Quelle. `RepairRunResult` trägt jetzt
+  ebenfalls `changed_files`, beide Result-Typen zusätzlich `exit_code`;
+  der Run-Record enthält additiv `changed_files`.
+- `_process_error_message()` — Absturz vor dem ersten Journal-Write
+  (Exit-Code ≠ 0, keine Einträge) → Fehler, jetzt auch für SAFE_AUTOMATIC
+  (vorher still `SKIPPED`).
+- `_overall_status()` — Prozess-Exit-Code + Journal-Einträge
+  (+ Per-Eintrag-Verifikation, die sich bereits als `UNRESOLVED`
+  niederschlägt) ergeben den Gesamtstatus:
+
+| Gesamtstatus | Bedingung |
+|---|---|
+| `FAILED` | Timeout/Start-/Absturzfehler; ODER nur `FAILED` ohne `SUCCESS`; ODER Exit-Code ≠ 0 ohne geschriebene Datei |
+| `UNRESOLVED` (neu als Run-Status, `run_tracking.STATUS_UNRESOLVED`) | Exit-Code ≠ 0 trotz geschriebener Einträge (`scripts/library_repair.py` liefert 1 bei Verification-Regression — neue/gestiegene Issue-Codes — oder bei Abbruch mitten im Lauf); ODER nur `UNRESOLVED`-Einträge ohne `SUCCESS` |
+| `SUCCESS` | ≥ 1 `SUCCESS` bei Exit-Code 0 (einzelne `FAILED`/`UNRESOLVED`/`SKIPPED` bleiben als Partial-Success in den Zählern sichtbar) |
+| `SKIPPED` | nichts geschrieben, nichts fehlgeschlagen |
+
+Ein vorhandenes Journal bedeutet damit nicht mehr automatisch Erfolg
+(Finding #5). Präsentation: Telegram (`_format_result()` und
+`_format_l23_result()` über den gemeinsamen `_result_headline()`, plus
+Exit-Code-Hinweis via `_exit_code_warning()`), Control-Center-Job-Ergebnis
+(`_run_level_repair_job()`: zusätzlich `unresolved`, `changed_files`,
+`exit_code`; `UNRESOLVED`/`SKIPPED` = Job `SUCCEEDED`, nur `FAILED` = Job
+`FAILED`) und UI (`health.js`/`library_artist_detail.html`:
+`_repairOutcomeText()`/`_repairCountsText()`, gelber `dot-warn` statt
+grünem Punkt für nicht-`SUCCESS`; Repair-History-Badge `status-warn` für
+`UNRESOLVED`/`SKIPPED` statt rot) leiten Emoji/Text aus denselben
+Rohdaten ab. Der CC-Job `repair_safe_automatic` nutzt weiterhin direkt
+`doctor_runner.run_safe_automatic_repair()` ohne Zähler (Exit-Code ≠ 0 →
+Job `FAILED`) — unverändert. Offene Nachfolge: die aggregierte
+Repair-Statistik (`compute_repair_statistics()`) weist `UNRESOLVED` nicht
+separat aus (`docs/FINDINGS_INDEX.md`).
 
 **Tests:**
 
@@ -1009,6 +1049,7 @@ nicht Teil dieses Fixes, siehe `docs/FINDINGS_INDEX.md`.
 | `tests/test_library_repair_planner.py` | `group_candidates_by_artist()` — L2/L3 getrennt gezählt, andere Level ignoriert, Sortierung (Gesamtzahl absteigend, dann alphabetisch), Determinismus, Pfad-Präfix-Fallback |
 | `tests/test_doctor_runner.py` | `run_level2_repair()`/`run_level3_repair()` — Subprozess-Aufruf, Timeout, Fehlerfälle |
 | `tests/test_repair_service_level23.py` | `execute_level2_repair()`/`execute_level3_repair()` — Stale-Plan-Schutz, Verification-Gate, Lock-Sharing mit §10/§11, Run-Record `kind: "repair"`, `changed_files` vs. `affected_files` (inkl. L2-SHA-Diff-Fall), Absturz ohne Journal-Einträge |
+| `tests/test_repair_result_semantics.py` | Findings #4/#5/#6 — Fälle A–F (`_overall_status()`, `_changed_files()`, echte Orchestrierung SAFE_AUTOMATIC + L2, Telegram `_format_result()`/`_format_l23_result()` gleiche Emoji-Semantik, CC-Job-Ergebnis, `health.js`/`library_artist_detail.html` per node real ausgeführt) |
 | `tests/test_repair_handler_level23.py` | Telegram-Sub-Flow (Start/Artist-Liste inkl. Pagination-Cache/Aktions-Auswahl/Preview/Confirm/Execute), Admin-Re-Check je Schritt, Index-basierte Artist-Auswahl (kein Rohname in `callback_data`), kein Auto-Start, Lock-Konflikt-Anzeige, Teilerfolg-Anzeige, `_format_l23_result()`-Summary-Zeilen/Emoji-Priorität |
 
 ---

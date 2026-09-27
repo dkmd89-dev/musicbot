@@ -342,6 +342,12 @@ async def _run_level_repair_job(
         registry.mark_failed(job_id, "Interner Fehler im Repair-Job.")
         return
 
+    # Finding #6: dieselben Rohdaten wie Telegram (_format_l23_result()) -
+    # "geändert" ausschliesslich aus changed_files, unresolved und
+    # exit_code explizit. affected_files (berührt, auch SKIPPED) bleibt
+    # additiv/kompatibel erhalten, ist aber KEINE "geändert"-Quelle.
+    # status UNRESOLVED/SKIPPED gilt als abgeschlossener Job (SUCCEEDED),
+    # nur FAILED als fehlgeschlagener Job.
     result_dict = {
         "repair_id": result.repair_id,
         "artist": result.artist,
@@ -351,8 +357,11 @@ async def _run_level_repair_job(
         "success": result.success,
         "failed": result.failed,
         "skipped": result.skipped,
+        "unresolved": result.unresolved,
         "resolved_count": result.resolved_count,
         "affected_files": result.affected_files,
+        "changed_files": result.changed_files,
+        "exit_code": result.exit_code,
         "rescan_triggered": result.rescan_triggered,
     }
     if result.status == "FAILED":
