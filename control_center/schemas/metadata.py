@@ -26,6 +26,9 @@ nachgezogen.
 
 from __future__ import annotations
 
+from pathlib import Path
+from services.library_health.tag_reader import read_tags
+
 from typing import Optional
 
 from pydantic import BaseModel
@@ -207,8 +210,66 @@ class ArtistDetailResponse(BaseModel):
     stale: bool
 
 
+def _refresh_editable_fields_from_tags(entry: dict, library_root: Path) -> dict:
+    """Liest die editierbaren Track-Felder live aus den Datei-Tags.
+
+    Zweck (Bugfix 2026-09-27): Nach einem erfolgreichen Metadaten-Edit
+    (Title/Artist/Album/Albumartist/Genre/Jahr/Track-Nr/Disc-Nr) zeigte
+    der Artist-Detail-Endpunkt weiterhin die alten Werte, weil er
+    ausschliesslich aus dem persistenten Report las, und der Report
+    nach einem Edit nicht invalidiert wird. Der Live-Read ueberspringt
+    diesen Cache-Staleness fuer die editierbaren Felder; aggregierte
+    Felder (file_size, issue_codes, mb_recording_id, isrc,
+    integrated_lufs) bleiben weiterhin aus dem Report.
+
+    Fallback: bei jedem Lesefehler (Datei fehlt, korrupt, kein
+    mutagen-Support) wird der unveraenderte `entry` zurueckgegeben -
+    kein 500er durch eine einzelne kaputte Datei.
+    """
+    rel_path = entry.get("relative_path")
+    if not rel_path:
+        return entry
+    full_path = Path(library_root) / rel_path
+    try:
+        tag_data = read_tags(full_path)
+    except Exception:
+        return entry
+
+    if getattr(tag_data, "error", None):
+        return entry
+
+    enriched = dict(entry)
+
+    if tag_data.title:
+        enriched["title"] = tag_data.title
+
+    # Multi-Artist: TagData hat zwei Felder (artists_primary_tag als Liste
+    # + artist als einzelner String). Prioritaet: join der Liste, damit
+    # "Apache 207; Nina Chuba" nicht auf den ersten Wert reduziert wird.
+    if tag_data.artists_primary_tag:
+        enriched["artist"] = ", ".join(tag_data.artists_primary_tag)
+    elif tag_data.artist:
+        enriched["artist"] = tag_data.artist
+
+    if tag_data.album:
+        enriched["album"] = tag_data.album
+    if tag_data.album_artist:
+        enriched["album_artist"] = tag_data.album_artist
+    if tag_data.genre:
+        enriched["genre"] = tag_data.genre
+    if tag_data.year:
+        enriched["year"] = tag_data.year
+    if tag_data.track_number is not None:
+        enriched["track_number"] = tag_data.track_number
+    if tag_data.disc_number is not None:
+        enriched["disc_number"] = tag_data.disc_number
+
+    return enriched
+
+
 def artist_detail_to_response(
     report: dict, *, artist: str, stale: bool,
+    library_root: Optional[Path] = None,
 ) -> Optional[ArtistDetailResponse]:
     """Liefert None, wenn `artist` im Report nicht (mehr) vorkommt -
     Aufrufer meldet dafuer HTTPException(404, code="ARTIST_NOT_FOUND").
@@ -222,6 +283,8 @@ def artist_detail_to_response(
         return None
     albums = [a for a in report.get("albums", []) if a["artist"] == artist]
     tracks = [f for f in report.get("files", []) if f.get("artist_directory") == artist]
+    if library_root is not None:
+        tracks = [_refresh_editable_fields_from_tags(f, library_root) for f in tracks]
     return ArtistDetailResponse(
         artist=summary["artist"],
         file_count=summary["file_count"],

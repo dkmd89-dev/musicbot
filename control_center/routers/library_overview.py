@@ -39,11 +39,14 @@ Authentifiziert mit derselben Schwelle wie routers/metadata.py
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from handlers.menu.models import AccessLevel
+from config import Config
 from logger import get_module_logger
 
 from .._library_scan import load_cached_report
@@ -93,7 +96,10 @@ def get_artists_overview() -> ArtistsOverviewResponse:
 @router.get("/artists-overview/{artist}", response_model=ArtistDetailResponse)
 def get_artist_overview_detail(artist: str) -> ArtistDetailResponse:
     report, stale = _require_cached_report()
-    detail = artist_detail_to_response(report, artist=artist, stale=stale)
+    detail = artist_detail_to_response(
+        report, artist=artist, stale=stale,
+        library_root=Path(Config.LIBRARY_DIR),
+    )
     if detail is None:
         request_id = uuid.uuid4().hex
         raise HTTPException(
