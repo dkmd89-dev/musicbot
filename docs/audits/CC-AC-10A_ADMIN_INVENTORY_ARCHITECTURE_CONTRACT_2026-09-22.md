@@ -1,5 +1,7 @@
 # CC-AC-10A — Admin Inventory + Architecture Contract
 
+> **Stand 2026-09-27:** Die Matrix unten (User-Verwaltung, Backups, Restart, Maintenance als „🔴 Telegram-only") ist durch CC-AC-10B/C/D überholt — alle vier existieren im Control Center. Aktueller Stand: `WEB_PARITY_TELEGRAM_CLIENT_AUDIT_2026-09-27.md`. Der Rest dieses Dokuments bleibt als historische Entscheidung unverändert.
+
 **Datum:** 2026-09-22
 **Auftrag:** freigegebene Master-Prompt `CC-AC-10.md` ("Vollständige
 Administration API Integration"), Abschnitt 20, Slice **CC-AC-10A**
