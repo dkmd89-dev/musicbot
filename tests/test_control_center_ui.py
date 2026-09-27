@@ -1250,17 +1250,48 @@ async def test_logger_page_renders(client) -> None:
 async def test_logger_page_has_all_panel_markers(client) -> None:
     r = await client.get("/logger")
     html = r.text
-    # Panel 1 — Runtime
+    # Runtime-Uebersicht + Startup-Karte
     assert "logger-runtime-kpi" in html
     assert "logger-runtime-content" in html
     assert "logger-runtime-refresh-btn" in html
-    # Panel 2 — Config
+    assert "logger-startup-content" in html
+    # Modulliste + Modul-Detailkarte
     assert "logger-config-content" in html
-    # Panel 3 — Diff
-    assert "logger-diff-content" in html
-    # Panel 4 — Apply
+    assert "logger-module-filter" in html
+    assert "logger-module-detail" in html
+    # Aktionen: speichern / zuruecksetzen / anwenden
+    assert "logger-save-btn" in html
+    assert "logger-reset-btn" in html
     assert "logger-apply-btn" in html
     assert "logger-apply-status" in html
+
+
+@pytest.mark.anyio
+async def test_logger_page_has_runtime_card_with_snapshot_semantics(client) -> None:
+    html = (await client.get("/logger")).text
+    assert "Runtime-Status" in html
+    assert "Zustand nach dem letzten erfolgreichen Bot-Start — kein Live-Zustand." in html
+    assert "Letzter erfolgreicher Bot-Start" in html
+
+
+@pytest.mark.anyio
+async def test_logger_page_has_three_module_actions(client) -> None:
+    html = (await client.get("/logger")).text
+    assert "Änderungen speichern" in html
+    assert "Zurücksetzen" in html
+    assert "🚀 Konfiguration anwenden" in html
+
+
+@pytest.mark.anyio
+async def test_logger_page_has_no_level_dropdown(client) -> None:
+    """Level wird als Radio-Liste (in logger.js gerendert) bearbeitet —
+    weder Template noch Skript duerfen ein <select> anbieten."""
+    html = (await client.get("/logger")).text
+    js = (await client.get("/static/pages/logger.js")).text
+    assert "<select" not in html
+    assert "<select" not in js
+    assert 'type="radio"' in js
+    assert "logger-level-radio" in js
 
 
 @pytest.mark.anyio
@@ -1324,7 +1355,7 @@ async def test_logger_page_has_file_handler_control_markers(client) -> None:
     html = (await client.get("/logger")).text
     assert "logger-config-status" in html
     assert "logger-config-content" in html
-    # Klarer Hinweis: Schalten veraendert den laufenden Bot nicht.
+    # Klarer Hinweis: Speichern veraendert den laufenden Bot nicht.
     assert "der laufende Bot wird" in html
 
 
@@ -1334,8 +1365,11 @@ async def test_logger_js_file_toggle_uses_existing_patch_endpoint(client) -> Non
     assert "logger-file-toggle" in js
     assert 'method: "PATCH"' in js
     assert '"/api/v1/admin/logger/config"' in js
-    # Genau ein Feld, expliziter Zielwert (kein Toggle, kein `enabled`).
-    assert "{ file_handler: wanted }" in js
+    # Entwurf -> ein PATCH mit genau den geaenderten Feldern
+    # (`level`/`file_handler`), kein serverseitiges Umschalten, kein `enabled`.
+    assert '"file_handler"' in js
+    assert "patch[name] = fields;" in js
+    assert "enabled:" not in js.split("_loggerSaveModule")[1].split("_loggerResetModule")[0]
     # Keine neue API-Flaeche: logger.js spricht nur die bestehenden
     # L4/L5-Endpunkte an.
     import re
@@ -1379,9 +1413,8 @@ async def test_logger_js_levels_match_backend_whitelist(client) -> None:
 
 
 @pytest.mark.anyio
-async def test_logger_js_level_select_patches_only_level(client) -> None:
+async def test_logger_js_level_radio_and_file_switch_are_the_only_patched_fields(client) -> None:
     js = (await client.get("/static/pages/logger.js")).text
-    assert "logger-level-select" in js
-    assert "{ level: wanted }" in js
-    # L6.1 unveraendert
-    assert "{ file_handler: wanted }" in js
+    assert "logger-level-radio" in js
+    assert "logger-file-toggle" in js
+    assert '"level"' in js and '"file_handler"' in js
