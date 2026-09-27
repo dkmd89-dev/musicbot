@@ -6,53 +6,88 @@
 // bestehender Panel-Logik (unveraendert aus den vier Vorseiten
 // uebernommen) plus drei neue Ergaenzungen: Score-History-Anzeige,
 // Health-Scan als Job, Findings-Filter (Severity/Kategorie) und
-// Repair-History/-Statistik. Nutzt die gemeinsamen Helfer aus
+// Repair-History/-Statistik. Layout A (Tabs): Kopf mit Score/Kennzahlen/
+// Navidrome-Chip, darunter die Tabler-Tabs Findings | Repair | Verlauf.
+// Es wurden nur Render-Funktionen umgestellt, die Job-/Polling-/API-Logik
+// ist unveraendert. Nutzt die gemeinsamen Helfer aus
 // common.js (apiUrl()/_loadInto()/_escapeHtml()/showOnly()/checkAuth()) —
 // keine Duplikate.
 
 // ── A) MusicBot Doctor ──────────────────────────────────────────────────
 
-function renderHealth(data) {
-  const el = document.getElementById("health-tiles");
-  const badge = document.getElementById("health-score-badge");
+const _HEALTH_STATUS_COLOR = {
+  EXCELLENT: "green", GOOD: "lime", FAIR: "yellow", POOR: "orange", CRITICAL: "red",
+};
+
+function _healthNumber(n) {
+  return typeof n === "number" ? n.toLocaleString("de-DE") : _escapeHtml(String(n));
+}
+
+// Signatur (el, data) ist der _loadInto()-Vertrag (renderFn(el, body)). Bis zum
+// Layout-A-Umbau hiess sie renderHealth(data): _loadInto uebergab das DOM-
+// Element als `data`, die Kacheln zeigten immer "Keine Dateien in der Library
+// gefunden." (Score "–") — auch bei gueltigem /health/cached-Report.
+function renderHealth(el, data) {
   if (!data.library || !data.library.files) {
-    el.innerHTML = "<p>Keine Dateien in der Library gefunden.</p>";
-    badge.textContent = "–";
+    el.innerHTML = '<div class="col-12"><p class="mb-0">Keine Dateien in der Library gefunden.</p></div>';
     return;
   }
-  const score = data.health.score != null ? data.health.score : "–";
+  const hasScore = data.health.score != null;
+  const score = hasScore ? data.health.score : "–";
   const status = data.health.status || "UNSCORED";
+  const color = _HEALTH_STATUS_COLOR[status] || "secondary";
+  const pct = hasScore ? Math.max(0, Math.min(100, Number(score))) : 0;
   el.innerHTML = `
-    <div class="tile"><div class="tile-label">Health Score</div>
-      <div class="tile-value status-${_escapeHtml(status)}">${_escapeHtml(String(score))}</div>
-      <div class="hint">${_escapeHtml(status)}</div></div>
-    <div class="tile"><div class="tile-label">Dateien</div>
-      <div class="tile-value">${data.library.files}</div></div>
-    <div class="tile"><div class="tile-label">Artists</div>
-      <div class="tile-value">${data.library.artists}</div></div>
-    <div class="tile"><div class="tile-label">Alben</div>
-      <div class="tile-value">${data.library.albums}</div></div>
+    <div class="col-12 col-md-6">
+      <div class="subheader">Health Score</div>
+      <div class="d-flex align-items-baseline gap-2">
+        <div class="h1 mb-0">${_escapeHtml(String(score))}</div>
+        <span class="badge bg-${color}-lt">${_escapeHtml(status)}</span>
+      </div>
+      ${hasScore ? `<div class="progress progress-sm mt-2"><div class="progress-bar bg-${color}" style="width: ${pct}%" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div></div>` : ""}
+    </div>
+    <div class="col-4 col-md-2"><div class="subheader">Dateien</div><div class="h2 mb-0">${_healthNumber(data.library.files)}</div></div>
+    <div class="col-4 col-md-2"><div class="subheader">Artists</div><div class="h2 mb-0">${_healthNumber(data.library.artists)}</div></div>
+    <div class="col-4 col-md-2"><div class="subheader">Alben</div><div class="h2 mb-0">${_healthNumber(data.library.albums)}</div></div>
   `;
-  badge.textContent = `${score} · ${status}`;
 }
 function loadHealth() {
   return _loadInto("health-tiles", "/api/v1/library/health/cached", renderHealth);
 }
 
+// Score-Verlauf als Sparkline (statt Textliste). Reihenfolge der API:
+// aelteste zuerst. Gleichbleibende Scores werden als flache Linie gezeichnet.
+function _sparklineSvg(entries) {
+  const W = 240, H = 32, PAD = 4;
+  const scored = entries.filter((e) => typeof e.score === "number");
+  if (!scored.length) return "";
+  const vals = scored.map((e) => e.score);
+  const min = Math.min.apply(null, vals);
+  const max = Math.max.apply(null, vals);
+  const x = (i) => scored.length === 1 ? W / 2 : PAD + i * (W - 2 * PAD) / (scored.length - 1);
+  const y = (v) => max === min ? H / 2 : PAD + (max - v) * (H - 2 * PAD) / (max - min);
+  const pts = scored.map((e, i) => x(i).toFixed(1) + "," + y(e.score).toFixed(1)).join(" ");
+  const last = scored[scored.length - 1];
+  const dots = scored.map((e, i) => {
+    const when = e.timestamp ? new Date(e.timestamp).toLocaleString() : "";
+    return `<circle cx="${x(i).toFixed(1)}" cy="${y(e.score).toFixed(1)}" r="${e === last ? 3.5 : 2}" fill="currentColor"><title>${_escapeHtml(String(e.score))} · ${_escapeHtml(e.status || "UNSCORED")} · ${_escapeHtml(when)}</title></circle>`;
+  }).join("");
+  return `<svg class="text-primary" viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="max-width:${W}px" role="img" aria-label="Score-Verlauf der letzten ${scored.length} Läufe">` +
+    `<polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${dots}</svg>`;
+}
+
 function renderScoreHistory(el, body) {
   if (!body.entries.length) {
-    el.innerHTML = '<p class="empty-note">Noch kein Score-Verlauf vorhanden — nach dem ersten Health-Scan sichtbar.</p>';
+    el.innerHTML = '<span>Noch kein Score-Verlauf vorhanden — nach dem ersten Health-Scan sichtbar.</span>';
     return;
   }
-  const recent = body.entries.slice(-10).reverse();
-  el.innerHTML = '<div class="row-list">' + recent.map((e) => `
-    <div class="row-item">
-      <div class="row-main">${e.score != null ? _escapeHtml(String(e.score)) : "–"} · ${_escapeHtml(e.status || "UNSCORED")}
-        <div class="hint">${e.total_issues != null ? e.total_issues + " offene Issues, " : ""}${e.total_files != null ? e.total_files + " Dateien" : ""}</div>
-      </div>
-      <div class="row-count">${e.timestamp ? new Date(e.timestamp).toLocaleString() : ""}</div>
-    </div>
-  `).join("") + "</div>";
+  const last = body.entries[body.entries.length - 1];
+  const facts = [];
+  facts.push(`${body.entries.length} Lauf/Läufe`);
+  if (last.timestamp) facts.push("zuletzt gescannt " + _escapeHtml(new Date(last.timestamp).toLocaleString()));
+  if (last.total_issues != null) facts.push(_healthNumber(last.total_issues) + " offene Issues laut Scan");
+  if (last.total_files != null) facts.push(_healthNumber(last.total_files) + " Dateien");
+  el.innerHTML = `<div class="subheader mb-1">Score-Verlauf</div>${_sparklineSvg(body.entries)}<div class="mt-1">${facts.join(" · ")}</div>`;
 }
 function loadScoreHistory() {
   return _loadInto("score-history-content", "/api/v1/library/health/score-history?limit=20", renderScoreHistory);
@@ -129,20 +164,24 @@ async function startHealthScanJob() {
 }
 document.getElementById("health-scan-btn").addEventListener("click", startHealthScanJob);
 
-async function loadNavidromeStatus() {
+function _setNavidromeChip(color, html) {
   const el = document.getElementById("navidrome-status");
+  el.className = "badge bg-" + color + "-lt";
+  el.innerHTML = html;
+}
+async function loadNavidromeStatus() {
   try {
     const res = await fetch(apiUrl("/api/v1/navidrome/status"), { credentials: "same-origin" });
     if (res.status === 401) { showOnly("login-view"); return; }
-    if (!res.ok) { el.textContent = "Navidrome: Status nicht abrufbar."; return; }
+    if (!res.ok) { _setNavidromeChip("secondary", "Navidrome: Status nicht abrufbar."); return; }
     const status = await res.json();
     const dot = status.connected ? "dot-ok" : "dot-error";
     const label = status.connected ? "Verbunden" : "Nicht erreichbar";
     const count = status.connected && status.artist_count != null
       ? ` (${status.artist_count} Artists)` : "";
-    el.innerHTML = `<span class="dot ${dot}"></span>Navidrome: ${label}${count}`;
+    _setNavidromeChip(status.connected ? "green" : "red", `<span class="dot ${dot}"></span>Navidrome: ${label}${count}`);
   } catch (err) {
-    el.textContent = "Navidrome: Netzwerkfehler.";
+    _setNavidromeChip("secondary", "Navidrome: Netzwerkfehler.");
   }
 }
 
@@ -150,65 +189,130 @@ async function loadNavidromeStatus() {
 
 let _lastFindingGroups = [];
 
+// Reihenfolge der Gruppen: schwerste Severity zuerst, dann groesste Gruppe.
+const _FINDING_TIER_ORDER = ["CRITICAL", "ERROR", "WARNING", "SUSPECTED", "INFO"];
+const _FINDING_TIER_COLOR = {
+  CRITICAL: "red", ERROR: "orange", WARNING: "yellow", SUSPECTED: "purple", INFO: "secondary",
+};
+const _FINDING_PREVIEW_ROWS = 5;
+// UI-Zustand ueber Re-Renders hinweg (Filter/Suche/Reload nach Aktion).
+const _findingsOpenCodes = new Set();
+const _findingsExpandedCodes = new Set();
+let _findingsOpenInitialized = false;
+
 function _findingLabel(f) {
   return f.path || [f.artist, f.album, f.title].filter(Boolean).join(" — ") || f.finding_id;
+}
+
+function _findingsSearchQuery() {
+  const input = document.getElementById("findings-search");
+  return input ? (input.value || "").trim().toLowerCase() : "";
+}
+
+function _findingMatchesQuery(f, q) {
+  return [_findingLabel(f), f.artist, f.album, f.title].filter(Boolean).join(" ").toLowerCase().indexOf(q) !== -1;
 }
 
 function _applyFindingsFilter(groups) {
   const severity = document.getElementById("findings-severity-filter").value;
   const category = document.getElementById("findings-category-filter").value;
+  const q = _findingsSearchQuery();
   return groups
     .filter((g) => !category || g.code === category)
-    .map((g) => ({
-      ...g,
-      findings: severity ? g.findings.filter((f) => f.severity === severity) : g.findings,
-    }))
+    .map((g) => {
+      let findings = severity ? g.findings.filter((f) => f.severity === severity) : g.findings;
+      if (q && String(g.code).toLowerCase().indexOf(q) === -1) {
+        findings = findings.filter((f) => _findingMatchesQuery(f, q));
+      }
+      return { ...g, findings };
+    })
     .filter((g) => g.findings.length > 0);
+}
+
+function _sortFindingGroups(groups) {
+  const rank = (g) => {
+    const i = _FINDING_TIER_ORDER.indexOf(g.tier);
+    return i === -1 ? _FINDING_TIER_ORDER.length : i;
+  };
+  return groups.slice().sort((a, b) =>
+    rank(a) - rank(b) || b.findings.length - a.findings.length || String(a.code).localeCompare(String(b.code)));
 }
 
 function _populateCategoryFilterOptions(groups) {
   const select = document.getElementById("findings-category-filter");
   const previous = select.value;
   const codes = [...new Set(groups.map((g) => g.code))].sort();
-  select.innerHTML = '<option value="">— alle —</option>' +
+  select.innerHTML = '<option value="">Kategorie: alle</option>' +
     codes.map((c) => `<option value="${_escapeHtml(c)}">${_escapeHtml(c)}</option>`).join("");
   if (codes.includes(previous)) select.value = previous;
+}
+
+function _findingRowHtml(f) {
+  const id = _escapeHtml(f.finding_id);
+  return `
+    <div class="list-group-item d-flex align-items-center gap-2 py-1 health-finding-row" data-finding-id="${id}">
+      <span class="health-path font-monospace small text-truncate" title="${_escapeHtml(f.message)}">${_escapeHtml(_findingLabel(f))}</span>
+      <div class="dropdown">
+        <button type="button" class="btn btn-sm btn-ghost-secondary" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Aktionen für dieses Finding">⋮</button>
+        <div class="dropdown-menu dropdown-menu-end">
+          <button type="button" class="dropdown-item resolve-btn" data-finding-id="${id}">Als repariert markieren</button>
+          <button type="button" class="dropdown-item accept-btn" data-finding-id="${id}">Akzeptieren …</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _findingGroupHtml(g, searching) {
+  const code = _escapeHtml(g.code);
+  const open = searching || _findingsOpenCodes.has(g.code);
+  const expanded = _findingsExpandedCodes.has(g.code);
+  const shown = expanded ? g.findings : g.findings.slice(0, _FINDING_PREVIEW_ROWS);
+  const rest = g.findings.length - shown.length;
+  let more = "";
+  if (rest > 0) {
+    more = `<button type="button" class="list-group-item list-group-item-action text-secondary health-more-btn" data-code="${code}">${rest} weitere anzeigen</button>`;
+  } else if (expanded && g.findings.length > _FINDING_PREVIEW_ROWS) {
+    more = `<button type="button" class="list-group-item list-group-item-action text-secondary health-more-btn" data-code="${code}">Weniger anzeigen</button>`;
+  }
+  const color = _FINDING_TIER_COLOR[g.tier] || "secondary";
+  return `
+    <details class="card health-group" data-code="${code}"${open ? " open" : ""}>
+      <summary class="card-header d-flex align-items-center gap-2">
+        <span class="badge bg-${color}-lt">${_escapeHtml(g.tier)}</span>
+        <span class="font-monospace fw-semibold flex-fill text-truncate">${code}</span>
+        <span class="text-secondary">${g.findings.length}</span>
+      </summary>
+      <div class="list-group list-group-flush">${shown.map(_findingRowHtml).join("")}${more}</div>
+    </details>`;
 }
 
 function renderFindings(el, groups) {
   _lastFindingGroups = groups;
   _populateCategoryFilterOptions(groups);
-  const filtered = _applyFindingsFilter(groups);
-  if (!filtered.length) { el.innerHTML = '<p class="empty-note">Keine offenen Findings (für die aktuelle Filterauswahl).</p>'; return; }
-  el.innerHTML = filtered.map((g) => `
-    <div class="finding-group">
-      <div class="row-item">
-        <div class="row-main"><span class="badge badge-${_escapeHtml(g.tier)}">${_escapeHtml(g.tier)}</span>${_escapeHtml(g.code)}</div>
-        <div class="row-count">${g.findings.length}</div>
-      </div>
-      <div class="row-list finding-sublist">
-        ${g.findings.map((f) => `
-          <div class="row-item" data-finding-id="${_escapeHtml(f.finding_id)}">
-            <div class="row-main" title="${_escapeHtml(f.message)}">${_escapeHtml(_findingLabel(f))}</div>
-            <div class="d-flex gap-2">
-              <button class="small resolve-btn" data-finding-id="${_escapeHtml(f.finding_id)}">Repariert</button>
-              <button class="small accept-btn" data-finding-id="${_escapeHtml(f.finding_id)}">Akzeptieren</button>
-            </div>
-          </div>
-        `).join("")}
-      </div>
-    </div>
-  `).join("");
+  const countEl = document.getElementById("health-findings-count");
+  if (countEl) {
+    const total = groups.reduce((n, g) => n + g.findings.length, 0);
+    countEl.textContent = total ? total.toLocaleString("de-DE") : "";
+  }
+  const filtered = _sortFindingGroups(_applyFindingsFilter(groups));
+  if (!filtered.length) { el.innerHTML = '<p class="mb-0">Keine offenen Findings (für die aktuelle Filterauswahl).</p>'; return; }
+  if (!_findingsOpenInitialized) {
+    _findingsOpenInitialized = true;
+    _findingsOpenCodes.add(filtered[0].code);
+  }
+  const searching = _findingsSearchQuery() !== "";
+  el.innerHTML = '<div class="d-flex flex-column gap-2">' +
+    filtered.map((g) => _findingGroupHtml(g, searching)).join("") + "</div>";
 }
 function loadFindings() {
   return _loadInto("findings-content", "/api/v1/library/findings", renderFindings);
 }
-document.getElementById("findings-severity-filter").addEventListener("change", () => {
+function _rerenderFindings() {
   renderFindings(document.getElementById("findings-content"), _lastFindingGroups);
-});
-document.getElementById("findings-category-filter").addEventListener("change", () => {
-  renderFindings(document.getElementById("findings-content"), _lastFindingGroups);
-});
+}
+document.getElementById("findings-severity-filter").addEventListener("change", _rerenderFindings);
+document.getElementById("findings-category-filter").addEventListener("change", _rerenderFindings);
+document.getElementById("findings-search").addEventListener("input", _rerenderFindings);
 
 async function acceptFinding(findingId, buttonEl) {
   const reason = window.prompt("Grund für die Akzeptanz (Pflichtfeld):", "");
@@ -269,29 +373,43 @@ async function resolveFinding(findingId, buttonEl) {
 }
 
 document.getElementById("findings-content").addEventListener("click", (event) => {
+  const moreBtn = event.target.closest(".health-more-btn");
+  if (moreBtn) {
+    const code = moreBtn.dataset.code;
+    if (_findingsExpandedCodes.has(code)) _findingsExpandedCodes.delete(code); else _findingsExpandedCodes.add(code);
+    _rerenderFindings();
+    return;
+  }
   const acceptBtn = event.target.closest(".accept-btn");
   if (acceptBtn) { acceptFinding(acceptBtn.dataset.findingId, acceptBtn); return; }
   const resolveBtn = event.target.closest(".resolve-btn");
   if (resolveBtn) { resolveFinding(resolveBtn.dataset.findingId, resolveBtn); return; }
 });
+// Auf-/Zuklappen merken (toggle bubbelt nicht -> Capture). Waehrend einer
+// Suche sind alle Gruppen automatisch offen: das ist kein Nutzer-Wunsch.
+document.getElementById("findings-content").addEventListener("toggle", (event) => {
+  const d = event.target;
+  if (!d || !d.classList || !d.classList.contains("health-group") || _findingsSearchQuery() !== "") return;
+  if (d.open) _findingsOpenCodes.add(d.dataset.code); else _findingsOpenCodes.delete(d.dataset.code);
+}, true);
 
 function renderAcceptedFindings(el, body) {
   if (!body.findings.length) {
-    el.innerHTML = '<p class="empty-note">Keine akzeptierten Findings.</p>';
+    el.innerHTML = '<p class="mb-0">Keine akzeptierten Findings.</p>';
     return;
   }
   const truncNote = body.total > body.findings.length
-    ? `<p class="empty-note">Zeige ${body.findings.length} von ${body.total} — ältere/weitere nicht geladen (kein Auto-Rendern großer Listen).</p>`
+    ? `<p class="small mb-2">Zeige ${body.findings.length} von ${body.total} — ältere/weitere nicht geladen (kein Auto-Rendern großer Listen).</p>`
     : "";
-  el.innerHTML = truncNote + '<div class="row-list">' + body.findings.map((f) => `
-    <div class="row-item" data-finding-id="${_escapeHtml(f.finding_id)}">
-      <div class="row-main" title="${_escapeHtml(f.message)}">
-        <span class="badge badge-INFO">${_escapeHtml(f.code)}</span>
-        ${_escapeHtml(_findingLabel(f))}
-        ${f.present_in_latest_scan === false ? '<span class="denied">(veraltet — nicht mehr erkannt)</span>' : ""}
-        <div class="hint">${_escapeHtml(f.review_note || "")}</div>
+  el.innerHTML = truncNote + '<div class="list-group list-group-flush border rounded">' + body.findings.map((f) => `
+    <div class="list-group-item d-flex align-items-center gap-2" data-finding-id="${_escapeHtml(f.finding_id)}">
+      <div class="health-path" title="${_escapeHtml(f.message)}">
+        <span class="badge bg-secondary-lt me-1">${_escapeHtml(f.code)}</span>
+        <span class="font-monospace small">${_escapeHtml(_findingLabel(f))}</span>
+        ${f.present_in_latest_scan === false ? '<span class="text-secondary small">(veraltet — nicht mehr erkannt)</span>' : ""}
+        <div class="text-secondary small">${_escapeHtml(f.review_note || "")}</div>
       </div>
-      <button class="small unaccept-btn" data-finding-id="${_escapeHtml(f.finding_id)}">Reaktivieren</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary unaccept-btn" data-finding-id="${_escapeHtml(f.finding_id)}">Reaktivieren</button>
     </div>
   `).join("") + "</div>";
 }
@@ -349,17 +467,30 @@ document.getElementById("accepted-findings-toggle").addEventListener("click", as
 
 let _lastSafeAutomaticCount = null;
 
+// Schrittanzeige (reine Orientierung, kein Zustandsautomat): 1 Plan, 2 SAFE_AUTOMATIC,
+// 3 L2/L3. Markiert den zuletzt begonnenen Schritt.
+function _setRepairStep(n) {
+  const list = document.getElementById("repair-steps");
+  if (!list) return;
+  Array.prototype.forEach.call(list.children, (li, i) => {
+    li.classList.toggle("active", i === n - 1);
+  });
+}
+
 function renderRepairPlan(el, plan) {
   const counts = Object.entries(plan.counts_by_level)
-    .map(([lvl, n]) => `<div><strong>${n}</strong><br>${lvl}</div>`).join("");
+    .map(([lvl, n]) => `<div class="col-6 col-sm-4"><div class="subheader">${_escapeHtml(lvl)}</div><div class="h3 mb-0">${n}</div></div>`).join("");
   el.innerHTML = `
-    <div class="counts-grid">${counts || "<div>keine Kandidaten</div>"}</div>
-    <p class="empty-note">${plan.actionable_total} automatisch reparierbar (alle Level zusammen), davon ${plan.counts_by_level.SAFE_AUTOMATIC || 0} SAFE_AUTOMATIC (per Button unten ausführbar) — der Rest (Cover/L2/L3 usw.) erfordert bewusste manuelle Auswahl. ${plan.manual_review_total} zur manuellen Prüfung (Health Score ${plan.health_score ?? "–"}). Reine Vorschau — es wird nichts ausgeführt.</p>
+    <div class="row g-3 mb-3">${counts || '<div class="col-12">keine Kandidaten</div>'}</div>
+    <p class="small mb-0">${plan.actionable_total} automatisch reparierbar (alle Level zusammen), davon ${plan.counts_by_level.SAFE_AUTOMATIC || 0} SAFE_AUTOMATIC (per Button unten ausführbar) — der Rest (Cover/L2/L3 usw.) erfordert bewusste manuelle Auswahl. ${plan.manual_review_total} zur manuellen Prüfung (Health Score ${plan.health_score ?? "–"}). Reine Vorschau — es wird nichts ausgeführt.</p>
   `;
   _lastSafeAutomaticCount = plan.counts_by_level.SAFE_AUTOMATIC || 0;
   const startBtn = document.getElementById("repair-start-btn");
   startBtn.disabled = false;
   startBtn.textContent = `SAFE_AUTOMATIC reparieren (${_lastSafeAutomaticCount})`;
+  const hint = document.getElementById("repair-start-hint");
+  if (hint) hint.hidden = true;
+  _setRepairStep(2);
 }
 function loadRepairPlan() {
   document.getElementById("repair-plan-content").innerHTML =
@@ -585,15 +716,16 @@ async function startLevel23Job(level, artist, count) {
 
 function renderLevel23Artists(el, plan) {
   if (!plan.artists.length) {
-    el.innerHTML = '<p class="empty-note">Keine L2/L3-Kandidaten.</p>';
+    el.innerHTML = '<p class="mb-0">Keine L2/L3-Kandidaten.</p>';
     return;
   }
-  el.innerHTML = '<div class="row-list">' + plan.artists.map((a) => `
-    <div class="row-item">
-      <div class="row-main">${_escapeHtml(a.artist)}</div>
-      <div class="row-count">
-        ${a.l2_count > 0 ? `<button class="small level23-btn" data-level="l2" data-artist="${_escapeHtml(a.artist)}" data-count="${a.l2_count}">L2 (${a.l2_count})</button>` : ""}
-        ${a.l3_count > 0 ? `<button class="small level23-btn" data-level="l3" data-artist="${_escapeHtml(a.artist)}" data-count="${a.l3_count}">L3 (${a.l3_count})</button>` : ""}
+  _setRepairStep(3);
+  el.innerHTML = '<div class="list-group list-group-flush border rounded">' + plan.artists.map((a) => `
+    <div class="list-group-item d-flex align-items-center gap-2">
+      <span class="health-path text-truncate">${_escapeHtml(a.artist)}</span>
+      <div class="btn-list flex-nowrap">
+        ${a.l2_count > 0 ? `<button type="button" class="btn btn-sm btn-outline-primary level23-btn" data-level="l2" data-artist="${_escapeHtml(a.artist)}" data-count="${a.l2_count}">L2 (${a.l2_count})</button>` : ""}
+        ${a.l3_count > 0 ? `<button type="button" class="btn btn-sm btn-outline-primary level23-btn" data-level="l3" data-artist="${_escapeHtml(a.artist)}" data-count="${a.l3_count}">L3 (${a.l3_count})</button>` : ""}
       </div>
     </div>
   `).join("") + "</div>";
@@ -613,64 +745,88 @@ document.getElementById("level23-plan-btn").addEventListener("click", loadLevel2
 
 // ── Repair-History / Repair-Statistik / Jobs ─────────────────────────────
 
+function _statCard(label, value) {
+  return `<div class="col-6 col-md-3"><div class="card card-sm"><div class="card-body"><div class="subheader">${_escapeHtml(label)}</div><div class="h2 mb-0">${_escapeHtml(String(value))}</div></div></div></div>`;
+}
 function renderRepairStatistics(el, stats) {
-  if (!stats.total_runs) { el.innerHTML = '<p class="empty-note">Noch keine Reparaturläufe vorhanden.</p>'; return; }
+  if (!stats.total_runs) { el.innerHTML = '<p class="mb-0">Noch keine Reparaturläufe vorhanden.</p>'; return; }
   const topCodes = stats.most_common_issue_codes.slice(0, 5)
-    .map(([code, n]) => `<div><strong>${n}</strong><br>${_escapeHtml(code)}</div>`).join("");
+    .map(([code, n]) => `<span class="badge bg-secondary-lt">${_escapeHtml(code)} <strong>${_escapeHtml(String(n))}</strong></span>`).join("");
   el.innerHTML = `
-    <div class="counts-grid">
-      <div><strong>${stats.total_runs}</strong><br>Läufe</div>
-      <div><strong>${stats.success}</strong><br>Erfolgreich</div>
-      <div><strong>${stats.failed}</strong><br>Fehlgeschlagen</div>
-      <div><strong>${stats.skipped}</strong><br>Übersprungen</div>
+    <div class="row g-3">
+      ${_statCard("Läufe", stats.total_runs)}
+      ${_statCard("Erfolgreich", stats.success)}
+      ${_statCard("Fehlgeschlagen", stats.failed)}
+      ${_statCard("Übersprungen", stats.skipped)}
     </div>
-    ${topCodes ? `<p class="hint mt-2">Häufigste Issue-Codes:</p><div class="counts-grid">${topCodes}</div>` : ""}
+    ${topCodes ? `<div class="small mt-3 mb-1">Häufigste Issue-Codes</div><div class="d-flex flex-wrap gap-2">${topCodes}</div>` : ""}
   `;
 }
 function loadRepairStatistics() {
   return _loadInto("repair-statistics-content", "/api/v1/library/repairs/statistics", renderRepairStatistics);
 }
 
+const _HISTORY_PREVIEW_ROWS = 5;
+let _lastRepairHistory = null;
+let _repairHistoryExpanded = false;
+
+function _repairStatusColor(status) {
+  return status === "SUCCESS" ? "green" : (status === "FAILED" ? "red" : "yellow");
+}
+
 function renderRepairHistory(el, body) {
-  if (!body.runs.length) { el.innerHTML = '<p class="empty-note">Noch keine Reparaturläufe vorhanden.</p>'; return; }
+  _lastRepairHistory = body;
+  if (!body.runs.length) { el.innerHTML = '<p class="mb-0">Noch keine Reparaturläufe vorhanden.</p>'; return; }
   const truncNote = body.total > body.runs.length
-    ? `<p class="empty-note">Zeige ${body.runs.length} von ${body.total} — ältere nicht geladen.</p>`
+    ? `<p class="small mb-2">Zeige ${body.runs.length} von ${body.total} — ältere nicht geladen.</p>`
     : "";
-  el.innerHTML = truncNote + '<div class="row-list">' + body.runs.map((r) => `
-    <div class="row-item">
-      <div class="row-main">
-        <span class="badge badge-${r.status === "SUCCESS" ? "status-success" : (r.status === "FAILED" ? "status-failed" : "status-warn")}">${_escapeHtml(r.status)}</span>
-        ${_escapeHtml(r.level)}${r.artist ? " · " + _escapeHtml(r.artist) : ""}
-        <div class="hint">${_escapeHtml(r.kind)} · ${_escapeHtml(r.triggered_by)}</div>
+  const shown = _repairHistoryExpanded ? body.runs : body.runs.slice(0, _HISTORY_PREVIEW_ROWS);
+  const rest = body.runs.length - shown.length;
+  const toggle = rest > 0
+    ? `<button type="button" class="list-group-item list-group-item-action text-secondary history-more-btn">${rest} weitere anzeigen</button>`
+    : (_repairHistoryExpanded && body.runs.length > _HISTORY_PREVIEW_ROWS
+      ? '<button type="button" class="list-group-item list-group-item-action text-secondary history-more-btn">Weniger anzeigen</button>' : "");
+  el.innerHTML = truncNote + '<div class="list-group list-group-flush border rounded">' + shown.map((r) => `
+    <div class="list-group-item d-flex align-items-start gap-2">
+      <span class="badge bg-${_repairStatusColor(r.status)}-lt">${_escapeHtml(r.status)}</span>
+      <div class="health-path">
+        <div>${_escapeHtml(r.level)}${r.artist ? " · " + _escapeHtml(r.artist) : ""}</div>
+        <div class="text-secondary small">${_escapeHtml(r.kind)} · ${_escapeHtml(r.triggered_by)}</div>
       </div>
-      <div class="row-count">${new Date(r.started_at).toLocaleString()}</div>
+      <div class="text-secondary small text-nowrap">${_escapeHtml(new Date(r.started_at).toLocaleString())}</div>
     </div>
-  `).join("") + "</div>";
+  `).join("") + toggle + "</div>";
 }
 function loadRepairHistory() {
   return _loadInto("repair-history-content", "/api/v1/library/repairs/history?limit=20", renderRepairHistory);
 }
+document.getElementById("repair-history-content").addEventListener("click", (event) => {
+  if (!event.target.closest(".history-more-btn") || !_lastRepairHistory) return;
+  _repairHistoryExpanded = !_repairHistoryExpanded;
+  renderRepairHistory(document.getElementById("repair-history-content"), _lastRepairHistory);
+});
 
-const _JOB_STATUS_BADGE = {
-  SUCCEEDED: "status-success", FAILED: "status-failed", CANCELLED: "status-cancelled",
+const _JOB_STATUS_COLOR = {
+  SUCCEEDED: "green", FAILED: "red", CANCELLED: "red",
 };
 
 function renderJobs(el, body) {
-  if (!body.jobs.length) { el.innerHTML = '<p class="empty-note">Keine Jobs.</p>'; return; }
-  el.innerHTML = '<div class="row-list">' + body.jobs.map((j) => {
-    const badgeClass = _JOB_STATUS_BADGE[j.status];
-    const statusHtml = badgeClass
-      ? `<span class="badge badge-${badgeClass}">${_escapeHtml(j.status)}</span>`
-      : `${_escapeHtml(j.status)} (${j.progress.toFixed(0)}%)`;
-    const errorHtml = j.error ? `<div class="hint">${_escapeHtml(j.error)}</div>` : "";
+  if (!body.jobs.length) { el.innerHTML = '<p class="mb-0">Keine Jobs.</p>'; return; }
+  el.innerHTML = '<div class="list-group list-group-flush border rounded">' + body.jobs.map((j) => {
+    const color = _JOB_STATUS_COLOR[j.status];
+    const statusHtml = color
+      ? `<span class="badge bg-${color}-lt">${_escapeHtml(j.status)}</span>`
+      : `<span class="badge bg-blue-lt">${_escapeHtml(j.status)} (${j.progress.toFixed(0)}%)</span>`;
+    const errorHtml = j.error ? `<div class="text-danger small">${_escapeHtml(j.error)}</div>` : "";
     return `
-      <div class="row-item">
-        <div class="row-main">
-          ${statusHtml} ${_escapeHtml(j.kind)}
-          <div class="hint">Initiator: ${_escapeHtml(j.initiator)} · ${_escapeHtml(j.job_id)}</div>
+      <div class="list-group-item d-flex align-items-start gap-2">
+        ${statusHtml}
+        <div class="health-path">
+          <div>${_escapeHtml(j.kind)}</div>
+          <div class="text-secondary small">Initiator: ${_escapeHtml(j.initiator)} · ${_escapeHtml(j.job_id)}</div>
           ${errorHtml}
         </div>
-        <div class="row-count">${new Date(j.created_at).toLocaleString()}</div>
+        <div class="text-secondary small text-nowrap">${_escapeHtml(new Date(j.created_at).toLocaleString())}</div>
       </div>
     `;
   }).join("") + "</div>";

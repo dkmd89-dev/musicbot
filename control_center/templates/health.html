@@ -1,9 +1,10 @@
 {% extends "_base.html" %}
 {% block title %}Health – MusicBot Control Center{% endblock %}
 {% block content %}
+<!-- Kopf: Titel, Navidrome-Status, Health Scan -->
 <div class="page-header d-print-none mb-4">
-  <div class="row align-items-center">
-    <div class="col">
+  <div class="row align-items-center g-3">
+    <div class="col-12 col-md">
       <h1 class="page-title">🩺 Health</h1>
       <div class="text-secondary">
         MusicBot Doctor, Library Health Review und Repair MusicBot — an
@@ -11,198 +12,178 @@
         Health-Werte.
       </div>
     </div>
-    <div class="col-auto">
-      <span id="health-score-badge" class="badge bg-secondary-lt fs-4">Lädt…</span>
-    </div>
-  </div>
-</div>
-
-<!-- A) MusicBot Doctor -->
-<div class="card mb-4">
-  <div class="card-header">
-    <div>
-      <h2 class="card-title">🩺 MusicBot Doctor</h2>
-      <div class="text-secondary small">
-        Health-Score, Library-Übersicht und Score-Verlauf.
-      </div>
-    </div>
-    <div class="card-actions">
+    <div class="col-12 col-md-auto d-flex flex-wrap align-items-center gap-2">
+      <span id="navidrome-status" class="badge bg-secondary-lt">Navidrome: lädt…</span>
       <button id="health-scan-btn" type="button" class="btn btn-primary">
         Health Scan starten
       </button>
     </div>
   </div>
+  <div id="health-scan-job-content" class="text-secondary small mt-2"></div>
+</div>
 
+<!-- Score + Kennzahlen (MusicBot Doctor) -->
+<div class="card mb-4">
   <div class="card-body">
-    <div id="health-tiles" class="row row-cards">
+    <div id="health-tiles" class="row g-3 align-items-center">
       <div class="col-12 text-secondary">Lädt…</div>
     </div>
-
-    <div id="health-scan-job-content" class="empty-note mt-3"></div>
-
-    <h3 class="mt-4">📈 Score-Verlauf</h3>
-    <div id="score-history-content" class="empty-note">Lädt…</div>
+    <div id="score-history-content" class="mt-3 text-secondary small">Lädt…</div>
   </div>
 </div>
 
-<!-- B) Library Health Review -->
-<div class="card mb-4">
-  <div class="card-header">
-    <h2 class="card-title">🔎 Library Health Review</h2>
-  </div>
-
-  <div class="card-body">
-    <div class="row g-3 mb-3">
-      <div class="col-12 col-md-4">
-        <label for="findings-severity-filter" class="form-label">Severity</label>
-        <select id="findings-severity-filter" class="form-select">
-          <option value="">— alle —</option>
-          <option value="CRITICAL">CRITICAL</option>
-          <option value="ERROR">ERROR</option>
-          <option value="WARNING">WARNING</option>
-          <option value="SUSPECTED">SUSPECTED</option>
-          <option value="INFO">INFO</option>
-        </select>
-      </div>
-      <div class="col-12 col-md-4">
-        <label for="findings-category-filter" class="form-label">Kategorie</label>
-        <select id="findings-category-filter" class="form-select">
-          <option value="">— alle —</option>
-        </select>
-      </div>
-    </div>
-
-    <div id="findings-content" class="empty-note">
-      Lädt…
-    </div>
-
-    <div class="mt-4">
-      <button
-        id="accepted-findings-toggle"
-        type="button"
-        class="btn btn-outline-secondary"
-      >
-        Akzeptierte Findings anzeigen
-      </button>
-    </div>
-
-    <div
-      id="accepted-findings-content"
-      class="empty-note mt-4"
-      hidden
-    ></div>
-  </div>
-</div>
-
-<!-- C) Repair MusicBot -->
-<div class="card mb-4">
-  <div class="card-header">
-    <div>
-      <h2 class="card-title">🛠 Repair MusicBot — Repair-Plan</h2>
-      <div class="text-secondary small">
-        Vorschau und anschließend gezielte SAFE_AUTOMATIC-Reparatur.
-      </div>
-    </div>
-    <div class="card-actions">
-      <button id="repair-plan-btn" type="button" class="btn btn-primary">
-        Berechnen
-      </button>
-    </div>
-  </div>
-
-  <div class="card-body">
-    <p class="text-secondary">
-      Führt einen vollständigen Library-Scan aus (kann eine Weile dauern).
-      Der Scan läuft nicht automatisch, sondern nur auf Klick.
-    </p>
-
-    <div id="repair-plan-content" class="empty-note"></div>
-
-    <div class="mt-4 d-flex gap-2">
-      <button id="repair-start-btn" type="button" class="btn btn-warning" disabled>
-        SAFE_AUTOMATIC reparieren
-      </button>
-
-      <button id="repair-cancel-btn" type="button" class="btn btn-outline-secondary" hidden>
-        Abbrechen
-      </button>
-    </div>
-
-    <div id="repair-job-content" class="empty-note mt-3"></div>
-  </div>
-</div>
-
-<div class="card mb-4">
-  <div class="card-header">
-    <div>
-      <h2 class="card-title">🎤 Repair MusicBot — L2/L3</h2>
-      <div class="text-secondary small">
-        Reparaturen gezielt pro Artist auswählen.
-      </div>
-    </div>
-    <div class="card-actions">
-      <button id="level23-plan-btn" type="button" class="btn btn-outline-primary">
-        Laden
-      </button>
-    </div>
-  </div>
-
-  <div class="card-body">
-    <p class="text-secondary">
-      Führt einen vollständigen Library-Scan aus und gruppiert L2
-      (Neuverarbeitung) und L3 (MusicBrainz) nach Artist.
-      Die Reparatur ist ausschließlich pro Artist ausführbar —
-      kein globaler Batch.
-    </p>
-
-    <div id="level23-artists-content" class="empty-note"></div>
-
-    <div id="level23-job-content" class="empty-note mt-3"></div>
-  </div>
-</div>
-
-<!-- Repair History / Statistics / Jobs -->
-<div class="card mb-4">
-  <div class="card-header">
-    <h2 class="card-title">🧾 Repair-Statistik</h2>
-  </div>
-  <div class="card-body">
-    <div id="repair-statistics-content" class="empty-note">Lädt…</div>
-  </div>
-</div>
-
-<div class="card mb-4">
-  <div class="card-header">
-    <h2 class="card-title">🕘 Repair-History</h2>
-  </div>
-  <div class="card-body">
-    <div id="repair-history-content" class="empty-note">Lädt…</div>
-  </div>
-</div>
-
-<div class="card mb-4">
-  <div class="card-header">
-    <h2 class="card-title">📋 Zuletzt ausgeführte Jobs</h2>
-    <div class="card-actions">
-      <button id="jobs-refresh-btn" type="button" class="btn btn-outline-primary">
-        Aktualisieren
-      </button>
-    </div>
-  </div>
-  <div class="card-body">
-    <div id="jobs-content" class="empty-note">Lädt…</div>
-  </div>
-</div>
-
-<!-- Navidrome -->
+<!-- Arbeitsbereiche: Findings | Repair | Verlauf -->
 <div class="card">
   <div class="card-header">
-    <h2 class="card-title">🎵 Navidrome</h2>
+    <ul class="nav nav-tabs card-header-tabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <a href="#health-tab-findings" class="nav-link active" data-bs-toggle="tab"
+           role="tab" aria-selected="true">
+          Findings <span id="health-findings-count" class="badge bg-secondary-lt ms-1"></span>
+        </a>
+      </li>
+      <li class="nav-item" role="presentation">
+        <a href="#health-tab-repair" class="nav-link" data-bs-toggle="tab"
+           role="tab" aria-selected="false" tabindex="-1">Repair</a>
+      </li>
+      <li class="nav-item" role="presentation">
+        <a href="#health-tab-history" class="nav-link" data-bs-toggle="tab"
+           role="tab" aria-selected="false" tabindex="-1">Verlauf</a>
+      </li>
+    </ul>
   </div>
 
   <div class="card-body">
-    <div id="navidrome-status" class="empty-note">
-      Lädt…
+    <div class="tab-content">
+
+      <!-- Findings (Library Health Review) -->
+      <div class="tab-pane active show" id="health-tab-findings" role="tabpanel">
+        <div class="row g-2 mb-3">
+          <div class="col-12 col-md-6">
+            <label for="findings-search" class="visually-hidden">Findings durchsuchen</label>
+            <input id="findings-search" type="search" class="form-control"
+                   placeholder="Artist, Titel, Pfad oder Code suchen …" autocomplete="off">
+          </div>
+          <div class="col-6 col-md-3">
+            <label for="findings-severity-filter" class="visually-hidden">Severity</label>
+            <select id="findings-severity-filter" class="form-select">
+              <option value="">Severity: alle</option>
+              <option value="CRITICAL">CRITICAL</option>
+              <option value="ERROR">ERROR</option>
+              <option value="WARNING">WARNING</option>
+              <option value="SUSPECTED">SUSPECTED</option>
+              <option value="INFO">INFO</option>
+            </select>
+          </div>
+          <div class="col-6 col-md-3">
+            <label for="findings-category-filter" class="visually-hidden">Kategorie</label>
+            <select id="findings-category-filter" class="form-select">
+              <option value="">Kategorie: alle</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="findings-content" class="text-secondary">Lädt…</div>
+
+        <div class="mt-4">
+          <button
+            id="accepted-findings-toggle"
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+          >
+            Akzeptierte Findings anzeigen
+          </button>
+        </div>
+
+        <div id="accepted-findings-content" class="text-secondary mt-3" hidden></div>
+      </div>
+
+      <!-- Repair MusicBot -->
+      <div class="tab-pane" id="health-tab-repair" role="tabpanel">
+        <ul id="repair-steps" class="steps steps-counter steps-blue mb-4">
+          <li class="step-item active">Plan berechnen</li>
+          <li class="step-item">SAFE_AUTOMATIC</li>
+          <li class="step-item">L2/L3 pro Artist</li>
+        </ul>
+
+        <div class="row g-4">
+          <div class="col-lg-6">
+            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+              <div>
+                <h3 class="mb-0">🛠 Repair-Plan</h3>
+                <div class="text-secondary small">
+                  Vorschau und anschließend gezielte SAFE_AUTOMATIC-Reparatur.
+                </div>
+              </div>
+              <button id="repair-plan-btn" type="button" class="btn btn-primary">
+                Berechnen
+              </button>
+            </div>
+            <p class="text-secondary small">
+              Führt einen vollständigen Library-Scan aus (kann eine Weile dauern).
+              Der Scan läuft nicht automatisch, sondern nur auf Klick.
+            </p>
+
+            <div id="repair-plan-content" class="text-secondary"></div>
+
+            <div class="mt-3 d-flex gap-2">
+              <button id="repair-start-btn" type="button" class="btn btn-warning" disabled>
+                SAFE_AUTOMATIC reparieren
+              </button>
+              <button id="repair-cancel-btn" type="button" class="btn btn-outline-secondary" hidden>
+                Abbrechen
+              </button>
+            </div>
+            <div id="repair-start-hint" class="text-secondary small mt-1">
+              Erst nach einem berechneten Plan verfügbar.
+            </div>
+
+            <div id="repair-job-content" class="text-secondary mt-3"></div>
+          </div>
+
+          <div class="col-lg-6">
+            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+              <div>
+                <h3 class="mb-0">🎤 L2 / L3</h3>
+                <div class="text-secondary small">
+                  Reparaturen gezielt pro Artist auswählen.
+                </div>
+              </div>
+              <button id="level23-plan-btn" type="button" class="btn btn-outline-primary">
+                Laden
+              </button>
+            </div>
+            <p class="text-secondary small">
+              Führt einen vollständigen Library-Scan aus und gruppiert L2
+              (Neuverarbeitung) und L3 (MusicBrainz) nach Artist.
+              Die Reparatur ist ausschließlich pro Artist ausführbar —
+              kein globaler Batch.
+            </p>
+
+            <div id="level23-artists-content" class="text-secondary"></div>
+
+            <div id="level23-job-content" class="text-secondary mt-3"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Verlauf: Statistik, History, Jobs -->
+      <div class="tab-pane" id="health-tab-history" role="tabpanel">
+        <h3>🧾 Repair-Statistik</h3>
+        <div id="repair-statistics-content" class="text-secondary mb-4">Lädt…</div>
+
+        <h3>🕘 Repair-History</h3>
+        <div id="repair-history-content" class="text-secondary mb-4">Lädt…</div>
+
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h3 class="mb-0">📋 Zuletzt ausgeführte Jobs</h3>
+          <button id="jobs-refresh-btn" type="button" class="btn btn-outline-primary btn-sm">
+            Aktualisieren
+          </button>
+        </div>
+        <div id="jobs-content" class="text-secondary">Lädt…</div>
+      </div>
+
     </div>
   </div>
 </div>
