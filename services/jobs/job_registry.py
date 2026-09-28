@@ -44,9 +44,9 @@ class JobRegistry:
         self._lock = threading.Lock()
         self.logger = (logger_factory or get_module_logger)("JobRegistry")
 
-    def create(self, kind: str, initiator: str) -> Job:
+    def create(self, kind: str, initiator: str, context: Optional[dict] = None) -> Job:
         job_id = uuid.uuid4().hex
-        job = Job(job_id=job_id, kind=kind, initiator=initiator)
+        job = Job(job_id=job_id, kind=kind, initiator=initiator, context=context)
         with self._lock:
             self._jobs[job_id] = job
             self._cancel_events[job_id] = threading.Event()

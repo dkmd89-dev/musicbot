@@ -503,6 +503,7 @@ async def _run_download_job(
     job_id: str,
     *,
     url: str,
+    download_type: str,
     chat_id: int,
     config: Config,
     duplicate_detector: DuplicateDetector,
@@ -527,7 +528,6 @@ async def _run_download_job(
     hier) - _logger (Modul-Ebene) wird verwendet."""
     registry.mark_running(job_id)
     result_reporter = DownloadResultReporter(logger=_logger)
-    download_type = "playlist" if "list=" in url else "single"
     active_download = ActiveDownload(chat_id=chat_id, url=url, download_type=download_type)
     bridge_task = asyncio.create_task(_cancel_bridge(registry, job_id, active_download))
 
@@ -569,7 +569,10 @@ async def _run_download_job(
             )
             if is_dup and entry:
                 message = result_reporter.build_duplicate_message(entry, dup_type)
-                registry.mark_succeeded(job_id, result={"outcome": "duplicate", "message": message})
+                registry.mark_succeeded(
+                    job_id,
+                    result={"outcome": "duplicate", "message": message, "artist": entry.artist},
+                )
                 return
 
             registry.update_progress(job_id, 20.0, "Download läuft…")
@@ -608,7 +611,14 @@ async def _run_download_job(
                 if res.get("renamed_due_to_conflict"):
                     conflict_entry = pipeline_core.resolve_file_conflict_as_duplicate(res, url, _logger)
                     message = result_reporter.build_duplicate_message(conflict_entry, "file_conflict")
-                    registry.mark_succeeded(job_id, result={"outcome": "duplicate", "message": message})
+                    registry.mark_succeeded(
+                        job_id,
+                        result={
+                            "outcome": "duplicate",
+                            "message": message,
+                            "artist": conflict_entry.artist,
+                        },
+                    )
                     return
                 res["original_url"] = url
                 processed_results.append(await pipeline_core.process_single_download_result(res, _logger))
@@ -705,12 +715,22 @@ async def start_download_job(
         )
 
     config = Config()
-    job = registry.create(kind=_DOWNLOAD_JOB_KIND, initiator=str(user_id))
+    # Playlist/Single-Erkennung einmal hier berechnet und sowohl als
+    # `context` (fuer eine sofort sichtbare UI-Kennzeichnung, bereits waehrend
+    # PENDING/RUNNING) als auch an _run_download_job() weitergereicht - keine
+    # zweite Berechnung, identische Regel wie handlers/-seitig.
+    download_type = "playlist" if "list=" in url else "single"
+    job = registry.create(
+        kind=_DOWNLOAD_JOB_KIND,
+        initiator=str(user_id),
+        context={"url": url, "download_type": download_type},
+    )
     asyncio.create_task(
         _run_download_job(
             registry,
             job.job_id,
             url=url,
+            download_type=download_type,
             chat_id=user_id,
             config=config,
             duplicate_detector=DuplicateDetector(config),
