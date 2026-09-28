@@ -1275,6 +1275,22 @@ async def test_admin_page_has_duplicate_cache_card(client):
 
 
 @pytest.mark.asyncio
+async def test_admin_page_has_runtime_snapshot_card(client):
+    """E1: read-only Fehlerstatistik + Duplikat-Sitzungszähler aus dem
+    Bot-Snapshot, Datenstand sichtbar, kein Reset im Web, Werte escaped."""
+    html = (await client.get("/admin")).text
+    js = (await client.get("/static/pages/admin.js")).text
+
+    assert 'id="admin-errors-content"' in html
+    assert 'id="admin-runtime-freshness"' in html
+    assert 'id="admin-duplicates-session"' in html
+    assert "/api/v1/admin/runtime-snapshot" in js
+    assert "loadRuntimeSnapshot();" in js
+    assert "_escapeHtml(e.message" in js
+    assert "runtime-snapshot/reset" not in js
+
+
+@pytest.mark.asyncio
 async def test_admin_page_has_users_panel(client):
     html = (await client.get("/admin")).text
     js = (await client.get("/static/pages/admin.js")).text

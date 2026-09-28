@@ -151,10 +151,30 @@
             Cache leeren
           </button>
           <div id="admin-duplicates-message" class="mt-3 text-secondary small"></div>
+          <div id="admin-duplicates-session" class="mt-3 small text-secondary">
+            Sitzungszähler des Bots werden geladen…
+          </div>
           <div class="mt-2 text-secondary small">
-            Sitzungszähler (Prüfungen, Duplikat-Rate) liegen nur im Bot-Prozess und
-            folgen mit dem Bot-Snapshot. Die Bibliotheks-Prüfung bleibt nach dem
-            Leeren aktiv.
+            Die Bibliotheks-Prüfung bleibt nach dem Leeren aktiv.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FEHLERSTATISTIK (E1, Bot-Runtime-Snapshot, read-only) -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Fehlerstatistik (Bot)</h3>
+          <div class="card-actions">
+            <span id="admin-runtime-freshness" class="text-secondary small"></span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="admin-errors-content" class="text-secondary">Wird geladen…</div>
+          <div class="mt-2 text-secondary small">
+            Nur lesend: Stand aus dem Bot-Snapshot (alle 60 s). Zurücksetzen der
+            Statistik weiterhin über Telegram.
           </div>
         </div>
       </div>

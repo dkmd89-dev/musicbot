@@ -1459,6 +1459,35 @@ class EnhancedErrorHandler:
             },
         }
 
+    def export_snapshot_section(self, max_recent: Optional[int] = None) -> Dict[str, Any]:
+        """E1 (Bot-Runtime-Snapshot, 2026-09-28): Fehlerzustand als
+        einfaches, JSON-fähiges Dict für services/bot_runtime_snapshot.py.
+        Letzte Fehler laufen ausschließlich über sanitize_exception_record()
+        (kein Telegram-Kontext, kein Stacktrace, redigierte Message) -
+        neueste zuerst. Liest nur, verändert keinen Zustand."""
+        from services.bot_runtime_snapshot import MAX_RECENT_ERRORS, sanitize_exception_record
+
+        limit = max_recent if max_recent is not None else MAX_RECENT_ERRORS
+        stats = self.exception_monitor.get_statistics()
+        plain_stats = {
+            key: (dict(value) if isinstance(value, dict) else value)
+            for key, value in stats.items()
+        }
+        performance = dict(self.performance_stats)
+        last_reset = performance.get("last_reset")
+        if isinstance(last_reset, datetime):
+            performance["last_reset"] = last_reset.isoformat()
+        recent = [
+            sanitize_exception_record(record)
+            for record in reversed(self.exception_monitor.get_recent_exceptions(limit))
+        ]
+        return {
+            "stats": plain_stats,
+            "performance": performance,
+            "recovery_attempts_total": sum(self.recovery_attempts.values()),
+            "recent": recent,
+        }
+
     def get_recent_exceptions_summary(self, count: int = 10) -> List[Dict[str, Any]]:
         """Gibt Zusammenfassung der letzten Exceptions"""
         recent = self.exception_monitor.get_recent_exceptions(count)

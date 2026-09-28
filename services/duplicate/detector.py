@@ -646,6 +646,26 @@ class DuplicateDetector:
             * 100,
         }
 
+    def snapshot_section(self) -> Dict:
+        """E1 (Bot-Runtime-Snapshot, 2026-09-28): Sitzungszähler dieser
+        Detector-Instanz (seit Prozessstart bzw. letztem Telegram-"Cache
+        leeren") inkl. abgeleiteter Raten - dieselbe Berechnung wie
+        get_statistics(), aber ohne Cache-Größen (die liest das Control
+        Center direkt aus den Dateien, services/duplicate/admin.py)."""
+        stats = self.get_statistics()
+        return {
+            key: stats[key]
+            for key in (
+                "total_checks",
+                "url_duplicates_found",
+                "content_duplicates_found",
+                "new_entries_added",
+                "duplicates_skipped",
+                "duplicate_rate",
+                "savings_percentage",
+            )
+        }
+
     def cleanup_cache(self, days_old: int = 30):
         self.duplicate_cache.cleanup_old_entries(days_old)
 
