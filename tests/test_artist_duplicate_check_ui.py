@@ -21,7 +21,8 @@ import httpx
 import pytest
 import pytest_asyncio
 
-TEMPLATE = Path(__file__).resolve().parent.parent / "control_center" / "templates" / "library_artist_detail.html"
+# CC-UI L1: Inline-Skript byte-identisch nach static/pages/ verschoben (U1).
+TEMPLATE = Path(__file__).resolve().parent.parent / "control_center" / "static" / "pages" / "library_artist.js"
 _NODE = shutil.which("node")
 needs_node = pytest.mark.skipif(_NODE is None, reason="node nicht verfuegbar")
 
@@ -47,7 +48,7 @@ async def test_panel_explains_that_it_is_read_only(client):
 
 @pytest.mark.asyncio
 async def test_script_uses_api_url_and_polls_every_second(client):
-    html = (await client.get("/library/Bausa")).text
+    html = (await client.get("/static/pages/library_artist.js")).text  # CC-UI L1: Skript ausgelagert
     block = html.split("// -- Duplikat-Check", 1)[1].split('document.getElementById("genre-manage-preview-btn")', 1)[0]
     assert re.findall(r"fetch\((?!apiUrl)", block) == []
     assert "setInterval(() => _pollDuplicateCheckJob(_dupCheckJobId), 1000)" in block

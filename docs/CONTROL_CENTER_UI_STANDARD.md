@@ -234,7 +234,7 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
 | U13 Inline-Styles | §1 Regel 4 |
 | U14 Buttons | §6 |
 | U15 Logs/Logger | entschieden 2026-09-28: zwei Seiten, gemeinsamer Kopf `_logs_header.html` mit Reitern, ein Sidebar-Eintrag „Logs“ (§10 gilt für beide) |
-| U16 `/metadata` | offen → Entscheidung im Library-Schritt |
+| U16 `/metadata` | entschieden 2026-09-28: 307-Weiterleitung auf `/library`, Stub-Template entfernt (Library L1) |
 | U17 `.row-count` | §6 Tabellen + §11 |
 | U18 Dark Mode | §2 |
 
@@ -255,7 +255,7 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
 ## 15. Reihenfolge
 
 1. **CC-UI-1:** Sprite, Theme (dunkel + Umschalter + Türkis), Shell in `_base.html`, Helfer aus §12 in `common.js`/`common.css` — additiv.
-2. Seiten: ~~Overview~~ (erledigt 2026-09-28) → ~~Downloads~~ (erledigt 2026-09-28) → ~~Administration~~ (erledigt 2026-09-28) → ~~Health~~ (erledigt 2026-09-28) → ~~Logs/Logger~~ (erledigt 2026-09-28) → ~~Statistics~~ (erledigt 2026-09-28, Music DNA als Blickfang) → Library + Artist-Detail → Navidrome (zuletzt, Nutzerentscheidung 2026-09-28).
+2. Seiten: ~~Overview~~ (erledigt 2026-09-28) → ~~Downloads~~ (erledigt 2026-09-28) → ~~Administration~~ (erledigt 2026-09-28) → ~~Health~~ (erledigt 2026-09-28) → ~~Logs/Logger~~ (erledigt 2026-09-28) → ~~Statistics~~ (erledigt 2026-09-28, Music DNA als Blickfang) → Library + Artist-Detail (L1 JS verschoben + `/metadata`-Weiterleitung erledigt 2026-09-28; L2 Übersicht, L3 Artist-Detail, L4 Metadaten-Editor mit Entwurf zuerst) → Navidrome (zuletzt, Nutzerentscheidung 2026-09-28).
 
    **Navidrome = eigener Musik-Bereich** (Nutzerentscheidung 2026-09-28): Die Seite wird der
    Musik-Bereich des Nutzers mit eigenem Layout in Anlehnung an Symfonium (Cover-Raster, runde
