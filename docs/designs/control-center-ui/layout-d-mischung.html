@@ -1,0 +1,338 @@
+<!doctype html>
+<!--
+  CC-UI-0 Layout-Entwurf D — "Mischung" (gemeinsam festgelegt, 2026-09-28)
+  Shell aus C, dunkel als Standard mit Türkis-Akzent, aktive Jobs als Karten
+  (Nutzer-Entwurf 1) mit Pipeline-Schritten (C), Verlauf/Listen als Tabelle
+  (Nutzer-Entwurf 2), Logs im Terminal-Stil (Nutzer-Entwurf 3), Modal + Toast
+  (C), Zustände Laden/Leer/Fehler (A). Tabler-Icons statt Emojis.
+  Nur Funktionen, die die bestehende API liefert (URL-Download, Fortschritt,
+  message, events, Metadaten-Checkliste, Abbrechen) — kein Format/Bitrate,
+  kein Pause/Play, keine MB/s/ETA/Größe, keine Cover-Bilder, nur YouTube.
+  Reines Mockup, KEINE Produktionsdatei. Statische Beispieldaten.
+-->
+<html lang="de" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Layout D · Mischung</title>
+  <script>
+    // Theme vor dem ersten Rendern setzen (kein Aufblitzen). Standard: dunkel.
+    try { if (localStorage.getItem("cc-theme") === "light") document.documentElement.setAttribute("data-bs-theme", "light"); } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="../../../control_center/static/vendor/tabler/css/tabler.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.5.1/dist/css/tabler.min.css">
+  <style>
+    /* Akzentfarbe Türkis statt Tabler-Blau - einzige Theme-Anpassung. */
+    :root, [data-bs-theme] {
+      --tblr-primary: #0ca678;
+      --tblr-primary-rgb: 12, 166, 120;
+      --tblr-primary-fg: #fff;
+      --tblr-link-color: #0ca678;
+      --tblr-link-color-rgb: 12, 166, 120;
+    }
+    .btn-primary { --tblr-btn-bg: #0ca678; --tblr-btn-border-color: #0ca678; --tblr-btn-hover-bg: #0a8f67; --tblr-btn-hover-border-color: #0a8f67; --tblr-btn-active-bg: #097a58; }
+    .icon { stroke: currentColor; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    /* Logs im Terminal-Stil */
+    .terminal { background: #0b1220; color: #cbd5e1; font-family: var(--tblr-font-monospace); font-size: .8rem; line-height: 1.6; }
+    .terminal .t-time { color: #64748b; }
+    .terminal .t-ok { color: #2fb344; }
+    .terminal .t-info { color: #0ca678; }
+    .terminal .t-err { color: #d63939; }
+    .mock-note { font-size: .75rem; }
+  </style>
+</head>
+<body>
+<!-- Icon-Sprite (Tabler Icons, outline) -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M3 17a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/><path d="M13 17a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/><path d="M9 17v-13h10v13"/><path d="M9 8h10"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M5 12l-2 0l9 -9l9 9l-2 0"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7"/><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></symbol>
+  <symbol id="i-books" viewBox="0 0 24 24"><path d="M5 5a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"/><path d="M9 5a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"/><path d="M5 8h4"/><path d="M9 16h4"/><path d="M13.803 4.56l2.184 -.53c.562 -.135 1.133 .19 1.282 .732l3.695 13.418a1.02 1.02 0 0 1 -.634 1.219l-.133 .041l-2.184 .53c-.562 .135 -1.133 -.19 -1.282 -.732l-3.695 -13.418a1.02 1.02 0 0 1 .634 -1.219l.133 -.041z"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 13a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/><path d="M15 9a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/><path d="M9 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/><path d="M4 20h14"/></symbol>
+  <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M4 15a2 2 0 0 1 2 -2h1a2 2 0 0 1 2 2v3a2 2 0 0 1 -2 2h-1a2 2 0 0 1 -2 -2l0 -3"/><path d="M15 15a2 2 0 0 1 2 -2h1a2 2 0 0 1 2 2v3a2 2 0 0 1 -2 2h-1a2 2 0 0 1 -2 -2l0 -3"/><path d="M4 15v-3a8 8 0 0 1 16 0v3"/></symbol>
+  <symbol id="i-health" viewBox="0 0 24 24"><path d="M19.5 13.572l-7.5 7.428l-2.896 -2.868m-6.117 -8.104a5 5 0 0 1 9.013 -3.022a5 5 0 1 1 7.5 6.572"/><path d="M3 13h2l2 3l2 -6l1 3h3"/></symbol>
+  <symbol id="i-logs" viewBox="0 0 24 24"><path d="M5 7l5 5l-5 5"/><path d="M12 19l7 0"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .827 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.827 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.827 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .827 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5l10 -10"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 9v4"/><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z"/><path d="M12 16h.01"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M9 15l6 -6"/><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464"/><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><path d="M8 12a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"/><path d="M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M6.5 7.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M3 6v5.172a2 2 0 0 0 .586 1.414l7.71 7.71a2.41 2.41 0 0 0 3.408 0l5.592 -5.592a2.41 2.41 0 0 0 0 -3.408l-7.71 -7.71a2 2 0 0 0 -1.414 -.586h-5.172a3 3 0 0 0 -3 3z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667z"/><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M12 8l0 4l2 2"/><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z"/><path d="M4 13h3l3 3h4l3 -3h3"/></symbol>
+</svg>
+
+<div class="page">
+  <!-- Shell (aus C): dunkle Sidebar mit Zählern -->
+  <aside class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark">
+    <div class="container-fluid">
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-d" aria-label="Menü öffnen">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <h1 class="navbar-brand justify-content-start">
+        <span class="avatar avatar-sm bg-teal-lt me-2"><svg class="icon"><use href="#i-music"/></svg></span>MusicBot
+      </h1>
+      <div class="collapse navbar-collapse" id="sidebar-d">
+        <ul class="navbar-nav pt-lg-3">
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-icon"><svg class="icon"><use href="#i-home"/></svg></span><span class="nav-link-title">Overview</span></a></li>
+          <li class="nav-item active"><a class="nav-link active" href="#"><span class="nav-link-icon"><svg class="icon"><use href="#i-download"/></svg></span><span class="nav-link-title">Downloads</span><span class="badge badge-sm bg-teal text-teal-fg position-static ms-auto">2</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-icon"><svg class="icon"><use href="#i-books"/></svg></span><span class="nav-link-title">Library</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-icon"><svg class="icon"><use href="#i-chart"/></svg></span><span class="nav-link-title">Statistics</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-icon"><svg class="icon"><use href="#i-headphones"/></svg></span><span class="nav-link-title">Navidrome</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-icon"><svg class="icon"><use href="#i-health"/></svg></span><span class="nav-link-title">Health</span><span class="badge badge-sm bg-yellow text-yellow-fg position-static ms-auto">4</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-icon"><svg class="icon"><use href="#i-logs"/></svg></span><span class="nav-link-title">Logs</span></a></li>
+          <li class="nav-item mt-3"><a class="nav-link" href="#"><span class="nav-link-icon"><svg class="icon"><use href="#i-settings"/></svg></span><span class="nav-link-title">Administration</span></a></li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+  <div class="page-wrapper">
+    <header class="navbar navbar-expand-md d-print-none">
+      <div class="container-xl">
+        <span class="navbar-text text-secondary">Control Center</span>
+        <div class="navbar-nav flex-row order-md-last align-items-center gap-2">
+          <button class="btn btn-icon btn-ghost-secondary" id="theme-toggle" type="button" title="Hell/Dunkel umschalten" aria-label="Hell/Dunkel umschalten">
+            <svg class="icon theme-icon-dark"><use href="#i-sun"/></svg>
+          </button>
+          <span class="avatar avatar-sm bg-teal-lt">R</span>
+          <span class="d-none d-md-inline">robin <span class="badge bg-purple-lt ms-1">OWNER</span></span>
+          <button class="btn btn-sm btn-ghost-secondary"><svg class="icon me-1"><use href="#i-logout"/></svg>Abmelden</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-header d-print-none">
+      <div class="container-xl">
+        <div class="page-pretitle">Musik</div>
+        <h2 class="page-title"><svg class="icon me-2 text-teal"><use href="#i-download"/></svg>Downloads</h2>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div class="container-xl">
+        <div class="alert alert-info mock-note">Mockup D · Mischung — Shell aus C, dunkel als Standard (Umschalter oben rechts), Türkis-Akzent, Tabler-Icons. Nur Funktionen der bestehenden API.</div>
+
+        <!-- Neuer Download (Nutzer-Entwurf 1, nur URL - API nimmt nur url) -->
+        <div class="card mb-3">
+          <div class="card-body">
+            <h3 class="card-title mb-1">Neuen Download starten</h3>
+            <div class="text-secondary mb-3">YouTube-Einzeltitel oder -Playlist. Duplikate werden automatisch erkannt.</div>
+            <form class="row g-2" onsubmit="return startDownload(event)">
+              <div class="col">
+                <div class="input-icon">
+                  <span class="input-icon-addon"><svg class="icon"><use href="#i-link"/></svg></span>
+                  <input class="form-control" placeholder="https://www.youtube.com/watch?v=…" aria-label="YouTube-URL">
+                </div>
+              </div>
+              <div class="col-12 col-sm-auto"><button class="btn btn-primary w-100" type="submit"><svg class="icon me-1"><use href="#i-download"/></svg>Download</button></div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Aktive Jobs als Karten (Nutzer-Entwurf 1) + Pipeline-Schritte (C) -->
+        <div class="d-flex align-items-center mb-2">
+          <span class="status-dot status-dot-animated status-teal me-2"></span>
+          <h3 class="mb-0 text-uppercase text-secondary fs-5">Aktive Downloads (2)</h3>
+        </div>
+        <div class="row row-cards mb-4">
+          <div class="col-12">
+            <div class="card">
+              <div class="card-body">
+                <div class="d-flex align-items-start mb-2">
+                  <div class="flex-fill">
+                    <div class="fw-bold">Cro — Einmal um die Welt</div>
+                    <div class="text-secondary small">Einzeltitel · Job 3f9a1c2e · seit 12:04</div>
+                  </div>
+                  <span class="badge bg-purple-lt"><svg class="icon icon-sm me-1"><use href="#i-tag"/></svg>Metadaten</span>
+                </div>
+                <div class="d-md-none small text-secondary my-3">Schritt 4 von 7 · MusicBrainz</div>
+                <ul class="steps steps-counter steps-teal my-3 d-none d-md-flex">
+                  <li class="step-item">Download</li>
+                  <li class="step-item">Artist/Titel</li>
+                  <li class="step-item">Genre</li>
+                  <li class="step-item active">MusicBrainz</li>
+                  <li class="step-item">Lyrics</li>
+                  <li class="step-item">Cover</li>
+                  <li class="step-item">Library</li>
+                </ul>
+                <div class="d-flex justify-content-between small text-secondary mb-1"><span>Metadaten: MusicBrainz-Abgleich</span><span>62 %</span></div>
+                <div class="progress progress-sm"><div class="progress-bar bg-teal" style="width: 62%"></div></div>
+              </div>
+              <div class="card-footer d-flex">
+                <a href="#" class="btn btn-sm btn-ghost-secondary" data-bs-toggle="offcanvas" data-bs-target="#job-detail"><svg class="icon me-1"><use href="#i-history"/></svg>Verlauf</a>
+                <button class="btn btn-sm btn-ghost-danger ms-auto" data-bs-toggle="modal" data-bs-target="#confirm-d"><svg class="icon me-1"><use href="#i-x"/></svg>Abbrechen</button>
+              </div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="card">
+              <div class="card-body">
+                <div class="d-flex align-items-start mb-2">
+                  <div class="flex-fill">
+                    <div class="fw-bold">Deutschrap Classics (Playlist)</div>
+                    <div class="text-secondary small">Playlist · Job 8c02d71b · seit 11:52</div>
+                  </div>
+                  <span class="badge bg-teal-lt"><svg class="icon icon-sm me-1"><use href="#i-download"/></svg>Download</span>
+                </div>
+                <div class="text-secondary small my-3">Meldung des Jobs (<code>message</code>): „Playlist: Titel 7 von 18“</div>
+                <div class="d-flex justify-content-between small text-secondary mb-1"><span>Lädt Titel 7/18</span><span>39 %</span></div>
+                <div class="progress progress-sm"><div class="progress-bar bg-teal" style="width: 39%"></div></div>
+              </div>
+              <div class="card-footer d-flex">
+                <a href="#" class="btn btn-sm btn-ghost-secondary" data-bs-toggle="offcanvas" data-bs-target="#job-detail"><svg class="icon me-1"><use href="#i-history"/></svg>Verlauf</a>
+                <button class="btn btn-sm btn-ghost-danger ms-auto" data-bs-toggle="modal" data-bs-target="#confirm-d"><svg class="icon me-1"><use href="#i-x"/></svg>Abbrechen</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Verlauf als Tabelle (Nutzer-Entwurf 2) mit Browser-Filter -->
+        <div class="card mb-4">
+          <div class="card-header flex-wrap gap-2">
+            <h3 class="card-title">Verlauf</h3>
+            <div class="card-actions d-flex flex-wrap gap-2 ms-0 ms-md-auto">
+              <div class="input-icon">
+                <span class="input-icon-addon"><svg class="icon"><use href="#i-search"/></svg></span>
+                <input id="hist-search" class="form-control form-control-sm" placeholder="Titel oder Artist …" oninput="filterHistory()">
+              </div>
+              <select id="hist-status" class="form-select form-select-sm w-auto" onchange="filterHistory()">
+                <option value="">Alle</option><option value="ok">Erfolgreich</option><option value="dup">Duplikat</option><option value="err">Fehler</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table card-table table-vcenter" id="hist-table">
+              <thead><tr><th>Track</th><th>Status</th><th class="d-none d-md-table-cell">Metadaten</th><th>Zeit</th><th class="w-1"></th></tr></thead>
+              <tbody>
+                <tr data-status="ok"><td><div>Bilder im Kopf</div><div class="text-secondary small">Sido</div></td>
+                  <td><span class="badge bg-green-lt"><svg class="icon icon-sm me-1"><use href="#i-check"/></svg>Fertig</span></td>
+                  <td class="text-nowrap d-none d-md-table-cell"><span class="badge bg-green-lt" title="Genre">Genre</span> <span class="badge bg-green-lt" title="Lyrics">Lyrics</span> <span class="badge bg-green-lt" title="Cover">Cover</span> <span class="badge bg-yellow-lt" title="MusicBrainz fehlt">MB</span> <span class="badge bg-green-lt" title="Lautheit">LUFS</span></td>
+                  <td class="text-secondary">11:58</td><td></td></tr>
+                <tr data-status="dup"><td><div>Chöre</div><div class="text-secondary small">Mark Forster</div></td>
+                  <td><span class="badge bg-secondary-lt"><svg class="icon icon-sm me-1"><use href="#i-copy"/></svg>Duplikat</span></td>
+                  <td class="text-secondary d-none d-md-table-cell">—</td><td class="text-secondary">11:41</td><td></td></tr>
+                <tr data-status="err"><td><div>Palmen aus Plastik</div><div class="text-secondary small">Bonez MC &amp; RAF Camora</div></td>
+                  <td><span class="badge bg-red-lt"><svg class="icon icon-sm me-1"><use href="#i-alert"/></svg>Fehler</span></td>
+                  <td class="text-secondary d-none d-md-table-cell">—</td><td class="text-secondary">10:12</td>
+                  <td><button class="btn btn-sm btn-icon btn-ghost-warning" title="Erneut versuchen" aria-label="Erneut versuchen"><svg class="icon"><use href="#i-refresh"/></svg></button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Zustände (aus A) - gelten für jede Karte/Tabelle auf allen Seiten -->
+        <h3 class="text-uppercase text-secondary fs-5 mb-2">Standard-Zustände</h3>
+        <div class="row row-cards mb-4">
+          <div class="col-md-4"><div class="card"><div class="card-body placeholder-glow">
+            <div class="text-secondary small mb-2">Laden</div>
+            <div class="placeholder col-9 mb-2"></div><div class="placeholder col-7 mb-2"></div><div class="placeholder col-5"></div></div></div></div>
+          <div class="col-md-4"><div class="card"><div class="empty py-4">
+            <div class="empty-icon"><svg class="icon"><use href="#i-inbox"/></svg></div>
+            <p class="empty-title">Noch keine Downloads</p>
+            <p class="empty-subtitle text-secondary">Starte oben einen Download per URL.</p></div></div></div>
+          <div class="col-md-4"><div class="card"><div class="card-status-start bg-danger"></div><div class="card-body">
+            <div class="fw-medium"><svg class="icon text-danger me-1"><use href="#i-alert"/></svg>Verlauf nicht erreichbar</div>
+            <div class="text-secondary small mb-2">HTTP 503 · 12:05</div>
+            <button class="btn btn-sm"><svg class="icon me-1"><use href="#i-refresh"/></svg>Erneut versuchen</button></div></div></div>
+        </div>
+
+        <!-- Logs im Terminal-Stil (Nutzer-Entwurf 3) - Vorschau für die Logs-Seite -->
+        <h3 class="text-uppercase text-secondary fs-5 mb-2">Logs-Stil (Vorschau für Logs/Logger)</h3>
+        <div class="card mb-3">
+          <div class="card-header">
+            <h3 class="card-title"><svg class="icon me-1"><use href="#i-logs"/></svg>control_center.log</h3>
+            <div class="card-actions"><span class="status status-teal"><span class="status-dot status-dot-animated"></span>Live</span></div>
+          </div>
+          <div class="card-body terminal rounded-bottom">
+            <div><span class="t-time">12:04:08</span> <span class="t-info">INFO</span>  🧩 [JOB 3f9a1c2e] gestartet</div>
+            <div><span class="t-time">12:04:10</span> <span class="t-ok">OK</span>    Download abgeschlossen</div>
+            <div><span class="t-time">12:04:14</span> <span class="t-ok">OK</span>    Genre gesetzt (Deutschrap)</div>
+            <div><span class="t-time">12:04:15</span> <span class="t-info">INFO</span>  Metadaten: MusicBrainz-Abgleich</div>
+            <div><span class="t-time">10:12:40</span> <span class="t-err">ERROR</span> Palmen aus Plastik: Video nicht verfügbar</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Seitenpanel: Job-Verlauf (Job.events) -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="job-detail">
+  <div class="offcanvas-header"><h2 class="offcanvas-title">Job-Verlauf</h2><button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Schließen"></button></div>
+  <div class="offcanvas-body">
+    <ul class="timeline timeline-simple">
+      <li class="timeline-event"><div class="timeline-event-icon bg-green-lt"><svg class="icon"><use href="#i-check"/></svg></div><div class="card timeline-event-card"><div class="card-body py-2"><div class="text-secondary float-end small">12:04:10</div>Download abgeschlossen</div></div></li>
+      <li class="timeline-event"><div class="timeline-event-icon bg-green-lt"><svg class="icon"><use href="#i-check"/></svg></div><div class="card timeline-event-card"><div class="card-body py-2"><div class="text-secondary float-end small">12:04:14</div>Genre gesetzt (Deutschrap)</div></div></li>
+      <li class="timeline-event"><div class="timeline-event-icon bg-teal-lt"><svg class="icon"><use href="#i-tag"/></svg></div><div class="card timeline-event-card"><div class="card-body py-2"><div class="text-secondary float-end small">12:04:15</div>MusicBrainz-Abgleich</div></div></li>
+    </ul>
+  </div>
+</div>
+
+<!-- Bestätigung: Tabler-Modal statt confirm() -->
+<div class="modal modal-blur fade" id="confirm-d" tabindex="-1">
+  <div class="modal-dialog modal-sm modal-dialog-centered"><div class="modal-content">
+    <div class="modal-status bg-danger"></div>
+    <div class="modal-body text-center py-4">
+      <svg class="icon mb-2 text-danger icon-lg"><use href="#i-alert"/></svg>
+      <h3>Download abbrechen?</h3>
+      <div class="text-secondary">Bereits fertige Titel bleiben erhalten.</div>
+    </div>
+    <div class="modal-footer"><div class="w-100 d-flex gap-2">
+      <button class="btn w-100" data-bs-dismiss="modal">Zurück</button>
+      <button class="btn btn-danger w-100" data-bs-dismiss="modal">Abbrechen</button>
+    </div></div>
+  </div></div>
+</div>
+
+<!-- Toast: Rückmeldung nach Aktionen -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+  <div class="toast" id="toast-d" role="status" aria-live="polite">
+    <div class="toast-header"><svg class="icon text-teal me-2"><use href="#i-check"/></svg><strong class="me-auto">Download gestartet</strong><button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Schließen"></button></div>
+    <div class="toast-body">Job 7b21e0aa läuft.</div>
+  </div>
+</div>
+
+<script src="../../../control_center/static/vendor/tabler/js/tabler.min.js"
+        onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@tabler/core@1.5.1/dist/js/tabler.min.js';document.body.appendChild(s)"></script>
+<script>
+  // Mockup-Logik: Theme-Umschalter, Toast, Verlauf-Filter (nur im Browser).
+  (function () {
+    var root = document.documentElement;
+    var btn = document.getElementById("theme-toggle");
+    function syncIcon() {
+      var dark = root.getAttribute("data-bs-theme") !== "light";
+      btn.querySelector("use").setAttribute("href", dark ? "#i-sun" : "#i-moon");
+    }
+    btn.addEventListener("click", function () {
+      var dark = root.getAttribute("data-bs-theme") !== "light";
+      root.setAttribute("data-bs-theme", dark ? "light" : "dark");
+      try { localStorage.setItem("cc-theme", dark ? "light" : "dark"); } catch (e) {}
+      syncIcon();
+    });
+    syncIcon();
+  })();
+  function startDownload(ev) {
+    ev.preventDefault();
+    var el = document.getElementById("toast-d");
+    if (window.bootstrap && window.bootstrap.Toast) { window.bootstrap.Toast.getOrCreateInstance(el).show(); }
+    else { el.classList.add("show"); setTimeout(function () { el.classList.remove("show"); }, 3000); }
+    return false;
+  }
+  function filterHistory() {
+    var q = document.getElementById("hist-search").value.toLowerCase();
+    var st = document.getElementById("hist-status").value;
+    document.querySelectorAll("#hist-table tbody tr").forEach(function (tr) {
+      var hit = (!q || tr.textContent.toLowerCase().indexOf(q) !== -1) && (!st || tr.dataset.status === st);
+      tr.hidden = !hit;
+    });
+  }
+</script>
+</body>
+</html>
