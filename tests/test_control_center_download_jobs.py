@@ -193,6 +193,56 @@ async def test_download_job_exposes_step_events(client, monkeypatch, tmp_path):
     assert all(set(e) == {"at", "message", "progress"} for e in job["events"])
 
 
+class _StepReportingDownloader(_FakeDownloader):
+    """Wie _FakeDownloader, meldet aber - wie EnhancedMetadataProcessor
+    innerhalb von download_audio() - Schritte über report_step()."""
+
+    async def download_audio(self, url):
+        from services.jobs.step_context import report_step
+
+        report_step("Cover laden…")
+        report_step("Tags schreiben…")
+        return await super().download_audio(url)
+
+
+@pytest.mark.asyncio
+async def test_single_download_job_contains_metadata_steps(client, monkeypatch, tmp_path):
+    """D.12c: bei Single-Downloads landen die feinen Metadaten-Schritte
+    (report_step()) mit Präfix "Metadaten: " im Job-Verlauf."""
+    _patch_dependencies(
+        monkeypatch,
+        downloader_factory=_StepReportingDownloader.factory(dict(SINGLE_SUCCESS_RESULT)),
+        duplicate_detector=_FakeDetector(),
+    )
+    monkeypatch.setattr(Config, "DOWNLOAD_HISTORY_DIR", property(lambda self: tmp_path))
+
+    r = await _start(client)
+    job = await _finished(client, r.json()["job_id"], path="/api/v1/jobs/download")
+
+    messages = [e["message"] for e in job["events"]]
+    i_dl = messages.index("Download läuft…")
+    assert messages[i_dl + 1 : i_dl + 3] == ["Metadaten: Cover laden…", "Metadaten: Tags schreiben…"]
+    assert messages[-1] == "Abgeschlossen"
+
+
+@pytest.mark.asyncio
+async def test_playlist_download_job_has_no_metadata_steps(client, monkeypatch, tmp_path):
+    """D.12c: bei Playlists bewusst KEINE feinen Schritte (würden die
+    MAX_JOB_EVENTS-Grenze sprengen)."""
+    _patch_dependencies(
+        monkeypatch,
+        downloader_factory=_StepReportingDownloader.factory({"success": False, "error": "x"}),
+        duplicate_detector=_FakeDetector(),
+    )
+    monkeypatch.setattr(Config, "DOWNLOAD_HISTORY_DIR", property(lambda self: tmp_path))
+
+    r = await _start(client, url="https://youtube.com/playlist?list=PL123")
+    job = await _finished(client, r.json()["job_id"], path="/api/v1/jobs/download")
+
+    assert job["context"]["download_type"] == "playlist"
+    assert not [e for e in job["events"] if e["message"].startswith("Metadaten:")]
+
+
 @pytest.mark.asyncio
 async def test_duplicate_found_succeeds_without_history_entry(client, monkeypatch, tmp_path):
     from pathlib import Path
