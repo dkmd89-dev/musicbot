@@ -127,27 +127,17 @@
         </div>
       </div>
 
+      <!-- Logs: ein Eintrag für Logdateien (/logs) und Logger-Einstellungen
+           (/logger), Umschalten über die Reiter in _logs_header.html. -->
       <div class="nav-item">
         <a
           href="{{ base_path }}/logs"
-          class="nav-link{{ ' active' if page_id == 'logs' else '' }}"
+          class="nav-link{{ ' active' if page_id in ('logs', 'logger') else '' }}"
         >
           <span class="nav-link-icon">
             <svg class="icon"><use href="#i-logs"/></svg>
           </span>
           <span class="nav-link-title">Logs</span>
-        </a>
-      </div>
-
-      <div class="nav-item">
-        <a
-          href="{{ base_path }}/logger"
-          class="nav-link{{ ' active' if page_id == 'logger' else '' }}"
-        >
-          <span class="nav-link-icon">
-            <svg class="icon"><use href="#i-adjustments"/></svg>
-          </span>
-          <span class="nav-link-title">Logger</span>
         </a>
       </div>
 

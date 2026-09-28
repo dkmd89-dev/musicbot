@@ -1154,3 +1154,6 @@ input.downloads-url-input { max-width: none; }
 /* CC-UI: vorformatierte Meldungen (z. B. Download-Ergebnis) mit
    Zeilenumbrüchen, ohne Inline-Style. */
 .cc-pre-wrap { white-space: pre-wrap; }
+
+/* CC-UI Logs: Log-Zeilen-Terminal scrollt innerhalb der Karte. */
+#logs-content .cc-terminal { max-height: 70vh; overflow: auto; }
