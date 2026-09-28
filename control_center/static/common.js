@@ -450,6 +450,9 @@ class CcApiError extends Error {
 }
 async function ccApi(method, path, body) {
   const options = { method: method || "GET", credentials: "same-origin", headers: {} };
+  // Wie die bisherigen Admin-Aufrufe: schreibende Requests als XHR kennzeichnen
+  // (serverseitig schützt der Origin-Check, siehe dependencies.verify_same_origin).
+  if (options.method !== "GET") options.headers["X-Requested-With"] = "XMLHttpRequest";
   if (body !== undefined) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);

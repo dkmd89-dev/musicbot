@@ -1273,8 +1273,12 @@ async def test_admin_page_has_duplicate_cache_card(client):
     assert 'id="admin-duplicates-clear-btn"' in html
     assert "/api/v1/admin/duplicates/stats" in js
     assert "/api/v1/admin/duplicates/clear" in js
-    assert "JSON.stringify({ confirm: true })" in js
-    assert "window.confirm(" in js
+    # Seit CC-UI Administration (UI-Standard Abschnitt 8): Bestätigung über
+    # ccConfirm() statt window.confirm(), Body über ccApi() - der gesendete
+    # Body {"confirm": true} und die Nachfrage sind verhaltensgleich in
+    # tests/test_control_center_admin_page.py abgesichert.
+    assert '"/api/v1/admin/duplicates/clear", { confirm: true }' in js
+    assert "ccConfirm(" in js and "window.confirm(" not in js
     assert "loadDuplicateCacheStats();" in js
 
 
