@@ -1,222 +1,161 @@
 {% extends "_base.html" %}
 {% block title %}Administration – MusicBot Control Center{% endblock %}
 {% block content %}
-<div class="page-header d-print-none mb-4">
-  <div class="row align-items-center">
-    <div class="col">
-      <h1 class="page-title">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
-             viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-             class="icon me-2" aria-hidden="true">
-          <path d="M12 8m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/>
-          <path d="M12 2v3"/>
-          <path d="M12 19v3"/>
-          <path d="M4.6 4.6l2.1 2.1"/>
-          <path d="M17.3 17.3l2.1 2.1"/>
-          <path d="M2 12h3"/>
-          <path d="M19 12h3"/>
-          <path d="M4.6 19.4l2.1-2.1"/>
-          <path d="M17.3 6.7l2.1-2.1"/>
-        </svg>
-        Administration
-      </h1>
-      <div class="text-secondary">
-        Systemverwaltung und administrative Funktionen.
-      </div>
+{# CC-UI Administration nach docs/CONTROL_CENTER_UI_STANDARD.md. Element-IDs
+   sind Vertrag mit static/pages/admin.js und tests/test_control_center_ui.py. #}
+<div class="page-header d-print-none mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col-12 col-md">
+      <div class="page-pretitle">Verwaltung</div>
+      <h2 class="page-title"><svg class="icon me-2 text-teal"><use href="#i-settings"/></svg>Administration</h2>
+      <div class="text-secondary mt-1">Systemstatus, Betrieb, Backups, Caches und Nutzer.</div>
     </div>
   </div>
 </div>
 
-<!-- SYSTEM STATUS -->
-<div class="card mb-4">
-  <div class="card-header">
-    <h2 class="card-title">System Status</h2>
+<!-- System-Status -->
+<div id="admin-system-status" class="row row-cards mb-2">
+  <div class="col-6 col-lg-3">
+    <div class="card card-sm h-100"><div class="card-body"><div class="row align-items-center g-3">
+      <div class="col-auto d-none d-sm-block"><span class="avatar bg-blue-lt"><svg class="icon"><use href="#i-cpu"/></svg></span></div>
+      <div class="col min-w-0"><div class="subheader">CPU</div><div class="h2 mb-0" id="admin-system-cpu">–</div></div>
+    </div></div></div>
   </div>
-  <div class="card-body">
-    <div id="admin-system-status" class="row row-cards">
-      <div class="col-6 col-lg-3">
-        <div class="card card-sm h-100">
-          <div class="card-body">
-            <div class="text-secondary small">CPU</div>
-            <div class="h2 mb-0" id="admin-system-cpu">–</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="col-6 col-lg-3">
-        <div class="card card-sm h-100">
-          <div class="card-body">
-            <div class="text-secondary small">RAM</div>
-            <div class="h2 mb-0" id="admin-system-memory">–</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="col-6 col-lg-3">
-        <div class="card card-sm h-100">
-          <div class="card-body">
-            <div class="text-secondary small">Disk</div>
-            <div class="h2 mb-0" id="admin-system-disk">–</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="col-6 col-lg-3">
-        <div class="card card-sm h-100">
-          <div class="card-body">
-            <div class="text-secondary small">Bot</div>
-            <div id="admin-system-bot" class="mt-1">
-              <span class="status">–</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="admin-system-status-error" class="alert alert-danger mt-3 mb-0" hidden></div>
+  <div class="col-6 col-lg-3">
+    <div class="card card-sm h-100"><div class="card-body"><div class="row align-items-center g-3">
+      <div class="col-auto d-none d-sm-block"><span class="avatar bg-purple-lt"><svg class="icon"><use href="#i-memory"/></svg></span></div>
+      <div class="col min-w-0"><div class="subheader">RAM</div><div class="h3 mb-0 text-truncate" id="admin-system-memory">–</div></div>
+    </div></div></div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card card-sm h-100"><div class="card-body"><div class="row align-items-center g-3">
+      <div class="col-auto d-none d-sm-block"><span class="avatar bg-orange-lt"><svg class="icon"><use href="#i-disk"/></svg></span></div>
+      <div class="col min-w-0"><div class="subheader">Disk</div><div class="h3 mb-0 text-truncate" id="admin-system-disk">–</div></div>
+    </div></div></div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card card-sm h-100"><div class="card-body"><div class="row align-items-center g-3">
+      <div class="col-auto d-none d-sm-block"><span class="avatar bg-teal-lt"><svg class="icon"><use href="#i-robot"/></svg></span></div>
+      <div class="col min-w-0"><div class="subheader">Bot-Service</div><div class="mt-1" id="admin-system-bot">–</div></div>
+    </div></div></div>
   </div>
 </div>
+<div id="admin-system-status-error" class="alert alert-danger mb-3" hidden></div>
 
-<!-- OPERATIONS -->
-<div class="mb-4">
-  <h2 class="mb-3">Operations</h2>
-
-  <div class="row row-cards">
-    <!-- BACKUPS -->
-    <div class="col-lg-6">
-      <div class="card h-100">
-        <div class="card-header">
-          <h3 class="card-title">Backups</h3>
+<!-- Betrieb -->
+<h3 class="text-uppercase text-secondary fs-5 mt-4 mb-2">Betrieb</h3>
+<div class="row row-cards mb-3">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header"><h3 class="card-title"><svg class="icon me-2"><use href="#i-robot"/></svg>Bot</h3></div>
+      <div class="card-body">
+        <div class="text-secondary mb-2">Bot-Service</div>
+        <div id="admin-bot-operation-status" class="mb-3">
+          <div class="placeholder-glow"><div class="placeholder col-4"></div></div>
         </div>
-        <div class="card-body">
-          <div class="text-secondary mb-3">
-            MusicBot-Backups erstellen und verwalten.
-          </div>
+        <button id="admin-bot-restart-btn" type="button" class="btn btn-outline-danger">
+          <svg class="icon me-1"><use href="#i-refresh"/></svg>Bot neu starten
+        </button>
+      </div>
+    </div>
+  </div>
 
-          <div class="row g-2 align-items-end">
-            <div class="col-sm-5 col-md-4">
-              <label class="form-label" for="admin-backup-type">Backup-Typ</label>
-              <select id="admin-backup-type" class="form-select">
-                <option value="bot">Bot</option>
-                <option value="library">Library</option>
-              </select>
-            </div>
-            <div class="col-sm-auto">
-              <button id="admin-backup-create-btn" class="btn btn-primary">
-                Backup erstellen
-              </button>
-            </div>
-            <div class="col-sm-auto">
-              <button id="admin-backup-manage-btn" class="btn btn-outline-secondary">
-                Backups verwalten
-              </button>
-            </div>
-          </div>
-          <div id="admin-backup-status" class="mt-3 text-secondary small"></div>
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header"><h3 class="card-title"><svg class="icon me-2"><use href="#i-tool"/></svg>Wartungsmodus</h3></div>
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span id="admin-maintenance-status">–</span>
+          <span id="admin-maintenance-label" class="text-secondary">Wartungsmodus wird geladen …</span>
+        </div>
+        <button id="admin-maintenance-toggle-btn" type="button" class="btn btn-outline-warning">
+          Wartungsmodus ändern
+        </button>
+        <div id="admin-maintenance-message" class="mt-3 small text-secondary">
+          Im Telegram-Bot werden bei aktivem Wartungsmodus alle Nutzer außer Admins und Owner blockiert.
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- MAINTENANCE -->
-    <div class="col-lg-6">
-      <div class="card h-100">
-        <div class="card-header">
-          <h3 class="card-title">Maintenance</h3>
+  <!-- Backups -->
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header flex-wrap gap-2">
+        <div>
+          <h3 class="card-title"><svg class="icon me-2"><use href="#i-archive"/></svg>Backups</h3>
+          <div class="card-subtitle">MusicBot-Backups erstellen und verwalten</div>
         </div>
-        <div class="card-body">
-          <div class="d-flex align-items-center gap-2 mb-3">
-            <span id="admin-maintenance-status" class="status">–</span>
-            <span id="admin-maintenance-label">Wartungsmodus wird geladen…</span>
-          </div>
-
-          <button id="admin-maintenance-toggle-btn" class="btn btn-outline-warning">
-            Wartungsmodus ändern
+        <div class="card-actions d-flex flex-wrap gap-2 ms-0 ms-md-auto">
+          <label class="visually-hidden" for="admin-backup-type">Backup-Typ</label>
+          <select id="admin-backup-type" class="form-select form-select-sm w-auto">
+            <option value="bot">Bot</option>
+            <option value="library">Library</option>
+          </select>
+          <button id="admin-backup-manage-btn" type="button" class="btn btn-sm">
+            <svg class="icon me-1"><use href="#i-refresh"/></svg>Liste aktualisieren
           </button>
-
-          <div id="admin-maintenance-message" class="mt-3 text-secondary small"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- DUPLIKAT-CACHE (Web-Paritäts-Backlog 4b) -->
-    <div class="col-lg-6">
-      <div class="card h-100">
-        <div class="card-header">
-          <h3 class="card-title">Duplikat-Cache</h3>
-        </div>
-        <div class="card-body">
-          <div id="admin-duplicates-stats" class="mb-3 text-secondary">Wird geladen…</div>
-          <button id="admin-duplicates-clear-btn" class="btn btn-outline-danger">
-            Cache leeren
+          <button id="admin-backup-create-btn" type="button" class="btn btn-sm btn-primary">
+            <svg class="icon me-1"><use href="#i-archive"/></svg>Backup erstellen
           </button>
-          <div id="admin-duplicates-message" class="mt-3 text-secondary small"></div>
-          <div id="admin-duplicates-session" class="mt-3 small text-secondary">
-            Sitzungszähler des Bots werden geladen…
-          </div>
-          <div class="mt-2 text-secondary small">
-            Die Bibliotheks-Prüfung bleibt nach dem Leeren aktiv.
-          </div>
         </div>
       </div>
-    </div>
-
-    <!-- FEHLERSTATISTIK (E1, Bot-Runtime-Snapshot, read-only) -->
-    <div class="col-12">
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Fehlerstatistik (Bot)</h3>
-          <div class="card-actions">
-            <span id="admin-runtime-freshness" class="text-secondary small"></span>
-          </div>
-        </div>
-        <div class="card-body">
-          <div id="admin-errors-content" class="text-secondary">Wird geladen…</div>
-          <div class="mt-2 text-secondary small">
-            Nur lesend: Stand aus dem Bot-Snapshot (alle 60 s). Zurücksetzen der
-            Statistik weiterhin über Telegram.
-          </div>
-        </div>
+      <div id="admin-backup-status">
+        <div class="card-body placeholder-glow"><div class="placeholder col-8 mb-2"></div><div class="placeholder col-5"></div></div>
       </div>
     </div>
+  </div>
 
-    <!-- BOT -->
-    <div class="col-12">
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Bot</h3>
+  <!-- Duplikat-Cache (Web-Paritäts-Backlog 4b) -->
+  <div class="col-lg-5">
+    <div class="card h-100">
+      <div class="card-header"><h3 class="card-title"><svg class="icon me-2"><use href="#i-copy"/></svg>Duplikat-Cache</h3></div>
+      <div class="card-body">
+        <div id="admin-duplicates-stats" class="mb-3">
+          <div class="placeholder-glow"><div class="placeholder col-7"></div></div>
         </div>
-        <div class="card-body">
-          <div class="row align-items-center">
-            <div class="col">
-              <div class="fw-medium">Bot-Service</div>
-              <div id="admin-bot-operation-status" class="text-secondary small">
-                Status wird geladen…
-              </div>
-            </div>
-            <div class="col-auto">
-              <button id="admin-bot-restart-btn" class="btn btn-outline-danger">
-                Bot neu starten
-              </button>
-            </div>
-          </div>
+        <button id="admin-duplicates-clear-btn" type="button" class="btn btn-outline-danger">
+          <svg class="icon me-1"><use href="#i-trash"/></svg>Cache leeren
+        </button>
+        <div id="admin-duplicates-message" class="mt-2 small text-secondary"></div>
+        <div class="hr-text">Seit Bot-Start</div>
+        <div id="admin-duplicates-session" class="small text-secondary">
+          Sitzungszähler des Bots werden geladen …
+        </div>
+        <div class="mt-3 text-secondary small">Die Bibliotheks-Prüfung bleibt nach dem Leeren aktiv.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fehlerstatistik (E1, Bot-Runtime-Snapshot, read-only) -->
+  <div class="col-lg-7">
+    <div class="card h-100">
+      <div class="card-header">
+        <h3 class="card-title"><svg class="icon me-2"><use href="#i-alert"/></svg>Fehlerstatistik (Bot)</h3>
+        <div class="card-actions"><span id="admin-runtime-freshness"></span></div>
+      </div>
+      <div class="card-body">
+        <div id="admin-errors-content">
+          <div class="placeholder-glow"><div class="placeholder col-9 mb-2"></div><div class="placeholder col-6"></div></div>
+        </div>
+        <div class="mt-3 text-secondary small">
+          Nur lesend: Stand aus dem Bot-Snapshot (alle 60 s). Zurücksetzen der Statistik weiterhin über Telegram.
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- USERS & ROLES -->
-<div class="card mb-4">
-  <div class="card-header">
-    <h2 class="card-title">Nutzer &amp; Rollen</h2>
+<!-- Nutzer & Rollen -->
+<h3 class="text-uppercase text-secondary fs-5 mt-4 mb-2">Nutzer</h3>
+<div class="card mb-3">
+  <div class="card-header"><h3 class="card-title"><svg class="icon me-2"><use href="#i-users"/></svg>Nutzer &amp; Rollen</h3></div>
+  <div id="admin-users-content">
+    <div class="card-body placeholder-glow"><div class="placeholder col-9 mb-2"></div><div class="placeholder col-7"></div></div>
   </div>
-  <div class="card-body">
-    <div id="admin-users-content" class="empty-note">
-      Lädt…
-    </div>
+  <div class="card-footer">
     <!-- Backlog 9: Web-Benutzer ohne Telegram (Freischaltung für Navidrome-Login) -->
-    <form id="admin-web-user-form" class="row g-2 align-items-end mt-3">
+    <form id="admin-web-user-form" class="row g-2 align-items-end">
       <div class="col-sm-5">
         <label class="form-label" for="admin-web-user-name">Web-Benutzer (Navidrome-Name)</label>
         <input id="admin-web-user-name" class="form-control" type="text" maxlength="128" required>
@@ -230,44 +169,41 @@
         </select>
       </div>
       <div class="col-sm-auto">
-        <button id="admin-web-user-btn" type="submit" class="btn btn-outline-primary">Web-Benutzer anlegen</button>
+        <button id="admin-web-user-btn" type="submit" class="btn btn-primary">
+          <svg class="icon me-1"><use href="#i-users"/></svg>Web-Benutzer anlegen
+        </button>
       </div>
       <div id="admin-web-user-message" class="col-12 small text-secondary">
         Schaltet ein Navidrome-Konto für die Anmeldung ohne Telegram frei (Rolle höchstens admin).
       </div>
     </form>
-    <div
-      id="admin-user-stats-content"
-      class="empty-note mt-4"
-      hidden
-    ></div>
   </div>
 </div>
 
-<!-- LIBRARY MAINTENANCE -->
+<!-- Library-Maintenance: Hinweis auf den Artist-Kontext -->
 <div class="card">
-  <div class="card-header">
-    <h2 class="card-title">Library-Maintenance</h2>
-  </div>
-  <div class="card-body">
-    <div class="alert alert-info mb-0" role="alert">
-      <div>
-        <h4 class="alert-title">Wartung im Artist-Kontext</h4>
-        <div class="text-secondary">
-          Die Library-Maintenance-Aktionen — Artist Casing korrigieren,
-          Legacy-Genre-Cleanup, Artist umbenennen und Titel bearbeiten —
-          sind im Artist-Kontext verfügbar.
-          Nutze dazu <strong>Library-Wartung</strong> bzw.
-          <strong>Metadaten bearbeiten</strong> auf der jeweiligen
-          Artist-Detailseite.
-        </div>
-        <div class="mt-3">
-          <a href="{{ base_path }}/library" class="btn btn-outline-primary">
-            Zur Library → Artist auswählen
-          </a>
-        </div>
+  <div class="card-body d-flex flex-wrap align-items-center gap-3">
+    <span class="avatar bg-teal-lt"><svg class="icon"><use href="#i-books"/></svg></span>
+    <div class="flex-fill">
+      <div class="fw-medium">Library-Maintenance im Artist-Kontext</div>
+      <div class="text-secondary small">
+        Artist-Schreibweise korrigieren, Legacy-Genre-Cleanup, Artist umbenennen und Titel bearbeiten
+        findest du unter <strong>Library-Wartung</strong> bzw. <strong>Metadaten bearbeiten</strong>
+        auf der jeweiligen Artist-Detailseite.
       </div>
     </div>
+    <a href="{{ base_path }}/library" class="btn">Zur Library</a>
+  </div>
+</div>
+
+<!-- Nutzer-Statistik im Seitenpanel (Standard Abschnitt 6) -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="admin-user-stats-offcanvas" aria-labelledby="admin-user-stats-title">
+  <div class="offcanvas-header">
+    <h2 class="offcanvas-title" id="admin-user-stats-title">Nutzer-Statistik</h2>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Schließen"></button>
+  </div>
+  <div class="offcanvas-body">
+    <div id="admin-user-stats-content"></div>
   </div>
 </div>
 {% endblock %}
