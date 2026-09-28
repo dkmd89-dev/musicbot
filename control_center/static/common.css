@@ -50,6 +50,11 @@
   --tblr-btn-active-bg: #097a58; --tblr-btn-active-border-color: #097a58;
   --tblr-btn-disabled-bg: #0ca678; --tblr-btn-disabled-border-color: #0ca678;
 }
+/* Tabler setzt hier ein festes Blau statt --tblr-primary (tabler.min.css
+   .btn-link / .list-group-item.active) - auf den Türkis-Akzent ziehen. */
+.btn-link { color: var(--tblr-primary); }
+.btn-link:hover, .btn-link:focus-visible { color: var(--tblr-link-hover-color); }
+.list-group-item.active { background-color: var(--tblr-primary); border-color: var(--tblr-primary); }
 
 /* ══════════════════════════════════════════════════════════════════
    2. RESET / BASE
@@ -573,47 +578,6 @@ button.select-row.active {
 }
 .panel-link:hover { text-decoration: underline; }
 
-/* ── 9.4 Recent Activity ─────────────────────────────────────────── */
-.activity-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.activity-item {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
-}
-.activity-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-.activity-main { min-width: 0; }
-.activity-title {
-  font-size: 0.85rem;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.activity-artist {
-  font-size: 0.75rem;
-  color: var(--muted);
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.activity-time {
-  font-size: 0.75rem;
-  color: var(--muted);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
 /* ── 9.5 Quick Actions (Icon-Kacheln) ────────────────────────────── */
 .quick-actions-grid {
   display: grid;
@@ -974,76 +938,6 @@ button.track-row:focus-visible { outline: 2px solid var(--accent); outline-offse
   }
 }
 
-/* === control_center_overview: Phase 4 Cards === */
-.overview-dominant .card {
-  border-left: 3px solid transparent;
-  transition: border-left-color 0.15s ease;
-}
-.overview-dominant > div:nth-child(1) .card { border-left-color: #066fd1; }
-.overview-dominant > div:nth-child(2) .card { border-left-color: #ae3ec9; }
-.overview-dominant > div:nth-child(3) .card { border-left-color: #f76707; }
-.overview-dominant .card-body { padding: 1.25rem 1.5rem; }
-
-.overview-compact .card-body { padding: 0.75rem 1rem; }
-.overview-compact .card .h3 { font-size: 1.1rem; }
-.overview-compact .card-header { padding: 0.6rem 1rem; }
-.overview-compact .card-header .card-title { font-size: 1rem; }
-.overview-compact .card-footer { padding: 0.5rem 1rem; }
-
-@media (max-width: 768px) {
-  .overview-dominant .card-body { padding: 1rem 1.15rem; }
-  .overview-compact .card-body { padding: 0.65rem 0.85rem; }
-}
-/* === /control_center_overview: Phase 4 Cards === */
-
-/* === control_center_overview: Health-Balken === */
-.health-bar-wrapper {
-  /* nutzt bestehende Karte-Hintergründe */
-}
-.health-bar {
-  height: 8px;
-  background: rgba(128, 128, 128, 0.15);
-  border-radius: 4px;
-  overflow: hidden;
-}
-.health-bar-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.35s ease;
-  width: 0;
-}
-.health-bar-fill.health-good { background: #2fb344; }
-.health-bar-fill.health-warn { background: #f59e0b; }
-.health-bar-fill.health-bad  { background: #d63939; }
-.health-bar-label {
-  margin-top: 0.4rem;
-  font-size: 0.8rem;
-  color: var(--muted, #8a919a);
-}
-/* === /control_center_overview: Health-Balken === */
-
-/* === control_center_overview: Phase 6 === */
-/* Feinschliff Health-Balken: schlanker, runder, dunklerer Track */
-.health-bar {
-  height: 6px;
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 3px;
-  overflow: hidden;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
-}
-.health-bar-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.4s ease;
-}
-.health-bar-label {
-  margin-top: 0.5rem;
-  font-size: 0.78rem;
-  color: var(--muted, #8a919a);
-  letter-spacing: 0.02em;
-}
-/* === /control_center_overview: Phase 6 === */
-
 /* === control_center_overview: Phase 7 === */
 /* Page-Header-Icon (identisch zur Statistics-Seite) */
 .page-header-icon {
@@ -1335,3 +1229,7 @@ input.downloads-url-input { max-width: none; }
 .cc-terminal .cc-t-ok { color: #2fb344; }
 .cc-terminal .cc-t-warn { color: #f59f00; }
 .cc-terminal .cc-t-err { color: #d63939; }
+
+/* CC-UI: Tabellenzelle, deren Inhalt per .text-truncate gekürzt wird
+   (max-width: 0 + width: 100% lässt die Zelle den Restplatz nehmen). */
+.cc-cell-truncate { max-width: 0; width: 100%; }

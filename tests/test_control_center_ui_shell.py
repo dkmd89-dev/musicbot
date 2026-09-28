@@ -100,7 +100,9 @@ async def test_logout_button_keeps_id_and_text_with_icon(client):
 
 
 def test_every_used_icon_exists_in_sprite():
-    sprite = ICONS.read_text(encoding="utf-8")
+    # Jinja-Kommentare {# ... #} werden nicht gerendert - Symbole darin
+    # zählen nicht (Regression: Symbole landeten versehentlich im Kommentar).
+    sprite = re.sub(r"\{#.*?#\}", "", ICONS.read_text(encoding="utf-8"), flags=re.S)
     defined = set(re.findall(r'<symbol [^>]*id="i-([a-z-]+)"', sprite))
     used = set()
     for path in TEMPLATES + [COMMON_JS]:
@@ -154,6 +156,8 @@ def test_common_css_sets_teal_accent_and_terminal_style():
 
     assert "--tblr-primary: #0ca678;" in css
     assert ".cc-terminal {" in css
+    # Tabler färbt .btn-link fest blau - muss auf den Akzent gezogen sein.
+    assert ".btn-link { color: var(--tblr-primary); }" in css
 
 
 # ─────────────────────────────────────────────────────────────────────────
