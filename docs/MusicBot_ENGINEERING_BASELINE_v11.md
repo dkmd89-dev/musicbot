@@ -1,15 +1,14 @@
 # MusicBot Engineering Baseline v11
 
-> **Status: 🟡 DRAFT (noch nicht eingefroren).**
+> **Status: 🟢 FROZEN (2026-09-28) — Freeze-Gate APPROVED, siehe Abschnitt 6.**
 >
-> Laufender Zwischenstand seit dem v10-Freeze (2026-09-14). Hier werden
-> pro ARCH-Phase/PR „ARCH Status", „Recent Major Changes" und Testzahlen
-> mitgeschrieben (CLAUDE.md „Baseline-Pflege"). Die Abschnitte 4–6
-> (Technical Debt / Security-Baseline / Architecture Freeze) bleiben
-> Platzhalter bis zum v11-Freeze — bis dahin ist
-> `docs/MusicBot_ENGINEERING_BASELINE_v10.md` der zitierbare eingefrorene
-> Referenzpunkt, `docs/FINDINGS_INDEX.md` die laufend gepflegte
-> Findings-Quelle.
+> Verifizierter Engineering-Referenzzustand nach dem v10-Freeze
+> (2026-09-14). Umfasst ARCH-033, die Control-Center-Admin-/Logger-
+> Integration (CC-AC-10A–D, CC-LOGGER-L2–L7), Client Consolidation
+> Phase A–D (inkl. D.10–D.13) und die Web-Parität (Backlog 4b, E1-Snapshot,
+> Navidrome-Login, Abmelden). `docs/archive/MusicBot_ENGINEERING_BASELINE_v10.md`
+> ist der eingefrorene Vorgänger. Der laufende Stand aller offenen/
+> zurückgestellten Punkte bleibt `docs/FINDINGS_INDEX.md`.
 
 ---
 
@@ -18,9 +17,11 @@
 | Feld | Wert |
 |---|---|
 | Baseline | v11 (DRAFT) |
-| Vorgänger | `docs/MusicBot_ENGINEERING_BASELINE_v10.md` (Freeze 2026-09-14, 4250 passed / 1 skipped / 0 failed / 11 subtests passed) |
-| Letzte vom Nutzer gemeldete Full-Suite-Zahl (aktuell, Branch `optimieren` nach Web-Paritäts-Backlog 9 / PR #348) | **6155 passed, 1 skipped, 11 subtests passed, 0 failed, 6 warnings** (395,12 s), 2026-09-28. Deckt alle Phasen seit dem letzten Stand ab: Backlog-Runde 2 (PR #333–#337), Client Consolidation D.10–D.13 (PR #338–#344, inkl. D.12a–c Runtime-Logging/Job-Verlauf und D.13 Cross-Process-Persistenz), Web-Parität 4b (PR #346), E1-Bot-Runtime-Snapshot (PR #347) und Navidrome-Login (PR #348). Skip-/Subtest-/Warnungs-Muster (1/11/6) unverändert gegenüber 2026-09-26. Vorheriger Stand: 5633 passed (2026-09-26, nach CC-LOGGER-L7). |
-| Zuwachs seit letztem hier dokumentiertem Stand | +522 passed (5633 → 6155), 0 failed |
+| Vorgänger | `docs/archive/MusicBot_ENGINEERING_BASELINE_v10.md` (Freeze 2026-09-14, 4250 passed / 1 skipped / 0 failed / 11 subtests passed) |
+| Letzte vom Nutzer gemeldete Full-Suite-Zahl (Freeze-Stand `main` = `489566d`, nach PR #349) | **6160 passed, 1 skipped, 11 subtests passed, 0 failed, 5 warnings** (409,53 s), 2026-09-28 — entspricht exakt den 6161 von pytest auf diesem Stand gesammelten Tests. Vorheriger Lauf: 6155 passed (Stand PR #348, 2026-09-28); davor 5633 passed (2026-09-26, nach CC-LOGGER-L7). Skip-/Subtest-Muster (1/11) seit v9 unverändert. |
+| Zuwachs seit v10-Freeze | +1910 passed (4250 → 6160), 0 failed am Freeze-Zeitpunkt |
+| Freeze-Datum | 2026-09-28 |
+| Freeze-Status | 🟢 APPROVED — siehe Abschnitt 6 |
 
 ---
 
@@ -511,20 +512,147 @@ Abschnitt „Implementierung".
 
 ---
 
-## 4. Technical Debt — Snapshot
+## 4. Technical Debt — Snapshot (Stand 2026-09-28, Freeze-Zeitpunkt)
 
-*(Platzhalter — wird beim v11-Freeze befüllt. Laufender Stand aller
-offenen/zurückgestellten Punkte: `docs/FINDINGS_INDEX.md`.)*
+Seit v10 geschlossen (Auswahl, Details in `docs/FINDINGS_INDEX.md`):
+**ARCH-033** (Telegram Level-2/Level-3 Repair), **CC-AC-10D Error-
+Administration** (E1-Snapshot), Logger-Cross-Prozess-Blocker (CC-LOGGER-
+L2–L7), **Wartungsmodus aus dem CC wirkungslos** (P2), User-Verwaltung-/
+Backup-Doppelimplementierungen, `AccessLevel`-Paketlage, Duplikat-Check
+und Duplikat-Verwaltung im CC, **Downloads im Web** inkl. Runtime-Logging
+und Job-Verlauf, **D.13 Cross-Process-Persistenz** (Lost Update, siehe
+Abschnitt 5), Login ohne Telegram (Navidrome-Benutzer), fehlende
+Abmeldung, sowie der Sammelpunkt „Web-Parität / Telegram als Client".
+Kein offener P0/P1 zum Freeze-Zeitpunkt (maschinell gegen
+`docs/FINDINGS_INDEX.md` verifiziert — alle als `P0`/`P1` markierten
+Zeilen sind `CLOSED`).
+
+Verbleibend offen (27 Punkte, alle P2/P3 bzw. unpriorisiert —
+Begründung je Zeile in `docs/FINDINGS_INDEX.md`):
+
+| Punkt | Art | Priorität |
+|---|---|---|
+| ARCH-031-Follow-up F2 (`tags_fingerprint()` rückwirkend für `apply_level1()`) | DEFER | P3 |
+| — (`utils/genre_map.py::GenreMapper.reload()`, ignoriert konfiguriertes `mapping_dir`) | DEFER | P3 |
+| — (`services/library_repair/run_tracking.py::compute_repair_statistics()`, aggregierte Repair-Statistik weist `UNRESOLVED` nicht separat aus) | DEFER | P3 |
+| — (ARCH-034/035, COVER/LOUDNESS/DUPLICATE über Telegram) | DEFER | P3 |
+| — (`_split_artists()`, `services/statistik/statistics_calculator.py`) | akzeptiert | P3 |
+| — (Family Hub, Challenge-Typ „Rate den Song") | DEFER | P3 |
+| — (Family Hub, Challenge-Typ „Playlist für Stimmung erstellen") | DEFER | P3 |
+| F-07 (MusicBrainz Artist-MBID nicht als Identitätssignal) | DEFER | P3 |
+| — (Hard-Cancel während FFmpeg-Postprocessing wird nicht erkannt) | akzeptiert | P3 |
+| — (P2.3 Stufe B — Bad Download Detector Reject-Gate) | DEFER | P2 |
+| — (Metadata Confidence Score — Wiederverwendung vs. separater Score) | DEFER | — |
+| — (Control Center, Subpath-Betrieb: echter Browser-/Telegram-Login-Test) | DEFER | P3 |
+| — (ARCH-021 Menu-Subsystem, Session-Legacy-State: `max_sessions` ohne Durchsetzung + `MenuSession.state`/`.data`/`.message_id` ungenutzt) | DEFER | P3 |
+| — (`config.py::DOWNLOAD_RETRY_COUNT`/`DOWNLOAD_RETRY_DELAY`, totes Config) | DEFER | P3 |
+| — (Music DNA v1, bewusst zurückgestellte Dimensionen) | DEFER | P3 |
+| — (Telegram-Delete für Duplikat-Check, Follow-up) | DEFER | P3 |
+| — (Manual Album Artist Editing, `aART` kann durch das bestehende `ALBUM_ARTIST_INCONSISTENT`-SAFE_AUTOMATIC-Repair auf den Verzeichnisnamen zurückg… | DEFER | P3 |
+| — (Manual Artist Editing, tag-wert-getriebener Scope kann Dateien mit abweichendem Artist-Tag dauerhaft aus dem Rename ausschließen) | akzeptiert | P3 |
+| — (Manual Metadata Editing v1/v2, `handlers/library_maintenance_handler.py`: gemeinsamer `libmaint_meta_new_value`-Session-Key ohne Flow-Identität/… | akzeptiert | P3 |
+| — (`services/library_repair/maintenance_service.py::album_targets()`, totes `is_symlink()`-Check im Einzeldatei-Scope-Zweig — Symlink-Dateien inner… | DEFER | P3 |
+| — (CC-LOGGER-L7, globales Log-Level ohne Persistenz-Schema) | DEFER | P3 |
+| — (CC-LOGGER-L7, Modul-Statistiken + volle Logger-Introspektion, Cross-Prozess-Blocker) | DEFER | P3 |
+| — (Artist-Seite `library_artist_detail.html`, Tag-Vorschau `renderMetadataEditPreview()`: `.row-count` läuft auf schmalen Bildschirmen über) | DEFER | P3 |
+| — (`handlers/duplicate_handler.py::find_duplicates()`/`clear_duplicate_cache()`, Legacy ohne Aufrufer) | DEFER | P3 |
+| — (`DuplicateDetector._in_flight` gilt nur pro Instanz/Prozess) | OPEN | P3 |
+| — (`enhanced_metadata_processor.log` wird von zwei Prozessen geschrieben/rotiert) | OPEN | P3 |
+| — (Familie im Control Center; Login ohne Telegram) | DEFER | P3 |
+
+27 offene Punkte (ggü. 10 in v10). Der Zuwachs besteht aus
+bewusst dokumentierten, kleinen Zurückstellungen/akzeptierten Risiken der
+deutlich größeren Serie (Control Center, Client Consolidation, Web-
+Parität) und aus in v10 noch nicht einzeln geführten Altpunkten, die der
+Findings-Index inzwischen separat ausweist — kein „vergessenes" Risiko,
+kein P0/P1.
 
 ---
 
-## 5. Security-Baseline
+## 5. Security- und Datensicherheits-Baseline (Stand 2026-09-28)
 
-*(Platzhalter — wird beim v11-Freeze befüllt.)*
+**Dokumentierter Datensicherheits-Vorfall der Serie (Nutzerentscheidung
+beim Freeze-Gate: „als dokumentierten, behobenen Vorfall akzeptieren"):**
+- **D.13 — Lost Update Download-Verlauf/Duplikat-Cache (P0-Bereich
+  Duplikaterkennung).** Seit Downloads auch aus dem Control Center möglich
+  waren (Client Consolidation D.10/D.11, PR #338) bis zum Fix (PR #344,
+  2026-09-28) überschrieb jeder Telegram-Download bzw. jeder Duplikat-
+  Lese-Treffer im Bot-Prozess die Einträge der Web-Downloads in
+  `download_history.json`, `url_duplicates.json` und
+  `content_duplicates.json` (langlebige Bot-Instanz schrieb ihren Stand
+  vom Bot-Start zurück). **Betroffen:** nur Verlaufs- und Duplikat-Cache-
+  Metadaten. **Nicht betroffen:** Audiodateien, Bibliothek, Tags. Die
+  Duplikaterkennung blieb über Bibliotheks-Prüfung und Datei-Konflikt-
+  Erkennung abgefedert. **Fix:** `fcntl.flock`-Zyklus (Lock → Neu laden
+  bei Dateiänderung → Operation → atomar schreiben, `utils/file_lock.py`),
+  Regressionstest inkl. echter Parallelität
+  (`tests/test_cross_process_persistence.py`). Details:
+  `docs/audits/CLIENT_CONSOLIDATION_PHASE_D_DOWNLOAD_RUNTIME_2026-09-27.md` §8.
+
+**Neue schützende Mechanismen seit v10:**
+- **Login mit Navidrome-Benutzer** (Backlog 9): Passwort nie in URL/Log/
+  Antwort (Navidrome `POST /auth/login`, `SecretStr`), keine Rückschlüsse
+  auf Konten, Rate-Limit 5 Fehlversuche/15 min pro Benutzername und IP
+  (speicherbegrenzt), Freischaltung nur durch Admin, Rolle höchstens ADMIN
+  (OWNER nur über Telegram), Same-Origin-Check. Betriebsvoraussetzung:
+  nginx `X-Forwarded-For` (`docs/CONTROL_CENTER_REVERSE_PROXY.md`).
+- **Abmelden** (`POST /api/v1/auth/logout`): löscht das Session-Cookie mit
+  identischem Path/Flags. Bewusst dokumentierte Einschränkung: stateless
+  HMAC-Session — kopierte Cookies bleiben bis Ablauf (7 Tage) gültig.
+- **Bot-Runtime-Snapshot** (E1): Fehlereinträge streng bereinigt (kein
+  Telegram-Kontext, kein Stacktrace, redigierte Message über
+  `services/logs/reader.py::redact_secrets`), CC nur lesend.
+- **Cross-Prozess-Konsistenz** für `user_data.json` (Phase A),
+  Download-Verlauf/Duplikat-Cache (D.13) und Wartungsmodus (Neulesen per
+  `stat()`), jeweils mit Tests.
+- Control-Center-Schreibendpunkte durchgehend mit Same-Origin-Check,
+  ADMIN-Gating serverseitig pro Router.
+
+Keine offenen Security-Findings am Ende dieser Serie.
 
 ---
 
 ## 6. Architecture Freeze
 
-*(Platzhalter — Freeze-Gate-Audit noch nicht durchgeführt, kein
-GO/NO-GO-Verdikt für v11.)*
+```
+🟢 ARCHITECTURE FREEZE — APPROVED (2026-09-28)
+```
+
+**Freeze-Gate-Audit (2026-09-28, Stand `main` = `489566d`):**
+
+| Kriterium | Ergebnis |
+|---|---|
+| Offene P0/P1-Findings | **0** (maschinell gegen `docs/FINDINGS_INDEX.md` verifiziert, Abschnitt 4) |
+| Vollständige Testsuite | **6160 passed, 1 skipped, 11 subtests passed, 0 failed** (409,53 s), vom Nutzer selbst auf dem Freeze-Stand ausgeführt (CLAUDE.md §8.A) — deckt sich mit den 6161 von pytest gesammelten Tests. Ein zuvor gemeldeter Lauf (6155) wurde als Stand vor PR #349 erkannt und nicht als Freeze-Beleg verwendet. |
+| Bekannte Regressionen | keine — jede Phase der Serie mit Vor-Fix-Gegenprobe und unverändert grünen bestehenden Tests (u. a. Telegram-Characterization für Duplikat-Leeren, Auth, `whoami`) |
+| Schichtgrenzen-Verletzungen | keine — AST-Prüfung: kein Import `services/` → `handlers`/`control_center`/`klassen`/`telegram`/`helfer`, kein Import `control_center/` → `handlers`/`klassen`/`telegram`/`helfer`, kein Import `utils/` → Präsentationsschichten; 150 Schichtgrenzen-Tests grün |
+| Produktions-Datensicherheit | **PASS mit dokumentiertem Vorfall** (Nutzerentscheidung): D.13 Lost Update von Verlaufs-/Duplikat-Cache-Metadaten während der Serie, keine Audio-/Bibliotheks-/Tag-Daten betroffen, behoben und mit Regressionstest abgesichert (Abschnitt 5). Kein Crash, keine Korruption. |
+
+Die Serie ist überwiegend additiv (neue Services, Router, Jobs,
+Snapshot-/Login-Mechanismen) und migriert bestehende Telegram-Fachlogik
+nach `services/`, ohne Telegram-Verhalten zu ändern (Characterization-
+first). Die einzigen bewussten Verhaltensänderungen sind die dokumentierten
+Fixes (D.13-Persistenz, Wartungsmodus-Neulesen, Leeren des Duplikat-Caches
+unter Lock).
+
+---
+
+## Freeze-Checkliste (v11-Freeze, 2026-09-28)
+
+- [x] Freeze-Gate-Audit → 🟢 APPROVED (alle Kriterien PASS, Kriterium 5 mit dokumentiertem Vorfall per Nutzerentscheidung, kein offener P0/P1)
+- [x] Abschnitte 4–6 als Schnappschuss befüllt
+- [x] „Baseline Frozen (2026-09-28)"-Footer gesetzt, DRAFT-Kopf entfernt
+- [x] Referenzen umgestellt: `README.md`, `docs/INDEX.md`, `CLAUDE.md`
+- [x] `docs/MusicBot_ENGINEERING_BASELINE_v10.md` → `docs/archive/`
+
+---
+
+## Baseline Frozen (2026-09-28)
+
+**Diese Datei ist damit abgeschlossen.** Neue Findings, Nachträge oder
+technische Schulden gehören ab jetzt in
+`MusicBot_ENGINEERING_BASELINE_v12.md`, sobald diese angelegt wird
+(Normalfall: beim nächsten ARCH-Phasen-Abschluss mit Code-/YAML-Änderung
+nach diesem Freeze — bis dahin ist dieses Dokument der eingefrorene
+Referenzpunkt). Der laufende Stand aller offenen/zurückgestellten Punkte
+bleibt `docs/FINDINGS_INDEX.md`.
