@@ -23,7 +23,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from logger import get_module_logger
+from config import Config
+from logger import get_module_logger, setup_enhanced_logging
 
 from services.jobs.job_registry import JobRegistry
 from services.logger_admin import LoggerApplyRateLimiter
@@ -52,6 +53,35 @@ from .schemas.errors import ErrorDetail
 
 _logger = get_module_logger("control_center.app")
 
+# D.12a: eigene Log-Datei des CC-Prozesses - bewusst NICHT bot.log, damit
+# nicht zwei Prozesse (bot.py + control-center.service) dieselbe
+# RotatingFileHandler-Datei rotieren. services/logs/reader.py findet sie
+# automatisch ueber LOG_DIR/*.log*.
+CONTROL_CENTER_LOG_FILENAME = "control_center.log"
+
+
+def setup_control_center_logging(config: Config | None = None) -> None:
+    """Initialisiert das Logging des CC-Prozesses mit dem bestehenden
+    setup_enhanced_logging() (identische Parameter wie bot.py, nur eigene
+    Datei). Vorher hatte der CC-Prozess keinen Root-Handler: INFO/DEBUG
+    aller get_module_logger()-Logger (YoutubeDownloader, pipeline_core,
+    JobRegistry, ...) gingen verloren, WARNING+ landete nur ueber
+    logging.lastResort auf stderr.
+
+    Wird ausschliesslich aus dem Startup-Event aufgerufen (siehe
+    create_app()): setup_enhanced_logging() entfernt alle Root-Handler -
+    Tests via httpx.ASGITransport loesen kein Lifespan-Event aus und
+    bleiben dadurch unberuehrt (caplog o. Ae.)."""
+    config = config or Config()
+    log_file = Path(config.LOG_DIR) / CONTROL_CENTER_LOG_FILENAME
+    setup_enhanced_logging(
+        log_file=str(log_file),
+        level=getattr(config, "LOG_LEVEL", "INFO"),
+        use_colors=True,
+        use_emojis=True,
+    )
+    _logger.info(f"✅ Control-Center-Logging eingerichtet: {log_file}")
+
 
 def create_app() -> FastAPI:
     app = FastAPI(title="MusicBot Control Center", version="0.1.0")
@@ -65,6 +95,11 @@ def create_app() -> FastAPI:
     # Pro App-Instanz (create_app()-Aufruf) isoliert, damit Tests
     # keinen geteilten Zustand sehen. Kein Modul-Level-Singleton.
     app.state.logger_apply_limiter = LoggerApplyRateLimiter(min_interval_seconds=60.0)
+
+    # D.12a: Logging erst beim Startup (nur unter uvicorn), nicht beim
+    # Import/create_app() - siehe setup_control_center_logging().
+    app.add_event_handler("startup", setup_control_center_logging)
+
     # Subpath-Betrieb hinter nginx (X-Forwarded-Prefix -> scope["root_path"],
     # siehe control_center/root_path.py) - ohne Header wirkungslos.
     app.add_middleware(ForwardedPrefixMiddleware)
