@@ -61,12 +61,12 @@ geschriebenen Zustand sichtbar macht.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import time
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar
+
+from utils.file_lock import cross_process_lock
 
 DEFAULT_USER_DATA_FILE = Path("data/user_data.json")
 
@@ -138,21 +138,9 @@ def save_user_data(
         return False
 
 
-@contextmanager
-def _cross_process_lock(path: Path):
-    """Hält einen exklusiven `fcntl.flock` auf einer `<path>.lock`-Datei,
-    solange der `with`-Block läuft — serialisiert den Read-Modify-Write-
-    Zyklus zwischen bot.service und control-center.service (A.7). Die
-    Lock-Datei selbst trägt keine Nutzdaten, nur ihr Dateideskriptor dient
-    als Lock-Handle (Standardmuster für `fcntl.flock` unter Linux)."""
-    lock_path = path.with_name(path.name + ".lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_path, "a+") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+# D.13: nach utils/file_lock.py verschoben (gemeinsam mit
+# DownloadHistoryStore/DuplicateCache genutzt) - Verhalten unverändert.
+_cross_process_lock = cross_process_lock
 
 
 def update_user_data(

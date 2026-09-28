@@ -651,16 +651,21 @@ class DuplicateDetector:
 
     def invalidate_entry(self, url: str = None, artist: str = None, title: str = None):
         removed_count = 0
-        if url:
-            url_hash = self.duplicate_cache.get_url_hash(url)
-            if url_hash in self.duplicate_cache.url_cache:
-                del self.duplicate_cache.url_cache[url_hash]
-                removed_count += 1
-        if artist and title:
-            content_hash = self.duplicate_cache.get_content_hash(artist, title)
-            if content_hash in self.duplicate_cache.content_cache:
-                del self.duplicate_cache.content_cache[content_hash]
-                removed_count += 1
-        if removed_count > 0:
-            self.duplicate_cache._save_caches()
+        # D.13: direkte Änderung an url_cache/content_cache nur innerhalb von
+        # DuplicateCache.transaction() (Lock + frischer Stand) - sonst würde
+        # ein anderer Prozess die gelöschten Einträge zurückschreiben bzw.
+        # hier ein veralteter Stand dessen neue Einträge überschreiben.
+        with self.duplicate_cache.transaction():
+            if url:
+                url_hash = self.duplicate_cache.get_url_hash(url)
+                if url_hash in self.duplicate_cache.url_cache:
+                    del self.duplicate_cache.url_cache[url_hash]
+                    removed_count += 1
+            if artist and title:
+                content_hash = self.duplicate_cache.get_content_hash(artist, title)
+                if content_hash in self.duplicate_cache.content_cache:
+                    del self.duplicate_cache.content_cache[content_hash]
+                    removed_count += 1
+            if removed_count > 0:
+                self.duplicate_cache._save_caches()
             self.logger.info(f"🗑️ {removed_count} Duplikat-Einträge invalidiert")

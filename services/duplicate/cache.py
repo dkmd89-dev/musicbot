@@ -8,18 +8,33 @@ ARCH-018 Phase 2 (docs/archive/arch/MusicBot_ARCH-018_Duplicate_Handler_Characte
 verschoben aus handlers/duplicate_handler.py. Reine Cache-/Persistenzlogik
 ohne Telegram-Bezug (Abschnitt 6 der Characterization, "fachlicher Kern") –
 unverändert in Verhalten und Signatur übernommen.
+
+D.13 (Zwei-Prozess-Betrieb): bot.service hält einen langlebigen
+DuplicateDetector/-Cache, control-center.service erzeugt pro Download-Job
+einen neuen - beide schreiben url_duplicates.json/content_duplicates.json.
+Vorher schrieb jede Instanz ihren beim Start geladenen Stand zurück und
+überschrieb damit die Einträge des anderen Prozesses (Lost Update ->
+verlorene Duplikat-Einträge, False Negatives auf URL-/Content-Ebene). Jetzt
+laufen alle lesenden und schreibenden Cache-Operationen in transaction():
+prozessübergreifender Lock (utils/file_lock.py, Muster aus
+services/user_data.py) -> Neu laden, falls die Dateien sich geändert haben
+-> Operation -> ggf. atomar schreiben. Fehlende Dateien (Telegram "Cache
+leeren") -> leerer Stand; unlesbare Dateien ersetzen den In-Memory-Stand
+nie durch "leer". Duplikat-Logik, Dateiformat und Signaturen unverändert.
 """
 
 import hashlib
 import json
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Iterator, Optional, Tuple
 from datetime import datetime, timedelta
 
 from logger import get_module_logger
 from services.downloader.models import DuplicateEntry
 from config import Config
+from utils.file_lock import cross_process_lock
 
 
 class DuplicateCache:
@@ -45,35 +60,46 @@ class DuplicateCache:
         # Caches laden
         self.url_cache = self._load_url_cache()
         self.content_cache = self._load_content_cache()
+        self._disk_signature = self._file_signature()
 
         self.logger.info(f"💾 DuplicateCache initialisiert: {self.cache_path}")
+
+    @staticmethod
+    def _parse_cache_file(path: Path) -> Dict[str, DuplicateEntry]:
+        """Liest eine Cache-Datei (fehlend -> {}), wirft bei ungültigem
+        Inhalt - gemeinsamer Parser für _load_*_cache() (Start) und
+        _refresh_from_disk() (D.13)."""
+        if not path.exists():
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        cache = {}
+        for key, entry_data in data.items():
+            cache[key] = DuplicateEntry(
+                artist=entry_data["artist"],
+                title=entry_data["title"],
+                url=entry_data["url"],
+                file_path=(
+                    Path(entry_data["file_path"])
+                    if entry_data.get("file_path")
+                    else None
+                ),
+                download_date=datetime.fromisoformat(
+                    entry_data["download_date"]
+                ),
+                file_hash=entry_data.get("file_hash"),
+                metadata_hash=entry_data.get("metadata_hash"),
+                duplicate_count=entry_data.get("duplicate_count", 1),
+            )
+        return cache
 
     def _load_url_cache(self) -> Dict[str, DuplicateEntry]:
         """Lädt URL-basierte Duplikate"""
         try:
+            cache = self._parse_cache_file(self.url_cache_file)
             if self.url_cache_file.exists():
-                with open(self.url_cache_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    cache = {}
-                    for url_hash, entry_data in data.items():
-                        cache[url_hash] = DuplicateEntry(
-                            artist=entry_data["artist"],
-                            title=entry_data["title"],
-                            url=entry_data["url"],
-                            file_path=(
-                                Path(entry_data["file_path"])
-                                if entry_data.get("file_path")
-                                else None
-                            ),
-                            download_date=datetime.fromisoformat(
-                                entry_data["download_date"]
-                            ),
-                            file_hash=entry_data.get("file_hash"),
-                            metadata_hash=entry_data.get("metadata_hash"),
-                            duplicate_count=entry_data.get("duplicate_count", 1),
-                        )
-                    self.logger.debug(f"📋 URL-Cache geladen: {len(cache)} Einträge")
-                    return cache
+                self.logger.debug(f"📋 URL-Cache geladen: {len(cache)} Einträge")
+            return cache
         except Exception as e:
             self.logger.warning(f"⚠️ Fehler beim Laden des URL-Cache: {e}")
         return {}
@@ -81,34 +107,60 @@ class DuplicateCache:
     def _load_content_cache(self) -> Dict[str, DuplicateEntry]:
         """Lädt Content-basierte Duplikate (Artist + Titel)"""
         try:
+            cache = self._parse_cache_file(self.content_cache_file)
             if self.content_cache_file.exists():
-                with open(self.content_cache_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    cache = {}
-                    for content_hash, entry_data in data.items():
-                        cache[content_hash] = DuplicateEntry(
-                            artist=entry_data["artist"],
-                            title=entry_data["title"],
-                            url=entry_data["url"],
-                            file_path=(
-                                Path(entry_data["file_path"])
-                                if entry_data.get("file_path")
-                                else None
-                            ),
-                            download_date=datetime.fromisoformat(
-                                entry_data["download_date"]
-                            ),
-                            file_hash=entry_data.get("file_hash"),
-                            metadata_hash=entry_data.get("metadata_hash"),
-                            duplicate_count=entry_data.get("duplicate_count", 1),
-                        )
-                    self.logger.debug(
-                        f"🎵 Content-Cache geladen: {len(cache)} Einträge"
-                    )
-                    return cache
+                self.logger.debug(
+                    f"🎵 Content-Cache geladen: {len(cache)} Einträge"
+                )
+            return cache
         except Exception as e:
             self.logger.warning(f"⚠️ Fehler beim Laden des Content-Cache: {e}")
         return {}
+
+    def _file_signature(self) -> Tuple[Optional[Tuple[int, int, int]], ...]:
+        """(inode, mtime_ns, size) je Cache-Datei oder None, wenn sie fehlt -
+        jeder atomare Schreibvorgang (tmp + replace) erzeugt ein neues Inode."""
+        signature = []
+        for path in (self.url_cache_file, self.content_cache_file):
+            try:
+                st = path.stat()
+                signature.append((st.st_ino, st.st_mtime_ns, st.st_size))
+            except FileNotFoundError:
+                signature.append(None)
+        return tuple(signature)
+
+    def _refresh_from_disk(self) -> None:
+        """D.13: lädt beide Caches neu, falls ein anderer Prozess/eine andere
+        Instanz die Dateien seit dem letzten Lesen/Schreiben geändert hat.
+        Bei unlesbarem Inhalt bleibt der In-Memory-Stand erhalten."""
+        signature = self._file_signature()
+        if signature == self._disk_signature:
+            return
+        try:
+            url_cache = self._parse_cache_file(self.url_cache_file)
+            content_cache = self._parse_cache_file(self.content_cache_file)
+        except Exception as e:
+            self.logger.warning(
+                f"⚠️ Duplikat-Cache konnte nicht neu geladen werden, behalte Speicherstand: {e}"
+            )
+            return
+        self.url_cache = url_cache
+        self.content_cache = content_cache
+        self._disk_signature = signature
+        self.logger.debug(
+            f"🔄 Duplikat-Cache neu geladen: {len(url_cache)} URL / {len(content_cache)} Content"
+        )
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """D.13: prozessübergreifend gesperrter Abschnitt mit frischem
+        Stand - alle Cache-Operationen (und externe direkte Änderungen an
+        url_cache/content_cache wie DuplicateDetector.invalidate_entry())
+        laufen hier hindurch. Nicht verschachteln (flock ist pro Datei-
+        Handle, ein zweites Anfordern im selben Prozess blockiert)."""
+        with cross_process_lock(self.url_cache_file):
+            self._refresh_from_disk()
+            yield
 
     def _save_caches(self):
         """
@@ -162,6 +214,7 @@ class DuplicateCache:
                 for content_hash, entry in self.content_cache.items()
             }
             self._write_json_atomic(self.content_cache_file, content_data)
+            self._disk_signature = self._file_signature()
 
             self.logger.debug("💾 Duplikat-Caches erfolgreich gespeichert")
         except Exception as e:
@@ -198,6 +251,10 @@ class DuplicateCache:
         return hashlib.md5(normalized_key.encode("utf-8")).hexdigest()
 
     def add_entry(self, entry: DuplicateEntry):
+        with self.transaction():
+            self._add_entry_locked(entry)
+
+    def _add_entry_locked(self, entry: DuplicateEntry):
         url_hash = self.get_url_hash(entry.url)
         content_hash = self.get_content_hash(entry.artist, entry.title)
 
@@ -219,6 +276,10 @@ class DuplicateCache:
     def check_url_duplicate(self, url: str) -> Optional[DuplicateEntry]:
         if not url:
             return None
+        with self.transaction():
+            return self._check_url_duplicate_locked(url)
+
+    def _check_url_duplicate_locked(self, url: str) -> Optional[DuplicateEntry]:
         cache_key = self._normalize_url_for_cache(url)
         self.logger.debug(f"🔍 URL-Cache-Check: '{url}' -> Key: '{cache_key}'")
 
@@ -313,6 +374,12 @@ class DuplicateCache:
     def check_content_duplicate(
         self, artist: str, title: str
     ) -> Optional[DuplicateEntry]:
+        with self.transaction():
+            return self._check_content_duplicate_locked(artist, title)
+
+    def _check_content_duplicate_locked(
+        self, artist: str, title: str
+    ) -> Optional[DuplicateEntry]:
         content_hash = self.get_content_hash(artist, title)
         result = self.content_cache.get(content_hash)
         if result:
@@ -338,6 +405,10 @@ class DuplicateCache:
         return result
 
     def cleanup_old_entries(self, days_old: int = 30):
+        with self.transaction():
+            self._cleanup_old_entries_locked(days_old)
+
+    def _cleanup_old_entries_locked(self, days_old: int = 30):
         cutoff_date = datetime.now() - timedelta(days=days_old)
         old_url_keys = [
             k for k, e in self.url_cache.items() if e.download_date < cutoff_date
