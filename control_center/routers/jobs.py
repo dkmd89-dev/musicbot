@@ -108,6 +108,7 @@ Authentifiziert mit mindestens AccessLevel.ADMIN.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -123,6 +124,7 @@ from services.downloader.download_result_reporter import DownloadResultReporter
 from services.downloader.downloader import YoutubeDownloader
 from services.duplicate.detector import DuplicateDetector
 from services.jobs.job_registry import JobRegistry
+from services.jobs.step_context import step_reporter
 from services.library_repair.doctor_runner import run_health_scan, run_safe_automatic_repair
 from services.library_repair.duplicate_runner import run_duplicate_scan
 from services.library_repair.genre_revalidation_runner import run_genre_revalidation_subprocess
@@ -576,8 +578,20 @@ async def _run_download_job(
                 return
 
             registry.update_progress(job_id, 20.0, "Download läuft…")
+            # D.12c: feine Metadaten-Schritte (EnhancedMetadataProcessor ->
+            # report_step()) nur bei Single-Downloads in den Job-Verlauf -
+            # bei Playlists wuerden ~10 Schritte pro Track die
+            # MAX_JOB_EVENTS-Grenze sofort sprengen. Task-lokal
+            # (contextvars), daher auch bei parallelen Jobs sauber getrennt.
+            if download_type == "single":
+                step_scope = step_reporter(
+                    lambda step: registry.update_progress(job_id, 20.0, f"Metadaten: {step}")
+                )
+            else:
+                step_scope = contextlib.nullcontext()
             try:
-                download_result = await downloader.download_audio(url)
+                with step_scope:
+                    download_result = await downloader.download_audio(url)
             except asyncio.CancelledError as ce:
                 partial_results = getattr(ce, "partial_playlist_results", None)
                 if partial_results:

@@ -39,6 +39,7 @@ from .lyrics_processor import LyricsProcessor
 from .cover_processor import CoverProcessor
 from .auto_learn import AutoLearnManager
 from .tag_writer import TagWriter
+from services.jobs.step_context import report_step
 from services.downloader.download_artifact_cleanup import (
     cleanup_single_download_artifact,
 )
@@ -312,10 +313,12 @@ class EnhancedMetadataProcessor(SingletonMixin):
 
             # ── 2. Cache-Check ───────────────────────────────────────────────
             self.logger.info("💾 2️⃣ Prüfe Metadaten-Cache...")
+            report_step("Cache prüfen…")
             cache_result = self.cache_handler.check(track_metadata, dominant_artist)
             if cache_result:
                 self.processing_stats.cache_hits += 1
                 self.logger.info(f"💾✅ Cache-Treffer für: {cache_result.title}")
+                report_step("Aus Cache übernommen")
                 # P2-Fund (docs/FINDINGS_INDEX.md, "Metadata-Cache-Hit +
                 # Duplicate-Cache leer"): bei einem Cache-Hit wird
                 # move_to_library() (Schritt 16) gar nicht erst erreicht -
@@ -464,6 +467,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
 
             # ── 6. Artist-Bestimmung ─────────────────────────────────────────
             self.logger.info("🎤 6️⃣ Bestimme finalen Künstler...")
+            report_step("Künstler bestimmen…")
             if not _is_podcast_channel and youtube_parsed.get("all_artists"):
                 _original_all = youtube_parsed.get("all_artists", [])
                 _cleaned_all = []
@@ -666,6 +670,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
 
             # ── 7. Titel-Bereinigung ─────────────────────────────────────────
             self.logger.info(f"🎵 7️⃣ Bestimme finalen Titel...")
+            report_step("Titel bestimmen…")
             if _is_podcast_channel:
                 clean_title = raw_title.strip()
             else:
@@ -710,6 +715,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
 
             # ── 9. Genre ─────────────────────────────────────────────────────────────
             self.logger.info("🏷️ 9️⃣ Bestimme Genre...")
+            report_step("Genre bestimmen…")
             genres_result = await self._determine_genre_with_stats(
                 track_metadata=track_metadata,
                 artist_name=final_artist,
@@ -744,6 +750,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
 
             # ── 10. Lyrics ───────────────────────────────────────────────────
             self.logger.info("📜 1️⃣0️⃣ Suche nach Lyrics...")
+            report_step("Lyrics suchen…")
             lyrics, lyrics_source = (
                 await self.lyrics_processor.fetch_lyrics_with_fallback(
                     artist=final_artist,
@@ -825,6 +832,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
 
             # ── 11b. Cover-Art ───────────────────────────────────────────────
             self.logger.info("🖼️ 1️⃣1️⃣b Lade Cover-Art...")
+            report_step("Cover laden…")
             cover_art = track_metadata.get("cover_art")
             cover_source = None
 
@@ -888,6 +896,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
 
             # ── 12. Album/Jahr ───────────────────────────────────────────────
             self.logger.info("💿 1️⃣2️⃣ Bestimme Album & Jahr...")
+            report_step("Album & Jahr bestimmen…")
             album_info = self.album_processor.determine_album_info(
                 track_metadata=track_metadata,
                 playlist_metadata=playlist_metadata,
@@ -979,6 +988,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
             # (docs/LIBRARY_REPAIR.md §6b) und schließt das offene DEFER-
             # Finding "Schritt 15b LUFS-Ziel verifizieren".
             self.logger.info("🔊 1️⃣5️⃣b ReplayGain-Analyse + Tag (kein Re-Encode)...")
+            report_step("ReplayGain-Analyse…")
             _loudness_ok = False
             try:
                 from utils.audio_enhancer import AudioEnhancer
@@ -1044,6 +1054,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
                 _artist_dir_existed_before_move = False
 
             self.logger.info("📂 1️⃣6️⃣ Verschiebe Datei in die Bibliothek...")
+            report_step("In Bibliothek verschieben…")
             library_path, renamed_due_to_conflict = filename_fixer.move_to_library(
                 source_path=original_path,
                 artist=artist_for_filename,
@@ -1057,6 +1068,7 @@ class EnhancedMetadataProcessor(SingletonMixin):
 
             # ── 17. Metadaten schreiben ──────────────────────────────────────
             self.logger.info("📝 1️⃣7️⃣ Schreibe Metadaten-Tags...")
+            report_step("Tags schreiben…")
             try:
                 # AE-12 (docs/archive/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md): write_tags()
                 # lief bisher synchron direkt im Event-Loop-Thread. Seit dem
