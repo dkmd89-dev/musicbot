@@ -1,0 +1,214 @@
+<!doctype html>
+<!--
+  CC-UI-0 Layout-Entwurf C — "Dashboard" (dunkle Sidebar, Dark Mode, Pipeline-Schritte)
+  Reines Mockup, KEINE Produktionsdatei. Statische Beispieldaten.
+  Tabler 1.5.1: zuerst lokal vendored (Repo-Pfad), Fallback CDN.
+-->
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Layout C · Dashboard</title>
+  <link rel="stylesheet" href="../../../control_center/static/vendor/tabler/css/tabler.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.5.1/dist/css/tabler.min.css">
+  <style>.mock-note { font-size: .75rem; }</style>
+</head>
+<body>
+<div class="page">
+  <!-- Shell: dunkle Sidebar (data-bs-theme=dark nur für die Sidebar) -->
+  <aside class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark">
+    <div class="container-fluid">
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-c" aria-label="Menü öffnen">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <h1 class="navbar-brand">🎵 MusicBot</h1>
+      <div class="collapse navbar-collapse" id="sidebar-c">
+        <ul class="navbar-nav pt-lg-3">
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-title">Overview</span></a></li>
+          <li class="nav-item active"><a class="nav-link active" href="#"><span class="nav-link-title">Downloads</span>
+            <span class="badge badge-sm bg-blue text-blue-fg ms-auto">1</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-title">Library</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-title">Statistics</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-title">Navidrome</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-title">Health</span>
+            <span class="badge badge-sm bg-yellow text-yellow-fg ms-auto">4</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-title">Logs</span></a></li>
+          <li class="nav-item mt-3"><a class="nav-link" href="#"><span class="nav-link-title">Administration</span></a></li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+  <div class="page-wrapper">
+    <header class="navbar navbar-expand-md d-print-none">
+      <div class="container-xl">
+        <span class="navbar-text">Control Center</span>
+        <div class="navbar-nav flex-row order-md-last align-items-center gap-2">
+          <button class="btn btn-sm btn-ghost-secondary" id="theme-toggle" type="button" title="Hell/Dunkel">🌓</button>
+          <span class="avatar avatar-sm bg-purple-lt">R</span>
+          <button class="btn btn-sm btn-outline-secondary">Abmelden</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-header d-print-none">
+      <div class="container-xl">
+        <div class="row align-items-center">
+          <div class="col"><div class="page-pretitle">Musik</div><h2 class="page-title">Downloads</h2></div>
+          <div class="col-auto"><button class="btn btn-primary" data-bs-toggle="offcanvas" data-bs-target="#new-dl">Neuer Download</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div class="container-xl">
+        <div class="alert alert-info mock-note">Mockup C · Dashboard — dunkle Sidebar mit Zählern, Hell/Dunkel-Umschalter, KPI-Karten mit Icon, Pipeline als Schrittfolge, Details/Eingaben im Seitenpanel, Toast als Rückmeldung.</div>
+
+        <!-- KPI-Karten mit Avatar-Icon -->
+        <div class="row row-cards mb-3">
+          <div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center">
+            <div class="col-auto"><span class="avatar bg-blue text-white">⬇</span></div>
+            <div class="col"><div class="fw-medium">1 aktiv</div><div class="text-secondary">62 % fertig</div></div></div></div></div></div>
+          <div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center">
+            <div class="col-auto"><span class="avatar bg-green text-white">✓</span></div>
+            <div class="col"><div class="fw-medium">14 heute</div><div class="text-secondary">erfolgreich</div></div></div></div></div></div>
+          <div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center">
+            <div class="col-auto"><span class="avatar bg-secondary text-white">≡</span></div>
+            <div class="col"><div class="fw-medium">3 Duplikate</div><div class="text-secondary">übersprungen</div></div></div></div></div></div>
+          <div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center">
+            <div class="col-auto"><span class="avatar bg-red text-white">!</span></div>
+            <div class="col"><div class="fw-medium">1 Fehler</div><div class="text-secondary">letzte 24 h</div></div></div></div></div></div>
+        </div>
+
+        <div class="row row-cards">
+          <!-- Pipeline als Schrittfolge (D.12c-Schritte sichtbar) -->
+          <div class="col-12">
+            <div class="card">
+              <div class="card-header">
+                <div><h3 class="card-title">Cro — Einmal um die Welt</h3><div class="card-subtitle">Einzeltitel · Job 3f9a1c2e · seit 12:04</div></div>
+                <div class="card-actions btn-list">
+                  <button class="btn btn-sm" data-bs-toggle="offcanvas" data-bs-target="#job-detail">Verlauf</button>
+                  <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#confirm-c">Abbrechen</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <ul class="steps steps-counter steps-blue my-2">
+                  <li class="step-item">Download</li>
+                  <li class="step-item">Artist/Titel</li>
+                  <li class="step-item">Genre</li>
+                  <li class="step-item active">MusicBrainz</li>
+                  <li class="step-item">Lyrics</li>
+                  <li class="step-item">Cover</li>
+                  <li class="step-item">Tags/Library</li>
+                </ul>
+                <div class="progress progress-sm mt-3"><div class="progress-bar progress-bar-indeterminate"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Verlauf als Karten-Liste mit Metadaten-Checkliste -->
+          <div class="col-lg-8">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">Verlauf</h3></div>
+              <div class="list-group list-group-flush">
+                <div class="list-group-item"><div class="row align-items-center">
+                  <div class="col-auto"><span class="status-dot status-green d-block"></span></div>
+                  <div class="col text-truncate"><div>Bilder im Kopf</div><div class="text-secondary small">Sido · 11:58</div></div>
+                  <div class="col-auto"><span class="badge bg-green-lt">Genre</span> <span class="badge bg-green-lt">Lyrics</span> <span class="badge bg-green-lt">Cover</span> <span class="badge bg-yellow-lt">MB</span></div>
+                </div></div>
+                <div class="list-group-item"><div class="row align-items-center">
+                  <div class="col-auto"><span class="status-dot status-secondary d-block"></span></div>
+                  <div class="col text-truncate"><div>Chöre</div><div class="text-secondary small">Mark Forster · 11:41</div></div>
+                  <div class="col-auto"><span class="badge bg-secondary-lt">Duplikat</span></div>
+                </div></div>
+                <div class="list-group-item"><div class="row align-items-center">
+                  <div class="col-auto"><span class="status-dot status-red d-block"></span></div>
+                  <div class="col text-truncate"><div>Palmen aus Plastik</div><div class="text-secondary small">Bonez MC &amp; RAF Camora · 10:12</div></div>
+                  <div class="col-auto"><button class="btn btn-sm btn-ghost-primary">Erneut</button></div>
+                </div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Zustände -->
+          <div class="col-lg-4">
+            <div class="card mb-3"><div class="card-body placeholder-glow">
+              <div class="text-secondary small mb-2">Zustand: Laden</div>
+              <div class="placeholder col-8 mb-1"></div><div class="placeholder col-6"></div></div></div>
+            <div class="card mb-3"><div class="empty py-3">
+              <div class="empty-icon fs-1">📭</div>
+              <p class="empty-title">Keine Downloads</p>
+              <div class="empty-action"><button class="btn btn-primary btn-sm">Download starten</button></div></div></div>
+            <div class="card"><div class="card-status-start bg-danger"></div><div class="card-body">
+              <div class="fw-medium">Verlauf nicht erreichbar</div><div class="text-secondary small mb-2">HTTP 503 · 12:05</div>
+              <button class="btn btn-sm">Erneut versuchen</button></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Seitenpanel: Neuer Download -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="new-dl">
+  <div class="offcanvas-header"><h2 class="offcanvas-title">Neuer Download</h2><button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button></div>
+  <div class="offcanvas-body">
+    <label class="form-label">YouTube-URL</label>
+    <input class="form-control mb-2" placeholder="https://www.youtube.com/watch?v=…">
+    <div class="form-hint mb-3">Einzeltitel oder Playlist.</div>
+    <button class="btn btn-primary w-100" id="start-c" data-bs-dismiss="offcanvas">Starten</button>
+  </div>
+</div>
+
+<!-- Seitenpanel: Job-Verlauf (ersetzt eigenes Drawer-System) -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="job-detail">
+  <div class="offcanvas-header"><h2 class="offcanvas-title">Job-Verlauf</h2><button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button></div>
+  <div class="offcanvas-body">
+    <ul class="timeline timeline-simple">
+      <li class="timeline-event"><div class="timeline-event-icon bg-green-lt">✓</div><div class="card timeline-event-card"><div class="card-body py-2"><div class="text-secondary float-end small">12:04:10</div>Download abgeschlossen</div></div></li>
+      <li class="timeline-event"><div class="timeline-event-icon bg-green-lt">✓</div><div class="card timeline-event-card"><div class="card-body py-2"><div class="text-secondary float-end small">12:04:14</div>Genre gesetzt (Deutschrap)</div></div></li>
+      <li class="timeline-event"><div class="timeline-event-icon bg-blue-lt">…</div><div class="card timeline-event-card"><div class="card-body py-2"><div class="text-secondary float-end small">12:04:15</div>MusicBrainz-Abgleich</div></div></li>
+    </ul>
+  </div>
+</div>
+
+<div class="modal modal-blur fade" id="confirm-c" tabindex="-1">
+  <div class="modal-dialog modal-sm modal-dialog-centered"><div class="modal-content">
+    <div class="modal-status bg-danger"></div>
+    <div class="modal-body text-center py-4"><h3>Download abbrechen?</h3><div class="text-secondary">Bereits fertige Titel bleiben erhalten.</div></div>
+    <div class="modal-footer"><div class="w-100 d-flex gap-2">
+      <button class="btn w-100" data-bs-dismiss="modal">Zurück</button>
+      <button class="btn btn-danger w-100" data-bs-dismiss="modal">Abbrechen</button>
+    </div></div>
+  </div></div>
+</div>
+
+<!-- Toast: Rückmeldung nach Aktionen -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+  <div class="toast" id="toast-c" role="status">
+    <div class="toast-header"><strong class="me-auto">✅ Download gestartet</strong><button type="button" class="btn-close" data-bs-dismiss="toast"></button></div>
+    <div class="toast-body">Job 7b21e0aa läuft.</div>
+  </div>
+</div>
+
+<script src="../../../control_center/static/vendor/tabler/js/tabler.min.js"
+        onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@tabler/core@1.5.1/dist/js/tabler.min.js';document.body.appendChild(s)"></script>
+<script>
+  // Mockup-Logik: Theme-Umschalter (pro Browser) + Toast-Demo.
+  (function () {
+    var root = document.documentElement;
+    try { if (localStorage.getItem("cc-theme") === "dark") root.setAttribute("data-bs-theme", "dark"); } catch (e) {}
+    document.getElementById("theme-toggle").addEventListener("click", function () {
+      var dark = root.getAttribute("data-bs-theme") !== "dark";
+      if (dark) root.setAttribute("data-bs-theme", "dark"); else root.removeAttribute("data-bs-theme");
+      try { localStorage.setItem("cc-theme", dark ? "dark" : "light"); } catch (e) {}
+    });
+    document.getElementById("start-c").addEventListener("click", function () {
+      var el = document.getElementById("toast-c");
+      if (window.bootstrap && window.bootstrap.Toast) { window.bootstrap.Toast.getOrCreateInstance(el).show(); }
+      else { el.classList.add("show"); setTimeout(function () { el.classList.remove("show"); }, 3000); }
+    });
+  })();
+</script>
+</body>
+</html>

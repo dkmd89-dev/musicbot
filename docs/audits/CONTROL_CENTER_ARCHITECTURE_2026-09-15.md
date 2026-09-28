@@ -2357,3 +2357,25 @@ verdrahtet; tote Route `logger_search_module` ohne Zielmethode.
 
 Vollstaendige Analyse (L1–L6-Preflight, Modul-Taxonomie, Migration-
 Matrix) und Test-Liste: `docs/audits/CC-LOGGER-L7_TELEGRAM_MIGRATION_2026-09-26.md`.
+
+## Nachtrag — Stand nach Client Consolidation / Web-Parität (2026-09-28)
+
+Kurzverweis, damit dieses LIVING-Dokument nicht hinter dem Code
+zurückbleibt. Details stehen jeweils im verlinkten Einzel-Audit; hier nur
+die Einordnung in die Control-Center-Architektur.
+
+| Baustein | Umsetzung im Control Center | Details |
+|---|---|---|
+| Downloads-UI (D.11) | `downloads.html` + `static/pages/downloads.js`: Start, Jobstatus, Fortschritt, Cancel, Verlauf; Backend unverändert `routers/jobs.py::user_router` | `CLIENT_CONSOLIDATION_PHASE_D_DOWNLOAD_RUNTIME_2026-09-27.md` §6 |
+| CC-Prozess-Logging (D.12a) | `app.py::setup_control_center_logging()` im Startup-Event → eigene `control_center.log` | ebd. §7 |
+| Job-Verlauf (D.12b) | `Job.events` (`JobEvent`, max. 100) → `JobSchema.events` → Verlauf in `downloads.js` | ebd. §7 |
+| Pipeline-Schritte (D.12c) | `services/jobs/step_context.py` (contextvars) → Single-Download-Jobs melden Metadaten-Schritte | ebd. §7 |
+| Cross-Process-Persistenz (D.13) | `utils/file_lock.py`; Download-Verlauf + Duplikat-Cache laden bei Änderung neu und schreiben unter Lock | ebd. §8 |
+| Duplikat-Cache-Verwaltung (4b) | `routers/admin_duplicates.py` (`/api/v1/admin/duplicates/stats`, `.../clear`), Karte in Administration | `WEB_PARITY_TELEGRAM_CLIENT_AUDIT_2026-09-27.md` §16 |
+| Bot-Runtime-Snapshot (E1) | `routers/admin_runtime.py` liest `data/bot_runtime_snapshot.json` read-only, Karte „Fehlerstatistik (Bot)“ | `ERROR_ADMINISTRATION_ARCHITECTURE_ANALYSIS_2026-09-27.md` §6, Web-Paritäts-Audit §17 |
+| Login mit Navidrome-Konto | `routers/auth.py` `POST /api/v1/auth/navidrome-login`, Web-Benutzer mit negativer ID, Freischaltung nur durch Admin, Rolle max. ADMIN | Web-Paritäts-Audit §18, `docs/CONTROL_CENTER_REVERSE_PROXY.md` §4a |
+| Abmelden | `POST /api/v1/auth/logout` löscht `cc_session`; Button im Header (`_base.html`, `common.js::onLogout`) | `FINDINGS_INDEX.md` („Control Center ohne Abmelde-Funktion“) |
+
+**Nächste Phase:** UI-Vereinheitlichung (CC-UI). Ausgangslage und
+offene Standard-Entscheidungen: `docs/audits/CONTROL_CENTER_UI_INVENTORY_2026-09-28.md`,
+Layout-Entwürfe: `docs/designs/control-center-ui/`.

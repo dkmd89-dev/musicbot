@@ -1,0 +1,197 @@
+<!doctype html>
+<!--
+  CC-UI-0 Layout-Entwurf A — "Klassisch" (nah am Ist-Zustand)
+  Reines Mockup, KEINE Produktionsdatei. Statische Beispieldaten.
+  Tabler 1.5.1: zuerst lokal vendored (Repo-Pfad), Fallback CDN.
+-->
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Layout A · Klassisch</title>
+  <link rel="stylesheet" href="../../../control_center/static/vendor/tabler/css/tabler.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.5.1/dist/css/tabler.min.css">
+  <style>
+    /* Einzige Eigen-Styles: Mockup-Hinweis. Alles andere reine Tabler-Klassen. */
+    .mock-note { font-size: .75rem; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <!-- Shell: helle vertikale Sidebar wie heute -->
+  <aside class="navbar navbar-vertical navbar-expand-md">
+    <div class="container-fluid">
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu" aria-label="Menü öffnen">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <h1 class="navbar-brand">🎵 MusicBot</h1>
+      <div class="collapse navbar-collapse" id="sidebar-menu">
+        <ul class="navbar-nav pt-lg-3">
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-title">Overview</span></a></li>
+          <li class="nav-item active"><a class="nav-link active" href="#"><span class="nav-link-title">Downloads</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-title">Library</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-title">Statistics</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-title">Navidrome</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-title">Health</span></a></li>
+          <li class="nav-item"><a class="nav-link" href="#"><span class="nav-link-title">Logs</span></a></li>
+          <li class="nav-item mt-3"><a class="nav-link" href="#"><span class="nav-link-title">Administration</span></a></li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+  <div class="page-wrapper">
+    <header class="navbar navbar-expand-md d-print-none">
+      <div class="container-xl">
+        <span class="navbar-text">MusicBot Control Center</span>
+        <div class="navbar-nav flex-row order-md-last align-items-center gap-2">
+          <span class="text-secondary">robin · <span class="badge bg-purple-lt">OWNER</span></span>
+          <button class="btn btn-sm btn-outline-secondary">Abmelden</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Seitenkopf: pretitle + Titel + Aktionen rechts (Standardmuster jeder Seite) -->
+    <div class="page-header d-print-none">
+      <div class="container-xl">
+        <div class="row g-2 align-items-center">
+          <div class="col-12 col-md">
+            <div class="page-pretitle">Musik</div>
+            <h2 class="page-title">Downloads</h2>
+          </div>
+          <div class="col-12 col-md-auto ms-md-auto">
+            <div class="btn-list">
+              <button class="btn">Verlauf aktualisieren</button>
+              <button class="btn btn-primary">Download starten</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div class="container-xl">
+        <div class="alert alert-info mock-note">Mockup A · Klassisch — helle Sidebar, Karten mit Kopfzeile, Tabellen, Tabler-Badges. Nächster am Ist-Zustand.</div>
+
+        <!-- KPI-Reihe: Tabler card-sm statt eigener kpi-card/tile -->
+        <div class="row row-deck row-cards mb-3">
+          <div class="col-6 col-lg-3"><div class="card card-sm"><div class="card-body">
+            <div class="subheader">Aktiv</div><div class="h1 mb-0">1</div></div></div></div>
+          <div class="col-6 col-lg-3"><div class="card card-sm"><div class="card-body">
+            <div class="subheader">Heute fertig</div><div class="h1 mb-0">14</div></div></div></div>
+          <div class="col-6 col-lg-3"><div class="card card-sm"><div class="card-body">
+            <div class="subheader">Duplikate übersprungen</div><div class="h1 mb-0">3</div></div></div></div>
+          <div class="col-6 col-lg-3"><div class="card card-sm"><div class="card-body">
+            <div class="subheader">Fehlgeschlagen</div><div class="h1 mb-0 text-danger">1</div></div></div></div>
+        </div>
+
+        <div class="row row-cards">
+          <!-- Neuer Download -->
+          <div class="col-lg-5">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">Neuer Download</h3></div>
+              <div class="card-body">
+                <label class="form-label" for="url-a">YouTube-URL</label>
+                <input id="url-a" class="form-control" placeholder="https://www.youtube.com/watch?v=…">
+                <div class="form-hint">Einzeltitel oder Playlist. Duplikate werden automatisch erkannt.</div>
+              </div>
+              <div class="card-footer text-end"><button class="btn btn-primary">Starten</button></div>
+            </div>
+          </div>
+
+          <!-- Aktiver Job -->
+          <div class="col-lg-7">
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Aktiver Job</h3>
+                <div class="card-actions"><button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#confirm-a">Abbrechen</button></div>
+              </div>
+              <div class="card-body">
+                <div class="d-flex justify-content-between mb-1">
+                  <strong>Cro — Einmal um die Welt</strong><span class="badge bg-blue-lt">läuft</span>
+                </div>
+                <div class="text-secondary small mb-2">Metadaten: MusicBrainz-Abgleich</div>
+                <div class="progress progress-sm mb-3"><div class="progress-bar" style="width: 62%"></div></div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-vcenter mb-0">
+                    <tbody>
+                      <tr><td class="text-secondary w-1">12:04:10</td><td>Download abgeschlossen</td><td class="text-end">20 %</td></tr>
+                      <tr><td class="text-secondary">12:04:12</td><td>Metadaten: Artist/Titel erkannt</td><td class="text-end">20 %</td></tr>
+                      <tr><td class="text-secondary">12:04:14</td><td>Metadaten: Genre gesetzt (Deutschrap)</td><td class="text-end">20 %</td></tr>
+                      <tr><td class="text-secondary">12:04:15</td><td>Metadaten: MusicBrainz-Abgleich</td><td class="text-end">62 %</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Verlauf als Tabelle -->
+          <div class="col-12">
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Verlauf</h3>
+                <div class="card-actions">
+                  <select class="form-select form-select-sm"><option>Alle</option><option>Erfolgreich</option><option>Fehlgeschlagen</option></select>
+                </div>
+              </div>
+              <div class="table-responsive">
+                <table class="table card-table table-vcenter">
+                  <thead><tr><th>Titel</th><th>Artist</th><th>Status</th><th>Metadaten</th><th>Zeit</th></tr></thead>
+                  <tbody>
+                    <tr><td>Bilder im Kopf</td><td>Sido</td><td><span class="badge bg-success-lt">erfolgreich</span></td>
+                      <td><span class="badge bg-success-lt">Genre</span> <span class="badge bg-success-lt">Lyrics</span> <span class="badge bg-success-lt">Cover</span> <span class="badge bg-warning-lt">MB fehlt</span></td><td class="text-secondary">11:58</td></tr>
+                    <tr><td>Chöre</td><td>Mark Forster</td><td><span class="badge bg-secondary-lt">Duplikat</span></td><td class="text-secondary">—</td><td class="text-secondary">11:41</td></tr>
+                    <tr><td>Palmen aus Plastik</td><td>Bonez MC &amp; RAF Camora</td><td><span class="badge bg-danger-lt">fehlgeschlagen</span></td><td class="text-secondary">—</td><td class="text-secondary">10:12</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Zustände: Standardbausteine für alle Seiten -->
+          <div class="col-md-4">
+            <div class="card"><div class="card-header"><h3 class="card-title">Zustand: Laden</h3></div>
+              <div class="card-body placeholder-glow">
+                <div class="placeholder col-9 mb-2"></div><div class="placeholder col-7 mb-2"></div><div class="placeholder col-5"></div>
+              </div></div>
+          </div>
+          <div class="col-md-4">
+            <div class="card"><div class="card-header"><h3 class="card-title">Zustand: Leer</h3></div>
+              <div class="empty py-4">
+                <p class="empty-title">Noch keine Downloads</p>
+                <p class="empty-subtitle text-secondary">Starte oben einen Download per URL.</p>
+              </div></div>
+          </div>
+          <div class="col-md-4">
+            <div class="card"><div class="card-header"><h3 class="card-title">Zustand: Fehler</h3></div>
+              <div class="card-body">
+                <div class="alert alert-danger mb-2">Verlauf konnte nicht geladen werden (HTTP 503).</div>
+                <button class="btn btn-sm">Erneut versuchen</button>
+              </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bestätigung: Tabler-Modal statt confirm() -->
+<div class="modal modal-blur fade" id="confirm-a" tabindex="-1">
+  <div class="modal-dialog modal-sm modal-dialog-centered"><div class="modal-content">
+    <div class="modal-status bg-danger"></div>
+    <div class="modal-body text-center py-4">
+      <h3>Download abbrechen?</h3>
+      <div class="text-secondary">Bereits fertige Titel bleiben erhalten.</div>
+    </div>
+    <div class="modal-footer"><div class="w-100 d-flex gap-2">
+      <button class="btn w-100" data-bs-dismiss="modal">Zurück</button>
+      <button class="btn btn-danger w-100" data-bs-dismiss="modal">Abbrechen</button>
+    </div></div>
+  </div></div>
+</div>
+
+<script src="../../../control_center/static/vendor/tabler/js/tabler.min.js"
+        onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@tabler/core@1.5.1/dist/js/tabler.min.js';document.body.appendChild(s)"></script>
+</body>
+</html>
