@@ -27,6 +27,9 @@ from logger import get_module_logger
 
 if TYPE_CHECKING:
     from handlers.enhanced_error_handler import EnhancedErrorHandler
+# Alias: die Legacy-Funktion clear_duplicate_cache(update, context) am
+# Dateiende (ohne Aufrufer, siehe dortige Notiz) trägt denselben Namen.
+from services.duplicate.admin import clear_duplicate_cache as _clear_duplicate_cache_service
 from services.duplicate.detector import DuplicateDetector
 
 
@@ -170,20 +173,14 @@ Diese Aktion kann nicht rückgängig gemacht werden!"""
         """
         query = update.callback_query
         try:
-            stats_before = self.detector.get_statistics()
+            # Unverändert zuerst die Statistik (bisheriger Fehlerpfad bleibt
+            # identisch, siehe tests/test_duplicate_handler_telegram.py).
+            self.detector.get_statistics()
 
-            deleted_files = []
-            for file_path in [
-                self.detector.duplicate_cache.url_cache_file,
-                self.detector.duplicate_cache.content_cache_file,
-            ]:
-                if file_path.exists():
-                    file_path.unlink()
-                    deleted_files.append(file_path.name)
-
-            # Caches im Speicher leeren
-            self.detector.duplicate_cache.url_cache = {}
-            self.detector.duplicate_cache.content_cache = {}
+            # 4b: Leeren über services/duplicate/admin.py (unter dem
+            # D.13-Lock) statt eigener Datei-/Speicherlogik im Handler.
+            clear_result = _clear_duplicate_cache_service(self.detector.duplicate_cache)
+            deleted_files = clear_result.deleted_files
 
             # Statistiken im Speicher zurücksetzen
             self.detector.stats = {
@@ -205,8 +202,8 @@ Diese Aktion kann nicht rückgängig gemacht werden!"""
                 "✅ **Cache geleert**\n\n"
                 "Der Duplikat-Cache wurde erfolgreich zurückgesetzt.\n\n"
                 f"Gelöschte Einträge:\n"
-                f"• URL-Cache: {stats_before.get('url_cache_size', 0)}\n"
-                f"• Content-Cache: {stats_before.get('content_cache_size', 0)}\n"
+                f"• URL-Cache: {clear_result.url_entries_removed}\n"
+                f"• Content-Cache: {clear_result.content_entries_removed}\n"
                 f"• Dateien: {', '.join(deleted_files) if deleted_files else 'Keine'}"
             )
             self.logger.info(f"🧹 Duplikat-Cache durch Admin geleert: {deleted_files}")
@@ -247,6 +244,12 @@ Diese Aktion kann nicht rückgängig gemacht werden!"""
                 )
 
 
+# Legacy (Web-Paritäts-Backlog 4b, 2026-09-28 dokumentiert): find_duplicates()
+# und clear_duplicate_cache() unten sind nirgends registriert (kein Aufrufer im
+# Repo) und würden ohne "config" in context.bot_data an
+# EnhancedDuplicateHandler() ohne Pflicht-Argumente scheitern. Aktiver Pfad ist
+# EnhancedDuplicateHandler.show_statistics_menu()/execute_clear_cache() über
+# die dup:*-Callbacks. Nach CLAUDE.md §20 nur dokumentiert, nicht entfernt.
 async def find_duplicates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Telegram-Handler für Duplikat-Suche (Kompatibilität)"""
     logger = get_module_logger("DuplicateHandler_Telegram")

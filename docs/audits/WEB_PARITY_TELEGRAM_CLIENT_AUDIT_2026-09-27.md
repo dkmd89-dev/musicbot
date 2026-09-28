@@ -118,7 +118,7 @@ Leitregeln (aus den bisherigen Entscheidungen abgeleitet, nicht neu erfunden):
 | 2 | ~~Backups: Telegram nutzt `services/backup_admin`~~ | B | — | ✅ **DONE (PR #333)** — siehe Abschnitt 12 | — |
 | 3 | ~~Logger: verbleibende Datei-I/O im Telegram-Handler auf `logger_admin`~~ | B | — | ✅ **DONE (Phase B, PR #327)** — siehe Abschnitt 8 | — |
 | 4a | ~~Duplikat-Check im CC (read-only Job über `run_duplicate_scan`)~~ | A | — | ✅ **DONE (PR #334)** — siehe Abschnitt 12 | — |
-| 4b | Duplikat-Verwaltung (Statistik, Cache leeren) | B + C | P3 | Cache-Löschlogik aus dem Handler nach `services/duplicate`, danach CC-Anbindung | ~~Entscheidung 1~~ — **seit D.13 keine** (Bot erkennt Dateiänderungen und lädt neu, siehe Abschnitt 15) |
+| 4b | ~~Duplikat-Verwaltung (Statistik, Cache leeren)~~ | B + C | — | ✅ **DONE (2026-09-28)** — siehe Abschnitt 16; Sitzungszähler folgen mit Backlog 5 | — |
 | 5 | Cross-Prozess-Snapshot (Error-Verwaltung E1, Logger-Zähler) | C | P2 | `ExceptionMonitor` schreibt Snapshot, CC liest read-only; Reset bleibt Telegram/Neustart | Entscheidung 1 = **E1** ✅ |
 | 6 | ~~Downloads aus dem Web~~ | B + C | — | ✅ **DONE (Client Consolidation D.10–D.13)** — siehe Abschnitt 14 | — |
 | 7 | Familie im Web | A | P3 | **zurückgestellt** (Entscheidung 4) | — |
@@ -384,6 +384,17 @@ PENDING.
 **Neuer Befund (D.13):** Backlog 4b hängt nicht mehr an Entscheidung 1 — seit D.13 erkennt der langlebige Bot-`DuplicateCache` Dateiänderungen (inode/mtime/size) und lädt neu; ein vom CC geleerter Cache (Dateien gelöscht) wird vom Bot beim nächsten Zugriff als leerer Stand übernommen.
 
 **Beschlossene Reihenfolge (Nutzer, 2026-09-28):** 1. Entscheidungen dokumentieren (dieser Abschnitt) → 2. Backlog 4b Duplikat-Verwaltung im Web → 3. Backlog 5 E1-Snapshot (Error-Verwaltung) → 4. Backlog 9 Navidrome-Login (Analyse mit Security-Fokus, dann Plan).
+
+---
+
+## 16. Backlog 4b umgesetzt — Duplikat-Cache-Verwaltung im Web (2026-09-28)
+
+- **Service:** neu `services/duplicate/admin.py` (`get_duplicate_cache_stats()`, `clear_duplicate_cache()`) über `DuplicateCache.entry_stats()`/`clear()` — beide unter `DuplicateCache.transaction()` (D.13-Lock). Schließt nebenbei ein Race: vorher löschte der Telegram-Handler die Dateien ohne Lock.
+- **Telegram:** `EnhancedDuplicateHandler.execute_clear_cache()` delegiert an den Service; Bestätigungsdialog, Text, Zurücksetzen der Zähler unverändert (Characterization-Tests vorher/nachher grün).
+- **Control Center:** `GET /api/v1/admin/duplicates/stats`, `POST /api/v1/admin/duplicates/clear` (ADMIN wie Telegram `dup:*`, Same-Origin, `confirm=true`); Karte „Duplikat-Cache" im Bereich Operations der Admin-Seite.
+- **Bewusst offen:** Sitzungszähler (`total_checks`, Duplikat-Rate, Einsparungen) leben nur im Bot-Speicher → Backlog 5 (E1-Snapshot). Legacy-Funktionen `find_duplicates()`/`clear_duplicate_cache()` ohne Aufrufer nur dokumentiert (CLAUDE.md §20).
+
+Matrix 2.1: Duplikat-Verwaltung → ✅ (bis auf die Sitzungszähler, siehe oben).
 
 ---
 

@@ -413,6 +413,62 @@ async function toggleMaintenance() {
   }
 }
 
+// Duplikat-Cache (Web-Paritäts-Backlog 4b) - reiner Client um
+// /api/v1/admin/duplicates/*, Fachlogik in services/duplicate/admin.py.
+function _formatDuplicateDate(iso) {
+  if (!iso) return "–";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "–" : d.toLocaleDateString("de-DE");
+}
+
+async function loadDuplicateCacheStats() {
+  const el = document.getElementById("admin-duplicates-stats");
+  if (!el) return;
+  try {
+    const res = await fetch(apiUrl("/api/v1/admin/duplicates/stats"), { credentials: "same-origin" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.error?.message || `Fehler: ${res.status}`);
+    el.innerHTML = `
+      <div>URL-Einträge: <strong>${_escapeHtml(String(data.url_entries))}</strong></div>
+      <div>Content-Einträge: <strong>${_escapeHtml(String(data.content_entries))}</strong></div>
+      <div class="small">Zeitraum: ${_escapeHtml(_formatDuplicateDate(data.oldest_entry))} – ${_escapeHtml(_formatDuplicateDate(data.newest_entry))}</div>`;
+  } catch (err) {
+    el.innerHTML = `<span class="text-danger">${_escapeHtml(err.message)}</span>`;
+  }
+}
+
+async function clearDuplicateCache() {
+  const buttonEl = document.getElementById("admin-duplicates-clear-btn");
+  const messageEl = document.getElementById("admin-duplicates-message");
+  if (!buttonEl) return;
+  if (!window.confirm(
+    "Gesamten Duplikat-Cache (URLs und Content) wirklich leeren?\n\n" +
+    "Diese Aktion kann nicht rückgängig gemacht werden.",
+  )) return;
+
+  buttonEl.disabled = true;
+  if (messageEl) messageEl.textContent = "Cache wird geleert…";
+  try {
+    const res = await fetch(apiUrl("/api/v1/admin/duplicates/clear"), {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+      body: JSON.stringify({ confirm: true }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.error?.message || `Fehler: ${res.status}`);
+    if (messageEl) {
+      messageEl.textContent =
+        `Geleert: ${data.url_entries_removed} URL- / ${data.content_entries_removed} Content-Einträge.`;
+    }
+    await loadDuplicateCacheStats();
+  } catch (err) {
+    if (messageEl) messageEl.innerHTML = `<span class="text-danger">${_escapeHtml(err.message)}</span>`;
+  } finally {
+    buttonEl.disabled = false;
+  }
+}
+
 async function loadBotOperationStatus() {
   const statusEl = document.getElementById("admin-bot-operation-status");
 
@@ -558,7 +614,12 @@ function renderAdminUsers(el, body) {
       loadSystemStatus();
       loadBotOperationStatus();
       loadMaintenanceStatus();
+      loadDuplicateCacheStats();
       loadAdminUsers();
+
+      document
+        .getElementById("admin-duplicates-clear-btn")
+        ?.addEventListener("click", clearDuplicateCache);
 
       document
         .getElementById("admin-maintenance-toggle-btn")

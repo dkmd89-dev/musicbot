@@ -31,6 +31,7 @@ from services.logger_admin import LoggerApplyRateLimiter
 
 from .routers import (
     admin,
+    admin_duplicates,
     admin_maintenance,
     admin_operations,
     auth,
@@ -114,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(navidrome.router)
     app.include_router(admin.router)
     app.include_router(admin_maintenance.router)
+    app.include_router(admin_duplicates.router)
     app.include_router(admin_operations.router)
     app.include_router(jobs.router)
     app.include_router(jobs.user_router)

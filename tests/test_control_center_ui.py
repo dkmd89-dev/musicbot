@@ -1259,6 +1259,22 @@ async def test_logs_page_has_no_time_range_job_or_user_filter(client):
 
 
 @pytest.mark.asyncio
+async def test_admin_page_has_duplicate_cache_card(client):
+    """Web-Paritäts-Backlog 4b: Duplikat-Cache-Karte (Statistik + Leeren
+    mit Bestätigung), reiner Client um /api/v1/admin/duplicates/*."""
+    html = (await client.get("/admin")).text
+    js = (await client.get("/static/pages/admin.js")).text
+
+    assert 'id="admin-duplicates-stats"' in html
+    assert 'id="admin-duplicates-clear-btn"' in html
+    assert "/api/v1/admin/duplicates/stats" in js
+    assert "/api/v1/admin/duplicates/clear" in js
+    assert "JSON.stringify({ confirm: true })" in js
+    assert "window.confirm(" in js
+    assert "loadDuplicateCacheStats();" in js
+
+
+@pytest.mark.asyncio
 async def test_admin_page_has_users_panel(client):
     html = (await client.get("/admin")).text
     js = (await client.get("/static/pages/admin.js")).text

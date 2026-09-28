@@ -28,7 +28,7 @@ import json
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 from datetime import datetime, timedelta
 
 from logger import get_module_logger
@@ -234,6 +234,42 @@ class DuplicateCache:
             except OSError:
                 pass
             raise
+
+    def clear(self) -> Tuple[int, int, List[str]]:
+        """4b: leert beide Caches (Dateien + Speicher) unter transaction() -
+        ohne Lock könnte ein anderer Prozess, der seinen Stand bereits
+        geladen hat, die gelöschten Einträge direkt wieder zurückschreiben.
+        Liefert (URL-Einträge, Content-Einträge, gelöschte Dateinamen) des
+        aktuellen Dateistands vor dem Leeren."""
+        with self.transaction():
+            url_count = len(self.url_cache)
+            content_count = len(self.content_cache)
+            deleted_files: List[str] = []
+            for path in (self.url_cache_file, self.content_cache_file):
+                if path.exists():
+                    path.unlink()
+                    deleted_files.append(path.name)
+            self.url_cache = {}
+            self.content_cache = {}
+            self._disk_signature = self._file_signature()
+        self.logger.info(
+            f"🧹 Duplikat-Cache geleert: {url_count} URL / {content_count} Content, Dateien: {deleted_files}"
+        )
+        return url_count, content_count, deleted_files
+
+    def entry_stats(self) -> Tuple[int, int, Optional[datetime], Optional[datetime]]:
+        """4b: (URL-Einträge, Content-Einträge, ältester, neuester
+        download_date) des aktuellen Dateistands (unter transaction())."""
+        with self.transaction():
+            dates = [e.download_date for e in self.url_cache.values()] + [
+                e.download_date for e in self.content_cache.values()
+            ]
+            return (
+                len(self.url_cache),
+                len(self.content_cache),
+                min(dates) if dates else None,
+                max(dates) if dates else None,
+            )
 
     def get_url_hash(self, url: str) -> str:
         # Nutzt dieselbe YouTube-bewusste Normalisierung wie check_url_duplicate()
