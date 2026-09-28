@@ -19,7 +19,8 @@ import httpx
 import pytest
 import pytest_asyncio
 
-TEMPLATE = Path(__file__).resolve().parent.parent / "control_center" / "templates" / "library_artist_detail.html"
+# CC-UI L1: Inline-Skript byte-identisch nach static/pages/ verschoben (U1).
+TEMPLATE = Path(__file__).resolve().parent.parent / "control_center" / "static" / "pages" / "library_artist.js"
 _NODE = shutil.which("node")
 
 
@@ -68,7 +69,7 @@ async def test_editor_tells_the_user_that_new_downloads_need_a_bot_restart(clien
 
 @pytest.mark.asyncio
 async def test_page_script_uses_only_the_genre_mapping_endpoints_via_api_url(client):
-    html = (await client.get("/library/Bausa")).text
+    html = (await client.get("/static/pages/library_artist.js")).text  # CC-UI L1: Skript ausgelagert
     block = html.split("// -- Genre-Mapping bearbeiten", 1)[1].split("document.getElementById(\"genre-manage-preview-btn\")", 1)[0]
     assert "fetch(apiUrl(`/api/v1/library/artists/${encodeURIComponent(artist)}/genre-mapping/preview`)" in block
     assert "fetch(apiUrl(`/api/v1/library/artists/${encodeURIComponent(artist)}/genre-mapping`)" in block
@@ -78,7 +79,7 @@ async def test_page_script_uses_only_the_genre_mapping_endpoints_via_api_url(cli
 
 @pytest.mark.asyncio
 async def test_save_requires_a_preview_and_a_confirmation_and_sends_the_etag(client):
-    html = (await client.get("/library/Bausa")).text
+    html = (await client.get("/static/pages/library_artist.js")).text  # CC-UI L1: Skript ausgelagert
     save_fn = html.split("async function saveGenreMapping() {", 1)[1].split("document.getElementById(\"genre-mapping-primary\")", 1)[0]
     assert "if (!pv) return;" in save_fn                       # ohne Vorschau kein Schreiben
     assert "window.confirm(" in save_fn and "Bot-Neustart" in save_fn

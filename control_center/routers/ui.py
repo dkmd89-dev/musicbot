@@ -38,7 +38,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from config import Config
@@ -93,9 +93,12 @@ def library_artist_detail_page(request: Request, artist: str) -> HTMLResponse:
     return _render(request, "library_artist_detail.html", "library")
 
 
-@router.get("/metadata", response_class=HTMLResponse)
-def metadata_page(request: Request) -> HTMLResponse:
-    return _render(request, "metadata.html", "metadata")
+@router.get("/metadata")
+def metadata_page(request: Request) -> RedirectResponse:
+    """CC-UI L1 (U16, Nutzerentscheidung 2026-09-28): die frühere Stub-Seite
+    verwies nur noch auf den Artist-Kontext und war nirgends verlinkt. Alte
+    Lesezeichen landen per Weiterleitung auf /library (subpath-fähig)."""
+    return RedirectResponse(url=request.scope.get("root_path", "") + "/library", status_code=307)
 
 
 @router.get("/statistics", response_class=HTMLResponse)

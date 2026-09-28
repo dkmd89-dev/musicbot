@@ -50,6 +50,17 @@ async def client():
         await c.aclose()
 
 
+async def _page_with_scripts(client, path: str) -> str:
+    """CC-UI L1: Library/Artist-Detail-JS liegt nicht mehr inline im Template,
+    sondern byte-identisch in static/pages/*.js (U1). Liefert die Seite plus
+    den Text aller von ihr eingebundenen Seiten-Skripte - also denselben
+    Inhalt, den diese Tests vorher im Inline-<script> geprüft haben."""
+    html = (await client.get(path)).text
+    scripts = re.findall(r'<script src="(/static/pages/[^"]+\.js)"></script>', html)
+    assert scripts, f"{path}: kein Seiten-Skript eingebunden"
+    return html + "".join(["\n" + (await client.get(src)).text for src in scripts])
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Gemeinsames Basis-Layout (_base.html) — gilt fuer alle Seiten
 # ─────────────────────────────────────────────────────────────────────────
@@ -383,7 +394,7 @@ async def test_library_page_has_metadata_browser_panel(client):
 
 @pytest.mark.asyncio
 async def test_library_page_ui_wiring_present(client):
-    html = (await client.get("/library")).text
+    html = await _page_with_scripts(client, "/library")
 
     assert "loadMetadataList" in html
     assert "renderTracks" in html
@@ -394,7 +405,7 @@ async def test_library_page_ui_wiring_present(client):
 
 @pytest.mark.asyncio
 async def test_library_page_has_mapping_summary_wiring(client):
-    html = (await client.get("/library")).text
+    html = await _page_with_scripts(client, "/library")
 
     assert 'id="metadata-mapping-btn"' in html
     assert "loadMappingSummary" in html
@@ -407,14 +418,14 @@ async def test_library_page_has_no_repeated_rescan_pagination(client):
     """Bewusste Entscheidung: keine Weiter/Zurück-Buttons, da jede
     Anfrage einen vollen Library-Scan ausloest - stattdessen
     Trunkierungshinweis wie beim Accepted-Findings-Panel."""
-    html = (await client.get("/library")).text
+    html = await _page_with_scripts(client, "/library")
 
     assert "kein Auto-Rendern großer Listen" in html
 
 
 @pytest.mark.asyncio
 async def test_library_page_has_missing_metadata_filter(client):
-    html = (await client.get("/library")).text
+    html = await _page_with_scripts(client, "/library")
 
     assert 'id="metadata-missing-filter"' in html
     assert "META_GENRE_MISSING" in html
@@ -442,7 +453,7 @@ async def test_library_page_has_missing_metadata_filter(client):
 #
 @pytest.mark.asyncio
 async def test_library_page_artists_overview_ui_wiring_present(client):
-    html = (await client.get("/library")).text
+    html = await _page_with_scripts(client, "/library")
 
     assert "loadArtistsOverview" in html
     assert "renderArtistsOverview" in html
@@ -456,7 +467,7 @@ async def test_library_page_artists_overview_ui_wiring_present(client):
 async def test_library_page_keeps_legacy_metadata_browser_unchanged(client):
     """Auftrag §39: alte, Klick-gesteuerte Tracks/Artists/Albums/Mapping-
     Sektion bleibt vollstaendig erreichbar, unveraendert."""
-    html = (await client.get("/library")).text
+    html = await _page_with_scripts(client, "/library")
 
     assert "Library-Metadata" in html
     assert 'id="metadata-tracks-btn"' in html
@@ -487,7 +498,7 @@ async def test_library_page_keeps_legacy_metadata_browser_unchanged(client):
 #
 @pytest.mark.asyncio
 async def test_library_page_has_artist_sort_control(client):
-    html = (await client.get("/library")).text
+    html = await _page_with_scripts(client, "/library")
 
     assert 'id="artist-sort"' in html
     assert "_ARTIST_SORT_COMPARATORS" in html
@@ -557,7 +568,7 @@ async def test_artist_detail_page_loads_shared_static_assets(client):
 #
 @pytest.mark.asyncio
 async def test_artist_detail_page_ui_wiring_present(client):
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "loadArtistDetail" in html
     assert "renderArtistDetail" in html
@@ -600,7 +611,7 @@ async def test_artist_detail_page_has_metadata_edit_panel_hidden_by_default(clie
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_metadata_edit_gated_by_access_level(client):
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert 'who.access_level === "ADMIN" || who.access_level === "OWNER"' in html
     assert 'getElementById("artist-metadata-edit-panel").hidden = !isAdmin' in html
@@ -634,7 +645,7 @@ async def test_artist_detail_page_has_manual_metadata_editing_buttons(client):
 async def test_artist_detail_page_wires_existing_artist_rename_endpoints(client):
     """Auftrag §13/§14: Artist bearbeiten ruft ausschliesslich den
     bestehenden admin_maintenance-Endpunkt auf, keine neue Ausfuehrung."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "/api/v1/admin/maintenance/artist-rename/preview?" in html
     assert '"/api/v1/admin/maintenance/artist-rename/execute"' in html
@@ -642,7 +653,7 @@ async def test_artist_detail_page_wires_existing_artist_rename_endpoints(client)
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_wires_existing_title_edit_endpoints(client):
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "/api/v1/admin/maintenance/title-edit/preview?" in html
     assert '"/api/v1/admin/maintenance/title-edit/execute"' in html
@@ -650,7 +661,7 @@ async def test_artist_detail_page_wires_existing_title_edit_endpoints(client):
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_wires_existing_genre_endpoints(client):
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "/api/v1/library/artists/${encodeURIComponent(artist)}/genre-preview" in html
     assert "/api/v1/library/artists/${encodeURIComponent(artist)}/set-genre" in html
@@ -662,7 +673,7 @@ async def test_artist_detail_page_metadata_edit_uses_artist_context_not_free_tex
     mitgegeben - alle sechs Aktionen (Preview+Execute je Artist/Titel/
     Genre) lesen ihn ueber currentArtistFromPath(), kein eigenes
     Freitext-Artist-Feld wie im generischen admin.html-Formular."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert html.count("currentArtistFromPath()") >= 6
 
@@ -686,7 +697,7 @@ async def test_artist_detail_page_reloads_own_preview_after_each_action(client):
     """Nach Erfolg laedt jede der drei Aktionen ihre EIGENE Vorschau neu
     (statt zu navigieren oder den laut CC-AC-1 nur zwischengespeicherten,
     nicht live aktualisierten Artist-Report erneut zu laden)."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert html.count("loadArtistEditPreview()") >= 2
     assert html.count("loadTitleEditPreview()") >= 2
@@ -698,7 +709,7 @@ async def test_artist_detail_page_surfaces_skip_reasons_in_preview(client):
     """Regression: SKIPPED/FAILED-Gruende (z. B. "Artist-Tag entspricht
     nicht dem gewaehlten Ausgangswert") wurden zuvor im No-Op-Fall
     verschluckt statt angezeigt."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "body.outcomes.map((o) => o.reason)" in html
 
@@ -708,7 +719,7 @@ async def test_artist_detail_page_disables_execute_after_input_changes(client):
     """Preview<->Execute-Kopplung: eine Feldaenderung NACH einer geladenen
     Vorschau deaktiviert den Ausfuehren-Button wieder, damit nie ein
     anderer Wert geschrieben wird als der zuletzt angezeigte Diff."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert 'getElementById("artist-edit-new-artist").addEventListener("input"' in html
     assert '["title-edit-track-select", "title-edit-new-title"].forEach' in html
@@ -723,7 +734,7 @@ async def test_artist_detail_page_title_edit_uses_track_picker_not_free_text_pat
     Pfad eines fremden Artists eingegeben werden koennte). Der Server
     bleibt trotzdem die eigentliche Schranke
     (maintenance_service.py::_title_edit_targets(), CC-LIB-FINAL Phase C)."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert '<select id="title-edit-track-select" class="form-select">' in html
     assert 'id="title-edit-rel-path"' not in html
@@ -751,7 +762,7 @@ async def test_artist_detail_page_execute_errors_do_not_claim_network_failure(cl
     synchroner Schreibvorgang wie oben) - identisches
     "Netzwerkfehler"-Wording wie beim aequivalenten Job-Start in
     static/pages/health.js::startLevel23Job()."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert html.count("Ergebnis unbekannt") >= 7
     assert html.count("Netzwerkfehler") == 1
@@ -765,7 +776,7 @@ async def test_artist_detail_page_execute_errors_do_not_claim_network_failure(cl
 async def test_artist_detail_page_confirms_before_write_actions(client):
     """Auftrag §25: Preview -> Confirmation -> Execute, window.confirm()
     identisch zu admin_maintenance heute (admin.html)."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "window.confirm(" in html
     assert html.count("window.confirm(") >= 3
@@ -790,7 +801,7 @@ async def test_artist_detail_page_has_album_edit_buttons(client):
 async def test_artist_detail_page_wires_existing_album_edit_endpoints(client):
     """Auftrag §13/§15 (CC-AC-3): Album bearbeiten ruft ausschliesslich
     den bestehenden Endpunkt auf, keine neue Ausfuehrungslogik."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "/api/v1/admin/maintenance/album-edit/preview?" in html
     assert '"/api/v1/admin/maintenance/album-edit/execute"' in html
@@ -798,7 +809,7 @@ async def test_artist_detail_page_wires_existing_album_edit_endpoints(client):
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_wires_existing_albumartist_edit_endpoints(client):
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "/api/v1/admin/maintenance/albumartist-edit/preview?" in html
     assert '"/api/v1/admin/maintenance/albumartist-edit/execute"' in html
@@ -808,7 +819,7 @@ async def test_artist_detail_page_wires_existing_albumartist_edit_endpoints(clie
 # async def test_artist_detail_page_has_album_pickers_not_free_text_path(client):
 #     """Auftrag §63-67 (CC-AC-3): Album-Auswahl per Picker (<select>),
 #     kein Freitext-Pfadfeld wie bei "Titel bearbeiten"."""
-#     html = (await client.get("/library/Bausa")).text
+#     html = await _page_with_scripts(client, "/library/Bausa")
 #
 #     assert '<select id="album-edit-album-select">' in html
 #     assert '<select id="albumartist-edit-album-select">' in html
@@ -819,7 +830,7 @@ async def test_artist_detail_page_album_picker_reuses_artists_overview_data(clie
     """Auftrag §7/§63-67: KEINE neue Datenquelle — der Album-Picker wird
     aus derselben artists-overview/{artist}-Antwort befuellt, die auch
     fuer die Alben-/Track-Anzeige laedt (kein zusaetzlicher Fetch)."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "function _artistAlbumOptions(artist, body)" in html
     assert "_populateAlbumPickers(body)" in html
@@ -831,7 +842,7 @@ async def test_artist_detail_page_album_picker_includes_singles(client):
     (album_directory fehlt) duerfen im Picker nicht leer bleiben —
     Singles werden individuell aus body.tracks abgeleitet, nicht als
     ein gemeinsamer Bulk-Kontext."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "t.album_directory" in html
     assert 't.extension !== ".m4a"' in html
@@ -844,7 +855,7 @@ async def test_artist_detail_page_album_edit_confirms_before_write(client):
     Execute-Request ausloesen, nicht nur irgendeine der bereits
     bestehenden drei (test_..._confirms_before_write_actions oben zaehlt
     nur pauschal >= 3, ohne die neuen Aktionen einzeln zu pruefen)."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert html.count("window.confirm(") >= 5
     album_edit_fn = html.split("async function executeAlbumEdit()")[1].split("async function ")[0]
@@ -855,7 +866,7 @@ async def test_artist_detail_page_album_edit_confirms_before_write(client):
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_reloads_album_preview_after_execute(client):
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert html.count("loadAlbumEditPreview()") >= 2
     assert html.count("loadAlbumArtistEditPreview()") >= 2
@@ -863,7 +874,7 @@ async def test_artist_detail_page_reloads_album_preview_after_execute(client):
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_album_edit_disables_execute_after_input_changes(client):
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert '["album-edit-album-select", "album-edit-new-album"].forEach' in html
     assert '["albumartist-edit-album-select", "albumartist-edit-new-albumartist"].forEach' in html
@@ -892,7 +903,7 @@ async def test_artist_detail_page_has_maintenance_panel_hidden_by_default(client
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_maintenance_gated_by_access_level(client):
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert 'getElementById("artist-maintenance-panel").hidden = !isAdmin' in html
 
@@ -924,7 +935,7 @@ async def test_artist_detail_page_has_maintenance_buttons(client):
 async def test_artist_detail_page_wires_existing_artist_casing_endpoints(client):
     """Auftrag CC-AC-4 §17: ruft ausschliesslich den bestehenden
     admin_maintenance-Endpunkt auf, keine neue Ausfuehrungslogik."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "/api/v1/admin/maintenance/artist-casing/preview?" in html
     assert "/api/v1/admin/maintenance/artist-casing/execute?" in html
@@ -932,7 +943,7 @@ async def test_artist_detail_page_wires_existing_artist_casing_endpoints(client)
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_wires_existing_legacy_genre_cleanup_endpoints(client):
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "/api/v1/admin/maintenance/legacy-genre-cleanup/preview?" in html
     assert "/api/v1/admin/maintenance/legacy-genre-cleanup/execute?" in html
@@ -943,7 +954,7 @@ async def test_artist_detail_page_wires_existing_repair_level_job_endpoints(clie
     """L3 laeuft als bestehender Job-Typ (services/jobs/), kein
     synchroner Preview->Execute wie die uebrigen Maintenance-Aktionen.
     L2 (Metadata-Reprocessing) wurde in CC-LIB-FINAL Phase B entfernt."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert '"/api/v1/jobs/repair-level3"' in html
     assert "/api/v1/jobs/${encodeURIComponent(jobId)}" in html
@@ -954,7 +965,7 @@ async def test_artist_detail_page_maintenance_uses_artist_context_not_free_text(
     """Auftrag §12: der Artist-Kontext (aus dem Pfad) wird implizit
     mitgegeben - kein eigenes Freitext-Artist-Feld wie im generischen
     admin.html-Formular bzw. der Repair-Plan-Liste auf /health."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     maintenance_section = html.split('id="artist-maintenance-panel"', 1)[1].split("</section>", 1)[0]
     assert "<input" not in maintenance_section
@@ -967,7 +978,7 @@ async def test_artist_detail_page_genre_revalidation_is_wired_to_the_job_endpoin
     Seit /api/v1/jobs/genre-revalidation-preview|apply gibt es echte Buttons — beide
     muessen verdrahtet sein (kein toter Button), der alte Hinweis ist entfernt.
     Wie bei L2/L3 gibt es kein Abbrechen (ein einzelner atomarer Lauf)."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "Genre revalidieren" in html
     assert 'id="genre-revalidation-preview-btn"' in html
@@ -996,7 +1007,7 @@ async def test_artist_detail_page_repair_job_confirm_mentions_duration_and_music
     """SCOPE-HINWEIS: Confirm-Dialog muss auf laengere Laufzeit hinweisen
     (L2/L3 laufen asynchron als Job, anders als die synchronen
     Maintenance-Aktionen) sowie bei L3 auf MusicBrainz/Netzwerk."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "kann einige Minuten dauern" in html or "Kann einige Minuten dauern" in html
     assert "MusicBrainz" in html
@@ -1004,7 +1015,7 @@ async def test_artist_detail_page_repair_job_confirm_mentions_duration_and_music
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_repair_job_polls_every_second(client):
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "setInterval(() => _pollArtistRepairJob(_artistRepairJobId), 1000)" in html
 
@@ -1025,7 +1036,7 @@ async def test_artist_detail_tracks_are_interactive(client):
     """Auftrag §4: Track-Zeilen sind native <button>, keine <div
     onclick>-Pseudo-Buttons - Enter/Space funktionieren ohne eigene
     Tastatur-Nachbildung."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert 'class="row-item track-row"' in html
     assert "data-track-path=" in html
@@ -1048,7 +1059,7 @@ async def test_artist_detail_has_track_detail_context(client):
 async def test_track_detail_context_displays_available_metadata(client):
     """Auftrag §8: nur tatsaechlich vorhandene, bereits unterstuetzte
     TrackSchema-Felder - keine neuen Backend-Felder fuer die UI."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     info_fn = html.split("function _trackDrawerFieldsHtml(t) {", 1)[1].split("\n  }", 1)[0]
     for field in (
@@ -1064,7 +1075,7 @@ async def test_track_detail_context_shows_health_from_existing_issue_codes(clien
     """Auftrag §7: Health kommt ausschliesslich aus dem vorhandenen
     TrackSchema.issue_codes-Feld - keine erfundene "Metadata
     vollstaendig"-Behauptung, neutrale Formulierung ohne offene Probleme."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "t.issue_codes.length" in html
     # CC-LIB-FINAL Library-Home: das Label-Dict lebt jetzt zentral als
@@ -1079,7 +1090,7 @@ async def test_track_detail_context_shows_health_from_existing_issue_codes(clien
 async def test_track_detail_context_exposes_existing_actions(client):
     """Auftrag §9/§11: buendelt die bestehenden Manual-Metadata-Editing-
     Aktionen (CC-AC-2/3) im Track-Kontext - keine neue Ausfuehrungslogik."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert 'data-track-action="${action}"' in html
     assert "title: _trackDrawerEditTitle," in html
@@ -1096,7 +1107,7 @@ async def test_track_action_preserves_preview_execute_flow(client):
     befuellen die bestehenden Formularfelder und rufen ausschliesslich
     die bereits vorhandenen, andernorts getesteten load*Preview()-
     Funktionen auf. Keine neue fetch()/POST-Ausfuehrung im Drawer-Block."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     drawer_block = html.split("let _trackDrawerIsAdmin = false;", 1)[1].split("function initPage()", 1)[0]
     assert "loadTitleEditPreview();" in drawer_block
@@ -1110,7 +1121,7 @@ async def test_track_detail_context_has_accessible_dialog_semantics(client):
     """Auftrag §16: role=dialog/aria-modal nativ im Markup, Escape
     schliesst, Tab-Fokus bleibt im Dialog, Fokus kehrt zur ausloesenden
     Track-Zeile zurueck."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert 'role="dialog"' in html
     assert 'aria-modal="true"' in html
@@ -1125,7 +1136,7 @@ async def test_track_detail_context_has_accessible_dialog_semantics(client):
 async def test_track_drawer_actions_gated_by_admin_access(client):
     """Identische UX-Schranke wie die bestehenden Metadata-/Wartungs-
     Panels (Auftrag CC-AC-2-Scope) - kein separater Admin-Check-Pfad."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert "_trackDrawerIsAdmin = isAdmin;" in html
     assert "Aktionen benötigen Admin-Berechtigung" in html
@@ -1137,7 +1148,7 @@ async def test_track_drawer_album_actions_require_m4a_scope(client):
     album_targets() (services/library_repair/maintenance_service.py)
     ueberhaupt einen Treffer liefern koennte - identische .m4a-
     Einschraenkung wie der bestehende Album-Picker (_artistAlbumOptions())."""
-    html = (await client.get("/library/Bausa")).text
+    html = await _page_with_scripts(client, "/library/Bausa")
 
     assert 'extension === ".m4a"' in html
 
@@ -1422,7 +1433,7 @@ async def test_library_page_attention_uses_severity_data(client):
     Severity-Klassifikation (verifiziert gegen services/library_health/
     issues.py, siehe common.js::_ISSUE_ERROR_CODES/_ISSUE_WARNING_CODES -
     seit CC-LIB-FINAL zentral dort statt einer library.html-lokalen Kopie)."""
-    html = (await client.get("/library")).text
+    html = await _page_with_scripts(client, "/library")
     common_js = (await client.get("/static/common.js")).text
 
     assert "_renderLibraryAttention" in html
@@ -1437,7 +1448,7 @@ async def test_library_page_attention_uses_severity_data(client):
 async def test_library_page_has_health_asc_sort_option(client):
     """CC-AC-8 Schritt 4: Sortier-Option 'Health (niedrig -> hoch)' plus
     Comparator. Bestehende health-Option bleibt (hoch -> niedrig)."""
-    html = (await client.get("/library")).text
+    html = await _page_with_scripts(client, "/library")
 
     assert 'value="health"' in html
     assert 'value="health_asc"' in html

@@ -37,17 +37,12 @@ import pytest
 
 CC = Path(__file__).resolve().parent.parent / "control_center"
 COMMON_JS = CC / "static" / "common.js"
-ARTIST_HTML = CC / "templates" / "library_artist_detail.html"
+# CC-UI L1: Inline-Skript byte-identisch nach static/pages/ verschoben (U1).
+ARTIST_JS = CC / "static" / "pages" / "library_artist.js"
 _NODE = shutil.which("node")
 
 needs_node = pytest.mark.skipif(_NODE is None, reason="node nicht verfuegbar")
 
-
-def _extract_script(html_path: Path) -> str:
-    html = html_path.read_text(encoding="utf-8")
-    m = re.search(r"\{% block scripts %\}\s*<script>(.*)</script>\s*\{% endblock %\}", html, re.S)
-    assert m, "kein <script>-Block in {% block scripts %} gefunden"
-    return m.group(1)
 
 
 _HARNESS = r"""
@@ -132,7 +127,7 @@ def _run(tmp_path: Path, scenario: dict) -> dict:
     script.write_text(_HARNESS, encoding="utf-8")
     combined = tmp_path / "common_plus_artist.js"
     combined.write_text(
-        COMMON_JS.read_text(encoding="utf-8") + "\n" + _extract_script(ARTIST_HTML),
+        COMMON_JS.read_text(encoding="utf-8") + "\n" + ARTIST_JS.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
     result = subprocess.run(
