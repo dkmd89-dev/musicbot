@@ -1,55 +1,38 @@
 {% extends "_base.html" %}
 {% block title %}Downloads – MusicBot Control Center{% endblock %}
 {% block content %}
-<div class="page-header d-print-none mb-4">
-  <div class="row align-items-center g-3">
-    <div class="col-auto">
-      <span class="page-header-icon" aria-hidden="true">
-        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-          <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-          <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" />
-          <path d="M7 11l5 5l5 -5" />
-          <path d="M12 4l0 12" />
-        </svg>
-      </span>
-    </div>
-    <div class="col">
-      <div class="page-pretitle">MUSIC</div>
-      <h1 class="page-title mb-0">Downloads</h1>
-      <div class="text-secondary small">Download starten, Fortschritt beobachten, Verlauf einsehen</div>
+{# CC-UI Downloads nach docs/CONTROL_CENTER_UI_STANDARD.md. Element-IDs sind
+   Vertrag mit static/pages/downloads.js und tests/test_control_center_ui.py. #}
+<div class="page-header d-print-none mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col-12 col-md">
+      <div class="page-pretitle">Musik</div>
+      <h2 class="page-title"><svg class="icon me-2 text-teal"><use href="#i-download"/></svg>Downloads</h2>
+      <div class="text-secondary mt-1">Download starten, Fortschritt beobachten, Verlauf einsehen</div>
     </div>
   </div>
 </div>
 
-<!-- KPI-Reihe: Menge → Erfolg → Probleme → Metadatenqualität (downloads.js) -->
-<div id="downloads-kpi" class="metrics-grid mb-3" hidden></div>
+<!-- Kennzahlen (downloads.js::_renderDownloadsKpi) -->
+<div id="downloads-kpi" class="row row-cards mb-3" hidden></div>
 
+<!-- Neuer Download -->
 <div class="card mb-3">
-  <div class="card-header">
-    <h2 class="card-title">
-      <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-player-play" width="20" height="20" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-        <path d="M7 4v16l13 -8z" />
-      </svg>
-      Download starten
-    </h2>
-  </div>
   <div class="card-body">
-    <form id="download-start-form" class="row g-2 align-items-center">
+    <h3 class="card-title mb-1">Neuen Download starten</h3>
+    <div class="text-secondary mb-3">YouTube-Einzeltitel oder -Playlist. Duplikate werden automatisch erkannt.</div>
+    <form id="download-start-form" class="row g-2">
       <div class="col">
         <label for="download-url-input" class="visually-hidden">YouTube-URL</label>
-        <input
-          type="text"
-          id="download-url-input"
-          class="form-control downloads-url-input"
-          placeholder="YouTube-URL (Video oder Playlist)"
-          autocomplete="off"
-          required
-        />
+        <div class="input-icon w-100">
+          <span class="input-icon-addon"><svg class="icon"><use href="#i-link"/></svg></span>
+          <input type="text" id="download-url-input" class="form-control downloads-url-input"
+                 placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" required>
+        </div>
       </div>
       <div class="col-12 col-sm-auto">
         <button type="submit" id="download-start-btn" class="btn btn-primary w-100">
-          Download starten
+          <svg class="icon me-1"><use href="#i-download"/></svg>Download starten
         </button>
       </div>
     </form>
@@ -57,87 +40,62 @@
 </div>
 
 <div class="row row-cards mb-3">
-  <!-- Links: Live-Zustand des eigenen Jobs (/api/v1/jobs/download/{id}) -->
-  <div class="col-lg-6">
+  <!-- Aktueller Download: Live-Zustand des eigenen Jobs (/api/v1/jobs/download/{id}) -->
+  <div class="col-lg-7">
     <div class="card h-100" id="downloads-current-panel">
       <div class="card-header">
-        <h2 class="card-title">
-          <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-activity" width="20" height="20" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-            <path d="M3 12h4l3 8l4 -16l3 8h4" />
-          </svg>
-          Aktuell
-        </h2>
+        <h3 class="card-title"><svg class="icon me-2"><use href="#i-refresh"/></svg>Aktueller Download</h3>
       </div>
-      <div class="card-body">
-        <div id="download-status-content">
-          <p class="empty-note mb-0">Kein aktiver Download.</p>
+      <div class="card-body" id="download-status-content">
+        <div class="empty py-3">
+          <div class="empty-icon"><svg class="icon"><use href="#i-inbox"/></svg></div>
+          <p class="empty-title">Kein aktiver Download</p>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Rechts: historische Aggregation der geladenen Verlaufseinträge,
+  <!-- Pipeline: historische Aggregation der geladenen Verlaufseinträge,
        ausdrücklich NICHT der aktuelle Job -->
-  <div class="col-lg-6">
+  <div class="col-lg-5">
     <div class="card h-100" id="downloads-pipeline-panel">
       <div class="card-header">
         <div>
-          <h2 class="card-title">
-            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-chart-bar" width="20" height="20" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-              <path d="M3 13a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z" />
-              <path d="M15 9a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z" />
-              <path d="M9 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z" />
-            </svg>
-            Pipeline
-          </h2>
-          <div class="text-secondary small">Berechnet aus den aktuell geladenen Verlaufseinträgen</div>
+          <h3 class="card-title"><svg class="icon me-2"><use href="#i-chart"/></svg>Metadaten-Qualität</h3>
+          <div class="card-subtitle">Berechnet aus den geladenen Verlaufseinträgen</div>
         </div>
       </div>
-      <div class="card-body">
-        <div id="downloads-pipeline-content" class="empty-note">Lädt…</div>
+      <div class="card-body" id="downloads-pipeline-content">
+        <div class="placeholder-glow"><div class="placeholder col-9 mb-2"></div><div class="placeholder col-7"></div></div>
       </div>
     </div>
   </div>
 </div>
 
+<!-- Verlauf -->
 <div class="card mb-3" id="downloads-history-card">
-  <div class="card-header">
+  <div class="card-header flex-wrap gap-2">
     <div>
-      <h2 class="card-title">
-        <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-list" width="20" height="20" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-          <path d="M9 6l11 0" />
-          <path d="M9 12l11 0" />
-          <path d="M9 18l11 0" />
-          <path d="M5 6l0 .01" />
-          <path d="M5 12l0 .01" />
-          <path d="M5 18l0 .01" />
-        </svg>
-        Verlauf
-      </h2>
-      <div class="text-secondary small">
-        Ge = Genre · Ly = Lyrics · Co = Cover · MB = MusicBrainz · Lo = Loudness
+      <h3 class="card-title"><svg class="icon me-2"><use href="#i-history"/></svg>Verlauf</h3>
+      <div class="card-subtitle">Ge = Genre · Ly = Lyrics · Co = Cover · MB = MusicBrainz · Lo = Loudness</div>
+    </div>
+    <div class="card-actions d-flex flex-wrap gap-2 ms-0 ms-md-auto">
+      <div class="input-icon flex-fill">
+        <span class="input-icon-addon"><svg class="icon"><use href="#i-search"/></svg></span>
+        <label for="downloads-search" class="visually-hidden">Verlauf durchsuchen</label>
+        <input id="downloads-search" type="search" class="form-control form-control-sm"
+               placeholder="Titel oder Artist …" autocomplete="off">
+      </div>
+      <div class="btn-group" role="group" id="downloads-status-filter" aria-label="Status-Filter">
+        <button type="button" class="btn btn-sm active" data-filter="all" aria-pressed="true">Alle</button>
+        <button type="button" class="btn btn-sm" data-filter="success" aria-pressed="false">Erfolgreich</button>
+        <button type="button" class="btn btn-sm" data-filter="failed" aria-pressed="false">Fehler</button>
       </div>
     </div>
   </div>
-
-  <div class="card-body">
-    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-      <div class="flex-fill">
-        <label for="downloads-search" class="visually-hidden">Verlauf durchsuchen</label>
-        <input id="downloads-search" type="search" class="form-control"
-               placeholder="Titel oder Artist suchen …" autocomplete="off">
-      </div>
-      <div class="btn-group" role="group" id="downloads-status-filter" aria-label="Status-Filter">
-        <button type="button" class="btn btn-sm btn-outline-secondary active" data-filter="all" aria-pressed="true">Alle</button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-filter="success" aria-pressed="false">Erfolgreich</button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-filter="failed" aria-pressed="false">Fehler</button>
-      </div>
-    </div>
-    <div id="downloads-content" class="empty-note">
-      Lädt…
+  <div id="downloads-content">
+    <div class="card-body placeholder-glow">
+      <div class="placeholder col-9 mb-2"></div><div class="placeholder col-7 mb-2"></div><div class="placeholder col-5"></div>
     </div>
   </div>
 </div>
@@ -146,38 +104,33 @@
   <div class="col-lg-6">
     <div class="card h-100" id="downloads-attention-panel">
       <div class="card-header">
-        <h2 class="card-title">
-          <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-alert-triangle" width="20" height="20" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-            <path d="M12 9v4" />
-            <path d="M10.363 3.5l-8.36 14a2 2 0 0 0 1.73 3h16.534a2 2 0 0 0 1.73 -3l-8.36 -14a2 2 0 0 0 -3.274 0z" />
-            <path d="M12 16h.01" />
-          </svg>
-          Auffällig
-        </h2>
+        <h3 class="card-title"><svg class="icon me-2"><use href="#i-alert"/></svg>Auffällig</h3>
       </div>
-      <div class="card-body">
-        <div id="downloads-attention-content" class="empty-note">Lädt…</div>
+      <div id="downloads-attention-content">
+        <div class="card-body placeholder-glow"><div class="placeholder col-6"></div></div>
       </div>
     </div>
   </div>
-
   <div class="col-lg-6">
     <div class="card h-100" id="downloads-last-panel">
       <div class="card-header">
-        <h2 class="card-title">
-          <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-clock" width="20" height="20" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-            <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" />
-            <path d="M12 7v5l3 3" />
-          </svg>
-          Letzter Download
-        </h2>
+        <h3 class="card-title"><svg class="icon me-2"><use href="#i-music"/></svg>Letzter Download</h3>
       </div>
-      <div class="card-body">
-        <div id="downloads-last-content" class="empty-note">Lädt…</div>
+      <div class="card-body" id="downloads-last-content">
+        <div class="placeholder-glow"><div class="placeholder col-8"></div></div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Job-Verlauf (Job.events) im Seitenpanel, Standard Abschnitt 9 -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="download-events-offcanvas" aria-labelledby="download-events-title">
+  <div class="offcanvas-header">
+    <h2 class="offcanvas-title" id="download-events-title">Job-Verlauf</h2>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Schließen"></button>
+  </div>
+  <div class="offcanvas-body" id="download-events-content">
+    <div class="text-secondary">Noch keine Schritte.</div>
   </div>
 </div>
 {% endblock %}

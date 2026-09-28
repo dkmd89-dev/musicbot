@@ -199,9 +199,6 @@ summary h2 { display: inline-flex; }
 .badge-WARNING { background: #d0a326; }
 .badge-SUSPECTED { background: #7a6fd0; }
 .badge-INFO { background: #6b6b6b; }
-.badge-status-success { background: var(--ok); }
-.badge-status-failed, .badge-status-cancelled { background: var(--error); }
-.badge-status-warn { background: var(--warning); }
 
 /* ══════════════════════════════════════════════════════════════════
    6. KPI-TILES (Legacy, weiterhin für Analytics-Seiten)
@@ -539,29 +536,8 @@ button.select-row.active {
   background: var(--accent);
   border-radius: 2px;
   transition: width 0.4s ease-out;
-}
+}/* ── 9.2 Attention-Panel ─────────────────────────────────────────── */
 
-/* ── 9.2 Attention-Panel ─────────────────────────────────────────── */
-.attention-panel { border-left: 4px solid #f59e0b; }
-.attention-panel--ok { border-left-color: var(--ok); }
-
-.attention-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  font-size: 0.9rem;
-  color: var(--fg);
-}
-.attention-row strong {
-  color: var(--error);
-  font-size: 1.1rem;
-}
-.attention-ok {
-  color: var(--ok);
-  font-size: 0.9rem;
-  font-weight: 500;
-}
 
 /* ── 9.3 Panel-Footer ────────────────────────────────────────────── */
 .panel-footer {
@@ -953,71 +929,12 @@ button.track-row:focus-visible { outline: 2px solid var(--accent); outline-offse
   line-height: 1;
   flex-shrink: 0;
   user-select: none;
-}
-
-/* Aufmerksamkeit-Card */
-.attention-count,
-.attention-empty {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.attention-badge {
-  width: 56px;
-  height: 56px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  font-size: 1.5rem;
-  font-weight: 700;
-  flex-shrink: 0;
-  line-height: 1;
-}
-.attention-badge--ok {
-  background: rgba(47, 179, 68, 0.15);
-  color: #2fb344;
-  font-size: 1.6rem;
-}
-.attention-badge--warn {
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
-}
-.attention-badge--critical {
-  background: rgba(214, 57, 57, 0.15);
-  color: #d63939;
-}
-
-.attention-headline {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--fg, #eaeaea);
-  margin-bottom: 0.15rem;
-}
-.attention-sub {
-  font-size: 0.85rem;
-  color: var(--muted, #9a9a9a);
-}
-
+}/* Aufmerksamkeit-Card */
 /* Card-Hintergrund-Tönung je Severity */
-#attention-panel.attention-panel--warn {
-  border-left: 3px solid #f59e0b;
-}
-#attention-panel.attention-panel--critical {
-  border-left: 3px solid #d63939;
-}
-#attention-panel.attention-panel--ok {
-  border-left: 3px solid #2fb344;
-}
+
 
 @media (max-width: 480px) {
   .page-header-icon {
-    width: 48px;
-    height: 48px;
-    font-size: 1.3rem;
-  }
-  .attention-badge {
     width: 48px;
     height: 48px;
     font-size: 1.3rem;
@@ -1233,3 +1150,7 @@ input.downloads-url-input { max-width: none; }
 /* CC-UI: Tabellenzelle, deren Inhalt per .text-truncate gekürzt wird
    (max-width: 0 + width: 100% lässt die Zelle den Restplatz nehmen). */
 .cc-cell-truncate { max-width: 0; width: 100%; }
+
+/* CC-UI: vorformatierte Meldungen (z. B. Download-Ergebnis) mit
+   Zeilenumbrüchen, ohne Inline-Style. */
+.cc-pre-wrap { white-space: pre-wrap; }
