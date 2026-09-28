@@ -14,6 +14,7 @@ Vergleich fair bleibt. Ausgangslage: `docs/audits/CONTROL_CENTER_UI_INVENTORY_20
 | C · Dashboard | `layout-c-dashboard.html` | dunkle Sidebar mit Zählern, Hell/Dunkel-Umschalter, KPI-Karten mit Icon, Pipeline als Schrittfolge, Seitenpanel (`offcanvas`), Toasts |
 | Nutzer 1–3 | (Screenshots im Chat, nicht abgelegt) | 1 Karten-Raster, 2 Tabelle, 3 Terminal-Stil — alle dunkel mit Türkis-Akzent |
 | **D · Mischung** | `layout-d-mischung.html` | **gemeinsam gewählte Richtung** (siehe unten) |
+| L4 · Metadaten-Editor | `l4-metadaten-editor.html` | Entwurf für den Editor auf der Artist-Seite (2026-09-28): Seitenpanel mit Reitern Artist/Titel/Album/Genre/Duplikate, vorbelegte Felder, automatische Vorschau alt → neu, Wartungs-Werkzeuge integriert (Karte „Library-Wartung“ entfällt, L3 nur noch auf Health) — **zur Freigabe** |
 
 Eigene Entwürfe bitte als `layout-<name>.html` hier ablegen (gleiche
 Beispielseite erleichtert den Vergleich, ist aber keine Pflicht).
