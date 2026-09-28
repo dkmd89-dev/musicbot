@@ -1,7 +1,7 @@
 # Control Center Download UI (Client Consolidation Phase D.11) Implementation Plan
 
 > **Feature**: Downloads-Web-UI im MusicBot Control Center — Download starten, Live-Jobstatus/Fortschritt, Cancel, erweiterte Verlaufsanzeige mit Metadaten-Checkliste
-> **Status**: Planning Complete
+> **Status**: Implemented (D.11 umgesetzt und gemergt, siehe `99-execution-plan.md` und `docs/audits/CLIENT_CONSOLIDATION_PHASE_D_DOWNLOAD_RUNTIME_2026-09-27.md` §6)
 > **Created**: 2026-09-28
 > **CodeOps Skills Version**: 3.20.0
 
