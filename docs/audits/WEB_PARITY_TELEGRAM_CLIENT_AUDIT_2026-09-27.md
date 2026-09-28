@@ -1,6 +1,6 @@
 # Web-Parität und „Telegram als Client" — Audit
 
-**Datum:** 2026-09-27 (Ersterstellung 08:00 Uhr, PR #316; verifiziert und ergänzt 2026-09-27 nachmittags nach CC-LIB-FINAL, siehe Abschnitt 7; erneut aktualisiert 2026-09-27 abends nach Client-Consolidation-Phase A/B, siehe Abschnitt 8; erneut ergänzt nach Backlog-Abarbeitung Backups/Duplikat-Check/AccessLevel-Move, siehe Abschnitt 12)
+**Datum:** 2026-09-27 (Ersterstellung 08:00 Uhr, PR #316; verifiziert und ergänzt 2026-09-27 nachmittags nach CC-LIB-FINAL, siehe Abschnitt 7; erneut aktualisiert 2026-09-27 abends nach Client-Consolidation-Phase A/B, siehe Abschnitt 8; erneut ergänzt nach Backlog-Abarbeitung Backups/Duplikat-Check/AccessLevel-Move, siehe Abschnitt 12; Downloads im Web abgeschlossen (Phase D.10–D.13), siehe Abschnitt 14)
 **Status:** 🟡 ANALYSIS COMPLETE — DECISION PENDING (keine Implementierung, reines Dokument; fünf zuvor offene Punkte inzwischen umgesetzt: User-Verwaltung/Logger siehe Abschnitt 8, Backups/Duplikat-Check-CC/AccessLevel-Move siehe Abschnitt 12)
 **Auftrag (Nutzer, 2026-09-27):** Das Control Center (CC) soll vollständig unabhängig von Telegram werden; Telegram ist am Ende nur noch ein Client neben dem Web.
 **Vorgehen:** CLAUDE.md §3.A — Ist-Zustand → Verantwortlichkeiten → Zielgrenzen → kleinster Schritt.
@@ -351,6 +351,24 @@ PENDING.
 
 ---
 
+## 14. Nachtrag — Downloads im Web abgeschlossen (Client Consolidation D.10–D.13, 2026-09-28)
+
+| Punkt | Stand | Beleg |
+|---|---|---|
+| Download starten (Single/Playlist), Live-Fortschritt, Cancel, Ergebnis | ✅ | D.10 (`POST /api/v1/jobs/download`), D.11 UI (PR #338) |
+| Verlauf, Metadaten-Checkliste, „🔁 Erneut versuchen", Downloads-Home | ✅ | PR #338–#341 |
+| Logs der Web-Downloads im Log-Dashboard | ✅ | D.12a (`logs/control_center.log`, PR #342) |
+| Schritt-Verlauf pro Job inkl. feiner Metadaten-Schritte | ✅ | D.12b/c (`1d99def`, PR #343) |
+| Verlauf/Duplikat-Cache konsistent zwischen Bot und CC | ✅ | D.13 (reproduziertes Lost Update geschlossen) |
+| Live-Status Telegram-initiierter Downloads im CC | ⚪ bewusst nicht geplant | hängt an Entscheidung 1 (Snapshot-Mechanismus) |
+| `_in_flight`-Schutz prozessübergreifend | ⚪ P3 | `docs/FINDINGS_INDEX.md` |
+
+**Folge für diese Matrix:** Zeile „📥 Downloads (Track, Playlist)" in 2.1: 🔴 🟣 → ✅ (Starten/Status/Cancel/Verlauf im Web; Live-Anzeige fremder Telegram-Downloads bleibt außerhalb, siehe oben). Backlog-Punkt 6 DONE. Details: `docs/audits/CLIENT_CONSOLIDATION_PHASE_D_DOWNLOAD_RUNTIME_2026-09-27.md` Abschnitte 5–8.
+
+**Weiterhin offen:** Duplikat-Verwaltung/-Cache (4b), Error-Verwaltung, Familie im Web, Login ohne Telegram, Test-System sowie die übrigen Nutzerentscheidungen aus Abschnitt 4 (Entscheidung 2 „Downloads aus dem Web" ist mit JA getroffen und umgesetzt) — Gesamtstatus bleibt 🟡 ANALYSIS COMPLETE — DECISION PENDING.
+
+---
+
 ## 13. Referenzen
 - `docs/audits/CC-AC-10A…10D_*_2026-09-22.md` (historisch), `CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md`
 - `docs/audits/CC-LOGGER-L3_RUNTIME_CONTROL_ARCHITECTURE_DECISION_2026-09-23.md` (Snapshot-Präzedenz)
@@ -359,5 +377,5 @@ PENDING.
 - `docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md` (Download-Center-Nachtrag, Scope-Entscheidung Verlauf statt Live-Status)
 - `docs/audits/CLIENT_CONSOLIDATION_PHASE_D_DOWNLOAD_RUNTIME_2026-09-27.md` (Downloads-Job-Verdrahtung, außerhalb des Scopes dieses Backlog-Durchlaufs)
 - `docs/LIBRARY_REPAIR.md` §17 (Genre-Mapping im CC), §18 (Genre revalidieren im CC)
-- `docs/FINDINGS_INDEX.md` (Zeile zu „Manual Metadata Editing v1/v2" bereits als OBSOLETE durch CC-LIB-FINAL geführt; Zeilen „User-Verwaltung: Doppelimplementierung" und „Logger: verbleibende Datei-I/O im Telegram-Handler" seit Phase A/B CLOSED, siehe Abschnitt 8; Zeilen „Backups: Doppelimplementierung", „Duplikat-Check im CC" und „AccessLevel/permissions falsches Paket" seit Abschnitt 12 CLOSED; Zeile „Downloads nicht aus dem Control Center startbar" seit Phase D mit Architekturentscheidung versehen, siehe Abschnitt 11)
+- `docs/FINDINGS_INDEX.md` (Zeile zu „Manual Metadata Editing v1/v2" bereits als OBSOLETE durch CC-LIB-FINAL geführt; Zeilen „User-Verwaltung: Doppelimplementierung" und „Logger: verbleibende Datei-I/O im Telegram-Handler" seit Phase A/B CLOSED, siehe Abschnitt 8; Zeilen „Backups: Doppelimplementierung", „Duplikat-Check im CC" und „AccessLevel/permissions falsches Paket" seit Abschnitt 12 CLOSED; Zeile „Downloads nicht aus dem Control Center startbar" seit D.13 CLOSED, siehe Abschnitt 14)
 - `/mnt/128ssd/client_consolidation.txt` (Auftrag Phase A–D), PR #326 (Phase A), PR #327 (Phase B), PR #328 (Phase C), PR #333 (Backups), PR #334 (Duplikat-Check im CC), PR #335 (AccessLevel-Move)
