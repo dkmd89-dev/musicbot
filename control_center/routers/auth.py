@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 POST /api/v1/auth/telegram-callback + POST /api/v1/auth/navidrome-login
-+ GET /api/v1/auth/whoami.
++ POST /api/v1/auth/logout + GET /api/v1/auth/whoami.
 
 Reine Orchestrierung: ruft ausschliesslich die Verifikations-/Session-
 Funktionen aus control_center/dependencies.py auf, keine eigene
@@ -17,7 +17,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from typing import Optional
+
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 
 from config import Config
 from logger import get_module_logger
@@ -32,6 +34,7 @@ from ..dependencies import (
     get_current_access_level,
     get_current_user_id,
     verify_same_origin,
+    verify_session_token,
     verify_telegram_login,
 )
 from ..schemas.auth import (
@@ -61,6 +64,19 @@ def _set_session_cookie(response: Response, request: Request, token: str) -> Non
         # an andere Apps derselben Domain (Immich, Navidrome, ...) geht.
         # Direktbetrieb (root_path == "") -> "/" wie bisher.
         path=request.scope.get("root_path", "") or "/",
+    )
+
+
+def _clear_session_cookie(response: Response, request: Request) -> None:
+    """Gegenstück zu _set_session_cookie(): identischer Path/Secure/
+    HttpOnly/SameSite - ein abweichender Path würde das Cookie nicht
+    löschen (Subpath-Betrieb hinter nginx, siehe root_path.py)."""
+    response.delete_cookie(
+        SESSION_COOKIE_NAME,
+        path=request.scope.get("root_path", "") or "/",
+        secure=True,
+        httponly=True,
+        samesite="strict",
     )
 
 
@@ -167,6 +183,28 @@ def navidrome_login(
     )
     _set_session_cookie(response, request, token)
     _logger.info(f"✅ Navidrome-Login: user={safe_username!r} -> user_id={result.user_id}")
+    return AuthStatusResponse()
+
+
+@router.post(
+    "/logout",
+    response_model=AuthStatusResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+def logout(
+    request: Request, response: Response, cc_session: Optional[str] = Cookie(default=None)
+) -> AuthStatusResponse:
+    """Abmelden: löscht das Session-Cookie im Browser. Idempotent - auch
+    ohne (gültige) Session 200. Einschränkung (bewusst, dokumentiert): Die
+    Session ist ein signiertes Cookie ohne serverseitigen Speicher - eine
+    vorher kopierte Cookie-Kopie bliebe bis zum Ablauf gültig; sofort
+    sperren weiterhin über Rolle/Löschen in der Nutzerverwaltung."""
+    user_id = None
+    if cc_session:
+        user_id = verify_session_token(cc_session, bot_token=Config().BOT_TOKEN)
+    _clear_session_cookie(response, request)
+    if user_id is not None:
+        _logger.info(f"👋 Abgemeldet: user_id={user_id}")
     return AuthStatusResponse()
 
 
