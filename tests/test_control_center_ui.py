@@ -261,15 +261,19 @@ async def test_downloads_page_has_history_panel(client):
 
 @pytest.mark.asyncio
 async def test_downloads_js_renders_job_events_escaped(client):
-    """D.12b: Schritt-Verlauf aus job.events - laufend als Liste, im
-    Ergebnis einklappbar ("Verlauf"), Meldungen immer escaped."""
+    """D.12b: Schritt-Verlauf aus job.events, Meldungen immer escaped.
+    Seit CC-UI Downloads (UI-Standard Abschnitt 9, Nutzerentscheidung
+    2026-09-28) im Seitenpanel #download-events-offcanvas statt als Liste/
+    <details> in der Karte - fuer laufende und beendete Jobs."""
     downloads_js = (await client.get("/static/pages/downloads.js")).text
+    html = (await client.get("/downloads")).text
 
     assert "function _jobEventsListHtml" in downloads_js
-    assert "function _jobEventsDetailsHtml" in downloads_js
+    assert "function _renderJobEvents" in downloads_js
     assert "job.events" in downloads_js
     assert "_escapeHtml(e.message)" in downloads_js
-    assert "<summary" in downloads_js and "Verlauf" in downloads_js
+    assert 'data-bs-target="#download-events-offcanvas"' in downloads_js and "Verlauf" in downloads_js
+    assert 'id="download-events-offcanvas"' in html and 'id="download-events-content"' in html
 
 
 @pytest.mark.asyncio

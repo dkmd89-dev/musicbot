@@ -1,4 +1,6 @@
 // control_center/static/pages/downloads.js
+// Downloads-Seite nach docs/CONTROL_CENTER_UI_STANDARD.md (CC-UI Downloads).
+// Endpunkte, Polling (Job 1 s, Verlauf 30 s) und Rehydrate unverändert.
 
 let _currentDownloadJobId = null;
 let _downloadJobPollTimer = null;
@@ -41,23 +43,6 @@ function _stopDownloadPolling() {
   if (_downloadJobPollTimer) { clearInterval(_downloadJobPollTimer); _downloadJobPollTimer = null; }
 }
 
-// Tabler-Icons als Inline-SVG (Konvention aus library.html, kein Icon-Font
-// vendored). Nur statische Pfad-Strings, nie Nutzerdaten.
-const _DL_ICON_PATHS = {
-  download: '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" /><path d="M7 11l5 5l5 -5" /><path d="M12 4l0 12" />',
-  "circle-check": '<path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M9 12l2 2l4 -4" />',
-  "circle-x": '<path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M10 10l4 4m0 -4l-4 4" />',
-  "chart-bar": '<path d="M3 13a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z" /><path d="M15 9a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z" /><path d="M9 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z" />',
-  check: '<path d="M5 12l5 5l10 -10" />',
-  x: '<path d="M18 6l-12 12" /><path d="M6 6l12 12" />',
-  minus: '<path d="M5 12l14 0" />',
-  refresh: '<path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" />',
-};
-
-function _dlIcon(name, size = 18, extraClass = "") {
-  return `<svg xmlns="http://www.w3.org/2000/svg" class="icon ${extraClass}" width="${size}" height="${size}" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>${_DL_ICON_PATHS[name] || ""}</svg>`;
-}
-
 // Die fuenf dreiwertigen Tier-Flags des Verlaufs (True/False/None, None =
 // "keine Aussage moeglich", siehe services/downloader/download_history.py).
 const _DL_TIERS = [
@@ -68,9 +53,13 @@ const _DL_TIERS = [
   { key: "loudness_ok", label: "Loudness", abbr: "Lo" },
 ];
 
+// Anzeige-Texte für Verlauf-Status (Standard Abschnitt 2).
+const _DL_STATUS_LABEL = { success: "Fertig", failed: "Fehler", cancelled: "Abgebrochen", duplicate: "Duplikat" };
+
 function _tierBadgeHtml(label, abbr, value) {
-  const cls = value === true ? "bg-success" : value === false ? "bg-danger" : "bg-secondary";
-  return `<span class="badge ${cls}" title="${_escapeHtml(label)}">${_escapeHtml(abbr)}</span>`;
+  const cls = value === true ? "bg-green-lt" : value === false ? "bg-red-lt" : "bg-secondary-lt";
+  const state = value === true ? "ok" : value === false ? "fehlt" : "keine Aussage";
+  return `<span class="badge ${cls}" title="${_escapeHtml(label)}: ${state}">${_escapeHtml(abbr)}</span>`;
 }
 
 function _relativeTimeText(timestamp) {
@@ -86,9 +75,17 @@ function _relativeTimeText(timestamp) {
   return new Date(t).toLocaleDateString();
 }
 
+function _absoluteTimeText(timestamp) {
+  const d = new Date(timestamp);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString();
+}
+
+// ── Aktueller Download ───────────────────────────────────────────────────
+
 function _renderDownloadIdle() {
-  document.getElementById("download-status-content").innerHTML =
-    '<p class="empty-note mb-0">Kein aktiver Download.</p>';
+  ccState.empty(document.getElementById("download-status-content"), "Kein aktiver Download",
+    "Starte oben einen Download per URL.");
+  _renderJobEvents(null);
 }
 
 function _formatResultMessage(message) {
@@ -96,57 +93,97 @@ function _formatResultMessage(message) {
 }
 
 // Verlinkung Duplikat-Ergebnis -> Artist-Detailseite (P2) - der Artist-Name
-// kommt bereits strukturiert aus dem Job-Result (jobs.py haengt ihn seit
-// dieser Ergaenzung neben der vorformatierten Nachricht an), keine eigene
-// Text-Extraktion aus der Nachricht noetig.
+// kommt bereits strukturiert aus dem Job-Result (jobs.py haengt ihn neben
+// der vorformatierten Nachricht an), keine Text-Extraktion noetig.
 function _duplicateArtistLinkHtml(job) {
   const artist = job.result && job.result.artist;
   if (!artist) return "";
   const href = apiUrl(`/library/${encodeURIComponent(artist)}`);
-  return `<div class="mt-2"><a href="${href}">Zum Artist „${_escapeHtml(artist)}" →</a></div>`;
+  return `<div class="mt-2"><a href="${href}">Zum Artist „${_escapeHtml(artist)}"</a></div>`;
 }
 
 // Schritt-Verlauf (D.12b) - job.events kommt aus JobRegistry (aelteste
-// zuerst). Uhrzeit lokal formatiert, Meldung immer escaped.
+// zuerst). Uhrzeit lokal formatiert, Meldung immer escaped. Anzeige im
+// Seitenpanel #download-events-offcanvas (Standard Abschnitt 9).
 function _formatEventTime(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 function _jobEventsListHtml(job) {
-  const events = Array.isArray(job.events) ? job.events : [];
+  const events = job && Array.isArray(job.events) ? job.events : [];
   if (!events.length) return "";
-  const rows = events.map((e) =>
-    `<li class="d-flex gap-2"><span class="text-secondary text-nowrap font-monospace">${_escapeHtml(_formatEventTime(e.at))}</span><span>${_escapeHtml(e.message)}</span></li>`
-  ).join("");
-  return `<ol class="list-unstyled small mb-0 download-job-events">${rows}</ol>`;
+  const running = job.status === "PENDING" || job.status === "RUNNING";
+  const rows = events.map((e, i) => {
+    const current = running && i === events.length - 1;
+    const icon = current ? ccIcon("refresh") : ccIcon("check");
+    return '<li class="timeline-event">'
+      + `<div class="timeline-event-icon ${current ? "bg-teal-lt" : "bg-green-lt"}">${icon}</div>`
+      + '<div class="card timeline-event-card"><div class="card-body py-2">'
+      + `<div class="text-secondary float-end small font-monospace">${_escapeHtml(_formatEventTime(e.at))}</div>`
+      + `<div>${_escapeHtml(e.message)}</div></div></div></li>`;
+  }).join("");
+  return `<ul class="timeline timeline-simple download-job-events">${rows}</ul>`;
 }
-function _jobEventsDetailsHtml(job) {
+function _renderJobEvents(job) {
+  const el = document.getElementById("download-events-content");
+  if (!el) return;
   const list = _jobEventsListHtml(job);
-  if (!list) return "";
-  return `<details class="mt-2"><summary class="small text-secondary">Verlauf</summary><div class="mt-1">${list}</div></details>`;
+  el.innerHTML = list || '<div class="text-secondary">Noch keine Schritte.</div>';
+}
+function _jobEventsButtonHtml(job) {
+  const count = job && Array.isArray(job.events) ? job.events.length : 0;
+  if (!count) return "";
+  return `<button type="button" class="btn btn-sm btn-ghost-secondary" data-bs-toggle="offcanvas" data-bs-target="#download-events-offcanvas">${ccIcon("history", "me-1")}Verlauf (${count})</button>`;
+}
+
+// Phasen des Web-Download-Jobs, abgeleitet aus den Job-Meldungen von
+// control_center/routers/jobs.py::_run_download_job() (dort festgeschrieben,
+// siehe tests/test_control_center_downloads_page.py). Unbekannte Meldung ->
+// keine Phase hervorgehoben.
+const _DL_PHASES = ["Prüfung", "Download", "Metadaten", "Abschluss"];
+function _downloadPhaseIndex(message) {
+  const m = message || "";
+  if (m.startsWith("Duplikat-Prüfung")) return 0;
+  if (m.startsWith("Download läuft")) return 1;
+  if (m.startsWith("Metadaten")) return 2;
+  if (m.startsWith("Zusammenfassung")) return 3;
+  return -1;
+}
+function _downloadPhasesHtml(job) {
+  const idx = job.status === "PENDING" ? -1 : _downloadPhaseIndex(job.message);
+  if (idx < 0) return "";
+  const items = _DL_PHASES.map((p, i) =>
+    `<li class="step-item${i === idx ? " active" : ""}">${_escapeHtml(p)}</li>`).join("");
+  return `<ul class="steps steps-counter steps-teal my-3 d-none d-md-flex">${items}</ul>`
+    + `<div class="d-md-none small text-secondary my-2">Phase ${idx + 1} von ${_DL_PHASES.length} · ${_escapeHtml(_DL_PHASES[idx])}</div>`;
 }
 
 function _renderDownloadResult(job) {
   const el = document.getElementById("download-status-content");
-  const eventsHtml = _jobEventsDetailsHtml(job);
+  _renderJobEvents(job);
+  const events = _jobEventsButtonHtml(job);
+  const footer = events ? `<div class="mt-2">${events}</div>` : "";
   if (job.status === "SUCCEEDED") {
     const outcome = job.result && job.result.outcome;
-    const alertClass = outcome === "duplicate" ? "alert-info" : "alert-success";
+    const dup = outcome === "duplicate";
     const msg = _formatResultMessage(job.result && job.result.message);
-    const artistLink = outcome === "duplicate" ? _duplicateArtistLinkHtml(job) : "";
-    el.innerHTML = `<div class="alert ${alertClass} mb-0" style="white-space: pre-wrap;">${msg}${artistLink}</div>${eventsHtml}`;
+    const artistLink = dup ? _duplicateArtistLinkHtml(job) : "";
+    el.innerHTML = `<div class="alert ${dup ? "alert-info" : "alert-success"} mb-0">`
+      + `<div class="d-flex gap-2">${ccIcon(dup ? "copy" : "check", "alert-icon")}`
+      + `<div class="cc-pre-wrap">${msg}${artistLink}</div></div></div>${footer}`;
     return;
   }
   if (job.status === "CANCELLED") {
-    el.innerHTML = `<div class="alert alert-secondary mb-0">Download abgebrochen.</div>${eventsHtml}`;
+    el.innerHTML = `<div class="alert alert-secondary mb-0"><div class="d-flex gap-2">${ccIcon("x", "alert-icon")}`
+      + `<div>Download abgebrochen.</div></div></div>${footer}`;
     return;
   }
-  el.innerHTML = `<div class="alert alert-danger mb-0">${_escapeHtml(job.error || "Unbekannter Fehler.")}</div>${eventsHtml}`;
+  el.innerHTML = `<div class="alert alert-danger mb-0"><div class="d-flex gap-2">${ccIcon("alert", "alert-icon")}`
+    + `<div>${_escapeHtml(job.error || "Unbekannter Fehler.")}</div></div></div>${footer}`;
 }
 
-// Prozent-Text + Laufzeit (P1) - started_at liefert das Backend bereits
-// (JobSchema), bisher ungenutzt. Reine Anzeige, keine neue Fachlogik.
+// Prozent-Text + Laufzeit (P1) - started_at liefert das Backend bereits.
 function _formatElapsedSeconds(totalSeconds) {
   const s = Math.max(0, Math.floor(totalSeconds));
   const m = Math.floor(s / 60);
@@ -160,14 +197,11 @@ function _elapsedText(job) {
   return _formatElapsedSeconds((Date.now() - started) / 1000);
 }
 
-// Download-Typ-Badge (P2) - job.context wird bereits bei Job-Erstellung
-// gesetzt (jobs.py::start_download_job()) und bleibt waehrend PENDING/
-// RUNNING/terminal unveraendert sichtbar (im Gegensatz zu job.result, das
-// erst am Ende existiert).
+// Download-Typ-Badge (P2) - job.context wird bei Job-Erstellung gesetzt.
 function _downloadTypeBadgeHtml(job) {
   const type = job.context && job.context.download_type;
   if (!type) return "";
-  const label = type === "playlist" ? "Playlist" : "Single";
+  const label = type === "playlist" ? "Playlist" : "Einzeltitel";
   return `<span class="badge bg-secondary-lt me-1">${_escapeHtml(label)}</span>`;
 }
 
@@ -175,21 +209,26 @@ function _renderDownloadJob(job) {
   if (job.status === "PENDING" || job.status === "RUNNING") {
     const pct = Math.round(job.progress || 0);
     const elapsed = _elapsedText(job);
-    const stateText = job.status === "PENDING" ? "Wartet" : "Download läuft";
-    const eventsList = _jobEventsListHtml(job);
+    const statusLabel = job.status === "PENDING" ? "Wartet" : "Läuft";
+    const idShort = job.job_id ? String(job.job_id).slice(0, 8) : "";
+    _renderJobEvents(job);
     document.getElementById("download-status-content").innerHTML = `
-      <div class="mb-3">
-        <div class="fw-medium text-truncate mb-2">${_downloadTypeBadgeHtml(job)}${_escapeHtml(job.message || "")}</div>
-        <div class="d-flex align-items-center gap-2 mb-1">
-          <div class="progress flex-fill">
-            <div class="progress-bar" style="width: ${pct}%" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div>
-          </div>
-          <div class="small text-nowrap">${pct} %</div>
+      <div class="d-flex align-items-start gap-2 mb-1">
+        <div class="flex-fill min-w-0">
+          <div class="fw-medium text-truncate">${_escapeHtml(job.message || "Download")}</div>
+          <div class="text-secondary small">${_downloadTypeBadgeHtml(job)}${idShort ? "Job " + _escapeHtml(idShort) : ""}${elapsed ? " · " + _escapeHtml(elapsed) : ""}</div>
         </div>
-        <div class="text-secondary small">${stateText}${elapsed ? " · " + _escapeHtml(elapsed) : ""}</div>
-        ${eventsList ? `<div class="mt-2">${eventsList}</div>` : ""}
+        ${ccStatusBadge(ccStatusKind(job.status), statusLabel)}
       </div>
-      <button type="button" id="download-cancel-btn" class="btn btn-sm btn-outline-danger">Abbrechen</button>
+      ${_downloadPhasesHtml(job)}
+      <div class="d-flex justify-content-between small text-secondary mb-1 mt-2"><span>Fortschritt</span><span>${pct} %</span></div>
+      <div class="progress progress-sm">
+        <div class="progress-bar bg-teal" style="width: ${pct}%" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div>
+      </div>
+      <div class="d-flex mt-3">
+        ${_jobEventsButtonHtml(job)}
+        <button type="button" id="download-cancel-btn" class="btn btn-sm btn-ghost-danger ms-auto">${ccIcon("x", "me-1")}Abbrechen</button>
+      </div>
     `;
     document.getElementById("download-cancel-btn").addEventListener("click", cancelDownload);
     return;
@@ -204,67 +243,62 @@ function _renderDownloadJob(job) {
 }
 
 async function _pollDownloadJob(jobId) {
+  let job;
   try {
-    const res = await fetch(apiUrl(`/api/v1/jobs/download/${encodeURIComponent(jobId)}`), { credentials: "same-origin" });
-    if (res.status === 401) { showOnly("login-view"); _stopDownloadPolling(); return; }
-    if (res.status === 404) {
-      // Rehydrate-Fall: Job existiert nicht (mehr) - z. B. JobRegistry ist
-      // rein prozessspeicher-basiert und ueberlebt keinen Neustart. Kein
-      // Fehler, sondern "kein aktiver Download (mehr)".
+    job = await ccApi("GET", `/api/v1/jobs/download/${encodeURIComponent(jobId)}`);
+  } catch (err) {
+    if (err.status === 401) { _stopDownloadPolling(); return; }
+    if (err.status === 404) {
+      // Rehydrate-Fall: Job existiert nicht (mehr) - JobRegistry ist rein
+      // prozessspeicher-basiert und ueberlebt keinen Neustart. Kein Fehler,
+      // sondern "kein aktiver Download (mehr)".
       _stopDownloadPolling();
       _setDownloadFormBusy(false);
       _persistCurrentDownloadJobId(null);
       _renderDownloadIdle();
-      return;
     }
-    if (!res.ok) return;
-    _renderDownloadJob(await res.json());
-  } catch (err) {}
+    return; // sonstige Fehler: nächster Poll versucht es erneut
+  }
+  _renderDownloadJob(job);
 }
 
 async function startDownload(url) {
   _setDownloadFormBusy(true);
-  document.getElementById("download-status-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
+  const statusEl = document.getElementById("download-status-content");
+  ccState.loading(statusEl);
+  let job;
   try {
-    const res = await fetch(apiUrl("/api/v1/jobs/download"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({ url }),
-    });
-    if (res.status === 401) { showOnly("login-view"); return; }
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      document.getElementById("download-status-content").innerHTML =
-        `<div class="alert alert-danger mb-0">${_escapeHtml((body && body.error && body.error.message) || String(res.status))}</div>`;
-      _setDownloadFormBusy(false);
-      return;
-    }
-    const job = await res.json();
-    _currentDownloadJobId = job.job_id;
-    _persistCurrentDownloadJobId(_currentDownloadJobId);
-    _renderDownloadJob(job);
-    _stopDownloadPolling();
-    _downloadJobPollTimer = setInterval(() => _pollDownloadJob(_currentDownloadJobId), 1000);
+    job = await ccApi("POST", "/api/v1/jobs/download", { url });
   } catch (err) {
-    document.getElementById("download-status-content").innerHTML =
-      `<div class="alert alert-danger mb-0">Download konnte nicht gestartet werden (${_escapeHtml(err.message)}).</div>`;
+    if (err.status === 401) return;
+    statusEl.innerHTML = `<div class="alert alert-danger mb-0"><div class="d-flex gap-2">${ccIcon("alert", "alert-icon")}`
+      + `<div>Download konnte nicht gestartet werden: ${_escapeHtml(err.message)}</div></div></div>`;
     _setDownloadFormBusy(false);
+    return;
   }
+  _currentDownloadJobId = job.job_id;
+  _persistCurrentDownloadJobId(_currentDownloadJobId);
+  ccToast("ok", "Download gestartet", job.job_id ? `Job ${String(job.job_id).slice(0, 8)}` : "");
+  _renderDownloadJob(job);
+  _stopDownloadPolling();
+  _downloadJobPollTimer = setInterval(() => _pollDownloadJob(_currentDownloadJobId), 1000);
 }
 
 async function cancelDownload() {
   if (!_currentDownloadJobId) return;
+  const confirmed = await ccConfirm({
+    title: "Download abbrechen?",
+    text: "Bereits fertige Titel bleiben erhalten.",
+    confirmLabel: "Abbrechen",
+    danger: true,
+  });
+  if (!confirmed || !_currentDownloadJobId) return;
   const btn = document.getElementById("download-cancel-btn");
   if (btn) btn.disabled = true;
   try {
-    await fetch(apiUrl(`/api/v1/jobs/download/${encodeURIComponent(_currentDownloadJobId)}/cancel`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-    });
+    await ccApi("POST", `/api/v1/jobs/download/${encodeURIComponent(_currentDownloadJobId)}/cancel`);
   } catch (err) {
-    window.alert("Netzwerkfehler beim Abbrechen: " + err.message);
+    if (err.status !== 401) ccToast("error", "Abbrechen fehlgeschlagen", err.message);
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -280,7 +314,7 @@ function _rehydrateActiveDownloadJob() {
   if (!jobId) return;
   _currentDownloadJobId = jobId;
   _setDownloadFormBusy(true);
-  document.getElementById("download-status-content").innerHTML = '<p class="empty-note">Prüfe laufenden Download…</p>';
+  ccState.loading(document.getElementById("download-status-content"));
   _stopDownloadPolling();
   _downloadJobPollTimer = setInterval(() => _pollDownloadJob(_currentDownloadJobId), 1000);
   _pollDownloadJob(jobId);
@@ -303,21 +337,15 @@ function _downloadEntryMatchesQuery(e, q) {
 }
 
 function _downloadHistoryRowHtml(e) {
-  return `
-    <div class="row-item">
-      <div class="row-main">
-        <div class="d-flex align-items-center gap-2">
-          <span class="badge badge-status-${_escapeHtml(e.status)}">${_escapeHtml(e.status)}</span>
-          <span class="text-truncate">${_escapeHtml(e.artist)} – ${_escapeHtml(e.title)}</span>
-        </div>
-        <div class="d-flex align-items-center gap-1 mt-1">
-          ${_DL_TIERS.map((t) => _tierBadgeHtml(t.label, t.abbr, e[t.key])).join("")}
-          <button type="button" class="btn btn-sm btn-outline-secondary btn-icon download-retry-btn" data-url="${_escapeHtml(e.url)}" title="Erneut versuchen" aria-label="Erneut versuchen">${_dlIcon("refresh", 14)}</button>
-        </div>
-      </div>
-      <div class="row-count" title="${_escapeHtml(new Date(e.timestamp).toLocaleString())}">${_escapeHtml(_relativeTimeText(e.timestamp))}</div>
-    </div>
-  `;
+  const label = _DL_STATUS_LABEL[e.status] || e.status || "–";
+  return "<tr>"
+    + `<td class="w-1">${ccStatusBadge(ccStatusKind(e.status), label)}</td>`
+    + `<td class="cc-cell-truncate"><div class="text-truncate">${_escapeHtml(e.title)}</div>`
+    + `<div class="text-secondary small text-truncate">${_escapeHtml(e.artist)}</div></td>`
+    + `<td class="d-none d-md-table-cell text-nowrap">${_DL_TIERS.map((t) => _tierBadgeHtml(t.label, t.abbr, e[t.key])).join(" ")}</td>`
+    + `<td class="text-secondary small text-nowrap" title="${_escapeHtml(_absoluteTimeText(e.timestamp))}">${_escapeHtml(_relativeTimeText(e.timestamp))}</td>`
+    + `<td class="w-1"><button type="button" class="btn btn-sm btn-icon btn-ghost-secondary download-retry-btn" data-url="${_escapeHtml(e.url)}" title="Erneut versuchen" aria-label="Erneut versuchen">${ccIcon("refresh")}</button></td>`
+    + "</tr>";
 }
 
 // Pipeline-Abdeckung: Anteil True an allen BEKANNTEN Tier-Werten (True/
@@ -343,35 +371,32 @@ function _formatPct(pct) {
   return pct === null ? "—" : `${Math.round(pct)} %`;
 }
 
+// Schwellen unverändert (90/70), Farben nach Standard Abschnitt 2.
 function _pctBarClass(pct) {
   if (pct === null) return "bg-secondary";
-  if (pct >= 90) return "bg-success";
-  if (pct >= 70) return "bg-warning";
-  return "bg-danger";
+  if (pct >= 90) return "bg-green";
+  if (pct >= 70) return "bg-yellow";
+  return "bg-red";
 }
 
-function _kpiCardHtml(icon, colorClass, label, value, tooltip) {
+function _kpiCardHtml(icon, color, label, value, tooltip) {
   return `
-    <div class="card card-sm" title="${_escapeHtml(tooltip)}">
-      <div class="card-body py-3">
-        <div class="d-flex align-items-center gap-3">
-          <span class="kpi-icon ${colorClass}" aria-hidden="true">${_dlIcon(icon, 24)}</span>
-          <div class="min-w-0">
-            <div class="text-secondary small">${_escapeHtml(label)}</div>
-            <div class="h1 mb-0">${_escapeHtml(value)}</div>
-          </div>
+    <div class="col-6 col-lg-3">
+      <div class="card card-sm h-100" title="${_escapeHtml(tooltip)}"><div class="card-body"><div class="row align-items-center g-3">
+        <div class="col-auto d-none d-sm-block"><span class="avatar bg-${color}-lt">${ccIcon(icon)}</span></div>
+        <div class="col min-w-0">
+          <div class="subheader text-truncate">${_escapeHtml(label)}</div>
+          <div class="h2 mb-0">${_escapeHtml(value)}</div>
         </div>
-      </div>
+      </div></div></div>
     </div>
   `;
 }
 
 // KPI-Leiste - reine Client-Aggregation ueber die geladenen Eintraege
 // (bis zu 200, siehe loadDownloads()). Bewusst NICHT als "Gesamt"/"All-Time"
-// beschriftet, da hoechstens die geladene Ansicht ausgewertet wird, keine
-// serverseitige Statistik (kein neuer Endpunkt) - identisches Prinzip wie
-// health.html's "keine vorgetaeuschten Health-Werte". Reihenfolge:
-// Menge -> Erfolg -> Probleme -> Metadatenqualitaet.
+// beschriftet, da hoechstens die geladene Ansicht ausgewertet wird.
+// Reihenfolge: Menge -> Erfolg -> Probleme -> Metadatenqualitaet.
 function _renderDownloadsKpi(entries) {
   const kpiEl = document.getElementById("downloads-kpi");
   if (!kpiEl) return;
@@ -382,28 +407,25 @@ function _renderDownloadsKpi(entries) {
   const pipeline = _downloadsPipelineStats(entries);
   kpiEl.hidden = false;
   kpiEl.innerHTML =
-    _kpiCardHtml("download", "kpi-blue", "Downloads", String(entries.length),
+    _kpiCardHtml("download", "teal", "Downloads", String(entries.length),
       "Anzahl der geladenen Verlaufseinträge.") +
-    _kpiCardHtml("circle-check", "kpi-green", "Erfolgsquote", `${rate} %`,
+    _kpiCardHtml("check", "green", "Erfolgsquote", `${rate} %`,
       "Anteil erfolgreicher Downloads an den geladenen Verlaufseinträgen.") +
-    _kpiCardHtml("circle-x", "kpi-orange", "Fehlgeschlagen", String(failed),
+    _kpiCardHtml("alert", "red", "Fehlgeschlagen", String(failed),
       "Anzahl fehlgeschlagener Downloads in den geladenen Verlaufseinträgen.") +
-    _kpiCardHtml("chart-bar", "kpi-purple", "Pipeline", _formatPct(pipeline.pct),
+    _kpiCardHtml("chart", "purple", "Metadaten", _formatPct(pipeline.pct),
       "Durchschnitt aller bekannten Metadaten-Prüfungen der geladenen Verlaufseinträge.");
 }
 
-// Historische Aggregation - ausdruecklich NICHT der aktuell laufende Job
-// (der steht links in "Aktuell").
+// Historische Aggregation - ausdruecklich NICHT der aktuell laufende Job.
 function _renderDownloadsPipeline(entries) {
   const el = document.getElementById("downloads-pipeline-content");
   if (!el) return;
   const stats = _downloadsPipelineStats(entries);
   if (!stats.known) {
-    el.className = "empty-note";
-    el.innerHTML = "Noch keine Metadaten-Prüfungen im Verlauf.";
+    ccState.empty(el, "Noch keine Metadaten-Prüfungen", "Erscheint nach den ersten Downloads.");
     return;
   }
-  el.className = "";
   const rows = stats.tiers.map((t) => {
     const width = t.pct === null ? 0 : Math.round(t.pct);
     return `
@@ -438,31 +460,33 @@ function _renderDownloadsAttention(entries) {
     .filter((t) => t.count > 0);
 
   if (!failedEntries.length && !missing.length) {
-    el.className = "";
-    el.innerHTML = `<div class="empty-note-ok d-flex align-items-center gap-2">${_dlIcon("circle-check")} Keine auffälligen Downloads</div>`;
+    el.innerHTML = '<div class="card-body"><div class="d-flex align-items-center gap-3">'
+      + `<span class="avatar bg-green-lt">${ccIcon("check")}</span>`
+      + '<div><div class="fw-medium">Keine auffälligen Downloads</div>'
+      + '<div class="text-secondary small">Keine Fehler, keine fehlenden Metadaten</div></div></div></div>';
     return;
   }
 
-  el.className = "";
   let html = "";
   if (failedEntries.length) {
     const last = failedEntries[0];
     html += `
-      <div class="d-flex align-items-center gap-2 mb-2">
-        <span class="text-danger">${_dlIcon("circle-x")}</span>
-        <span class="fw-medium">${failedEntries.length} fehlgeschlagen</span>
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          ${ccStatusBadge("error", `${failedEntries.length} fehlgeschlagen`)}
+        </div>
+        <div class="text-secondary small">Letzter Fehler</div>
+        <div class="text-truncate">${_escapeHtml(last.artist)} – ${_escapeHtml(last.title)}</div>
+        <div class="text-secondary small mb-2" title="${_escapeHtml(_absoluteTimeText(last.timestamp))}">${_escapeHtml(_relativeTimeText(last.timestamp))}</div>
+        <button type="button" id="downloads-attention-open-btn" class="btn btn-sm">${ccIcon("history", "me-1")}Fehler im Verlauf zeigen</button>
       </div>
-      <div class="text-secondary small">Letzter Fehler</div>
-      <div class="text-truncate">${_escapeHtml(last.artist)} – ${_escapeHtml(last.title)}</div>
-      <div class="text-secondary small mb-2" title="${_escapeHtml(new Date(last.timestamp).toLocaleString())}">${_escapeHtml(_relativeTimeText(last.timestamp))}</div>
-      <button type="button" id="downloads-attention-open-btn" class="btn btn-sm btn-outline-secondary mb-3">Verlauf öffnen</button>
     `;
   }
   if (missing.length) {
-    html += '<div class="row-list">' + missing.map((t) => `
-      <div class="row-item">
-        <div class="row-main">ohne ${_escapeHtml(t.label)}</div>
-        <div class="row-count">${t.count}</div>
+    html += '<div class="list-group list-group-flush">' + missing.map((t) => `
+      <div class="list-group-item d-flex justify-content-between align-items-center">
+        <span>ohne ${_escapeHtml(t.label)}</span>
+        <span class="badge bg-yellow-lt">${t.count}</span>
       </div>
     `).join("") + "</div>";
   }
@@ -471,10 +495,10 @@ function _renderDownloadsAttention(entries) {
 
 function _checklistRowHtml(label, value, unknownText) {
   const icon = value === true
-    ? `<span class="text-success">${_dlIcon("check")}</span>`
+    ? `<span class="text-green">${ccIcon("check")}</span>`
     : value === false
-      ? `<span class="text-danger">${_dlIcon("x")}</span>`
-      : `<span class="text-secondary">${_dlIcon("minus")}</span>`;
+      ? `<span class="text-red">${ccIcon("x")}</span>`
+      : `<span class="text-secondary">${ccIcon("minus")}</span>`;
   const hint = value === null || value === undefined ? ` <span class="text-secondary small">(${_escapeHtml(unknownText)})</span>` : "";
   return `<div class="d-flex align-items-center gap-2 py-1">${icon}<span>${_escapeHtml(label)}${hint}</span></div>`;
 }
@@ -483,17 +507,15 @@ function _renderDownloadsLast(entries) {
   const el = document.getElementById("downloads-last-content");
   if (!el) return;
   if (!entries.length) {
-    el.className = "empty-note";
-    el.innerHTML = "Noch kein Download im Verlauf.";
+    ccState.empty(el, "Noch kein Download im Verlauf");
     return;
   }
   const e = entries[0];
   const downloadOk = e.status === "success" ? true : e.status === "failed" ? false : null;
-  el.className = "";
   el.innerHTML = `
     <div class="d-flex justify-content-between align-items-baseline gap-2 mb-2">
       <div class="fw-medium text-truncate">${_escapeHtml(e.artist)} – ${_escapeHtml(e.title)}</div>
-      <div class="text-secondary small text-nowrap" title="${_escapeHtml(new Date(e.timestamp).toLocaleString())}">${_escapeHtml(_relativeTimeText(e.timestamp))}</div>
+      <div class="text-secondary small text-nowrap" title="${_escapeHtml(_absoluteTimeText(e.timestamp))}">${_escapeHtml(_relativeTimeText(e.timestamp))}</div>
     </div>
     ${_checklistRowHtml("Download", downloadOk, e.status)}
     ${_DL_TIERS.map((t) => _checklistRowHtml(t.label, e[t.key], "keine Aussage")).join("")}
@@ -501,10 +523,13 @@ function _renderDownloadsLast(entries) {
 }
 
 function _renderDownloadsSummaryUnavailable() {
-  ["downloads-pipeline-content", "downloads-attention-content", "downloads-last-content"].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el && !_lastDownloadHistory) { el.className = "empty-note"; el.innerHTML = "Keine Daten verfügbar."; }
-  });
+  if (_lastDownloadHistory) return;
+  const pipeline = document.getElementById("downloads-pipeline-content");
+  if (pipeline) ccState.empty(pipeline, "Keine Daten verfügbar");
+  const attention = document.getElementById("downloads-attention-content");
+  if (attention) { attention.innerHTML = '<div class="card-body"></div>'; ccState.empty(attention.firstElementChild, "Keine Daten verfügbar"); }
+  const last = document.getElementById("downloads-last-content");
+  if (last) ccState.empty(last, "Keine Daten verfügbar");
 }
 
 function _setDownloadStatusFilter(filter) {
@@ -526,20 +551,21 @@ function _rerenderDownloads() {
     (_downloadStatusFilter === "all" || e.status === _downloadStatusFilter) &&
     (!q || _downloadEntryMatchesQuery(e, q)));
   if (!filtered.length) {
-    el.innerHTML = q || _downloadStatusFilter !== "all"
-      ? '<p class="empty-note">Keine Treffer für Suche/Filter.</p>'
-      : '<p class="empty-note">Kein Download-Verlauf.</p>';
+    if (q || _downloadStatusFilter !== "all") ccState.empty(el, "Keine Treffer", "Suche oder Filter anpassen.");
+    else ccState.empty(el, "Noch keine Downloads", "Starte oben einen Download per URL.");
     return;
   }
   const shown = _downloadHistoryExpanded ? filtered : filtered.slice(0, _DOWNLOAD_HISTORY_PREVIEW_ROWS);
   const rest = filtered.length - shown.length;
   let more = "";
   if (rest > 0) {
-    more = `<button type="button" class="btn btn-sm btn-outline-secondary mt-2 downloads-history-more-btn">${rest} weitere anzeigen</button>`;
+    more = `<div class="card-footer"><button type="button" class="btn btn-sm downloads-history-more-btn">${rest} weitere anzeigen</button></div>`;
   } else if (_downloadHistoryExpanded && filtered.length > _DOWNLOAD_HISTORY_PREVIEW_ROWS) {
-    more = '<button type="button" class="btn btn-sm btn-outline-secondary mt-2 downloads-history-more-btn">Weniger anzeigen</button>';
+    more = '<div class="card-footer"><button type="button" class="btn btn-sm downloads-history-more-btn">Weniger anzeigen</button></div>';
   }
-  el.innerHTML = '<div class="row-list">' + shown.map(_downloadHistoryRowHtml).join("") + "</div>" + more;
+  el.innerHTML = '<div class="table-responsive"><table class="table card-table table-vcenter mb-0">'
+    + '<thead><tr><th>Status</th><th>Track</th><th class="d-none d-md-table-cell">Metadaten</th><th>Zeit</th><th></th></tr></thead>'
+    + "<tbody>" + shown.map(_downloadHistoryRowHtml).join("") + "</tbody></table></div>" + more;
   _applyRetryButtonsBusyState();
 }
 
@@ -553,7 +579,7 @@ function renderDownloads(el, body) {
 }
 
 function loadDownloads() {
-  return _loadInto("downloads-content", "/api/v1/downloads/history?limit=200", renderDownloads)
+  return _loadInto("downloads-content", "/api/v1/downloads/history?limit=200", renderDownloads, loadDownloads)
     .then(_renderDownloadsSummaryUnavailable);
 }
 

@@ -254,5 +254,5 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
 ## 15. Reihenfolge
 
 1. **CC-UI-1:** Sprite, Theme (dunkel + Umschalter + Türkis), Shell in `_base.html`, Helfer aus §12 in `common.js`/`common.css` — additiv.
-2. Seiten: ~~Overview~~ (erledigt 2026-09-28) → Downloads → Administration → Health → Logs/Logger → Navidrome → Statistics → Library + Artist-Detail.
+2. Seiten: ~~Overview~~ (erledigt 2026-09-28) → ~~Downloads~~ (erledigt 2026-09-28) → Administration → Health → Logs/Logger → Navidrome → Statistics → Library + Artist-Detail.
 3. Abschluss: manueller Browser-/Subpath-Durchlauf, Alt-Klassen aufräumen.
