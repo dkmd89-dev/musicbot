@@ -335,14 +335,29 @@ function onTelegramAuth(user) {
 
 // Mobile Sidebar-Drawer (Master-Prompt Abschnitt 12 "RESPONSIVE
 // NAVIGATION") - reines CSS-Klassen-Toggle, keine Bibliothek.
+// Der Schalter liegt im Header (nicht in der Sidebar, die auf dem Handy
+// aus dem Bild geschoben wird); aria-expanded folgt dem Zustand.
+// Schließen: Schalter, Tipp auf den Hintergrund, Escape, Klick auf einen Link.
+function _setSidebarOpen(open) {
+  document.body.classList.toggle("sidebar-open", open);
+  const btn = document.getElementById("sidebar-toggle");
+  if (btn) {
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    btn.setAttribute("aria-label", open ? "Menü schließen" : "Menü öffnen");
+  }
+}
 function _initSidebarToggle() {
   const toggleBtn = document.getElementById("sidebar-toggle");
   if (!toggleBtn) return;
   toggleBtn.addEventListener("click", () => {
-    document.body.classList.toggle("sidebar-open");
+    _setSidebarOpen(!document.body.classList.contains("sidebar-open"));
   });
   document.getElementById("sidebar")?.addEventListener("click", (event) => {
-    if (event.target.closest("a")) document.body.classList.remove("sidebar-open");
+    if (event.target.closest("a")) _setSidebarOpen(false);
+  });
+  document.getElementById("sidebar-backdrop")?.addEventListener("click", () => _setSidebarOpen(false));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && document.body.classList.contains("sidebar-open")) _setSidebarOpen(false);
   });
 }
 document.addEventListener("DOMContentLoaded", _initSidebarToggle);

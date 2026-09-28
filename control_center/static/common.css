@@ -95,6 +95,9 @@ code { background: var(--card-bg); border: 1px solid var(--border); padding: 1px
     display: none;
   }
 }
+#sidebar-backdrop {
+  display: none;
+}
 
 /*
  * Mobile:
@@ -120,8 +123,10 @@ code { background: var(--card-bg); border: 1px solid var(--border); padding: 1px
     transform: translateX(0);
   }
 
-  body.sidebar-open::after {
-    content: "";
+  /* Echtes Element statt body::after, damit ein Tipp darauf das Menü
+     schließen kann (common.js::_initSidebarToggle). */
+  body.sidebar-open #sidebar-backdrop {
+    display: block;
     position: fixed;
     inset: 0;
     z-index: 1039;

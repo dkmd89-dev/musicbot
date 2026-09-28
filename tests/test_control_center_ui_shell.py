@@ -319,3 +319,99 @@ def test_theme_switch_persists_and_tolerates_blocked_storage(tmp_path):
     assert out["themeAfterLight"] == "light"
     assert out["stored"] == "light"
     assert out["themeAfterDarkBlockedStorage"] == "dark"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Mobile Navigation (FINDINGS_INDEX: Menü-Schalter außerhalb des
+# Bildschirms) - der Schalter darf nicht in <aside id="sidebar"> liegen,
+# weil common.css die Sidebar auf dem Handy per translateX(-100%) aus dem
+# Bild schiebt.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ALL_PAGES)
+async def test_mobile_menu_toggle_lives_in_header_not_in_sidebar(client, path):
+    html = (await client.get(path)).text
+
+    assert 'id="sidebar-toggle"' not in _sidebar(html)
+    header = html[html.index('<header class="navbar'):]
+    header = header[: header.index("</header>")]
+    assert 'id="sidebar-toggle"' in header
+    toggle = header[header.index('id="sidebar-toggle"'):]
+    toggle = toggle[: toggle.index(">")]
+    assert 'aria-controls="sidebar"' in toggle
+    assert 'aria-expanded="false"' in toggle
+    assert 'id="sidebar-backdrop"' in html
+
+
+def test_mobile_backdrop_is_a_real_element_not_body_pseudo():
+    css = COMMON_CSS.read_text(encoding="utf-8")
+    no_comments = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+    assert "body.sidebar-open::after" not in no_comments
+    assert "#sidebar-backdrop" in no_comments
+
+
+_NAV_HARNESS = r"""
+const fs = require("fs");
+const docListeners = {};
+const mk = (id) => {
+  const l = {}; const a = {};
+  return { id, listeners: l, attrs: a,
+    addEventListener: (t, f) => { (l[t] = l[t] || []).push(f); },
+    setAttribute: (k, v) => { a[k] = String(v); },
+    getAttribute: (k) => a[k],
+    fire: (t, ev) => (l[t] || []).forEach((f) => f(ev || {})) };
+};
+const els = { "sidebar-toggle": mk("sidebar-toggle"), "sidebar": mk("sidebar"), "sidebar-backdrop": mk("sidebar-backdrop") };
+els["sidebar-toggle"].attrs["aria-expanded"] = "false";
+const cls = new Set();
+global.document = {
+  querySelector: () => null,
+  getElementById: (id) => els[id] || null,
+  addEventListener: (t, f) => { (docListeners[t] = docListeners[t] || []).push(f); },
+  documentElement: { getAttribute: () => "dark", setAttribute: () => {} },
+  body: { classList: {
+    toggle: (c, force) => { const on = force === undefined ? !cls.has(c) : !!force; on ? cls.add(c) : cls.delete(c); return on; },
+    remove: (c) => cls.delete(c), add: (c) => cls.add(c), contains: (c) => cls.has(c) } },
+};
+global.window = {};
+global.localStorage = { getItem: () => null, setItem: () => {} };
+new Function(fs.readFileSync(process.argv[2], "utf-8"))();
+(docListeners["DOMContentLoaded"] || []).forEach((f) => f());
+const snap = () => ({ open: cls.has("sidebar-open"), expanded: els["sidebar-toggle"].attrs["aria-expanded"] });
+const keydown = (key) => (docListeners["keydown"] || []).forEach((f) => f({ key }));
+const out = {};
+out.start = snap();
+els["sidebar-toggle"].fire("click"); out.afterToggle = snap();
+els["sidebar-backdrop"].fire("click"); out.afterBackdrop = snap();
+els["sidebar-toggle"].fire("click");
+keydown("a"); out.afterOtherKey = snap();
+keydown("Escape"); out.afterEscape = snap();
+els["sidebar-toggle"].fire("click");
+els["sidebar"].fire("click", { target: { closest: () => null } }); out.afterNonLinkClick = snap();
+els["sidebar"].fire("click", { target: { closest: (s) => (s === "a" ? {} : null) } }); out.afterLinkClick = snap();
+els["sidebar-toggle"].fire("click"); els["sidebar-toggle"].fire("click"); out.afterDoubleToggle = snap();
+console.log(JSON.stringify(out));
+"""
+
+
+@needs_node
+def test_mobile_menu_opens_and_closes_with_aria_state(tmp_path):
+    script = tmp_path / "nav.js"
+    script.write_text(_NAV_HARNESS, encoding="utf-8")
+    result = subprocess.run([_NODE, str(script), str(COMMON_JS)],
+                            capture_output=True, text=True, timeout=30, check=True)
+    out = json.loads(result.stdout.strip().splitlines()[-1])
+
+    closed = {"open": False, "expanded": "false"}
+    opened = {"open": True, "expanded": "true"}
+    assert out["start"] == closed
+    assert out["afterToggle"] == opened
+    assert out["afterBackdrop"] == closed
+    assert out["afterOtherKey"] == opened
+    assert out["afterEscape"] == closed
+    assert out["afterNonLinkClick"] == opened
+    assert out["afterLinkClick"] == closed
+    assert out["afterDoubleToggle"] == closed
