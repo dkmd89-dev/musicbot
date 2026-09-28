@@ -19,8 +19,8 @@
 |---|---|
 | Baseline | v11 (DRAFT) |
 | Vorgänger | `docs/MusicBot_ENGINEERING_BASELINE_v10.md` (Freeze 2026-09-14, 4250 passed / 1 skipped / 0 failed / 11 subtests passed) |
-| Letzte vom Nutzer gemeldete Full-Suite-Zahl (aktuell, nach CC-LOGGER-L7 „Telegram-Migration") | **5633 passed, 1 skipped, 11 subtests passed, 0 failed, 6 warnings** (343,70 s), 2026-09-26. +160 gegenüber der zuletzt hier dokumentierten Zahl (5473, 2026-09-22) — deckt `control-center-navidrome` und CC-LOGGER-L2–L7 ab (Einzelergebnisse je Phase in `docs/FINDINGS_INDEX.md`). Unverändertes Skip-/Subtest-Muster (1/11) seit v9 durchgehend. Backlog-Runde 2 (2026-09-27, PR #333/#334/#335): reine Refactorings und additive CC-Jobs, keine neuen Testzahlen an dieser Stelle. Neue volle Suite steht beim Nutzer aus. |
-| Zuwachs seit letztem hier dokumentiertem Stand | +160 passed (5473 → 5633), 0 failed |
+| Letzte vom Nutzer gemeldete Full-Suite-Zahl (aktuell, Branch `optimieren` nach Web-Paritäts-Backlog 9 / PR #348) | **6155 passed, 1 skipped, 11 subtests passed, 0 failed, 6 warnings** (395,12 s), 2026-09-28. Deckt alle Phasen seit dem letzten Stand ab: Backlog-Runde 2 (PR #333–#337), Client Consolidation D.10–D.13 (PR #338–#344, inkl. D.12a–c Runtime-Logging/Job-Verlauf und D.13 Cross-Process-Persistenz), Web-Parität 4b (PR #346), E1-Bot-Runtime-Snapshot (PR #347) und Navidrome-Login (PR #348). Skip-/Subtest-/Warnungs-Muster (1/11/6) unverändert gegenüber 2026-09-26. Vorheriger Stand: 5633 passed (2026-09-26, nach CC-LOGGER-L7). |
+| Zuwachs seit letztem hier dokumentiertem Stand | +522 passed (5633 → 6155), 0 failed |
 
 ---
 
