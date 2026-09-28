@@ -24,6 +24,7 @@ class JobSchema(BaseModel):
     finished_at: Optional[str] = None
     result: Optional[dict] = None
     error: Optional[str] = None
+    context: Optional[dict] = None
 
 
 class JobListResponse(BaseModel):
@@ -45,6 +46,7 @@ def job_to_schema(job: Job) -> JobSchema:
         finished_at=job.finished_at,
         result=job.result,
         error=job.error,
+        context=job.context,
     )
 
 

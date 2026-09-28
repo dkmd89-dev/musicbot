@@ -50,13 +50,25 @@ function _formatResultMessage(message) {
   return _escapeHtml(message || "").replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
+// Verlinkung Duplikat-Ergebnis -> Artist-Detailseite (P2) - der Artist-Name
+// kommt bereits strukturiert aus dem Job-Result (jobs.py haengt ihn seit
+// dieser Ergaenzung neben der vorformatierten Nachricht an), keine eigene
+// Text-Extraktion aus der Nachricht noetig.
+function _duplicateArtistLinkHtml(job) {
+  const artist = job.result && job.result.artist;
+  if (!artist) return "";
+  const href = apiUrl(`/library/${encodeURIComponent(artist)}`);
+  return `<div class="mt-2"><a href="${href}">Zum Artist „${_escapeHtml(artist)}" →</a></div>`;
+}
+
 function _renderDownloadResult(job) {
   const el = document.getElementById("download-status-content");
   if (job.status === "SUCCEEDED") {
     const outcome = job.result && job.result.outcome;
     const alertClass = outcome === "duplicate" ? "alert-info" : "alert-success";
     const msg = _formatResultMessage(job.result && job.result.message);
-    el.innerHTML = `<div class="alert ${alertClass} mb-0" style="white-space: pre-wrap;">${msg}</div>`;
+    const artistLink = outcome === "duplicate" ? _duplicateArtistLinkHtml(job) : "";
+    el.innerHTML = `<div class="alert ${alertClass} mb-0" style="white-space: pre-wrap;">${msg}${artistLink}</div>`;
     return;
   }
   if (job.status === "CANCELLED") {
@@ -81,6 +93,17 @@ function _elapsedText(job) {
   return _formatElapsedSeconds((Date.now() - started) / 1000);
 }
 
+// Download-Typ-Badge (P2) - job.context wird bereits bei Job-Erstellung
+// gesetzt (jobs.py::start_download_job()) und bleibt waehrend PENDING/
+// RUNNING/terminal unveraendert sichtbar (im Gegensatz zu job.result, das
+// erst am Ende existiert).
+function _downloadTypeBadgeHtml(job) {
+  const type = job.context && job.context.download_type;
+  if (!type) return "";
+  const label = type === "playlist" ? "Playlist" : "Single";
+  return `<span class="badge bg-secondary-lt me-1">${_escapeHtml(label)}</span>`;
+}
+
 function _renderDownloadJob(job) {
   if (job.status === "PENDING" || job.status === "RUNNING") {
     const pct = Math.round(job.progress || 0);
@@ -88,7 +111,7 @@ function _renderDownloadJob(job) {
     document.getElementById("download-status-content").innerHTML = `
       <div class="mb-2">
         <div class="d-flex justify-content-between align-items-baseline gap-2 mb-1">
-          <div class="text-secondary small text-truncate">${_escapeHtml(job.message || "")}</div>
+          <div class="text-secondary small text-truncate">${_downloadTypeBadgeHtml(job)}${_escapeHtml(job.message || "")}</div>
           <div class="text-secondary small text-nowrap">${pct}%${elapsed ? " · " + _escapeHtml(elapsed) : ""}</div>
         </div>
         <div class="progress mb-1">

@@ -45,6 +45,12 @@ class Job:
     finished_at: Optional[str] = None
     result: Optional[dict] = None
     error: Optional[str] = None
+    # Optionale, bei create() gesetzte Metadaten - im Gegensatz zu `result`
+    # (nur am Ende, ueber mark_succeeded()/mark_failed()) bereits waehrend
+    # PENDING/RUNNING sichtbar. Job-kind-agnostisch (kein Downloads-
+    # spezifisches Feld auf dem gemeinsamen Modell) - z. B. fuer
+    # Downloads-Jobs {"url": ..., "download_type": "single"|"playlist"}.
+    context: Optional[dict] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,4 +65,5 @@ class Job:
             "finished_at": self.finished_at,
             "result": self.result,
             "error": self.error,
+            "context": self.context,
         }
