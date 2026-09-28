@@ -12,6 +12,14 @@ from pydantic import BaseModel
 from services.jobs.models import Job
 
 
+class JobEventSchema(BaseModel):
+    """D.12b: ein Eintrag im Schritt-Verlauf (services/jobs/models.py::JobEvent)."""
+
+    at: str
+    message: str
+    progress: Optional[float] = None
+
+
 class JobSchema(BaseModel):
     job_id: str
     kind: str
@@ -25,6 +33,8 @@ class JobSchema(BaseModel):
     result: Optional[dict] = None
     error: Optional[str] = None
     context: Optional[dict] = None
+    # D.12b: additiv, älteste zuerst - `message` bleibt die letzte Meldung.
+    events: list[JobEventSchema] = []
 
 
 class JobListResponse(BaseModel):
@@ -47,6 +57,10 @@ def job_to_schema(job: Job) -> JobSchema:
         result=job.result,
         error=job.error,
         context=job.context,
+        events=[
+            JobEventSchema(at=e.at, message=e.message, progress=e.progress)
+            for e in job.events
+        ],
     )
 
 

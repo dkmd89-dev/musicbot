@@ -30,6 +30,20 @@ def now_iso() -> str:
 
 
 @dataclass
+class JobEvent:
+    """Ein Eintrag im Schritt-Verlauf eines Jobs (D.12b) - reiner
+    Datencontainer, von JobRegistry bei Statuswechseln und neuen
+    Fortschrittsmeldungen angehängt (siehe JobRegistry._append_event())."""
+
+    at: str
+    message: str
+    progress: Optional[float] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"at": self.at, "message": self.message, "progress": self.progress}
+
+
+@dataclass
 class Job:
     """Zustand eines einzelnen Jobs. Rein In-Memory (siehe JobRegistry) —
     kein Anspruch auf Persistenz über einen Prozess-Neustart hinweg."""
@@ -51,6 +65,10 @@ class Job:
     # spezifisches Feld auf dem gemeinsamen Modell) - z. B. fuer
     # Downloads-Jobs {"url": ..., "download_type": "single"|"playlist"}.
     context: Optional[dict] = None
+    # D.12b: Schritt-Verlauf (älteste zuerst, begrenzt auf
+    # JobRegistry.MAX_JOB_EVENTS) - `message` bleibt unverändert die
+    # jeweils letzte Meldung, `events` ist rein additiv.
+    events: list[JobEvent] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -66,4 +84,5 @@ class Job:
             "result": self.result,
             "error": self.error,
             "context": self.context,
+            "events": [e.to_dict() for e in self.events],
         }

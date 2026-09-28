@@ -106,21 +106,43 @@ function _duplicateArtistLinkHtml(job) {
   return `<div class="mt-2"><a href="${href}">Zum Artist „${_escapeHtml(artist)}" →</a></div>`;
 }
 
+// Schritt-Verlauf (D.12b) - job.events kommt aus JobRegistry (aelteste
+// zuerst). Uhrzeit lokal formatiert, Meldung immer escaped.
+function _formatEventTime(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+function _jobEventsListHtml(job) {
+  const events = Array.isArray(job.events) ? job.events : [];
+  if (!events.length) return "";
+  const rows = events.map((e) =>
+    `<li class="d-flex gap-2"><span class="text-secondary text-nowrap font-monospace">${_escapeHtml(_formatEventTime(e.at))}</span><span>${_escapeHtml(e.message)}</span></li>`
+  ).join("");
+  return `<ol class="list-unstyled small mb-0 download-job-events">${rows}</ol>`;
+}
+function _jobEventsDetailsHtml(job) {
+  const list = _jobEventsListHtml(job);
+  if (!list) return "";
+  return `<details class="mt-2"><summary class="small text-secondary">Verlauf</summary><div class="mt-1">${list}</div></details>`;
+}
+
 function _renderDownloadResult(job) {
   const el = document.getElementById("download-status-content");
+  const eventsHtml = _jobEventsDetailsHtml(job);
   if (job.status === "SUCCEEDED") {
     const outcome = job.result && job.result.outcome;
     const alertClass = outcome === "duplicate" ? "alert-info" : "alert-success";
     const msg = _formatResultMessage(job.result && job.result.message);
     const artistLink = outcome === "duplicate" ? _duplicateArtistLinkHtml(job) : "";
-    el.innerHTML = `<div class="alert ${alertClass} mb-0" style="white-space: pre-wrap;">${msg}${artistLink}</div>`;
+    el.innerHTML = `<div class="alert ${alertClass} mb-0" style="white-space: pre-wrap;">${msg}${artistLink}</div>${eventsHtml}`;
     return;
   }
   if (job.status === "CANCELLED") {
-    el.innerHTML = '<div class="alert alert-secondary mb-0">Download abgebrochen.</div>';
+    el.innerHTML = `<div class="alert alert-secondary mb-0">Download abgebrochen.</div>${eventsHtml}`;
     return;
   }
-  el.innerHTML = `<div class="alert alert-danger mb-0">${_escapeHtml(job.error || "Unbekannter Fehler.")}</div>`;
+  el.innerHTML = `<div class="alert alert-danger mb-0">${_escapeHtml(job.error || "Unbekannter Fehler.")}</div>${eventsHtml}`;
 }
 
 // Prozent-Text + Laufzeit (P1) - started_at liefert das Backend bereits
@@ -154,6 +176,7 @@ function _renderDownloadJob(job) {
     const pct = Math.round(job.progress || 0);
     const elapsed = _elapsedText(job);
     const stateText = job.status === "PENDING" ? "Wartet" : "Download läuft";
+    const eventsList = _jobEventsListHtml(job);
     document.getElementById("download-status-content").innerHTML = `
       <div class="mb-3">
         <div class="fw-medium text-truncate mb-2">${_downloadTypeBadgeHtml(job)}${_escapeHtml(job.message || "")}</div>
@@ -164,6 +187,7 @@ function _renderDownloadJob(job) {
           <div class="small text-nowrap">${pct} %</div>
         </div>
         <div class="text-secondary small">${stateText}${elapsed ? " · " + _escapeHtml(elapsed) : ""}</div>
+        ${eventsList ? `<div class="mt-2">${eventsList}</div>` : ""}
       </div>
       <button type="button" id="download-cancel-btn" class="btn btn-sm btn-outline-danger">Abbrechen</button>
     `;

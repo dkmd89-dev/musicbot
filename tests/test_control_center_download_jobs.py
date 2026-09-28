@@ -171,6 +171,29 @@ async def test_successful_single_download_succeeds_and_records_history(client, m
 
 
 @pytest.mark.asyncio
+async def test_download_job_exposes_step_events(client, monkeypatch, tmp_path):
+    """D.12b: GET /api/v1/jobs/download/{id} liefert den Schritt-Verlauf
+    (additives Feld `events`, älteste zuerst)."""
+    _patch_dependencies(
+        monkeypatch,
+        downloader_factory=_FakeDownloader.factory(dict(SINGLE_SUCCESS_RESULT)),
+        duplicate_detector=_FakeDetector(),
+    )
+    monkeypatch.setattr(Config, "DOWNLOAD_HISTORY_DIR", property(lambda self: tmp_path))
+
+    r = await _start(client)
+    assert r.json()["events"] == []
+    job = await _finished(client, r.json()["job_id"], path="/api/v1/jobs/download")
+
+    messages = [e["message"] for e in job["events"]]
+    assert messages[0] == "Gestartet"
+    assert "Duplikat-Prüfung…" in messages
+    assert "Metadaten werden verarbeitet…" in messages
+    assert messages[-1] == "Abgeschlossen"
+    assert all(set(e) == {"at", "message", "progress"} for e in job["events"])
+
+
+@pytest.mark.asyncio
 async def test_duplicate_found_succeeds_without_history_entry(client, monkeypatch, tmp_path):
     from pathlib import Path
     from services.downloader.models import DuplicateEntry
