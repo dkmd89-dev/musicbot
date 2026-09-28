@@ -255,5 +255,15 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
 ## 15. Reihenfolge
 
 1. **CC-UI-1:** Sprite, Theme (dunkel + Umschalter + Türkis), Shell in `_base.html`, Helfer aus §12 in `common.js`/`common.css` — additiv.
-2. Seiten: ~~Overview~~ (erledigt 2026-09-28) → ~~Downloads~~ (erledigt 2026-09-28) → ~~Administration~~ (erledigt 2026-09-28) → ~~Health~~ (erledigt 2026-09-28) → ~~Logs/Logger~~ (erledigt 2026-09-28) → Navidrome → Statistics → Library + Artist-Detail.
+2. Seiten: ~~Overview~~ (erledigt 2026-09-28) → ~~Downloads~~ (erledigt 2026-09-28) → ~~Administration~~ (erledigt 2026-09-28) → ~~Health~~ (erledigt 2026-09-28) → ~~Logs/Logger~~ (erledigt 2026-09-28) → ~~Statistics~~ (erledigt 2026-09-28, Music DNA als Blickfang) → Library + Artist-Detail → Navidrome (zuletzt, Nutzerentscheidung 2026-09-28).
+
+   **Navidrome = eigener Musik-Bereich** (Nutzerentscheidung 2026-09-28): Die Seite wird der
+   Musik-Bereich des Nutzers mit eigenem Layout in Anlehnung an Symfonium (Cover-Raster, runde
+   Artist-Bilder, Album-Ansichten, Player-Leiste) und folgt dem Standard nur in Shell, Theme,
+   Icons, Zuständen und Helfern. Die bereits begonnene Artist-Darstellung (Cover, rund) ist
+   Ausgangspunkt, nicht Neubau. **Abspielen im Browser ist eine neue Funktion**, keine
+   UI-Umstellung: Heute gibt es keinen Stream-Endpunkt, nötig wäre z. B. ein
+   auth-geschützter Stream-/Cover-Proxy auf die Subsonic-API von Navidrome
+   (`services/clients/navidrome_api.py`). Dafür gibt es eine eigene Planung → Freigabe →
+   Umsetzung, Credentials dürfen nie in URLs, Logs oder im Browser landen (CLAUDE.md §12).
 3. Abschluss: manueller Browser-/Subpath-Durchlauf, Alt-Klassen aufräumen.
