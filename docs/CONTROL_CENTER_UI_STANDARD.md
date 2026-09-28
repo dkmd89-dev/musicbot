@@ -91,7 +91,7 @@ Feste Zuordnung (Auszug, erweiterbar im Sprite):
   bräuchten auf jeder Seite zusätzliche API-Abfragen. Eine Seite darf sie später
   nur ergänzen, wenn der Wert bereits aus einer vorhandenen API kommt.
 - Administration unten abgesetzt (`mt-3`).
-- Header: links Kontext „Control Center“, rechts Theme-Umschalter,
+- Header (auf dem Handy einzeilig: Menü, Theme, Abmelden; Titel und Benutzer erst ab `md`/`sm`): links Kontext „Control Center“, rechts Theme-Umschalter,
   Benutzer (Avatar + Name + Rollen-Badge `bg-purple-lt`), Abmelden
   (`btn-ghost-secondary` + `i-logout`).
 - Views `loading-view` / `login-view` / `error-view` bleiben (Verhalten unverändert).
@@ -254,5 +254,5 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
 ## 15. Reihenfolge
 
 1. **CC-UI-1:** Sprite, Theme (dunkel + Umschalter + Türkis), Shell in `_base.html`, Helfer aus §12 in `common.js`/`common.css` — additiv.
-2. Seiten: Overview → Downloads → Administration → Health → Logs/Logger → Navidrome → Statistics → Library + Artist-Detail.
+2. Seiten: ~~Overview~~ (erledigt 2026-09-28) → Downloads → Administration → Health → Logs/Logger → Navidrome → Statistics → Library + Artist-Detail.
 3. Abschluss: manueller Browser-/Subpath-Durchlauf, Alt-Klassen aufräumen.
