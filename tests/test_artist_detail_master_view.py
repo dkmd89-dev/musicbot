@@ -28,7 +28,6 @@ identisches Muster wie tests/test_health_page_layout_a.py) und prüft:
 from __future__ import annotations
 
 import json
-import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -179,13 +178,14 @@ def test_render_shows_kpi_tiles_including_open_findings(tmp_path: Path) -> None:
         {"op": "call", "fn": "renderArtistDetail", "args": ["@artist-content", _body()]},
     ]})
     html = out["els"]["artist-content"]["html"]
-    assert '<div class="tile-value status-EXCELLENT">92</div>' in html
-    assert '<div class="tile-value">3</div>' in html  # Dateien
-    assert '<div class="tile-value">1</div>' in html  # Alben
+    # CC-UI L3a (bewusst angepasst): Kennzahl-Karten statt .tiles; Health-Farbe
+    # nach denselben Schwellen 90/70 wie der Punkt in der Library-Liste.
+    assert '<div class="h2 mb-0" data-kpi="health"><span class="text-green">92</span></div>' in html
+    assert '<div class="h2 mb-0" data-kpi="files">3</div>' in html  # Dateien
+    assert '<div class="h2 mb-0" data-kpi="albums">1</div>' in html  # Alben
     # Offene Findings: 1 issue_code auf "Powers", 0 sonst -> Summe 1.
     assert "Offene Findings" in html
-    m = re.search(r'Offene Findings</div>\s*<div class="tile-value">(\d+)</div>', html)
-    assert m and m.group(1) == "1"
+    assert '<div class="h2 mb-0" data-kpi="findings">1</div>' in html
 
 
 @needs_node
@@ -201,11 +201,12 @@ def test_render_lists_real_album_and_singles_group_first_album_selected(tmp_path
     html = out["els"]["artist-content"]["html"]
     assert "2020 - Powers" in html
     assert "Ohne Album" in html
-    assert 'class="select-row active"' in html  # genau ein aktiver Eintrag
+    # CC-UI L3a (bewusst angepasst): list-group statt select-row
+    assert html.count(' active" data-album-key=') == 1  # genau ein aktiver Eintrag
     assert html.count('data-album-key=') == 2
     assert "Was Du Liebe nennst" in html
     assert 'id="album-detail-edit-album-btn"' in html  # echtes Album -> Toolbar da
-    assert "⚠ 1" in html  # issue_codes-Zaehler fuer "Powers"
+    assert '<use href="#i-alert"/></svg>1</span>' in html  # issue_codes-Zaehler fuer "Powers" (vorher "⚠ 1")
     # "Auf gute Freunde" gehoert zur Singles-Gruppe, die NICHT das zuerst
     # ausgewaehlte (alphabetisch erste) Album ist.
     powers_and_after = html.split("2020 - Powers", 1)[1]
@@ -254,8 +255,9 @@ def test_clicking_another_album_switches_detail_pane_tracks(tmp_path: Path) -> N
     assert "Powers" not in detail_html
     list_html = out["els"]["artist-album-list"]["html"]
     # Jetzt ist "2018 - Chants" aktiv, nicht mehr "2020 - Powers".
-    assert re.search(r'data-album-key="2018 - Chants"[^>]*class="select-row active"|class="select-row active" data-album-key="2018 - Chants"', list_html) \
-        or 'class="select-row active" data-album-key="2018 - Chants"' in list_html
+    # CC-UI L3a (bewusst angepasst): list-group statt select-row
+    assert ' active" data-album-key="2018 - Chants"' in list_html
+    assert ' active" data-album-key="2020 - Powers"' not in list_html
 
 
 # ─────────────────────────────────────────────────────────────────────────

@@ -1038,7 +1038,7 @@ async def test_artist_detail_tracks_are_interactive(client):
     Tastatur-Nachbildung."""
     html = await _page_with_scripts(client, "/library/Bausa")
 
-    assert 'class="row-item track-row"' in html
+    assert 'class="track-row ' in html  # CC-UI L3a: list-group statt row-item
     assert "data-track-path=" in html
     assert "openTrackDrawer(track)" in html
 
@@ -1047,8 +1047,9 @@ async def test_artist_detail_tracks_are_interactive(client):
 async def test_artist_detail_has_track_detail_context(client):
     html = (await client.get("/library/Bausa")).text
 
-    assert 'id="track-drawer-overlay" class="drawer-overlay" hidden' in html
-    assert 'id="track-drawer"' in html
+    # CC-UI L3a (bewusst angepasst): Tabler-Offcanvas statt eigenem Overlay
+    assert '<div class="offcanvas offcanvas-end" tabindex="-1" id="track-drawer"' in html
+    assert 'id="track-drawer-overlay"' not in html
     assert 'id="track-drawer-title"' in html
     assert 'id="track-drawer-info"' in html
     assert 'id="track-drawer-health"' in html
@@ -1126,9 +1127,11 @@ async def test_track_detail_context_has_accessible_dialog_semantics(client):
     assert 'role="dialog"' in html
     assert 'aria-modal="true"' in html
     assert 'aria-labelledby="track-drawer-title"' in html
-    assert 'event.key === "Escape"' in html
+    # CC-UI L3a (bewusst angepasst): Escape und Tab-Fokus-Falle übernimmt das
+    # Tabler-Offcanvas statt eigener Tastatur-Logik.
+    assert "window.tabler.Offcanvas" in html
     assert "closeTrackDrawer()" in html
-    assert 'event.key !== "Tab"' in html
+    assert '"hidden.bs.offcanvas", _trackDrawerAfterClose' in html
     assert "_trackDrawerTriggerEl.focus()" in html
 
 

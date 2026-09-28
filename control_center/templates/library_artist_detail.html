@@ -1,22 +1,22 @@
 {% extends "_base.html" %}
 {% block title %}Artist – MusicBot Control Center{% endblock %}
 {% block content %}
-<div class="page-header d-print-none mb-4">
-  <div class="row align-items-center">
-    <div class="col">
-      <div class="text-secondary mb-1">
-        <a href="{{ base_path }}/library">📚 Library</a>
-        <span class="mx-1">›</span>
-        <span id="breadcrumb-artist">🎤 …</span>
-      </div>
-
-      <h1 class="page-title" id="artist-title">🎤 …</h1>
-      <div class="text-secondary" id="artist-subtitle"></div>
+{# CC-UI Library L3a nach docs/CONTROL_CENTER_UI_STANDARD.md: Kopf, Kennzahlen,
+   Alben/Tracks als list-group, Track-Detail als Tabler-Offcanvas. Element-IDs
+   sind Vertrag mit static/pages/library_artist.js und den Tests. #}
+<div class="page-header d-print-none mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col-12 col-md min-w-0">
+      <ol class="breadcrumb mb-1" aria-label="Pfad">
+        <li class="breadcrumb-item"><a href="{{ base_path }}/library"><svg class="icon me-1"><use href="#i-books"/></svg>Library</a></li>
+        <li class="breadcrumb-item active text-truncate" aria-current="page" id="breadcrumb-artist">…</li>
+      </ol>
+      <h2 class="page-title text-truncate"><svg class="icon me-2 text-teal"><use href="#i-microphone"/></svg><span id="artist-title">…</span></h2>
+      <div class="text-secondary mt-1" id="artist-subtitle"></div>
     </div>
-
-    <div class="col-auto">
-      <a href="{{ base_path }}/library" class="btn btn-outline-secondary">
-        ◀️ Zurück zu Artists
+    <div class="col-12 col-md-auto">
+      <a href="{{ base_path }}/library" class="btn">
+        <svg class="icon me-1"><use href="#i-arrow-left"/></svg>Zurück zu Artists
       </a>
     </div>
   </div>
@@ -24,46 +24,29 @@
 
 <!-- Artist overview / tracks -->
 <div id="artist-content">
-  <p class="empty-note">Artist wird geladen …</p>
+  <div class="card"><div class="card-body">
+    <div class="placeholder-glow" aria-busy="true"><div class="placeholder col-9 mb-2"></div><div class="placeholder col-7 mb-2"></div><div class="placeholder col-5"></div></div>
+  </div></div>
 </div>
 
-<!-- Track Detail Drawer -->
-<div id="track-drawer-overlay" class="drawer-overlay" hidden>
-  <div
-    id="track-drawer"
-    class="track-drawer"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="track-drawer-title"
-  >
-    <div class="track-drawer-header">
-      <h2 id="track-drawer-title">🎵 …</h2>
-      <button
-        type="button"
-        id="track-drawer-close"
-        class="btn btn-sm btn-ghost-secondary"
-        aria-label="Track-Detail schließen"
-      >
-        ✕
-      </button>
+<!-- Track-Detail als Tabler-Offcanvas (Standard §6; vorher eigener Drawer).
+     Fokus-Falle, Escape und Backdrop übernimmt Tabler/Bootstrap. -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="track-drawer"
+     role="dialog" aria-modal="true" aria-labelledby="track-drawer-title">
+  <div class="offcanvas-header">
+    <div class="min-w-0">
+      <h2 class="offcanvas-title text-truncate" id="track-drawer-title">Track</h2>
+      <div class="text-secondary small text-truncate" id="track-drawer-subtitle"></div>
     </div>
-
-    <p class="track-drawer-subtitle hint" id="track-drawer-subtitle"></p>
-
-    <div class="track-drawer-section">
-      <h3>Information</h3>
-      <div id="track-drawer-info"></div>
-    </div>
-
-    <div class="track-drawer-section">
-      <h3>Health</h3>
-      <div id="track-drawer-health"></div>
-    </div>
-
-    <div class="track-drawer-section">
-      <h3>Aktionen</h3>
-      <div id="track-drawer-actions"></div>
-    </div>
+    <button type="button" id="track-drawer-close" class="btn-close" aria-label="Track-Detail schließen"></button>
+  </div>
+  <div class="offcanvas-body">
+    <div class="subheader mb-2">Information</div>
+    <div id="track-drawer-info" class="mb-4"></div>
+    <div class="subheader mb-2">Health</div>
+    <div id="track-drawer-health" class="mb-4"></div>
+    <div class="subheader mb-2">Aktionen</div>
+    <div id="track-drawer-actions"></div>
   </div>
 </div>
 
