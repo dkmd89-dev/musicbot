@@ -260,6 +260,19 @@ async def test_downloads_page_has_history_panel(client):
 
 
 @pytest.mark.asyncio
+async def test_downloads_js_renders_job_events_escaped(client):
+    """D.12b: Schritt-Verlauf aus job.events - laufend als Liste, im
+    Ergebnis einklappbar ("Verlauf"), Meldungen immer escaped."""
+    downloads_js = (await client.get("/static/pages/downloads.js")).text
+
+    assert "function _jobEventsListHtml" in downloads_js
+    assert "function _jobEventsDetailsHtml" in downloads_js
+    assert "job.events" in downloads_js
+    assert "_escapeHtml(e.message)" in downloads_js
+    assert "<summary" in downloads_js and "Verlauf" in downloads_js
+
+
+@pytest.mark.asyncio
 async def test_downloads_page_has_start_form(client):
     html = (await client.get("/downloads")).text
 

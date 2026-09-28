@@ -34,10 +34,14 @@ from typing import Dict, List, Optional
 
 from logger import get_module_logger
 
-from .models import Job, JobStatus, now_iso
+from .models import Job, JobEvent, JobStatus, now_iso
 
 
 class JobRegistry:
+    # D.12b: Obergrenze für Job.events - bei Überlauf fallen die ältesten
+    # Einträge weg (Playlists erzeugen einen Eintrag pro Track).
+    MAX_JOB_EVENTS = 100
+
     def __init__(self, logger_factory=None):
         self._jobs: Dict[str, Job] = {}
         self._cancel_events: Dict[str, threading.Event] = {}
@@ -63,22 +67,48 @@ class JobRegistry:
         jobs.sort(key=lambda j: j.created_at, reverse=True)
         return jobs[:limit]
 
+    def _append_event(self, job: Job, message: str, progress: Optional[float] = None) -> bool:
+        """D.12b: hängt einen Verlaufseintrag an (Aufrufer hält self._lock).
+        Aufeinanderfolgende identische Meldungen werden nicht doppelt
+        erfasst. Liefert True, wenn ein Eintrag angehängt wurde (dann loggt
+        der Aufrufer ihn ausserhalb des Locks via _log_event())."""
+        if job.events and job.events[-1].message == message:
+            return False
+        job.events.append(JobEvent(at=now_iso(), message=message, progress=progress))
+        if len(job.events) > self.MAX_JOB_EVENTS:
+            del job.events[: len(job.events) - self.MAX_JOB_EVENTS]
+        return True
+
+    def _log_event(self, job_id: str, message: str) -> None:
+        # Verkürzte Job-ID als Korrelationsschlüssel in control_center.log
+        # (Volltextsuche im Log-Dashboard).
+        self.logger.info(f"🧩 [JOB {job_id[:8]}] {message}")
+
     def mark_running(self, job_id: str) -> None:
+        appended = False
         with self._lock:
             job = self._jobs.get(job_id)
             if job is not None:
                 job.status = JobStatus.RUNNING
                 job.started_at = now_iso()
+                appended = self._append_event(job, "Gestartet", job.progress)
+        if appended:
+            self._log_event(job_id, "Gestartet")
 
     def update_progress(self, job_id: str, progress: float, message: str = "") -> None:
+        appended = False
         with self._lock:
             job = self._jobs.get(job_id)
             if job is not None:
                 job.progress = progress
                 if message:
                     job.message = message
+                    appended = self._append_event(job, message, progress)
+        if appended:
+            self._log_event(job_id, message)
 
     def mark_succeeded(self, job_id: str, result: Optional[dict] = None) -> None:
+        appended = False
         with self._lock:
             job = self._jobs.get(job_id)
             if job is not None:
@@ -86,12 +116,17 @@ class JobRegistry:
                 job.progress = 100.0
                 job.result = result
                 job.finished_at = now_iso()
+                appended = self._append_event(job, "Abgeschlossen", 100.0)
+        if appended:
+            self._log_event(job_id, "Abgeschlossen")
 
     def mark_failed(self, job_id: str, error: str, result: Optional[dict] = None) -> None:
         """`result` optional (Nachtrag Phase 2/Repair-Execution): ein Job
         kann fehlschlagen, aber trotzdem Diagnosedaten liefern (z. B.
         Subprozess-stdout bei einem Exit-Code != 0) — Job.result ist
         unabhängig vom Status bereits im Modell vorgesehen."""
+        event_message = f"Fehlgeschlagen: {error}" if error else "Fehlgeschlagen"
+        appended = False
         with self._lock:
             job = self._jobs.get(job_id)
             if job is not None:
@@ -99,24 +134,39 @@ class JobRegistry:
                 job.error = error
                 job.result = result
                 job.finished_at = now_iso()
+                appended = self._append_event(job, event_message, job.progress)
+        if appended:
+            self._log_event(job_id, event_message)
 
     def mark_cancelled(self, job_id: str) -> None:
+        appended = False
         with self._lock:
             job = self._jobs.get(job_id)
             if job is not None:
                 job.status = JobStatus.CANCELLED
                 job.finished_at = now_iso()
+                appended = self._append_event(job, "Abgebrochen", job.progress)
+        if appended:
+            self._log_event(job_id, "Abgebrochen")
 
     def request_cancel(self, job_id: str) -> bool:
         """Fordert den Abbruch an (thread-sicher, analog
         ActiveDownload.request_cancel()). Liefert False bei unbekannter
         job_id, sonst True — der Job selbst muss is_cancel_requested()
         aktiv abfragen (kooperatives Abbrechen, kein hartes Kill)."""
+        appended = False
         with self._lock:
             event = self._cancel_events.get(job_id)
+            job = self._jobs.get(job_id)
+            # Nur für noch laufende Jobs protokollieren - ein Cancel auf
+            # einen bereits beendeten Job ändert nichts am Ergebnis.
+            if event is not None and job is not None and job.finished_at is None and not event.is_set():
+                appended = self._append_event(job, "Abbruch angefordert", job.progress)
         if event is None:
             return False
         event.set()
+        if appended:
+            self._log_event(job_id, "Abbruch angefordert")
         return True
 
     def is_cancel_requested(self, job_id: str) -> bool:

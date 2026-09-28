@@ -159,3 +159,119 @@ class TestCancellation:
     def test_is_cancel_requested_false_for_unknown_job(self):
         registry = JobRegistry()
         assert registry.is_cancel_requested("does-not-exist") is False
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# D.12b — Schritt-Verlauf (Job.events)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _messages(job):
+    return [e.message for e in job.events]
+
+
+def test_new_job_has_no_events():
+    registry = JobRegistry()
+    job = registry.create(kind="download_track", initiator="1")
+    assert job.events == []
+
+
+def test_events_follow_status_and_progress_changes():
+    registry = JobRegistry()
+    job = registry.create(kind="download_track", initiator="1")
+
+    registry.mark_running(job.job_id)
+    registry.update_progress(job.job_id, 5.0, "Duplikat-Prüfung…")
+    registry.update_progress(job.job_id, 20.0, "Download läuft…")
+    registry.mark_succeeded(job.job_id, result={"outcome": "success"})
+
+    assert _messages(job) == ["Gestartet", "Duplikat-Prüfung…", "Download läuft…", "Abgeschlossen"]
+    assert [e.progress for e in job.events] == [0.0, 5.0, 20.0, 100.0]
+    assert all(e.at for e in job.events)
+
+
+def test_message_still_holds_last_progress_message():
+    """Characterization: `message` bleibt unverändert die letzte
+    update_progress()-Meldung - der Verlauf ist rein additiv."""
+    registry = JobRegistry()
+    job = registry.create(kind="download_track", initiator="1")
+    registry.update_progress(job.job_id, 10.0, "A")
+    registry.update_progress(job.job_id, 20.0, "B")
+    registry.mark_succeeded(job.job_id)
+    assert job.message == "B"
+
+
+def test_identical_consecutive_messages_are_not_duplicated():
+    registry = JobRegistry()
+    job = registry.create(kind="download_track", initiator="1")
+    registry.update_progress(job.job_id, 20.0, "Download läuft…")
+    registry.update_progress(job.job_id, 30.0, "Download läuft…")
+    registry.update_progress(job.job_id, 30.0, "Download läuft… 1/3")
+    assert _messages(job) == ["Download läuft…", "Download läuft… 1/3"]
+
+
+def test_progress_without_message_adds_no_event():
+    registry = JobRegistry()
+    job = registry.create(kind="download_track", initiator="1")
+    registry.update_progress(job.job_id, 50.0)
+    assert job.events == []
+
+
+def test_failed_and_cancelled_events():
+    registry = JobRegistry()
+    failed = registry.create(kind="download_track", initiator="1")
+    registry.mark_failed(failed.job_id, "Keine erfolgreichen Tracks.")
+    assert _messages(failed) == ["Fehlgeschlagen: Keine erfolgreichen Tracks."]
+
+    cancelled = registry.create(kind="download_track", initiator="1")
+    registry.mark_running(cancelled.job_id)
+    assert registry.request_cancel(cancelled.job_id) is True
+    registry.request_cancel(cancelled.job_id)  # zweites Cancel: kein weiterer Eintrag
+    registry.mark_cancelled(cancelled.job_id)
+    assert _messages(cancelled) == ["Gestartet", "Abbruch angefordert", "Abgebrochen"]
+
+
+def test_cancel_on_finished_job_adds_no_event():
+    registry = JobRegistry()
+    job = registry.create(kind="download_track", initiator="1")
+    registry.mark_succeeded(job.job_id)
+    registry.request_cancel(job.job_id)
+    assert _messages(job) == ["Abgeschlossen"]
+
+
+def test_events_are_capped_keeping_newest():
+    registry = JobRegistry()
+    job = registry.create(kind="download_track", initiator="1")
+    total = JobRegistry.MAX_JOB_EVENTS + 5
+    for i in range(total):
+        registry.update_progress(job.job_id, 30.0, f"Download läuft… {i + 1}/{total}")
+
+    assert len(job.events) == JobRegistry.MAX_JOB_EVENTS
+    assert job.events[0].message == f"Download läuft… 6/{total}"
+    assert job.events[-1].message == f"Download läuft… {total}/{total}"
+
+
+def test_to_dict_contains_events():
+    registry = JobRegistry()
+    job = registry.create(kind="download_track", initiator="1")
+    registry.update_progress(job.job_id, 5.0, "Duplikat-Prüfung…")
+    data = job.to_dict()
+    assert data["events"] == [
+        {"at": job.events[0].at, "message": "Duplikat-Prüfung…", "progress": 5.0}
+    ]
+
+
+def test_each_event_is_logged_with_short_job_id():
+    lines = []
+
+    class _Logger:
+        def info(self, msg, *a, **k):
+            lines.append(msg)
+
+    registry = JobRegistry(logger_factory=lambda name: _Logger())
+    job = registry.create(kind="download_track", initiator="1")
+    registry.update_progress(job.job_id, 5.0, "Duplikat-Prüfung…")
+    registry.update_progress(job.job_id, 6.0, "Duplikat-Prüfung…")  # dedupliziert, kein Log
+
+    assert f"🧩 [JOB {job.job_id[:8]}] Duplikat-Prüfung…" in lines
+    assert sum("Duplikat-Prüfung" in line for line in lines) == 1
