@@ -1,156 +1,107 @@
 {% extends "_base.html" %}
 {% block title %}Library – MusicBot Control Center{% endblock %}
 {% block content %}
-<div class="page-header d-print-none mb-4">
-  <div class="row align-items-center">
-    <div class="col">
-      <h1 class="page-title">📚 Library</h1>
-      <div class="text-secondary" id="library-last-scan"></div>
-      <div class="text-secondary">
-        Artists, Alben, Tracks und Mapping-Übersicht.
-      </div>
+{# CC-UI Library L2 nach docs/CONTROL_CENTER_UI_STANDARD.md: die Library ist
+   die Metadaten-Werkstatt (Nutzerentscheidung 2026-09-28) - Artists finden,
+   nach offenen Metadaten-Themen filtern, zum Bearbeiten springen. Element-IDs
+   sind Vertrag mit static/pages/library.js und den Tests. #}
+<div class="page-header d-print-none mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col-12 col-md">
+      <div class="page-pretitle">Music</div>
+      <h2 class="page-title"><svg class="icon me-2 text-teal"><use href="#i-books"/></svg>Library</h2>
+      <div class="text-secondary mt-1">Metadaten prüfen, bearbeiten und aktualisieren.</div>
+      <div class="text-secondary small mt-1" id="library-last-scan"></div>
     </div>
   </div>
 </div>
 
-<!-- Library KPIs -->
-<div class="row row-cards mb-4" id="library-kpi-tiles" hidden>
+<!-- Kennzahlen (aus GET /api/v1/library/health/cached) -->
+<div class="row row-cards mb-3" id="library-kpi-tiles" hidden>
   <div class="col-6 col-lg-3">
-    <div class="card h-100">
-      <div class="card-body py-3">
-        <div class="text-secondary small">🎵 Tracks</div>
-        <div class="h2 mb-0" id="library-kpi-tracks">–</div>
-      </div>
-    </div>
+    <div class="card card-sm h-100"><div class="card-body"><div class="row align-items-center g-3">
+      <div class="col-auto"><span class="avatar bg-teal-lt"><svg class="icon"><use href="#i-music"/></svg></span></div>
+      <div class="col min-w-0"><div class="subheader">Tracks</div><div class="h2 mb-0" id="library-kpi-tracks">–</div></div>
+    </div></div></div>
   </div>
-
   <div class="col-6 col-lg-3">
-    <div class="card h-100">
-      <div class="card-body py-3">
-        <div class="text-secondary small">🎤 Artists</div>
-        <div class="h2 mb-0" id="library-kpi-artists">–</div>
-      </div>
-    </div>
+    <div class="card card-sm h-100"><div class="card-body"><div class="row align-items-center g-3">
+      <div class="col-auto"><span class="avatar bg-purple-lt"><svg class="icon"><use href="#i-microphone"/></svg></span></div>
+      <div class="col min-w-0"><div class="subheader">Artists</div><div class="h2 mb-0" id="library-kpi-artists">–</div></div>
+    </div></div></div>
   </div>
-
   <div class="col-6 col-lg-3">
-    <div class="card h-100">
-      <div class="card-body py-3">
-        <div class="text-secondary small">💿 Alben</div>
-        <div class="h2 mb-0" id="library-kpi-albums">–</div>
-      </div>
-    </div>
+    <div class="card card-sm h-100"><div class="card-body"><div class="row align-items-center g-3">
+      <div class="col-auto"><span class="avatar bg-blue-lt"><svg class="icon"><use href="#i-disc"/></svg></span></div>
+      <div class="col min-w-0"><div class="subheader">Alben</div><div class="h2 mb-0" id="library-kpi-albums">–</div></div>
+    </div></div></div>
   </div>
-
-  <!-- CC-LIB-FINAL Library-Home (Nutzer-Freigabe): Health-Zahl ist bereits
-       prominent in der "Library Health"-Karte direkt darunter (Score +
-       Trend + Sparkline) - hier stattdessen ein Schnellzugriff auf die
-       Library-Wartung (Scan/Mapping-Sektion unten). Reines Anchor-Link-
-       Verhalten (<details id="library-metadata-details"> oeffnet sich
-       nativ beim Anspringen seines :target-Fragments, kein JS noetig). -->
+  <!-- CC-LIB-FINAL: Schnellzugriff auf den Live-Scan (natives :target-Öffnen
+       von <details id="library-metadata-details">, kein JS). -->
   <div class="col-6 col-lg-3">
-    <a href="#library-metadata-details" class="card h-100 text-reset text-decoration-none">
-      <div class="card-body py-3">
-        <div class="text-secondary small">Schnellzugriff</div>
-        <div class="h2 mb-0">🛠 Wartung</div>
-      </div>
-    </a>
+    <a href="#library-metadata-details" class="card card-sm card-link h-100 text-reset text-decoration-none"><div class="card-body"><div class="row align-items-center g-3">
+      <div class="col-auto"><span class="avatar bg-orange-lt"><svg class="icon"><use href="#i-tool"/></svg></span></div>
+      <div class="col min-w-0"><div class="subheader text-truncate">Live-Scan</div><div class="h2 mb-0">Wartung</div></div>
+    </div></div></a>
   </div>
 </div>
 
 <!-- Health + Aufmerksamkeit -->
-<div class="row row-cards mb-4">
-
+<div class="row row-cards mb-3">
   <div class="col-lg-6">
     <div class="card h-100" id="library-health-panel">
       <div class="card-header">
-        <h3 class="card-title">
-          <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-heart-rate-monitor" width="20" height="20" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-            <path d="M3 12h4l3 -9l4 18l3 -9h4" />
-          </svg>
-          Library Health
-        </h3>
+        <h3 class="card-title"><svg class="icon me-2 text-teal"><use href="#i-health"/></svg>Library Health</h3>
       </div>
       <div class="card-body">
-        <div id="library-health-content" class="text-secondary">
-          Health wird geladen …
-        </div>
+        <div id="library-health-content"><div class="placeholder-glow" aria-busy="true"><div class="placeholder col-9 mb-2"></div><div class="placeholder col-7 mb-2"></div><div class="placeholder col-5"></div></div></div>
         <div id="library-health-sparkline"></div>
       </div>
     </div>
   </div>
-
   <div class="col-lg-6">
     <div class="card h-100" id="library-attention-panel">
       <div class="card-header">
-        <h3 class="card-title">
-          <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-alert-triangle" width="20" height="20" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-            <path d="M12 9v4" />
-            <path d="M10.363 3.5l-8.36 14a2 2 0 0 0 1.73 3h16.534a2 2 0 0 0 1.73 -3l-8.36 -14a2 2 0 0 0 -3.274 0z" />
-            <path d="M12 16h.01" />
-          </svg>
-          Aufmerksamkeit
-        </h3>
+        <div>
+          <h3 class="card-title"><svg class="icon me-2 text-teal"><use href="#i-alert"/></svg>Aufmerksamkeit</h3>
+          <div class="card-subtitle">Thema anklicken, um die betroffenen Artists zu sehen.</div>
+        </div>
       </div>
       <div class="card-body">
-        <div id="library-attention-content" class="text-secondary">
-          Wird geladen …
-        </div>
+        <div id="library-attention-content"><div class="placeholder-glow" aria-busy="true"><div class="placeholder col-9 mb-2"></div><div class="placeholder col-7 mb-2"></div><div class="placeholder col-5"></div></div></div>
       </div>
     </div>
   </div>
-
 </div>
 
-<!-- Artists -->
-<div class="card mb-4">
+<!-- Artists: Einstieg zum Bearbeiten -->
+<div class="card mb-3" id="library-artists-card">
   <div class="card-header">
-    <h2 class="card-title">
-      <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-microphone" width="20" height="20" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-        <rect x="9" y="2" width="6" height="13" rx="3" />
-        <path d="M5 10a7 7 0 0 0 14 0" />
-        <path d="M8 21h8" />
-        <path d="M12 17v4" />
-      </svg>
-      Artists
-    </h2>
+    <div>
+      <h3 class="card-title"><svg class="icon me-2 text-teal"><use href="#i-microphone"/></svg>Artists</h3>
+      <div class="card-subtitle">Artist wählen, um Metadaten zu bearbeiten.</div>
+    </div>
+    <div class="card-actions"><span class="text-secondary small" id="artists-overview-count"></span></div>
   </div>
-
-  <div class="card-body">
-
-    <div class="row g-2 mb-3">
-      <div class="col">
+  <div class="card-body border-bottom">
+    <div class="row g-2">
+      <div class="col-12 col-md">
         <div class="input-icon">
-          <span class="input-icon-addon">
-            <svg xmlns="http://www.w3.org/2000/svg"
-                 width="20" height="20"
-                 viewBox="0 0 24 24"
-                 fill="none"
-                 stroke="currentColor"
-                 stroke-width="2"
-                 stroke-linecap="round"
-                 stroke-linejoin="round"
-                 class="icon"
-                 aria-hidden="true">
-              <circle cx="11" cy="11" r="8"/>
-              <path d="M21 21l-4.35-4.35"/>
-            </svg>
-          </span>
-          <input
-            type="text"
-            id="artist-search"
-            class="form-control"
-            placeholder="Artist suchen …"
-            autocomplete="off"
-          >
+          <span class="input-icon-addon"><svg class="icon"><use href="#i-search"/></svg></span>
+          <input type="text" id="artist-search" class="form-control" placeholder="Artist suchen …"
+                 autocomplete="off" aria-label="Artist suchen">
         </div>
       </div>
-
-      <div class="col-auto">
-        <select id="artist-sort" class="form-select">
+      <div class="col-12 col-sm-6 col-md-auto">
+        <div class="input-group">
+          <span class="input-group-text"><svg class="icon"><use href="#i-filter"/></svg></span>
+          <select id="artist-issue-filter" class="form-select" aria-label="Nach Metadaten-Thema filtern">
+            <option value="">Alle Artists</option>
+          </select>
+        </div>
+      </div>
+      <div class="col-12 col-sm-6 col-md-auto">
+        <select id="artist-sort" class="form-select" aria-label="Sortierung">
           <option value="name">Sortieren: Name (A–Z)</option>
           <option value="files">Sortieren: Dateien</option>
           <option value="albums">Sortieren: Alben</option>
@@ -159,73 +110,36 @@
         </select>
       </div>
     </div>
-
-    <div id="artists-overview-content" class="text-secondary">
-      Artists werden geladen …
-    </div>
-
+    <div id="artists-overview-stale" class="small text-warning mt-2" hidden></div>
+  </div>
+  <div id="artists-overview-content">
+    <div class="card-body"><div class="placeholder-glow" aria-busy="true"><div class="placeholder col-9 mb-2"></div><div class="placeholder col-7 mb-2"></div><div class="placeholder col-5"></div></div></div>
   </div>
 </div>
 
-<!-- Library Metadata -->
-<div class="card mb-4">
+<!-- Live-Scan (Library-Metadata): vollständiger Scan nur auf Klick -->
+<div class="card mb-3">
   <details id="library-metadata-details">
-
-    <summary class="card-header" style="cursor: pointer; list-style: none;">
-      <h2 class="card-title">Library-Metadata</h2>
-    </summary>
-
-    <div class="card-body">
-
-      <p class="text-secondary">
-        Führt einen vollständigen Library-Scan aus (kann eine Weile dauern)
-        — läuft nicht automatisch, nur auf Klick.
-      </p>
-
-      <div class="row g-2 mb-3">
-
-        <div class="col-auto">
-          <button id="metadata-tracks-btn" class="btn btn-primary">
-            Tracks
-          </button>
-        </div>
-
-        <div class="col-auto">
-          <button id="metadata-artists-btn" class="btn btn-primary">
-            Artists
-          </button>
-        </div>
-
-        <div class="col-auto">
-          <button id="metadata-albums-btn" class="btn btn-primary">
-            Albums
-          </button>
-        </div>
-
-        <div class="col-auto">
-          <button id="metadata-mapping-btn" class="btn btn-outline-primary">
-            Mapping
-          </button>
-        </div>
-
+    <summary class="card-header cc-summary">
+      <div>
+        <h3 class="card-title"><svg class="icon me-2 text-teal"><use href="#i-scan"/></svg>Library-Metadata · Live-Scan</h3>
+        <div class="card-subtitle">Vollständiger Scan auf Klick – kann eine Weile dauern, läuft nie automatisch.</div>
       </div>
-
-      <div class="row align-items-center g-2 mb-3">
-
-        <div class="col-auto">
-          <label
-            for="metadata-missing-filter"
-            class="form-label mb-0"
-          >
-            Fehlende Metadata:
-          </label>
+    </summary>
+    <div class="card-body">
+      <div class="row g-3 align-items-end mb-3">
+        <div class="col-12 col-lg-auto">
+          <div class="form-label">Anzeigen</div>
+          <div class="btn-group w-100" role="group" aria-label="Live-Scan anzeigen">
+            <button type="button" id="metadata-tracks-btn" class="btn">Tracks</button>
+            <button type="button" id="metadata-artists-btn" class="btn">Artists</button>
+            <button type="button" id="metadata-albums-btn" class="btn">Alben</button>
+            <button type="button" id="metadata-mapping-btn" class="btn">Mapping</button>
+          </div>
         </div>
-
-        <div class="col-auto">
-          <select
-            id="metadata-missing-filter"
-            class="form-select"
-          >
+        <div class="col-12 col-lg">
+          <label for="metadata-missing-filter" class="form-label">Tracks mit fehlender Angabe</label>
+          <select id="metadata-missing-filter" class="form-select">
             <option value="">— kein Filter —</option>
             <option value="META_ARTIST_MISSING">Artist fehlt</option>
             <option value="META_ALBUM_MISSING">Album fehlt</option>
@@ -242,13 +156,9 @@
             <option value="LOUDNESS_TAG_MISSING">Loudness-Tag fehlt</option>
           </select>
         </div>
-
       </div>
-
-      <div id="metadata-content" class="text-secondary"></div>
-
+      <div id="metadata-content"></div>
     </div>
-
   </details>
 </div>
 {% endblock %}
