@@ -2,11 +2,12 @@
 {% block title %}Health – MusicBot Control Center{% endblock %}
 {% block content %}
 <!-- Kopf: Titel, Navidrome-Status, Health Scan -->
-<div class="page-header d-print-none mb-4">
+<div class="page-header d-print-none mb-3">
   <div class="row align-items-center g-3">
     <div class="col-12 col-md">
-      <h1 class="page-title">🩺 Health</h1>
-      <div class="text-secondary">
+      <div class="page-pretitle">Wartung</div>
+      <h2 class="page-title"><svg class="icon me-2 text-teal"><use href="#i-health"/></svg>Health</h2>
+      <div class="text-secondary mt-1">
         MusicBot Doctor, Library Health Review und Repair MusicBot — an
         einem Ort. Nur tatsächlich vorhandene Checks, keine vorgetäuschten
         Health-Werte.
@@ -15,20 +16,20 @@
     <div class="col-12 col-md-auto d-flex flex-wrap align-items-center gap-2">
       <span id="navidrome-status" class="badge bg-secondary-lt">Navidrome: lädt…</span>
       <button id="health-scan-btn" type="button" class="btn btn-primary">
-        Health Scan starten
+        <svg class="icon me-1"><use href="#i-refresh"/></svg>Health Scan starten
       </button>
     </div>
   </div>
-  <div id="health-scan-job-content" class="text-secondary small mt-2"></div>
+  <div id="health-scan-job-content" class="mt-2"></div>
 </div>
 
 <!-- Score + Kennzahlen (MusicBot Doctor) -->
 <div class="card mb-4">
   <div class="card-body">
     <div id="health-tiles" class="row g-3 align-items-center">
-      <div class="col-12 text-secondary">Lädt…</div>
+      <div class="col-12 placeholder-glow"><div class="placeholder col-6 mb-2"></div><div class="placeholder col-4"></div></div>
     </div>
-    <div id="score-history-content" class="mt-3 text-secondary small">Lädt…</div>
+    <div id="score-history-content" class="mt-3 text-secondary small placeholder-glow"><div class="placeholder col-5"></div></div>
   </div>
 </div>
 
@@ -83,7 +84,7 @@
           </div>
         </div>
 
-        <div id="findings-content" class="text-secondary">Lädt…</div>
+        <div id="findings-content" class="text-secondary placeholder-glow"><div class="placeholder col-9 mb-2"></div><div class="placeholder col-7 mb-2"></div><div class="placeholder col-5"></div></div>
 
         <div class="mt-4">
           <button
@@ -110,7 +111,7 @@
           <div class="col-lg-6">
             <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
               <div>
-                <h3 class="mb-0">🛠 Repair-Plan</h3>
+                <h3 class="mb-0"><svg class="icon me-2"><use href="#i-tool"/></svg>Repair-Plan</h3>
                 <div class="text-secondary small">
                   Vorschau und anschließend gezielte SAFE_AUTOMATIC-Reparatur.
                 </div>
@@ -144,7 +145,7 @@
           <div class="col-lg-6">
             <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
               <div>
-                <h3 class="mb-0">🎤 L3 (MusicBrainz)</h3>
+                <h3 class="mb-0"><svg class="icon me-2"><use href="#i-tag"/></svg>L3 (MusicBrainz)</h3>
                 <div class="text-secondary small">
                   Reparaturen gezielt pro Artist auswählen.
                 </div>
@@ -170,19 +171,19 @@
 
       <!-- Verlauf: Statistik, History, Jobs -->
       <div class="tab-pane" id="health-tab-history" role="tabpanel">
-        <h3>🧾 Repair-Statistik</h3>
-        <div id="repair-statistics-content" class="text-secondary mb-4">Lädt…</div>
+        <h3><svg class="icon me-2"><use href="#i-chart"/></svg>Repair-Statistik</h3>
+        <div id="repair-statistics-content" class="text-secondary mb-4 placeholder-glow"><div class="placeholder col-8"></div></div>
 
-        <h3>🕘 Repair-History</h3>
-        <div id="repair-history-content" class="text-secondary mb-4">Lädt…</div>
+        <h3><svg class="icon me-2"><use href="#i-history"/></svg>Repair-History</h3>
+        <div id="repair-history-content" class="text-secondary mb-4 placeholder-glow"><div class="placeholder col-9 mb-2"></div><div class="placeholder col-6"></div></div>
 
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <h3 class="mb-0">📋 Zuletzt ausgeführte Jobs</h3>
+          <h3 class="mb-0"><svg class="icon me-2"><use href="#i-refresh"/></svg>Zuletzt ausgeführte Jobs</h3>
           <button id="jobs-refresh-btn" type="button" class="btn btn-outline-primary btn-sm">
             Aktualisieren
           </button>
         </div>
-        <div id="jobs-content" class="text-secondary">Lädt…</div>
+        <div id="jobs-content" class="text-secondary placeholder-glow"><div class="placeholder col-9 mb-2"></div><div class="placeholder col-6"></div></div>
       </div>
 
     </div>
