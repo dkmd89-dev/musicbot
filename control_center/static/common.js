@@ -346,3 +346,209 @@ function _initSidebarToggle() {
   });
 }
 document.addEventListener("DOMContentLoaded", _initSidebarToggle);
+
+// ══════════════════════════════════════════════════════════════════════
+// CC-UI-1: gemeinsame UI-Helfer nach docs/CONTROL_CENTER_UI_STANDARD.md
+// (Abschnitte 2, 3, 7, 8, 12). Rein additiv - keine bestehende Funktion
+// ist verändert; Seiten stellen erst in ihren eigenen PRs darauf um.
+// ══════════════════════════════════════════════════════════════════════
+
+// Icon aus dem Sprite (templates/_icons.html), Standard Abschnitt 3.
+function ccIcon(id, extraClass) {
+  const cls = "icon" + (extraClass ? " " + extraClass : "");
+  return `<svg class="${_escapeHtml(cls)}" aria-hidden="true"><use href="#i-${_escapeHtml(id)}"/></svg>`;
+}
+
+// Status-Farben (Standard Abschnitt 2) - ein einziges Mapping.
+const CC_STATUS_STYLE = {
+  ok:      { color: "green",     icon: "check" },
+  running: { color: "teal",      icon: "refresh" },
+  warn:    { color: "yellow",    icon: "alert" },
+  error:   { color: "red",       icon: "alert" },
+  step:    { color: "purple",    icon: "tag" },
+  neutral: { color: "secondary", icon: "info" },
+};
+// Vorhandene Werte aus der API -> Status-Art (Standard Abschnitt 2, Tabelle
+// "Zuordnung vorhandener Werte"). Unbekannte Werte -> neutral.
+const CC_STATUS_KIND = {
+  // JobStatus
+  PENDING: "neutral", RUNNING: "running", SUCCEEDED: "ok", FAILED: "error", CANCELLED: "neutral",
+  // Download-Verlauf
+  success: "ok", failed: "error", cancelled: "neutral", duplicate: "neutral",
+  // Finding-Schwere
+  CRITICAL: "error", ERROR: "error", WARNING: "warn", SUSPECTED: "warn", INFO: "neutral",
+  // Health-Score
+  EXCELLENT: "ok", GOOD: "ok", FAIR: "warn", POOR: "error",
+  // Repair-Ergebnis
+  SUCCESS: "ok", UNRESOLVED: "warn", SKIPPED: "warn",
+};
+function ccStatusKind(value) {
+  return CC_STATUS_KIND[value] || "neutral";
+}
+// Badge immer Icon + Text (Farbe trägt nie allein die Information).
+function ccStatusBadge(kind, label) {
+  const style = CC_STATUS_STYLE[kind] || CC_STATUS_STYLE.neutral;
+  return `<span class="badge bg-${style.color}-lt">${ccIcon(style.icon, "icon-sm me-1")}${_escapeHtml(label)}</span>`;
+}
+
+// Zustände Laden/Leer/Fehler/keine Berechtigung (Standard Abschnitt 7).
+const ccState = {
+  loading(el) {
+    if (!el) return;
+    el.innerHTML = '<div class="placeholder-glow" aria-busy="true">'
+      + '<div class="placeholder col-9 mb-2"></div><div class="placeholder col-7 mb-2"></div>'
+      + '<div class="placeholder col-5"></div></div>';
+  },
+  empty(el, title, subtitle, actionHtml) {
+    if (!el) return;
+    el.innerHTML = '<div class="empty py-4">'
+      + `<div class="empty-icon">${ccIcon("inbox")}</div>`
+      + `<p class="empty-title">${_escapeHtml(title || "Keine Einträge")}</p>`
+      + (subtitle ? `<p class="empty-subtitle text-secondary">${_escapeHtml(subtitle)}</p>` : "")
+      + (actionHtml ? `<div class="empty-action">${actionHtml}</div>` : "")
+      + "</div>";
+  },
+  // retryFn nur bei 5xx/Netzwerk übergeben (nicht bei 403/404).
+  error(el, message, retryFn) {
+    if (!el) return;
+    el.innerHTML = `<div class="text-danger mb-2">${ccIcon("alert", "me-1")}${_escapeHtml(message || "Fehler beim Laden.")}</div>`
+      + (retryFn ? `<button type="button" class="btn btn-sm">${ccIcon("refresh", "me-1")}Erneut versuchen</button>` : "");
+    const btn = retryFn ? el.querySelector("button") : null;
+    if (btn) btn.addEventListener("click", () => retryFn());
+  },
+  denied(el) {
+    if (!el) return;
+    el.innerHTML = `<div class="alert alert-warning mb-0">${ccIcon("lock", "me-1")}Keine Berechtigung (Rolle reicht nicht).</div>`;
+  },
+};
+
+// API-Zugriff für alle Methoden (Standard Abschnitt 12). Läuft immer über
+// apiUrl() (Subpath-Betrieb). 401 -> Login-Ansicht. Fehler werfen
+// CcApiError mit der Meldung aus {"error": {"message": ...}}.
+class CcApiError extends Error {
+  constructor(message, status, body) {
+    super(message);
+    this.name = "CcApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+async function ccApi(method, path, body) {
+  const options = { method: method || "GET", credentials: "same-origin", headers: {} };
+  if (body !== undefined) {
+    options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(body);
+  }
+  const res = await fetch(apiUrl(path), options);
+  if (res.status === 401) {
+    showOnly("login-view");
+    throw new CcApiError("Nicht angemeldet.", 401, null);
+  }
+  const text = await res.text();
+  let data = null;
+  if (text) {
+    try { data = JSON.parse(text); } catch (e) { data = null; }
+  }
+  if (!res.ok) {
+    const msg = (data && data.error && data.error.message) || `HTTP ${res.status}`;
+    throw new CcApiError(msg, res.status, data);
+  }
+  return data;
+}
+
+// Bestätigungsdialog statt confirm() (Standard Abschnitt 8). Nutzt das
+// vorhandene window.tabler.Modal; ohne Tabler-JS Rückfall auf confirm().
+function ccConfirm(opts) {
+  const o = opts || {};
+  const Modal = window.tabler && window.tabler.Modal;
+  if (!Modal) return Promise.resolve(window.confirm(o.text || o.title || "Fortfahren?"));
+  let el = document.getElementById("cc-confirm-modal");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "cc-confirm-modal";
+    el.className = "modal modal-blur fade";
+    el.tabIndex = -1;
+    el.innerHTML = '<div class="modal-dialog modal-sm modal-dialog-centered"><div class="modal-content">'
+      + '<div class="modal-status"></div>'
+      + '<div class="modal-body text-center py-4"><h3 class="cc-confirm-title"></h3>'
+      + '<div class="text-secondary cc-confirm-text"></div></div>'
+      + '<div class="modal-footer"><div class="w-100 d-flex gap-2">'
+      + '<button type="button" class="btn w-100 cc-confirm-cancel" data-bs-dismiss="modal">Zurück</button>'
+      + '<button type="button" class="btn w-100 cc-confirm-ok"></button>'
+      + "</div></div></div></div>";
+    document.body.appendChild(el);
+  }
+  el.querySelector(".modal-status").className = "modal-status " + (o.danger ? "bg-danger" : "bg-teal");
+  el.querySelector(".cc-confirm-title").textContent = o.title || "Fortfahren?";
+  el.querySelector(".cc-confirm-text").textContent = o.text || "";
+  const okBtn = el.querySelector(".cc-confirm-ok");
+  okBtn.textContent = o.confirmLabel || "OK";
+  okBtn.className = "btn w-100 cc-confirm-ok " + (o.danger ? "btn-danger" : "btn-primary");
+  return new Promise((resolve) => {
+    let result = false;
+    const onOk = () => { result = true; modal.hide(); };
+    const onHidden = () => {
+      okBtn.removeEventListener("click", onOk);
+      el.removeEventListener("hidden.bs.modal", onHidden);
+      resolve(result);
+    };
+    const modal = Modal.getOrCreateInstance(el);
+    okBtn.addEventListener("click", onOk);
+    el.addEventListener("hidden.bs.modal", onHidden);
+    modal.show();
+  });
+}
+
+// Rückmeldung nach Aktionen (Standard Abschnitt 8). kind: "ok" | "error".
+// Erfolg verschwindet nach ~4 s, Fehler bleiben stehen.
+function ccToast(kind, title, text) {
+  let container = document.getElementById("cc-toast-container");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "cc-toast-container";
+    container.className = "toast-container position-fixed bottom-0 end-0 p-3";
+    document.body.appendChild(container);
+  }
+  const isError = kind === "error";
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.setAttribute("role", isError ? "alert" : "status");
+  toast.setAttribute("aria-live", isError ? "assertive" : "polite");
+  toast.innerHTML = '<div class="toast-header">'
+    + ccIcon(isError ? "alert" : "check", (isError ? "text-danger" : "text-teal") + " me-2")
+    + `<strong class="me-auto">${_escapeHtml(title)}</strong>`
+    + '<button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Schließen"></button></div>'
+    + (text ? `<div class="toast-body">${_escapeHtml(text)}</div>` : "");
+  container.appendChild(toast);
+  const Toast = window.tabler && window.tabler.Toast;
+  if (Toast) {
+    toast.addEventListener("hidden.bs.toast", () => toast.remove());
+    Toast.getOrCreateInstance(toast, { autohide: !isError, delay: 4000 }).show();
+  } else {
+    toast.classList.add("show");
+    if (!isError) setTimeout(() => toast.remove(), 4000);
+  }
+  return toast;
+}
+
+// Hell/Dunkel-Umschalter (Standard Abschnitt 2). Startwert setzt bereits
+// das Inline-Skript im <head> von _base.html; hier nur Klick + Icon.
+function _ccCurrentTheme() {
+  return document.documentElement.getAttribute("data-bs-theme") === "light" ? "light" : "dark";
+}
+function _ccSyncThemeToggleIcon() {
+  const use = document.querySelector("#theme-toggle use");
+  if (use) use.setAttribute("href", _ccCurrentTheme() === "dark" ? "#i-sun" : "#i-moon");
+}
+function ccSetTheme(theme) {
+  const next = theme === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-bs-theme", next);
+  try { localStorage.setItem("cc-theme", next); } catch (e) { /* nur diese Sitzung */ }
+  _ccSyncThemeToggleIcon();
+}
+document.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("theme-toggle");
+  if (!btn) return;
+  _ccSyncThemeToggleIcon();
+  btn.addEventListener("click", () => ccSetTheme(_ccCurrentTheme() === "dark" ? "light" : "dark"));
+});
