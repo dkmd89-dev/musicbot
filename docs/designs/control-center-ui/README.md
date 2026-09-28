@@ -45,4 +45,4 @@ Das Ergebnis wird als `docs/CONTROL_CENTER_UI_STANDARD.md` festgehalten (Schritt
 - **Keine Funktionen ohne bestehende API:** kein Format/Bitrate, kein Pause/Play, keine MB/s/ETA/Größe/Speicherplatz, keine Cover-Vorschau, nur YouTube.
 - Handy: Schrittfolge wird zu „Schritt n von 7“, Metadaten-Spalte ausgeblendet.
 
-Nächster Schritt: `docs/CONTROL_CENTER_UI_STANDARD.md` aus Entwurf D ableiten.
+Abgeleitet: `docs/CONTROL_CENTER_UI_STANDARD.md` (verbindlich). Das Mockup bleibt Referenz, der Standard hat Vorrang.
