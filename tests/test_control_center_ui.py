@@ -1412,7 +1412,9 @@ async def test_library_page_has_maintenance_quick_access_tile(client):
 
     assert 'id="library-kpi-health"' not in html
     assert 'href="#library-metadata-details"' in html
-    assert "🛠 Wartung" in html
+    # CC-UI Library L2 (bewusst angepasst): Sprite-Icon statt Emoji.
+    tile = html[html.index('href="#library-metadata-details"'):][:600]
+    assert '<use href="#i-tool"/>' in tile and ">Wartung<" in tile
 
 
 # @pytest.mark.asyncio

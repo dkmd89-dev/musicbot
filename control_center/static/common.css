@@ -240,14 +240,6 @@ summary h2 { display: inline-flex; }
 .tile-value { font-size: 2rem; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
 .status-EXCELLENT, .status-GOOD { color: var(--ok); }
 .status-CRITICAL, .status-POOR { color: var(--error); }
-.counts-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-  gap: 8px; margin-bottom: 10px;
-}
-.counts-grid div {
-  background: var(--bg); border-radius: 6px; padding: 6px 8px; font-size: 0.75rem;
-  text-align: center;
-}
 .denied, .empty-note { color: var(--muted); font-size: 0.85rem; }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -632,12 +624,6 @@ a.row-item:hover {
   background: rgba(127, 127, 127, 0.08);
 }
 
-/* CC-AC-8 Schritt 4: grüner Empty State für "alles in Ordnung". */
-.empty-note-ok {
-  color: var(--ok);
-  font-weight: 600;
-}
-
 /* ══════════════════════════════════════════════════════════════════
    11. LIBRARY Track Detail Drawer (CC-AC-9)
    ══════════════════════════════════════════════════════════════════ */
@@ -924,3 +910,22 @@ input.downloads-url-input { max-width: none; }
   border: 1px solid var(--tblr-border-color);
 }
 .cc-dna-tod-peak { border-color: #0ca678; background: rgba(12, 166, 120, 0.08); }
+
+/* CC-UI Library: aufklappbarer Karten-Kopf (<details><summary>) ohne
+   Inline-Style, mit Pfeil rechts. */
+.cc-summary { cursor: pointer; list-style: none; }
+.cc-summary::-webkit-details-marker { display: none; }
+.cc-summary::after {
+  content: ""; margin-left: auto; width: .55rem; height: .55rem; flex-shrink: 0;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(45deg); opacity: .6; transition: transform .15s;
+}
+details[open] > .cc-summary::after { transform: rotate(-135deg); }
+.artist-row { cursor: pointer; }
+.cc-attention-count { min-width: 2.5em; }
+/* Namensspalten in Library-Tabellen: kürzen statt Seite verbreitern (U17). */
+.cc-col-name { max-width: 16rem; }
+@media (max-width: 576px) { .cc-col-name { max-width: 9rem; } }
+/* CC-UI Library: Suche/Filter/Sortierung füllen ihre Spalte (die globale
+   Legacy-Regel begrenzt Eingaben sonst auf 320px). */
+#artist-search, #artist-sort, #artist-issue-filter, #metadata-missing-filter { max-width: none; }
