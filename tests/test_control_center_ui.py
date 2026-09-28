@@ -1188,7 +1188,9 @@ async def test_statistics_page_has_all_panels(client):
     assert "renderAllTimeGenres" in js
     assert "renderMusicDna" in js
     assert "renderMusicTimeline" in js
-    assert "_loadInto(" in js
+    # CC-UI Statistics (bewusst angepasst): Laden über ccApi + ccState statt
+    # _loadInto (Standard §12), Verhalten in tests/test_control_center_statistics_page.py.
+    assert 'ccApi("GET"' in js
 
 
 # ─────────────────────────────────────────────────────────────────────────
