@@ -1,7 +1,7 @@
 # Error-Administration — Architekturanalyse (CC-AC-10D Folgephase)
 
 **Datum:** 2026-09-27 · **Typ:** reine Analyse, **kein Code** ·
-**Status:** 🟡 ANALYSIS COMPLETE — DECISION PENDING
+**Status:** 🟢 ENTSCHIEDEN + UMGESETZT (2026-09-28: Variante E1, siehe Abschnitt 6)
 
 Bezug: offenes Finding „CC-AC-10D, Error-Administration ohne Web-API,
 Cross-Prozess-Blocker" (`docs/FINDINGS_INDEX.md`), Nutzer-Entscheidung
@@ -226,3 +226,18 @@ Nutzer durch — bis zum nächsten Bot-Neustart. Umgekehrte Richtung
 (Telegram schaltet, CC liest) funktioniert. Genau das Anti-Muster, vor
 dem Abschnitt 3/A warnt. Als eigenes Finding in `docs/FINDINGS_INDEX.md`
 erfasst (P2), in dieser Analysephase bewusst **nicht** behoben.
+
+---
+
+## 6. Entscheidung und Umsetzung (2026-09-28)
+
+**Nutzerentscheidung:** Variante **E1** (Web-Paritäts-Audit, Entscheidung 1). Offene Punkte aus Abschnitt 4: Intervall **60 s**, Historie **50 Einträge**, Datenschutz **streng** (ohne `user`/`chat`/`text_preview`/Callback-Daten, ohne Stacktrace, Message gekürzt + redigiert). Punkt 4 (Reset leert `exception_history`) entfällt, da der Reset unter E1 Telegram-only bleibt — die dortige Eigenheit ist unverändert.
+
+**Umsetzung:**
+- `services/bot_runtime_snapshot.py`: `write_bot_runtime_snapshot()` (atomar, Fehler nicht propagiert), `read_bot_runtime_snapshot()` (available/stale/missing/corrupt, stale ab 3 Intervallen), `sanitize_exception_record()` als einzige Stelle, über die Fehler-Einträge in den Snapshot gelangen.
+- `handlers/enhanced_error_handler.py::EnhancedErrorHandler.export_snapshot_section()` (liest nur), `services/duplicate/detector.py::DuplicateDetector.snapshot_section()` (Sitzungszähler).
+- `bot.py`: `_periodic_runtime_snapshot()` schreibt sofort nach dem Start, dann alle 60 s, letzter Stand beim Shutdown; jeder Abschnitt einzeln abgesichert.
+- Control Center: `GET /api/v1/admin/runtime-snapshot` (ADMIN, kein Schreib-Endpunkt), Karte „Fehlerstatistik (Bot)" mit Datenstand, Sitzungszähler in der Duplikat-Karte.
+
+Nicht umgesetzt (bewusst, E1): Reset aus dem Web (wäre E2), Logger-Zähler und Live-Anzeige Telegram-initiierter Downloads (später additiv als weitere Snapshot-Abschnitte möglich).
+

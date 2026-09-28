@@ -119,7 +119,7 @@ Leitregeln (aus den bisherigen Entscheidungen abgeleitet, nicht neu erfunden):
 | 3 | ~~Logger: verbleibende Datei-I/O im Telegram-Handler auf `logger_admin`~~ | B | — | ✅ **DONE (Phase B, PR #327)** — siehe Abschnitt 8 | — |
 | 4a | ~~Duplikat-Check im CC (read-only Job über `run_duplicate_scan`)~~ | A | — | ✅ **DONE (PR #334)** — siehe Abschnitt 12 | — |
 | 4b | ~~Duplikat-Verwaltung (Statistik, Cache leeren)~~ | B + C | — | ✅ **DONE (2026-09-28)** — siehe Abschnitt 16; Sitzungszähler folgen mit Backlog 5 | — |
-| 5 | Cross-Prozess-Snapshot (Error-Verwaltung E1, Logger-Zähler) | C | P2 | `ExceptionMonitor` schreibt Snapshot, CC liest read-only; Reset bleibt Telegram/Neustart | Entscheidung 1 = **E1** ✅ |
+| 5 | ~~Cross-Prozess-Snapshot (Error-Verwaltung E1)~~ | C | — | ✅ **DONE (2026-09-28)** — siehe Abschnitt 17; Logger-Zähler/Live-Downloads später additiv | — |
 | 6 | ~~Downloads aus dem Web~~ | B + C | — | ✅ **DONE (Client Consolidation D.10–D.13)** — siehe Abschnitt 14 | — |
 | 7 | Familie im Web | A | P3 | **zurückgestellt** (Entscheidung 4) | — |
 | 8 | ~~`AccessLevel`/`permissions` aus `handlers/menu/` nach `services/` verschieben~~ | D | — | ✅ **DONE (PR #335)** — siehe Abschnitt 12 | — |
@@ -395,6 +395,16 @@ PENDING.
 - **Bewusst offen:** Sitzungszähler (`total_checks`, Duplikat-Rate, Einsparungen) leben nur im Bot-Speicher → Backlog 5 (E1-Snapshot). Legacy-Funktionen `find_duplicates()`/`clear_duplicate_cache()` ohne Aufrufer nur dokumentiert (CLAUDE.md §20).
 
 Matrix 2.1: Duplikat-Verwaltung → ✅ (bis auf die Sitzungszähler, siehe oben).
+
+---
+
+## 17. Backlog 5 umgesetzt — Bot-Runtime-Snapshot E1 (2026-09-28)
+
+Der Bot schreibt alle 60 s (plus Start/Shutdown) `data/bot_runtime_snapshot.json` mit den Abschnitten **Fehler** (Statistik, Performance/Recovery, letzte 50 Fehler — streng bereinigt: kein Telegram-Kontext, kein Stacktrace, Message gekürzt und redigiert) und **Duplikat-Sitzungszähler**; das Control Center liest nur (`GET /api/v1/admin/runtime-snapshot`, ADMIN) und zeigt den Datenstand offen an (stale ab 3 min). Zurücksetzen bleibt Telegram-only. Details: `docs/audits/ERROR_ADMINISTRATION_ARCHITECTURE_ANALYSIS_2026-09-27.md` §6.
+
+Matrix 2.1: Error-Verwaltung → ✅ (lesend; Reset Telegram), Duplikat-Verwaltung vollständig ✅ (inkl. Sitzungszähler).
+
+**Verbleibend offen:** Backlog 9 (Login mit Navidrome-Benutzer, auch ohne Telegram-Bindung) — nächster Schritt laut beschlossener Reihenfolge; Familie (zurückgestellt).
 
 ---
 

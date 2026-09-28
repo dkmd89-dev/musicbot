@@ -34,6 +34,7 @@ from .routers import (
     admin_duplicates,
     admin_maintenance,
     admin_operations,
+    admin_runtime,
     auth,
     downloads,
     findings,
@@ -117,6 +118,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_maintenance.router)
     app.include_router(admin_duplicates.router)
     app.include_router(admin_operations.router)
+    app.include_router(admin_runtime.router)
     app.include_router(jobs.router)
     app.include_router(jobs.user_router)
     app.include_router(logs.router)

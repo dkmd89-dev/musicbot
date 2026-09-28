@@ -469,6 +469,94 @@ async function clearDuplicateCache() {
   }
 }
 
+// Bot-Runtime-Snapshot (E1) - read-only Fehlerstatistik + Duplikat-
+// Sitzungszähler aus /api/v1/admin/runtime-snapshot. Kein Reset im Web.
+function _formatAge(seconds) {
+  if (seconds == null) return "";
+  const s = Math.round(seconds);
+  if (s < 60) return `vor ${s} s`;
+  if (s < 3600) return `vor ${Math.round(s / 60)} min`;
+  return `vor ${Math.round(s / 3600)} h`;
+}
+
+function _topEntriesHtml(map, limit = 5) {
+  const entries = Object.entries(map || {}).sort((a, b) => b[1] - a[1]).slice(0, limit);
+  if (!entries.length) return '<span class="text-secondary">–</span>';
+  return entries
+    .map(([k, v]) => `<span class="badge bg-secondary-lt me-1">${_escapeHtml(k)}: ${_escapeHtml(String(v))}</span>`)
+    .join("");
+}
+
+function renderRuntimeErrors(el, body) {
+  const errors = body.errors;
+  if (!errors) {
+    el.innerHTML = '<span class="text-secondary">Keine Fehlerdaten im Snapshot.</span>';
+    return;
+  }
+  const recent = (errors.recent || []).slice(0, 10).map((e) => `
+    <tr>
+      <td class="text-nowrap small">${_escapeHtml((e.timestamp || "").replace("T", " ").slice(0, 19))}</td>
+      <td>${_escapeHtml(e.type || "")}</td>
+      <td>${_escapeHtml(e.category || "")}</td>
+      <td>${_escapeHtml(e.severity || "")}</td>
+      <td>${_escapeHtml(e.module || "–")}</td>
+      <td class="small">${_escapeHtml(e.message || "")}</td>
+    </tr>`).join("");
+  el.innerHTML = `
+    <div class="row mb-3">
+      <div class="col-sm-4"><div class="text-secondary small">Fehler gesamt</div><div class="h3 mb-0">${_escapeHtml(String(errors.total_exceptions))}</div></div>
+      <div class="col-sm-4"><div class="text-secondary small">Ø Bearbeitungszeit</div><div class="h3 mb-0">${_escapeHtml(errors.avg_processing_time.toFixed(3))} s</div></div>
+      <div class="col-sm-4"><div class="text-secondary small">Recovery-Quote</div><div class="h3 mb-0">${_escapeHtml((errors.recovery_success_rate * 100).toFixed(1))} %</div></div>
+    </div>
+    <div class="mb-2"><span class="text-secondary small me-2">Kategorien</span>${_topEntriesHtml(errors.by_category)}</div>
+    <div class="mb-2"><span class="text-secondary small me-2">Module</span>${_topEntriesHtml(errors.by_module)}</div>
+    <div class="mb-3"><span class="text-secondary small me-2">Schwere</span>${_topEntriesHtml(errors.by_severity)}</div>
+    ${recent ? `<div class="table-responsive"><table class="table table-sm table-vcenter mb-0">
+      <thead><tr><th>Zeit</th><th>Typ</th><th>Kategorie</th><th>Schwere</th><th>Modul</th><th>Meldung</th></tr></thead>
+      <tbody>${recent}</tbody></table></div>` : '<div class="text-secondary small">Keine Fehler seit Bot-Start.</div>'}`;
+}
+
+function renderDuplicateSession(el, body) {
+  const d = body.duplicates;
+  if (!d) {
+    el.textContent = "Keine Sitzungszähler im Bot-Snapshot.";
+    return;
+  }
+  el.innerHTML = `
+    <div class="fw-medium mb-1">Seit Bot-Start</div>
+    <div>Prüfungen: <strong>${_escapeHtml(String(d.total_checks))}</strong>
+      · Übersprungen: <strong>${_escapeHtml(String(d.duplicates_skipped))}</strong></div>
+    <div>URL-/Content-Treffer: ${_escapeHtml(String(d.url_duplicates_found))} / ${_escapeHtml(String(d.content_duplicates_found))}
+      · Duplikat-Rate: ${_escapeHtml(d.duplicate_rate.toFixed(1))} %</div>`;
+}
+
+async function loadRuntimeSnapshot() {
+  const errorsEl = document.getElementById("admin-errors-content");
+  const dupEl = document.getElementById("admin-duplicates-session");
+  const freshEl = document.getElementById("admin-runtime-freshness");
+  try {
+    const res = await fetch(apiUrl("/api/v1/admin/runtime-snapshot"), { credentials: "same-origin" });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(body?.error?.message || `Fehler: ${res.status}`);
+
+    if (body.status === "missing" || body.status === "corrupt") {
+      const msg = body.message || "Kein Bot-Snapshot verfügbar.";
+      if (errorsEl) errorsEl.innerHTML = `<span class="text-secondary">${_escapeHtml(msg)}</span>`;
+      if (dupEl) dupEl.textContent = msg;
+      if (freshEl) freshEl.textContent = "";
+      return;
+    }
+    if (freshEl) {
+      const stale = body.status === "stale";
+      freshEl.innerHTML = `<span class="${stale ? "text-warning" : "text-secondary"}">Stand: ${_escapeHtml(_formatAge(body.age_seconds))}${stale ? " – Bot schreibt keinen Snapshot mehr" : ""}</span>`;
+    }
+    if (errorsEl) renderRuntimeErrors(errorsEl, body);
+    if (dupEl) renderDuplicateSession(dupEl, body);
+  } catch (err) {
+    if (errorsEl) errorsEl.innerHTML = `<span class="text-danger">${_escapeHtml(err.message)}</span>`;
+  }
+}
+
 async function loadBotOperationStatus() {
   const statusEl = document.getElementById("admin-bot-operation-status");
 
@@ -615,6 +703,7 @@ function renderAdminUsers(el, body) {
       loadBotOperationStatus();
       loadMaintenanceStatus();
       loadDuplicateCacheStats();
+      loadRuntimeSnapshot();
       loadAdminUsers();
 
       document

@@ -97,6 +97,12 @@ def _redact_secrets(line: str) -> str:
     return line
 
 
+# E1 (Bot-Runtime-Snapshot, 2026-09-28): öffentlicher Name für dieselbe
+# Redaction, damit services/bot_runtime_snapshot.py keine zweite
+# Secret-Erkennung braucht. Verhalten unverändert.
+redact_secrets = _redact_secrets
+
+
 @dataclass
 class LogEntry:
     time: str

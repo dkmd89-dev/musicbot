@@ -11,6 +11,7 @@ from typing import Optional
 from pathlib import Path
 import asyncio
 import signal
+from datetime import datetime, timezone
 
 # aiohttp wird für den Session-Cleanup benötigt
 try:
@@ -30,6 +31,7 @@ from services.downloader.download_artifact_cleanup import (
     cleanup_download_artifacts,
 )
 from services.logger_admin import write_runtime_snapshot
+from services import bot_runtime_snapshot
 
 # Import der RichMenuSystem Komponenten
 from handlers.menu.rich_menu_handler import RichMenuHandler
@@ -58,6 +60,11 @@ class ExtendedBot:
 
         self._cleanup_task = None
         self._shutdown_event = asyncio.Event()
+
+        # E1 (Bot-Runtime-Snapshot): periodischer Snapshot für das Control
+        # Center, siehe _periodic_runtime_snapshot().
+        self._runtime_snapshot_task = None
+        self._bot_started_at = datetime.now(timezone.utc).isoformat()
 
         # Family-Challenge-Scheduler (Phase F4, Family Hub): braucht die
         # echte Bot-Instanz (self.application.bot), erst nach Application-
@@ -212,6 +219,53 @@ class ExtendedBot:
             await self.application.bot.set_my_commands(commands)
             self.logger.info("✅ Bot-Befehle im Menü gesetzt")
 
+    def _collect_runtime_snapshot_sections(self) -> dict:
+        """E1: sammelt die Laufzeit-Abschnitte (nur lesend). Jeder
+        Abschnitt einzeln abgesichert - ein Fehler in einem Abschnitt
+        verhindert die übrigen nicht."""
+        sections: dict = {}
+        if self.error_handler:
+            try:
+                sections["errors"] = self.error_handler.export_snapshot_section()
+            except Exception as e:
+                self.logger.warning(f"⚠️ Snapshot-Abschnitt 'errors' fehlgeschlagen: {e}")
+        detector = getattr(self.rich_menu_handler, "duplicate_detector", None)
+        if detector is not None:
+            try:
+                sections["duplicates"] = detector.snapshot_section()
+            except Exception as e:
+                self.logger.warning(f"⚠️ Snapshot-Abschnitt 'duplicates' fehlgeschlagen: {e}")
+        return sections
+
+    async def _write_runtime_snapshot(self) -> None:
+        """E1: schreibt den Bot-Runtime-Snapshot (Datei-I/O im Thread).
+        Observability, nicht Lifecycle-kritisch - Fehler nur loggen."""
+        try:
+            sections = self._collect_runtime_snapshot_sections()
+            await asyncio.to_thread(
+                bot_runtime_snapshot.write_bot_runtime_snapshot,
+                self.config,
+                sections,
+                bot_started_at=self._bot_started_at,
+            )
+        except Exception as e:
+            self.logger.warning(f"⚠️ Bot-Runtime-Snapshot fehlgeschlagen: {e}")
+
+    async def _periodic_runtime_snapshot(self):
+        """E1: Snapshot sofort und danach alle SNAPSHOT_INTERVAL_SECONDS,
+        bis zum Shutdown (der letzte Stand wird in _cleanup() geschrieben)."""
+        interval = bot_runtime_snapshot.SNAPSHOT_INTERVAL_SECONDS
+        try:
+            while not self._shutdown_event.is_set():
+                await self._write_runtime_snapshot()
+                try:
+                    await asyncio.wait_for(self._shutdown_event.wait(), timeout=interval)
+                except asyncio.TimeoutError:
+                    pass
+        except asyncio.CancelledError:
+            self.logger.debug("Runtime-Snapshot-Task wurde beendet")
+            raise
+
     async def _periodic_cleanup(self):
         """Führt periodische Cleanup-Aufgaben aus"""
         try:
@@ -263,6 +317,12 @@ class ExtendedBot:
             # 3. Periodic Cleanup Task starten
             self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
             self.logger.debug("✅ Cleanup-Task gestartet")
+
+            # 3b. E1: Bot-Runtime-Snapshot für das Control Center
+            self._runtime_snapshot_task = asyncio.create_task(
+                self._periodic_runtime_snapshot()
+            )
+            self.logger.debug("✅ Runtime-Snapshot-Task gestartet")
 
             # 4. Statistik-Hintergrund-Polling starten (falls verfügbar)
             if (
@@ -384,6 +444,15 @@ class ExtendedBot:
             except asyncio.CancelledError:
                 pass
             self.logger.debug("✅ Cleanup-Task gestoppt")
+
+        # E1: Runtime-Snapshot-Task stoppen und letzten Stand schreiben
+        if self._runtime_snapshot_task and not self._runtime_snapshot_task.done():
+            self._runtime_snapshot_task.cancel()
+            try:
+                await self._runtime_snapshot_task
+            except asyncio.CancelledError:
+                pass
+        await self._write_runtime_snapshot()
 
         # Statistik-Polling stoppen
         if (
