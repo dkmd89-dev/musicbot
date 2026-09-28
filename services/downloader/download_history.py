@@ -15,6 +15,16 @@ Ein Eintrag wird an genau vier Stellen in klassen/download_handler.py
 geschrieben (Single-Erfolg, Playlist-Erfolg pro Track, Fehlschlag,
 Abbruch) - siehe dortige add_history_entry()-Aufrufe. Deckelung auf die
 letzten MAX_ENTRIES_PER_CHAT Einträge pro Chat, älteste zuerst entfernt.
+
+D.13 (Zwei-Prozess-Betrieb): bot.service hält EINE langlebige Instanz,
+control-center.service erzeugt pro Download-Job eine neue - beide
+schreiben dieselbe Datei. Vorher schrieb jede Instanz ihren beim Start
+geladenen Stand zurück und überschrieb damit die Einträge des anderen
+Prozesses (Lost Update). Jetzt: add_entry() läuft unter einem
+prozessübergreifenden Lock (utils/file_lock.py, dasselbe Muster wie
+services/user_data.py) als Sperren -> Neu laden -> Ändern -> Schreiben;
+Lesezugriffe laden neu, sobald sich die Datei geändert hat. Eine beim
+Neuladen unlesbare Datei ersetzt den In-Memory-Stand nie durch "leer".
 """
 
 import json
@@ -25,6 +35,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from logger import get_module_logger
+from utils.file_lock import cross_process_lock
 
 MAX_ENTRIES_PER_CHAT = 20
 
@@ -89,6 +100,7 @@ class DownloadHistoryStore:
         self.history_file = self.cache_path / "download_history.json"
 
         self._data: Dict[str, List[Dict[str, Any]]] = self._load()
+        self._disk_signature = self._file_signature()
         self.logger.info(f"📋 DownloadHistoryStore initialisiert: {self.cache_path}")
 
     def _load(self) -> Dict[str, List[Dict[str, Any]]]:
@@ -102,9 +114,45 @@ class DownloadHistoryStore:
             self.logger.warning(f"⚠️ Fehler beim Laden des Download-Verlaufs: {e}")
         return {}
 
+    def _file_signature(self) -> Optional[Tuple[int, int, int]]:
+        """(inode, mtime_ns, size) der Datei oder None, wenn sie fehlt -
+        jeder atomare Schreibvorgang (tmp + replace) erzeugt ein neues
+        Inode, auch bei gleicher Größe/mtime-Auflösung."""
+        try:
+            st = self.history_file.stat()
+        except FileNotFoundError:
+            return None
+        return (st.st_ino, st.st_mtime_ns, st.st_size)
+
+    def _refresh_from_disk(self) -> None:
+        """D.13: lädt die Datei neu, falls ein anderer Prozess/eine andere
+        Instanz sie seit dem letzten Lesen/Schreiben geändert hat. Fehlende
+        Datei -> leerer Stand; unlesbare Datei -> In-Memory-Stand bleibt
+        (Warnung), wird beim nächsten Schreiben wieder hergestellt."""
+        signature = self._file_signature()
+        if signature == self._disk_signature:
+            return
+        if signature is None:
+            self._data = {}
+            self._disk_signature = None
+            return
+        try:
+            with open(self.history_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError("Download-Verlauf ist kein JSON-Objekt")
+        except Exception as e:
+            self.logger.warning(
+                f"⚠️ Download-Verlauf konnte nicht neu geladen werden, behalte Speicherstand: {e}"
+            )
+            return
+        self._data = data
+        self._disk_signature = signature
+
     def _save(self) -> None:
         try:
             self._write_json_atomic(self.history_file, self._data)
+            self._disk_signature = self._file_signature()
         except Exception as e:
             self.logger.error(f"❌ Fehler beim Speichern des Download-Verlaufs: {e}")
 
@@ -158,16 +206,19 @@ class DownloadHistoryStore:
             mb_ok=mb_ok,
             loudness_ok=loudness_ok,
         )
-        entries = self._data.setdefault(key, [])
-        entries.append(entry.to_dict())
-        if len(entries) > MAX_ENTRIES_PER_CHAT:
-            del entries[: len(entries) - MAX_ENTRIES_PER_CHAT]
-        self._save()
+        with cross_process_lock(self.history_file):
+            self._refresh_from_disk()
+            entries = self._data.setdefault(key, [])
+            entries.append(entry.to_dict())
+            if len(entries) > MAX_ENTRIES_PER_CHAT:
+                del entries[: len(entries) - MAX_ENTRIES_PER_CHAT]
+            self._save()
 
     def get_recent(
         self, chat_id: int, limit: int = MAX_ENTRIES_PER_CHAT
     ) -> List[DownloadHistoryEntry]:
         """Liefert die letzten Einträge für einen Chat, neueste zuerst."""
+        self._refresh_from_disk()
         raw = self._data.get(str(chat_id), [])
         entries = [DownloadHistoryEntry.from_dict(d) for d in reversed(raw)]
         return entries[:limit]
@@ -192,6 +243,7 @@ class DownloadHistoryStore:
         Chat). Sortierung über timestamp (ISO-8601, sortiert korrekt
         lexikographisch, identisches Prinzip wie an anderer Stelle im
         Projekt bereits verwendet)."""
+        self._refresh_from_disk()
         all_entries: List[Tuple[int, DownloadHistoryEntry]] = []
         for chat_id_str, raw_entries in self._data.items():
             try:

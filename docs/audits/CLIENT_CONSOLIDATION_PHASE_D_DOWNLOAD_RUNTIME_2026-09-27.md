@@ -2,7 +2,7 @@
 
 **Auftrag:** `/mnt/128ssd/client_consolidation.txt` ("MUSICBOT — client consolidation & NEXT PARITY PHASE").
 **Ziel:** Telegram = Client, Control Center = Client, `services/` = zentrale Fachlogik.
-**Stand dieses Dokuments:** 2026-09-28 (CC-Job-Verdrahtung für Downloads implementiert, CC-Download-UI (D.11) implementiert und getestet — Commit ausstehend; Cross-Process-Schreibzugriffs-Risiko aus Abschnitt 5.6 bleibt unverändert offen).
+**Stand dieses Dokuments:** 2026-09-28 (Phase D vollständig abgeschlossen: CC-Job-Verdrahtung (D.10), CC-Download-UI (D.11), Download-Runtime-Logging und Job-Verlauf (D.12a–c, Abschnitt 7) und Cross-Process-Persistenz für Duplikat-Cache/Download-Verlauf (D.13, Abschnitt 5.6/8) umgesetzt und in `main`; einzige Restlücke `_in_flight` nur pro Prozess, P3).
 
 ---
 
@@ -17,9 +17,13 @@
 | D.7 | Downloads: Architekturentscheidung (Nutzer) | ✅ ENTSCHIEDEN | Abschnitt 5.1/5.2 |
 | D.8 | Concurrency-Slot-Mechanismus (Option B) | ✅ IMPLEMENTED | PR #329 (`c27dbf1`), PR #330 (`03965b8`) |
 | D.9 | Telegram-freie Pipeline-Extraktion | ✅ IMPLEMENTED | PR #331 (`e5650bd`) |
-| D.10 | **CC Job-Verdrahtung (Download starten/Status/Cancel)** | ✅ IMPLEMENTED | Abschnitt 5.4 (Commit ausstehend, siehe dort) |
+| D.10 | **CC Job-Verdrahtung (Download starten/Status/Cancel)** | ✅ IMPLEMENTED | Abschnitt 5.5 |
 | D.11 | **CC Download-UI** (Dashboard/Downloads → Download starten → Jobstatus → Fortschritt/Ergebnis → Cancel) | ✅ IMPLEMENTED | Abschnitt 6, `plans/control-center-download-ui/` |
-| — | Cross-Process-Schreibzugriff Duplicate-/History-Dateien | ⚠️ **RISIKO, NICHT VALIDIERT** | Abschnitt 5.6 |
+| D.12a | CC-Prozess-Logging (`logs/control_center.log`) | ✅ IMPLEMENTED | PR #342, Abschnitt 7 |
+| D.12b | Schritt-Verlauf pro Job (`Job.events`) + Timeline in der Downloads-UI | ✅ IMPLEMENTED | `1d99def`, Abschnitt 7 |
+| D.12c | Feine Metadaten-Schritte im Job-Verlauf (Single-Downloads) | ✅ IMPLEMENTED | PR #343, Abschnitt 7 |
+| D.13 | Cross-Process-Schreibzugriff Duplicate-/History-Dateien | ✅ CLOSED (reproduziert + behoben) | Abschnitt 5.6 / 8 |
+| — | `DuplicateDetector._in_flight` nur pro Prozess | ⚪ OPEN (P3, bewusste Restlücke) | Abschnitt 8, `docs/FINDINGS_INDEX.md` |
 
 ---
 
@@ -94,9 +98,9 @@ Erster CC-eigener Download-Weg (`docs/FINDINGS_INDEX.md` "Downloads nicht aus de
 - Tests: `tests/test_control_center_download_jobs.py` (9 — Erfolg/Duplikat/Fehlschlag/Abbruch/leeres Ergebnis/URL-Validierung/CSRF/Access-Level-Schwelle/Ownership-Isolation). Volle Regression `-k "control_center or download or duplicate"`: 1493 passed, 1 skipped, 0 failed.
 - **Commit-Status:** Im Arbeitsverzeichnis implementiert und getestet, **noch nicht committed** zum Zeitpunkt dieses Dokuments (Dateien: `control_center/app.py`, `control_center/routers/jobs.py`, `control_center/schemas/jobs.py`, `klassen/download_handler.py`, `services/downloader/download_pipeline_core.py`, plus Tests).
 
-### 5.6 ⚠️ Offenes Risiko — Cross-Process-Schreibzugriff auf Duplicate-/History-Dateien (NICHT VALIDIERT)
+### 5.6 Cross-Process-Schreibzugriff auf Duplicate-/History-Dateien — ✅ GESCHLOSSEN durch D.13 (2026-09-28)
 
-**Dieser Punkt ist ausdrücklich NICHT als erledigt zu betrachten.**
+> **Nachtrag D.13:** Die unten beschriebene Befürchtung hat sich bei der Analyse als **deutlich schwerer** bestätigt als ein seltenes Race — Einträge gingen im Normalbetrieb deterministisch verloren. Analyse, Reproduktion und Fix: Abschnitt 8. Der folgende Text ist der ursprüngliche Stand vor D.13 (historisch belassen).
 
 Mit 5.5 sind `services/duplicate/detector.py::DuplicateDetector` (Duplikat-Cache, `DuplicateCache`-Datei unter `Config.DUPLICATE_CACHE_DIR`) und `services/downloader/download_history.py::DownloadHistoryStore` (`download_history.json`) zum ersten Mal **gleichzeitig aus zwei unabhängigen Prozessen heraus beschreibbar** (Bot-Prozess via Telegram-Download, CC-Prozess via `_run_download_job()`) — vorher gab es nur einen schreibenden Prozess.
 
@@ -127,17 +131,58 @@ Mit 5.5 sind `services/duplicate/detector.py::DuplicateDetector` (Duplikat-Cache
 - `control_center/static/pages/downloads.js` (neu): Job-Start/Poll/Cancel, Verlaufs-Rendering inkl. Metadaten-Badges und Retry-Wiring — reiner Client, keine zweite Fachlogik (keine Duplizierung der SSRF-Domain-Allowlist, keine erfundenen Pipeline-Optionen).
 - Kein Backend-/Service-/Schema-Change nötig — alle konsumierten Endpunkte/Felder existierten bereits vollständig aus D.10.
 - Tests: `tests/test_control_center_ui.py` um 14 Tests erweitert (String-Matching gegen ausgeliefertes HTML/JS, identisches Verfahren wie bei allen anderen CC-Seiten — kein Browser-Runtime verfügbar). Volle thematische Regression (`-k "control_center or download"`): 1115 passed, 0 failed.
-- **Commit-Status:** Im Arbeitsverzeichnis implementiert und getestet, Commit-Zeitpunkt vom Nutzer am Ende der Ausführungsplan-Session gewählt (siehe `plans/control-center-download-ui/99-execution-plan.md`).
+- **Commit-Status:** in `main` (PR #338).
 
-Die Cross-Process-Schreibzugriffs-Frage (Abschnitt 5.6) bleibt unabhängig davon **weiterhin offen** und wurde durch diese UI-Phase bewusst nicht mitgelöst.
+Die Cross-Process-Schreibzugriffs-Frage (Abschnitt 5.6) wurde durch diese UI-Phase bewusst nicht mitgelöst — inzwischen durch D.13 geschlossen (Abschnitt 8). Commit-Stand: D.11 in `main` (PR #338, Folge-PRs #339–#341).
 
 ---
 
-## 7. Referenzen
+## 7. Download-Runtime-Logging und Job-Verlauf (D.12a–c, ✅ IMPLEMENTED, 2026-09-28)
+
+**Analyse (D.12):** Der CC-Prozess (`uvicorn control_center.app:app`) rief nirgends `setup_enhanced_logging()` auf — der Root-Logger hatte keinen Handler, INFO/DEBUG aller `get_module_logger()`-Logger (`YoutubeDownloader`, `download_utils`, `pipeline_core`, `DuplicateDetector`, `JobRegistry`, `control_center.jobs`) gingen bei Web-Downloads verloren, WARNING+ nur über `logging.lastResort` nach journald. Sichtbar blieben nur Logger mit eigenem Handler (`EnhancedMetadataProcessor`, `yt_utils`, uvicorn) — durch Server-Journal vom 2026-09-28 bestätigt.
+
+| Schritt | Umsetzung | Tests |
+|---|---|---|
+| **D.12a** | `control_center/app.py::setup_control_center_logging()` im Startup-Event: bestehendes `setup_enhanced_logging()` mit eigener Datei `LOG_DIR/control_center.log` (nicht `bot.log` — kein Zwei-Prozess-Rotieren). Startup-Event statt `create_app()`, damit Tests über `httpx.ASGITransport` (kein Lifespan) den Root-Logger nicht verändern. Log-Dashboard findet die Datei automatisch (`*.log*`). | `tests/test_control_center_logging_startup.py` (4) |
+| **D.12b** | Additives `Job.events` (`services/jobs/models.py::JobEvent`, max. `JobRegistry.MAX_JOB_EVENTS = 100`), befüllt bei Status-/Fortschrittswechseln (deduplizierte Meldungen), je Eintrag INFO `🧩 [JOB <id8>] …` in `control_center.log`; `JobSchema.events` additiv; Downloads-UI zeigt den Verlauf laufend und im Ergebnis („Verlauf"). Gilt für alle CC-Job-Arten. `job.message` unverändert. | `test_job_registry.py` (+10), `test_control_center_download_jobs.py` (+1), `test_control_center_ui.py` (+1) |
+| **D.12c** | Neu `services/jobs/step_context.py`: task-lokaler Schritt-Melder (`contextvars`) — nötig, weil `EnhancedMetadataProcessor` ein Singleton ist und mehrere CC-Jobs parallel laufen. `process_single_track()` ruft an seinen bestehenden INFO-Log-Stellen additiv `report_step()` auf (ohne Melder No-op → Telegram-Pfad/`scripts/` unverändert). `_run_download_job()` setzt den Melder nur bei Single-Downloads („Metadaten: …"); Playlists bewusst nur grob (MAX_JOB_EVENTS). | `test_step_context.py` (5), `test_enhanced_metadata_processor_step_reporting.py` (4, inkl. „Ergebnis mit/ohne Melder identisch"), `test_control_center_download_jobs.py` (+2) |
+
+**Nebenbefunde:** `enhanced_metadata_processor.log` wird von Bot- und CC-Prozess geschrieben/rotiert (P3, `docs/FINDINGS_INDEX.md`). Modul-Logdateien über `ModuleLoggerManager._apply_module_config()` doppeln `bot.log` ohne Rotation — auf dem Server per Konfiguration (`file_handler: false` für `telegram_bot`, `RichMenuHandler`, `RichMenuSystem`, `CoverProcessor`, `AutoLearnManager`) bereinigt, kein Code-Change.
+
+---
+
+## 8. Cross-Process-Persistenz Duplikat-Cache / Download-Verlauf (D.13, ✅ CLOSED, 2026-09-28)
+
+**Befund (reproduziert mit den echten Klassen):** `DownloadHistoryStore` und `DuplicateCache` luden ihre Datei nur im Konstruktor und schrieben bei jeder Änderung den **kompletten** In-Memory-Stand zurück. Der Bot hält EINE langlebige Instanz (`handlers/menu/rich_menu_handler.py`), das CC erzeugt pro Job eine neue (`control_center/routers/jobs.py`) →
+
+```
+HISTORY   nach CC-, dann Bot-Download:  ['Telegram']   ← Web-Eintrag weg
+DUP-CACHE nach CC-, dann Bot-Download:  ['Telegram']   ← Web-Eintrag weg
+Neuer CC-Job erkennt die Web-URL als Duplikat: False
+```
+
+- Lost Update **ohne** echte Gleichzeitigkeit: jeder Telegram-Download überschrieb alle Web-Einträge seit dem Bot-Start; ebenso jeder Duplikat-Lese-Treffer (`check_*_duplicate()` speichert `duplicate_count`) und parallele CC-Jobs untereinander.
+- Folge: verlorene Verlaufs-Einträge (sichtbar) und verlorene Duplikat-Einträge auf URL-/Content-Ebene (False Negatives, P0-Bereich). Abgefedert nur durch Library-Fallback (`check_library_duplicate()`) und Datei-Konflikt-Erkennung (`renamed_due_to_conflict`).
+
+**Fix (Muster aus Phase A wiederverwendet, keine zweite Implementierung):**
+- `fcntl.flock`-Helfer aus `services/user_data.py` nach `utils/file_lock.py::cross_process_lock()` verschoben; `user_data.py` nutzt ihn unverändert per Alias `_cross_process_lock`.
+- `DownloadHistoryStore.add_entry()`: Lock → Neu laden bei Dateiänderung → Anhängen → atomar schreiben; `get_recent()`/`get_all_recent()` laden bei Änderung neu (Bot sieht Web-Downloads sofort).
+- `DuplicateCache.transaction()`: Lock → Neu laden bei Dateiänderung; `add_entry`, `check_url_duplicate`, `check_content_duplicate`, `cleanup_old_entries` laufen darüber (Logik unverändert in `_…_locked`-Methoden). `DuplicateDetector.invalidate_entry()` ändert die Dicts nur noch innerhalb `transaction()`.
+- Änderungserkennung über `(inode, mtime_ns, size)` — jeder atomare Schreibvorgang erzeugt ein neues Inode.
+- Fehlende Dateien (Telegram „Cache leeren") → leerer Stand, keine Wiederauferstehung; unlesbare Dateien ersetzen den Speicherstand **nie** durch „leer".
+- Unverändert: Duplikat-Logik und -Ebenen, Dateiformat, öffentliche Signaturen, Telegram-Handler.
+
+**Tests:** `tests/test_cross_process_persistence.py` (10: Interleaving Bot/CC, langlebige Instanz sieht fremde Einträge, Lese-Treffer überschreibt nichts, gelöschte Dateien bleiben gelöscht, unlesbare Datei behält Speicherstand, echte Parallelität über `multiprocessing` **spawn** + Barrier). Ohne Fix 8 failed (3× reproduzierbar), mit Fix 10 passed. `spawn` statt `fork` bewusst: ein geforkter Kindprozess erbt den Zustand der laufenden pytest-Sitzung und verursachte sporadisch einen Seiteneffekt auf `tests/test_resolve_duplicates.py`.
+
+**Restlücke (P3, bewusst):** `DuplicateDetector._in_flight` (Schutz gegen parallele Downloads derselben URL) bleibt ein In-Memory-Dict pro Instanz/Prozess — greift nicht zwischen Bot und CC bzw. zwischen CC-Jobs. Folge nur bei zeitgleichem Doppelstart derselben URL; der zweite Download wird spätestens über `renamed_due_to_conflict` als Duplikat behandelt.
+
+---
+
+## 9. Referenzen
 
 - `/mnt/128ssd/client_consolidation.txt` (Auftrag Phase A–D)
 - `docs/audits/WEB_PARITY_TELEGRAM_CLIENT_AUDIT_2026-09-27.md` (Abschnitte 8/9/11)
 - `docs/audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md` (Download-Center-Nachtrag, ursprüngliche Scope-Entscheidung)
 - `docs/audits/SERVICES_TELEGRAM_COUPLING_2026-09-01.md` (Telegram-Freiheit von `YoutubeDownloader`/`DuplicateDetector`)
 - `docs/FINDINGS_INDEX.md` (Zeile "Downloads nicht aus dem Control Center startbar")
-- PRs: #326 (Phase A), #327 (Phase B), #328 (Phase C), #329/#330 (Concurrency), #331 (Pipeline-Extraktion)
+- PRs: #326 (Phase A), #327 (Phase B), #328 (Phase C), #329/#330 (Concurrency), #331 (Pipeline-Extraktion), #338–#341 (D.11 UI + Folge), #342 (D.12a), `1d99def` (D.12b), #343 (D.12c), D.13 (dieser Stand)
