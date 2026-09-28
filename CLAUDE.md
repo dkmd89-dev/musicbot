@@ -1117,20 +1117,18 @@ Nicht jede einzelne triviale Funktion braucht eine seitenlange Beschreibung.
 
 ## Baseline-Pflege
 
-Aktuelle **eingefrorene** Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v10.md`
-(Freeze 2026-09-14, 4250 passed / 0 failed, 1 umgebungsbedingt skipped,
-11 subtests passed). Referenziert von `README.md` und `docs/INDEX.md`.
-Vorgänger `docs/MusicBot_ENGINEERING_BASELINE_v9.md` (Freeze 2026-09-07,
-2580 passed) liegt unverändert unter `docs/archive/`.
+Aktuelle **eingefrorene** Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v11.md`
+(Freeze 2026-09-28, 6160 passed / 0 failed, 1 umgebungsbedingt skipped,
+11 subtests passed; Freeze-Gate APPROVED, Kriterium Datensicherheit mit
+dokumentiertem D.13-Vorfall per Nutzerentscheidung). Referenziert von
+`README.md` und `docs/INDEX.md`. Vorgänger
+`docs/MusicBot_ENGINEERING_BASELINE_v10.md` (Freeze 2026-09-14, 4250
+passed) liegt unverändert unter `docs/archive/`.
 
-Laufender Zwischenstand seit dem v10-Freeze:
-`docs/MusicBot_ENGINEERING_BASELINE_v11.md` — **DRAFT, noch nicht
-eingefroren**. Angelegt nach Abschluss von ARCH-033 (Telegram Level-2/
-Level-3 Repair, Pro-Artist, 4310 passed / 1 skipped / 11 subtests
-passed / 0 failed, 2026-09-14). Die Tech-Debt-/Security-/Freeze-
-Abschnitte bleiben Platzhalter bis zum v11-Freeze; v10 bleibt bis dahin
-der zitierbare eingefrorene Referenzpunkt, `docs/FINDINGS_INDEX.md` die
-lebende Findings-Quelle. v11 dupliziert keine Findings.
+Eine DRAFT-`MusicBot_ENGINEERING_BASELINE_v12.md` existiert noch nicht —
+sie wird (Normalfall direkt nach einem Freeze, siehe unten) beim nächsten
+ARCH-Phasen-Abschluss mit Code-/YAML-Änderung angelegt.
+`docs/FINDINGS_INDEX.md` bleibt die lebende Findings-Quelle.
 
 Der aktuelle Stand aller offenen/zurückgestellten Punkte steht ab sofort
 in `docs/FINDINGS_INDEX.md`, nicht in der Tech-Debt-Tabelle der jeweils
@@ -1148,8 +1146,8 @@ Testzahlen — die Testzahl stammt aus dem zuletzt vom Nutzer gemeldeten
 Full-Suite-Lauf, siehe §8.A; der Implementierungsprozess führt die volle
 Suite nicht selbst aus). Solange eine DRAFT-vN+1 existiert, geht der Zwischenstand
 dorthin — die eingefrorene vN wird nicht mehr angefasst. Aktuell ist
-das der Fall: v11 ist als DRAFT angelegt (siehe oben), der nächste
-ARCH-Phasen-Abschluss trägt dort nach, keine neue vN+2 nötig. Existiert
+das NICHT der Fall: v11 ist seit 2026-09-28 eingefroren, eine
+DRAFT-v12 wird beim nächsten ARCH-Phasen-Abschluss angelegt. Existiert
 keine DRAFT-vN+1 (Normalfall direkt nach einem Freeze), wird sie beim
 nächsten solchen Abschluss angelegt. Bei größerer Drift (>3 ARCH-Phasen
 seit letztem Sync) ohne DRAFT-vN+1 wird eine neue vN+1 statt eines
