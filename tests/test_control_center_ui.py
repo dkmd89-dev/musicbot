@@ -778,8 +778,10 @@ async def test_artist_detail_page_confirms_before_write_actions(client):
     identisch zu admin_maintenance heute (admin.html)."""
     html = await _page_with_scripts(client, "/library/Bausa")
 
-    assert "window.confirm(" in html
-    assert html.count("window.confirm(") >= 3
+    # CC-UI L3b (bewusst angepasst): Bestätigungs-Modal über _artistConfirm()
+    # statt window.confirm() - Texte unverändert, ohne Tabler weiterhin confirm().
+    assert html.count("await _artistConfirm(") >= 3
+    assert "window.confirm(message)" in html  # Rückfall ohne Tabler-Modal
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -857,11 +859,12 @@ async def test_artist_detail_page_album_edit_confirms_before_write(client):
     nur pauschal >= 3, ohne die neuen Aktionen einzeln zu pruefen)."""
     html = await _page_with_scripts(client, "/library/Bausa")
 
-    assert html.count("window.confirm(") >= 5
+    # CC-UI L3b (bewusst angepasst): _artistConfirm() statt window.confirm()
+    assert html.count("await _artistConfirm(") >= 5
     album_edit_fn = html.split("async function executeAlbumEdit()")[1].split("async function ")[0]
-    assert "window.confirm(" in album_edit_fn
+    assert "_artistConfirm(" in album_edit_fn
     albumartist_edit_fn = html.split("async function executeAlbumArtistEdit()")[1].split("async function ")[0]
-    assert "window.confirm(" in albumartist_edit_fn
+    assert "_artistConfirm(" in albumartist_edit_fn
 
 
 @pytest.mark.asyncio
@@ -1038,7 +1041,7 @@ async def test_artist_detail_tracks_are_interactive(client):
     Tastatur-Nachbildung."""
     html = await _page_with_scripts(client, "/library/Bausa")
 
-    assert 'class="row-item track-row"' in html
+    assert 'class="track-row ' in html  # CC-UI L3a: list-group statt row-item
     assert "data-track-path=" in html
     assert "openTrackDrawer(track)" in html
 
@@ -1047,8 +1050,9 @@ async def test_artist_detail_tracks_are_interactive(client):
 async def test_artist_detail_has_track_detail_context(client):
     html = (await client.get("/library/Bausa")).text
 
-    assert 'id="track-drawer-overlay" class="drawer-overlay" hidden' in html
-    assert 'id="track-drawer"' in html
+    # CC-UI L3a (bewusst angepasst): Tabler-Offcanvas statt eigenem Overlay
+    assert '<div class="offcanvas offcanvas-end" tabindex="-1" id="track-drawer"' in html
+    assert 'id="track-drawer-overlay"' not in html
     assert 'id="track-drawer-title"' in html
     assert 'id="track-drawer-info"' in html
     assert 'id="track-drawer-health"' in html
@@ -1126,9 +1130,11 @@ async def test_track_detail_context_has_accessible_dialog_semantics(client):
     assert 'role="dialog"' in html
     assert 'aria-modal="true"' in html
     assert 'aria-labelledby="track-drawer-title"' in html
-    assert 'event.key === "Escape"' in html
+    # CC-UI L3a (bewusst angepasst): Escape und Tab-Fokus-Falle übernimmt das
+    # Tabler-Offcanvas statt eigener Tastatur-Logik.
+    assert "window.tabler.Offcanvas" in html
     assert "closeTrackDrawer()" in html
-    assert 'event.key !== "Tab"' in html
+    assert '"hidden.bs.offcanvas", _trackDrawerAfterClose' in html
     assert "_trackDrawerTriggerEl.focus()" in html
 
 

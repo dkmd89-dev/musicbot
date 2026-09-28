@@ -49,7 +49,7 @@ async def test_script_uses_api_url_confirms_before_apply_and_polls_every_second(
     block = html.split("// -- Genre revalidieren", 1)[1].split('document.getElementById("genre-manage-preview-btn")', 1)[0]
     assert re.findall(r"fetch\((?!apiUrl)", block) == []
     start = block.split("async function startGenreRevalidation(mode) {", 1)[1].split("_genreRevalSetBusy(true);", 1)[0]
-    assert 'if (mode === "apply")' in start and "window.confirm(" in start and "if (!confirmed) return;" in start
+    assert 'if (mode === "apply")' in start and "_artistConfirm(" in start and "if (!confirmed) return;" in start
     assert "setInterval(() => _pollGenreRevalidationJob(_genreRevalJobId), 1000)" in block
     assert "Netzwerkfehler" not in block                             # Wording-Pin der Seite (nur der L2/L3-Job-Start)
 
@@ -61,6 +61,7 @@ _HARNESS = r"""
 const els = {};
 const mk = (id) => (els[id] = els[id] || { id, innerHTML: "", disabled: false });
 global.document = { getElementById: (id) => mk(id) };
+global.ccIcon = (id, cls) => `<svg class="icon${cls ? " " + cls : ""}" aria-hidden="true"><use href="#i-${id}"/></svg>`;  // wie common.js (CC-UI L3b)
 global._escapeHtml = (v) => (v == null ? "" : String(v)
   .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"));
 global.clearInterval = () => {};

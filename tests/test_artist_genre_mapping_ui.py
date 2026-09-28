@@ -82,7 +82,7 @@ async def test_save_requires_a_preview_and_a_confirmation_and_sends_the_etag(cli
     html = (await client.get("/static/pages/library_artist.js")).text  # CC-UI L1: Skript ausgelagert
     save_fn = html.split("async function saveGenreMapping() {", 1)[1].split("document.getElementById(\"genre-mapping-primary\")", 1)[0]
     assert "if (!pv) return;" in save_fn                       # ohne Vorschau kein Schreiben
-    assert "window.confirm(" in save_fn and "Bot-Neustart" in save_fn
+    assert "_artistConfirm(" in save_fn and "Bot-Neustart" in save_fn  # CC-UI L3b: Modal statt window.confirm
     assert "etag: pv.etag" in save_fn
     assert "res.status === 409" in save_fn                      # veralteter Stand wird behandelt
 
