@@ -148,3 +148,46 @@ class TestExecuteClearCache:
 
         text = update.callback_query.edit_message_text.call_args[0][0]
         assert "Fehler beim Löschen des Duplikat-Cache" in text
+
+
+class TestExecuteClearCacheCharacterization:
+    """4b (2026-09-28): Characterization des Telegram-Cache-Leerens mit
+    echten Einträgen, VOR der Delegation an services/duplicate/admin.py -
+    Text, gelöschte Dateien, zurückgesetzter Speicher-/Zählerstand müssen
+    danach identisch bleiben."""
+
+    @pytest.mark.asyncio
+    async def test_clear_with_entries_reports_counts_and_resets_state(self, handler):
+        handler.detector.register_download(
+            "https://www.youtube.com/watch?v=AAA111", "Artist A", "Song A"
+        )
+        handler.detector.register_download(
+            "https://www.youtube.com/watch?v=BBB222", "Artist B", "Song B"
+        )
+        handler.detector.stats["total_checks"] = 7
+        cache = handler.detector.duplicate_cache
+        url_file, content_file = cache.url_cache_file, cache.content_cache_file
+        assert url_file.exists() and content_file.exists()
+        update = make_update()
+
+        await handler.execute_clear_cache(update, make_context())
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Cache geleert" in text
+        assert "• URL-Cache: 2" in text
+        assert "• Content-Cache: 2" in text
+        assert "url_duplicates.json" in text and "content_duplicates.json" in text
+        assert not url_file.exists() and not content_file.exists()
+        assert handler.detector.duplicate_cache.url_cache == {}
+        assert handler.detector.duplicate_cache.content_cache == {}
+        assert handler.detector.stats["total_checks"] == 0
+
+    @pytest.mark.asyncio
+    async def test_clear_without_files_reports_keine(self, handler):
+        update = make_update()
+
+        await handler.execute_clear_cache(update, make_context())
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Cache geleert" in text
+        assert "• Dateien: Keine" in text
