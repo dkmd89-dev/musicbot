@@ -32,7 +32,7 @@ import hmac
 import json
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 from fastapi import Cookie, Depends, HTTPException, Request
 
@@ -40,6 +40,7 @@ from config import Config
 from logger import get_module_logger
 from services.access_control import AccessLevel, get_user_access_level
 from services.user_data import load_user_data
+from services.web_auth import AUTH_METHOD_NAVIDROME, AUTH_METHOD_TELEGRAM, cap_access_level
 
 from .schemas.errors import ErrorDetail
 
@@ -103,8 +104,11 @@ def _session_secret(bot_token: str) -> bytes:
     return hashlib.sha256(f"control_center_session_v1:{bot_token}".encode("utf-8")).digest()
 
 
-def create_session_token(user_id: int, *, bot_token: str) -> str:
-    payload = {"user_id": user_id, "issued_at": time.time()}
+def create_session_token(user_id: int, *, bot_token: str, auth: str = AUTH_METHOD_TELEGRAM) -> str:
+    """`auth` (Web-Paritäts-Backlog 9): Anmeldeart "telegram" oder
+    "navidrome" - steuert die Rollen-Obergrenze (Navidrome höchstens ADMIN,
+    siehe get_current_access_level())."""
+    payload = {"user_id": user_id, "issued_at": time.time(), "auth": auth}
     payload_b64 = base64.urlsafe_b64encode(
         json.dumps(payload, separators=(",", ":")).encode("utf-8")
     ).decode("ascii")
@@ -119,6 +123,15 @@ def verify_session_token(token: str, *, bot_token: str) -> Optional[int]:
     abgelaufen ist — sonst None. Ein ungültiger/abgelaufener Client-Cookie
     ist ein Normalfall (z. B. nach Ablauf oder Bot-Token-Rotation), keine
     Exception."""
+    session = verify_session(token, bot_token=bot_token)
+    return session[0] if session else None
+
+
+def verify_session(token: str, *, bot_token: str) -> Optional[Tuple[int, str]]:
+    """Wie verify_session_token(), liefert zusätzlich die Anmeldeart.
+    Cookies von vor Backlog 9 (ohne "auth") gelten als Telegram-Login -
+    bestehende Sessions bleiben gültig. Unbekannte Werte werden wie
+    "navidrome" behandelt (die restriktivere Variante)."""
     try:
         payload_b64, signature = token.split(".", 1)
     except ValueError:
@@ -139,7 +152,10 @@ def verify_session_token(token: str, *, bot_token: str) -> Optional[int]:
 
     if time.time() - issued_at > SESSION_TTL_SECONDS:
         return None
-    return user_id
+    auth = payload.get("auth", AUTH_METHOD_TELEGRAM)
+    if auth not in (AUTH_METHOD_TELEGRAM, AUTH_METHOD_NAVIDROME):
+        auth = AUTH_METHOD_NAVIDROME
+    return user_id, auth
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -173,6 +189,20 @@ def get_current_user_id(cc_session: Optional[str] = Cookie(default=None)) -> int
     return user_id
 
 
+def get_current_auth_method(
+    cc_session: Optional[str] = Cookie(default=None),
+    _user_id: int = Depends(get_current_user_id),
+) -> str:
+    """Anmeldeart der aktuellen Session (Backlog 9). Hängt an
+    get_current_user_id(), damit ungültige Sessions dort bereits mit 401
+    abgewiesen werden. Dev-Bypass -> "telegram" (Owner, wie bisher)."""
+    config = Config()
+    if config.CONTROL_CENTER_DEV_AUTH_BYPASS or not cc_session:
+        return AUTH_METHOD_TELEGRAM
+    session = verify_session(cc_session, bot_token=config.BOT_TOKEN)
+    return session[1] if session else AUTH_METHOD_TELEGRAM
+
+
 class _UserDataCacheAdapter:
     """Minimaler Adapter fuer get_user_access_level()'s duck-typed
     `user_mgmt_handler`-Parameter (siehe Modul-Docstring)."""
@@ -183,11 +213,14 @@ class _UserDataCacheAdapter:
 
 def get_current_access_level(
     user_id: int = Depends(get_current_user_id),
+    auth_method: str = Depends(get_current_auth_method),
 ) -> AccessLevel:
     config = Config()
     user_data = load_user_data(Path(config.DATA_DIR) / "user_data.json", logger=_logger)
     adapter = _UserDataCacheAdapter(user_data)
-    return get_user_access_level(user_id, config, user_mgmt_handler=adapter)
+    level = get_user_access_level(user_id, config, user_mgmt_handler=adapter)
+    # Backlog 9 (Nutzerentscheidung): Navidrome-Login höchstens ADMIN.
+    return cap_access_level(level, auth_method)
 
 
 def require_min_access_level(minimum: AccessLevel):

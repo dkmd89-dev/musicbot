@@ -215,6 +215,27 @@
     <div id="admin-users-content" class="empty-note">
       Lädt…
     </div>
+    <!-- Backlog 9: Web-Benutzer ohne Telegram (Freischaltung für Navidrome-Login) -->
+    <form id="admin-web-user-form" class="row g-2 align-items-end mt-3">
+      <div class="col-sm-5">
+        <label class="form-label" for="admin-web-user-name">Web-Benutzer (Navidrome-Name)</label>
+        <input id="admin-web-user-name" class="form-control" type="text" maxlength="128" required>
+      </div>
+      <div class="col-sm-3">
+        <label class="form-label" for="admin-web-user-role">Rolle</label>
+        <select id="admin-web-user-role" class="form-select">
+          <option value="user">user</option>
+          <option value="moderator">moderator</option>
+          <option value="admin">admin</option>
+        </select>
+      </div>
+      <div class="col-sm-auto">
+        <button id="admin-web-user-btn" type="submit" class="btn btn-outline-primary">Web-Benutzer anlegen</button>
+      </div>
+      <div id="admin-web-user-message" class="col-12 small text-secondary">
+        Schaltet ein Navidrome-Konto für die Anmeldung ohne Telegram frei (Rolle höchstens admin).
+      </div>
+    </form>
     <div
       id="admin-user-stats-content"
       class="empty-note mt-4"

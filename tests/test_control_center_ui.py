@@ -1291,6 +1291,32 @@ async def test_admin_page_has_runtime_snapshot_card(client):
 
 
 @pytest.mark.asyncio
+async def test_login_view_has_navidrome_login_form(client):
+    """Backlog 9: Login mit Navidrome-Benutzer neben dem Telegram-Widget.
+    Passwort nur im POST-Body, Feld wird sofort geleert, kein Storage."""
+    html = (await client.get("/")).text
+    js = (await client.get("/static/common.js")).text
+
+    assert 'id="navidrome-login-form"' in html
+    assert 'type="password"' in html and 'autocomplete="current-password"' in html
+    assert "/api/v1/auth/navidrome-login" in js
+    assert 'pwEl.value = "";' in js
+    assert "localStorage" not in js.split("async function onNavidromeLogin", 1)[1].split("document.addEventListener", 1)[0]
+
+
+@pytest.mark.asyncio
+async def test_admin_page_has_web_user_form(client):
+    """Backlog 9: Web-Benutzer ohne Telegram anlegen (Rolle höchstens admin)."""
+    html = (await client.get("/admin")).text
+    js = (await client.get("/static/pages/admin.js")).text
+
+    assert 'id="admin-web-user-form"' in html
+    assert '<option value="owner">' not in html.split('id="admin-web-user-form"', 1)[1].split("</form>", 1)[0]
+    assert "/api/v1/admin/web-users" in js
+    assert "u.telegram_id < 0" in js
+
+
+@pytest.mark.asyncio
 async def test_admin_page_has_users_panel(client):
     html = (await client.get("/admin")).text
     js = (await client.get("/static/pages/admin.js")).text

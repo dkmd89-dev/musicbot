@@ -254,6 +254,45 @@ async function checkAuth() {
   }
 }
 
+// Backlog 9: Login mit Navidrome-Benutzer. Passwort wird nur im POST-Body
+// an den eigenen Server geschickt (der es an Navidrome weiterreicht) und
+// sofort aus dem Feld gelöscht - nie in URL, Storage oder Konsole.
+async function onNavidromeLogin(event) {
+  event.preventDefault();
+  const userEl = document.getElementById("navidrome-login-username");
+  const pwEl = document.getElementById("navidrome-login-password");
+  const btn = document.getElementById("navidrome-login-btn");
+  const msgEl = document.getElementById("navidrome-login-message");
+  if (!userEl || !pwEl) return;
+  const password = pwEl.value;
+  pwEl.value = "";
+  if (btn) btn.disabled = true;
+  if (msgEl) msgEl.textContent = "";
+  try {
+    const res = await fetch(apiUrl("/api/v1/auth/navidrome-login"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ username: userEl.value, password }),
+    });
+    if (res.ok) {
+      if (typeof initPage === "function") initPage();
+      return;
+    }
+    const body = await res.json().catch(() => null);
+    if (msgEl) msgEl.textContent = (body && body.error && body.error.message) || `Anmeldung fehlgeschlagen (${res.status}).`;
+  } catch (err) {
+    if (msgEl) msgEl.textContent = "Netzwerkfehler bei der Anmeldung.";
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const form = document.getElementById("navidrome-login-form");
+  if (form) form.addEventListener("submit", onNavidromeLogin);
+});
+
 function onTelegramAuth(user) {
   fetch(apiUrl("/api/v1/auth/telegram-callback"), {
     method: "POST",

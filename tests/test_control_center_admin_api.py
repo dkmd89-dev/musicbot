@@ -357,3 +357,56 @@ class TestDeleteUserEndpoint:
 
         assert response.status_code == 403
         assert "222" in _read_user_data(user_data_dir)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Backlog 9: Web-Benutzer (Login nur über Navidrome, ohne Telegram)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestCreateWebUserEndpoint:
+    @pytest.mark.asyncio
+    async def test_creates_web_user_with_negative_id(self, client, user_data_dir):
+        _write_user_data(user_data_dir, {"111": {"role": "user", "navidrome_user": "bob"}})
+
+        r = await client.post(
+            "/api/v1/admin/web-users", json={"navidrome_user": "alice", "role": "moderator"}, headers=_SAME_ORIGIN
+        )
+
+        assert r.status_code == 201
+        assert r.json()["telegram_id"] == -1
+        assert r.json()["role"] == "moderator"
+        stored = _read_user_data(user_data_dir)["-1"]
+        assert stored["navidrome_user"] == "alice" and stored["account_type"] == "web"
+
+    @pytest.mark.asyncio
+    async def test_web_user_appears_in_user_list(self, client, user_data_dir):
+        _write_user_data(user_data_dir, {"111": {"role": "user"}, "-1": {"role": "user", "navidrome_user": "alice"}})
+
+        body = (await client.get("/api/v1/admin/users")).json()
+
+        assert [u["telegram_id"] for u in body["users"]] == [-1, 111]
+
+    @pytest.mark.asyncio
+    async def test_duplicate_navidrome_user_conflicts(self, client, user_data_dir):
+        _write_user_data(user_data_dir, {"111": {"role": "user", "navidrome_user": "Alice"}})
+
+        r = await client.post("/api/v1/admin/web-users", json={"navidrome_user": "alice"}, headers=_SAME_ORIGIN)
+
+        assert r.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_owner_role_forbidden(self, client, user_data_dir):
+        r = await client.post(
+            "/api/v1/admin/web-users", json={"navidrome_user": "alice", "role": "owner"}, headers=_SAME_ORIGIN
+        )
+
+        assert r.status_code == 403
+        assert _read_user_data(user_data_dir) == {}
+
+    @pytest.mark.asyncio
+    async def test_rejected_without_origin_header(self, client, user_data_dir):
+        r = await client.post("/api/v1/admin/web-users", json={"navidrome_user": "alice"})
+
+        assert r.status_code == 403
+        assert _read_user_data(user_data_dir) == {}

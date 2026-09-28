@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 
 class TelegramLoginPayload(BaseModel):
@@ -29,3 +29,12 @@ class AuthStatusResponse(BaseModel):
 class WhoAmIResponse(BaseModel):
     user_id: int
     access_level: str
+
+
+class NavidromeLoginPayload(BaseModel):
+    """Backlog 9: Login mit Navidrome-Benutzer. Das Passwort wird nur an
+    Navidrome (POST /auth/login) weitergereicht, nie gespeichert/geloggt."""
+
+    username: str
+    # SecretStr: Passwort erscheint nie in repr()/str()/Fehlerausgaben.
+    password: SecretStr

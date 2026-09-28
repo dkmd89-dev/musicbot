@@ -90,6 +90,54 @@ def create_user(users: dict, telegram_id: str, navidrome_user: str) -> dict:
     return entry
 
 
+def _parse_user_id(key: str) -> Optional[int]:
+    try:
+        return int(key)
+    except (TypeError, ValueError):
+        return None
+
+
+def is_web_user_id(user_id: int) -> bool:
+    """Web-Paritäts-Backlog 9: Web-Benutzer (Login nur über Navidrome, ohne
+    Telegram-Konto) haben NEGATIVE IDs - Telegram-User-IDs sind immer
+    positiv, eine Kollision ist dadurch ausgeschlossen."""
+    return user_id < 0
+
+
+def create_web_user(users: dict, navidrome_user: str, role: str = "user") -> "tuple[str, dict]":
+    """Web-Paritäts-Backlog 9: legt einen Web-Benutzer ohne Telegram-Konto
+    an (Freischaltung für den Navidrome-Login, nur durch einen Admin).
+    Vergibt die nächste freie negative ID. OWNER ist nicht vergebbar
+    (Navidrome-Logins sind ohnehin auf ADMIN begrenzt). Ein Navidrome-
+    Benutzername darf nur EINEM Eintrag zugeordnet sein (Vergleich ohne
+    Groß-/Kleinschreibung), sonst wäre die Login-Zuordnung mehrdeutig."""
+    navidrome_user = (navidrome_user or "").strip()
+    if not navidrome_user:
+        raise UserAdminError("Navidrome-Benutzername darf nicht leer sein.")
+    if role not in ROLES:
+        raise InvalidRoleError(f"Ungültige Rolle: {role}")
+    if role == "owner":
+        raise OwnerPromotionDeniedError("Web-Benutzer können nicht Owner sein.")
+    wanted = navidrome_user.casefold()
+    for key, entry in users.items():
+        existing = (entry or {}).get("navidrome_user") or ""
+        if existing.strip().casefold() == wanted:
+            raise UserAlreadyExistsError(
+                f"Navidrome-Benutzer {navidrome_user} ist bereits Benutzer {key} zugeordnet."
+            )
+    existing_ids = [i for i in (_parse_user_id(k) for k in users) if i is not None]
+    new_id = min([i for i in existing_ids if i < 0], default=0) - 1
+    entry = {
+        "role": role,
+        "permissions": list(_ROLE_DEFAULT_PERMISSIONS[role]),
+        "navidrome_user": navidrome_user,
+        "created_at": datetime.now().isoformat(),
+        "account_type": "web",
+    }
+    users[str(new_id)] = entry
+    return str(new_id), entry
+
+
 def update_navidrome_user(users: dict, telegram_id: str, navidrome_user: str) -> dict:
     """Aktualisiert den Navidrome-User eines bestehenden Benutzers —
     identisch zu UserManagementHandler.process_edit_navidrome_user()."""
