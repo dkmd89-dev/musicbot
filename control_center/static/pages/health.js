@@ -76,6 +76,27 @@ function loadScoreHistory() {
   return _loadInto("score-history-content", "/api/v1/library/health/score-history?limit=20", renderScoreHistory);
 }
 
+// ── Gemeinsame Job-Anzeige (UI-Standard Abschnitt 9) ─────────────────────
+// Health-Scan, SAFE_AUTOMATIC und L3 zeigen denselben Aufbau: Status-Badge,
+// Fortschrittsbalken und Meldung; Log-Auszüge im Terminal-Stil.
+function _jobRunningHtml(job) {
+  const pct = Math.max(0, Math.min(100, Math.round(job.progress || 0)));
+  const label = job.status === "PENDING" ? "Wartet" : "Läuft";
+  return '<div class="d-flex align-items-center gap-2 mb-1">'
+    + ccStatusBadge(ccStatusKind(job.status), label)
+    + `<span class="small text-secondary text-truncate">${_escapeHtml(job.message || "")}</span>`
+    + `<span class="small text-secondary ms-auto">${pct} %</span></div>`
+    + `<div class="progress progress-sm"><div class="progress-bar bg-teal" style="width: ${pct}%" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div></div>`;
+}
+function _jobResultHtml(kind, label, text) {
+  return `<div class="d-flex align-items-start gap-2">${ccStatusBadge(kind, label)}`
+    + (text ? `<span class="small">${text}</span>` : "") + "</div>";
+}
+function _jobTailHtml(tail) {
+  if (!tail) return "";
+  return `<pre class="cc-terminal rounded p-2 mt-2 mb-0">${_escapeHtml(tail.slice(-1200))}</pre>`;
+}
+
 let _healthScanJobPollTimer = null;
 let _currentHealthScanJobId = null;
 
@@ -89,7 +110,7 @@ function _renderHealthScanJobStatus(job) {
 
   if (job.status === "PENDING" || job.status === "RUNNING") {
     startBtn.disabled = true;
-    el.innerHTML = `<p class="empty-note">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%) — ${_escapeHtml(job.message || "")}</p>`;
+    el.innerHTML = _jobRunningHtml(job);
     return;
   }
 
@@ -97,14 +118,15 @@ function _renderHealthScanJobStatus(job) {
   _stopHealthScanJobPolling();
 
   if (job.status === "SUCCEEDED") {
-    el.innerHTML = `<p><span class="dot dot-ok"></span>Health-Scan abgeschlossen.</p>`;
+    el.innerHTML = _jobResultHtml("ok", "Fertig", "Health-Scan abgeschlossen.");
+    ccToast("ok", "Health-Scan abgeschlossen");
     loadHealth();
     loadScoreHistory();
     loadFindings();
   } else if (job.status === "CANCELLED") {
-    el.innerHTML = `<p class="empty-note">Abgebrochen.</p>`;
+    el.innerHTML = _jobResultHtml("neutral", "Abgebrochen", "");
   } else {
-    el.innerHTML = `<p><span class="dot dot-error"></span>Fehlgeschlagen: ${_escapeHtml(job.error || "Unbekannter Fehler")}</p>`;
+    el.innerHTML = _jobResultHtml("error", "Fehlgeschlagen", _escapeHtml(job.error || "Unbekannter Fehler"));
   }
 }
 
@@ -120,30 +142,22 @@ async function _pollHealthScanJob(jobId) {
 async function startHealthScanJob() {
   const startBtn = document.getElementById("health-scan-btn");
   startBtn.disabled = true;
-  document.getElementById("health-scan-job-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
+  document.getElementById("health-scan-job-content").innerHTML = _jobRunningHtml({ status: "PENDING", progress: 0, message: "Wird gestartet …" });
 
+  let job;
   try {
-    const res = await fetch(apiUrl("/api/v1/jobs/health-scan"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-    });
-    if (res.status === 401) { showOnly("login-view"); return; }
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      window.alert("Fehler: " + (body && body.error ? body.error.message : res.status));
-      startBtn.disabled = false;
-      return;
-    }
-    const job = await res.json();
-    _currentHealthScanJobId = job.job_id;
-    _renderHealthScanJobStatus(job);
-    _stopHealthScanJobPolling();
-    _healthScanJobPollTimer = setInterval(() => _pollHealthScanJob(_currentHealthScanJobId), 1000);
+    job = await ccApi("POST", "/api/v1/jobs/health-scan");
   } catch (err) {
-    window.alert("Netzwerkfehler: " + err.message);
+    if (err.status === 401) return;
+    document.getElementById("health-scan-job-content").innerHTML = "";
+    ccToast("error", "Health-Scan nicht gestartet", err.message);
     startBtn.disabled = false;
+    return;
   }
+  _currentHealthScanJobId = job.job_id;
+  _renderHealthScanJobStatus(job);
+  _stopHealthScanJobPolling();
+  _healthScanJobPollTimer = setInterval(() => _pollHealthScanJob(_currentHealthScanJobId), 1000);
 }
 document.getElementById("health-scan-btn").addEventListener("click", startHealthScanJob);
 
@@ -158,11 +172,11 @@ async function loadNavidromeStatus() {
     if (res.status === 401) { showOnly("login-view"); return; }
     if (!res.ok) { _setNavidromeChip("secondary", "Navidrome: Status nicht abrufbar."); return; }
     const status = await res.json();
-    const dot = status.connected ? "dot-ok" : "dot-error";
+    const dot = status.connected ? "status-green" : "status-red";
     const label = status.connected ? "Verbunden" : "Nicht erreichbar";
     const count = status.connected && status.artist_count != null
       ? ` (${status.artist_count} Artists)` : "";
-    _setNavidromeChip(status.connected ? "green" : "red", `<span class="dot ${dot}"></span>Navidrome: ${label}${count}`);
+    _setNavidromeChip(status.connected ? "green" : "red", `<span class="status-dot ${dot} me-1"></span>Navidrome: ${label}${count}`);
   } catch (err) {
     _setNavidromeChip("secondary", "Navidrome: Netzwerkfehler.");
   }
@@ -392,7 +406,7 @@ async function _copyFinding(btn) {
   const hit = _findFindingById(btn.dataset.findingId);
   if (!hit) return;
   const ok = await _copyToClipboard(_findingCopyText(hit.finding, hit.code));
-  btn.textContent = ok ? "Kopiert ✓" : "Kopieren nicht möglich";
+  btn.textContent = ok ? "Kopiert" : "Kopieren nicht möglich";
   setTimeout(() => { btn.textContent = "Kopieren"; }, 1500);
 }
 
@@ -448,62 +462,54 @@ document.getElementById("findings-severity-filter").addEventListener("change", _
 document.getElementById("findings-category-filter").addEventListener("change", _rerenderFindings);
 document.getElementById("findings-search").addEventListener("input", _rerenderFindings);
 
+// Nutzerentscheidung 2026-09-28: ein Dialog mit Eingabefeld statt
+// prompt() + confirm() (Grund Pflicht beim Akzeptieren, Notiz optional).
 async function acceptFinding(findingId, buttonEl) {
-  const reason = window.prompt("Grund für die Akzeptanz (Pflichtfeld):", "");
+  const reason = await ccPrompt({
+    title: "Finding akzeptieren?",
+    text: "Das Finding gilt danach als bewusst akzeptiert und erscheint nicht mehr unter den offenen Findings.",
+    label: "Grund",
+    required: true,
+    confirmLabel: "Akzeptieren",
+  });
   if (reason === null) return;
-  if (!reason.trim()) { window.alert("Ein Grund ist erforderlich."); return; }
-  if (!window.confirm(`Finding wirklich als akzeptiert markieren?\n\n${reason}`)) return;
+  if (!reason.trim()) { ccToast("error", "Ein Grund ist erforderlich."); return; }
 
   buttonEl.disabled = true;
   try {
-    const res = await fetch(apiUrl(`/api/v1/library/findings/${encodeURIComponent(findingId)}/accept`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({ reason }),
-    });
-    if (res.status === 401) { showOnly("login-view"); return; }
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      window.alert("Fehler: " + (body && body.error ? body.error.message : res.status));
-      buttonEl.disabled = false;
-      return;
-    }
-    await loadFindings();
-    if (!document.getElementById("accepted-findings-content").hidden) {
-      await loadAcceptedFindings();
-    }
+    await ccApi("POST", `/api/v1/library/findings/${encodeURIComponent(findingId)}/accept`, { reason });
   } catch (err) {
-    window.alert("Netzwerkfehler: " + err.message);
+    if (err.status !== 401) ccToast("error", "Finding nicht akzeptiert", err.message);
     buttonEl.disabled = false;
+    return;
+  }
+  ccToast("ok", "Finding akzeptiert");
+  await loadFindings();
+  if (!document.getElementById("accepted-findings-content").hidden) {
+    await loadAcceptedFindings();
   }
 }
 
 async function resolveFinding(findingId, buttonEl) {
-  const note = window.prompt("Notiz zur Behebung (optional):", "");
+  const note = await ccPrompt({
+    title: "Als repariert markieren?",
+    text: "Das Finding wird als behoben geführt.",
+    label: "Notiz zur Behebung",
+    required: false,
+    confirmLabel: "Als repariert markieren",
+  });
   if (note === null) return;
-  if (!window.confirm("Finding wirklich als repariert markieren?")) return;
 
   buttonEl.disabled = true;
   try {
-    const res = await fetch(apiUrl(`/api/v1/library/findings/${encodeURIComponent(findingId)}/review`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({ status: "RESOLVED", note: note || null }),
-    });
-    if (res.status === 401) { showOnly("login-view"); return; }
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      window.alert("Fehler: " + (body && body.error ? body.error.message : res.status));
-      buttonEl.disabled = false;
-      return;
-    }
-    await loadFindings();
+    await ccApi("POST", `/api/v1/library/findings/${encodeURIComponent(findingId)}/review`, { status: "RESOLVED", note: note || null });
   } catch (err) {
-    window.alert("Netzwerkfehler: " + err.message);
+    if (err.status !== 401) ccToast("error", "Finding nicht geändert", err.message);
     buttonEl.disabled = false;
+    return;
   }
+  ccToast("ok", "Als repariert markiert");
+  await loadFindings();
 }
 
 document.getElementById("findings-content").addEventListener("click", (event) => {
@@ -572,29 +578,24 @@ function loadAcceptedFindings() {
 }
 
 async function unacceptFinding(findingId, buttonEl) {
-  if (!window.confirm("Diese Akzeptanz wirklich zurücknehmen? Das Finding wird wieder als offen geführt.")) return;
+  const confirmed = await ccConfirm({
+    title: "Akzeptanz zurücknehmen?",
+    text: "Das Finding wird wieder als offen geführt.",
+    confirmLabel: "Zurücknehmen",
+  });
+  if (!confirmed) return;
 
   buttonEl.disabled = true;
   try {
-    const res = await fetch(apiUrl(`/api/v1/library/findings/${encodeURIComponent(findingId)}/unaccept`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({}),
-    });
-    if (res.status === 401) { showOnly("login-view"); return; }
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      window.alert("Fehler: " + (body && body.error ? body.error.message : res.status));
-      buttonEl.disabled = false;
-      return;
-    }
-    await loadAcceptedFindings();
-    await loadFindings();
+    await ccApi("POST", `/api/v1/library/findings/${encodeURIComponent(findingId)}/unaccept`, {});
   } catch (err) {
-    window.alert("Netzwerkfehler: " + err.message);
+    if (err.status !== 401) ccToast("error", "Akzeptanz nicht zurückgenommen", err.message);
     buttonEl.disabled = false;
+    return;
   }
+  ccToast("ok", "Akzeptanz zurückgenommen");
+  await loadAcceptedFindings();
+  await loadFindings();
 }
 
 document.getElementById("accepted-findings-content").addEventListener("click", (event) => {
@@ -610,7 +611,7 @@ document.getElementById("accepted-findings-toggle").addEventListener("click", as
   content.hidden = !willShow;
   toggleBtn.textContent = willShow ? "Akzeptierte Findings verbergen" : "Akzeptierte Findings anzeigen";
   if (willShow) {
-    content.textContent = "Lädt…";
+    ccState.loading(content);
     await loadAcceptedFindings();
   }
 });
@@ -646,7 +647,7 @@ function renderRepairPlan(el, plan) {
 }
 function loadRepairPlan() {
   document.getElementById("repair-plan-content").innerHTML =
-    '<span class="empty-note">Scan läuft, kann eine Weile dauern…</span>';
+    '<div class="d-flex align-items-center gap-2 text-secondary"><span class="spinner-border spinner-border-sm"></span>Scan läuft, kann eine Weile dauern …</div>';
   return _loadInto("repair-plan-content", "/api/v1/library/repair-plan", renderRepairPlan);
 }
 
@@ -665,7 +666,7 @@ function _renderRepairJobStatus(job) {
   if (job.status === "PENDING" || job.status === "RUNNING") {
     cancelBtn.hidden = false;
     startBtn.disabled = true;
-    el.innerHTML = `<p class="empty-note">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%) — ${_escapeHtml(job.message || "")}</p>`;
+    el.innerHTML = _jobRunningHtml(job);
     return;
   }
 
@@ -675,17 +676,16 @@ function _renderRepairJobStatus(job) {
 
   if (job.status === "SUCCEEDED") {
     const tail = (job.result && job.result.stdout_tail) || "";
-    el.innerHTML = `<p><span class="dot dot-ok"></span>Reparatur abgeschlossen.</p>` +
-      (tail ? `<pre style="white-space:pre-wrap;font-size:0.75rem;">${_escapeHtml(tail.slice(-1200))}</pre>` : "");
+    el.innerHTML = _jobResultHtml("ok", "Fertig", "Reparatur abgeschlossen.") + _jobTailHtml(tail);
+    ccToast("ok", "SAFE_AUTOMATIC-Reparatur abgeschlossen");
     loadRepairHistory();
     loadRepairStatistics();
     loadJobs();
   } else if (job.status === "CANCELLED") {
-    el.innerHTML = `<p class="empty-note">Abgebrochen.</p>`;
+    el.innerHTML = _jobResultHtml("neutral", "Abgebrochen", "");
   } else {
     const tail = (job.result && job.result.stdout_tail) || (job.result && job.result.stderr_tail) || "";
-    el.innerHTML = `<p><span class="dot dot-error"></span>Fehlgeschlagen: ${_escapeHtml(job.error || "Unbekannter Fehler")}</p>` +
-      (tail ? `<pre style="white-space:pre-wrap;font-size:0.75rem;">${_escapeHtml(tail.slice(-1200))}</pre>` : "");
+    el.innerHTML = _jobResultHtml("error", "Fehlgeschlagen", _escapeHtml(job.error || "Unbekannter Fehler")) + _jobTailHtml(tail);
   }
 }
 
@@ -700,54 +700,52 @@ async function _pollRepairJob(jobId) {
 
 async function startRepairJob() {
   const count = _lastSafeAutomaticCount ?? "unbekannt viele";
-  const confirmed = window.confirm(
-    `SAFE_AUTOMATIC-Reparatur wirklich starten?\n\n` +
-    `Betrifft ${count} Kandidat(en) aus der zuletzt geladenen Vorschau. ` +
-    `Verlustfrei/deterministisch, mit Backup + Rollback abgesichert — ` +
-    `aber es werden tatsächlich Dateien in der Library verändert.`
-  );
+  const confirmed = await ccConfirm({
+    title: "SAFE_AUTOMATIC-Reparatur starten?",
+    text: `Betrifft ${count} Kandidat(en) aus der zuletzt geladenen Vorschau. `
+      + "Verlustfrei/deterministisch, mit Backup + Rollback abgesichert — "
+      + "aber es werden tatsächlich Dateien in der Library verändert.",
+    confirmLabel: "Reparatur starten",
+    danger: true,
+  });
   if (!confirmed) return;
 
   const startBtn = document.getElementById("repair-start-btn");
   startBtn.disabled = true;
-  document.getElementById("repair-job-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
+  document.getElementById("repair-job-content").innerHTML = _jobRunningHtml({ status: "PENDING", progress: 0, message: "Wird gestartet …" });
 
+  let job;
   try {
-    const res = await fetch(apiUrl("/api/v1/jobs/repair-safe-automatic"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-    });
-    if (res.status === 401) { showOnly("login-view"); return; }
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      window.alert("Fehler: " + (body && body.error ? body.error.message : res.status));
-      startBtn.disabled = false;
-      return;
-    }
-    const job = await res.json();
-    _currentRepairJobId = job.job_id;
-    _renderRepairJobStatus(job);
-    _stopRepairJobPolling();
-    _repairJobPollTimer = setInterval(() => _pollRepairJob(_currentRepairJobId), 1000);
+    job = await ccApi("POST", "/api/v1/jobs/repair-safe-automatic");
   } catch (err) {
-    window.alert("Netzwerkfehler: " + err.message);
+    if (err.status === 401) return;
+    document.getElementById("repair-job-content").innerHTML = "";
+    ccToast("error", "Reparatur nicht gestartet", err.message);
     startBtn.disabled = false;
+    return;
   }
+  _currentRepairJobId = job.job_id;
+  _renderRepairJobStatus(job);
+  _stopRepairJobPolling();
+  _repairJobPollTimer = setInterval(() => _pollRepairJob(_currentRepairJobId), 1000);
 }
 
 async function cancelRepairJob() {
   if (!_currentRepairJobId) return;
+  // Nutzerentscheidung 2026-09-28: Abbrechen mit Nachfrage (wie Downloads).
+  const confirmed = await ccConfirm({
+    title: "Reparatur abbrechen?",
+    text: "Bereits reparierte Dateien bleiben unverändert; der Lauf endet nach dem aktuellen Schritt.",
+    confirmLabel: "Abbrechen",
+    danger: true,
+  });
+  if (!confirmed || !_currentRepairJobId) return;
   const cancelBtn = document.getElementById("repair-cancel-btn");
   cancelBtn.disabled = true;
   try {
-    await fetch(apiUrl(`/api/v1/jobs/${encodeURIComponent(_currentRepairJobId)}/cancel`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-    });
+    await ccApi("POST", `/api/v1/jobs/${encodeURIComponent(_currentRepairJobId)}/cancel`);
   } catch (err) {
-    window.alert("Netzwerkfehler beim Abbrechen: " + err.message);
+    if (err.status !== 401) ccToast("error", "Abbrechen fehlgeschlagen", err.message);
   } finally {
     cancelBtn.disabled = false;
   }
@@ -796,7 +794,7 @@ function _renderLevel23JobStatus(job) {
   const el = document.getElementById("level23-job-content");
 
   if (job.status === "PENDING" || job.status === "RUNNING") {
-    el.innerHTML = `<p class="empty-note">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%) — ${_escapeHtml(job.message || "")}</p>`;
+    el.innerHTML = _jobRunningHtml(job);
     return;
   }
 
@@ -806,16 +804,19 @@ function _renderLevel23JobStatus(job) {
 
   if (job.status === "SUCCEEDED") {
     if (r.total === 0) {
-      el.innerHTML = `<p><span class="dot dot-ok"></span>${_escapeHtml(r.artist || "")}: keine offenen ${_escapeHtml(_LEVEL23_LABELS[r.level] || "")}-Befunde (mehr) vorhanden.</p>`;
+      el.innerHTML = _jobResultHtml("ok", "Fertig",
+        `${_escapeHtml(r.artist || "")}: keine offenen ${_escapeHtml(_LEVEL23_LABELS[r.level] || "")}-Befunde (mehr) vorhanden.`);
     } else {
-      el.innerHTML = `<p><span class="dot ${r.status === "SUCCESS" ? "dot-ok" : "dot-warn"}"></span>${_escapeHtml(r.artist || "")} — ${_escapeHtml(r.level || "")} ${_escapeHtml(_repairOutcomeText(r))}: ` +
-        _repairCountsText(r) + "</p>";
+      const kind = r.status === "SUCCESS" ? "ok" : (r.failed ? "error" : "warn");
+      el.innerHTML = _jobResultHtml(kind, _repairOutcomeText(r),
+        `${_escapeHtml(r.artist || "")} — ${_escapeHtml(r.level || "")}: ` + _repairCountsText(r));
     }
+    ccToast(r.failed ? "error" : "ok", `L3 ${_repairOutcomeText(r)}`, r.artist || "");
     loadRepairHistory();
     loadRepairStatistics();
     loadJobs();
   } else {
-    el.innerHTML = `<p><span class="dot dot-error"></span>Fehlgeschlagen: ${_escapeHtml(job.error || "Unbekannter Fehler")}</p>`;
+    el.innerHTML = _jobResultHtml("error", "Fehlgeschlagen", _escapeHtml(job.error || "Unbekannter Fehler"));
   }
 }
 
@@ -829,40 +830,33 @@ async function _pollLevel23Job(jobId) {
 }
 
 async function startLevel23Job(level, artist, count) {
-  const confirmed = window.confirm(
-    `${_LEVEL23_LABELS[level]} wirklich starten für "${artist}"?\n\n` +
-    `Betrifft ${count} Kandidat(en) aus der zuletzt geladenen Vorschau. ` +
-    `Mit Backup abgesichert — aber es werden tatsächlich Dateien in der Library verändert.` +
-    (level === "l3" ? "\n\nL3 ruft MusicBrainz auf — einzelne Dateien können bei Netzwerk-/Rate-Limit-Fehlern fehlschlagen." : "")
-  );
+  const confirmed = await ccConfirm({
+    title: `${_LEVEL23_LABELS[level]} starten?`,
+    text: `Artist „${artist}“ — betrifft ${count} Kandidat(en) aus der zuletzt geladenen Vorschau. `
+      + "Mit Backup abgesichert — aber es werden tatsächlich Dateien in der Library verändert."
+      + (level === "l3" ? " L3 ruft MusicBrainz auf — einzelne Dateien können bei Netzwerk-/Rate-Limit-Fehlern fehlschlagen." : ""),
+    confirmLabel: "Reparatur starten",
+    danger: true,
+  });
   if (!confirmed) return;
 
   _setLevel23ButtonsDisabled(true);
-  document.getElementById("level23-job-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
+  document.getElementById("level23-job-content").innerHTML = _jobRunningHtml({ status: "PENDING", progress: 0, message: "Wird gestartet …" });
 
+  let job;
   try {
-    const res = await fetch(apiUrl("/api/v1/jobs/repair-level3"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({ artist }),
-    });
-    if (res.status === 401) { showOnly("login-view"); return; }
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      window.alert("Fehler: " + (body && body.error ? body.error.message : res.status));
-      _setLevel23ButtonsDisabled(false);
-      return;
-    }
-    const job = await res.json();
-    _level23JobId = job.job_id;
-    _renderLevel23JobStatus(job);
-    _stopLevel23JobPolling();
-    _level23JobPollTimer = setInterval(() => _pollLevel23Job(_level23JobId), 1000);
+    job = await ccApi("POST", "/api/v1/jobs/repair-level3", { artist });
   } catch (err) {
-    window.alert("Netzwerkfehler: " + err.message);
+    if (err.status === 401) return;
+    document.getElementById("level23-job-content").innerHTML = "";
+    ccToast("error", "L3-Reparatur nicht gestartet", err.message);
     _setLevel23ButtonsDisabled(false);
+    return;
   }
+  _level23JobId = job.job_id;
+  _renderLevel23JobStatus(job);
+  _stopLevel23JobPolling();
+  _level23JobPollTimer = setInterval(() => _pollLevel23Job(_level23JobId), 1000);
 }
 
 function renderLevel23Artists(el, plan) {
@@ -882,7 +876,7 @@ function renderLevel23Artists(el, plan) {
 }
 function loadLevel23Artists() {
   document.getElementById("level23-artists-content").innerHTML =
-    '<span class="empty-note">Scan läuft, kann eine Weile dauern…</span>';
+    '<div class="d-flex align-items-center gap-2 text-secondary"><span class="spinner-border spinner-border-sm"></span>Scan läuft, kann eine Weile dauern …</div>';
   return _loadInto("level23-artists-content", "/api/v1/library/repair-plan/by-artist", renderLevel23Artists);
 }
 
@@ -938,7 +932,7 @@ function renderRepairHistory(el, body) {
       ? '<button type="button" class="list-group-item list-group-item-action text-secondary history-more-btn">Weniger anzeigen</button>' : "");
   el.innerHTML = truncNote + '<div class="list-group list-group-flush border rounded">' + shown.map((r) => `
     <div class="list-group-item d-flex align-items-start gap-2">
-      <span class="badge bg-${_repairStatusColor(r.status)}-lt">${_escapeHtml(r.status)}</span>
+      ${ccStatusBadge(ccStatusKind(r.status), r.status)}
       <div class="health-path">
         <div>${_escapeHtml(r.level)}${r.artist ? " · " + _escapeHtml(r.artist) : ""}</div>
         <div class="text-secondary small">${_escapeHtml(r.kind)} · ${_escapeHtml(r.triggered_by)}</div>
@@ -961,12 +955,12 @@ const _JOB_STATUS_COLOR = {
 };
 
 function renderJobs(el, body) {
-  if (!body.jobs.length) { el.innerHTML = '<p class="mb-0">Keine Jobs.</p>'; return; }
+  if (!body.jobs.length) { ccState.empty(el, "Keine Jobs.", "Hier erscheinen Health-Scans und Reparaturen."); return; }
   el.innerHTML = '<div class="list-group list-group-flush border rounded">' + body.jobs.map((j) => {
-    const color = _JOB_STATUS_COLOR[j.status];
-    const statusHtml = color
-      ? `<span class="badge bg-${color}-lt">${_escapeHtml(j.status)}</span>`
-      : `<span class="badge bg-blue-lt">${_escapeHtml(j.status)} (${j.progress.toFixed(0)}%)</span>`;
+    // Laufende Jobs türkis (Standard Abschnitt 2), abgebrochene wie bisher rot.
+    const done = j.status in _JOB_STATUS_COLOR;
+    const kind = j.status === "CANCELLED" ? "error" : ccStatusKind(j.status);
+    const statusHtml = ccStatusBadge(kind, done ? j.status : `${j.status} (${j.progress.toFixed(0)}%)`);
     const errorHtml = j.error ? `<div class="text-danger small">${_escapeHtml(j.error)}</div>` : "";
     return `
       <div class="list-group-item d-flex align-items-start gap-2">

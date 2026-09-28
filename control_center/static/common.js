@@ -517,6 +517,76 @@ function ccConfirm(opts) {
   });
 }
 
+// Bestätigung mit Eingabefeld statt prompt() + confirm() (Standard
+// Abschnitt 8, CC-UI Health). Liefert den eingegebenen Text (getrimmt) oder
+// null bei Abbruch. required: OK erst bei nicht-leerer Eingabe. Ohne
+// Tabler-JS Rückfall auf prompt().
+function ccPrompt(opts) {
+  const o = opts || {};
+  const Modal = window.tabler && window.tabler.Modal;
+  if (!Modal) {
+    const v = window.prompt(o.text || o.title || "", o.value || "");
+    if (v === null) return Promise.resolve(null);
+    const t = String(v).trim();
+    return Promise.resolve(o.required && !t ? null : t);
+  }
+  let el = document.getElementById("cc-prompt-modal");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "cc-prompt-modal";
+    el.className = "modal modal-blur fade";
+    el.tabIndex = -1;
+    el.innerHTML = '<div class="modal-dialog modal-dialog-centered"><div class="modal-content">'
+      + '<div class="modal-status"></div>'
+      + '<form class="cc-prompt-form">'
+      + '<div class="modal-body py-4"><h3 class="cc-prompt-title"></h3>'
+      + '<div class="text-secondary mb-3 cc-prompt-text"></div>'
+      + '<label class="form-label cc-prompt-label" for="cc-prompt-input"></label>'
+      + '<textarea class="form-control cc-prompt-input" id="cc-prompt-input" rows="3" maxlength="1000"></textarea></div>'
+      + '<div class="modal-footer"><div class="w-100 d-flex gap-2">'
+      + '<button type="button" class="btn w-100" data-bs-dismiss="modal">Zurück</button>'
+      + '<button type="submit" class="btn w-100 cc-prompt-ok"></button>'
+      + "</div></div></form></div></div>";
+    document.body.appendChild(el);
+  }
+  el.querySelector(".modal-status").className = "modal-status " + (o.danger ? "bg-danger" : "bg-teal");
+  el.querySelector(".cc-prompt-title").textContent = o.title || "";
+  el.querySelector(".cc-prompt-text").textContent = o.text || "";
+  el.querySelector(".cc-prompt-label").textContent = (o.label || "") + (o.required ? " (Pflichtfeld)" : " (optional)");
+  const input = el.querySelector(".cc-prompt-input");
+  input.value = o.value || "";
+  input.required = !!o.required;
+  const okBtn = el.querySelector(".cc-prompt-ok");
+  okBtn.textContent = o.confirmLabel || "OK";
+  okBtn.className = "btn w-100 cc-prompt-ok " + (o.danger ? "btn-danger" : "btn-primary");
+  const form = el.querySelector(".cc-prompt-form");
+  const syncOk = () => { okBtn.disabled = !!o.required && !input.value.trim(); };
+  syncOk();
+  return new Promise((resolve) => {
+    let result = null;
+    const modal = Modal.getOrCreateInstance(el);
+    const onSubmit = (ev) => {
+      ev.preventDefault();
+      if (o.required && !input.value.trim()) return;
+      result = input.value.trim();
+      modal.hide();
+    };
+    const onShown = () => input.focus();
+    const onHidden = () => {
+      form.removeEventListener("submit", onSubmit);
+      input.removeEventListener("input", syncOk);
+      el.removeEventListener("shown.bs.modal", onShown);
+      el.removeEventListener("hidden.bs.modal", onHidden);
+      resolve(result);
+    };
+    form.addEventListener("submit", onSubmit);
+    input.addEventListener("input", syncOk);
+    el.addEventListener("shown.bs.modal", onShown);
+    el.addEventListener("hidden.bs.modal", onHidden);
+    modal.show();
+  });
+}
+
 // Rückmeldung nach Aktionen (Standard Abschnitt 8). kind: "ok" | "error".
 // Erfolg verschwindet nach ~4 s, Fehler bleiben stehen.
 function ccToast(kind, title, text) {

@@ -646,7 +646,8 @@ def test_finding_copy_puts_code_message_and_path_on_clipboard(tmp_path: Path) ->
     out = _findings(tmp_path, [_MISMATCH], ops_after=[copy])
     f = _MISMATCH["findings"][0]
     assert out["copied"] == f"FILENAME_TITLE_MISMATCH\n{f['message']}\n{f['path']}"
-    assert out["fired"] == ["Kopiert ✓"]
+    # CC-UI Health (Standard Abschnitt 3): kein Emoji-Zeichen mehr in der Rückmeldung.
+    assert out["fired"] == ["Kopiert"]
 
 
 @needs_node

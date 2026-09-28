@@ -150,7 +150,7 @@ Die Status-Semantik von `_loadInto()` (401/403/404/5xx) bleibt; nur die Darstell
 
 ## 8. Rückmeldung & Bestätigung (U7/U8)
 
-- **Bestätigung:** kein `confirm()` in neuem Code. Gemeinsamer Tabler-Dialog
+- **Bestätigung:** kein `confirm()`/`prompt()` in neuem Code (Eingaben über `ccPrompt`). Gemeinsamer Tabler-Dialog
   (`modal modal-blur`, `modal-sm`, `modal-status bg-danger` bei destruktiv):
   Frage als Titel, Folge in einem Satz, Buttons „Zurück“ + Aktion.
 - **Rückmeldung nach Aktionen:** Tabler-Toast unten rechts
@@ -206,6 +206,7 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
   | `ccState.loading(el)`, `ccState.empty(el, title, subtitle, actionHtml?)`, `ccState.error(el, message, retryFn?)` | Zustände nach Abschnitt 7 |
   | `ccApi(method, path, body?)` | `fetch` über `apiUrl()`, `credentials: "same-origin"`, JSON, bei schreibenden Requests `X-Requested-With: XMLHttpRequest`, wirft bei Fehler mit Meldung aus `{"error":{"message"}}`; 401 → `login-view` |
   | `ccConfirm({title, text, confirmLabel, danger}) → Promise<boolean>` | Bestätigungsdialog nach Abschnitt 8 |
+  | `ccPrompt({title, text, label, required, confirmLabel, danger}) → Promise<string\|null>` | Bestätigung mit Eingabefeld statt `prompt()` + `confirm()` (ergänzt CC-UI Health); `null` bei Abbruch |
   | `ccToast(kind, title, text?)` | Rückmeldung nach Abschnitt 8 |
   | `ccStatusBadge(kind, label)` | Badge nach Abschnitt 2 (Icon + Text, escaped) |
   | `ccIcon(id, extraClass?)` | SVG-`<use>` für den Sprite |
@@ -254,5 +255,5 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
 ## 15. Reihenfolge
 
 1. **CC-UI-1:** Sprite, Theme (dunkel + Umschalter + Türkis), Shell in `_base.html`, Helfer aus §12 in `common.js`/`common.css` — additiv.
-2. Seiten: ~~Overview~~ (erledigt 2026-09-28) → ~~Downloads~~ (erledigt 2026-09-28) → ~~Administration~~ (erledigt 2026-09-28) → Health → Logs/Logger → Navidrome → Statistics → Library + Artist-Detail.
+2. Seiten: ~~Overview~~ (erledigt 2026-09-28) → ~~Downloads~~ (erledigt 2026-09-28) → ~~Administration~~ (erledigt 2026-09-28) → ~~Health~~ (erledigt 2026-09-28) → Logs/Logger → Navidrome → Statistics → Library + Artist-Detail.
 3. Abschluss: manueller Browser-/Subpath-Durchlauf, Alt-Klassen aufräumen.
