@@ -1288,3 +1288,13 @@ button.finding-toggle:focus-visible {
   outline-offset: 2px;
 }
 /* === /Health: Findings-Gruppen === */
+
+/* === Downloads-Home === */
+/* Das URL-Feld soll die volle Kartenbreite nutzen; die generische
+   input-Regel (Abschnitt 7) begrenzt sonst auf 320px. */
+input.downloads-url-input { max-width: none; }
+@media (max-width: 576px) {
+  #downloads-status-filter { width: 100%; }
+  #downloads-status-filter .btn { flex: 1 1 0; }
+}
+/* === /Downloads-Home === */
