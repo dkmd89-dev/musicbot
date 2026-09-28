@@ -283,3 +283,49 @@ class NavidromeAPI:
         response.raise_for_status()
         return response.content, response.headers.get("Content-Type", "image/jpeg")
 
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Control-Center-Login mit Navidrome-Benutzer (Web-Paritäts-Backlog 9,
+# 2026-09-28). Bewusst NICHT über make_request()/Subsonic u=/p=: dort steht
+# das Passwort als Query-Parameter in der URL. Navidromes eigener
+# Login-Endpunkt POST /auth/login nimmt die Zugangsdaten im JSON-Body.
+# Das Passwort erscheint nie in einer URL, einem Log oder einer Exception.
+# ─────────────────────────────────────────────────────────────────────────
+
+CREDENTIALS_OK = "ok"
+CREDENTIALS_INVALID = "invalid"
+CREDENTIALS_UNAVAILABLE = "unavailable"
+
+
+def verify_navidrome_credentials(username: str, password: str, *, config=None) -> str:
+    """Prüft Navidrome-Zugangsdaten über POST {NAVIDROME_URL}/auth/login.
+
+    Rückgabe: CREDENTIALS_OK (200), CREDENTIALS_INVALID (401/403) oder
+    CREDENTIALS_UNAVAILABLE (nicht konfiguriert, nicht erreichbar, Timeout,
+    sonstiger Status). Wirft nie - weder Benutzername noch Passwort werden
+    geloggt, Exceptions werden ohne Original-Objekt behandelt."""
+    config = config or _get_navidrome_config()
+    base_url = getattr(config, "NAVIDROME_URL", "") or ""
+    if not base_url:
+        log_handler_warning("Navidrome-Login nicht möglich: NAVIDROME_URL fehlt.", context="NavidromeAPI")
+        return CREDENTIALS_UNAVAILABLE
+    try:
+        response = requests.post(
+            f"{base_url.rstrip('/')}/auth/login",
+            json={"username": username, "password": password},
+            timeout=getattr(Config, "NAVIDROME_REQUEST_TIMEOUT", 15),
+        )
+    except Exception as err:  # noqa: BLE001 - Netzwerk/Timeout -> unavailable
+        log_handler_error(
+            f"Navidrome-Login nicht erreichbar ({type(err).__name__}).", context="NavidromeAPI"
+        )
+        return CREDENTIALS_UNAVAILABLE
+    if response.status_code == 200:
+        return CREDENTIALS_OK
+    if response.status_code in (401, 403):
+        return CREDENTIALS_INVALID
+    log_handler_error(
+        f"Navidrome-Login: unerwarteter Status {response.status_code}.", context="NavidromeAPI"
+    )
+    return CREDENTIALS_UNAVAILABLE

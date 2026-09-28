@@ -654,7 +654,7 @@ function renderAdminUsers(el, body) {
       <div class="row-item">
         <div class="row-main">
           <span class="badge badge-${roleBadge[u.role] || "INFO"}">${_escapeHtml(u.role)}</span>
-          #${u.telegram_id}${u.navidrome_user ? " — 🎵 " + _escapeHtml(u.navidrome_user) : ""}
+          ${u.telegram_id < 0 ? '<span class="badge bg-azure-lt">Web</span> ' : ""}#${_escapeHtml(String(u.telegram_id))}${u.navidrome_user ? " — 🎵 " + _escapeHtml(u.navidrome_user) : ""}
         </div>
         ${u.navidrome_user ? `<button class="small view-stats-btn" data-navidrome-user="${_escapeHtml(u.navidrome_user)}">Statistik</button>` : ""}
         <div class="row-count">${u.created_at ? new Date(u.created_at).toLocaleDateString() : "–"}</div>
@@ -663,6 +663,34 @@ function renderAdminUsers(el, body) {
   }
   function loadAdminUsers() {
     return _loadInto("admin-users-content", "/api/v1/admin/users", renderAdminUsers);
+  }
+
+  // Backlog 9: Web-Benutzer ohne Telegram anlegen (Freischaltung Navidrome-Login)
+  async function createWebUser(event) {
+    event.preventDefault();
+    const nameEl = document.getElementById("admin-web-user-name");
+    const roleEl = document.getElementById("admin-web-user-role");
+    const msgEl = document.getElementById("admin-web-user-message");
+    const btn = document.getElementById("admin-web-user-btn");
+    if (!nameEl || !roleEl) return;
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch(apiUrl("/api/v1/admin/web-users"), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+        body: JSON.stringify({ navidrome_user: nameEl.value, role: roleEl.value }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error?.message || `Fehler: ${res.status}`);
+      if (msgEl) msgEl.innerHTML = `<span class="text-success">Web-Benutzer #${_escapeHtml(String(data.telegram_id))} (${_escapeHtml(data.navidrome_user || "")}) angelegt.</span>`;
+      nameEl.value = "";
+      loadAdminUsers();
+    } catch (err) {
+      if (msgEl) msgEl.innerHTML = `<span class="text-danger">${_escapeHtml(err.message)}</span>`;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   function renderStatistics(el, stats) {
@@ -709,6 +737,10 @@ function renderAdminUsers(el, body) {
       document
         .getElementById("admin-duplicates-clear-btn")
         ?.addEventListener("click", clearDuplicateCache);
+
+      document
+        .getElementById("admin-web-user-form")
+        ?.addEventListener("submit", createWebUser);
 
       document
         .getElementById("admin-maintenance-toggle-btn")

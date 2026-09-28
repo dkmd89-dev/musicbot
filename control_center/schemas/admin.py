@@ -69,6 +69,13 @@ class CreateUserRequest(BaseModel):
     navidrome_user: str
 
 
+class CreateWebUserRequest(BaseModel):
+    """Backlog 9: Web-Benutzer ohne Telegram (Login nur über Navidrome)."""
+
+    navidrome_user: str
+    role: str = "user"
+
+
 class UpdateNavidromeRequest(BaseModel):
     navidrome_user: str
 

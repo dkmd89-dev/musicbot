@@ -40,6 +40,7 @@ location /controlcenter/ {
     proxy_set_header Host $http_host;           # inkl. Port, für den Origin-Check
     proxy_set_header X-Forwarded-Proto $scheme; # https -> scope["scheme"]
     proxy_set_header X-Forwarded-Prefix /controlcenter;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; # echte Client-IP (Login-Rate-Limit)
 }
 ```
 
@@ -54,6 +55,7 @@ Pflicht-Header und Grund:
 | `X-Forwarded-Prefix` | setzt `root_path` (Links, Redirects, Cookie-Path) | Seiten laden, aber alle Links/API-Calls zeigen auf `/` (= Immich) |
 | `Host $http_host` | `verify_same_origin` vergleicht `Origin` mit `scheme://Host` | alle schreibenden Endpunkte → 403 `ORIGIN_CHECK_FAILED` |
 | `X-Forwarded-Proto` | uvicorn (`--proxy-headers`, Default, vertraut `127.0.0.1`) setzt das Schema | Origin `https://…` ≠ `http://…` → 403 bei schreibenden Endpunkten |
+| `X-Forwarded-For` (seit Backlog 9) | echte Client-IP für das Rate-Limit des Navidrome-Logins (5 Fehlversuche / 15 min pro IP und pro Benutzername) | alle Clients erscheinen als `127.0.0.1` → das IP-Limit wirkt global: 5 Fehlversuche irgendeines Clients sperren den Navidrome-Login für **alle** für 15 min (Telegram-Login unberührt) |
 
 nginx überschreibt einen vom Client mitgeschickten `X-Forwarded-Prefix`
 (`proxy_set_header` ersetzt den Wert) — getestet.
@@ -84,6 +86,15 @@ Vertrauensgrenze ist die Loopback-Bindung.
 - `Secure` gilt auch im Direktbetrieb: Chrome/Firefox akzeptieren es auf
   `http://127.0.0.1`, Safari nicht. Für lokale Entwicklung deshalb
   `CONTROL_CENTER_DEV_AUTH_BYPASS=true` (kein Cookie nötig), siehe README.
+
+## 4a. Login mit Navidrome-Benutzer (Backlog 9, 2026-09-28)
+
+- Formular in der Login-Ansicht neben dem Telegram-Widget; `POST /api/v1/auth/navidrome-login` (Same-Origin-Check).
+- Prüfung der Zugangsdaten über Navidromes `POST /auth/login` (`NAVIDROME_URL` muss vom CC-Prozess erreichbar sein) — das Passwort steht nie in einer URL und wird nie geloggt.
+- Nur vom Admin freigeschaltete Konten: Navidrome-Benutzer muss in `data/user_data.json` genau einem Benutzer zugeordnet sein (Telegram-verknüpft oder Web-Benutzer mit negativer ID, anzulegen unter Admin → Nutzer & Rollen → „Web-Benutzer anlegen").
+- Rolle über Navidrome-Login höchstens ADMIN — OWNER nur über den Telegram-Login.
+- Einheitliche Meldung „Benutzername oder Passwort falsch" (auch für nicht freigeschaltete Konten); 429 mit `Retry-After` nach 5 Fehlversuchen; 503, wenn Navidrome nicht erreichbar ist.
+- Setzt `X-Forwarded-For` im nginx voraus (siehe Tabelle in Abschnitt 2).
 
 ## 5. Regeln für neue UI-Seiten
 

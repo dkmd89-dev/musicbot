@@ -255,7 +255,7 @@
           </div>
 
           <div id="login-view" hidden>
-            <p>Anmeldung über Telegram erforderlich.</p>
+            <p>Anmeldung über Telegram oder mit deinem Navidrome-Konto.</p>
 
             {% if bot_username %}
               <script
@@ -274,6 +274,17 @@
                 <code>CONTROL_CENTER_DEV_AUTH_BYPASS=true</code> setzen.
               </p>
             {% endif %}
+
+            <!-- Backlog 9: Login mit Navidrome-Benutzer (nur vom Admin freigeschaltete Konten) -->
+            <form id="navidrome-login-form" class="mt-4" style="max-width: 22rem;" autocomplete="on">
+              <div class="fw-medium mb-2">Mit Navidrome-Konto anmelden</div>
+              <input id="navidrome-login-username" class="form-control mb-2" type="text"
+                     name="username" autocomplete="username" placeholder="Navidrome-Benutzer" required maxlength="128">
+              <input id="navidrome-login-password" class="form-control mb-2" type="password"
+                     name="password" autocomplete="current-password" placeholder="Passwort" required maxlength="1024">
+              <button id="navidrome-login-btn" type="submit" class="btn btn-primary">Anmelden</button>
+              <div id="navidrome-login-message" class="mt-2 small text-danger" role="alert"></div>
+            </form>
           </div>
 
           <div id="error-view" hidden></div>

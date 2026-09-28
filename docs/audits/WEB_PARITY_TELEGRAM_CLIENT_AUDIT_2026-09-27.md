@@ -123,7 +123,7 @@ Leitregeln (aus den bisherigen Entscheidungen abgeleitet, nicht neu erfunden):
 | 6 | ~~Downloads aus dem Web~~ | B + C | — | ✅ **DONE (Client Consolidation D.10–D.13)** — siehe Abschnitt 14 | — |
 | 7 | Familie im Web | A | P3 | **zurückgestellt** (Entscheidung 4) | — |
 | 8 | ~~`AccessLevel`/`permissions` aus `handlers/menu/` nach `services/` verschieben~~ | D | — | ✅ **DONE (PR #335)** — siehe Abschnitt 12 | — |
-| 9 | Login mit Navidrome-Benutzer (auch ohne Telegram-Bindung) | D | P2 | Analyse mit Security-Fokus (Identitätsmodell, Rate-Limit, Credentials nie im Log), dann Plan | Entscheidung 3 ✅ |
+| 9 | ~~Login mit Navidrome-Benutzer (auch ohne Telegram-Bindung)~~ | D | — | ✅ **DONE (2026-09-28)** — siehe Abschnitt 18 | — |
 | 10 | ~~Test-System~~ | ⚪ | — | ✅ **ENTSCHIEDEN: nicht ins Web**, bleibt Telegram-only (Entscheidung 5) | — |
 
 **Empfohlene Reihenfolge:** 1, 3, 2, 4a und 8 sind erledigt (Phase A/B siehe Abschnitt 8; Backups/Duplikat-Check/AccessLevel-Move siehe Abschnitt 12); verbleibend: Entscheidung 1 → 5 → 4b; 6 (Downloads-UI, Backend bereits per Client-Consolidation-Phase D verdrahtet, siehe `docs/audits/CLIENT_CONSOLIDATION_PHASE_D_DOWNLOAD_RUNTIME_2026-09-27.md`) ist unabhängig von Entscheidung 1 startbar (siehe dortige Präzisierung). Layout B der Health-Seite ist davon unabhängig (reine UI).
@@ -405,6 +405,20 @@ Der Bot schreibt alle 60 s (plus Start/Shutdown) `data/bot_runtime_snapshot.json
 Matrix 2.1: Error-Verwaltung → ✅ (lesend; Reset Telegram), Duplikat-Verwaltung vollständig ✅ (inkl. Sitzungszähler).
 
 **Verbleibend offen:** Backlog 9 (Login mit Navidrome-Benutzer, auch ohne Telegram-Bindung) — nächster Schritt laut beschlossener Reihenfolge; Familie (zurückgestellt).
+
+---
+
+## 18. Backlog 9 umgesetzt — Login mit Navidrome-Benutzer (2026-09-28)
+
+**Festlegungen (Nutzer):** Freischaltung nur durch einen Admin; Rolle über Navidrome-Login höchstens ADMIN (OWNER nur über Telegram); Prüfung über Navidromes `POST /auth/login`.
+
+**Identitätsmodell:** Web-Benutzer ohne Telegram erhalten in `data/user_data.json` eine **negative** ID (Telegram-IDs sind immer positiv) — alle CC-Stellen, die eine `int`-Nutzer-ID erwarten (Rolle, Job-`initiator`, Download-Verlauf, Statistik über `navidrome_user`, Audit-Logs), bleiben unverändert. Ein mit einer Telegram-ID verknüpfter Navidrome-Benutzer erhält beim Navidrome-Login **dieselbe** Identität wie beim Telegram-Login.
+
+**Umsetzung:** `services/clients/navidrome_api.py::verify_navidrome_credentials()`, `services/web_auth.py` (Zuordnung, einheitliches Fehlerergebnis, Rate-Limit, Rollen-Obergrenze), `services/user_admin.py::create_web_user()`, `control_center/dependencies.py` (Session mit `auth`, Obergrenze in `get_current_access_level()`, alte Cookies gültig), `POST /api/v1/auth/navidrome-login`, `POST /api/v1/admin/web-users`, Login-Formular und „Web-Benutzer anlegen" in der UI.
+
+**Security:** Passwort nie in URL/Log/Antwort (`SecretStr`, POST-Body, Tests prüfen Log und Antwort), keine Rückschlüsse auf Konten, Rate-Limit pro Benutzername und IP (speicherbegrenzt), Same-Origin-Check, 503 bei nicht erreichbarem Navidrome. Betriebsvoraussetzung `X-Forwarded-For` im nginx (`docs/CONTROL_CENTER_REVERSE_PROXY.md`).
+
+Matrix 2.3 D: „Login ohne Telegram" → ✅. **Damit ist das Ziel „Web unabhängig von Telegram" für alle entschiedenen Bereiche erreicht**; offen bleiben nur bewusst zurückgestellte Punkte (Familie, Logger-Zähler/Live-Downloads als spätere Snapshot-Abschnitte).
 
 ---
 

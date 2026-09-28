@@ -45,6 +45,7 @@ from services.user_data import load_user_data, update_user_data
 from ..dependencies import get_current_user_id, require_min_access_level, verify_same_origin
 from ..schemas.admin import (
     CreateUserRequest,
+    CreateWebUserRequest,
     DeleteUserResponse,
     UpdateNavidromeRequest,
     UpdatePermissionsRequest,
@@ -65,6 +66,10 @@ _logger = get_module_logger("control_center.admin")
 
 def _user_data_path(config: Config) -> Path:
     return Path(config.DATA_DIR) / "user_data.json"
+
+
+def _is_user_id_key(key: str) -> bool:
+    return key.isdigit() or (key.startswith("-") and key[1:].isdigit())
 
 
 def _detail_response(telegram_id: str, entry: dict) -> UserDetailResponse:
@@ -117,6 +122,8 @@ def get_users() -> UsersResponse:
     config = Config()
     user_data = load_user_data(_user_data_path(config), logger=_logger)
 
+    # Backlog 9: Web-Benutzer ohne Telegram haben NEGATIVE IDs
+    # (services/user_admin.py::create_web_user) - nicht mehr nur isdigit().
     users = [
         UserEntry(
             telegram_id=int(telegram_id),
@@ -125,7 +132,7 @@ def get_users() -> UsersResponse:
             created_at=data.get("created_at"),
         )
         for telegram_id, data in user_data.items()
-        if telegram_id.isdigit()
+        if _is_user_id_key(telegram_id)
     ]
     users.sort(key=lambda u: u.telegram_id)
     return UsersResponse(users=users)
@@ -154,6 +161,35 @@ def post_create_user(payload: CreateUserRequest) -> UserDetailResponse:
     _require_saved(saved)
     _logger.info(f"✅ [control_center] Benutzer {telegram_id} angelegt")
     return _detail_response(telegram_id, entry)
+
+
+@router.post(
+    "/web-users",
+    response_model=UserDetailResponse,
+    status_code=201,
+    dependencies=[Depends(verify_same_origin)],
+)
+def post_create_web_user(payload: CreateWebUserRequest) -> UserDetailResponse:
+    """Backlog 9: Web-Benutzer ohne Telegram anlegen = Freischaltung für den
+    Login mit Navidrome-Benutzer. Vergibt eine negative ID (unter dem
+    user_data-Lock). Rolle höchstens admin (OWNER nur über Telegram)."""
+    config = Config()
+
+    def _mutate(users: dict):
+        return user_admin.create_web_user(users, payload.navidrome_user, payload.role)
+
+    try:
+        (new_id, entry), _, saved = update_user_data(_mutate, _user_data_path(config), logger=_logger)
+    except user_admin.UserAlreadyExistsError as e:
+        raise _conflict(e) from e
+    except user_admin.OwnerPromotionDeniedError as e:
+        raise _forbidden(e) from e
+    except user_admin.UserAdminError as e:
+        raise _validation_error(e) from e
+
+    _require_saved(saved)
+    _logger.info(f"✅ [control_center] Web-Benutzer {new_id} ({entry['navidrome_user']}) angelegt")
+    return _detail_response(new_id, entry)
 
 
 @router.patch(
