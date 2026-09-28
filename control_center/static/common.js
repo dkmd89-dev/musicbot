@@ -246,6 +246,8 @@ async function checkAuth() {
     const who = await res.json();
     const userEl = document.getElementById("current-user");
     if (userEl) userEl.textContent = `Angemeldet als #${who.user_id} (${who.access_level})`;
+    const logoutBtn = document.getElementById("logout-btn");
+    if (logoutBtn) logoutBtn.hidden = false;
     showOnly("dashboard-view");
     return who;
   } catch (err) {
@@ -287,6 +289,27 @@ async function onNavidromeLogin(event) {
     if (btn) btn.disabled = false;
   }
 }
+
+// Abmelden: Server löscht das Session-Cookie (POST, Same-Origin-Check),
+// danach Login-Ansicht. Auch bei Fehler lokal abmelden-Zustand zeigen.
+async function onLogout() {
+  const btn = document.getElementById("logout-btn");
+  if (btn) btn.disabled = true;
+  try {
+    await fetch(apiUrl("/api/v1/auth/logout"), { method: "POST", credentials: "same-origin" });
+  } catch (err) {
+    // Netzwerkfehler: Cookie evtl. noch gesetzt - Neuladen zeigt den echten Zustand.
+  }
+  const userEl = document.getElementById("current-user");
+  if (userEl) userEl.textContent = "";
+  if (btn) { btn.hidden = true; btn.disabled = false; }
+  showOnly("login-view");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const logoutBtn = document.getElementById("logout-btn");
+  if (logoutBtn) logoutBtn.addEventListener("click", onLogout);
+});
 
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("navidrome-login-form");

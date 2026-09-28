@@ -1291,6 +1291,18 @@ async def test_admin_page_has_runtime_snapshot_card(client):
 
 
 @pytest.mark.asyncio
+async def test_header_has_logout_button(client):
+    """Abmelden: Button in der Kopfzeile (erst nach erfolgreichem whoami
+    sichtbar), ruft POST /api/v1/auth/logout und zeigt die Login-Ansicht."""
+    html = (await client.get("/")).text
+    js = (await client.get("/static/common.js")).text
+
+    assert 'id="logout-btn"' in html
+    assert "/api/v1/auth/logout" in js
+    assert 'showOnly("login-view");' in js.split("async function onLogout", 1)[1].split("document.addEventListener", 1)[0]
+
+
+@pytest.mark.asyncio
 async def test_login_view_has_navidrome_login_form(client):
     """Backlog 9: Login mit Navidrome-Benutzer neben dem Telegram-Widget.
     Passwort nur im POST-Body, Feld wird sofort geleert, kein Storage."""

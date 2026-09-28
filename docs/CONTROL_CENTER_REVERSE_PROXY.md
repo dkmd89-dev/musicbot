@@ -95,6 +95,7 @@ Vertrauensgrenze ist die Loopback-Bindung.
 - Rolle über Navidrome-Login höchstens ADMIN — OWNER nur über den Telegram-Login.
 - Einheitliche Meldung „Benutzername oder Passwort falsch" (auch für nicht freigeschaltete Konten); 429 mit `Retry-After` nach 5 Fehlversuchen; 503, wenn Navidrome nicht erreichbar ist.
 - Setzt `X-Forwarded-For` im nginx voraus (siehe Tabelle in Abschnitt 2).
+- **Abmelden** (2026-09-28): Button „Abmelden" in der Kopfzeile → `POST /api/v1/auth/logout` (Same-Origin-Check) löscht `cc_session` mit identischem Path (`/controlcenter` hinter nginx). Die Session ist ein signiertes Cookie ohne serverseitigen Speicher — eine vorher kopierte Cookie-Kopie bliebe bis zum Ablauf (7 Tage) gültig; sofort sperren weiterhin über Rolle/Löschen in der Nutzerverwaltung.
 
 ## 5. Regeln für neue UI-Seiten
 
