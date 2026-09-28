@@ -1,0 +1,25 @@
+{# Gemeinsamer Kopf für /logs (Logdateien) und /logger (Logger-Einstellungen)
+   - ein Menüpunkt "Logs", Umschalten über die Reiter. Erwartet page_id. #}
+<div class="page-header d-print-none mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col-12 col-md">
+      <div class="page-pretitle">System</div>
+      <h2 class="page-title"><svg class="icon me-2 text-teal"><use href="#i-logs"/></svg>Logs</h2>
+      <div class="text-secondary mt-1">Log-Dateien lesen und Logger-Module konfigurieren.</div>
+    </div>
+  </div>
+  <ul class="nav nav-tabs mt-3" id="logs-subnav">
+    <li class="nav-item">
+      <a href="{{ base_path }}/logs"
+         class="nav-link{{ ' active' if page_id == 'logs' else '' }}"{% if page_id == 'logs' %} aria-current="page"{% endif %}>
+        <svg class="icon me-1"><use href="#i-logs"/></svg>Logdateien
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="{{ base_path }}/logger"
+         class="nav-link{{ ' active' if page_id == 'logger' else '' }}"{% if page_id == 'logger' %} aria-current="page"{% endif %}>
+        <svg class="icon me-1"><use href="#i-adjustments"/></svg>Logger-Einstellungen
+      </a>
+    </li>
+  </ul>
+</div>

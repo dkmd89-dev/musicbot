@@ -29,7 +29,9 @@ COMMON_JS = CC_DIR / "static" / "common.js"
 ICONS = CC_DIR / "templates" / "_icons.html"
 
 ALL_PAGES = ["/", "/downloads", "/library", "/statistics", "/health", "/navidrome", "/logs", "/logger", "/admin"]
-NAV_ICONS = ["home", "download", "books", "chart", "headphones", "health", "logs", "adjustments", "settings"]
+# CC-UI Logs/Logger: "adjustments" (Logger) ist kein Sidebar-Eintrag mehr,
+# /logger hängt als Reiter unter "Logs".
+NAV_ICONS = ["home", "download", "books", "chart", "headphones", "health", "logs", "settings"]
 
 
 @pytest_asyncio.fixture

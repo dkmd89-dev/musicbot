@@ -48,6 +48,12 @@ global.document = {
 };
 global.window = { confirm: () => true };
 global.apiUrl = (u) => u;
+// CC-UI Logs/Logger: common.js-Helfer, die logger.js jetzt nutzt. ccConfirm
+// bildet den dokumentierten Rueckfall ohne Tabler nach (window.confirm(text)).
+global.ccIcon = (name) => `<svg data-icon="${name}"></svg>`;
+global.ccConfirm = (o) => Promise.resolve(window.confirm(o.text));
+global.toasts = [];
+global.ccToast = (kind, title, text) => { global.toasts.push({ kind, title, text }); };
 global._loadInto = async () => {};
 global.checkAuth = () => Promise.resolve(null);
 global.showOnly = () => {};
@@ -103,6 +109,7 @@ const api = new Function(src + "\nreturn { _loggerState, renderConfig, renderRun
   out.drafts = api._loggerState.drafts;
   out.persisted = api._loggerState.config && api._loggerState.config.modules;
   out.calls = calls;
+  out.toasts = global.toasts;
   // Bugfix (Harness): console.log() gefolgt von process.exit() kann bei
   // groesserem Output stdout abschneiden, wenn stdout eine Pipe ist
   // (subprocess.run(capture_output=True) nutzt Pipes) - der Write ist dort
@@ -532,7 +539,7 @@ def test_detail_file_handler_deviation_is_reported(tmp_path: Path) -> None:
     rt = _runtime(handlers={"ModA": ["StreamHandler"], "ModB": ["StreamHandler"]})
     html = _run(tmp_path, {"modules": _mods(), "runtime": rt,
                            "steps": [{"op": "select", "name": "ModA"}]})["detail"]
-    assert "⚠ Abweichung" in html
+    assert "Abweichung" in html
     assert "Konfiguration wurde noch nicht angewendet" in html
     assert "file_handler: aus → an" in html
     assert "FileHandler: nicht vorhanden" in html
@@ -554,7 +561,7 @@ def test_diff_compares_persisted_state_not_the_unsaved_draft(tmp_path: Path) -> 
     ]})
     # Der Entwurf aendert Desired-vs-Actual nicht — erst Speichern persistiert.
     assert "identisch" in out["detail"]
-    assert "⚠ Abweichung" not in out["detail"]
+    assert '<div class="alert-title">Abweichung</div>' not in out["detail"]
 
 
 def test_file_handler_subclasses_count_as_file_handler(tmp_path: Path) -> None:
@@ -595,7 +602,7 @@ def test_apply_clear_does_not_claim_everything_was_checked(tmp_path: Path) -> No
         "status": "applied", "message": "ok",
         "preflight": dict(_PF_BASE, status="clear", active={"repair": False}, unverified=[]),
     }})["applyStatus"]
-    assert "✓ Keine bekannte kritische Aktivität erkannt" in html
+    assert "Keine bekannte kritische Aktivität erkannt" in html
     assert "Konfiguration kann angewendet werden" in html
     assert "alert-success" in html
     assert "alle Aktivitäten" not in html.lower()
@@ -608,7 +615,7 @@ def test_apply_unverified_lists_activities_and_is_never_shown_as_clear(tmp_path:
         "preflight": dict(_PF_BASE, status="unverified", active={"repair": False},
                           unverified=["downloads", "backups"]),
     }})["applyStatus"]
-    assert "⚠ Konfiguration kann angewendet werden" in html
+    assert "Konfiguration kann angewendet werden" in html
     assert "Der Repair-Lock ist frei" in html
     assert "<li>Downloads</li>" in html and "<li>Backups</li>" in html
     assert "nicht zuverlässig live geprüft" in html
@@ -623,7 +630,7 @@ def test_apply_blocked_409_is_error_state_without_success(tmp_path: Path) -> Non
         "code": "LOGGER_APPLY_BLOCKED", "message": "x",
         "preflight": dict(_PF_BASE, status="blocked", active={"repair": True}, unverified=[]),
     }}})["applyStatus"]
-    assert "⚠ Anwendung blockiert" in html
+    assert "Anwendung blockiert" in html
     assert "alert-danger" in html
     assert "Repair-/Maintenance-Lauf wurde erkannt" in html
     assert "PF-Meldung" in html  # konkrete Aktivitaet/Meldung des Preflight
@@ -635,7 +642,7 @@ def test_apply_blocked_409_is_error_state_without_success(tmp_path: Path) -> Non
 def test_apply_rate_limit_shows_retry_after_seconds(tmp_path: Path) -> None:
     html = _apply(tmp_path, {"status": 429, "headers": {"retry-after": "12"},
                              "body": {"detail": {"code": "LOGGER_APPLY_RATE_LIMITED", "message": "zu schnell"}}})["applyStatus"]
-    assert "⏳ Zu viele Anfragen" in html
+    assert "Zu viele Anfragen" in html
     assert "Bitte noch <strong id=\"logger-rate-limit-countdown\">12</strong> Sekunden warten" in html
 
 
@@ -665,3 +672,45 @@ def test_apply_confirm_warns_about_unsaved_changes(tmp_path: Path) -> None:
     out = json.loads(result.stdout.strip().splitlines()[-1])
     assert "ungespeicherte Änderungen" in out["confirm"]
     assert "NICHT angewendet" in out["confirm"]
+
+
+# ---------------------------------------------------------------------------
+# CC-UI Logs/Logger: ccConfirm statt window.confirm(), Toasts
+# ---------------------------------------------------------------------------
+
+def test_apply_asks_via_cc_confirm_and_sends_nothing_when_declined(tmp_path: Path) -> None:
+    script = _HARNESS.replace(
+        "global.ccConfirm = (o) => Promise.resolve(window.confirm(o.text));",
+        "global.ccConfirm = (o) => { global.__opts = o; return Promise.resolve(false); };",
+    ).replace("out.calls = calls;", "out.calls = calls; out.opts = global.__opts;")
+    path = tmp_path / "harness.js"
+    path.write_text(script, encoding="utf-8")
+    scenario = {"modules": _mods(), "steps": [{"op": "select", "name": "ModA"}, {"op": "apply"}]}
+    result = subprocess.run(
+        [_NODE, str(path), str(LOGGER_JS), json.dumps(scenario)],
+        capture_output=True, text=True, timeout=30, check=True,
+    )
+    out = json.loads(result.stdout.strip().splitlines()[-1])
+    assert out["opts"]["title"] == "Konfiguration anwenden?"
+    assert out["opts"]["danger"] is True
+    assert "neu gestartet" in out["opts"]["text"]
+    assert not [c for c in out["calls"] if "/apply" in c["url"]]
+    assert out["applyStatus"] == ""
+
+
+def test_apply_success_shows_toast_and_icon_alert(tmp_path: Path) -> None:
+    out = _run(tmp_path, {"modules": _mods(), "fetch": {"status": 200, "body": {
+        "preflight": {"status": "clear"}, "message": "Restart geplant."}},
+        "steps": [{"op": "select", "name": "ModA"}, {"op": "apply"}]})
+    assert {"kind": "success", "title": "Neustart geplant", "text": "Restart geplant."} in out["toasts"]
+    assert '<svg data-icon="check"></svg>Keine bekannte kritische Aktivität erkannt' in out["applyStatus"]
+
+
+def test_save_success_shows_toast(tmp_path: Path) -> None:
+    out = _run(tmp_path, {"modules": _mods(), "steps": [
+        {"op": "select", "name": "ModA"},
+        {"op": "draft", "name": "ModA", "field": "level", "value": "ERROR"},
+        {"op": "save"},
+    ]})
+    assert [t for t in out["toasts"] if t["kind"] == "success" and t["title"] == "Gespeichert"]
+    assert "ModA" in out["toasts"][0]["text"]

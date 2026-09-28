@@ -246,7 +246,7 @@ function renderRuntimeStatus(el, body) {
     el.innerHTML = '<div class="alert alert-secondary mb-0"><div><div class="alert-title">Kein Runtime-Snapshot vorhanden</div>' +
       '<div class="text-secondary">Er wird beim nächsten erfolgreichen Bot-Start geschrieben. ' +
       'Der Runtime-Zustand ist bis dahin unbekannt.</div></div></div>';
-    if (startupEl) startupEl.innerHTML = '<p class="empty-note mb-0">Nicht verfügbar — noch kein Runtime-Snapshot vorhanden.</p>';
+    if (startupEl) startupEl.innerHTML = '<p class="text-secondary mb-0">Nicht verfügbar — noch kein Runtime-Snapshot vorhanden.</p>';
     _loggerRefreshModuleViews();
     return;
   }
@@ -365,7 +365,7 @@ function _loggerRenderModuleList() {
   }
   if (!total) return;
   if (!names.length) {
-    el.className = "logger-module-list empty-note p-3";
+    el.className = "logger-module-list text-secondary p-3";
     el.innerHTML = "Kein Modul entspricht dem Filter.";
     return;
   }
@@ -391,7 +391,7 @@ function renderConfig(el, body) {
     _loggerState.drafts = {};
     const countEl = document.getElementById("logger-module-count");
     if (countEl) countEl.textContent = "";
-    el.className = "logger-module-list empty-note p-3";
+    el.className = "logger-module-list text-secondary p-3";
     el.innerHTML = 'Keine persistierte Konfiguration vorhanden. Der Bot muss mindestens einmal gestartet worden sein, damit die Default-Konfiguration generiert wird.';
     _loggerRenderDetail();
     _loggerRefreshRuntimeHints();
@@ -493,7 +493,7 @@ function _loggerDiffHtml(name) {
   }
   if (diff.status === "differs") {
     return '<div class="alert alert-warning mb-0"><div>' +
-      '<div class="alert-title">⚠ Abweichung</div>' +
+      '<div class="alert-title">Abweichung</div>' +
       '<div class="text-secondary mb-1">Konfiguration wurde noch nicht angewendet. ' +
         'Beim nächsten Bot-Neustart würden wirksam (actual → desired):</div>' +
       '<ul class="mb-0">' + diff.changes.map(function(c) { return '<li>' + c + '</li>'; }).join("") + '</ul>' +
@@ -528,7 +528,7 @@ function _loggerRenderDetail() {
   const m = name ? _loggerPersistedModule(name) : null;
 
   if (!name || m === null) {
-    el.innerHTML = '<p class="empty-note mb-0">' +
+    el.innerHTML = '<p class="text-secondary mb-0">' +
       (_loggerState.config && Object.keys(_loggerState.config.modules || {}).length
         ? 'Modul in der Liste auswählen, um Level und eigene Log-Datei zu bearbeiten.'
         : 'Keine Module verfügbar.') + '</p>';
@@ -691,6 +691,7 @@ async function _loggerSaveModule() {
         "Der laufende Bot wurde nicht verändert. Wirksam erst nach " +
           "„Konfiguration anwenden“ (Bot-Neustart)."
       );
+      ccToast("success", "Gespeichert", name + " — wirksam nach „Konfiguration anwenden“.");
       reload = true;
       return;
     }
@@ -826,13 +827,16 @@ function _loggerRenderAlert(kind, title, body) {
   _loggerRenderAlertInto("logger-apply-status", kind, title, body);
 }
 
+// CC-UI Logs/Logger: Icon je Hinweis-Art statt Emoji-Präfix im Titel.
+const _LOGGER_ALERT_ICONS = { success: "check", warning: "alert", danger: "alert", info: "info" };
+
 function _loggerRenderAlertInto(elementId, kind, title, body) {
   // kind: "success" | "warning" | "danger" | "info"
   const el = document.getElementById(elementId);
   if (!el) return;
   el.innerHTML =
     '<div class="alert alert-' + kind + ' mb-0"><div>' +
-      '<div class="alert-title">' + _escapeHtml(title) + '</div>' +
+      '<div class="alert-title">' + ccIcon(_LOGGER_ALERT_ICONS[kind] || "info", "me-1") + _escapeHtml(title) + '</div>' +
       '<div class="text-secondary">' + body + '</div>' +
     '</div></div>';
 }
@@ -865,18 +869,22 @@ async function _loggerApply() {
   const btn = document.getElementById("logger-apply-btn");
   if (!btn || btn.disabled) return;
 
-  const confirmed = window.confirm(
-    "Administrativer Vorgang:\n\n" +
-    "Der Bot wird neu gestartet. Die persistierte Logger-Konfiguration " +
-    "wird beim Neustart angewendet.\n\n" +
-    (_loggerAnyDirty()
-      ? "ACHTUNG: Es gibt ungespeicherte Änderungen — sie werden NICHT angewendet.\n\n"
-      : "") +
-    "Ein laufender Repair-/Maintenance-Lauf würde den Restart blockieren. " +
-    "Laufende Downloads oder Backups können nicht geprüft werden und " +
-    "würden unterbrochen.\n\n" +
-    "Fortfahren?"
-  );
+  // CC-UI Logs/Logger: Bestätigungs-Modal (ccConfirm) statt Browser-Dialog;
+  // ohne Tabler fällt ccConfirm selbst auf den Browser-Dialog zurück.
+  const confirmed = await ccConfirm({
+    title: "Konfiguration anwenden?",
+    text:
+      "Administrativer Vorgang: Der Bot wird neu gestartet. Die persistierte " +
+      "Logger-Konfiguration wird beim Neustart angewendet. " +
+      (_loggerAnyDirty()
+        ? "ACHTUNG: Es gibt ungespeicherte Änderungen — sie werden NICHT angewendet. "
+        : "") +
+      "Ein laufender Repair-/Maintenance-Lauf würde den Restart blockieren. " +
+      "Laufende Downloads oder Backups können nicht geprüft werden und " +
+      "würden unterbrochen.",
+    confirmLabel: "Anwenden (Neustart)",
+    danger: true,
+  });
   if (!confirmed) return;
 
   _loggerClearRateLimitTimer();
@@ -899,10 +907,11 @@ async function _loggerApply() {
       const message = (body && body.message) || "Restart geplant.";
       const reloadHint =
         '<div class="mt-2 small">Die Seite kann in wenigen Sekunden aktualisiert werden, um den neuen Runtime-Zustand zu sehen.</div>';
+      ccToast("success", "Neustart geplant", message);
       if (preflight.status === "unverified") {
         _loggerRenderAlert(
           "warning",
-          "⚠ Konfiguration kann angewendet werden",
+          "Konfiguration kann angewendet werden",
           '<div>Der Repair-Lock ist frei.</div>' +
             _loggerUnverifiedListHtml(preflight) +
             '<div class="mt-2">Der Bot wird kontrolliert neu gestartet.</div>' +
@@ -912,7 +921,7 @@ async function _loggerApply() {
       } else {
         _loggerRenderAlert(
           "success",
-          "✓ Keine bekannte kritische Aktivität erkannt",
+          "Keine bekannte kritische Aktivität erkannt",
           '<div>Konfiguration kann angewendet werden. Der Bot wird kontrolliert neu gestartet.</div>' +
             '<div class="small mt-1">' + _escapeHtml(message) + '</div>' +
             reloadHint
@@ -930,7 +939,7 @@ async function _loggerApply() {
       if (code === "LOGGER_APPLY_BLOCKED" && preflight) {
         _loggerRenderAlert(
           "danger",
-          "⚠ Anwendung blockiert",
+          "Anwendung blockiert",
           _loggerBlockedBodyHtml(preflight)
         );
       } else if (code === "LOGGER_CONFIG_MISSING") {
@@ -964,7 +973,7 @@ async function _loggerApply() {
       }
       _loggerRenderAlert(
         "warning",
-        "⏳ Zu viele Anfragen",
+        "Zu viele Anfragen",
         '<div>Bitte noch <strong id="logger-rate-limit-countdown">' + seconds + '</strong> Sekunden warten.</div>' +
           '<div class="small mt-1">' +
             _escapeHtml(detail.message || "Ein weiterer Apply-Versuch folgt zu schnell aufeinander.") +

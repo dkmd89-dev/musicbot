@@ -1238,9 +1238,12 @@ async def test_logs_page_has_filter_and_content_panels(client):
     assert 'id="logs-search-input"' in html
     assert 'id="logs-filter-btn"' in html
     assert 'id="logs-content"' in html
-    assert "/api/v1/logs" in html
-    assert "loadLogs" in html
-    assert "renderLogs" in html
+    assert "/static/pages/logs.js" in html
+    # CC-UI Logs/Logger: Logik aus dem Inline-Script nach logs.js ausgelagert.
+    js = (await client.get("/static/pages/logs.js")).text
+    assert "/api/v1/logs" in js
+    assert "loadLogs" in js
+    assert "renderLogs" in js
 
 
 @pytest.mark.asyncio
@@ -1492,7 +1495,7 @@ async def test_logger_page_has_three_module_actions(client) -> None:
     html = (await client.get("/logger")).text
     assert "Änderungen speichern" in html
     assert "Zurücksetzen" in html
-    assert "🚀 Konfiguration anwenden" in html
+    assert "Konfiguration anwenden" in html
 
 
 @pytest.mark.anyio
@@ -1514,13 +1517,21 @@ async def test_logger_page_references_js_file(client) -> None:
 
 
 @pytest.mark.anyio
-async def test_logger_sidebar_entry_present_on_all_pages(client) -> None:
-    # Der Sidebar-Eintrag „Logger" muss auf allen Seiten erscheinen.
-    for path in ("/", "/logs", "/admin", "/navidrome"):
+async def test_logger_reachable_via_logs_subnav(client) -> None:
+    # CC-UI Logs/Logger (bewusst angepasst): kein eigener Sidebar-Eintrag
+    # „Logger" mehr - /logger ist über den Reiter „Logger-Einstellungen"
+    # im gemeinsamen Logs-Kopf erreichbar, der Sidebar-Eintrag „Logs" gilt
+    # für beide Seiten.
+    for path in ("/", "/admin", "/navidrome"):
         r = await client.get(path)
         assert r.status_code == 200, f"{path} lieferte {r.status_code}"
-        assert "/logger" in r.text, f"{path}: /logger-Link fehlt in Sidebar"
-        assert "Logger</span>" in r.text, f"{path}: Logger-Titel fehlt"
+        assert "Logger</span>" not in r.text, f"{path}: alter Logger-Sidebar-Eintrag"
+    for path in ("/logs", "/logger"):
+        html = (await client.get(path)).text
+        subnav = html[html.index('id="logs-subnav"'):]
+        subnav = subnav[:subnav.index("</ul>")]
+        assert 'href="/logger"' in subnav and 'href="/logs"' in subnav
+        assert "Logger-Einstellungen" in subnav
 
 
 @pytest.mark.anyio

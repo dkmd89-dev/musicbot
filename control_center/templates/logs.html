@@ -1,49 +1,31 @@
 {% extends "_base.html" %}
 {% block title %}Logs – MusicBot Control Center{% endblock %}
 {% block content %}
-<div class="page-header d-print-none mb-4">
-  <div class="row align-items-center">
-    <div class="col">
-      <h1 class="page-title">📋 Logs</h1>
-      <div class="text-secondary">
-        Diagnose-Log-Ansicht für die Analyse von MusicBot-Komponenten.
+{# CC-UI Logs/Logger nach docs/CONTROL_CENTER_UI_STANDARD.md: gemeinsamer
+   Kopf mit Reitern (_logs_header.html), Log-Zeilen im Terminal-Stil. #}
+{% include "_logs_header.html" %}
+
+<div class="card mb-3">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title"><svg class="icon me-2"><use href="#i-search"/></svg>Filter</h3>
+      <div class="card-subtitle">
+        Kein Zeitraum-, Job- oder User-Filter: Logzeilen enthalten kein Datum (nur Uhrzeit)
+        und keine strukturierte Job-/User-Zuordnung.
       </div>
     </div>
-  </div>
-</div>
-
-<div class="alert alert-info mb-4" role="alert">
-  <div>
-    <h4 class="alert-title">ℹ️ Verfügbare Filter</h4>
-    <div class="text-secondary">
-      Kein Zeitraum-, Job- oder User-Filter: Logzeilen enthalten kein Datum
-      (nur Uhrzeit) und keine strukturierte Job-/User-Zuordnung.
-      Stattdessen stehen Log-Datei, Level, Komponente und Volltextsuche zur Verfügung.
-    </div>
-  </div>
-</div>
-
-<div class="card mb-4">
-  <div class="card-header">
-    <h2 class="card-title">🔎 Filter</h2>
     <div class="card-actions">
-      <button
-        id="logs-refresh-btn"
-        type="button"
-        class="btn btn-outline-primary"
-      >
-        Aktualisieren
+      <button id="logs-refresh-btn" type="button" class="btn btn-sm">
+        <svg class="icon me-1"><use href="#i-refresh"/></svg>Aktualisieren
       </button>
     </div>
   </div>
-
   <div class="card-body">
     <div class="row g-3">
       <div class="col-12 col-md-4">
         <label for="logs-source-select" class="form-label">Log-Datei</label>
         <select id="logs-source-select" class="form-select"></select>
       </div>
-
       <div class="col-12 col-md-3">
         <label for="logs-level-select" class="form-label">Level</label>
         <select id="logs-level-select" class="form-select">
@@ -55,34 +37,17 @@
           <option value="CRITICAL">CRITICAL</option>
         </select>
       </div>
-
       <div class="col-12 col-md-5">
         <label for="logs-component-input" class="form-label">Komponente</label>
-        <input
-          type="text"
-          id="logs-component-input"
-          class="form-control"
-          placeholder="z. B. TELEGRAM_BOT"
-        >
+        <input type="text" id="logs-component-input" class="form-control" placeholder="z. B. TELEGRAM_BOT">
       </div>
-
       <div class="col-12 col-md-9">
         <label for="logs-search-input" class="form-label">Volltextsuche</label>
-        <input
-          type="text"
-          id="logs-search-input"
-          class="form-control"
-          placeholder="Nach Logtext suchen"
-        >
+        <input type="text" id="logs-search-input" class="form-control" placeholder="Nach Logtext suchen">
       </div>
-
       <div class="col-12 col-md-3 d-flex align-items-end">
-        <button
-          id="logs-filter-btn"
-          type="button"
-          class="btn btn-primary w-100"
-        >
-          Filtern
+        <button id="logs-filter-btn" type="button" class="btn btn-primary w-100">
+          <svg class="icon me-1"><use href="#i-search"/></svg>Filtern
         </button>
       </div>
     </div>
@@ -91,85 +56,17 @@
 
 <div class="card">
   <div class="card-header">
-    <h2 class="card-title">📝 Log-Zeilen</h2>
+    <h3 class="card-title"><svg class="icon me-2"><use href="#i-logs"/></svg>Log-Zeilen</h3>
+    <div class="card-actions"><span id="logs-count" class="text-secondary small"></span></div>
   </div>
-
-  <div class="card-body">
-    <div id="logs-content" class="empty-note">
-      Lädt…
+  <div id="logs-content">
+    <div class="card-body placeholder-glow">
+      <div class="placeholder col-9 mb-2"></div><div class="placeholder col-7 mb-2"></div><div class="placeholder col-5"></div>
     </div>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script>
-  // Master-Prompt Abschnitt 12 "LOGS & DIAGNOSTICS" - erster Schritt.
-  // Liest services/logs/reader.py::read_logs() ueber GET /api/v1/logs
-  // (siehe dortigen Docstring fuer die bewussten Einschraenkungen:
-  // kein Zeitraum-/Job-/User-Filter, da die Datenquelle das nicht
-  // zuverlaessig hergibt - Master-Prompt Regel 38).
-  const _LOG_LEVEL_BADGE = {
-    ERROR: "status-failed", CRITICAL: "status-failed", WARNING: "WARNING",
-  };
-
-  function renderLogs(el, body) {
-    // Quelle-Dropdown nur beim ersten Laden befuellen (sonst geht die
-    // Nutzerauswahl bei jedem Refresh verloren).
-    const sourceSelect = document.getElementById("logs-source-select");
-    if (!sourceSelect.options.length) {
-      sourceSelect.innerHTML = body.available_sources.map((s) =>
-        `<option value="${_escapeHtml(s)}">${_escapeHtml(s)}</option>`
-      ).join("");
-      sourceSelect.value = body.source;
-    }
-
-    if (!body.entries.length) {
-      el.innerHTML = '<p class="empty-note">Keine passenden Log-Zeilen.</p>';
-      return;
-    }
-    const trunc = body.total_matched > body.entries.length
-      ? `<p class="empty-note">Zeige ${body.entries.length} von ${body.total_matched} — weitere nicht geladen (kein Auto-Rendern großer Listen).</p>`
-      : "";
-    el.innerHTML = trunc + '<div class="row-list">' + body.entries.map((e) => {
-      const badgeClass = e.level ? (_LOG_LEVEL_BADGE[e.level] || "INFO") : null;
-      const levelHtml = badgeClass
-        ? `<span class="badge badge-${badgeClass}">${_escapeHtml(e.level)}</span>`
-        : "";
-      const componentHtml = e.component ? `[${_escapeHtml(e.component)}] ` : "";
-      return `
-        <div class="row-item">
-          <div class="row-main">${levelHtml}${componentHtml}${_escapeHtml(e.message)}</div>
-          <div class="row-count">${_escapeHtml(e.time)}</div>
-        </div>
-      `;
-    }).join("") + "</div>";
-  }
-
-  function loadLogs() {
-    const params = new URLSearchParams();
-    const source = document.getElementById("logs-source-select").value;
-    const level = document.getElementById("logs-level-select").value;
-    const component = document.getElementById("logs-component-input").value.trim();
-    const search = document.getElementById("logs-search-input").value.trim();
-    if (source) params.set("source", source);
-    if (level) params.set("level", level);
-    if (component) params.set("component", component);
-    if (search) params.set("search", search);
-    params.set("limit", "200");
-    return _loadInto("logs-content", `/api/v1/logs?${params.toString()}`, renderLogs);
-  }
-
-  document.getElementById("logs-refresh-btn").addEventListener("click", loadLogs);
-  document.getElementById("logs-filter-btn").addEventListener("click", loadLogs);
-  document.getElementById("logs-source-select").addEventListener("change", loadLogs);
-
-  function initPage() {
-    checkAuth().then((who) => {
-      if (!who) return;
-      loadLogs();
-    });
-  }
-  initPage();
-</script>
+<script src="{{ base_path }}/static/pages/logs.js"></script>
 {% endblock %}
