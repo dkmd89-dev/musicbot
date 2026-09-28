@@ -36,12 +36,24 @@
   </div>
 </div>
 
+<div id="downloads-kpi" class="metrics-grid mb-3" hidden></div>
+
 <div class="card">
   <div class="card-header">
-    <h2 class="card-title">📋 Verlauf</h2>
+    <div>
+      <h2 class="card-title">📋 Verlauf</h2>
+      <div class="text-secondary small">
+        Ge = Genre · Ly = Lyrics · Co = Cover · MB = MusicBrainz · Lo = Loudness
+      </div>
+    </div>
   </div>
 
   <div class="card-body">
+    <div class="mb-3">
+      <label for="downloads-search" class="visually-hidden">Verlauf durchsuchen</label>
+      <input id="downloads-search" type="search" class="form-control"
+             placeholder="Titel oder Artist suchen …" autocomplete="off">
+    </div>
     <div id="downloads-content" class="empty-note">
       Lädt…
     </div>
