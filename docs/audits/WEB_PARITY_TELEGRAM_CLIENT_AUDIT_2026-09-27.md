@@ -1,7 +1,7 @@
 # Web-Parität und „Telegram als Client" — Audit
 
-**Datum:** 2026-09-27 (Ersterstellung 08:00 Uhr, PR #316; verifiziert und ergänzt 2026-09-27 nachmittags nach CC-LIB-FINAL, siehe Abschnitt 7; erneut aktualisiert 2026-09-27 abends nach Client-Consolidation-Phase A/B, siehe Abschnitt 8; erneut ergänzt nach Backlog-Abarbeitung Backups/Duplikat-Check/AccessLevel-Move, siehe Abschnitt 12; Downloads im Web abgeschlossen (Phase D.10–D.13), siehe Abschnitt 14)
-**Status:** 🟡 ANALYSIS COMPLETE — DECISION PENDING (keine Implementierung, reines Dokument; fünf zuvor offene Punkte inzwischen umgesetzt: User-Verwaltung/Logger siehe Abschnitt 8, Backups/Duplikat-Check-CC/AccessLevel-Move siehe Abschnitt 12)
+**Datum:** 2026-09-27 (Ersterstellung 08:00 Uhr, PR #316; verifiziert und ergänzt 2026-09-27 nachmittags nach CC-LIB-FINAL, siehe Abschnitt 7; erneut aktualisiert 2026-09-27 abends nach Client-Consolidation-Phase A/B, siehe Abschnitt 8; erneut ergänzt nach Backlog-Abarbeitung Backups/Duplikat-Check/AccessLevel-Move, siehe Abschnitt 12; Downloads im Web abgeschlossen (Phase D.10–D.13), siehe Abschnitt 14; Nutzerentscheidungen 1/3/4/5 getroffen, siehe Abschnitt 15)
+**Status:** 🟢 DECISIONS MADE (2026-09-28, Abschnitt 15) — Umsetzung läuft backlogweise (reines Dokument; fünf zuvor offene Punkte inzwischen umgesetzt: User-Verwaltung/Logger siehe Abschnitt 8, Backups/Duplikat-Check-CC/AccessLevel-Move siehe Abschnitt 12)
 **Auftrag (Nutzer, 2026-09-27):** Das Control Center (CC) soll vollständig unabhängig von Telegram werden; Telegram ist am Ende nur noch ein Client neben dem Web.
 **Vorgehen:** CLAUDE.md §3.A — Ist-Zustand → Verantwortlichkeiten → Zielgrenzen → kleinster Schritt.
 **Ablösung:** Die Matrix in `CC-AC-10A_ADMIN_INVENTORY_ARCHITECTURE_CONTRACT_2026-09-22.md` („🔴 Telegram-only" für User-Verwaltung, Backups, Restart, Maintenance) ist durch CC-AC-10B/C/D überholt; dieses Dokument hat Vorrang.
@@ -100,6 +100,8 @@ Leitregeln (aus den bisherigen Entscheidungen abgeleitet, nicht neu erfunden):
 
 ## 4. Entscheidungen (Nutzer)
 
+> **Stand 2026-09-28: alle fünf Entscheidungen getroffen** — 2 = JA (umgesetzt, Abschnitt 11/14), 1 = E1 Snapshot, 3 = eigener Login mit Navidrome-Benutzer (auch ohne Telegram-Bindung), 4 = zurückgestellt, 5 = nicht ins Web. Details und Folgen: Abschnitt 15. Die ursprünglichen Fragen bleiben unten historisch stehen.
+
 1. **Cross-Prozess-Mechanismus** (schaltet Error-Verwaltung, Logger-Zähler, Live-Downloads frei): E1 (Bot schreibt Snapshot-Datei, CC liest read-only; Reset bleibt Telegram/Neustart) — empfohlen, **oder** zusätzlich eine Request-Datei, die der Bot pollt (Aktionen aus dem Web), **oder** ein IPC (nicht empfohlen, L3-Präzedenz).
 2. **Downloads aus dem Web starten?** Ja/Nein. Ja bedeutet: Extraktion der Orchestrierung aus `klassen/download_handler.py` in `services/` plus ein Ausführungsweg im Bot-Prozess (Entscheidung 1 ist Voraussetzung). Größter Einzelposten, eigene ARCH-Phase.
 3. **Login ohne Telegram?** Nur relevant, wenn Telegram komplett entfallen darf. Sonst bleibt Telegram der Identitätsanbieter des Web (dann ist „Client" fachlich erreicht, der Login nicht).
@@ -116,13 +118,13 @@ Leitregeln (aus den bisherigen Entscheidungen abgeleitet, nicht neu erfunden):
 | 2 | ~~Backups: Telegram nutzt `services/backup_admin`~~ | B | — | ✅ **DONE (PR #333)** — siehe Abschnitt 12 | — |
 | 3 | ~~Logger: verbleibende Datei-I/O im Telegram-Handler auf `logger_admin`~~ | B | — | ✅ **DONE (Phase B, PR #327)** — siehe Abschnitt 8 | — |
 | 4a | ~~Duplikat-Check im CC (read-only Job über `run_duplicate_scan`)~~ | A | — | ✅ **DONE (PR #334)** — siehe Abschnitt 12 | — |
-| 4b | Duplikat-Verwaltung (Statistik, Cache leeren) | B + C | P3 | Cache-Löschlogik aus dem Handler nach `services/duplicate`; CC erst nach Entscheidung 1 | Entscheidung 1 |
-| 5 | Cross-Prozess-Snapshot (Error-Verwaltung E1, Logger-Zähler) | C | P2 | nach Entscheidung 1: `ExceptionMonitor` schreibt Snapshot, CC liest | Entscheidung 1 |
-| 6 | Downloads aus dem Web | B + C | P1 (groß) | ARCH-Phase: Ist-Analyse `klassen/download_handler.py`, Zielgrenzen, Extraktion | Entscheidungen 1, 2 |
-| 7 | Familie im Web | A | P3 | nach Entscheidung 4 | Entscheidung 4 |
+| 4b | Duplikat-Verwaltung (Statistik, Cache leeren) | B + C | P3 | Cache-Löschlogik aus dem Handler nach `services/duplicate`, danach CC-Anbindung | ~~Entscheidung 1~~ — **seit D.13 keine** (Bot erkennt Dateiänderungen und lädt neu, siehe Abschnitt 15) |
+| 5 | Cross-Prozess-Snapshot (Error-Verwaltung E1, Logger-Zähler) | C | P2 | `ExceptionMonitor` schreibt Snapshot, CC liest read-only; Reset bleibt Telegram/Neustart | Entscheidung 1 = **E1** ✅ |
+| 6 | ~~Downloads aus dem Web~~ | B + C | — | ✅ **DONE (Client Consolidation D.10–D.13)** — siehe Abschnitt 14 | — |
+| 7 | Familie im Web | A | P3 | **zurückgestellt** (Entscheidung 4) | — |
 | 8 | ~~`AccessLevel`/`permissions` aus `handlers/menu/` nach `services/` verschieben~~ | D | — | ✅ **DONE (PR #335)** — siehe Abschnitt 12 | — |
-| 9 | Login ohne Telegram | D | offen | nach Entscheidung 3 | Entscheidung 3 |
-| 10 | Test-System | ⚪ | offen | nach Entscheidung 5 | Entscheidung 5 |
+| 9 | Login mit Navidrome-Benutzer (auch ohne Telegram-Bindung) | D | P2 | Analyse mit Security-Fokus (Identitätsmodell, Rate-Limit, Credentials nie im Log), dann Plan | Entscheidung 3 ✅ |
+| 10 | ~~Test-System~~ | ⚪ | — | ✅ **ENTSCHIEDEN: nicht ins Web**, bleibt Telegram-only (Entscheidung 5) | — |
 
 **Empfohlene Reihenfolge:** 1, 3, 2, 4a und 8 sind erledigt (Phase A/B siehe Abschnitt 8; Backups/Duplikat-Check/AccessLevel-Move siehe Abschnitt 12); verbleibend: Entscheidung 1 → 5 → 4b; 6 (Downloads-UI, Backend bereits per Client-Consolidation-Phase D verdrahtet, siehe `docs/audits/CLIENT_CONSOLIDATION_PHASE_D_DOWNLOAD_RUNTIME_2026-09-27.md`) ist unabhängig von Entscheidung 1 startbar (siehe dortige Präzisierung). Layout B der Health-Seite ist davon unabhängig (reine UI).
 
@@ -366,6 +368,22 @@ PENDING.
 **Folge für diese Matrix:** Zeile „📥 Downloads (Track, Playlist)" in 2.1: 🔴 🟣 → ✅ (Starten/Status/Cancel/Verlauf im Web; Live-Anzeige fremder Telegram-Downloads bleibt außerhalb, siehe oben). Backlog-Punkt 6 DONE. Details: `docs/audits/CLIENT_CONSOLIDATION_PHASE_D_DOWNLOAD_RUNTIME_2026-09-27.md` Abschnitte 5–8.
 
 **Weiterhin offen:** Duplikat-Verwaltung/-Cache (4b), Error-Verwaltung, Familie im Web, Login ohne Telegram, Test-System sowie die übrigen Nutzerentscheidungen aus Abschnitt 4 (Entscheidung 2 „Downloads aus dem Web" ist mit JA getroffen und umgesetzt) — Gesamtstatus bleibt 🟡 ANALYSIS COMPLETE — DECISION PENDING.
+
+---
+
+## 15. Nutzerentscheidungen getroffen (2026-09-28)
+
+| # | Frage | Entscheidung | Folge |
+|---|---|---|---|
+| 1 | Cross-Prozess-Mechanismus | **E1 — Snapshot:** Bot schreibt Snapshot-Datei, CC liest read-only; Reset bleibt Telegram/Neustart | Backlog 5 (Error-Verwaltung, Logger-Zähler) freigegeben; auch Grundlage für eine spätere Live-Anzeige Telegram-initiierter Downloads |
+| 2 | Downloads aus dem Web | **JA** (bereits 2026-09-28, Abschnitt 11) | ✅ umgesetzt (D.10–D.13, Abschnitt 14) |
+| 3 | Login ohne Telegram | **Eigener Login mit Navidrome-Benutzer**, ausdrücklich **auch ohne Telegram-Bindung** möglich; Telegram-Login-Widget bleibt zusätzlich | Backlog 9, P2. Kernfrage der Analyse: Die Telegram-ID ist heute der zentrale Nutzerschlüssel (`user_data.json`, `AccessLevel`, Job-`initiator`, Download-Verlauf `chat_id`) — Navidrome-Benutzer ohne Telegram-ID brauchen eine eigene Identität (z. B. Schlüssel `navidrome:<user>` mit eigener Rolle). Prüfung der Credentials über Navidrome selbst (Subsonic-Auth), CC speichert keine Passwörter; Rate-Limit, Credentials nie im Log (CLAUDE.md §12) |
+| 4 | Familie ins Web | **Zurückgestellt** | Backlog 7 ruht |
+| 5 | Test-System | **Nicht ins Web**, bleibt Telegram-only | Backlog 10 erledigt |
+
+**Neuer Befund (D.13):** Backlog 4b hängt nicht mehr an Entscheidung 1 — seit D.13 erkennt der langlebige Bot-`DuplicateCache` Dateiänderungen (inode/mtime/size) und lädt neu; ein vom CC geleerter Cache (Dateien gelöscht) wird vom Bot beim nächsten Zugriff als leerer Stand übernommen.
+
+**Beschlossene Reihenfolge (Nutzer, 2026-09-28):** 1. Entscheidungen dokumentieren (dieser Abschnitt) → 2. Backlog 4b Duplikat-Verwaltung im Web → 3. Backlog 5 E1-Snapshot (Error-Verwaltung) → 4. Backlog 9 Navidrome-Login (Analyse mit Security-Fokus, dann Plan).
 
 ---
 
