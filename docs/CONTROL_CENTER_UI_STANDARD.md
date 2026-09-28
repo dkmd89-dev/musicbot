@@ -255,7 +255,7 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
 ## 15. Reihenfolge
 
 1. **CC-UI-1:** Sprite, Theme (dunkel + Umschalter + Türkis), Shell in `_base.html`, Helfer aus §12 in `common.js`/`common.css` — additiv.
-2. Seiten: ~~Overview~~ (erledigt 2026-09-28) → ~~Downloads~~ (erledigt 2026-09-28) → ~~Administration~~ (erledigt 2026-09-28) → ~~Health~~ (erledigt 2026-09-28) → ~~Logs/Logger~~ (erledigt 2026-09-28) → ~~Statistics~~ (erledigt 2026-09-28, Music DNA als Blickfang) → Library + Artist-Detail (L1 JS verschoben + `/metadata`-Weiterleitung erledigt 2026-09-28; L2 Übersicht als Metadaten-Werkstatt erledigt 2026-09-28; L3a Artist-Detail-Seitengerüst + Offcanvas erledigt 2026-09-28; L3 Artist-Detail, L4 Metadaten-Editor mit Entwurf zuerst) → Navidrome (zuletzt, Nutzerentscheidung 2026-09-28).
+2. Seiten: ~~Overview~~ (erledigt 2026-09-28) → ~~Downloads~~ (erledigt 2026-09-28) → ~~Administration~~ (erledigt 2026-09-28) → ~~Health~~ (erledigt 2026-09-28) → ~~Logs/Logger~~ (erledigt 2026-09-28) → ~~Statistics~~ (erledigt 2026-09-28, Music DNA als Blickfang) → Library + Artist-Detail (L1 JS verschoben + `/metadata`-Weiterleitung erledigt 2026-09-28; L2 Übersicht als Metadaten-Werkstatt erledigt 2026-09-28; L3a Artist-Detail-Seitengerüst + Offcanvas erledigt 2026-09-28; L3b Dialoge + Wartung erledigt 2026-09-28; L3 Artist-Detail, L4 Metadaten-Editor mit Entwurf zuerst) → Navidrome (zuletzt, Nutzerentscheidung 2026-09-28).
 
    **Navidrome = eigener Musik-Bereich** (Nutzerentscheidung 2026-09-28): Die Seite wird der
    Musik-Bereich des Nutzers mit eigenem Layout in Anlehnung an Symfonium (Cover-Raster, runde

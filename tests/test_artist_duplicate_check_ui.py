@@ -62,6 +62,7 @@ _HARNESS = r"""
 const els = {};
 const mk = (id) => (els[id] = els[id] || { id, innerHTML: "", disabled: false });
 global.document = { getElementById: (id) => mk(id) };
+global.ccIcon = (id, cls) => `<svg class="icon${cls ? " " + cls : ""}" aria-hidden="true"><use href="#i-${id}"/></svg>`;  // wie common.js (CC-UI L3b)
 global._escapeHtml = (v) => (v == null ? "" : String(v)
   .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"));
 global.clearInterval = () => {};

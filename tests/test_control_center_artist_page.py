@@ -270,3 +270,184 @@ def test_drawer_actions_hidden_for_non_admin(tmp_path):
     out = _run(tmp_path, {"access": "USER", "ops": [{"op": "open", "track": _body()["tracks"][1]}]})
     actions = out["els"]["track-drawer-actions"]["html"]
     assert "Aktionen benötigen Admin-Berechtigung" in actions and "data-track-action" not in actions
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# CC-UI Library L3b — Dialoge, Pflichtfeld-Hinweise, Wartung nach Standard
+# (Nutzerentscheidung 2026-09-28: Hinweis am Feld statt alert(), Modal statt
+# confirm(); Ablauf von "Metadaten bearbeiten" bleibt bis L4 unverändert).
+# ═════════════════════════════════════════════════════════════════════════
+
+
+def test_whole_artist_page_has_no_emoji_browser_dialogs_or_legacy_markup():
+    js = ARTIST_JS.read_text(encoding="utf-8")
+    html = ARTIST_HTML.read_text(encoding="utf-8")
+    assert not _EMOJI.search(js) and not _EMOJI.search(html)
+    assert "window.alert" not in js and "window.prompt" not in js
+    # einziger confirm()-Aufruf: der Rückfall ohne Tabler-Modal
+    assert js.count("window.confirm(") == 1 and "window.confirm(message)" in js
+    for legacy in ('class="empty-note', 'class="hint', "dot dot-", 'class="row-item', 'class="row-list', 'class="row-count'):
+        assert legacy not in js and legacy not in html, legacy
+    assert 'style="cursor' not in html
+    assert html.count('class="card-header cc-summary"') == 2
+
+
+_HARNESS_L3B = r"""
+const fs = require("fs");
+const [commonPath, jsPath, scenarioJson] = process.argv.slice(2);
+const sc = JSON.parse(scenarioJson);
+const els = {};
+const log = [];
+const mkEl = (id) => {
+  const el = { id, hidden: false, textContent: "", innerHTML: "", className: "", style: {}, disabled: false,
+    value: (sc.values || {})[id] || "", dataset: {}, options: [], listeners: {}, open: false,
+    classList: { add(c) { log.push(`${id}+${c}`); }, remove(c) { log.push(`${id}-${c}`); }, contains: () => false, toggle() {} },
+    setAttribute() {}, getAttribute() { return null; },
+    querySelector: () => mkEl("_sub"), querySelectorAll: () => [],
+    addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); },
+    insertAdjacentElement() {}, appendChild() {}, remove() {}, scrollIntoView() {}, focus() { log.push(`focus:${id}`); } };
+  return el;
+};
+global.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+global.document = {
+  querySelector: () => null, querySelectorAll: () => [],
+  getElementById: (id) => (els[id] = els[id] || mkEl(id)),
+  createElement: () => mkEl("created"), addEventListener() {}, removeEventListener() {},
+  documentElement: { getAttribute: () => "dark", setAttribute() {} },
+  body: { appendChild() {}, contains: () => true, classList: { toggle() {}, remove() {}, contains: () => false } },
+};
+global.window = { location: { pathname: "/library/Bausa" }, tabler: sc.tabler ? { Modal: {} } : undefined,
+  confirm: (t) => { log.push("window.confirm:" + t); return sc.confirmAnswer; } };
+global.console = { ...console, error() {} };
+const calls = [];
+const routes = sc.routes || {};
+global.fetch = async (url, opts) => {
+  const method = (opts && opts.method) || "GET";
+  calls.push(method + " " + url);
+  const key = method + " " + url.split("?")[0];
+  const r = url.includes("/auth/whoami") ? { status: 200, body: { user_id: 1, access_level: "OWNER" } }
+    : (routes[key] || { status: 404, body: { error: { message: "nicht gefunden" } } });
+  return { status: r.status, ok: r.status >= 200 && r.status < 300,
+           text: async () => JSON.stringify(r.body), json: async () => r.body };
+};
+global.setInterval = () => 1; global.clearInterval = () => {};
+global.log = log; global.sc = sc;
+const src = fs.readFileSync(commonPath, "utf-8") + "\n" + fs.readFileSync(jsPath, "utf-8")
+  + "\n;ccConfirm = (o) => { log.push('ccConfirm:' + JSON.stringify(o)); return Promise.resolve(sc.confirmAnswer); };"
+  + "\n;ccToast = (k, t, x) => { log.push('toast:' + [k, t, x].join('|')); };";
+const api = new Function(src + "\nreturn { loadArtistEditPreview, executeArtistEdit, loadTitleEditPreview, "
+  + "startArtistRepairJob, renderMetadataEditPreview, _renderArtistRepairJobStatus };")();
+const tick = () => new Promise((r) => setTimeout(r, 20));
+(async () => {
+  await tick();
+  calls.length = 0;
+  for (const op of sc.ops || []) {
+    const args = (op.args || []).map((a) => (typeof a === "string" && a[0] === "@" ? document.getElementById(a.slice(1)) : a));
+    await api[op.fn](...args);
+    await tick();
+  }
+  const out = { log, calls, els: {} };
+  Object.keys(els).forEach((id) => { out.els[id] = { html: els[id].innerHTML, text: String(els[id].textContent), disabled: els[id].disabled }; });
+  process.stdout.write(JSON.stringify(out) + "\n", () => process.exit(0));
+})();
+"""
+
+
+def _run_l3b(tmp_path: Path, scenario: dict) -> dict:
+    harness = tmp_path / "harness_l3b.js"
+    harness.write_text(_HARNESS_L3B, encoding="utf-8")
+    proc = subprocess.run([_NODE, str(harness), str(COMMON_JS), str(ARTIST_JS), json.dumps(scenario)],
+                          capture_output=True, text=True, timeout=30)
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
+_EXEC = "POST /api/v1/admin/maintenance/artist-rename/execute"
+
+
+@needs_node
+def test_empty_required_field_gets_hint_at_field_not_alert(tmp_path):
+    out = _run_l3b(tmp_path, {"ops": [{"fn": "loadArtistEditPreview"}]})
+    assert "artist-edit-new-artist+is-invalid" in out["log"]
+    assert out["els"]["artist-edit-new-artist-feedback"]["text"] == "Bitte neuen Artist-Namen eingeben."
+    assert "focus:artist-edit-new-artist" in out["log"]
+    assert not out["calls"]  # kein Preview-Request
+
+
+@needs_node
+def test_title_hint_marks_the_actually_missing_field(tmp_path):
+    out = _run_l3b(tmp_path, {"values": {"title-edit-track-select": "Bausa/x.m4a"}, "ops": [{"fn": "loadTitleEditPreview"}]})
+    assert "title-edit-new-title+is-invalid" in out["log"]
+    assert "title-edit-track-select+is-invalid" not in out["log"]
+    assert out["els"]["title-edit-new-title-feedback"]["text"] == "Bitte neuen Titel eingeben."
+
+
+@needs_node
+def test_execute_asks_via_modal_with_unchanged_text_and_declined_sends_nothing(tmp_path):
+    out = _run_l3b(tmp_path, {"tabler": True, "confirmAnswer": False, "values": {"artist-edit-new-artist": "Bausa Neu"},
+                              "ops": [{"fn": "executeArtistEdit"}]})
+    opts = json.loads(next(e for e in out["log"] if e.startswith("ccConfirm:"))[len("ccConfirm:"):])
+    assert opts["title"] == 'Artist "Bausa" wirklich zu "Bausa Neu" umbenennen?'
+    assert opts["text"].startswith("Mit Backup abgesichert") and opts["danger"] is True
+    assert not any(c.startswith("POST") for c in out["calls"])
+
+
+@needs_node
+def test_without_tabler_modal_falls_back_to_confirm_with_full_text(tmp_path):
+    out = _run_l3b(tmp_path, {"confirmAnswer": False, "values": {"artist-edit-new-artist": "X"},
+                              "ops": [{"fn": "executeArtistEdit"}]})
+    msg = next(e for e in out["log"] if e.startswith("window.confirm:"))
+    assert 'wirklich zu "X" umbenennen?' in msg and "Mit Backup abgesichert" in msg
+
+
+@needs_node
+def test_execute_success_and_error_render_as_alerts(tmp_path):
+    ok = {"success_count": 3, "failed_count": 0, "skipped_count": 1}
+    out = _run_l3b(tmp_path, {"tabler": True, "confirmAnswer": True, "values": {"artist-edit-new-artist": "X"},
+                              "routes": {_EXEC: {"status": 200, "body": ok}}, "ops": [{"fn": "executeArtistEdit"}]})
+    res = out["els"]["artist-edit-result-content"]["html"]
+    # Regression (vorbestehend, am alten Stand reproduziert): die Erfolgsmeldung
+    # wurde vom anschließenden Vorschau-Neuladen sofort wieder geleert.
+    assert 'class="alert alert-success mb-0"' in res and "3 erfolgreich, 0 fehlgeschlagen, 1 übersprungen." in res
+    assert "toast:success|Änderungen geschrieben|3 erfolgreich, 0 fehlgeschlagen, 1 übersprungen." in out["log"]
+    assert out["calls"][-1].startswith("GET /api/v1/admin/maintenance/artist-rename/preview")  # Vorschau neu geladen
+    assert "Ordner „Bausa“" in res or "Ordner „Bausa\"" in res
+    out = _run_l3b(tmp_path, {"tabler": True, "confirmAnswer": True, "values": {"artist-edit-new-artist": "X"},
+                              "routes": {_EXEC: {"status": 409, "body": {"error": {"message": "<b>läuft</b>"}}}},
+                              "ops": [{"fn": "executeArtistEdit"}]})
+    res = out["els"]["artist-edit-result-content"]["html"]
+    assert 'class="alert alert-danger mb-0"' in res and "&lt;b&gt;läuft&lt;/b&gt;" in res
+
+
+@needs_node
+def test_preview_diff_is_below_filename_not_beside_it(tmp_path):
+    """U17 (FINDINGS_INDEX, Tag-Vorschau): Diff unter dem Dateinamen, umbrechbar."""
+    body = {"target_count": 1, "changed_count": 1, "outcomes": [
+        {"file": "Bausa/Ein sehr langer Pfad/01 - Titel.m4a", "status": "DRY_RUN",
+         "before": {"artist": "Bausa"}, "after": {"artist": "Bausa feat. Jemand"}}]}
+    out = _run_l3b(tmp_path, {"ops": [{"fn": "renderMetadataEditPreview",
+                                       "args": ["@artist-edit-content", body, "artist-edit-execute-btn"]}]})
+    html = out["els"]["artist-edit-content"]["html"]
+    assert '<div class="list-group">' in html and "row-count" not in html
+    assert 'class="text-secondary small text-break">artist: Bausa → Bausa feat. Jemand</div>' in html
+    assert out["els"]["artist-edit-execute-btn"]["disabled"] is False
+
+
+@needs_node
+def test_repair_job_start_errors_become_toasts(tmp_path):
+    out = _run_l3b(tmp_path, {"tabler": True, "confirmAnswer": True,
+                              "routes": {"POST /api/v1/jobs/repair-level3": {"status": 409, "body": {"error": {"message": "läuft bereits"}}}},
+                              "ops": [{"fn": "startArtistRepairJob", "args": ["l3"]}]})
+    assert "toast:error|L3-Reparatur nicht gestartet|läuft bereits" in out["log"]
+
+
+@needs_node
+def test_repair_job_running_and_finished_states(tmp_path):
+    running = {"status": "RUNNING", "progress": 40.0, "message": "läuft", "result": None, "error": None}
+    out = _run_l3b(tmp_path, {"ops": [{"fn": "_renderArtistRepairJobStatus", "args": [running]}]})
+    html = out["els"]["artist-repair-job-content"]["html"]
+    assert "RUNNING (40%)" in html and 'class="progress-bar bg-teal" style="width: 40%"' in html
+    failed = {"status": "FAILED", "progress": 100.0, "message": "", "result": None, "error": "<i>kaputt</i>"}
+    out = _run_l3b(tmp_path, {"ops": [{"fn": "_renderArtistRepairJobStatus", "args": [failed]}]})
+    html = out["els"]["artist-repair-job-content"]["html"]
+    assert 'class="alert alert-danger mb-0"' in html and "&lt;i&gt;kaputt&lt;/i&gt;" in html

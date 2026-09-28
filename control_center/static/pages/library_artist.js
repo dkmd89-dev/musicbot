@@ -231,14 +231,14 @@
   // MP4-/iTunes-Atome, siehe LIBRARY_REPAIR.md §15/§16).
   function _artistAlbumOptions(artist, body) {
     const options = (body.albums || []).map((a) => ({
-      value: a.album, label: `💿 ${a.album} (${a.file_count} Dateien)`,
+      value: a.album, label: `${a.album} (${a.file_count} Dateien)`,
     }));
     const prefix = `${artist}/`;
     (body.tracks || []).forEach((t) => {
       if (t.album_directory || t.extension !== ".m4a") return;
       if (!t.relative_path.startsWith(prefix)) return;
       const value = t.relative_path.slice(prefix.length);
-      options.push({ value, label: `🎵 ${t.title || t.filename} (Single)` });
+      options.push({ value, label: `${t.title || t.filename} (Single)` });
     });
     return options;
   }
@@ -325,6 +325,56 @@
     }
   }
 
+  // ── CC-UI L3b: gemeinsame Bausteine für Bestätigung und Rückmeldung ──────
+  // Browser-confirm() -> Bestätigungs-Modal (Standard §8). Erste Zeile des
+  // bisherigen Texts wird Titel, der Rest Text - Wortlaut unverändert. Ohne
+  // Tabler-Modal (Tests/Fallback) wie bisher der Browser-Dialog mit vollem Text.
+  function _artistConfirm(message, confirmLabel) {
+    if (!(window.tabler && window.tabler.Modal)) return Promise.resolve(window.confirm(message));
+    const [title, ...rest] = String(message).split("\n\n");
+    return ccConfirm({ title, text: rest.join("\n\n"), confirmLabel: confirmLabel || "Ausführen", danger: true });
+  }
+
+  // Pflichtfeld-Hinweis direkt am Feld statt alert() (Nutzerentscheidung
+  // 2026-09-28). Verschwindet bei der nächsten Eingabe.
+  function _fieldHint(id, message) {
+    const field = document.getElementById(id);
+    if (!field) return;
+    let fb = document.getElementById(`${id}-feedback`);
+    if (!fb && typeof document.createElement === "function" && field.insertAdjacentElement) {
+      fb = document.createElement("div");
+      fb.id = `${id}-feedback`;
+      fb.className = "invalid-feedback";
+      field.insertAdjacentElement("afterend", fb);
+    }
+    if (fb) fb.textContent = message;
+    field.classList.add("is-invalid");
+    const clear = () => field.classList.remove("is-invalid");
+    field.addEventListener("input", clear, { once: true });
+    field.addEventListener("change", clear, { once: true });
+    field.focus();
+  }
+
+  function _runningHtml(text) {
+    return `<div class="d-flex align-items-center gap-2 text-secondary"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>${_escapeHtml(text)}</div>`;
+  }
+
+  const _RESULT_ICONS = { success: "check", danger: "alert", warning: "alert", info: "info" };
+  function _resultAlert(kind, html) {
+    return `<div class="alert alert-${kind} mb-0">${ccIcon(_RESULT_ICONS[kind] || "info", "me-1")}${html}</div>`;
+  }
+
+  function _executeToast(body) {
+    ccToast(body.failed_count ? "error" : "success", body.failed_count ? "Teilweise fehlgeschlagen" : "Änderungen geschrieben",
+      `${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.`);
+  }
+
+  function _executeResultHtml(body, noteText) {
+    return _resultAlert(body.failed_count ? "warning" : "success",
+      `${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.`)
+      + (noteText ? `<div class="text-secondary small mt-2">${noteText}</div>` : "");
+  }
+
   // Manual Metadata Editing v1 (CC-AC-2, library_artist_centric_UX.txt) -
   // reine Verdrahtung der bestehenden, bereits produktiven Endpunkte aus
   // control_center/routers/admin_maintenance.py (Artist/Titel) und
@@ -363,7 +413,7 @@
   function renderMetadataEditPreview(el, body, execBtnId) {
     const startBtn = document.getElementById(execBtnId);
     if (!body.target_count) {
-      el.innerHTML = '<p class="empty-note">Keine Dateien gefunden.</p>';
+      el.innerHTML = '<div class="text-secondary">Keine Dateien gefunden.</div>';
       startBtn.disabled = true;
       return;
     }
@@ -375,24 +425,26 @@
       const reasons = [...new Set(body.outcomes.map((o) => o.reason).filter(Boolean))];
       const isGenuineNoop = reasons.length > 0 && reasons.every((r) => _NOOP_SKIP_REASONS.has(r));
       const reasonHtml = reasons.length
-        ? '<div class="row-list">' + reasons.map((r) => `
-            <div class="row-item"><div class="row-main">${_escapeHtml(r)}</div></div>
-          `).join("") + "</div>"
+        ? '<ul class="list-unstyled mb-0 mt-2">' + reasons.map((r) => `
+            <li class="text-secondary small text-break">${ccIcon("info", "icon-sm me-1")}${_escapeHtml(r)}</li>
+          `).join("") + "</ul>"
         : "";
       const headline = isGenuineNoop
         ? `${body.target_count} Datei(en) — keine Änderung nötig.`
         : `${body.target_count} Datei(en) — wird übersprungen:`;
-      el.innerHTML = `<p class="empty-note">${headline}</p>${reasonHtml}`;
+      el.innerHTML = `<div class="fw-medium">${headline}</div>${reasonHtml}`;
       startBtn.disabled = true;
       return;
     }
+    // CC-UI L3b: Diff steht UNTER dem Dateinamen (vorher .row-count daneben,
+    // lief auf schmalen Bildschirmen über - FINDINGS_INDEX, U17).
     const rows = body.outcomes.filter((o) => o.status === "DRY_RUN").map((o) => `
-      <div class="row-item">
-        <div class="row-main">${_escapeHtml(o.file)}</div>
-        <div class="row-count">${_escapeHtml(_diffSummary(o.before, o.after))}</div>
+      <div class="list-group-item py-2">
+        <div class="text-truncate small" title="${_escapeHtml(o.file)}">${_escapeHtml(o.file)}</div>
+        <div class="text-secondary small text-break">${_escapeHtml(_diffSummary(o.before, o.after))}</div>
       </div>
     `).join("");
-    el.innerHTML = `<p class="empty-note">${body.changed_count} von ${body.target_count} Datei(en) werden geändert:</p><div class="row-list">${rows}</div>`;
+    el.innerHTML = `<div class="fw-medium mb-2">${body.changed_count} von ${body.target_count} Datei(en) werden geändert:</div><div class="list-group">${rows}</div>`;
     startBtn.disabled = false;
   }
 
@@ -401,7 +453,7 @@
   async function loadArtistEditPreview() {
     const artist = currentArtistFromPath();
     const newArtist = document.getElementById("artist-edit-new-artist").value.trim();
-    if (!newArtist) { window.alert("Bitte neuen Artist-Namen eingeben."); return; }
+    if (!newArtist) { _fieldHint("artist-edit-new-artist", "Bitte neuen Artist-Namen eingeben."); return; }
     document.getElementById("artist-edit-execute-btn").disabled = true;
     document.getElementById("artist-edit-result-content").innerHTML = "";
     const params = new URLSearchParams({ artist, new_artist: newArtist }).toString();
@@ -424,7 +476,7 @@
     const artist = currentArtistFromPath();
     const newArtist = document.getElementById("artist-edit-new-artist").value.trim();
     if (!newArtist) return;
-    const confirmed = window.confirm(
+    const confirmed = await _artistConfirm(
       `Artist "${artist}" wirklich zu "${newArtist}" umbenennen?\n\n` +
       `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
       `aber es werden tatsächlich Dateien in der Library verändert.`
@@ -434,7 +486,7 @@
     const execBtn = document.getElementById("artist-edit-execute-btn");
     const resultEl = document.getElementById("artist-edit-result-content");
     execBtn.disabled = true;
-    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    resultEl.innerHTML = _runningHtml("Wird ausgeführt…");
     try {
       const res = await fetch(apiUrl("/api/v1/admin/maintenance/artist-rename/execute"), {
         method: "POST",
@@ -445,7 +497,7 @@
       if (res.status === 401) { showOnly("login-view"); return; }
       const body = await res.json();
       if (!res.ok) {
-        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        resultEl.innerHTML = _resultAlert("danger", `Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}`);
         return;
       }
       // KEINE Navigation: apply_artist_rename() ist tag-wert-getrieben
@@ -454,13 +506,16 @@
       // Verzeichnisname (der diese Seite adressiert) bleibt unveraendert.
       // Ein Redirect auf /library/{newArtist} waere ein garantierter
       // 404, da dieser Verzeichnisname nie existiert.
-      resultEl.innerHTML =
-        `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>` +
-        `<p class="hint">Nur die Tag-Werte wurden geschrieben — der Artist-Ordner „${_escapeHtml(artist)}" bleibt unverändert. ` +
-        `Diese Übersicht stammt aus dem zwischengespeicherten Health-Report; ein Neuscan (Telegram „🩺 MusicBot Doctor" oder CLI) zeigt den neuen Tag-Wert.</p>`;
+      // Erst Vorschau neu laden (sie leert das Ergebnisfeld), dann das Ergebnis
+      // zeigen - vorher verschwand die Erfolgsmeldung sofort wieder (CC-UI L3b).
+      const resultHtml = _executeResultHtml(body,
+        `Nur die Tag-Werte wurden geschrieben — der Artist-Ordner „${_escapeHtml(artist)}" bleibt unverändert. ` +
+        `Diese Übersicht stammt aus dem zwischengespeicherten Health-Report; ein Neuscan (Telegram „MusicBot Doctor" oder CLI) zeigt den neuen Tag-Wert.`);
       await loadArtistEditPreview();
+      resultEl.innerHTML = resultHtml;
+      _executeToast(body);
     } catch (err) {
-      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+      resultEl.innerHTML = _resultAlert("danger", `Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).`);
     } finally {
       execBtn.disabled = false;
     }
@@ -491,7 +546,8 @@
     const artist = currentArtistFromPath();
     const relPath = document.getElementById("title-edit-track-select").value;
     const newTitle = document.getElementById("title-edit-new-title").value.trim();
-    if (!relPath || !newTitle) { window.alert("Bitte Track wählen und neuen Titel eingeben."); return; }
+    if (!relPath) { _fieldHint("title-edit-track-select", "Bitte Track wählen."); return; }
+    if (!newTitle) { _fieldHint("title-edit-new-title", "Bitte neuen Titel eingeben."); return; }
     document.getElementById("title-edit-execute-btn").disabled = true;
     document.getElementById("title-edit-result-content").innerHTML = "";
     const params = new URLSearchParams({ artist, rel_path: relPath, new_title: newTitle }).toString();
@@ -507,7 +563,7 @@
     const relPath = document.getElementById("title-edit-track-select").value;
     const newTitle = document.getElementById("title-edit-new-title").value.trim();
     if (!relPath || !newTitle) return;
-    const confirmed = window.confirm(
+    const confirmed = await _artistConfirm(
       `Titel für "${_titleEditTrackLabel(relPath)}" wirklich zu "${newTitle}" ändern?\n\n` +
       `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
       `aber es wird tatsächlich eine Datei in der Library verändert.`
@@ -517,7 +573,7 @@
     const execBtn = document.getElementById("title-edit-execute-btn");
     const resultEl = document.getElementById("title-edit-result-content");
     execBtn.disabled = true;
-    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    resultEl.innerHTML = _runningHtml("Wird ausgeführt…");
     try {
       const res = await fetch(apiUrl("/api/v1/admin/maintenance/title-edit/execute"), {
         method: "POST",
@@ -528,15 +584,17 @@
       if (res.status === 401) { showOnly("login-view"); return; }
       const body = await res.json();
       if (!res.ok) {
-        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        resultEl.innerHTML = _resultAlert("danger", `Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}`);
         return;
       }
-      resultEl.innerHTML =
-        `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>` +
-        `<p class="hint">Die Trackliste unten stammt aus dem zwischengespeicherten Health-Report und zeigt den neuen Titel erst nach einem Neuscan.</p>`;
+      // Erst Vorschau neu laden (sie leert das Ergebnisfeld), dann das Ergebnis
+      // zeigen - vorher verschwand die Erfolgsmeldung sofort wieder (CC-UI L3b).
+      const resultHtml = _executeResultHtml(body, `Die Trackliste unten stammt aus dem zwischengespeicherten Health-Report und zeigt den neuen Titel erst nach einem Neuscan.`);
       await loadTitleEditPreview();
+      resultEl.innerHTML = resultHtml;
+      _executeToast(body);
     } catch (err) {
-      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+      resultEl.innerHTML = _resultAlert("danger", `Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).`);
     } finally {
       execBtn.disabled = false;
     }
@@ -564,8 +622,8 @@
     const artist = currentArtistFromPath();
     const album = document.getElementById("album-edit-album-select").value;
     const newAlbum = document.getElementById("album-edit-new-album").value.trim();
-    if (!album) { window.alert("Bitte zuerst ein Album auswählen."); return; }
-    if (!newAlbum) { window.alert("Bitte neuen Albumnamen eingeben."); return; }
+    if (!album) { _fieldHint("album-edit-album-select", "Bitte zuerst ein Album auswählen."); return; }
+    if (!newAlbum) { _fieldHint("album-edit-new-album", "Bitte neuen Albumnamen eingeben."); return; }
     document.getElementById("album-edit-execute-btn").disabled = true;
     document.getElementById("album-edit-result-content").innerHTML = "";
     const params = new URLSearchParams({ artist, album, new_album: newAlbum }).toString();
@@ -581,7 +639,7 @@
     const album = document.getElementById("album-edit-album-select").value;
     const newAlbum = document.getElementById("album-edit-new-album").value.trim();
     if (!album || !newAlbum) return;
-    const confirmed = window.confirm(
+    const confirmed = await _artistConfirm(
       `Album "${album}" wirklich zu "${newAlbum}" ändern?\n\n` +
       `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
       `aber es werden tatsächlich Dateien in der Library verändert.`
@@ -591,7 +649,7 @@
     const execBtn = document.getElementById("album-edit-execute-btn");
     const resultEl = document.getElementById("album-edit-result-content");
     execBtn.disabled = true;
-    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    resultEl.innerHTML = _runningHtml("Wird ausgeführt…");
     try {
       const res = await fetch(apiUrl("/api/v1/admin/maintenance/album-edit/execute"), {
         method: "POST",
@@ -602,15 +660,17 @@
       if (res.status === 401) { showOnly("login-view"); return; }
       const body = await res.json();
       if (!res.ok) {
-        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        resultEl.innerHTML = _resultAlert("danger", `Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}`);
         return;
       }
-      resultEl.innerHTML =
-        `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>` +
-        `<p class="hint">Nur der Album-Tag (©alb) wurde geschrieben — der Alben-Eintrag oben zeigt weiterhin den Verzeichnisnamen und bleibt unverändert; die Track-Liste unten übernimmt den neuen Wert erst nach einem Neuscan.</p>`;
+      // Erst Vorschau neu laden (sie leert das Ergebnisfeld), dann das Ergebnis
+      // zeigen - vorher verschwand die Erfolgsmeldung sofort wieder (CC-UI L3b).
+      const resultHtml = _executeResultHtml(body, `Nur der Album-Tag (©alb) wurde geschrieben — der Alben-Eintrag oben zeigt weiterhin den Verzeichnisnamen und bleibt unverändert; die Track-Liste unten übernimmt den neuen Wert erst nach einem Neuscan.`);
       await loadAlbumEditPreview();
+      resultEl.innerHTML = resultHtml;
+      _executeToast(body);
     } catch (err) {
-      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+      resultEl.innerHTML = _resultAlert("danger", `Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).`);
     } finally {
       execBtn.disabled = false;
     }
@@ -637,8 +697,8 @@
     const artist = currentArtistFromPath();
     const album = document.getElementById("albumartist-edit-album-select").value;
     const newAlbumArtist = document.getElementById("albumartist-edit-new-albumartist").value.trim();
-    if (!album) { window.alert("Bitte zuerst ein Album auswählen."); return; }
-    if (!newAlbumArtist) { window.alert("Bitte neuen Albuminterpret eingeben."); return; }
+    if (!album) { _fieldHint("albumartist-edit-album-select", "Bitte zuerst ein Album auswählen."); return; }
+    if (!newAlbumArtist) { _fieldHint("albumartist-edit-new-albumartist", "Bitte neuen Albuminterpret eingeben."); return; }
     document.getElementById("albumartist-edit-execute-btn").disabled = true;
     document.getElementById("albumartist-edit-result-content").innerHTML = "";
     const params = new URLSearchParams({ artist, album, new_album_artist: newAlbumArtist }).toString();
@@ -654,7 +714,7 @@
     const album = document.getElementById("albumartist-edit-album-select").value;
     const newAlbumArtist = document.getElementById("albumartist-edit-new-albumartist").value.trim();
     if (!album || !newAlbumArtist) return;
-    const confirmed = window.confirm(
+    const confirmed = await _artistConfirm(
       `Albuminterpret für Album "${album}" wirklich zu "${newAlbumArtist}" ändern?\n\n` +
       `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
       `aber es werden tatsächlich Dateien in der Library verändert.`
@@ -664,7 +724,7 @@
     const execBtn = document.getElementById("albumartist-edit-execute-btn");
     const resultEl = document.getElementById("albumartist-edit-result-content");
     execBtn.disabled = true;
-    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    resultEl.innerHTML = _runningHtml("Wird ausgeführt…");
     try {
       const res = await fetch(apiUrl("/api/v1/admin/maintenance/albumartist-edit/execute"), {
         method: "POST",
@@ -675,15 +735,17 @@
       if (res.status === 401) { showOnly("login-view"); return; }
       const body = await res.json();
       if (!res.ok) {
-        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        resultEl.innerHTML = _resultAlert("danger", `Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}`);
         return;
       }
-      resultEl.innerHTML =
-        `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>` +
-        `<p class="hint">Nur der Albuminterpret-Tag (aART) wurde geschrieben — er wird in der Alben-/Track-Übersicht oben aktuell gar nicht angezeigt, auch nicht nach einem Neuscan.</p>`;
+      // Erst Vorschau neu laden (sie leert das Ergebnisfeld), dann das Ergebnis
+      // zeigen - vorher verschwand die Erfolgsmeldung sofort wieder (CC-UI L3b).
+      const resultHtml = _executeResultHtml(body, `Nur der Albuminterpret-Tag (aART) wurde geschrieben — er wird in der Alben-/Track-Übersicht oben aktuell gar nicht angezeigt, auch nicht nach einem Neuscan.`);
       await loadAlbumArtistEditPreview();
+      resultEl.innerHTML = resultHtml;
+      _executeToast(body);
     } catch (err) {
-      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+      resultEl.innerHTML = _resultAlert("danger", `Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).`);
     } finally {
       execBtn.disabled = false;
     }
@@ -715,7 +777,7 @@
 
   async function executeGenreManage() {
     const artist = currentArtistFromPath();
-    const confirmed = window.confirm(
+    const confirmed = await _artistConfirm(
       `Genre für "${artist}" wirklich setzen?\n\n` +
       `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
       `aber es werden tatsächlich Dateien in der Library verändert.`
@@ -725,7 +787,7 @@
     const execBtn = document.getElementById("genre-manage-execute-btn");
     const resultEl = document.getElementById("genre-manage-result-content");
     execBtn.disabled = true;
-    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    resultEl.innerHTML = _runningHtml("Wird ausgeführt…");
     try {
       const res = await fetch(apiUrl(`/api/v1/library/artists/${encodeURIComponent(artist)}/set-genre`), {
         method: "POST",
@@ -734,13 +796,17 @@
       if (res.status === 401) { showOnly("login-view"); return; }
       const body = await res.json();
       if (!res.ok) {
-        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        resultEl.innerHTML = _resultAlert("danger", `Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}`);
         return;
       }
-      resultEl.innerHTML = `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>`;
+      // Erst Vorschau neu laden (sie leert das Ergebnisfeld), dann das Ergebnis
+      // zeigen - vorher verschwand die Erfolgsmeldung sofort wieder (CC-UI L3b).
+      const resultHtml = _executeResultHtml(body);
       await loadGenreManagePreview();
+      resultEl.innerHTML = resultHtml;
+      _executeToast(body);
     } catch (err) {
-      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+      resultEl.innerHTML = _resultAlert("danger", `Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).`);
     } finally {
       execBtn.disabled = false;
     }
@@ -847,7 +913,7 @@
     const previewEl = document.getElementById("genre-mapping-preview-content");
     const saveBtn = document.getElementById("genre-mapping-save-btn");
     _genreMappingInvalidate();
-    previewEl.innerHTML = '<p class="empty-note">Wird geprüft…</p>';
+    previewEl.innerHTML = _runningHtml("Wird geprüft…");
     try {
       const res = await fetch(apiUrl(`/api/v1/library/artists/${encodeURIComponent(artist)}/genre-mapping/preview`), {
         method: "POST",
@@ -873,7 +939,7 @@
     const pv = _genreMap.previewed;
     if (!pv) return;
     const artist = currentArtistFromPath();
-    const confirmed = window.confirm(
+    const confirmed = await _artistConfirm(
       `Genre-Mapping für "${artist}" wirklich ändern?\n\n` +
       `Neu: ${[pv.primary, ...pv.secondary].join("; ")}\n\n` +
       `Das schreibt mapping/artist_genre.yaml. Für neue Downloads wirkt es erst nach einem Bot-Neustart; ` +
@@ -884,7 +950,7 @@
     const saveBtn = document.getElementById("genre-mapping-save-btn");
     const resultEl = document.getElementById("genre-mapping-result-content");
     saveBtn.disabled = true;
-    resultEl.innerHTML = '<p class="empty-note">Wird gespeichert…</p>';
+    resultEl.innerHTML = _runningHtml("Wird gespeichert…");
     try {
       const res = await fetch(apiUrl(`/api/v1/library/artists/${encodeURIComponent(artist)}/genre-mapping`), {
         method: "PUT",
@@ -979,7 +1045,7 @@
     let outcomeNote;
     if (r.mode === "apply") {
       outcomeNote = r.mutated
-        ? '<div class="alert alert-success py-2 mb-0">✅ Gelerntes Genre aktualisiert. Für neue Downloads wirksam nach einem Bot-Neustart; Audio-Dateien wurden nicht verändert.</div>'
+        ? `<div class="alert alert-success py-2 mb-0">${ccIcon("check", "me-1")}Gelerntes Genre aktualisiert. Für neue Downloads wirksam nach einem Bot-Neustart; Audio-Dateien wurden nicht verändert.</div>`
         : '<div class="text-secondary small">Keine Änderung geschrieben.</div>';
     } else {
       outcomeNote = '<div class="text-secondary small">Vorschau — es wurde nichts geschrieben.</div>';
@@ -1003,7 +1069,8 @@
   function _renderGenreRevalidationJob(job) {
     const el = document.getElementById("genre-revalidation-content");
     if (job.status === "PENDING" || job.status === "RUNNING") {
-      el.innerHTML = `<p class="empty-note">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%) — ${_escapeHtml(job.message || "")}</p>`;
+      el.innerHTML = `<div class="d-flex align-items-center gap-2 mb-2"><span class="badge bg-teal-lt">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%)</span><span class="text-secondary small text-truncate">${_escapeHtml(job.message || "")}</span></div>`
+        + `<div class="progress progress-sm"><div class="progress-bar bg-teal" style="width: ${Math.max(0, Math.min(100, Number(job.progress) || 0))}%"></div></div>`;
       return;
     }
     _stopGenreRevalPolling();
@@ -1031,7 +1098,7 @@
   async function startGenreRevalidation(mode) {
     const artist = currentArtistFromPath();
     if (mode === "apply") {
-      const confirmed = window.confirm(
+      const confirmed = await _artistConfirm(
         `Genre-Revalidierung für "${artist}" anwenden?\n\n` +
         `Last.fm wird erneut abgefragt; nur wenn die Overturn-Regel dann noch erfüllt ist, ` +
         `wird das gelernte Genre in mapping/auto_learned_genre.json aktualisiert. ` +
@@ -1040,7 +1107,7 @@
       if (!confirmed) return;
     }
     _genreRevalSetBusy(true);
-    document.getElementById("genre-revalidation-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
+    document.getElementById("genre-revalidation-content").innerHTML = _runningHtml("Wird gestartet…");
     try {
       const res = await fetch(apiUrl(`/api/v1/jobs/genre-revalidation-${mode}`), {
         method: "POST",
@@ -1089,7 +1156,7 @@
 
   function duplicateCheckResultHtml(r) {
     if (r.read_only_intact === false) {
-      return '<div class="alert alert-danger mb-0">🚨 Sicherheitswarnung: Das Dateisystem hat sich während des Scans verändert — Ergebnis verworfen, bitte erneut versuchen.</div>';
+      return `<div class="alert alert-danger mb-0">${ccIcon("alert", "me-1")}Sicherheitswarnung: Das Dateisystem hat sich während des Scans verändert — Ergebnis verworfen, bitte erneut versuchen.</div>`;
     }
     const groups = r.duplicate_groups || 0;
     if (groups === 0) {
@@ -1107,11 +1174,11 @@
         const removeLines = (d.remove_proposal || []).map((rp) => {
           const rpCandidate = candidates.find((c) => c.path === rp);
           const rpBitrate = rpCandidate && rpCandidate.bitrate ? ` (${rpCandidate.bitrate} kbps)` : "";
-          return `<div class="small">🗑️ Vorschlag entfernen: ${_escapeHtml(_shortPath(rp))}${rpBitrate}</div>`;
+          return `<div class="small text-danger">${ccIcon("trash", "icon-sm me-1")}Vorschlag entfernen: ${_escapeHtml(_shortPath(rp))}${rpBitrate}</div>`;
         }).join("");
-        return `<div class="mb-2"><div class="fw-semibold">🎵 ${title}</div><div class="small">✅ Behalten: ${_escapeHtml(_shortPath(d.keep))}${keepBitrate}</div>${removeLines}</div>`;
+        return `<div class="mb-2"><div class="fw-semibold">${ccIcon("music", "me-1 text-teal")}${title}</div><div class="small text-success">${ccIcon("check", "icon-sm me-1")}Behalten: ${_escapeHtml(_shortPath(d.keep))}${keepBitrate}</div>${removeLines}</div>`;
       }
-      return `<div class="mb-2"><div class="fw-semibold">🎵 ${title}</div><div class="small">⚠️ ${_escapeHtml(d.action || "MANUAL_REVIEW")}: ${_escapeHtml(d.reason || "kein Grund angegeben")}</div></div>`;
+      return `<div class="mb-2"><div class="fw-semibold">${ccIcon("music", "me-1 text-teal")}${title}</div><div class="small text-warning">${ccIcon("alert", "icon-sm me-1")}${_escapeHtml(d.action || "MANUAL_REVIEW")}: ${_escapeHtml(d.reason || "kein Grund angegeben")}</div></div>`;
     }).join("");
     return `
       <div class="alert alert-info py-2 mb-2">${groups} Duplikat-Gruppe(n) — ${resolved} mit Vorschlag, ${manual} zur manuellen Prüfung</div>
@@ -1130,7 +1197,8 @@
   function _renderDuplicateCheckJob(job) {
     const el = document.getElementById("duplicate-check-content");
     if (job.status === "PENDING" || job.status === "RUNNING") {
-      el.innerHTML = `<p class="empty-note">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%) — ${_escapeHtml(job.message || "")}</p>`;
+      el.innerHTML = `<div class="d-flex align-items-center gap-2 mb-2"><span class="badge bg-teal-lt">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%)</span><span class="text-secondary small text-truncate">${_escapeHtml(job.message || "")}</span></div>`
+        + `<div class="progress progress-sm"><div class="progress-bar bg-teal" style="width: ${Math.max(0, Math.min(100, Number(job.progress) || 0))}%"></div></div>`;
       return;
     }
     _stopDupCheckPolling();
@@ -1154,7 +1222,7 @@
   async function startDuplicateCheck() {
     const artist = currentArtistFromPath();
     _dupCheckSetBusy(true);
-    document.getElementById("duplicate-check-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
+    document.getElementById("duplicate-check-content").innerHTML = _runningHtml("Wird gestartet…");
     try {
       const res = await fetch(apiUrl("/api/v1/jobs/duplicate-check"), {
         method: "POST",
@@ -1213,7 +1281,7 @@
 
   async function executeArtistCasing() {
     const artist = currentArtistFromPath();
-    const confirmed = window.confirm(
+    const confirmed = await _artistConfirm(
       `Artist-Casing für "${artist}" wirklich korrigieren?\n\n` +
       `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
       `aber es werden tatsächlich Dateien in der Library verändert.`
@@ -1223,7 +1291,7 @@
     const execBtn = document.getElementById("artist-casing-execute-btn");
     const resultEl = document.getElementById("artist-casing-result-content");
     execBtn.disabled = true;
-    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    resultEl.innerHTML = _runningHtml("Wird ausgeführt…");
     try {
       const params = new URLSearchParams({ artist }).toString();
       const res = await fetch(apiUrl(`/api/v1/admin/maintenance/artist-casing/execute?${params}`), {
@@ -1233,13 +1301,17 @@
       if (res.status === 401) { showOnly("login-view"); return; }
       const body = await res.json();
       if (!res.ok) {
-        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        resultEl.innerHTML = _resultAlert("danger", `Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}`);
         return;
       }
-      resultEl.innerHTML = `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>`;
+      // Erst Vorschau neu laden (sie leert das Ergebnisfeld), dann das Ergebnis
+      // zeigen - vorher verschwand die Erfolgsmeldung sofort wieder (CC-UI L3b).
+      const resultHtml = _executeResultHtml(body);
       await loadArtistCasingPreview();
+      resultEl.innerHTML = resultHtml;
+      _executeToast(body);
     } catch (err) {
-      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+      resultEl.innerHTML = _resultAlert("danger", `Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).`);
     } finally {
       execBtn.disabled = false;
     }
@@ -1264,7 +1336,7 @@
 
   async function executeLegacyGenreCleanup() {
     const artist = currentArtistFromPath();
-    const confirmed = window.confirm(
+    const confirmed = await _artistConfirm(
       `Legacy-Genre-Atome für "${artist}" wirklich entfernen?\n\n` +
       `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
       `aber es werden tatsächlich Dateien in der Library verändert.`
@@ -1274,7 +1346,7 @@
     const execBtn = document.getElementById("legacy-genre-cleanup-execute-btn");
     const resultEl = document.getElementById("legacy-genre-cleanup-result-content");
     execBtn.disabled = true;
-    resultEl.innerHTML = '<p class="empty-note">Wird ausgeführt…</p>';
+    resultEl.innerHTML = _runningHtml("Wird ausgeführt…");
     try {
       const params = new URLSearchParams({ artist }).toString();
       const res = await fetch(apiUrl(`/api/v1/admin/maintenance/legacy-genre-cleanup/execute?${params}`), {
@@ -1284,13 +1356,17 @@
       if (res.status === 401) { showOnly("login-view"); return; }
       const body = await res.json();
       if (!res.ok) {
-        resultEl.innerHTML = `<p><span class="dot dot-error"></span>Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}</p>`;
+        resultEl.innerHTML = _resultAlert("danger", `Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}`);
         return;
       }
-      resultEl.innerHTML = `<p><span class="dot dot-ok"></span>${body.success_count} erfolgreich, ${body.failed_count} fehlgeschlagen, ${body.skipped_count} übersprungen.</p>`;
+      // Erst Vorschau neu laden (sie leert das Ergebnisfeld), dann das Ergebnis
+      // zeigen - vorher verschwand die Erfolgsmeldung sofort wieder (CC-UI L3b).
+      const resultHtml = _executeResultHtml(body);
       await loadLegacyGenreCleanupPreview();
+      resultEl.innerHTML = resultHtml;
+      _executeToast(body);
     } catch (err) {
-      resultEl.innerHTML = `<p><span class="dot dot-error"></span>Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).</p>`;
+      resultEl.innerHTML = _resultAlert("danger", `Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).`);
     } finally {
       execBtn.disabled = false;
     }
@@ -1344,7 +1420,8 @@
     const el = document.getElementById("artist-repair-job-content");
 
     if (job.status === "PENDING" || job.status === "RUNNING") {
-      el.innerHTML = `<p class="empty-note">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%) — ${_escapeHtml(job.message || "")}</p>`;
+      el.innerHTML = `<div class="d-flex align-items-center gap-2 mb-2"><span class="badge bg-teal-lt">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%)</span><span class="text-secondary small text-truncate">${_escapeHtml(job.message || "")}</span></div>`
+        + `<div class="progress progress-sm"><div class="progress-bar bg-teal" style="width: ${Math.max(0, Math.min(100, Number(job.progress) || 0))}%"></div></div>`;
       return;
     }
 
@@ -1354,13 +1431,13 @@
 
     if (job.status === "SUCCEEDED") {
       if (r.total === 0) {
-        el.innerHTML = `<p><span class="dot dot-ok"></span>Keine offenen ${_escapeHtml(_ARTIST_REPAIR_LEVEL_LABELS[r.level] || "")}-Befunde (mehr) vorhanden.</p>`;
+        el.innerHTML = _resultAlert("success", `Keine offenen ${_escapeHtml(_ARTIST_REPAIR_LEVEL_LABELS[r.level] || "")}-Befunde (mehr) vorhanden.`);
         return;
       }
-      el.innerHTML = `<p><span class="dot ${r.status === "SUCCESS" ? "dot-ok" : "dot-warn"}"></span>${_escapeHtml(r.level || "")} ${_escapeHtml(_repairOutcomeText(r))}: ` +
-        _repairCountsText(r) + "</p>";
+      el.innerHTML = _resultAlert(r.status === "SUCCESS" ? "success" : "warning",
+        `${_escapeHtml(r.level || "")} ${_escapeHtml(_repairOutcomeText(r))}: ` + _repairCountsText(r));
     } else {
-      el.innerHTML = `<p><span class="dot dot-error"></span>Fehlgeschlagen: ${_escapeHtml(job.error || "Unbekannter Fehler")}</p>`;
+      el.innerHTML = _resultAlert("danger", `Fehlgeschlagen: ${_escapeHtml(job.error || "Unbekannter Fehler")}`);
     }
   }
 
@@ -1375,7 +1452,7 @@
 
   async function startArtistRepairJob(level) {
     const artist = currentArtistFromPath();
-    const confirmed = window.confirm(
+    const confirmed = await _artistConfirm(
       `${_ARTIST_REPAIR_LEVEL_LABELS[level]} wirklich starten für "${artist}"?\n\n` +
       `Kann einige Minuten dauern. Mit Backup abgesichert — aber es werden tatsächlich Dateien in der Library verändert.\n\n` +
       `L3 ruft MusicBrainz auf — einzelne Dateien können bei Netzwerk-/Rate-Limit-Fehlern fehlschlagen.`
@@ -1383,7 +1460,7 @@
     if (!confirmed) return;
 
     _setArtistRepairButtonsDisabled(true);
-    document.getElementById("artist-repair-job-content").innerHTML = '<p class="empty-note">Wird gestartet…</p>';
+    document.getElementById("artist-repair-job-content").innerHTML = _runningHtml("Wird gestartet…");
 
     try {
       const res = await fetch(apiUrl("/api/v1/jobs/repair-level3"), {
@@ -1395,7 +1472,7 @@
       if (res.status === 401) { showOnly("login-view"); return; }
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        window.alert("Fehler: " + (body && body.error ? body.error.message : res.status));
+        ccToast("error", "L3-Reparatur nicht gestartet", String(body && body.error ? body.error.message : res.status));
         _setArtistRepairButtonsDisabled(false);
         return;
       }
@@ -1405,7 +1482,7 @@
       _stopArtistRepairJobPolling();
       _artistRepairJobPollTimer = setInterval(() => _pollArtistRepairJob(_artistRepairJobId), 1000);
     } catch (err) {
-      window.alert("Netzwerkfehler: " + err.message);
+      ccToast("error", "Netzwerkfehler", err.message);
       _setArtistRepairButtonsDisabled(false);
     }
   }

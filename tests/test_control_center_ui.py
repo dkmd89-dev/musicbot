@@ -778,8 +778,10 @@ async def test_artist_detail_page_confirms_before_write_actions(client):
     identisch zu admin_maintenance heute (admin.html)."""
     html = await _page_with_scripts(client, "/library/Bausa")
 
-    assert "window.confirm(" in html
-    assert html.count("window.confirm(") >= 3
+    # CC-UI L3b (bewusst angepasst): Bestätigungs-Modal über _artistConfirm()
+    # statt window.confirm() - Texte unverändert, ohne Tabler weiterhin confirm().
+    assert html.count("await _artistConfirm(") >= 3
+    assert "window.confirm(message)" in html  # Rückfall ohne Tabler-Modal
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -857,11 +859,12 @@ async def test_artist_detail_page_album_edit_confirms_before_write(client):
     nur pauschal >= 3, ohne die neuen Aktionen einzeln zu pruefen)."""
     html = await _page_with_scripts(client, "/library/Bausa")
 
-    assert html.count("window.confirm(") >= 5
+    # CC-UI L3b (bewusst angepasst): _artistConfirm() statt window.confirm()
+    assert html.count("await _artistConfirm(") >= 5
     album_edit_fn = html.split("async function executeAlbumEdit()")[1].split("async function ")[0]
-    assert "window.confirm(" in album_edit_fn
+    assert "_artistConfirm(" in album_edit_fn
     albumartist_edit_fn = html.split("async function executeAlbumArtistEdit()")[1].split("async function ")[0]
-    assert "window.confirm(" in albumartist_edit_fn
+    assert "_artistConfirm(" in albumartist_edit_fn
 
 
 @pytest.mark.asyncio
