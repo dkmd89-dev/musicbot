@@ -86,9 +86,10 @@ Feste Zuordnung (Auszug, erweiterbar im Sprite):
 ## 4. Shell (`_base.html`)
 
 - `navbar-vertical` links, dunkel, Marke „MusicBot“ mit `i-music`-Avatar.
-- Navigationspunkte mit Icon + Titel; **Zähler** als
-  `badge badge-sm position-static ms-auto` (nur wenn der Wert bereits aus
-  einer vorhandenen API kommt, z. B. aktive Jobs, offene Findings).
+- Navigationspunkte mit Icon + Titel. **Zähler** (`badge badge-sm position-static ms-auto`)
+  sind vorerst **nicht** Teil der Shell (Entscheidung CC-UI-1, 2026-09-28): sie
+  bräuchten auf jeder Seite zusätzliche API-Abfragen. Eine Seite darf sie später
+  nur ergänzen, wenn der Wert bereits aus einer vorhandenen API kommt.
 - Administration unten abgesetzt (`mt-3`).
 - Header: links Kontext „Control Center“, rechts Theme-Umschalter,
   Benutzer (Avatar + Name + Rollen-Badge `bg-purple-lt`), Abmelden
@@ -191,6 +192,11 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
 
 ## 12. JavaScript-Konventionen
 
+**Umgesetzt in CC-UI-1 (2026-09-28):** Sprite `templates/_icons.html`, Theme
+(dunkel + Umschalter + Türkis), Shell in `_base.html`, Helfer unten in
+`static/common.js`, `.cc-terminal` in `static/common.css`. Tests:
+`tests/test_control_center_ui_shell.py`.
+
 - Seiten-JS **nur** in `static/pages/<seite>.js` — kein Inline-`<script>`-Block mit Logik im Template (U1).
 - Gemeinsame Helfer in `static/common.js`. **CC-UI-1** ergänzt additiv
   (Namen verbindlich, Umsetzung folgt):
@@ -203,6 +209,9 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
   | `ccToast(kind, title, text?)` | Rückmeldung nach Abschnitt 8 |
   | `ccStatusBadge(kind, label)` | Badge nach Abschnitt 2 (Icon + Text, escaped) |
   | `ccIcon(id, extraClass?)` | SVG-`<use>` für den Sprite |
+  | `ccStatusKind(value)` | vorhandener API-Wert → Status-Art nach Abschnitt 2 |
+  | `ccState.denied(el)` | Zustand „Keine Berechtigung“ |
+  | `ccSetTheme("dark"\|"light")` | Theme setzen + speichern |
 
   `_loadInto()`, `_escapeHtml()`, `apiUrl()`, `showOnly()`, `showError()` bleiben unverändert; `_loadInto()` darf intern auf `ccState` umgestellt werden, ohne die Signatur zu ändern.
 - Keine globalen `onclick="…"` für neuen Code; Event-Listener in der Seiten-JS.

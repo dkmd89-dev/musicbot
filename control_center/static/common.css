@@ -9,9 +9,23 @@
 /* ══════════════════════════════════════════════════════════════════
    1. VARIABLEN (Light + Dark Mode)
    ══════════════════════════════════════════════════════════════════ */
+/* CC-UI-1: Die bisherigen Variablen zeigen auf Tabler-Variablen und
+   folgen damit dem Theme-Umschalter (data-bs-theme) statt dem
+   Betriebssystem (vorher @media prefers-color-scheme). Namen bleiben
+   unverändert, alle bestehenden Seiten-Styles funktionieren weiter.
+   Türkis als Akzent: docs/CONTROL_CENTER_UI_STANDARD.md Abschnitt 2. */
+:root, [data-bs-theme] {
+  --tblr-primary: #0ca678;
+  --tblr-primary-rgb: 12, 166, 120;
+  --tblr-primary-fg: #ffffff;
+  --tblr-link-color: #0ca678;
+  --tblr-link-color-rgb: 12, 166, 120;
+  --tblr-link-hover-color: #0a8f67;
+  --tblr-link-hover-color-rgb: 10, 143, 103;
+}
 :root {
-  --bg: #f7f7f8; --fg: #1a1a1a; --muted: #6b6b6b;
-  --card-bg: #ffffff; --border: #e2e2e2; --accent: #2f6fed;
+  --bg: var(--tblr-body-bg); --fg: var(--tblr-body-color); --muted: var(--tblr-secondary);
+  --card-bg: var(--tblr-bg-surface); --border: var(--tblr-border-color); --accent: var(--tblr-primary);
   --error: #c0392b; --ok: #1f8a4c; --warning: #b8860b; --sidebar-bg: #1a1c20; --sidebar-fg: #d8d9dc;
   --sidebar-width: 220px; --header-height: 52px;
 
@@ -21,18 +35,20 @@
   --chart-dna-genres: #f59e0b;
   --chart-dna-artists: #ec4899;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #16171a; --fg: #eaeaea; --muted: #9a9a9a;
-    --card-bg: #202226; --border: #3a3d45; --accent: #6ea0ff;
-    --error: #ff6b5e; --ok: #4fd07a; --warning: #f5b544; --sidebar-bg: #101114;
+[data-bs-theme="dark"] {
+  --error: #ff6b5e; --ok: #4fd07a; --warning: #f5b544; --sidebar-bg: #101114;
 
-    /* Angepasste Diagrammfarben für Dark Mode */
-    --chart-month: #6ea0ff;
-    --chart-genres: #a78bfa;
-    --chart-dna-genres: #fbbf24;
-    --chart-dna-artists: #f472b6;
-  }
+  /* Angepasste Diagrammfarben für Dark Mode */
+  --chart-month: #6ea0ff;
+  --chart-genres: #a78bfa;
+  --chart-dna-genres: #fbbf24;
+  --chart-dna-artists: #f472b6;
+}
+.btn-primary {
+  --tblr-btn-bg: #0ca678; --tblr-btn-border-color: #0ca678;
+  --tblr-btn-hover-bg: #0a8f67; --tblr-btn-hover-border-color: #0a8f67;
+  --tblr-btn-active-bg: #097a58; --tblr-btn-active-border-color: #097a58;
+  --tblr-btn-disabled-bg: #0ca678; --tblr-btn-disabled-border-color: #0ca678;
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -49,7 +65,7 @@ h1 { font-size: 1.3rem; margin: 0 0 4px; }
 .hint { color: var(--muted); font-size: 0.85rem; }
 code { background: var(--card-bg); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; }
 
-//* ══════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════
    3. APP-SHELL: Tabler
    ══════════════════════════════════════════════════════════════════ */
 
@@ -115,7 +131,8 @@ code { background: var(--card-bg); border: 1px solid var(--border); padding: 1px
   #sidebar-toggle {
     display: inline-flex;
   }
-}* ══════════════════════════════════════════════════════════════════
+}
+/* ══════════════════════════════════════════════════════════════════
    4. BASISELEMENTE: Buttons, Dots, Inputs
    ══════════════════════════════════════════════════════════════════ */
 #navidrome-status { color: var(--muted); font-size: 0.85rem; margin-bottom: 16px; }
@@ -1298,3 +1315,18 @@ input.downloads-url-input { max-width: none; }
   #downloads-status-filter .btn { flex: 1 1 0; }
 }
 /* === /Downloads-Home === */
+
+/* ══════════════════════════════════════════════════════════════════
+   CC-UI-1: Logs im Terminal-Stil (Standard Abschnitt 10) - bleibt
+   auch im hellen Theme dunkel.
+   ══════════════════════════════════════════════════════════════════ */
+.cc-terminal {
+  background: #0b1220; color: #cbd5e1;
+  font-family: var(--tblr-font-monospace); font-size: 0.8rem; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word;
+}
+.cc-terminal .cc-t-time { color: #64748b; }
+.cc-terminal .cc-t-info { color: #0ca678; }
+.cc-terminal .cc-t-ok { color: #2fb344; }
+.cc-terminal .cc-t-warn { color: #f59f00; }
+.cc-terminal .cc-t-err { color: #d63939; }
