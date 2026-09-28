@@ -2378,4 +2378,4 @@ die Einordnung in die Control-Center-Architektur.
 
 **Nächste Phase:** UI-Vereinheitlichung (CC-UI). Ausgangslage und
 offene Standard-Entscheidungen: `docs/audits/CONTROL_CENTER_UI_INVENTORY_2026-09-28.md`,
-Layout-Entwürfe: `docs/designs/control-center-ui/`.
+Layout-Entwürfe: `docs/designs/control-center-ui/`, verbindlicher Standard: `docs/CONTROL_CENTER_UI_STANDARD.md`.

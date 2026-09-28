@@ -12,8 +12,8 @@ Vergleich fair bleibt. Ausgangslage: `docs/audits/CONTROL_CENTER_UI_INVENTORY_20
 | A · Klassisch | `layout-a-klassisch.html` | helle vertikale Sidebar (wie heute), Seitenkopf mit Aktionen, Karten mit Kopfzeile, Tabellen, `bg-*-lt`-Badges; am wenigsten Umbau |
 | B · Kompakt | `layout-b-kompakt.html` | horizontale Navigation, Emojis bleiben, KPIs als Textzeile, Tabs in einer Karte, dichte Tabellen, Status-Punkte |
 | C · Dashboard | `layout-c-dashboard.html` | dunkle Sidebar mit Zählern, Hell/Dunkel-Umschalter, KPI-Karten mit Icon, Pipeline als Schrittfolge, Seitenpanel (`offcanvas`), Toasts |
-| Nutzer 1 | _offen_ | |
-| Nutzer 2 | _offen_ | |
+| Nutzer 1–3 | (Screenshots im Chat, nicht abgelegt) | 1 Karten-Raster, 2 Tabelle, 3 Terminal-Stil — alle dunkel mit Türkis-Akzent |
+| **D · Mischung** | `layout-d-mischung.html` | **gemeinsam gewählte Richtung** (siehe unten) |
 
 Eigene Entwürfe bitte als `layout-<name>.html` hier ablegen (gleiche
 Beispielseite erleichtert den Vergleich, ist aber keine Pflicht).
@@ -36,3 +36,13 @@ Die Entscheidungen aus Inventur Abschnitt 6 fallen direkt aus dem Vergleich:
 
 Mischen ist ausdrücklich erlaubt (z. B. Shell aus A, Pipeline und Toasts aus C).
 Das Ergebnis wird als `docs/CONTROL_CENTER_UI_STANDARD.md` festgehalten (Schritt CC-UI-Standard).
+
+## Entscheidung 2026-09-28 → Entwurf D
+
+- **Mischung freigegeben:** Shell aus C (dunkle Sidebar mit Zählern), aktive Jobs als Karten (Nutzer 1) mit Pipeline-Schritten (C), Verlauf und alle Listen als Tabelle (Nutzer 2), Logs/Logger im Terminal-Stil (Nutzer 3), Bestätigung per Modal, Rückmeldung per Toast (C), Zustände Laden/Leer/Fehler (A).
+- **Dunkel als Standard**, Umschalter auf Hell (Wahl pro Browser), Akzentfarbe Türkis.
+- **Tabler-Icons** statt Emojis in Navigation, Titeln und Aktionen.
+- **Keine Funktionen ohne bestehende API:** kein Format/Bitrate, kein Pause/Play, keine MB/s/ETA/Größe/Speicherplatz, keine Cover-Vorschau, nur YouTube.
+- Handy: Schrittfolge wird zu „Schritt n von 7“, Metadaten-Spalte ausgeblendet.
+
+Abgeleitet: `docs/CONTROL_CENTER_UI_STANDARD.md` (verbindlich). Das Mockup bleibt Referenz, der Standard hat Vorrang.
