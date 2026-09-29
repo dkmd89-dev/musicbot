@@ -757,6 +757,69 @@ button.track-row:focus-visible { outline: 2px solid var(--accent); outline-offse
 }
 /* === /Navidrome N1 === */
 
+/* === Navidrome N4: Player-Leiste, Warteschlange, Songzeilen === */
+.nav-song-row { cursor: pointer; }
+.nav-song-row.nav-song-current { border-left: 3px solid var(--accent); }
+.nav-song-row.nav-song-current .fw-medium { color: var(--accent); }
+.nav-song-lead { min-width: 2rem; text-align: center; }
+
+/* Feste Leiste unten (neben der Sidebar ab lg); Seite bekommt Platz darunter. */
+.nav-player {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1030;
+  background: var(--tblr-bg-surface, #151c26);
+  border-top: 1px solid var(--tblr-border-color, #243041);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  min-height: 72px;
+}
+.nav-player[hidden] { display: none; }
+body.nav-has-player { padding-bottom: 92px; }
+body.nav-has-player #cc-toast-container { bottom: 84px !important; }
+@media (min-width: 992px) {
+  .nav-player { left: 16rem; gap: 1.5rem; padding: 0.5rem 1.5rem; min-height: 84px; }
+}
+.nav-np-info { display: flex; align-items: center; gap: 0.75rem; min-width: 0; flex: 1 1 0; }
+.nav-np-coverbtn { border: 0; padding: 0; background: none; flex: 0 0 auto; line-height: 0; }
+.nav-np-cover-box {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.nav-np-cover-box.nav-np-cover-sm { width: 38px; height: 38px; border-radius: 6px; }
+.nav-np-transport { display: flex; align-items: center; gap: 0.15rem; flex: 0 0 auto; }
+.nav-np-btn.nav-np-on { color: var(--accent); }
+.nav-np-play { width: 42px; height: 42px; }
+.nav-np-play-lg { width: 64px; height: 64px; }
+.nav-np-seek { align-items: center; gap: 0.6rem; flex: 2 1 0; min-width: 0; }
+.nav-np-vol { align-items: center; gap: 0.5rem; width: 130px; flex: 0 0 auto; }
+.nav-np-range { margin: 0; flex: 1 1 auto; min-width: 0; accent-color: var(--accent); }
+.nav-np-vol-icon { color: var(--tblr-secondary, #8b97a8); line-height: 0; }
+/* Handy: Mini-Player - nur Cover, Titel, Play/Weiter; Fortschritt als dünner Balken. */
+.nav-np-mini { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(127,127,127,.25); }
+.nav-np-mini i { display: block; height: 100%; width: 0; background: var(--accent); }
+@media (max-width: 767.98px) {
+  .nav-np-transport [data-np-act="shuffle"],
+  .nav-np-transport [data-np-act="repeat"],
+  .nav-np-transport [data-np-act="prev"] { display: none; }
+  .nav-player { min-height: 64px; }
+  .nav-np-cover-box { width: 44px; height: 44px; }
+}
+.nav-fullplayer { height: 100% !important; }
+.nav-np-full-cover { max-width: 360px; margin: 0.5rem auto 0; }
+.nav-np-full-cover .nav-np-cover-box { width: 100%; height: auto; aspect-ratio: 1; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+.nav-queue-row.nav-queue-current { background: rgba(45, 212, 191, 0.10); }
+.nav-queue-row { cursor: pointer; }
+/* === /Navidrome N4 === */
+
 /* === Logger: Modulliste (CC-LOGGER-L6.1 Dashboard) === */
 /* Scrollbare Liste (bei vielen Modulen); Items sind native <button>s
    (Tastatur/Fokus), daher die generischen button-Grundstyles (Abschnitt 4)

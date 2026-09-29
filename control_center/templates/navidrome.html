@@ -4,7 +4,7 @@
 {% block content %}
 {# CC-UI Navidrome N1 (Nutzerfreigabe 2026-09-29): Musik-Bereich im Stil von
    Symfonium — Suche im Kopf, Pill-Reiter, Start mit Regalen, Cover-/Artist-
-   Raster; N2: Detailseiten per Hash-Routing statt Modal. Element-IDs
+   Raster; N2: Detailseiten per Hash-Routing statt Modal; N4: Player-Leiste. Element-IDs
    sind Vertrag mit static/pages/navidrome.js. #}
 <div class="page-header d-print-none mb-3">
   <div class="row g-2 align-items-center">
@@ -166,8 +166,40 @@
     <pre id="navidrome-scan-output" class="cc-terminal">Noch kein Scan ausgeführt.</pre>
   </div>
 </div>
+
+<!-- Player (N4): feste Leiste, Warteschlange als Seitenpanel, Vollbild-Player (Handy) -->
+<div id="nav-player-bar" class="nav-player" hidden aria-label="Player"></div>
+
+<div class="offcanvas offcanvas-end" tabindex="-1" id="nav-queue-offcanvas"
+     role="dialog" aria-modal="true" aria-labelledby="nav-queue-title">
+  <div class="offcanvas-header">
+    <div class="min-w-0">
+      <h2 class="offcanvas-title" id="nav-queue-title"><svg class="icon me-2 text-teal"><use href="#i-playlist"/></svg>Warteschlange</h2>
+      <div class="text-secondary small" id="nav-queue-summary"></div>
+    </div>
+    <div class="d-flex align-items-center gap-2 ms-3">
+      <button type="button" class="btn btn-sm" id="nav-queue-clear">Leeren</button>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Schließen"></button>
+    </div>
+  </div>
+  <div class="offcanvas-body p-0" id="nav-queue-body"></div>
+</div>
+
+<div class="offcanvas offcanvas-bottom nav-fullplayer" tabindex="-1" id="nav-fullplayer"
+     role="dialog" aria-modal="true" aria-labelledby="nav-fullplayer-title">
+  <div class="offcanvas-header">
+    <button type="button" class="btn btn-icon btn-ghost-secondary" data-bs-dismiss="offcanvas" aria-label="Schließen">
+      <svg class="icon"><use href="#i-chevron-down"/></svg></button>
+    <h2 class="offcanvas-title text-secondary small text-uppercase" id="nav-fullplayer-title">Wiedergabe</h2>
+    <button type="button" class="btn btn-icon btn-ghost-secondary" data-bs-toggle="offcanvas"
+            data-bs-target="#nav-queue-offcanvas" aria-label="Warteschlange">
+      <svg class="icon"><use href="#i-playlist"/></svg></button>
+  </div>
+  <div class="offcanvas-body" id="nav-fullplayer-body"></div>
+</div>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ base_path }}/static/pages/navidrome_player.js"></script>
 <script src="{{ base_path }}/static/pages/navidrome.js"></script>
 {% endblock %}
