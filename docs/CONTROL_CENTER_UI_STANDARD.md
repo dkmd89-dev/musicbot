@@ -255,17 +255,13 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
 ## 15. Reihenfolge
 
 1. **CC-UI-1:** Sprite, Theme (dunkel + Umschalter + Türkis), Shell in `_base.html`, Helfer aus §12 in `common.js`/`common.css` — additiv.
-2. Seiten: ~~Overview~~ (erledigt 2026-09-28) → ~~Downloads~~ (erledigt 2026-09-28) → ~~Administration~~ (erledigt 2026-09-28) → ~~Health~~ (erledigt 2026-09-28) → ~~Logs/Logger~~ (erledigt 2026-09-28) → ~~Statistics~~ (erledigt 2026-09-28, Music DNA als Blickfang) → Library + Artist-Detail (L1 JS verschoben + `/metadata`-Weiterleitung erledigt 2026-09-28; L2 Übersicht als Metadaten-Werkstatt erledigt 2026-09-28; L3a Artist-Detail-Seitengerüst + Offcanvas erledigt 2026-09-28; L3b Dialoge + Wartung erledigt 2026-09-28; L4 Metadaten-Editor als Seitenpanel erledigt 2026-09-29 — ~~Library + Artist-Detail~~ abgeschlossen) → Navidrome (zuletzt, Nutzerentscheidung 2026-09-28).
+2. Seiten: ~~Overview~~ (erledigt 2026-09-28) → ~~Downloads~~ (erledigt 2026-09-28) → ~~Administration~~ (erledigt 2026-09-28) → ~~Health~~ (erledigt 2026-09-28) → ~~Logs/Logger~~ (erledigt 2026-09-28) → ~~Statistics~~ (erledigt 2026-09-28, Music DNA als Blickfang) → Library + Artist-Detail (L1 JS verschoben + `/metadata`-Weiterleitung erledigt 2026-09-28; L2 Übersicht als Metadaten-Werkstatt erledigt 2026-09-28; L3a Artist-Detail-Seitengerüst + Offcanvas erledigt 2026-09-28; L3b Dialoge + Wartung erledigt 2026-09-28; L4 Metadaten-Editor als Seitenpanel erledigt 2026-09-29 — ~~Library + Artist-Detail~~ abgeschlossen) → Navidrome (Nutzerentscheidung 2026-09-28; N1–N5 abgeschlossen 2026-09-29).
 
    **Navidrome = eigener Musik-Bereich** (Nutzerentscheidung 2026-09-28): Die Seite wird der
    Musik-Bereich des Nutzers mit eigenem Layout in Anlehnung an Symfonium (Cover-Raster, runde
    Artist-Bilder, Album-Ansichten, Player-Leiste) und folgt dem Standard nur in Shell, Theme,
    Icons, Zuständen und Helfern. Die bereits begonnene Artist-Darstellung (Cover, rund) ist
-   Ausgangspunkt, nicht Neubau. **Abspielen im Browser ist eine neue Funktion**, keine
-   UI-Umstellung: Heute gibt es keinen Stream-Endpunkt, nötig wäre z. B. ein
-   auth-geschützter Stream-/Cover-Proxy auf die Subsonic-API von Navidrome
-   (`services/clients/navidrome_api.py`). Dafür gibt es eine eigene Planung → Freigabe →
-   Umsetzung, Credentials dürfen nie in URLs, Logs oder im Browser landen (CLAUDE.md §12).
+   Ausgangspunkt, nicht Neubau. **Abspielen im Browser ist seit N3–N5 umgesetzt:** Stream-Endpunkt `GET /api/v1/navidrome/stream/{song_id}` (N3, Range-fähig), Player-Leiste + Warteschlange (`static/pages/navidrome_player.js`, N4), Favoriten/Scrobble/Zur Playlist (N5). Credentials bleiben serverseitig (CLAUDE.md §12) — der Browser kennt nur das Session-Cookie.
 
    **Stufenplan (Nutzerfreigabe 2026-09-29):** N1 Gerüst + Startseite mit Regalen + Raster +
    Suche (erledigt 2026-09-29) → N2 Detailseiten mit Hash-Routing statt Modal (erledigt 2026-09-29) → N3 Stream-API (erledigt 2026-09-29, Endpunkt ohne Player-UI)
