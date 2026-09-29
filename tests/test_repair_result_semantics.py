@@ -435,7 +435,9 @@ class TestControlCenterJobResult:
 _NODE = shutil.which("node")
 _CC = Path(__file__).resolve().parent.parent / "control_center"
 _HEALTH_JS = _CC / "static" / "pages" / "health.js"
-_ARTIST_HTML = _CC / "templates" / "library_artist_detail.html"
+# _renderLevel23JobStatus ruft zusaetzlich _jobResultHtml auf (seit #358,
+# Health nach UI-Standard). Die drei Helper werden mit extrahiert.
+_HEALTH_HELPERS = ("_repairOutcomeText", "_repairCountsText", "_jobResultHtml")
 
 
 def _extract_function(src: str, name: str) -> str:
@@ -463,8 +465,13 @@ const render = new Function(
   "_stopLevel23JobPolling", "_setLevel23ButtonsDisabled", "loadRepairHistory",
   "loadRepairStatistics", "loadJobs", "_stopArtistRepairJobPolling",
   "_setArtistRepairButtonsDisabled", "_LEVEL23_LABELS", "_ARTIST_REPAIR_LEVEL_LABELS",
+  "ccStatusBadge", "ccToast",
   src + "\nreturn RENDER;",
-)(noop, noop, noop, noop, noop, noop, noop, {}, {});
+)(noop, noop, noop, noop, noop, noop, noop, {}, {},
+   // Stub aus common.js: reproduziert das von _jobResultHtml erwartete
+   // Klassenschema "dot-<kind>" (der Test prueft "dot-warn").
+   (kind, label) => `<span class="badge dot-${kind}">${_escapeHtml(label)}</span>`,
+   noop);
 render(job);
 process.stdout.write(el.innerHTML);
 """
@@ -473,7 +480,7 @@ process.stdout.write(el.innerHTML);
 def _render(path: Path, render_fn: str, result: dict, tmp_path: Path) -> str:
     src = path.read_text(encoding="utf-8")
     code = "\n".join(
-        _extract_function(src, n) for n in ("_repairOutcomeText", "_repairCountsText", render_fn)
+        _extract_function(src, n) for n in (*_HEALTH_HELPERS, render_fn)
     )
     snippet = tmp_path / "snippet.js"
     snippet.write_text(code, encoding="utf-8")
@@ -500,12 +507,16 @@ def _job_result(status, counts, exit_code=0):
 
 _UI_TARGETS = [
     (_HEALTH_JS, "_renderLevel23JobStatus"),
-    (_ARTIST_HTML, "_renderArtistRepairJobStatus"),
+    # library_artist_detail.html / _renderArtistRepairJobStatus entfaellt:
+    # L3-Repair laeuft seit CC-UI L4 ausschliesslich auf der Health-Seite
+    # (FINDINGS_INDEX-Zeile "Library L4"), die Artist-Detail-Seite rendert
+    # keine Repair-Jobs mehr. Die Ergebnissemantik wird ueber [health_js]
+    # abgedeckt.
 ]
 
 
 @pytest.mark.skipif(_NODE is None, reason="node nicht verfügbar")
-@pytest.mark.parametrize("path,render_fn", _UI_TARGETS, ids=["health_js", "artist_detail"])
+@pytest.mark.parametrize("path,render_fn", _UI_TARGETS, ids=["health_js"])
 class TestUiRendering:
     def test_case_b_uses_changed_files_and_shows_unresolved(self, path, render_fn, tmp_path):
         html = _render(path, render_fn,
