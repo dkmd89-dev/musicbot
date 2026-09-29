@@ -26,6 +26,9 @@ from services.mapping_admin import (
     GenreOverrideSaveResult,
     GenreFilterPlan,
     GenreFilterSaveResult,
+    SpecialChannelCategory,
+    SpecialChannelPlan,
+    SpecialChannelSaveResult,
 )
 
 
@@ -424,5 +427,101 @@ def genre_filter_save_to_response(
         message=(
             GENRE_FILTER_SAVE_MESSAGE_WRITTEN if result.written
             else GENRE_FILTER_SAVE_MESSAGE_UNCHANGED
+        ),
+    )
+
+# ── Special-Channel (M5) — geordnete Kategorien ──────────────────────
+
+
+class SpecialChannelCategorySchema(BaseModel):
+    name: str
+    channels: List[str]
+
+
+class SpecialChannelListResponse(BaseModel):
+    mapping_id: str
+    categories: List[SpecialChannelCategorySchema]
+    count: int
+    etag: str
+    warnings: List[str] = Field(default_factory=list)
+    bot_reload_required: bool = True
+
+
+class SpecialChannelBody(BaseModel):
+    categories: List[SpecialChannelCategorySchema]
+
+
+class SpecialChannelSaveBody(SpecialChannelBody):
+    etag: str
+
+
+class SpecialChannelPreviewResponse(BaseModel):
+    mapping_id: str
+    change: str
+    categories: List[SpecialChannelCategorySchema]
+    added: List[str]
+    removed: List[str]
+    warnings: List[str] = Field(default_factory=list)
+    etag: str
+    comment_warning: Optional[str] = None
+
+
+class SpecialChannelSaveResponse(SpecialChannelPreviewResponse):
+    written: bool
+    unchanged: bool
+    new_etag: str
+    bot_reload_required: bool = True
+    message: str
+
+
+SPECIAL_CHANNEL_COMMENT_WARNING = (
+    "Kommentarzeilen in special_channel.yaml gehen beim Speichern verloren "
+    "(bekannte Einschraenkung des YAML-Rewrites). Die fachliche "
+    "Prioritaets-Reihenfolge der Kategorien bleibt erhalten."
+)
+
+
+def special_channel_plan_to_preview(plan: SpecialChannelPlan) -> SpecialChannelPreviewResponse:
+    return SpecialChannelPreviewResponse(
+        mapping_id=plan.mapping_id,
+        change=plan.change,
+        categories=[
+            SpecialChannelCategorySchema(name=c.name, channels=list(c.channels))
+            for c in plan.categories
+        ],
+        added=list(plan.added),
+        removed=list(plan.removed),
+        warnings=list(plan.warnings),
+        etag=plan.etag,
+        comment_warning=(
+            SPECIAL_CHANNEL_COMMENT_WARNING
+            if plan.change in ("update", "cleanup")
+            else None
+        ),
+    )
+
+
+SPECIAL_CHANNEL_SAVE_MESSAGE_WRITTEN = (
+    "Mapping gespeichert. Der laufende Bot laedt special_channel.yaml beim "
+    "Start: die Aenderung wirkt fuer neue Downloads erst nach Bot-Neustart. "
+    "Hinweis: die Runtime merged weiterhin special_channel.yaml mit "
+    "Config.SPECIAL_CHANNELS — die Administration verwaltet nur die YAML-Quelle."
+)
+SPECIAL_CHANNEL_SAVE_MESSAGE_UNCHANGED = "Mapping war bereits identisch — nichts geschrieben."
+
+
+def special_channel_save_to_response(
+    plan: SpecialChannelPlan, result: SpecialChannelSaveResult,
+) -> SpecialChannelSaveResponse:
+    base = special_channel_plan_to_preview(plan)
+    return SpecialChannelSaveResponse(
+        **base.model_dump(),
+        written=result.written,
+        unchanged=result.unchanged,
+        new_etag=result.new_etag,
+        bot_reload_required=result.written,
+        message=(
+            SPECIAL_CHANNEL_SAVE_MESSAGE_WRITTEN if result.written
+            else SPECIAL_CHANNEL_SAVE_MESSAGE_UNCHANGED
         ),
     )

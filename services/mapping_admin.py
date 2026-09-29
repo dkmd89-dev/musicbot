@@ -57,6 +57,9 @@ MAPPING_ROOT_KEY_GENRE_OVERRIDES = "GENRE_OVERRIDES"
 MAPPING_ID_GENRE_FILTERS = "genre-filters"
 MAPPING_FILENAME_GENRE_FILTERS = "genre_filters.yaml"
 MAPPING_ROOT_KEY_GENRE_FILTERS = "IGNORE_SECONDARY"
+MAPPING_ID_SPECIAL_CHANNELS = "special-channels"
+MAPPING_FILENAME_SPECIAL_CHANNELS = "special_channel.yaml"
+MAPPING_ROOT_KEY_SPECIAL_CHANNELS = "SPECIAL_CHANNELS"
 
 
 @dataclass(frozen=True)
@@ -93,6 +96,12 @@ _MAPPING_DESCRIPTORS: Dict[str, MappingDescriptor] = {
         filename=MAPPING_FILENAME_GENRE_FILTERS,
         root_key=MAPPING_ROOT_KEY_GENRE_FILTERS,
         kind="genre-filter",
+    ),
+    MAPPING_ID_SPECIAL_CHANNELS: MappingDescriptor(
+        mapping_id=MAPPING_ID_SPECIAL_CHANNELS,
+        filename=MAPPING_FILENAME_SPECIAL_CHANNELS,
+        root_key=MAPPING_ROOT_KEY_SPECIAL_CHANNELS,
+        kind="special-channel",
     ),
 }
 
@@ -138,6 +147,8 @@ MAX_DESCRIPTION_LENGTH = 500
 MAX_SECONDARY_ENTRIES = 20
 MAX_GENRE_ALIAS_KEY_LENGTH = 200
 MAX_GENRE_FILTER_VALUE_LENGTH = 100
+MAX_SPECIAL_CATEGORY_NAME_LENGTH = 100
+MAX_SPECIAL_CHANNEL_NAME_LENGTH = 200
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -309,6 +320,137 @@ def _normalize_filter_list(
     return result, warnings
 
 
+def _validate_special_category_name(value: object) -> str:
+    if value is None or not isinstance(value, str):
+        raise MappingInvalidInputError("Kategorie-Name muss ein Text sein.")
+    if "\n" in value or "\r" in value:
+        raise MappingInvalidInputError("Kategorie-Name darf keine Zeilenumbrueche enthalten.")
+    trimmed = value.strip()
+    if not trimmed:
+        raise MappingInvalidInputError("Kategorie-Name darf nicht leer sein.")
+    if len(trimmed) > MAX_SPECIAL_CATEGORY_NAME_LENGTH:
+        raise MappingInvalidInputError(
+            f"Kategorie-Name zu lang (max. {MAX_SPECIAL_CATEGORY_NAME_LENGTH} Zeichen)."
+        )
+    if _CONTROL_CHARS.search(trimmed):
+        raise MappingInvalidInputError("Kategorie-Name enthaelt Steuerzeichen.")
+    return trimmed
+
+
+def _validate_special_channel_name(value: object) -> str:
+    if value is None or not isinstance(value, str):
+        raise MappingInvalidInputError("Kanalname muss ein Text sein.")
+    if "\n" in value or "\r" in value:
+        raise MappingInvalidInputError("Kanalname darf keine Zeilenumbrueche enthalten.")
+    trimmed = value.strip()
+    if not trimmed:
+        raise MappingInvalidInputError("Kanalname darf nicht leer sein.")
+    if len(trimmed) > MAX_SPECIAL_CHANNEL_NAME_LENGTH:
+        raise MappingInvalidInputError(
+            f"Kanalname zu lang (max. {MAX_SPECIAL_CHANNEL_NAME_LENGTH} Zeichen)."
+        )
+    if _CONTROL_CHARS.search(trimmed):
+        raise MappingInvalidInputError("Kanalname enthaelt Steuerzeichen.")
+    return trimmed
+
+
+def _normalize_special_categories(
+    raw_categories: object, *, strict: bool,
+) -> Tuple[List[SpecialChannelCategory], List[str]]:
+    """Kategorien in Reihenfolge, Kanalnamen in Reihenfolge, Case bleibt
+    erhalten. strict=True: 422 bei strukturellen Fehlern. strict=False:
+    ueberspringt unsauberes mit Warnung (fuer die Datei-Sicht)."""
+    warnings: List[str] = []
+    if raw_categories is None:
+        return [], warnings
+    if not isinstance(raw_categories, (list, tuple)):
+        if strict:
+            raise MappingInvalidInputError("Kategorien muessen eine Liste sein.")
+        return [], ["Kategorien-Struktur war keine Liste; nichts geladen."]
+
+    seen_cat_names: set = set()
+    result: List[SpecialChannelCategory] = []
+    category_collision = 0
+    category_empty = 0
+    for cat in raw_categories:
+        if not isinstance(cat, dict):
+            if strict:
+                raise MappingInvalidInputError("Jede Kategorie muss ein Objekt sein.")
+            continue
+        name_raw = cat.get("name")
+        try:
+            name = _validate_special_category_name(name_raw)
+        except MappingInvalidInputError:
+            if strict:
+                raise
+            continue
+        name_fold = name.casefold()
+        if name_fold in seen_cat_names:
+            if strict:
+                raise MappingInvalidInputError(
+                    f"Kategorie {name!r} kollidiert case-insensitiv mit einer anderen."
+                )
+            category_collision += 1
+            continue
+        channels_raw = cat.get("channels")
+        if channels_raw is None:
+            channels_raw = []
+        if not isinstance(channels_raw, (list, tuple)):
+            if strict:
+                raise MappingInvalidInputError(
+                    f"Kategorie {name!r}: channels muss eine Liste sein."
+                )
+            continue
+        if strict and not channels_raw:
+            raise MappingInvalidInputError(
+                f"Kategorie {name!r} ist leer — leere Kategorien sind nicht erlaubt."
+            )
+        seen_channels: set = set()
+        clean_channels: List[str] = []
+        channel_dupes = 0
+        for ch in channels_raw:
+            try:
+                ch_clean = _validate_special_channel_name(ch)
+            except MappingInvalidInputError:
+                if strict:
+                    raise
+                continue
+            ch_fold = ch_clean.casefold()
+            if ch_fold in seen_channels:
+                channel_dupes += 1
+                continue
+            seen_channels.add(ch_fold)
+            clean_channels.append(ch_clean)
+        if not clean_channels and not strict:
+            category_empty += 1
+            continue
+        if channel_dupes:
+            warnings.append(
+                f"Kategorie {name!r}: {channel_dupes} casefold-Duplikate zusammengefuehrt."
+            )
+        seen_cat_names.add(name_fold)
+        result.append(SpecialChannelCategory(name=name, channels=clean_channels))
+
+    if category_collision:
+        warnings.append(f"{category_collision} Kategorien mit casefold-Kollision uebersprungen.")
+    if category_empty:
+        warnings.append(f"{category_empty} leere Kategorien uebersprungen.")
+
+    # Cross-Kategorie-Warnung
+    seen_channel_cat: Dict[str, str] = {}
+    for cat in result:
+        for ch in cat.channels:
+            key = ch.casefold()
+            if key in seen_channel_cat:
+                warnings.append(
+                    f"Kanal {ch!r} kommt in {seen_channel_cat[key]!r} und "
+                    f"{cat.name!r} vor — {seen_channel_cat[key]!r} gewinnt wegen Prioritaet."
+                )
+            else:
+                seen_channel_cat[key] = cat.name
+    return result, warnings
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Dataclasses (kind-spezifisch)
 # ─────────────────────────────────────────────────────────────────────────
@@ -418,6 +560,31 @@ class GenreFilterSaveResult:
     written: bool
     unchanged: bool
     values: List[str]
+    new_etag: str
+
+
+@dataclass(frozen=True)
+class SpecialChannelCategory:
+    name: str
+    channels: List[str]
+
+
+@dataclass(frozen=True)
+class SpecialChannelPlan:
+    mapping_id: str
+    change: str  # "update" | "cleanup" | "unchanged"
+    categories: List[SpecialChannelCategory]
+    added: List[str]
+    removed: List[str]
+    warnings: List[str]
+    etag: str
+
+
+@dataclass(frozen=True)
+class SpecialChannelSaveResult:
+    written: bool
+    unchanged: bool
+    categories: List[SpecialChannelCategory]
     new_etag: str
 
 
@@ -621,6 +788,56 @@ def _parse_genre_override_entry(key: str, raw: Any) -> Optional[GenreOverrideEnt
     if not override:
         return None
     return GenreOverrideEntry(key=key, override=override)
+
+
+def _load_raw_special_categories(descriptor: MappingDescriptor, mapping_dir: Path) -> Dict[str, List[object]]:
+    """Rohdaten als geordnetes dict {Kategorie: [Kanaele]}. Wirft
+    MappingUnavailableError bei fehlender/korrupter Datei."""
+    import yaml
+
+    path = _mapping_path(descriptor, mapping_dir)
+    if not path.exists():
+        raise MappingUnavailableError(f"{path} existiert nicht.")
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (yaml.YAMLError, OSError) as e:
+        raise MappingUnavailableError(f"{path} konnte nicht gelesen werden: {e!r}") from e
+    raw = data.get(descriptor.root_key, data) or {}
+    if not isinstance(raw, dict):
+        raise MappingUnavailableError(
+            f"{path}: '{descriptor.root_key}' ist kein Dict."
+        )
+    return raw
+
+
+def _dump_special_categories(
+    descriptor: MappingDescriptor,
+    mapping_dir: Path,
+    categories: List[SpecialChannelCategory],
+) -> None:
+    import yaml
+
+    path = _mapping_path(descriptor, mapping_dir)
+    # plain dict: Python 3.7+ behaelt Einfuegereihenfolge; yaml.safe_dump
+    # kann OrderedDict nicht serialisieren.
+    payload = {c.name: list(c.channels) for c in categories}
+    data = {descriptor.root_key: payload}
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+
+
+def _special_channels_etag(categories: List[SpecialChannelCategory]) -> str:
+    """Etag: Kategorien in Reihenfolge, Kanaele pro Kategorie sortiert."""
+    payload = [
+        [c.name, sorted(c.channels, key=lambda s: s.casefold())]
+        for c in categories
+    ]
+    data = json.dumps(payload, ensure_ascii=False)
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()[:16]
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1121,3 +1338,150 @@ def list_genre_filters(mapping_dir: Path) -> List[str]:
     """Komfort-Shim: nur die normierte Werteliste."""
     values, _etag, _warnings = get_genre_filter_state(mapping_dir)
     return values
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Special-Channel (M5) — geordnete Kategorien
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def get_special_channels_state(
+    mapping_dir: Path,
+) -> Tuple[List[SpecialChannelCategory], str, List[str]]:
+    """Rueckgabe: (Kategorien, etag, warnings). Reihenfolge der Kategorien
+    ist Semantik (Prioritaet). Datei bleibt unangetastet."""
+    descriptor = _get_descriptor(MAPPING_ID_SPECIAL_CHANNELS)
+    raw = _load_raw_special_categories(descriptor, mapping_dir)
+    raw_list = [{"name": k, "channels": list(v) if isinstance(v, list) else []}
+                for k, v in raw.items()]
+    categories, warnings = _normalize_special_categories(raw_list, strict=False)
+    etag = _special_channels_etag(categories)
+    return categories, etag, warnings
+
+
+def _raw_special_is_clean(
+    descriptor: MappingDescriptor,
+    mapping_dir: Path,
+    normalized: List[SpecialChannelCategory],
+) -> bool:
+    """True, wenn die Roh-Datei semantisch identisch zur normalisierten
+    Sicht ist. Prueft zusaetzlich die ROHEN Kanal-Laengen, damit Duplikate
+    erkannt werden (die Normalisierung dedupliziert, sonst waere der
+    Vergleich ein Zirkelschluss)."""
+    raw = _load_raw_special_categories(descriptor, mapping_dir)
+    # Laengen der Roh-Kanaele vs. normalisierte Laengen
+    raw_cat_names = list(raw.keys())
+    norm_cat_names = [c.name for c in normalized]
+    if raw_cat_names != norm_cat_names:
+        return False
+    for raw_key, cat in zip(raw_cat_names, normalized):
+        raw_channels = raw[raw_key] if isinstance(raw[raw_key], list) else []
+        if len(raw_channels) != len(cat.channels):
+            return False
+        # Vergleich der Rohkanäle mit normalisierten (case- und whitespace-strikt)
+        for raw_ch, norm_ch in zip(raw_channels, cat.channels):
+            if not isinstance(raw_ch, str):
+                return False
+            if raw_ch.strip() != norm_ch:
+                return False
+    return True
+
+
+def plan_special_channels_update(
+    categories_input: object, mapping_dir: Path,
+) -> SpecialChannelPlan:
+    descriptor = _get_descriptor(MAPPING_ID_SPECIAL_CHANNELS)
+    current_categories, current_warnings = _normalize_special_categories(
+        [{"name": k, "channels": list(v) if isinstance(v, list) else []}
+         for k, v in _load_raw_special_categories(descriptor, mapping_dir).items()],
+        strict=False,
+    )
+    current_etag = _special_channels_etag(current_categories)
+    raw_is_clean = _raw_special_is_clean(descriptor, mapping_dir, current_categories)
+
+    new_categories, new_warnings = _normalize_special_categories(
+        categories_input, strict=True,
+    )
+
+    all_warnings = list(new_warnings)
+
+    # Diff: Kategorien
+    current_cat_map = {c.name.casefold(): c for c in current_categories}
+    new_cat_map = {c.name.casefold(): c for c in new_categories}
+    added: List[str] = []
+    removed: List[str] = []
+    for key, cat in new_cat_map.items():
+        cur = current_cat_map.get(key)
+        if cur is None:
+            added.append(f"Kategorie {cat.name!r}")
+            for ch in cat.channels:
+                added.append(f"{cat.name}: {ch}")
+            continue
+        cur_fold = {c.casefold() for c in cur.channels}
+        for ch in cat.channels:
+            if ch.casefold() not in cur_fold:
+                added.append(f"{cat.name}: {ch}")
+    for key, cat in current_cat_map.items():
+        new = new_cat_map.get(key)
+        if new is None:
+            removed.append(f"Kategorie {cat.name!r}")
+            for ch in cat.channels:
+                removed.append(f"{cat.name}: {ch}")
+            continue
+        new_fold = {c.casefold() for c in new.channels}
+        for ch in cat.channels:
+            if ch.casefold() not in new_fold:
+                removed.append(f"{cat.name}: {ch}")
+
+    # change-Bewertung
+    if not added and not removed and raw_is_clean:
+        change = "unchanged"
+    elif not added and not removed and not raw_is_clean:
+        change = "cleanup"
+        if current_warnings:
+            all_warnings.append(
+                "Die Datei enthaelt unsaubere Eintraege (Duplikate/"
+                "Gross-Kleinschreibung/Leerzeichen). Ein Speichern "
+                "schreibt die bereinigte Struktur zurueck."
+            )
+    else:
+        change = "update"
+
+    return SpecialChannelPlan(
+        mapping_id=descriptor.mapping_id,
+        change=change,
+        categories=new_categories,
+        added=added,
+        removed=removed,
+        warnings=all_warnings,
+        etag=current_etag,
+    )
+
+
+def apply_special_channels_update(
+    categories_input: object, mapping_dir: Path, *, expected_etag: str,
+) -> Tuple[SpecialChannelPlan, SpecialChannelSaveResult]:
+    with _WRITE_LOCK:
+        plan = plan_special_channels_update(categories_input, mapping_dir)
+        if plan.etag != expected_etag:
+            raise MappingConflictError(
+                "Der Mapping-Stand wurde seit der Vorschau geaendert. "
+                "Bitte neu laden und erneut pruefen."
+            )
+        if plan.change == "unchanged":
+            return plan, SpecialChannelSaveResult(
+                written=False, unchanged=True,
+                categories=list(plan.categories), new_etag=plan.etag,
+            )
+        descriptor = _get_descriptor(MAPPING_ID_SPECIAL_CHANNELS)
+        _dump_special_categories(descriptor, mapping_dir, plan.categories)
+        new_etag = _special_channels_etag(plan.categories)
+        return plan, SpecialChannelSaveResult(
+            written=True, unchanged=False,
+            categories=list(plan.categories), new_etag=new_etag,
+        )
+
+
+def list_special_channel_categories(mapping_dir: Path) -> List[SpecialChannelCategory]:
+    cats, _etag, _w = get_special_channels_state(mapping_dir)
+    return cats

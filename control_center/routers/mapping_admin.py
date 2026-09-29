@@ -29,6 +29,7 @@ from services.mapping_admin import (
     MAPPING_ID_GENRE_ALIASES,
     MAPPING_ID_GENRE_OVERRIDES,
     MAPPING_ID_GENRE_FILTERS,
+    MAPPING_ID_SPECIAL_CHANNELS,
     ChannelGenreEntry,
     ChannelGenrePlan,
     GenreAliasEntry,
@@ -41,13 +42,17 @@ from services.mapping_admin import (
     MappingInvalidInputError,
     MappingUnavailableError,
     MappingUnknownIdError,
+    SpecialChannelPlan,
     apply_genre_filter_update,
     apply_mapping_update,
+    apply_special_channels_update,
     get_genre_filter_state,
     get_mapping_entry,
+    get_special_channels_state,
     list_mapping,
     plan_genre_filter_update,
     plan_mapping_update,
+    plan_special_channels_update,
 )
 
 from ..dependencies import get_current_user_id, require_min_access_level, verify_same_origin
@@ -74,6 +79,12 @@ from ..schemas.mapping_admin import (
     GenreFilterListResponse,
     GenreFilterPreviewResponse,
     GenreFilterSaveResponse,
+    SpecialChannelCategorySchema,
+    SpecialChannelListResponse,
+    SpecialChannelPreviewResponse,
+    SpecialChannelSaveResponse,
+    special_channel_plan_to_preview,
+    special_channel_save_to_response,
     genre_filter_plan_to_preview,
     genre_filter_save_to_response,
     entry_to_schema,
@@ -117,7 +128,7 @@ def _mapping_http_error(e: MappingDomainError) -> HTTPException:
     )
 
 
-_SUPPORTED_MAPPING_IDS = frozenset({MAPPING_ID_CHANNEL_GENRE, MAPPING_ID_GENRE_ALIASES, MAPPING_ID_GENRE_OVERRIDES, MAPPING_ID_GENRE_FILTERS})
+_SUPPORTED_MAPPING_IDS = frozenset({MAPPING_ID_CHANNEL_GENRE, MAPPING_ID_GENRE_ALIASES, MAPPING_ID_GENRE_OVERRIDES, MAPPING_ID_GENRE_FILTERS, MAPPING_ID_SPECIAL_CHANNELS})
 
 
 def _ensure_supported(mapping_id: str) -> None:
@@ -147,6 +158,21 @@ def get_mapping(mapping_id: str):
             mapping_id=mapping_id,
             values=values,
             count=len(values),
+            etag=etag,
+            warnings=warnings,
+        )
+    if mapping_id == MAPPING_ID_SPECIAL_CHANNELS:
+        try:
+            categories, etag, warnings = get_special_channels_state(_mapping_dir())
+        except MappingDomainError as e:
+            raise _mapping_http_error(e) from e
+        return SpecialChannelListResponse(
+            mapping_id=mapping_id,
+            categories=[
+                SpecialChannelCategorySchema(name=c.name, channels=list(c.channels))
+                for c in categories
+            ],
+            count=len(categories),
             etag=etag,
             warnings=warnings,
         )
@@ -180,12 +206,12 @@ def get_mapping_entry_endpoint(
     mapping_id: str, key: str = Query(..., min_length=1, max_length=200),
 ):
     _ensure_supported(mapping_id)
-    if mapping_id == MAPPING_ID_GENRE_FILTERS:
+    if mapping_id in (MAPPING_ID_GENRE_FILTERS, MAPPING_ID_SPECIAL_CHANNELS):
         raise HTTPException(
             status_code=404,
             detail=ErrorDetail(
                 code="MAPPING_NO_ENTRIES",
-                message="genre-filters hat keine Einzeleintraege; GET auf die Liste verwenden.",
+                message=f"{mapping_id} hat keine Einzeleintraege; GET auf die Liste verwenden.",
             ).model_dump(),
         )
     try:
@@ -239,6 +265,14 @@ def post_mapping_preview(
         except MappingDomainError as e:
             raise _mapping_http_error(e) from e
         return genre_filter_plan_to_preview(plan)
+    if mapping_id == MAPPING_ID_SPECIAL_CHANNELS:
+        try:
+            plan = plan_special_channels_update(
+                (body or {}).get("categories", []), _mapping_dir(),
+            )
+        except MappingDomainError as e:
+            raise _mapping_http_error(e) from e
+        return special_channel_plan_to_preview(plan)
 
     if key is None:
         raise HTTPException(
@@ -299,6 +333,19 @@ def put_mapping(
             f"(geschrieben={result.written})"
         )
         return genre_filter_save_to_response(plan, result)
+    if mapping_id == MAPPING_ID_SPECIAL_CHANNELS:
+        try:
+            plan, result = apply_special_channels_update(
+                payload.get("categories", []), _mapping_dir(),
+                expected_etag=expected_etag,
+            )
+        except MappingDomainError as e:
+            raise _mapping_http_error(e) from e
+        _logger.info(
+            f"[control_center] {mapping_id} {plan.change} von User {user_id} "
+            f"(geschrieben={result.written})"
+        )
+        return special_channel_save_to_response(plan, result)
 
     if key is None:
         raise HTTPException(
