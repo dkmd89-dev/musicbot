@@ -167,15 +167,21 @@ function _navArtistCard(a) {
     </a>`;
 }
 
-// Song-Zeile: Nummer/Icon, Titel, Untertitel, Dauer. opts.sub: Untertitel (Text),
-// opts.number: Trackzahl statt Icon.
+// Songlisten, aus denen der Player spielt: Schlüssel -> {songs, ctx}. Zeilen und
+// Play-Knöpfe verweisen per data-np-list/-index darauf (N4).
+const _navLists = {};
+
+// Song-Zeile (Klick = ab hier abspielen): Nummer/Icon, Titel, Untertitel, Dauer,
+// "Zur Warteschlange" und Details-Link. opts: key/index (Liste im Player),
+// sub (Untertitel), number (Trackzahl statt Icon).
 function _navSongRow(s, opts) {
   const o = opts || {};
   const lead = o.number != null
     ? `<span class="text-secondary">${_navEsc(String(o.number))}</span>`
     : `<span class="avatar avatar-sm bg-teal-lt">${ccIcon("music")}</span>`;
   return `
-    <a href="${_navEsc(_navHref("song", s.id))}" class="list-group-item list-group-item-action nav-song-link">
+    <div class="list-group-item list-group-item-action nav-song-row" role="button" tabindex="0"
+         data-song-id="${_navEsc(s.id)}" data-np-list="${_navEsc(o.key || "")}" data-np-index="${o.index ?? 0}">
       <div class="row align-items-center g-2">
         <div class="col-auto nav-song-lead">${lead}</div>
         <div class="col min-w-0">
@@ -183,11 +189,30 @@ function _navSongRow(s, opts) {
           ${o.sub ? `<div class="text-secondary small text-truncate">${_navEsc(o.sub)}</div>` : ""}
         </div>
         <div class="col-auto text-secondary small">${s.duration ? _fmtDuration(s.duration) : ""}</div>
+        <div class="col-auto" style="white-space:nowrap;">
+          <button type="button" class="btn btn-icon btn-sm btn-ghost-secondary" data-np-add
+                  title="Zur Warteschlange" aria-label="Zur Warteschlange hinzufügen">${ccIcon("plus")}</button>
+          <a href="${_navEsc(_navHref("song", s.id))}" class="btn btn-icon btn-sm btn-ghost-secondary nav-song-link"
+             title="Details" aria-label="Song-Details">${ccIcon("info-circle")}</a>
+        </div>
       </div>
-    </a>`;
+    </div>`;
 }
 function _navSongSub(s) {
   return [s.artist || "", s.album || ""].filter(Boolean).join(" · ");
+}
+
+// Abspielen / Zufällig / Als Nächstes für die Liste `key` (Detailseiten).
+function _navPlayButtons(key, opts) {
+  const withShuffle = !(opts && opts.shuffle === false);
+  return `<div class="d-flex flex-wrap gap-2 mb-3">
+    <button type="button" class="btn btn-primary" data-np-play="all" data-np-list="${_navEsc(key)}">
+      ${ccIcon("player-play", "me-1")}Abspielen</button>
+    ${withShuffle ? `<button type="button" class="btn" data-np-play="shuffle" data-np-list="${_navEsc(key)}">
+      ${ccIcon("shuffle", "me-1")}Zufällig</button>` : ""}
+    <button type="button" class="btn" data-np-play="next" data-np-list="${_navEsc(key)}">
+      ${ccIcon("playlist", "me-1")}Als Nächstes</button>
+  </div>`;
 }
 
 function _navSection(title, icon, bodyHtml) {
@@ -200,10 +225,13 @@ function _navAlbumGrid(items) {
 function _navArtistGrid(items) {
   return `<div class="nav-grid nav-grid-artists">${items.map(_navArtistCard).join("")}</div>`;
 }
+// opts: key (registriert die Liste für den Player), ctx ({cover_art}), numbered, noSub.
 function _navSongList(items, opts) {
   const o = opts || {};
+  if (o.key) _navLists[o.key] = { songs: items, ctx: o.ctx || null };
   return `<div class="list-group list-group-flush">${items.map((s, i) => _navSongRow(s, {
-    sub: _navSongSub(s),
+    key: o.key, index: i,
+    sub: o.noSub ? "" : _navSongSub(s),
     number: o.numbered ? (s.track ?? (i + 1)) : null,
   })).join("")}</div>`;
 }
@@ -242,9 +270,10 @@ async function _renderAlbumView(id) {
   if (data.year) meta.push(_navEsc(String(data.year)));
   if (data.song_count) meta.push(`${data.song_count} Songs`);
   if (data.duration) meta.push(_fmtDuration(data.duration));
-  const songs = data.songs?.length
-    ? `<div class="card"><div class="list-group list-group-flush">${data.songs.map((s, i) =>
-        _navSongRow(s, { number: s.track ?? (i + 1) })).join("")}</div></div>`
+  const hasSongs = !!data.songs?.length;
+  const songs = hasSongs
+    ? `<div class="card">${_navSongList(data.songs, {
+        key: "detail", ctx: { cover_art: data.cover_art }, numbered: true, noSub: true })}</div>`
     : `<div class="text-secondary">Keine Songs.</div>`;
   return `
     <div class="row g-4 mb-4">
@@ -254,7 +283,8 @@ async function _renderAlbumView(id) {
       <div class="col d-flex flex-column justify-content-end">
         <div class="page-pretitle">Album</div>
         <h2 class="mb-1">${_navEsc(data.name)}</h2>
-        <div class="text-secondary">${artist}${meta.length ? " · " + meta.join(" · ") : ""}</div>
+        <div class="text-secondary mb-3">${artist}${meta.length ? " · " + meta.join(" · ") : ""}</div>
+        ${hasSongs ? _navPlayButtons("detail") : ""}
       </div>
     </div>
     ${songs}`;
@@ -265,6 +295,7 @@ async function _renderSongView(id) {
   const genres = (data.genres || []).join(", ") || data.genre || "–";
   const artist = data.artist_id ? _navLink("artist", data.artist_id, data.artist || "") : _navEsc(data.artist || "–");
   const album = data.album_id ? _navLink("album", data.album_id, data.album || "") : _navEsc(data.album || "–");
+  _navLists.detail = { songs: [data], ctx: { cover_art: data.cover_art } };
   return `
     <div class="row g-4 mb-3">
       <div class="col-12 col-sm-4 col-md-3 col-lg-2">
@@ -274,7 +305,8 @@ async function _renderSongView(id) {
         <div class="page-pretitle">Song</div>
         <h2 class="mb-1">${_navEsc(data.title)}</h2>
         <div class="text-secondary">${artist}</div>
-        <div class="text-secondary small">${album}</div>
+        <div class="text-secondary small mb-3">${album}</div>
+        ${_navPlayButtons("detail", { shuffle: false })}
       </div>
     </div>
     <div class="card"><div class="card-body"><div class="datagrid">
@@ -288,13 +320,14 @@ async function _renderSongView(id) {
 async function _renderGenreView(name) {
   const data = await _navFetch(`/genres/${encodeURIComponent(name)}`);
   const songs = data.songs?.length
-    ? `<div class="card">${_navSongList(data.songs)}</div>`
+    ? `<div class="card">${_navSongList(data.songs, { key: "detail" })}</div>`
     : `<div class="text-secondary">Keine Songs.</div>`;
   return `
-    <div class="mb-4">
+    <div class="mb-3">
       <div class="page-pretitle">Genre</div>
       <h2 class="mb-0">${ccIcon("tag", "me-2 text-teal")}${_navEsc(name)}</h2>
     </div>
+    ${data.songs?.length ? _navPlayButtons("detail") : ""}
     ${songs}`;
 }
 
@@ -303,7 +336,7 @@ async function _renderPlaylistView(id) {
   const meta = [data.owner || "", `${data.song_count} Songs`, data.duration ? _fmtDuration(data.duration) : ""]
     .filter(Boolean).join(" · ");
   const songs = data.songs?.length
-    ? `<div class="card">${_navSongList(data.songs)}</div>`
+    ? `<div class="card">${_navSongList(data.songs, { key: "detail" })}</div>`
     : `<div class="text-secondary">Diese Playlist ist leer.</div>`;
   return `
     <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
@@ -320,6 +353,7 @@ async function _renderPlaylistView(id) {
           ${ccIcon("trash", "me-1")}Löschen</button>
       </div>
     </div>
+    ${data.songs?.length ? _navPlayButtons("detail") : ""}
     ${songs}`;
 }
 
@@ -327,13 +361,14 @@ async function _renderTopSongsView(artistId) {
   const data = await _navFetch(`/artists/${encodeURIComponent(artistId)}/top?count=25`);
   const name = data.artist_name || "";
   const songs = data.songs?.length
-    ? `<div class="card">${_navSongList(data.songs, { numbered: true })}</div>`
+    ? `<div class="card">${_navSongList(data.songs, { key: "detail", numbered: true })}</div>`
     : `<div class="text-secondary">Keine Songs.</div>`;
   return `
-    <div class="mb-4">
+    <div class="mb-3">
       <div class="page-pretitle">Top Songs</div>
       <h2 class="mb-0">${ccIcon("flame", "me-2 text-teal")}${_navLink("artist", data.artist_id || artistId, name)}</h2>
     </div>
+    ${data.songs?.length ? _navPlayButtons("detail") : ""}
     ${songs}`;
 }
 
@@ -363,11 +398,62 @@ async function _navRoute() {
     const html = await _NAV_DETAIL[route.type](route.id);
     if (seq !== _navState.detailSeq) return;   // veraltete Antwort
     out.innerHTML = html;
+    _navDecoratePlayer();
   } catch (err) {
     if (seq !== _navState.detailSeq) return;
     if (err && err.status === 404) ccState.empty(out, "Nicht gefunden", "Dieser Eintrag existiert nicht (mehr).");
     else ccState.error(out, err.message, _navRoute);
   }
+}
+
+// Player (navidrome_player.js) - fehlt er (z. B. in Tests), bleibt die Seite benutzbar.
+function _navPlayer() {
+  return typeof NavPlayer !== "undefined" ? NavPlayer : null;
+}
+function _navDecoratePlayer() {
+  const player = _navPlayer();
+  if (player) player.decorate();
+}
+
+// Klicks in Songlisten und auf die Play-Knöpfe der Detailseiten.
+function _navPlaySongsFrom(list, index) {
+  const player = _navPlayer();
+  if (player && list && list.songs[index]) player.playList(list.songs, index, list.ctx);
+}
+function _navOnPlayClick(ev) {
+  const player = _navPlayer();
+  const t = ev.target && ev.target.closest ? ev.target : null;
+  if (!player || !t) return;
+  const playBtn = t.closest("[data-np-play]");
+  if (playBtn) {
+    ev.preventDefault?.();
+    const list = _navLists[playBtn.dataset.npList];
+    if (!list || !list.songs.length) return;
+    const kind = playBtn.dataset.npPlay;
+    if (kind === "all") player.playList(list.songs, 0, list.ctx);
+    else if (kind === "shuffle") player.playList(list.songs, 0, list.ctx, { shuffle: true });
+    else if (kind === "next") player.addNext(list.songs, list.ctx);
+    return;
+  }
+  const row = t.closest(".nav-song-row");
+  if (!row) return;
+  const list = _navLists[row.dataset.npList];
+  const index = Number(row.dataset.npIndex);
+  if (t.closest("[data-np-add]")) {
+    ev.preventDefault?.();
+    if (list && list.songs[index]) player.addEnd([list.songs[index]], list.ctx);
+    return;
+  }
+  if (t.closest("a")) return;                  // Details-Link: normal navigieren
+  _navPlaySongsFrom(list, index);
+}
+// Enter/Leertaste auf einer fokussierten Zeile = abspielen (Zeilen sind role="button").
+function _navOnRowKey(ev) {
+  if (ev.key !== "Enter" && ev.key !== " ") return;
+  const t = ev.target;
+  if (!t || !t.classList || !t.classList.contains("nav-song-row")) return;
+  ev.preventDefault?.();
+  _navPlaySongsFrom(_navLists[t.dataset.npList], Number(t.dataset.npIndex));
 }
 
 // Hash entfernen, ohne die Seite neu zu laden (feuert kein hashchange).
@@ -548,10 +634,11 @@ async function runSearch(ev) {
     const sections = [];
     if (data.artists?.length) sections.push(_navSection("Artists", "microphone", _navArtistGrid(data.artists)));
     if (data.albums?.length)  sections.push(_navSection("Alben", "disc", _navAlbumGrid(data.albums)));
-    if (data.songs?.length)   sections.push(_navSection("Songs", "music", `<div class="card">${_navSongList(data.songs)}</div>`));
+    if (data.songs?.length)   sections.push(_navSection("Songs", "music", `<div class="card">${_navSongList(data.songs, { key: "search" })}</div>`));
 
     if (!sections.length) { ccState.empty(out, "Keine Ergebnisse", `Nichts gefunden für „${q}“.`); return; }
     out.innerHTML = sections.join("");
+    _navDecoratePlayer();
   } catch (err) {
     if (seq !== _navState.searchSeq) return;
     ccState.error(out, err.message, () => runSearch());
@@ -704,9 +791,10 @@ async function loadFavorites() {
     const sections = [];
     if (data.artists?.length) sections.push(_navSection("Artists", "microphone", _navArtistGrid(data.artists)));
     if (data.albums?.length)  sections.push(_navSection("Alben", "disc", _navAlbumGrid(data.albums)));
-    if (data.songs?.length)   sections.push(_navSection("Songs", "music", `<div class="card">${_navSongList(data.songs)}</div>`));
+    if (data.songs?.length)   sections.push(_navSection("Songs", "music", `<div class="card">${_navSongList(data.songs, { key: "favorites" })}</div>`));
     if (!sections.length) { ccState.empty(list, "Noch keine Favoriten", "Markierte Artists, Alben und Songs erscheinen hier."); return; }
     list.innerHTML = sections.join("");
+    _navDecoratePlayer();
   } catch (err) { ccState.error(list, err.message, loadFavorites); }
 }
 
@@ -784,6 +872,11 @@ function initPage() {
     document.getElementById("nav-playlist-new")?.addEventListener("click", createPlaylist);
     document.getElementById("nav-playlists-list")?.addEventListener("click", _navOnPlaylistClick);
     document.getElementById("nav-detail-content")?.addEventListener("click", _navOnPlaylistClick);
+    for (const id of ["nav-detail-content", "nav-search-results", "nav-favorites-list"]) {
+      document.getElementById(id)?.addEventListener("click", _navOnPlayClick);
+      document.getElementById(id)?.addEventListener("keydown", _navOnRowKey);
+    }
+    _navPlayer()?.init();
     document.getElementById("nav-shuffle-btn")?.addEventListener("click", loadShelfRandom);
     document.getElementById("nav-detail-back")?.addEventListener("click", _navBackToOverview);
 
