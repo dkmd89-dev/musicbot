@@ -591,16 +591,17 @@ button.track-row:focus-visible { outline: 2px solid var(--accent); outline-offse
 }
 
 .artist-card:focus-visible {
-  outline: 2px solid #066fd1;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
 .artist-avatar {
+  position: relative;
   width: 120px;
   height: 120px;
   border-radius: 50%;
   overflow: hidden;
-  background: rgba(6, 111, 209, 0.15);
+  background: rgba(127, 127, 127, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -619,7 +620,7 @@ button.track-row:focus-visible { outline: 2px solid var(--accent); outline-offse
 .artist-initial {
   font-size: 2.5rem;
   font-weight: 600;
-  color: #066fd1;
+  color: var(--accent);
   user-select: none;
   line-height: 1;
 }
@@ -659,7 +660,102 @@ button.track-row:focus-visible { outline: 2px solid var(--accent); outline-offse
     font-size: 0.75rem;
   }
 }
+/* Artist-Bild liegt über dem Initial (bei Ladefehler bleibt der Buchstabe). */
+.artist-avatar .nav-cover-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 /* === /Navidrome: Artist Grid === */
+
+/* === Navidrome N1: Cover-Kacheln, Raster, Regale === */
+.nav-cover-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+}
+.nav-cover-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tblr-secondary, #8b97a8);
+  background: rgba(127, 127, 127, 0.12);
+}
+.nav-cover-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.nav-tile {
+  display: block;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+  border-radius: 10px;
+  transition: transform 0.15s ease;
+}
+.nav-tile:hover { transform: translateY(-2px); color: inherit; }
+.nav-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.nav-cover {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+.nav-tile-title {
+  margin-top: 0.4rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-tile-sub {
+  font-size: 0.8rem;
+  color: var(--tblr-secondary, #8b97a8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 1.25rem 1rem;
+}
+.nav-grid.nav-grid-artists {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+/* Regal: eine Zeile, seitlich scrollbar; Kacheln haben feste Breite. */
+.nav-shelf-row {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding: 0.25rem 0.25rem 0.75rem;
+  scroll-snap-type: x proximity;
+}
+.nav-shelf-row > .nav-tile,
+.nav-shelf-row > .artist-card {
+  flex: 0 0 150px;
+  scroll-snap-align: start;
+}
+.nav-shelf-row > .artist-card { flex-basis: 140px; }
+
+@media (max-width: 576px) {
+  .nav-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 0.75rem; }
+  .nav-grid.nav-grid-artists { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+  .nav-shelf-row > .nav-tile { flex-basis: 130px; }
+  .nav-shelf-row > .artist-card { flex-basis: 110px; }
+}
+/* === /Navidrome N1 === */
 
 /* === Logger: Modulliste (CC-LOGGER-L6.1 Dashboard) === */
 /* Scrollbare Liste (bei vielen Modulen); Items sind native <button>s

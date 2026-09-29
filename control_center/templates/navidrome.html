@@ -2,220 +2,184 @@
 {% block title %}Navidrome – MusicBot Control Center{% endblock %}
 
 {% block content %}
-
-<div class="page-header d-print-none">
-  <div class="container-xl">
-    <div class="row g-2 align-items-center">
-      <div class="col">
-        <h2 class="page-title">Navidrome</h2>
-        <div class="text-muted mt-1">
-          Vollständige Verwaltung: Browse, Suche, Playlists, Favoriten, Scan.
+{# CC-UI Navidrome N1 (Nutzerfreigabe 2026-09-29): Musik-Bereich im Stil von
+   Symfonium — Suche im Kopf, Pill-Reiter, Start mit Regalen, Cover-/Artist-
+   Raster. Detailansichten (Modal) bleiben bis N2 unverändert. Element-IDs
+   sind Vertrag mit static/pages/navidrome.js. #}
+<div class="page-header d-print-none mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col-12 col-lg">
+      <div class="page-pretitle">Music</div>
+      <h2 class="page-title"><svg class="icon me-2 text-teal"><use href="#i-headphones"/></svg>Navidrome</h2>
+      <div class="text-secondary mt-1">Deine Musik: stöbern, suchen, Playlists verwalten.</div>
+    </div>
+    <div class="col-12 col-lg-auto">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <form id="nav-search-form" class="flex-fill" role="search" autocomplete="off">
+          <div class="input-icon">
+            <span class="input-icon-addon"><svg class="icon"><use href="#i-search"/></svg></span>
+            <input type="search" id="nav-search-input" class="form-control"
+                   placeholder="Suche in deiner Musik…" aria-label="Suche in deiner Musik">
+          </div>
+        </form>
+        <div id="navidrome-status-row" class="d-flex align-items-center gap-2"
+             data-status-endpoint="/api/v1/navidrome/status"
+             data-scan-endpoint="/api/v1/navidrome/scan">
+          <span id="navidrome-status" class="badge bg-secondary-lt" style="margin-bottom:0">Lädt …</span>
+          <span id="navidrome-artist-count" class="text-secondary small"></span>
         </div>
-      </div>
-      <div class="col-auto ms-auto d-print-none">
-        <button id="navidrome-scan-btn" class="btn btn-primary">
-          <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24"
-               viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
-               stroke-linecap="round" stroke-linejoin="round">
-            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-            <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" />
-            <path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" />
-          </svg>
-          Scan starten
+        <button id="navidrome-scan-btn" type="button" class="btn">
+          <svg class="icon me-1"><use href="#i-scan"/></svg>Scan
+        </button>
+        <button id="navidrome-scan-log-btn" type="button" class="btn btn-ghost-secondary d-none"
+                data-bs-toggle="offcanvas" data-bs-target="#navidrome-scan-offcanvas"
+                aria-label="Scan-Ausgabe anzeigen" title="Scan-Ausgabe anzeigen">
+          <svg class="icon"><use href="#i-logs"/></svg>
         </button>
       </div>
     </div>
   </div>
 </div>
 
-<div class="page-body">
-  <div class="container-xl">
+<!-- Reiter (Pills) -->
+<ul class="nav nav-pills mb-3 flex-nowrap overflow-auto" id="nav-tabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <a href="#nav-pane-start" class="nav-link active" role="tab" aria-selected="true" data-navtab="start">
+      <svg class="icon me-1"><use href="#i-home"/></svg>Start</a>
+  </li>
+  <li class="nav-item" role="presentation">
+    <a href="#nav-pane-artists" class="nav-link" role="tab" aria-selected="false" data-navtab="artists">
+      <svg class="icon me-1"><use href="#i-microphone"/></svg>Artists</a>
+  </li>
+  <li class="nav-item" role="presentation">
+    <a href="#nav-pane-albums" class="nav-link" role="tab" aria-selected="false" data-navtab="albums">
+      <svg class="icon me-1"><use href="#i-disc"/></svg>Alben</a>
+  </li>
+  <li class="nav-item" role="presentation">
+    <a href="#nav-pane-genres" class="nav-link" role="tab" aria-selected="false" data-navtab="genres">
+      <svg class="icon me-1"><use href="#i-tag"/></svg>Genres</a>
+  </li>
+  <li class="nav-item" role="presentation">
+    <a href="#nav-pane-playlists" class="nav-link" role="tab" aria-selected="false" data-navtab="playlists">
+      <svg class="icon me-1"><use href="#i-playlist"/></svg>Playlists</a>
+  </li>
+  <li class="nav-item" role="presentation">
+    <a href="#nav-pane-favorites" class="nav-link" role="tab" aria-selected="false" data-navtab="favorites">
+      <svg class="icon me-1"><use href="#i-star"/></svg>Favoriten</a>
+  </li>
+</ul>
 
-    <!-- ===================== STATUS ===================== -->
-    <div class="row row-deck row-cards" id="navidrome-status-row"
-         data-status-endpoint="/api/v1/navidrome/status"
-         data-scan-endpoint="/api/v1/navidrome/scan">
-      <div class="col-sm-6 col-lg-3">
-        <div class="card">
-          <div class="card-body">
-            <div class="subheader">Verbindung</div>
-            <div class="h1 mb-0" id="navidrome-status">–</div>
-            <div class="mt-2">
-              <span class="status status-secondary" id="navidrome-connected-status">
-                Lädt…
-              </span>
-            </div>
-          </div>
-        </div>
+<div class="tab-content">
+
+  <!-- Start: Regale -->
+  <div class="tab-pane active show" id="nav-pane-start" role="tabpanel">
+    <section class="mb-4">
+      <div class="d-flex align-items-baseline justify-content-between mb-2">
+        <h3 class="mb-0">Zuletzt hinzugefügt</h3>
+        <a href="#" class="small" data-nav-goto="albums">Alle Alben →</a>
       </div>
-      <div class="col-sm-6 col-lg-3">
-        <div class="card">
-          <div class="card-body">
-            <div class="subheader">Artists</div>
-            <div class="h1 mb-0" id="navidrome-artist-count">–</div>
-          </div>
-        </div>
+      <div id="nav-shelf-newest" class="nav-shelf"></div>
+    </section>
+    <section class="mb-4">
+      <div class="d-flex align-items-baseline justify-content-between mb-2">
+        <h3 class="mb-0">Zufällig für dich</h3>
+        <button type="button" class="btn btn-sm btn-ghost-secondary" id="nav-shuffle-btn">
+          <svg class="icon me-1"><use href="#i-shuffle"/></svg>Neu mischen
+        </button>
       </div>
+      <div id="nav-shelf-random" class="nav-shelf"></div>
+    </section>
+    <section class="mb-4">
+      <div class="d-flex align-items-baseline justify-content-between mb-2">
+        <h3 class="mb-0">Deine Artists</h3>
+        <a href="#" class="small" data-nav-goto="artists">Alle Artists →</a>
+      </div>
+      <div id="nav-shelf-artists" class="nav-shelf"></div>
+    </section>
+    <section class="mb-4" id="nav-shelf-favorites-section" hidden>
+      <div class="d-flex align-items-baseline justify-content-between mb-2">
+        <h3 class="mb-0">Favoriten</h3>
+        <a href="#" class="small" data-nav-goto="favorites">Alle Favoriten →</a>
+      </div>
+      <div id="nav-shelf-favorites" class="nav-shelf"></div>
+    </section>
+  </div>
+
+  <!-- Artists -->
+  <div class="tab-pane" id="nav-pane-artists" role="tabpanel">
+    <div id="nav-artists-list"></div>
+    <div class="text-center mt-3" id="nav-artists-footer"></div>
+  </div>
+
+  <!-- Alben -->
+  <div class="tab-pane" id="nav-pane-albums" role="tabpanel">
+    <div id="nav-albums-list"></div>
+    <div class="text-center mt-3" id="nav-albums-footer"></div>
+  </div>
+
+  <!-- Genres -->
+  <div class="tab-pane" id="nav-pane-genres" role="tabpanel">
+    <div id="nav-genres-list"></div>
+  </div>
+
+  <!-- Playlists -->
+  <div class="tab-pane" id="nav-pane-playlists" role="tabpanel">
+    <div class="d-flex justify-content-end mb-3">
+      <button class="btn btn-primary" id="nav-playlist-new" type="button">
+        <svg class="icon me-1"><use href="#i-plus"/></svg>Neue Playlist
+      </button>
     </div>
+    <div id="nav-playlists-list"></div>
+    <div class="text-center mt-3" id="nav-playlists-footer"></div>
+  </div>
 
-    <!-- ===================== TABS ===================== -->
-    <div class="card mt-3">
-      <div class="card-header">
-        <ul class="nav nav-tabs card-header-tabs" data-bs-toggle="tabs" role="tablist">
-          <li class="nav-item" role="presentation">
-            <a href="#tab-artists" class="nav-link active" data-bs-toggle="tab" role="tab"
-               data-navtab="artists">🎤 Artists</a>
-          </li>
-          <li class="nav-item" role="presentation">
-            <a href="#tab-albums" class="nav-link" data-bs-toggle="tab" role="tab"
-               data-navtab="albums">💿 Alben</a>
-          </li>
-          <li class="nav-item" role="presentation">
-            <a href="#tab-genres" class="nav-link" data-bs-toggle="tab" role="tab"
-               data-navtab="genres">🎭 Genres</a>
-          </li>
-          <li class="nav-item" role="presentation">
-            <a href="#tab-search" class="nav-link" data-bs-toggle="tab" role="tab"
-               data-navtab="search">🔍 Suche</a>
-          </li>
-          <li class="nav-item" role="presentation">
-            <a href="#tab-playlists" class="nav-link" data-bs-toggle="tab" role="tab"
-               data-navtab="playlists">📋 Playlists</a>
-          </li>
-          <li class="nav-item" role="presentation">
-            <a href="#tab-favorites" class="nav-link" data-bs-toggle="tab" role="tab"
-               data-navtab="favorites">⭐ Favoriten</a>
-          </li>
-          <li class="nav-item" role="presentation">
-            <a href="#tab-discover" class="nav-link" data-bs-toggle="tab" role="tab"
-               data-navtab="discover">🎵 Entdecken</a>
-          </li>
-        </ul>
+  <!-- Favoriten -->
+  <div class="tab-pane" id="nav-pane-favorites" role="tabpanel">
+    <div id="nav-favorites-list"></div>
+  </div>
+
+  <!-- Suchergebnisse (kein eigener Reiter; erscheint bei einer Suche) -->
+  <div class="tab-pane" id="nav-pane-search" role="tabpanel" aria-live="polite">
+    <div id="nav-search-results"></div>
+  </div>
+
+</div>
+
+<!-- Detail-Modal (bleibt bis N2 unverändert) -->
+<div class="modal modal-blur fade" id="nav-detail-modal" tabindex="-1"
+     role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-md-down"
+       role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button type="button"
+                class="btn btn-sm btn-icon btn-ghost-secondary d-none me-2"
+                id="nav-detail-back" title="Zurück" aria-label="Zurück">
+          <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24"
+               viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+            <path d="M15 6l-6 6l6 6" />
+          </svg>
+        </button>
+        <h5 class="modal-title text-truncate flex-grow-1" id="nav-detail-title">Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"
+                aria-label="Schließen"></button>
       </div>
-
-      <div class="card-body">
-        <div class="tab-content">
-
-          <!-- ---------- Artists ---------- -->
-          <div class="tab-pane active show" id="tab-artists" role="tabpanel">
-            <div id="nav-artists-list" class="text-muted">Lädt…</div>
-            <div class="mt-2 d-flex gap-2 align-items-center">
-              <button class="btn btn-sm" id="nav-artists-prev">← Zurück</button>
-              <span id="nav-artists-page" class="text-muted">Seite 1</span>
-              <button class="btn btn-sm" id="nav-artists-next">Weiter →</button>
-            </div>
-          </div>
-
-          <!-- ---------- Alben ---------- -->
-          <div class="tab-pane" id="tab-albums" role="tabpanel">
-            <div id="nav-albums-list" class="text-muted">Lädt…</div>
-            <div class="mt-2 d-flex gap-2 align-items-center">
-              <button class="btn btn-sm" id="nav-albums-prev">← Zurück</button>
-              <span id="nav-albums-page" class="text-muted">Seite 1</span>
-              <button class="btn btn-sm" id="nav-albums-next">Weiter →</button>
-            </div>
-          </div>
-
-          <!-- ---------- Genres ---------- -->
-          <div class="tab-pane" id="tab-genres" role="tabpanel">
-            <div id="nav-genres-list" class="text-muted">Lädt…</div>
-          </div>
-
-          <!-- ---------- Suche ---------- -->
-          <div class="tab-pane" id="tab-search" role="tabpanel">
-            <form id="nav-search-form" class="row g-2 mb-3">
-              <div class="col-auto">
-                <select id="nav-search-type" class="form-select">
-                  <option value="all">Alle</option>
-                  <option value="artists">Artists</option>
-                  <option value="albums">Alben</option>
-                  <option value="songs">Songs</option>
-                </select>
-              </div>
-              <div class="col">
-                <input type="text" id="nav-search-input" class="form-control"
-                       placeholder="Suchbegriff…" autocomplete="off">
-              </div>
-              <div class="col-auto">
-                <button type="submit" class="btn btn-primary">Suchen</button>
-              </div>
-            </form>
-            <div id="nav-search-results" class="text-muted"></div>
-          </div>
-
-          <!-- ---------- Playlists ---------- -->
-          <div class="tab-pane" id="tab-playlists" role="tabpanel">
-            <div class="mb-2">
-              <button class="btn btn-sm btn-primary" id="nav-playlist-new">
-                ➕ Neue Playlist
-              </button>
-            </div>
-            <div id="nav-playlists-list" class="text-muted">Lädt…</div>
-            <div class="mt-2 d-flex gap-2 align-items-center">
-              <button class="btn btn-sm" id="nav-playlists-prev">← Zurück</button>
-              <span id="nav-playlists-page" class="text-muted">Seite 1</span>
-              <button class="btn btn-sm" id="nav-playlists-next">Weiter →</button>
-            </div>
-          </div>
-
-          <!-- ---------- Favoriten ---------- -->
-          <div class="tab-pane" id="tab-favorites" role="tabpanel">
-            <div id="nav-favorites-list" class="text-muted">Lädt…</div>
-          </div>
-
-          <!-- ---------- Entdecken ---------- -->
-          <div class="tab-pane" id="tab-discover" role="tabpanel">
-            <div class="mb-3 d-flex gap-2">
-              <button class="btn btn-sm" id="nav-discover-random">🎲 Zufällige Songs</button>
-              <button class="btn btn-sm" id="nav-discover-newest">🆕 Neue Alben</button>
-            </div>
-            <div id="nav-discover-list" class="text-muted"></div>
-          </div>
-
-        </div>
-      </div>
+      <div class="modal-body" id="nav-detail-body">Lädt…</div>
     </div>
+  </div>
+</div>
 
-    <!-- ===================== DETAIL-MODAL ===================== -->
-    <div class="modal modal-blur fade" id="nav-detail-modal" tabindex="-1"
-         role="dialog" aria-hidden="true">
-      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-md-down"
-           role="document">
-        <div class="modal-content">
-          <div class="modal-header">
-            <button type="button"
-                    class="btn btn-sm btn-icon btn-ghost-secondary d-none me-2"
-                    id="nav-detail-back" title="Zurück" aria-label="Zurück">
-              <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24"
-                   viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
-                   stroke-linecap="round" stroke-linejoin="round">
-                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                <path d="M15 6l-6 6l6 6" />
-              </svg>
-            </button>
-            <h5 class="modal-title text-truncate flex-grow-1" id="nav-detail-title">Details</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"
-                    aria-label="Schließen"></button>
-          </div>
-          <div class="modal-body" id="nav-detail-body">Lädt…</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===================== SCAN-AUSGABE ===================== -->
-    <div class="row mt-3">
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header">
-            <h3 class="card-title">Scan-Ausgabe</h3>
-          </div>
-          <div class="card-body">
-            <pre id="navidrome-scan-output" class="text-muted">Noch kein Scan ausgeführt.</pre>
-          </div>
-        </div>
-      </div>
-    </div>
-
+<!-- Scan-Ausgabe als Seitenpanel -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="navidrome-scan-offcanvas"
+     role="dialog" aria-modal="true" aria-labelledby="navidrome-scan-title">
+  <div class="offcanvas-header">
+    <h2 class="offcanvas-title" id="navidrome-scan-title"><svg class="icon me-2 text-teal"><use href="#i-scan"/></svg>Scan-Ausgabe</h2>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Schließen"></button>
+  </div>
+  <div class="offcanvas-body">
+    <pre id="navidrome-scan-output" class="cc-terminal">Noch kein Scan ausgeführt.</pre>
   </div>
 </div>
 {% endblock %}

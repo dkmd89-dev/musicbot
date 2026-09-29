@@ -1,16 +1,20 @@
 // control_center/static/pages/navidrome.js
-// Navidrome-Seite: Status, Scan, Browse, Suche, Playlists, Favoriten,
-// Entdecken - mit Modal-Stack-Navigation (Back-Button + Breadcrumb)
-// und Cover-Art via /api/v1/navidrome/cover/{id}.
+// Navidrome-Seite (CC-UI N1): Kopf mit Suche/Status/Scan, Pill-Reiter, Start
+// mit Regalen, Cover-/Artist-Raster mit "Mehr laden". Die Detailansichten
+// (Artist/Album/Song/Genre/Playlist) laufen bis N2 unverändert im Modal-Stack.
+// Cover-Art via /api/v1/navidrome/cover/{id}.
 
 // =====================================================================
 // State
 // =====================================================================
 const _navState = {
-  artistsPage: 0,   artistsPageSize: 30,
-  albumsPage: 0,    albumsPageSize: 15,
-  albumsArtistId: null,
-  playlistsPage: 0, playlistsPageSize: 20,
+  tab: "start",       // aktiver Reiter (oder "search")
+  prevTab: "start",   // letzter echter Reiter, Ziel beim Verlassen der Suche
+  searchSeq: 0,       // verwirft veraltete Suchantworten
+  loaded: {},         // Reiter -> bereits geladen
+  artists:   { page: 0, size: 30, html: "" },
+  albums:    { page: 0, size: 30, html: "" },
+  playlists: { page: 0, size: 20, html: "" },
 };
 
 // =====================================================================
@@ -18,48 +22,22 @@ const _navState = {
 // =====================================================================
 function _navEndpoints() {
   const el = document.getElementById("navidrome-status-row");
-  const status = el?.dataset.statusEndpoint || "/api/v1/navidrome/status";
-  const scan   = el?.dataset.scanEndpoint   || "/api/v1/navidrome/scan";
+  const status = el?.dataset?.statusEndpoint || "/api/v1/navidrome/status";
+  const scan   = el?.dataset?.scanEndpoint   || "/api/v1/navidrome/scan";
   const base   = status.replace(/\/status$/, "");
   return { base, status, scan };
 }
 
-async function _navFetch(path, options = {}) {
+// Lesender Zugriff auf die Navidrome-API (Fehler: CcApiError mit Meldung).
+function _navFetch(path) {
   const { base } = _navEndpoints();
-  const opts = {
-    credentials: "same-origin",
-    ...options,
-    headers: {
-      "X-Requested-With": "XMLHttpRequest",
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.headers || {}),
-    },
-  };
-  const res = await fetch(apiUrl(base + path), opts);
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try {
-      const body = await res.json();
-      if (body?.detail) {
-        detail = typeof body.detail === "string" ? body.detail : (body.detail.message || detail);
-      }
-    } catch (_) { /* ignore */ }
-    throw new Error(detail);
-  }
-  if (res.status === 204) return null;
-  return res.json();
+  return ccApi("GET", base + path);
 }
 
 function _navEsc(s) {
   return (typeof _escapeHtml === "function")
     ? _escapeHtml(String(s ?? ""))
     : String(s ?? "");
-}
-function _navErr(el, err) {
-  if (el) el.innerHTML = `<div class="text-danger">❌ ${_navEsc(err.message || err)}</div>`;
-}
-function _navEmpty(el, msg) {
-  if (el) el.innerHTML = `<div class="text-muted">${_navEsc(msg)}</div>`;
 }
 function _fmtDuration(sec) {
   if (!sec && sec !== 0) return "";
@@ -72,66 +50,65 @@ function _coverUrl(coverId, size = 300) {
   const { base } = _navEndpoints();
   return apiUrl(`${base}/cover/${encodeURIComponent(coverId)}?size=${size}`);
 }
-function _coverImg(coverId, size = 300, aspect = "1") {
-  if (coverId) {
-    return `<img src="${_coverUrl(coverId, size)}" alt=""
-                 style="width:100%;height:100%;object-fit:cover;display:block;"
-                 loading="lazy" onerror="this.style.display='none'">`;
-  }
-  return `<div class="d-flex align-items-center justify-content-center bg-secondary-lt"
-               style="width:100%;height:100%;aspect-ratio:${aspect};">
-            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-lg text-muted"
-                 width="24" height="24" viewBox="0 0 24 24" stroke-width="1.5"
-                 stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-              <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-              <path d="M3 3m0 3a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3z"/>
-              <path d="M9 17v-8l6 4l-6 4"/>
-            </svg>
-          </div>`;
+// Cover mit Platzhalter darunter: schlägt das Laden fehl, bleibt das Icon sichtbar.
+function _coverImg(coverId, size = 300) {
+  const fallback = `<div class="nav-cover-fallback">${ccIcon("disc", "icon-lg")}</div>`;
+  if (!coverId) return `<div class="nav-cover-wrap">${fallback}</div>`;
+  return `<div class="nav-cover-wrap">${fallback}
+    <img class="nav-cover-img" src="${_coverUrl(coverId, size)}" alt=""
+         loading="lazy" onerror="this.style.display='none'"></div>`;
 }
 
 // =====================================================================
 // Status
 // =====================================================================
-function renderNavidromeStatus(el, data) {
-  const connectedEl = document.getElementById("navidrome-status");
-  const statusEl    = document.getElementById("navidrome-connected-status");
-  const countEl     = document.getElementById("navidrome-artist-count");
-
-  if (data.connected) {
-    connectedEl.textContent = "Online";
-    statusEl.className = "status status-success";
-    statusEl.textContent = "Navidrome erreichbar";
-  } else {
-    connectedEl.textContent = "Offline";
-    statusEl.className = "status status-danger";
-    statusEl.textContent = "Nicht erreichbar";
+function renderNavidromeStatus(data) {
+  const badge = document.getElementById("navidrome-status");
+  const countEl = document.getElementById("navidrome-artist-count");
+  if (badge) {
+    const online = !!data.connected;
+    badge.className = "badge " + (online ? "bg-green-lt" : "bg-red-lt");
+    badge.innerHTML = ccIcon(online ? "check" : "alert", "icon-sm me-1") + (online ? "Online" : "Offline");
   }
-  countEl.textContent = data.artist_count != null
-    ? _navEsc(String(data.artist_count)) : "–";
+  if (countEl) {
+    countEl.textContent = data.artist_count != null ? `${data.artist_count} Artists` : "";
+  }
 }
-function loadNavidromeStatus() {
+async function loadNavidromeStatus() {
   const { status } = _navEndpoints();
-  return _loadInto("navidrome-status-row", status, renderNavidromeStatus, loadNavidromeStatus);
+  try {
+    renderNavidromeStatus(await ccApi("GET", status));
+  } catch (err) {
+    if (err && err.status === 401) return;
+    renderNavidromeStatus({ connected: false });
+  }
 }
 
 // =====================================================================
-// Scan
+// Scan (Ausgabe im Seitenpanel, Ergebnis als Toast)
 // =====================================================================
 async function triggerNavidromeScan() {
   const btn = document.getElementById("navidrome-scan-btn");
   const out = document.getElementById("navidrome-scan-output");
+  const logBtn = document.getElementById("navidrome-scan-log-btn");
   if (!btn || !out) return;
   btn.disabled = true;
   out.textContent = "Scan läuft…";
+  if (logBtn) logBtn.classList.remove("d-none");
   try {
-    const data = await _navFetch("/scan", { method: "POST" });
-    out.textContent = data.success
-      ? `✅ Scan erfolgreich (rc=${data.returncode})\n${data.stdout || ""}`
-      : `❌ Scan fehlgeschlagen (rc=${data.returncode})\n${data.stderr || ""}`;
+    const { scan } = _navEndpoints();
+    const data = await ccApi("POST", scan);
+    if (data.success) {
+      out.textContent = `Scan erfolgreich (rc=${data.returncode})\n${data.stdout || ""}`;
+      ccToast("ok", "Scan abgeschlossen");
+    } else {
+      out.textContent = `Scan fehlgeschlagen (rc=${data.returncode})\n${data.stderr || ""}`;
+      ccToast("error", "Scan fehlgeschlagen", "Details in der Scan-Ausgabe.");
+    }
     loadNavidromeStatus();
   } catch (err) {
-    out.textContent = `❌ Fehler: ${err.message}`;
+    out.textContent = `Fehler: ${err.message}`;
+    ccToast("error", "Scan nicht möglich", err.message);
   } finally {
     btn.disabled = false;
   }
@@ -281,7 +258,7 @@ function _wireBreadcrumbJump(root) {
 }
 
 // =====================================================================
-// View-Renderer
+// View-Renderer (Detailansichten im Modal, bis N2 unverändert)
 // =====================================================================
 async function _renderArtistView(id) {
   const data = await _navFetch(`/artists/${encodeURIComponent(id)}`);
@@ -473,99 +450,199 @@ async function _renderTopSongsView(artistId, artistName) {
 }
 
 // =====================================================================
-// Artist-Liste (Hauptseite)
+// Kacheln (Alben/Artists/Songs) - gemeinsam für Regale, Raster und Suche
 // =====================================================================
-async function loadArtists(page = _navState.artistsPage) {
-  _navState.artistsPage = page;
-  const list = document.getElementById("nav-artists-list");
-  const pageEl = document.getElementById("nav-artists-page");
-  if (!list) return;
-  list.innerHTML = "Lädt…";
+function _navAlbumTile(a) {
+  const sub = [a.artist || "", a.year ? String(a.year) : ""].filter(Boolean).join(" · ");
+  return `
+    <a href="#" class="nav-tile nav-album-link" data-id="${_navEsc(a.id)}" data-name="${_navEsc(a.name)}">
+      <div class="nav-cover">${_coverImg(a.cover_art, 300)}</div>
+      <div class="nav-tile-title">${_navEsc(a.name)}</div>
+      <div class="nav-tile-sub">${_navEsc(sub)}</div>
+    </a>`;
+}
 
-  try {
-    const q = `?page=${page}&page_size=${_navState.artistsPageSize}`;
-    const data = await _navFetch(`/artists${q}`);
+function _navArtistCard(a) {
+  // Navidrome-Cover-Fallback: artist_id funktioniert als Cover-ID, weil
+  // Navidrome artist.jpg im Artist-Verzeichnis automatisch ausliefert.
+  const coverId = a.cover_art || a.coverArt || a.id || null;
+  const initial = (a.name || "?").charAt(0).toUpperCase();
+  const avatarInner = coverId
+    ? `<span class="artist-initial">${_navEsc(initial)}</span>
+       <img class="nav-cover-img" src="${_coverUrl(coverId, 300)}" alt="" loading="lazy"
+            onerror="this.style.display='none'">`
+    : `<span class="artist-initial">${_navEsc(initial)}</span>`;
+  const meta = a.album_count != null
+    ? `<div class="artist-meta">${a.album_count} ${a.album_count === 1 ? "Album" : "Alben"}</div>`
+    : "";
+  return `
+    <a href="#" class="artist-card nav-artist-link" data-id="${_navEsc(a.id)}" data-name="${_navEsc(a.name)}">
+      <div class="artist-avatar">${avatarInner}</div>
+      <div class="artist-name">${_navEsc(a.name)}</div>
+      ${meta}
+    </a>`;
+}
 
-    if (!data.items.length) {
-      _navEmpty(list, "Keine Artists gefunden.");
-    } else {
-      const cards = data.items.map(a => {
-        // Navidrome-Cover-Fallback: artist_id funktioniert als Cover-ID,
-        // weil Navidrome artist.jpg im Artist-Verzeichnis automatisch ausliefert.
-        const coverId = a.cover_art || a.coverArt || a.id || null;
-        const initial = (a.name || "?").charAt(0).toUpperCase();
-        const avatarInner = coverId
-          ? _coverImg(coverId, 300)
-          : `<span class="artist-initial">${_navEsc(initial)}</span>`;
-        const albumCount = (a.album_count ?? 0);
-        const albumLabel = albumCount === 1 ? "Album" : "Alben";
-        return `
-          <a href="#" class="artist-card nav-artist-link"
-             data-id="${_navEsc(a.id)}" data-name="${_navEsc(a.name)}">
-            <div class="artist-avatar">${avatarInner}</div>
-            <div class="artist-name">${_navEsc(a.name)}</div>
-            <div class="artist-meta">${albumCount} ${albumLabel}</div>
-          </a>
-        `;
-      }).join("");
-      list.innerHTML = `<div class="artist-grid">${cards}</div>`;
-    }
+function _navSongRow(s, withAlbum) {
+  const sub = [s.artist || "", withAlbum ? (s.album || "") : ""].filter(Boolean).join(" · ");
+  return `
+    <a href="#" class="list-group-item list-group-item-action nav-song-link"
+       data-id="${_navEsc(s.id)}" data-name="${_navEsc(s.title)}">
+      <div class="row align-items-center g-2">
+        <div class="col-auto"><span class="avatar avatar-sm bg-teal-lt">${ccIcon("music")}</span></div>
+        <div class="col min-w-0">
+          <div class="text-truncate fw-medium">${_navEsc(s.title)}</div>
+          <div class="text-secondary small text-truncate">${_navEsc(sub)}</div>
+        </div>
+        <div class="col-auto text-secondary small">${s.duration ? _fmtDuration(s.duration) : ""}</div>
+      </div>
+    </a>`;
+}
 
-    if (pageEl) pageEl.textContent = `Seite ${page + 1} · insgesamt ${data.total}`;
-    document.getElementById("nav-artists-prev").disabled = page <= 0;
-    document.getElementById("nav-artists-next").disabled = !data.has_next;
-    _wireDetailLinks(list);
-  } catch (err) {
-    _navErr(list, err);
-  }
+function _navSection(title, icon, bodyHtml) {
+  return `<section class="mb-4">
+    <h3 class="subheader mb-2">${ccIcon(icon, "icon-sm me-1")}${_navEsc(title)}</h3>${bodyHtml}</section>`;
+}
+function _navAlbumGrid(items) {
+  return `<div class="nav-grid">${items.map(_navAlbumTile).join("")}</div>`;
+}
+function _navArtistGrid(items) {
+  return `<div class="nav-grid nav-grid-artists">${items.map(_navArtistCard).join("")}</div>`;
+}
+function _navSongList(items, withAlbum) {
+  return `<div class="list-group list-group-flush">${items.map(s => _navSongRow(s, withAlbum)).join("")}</div>`;
+}
+function _navShelfRow(html) {
+  return `<div class="nav-shelf-row">${html}</div>`;
 }
 
 // =====================================================================
-// Album-Liste (Hauptseite)
+// Start: Regale (jedes lädt unabhängig, Fehler nur im jeweiligen Regal)
 // =====================================================================
-async function loadAlbums(page = _navState.albumsPage) {
-  _navState.albumsPage = page;
-  const list = document.getElementById("nav-albums-list");
-  const pageEl = document.getElementById("nav-albums-page");
-  if (!list) return;
-  list.innerHTML = "Lädt…";
-
+async function loadShelfNewest() {
+  const el = document.getElementById("nav-shelf-newest");
+  if (!el) return;
+  ccState.loading(el);
   try {
-    const params = new URLSearchParams({
-      page: String(page),
-      page_size: String(_navState.albumsPageSize),
-    });
-    if (_navState.albumsArtistId) params.set("artist_id", _navState.albumsArtistId);
+    const data = await _navFetch("/newest?page=0&page_size=12");
+    if (!data.items?.length) { ccState.empty(el, "Noch keine Alben", "Neue Alben erscheinen nach dem nächsten Scan."); return; }
+    el.innerHTML = _navShelfRow(data.items.map(_navAlbumTile).join(""));
+    _wireDetailLinks(el);
+  } catch (err) { ccState.error(el, err.message, loadShelfNewest); }
+}
 
-    const data = await _navFetch(`/albums?${params.toString()}`);
-
-    if (!data.items.length) {
-      _navEmpty(list, "Keine Alben gefunden.");
-    } else {
-      list.innerHTML = `<div class="row row-cards">${data.items.map(a => `
-        <div class="col-6 col-md-4 col-lg-3">
-          <a href="#" class="card card-link nav-album-link"
-             data-id="${_navEsc(a.id)}" data-name="${_navEsc(a.name)}">
-            <div style="aspect-ratio:1;overflow:hidden;background:#1a1a1a;">
-              ${_coverImg(a.cover_art, 300)}
-            </div>
-            <div class="card-body p-2">
-              <div class="text-truncate fw-bold">${_navEsc(a.name)}</div>
-              <div class="text-muted small text-truncate">${_navEsc(a.artist || "")}</div>
-              <div class="text-muted small">${a.year ? _navEsc(String(a.year)) : ""}</div>
-            </div>
-          </a>
-        </div>`).join("")}</div>`;
+// "Zufällig für dich": zufällige Songs -> ihre (einmaligen) Alben, damit die
+// Kacheln Cover zeigen. Kein eigener Endpunkt nötig; ein fehlschlagendes Album
+// wird übersprungen.
+async function loadShelfRandom() {
+  const el = document.getElementById("nav-shelf-random");
+  if (!el) return;
+  ccState.loading(el);
+  try {
+    const data = await _navFetch("/random?size=40");
+    const ids = [];
+    const seen = new Set();
+    for (const s of (data.songs || [])) {
+      if (s.album_id && !seen.has(s.album_id)) {
+        seen.add(s.album_id);
+        ids.push(s.album_id);
+        if (ids.length >= 8) break;
+      }
     }
+    const albums = (await Promise.all(
+      ids.map(id => _navFetch(`/albums/${encodeURIComponent(id)}`).catch(() => null))
+    )).filter(Boolean);
+    if (!albums.length) { ccState.empty(el, "Keine Vorschläge", "Es wurden keine Songs gefunden."); return; }
+    el.innerHTML = _navShelfRow(albums.map(_navAlbumTile).join(""));
+    _wireDetailLinks(el);
+  } catch (err) { ccState.error(el, err.message, loadShelfRandom); }
+}
 
-    if (pageEl) pageEl.textContent = `Seite ${page + 1}`;
-    document.getElementById("nav-albums-prev").disabled = page <= 0;
-    document.getElementById("nav-albums-next").disabled = !data.has_next;
+async function loadShelfArtists() {
+  const el = document.getElementById("nav-shelf-artists");
+  if (!el) return;
+  ccState.loading(el);
+  try {
+    const data = await _navFetch("/artists?page=0&page_size=12");
+    if (!data.items?.length) { ccState.empty(el, "Keine Artists gefunden."); return; }
+    el.innerHTML = _navShelfRow(data.items.map(_navArtistCard).join(""));
+    _wireDetailLinks(el);
+  } catch (err) { ccState.error(el, err.message, loadShelfArtists); }
+}
+
+// Favoriten-Regal nur, wenn es favorisierte Alben gibt (sonst bleibt es weg).
+async function loadShelfFavorites() {
+  const section = document.getElementById("nav-shelf-favorites-section");
+  const el = document.getElementById("nav-shelf-favorites");
+  if (!section || !el) return;
+  try {
+    const data = await _navFetch("/favorites");
+    const albums = (data.albums || []).slice(0, 12);
+    if (!albums.length) { section.hidden = true; return; }
+    el.innerHTML = _navShelfRow(albums.map(_navAlbumTile).join(""));
+    section.hidden = false;
+    _wireDetailLinks(el);
+  } catch (err) { section.hidden = true; }
+}
+
+function loadStart() {
+  loadShelfNewest();
+  loadShelfRandom();
+  loadShelfArtists();
+  loadShelfFavorites();
+}
+
+// =====================================================================
+// Raster mit "Mehr laden" (Artists, Alben)
+// =====================================================================
+const _NAV_GRIDS = {
+  artists: {
+    listId: "nav-artists-list", footerId: "nav-artists-footer", path: "/artists",
+    item: _navArtistCard, gridClass: "nav-grid nav-grid-artists",
+    emptyTitle: "Keine Artists gefunden.",
+  },
+  albums: {
+    listId: "nav-albums-list", footerId: "nav-albums-footer", path: "/albums",
+    item: _navAlbumTile, gridClass: "nav-grid",
+    emptyTitle: "Keine Alben gefunden.",
+  },
+};
+
+async function _navLoadGrid(key, reset) {
+  const cfg = _NAV_GRIDS[key];
+  const st = _navState[key];
+  const list = document.getElementById(cfg.listId);
+  const footer = document.getElementById(cfg.footerId);
+  if (!list) return;
+  if (reset) {
+    st.page = 0;
+    st.html = "";
+    ccState.loading(list);
+    if (footer) footer.innerHTML = "";
+  }
+  try {
+    const data = await _navFetch(`${cfg.path}?page=${st.page}&page_size=${st.size}`);
+    if (reset && !data.items.length) { ccState.empty(list, cfg.emptyTitle); return; }
+    st.html += data.items.map(cfg.item).join("");
+    list.innerHTML = `<div class="${cfg.gridClass}">${st.html}</div>`;
     _wireDetailLinks(list);
+    _navRenderMore(footer, data.has_next, () => { st.page += 1; _navLoadGrid(key, false); });
   } catch (err) {
-    _navErr(list, err);
+    if (reset) ccState.error(list, err.message, () => _navLoadGrid(key, true));
+    else ccToast("error", "Mehr laden fehlgeschlagen", err.message);
   }
 }
+
+function _navRenderMore(footer, hasNext, onMore) {
+  if (!footer) return;
+  if (!hasNext) { footer.innerHTML = ""; return; }
+  footer.innerHTML = `<button type="button" class="btn">${ccIcon("plus", "me-1")}Mehr laden</button>`;
+  const btn = footer.querySelector("button");
+  if (btn) btn.addEventListener("click", onMore);
+}
+
+const loadArtists = (reset = true) => _navLoadGrid("artists", reset);
+const loadAlbums  = (reset = true) => _navLoadGrid("albums", reset);
 
 // =====================================================================
 // Genres
@@ -573,212 +650,169 @@ async function loadAlbums(page = _navState.albumsPage) {
 async function loadGenres() {
   const list = document.getElementById("nav-genres-list");
   if (!list) return;
-  list.innerHTML = "Lädt…";
+  ccState.loading(list);
   try {
     const data = await _navFetch("/genres");
-    if (!data.items.length) {
-      _navEmpty(list, "Keine Genres gefunden.");
-    } else {
-      const rows = data.items.map(g => `
-        <tr>
-          <td>
-            <a href="#" class="nav-genre-link" data-name="${_navEsc(g.name)}">
-              🎭 ${_navEsc(g.name)}
-            </a>
-          </td>
-          <td class="text-end text-muted">${g.song_count ?? ""}</td>
-        </tr>
-      `).join("");
-      list.innerHTML = `
-        <table class="table table-sm table-vcenter">
-          <thead><tr><th>Genre</th><th class="text-end">Songs</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      `;
-      list.querySelectorAll(".nav-genre-link").forEach(a => {
-        a.addEventListener("click", (ev) => {
-          ev.preventDefault();
-          _navView.push({ type: "genre", id: a.dataset.name, label: a.dataset.name });
-        });
-      });
-    }
-  } catch (err) {
-    _navErr(list, err);
-  }
+    if (!data.items.length) { ccState.empty(list, "Keine Genres gefunden."); return; }
+    list.innerHTML = `<div class="d-flex flex-wrap gap-2">${data.items.map(g => `
+      <a href="#" class="btn btn-pill nav-genre-link" data-name="${_navEsc(g.name)}">
+        ${ccIcon("tag", "icon-sm me-1")}${_navEsc(g.name)}
+        ${g.song_count != null ? `<span class="badge bg-secondary-lt ms-2">${_navEsc(String(g.song_count))}</span>` : ""}
+      </a>`).join("")}</div>`;
+    _wireDetailLinks(list);
+  } catch (err) { ccState.error(list, err.message, loadGenres); }
 }
 
 // =====================================================================
-// Suche
+// Suche (Ergebnisse ersetzen den Reiterinhalt; leeres Feld -> zurück)
 // =====================================================================
 async function runSearch(ev) {
   if (ev) ev.preventDefault();
   const input = document.getElementById("nav-search-input");
-  const type  = document.getElementById("nav-search-type");
   const out   = document.getElementById("nav-search-results");
   if (!input || !out) return;
 
   const q = (input.value || "").trim();
-  if (!q) { out.innerHTML = ""; return; }
+  if (!q) { _navLeaveSearch(); return; }
 
-  out.innerHTML = "Suche läuft…";
+  const seq = ++_navState.searchSeq;
+  _navShowTab("search");
+  ccState.loading(out);
   try {
-    const params = new URLSearchParams({ q, type: type?.value || "all" });
+    const params = new URLSearchParams({ q, type: "all" });
     const data = await _navFetch(`/search?${params.toString()}`);
+    if (seq !== _navState.searchSeq) return;   // veraltete Antwort
 
     const sections = [];
-    if (data.artists?.length) {
-      sections.push(`<h4 class="mt-3">🎤 Artists</h4>` + _renderList(
-        data.artists,
-        a => `<a href="#" class="nav-artist-link" data-id="${_navEsc(a.id)}" data-name="${_navEsc(a.name)}">🎤 ${_navEsc(a.name)}</a>`
-      ));
-    }
-    if (data.albums?.length) {
-      sections.push(`<h4 class="mt-3">💿 Alben</h4>` + _renderList(
-        data.albums,
-        a => `<a href="#" class="nav-album-link" data-id="${_navEsc(a.id)}" data-name="${_navEsc(a.name)}">💿 ${_navEsc(a.name)} <span class="text-muted">– ${_navEsc(a.artist || "")}</span></a>`
-      ));
-    }
-    if (data.songs?.length) {
-      sections.push(`<h4 class="mt-3">🎵 Songs</h4>` + _renderList(
-        data.songs,
-        s => `<a href="#" class="nav-song-link" data-id="${_navEsc(s.id)}" data-name="${_navEsc(s.title)}">🎵 ${_navEsc(s.title)} <span class="text-muted">– ${_navEsc(s.artist || "")}</span></a>`
-      ));
-    }
+    if (data.artists?.length) sections.push(_navSection("Artists", "microphone", _navArtistGrid(data.artists)));
+    if (data.albums?.length)  sections.push(_navSection("Alben", "disc", _navAlbumGrid(data.albums)));
+    if (data.songs?.length)   sections.push(_navSection("Songs", "music", _navSongList(data.songs, true)));
 
-    if (!sections.length) { out.innerHTML = `<div class="text-muted">Keine Ergebnisse.</div>`; return; }
+    if (!sections.length) { ccState.empty(out, "Keine Ergebnisse", `Nichts gefunden für „${q}“.`); return; }
     out.innerHTML = sections.join("");
     _wireDetailLinks(out);
   } catch (err) {
-    _navErr(out, err);
+    if (seq !== _navState.searchSeq) return;
+    ccState.error(out, err.message, () => runSearch());
   }
 }
 
-function _renderList(items, fn) {
-  return `<ul class="list-unstyled mb-0">${items.map(i => `<li class="py-1">${fn(i)}</li>`).join("")}</ul>`;
+function _navLeaveSearch() {
+  _navState.searchSeq += 1;
+  if (_navState.tab === "search") _navShowTab(_navState.prevTab || "start");
 }
 
 // =====================================================================
-// Playlists (CRUD)
+// Playlists (Anlegen/Umbenennen/Löschen über Dialoge + Toasts)
 // =====================================================================
-async function loadPlaylists(page = _navState.playlistsPage) {
-  _navState.playlistsPage = page;
+function _navPlaylistRow(p) {
+  const meta = [p.owner || "", `${p.song_count} Songs`, p.duration ? _fmtDuration(p.duration) : ""]
+    .filter(Boolean).join(" · ");
+  return `
+    <div class="list-group-item">
+      <div class="row align-items-center g-2">
+        <div class="col-auto"><span class="avatar bg-teal-lt">${ccIcon("playlist")}</span></div>
+        <div class="col min-w-0">
+          <a href="#" class="nav-playlist-link text-reset fw-medium text-truncate d-block"
+             data-id="${_navEsc(p.id)}" data-name="${_navEsc(p.name)}">${_navEsc(p.name)}</a>
+          <div class="text-secondary small text-truncate">${_navEsc(meta)}</div>
+        </div>
+        <div class="col-auto" style="white-space:nowrap;">
+          <button type="button" class="btn btn-icon btn-ghost-secondary nav-playlist-rename"
+                  data-id="${_navEsc(p.id)}" data-name="${_navEsc(p.name)}"
+                  title="Umbenennen" aria-label="Playlist umbenennen">${ccIcon("edit")}</button>
+          <button type="button" class="btn btn-icon btn-ghost-danger nav-playlist-delete"
+                  data-id="${_navEsc(p.id)}" data-name="${_navEsc(p.name)}"
+                  title="Löschen" aria-label="Playlist löschen">${ccIcon("trash")}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function loadPlaylists(reset = true) {
+  const st = _navState.playlists;
   const list = document.getElementById("nav-playlists-list");
-  const pageEl = document.getElementById("nav-playlists-page");
+  const footer = document.getElementById("nav-playlists-footer");
   if (!list) return;
-  list.innerHTML = "Lädt…";
-
-  try {
-    const q = `?page=${page}&page_size=${_navState.playlistsPageSize}`;
-    const data = await _navFetch(`/playlists${q}`);
-
-    if (!data.items.length) {
-      _navEmpty(list, "Keine Playlists vorhanden. Erstelle die erste mit ➕ Neue Playlist.");
-    } else {
-      const rows = data.items.map(p => `
-        <tr>
-          <td>
-            <a href="#" class="nav-playlist-link"
-               data-id="${_navEsc(p.id)}" data-name="${_navEsc(p.name)}">
-              📋 ${_navEsc(p.name)}
-            </a>
-          </td>
-          <td class="text-muted d-none d-sm-table-cell">${_navEsc(p.owner || "")}</td>
-          <td class="text-end text-muted">${p.song_count}</td>
-          <td class="text-end" style="white-space:nowrap;">
-            <button class="btn btn-sm btn-icon btn-ghost-secondary nav-playlist-rename"
-                    data-id="${_navEsc(p.id)}" data-name="${_navEsc(p.name)}" title="Umbenennen">
-              <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24"
-                   viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
-                   stroke-linecap="round" stroke-linejoin="round">
-                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                <path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1"/>
-                <path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415z"/>
-                <path d="M16 5l3 3"/>
-              </svg>
-            </button>
-            <button class="btn btn-sm btn-icon btn-ghost-danger nav-playlist-delete"
-                    data-id="${_navEsc(p.id)}" data-name="${_navEsc(p.name)}" title="Löschen">
-              <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24"
-                   viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
-                   stroke-linecap="round" stroke-linejoin="round">
-                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                <path d="M4 7l16 0"/>
-                <path d="M10 11l0 6"/>
-                <path d="M14 11l0 6"/>
-                <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12"/>
-                <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3"/>
-              </svg>
-            </button>
-          </td>
-        </tr>
-      `).join("");
-      list.innerHTML = `
-        <table class="table table-sm table-vcenter">
-          <thead><tr>
-            <th>Playlist</th>
-            <th class="d-none d-sm-table-cell">Besitzer</th>
-            <th class="text-end">Songs</th>
-            <th></th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      `;
-      list.querySelectorAll(".nav-playlist-link").forEach(a => {
-        a.addEventListener("click", (ev) => {
-          ev.preventDefault();
-          _navView.push({ type: "playlist", id: a.dataset.id, label: a.dataset.name });
-        });
-      });
-      list.querySelectorAll(".nav-playlist-rename").forEach(b => {
-        b.addEventListener("click", () => renamePlaylistPrompt(b.dataset.id, b.dataset.name));
-      });
-      list.querySelectorAll(".nav-playlist-delete").forEach(b => {
-        b.addEventListener("click", () => deletePlaylistConfirm(b.dataset.id, b.dataset.name));
-      });
-    }
-
-    if (pageEl) pageEl.textContent = `Seite ${page + 1} · insgesamt ${data.total}`;
-    document.getElementById("nav-playlists-prev").disabled = page <= 0;
-    document.getElementById("nav-playlists-next").disabled = !data.has_next;
-  } catch (err) {
-    _navErr(list, err);
+  if (reset) {
+    st.page = 0;
+    st.html = "";
+    ccState.loading(list);
+    if (footer) footer.innerHTML = "";
   }
+  try {
+    const data = await _navFetch(`/playlists?page=${st.page}&page_size=${st.size}`);
+    if (reset && !data.items.length) {
+      ccState.empty(list, "Keine Playlists vorhanden.", "Lege mit „Neue Playlist“ die erste an.");
+      return;
+    }
+    st.html += data.items.map(_navPlaylistRow).join("");
+    list.innerHTML = `<div class="list-group">${st.html}</div>`;
+    _wireDetailLinks(list);
+    _navRenderMore(footer, data.has_next, () => { st.page += 1; loadPlaylists(false); });
+  } catch (err) {
+    if (reset) ccState.error(list, err.message, () => loadPlaylists(true));
+    else ccToast("error", "Mehr laden fehlgeschlagen", err.message);
+  }
+}
+
+// Ein Name pro Zeile: Zeilenumbrüche aus dem Eingabefeld zu Leerzeichen.
+function _navCleanName(name) {
+  return String(name || "").replace(/\s+/g, " ").trim();
 }
 
 async function createPlaylist() {
-  const name = prompt("Name der neuen Playlist:");
-  if (name == null) return;
-  const trimmed = name.trim();
-  if (!trimmed) { alert("Name darf nicht leer sein."); return; }
+  const raw = await ccPrompt({
+    title: "Neue Playlist", label: "Name", required: true, confirmLabel: "Anlegen",
+  });
+  const name = _navCleanName(raw);
+  if (!name) return;
   try {
-    await _navFetch("/playlists", {
-      method: "POST",
-      body: JSON.stringify({ name: trimmed }),
-    });
-    loadPlaylists(0);
-  } catch (err) { alert(`❌ Fehler: ${err.message}`); }
+    const { base } = _navEndpoints();
+    await ccApi("POST", `${base}/playlists`, { name });
+    ccToast("ok", "Playlist angelegt", name);
+    loadPlaylists(true);
+  } catch (err) { ccToast("error", "Playlist nicht angelegt", err.message); }
 }
 
 async function renamePlaylistPrompt(id, current) {
-  const name = prompt(`Neuer Name für „${current}":`, current);
-  if (name == null) return;
-  const trimmed = name.trim();
-  if (!trimmed) { alert("Name darf nicht leer sein."); return; }
+  const raw = await ccPrompt({
+    title: "Playlist umbenennen", label: "Neuer Name", value: current,
+    required: true, confirmLabel: "Umbenennen",
+  });
+  const name = _navCleanName(raw);
+  if (!name || name === current) return;
   try {
-    await _navFetch(`/playlists/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      body: JSON.stringify({ name: trimmed }),
-    });
-    loadPlaylists();
-  } catch (err) { alert(`❌ Fehler: ${err.message}`); }
+    const { base } = _navEndpoints();
+    await ccApi("PUT", `${base}/playlists/${encodeURIComponent(id)}`, { name });
+    ccToast("ok", "Playlist umbenannt", name);
+    loadPlaylists(true);
+  } catch (err) { ccToast("error", "Umbenennen fehlgeschlagen", err.message); }
 }
 
 async function deletePlaylistConfirm(id, name) {
-  if (!confirm(`Playlist „${name}" wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden!`)) return;
+  const ok = await ccConfirm({
+    title: `Playlist „${name}“ löschen?`,
+    text: "Diese Aktion kann nicht rückgängig gemacht werden.",
+    confirmLabel: "Löschen", danger: true,
+  });
+  if (!ok) return;
   try {
-    await _navFetch(`/playlists/${encodeURIComponent(id)}`, { method: "DELETE" });
-    loadPlaylists();
-  } catch (err) { alert(`❌ Fehler: ${err.message}`); }
+    const { base } = _navEndpoints();
+    await ccApi("DELETE", `${base}/playlists/${encodeURIComponent(id)}`);
+    ccToast("ok", "Playlist gelöscht", name);
+    loadPlaylists(true);
+  } catch (err) { ccToast("error", "Löschen fehlgeschlagen", err.message); }
+}
+
+// Ein Listener für Umbenennen/Löschen (die Zeilen werden beim Nachladen ersetzt).
+function _navOnPlaylistClick(ev) {
+  const target = ev.target && ev.target.closest ? ev.target : null;
+  if (!target) return;
+  const ren = target.closest(".nav-playlist-rename");
+  if (ren) { ev.preventDefault(); renamePlaylistPrompt(ren.dataset.id, ren.dataset.name); return; }
+  const del = target.closest(".nav-playlist-delete");
+  if (del) { ev.preventDefault(); deletePlaylistConfirm(del.dataset.id, del.dataset.name); }
 }
 
 // =====================================================================
@@ -787,68 +821,17 @@ async function deletePlaylistConfirm(id, name) {
 async function loadFavorites() {
   const list = document.getElementById("nav-favorites-list");
   if (!list) return;
-  list.innerHTML = "Lädt…";
-
+  ccState.loading(list);
   try {
     const data = await _navFetch("/favorites");
-    const hasAny = data.artists?.length || data.albums?.length || data.songs?.length;
-    if (!hasAny) { _navEmpty(list, "Noch keine Favoriten markiert."); return; }
-
     const sections = [];
-    if (data.artists?.length) {
-      sections.push(`<h4>🎤 Artists</h4>` + _renderList(
-        data.artists,
-        a => `<a href="#" class="nav-artist-link" data-id="${_navEsc(a.id)}" data-name="${_navEsc(a.name)}">🎤 ${_navEsc(a.name)}</a>`
-      ));
-    }
-    if (data.albums?.length) {
-      sections.push(`<h4 class="mt-3">💿 Alben</h4>` + _renderList(
-        data.albums,
-        a => `<a href="#" class="nav-album-link" data-id="${_navEsc(a.id)}" data-name="${_navEsc(a.name)}">💿 ${_navEsc(a.name)} <span class="text-muted">– ${_navEsc(a.artist || "")}</span></a>`
-      ));
-    }
-    if (data.songs?.length) {
-      sections.push(`<h4 class="mt-3">🎵 Songs</h4>` + _renderList(
-        data.songs,
-        s => `<a href="#" class="nav-song-link" data-id="${_navEsc(s.id)}" data-name="${_navEsc(s.title)}">🎵 ${_navEsc(s.title)} <span class="text-muted">– ${_navEsc(s.artist || "")}</span></a>`
-      ));
-    }
+    if (data.artists?.length) sections.push(_navSection("Artists", "microphone", _navArtistGrid(data.artists)));
+    if (data.albums?.length)  sections.push(_navSection("Alben", "disc", _navAlbumGrid(data.albums)));
+    if (data.songs?.length)   sections.push(_navSection("Songs", "music", _navSongList(data.songs, true)));
+    if (!sections.length) { ccState.empty(list, "Noch keine Favoriten", "Markierte Artists, Alben und Songs erscheinen hier."); return; }
     list.innerHTML = sections.join("");
     _wireDetailLinks(list);
-  } catch (err) { _navErr(list, err); }
-}
-
-// =====================================================================
-// Entdecken
-// =====================================================================
-async function loadRandom() {
-  const out = document.getElementById("nav-discover-list");
-  if (!out) return;
-  out.innerHTML = "Lädt…";
-  try {
-    const data = await _navFetch("/random?size=25");
-    if (!data.songs?.length) { _navEmpty(out, "Keine Songs gefunden."); return; }
-    out.innerHTML = `<h4>🎲 Zufällige Songs</h4>` + _renderList(
-      data.songs,
-      s => `<a href="#" class="nav-song-link" data-id="${_navEsc(s.id)}" data-name="${_navEsc(s.title)}">🎵 ${_navEsc(s.title)} <span class="text-muted">– ${_navEsc(s.artist || "")}</span></a>`
-    );
-    _wireDetailLinks(out);
-  } catch (err) { _navErr(out, err); }
-}
-
-async function loadNewest() {
-  const out = document.getElementById("nav-discover-list");
-  if (!out) return;
-  out.innerHTML = "Lädt…";
-  try {
-    const data = await _navFetch("/newest?page=0&page_size=15");
-    if (!data.items?.length) { _navEmpty(out, "Keine Alben gefunden."); return; }
-    out.innerHTML = `<h4>🆕 Neue Alben</h4>` + _renderList(
-      data.items,
-      a => `<a href="#" class="nav-album-link" data-id="${_navEsc(a.id)}" data-name="${_navEsc(a.name)}">💿 ${_navEsc(a.name)} <span class="text-muted">– ${_navEsc(a.artist || "")}</span></a>`
-    );
-    _wireDetailLinks(out);
-  } catch (err) { _navErr(out, err); }
+  } catch (err) { ccState.error(list, err.message, loadFavorites); }
 }
 
 // =====================================================================
@@ -856,30 +839,21 @@ async function loadNewest() {
 // =====================================================================
 function _wireDetailLinks(root) {
   if (!root) return;
-  root.querySelectorAll(".nav-artist-link").forEach(a => {
-    if (a.dataset.wired) return;
-    a.dataset.wired = "1";
-    a.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      _navView.push({ type: "artist", id: a.dataset.id, label: a.dataset.name || "Artist" });
+  const wire = (selector, build) => {
+    root.querySelectorAll(selector).forEach(a => {
+      if (a.dataset.wired) return;
+      a.dataset.wired = "1";
+      a.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        _navView.push(build(a));
+      });
     });
-  });
-  root.querySelectorAll(".nav-album-link").forEach(a => {
-    if (a.dataset.wired) return;
-    a.dataset.wired = "1";
-    a.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      _navView.push({ type: "album", id: a.dataset.id, label: a.dataset.name || "Album" });
-    });
-  });
-  root.querySelectorAll(".nav-song-link").forEach(a => {
-    if (a.dataset.wired) return;
-    a.dataset.wired = "1";
-    a.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      _navView.push({ type: "song", id: a.dataset.id, label: a.dataset.name || "Song" });
-    });
-  });
+  };
+  wire(".nav-artist-link", a => ({ type: "artist", id: a.dataset.id, label: a.dataset.name || "Artist" }));
+  wire(".nav-album-link", a => ({ type: "album", id: a.dataset.id, label: a.dataset.name || "Album" }));
+  wire(".nav-song-link", a => ({ type: "song", id: a.dataset.id, label: a.dataset.name || "Song" }));
+  wire(".nav-genre-link", a => ({ type: "genre", id: a.dataset.name, label: a.dataset.name }));
+  wire(".nav-playlist-link", a => ({ type: "playlist", id: a.dataset.id, label: a.dataset.name }));
   root.querySelectorAll('[data-nav-action="top-songs"]').forEach(b => {
     if (b.dataset.wired) return;
     b.dataset.wired = "1";
@@ -896,6 +870,40 @@ function _wireDetailLinks(root) {
 }
 
 // =====================================================================
+// Reiter (eigene Umschaltung; Inhalte werden beim ersten Öffnen geladen)
+// =====================================================================
+const _NAV_TABS = ["start", "artists", "albums", "genres", "playlists", "favorites", "search"];
+
+function _navLoadTab(tab) {
+  if (_navState.loaded[tab]) return;
+  if (tab === "search") return;   // lädt über runSearch()
+  _navState.loaded[tab] = true;
+  if (tab === "start")     loadStart();
+  if (tab === "artists")   loadArtists();
+  if (tab === "albums")    loadAlbums();
+  if (tab === "genres")    loadGenres();
+  if (tab === "playlists") loadPlaylists();
+  if (tab === "favorites") loadFavorites();
+}
+
+function _navShowTab(tab) {
+  if (tab !== "search") _navState.prevTab = tab;
+  _navState.tab = tab;
+  document.querySelectorAll("[data-navtab]").forEach(a => {
+    const on = a.dataset.navtab === tab;
+    a.classList.toggle("active", on);
+    a.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  _NAV_TABS.forEach(t => {
+    const pane = document.getElementById(`nav-pane-${t}`);
+    if (!pane) return;
+    pane.classList.toggle("active", t === tab);
+    pane.classList.toggle("show", t === tab);
+  });
+  _navLoadTab(tab);
+}
+
+// =====================================================================
 // Init
 // =====================================================================
 function initPage() {
@@ -906,41 +914,38 @@ function initPage() {
     document.getElementById("navidrome-scan-btn")
       ?.addEventListener("click", triggerNavidromeScan);
 
-    document.querySelectorAll('[data-bs-toggle="tab"][data-navtab]').forEach(a => {
-      a.addEventListener("shown.bs.tab", () => {
-        const t = a.dataset.navtab;
-        if (t === "artists")   loadArtists();
-        if (t === "albums")    loadAlbums();
-        if (t === "genres")    loadGenres();
-        if (t === "playlists") loadPlaylists();
-        if (t === "favorites") loadFavorites();
+    document.querySelectorAll("[data-navtab]").forEach(a => {
+      a.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        const input = document.getElementById("nav-search-input");
+        if (input) input.value = "";
+        _navState.searchSeq += 1;
+        _navShowTab(a.dataset.navtab);
+      });
+    });
+    document.querySelectorAll("[data-nav-goto]").forEach(a => {
+      a.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        _navShowTab(a.dataset.navGoto);
       });
     });
 
-    document.getElementById("nav-artists-prev")?.addEventListener("click",
-      () => loadArtists(Math.max(0, _navState.artistsPage - 1)));
-    document.getElementById("nav-artists-next")?.addEventListener("click",
-      () => loadArtists(_navState.artistsPage + 1));
-    document.getElementById("nav-albums-prev")?.addEventListener("click",
-      () => loadAlbums(Math.max(0, _navState.albumsPage - 1)));
-    document.getElementById("nav-albums-next")?.addEventListener("click",
-      () => loadAlbums(_navState.albumsPage + 1));
-    document.getElementById("nav-playlists-prev")?.addEventListener("click",
-      () => loadPlaylists(Math.max(0, _navState.playlistsPage - 1)));
-    document.getElementById("nav-playlists-next")?.addEventListener("click",
-      () => loadPlaylists(_navState.playlistsPage + 1));
-
+    const searchInput = document.getElementById("nav-search-input");
     document.getElementById("nav-search-form")?.addEventListener("submit", runSearch);
+    searchInput?.addEventListener("input", () => {
+      if (!(searchInput.value || "").trim() && _navState.tab === "search") _navLeaveSearch();
+    });
+
     document.getElementById("nav-playlist-new")?.addEventListener("click", createPlaylist);
-    document.getElementById("nav-discover-random")?.addEventListener("click", loadRandom);
-    document.getElementById("nav-discover-newest")?.addEventListener("click", loadNewest);
+    document.getElementById("nav-playlists-list")?.addEventListener("click", _navOnPlaylistClick);
+    document.getElementById("nav-shuffle-btn")?.addEventListener("click", loadShelfRandom);
 
     document.getElementById("nav-detail-back")?.addEventListener("click", () => _navView.back());
     document.getElementById("nav-detail-modal")?.addEventListener("hidden.bs.modal", () => {
       _navView.stack = [];
     });
 
-    loadArtists(0);
+    _navShowTab("start");
   });
 }
 initPage();
