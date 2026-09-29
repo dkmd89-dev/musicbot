@@ -28,20 +28,25 @@ from services.mapping_admin import (
     MAPPING_ID_CHANNEL_GENRE,
     MAPPING_ID_GENRE_ALIASES,
     MAPPING_ID_GENRE_OVERRIDES,
+    MAPPING_ID_GENRE_FILTERS,
     ChannelGenreEntry,
     ChannelGenrePlan,
     GenreAliasEntry,
     GenreAliasPlan,
     GenreOverrideEntry,
     GenreOverridePlan,
+    GenreFilterPlan,
     MappingConflictError,
     MappingDomainError,
     MappingInvalidInputError,
     MappingUnavailableError,
     MappingUnknownIdError,
+    apply_genre_filter_update,
     apply_mapping_update,
+    get_genre_filter_state,
     get_mapping_entry,
     list_mapping,
+    plan_genre_filter_update,
     plan_mapping_update,
 )
 
@@ -66,6 +71,11 @@ from ..schemas.mapping_admin import (
     GenreOverrideSaveBody,
     GenreOverrideSaveResponse,
     GenreOverrideBody,
+    GenreFilterListResponse,
+    GenreFilterPreviewResponse,
+    GenreFilterSaveResponse,
+    genre_filter_plan_to_preview,
+    genre_filter_save_to_response,
     entry_to_schema,
     genre_override_entry_to_schema,
     genre_override_plan_to_preview,
@@ -107,7 +117,7 @@ def _mapping_http_error(e: MappingDomainError) -> HTTPException:
     )
 
 
-_SUPPORTED_MAPPING_IDS = frozenset({MAPPING_ID_CHANNEL_GENRE, MAPPING_ID_GENRE_ALIASES, MAPPING_ID_GENRE_OVERRIDES})
+_SUPPORTED_MAPPING_IDS = frozenset({MAPPING_ID_CHANNEL_GENRE, MAPPING_ID_GENRE_ALIASES, MAPPING_ID_GENRE_OVERRIDES, MAPPING_ID_GENRE_FILTERS})
 
 
 def _ensure_supported(mapping_id: str) -> None:
@@ -126,8 +136,21 @@ def _ensure_supported(mapping_id: str) -> None:
 
 @router.get("/{mapping_id}")
 def get_mapping(mapping_id: str):
-    """Liste aller Eintraege. Antwort-Schema haengt von der mapping_id ab."""
+    """Liste aller Eintraege bzw. Werte. Antwort-Schema haengt von der mapping_id ab."""
     _ensure_supported(mapping_id)
+    if mapping_id == MAPPING_ID_GENRE_FILTERS:
+        try:
+            values, etag, warnings = get_genre_filter_state(_mapping_dir())
+        except MappingDomainError as e:
+            raise _mapping_http_error(e) from e
+        return GenreFilterListResponse(
+            mapping_id=mapping_id,
+            values=values,
+            count=len(values),
+            etag=etag,
+            warnings=warnings,
+        )
+
     try:
         entries = list_mapping(mapping_id, _mapping_dir())
     except MappingDomainError as e:
@@ -157,6 +180,14 @@ def get_mapping_entry_endpoint(
     mapping_id: str, key: str = Query(..., min_length=1, max_length=200),
 ):
     _ensure_supported(mapping_id)
+    if mapping_id == MAPPING_ID_GENRE_FILTERS:
+        raise HTTPException(
+            status_code=404,
+            detail=ErrorDetail(
+                code="MAPPING_NO_ENTRIES",
+                message="genre-filters hat keine Einzeleintraege; GET auf die Liste verwenden.",
+            ).model_dump(),
+        )
     try:
         entry, etag = get_mapping_entry(mapping_id, key, _mapping_dir())
     except MappingDomainError as e:
@@ -195,9 +226,28 @@ def get_mapping_entry_endpoint(
     dependencies=[Depends(verify_same_origin)],
 )
 def post_mapping_preview(
-    mapping_id: str, body: dict, key: str = Query(..., min_length=1, max_length=200),
+    mapping_id: str,
+    body: dict,
+    key: Optional[str] = Query(default=None, min_length=1, max_length=200),
 ):
     _ensure_supported(mapping_id)
+    if mapping_id == MAPPING_ID_GENRE_FILTERS:
+        try:
+            plan = plan_genre_filter_update(
+                (body or {}).get("values", []), _mapping_dir(),
+            )
+        except MappingDomainError as e:
+            raise _mapping_http_error(e) from e
+        return genre_filter_plan_to_preview(plan)
+
+    if key is None:
+        raise HTTPException(
+            status_code=422,
+            detail=ErrorDetail(
+                code="MAPPING_INVALID_INPUT",
+                message="Query-Parameter 'key' fehlt.",
+            ).model_dump(),
+        )
     try:
         plan = plan_mapping_update(mapping_id, key, body or {}, _mapping_dir())
     except MappingDomainError as e:
@@ -222,7 +272,7 @@ def post_mapping_preview(
 def put_mapping(
     mapping_id: str,
     body: dict,
-    key: str = Query(..., min_length=1, max_length=200),
+    key: Optional[str] = Query(default=None, min_length=1, max_length=200),
     user_id: int = Depends(get_current_user_id),
 ):
     _ensure_supported(mapping_id)
@@ -235,6 +285,29 @@ def put_mapping(
         )
     expected_etag = str(body["etag"])
     payload = {k: v for k, v in body.items() if k != "etag"}
+
+    if mapping_id == MAPPING_ID_GENRE_FILTERS:
+        try:
+            plan, result = apply_genre_filter_update(
+                payload.get("values", []), _mapping_dir(),
+                expected_etag=expected_etag,
+            )
+        except MappingDomainError as e:
+            raise _mapping_http_error(e) from e
+        _logger.info(
+            f"[control_center] {mapping_id} {plan.change} von User {user_id} "
+            f"(geschrieben={result.written})"
+        )
+        return genre_filter_save_to_response(plan, result)
+
+    if key is None:
+        raise HTTPException(
+            status_code=422,
+            detail=ErrorDetail(
+                code="MAPPING_INVALID_INPUT",
+                message="Query-Parameter 'key' fehlt.",
+            ).model_dump(),
+        )
     try:
         plan, result = apply_mapping_update(
             mapping_id, key, payload, _mapping_dir(), expected_etag=expected_etag,

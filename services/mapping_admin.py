@@ -54,6 +54,9 @@ MAPPING_ROOT_KEY_GENRE_ALIASES = "GENRE_ALIASES"
 MAPPING_ID_GENRE_OVERRIDES = "genre-overrides"
 MAPPING_FILENAME_GENRE_OVERRIDES = "genre_overrides.yaml"
 MAPPING_ROOT_KEY_GENRE_OVERRIDES = "GENRE_OVERRIDES"
+MAPPING_ID_GENRE_FILTERS = "genre-filters"
+MAPPING_FILENAME_GENRE_FILTERS = "genre_filters.yaml"
+MAPPING_ROOT_KEY_GENRE_FILTERS = "IGNORE_SECONDARY"
 
 
 @dataclass(frozen=True)
@@ -84,6 +87,12 @@ _MAPPING_DESCRIPTORS: Dict[str, MappingDescriptor] = {
         root_key="GENRE_OVERRIDES",
         kind="genre-override",
         lookup_exact_first=True,
+    ),
+    MAPPING_ID_GENRE_FILTERS: MappingDescriptor(
+        mapping_id=MAPPING_ID_GENRE_FILTERS,
+        filename=MAPPING_FILENAME_GENRE_FILTERS,
+        root_key=MAPPING_ROOT_KEY_GENRE_FILTERS,
+        kind="genre-filter",
     ),
 }
 
@@ -128,6 +137,7 @@ MAX_CHANNEL_LENGTH = 200
 MAX_DESCRIPTION_LENGTH = 500
 MAX_SECONDARY_ENTRIES = 20
 MAX_GENRE_ALIAS_KEY_LENGTH = 200
+MAX_GENRE_FILTER_VALUE_LENGTH = 100
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -229,6 +239,76 @@ def _validate_alias_key(value: object) -> str:
     return trimmed
 
 
+def _normalize_filter_list(
+    raw_values: object, *, strict: bool,
+) -> Tuple[List[str], List[str]]:
+    """strip -> lower -> casefold-dedupe (erste Occurrence gewinnt).
+    Reihenfolge bleibt erhalten. strict=True (User-Input): 422 bei
+    leerem/Nicht-Text/zu lang/Steuerzeichen. strict=False (Datei-Input):
+    ueberspringt solche Werte mit einer Warnung."""
+    if raw_values is None:
+        return [], []
+    if not isinstance(raw_values, (list, tuple)):
+        if strict:
+            raise MappingInvalidInputError("Filter-Liste muss eine Liste sein.")
+        return [], ["Filter-Liste war keine Liste; keine Filter geladen."]
+    warnings: List[str] = []
+    seen: set = set()
+    result: List[str] = []
+    skipped_non_string = 0
+    skipped_empty = 0
+    skipped_too_long = 0
+    skipped_control = 0
+    duplicate_count = 0
+    for item in raw_values:
+        if not isinstance(item, str):
+            if strict:
+                raise MappingInvalidInputError("Filter-Wert muss ein Text sein.")
+            skipped_non_string += 1
+            continue
+        if "\n" in item or "\r" in item:
+            if strict:
+                raise MappingInvalidInputError("Filter-Wert darf keine Zeilenumbrueche enthalten.")
+            skipped_control += 1
+            continue
+        trimmed = item.strip()
+        if not trimmed:
+            if strict:
+                raise MappingInvalidInputError("Filter-Wert darf nicht leer sein.")
+            skipped_empty += 1
+            continue
+        if len(trimmed) > MAX_GENRE_FILTER_VALUE_LENGTH:
+            if strict:
+                raise MappingInvalidInputError(
+                    f"Filter-Wert zu lang (max. {MAX_GENRE_FILTER_VALUE_LENGTH} Zeichen)."
+                )
+            skipped_too_long += 1
+            continue
+        if _CONTROL_CHARS.search(trimmed):
+            if strict:
+                raise MappingInvalidInputError("Filter-Wert enthaelt Steuerzeichen.")
+            skipped_control += 1
+            continue
+        clean = trimmed.lower()
+        fold = clean.casefold()
+        if fold in seen:
+            duplicate_count += 1
+            continue
+        seen.add(fold)
+        result.append(clean)
+    if skipped_non_string:
+        warnings.append(f"{skipped_non_string} Nicht-Text-Werte uebersprungen.")
+    if skipped_empty:
+        warnings.append(f"{skipped_empty} leere Werte uebersprungen.")
+    if skipped_too_long:
+        warnings.append(f"{skipped_too_long} zu lange Werte uebersprungen.")
+    if skipped_control:
+        warnings.append(f"{skipped_control} Werte mit Steuerzeichen uebersprungen.")
+    if duplicate_count:
+        warnings.append(f"{duplicate_count} casefold-Duplikate zusammengefuehrt.")
+    return result, warnings
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Dataclasses (kind-spezifisch)
 # ─────────────────────────────────────────────────────────────────────────
@@ -322,6 +402,25 @@ class GenreOverrideSaveResult:
     new_etag: str
 
 
+@dataclass(frozen=True)
+class GenreFilterPlan:
+    mapping_id: str
+    change: str  # "update" | "cleanup" | "unchanged" (kein "create")
+    added: List[str]
+    removed: List[str]
+    values: List[str]
+    warnings: List[str]
+    etag: str
+
+
+@dataclass(frozen=True)
+class GenreFilterSaveResult:
+    written: bool
+    unchanged: bool
+    values: List[str]
+    new_etag: str
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Datei-Zugriff
 # ─────────────────────────────────────────────────────────────────────────
@@ -383,6 +482,42 @@ def _dump_raw_mapping(
     tmp.replace(path)
 
 
+def _load_raw_list(
+    descriptor: MappingDescriptor, mapping_dir: Path,
+) -> List[object]:
+    """Rohliste aus dem Root-Key (z.B. IGNORE_SECONDARY)."""
+    import yaml
+
+    path = _mapping_path(descriptor, mapping_dir)
+    if not path.exists():
+        raise MappingUnavailableError(f"{path} existiert nicht.")
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (yaml.YAMLError, OSError) as e:
+        raise MappingUnavailableError(f"{path} konnte nicht gelesen werden: {e!r}") from e
+    raw = data.get(descriptor.root_key, data) or []
+    if not isinstance(raw, list):
+        raise MappingUnavailableError(
+            f"{path}: '{descriptor.root_key}' ist keine Liste."
+        )
+    return list(raw)
+
+
+def _dump_raw_list(
+    descriptor: MappingDescriptor, mapping_dir: Path, values: List[str],
+) -> None:
+    import yaml
+
+    path = _mapping_path(descriptor, mapping_dir)
+    data = {descriptor.root_key: list(values)}
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Etags
 # ─────────────────────────────────────────────────────────────────────────
@@ -428,6 +563,13 @@ def _genre_override_etag(mapping: Dict[str, Any]) -> str:
             continue
         items.append([str(k), str(v).strip()])
     return _etag_of(items)
+
+
+def _genre_filter_etag(values: List[str]) -> str:
+    """Etag ueber die normierte Liste IN REIHENFOLGE — M4 bewusst anders
+    als die key-basierten M2/M3-Etats. ["rock","indie"] != ["indie","rock"]."""
+    payload = json.dumps(list(values), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def _compute_etag(descriptor: MappingDescriptor, mapping: Dict[str, Any]) -> str:
@@ -882,3 +1024,100 @@ def apply_genre_override_update(
         MAPPING_ID_GENRE_OVERRIDES, key, {"override": override},
         mapping_dir, expected_etag,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Genre-Filter (M4) — Liste statt Entry-Modell
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def get_genre_filter_state(
+    mapping_dir: Path,
+) -> Tuple[List[str], str, List[str]]:
+    """Rueckgabe: (normierte Werte, etag, warnings). Normalisiert die
+    Rohliste aus der Datei (strip -> lower -> casefold-dedupe) — bei
+    casefold-Duplikaten in der Datei wird das in `warnings` berichtet,
+    die Datei bleibt unangetastet."""
+    descriptor = _get_descriptor(MAPPING_ID_GENRE_FILTERS)
+    raw = _load_raw_list(descriptor, mapping_dir)
+    values, warnings = _normalize_filter_list(raw, strict=False)
+    etag = _genre_filter_etag(values)
+    return values, etag, warnings
+
+
+def plan_genre_filter_update(
+    values: object, mapping_dir: Path,
+) -> GenreFilterPlan:
+    descriptor = _get_descriptor(MAPPING_ID_GENRE_FILTERS)
+    raw = _load_raw_list(descriptor, mapping_dir)
+    current_values, current_warnings = _normalize_filter_list(raw, strict=False)
+    current_etag = _genre_filter_etag(current_values)
+
+    new_values, new_warnings = _normalize_filter_list(values, strict=True)
+
+    all_warnings = list(new_warnings)
+
+    # "cleanup": normalisierte Sicht == Ziel, aber die ROH-Datei ist
+    # unsauber (Duplikate/Gross-/Kleinschreibung/Leerzeichen). Ein PUT
+    # ist dann die kontrollierte Migration der Datei.
+    raw_is_clean = list(raw) == list(current_values)
+
+    if current_values == new_values:
+        if raw_is_clean:
+            change = "unchanged"
+        else:
+            change = "cleanup"
+            if current_warnings:
+                all_warnings.append(
+                    "Die Datei enthaelt unsaubere Eintraege (Duplikate/"
+                    "Gross-Kleinschreibung/Leerzeichen). Ein Speichern "
+                    "schreibt die bereinigte Liste zurueck."
+                )
+    else:
+        change = "update"
+
+    current_fold = {v.casefold() for v in current_values}
+    new_fold = {v.casefold() for v in new_values}
+    added = [v for v in new_values if v.casefold() not in current_fold]
+    removed = [v for v in current_values if v.casefold() not in new_fold]
+
+    return GenreFilterPlan(
+        mapping_id=descriptor.mapping_id,
+        change=change,
+        added=added,
+        removed=removed,
+        values=new_values,
+        warnings=all_warnings,
+        etag=current_etag,
+    )
+
+
+def apply_genre_filter_update(
+    values: object, mapping_dir: Path, *, expected_etag: str,
+) -> Tuple[GenreFilterPlan, GenreFilterSaveResult]:
+    with _WRITE_LOCK:
+        plan = plan_genre_filter_update(values, mapping_dir)
+        if plan.etag != expected_etag:
+            raise MappingConflictError(
+                "Der Mapping-Stand wurde seit der Vorschau geaendert. "
+                "Bitte neu laden und erneut pruefen."
+            )
+        if plan.change == "unchanged":
+            return plan, GenreFilterSaveResult(
+                written=False, unchanged=True,
+                values=list(plan.values), new_etag=plan.etag,
+            )
+        # change in {"update", "cleanup"} -> schreiben
+        descriptor = _get_descriptor(MAPPING_ID_GENRE_FILTERS)
+        _dump_raw_list(descriptor, mapping_dir, plan.values)
+        new_etag = _genre_filter_etag(plan.values)
+        return plan, GenreFilterSaveResult(
+            written=True, unchanged=False,
+            values=list(plan.values), new_etag=new_etag,
+        )
+
+
+def list_genre_filters(mapping_dir: Path) -> List[str]:
+    """Komfort-Shim: nur die normierte Werteliste."""
+    values, _etag, _warnings = get_genre_filter_state(mapping_dir)
+    return values

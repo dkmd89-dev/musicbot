@@ -24,6 +24,8 @@ from services.mapping_admin import (
     GenreOverrideEntry,
     GenreOverridePlan,
     GenreOverrideSaveResult,
+    GenreFilterPlan,
+    GenreFilterSaveResult,
 )
 
 
@@ -337,5 +339,90 @@ def genre_override_save_to_response(
         message=(
             GENRE_OVERRIDE_SAVE_MESSAGE_WRITTEN if result.written
             else GENRE_OVERRIDE_SAVE_MESSAGE_UNCHANGED
+        ),
+    )
+
+# ── Genre-Filter (M4) — Liste ────────────────────────────────────────
+
+
+class GenreFilterListResponse(BaseModel):
+    mapping_id: str
+    values: List[str]
+    count: int
+    etag: str
+    warnings: List[str] = Field(default_factory=list)
+    bot_reload_required: bool = True
+
+
+class GenreFilterBody(BaseModel):
+    values: List[str]
+
+
+class GenreFilterSaveBody(GenreFilterBody):
+    etag: str
+
+
+class GenreFilterPreviewResponse(BaseModel):
+    mapping_id: str
+    change: str
+    added: List[str]
+    removed: List[str]
+    values: List[str]
+    warnings: List[str] = Field(default_factory=list)
+    etag: str
+    comment_warning: Optional[str] = None
+
+
+class GenreFilterSaveResponse(GenreFilterPreviewResponse):
+    written: bool
+    unchanged: bool
+    new_etag: str
+    bot_reload_required: bool = True
+    message: str
+
+
+GENRE_FILTER_COMMENT_WARNING = (
+    "Kommentarzeilen in genre_filters.yaml gehen beim Speichern verloren "
+    "(bekannte Einschraenkung des YAML-Rewrites)."
+)
+
+
+def genre_filter_plan_to_preview(plan: GenreFilterPlan) -> GenreFilterPreviewResponse:
+    return GenreFilterPreviewResponse(
+        mapping_id=plan.mapping_id,
+        change=plan.change,
+        added=list(plan.added),
+        removed=list(plan.removed),
+        values=list(plan.values),
+        warnings=list(plan.warnings),
+        etag=plan.etag,
+        comment_warning=(
+            GENRE_FILTER_COMMENT_WARNING
+            if plan.change in ("update", "cleanup")
+            else None
+        ),
+    )
+
+
+GENRE_FILTER_SAVE_MESSAGE_WRITTEN = (
+    "Mapping gespeichert. Der laufende Bot laedt genre_filters.yaml beim "
+    "Start: die Aenderung wirkt fuer neue Downloads erst nach Bot-Neustart."
+)
+GENRE_FILTER_SAVE_MESSAGE_UNCHANGED = "Mapping war bereits identisch — nichts geschrieben."
+
+
+def genre_filter_save_to_response(
+    plan: GenreFilterPlan, result: GenreFilterSaveResult,
+) -> GenreFilterSaveResponse:
+    base = genre_filter_plan_to_preview(plan)
+    return GenreFilterSaveResponse(
+        **base.model_dump(),
+        written=result.written,
+        unchanged=result.unchanged,
+        new_etag=result.new_etag,
+        bot_reload_required=result.written,
+        message=(
+            GENRE_FILTER_SAVE_MESSAGE_WRITTEN if result.written
+            else GENRE_FILTER_SAVE_MESSAGE_UNCHANGED
         ),
     )
