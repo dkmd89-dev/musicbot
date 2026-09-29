@@ -32,6 +32,7 @@ Alle hier gelisteten Dokumente sind heute gültig und liegen deshalb direkt unte
 | [MusicBot_ARCHITECTURE_EVOLUTION.md](MusicBot_ARCHITECTURE_EVOLUTION.md) | CURRENT (historisches Analyseprotokoll) | Architektur-Invarianten (INV-01–04), Evolution-Kandidaten, ADRs, Closure-Verifikation der Enforcement-Fix-Phase sowie AE-10/AE-11/AE-12 (Abschnitt 29) — Herleitung von v4. **Nicht als Baseline zu lesen** — die darin dokumentierten historischen „NOT READY"-Zustände sind durch AE-10/11/12 geschlossen. |
 | [MusicBot_TELEGRAM_MENU_SYSTEM.md](MusicBot_TELEGRAM_MENU_SYSTEM.md) | CURRENT (lebendes Dokument) | Zentrale Referenz für das Telegram-Inline-Menü-System: Zwei-Ebenen-Routing, Menübaum, Download-Control-Center (Live-Status, Hard-Cancel, Verlauf), Bot-Wartungsmodus, Family Hub, Metadata-Reprocessing-Telegram-Anbindung, Muster für künftige Menü-Erweiterungen. |
 | [MusicBot_NAVIDROME_MENU_ARCHITECTURE.md](MusicBot_NAVIDROME_MENU_ARCHITECTURE.md) | CURRENT | Navidrome-Menü-System — API-Capability-Matrix, Callback-Matrix, Zielarchitektur. |
+| [MusicBot_STATUS_MENU_CLOSURE.md](MusicBot_STATUS_MENU_CLOSURE.md) | CURRENT | Telegram-System-Status-Menü — Closure des `EnhancedStatusHandler`-Routings; wird aktiv aus `handlers/enhanced_status_handler.py`, `handlers/menu/actions/admin_diagnostics.py` und den zugehörigen Tests referenziert und bleibt deshalb im Root. |
 | [MusicBot_DUPLICATE_RESOLUTION_ARCHITECTURE.md](MusicBot_DUPLICATE_RESOLUTION_ARCHITECTURE.md) | CURRENT (Architekturentscheidung) | Forensischer Architecture Decision Audit für die zentrale Duplicate-Resolution-Komponente. Wird weiterhin direkt von `services/duplicate/`, `scripts/resolve_duplicates.py` und Tests referenziert und deshalb bewusst im Root belassen. Die dokumentierte „kein Rollback-Versprechen"-Entscheidung (Abschnitt 17) wurde additiv um einen optionalen `backup_fn`-DI-Parameter erweitert (Default `None` = Verhalten unverändert). |
 | [LIBRARY_HEALTH.md](LIBRARY_HEALTH.md) | CURRENT | `scripts/library_health_check.py` — vollständig read-only Health-Analyse der Music-Library, versionierter Report (JSON + Text) mit deterministischem Score. Domain in `services/library_health/`. |
 | [LIBRARY_REPAIR.md](LIBRARY_REPAIR.md) | CURRENT | `scripts/library_repair.py` / `services/library_repair/` — leitet Reparaturaktionen aus dem Health-Report ab; alle 8 Executoren implementiert; Backup/Rollback-Modell; §10 Telegram-Integration, §11 Library-Maintenance-Consolidation (ARCH-032), §12 Level-2/3-Repair (ARCH-033). |
@@ -114,7 +115,11 @@ Begleitende historische Analyseartefakte:
 
 - **`docs/archive/arch/`** — ARCH-001 bis ARCH-031 (Migrationsprotokolle, Charakterisierungen, Analysepapiere). Einzelauflistung entfällt; die Dateien liegen vollständig erhalten im Verzeichnis. Für die **aktuell gültige** Zielarchitektur der Library-Repair-/Maintenance-Telegram-Integration (ARCH-031/032/033) siehe stattdessen:
   - [docs/LIBRARY_REPAIR.md](LIBRARY_REPAIR.md) §11/§12 — Maintenance-Consolidation + Level-2/3-Repair.
-  - [docs/adr/0001](adr/0001)-[0004](adr/0004) — Architektur-Entscheidungen Library Repair.
+  - `docs/adr/` — Architektur-Entscheidungen Library Repair:
+    [0001-library-maintenance-actions-not-finding-driven.md](adr/0001-library-maintenance-actions-not-finding-driven.md),
+    [0002-consolidate-repair-script-boilerplate.md](adr/0002-consolidate-repair-script-boilerplate.md),
+    [0003-telegram-level2-level3-per-artist-confirmation.md](adr/0003-telegram-level2-level3-per-artist-confirmation.md),
+    [0004-shared-run-tracking-module.md](adr/0004-shared-run-tracking-module.md).
   - [docs/audits/ARCH-031_032_LIBRARY_MAINTENANCE_CONSOLIDATION_CLOSURE_2026-09-14.md](audits/ARCH-031_032_LIBRARY_MAINTENANCE_CONSOLIDATION_CLOSURE_2026-09-14.md) — Abschlussbericht.
   - [docs/FINDINGS_INDEX.md](FINDINGS_INDEX.md) — lebender Stand (z. B. ARCH-034/035 noch offen).
 
