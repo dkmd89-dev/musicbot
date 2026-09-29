@@ -144,26 +144,35 @@
         </select>
         <input type="hidden" id="albumartist-edit-album-select">
         <div class="row g-3">
-          <div class="col-md-6">
+          <div class="col-md-4">
             <label class="form-label" for="album-edit-new-album">Albumname (©alb)</label>
             <div class="input-group">
               <input type="text" id="album-edit-new-album" class="form-control" autocomplete="off">
               <button id="album-edit-preview-btn" type="button" class="btn" title="Vorschau aktualisieren" aria-label="Vorschau Albumname aktualisieren"><svg class="icon"><use href="#i-refresh"/></svg></button>
             </div>
           </div>
-          <div class="col-md-6">
+          <div class="col-md-4">
             <label class="form-label" for="albumartist-edit-new-albumartist">Albuminterpret (aART)</label>
             <div class="input-group">
               <input type="text" id="albumartist-edit-new-albumartist" class="form-control" autocomplete="off">
               <button id="albumartist-edit-preview-btn" type="button" class="btn" title="Vorschau aktualisieren" aria-label="Vorschau Albuminterpret aktualisieren"><svg class="icon"><use href="#i-refresh"/></svg></button>
             </div>
           </div>
+          <div class="col-md-4">
+            <label class="form-label" for="year-edit-new-year">Jahr (©day)</label>
+            <div class="input-group">
+              <input type="text" id="year-edit-new-year" class="form-control" autocomplete="off" maxlength="4" pattern="[0-9]{4}">
+              <button id="year-edit-preview-btn" type="button" class="btn" title="Vorschau aktualisieren" aria-label="Vorschau Jahr aktualisieren"><svg class="icon"><use href="#i-refresh"/></svg></button>
+            </div>
+          </div>
         </div>
-        <div class="form-hint">Vorbelegt mit den aktuellen Tag-Werten des Albums. Ändert weder den Artist-Tag noch den Ordner.</div>
+        <div class="form-hint">Vorbelegt mit den aktuellen Tag-Werten des Albums. Ändert weder den Artist-Tag noch den Ordner. Das Jahr wird als 4-stellige Zahl geschrieben; vorhandene Volldaten (z. B. <code>2024-05-17</code>) werden auf <code>2024</code> gekürzt.</div>
         <div id="album-edit-content" class="md-diff mt-3" aria-live="polite"></div>
         <div id="albumartist-edit-content" class="md-diff mt-2" aria-live="polite"></div>
+        <div id="year-edit-content" class="md-diff mt-2" aria-live="polite"></div>
         <div id="album-edit-result-content" class="mt-3"></div>
         <div id="albumartist-edit-result-content" class="mt-2"></div>
+        <div id="year-edit-result-content" class="mt-2"></div>
       </div>
       <div class="md-footer p-3">
         <button id="album-edit-execute-btn" type="button" class="btn btn-primary" data-count-label="Übernehmen" disabled>

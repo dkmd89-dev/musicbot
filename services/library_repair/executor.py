@@ -87,6 +87,7 @@ MAINTENANCE_ACTION_CODES = frozenset(
         "TITLE_MANUAL_EDIT",
         "ALBUM_MANUAL_EDIT",
         "ALBUM_ARTIST_MANUAL_EDIT",
+        "YEAR_MANUAL_EDIT",
     }
 )
 
@@ -1268,6 +1269,21 @@ def apply_title_edit(
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def read_current_year(path: Path) -> str:
+    """Liest den aktuellen ©day-Wert EINER Datei (repraesentativ fuer die
+    Preview-/Eingabe-Anzeige, rein lesend). Pipeline-Konvention ist eine
+    4-stellige Jahreszahl ("2024"); Altdaten koennen ein Volldatum
+    ("2024-05-17") enthalten - das UI schneidet fuer die Vorbelegung auf
+    die ersten 4 Zeichen, geschrieben wird immer das vierstellige Jahr
+    (Entscheidung D2). Identisches Prinzip wie read_current_album()."""
+    tags = _full_tags(path)
+    raw = tags.get("\xa9day")
+    if not raw:
+        return ""
+    v = raw[0]
+    return v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v)
+
+
 def read_current_album(path: Path) -> str:
     """Liest den aktuellen ©alb-Wert EINER Datei (repraesentativ fuer die
     Preview-/Eingabe-Anzeige, rein lesend, Auftrag §8) - der Album-Scope
@@ -1291,6 +1307,19 @@ def read_current_album_artist(path: Path) -> str:
         return ""
     v = raw[0]
     return v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v)
+
+
+def _write_year_atom(src: Path, year_value: str) -> Path:
+    """Setzt NUR ©day (identisches Sibling-Tmp-Muster wie
+    _write_album_atom())."""
+    from mutagen.mp4 import MP4
+
+    tmp = src.with_name(f".{src.stem}.repairtmp_{int(time.time() * 1000)}{src.suffix}")
+    shutil.copy2(src, tmp)
+    audio = MP4(tmp)
+    audio["\xa9day"] = [year_value]
+    audio.save()
+    return tmp
 
 
 def _write_album_atom(src: Path, album_value: str) -> Path:
@@ -1317,6 +1346,112 @@ def _write_album_artist_atom(src: Path, album_artist_value: str) -> Path:
     audio["aART"] = [album_artist_value]
     audio.save()
     return tmp
+
+
+def apply_year_edit(
+    targets: list[str],
+    library_root: Path,
+    journal: RepairJournal,
+    *,
+    new_year: str,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """Manual Year Editing: setzt ©day auf einen expliziten Nutzer-Zielwert
+    (4-stelliges Jahr) fuer ALLE Dateien im Album-Scope - identisches
+    Sicherheits-/Verifikationsmuster wie apply_album_edit(). Album-Scope
+    wegen Health-Regel ALBUM_YEAR_INCONSISTENT."""
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+
+    for rel in sorted(set(targets)):
+        path = library_root / rel
+        oc = ExecOutcome(
+            file=rel, issue_code="YEAR_MANUAL_EDIT", action="YEAR_MANUAL_EDIT",
+            status="SKIPPED",
+        )
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            tags = _full_tags(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Tag-Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        cur_raw = tags.get("\xa9day")
+        cur_year = cur_raw[0] if cur_raw else ""
+        cur_year = (
+            cur_year.decode("utf-8", "replace") if isinstance(cur_year, bytes) else str(cur_year)
+        )
+
+        if cur_year == new_year:
+            oc.reason = "bereits korrekt"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        oc.before = {"year": cur_year}
+        oc.after = {"year": new_year}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        audio_before = _audio_essence_md5(path)
+        exclude = {"\xa9day"}
+        others_before = tags_fingerprint(tags, exclude)
+        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _write_year_atom(path, new_year)
+            verify_tags = _full_tags(tmp)
+            v_raw = verify_tags.get("\xa9day")
+            v_year = v_raw[0] if v_raw else ""
+            v_year = (
+                v_year.decode("utf-8", "replace") if isinstance(v_year, bytes) else str(v_year)
+            )
+            if v_year != new_year:
+                raise RuntimeError(f"©day falsch: {v_year!r} != {new_year!r}")
+            others_after = tags_fingerprint(verify_tags, exclude)
+            if others_after != others_before:
+                raise RuntimeError("Andere Atome wurden veraendert (Fingerprint-Diff)")
+            audio_tmp = _audio_essence_md5(tmp)
+            if audio_tmp != audio_before or audio_tmp.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {audio_tmp})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if backup.exists():
+                    backup.replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        outcomes.append(oc)
+
+    return outcomes
 
 
 def apply_album_edit(

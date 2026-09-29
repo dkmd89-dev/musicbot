@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 Request-Schemas für POST /api/v1/admin/maintenance/artist-rename/execute,
-.../title-edit/execute, .../album-edit/execute und
-.../albumartist-edit/execute — die vier Aktionen mit manuellem
+.../title-edit/execute, .../album-edit/execute,
+.../albumartist-edit/execute und .../year-edit/execute — die vier Aktionen mit manuellem
 Freitext-Zielwert (Preview-Endpunkte nutzen stattdessen Query-Parameter,
 siehe control_center/routers/admin_maintenance.py, identisches Muster
 wie AcceptFindingRequest in schemas/findings.py).
@@ -35,3 +35,9 @@ class AlbumArtistEditRequest(BaseModel):
     artist: str
     album: str
     new_album_artist: str
+
+
+class YearEditRequest(BaseModel):
+    artist: str
+    album: str
+    new_year: str
