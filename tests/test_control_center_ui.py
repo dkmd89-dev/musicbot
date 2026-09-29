@@ -604,29 +604,35 @@ async def test_artist_detail_page_resolves_artist_client_side_not_server_side(cl
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_has_metadata_edit_panel_hidden_by_default(client):
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
     html = (await client.get("/library/Bausa")).text
 
-    assert 'id="artist-metadata-edit-panel" hidden' in html
+    assert '<button type="button" id="artist-edit-open-btn" class="btn btn-primary" hidden>' in html
+    assert 'id="md-editor"' in html
+    assert 'id="artist-metadata-edit-panel"' not in html
 
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_metadata_edit_gated_by_access_level(client):
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
     html = await _page_with_scripts(client, "/library/Bausa")
 
     assert 'who.access_level === "ADMIN" || who.access_level === "OWNER"' in html
-    assert 'getElementById("artist-metadata-edit-panel").hidden = !isAdmin' in html
+    assert 'getElementById("artist-edit-open-btn").hidden = !isAdmin' in html
+    assert "if (!_trackDrawerIsAdmin) return;" in html  # openMetadataEditor()
 
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_metadata_panel_is_collapsed_details(client):
-    """CC-AC-7: Metadaten-Editing ist initial eingeklappt (natives
-    <details>, kein open-Attribut) statt eines dauerhaft sichtbaren
-    Formularblocks."""
+    """CC-AC-7 fortgeschrieben: der Editor ist beim Laden geschlossen (Offcanvas
+    ohne .show) statt eines dauerhaft sichtbaren Formularblocks."""
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
     html = (await client.get("/library/Bausa")).text
 
-    panel = html.split('id="artist-metadata-edit-panel"', 1)[1].split("</section>", 1)[0]
-    assert "<details>" in panel
-    assert "<details open>" not in panel
+    assert '<div class="offcanvas offcanvas-end cc-md-editor" tabindex="-1" id="md-editor"' in html
 
 
 @pytest.mark.asyncio
@@ -727,49 +733,34 @@ async def test_artist_detail_page_disables_execute_after_input_changes(client):
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_title_edit_uses_track_picker_not_free_text_path(client):
-    """CC-LIB-FINAL Phase D (Auftrag §6.2): kein manuell einzutippender
-    technischer relativer Dateipfad mehr fuer 'Titel bearbeiten' - der
-    Track kommt aus einem <select>, gespeist ausschliesslich aus den
-    bereits geladenen Tracks dieses Artists (kein Freitextfeld, in dem ein
-    Pfad eines fremden Artists eingegeben werden koennte). Der Server
-    bleibt trotzdem die eigentliche Schranke
-    (maintenance_service.py::_title_edit_targets(), CC-LIB-FINAL Phase C)."""
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
+    # Titel direkt in der Trackliste statt Dropdown; der Pfad bleibt verborgen.
     html = await _page_with_scripts(client, "/library/Bausa")
 
-    assert '<select id="title-edit-track-select" class="form-select">' in html
+    assert '<input type="hidden" id="title-edit-track-select">' in html
+    assert 'id="title-edit-list"' in html
     assert 'id="title-edit-rel-path"' not in html
     assert "function _artistTrackOptionGroups(body)" in html
     assert "function _populateTrackPickers(body)" in html
     assert "_populateTrackPickers(body)" in html
-    # Bestaetigungsdialog zeigt den Tracknamen, nicht den technischen Pfad.
     assert "_titleEditTrackLabel(relPath)" in html
 
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_execute_errors_do_not_claim_network_failure(client):
-    """Die sieben synchronen Ganz-Artist-/Ganz-Album-/Ganz-Track-
-    Schreibvorgaenge (Artist/Titel/Genre bearbeiten aus CC-AC-2,
-    Album/Albuminterpret bearbeiten aus CC-AC-3, Artist-Casing/Legacy-
-    Genre-Cleanup aus CC-AC-4) sind synchrone Schreibvorgaenge hinter
-    einem Reverse Proxy ohne explizites proxy_read_timeout
-    (docs/CONTROL_CENTER_REVERSE_PROXY.md) - ein abgebrochener Request
-    kann trotzdem serverseitig fertig geschrieben worden sein. Ihr
-    Fehlertext behauptet deshalb keinen Netzwerkfehler mehr, sondern ein
-    unbekanntes Ergebnis.
-
-    Der L2/L3-Job-Start (CC-AC-4) ist davon bewusst ausgenommen: er
-    erstellt nur einen Job und kehrt sofort zurueck (kein langer
-    synchroner Schreibvorgang wie oben) - identisches
-    "Netzwerkfehler"-Wording wie beim aequivalenten Job-Start in
-    static/pages/health.js::startLevel23Job()."""
+    """Schreibvorgaenge sind synchron hinter einem Reverse Proxy ohne
+    explizites proxy_read_timeout (docs/CONTROL_CENTER_REVERSE_PROXY.md) - ein
+    abgebrochener Request kann serverseitig fertig geschrieben worden sein.
+    Ihr Fehlertext behauptet deshalb keinen Netzwerkfehler, sondern ein
+    unbekanntes Ergebnis."""
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
+    # Der L3-Job-Start (einzige "Netzwerkfehler"-Stelle) ist mit L3 entfallen.
     html = await _page_with_scripts(client, "/library/Bausa")
 
     assert html.count("Ergebnis unbekannt") >= 7
-    assert html.count("Netzwerkfehler") == 1
-
-    start_job_fn = html.split("async function startArtistRepairJob(level) {", 1)[1]
-    start_job_fn_body = start_job_fn.split('document.getElementById("repair-l3-btn")', 1)[0]
-    assert "Netzwerkfehler" in start_job_fn_body
+    assert "Netzwerkfehler" not in html
 
 
 @pytest.mark.asyncio
@@ -791,12 +782,15 @@ async def test_artist_detail_page_confirms_before_write_actions(client):
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_has_album_edit_buttons(client):
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
+    # Album-Reiter: zwei Vorschauen, EIN Übernehmen für Albumname + Albuminterpret.
     html = (await client.get("/library/Bausa")).text
 
     assert 'id="album-edit-preview-btn"' in html
     assert 'id="album-edit-execute-btn"' in html
     assert 'id="albumartist-edit-preview-btn"' in html
-    assert 'id="albumartist-edit-execute-btn"' in html
+    assert 'id="albumartist-edit-execute-btn"' not in html
 
 
 @pytest.mark.asyncio
@@ -861,10 +855,15 @@ async def test_artist_detail_page_album_edit_confirms_before_write(client):
 
     # CC-UI L3b (bewusst angepasst): _artistConfirm() statt window.confirm()
     assert html.count("await _artistConfirm(") >= 5
-    album_edit_fn = html.split("async function executeAlbumEdit()")[1].split("async function ")[0]
+    album_edit_fn = html.split("async function executeAlbumEdit(opts = {})")[1]  # CC-UI L4: skipConfirm für das gemeinsame Übernehmen.split("async function ")[0]
     assert "_artistConfirm(" in album_edit_fn
-    albumartist_edit_fn = html.split("async function executeAlbumArtistEdit()")[1].split("async function ")[0]
+    albumartist_edit_fn = html.split("async function executeAlbumArtistEdit(opts = {})")[1].split("async function ")[0]
     assert "_artistConfirm(" in albumartist_edit_fn
+    # CC-UI L4: gemeinsames Übernehmen fragt EINMAL und ruft beide ohne eigene Bestätigung
+    album_tab_fn = html.split("async function executeAlbumTab()")[1].split("async function ")[0]
+    assert "await _artistConfirm(" in album_tab_fn
+    assert "executeAlbumEdit({ skipConfirm: true })" in album_tab_fn
+    assert "executeAlbumArtistEdit({ skipConfirm: true })" in album_tab_fn
 
 
 @pytest.mark.asyncio
@@ -877,49 +876,54 @@ async def test_artist_detail_page_reloads_album_preview_after_execute(client):
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_album_edit_disables_execute_after_input_changes(client):
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
+    # Eingaben setzen den Zähler zurück (Button aus) und starten die Vorschau neu.
     html = await _page_with_scripts(client, "/library/Bausa")
 
-    assert '["album-edit-album-select", "album-edit-new-album"].forEach' in html
+    assert 'addEventListener("input", () => _autoAlbumPreview("album"))' in html
     assert '["albumartist-edit-album-select", "albumartist-edit-new-albumartist"].forEach' in html
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# GET /library/{artist} — Library-Wartung (CC-AC-4)
-# ─────────────────────────────────────────────────────────────────────────
-#
-# Reine Verdrahtung der bereits produktiven Endpunkte aus
-# admin_maintenance.py (Artist-Casing, Legacy-Genre-Cleanup — eigene
-# Test-Suite: test_control_center_admin_maintenance_api.py) und jobs.py
-# (L2/L3 — eigene Test-Suite: test_control_center_jobs_api.py). Hier wird
-# nur geprueft, dass das Artist-Detail-Template sie tatsaechlich
-# verdrahtet, Genre-Revalidierung bewusst KEINEN Button bekommt (kein
-# CC-Endpunkt vorhanden), und die Buttons hinter derselben
-# Admin-Sichtbarkeitsschranke wie die CC-AC-2-/CC-AC-3-Panels stehen.
+    auto_fn = html.split("function _autoAlbumPreview(field) {", 1)[1].split("\n  }", 1)[0]
+    assert "_albumState.counts[field] = 0;" in auto_fn and "_updateAlbumExecuteBtn();" in auto_fn
 
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_has_maintenance_panel_hidden_by_default(client):
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
     html = (await client.get("/library/Bausa")).text
 
-    assert 'id="artist-maintenance-panel" hidden' in html
+    assert 'id="artist-maintenance-panel"' not in html
 
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_maintenance_gated_by_access_level(client):
-    html = await _page_with_scripts(client, "/library/Bausa")
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
+    # Die Werkzeuge liegen im Editor und sind damit hinter derselben Admin-Schranke.
+    html = (await client.get("/library/Bausa")).text
 
-    assert 'getElementById("artist-maintenance-panel").hidden = !isAdmin' in html
+    editor = html.split('id="md-editor"', 1)[1]
+    for tool in ("artist-casing-preview-btn", "legacy-genre-cleanup-preview-btn",
+                 "genre-revalidation-preview-btn", "duplicate-check-btn"):
+        assert f'id="{tool}"' in editor, tool
 
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_maintenance_panel_is_collapsed_details(client):
-    """CC-AC-7: Library-Wartung ist initial eingeklappt (natives
-    <details>, kein open-Attribut)."""
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
+    # Werkzeuge im fachlich passenden Reiter (Casing -> Artist, Legacy-Genre +
+    # Last.fm -> Genre, Duplikat-Check -> Duplikate).
     html = (await client.get("/library/Bausa")).text
 
-    panel = html.split('id="artist-maintenance-panel"', 1)[1].split("</section>", 1)[0]
-    assert "<details>" in panel
-    assert "<details open>" not in panel
+    def pane(name):
+        return html.split(f'data-md-pane="{name}"', 1)[1].split("</section>", 1)[0]
+
+    assert 'id="artist-casing-preview-btn"' in pane("artist")
+    assert 'id="legacy-genre-cleanup-preview-btn"' in pane("genre")
+    assert 'id="genre-revalidation-preview-btn"' in pane("genre")
+    assert 'id="duplicate-check-btn"' in pane("dupes")
 
 
 @pytest.mark.asyncio
@@ -930,7 +934,9 @@ async def test_artist_detail_page_has_maintenance_buttons(client):
     assert 'id="artist-casing-execute-btn"' in html
     assert 'id="legacy-genre-cleanup-preview-btn"' in html
     assert 'id="legacy-genre-cleanup-execute-btn"' in html
-    assert 'id="repair-l3-btn"' in html
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
+    assert 'id="repair-l3-btn"' not in html
     assert 'id="repair-l2-btn"' not in html  # CC-LIB-FINAL Phase B: entfernt
 
 
@@ -954,24 +960,24 @@ async def test_artist_detail_page_wires_existing_legacy_genre_cleanup_endpoints(
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_wires_existing_repair_level_job_endpoints(client):
-    """L3 laeuft als bestehender Job-Typ (services/jobs/), kein
-    synchroner Preview->Execute wie die uebrigen Maintenance-Aktionen.
-    L2 (Metadata-Reprocessing) wurde in CC-LIB-FINAL Phase B entfernt."""
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
     html = await _page_with_scripts(client, "/library/Bausa")
+    health_js = (await client.get("/static/pages/health.js")).text
 
-    assert '"/api/v1/jobs/repair-level3"' in html
-    assert "/api/v1/jobs/${encodeURIComponent(jobId)}" in html
+    assert '"/api/v1/jobs/repair-level3"' not in html
+    assert '"/api/v1/jobs/repair-level3"' in health_js  # dieselbe Funktion bleibt auf Health
 
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_maintenance_uses_artist_context_not_free_text(client):
-    """Auftrag §12: der Artist-Kontext (aus dem Pfad) wird implizit
-    mitgegeben - kein eigenes Freitext-Artist-Feld wie im generischen
-    admin.html-Formular bzw. der Repair-Plan-Liste auf /health."""
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
+    # Werkzeuge ohne Freitextfeld für den Artist; Artist kommt aus der URL.
     html = await _page_with_scripts(client, "/library/Bausa")
 
-    maintenance_section = html.split('id="artist-maintenance-panel"', 1)[1].split("</section>", 1)[0]
-    assert "<input" not in maintenance_section
+    dupes = html.split('data-md-pane="dupes"', 1)[1].split("</section>", 1)[0]
+    assert "<input" not in dupes
     assert html.count("currentArtistFromPath()") >= 17
 
 
@@ -1007,31 +1013,22 @@ async def test_artist_detail_page_repair_jobs_have_no_cancel_button(client):
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_repair_job_confirm_mentions_duration_and_musicbrainz(client):
-    """SCOPE-HINWEIS: Confirm-Dialog muss auf laengere Laufzeit hinweisen
-    (L2/L3 laufen asynchron als Job, anders als die synchronen
-    Maintenance-Aktionen) sowie bei L3 auf MusicBrainz/Netzwerk."""
-    html = await _page_with_scripts(client, "/library/Bausa")
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
+    health_js = (await client.get("/static/pages/health.js")).text
 
-    assert "kann einige Minuten dauern" in html or "Kann einige Minuten dauern" in html
-    assert "MusicBrainz" in html
+    assert "MusicBrainz" in health_js
 
 
 @pytest.mark.asyncio
 async def test_artist_detail_page_repair_job_polls_every_second(client):
+    # CC-UI L4 (bewusst angepasst, Nutzerfreigabe 2026-09-28): Metadaten-Editor als
+    # Seitenpanel, Karte "Library-Wartung" entfällt, L3 nur noch auf der Health-Seite.
     html = await _page_with_scripts(client, "/library/Bausa")
+    health_js = (await client.get("/static/pages/health.js")).text
 
-    assert "setInterval(() => _pollArtistRepairJob(_artistRepairJobId), 1000)" in html
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# GET /library/{artist} — Track Detail Drawer (CC-AC-9, Track-Centric
-# Library Actions)
-# ─────────────────────────────────────────────────────────────────────────
-#
-# Auftrag §19: mindestens Track UI, Track Drawer, Metadata, Actions,
-# Preview/Execute-Erhalt, Accessibility abdecken. Wie die uebrigen Tests
-# in dieser Datei rein string-basiert gegen das echte gerenderte Template
-# (kein Headless-Browser) - siehe Playwright-Hinweis im Abschlussbericht.
+    assert "_pollArtistRepairJob" not in html
+    assert "setInterval(() => _pollLevel23Job(_level23JobId), 1000)" in health_js
 
 
 @pytest.mark.asyncio
@@ -1102,7 +1099,7 @@ async def test_track_detail_context_exposes_existing_actions(client):
     assert '"album-edit-album-select", "album-edit-new-album"' in html
     assert '"albumartist-edit-album-select", "albumartist-edit-new-albumartist"' in html
     assert "genre: _trackDrawerEditGenre," in html
-    assert "maintenance: _trackDrawerOpenMaintenance," in html
+    assert "duplicates: _trackDrawerOpenDuplicates," in html  # CC-UI L4: statt Library-Wartung
 
 
 @pytest.mark.asyncio
