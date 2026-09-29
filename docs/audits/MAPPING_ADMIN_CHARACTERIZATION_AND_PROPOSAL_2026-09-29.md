@@ -259,3 +259,15 @@ Drei ehrliche Zustände je Datei in der API-Antwort:
 - Keine Aenderungen an bestehender Mapping-Fachlogik oder Dateiformaten
 
 **Naechster Schritt:** M2 — die naechste manuelle Mapping-Datei (`genre-aliases` als Vorschlag).
+
+**Live verifiziert 2026-09-29** (lokale Testinstanz auf `127.0.0.1:8421`,
+`CONTROL_CENTER_DEV_AUTH_BYPASS=true`, gegen die echte
+`mapping/channel_genre.yaml`):
+
+- `GET /api/v1/admin/mappings/channel-genre` → HTTP 200, korrekte Eintraege.
+- `GET .../entry?channel=kontor.tv` → HTTP 200, Etag geliefert.
+- `PUT` mit veraltetem Etag (nach externer Aenderung der Datei) →
+  HTTP 409 `MAPPING_CHANGED`, Datei-SHA-256 unveraendert (kein Lost Update).
+- Zusatzbefund: externe Aenderung mit *kaputtem* YAML → HTTP 503
+  `MAPPING_UNAVAILABLE` (kein stilles Schreiben, kein 500).
+- Datei nach Test vollstaendig restauriert (SHA-256-Check gruen).
