@@ -348,6 +348,49 @@ async function loadNavidromeStatus() {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// Heute gehört: GET /api/v1/statistics/me/timeline (Nutzerwunsch
+// 2026-09-29) - kleiner Block in der Library-Karte, bestehender Endpunkt.
+// ══════════════════════════════════════════════════════════════════
+function _formatListening(seconds) {
+  const totalMinutes = Math.floor(Number(seconds || 0) / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+async function loadTodayListening() {
+  const el = document.getElementById("status-today-content");
+  if (!el) return;
+  let t;
+  try {
+    t = await ccApi("GET", "/api/v1/statistics/me/timeline");
+  } catch (err) {
+    if (err.status === 401) return;
+    el.classList.remove("placeholder-glow");
+    // 404 = kein Navidrome-Benutzer hinterlegt - Hinweis statt Fehler.
+    el.innerHTML = `<div class="text-secondary small">${_escapeHtml(err.status === 404
+      ? "Kein Navidrome-Benutzer hinterlegt." : "Hörstatistik gerade nicht verfügbar.")}</div>`;
+    return;
+  }
+  el.classList.remove("placeholder-glow");
+  if (!t || !t.has_data || !t.track_count) {
+    el.innerHTML = '<div class="text-secondary small">Heute noch nichts gehört.</div>';
+    return;
+  }
+  const stat = (label, value) => `<div class="col-4"><div class="text-secondary small">${label}</div>`
+    + `<div class="fw-semibold">${_escapeHtml(value)}</div></div>`;
+  const top = (t.top_artist && t.top_artist.label)
+    ? `<div class="text-secondary small mt-2 text-truncate">Top: <span class="text-reset fw-medium">${_escapeHtml(t.top_artist.label)}</span></div>`
+    : "";
+  el.innerHTML = '<div class="row g-2">'
+    + stat("Plays", String(t.track_count))
+    + stat("Hörzeit", _formatListening(t.listening_seconds))
+    + stat("Neu", String(t.new_track_count ?? 0))
+    + "</div>" + top
+    + `<a href="${CC_BASE}/statistics" class="btn btn-link p-0 mt-2">Zur Statistik</a>`;
+}
+
+// ══════════════════════════════════════════════════════════════════
 // Init
 // ══════════════════════════════════════════════════════════════════
 function initPage() {
@@ -358,6 +401,7 @@ function initPage() {
     loadNavidromeStatus();
     loadFindings();
     loadRecentActivity();
+    loadTodayListening();
   });
 }
 initPage();

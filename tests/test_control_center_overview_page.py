@@ -155,6 +155,7 @@ def _base(**overrides):
         "/api/v1/navidrome/status": {"status": 200, "body": {"connected": True, "artist_count": 1500}},
         "/api/v1/library/findings/summary": {"status": 200, "body": {"open": 0}},
         "/api/v1/downloads/history": {"status": 200, "body": {"entries": []}},
+        "/api/v1/statistics/me/timeline": {"status": 200, "body": {"has_data": False}},
     }
     scenario.update(overrides)
     return scenario
@@ -181,6 +182,9 @@ def test_loads_only_the_known_cheap_endpoints(tmp_path):
         "/api/v1/navidrome/status",
         "/api/v1/library/findings/summary",
         "/api/v1/downloads/history?limit=5",
+        # Overview O2 (bewusst ergänzt, Nutzerwunsch 2026-09-29): "Heute gehört" in der
+        # Library-Karte - liest nur den gespeicherten Wiedergabeverlauf, kein Scan.
+        "/api/v1/statistics/me/timeline",
     ])
     assert not any("repair-plan" in c or c.endswith("/library/health") for c in out["calls"])
 
@@ -342,3 +346,43 @@ def test_unauthenticated_shows_login_and_loads_nothing_else(tmp_path):
 
     assert out["calls"] == ["/api/v1/auth/whoami"]
     assert out["els"]["login-view"]["hidden"] is False
+
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Overview O2 (Nutzerfreigabe 2026-09-29): "Heute gehört" in der Library-
+# Karte, Library-Link in "Aufmerksamkeit", Statistics im Schnellzugriff,
+# Library-Text "Metadaten prüfen und bearbeiten".
+# ─────────────────────────────────────────────────────────────────────────
+
+_TODAY = {"has_data": True, "track_count": 12, "listening_seconds": 3900, "new_track_count": 2,
+          "top_artist": {"label": "<Cro>", "count": 5}}
+
+
+@needs_node
+def test_today_block_shows_plays_listening_time_and_top_artist(tmp_path):
+    html = _run(tmp_path, _base(**{"/api/v1/statistics/me/timeline": {"status": 200, "body": _TODAY}}))["els"]["status-today-content"]["html"]
+    assert ">12<" in html and "1h 5m" in html and ">2<" in html
+    assert "&lt;Cro&gt;" in html and "<Cro>" not in html
+    assert 'href="/statistics"' in html
+
+
+@needs_node
+@pytest.mark.parametrize("response, text", [
+    ({"status": 200, "body": {"has_data": False}}, "Heute noch nichts gehört."),
+    ({"status": 404, "body": {"error": {"message": "x"}}}, "Kein Navidrome-Benutzer hinterlegt."),
+    ({"status": 500, "body": {"error": {"message": "x"}}}, "Hörstatistik gerade nicht verfügbar."),
+])
+def test_today_block_states(tmp_path, response, text):
+    el = _run(tmp_path, _base(**{"/api/v1/statistics/me/timeline": response}))["els"]["status-today-content"]
+    assert text in el["html"]
+    assert "placeholder-glow" not in el["cls"]
+
+
+def test_overview_template_links_and_quick_access():
+    html = (CC_DIR / "templates" / "overview.html").read_text(encoding="utf-8")
+    assert 'href="{{ base_path }}/library?issue=__any" id="attention-library-link"' in html
+    assert "Metadaten prüfen und bearbeiten" in html and "Musikbibliothek verwalten" not in html
+    assert 'href="{{ base_path }}/statistics" class="card card-link' in html
+    assert html.count('class="col-sm-6 col-lg-3"') == 4
+    assert 'id="status-today-content"' in html
