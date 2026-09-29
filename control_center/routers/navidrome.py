@@ -19,6 +19,8 @@ Stellt die vollständige Navidrome-Funktionalität des Telegram-Bots
     GET    /api/v1/navidrome/genres
     GET    /api/v1/navidrome/genres/{genre_name}      ?size
     GET    /api/v1/navidrome/songs/{song_id}
+    GET    /api/v1/navidrome/cover/{cover_id}         ?size   (Cover-Proxy)
+    GET    /api/v1/navidrome/stream/{song_id}         (Audio-Proxy, Range-fähig)
 
   Suche & Entdecken
     GET    /api/v1/navidrome/search                   ?q&type
@@ -53,9 +55,12 @@ Playlist-CRUD genügt AccessLevel.USER (identisch zur Telegram-Seite).
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
+from starlette.concurrency import iterate_in_threadpool
 
 from services.access_control import AccessLevel
 from logger import get_module_logger
@@ -238,6 +243,100 @@ async def get_cover(
         media_type=content_type,
         headers={"Cache-Control": "public, max-age=86400"},
     )
+
+
+# ===== Audio-Stream-Proxy (CC-UI Navidrome N3) =====
+# Wie beim Cover-Proxy spricht nur das Control Center mit Navidrome: Der
+# Browser sendet sein Session-Cookie, die Subsonic-Zugangsdaten (u=/p=) bleiben
+# serverseitig und tauchen weder in URL, Antwort noch Log auf. Der Router
+# reicht Range-Anfragen durch (Spulen) und streamt die Bytes stückweise.
+
+_STREAM_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_STREAM_RANGE_RE = re.compile(r"^bytes=(\d+-\d*|-\d+)$")   # genau ein Bereich
+_STREAM_PASSTHROUGH_HEADERS = ("content-type", "content-length", "content-range")
+_STREAM_CHUNK_SIZE = 64 * 1024
+_STREAM_OK_TYPES = {"application/ogg", "application/octet-stream"}
+
+
+def _stream_error(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail=ErrorDetail(code=code, message=message).model_dump(),
+    )
+
+
+def _is_audio_content_type(content_type: str) -> bool:
+    main = (content_type or "").split(";")[0].strip().lower()
+    return main.startswith("audio/") or main in _STREAM_OK_TYPES
+
+
+def _stream_failure(upstream: Any, song_id: str) -> HTTPException:
+    """Wandelt eine Nicht-Audio-/Fehlerantwort von Navidrome in eine
+    Control-Center-Fehlerantwort. Weder Upstream-Body noch URL werden
+    weitergereicht oder geloggt (nur der Subsonic-Fehlercode)."""
+    status = upstream.status_code
+    subsonic_code = None
+    try:
+        content_type = (upstream.headers.get("content-type") or "").lower()
+        if "json" in content_type:
+            subsonic_code = ((_subsonic(upstream.json()).get("error")) or {}).get("code")
+    except Exception:  # noqa: BLE001 - kaputter Body: nur der Status zählt
+        subsonic_code = None
+    _logger.warning(
+        f"Navidrome-Stream fehlgeschlagen: song_id={song_id} "
+        f"upstream_status={status} subsonic_code={subsonic_code}"
+    )
+    if status == 416:
+        return _stream_error(416, "NAVIDROME_STREAM_RANGE", "Bereich nicht verfügbar")
+    if status in (400, 404) or subsonic_code == 70:
+        return _stream_error(404, "NAVIDROME_SONG_NOT_FOUND", "Song nicht gefunden")
+    return _stream_error(502, "NAVIDROME_STREAM_FAILED", "Navidrome-Stream nicht verfügbar")
+
+
+@router.get("/stream/{song_id}")
+async def get_stream(song_id: str, request: Request) -> StreamingResponse:
+    if not _STREAM_ID_RE.fullmatch(song_id):
+        raise _stream_error(422, "INVALID_SONG_ID", "Ungültige Song-ID")
+
+    range_header = request.headers.get("range")
+    if range_header is not None and not _STREAM_RANGE_RE.fullmatch(range_header.strip()):
+        range_header = None            # unbekanntes Format: ganze Datei liefern
+    elif range_header is not None:
+        range_header = range_header.strip()
+
+    api = NavidromeAPI()
+    try:
+        upstream = await asyncio.to_thread(api.open_stream, song_id, range_header)
+    except Exception as err:  # noqa: BLE001 - Meldung kann die Navidrome-URL enthalten
+        _logger.error(f"Navidrome-Stream nicht erreichbar: song_id={song_id} ({type(err).__name__})")
+        raise _stream_error(502, "NAVIDROME_STREAM_FAILED", "Navidrome-Stream nicht verfügbar") from None
+
+    content_type = upstream.headers.get("content-type", "")
+    if upstream.status_code not in (200, 206) or not _is_audio_content_type(content_type):
+        try:
+            failure = _stream_failure(upstream, song_id)
+        finally:
+            upstream.close()
+        raise failure
+
+    headers = {
+        name: upstream.headers[name]
+        for name in _STREAM_PASSTHROUGH_HEADERS
+        if name in upstream.headers
+    }
+    headers["Accept-Ranges"] = "bytes"
+    headers["Cache-Control"] = "private, no-cache"
+
+    async def _body():
+        try:
+            async for chunk in iterate_in_threadpool(upstream.iter_content(chunk_size=_STREAM_CHUNK_SIZE)):
+                yield chunk
+        except Exception as err:  # noqa: BLE001 - Meldung kann die URL enthalten
+            _logger.error(f"Navidrome-Stream abgebrochen: song_id={song_id} ({type(err).__name__})")
+        finally:
+            upstream.close()
+
+    return StreamingResponse(_body(), status_code=upstream.status_code, headers=headers)
 
 # ===== Artists =====
 

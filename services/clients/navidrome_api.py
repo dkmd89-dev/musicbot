@@ -283,6 +283,35 @@ class NavidromeAPI:
         response.raise_for_status()
         return response.content, response.headers.get("Content-Type", "image/jpeg")
 
+    def open_stream(self, song_id: str, range_header: "str | None" = None) -> "requests.Response":
+        """Öffnet den Audio-Stream eines Songs (Subsonic stream, format=raw).
+
+        Liefert die noch nicht gelesene requests.Response (stream=True), damit
+        der Aufrufer die Bytes stückweise weiterreichen kann (Control-Center-
+        Player). format=raw = keine Transkodierung, damit Range-Anfragen
+        (Spulen) funktionieren. range_header wird unverändert an Navidrome
+        weitergegeben.
+
+        Der Aufrufer MUSS die Response schließen und prüft status_code selbst -
+        bewusst kein raise_for_status(): dessen Fehlermeldung enthielte die
+        Request-URL samt u=/p= (Klartext-Passwort, siehe _scrub_credentials).
+        Verbindungsfehler werden maskiert und ohne Original-Exception als
+        RuntimeError geworfen.
+        """
+        url = self._build_url("stream")
+        params = {**self._auth_params, "id": song_id, "format": "raw"}
+        headers = {"Range": range_header} if range_header else {}
+        try:
+            return requests.get(
+                url,
+                params=params,
+                headers=headers,
+                stream=True,
+                timeout=getattr(Config, "NAVIDROME_REQUEST_TIMEOUT", 15),
+            )
+        except Exception as err:  # noqa: BLE001 - Netzwerk/Timeout -> maskiert weiterreichen
+            raise RuntimeError(_scrub_credentials(str(err))) from None
+
 
 
 # ─────────────────────────────────────────────────────────────────────────
