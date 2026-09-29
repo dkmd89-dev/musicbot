@@ -42,11 +42,16 @@ vorhandene Genauigkeit vortäuschen):
   Root-Format (`bot.log` + Rotation, der praktisch wichtigste Fall) gibt
   es keine verlässliche Datumsinformation innerhalb der Zeile — nur die
   Datei-Auswahl selbst grenzt grob ein.
-- **Kein "Job"/"User"-Filter.** Keiner der bestehenden `log*()`-Aufrufe
-  im gesamten Repository korreliert Log-Zeilen strukturiert mit einer
-  Job-/User-ID (kein einheitliches `extra={"job_id": ...}"`-Feld o. Ä.)
-  — das flächendeckend nachzurüsten wäre ein großer, hier nicht
-  beauftragter Eingriff in sehr viele bestehende log-Aufrufe.
+- **Job-Filter (D.12b.2):** Der Reader akzeptiert seit 2026-09-29 ein
+  optionales `[JOB <8 hex>]`-Token an beliebiger Position in der
+  Message (deckt JobRegistry- UND Download-Kontext-Konvention ab) und
+  kann per `read_logs(..., job_id=...)` / `?job=<id>` filtern. Die
+  Attribution entsteht additiv ueber `services/jobs/job_context.py`
+  (ContextVar) und `logger.py::_JobIdFilter` (an den Root-Handlern);
+  Download-interne Log-Zeilen (YoutubeDownloader, pipeline_core,
+  download_utils, DownloadExecutor) tragen seitdem dieselbe Job-ID wie
+  die JobRegistry-Emissionen. **Kein "User"-Filter** — User-IDs werden
+  weiterhin nicht strukturiert in Log-Zeilen gefuehrt.
 
 Security (Master-Prompt Abschnitt 23/31, CLAUDE.md Abschnitt 12 P0
 "keine Secrets loggen"): zusätzliche, defensive Redaktion
@@ -75,6 +80,12 @@ _LINE_RE = re.compile(
     r"\[(?P<component>[A-Z0-9_]+)\]\s*"
     r"(?P<message>.*)$"
 )
+# D.12b.2: Suchregex fuer [JOB <8 hex>] an beliebiger Position in der
+# Message. Deckt BEIDE Konventionen ab:
+#   - JobRegistry:    "🧩 [JOB abc12345] Meldung"
+#   - Download-Kontext (neu): "[JOB abc12345] Meldung"
+_JOB_RE = re.compile(r"\[JOB (?P<job_id>[a-f0-9]{8})\]")
+
 _LEVEL_EMOJI_TO_NAME = {v: k for k, v in LOG_LEVEL_EMOJIS.items()}
 _KNOWN_LEVEL_NAMES = frozenset(LOG_LEVEL_EMOJIS.keys())
 
@@ -109,6 +120,10 @@ class LogEntry:
     level: Optional[str]
     component: Optional[str]
     message: str
+    # D.12b.2: aus optionalem "[JOB <8 hex>]"-Token in der Message.
+    # None bei Zeilen ohne Job-Kontext. Die Message ist um das Token
+    # bereinigt (nicht doppelt in UI/API).
+    job_id: Optional[str] = None
 
 
 def _parse_line(raw_line: str) -> LogEntry:
@@ -127,11 +142,37 @@ def _parse_line(raw_line: str) -> LogEntry:
     if level is None and level_token in _KNOWN_LEVEL_NAMES:
         level = level_token  # use_emojis=False -> Klartext-Levelname statt Emoji
 
+    message = match.group("message")
+    # D.12b.2: [JOB xxx] extrahieren und entfernen. Deckt beide
+    # Positionen ab (JobRegistry: eingebettet nach Emoji; Download-
+    # Kontext: direkt nach [COMPONENT]). KEINE globale Whitespace-
+    # Normalisierung — die würde legitime Mehrfach-Leerzeichen in
+    # Metadaten zerstören. Stattdessen nur der unmittelbare Space
+    # neben dem Token trimmen.
+    job_match = _JOB_RE.search(message)
+    if job_match:
+        job_id = job_match.group("job_id")
+        start, end = job_match.start(), job_match.end()
+        # Space direkt nach dem Token mitentfernen (verhindert
+        # "🧩  Download..." mit doppeltem Space)
+        if end < len(message) and message[end] == " ":
+            end += 1
+        # ... oder direkt davor, wenn Token am Ende stand
+        elif start > 0 and message[start - 1] == " ":
+            start -= 1
+        message = message[:start] + message[end:]
+        # Token stand am Anfang: kein führendes Space übrig lassen
+        if start == 0:
+            message = message.lstrip()
+    else:
+        job_id = None
+
     return LogEntry(
         time=match.group("time"),
         level=level,
         component=match.group("component"),
-        message=match.group("message"),
+        message=message,
+        job_id=job_id,
     )
 
 
@@ -155,6 +196,7 @@ def read_logs(
     level: Optional[str] = None,
     component: Optional[str] = None,
     search: Optional[str] = None,
+    job_id: Optional[str] = None,
     limit: int = 200,
 ) -> dict:
     """Liest genau EINE Log-Datei aus `log_dir` (per `source` gewaehlt,
@@ -217,6 +259,8 @@ def read_logs(
         if level and (entry.level or "").upper() != level.upper():
             continue
         if component and (entry.component or "").upper() != component.upper():
+            continue
+        if job_id and (entry.job_id or "").lower() != job_id.lower():
             continue
         if search_lower and search_lower not in line.lower():
             continue

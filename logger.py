@@ -10,6 +10,10 @@ from logging.handlers import RotatingFileHandler
 import colorama
 from colorama import Fore, Back, Style
 
+# D.12b.2: task-lokale Job-ID fuer Log-Anreicherung.
+# job_context.py importiert logger.py NICHT -> kein Zyklus.
+from services.jobs.job_context import get_current_job_id
+
 # Initialisiere Colorama für Cross-Platform Farb-Support
 colorama.init(autoreset=True)
 
@@ -144,6 +148,13 @@ class ColoredFormatter(logging.Formatter):
 
         # Nachricht formatieren
         message = record.getMessage()
+        # D.12b.2: Job-ID-Praefix nur zeigen, wenn
+        # (a) eine Job-ID am Record haengt UND
+        # (b) die Message sie nicht schon selbst traegt (JobRegistry
+        #     formatiert als "[JOB abc12345] ...").
+        _jid = getattr(record, "job_id", "-")
+        if _jid and _jid != "-" and "[JOB " not in message:
+            message = f"[JOB {_jid}] {message}"
 
         # Finale Formatierung
         formatted = f"{timestamp} {level_display} {module_display} {message}"
@@ -155,7 +166,23 @@ class ColoredFormatter(logging.Formatter):
         return formatted
 
 
+class _JobIdFilter(logging.Filter):
+    """D.12b.2: reichert jeden LogRecord mit `job_id` an — aus dem
+    task-lokalen ContextVar (services/jobs/job_context.py). Wird an die
+    Root-HANDLER gehaengt (nicht an den Root-Logger), weil Filter auf
+    Parent-Loggern bei Propagation nicht ausgefuehrt werden.
+
+    Vertrag: record.job_id existiert IMMER — "-" ohne Job-Kontext,
+    sonst die ersten 8 Zeichen der ID (konsistent zu JobRegistry)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        jid = get_current_job_id()
+        record.job_id = jid[:8] if jid else "-"
+        return True
+
+
 class EnhancedRotatingFileHandler(RotatingFileHandler):
+
     """
     Erweiterte RotatingFileHandler mit besserer Fehlerbehandlung
     """
@@ -297,6 +324,14 @@ def setup_enhanced_logging(
     file_handler.setFormatter(formatter)
     file_handler.setLevel(logging.DEBUG)
     root_logger.addHandler(file_handler)
+
+    # D.12b.2: Job-ID-Filter an alle Root-Handler haengen (nicht am
+    # Logger — Filter auf Parent-Loggern werden bei Propagation nicht
+    # ausgefuehrt). Damit traegt jeder Record record.job_id; der
+    # Formatter rendert den Praefix nur bei aktiver Job-ID.
+    _job_filter = _JobIdFilter()
+    for _h in root_logger.handlers:
+        _h.addFilter(_job_filter)
 
     _loggers_initialized = True
     return root_logger
