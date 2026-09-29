@@ -23,6 +23,7 @@ const _loggerState = {
   config: null,    // Antwort von GET /config (zuletzt vom Server geladen)
   selected: null,  // Name des ausgewaehlten Moduls
   drafts: {},      // { modul: { level?, file_handler? } } — nur ungespeicherte Abweichungen
+  quick: "all",    // Schnellfilter der Modulliste: all | diff | file | active
   saving: false,
   filter: "",
 };
@@ -194,6 +195,15 @@ function _loggerComputeModuleDiff(name, runtime, config) {
   const wantDisabled = cfgM.enabled === false;
 
   const changes = [];
+  // Deaktivierte Module: der Bot setzt bei enabled=False nur logger.disabled
+  // und bricht dann ab (handlers/enhanced_logger_menu_handler.py::
+  // _apply_module_config()) - Level/Handler werden nie angewendet und sind
+  // für ein stummes Modul bedeutungslos. Verglichen wird deshalb nur an/aus;
+  // sonst bliebe dauerhaft eine unauflösbare "Abweichung" stehen.
+  if (wantDisabled) {
+    if (!rtIsDisabled) changes.push("enabled: an → aus");
+    return { status: changes.length ? "differs" : "identical", changes: changes };
+  }
   if (rtLevel !== cfgLevel) {
     changes.push("level: <code>" + _escapeHtml(rtLevel) + "</code> → <code>" + _escapeHtml(cfgLevel) + "</code>");
   }
@@ -312,17 +322,23 @@ function loadRuntimeStatus() {
 // =====================================================================
 // Modulliste (Quelle: GET /config)
 // =====================================================================
+// Logger-Umbau (2026-09-29): eine ruhige Zeile je Modul - Name, Level,
+// Datei, Zustand. "aus" ist neutral grau (alle Module aus ist ein gültiger,
+// gewollter Zustand); farbig hervorgehoben werden nur echte Abweichungen
+// und ungespeicherte Entwürfe.
 function _loggerModuleBadges(name) {
   const m = _loggerPersistedModule(name) || {};
   const level = m.level || "INFO";
   const levelOk = LOGGER_LEVELS.indexOf(level) !== -1;
   const parts = [
-    '<span class="badge ' + (levelOk ? 'bg-blue-lt' : 'bg-danger-lt') + '">' + _escapeHtml(level) + '</span>',
+    '<span class="badge ' + (levelOk ? 'bg-blue-lt' : 'bg-danger-lt') + ' cc-logger-level">' + _escapeHtml(level) + '</span>',
     m.file_handler
       ? '<span class="badge bg-green-lt" title="Eigene Log-Datei konfiguriert">Datei</span>'
       : '<span class="badge bg-secondary-lt" title="Keine eigene Log-Datei konfiguriert">keine Datei</span>',
+    m.enabled === false
+      ? '<span class="badge bg-secondary-lt" title="enabled=false: Logger ist deaktiviert und schreibt nichts">aus</span>'
+      : '<span class="badge bg-teal-lt" title="enabled=true">aktiv</span>',
   ];
-  if (m.enabled === false) parts.push('<span class="badge bg-danger-lt">disabled</span>');
   const diff = _loggerComputeModuleDiff(name, _loggerState.runtime, _loggerState.config);
   if (diff.status === "differs") {
     parts.push('<span class="badge bg-warning-lt" title="Weicht vom Runtime-Zustand ab">Abweichung</span>');
@@ -336,19 +352,52 @@ function _loggerModuleBadges(name) {
 function _loggerModuleItemHtml(name) {
   const selected = _loggerState.selected === name;
   return '<button type="button" class="list-group-item list-group-item-action logger-module-item' +
-      (selected ? ' selected' : '') + '" data-module="' + _escapeHtml(name) + '"' +
+      (selected ? ' selected active' : '') + '" data-module="' + _escapeHtml(name) + '"' +
       ' aria-pressed="' + (selected ? 'true' : 'false') + '">' +
-    '<div class="fw-semibold text-break">' + _escapeHtml(name) + '</div>' +
-    '<div class="d-flex flex-wrap gap-1 mt-1">' + _loggerModuleBadges(name) + '</div>' +
+    '<div class="d-flex flex-wrap align-items-center gap-2">' +
+      '<div class="fw-semibold text-break flex-fill cc-logger-name">' + _escapeHtml(name) + '</div>' +
+      '<div class="d-flex flex-wrap gap-1">' + _loggerModuleBadges(name) + '</div>' +
+      ccIcon("edit", "text-secondary d-none d-md-inline") +
+    '</div>' +
   '</button>';
+}
+
+function _loggerMatchesQuick(name) {
+  const quick = _loggerState.quick || "all";
+  if (quick === "all") return true;
+  const m = _loggerPersistedModule(name) || {};
+  if (quick === "file") return !!m.file_handler;
+  if (quick === "active") return m.enabled !== false;
+  if (quick === "diff") {
+    return _loggerComputeModuleDiff(name, _loggerState.runtime, _loggerState.config).status === "differs";
+  }
+  return true;
 }
 
 function _loggerFilteredNames() {
   const modules = (_loggerState.config && _loggerState.config.modules) || {};
   const q = (_loggerState.filter || "").trim().toLowerCase();
   return Object.keys(modules).sort().filter(function(n) {
-    return !q || n.toLowerCase().indexOf(q) !== -1;
+    return (!q || n.toLowerCase().indexOf(q) !== -1) && _loggerMatchesQuick(n);
   });
+}
+
+// Anwenden-Leiste: wie viele Module weichen vom Runtime-Zustand ab?
+function _loggerRenderApplySummary() {
+  const el = document.getElementById("logger-apply-summary");
+  if (!el) return;
+  const modules = (_loggerState.config && _loggerState.config.modules) || {};
+  const rt = _loggerState.runtime;
+  if (!rt || rt.status !== "available") {
+    el.textContent = "Runtime-Zustand unbekannt — Abweichungen können nicht ermittelt werden.";
+    return;
+  }
+  const n = Object.keys(modules).filter(function(name) {
+    return _loggerComputeModuleDiff(name, rt, _loggerState.config).status === "differs";
+  }).length;
+  el.textContent = n
+    ? n + (n === 1 ? " Modul weicht" : " Module weichen") + " vom laufenden Bot ab — wirksam erst nach „Konfiguration anwenden“."
+    : "Keine Abweichung — die persistierte Konfiguration entspricht dem laufenden Bot.";
 }
 
 function _loggerRenderModuleList() {
@@ -363,6 +412,7 @@ function _loggerRenderModuleList() {
       ? (names.length === total ? total + " Module" : names.length + " von " + total + " Modulen")
       : "";
   }
+  _loggerRenderApplySummary();
   if (!total) return;
   if (!names.length) {
     el.className = "logger-module-list text-secondary p-3";
@@ -444,11 +494,22 @@ function _loggerSelectModule(name) {
     container.querySelectorAll(".logger-module-item").forEach(function(btn) {
       const on = btn.getAttribute("data-module") === name;
       btn.classList.toggle("selected", on);
+      btn.classList.toggle("active", on);
       btn.setAttribute("aria-pressed", on ? "true" : "false");
     });
   }
   _loggerClearStatus("logger-config-status");
   _loggerRenderDetail();
+  _loggerOpenDetail();
+}
+
+// Modul-Details als Seitenpanel (Logger-Umbau 2026-09-29).
+function _loggerOpenDetail() {
+  const el = document.getElementById("logger-detail-offcanvas");
+  if (!el) return;
+  const Offcanvas = window.tabler && window.tabler.Offcanvas;
+  if (Offcanvas) Offcanvas.getOrCreateInstance(el).show();
+  else if (el.classList && el.classList.add) el.classList.add("show");
 }
 
 function _loggerLevelRadiosHtml(name, current, persisted) {
@@ -518,7 +579,7 @@ function _loggerRuntimeBlockHtml(name) {
   return '<div>Level: <code>' + _escapeHtml(v.level) + '</code></div>' +
     '<div>FileHandler: ' + (v.file ? 'vorhanden' : 'nicht vorhanden') + '</div>' +
     '<div>Console: ' + (v.console ? 'vorhanden' : 'nicht vorhanden') + '</div>' +
-    (v.disabled ? '<div><span class="badge bg-danger-lt">disabled</span></div>' : '');
+    (v.disabled ? '<div><span class="badge bg-secondary-lt">aus (disabled)</span></div>' : '');
 }
 
 function _loggerRenderDetail() {
@@ -548,7 +609,7 @@ function _loggerRenderDetail() {
         '<div class="h2 mb-0 text-break">' + _escapeHtml(name) + '</div>' +
       '</div>' +
       '<div class="d-flex flex-wrap gap-1 justify-content-end">' +
-        (enabled ? '<span class="badge bg-success-lt">aktiv</span>' : '<span class="badge bg-danger-lt">disabled</span>') +
+        (enabled ? '<span class="badge bg-teal-lt">aktiv</span>' : '<span class="badge bg-secondary-lt" title="enabled=false: Logger ist deaktiviert und schreibt nichts">aus</span>') +
         '<span id="logger-dirty-badge">' + (_loggerIsDirty(name) ? '<span class="badge bg-orange-lt">ungespeichert</span>' : '') + '</span>' +
       '</div>' +
     '</div>' +
@@ -772,6 +833,19 @@ function _loggerInitConfigControls() {
       } else if (target.classList.contains("logger-file-toggle")) {
         _loggerOnDraftChange(name, "file_handler", !!target.checked);
       }
+    });
+  }
+
+  const quick = document.getElementById("logger-module-quickfilter");
+  if (quick) {
+    quick.addEventListener("click", function(ev) {
+      const btn = ev.target && ev.target.closest ? ev.target.closest("[data-quick]") : null;
+      if (!btn) return;
+      _loggerState.quick = btn.getAttribute("data-quick");
+      quick.querySelectorAll("[data-quick]").forEach(function(b) {
+        b.classList.toggle("active", b === btn);
+      });
+      _loggerRenderModuleList();
     });
   }
 

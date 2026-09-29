@@ -2,58 +2,76 @@
 {% block title %}Logger – MusicBot Control Center{% endblock %}
 
 {% block content %}
-{# CC-UI Logs/Logger: gemeinsamer Kopf mit Reitern (_logs_header.html). #}
+{# CC-UI Logs/Logger: gemeinsamer Kopf mit Reitern (_logs_header.html).
+   Logger-Umbau (Nutzerfreigabe 2026-09-29): Runtime in einer Karte mit
+   Kennzahlen, Anwenden-Leiste mit Zahl der Abweichungen, Modul-Liste über
+   die volle Breite mit Schnellfiltern, Modul-Details als Seitenpanel.
+   Element-IDs und Endpunkte unverändert (Vertrag mit logger.js/Tests). #}
 {% include "_logs_header.html" %}
 
-<!-- Übersicht: Runtime-Status + letzter Startup -->
-<div class="row row-cards mb-4">
-  <div class="col-lg-8">
-    <div class="card h-100">
-      <div class="card-header">
-        <div>
-          <h2 class="card-title"><svg class="icon me-2 text-teal"><use href="#i-server"/></svg>Runtime-Status</h2>
-          <div class="text-secondary small">
-            Zustand nach dem letzten erfolgreichen Bot-Start — kein Live-Zustand.
-          </div>
-        </div>
-        <div class="card-actions">
-          <button id="logger-runtime-refresh-btn" type="button" class="btn btn-sm">
-            <svg class="icon me-1"><use href="#i-refresh"/></svg>Aktualisieren
-          </button>
-        </div>
-      </div>
-      <div class="card-body">
-        <div id="logger-runtime-kpi" class="row g-3 mb-3"></div>
-        <div id="logger-runtime-content"><div class="placeholder-glow"><div class="placeholder col-8 mb-2"></div><div class="placeholder col-5"></div></div></div>
+<!-- Runtime: Kennzahlen + Snapshot-Details -->
+<div class="card mb-3">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title"><svg class="icon me-2 text-teal"><use href="#i-server"/></svg>Runtime-Status</h2>
+      <div class="text-secondary small">
+        Zustand nach dem letzten erfolgreichen Bot-Start — kein Live-Zustand.
       </div>
     </div>
+    <div class="card-actions">
+      <button id="logger-runtime-refresh-btn" type="button" class="btn btn-sm">
+        <svg class="icon me-1"><use href="#i-refresh"/></svg>Aktualisieren
+      </button>
+    </div>
   </div>
-  <div class="col-lg-4">
-    <div class="card h-100">
-      <div class="card-header">
-        <h2 class="card-title"><svg class="icon me-2"><use href="#i-history"/></svg>Letzter erfolgreicher Bot-Start</h2>
+  <div class="card-body">
+    <div id="logger-runtime-kpi" class="row g-3 mb-3"></div>
+    <div class="row g-3">
+      <div class="col-md-7">
+        <div id="logger-runtime-content"><div class="placeholder-glow"><div class="placeholder col-8 mb-2"></div><div class="placeholder col-5"></div></div></div>
       </div>
-      <div class="card-body">
+      <div class="col-md-5">
+        <div class="subheader mb-1"><svg class="icon icon-sm me-1"><use href="#i-history"/></svg>Letzter erfolgreicher Bot-Start</div>
         <div id="logger-startup-content"><div class="placeholder-glow"><div class="placeholder col-8 mb-2"></div><div class="placeholder col-5"></div></div></div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Module + Modul-Detailkarte -->
-<div class="row row-cards">
-  <div class="col-lg-5">
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <h2 class="card-title"><svg class="icon me-2"><use href="#i-adjustments"/></svg>Logger-Module</h2>
-          <div class="text-secondary small">
-            Persistierte Konfiguration (data/module_logger_config.json) —
-            wirksam beim nächsten Bot-Start.
-          </div>
-        </div>
+<!-- Anwenden-Leiste (betrifft alle Module) -->
+<div class="card mb-3" id="logger-apply-card">
+  <div class="card-body d-flex flex-wrap align-items-center gap-3">
+    <span class="avatar bg-orange-lt"><svg class="icon"><use href="#i-refresh"/></svg></span>
+    <div class="flex-fill min-w-0">
+      <div class="fw-medium" id="logger-apply-summary">Abweichungen werden ermittelt …</div>
+      <div class="text-secondary small">
+        <strong>Administrativer Vorgang:</strong> „Konfiguration anwenden“
+        startet den Bot neu. Die persistierte Logger-Konfiguration
+        (aller Module) wird beim Neustart angewendet.
       </div>
-      <div class="card-body border-bottom py-2">
+    </div>
+    <button id="logger-apply-btn" type="button" class="btn btn-outline-danger" disabled>
+      <svg class="icon me-1"><use href="#i-refresh"/></svg>Konfiguration anwenden
+    </button>
+  </div>
+  <div id="logger-apply-status" class="px-3 pb-3"></div>
+</div>
+
+<!-- Logger-Module (volle Breite) -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title"><svg class="icon me-2"><use href="#i-adjustments"/></svg>Logger-Module</h2>
+      <div class="text-secondary small">
+        Persistierte Konfiguration (data/module_logger_config.json) —
+        wirksam beim nächsten Bot-Start. Modul anklicken zum Bearbeiten.
+      </div>
+    </div>
+    <div class="card-actions"><span id="logger-module-count" class="text-secondary small"></span></div>
+  </div>
+  <div class="card-body border-bottom py-2">
+    <div class="row g-2 align-items-center">
+      <div class="col-12 col-md">
         <input
           id="logger-module-filter"
           type="search"
@@ -62,63 +80,49 @@
           aria-label="Module filtern"
           autocomplete="off"
         >
-        <div id="logger-module-count" class="text-secondary small mt-1"></div>
       </div>
-      <div id="logger-config-content" class="logger-module-list p-3"><div class="placeholder-glow"><div class="placeholder col-8 mb-2"></div><div class="placeholder col-5"></div></div></div>
+      <div class="col-12 col-md-auto">
+        <div class="btn-group btn-group-sm w-100" role="group" aria-label="Schnellfilter" id="logger-module-quickfilter">
+          <button type="button" class="btn active" data-quick="all">Alle</button>
+          <button type="button" class="btn" data-quick="diff">Abweichungen</button>
+          <button type="button" class="btn" data-quick="file">Eigene Datei</button>
+          <button type="button" class="btn" data-quick="active">Aktiv</button>
+        </div>
+      </div>
     </div>
   </div>
+  <div id="logger-config-content" class="logger-module-list p-3"><div class="placeholder-glow"><div class="placeholder col-8 mb-2"></div><div class="placeholder col-5"></div></div></div>
+</div>
 
-  <div class="col-lg-7">
-    <div class="card" id="logger-detail-card">
-      <div class="card-header">
-        <div>
-          <h2 class="card-title"><svg class="icon me-2"><use href="#i-settings"/></svg>Modul-Details</h2>
-          <div class="text-secondary small">
-            Gespeicherte Absicht — der laufende Bot wird durch Speichern nicht
-            verändert.
-          </div>
-        </div>
+<!-- Modul-Details als Seitenpanel -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="logger-detail-offcanvas"
+     role="dialog" aria-modal="true" aria-labelledby="logger-detail-title">
+  <div class="offcanvas-header">
+    <div class="min-w-0">
+      <h2 class="offcanvas-title" id="logger-detail-title"><svg class="icon me-2 text-teal"><use href="#i-settings"/></svg>Modul-Details</h2>
+      <div class="text-secondary small">
+        Gespeicherte Absicht — der laufende Bot wird durch Speichern nicht
+        verändert.
       </div>
-      <div id="logger-module-detail" class="card-body">
-        <p class="text-secondary mb-0">
-          Modul in der Liste auswählen, um Level und eigene Log-Datei zu bearbeiten.
-        </p>
-      </div>
-      <div class="card-footer">
-        <div id="logger-config-status" class="mb-3"></div>
-        <div class="d-flex flex-wrap gap-2">
-          <button
-            id="logger-save-btn"
-            type="button"
-            class="btn btn-primary"
-            disabled
-          >
-            <svg class="icon me-1"><use href="#i-check"/></svg>Änderungen speichern
-          </button>
-          <button
-            id="logger-reset-btn"
-            type="button"
-            class="btn btn-outline-secondary"
-            disabled
-          >
-            Zurücksetzen
-          </button>
-          <button
-            id="logger-apply-btn"
-            type="button"
-            class="btn btn-outline-danger ms-md-auto"
-            disabled
-          >
-            <svg class="icon me-1"><use href="#i-refresh"/></svg>Konfiguration anwenden
-          </button>
-        </div>
-        <div class="text-secondary small mt-2">
-          <strong>Administrativer Vorgang:</strong> „Konfiguration anwenden“
-          startet den Bot neu. Die persistierte Logger-Konfiguration
-          (aller Module) wird beim Neustart angewendet.
-        </div>
-        <div id="logger-apply-status" class="mt-3"></div>
-      </div>
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Schließen"></button>
+  </div>
+  <div class="offcanvas-body" id="logger-detail-card">
+    <div id="logger-module-detail">
+      <p class="text-secondary mb-0">
+        Modul in der Liste auswählen, um Level und eigene Log-Datei zu bearbeiten.
+      </p>
+    </div>
+  </div>
+  <div class="border-top p-3">
+    <div id="logger-config-status" class="mb-3"></div>
+    <div class="d-flex flex-wrap gap-2">
+      <button id="logger-save-btn" type="button" class="btn btn-primary" disabled>
+        <svg class="icon me-1"><use href="#i-check"/></svg>Änderungen speichern
+      </button>
+      <button id="logger-reset-btn" type="button" class="btn btn-outline-secondary" disabled>
+        Zurücksetzen
+      </button>
     </div>
   </div>
 </div>

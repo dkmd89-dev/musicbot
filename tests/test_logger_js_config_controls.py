@@ -64,6 +64,11 @@ global.setInterval = () => 0;
 global.clearInterval = () => {};
 
 const scenario = JSON.parse(process.argv[3]);
+// Logger-Umbau: Seitenpanel über Tabler-Offcanvas (optional nachgebildet)
+global.__offcanvas = [];
+if (scenario.tabler) {
+  window.tabler = { Offcanvas: { getOrCreateInstance: () => ({ show() { global.__offcanvas.push("show"); } }) } };
+}
 const fx = scenario.fetch || { status: 200 };
 global.fetch = async (url, opts) => {
   calls.push({ url, method: opts && opts.method, body: opts && opts.body,
@@ -79,7 +84,7 @@ global.fetch = async (url, opts) => {
 const src = fs.readFileSync(process.argv[2], "utf-8");
 const api = new Function(src + "\nreturn { _loggerState, renderConfig, renderRuntimeStatus, " +
   "_loggerSelectModule, _loggerOnDraftChange, _loggerSaveModule, _loggerResetModule, " +
-  "_loggerRenderDetail, _loggerApply, _loggerComputeModuleDiff, _loggerHandlerKind };")();
+  "_loggerRenderDetail, _loggerApply, _loggerComputeModuleDiff, _loggerHandlerKind, _loggerRenderModuleList };")();
 
 (async () => {
   const out = { errors: [] };
@@ -95,9 +100,12 @@ const api = new Function(src + "\nreturn { _loggerState, renderConfig, renderRun
     else if (step.op === "save") await api._loggerSaveModule();
     else if (step.op === "reset") api._loggerResetModule();
     else if (step.op === "apply") await api._loggerApply();
+    else if (step.op === "quick") { api._loggerState.quick = step.value; api._loggerRenderModuleList(); }
   }
   const g = (id) => document.getElementById(id);
   out.list = listEl.innerHTML;
+  out.applySummary = g("logger-apply-summary").textContent;
+  out.offcanvas = global.__offcanvas;
   out.detail = g("logger-module-detail").innerHTML;
   out.configStatus = g("logger-config-status").innerHTML;
   out.applyStatus = g("logger-apply-status").innerHTML;
@@ -188,8 +196,12 @@ def test_module_list_shows_all_configured_modules_with_level_and_file_state(tmp_
 
 
 def test_module_list_marks_disabled_module(tmp_path: Path) -> None:
+    # Logger-Umbau (bewusst angepasst): "aus" neutral grau statt rotem "disabled" -
+    # alle Module aus ist ein gültiger, gewollter Zustand (Nutzer 2026-09-29).
     out = _run(tmp_path, {"modules": _mods(ModC=dict(_MOD, level="INFO", enabled=False))})
-    assert "disabled" in out["list"]
+    item = out["list"].split('data-module="ModC"', 1)[1].split("</button>", 1)[0]
+    assert '<span class="badge bg-secondary-lt" title="enabled=false: Logger ist deaktiviert und schreibt nichts">aus</span>' in item
+    assert "bg-danger-lt" not in item
 
 
 def test_empty_config_shows_empty_state_and_no_detail(tmp_path: Path) -> None:
@@ -714,3 +726,77 @@ def test_save_success_shows_toast(tmp_path: Path) -> None:
     ]})
     assert [t for t in out["toasts"] if t["kind"] == "success" and t["title"] == "Gespeichert"]
     assert "ModA" in out["toasts"][0]["text"]
+
+
+# ---------------------------------------------------------------------
+# Regression (2026-09-29, Nutzer-Screenshot): deaktivierte Module zeigten
+# dauerhaft "Abweichung". Der Bot bricht in
+# handlers/enhanced_logger_menu_handler.py::_apply_module_config() bei
+# enabled=False nach logger.disabled=True ab und setzt Level/Handler NIE -
+# ein Vergleich von Level/Handlern ist für deaktivierte Module deshalb
+# bedeutungslos und durch "Konfiguration anwenden" nicht auflösbar.
+# ---------------------------------------------------------------------
+
+_DISABLED_CFG = dict(_MOD, enabled=False, level="DEBUG", file_handler=True, console_handler=True)
+
+
+def test_disabled_module_that_is_disabled_at_runtime_is_not_a_deviation(tmp_path: Path) -> None:
+    rt = _runtime(levels={"ModA": "INFO", "ModB": "DEBUG", "ModD": "INFO"},
+                  handlers={"ModA": ["EnhancedRotatingFileHandler", "StreamHandler"], "ModB": ["StreamHandler"], "ModD": []},
+                  disabled=["ModD"])
+    out = _run(tmp_path, {"modules": _mods(ModD=_DISABLED_CFG), "runtime": rt,
+                          "steps": [{"op": "select", "name": "ModD"}]})
+    item = out["list"].split('data-module="ModD"', 1)[1].split("</button>", 1)[0]
+    assert "Abweichung" not in item
+    assert "identisch" in out["detail"]
+
+
+def test_disabled_module_still_active_at_runtime_reports_only_the_enabled_change(tmp_path: Path) -> None:
+    rt = _runtime(levels={"ModA": "INFO", "ModB": "DEBUG", "ModD": "INFO"},
+                  handlers={"ModA": ["EnhancedRotatingFileHandler", "StreamHandler"], "ModB": ["StreamHandler"], "ModD": []},
+                  disabled=[])
+    out = _run(tmp_path, {"modules": _mods(ModD=_DISABLED_CFG), "runtime": rt,
+                          "steps": [{"op": "select", "name": "ModD"}]})
+    assert "enabled: an → aus" in out["detail"]
+    assert "level:" not in out["detail"] and "file_handler:" not in out["detail"] and "console_handler:" not in out["detail"]
+
+
+
+# ---------------------------------------------------------------------
+# Logger-Umbau (Nutzerfreigabe 2026-09-29): Schnellfilter, Anwenden-Leiste
+# mit Zahl der Abweichungen, Modul-Details als Seitenpanel.
+# ---------------------------------------------------------------------
+
+def _rt_with_deviation():
+    # ModA: Level weicht ab (DEBUG im Bot, INFO in der Config); ModB identisch
+    return _runtime(levels={"ModA": "DEBUG", "ModB": "DEBUG"})
+
+
+def test_apply_summary_counts_real_deviations(tmp_path: Path) -> None:
+    out = _run(tmp_path, {"modules": _mods(), "runtime": _rt_with_deviation()})
+    assert out["applySummary"].startswith("1 Modul weicht vom laufenden Bot ab")
+    out = _run(tmp_path, {"modules": _mods(), "runtime": _runtime()})
+    assert out["applySummary"].startswith("Keine Abweichung")
+
+
+def test_apply_summary_without_runtime_says_unknown(tmp_path: Path) -> None:
+    out = _run(tmp_path, {"modules": _mods()})
+    assert "Runtime-Zustand unbekannt" in out["applySummary"]
+
+
+def test_quick_filters_narrow_the_module_list(tmp_path: Path) -> None:
+    mods = _mods(ModC=dict(_MOD, level="INFO", enabled=False, file_handler=False))
+    rt = _runtime(levels={"ModA": "DEBUG", "ModB": "DEBUG", "ModC": "INFO"},
+                  handlers={"ModA": ["EnhancedRotatingFileHandler", "StreamHandler"], "ModB": ["StreamHandler"], "ModC": []},
+                  disabled=["ModC"])
+    for quick, expected in (("diff", {"ModA"}), ("file", {"ModA"}), ("active", {"ModA", "ModB"}),
+                            ("all", {"ModA", "ModB", "ModC"})):
+        out = _run(tmp_path, {"modules": mods, "runtime": rt, "steps": [{"op": "quick", "value": quick}]})
+        shown = set(re.findall(r'data-module="([^"]+)"', out["list"]))
+        assert shown == expected, (quick, shown)
+
+
+def test_selecting_a_module_opens_the_detail_panel(tmp_path: Path) -> None:
+    out = _run(tmp_path, {"tabler": True, "modules": _mods(), "steps": [{"op": "select", "name": "ModA"}]})
+    assert out["offcanvas"] == ["show"]
+    assert "ModA" in out["detail"]
