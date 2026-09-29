@@ -332,16 +332,55 @@
   }
 
   // Track wählen: Titel vorbelegen, Vorschau zurücksetzen, Feld fokussieren.
+  async function _loadFeatureArtistsForTrack(relPath) {
+    const artist = currentArtistFromPath();
+    const mainEl = document.getElementById("feature-artists-main-artist-display");
+    const featEl = document.getElementById("feature-artists-edit-new");
+    const content = document.getElementById("feature-artists-edit-content");
+    const resultEl = document.getElementById("feature-artists-edit-result-content");
+    resultEl.innerHTML = "";
+    if (!relPath) {
+      mainEl.value = "";
+      featEl.value = "";
+      content.innerHTML = "";
+      _titleState.current.feature_artists = [];
+      _titleState.counts.feature_artists = 0;
+      _updateTitleExecuteBtn();
+      return;
+    }
+    const t = _artistDetailTracksByPath[relPath] || {};
+    mainEl.value = t.artist || "";
+    featEl.value = "";
+    content.innerHTML = '<div class="text-secondary small">Lädt aktuelle Feature-Artists …</div>';
+    _titleState.counts.feature_artists = 0;
+    _updateTitleExecuteBtn();
+    try {
+      const params = new URLSearchParams({ artist, rel_path: relPath }).toString();
+      const body = await ccApi("GET", `/api/v1/admin/maintenance/feature-artists-edit/current?${params}`);
+      const feats = Array.isArray(body.feature_artists) ? body.feature_artists : [];
+      _titleState.current.feature_artists = feats;
+      featEl.value = feats.join("\n");
+      content.innerHTML = _noChangeHtml("Entspricht den aktuellen Features — keine Änderung.");
+    } catch (err) {
+      content.innerHTML = `<div class="text-danger small">Feature-Artists konnten nicht geladen werden: ${_escapeHtml(err.message || "")}</div>`;
+    } finally {
+      _updateTitleExecuteBtn();
+    }
+  }
+
   function _selectTitleTrack(relPath) {
     const t = _artistDetailTracksByPath[relPath];
     document.getElementById("title-edit-track-select").value = relPath;
     document.getElementById("title-edit-new-title").value = t ? (t.title || "") : "";
     const _tn = (_artistDetailTracksByPath[relPath] || {}).track_number;
-    document.getElementById("track-number-edit-new-number").value = _tn || "";
+    document.getElementById("track-number-edit-new-number").value = _tn == null ? "" : String(_tn);
     _updateTrackNumberHint(relPath);
     document.getElementById("title-edit-result-content").innerHTML = "";
+    document.getElementById("track-number-edit-result-content").innerHTML = "";
     _markTitleRow(relPath);
     _autoTitlePreview();
+    _autoTrackNumberPreview();
+    _loadFeatureArtistsForTrack(relPath);  // async, aktualisiert Feature-Feld + State
     document.getElementById("title-edit-new-title").focus();
   }
 
@@ -640,7 +679,25 @@
   // Containment-Pruefung) - kein Client-seitiger Scope-Guard mehr noetig,
   // da die Auswahl strukturell nur Tracks dieses Artists enthaelt.
 
-  const _titleState = { counts: { title: 0, track_number: 0 } };
+  const _titleState = { current: { title: "", track_number: null, feature_artists: [] }, counts: { title: 0, track_number: 0, feature_artists: 0 } };
+
+  function _inputValue(id) {
+    const el = document.getElementById(id);
+    if (!el) return "";
+    const v = el.value;
+    return v == null ? "" : String(v);
+  }
+
+  function _featureArtistsListFromInput(raw) {
+    return String(raw || "").split(/\r?\n/).map((s) => s.trim()).filter((s) => s.length > 0);
+  }
+
+  function _featureArtistsListsEqual(a, b) {
+    const na = (a || []).slice().sort();
+    const nb = (b || []).slice().sort();
+    if (na.length !== nb.length) return false;
+    return na.every((x, i) => x === nb[i]);
+  }
 
   function _updateTrackNumberHint(relPath) {
     const el = document.getElementById("track-number-edit-hint");
@@ -662,6 +719,7 @@
       Math.max(
         _titleState.counts.title || 0,
         _titleState.counts.track_number || 0,
+        _titleState.counts.feature_artists || 0,
       ));
   }
 
@@ -690,7 +748,7 @@
   async function loadTrackNumberEditPreview() {
     const artist = currentArtistFromPath();
     const relPath = document.getElementById("title-edit-track-select").value;
-    const raw = document.getElementById("track-number-edit-new-number").value.trim();
+    const raw = _inputValue("track-number-edit-new-number").trim();
     if (!relPath) { _fieldHint("title-edit-track-select", "Bitte Track wählen."); return; }
     if (!raw) { _fieldHint("track-number-edit-new-number", "Bitte neue Tracknummer eingeben."); return; }
     _titleState.counts.track_number = 0;
@@ -708,11 +766,34 @@
     );
   }
 
+  async function loadFeatureArtistsEditPreview() {
+    const artist = currentArtistFromPath();
+    const relPath = document.getElementById("title-edit-track-select").value;
+    const raw = document.getElementById("feature-artists-edit-new").value;
+    if (!relPath) { _fieldHint("title-edit-track-select", "Bitte Track wählen."); return; }
+    _titleState.counts.feature_artists = 0;
+    _updateTitleExecuteBtn();
+    document.getElementById("feature-artists-edit-result-content").innerHTML = "";
+    const features = _featureArtistsListFromInput(raw);
+    const seq = _nextPreviewSeq("feature_artists");
+    // Liste -> POST-Vorschau (Praesedenz post_genre_mapping_preview)
+    await _loadInto(
+      "feature-artists-edit-content",
+      "/api/v1/admin/maintenance/feature-artists-edit/preview",
+      (el, body) => {
+        if (!_isCurrentPreview("feature_artists", seq)) return;
+        renderMetadataEditPreview(el, body, null, (n) => { _titleState.counts.feature_artists = n; _updateTitleExecuteBtn(); });
+      },
+      { method: "POST", body: JSON.stringify({ artist, rel_path: relPath, feature_artists: features }) },
+    );
+  }
+
   function _autoTitlePreview() {
     const content = document.getElementById("title-edit-content");
     const relPath = document.getElementById("title-edit-track-select").value;
     const value = document.getElementById("title-edit-new-title").value.trim();
     const t = _artistDetailTracksByPath[relPath];
+    _titleState.current.title = t ? (t.title || "") : "";
     _titleState.counts.title = 0;
     _updateTitleExecuteBtn();
     _nextPreviewSeq("title");
@@ -729,8 +810,9 @@
   function _autoTrackNumberPreview() {
     const content = document.getElementById("track-number-edit-content");
     const relPath = document.getElementById("title-edit-track-select").value;
-    const value = document.getElementById("track-number-edit-new-number").value.trim();
+    const value = _inputValue("track-number-edit-new-number").trim();
     const t = _artistDetailTracksByPath[relPath];
+    _titleState.current.track_number = t ? (t.track_number || null) : null;
     _titleState.counts.track_number = 0;
     _updateTitleExecuteBtn();
     _nextPreviewSeq("track_number");
@@ -742,6 +824,27 @@
     }
     content.innerHTML = _runningHtml("Vorschau wird berechnet…");
     _schedulePreview("track_number", loadTrackNumberEditPreview);
+  }
+
+  function _autoFeatureArtistsPreview() {
+    const content = document.getElementById("feature-artists-edit-content");
+    const relPath = document.getElementById("title-edit-track-select").value;
+    const raw = document.getElementById("feature-artists-edit-new").value;
+    _titleState.counts.feature_artists = 0;
+    _updateTitleExecuteBtn();
+    _nextPreviewSeq("feature_artists");
+    clearTimeout(_previewTimers.feature_artists);
+    if (!relPath) {
+      content.innerHTML = "";
+      return;
+    }
+    const features = _featureArtistsListFromInput(raw);
+    if (_featureArtistsListsEqual(features, _titleState.current.feature_artists)) {
+      content.innerHTML = _noChangeHtml("Entspricht den aktuellen Features — keine Änderung.");
+      return;
+    }
+    content.innerHTML = _runningHtml("Vorschau wird berechnet…");
+    _schedulePreview("feature_artists", loadFeatureArtistsEditPreview);
   }
 
   async function executeTitleEdit(opts = {}) {
@@ -791,7 +894,7 @@
   async function executeTrackNumberEdit(opts = {}) {
     const artist = currentArtistFromPath();
     const relPath = document.getElementById("title-edit-track-select").value;
-    const raw = document.getElementById("track-number-edit-new-number").value.trim();
+    const raw = _inputValue("track-number-edit-new-number").trim();
     if (!relPath || !raw) return;
     if (!opts.skipConfirm) {
       const confirmed = await _artistConfirm(
@@ -830,34 +933,93 @@
     }
   }
 
+  async function executeFeatureArtistsEdit(opts = {}) {
+    const artist = currentArtistFromPath();
+    const relPath = document.getElementById("title-edit-track-select").value;
+    if (!relPath) return;
+    const features = _featureArtistsListFromInput(document.getElementById("feature-artists-edit-new").value);
+    if (!opts.skipConfirm) {
+      const current = _titleState.current.feature_artists || [];
+      const listOld = current.length ? current.join(", ") : "(keine)";
+      const listNew = features.length ? features.join(", ") : "(keine)";
+      const confirmed = await _artistConfirm(
+        `Feature-Artists für "${_titleEditTrackLabel(relPath)}" wirklich ändern?\n\n` +
+        `Feature-Artists: [${listOld}] → [${listNew}]\n\n` +
+        `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+        `aber es wird tatsächlich eine Datei in der Library verändert.`
+      );
+      if (!confirmed) return;
+    }
+
+    const execBtn = document.getElementById("title-edit-execute-btn");
+    const resultEl = document.getElementById("feature-artists-edit-result-content");
+    execBtn.disabled = true;
+    resultEl.innerHTML = _runningHtml("Wird ausgeführt…");
+    try {
+      const res = await fetch(apiUrl("/api/v1/admin/maintenance/feature-artists-edit/execute"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ artist, rel_path: relPath, feature_artists: features }),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      const body = await res.json();
+      if (!res.ok) {
+        resultEl.innerHTML = _resultAlert("danger", `Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}`);
+        return;
+      }
+      const resultHtml = _executeResultHtml(body,
+        `Nur die Feature-Artist-Tags (©ART[1:] und ARTISTS) wurden geschrieben — der Haupt-Artist bleibt unverändert. ` +
+        `Navidrome zeigt Multi-Artist ggf. erst nach einem Scan.`);
+      _titleState.current.feature_artists = features;
+      await loadFeatureArtistsEditPreview();
+      resultEl.innerHTML = resultHtml;
+      _executeToast(body);
+    } catch (err) {
+      resultEl.innerHTML = _resultAlert("danger", `Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).`);
+    } finally {
+      _updateTitleExecuteBtn();
+    }
+  }
+
   // Ein "Übernehmen" für den Track-Block: eine Bestätigung, dann nur die
-  // geaenderten Felder schreiben (Titel zuerst, dann Tracknummer).
+  // geaenderten Felder schreiben (Titel, Tracknummer, Feature-Artists).
   async function executeTitleTab() {
     const relPath = document.getElementById("title-edit-track-select").value;
     const doTitle = _titleState.counts.title > 0;
     const doTrackNumber = _titleState.counts.track_number > 0;
-    if (!relPath || (!doTitle && !doTrackNumber)) return;
-    if (doTitle && doTrackNumber) {
-      // Beide Felder: eine gemeinsame Bestaetigung, dann nacheinander.
-      const newTitle = document.getElementById("title-edit-new-title").value.trim();
-      const newNumber = document.getElementById("track-number-edit-new-number").value.trim();
+    const doFeatures = _titleState.counts.feature_artists > 0;
+    const active = [doTitle, doTrackNumber, doFeatures].filter(Boolean).length;
+    if (!relPath || active === 0) return;
+    if (active > 1) {
+      // Mehrere Felder: eine gemeinsame Bestaetigung, dann nacheinander.
       const t = _artistDetailTracksByPath[relPath];
-      const lines = [
-        `Titel: "${(t && t.title) || ""}" → "${newTitle}"`,
-        `Tracknummer: ${(t && t.track_number) || "—"} → ${newNumber}`,
-      ];
+      const lines = [];
+      if (doTitle) {
+        lines.push(`Titel: "${(t && t.title) || ""}" → "${document.getElementById("title-edit-new-title").value.trim()}"`);
+      }
+      if (doTrackNumber) {
+        lines.push(`Tracknummer: ${(t && t.track_number) || "—"} → ${_inputValue("track-number-edit-new-number").trim()}`);
+      }
+      if (doFeatures) {
+        const oldF = (_titleState.current.feature_artists || []).join(", ") || "(keine)";
+        const newF = _featureArtistsListFromInput(document.getElementById("feature-artists-edit-new").value).join(", ") || "(keine)";
+        lines.push(`Feature-Artists: [${oldF}] → [${newF}]`);
+      }
       const confirmed = await _artistConfirm(
         `Track "${_titleEditTrackLabel(relPath)}" wirklich ändern?\n\n` + lines.join("\n") + "\n\n" +
         `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
         `aber es werden tatsächlich Dateien in der Library verändert.`
       );
       if (!confirmed) return;
-      await executeTitleEdit({ skipConfirm: true });
-      await executeTrackNumberEdit({ skipConfirm: true });
+      if (doTitle) await executeTitleEdit({ skipConfirm: true });
+      if (doTrackNumber) await executeTrackNumberEdit({ skipConfirm: true });
+      if (doFeatures) await executeFeatureArtistsEdit({ skipConfirm: true });
       return;
     }
     if (doTitle) return executeTitleEdit();
-    return executeTrackNumberEdit();
+    if (doTrackNumber) return executeTrackNumberEdit();
+    return executeFeatureArtistsEdit();
   }
 
   document.getElementById("title-edit-preview-btn").addEventListener("click", loadTitleEditPreview);
@@ -871,10 +1033,16 @@
     document.getElementById("title-edit-execute-btn").disabled = true;
     _autoTrackNumberPreview();
   });
+  document.getElementById("feature-artists-edit-new").addEventListener("input", () => {
+    document.getElementById("title-edit-execute-btn").disabled = true;
+    _autoFeatureArtistsPreview();
+  });
+  document.getElementById("feature-artists-edit-preview-btn").addEventListener("click", loadFeatureArtistsEditPreview);
   document.getElementById("title-edit-track-select").addEventListener("input", () => {
     document.getElementById("title-edit-execute-btn").disabled = true;
     _autoTitlePreview();
     _autoTrackNumberPreview();
+    _autoFeatureArtistsPreview();
   });
 
   // -- Album bearbeiten (Manual Metadata Editing v2, CC-AC-3) --------------

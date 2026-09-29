@@ -343,7 +343,8 @@ const src = fs.readFileSync(commonPath, "utf-8") + "\n" + fs.readFileSync(jsPath
 const api = new Function(src + "\nreturn { loadArtistEditPreview, executeArtistEdit, loadTitleEditPreview, "
   + "renderMetadataEditPreview, renderArtistDetail, openMetadataEditor, _selectAlbumForEdit, executeAlbumTab, "
   + "_selectTitleTrack, _albumState, "
-  + "loadTrackNumberEditPreview, executeTrackNumberEdit, executeTitleTab, _titleState };")();
+  + "loadTrackNumberEditPreview, executeTrackNumberEdit, executeTitleTab, _titleState, "
+  + "loadFeatureArtistsEditPreview, executeFeatureArtistsEdit, _titleEditTrackLabel };")();
 const tick = () => new Promise((r) => setTimeout(r, 20));
 (async () => {
   await tick();
@@ -596,6 +597,35 @@ def test_editor_stays_closed_for_non_admin(tmp_path):
 
 @needs_node
 @needs_node
+@needs_node
+def test_feature_artists_edit_via_ui(tmp_path):
+    """Feature-Artists-Feld im Track-Block: Vorbelegung aus
+    /feature-artists-edit/current, ein "Übernehmen" ruft /execute."""
+    body = _body()
+    path = body["tracks"][0]["relative_path"]
+    out = _run_l3b(tmp_path, {"tabler": True, "confirmAnswer": True, "routesContains": [
+        {"match": "feature-artists-edit/current",
+         "status": 200, "body": {"feature_artists": ["Kontra K"]}},
+        {"match": "feature-artists-edit/preview", "status": 200, "body": _preview_body(1)},
+        {"match": "feature-artists-edit/execute", "status": 200,
+         "body": {"success_count": 1, "failed_count": 0, "skipped_count": 0}},
+    ], "ops": [
+        {"fn": "renderArtistDetail", "args": ["@artist-content", body]},
+        {"fn": "_selectTitleTrack", "args": [path]},
+        {"wait": 800},
+        {"input": "feature-artists-edit-new", "value": "Kontra K\\nCapital Bra"},
+        {"wait": 800},
+        {"fn": "executeTitleTab"},
+    ]})
+
+    # Haupt-Artist ist aus dem Track vorbelegt
+    assert out["els"]["feature-artists-main-artist-display"]["value"] == "Bausa"
+
+    # Uebernehmen wurde getriggert (feature-artists-edit/execute)
+    posts = [c for c in out["calls"] if c.startswith("POST")]
+    assert any("feature-artists-edit/execute" in p for p in posts), out["calls"]
+
+
 def test_track_number_edit_preview_and_execute_via_ui(tmp_path):
     """Tracknummer-Feld im Titel-Reiter: Vorbelegung aus Trackdaten,
     Vorschau nach Input, ein "Übernehmen" ruft track-number-edit/execute."""

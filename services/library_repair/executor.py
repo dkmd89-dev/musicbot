@@ -89,6 +89,7 @@ MAINTENANCE_ACTION_CODES = frozenset(
         "ALBUM_ARTIST_MANUAL_EDIT",
         "YEAR_MANUAL_EDIT",
         "TRACK_NUMBER_MANUAL_EDIT",
+        "FEATURE_ARTISTS_MANUAL_EDIT",
     }
 )
 
@@ -1569,6 +1570,164 @@ def apply_track_number_edit(
                 raise RuntimeError(f"trkn total veraendert: {verify_total!r} != {cur_total!r}")
             verify_tags = _full_tags(tmp)
             others_after = tags_fingerprint(verify_tags, exclude)
+            if others_after != others_before:
+                raise RuntimeError("Andere Atome wurden veraendert (Fingerprint-Diff)")
+            audio_tmp = _audio_essence_md5(tmp)
+            if audio_tmp != audio_before or audio_tmp.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {audio_tmp})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if backup.exists():
+                    backup.replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        finally:
+            if oc.status == "FAILED":
+                try:
+                    Path(backup).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        je = _je_named(rel, oc, dry_run)
+        je.sha256_before = sha_before
+        je.sha256_after = _sha256(path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = (
+            _audio_essence_md5(path) if oc.status in _WROTE_TO_DISK else audio_before
+        )
+        je.backup_path = oc.backup_path
+        journal.record(je)
+        outcomes.append(oc)
+
+    return outcomes
+
+
+def read_current_feature_artists(path: Path) -> list[str]:
+    """Liest die aktuellen Feature-Artists EINER Datei (repraesentativ fuer
+    die Vorbelegung, rein lesend). Reihenfolge: erst ©ART[1:] wenn >1
+    Eintrag, sonst ARTISTS[1:] wenn >1 Eintrag, sonst leer. Der Haupt-
+    Artist ist immer der erste Eintrag von ©ART und wird vom Editor nie
+    veraendert."""
+    cur = _read_atoms(path)
+    if len(cur["artist"]) > 1:
+        return list(cur["artist"][1:])
+    if len(cur["artists_freeform"]) > 1:
+        return list(cur["artists_freeform"][1:])
+    return []
+
+
+def apply_feature_artists_edit(
+    targets: list[str],
+    library_root: Path,
+    journal: RepairJournal,
+    *,
+    new_feature_artists: list[str],
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """Manual Feature-Artists Editing: setzt ©ART auf
+    [Haupt-Artist] + new_feature_artists und ARTISTS-Freeform auf
+    dieselbe Liste (geloescht, wenn die Feature-Liste leer ist).
+    Haupt-Artist (= ©ART[0] der Datei) wird NIE veraendert.
+    `targets` enthaelt in der Praxis IMMER genau eine Datei
+    (Ein-Track-Scope wie Titel/Tracknummer)."""
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+
+    # Case-insensitives Dedup gegen den Aufrufer-Haupt-Artist passiert hier
+    # NICHT (der kommt aus der Datei), aber gegen bereits vorhandene
+    # Eintraege der Nutzer-Liste schon - siehe _validate_feature_artists
+    # in maintenance_service.py, die schon dedupliziert hat.
+    normalized_feats = list(new_feature_artists)
+
+    for rel in sorted(set(targets)):
+        path = library_root / rel
+        oc = ExecOutcome(
+            file=rel, issue_code="FEATURE_ARTISTS_MANUAL_EDIT",
+            action="FEATURE_ARTISTS_MANUAL_EDIT", status="SKIPPED",
+        )
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            cur = _read_atoms(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Tag-Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        if not cur["artist"]:
+            oc.reason = "Kein ©ART-Tag - Haupt-Artist unbekannt"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        main = cur["artist"][0]
+        # Features nochmal case-insensitiv gegen Haupt-Artist dedupen
+        # (Defense-in-Depth: der Service validiert schon, aber hier
+        # schuetzen wir uns gegen direkte Executor-Aufrufe in Tests).
+        feats: list[str] = []
+        seen = {main.casefold()}
+        for f in normalized_feats:
+            k = f.casefold()
+            if k in seen:
+                continue
+            seen.add(k)
+            feats.append(f)
+
+        art_after = [main] + feats
+        artists_after = list(art_after) if feats else []
+
+        if art_after == cur["artist"] and artists_after == cur["artists_freeform"]:
+            oc.reason = "bereits korrekt"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        oc.before = {"artist": cur["artist"], "artists_freeform": cur["artists_freeform"]}
+        oc.after = {"artist": art_after, "artists_freeform": artists_after}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        exclude = {"\xa9ART", _ARTISTS_FREEFORM_ATOM}
+        others_before = tags_fingerprint(_full_tags(path), exclude)
+        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _write_atoms(
+                path, {"artist": art_after, "artists_freeform": artists_after}
+            )
+            verify = _read_atoms(tmp)
+            if verify["artist"] != art_after or verify["artists_freeform"] != artists_after:
+                raise RuntimeError("Verifikation fehlgeschlagen (Ziel-Atome)")
+            others_after = tags_fingerprint(_full_tags(tmp), exclude)
             if others_after != others_before:
                 raise RuntimeError("Andere Atome wurden veraendert (Fingerprint-Diff)")
             audio_tmp = _audio_essence_md5(tmp)

@@ -140,10 +140,26 @@
               <div id="track-number-edit-hint" class="small text-secondary"></div>
             </div>
           </div>
+          <div class="row g-2 mt-1">
+            <div class="col-12 col-md-4">
+              <label class="form-label small" for="feature-artists-main-artist-display">Haupt-Artist (nur lesend)</label>
+              <input type="text" id="feature-artists-main-artist-display" class="form-control form-control-sm" readonly aria-readonly="true">
+            </div>
+            <div class="col-12 col-md-8">
+              <label class="form-label small" for="feature-artists-edit-new">Feature-Artists (©ART[1:] + ARTISTS)</label>
+              <div class="input-group input-group-sm">
+                <textarea id="feature-artists-edit-new" class="form-control" rows="2" autocomplete="off" aria-label="Feature-Artists (eine Zeile pro Artist)" placeholder="Eine Zeile pro Artist — leer = alle Features entfernen"></textarea>
+                <button id="feature-artists-edit-preview-btn" type="button" class="btn" title="Vorschau Feature-Artists aktualisieren" aria-label="Vorschau Feature-Artists aktualisieren"><svg class="icon"><use href="#i-refresh"/></svg></button>
+              </div>
+              <div class="form-hint">Pro Zeile ein Name. Max. 10. Kein Semikolon, kein „feat./ft.“. Der Haupt-Artist bleibt unverändert.</div>
+            </div>
+          </div>
           <div id="title-edit-content" class="md-diff mt-3" aria-live="polite"></div>
           <div id="track-number-edit-content" class="md-diff mt-2" aria-live="polite"></div>
+          <div id="feature-artists-edit-content" class="md-diff mt-2" aria-live="polite"></div>
           <div id="title-edit-result-content" class="mt-3"></div>
           <div id="track-number-edit-result-content" class="mt-2"></div>
+          <div id="feature-artists-edit-result-content" class="mt-2"></div>
         </div>
       </div>
       <div class="md-footer p-3">

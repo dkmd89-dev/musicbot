@@ -64,6 +64,7 @@ Authentifiziert mit mindestens AccessLevel.ADMIN. POST-Endpunkte sind
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from services.access_control import AccessLevel
 from logger import get_module_logger
@@ -73,6 +74,7 @@ from services.library_repair.maintenance_service import (
     execute_album_edit,
     execute_artist_casing_fix,
     execute_artist_rename,
+    execute_feature_artists_edit,
     execute_legacy_genre_cleanup,
     execute_title_edit,
     execute_track_number_edit,
@@ -81,6 +83,8 @@ from services.library_repair.maintenance_service import (
     preview_album_edit,
     preview_artist_casing,
     preview_artist_rename,
+    current_feature_artists,
+    preview_feature_artists_edit,
     preview_legacy_genre_cleanup,
     preview_title_edit,
     preview_track_number_edit,
@@ -92,6 +96,7 @@ from ..dependencies import get_current_user_id, require_min_access_level, verify
 from ..schemas.admin_maintenance import (
     AlbumArtistEditRequest,
     AlbumEditRequest,
+    FeatureArtistsEditRequest,
     ArtistRenameRequest,
     TitleEditRequest,
     TrackNumberEditRequest,
@@ -368,6 +373,68 @@ def post_track_number_edit_execute(
     try:
         result = execute_track_number_edit(
             payload.artist, payload.rel_path, payload.new_track_number,
+            triggered_by=f"control_center:{user_id}",
+        )
+    except MaintenanceServiceError as e:
+        raise _validation_error(e) from e
+    except RepairAlreadyRunningError as e:
+        raise _lock_conflict_error(e) from e
+    return maintenance_execute_to_response(result)
+
+
+# ── Feature-Artists bearbeiten (manueller Zielwert, ©ART + ARTISTS) ──────
+#
+# Liste ⇒ POST fuer die Vorschau (Praesedenz: post_genre_mapping_preview
+# in metadata_actions.py).
+
+
+class _FeatureArtistsCurrentResponse(BaseModel):
+    """Read-only: aktuelle Feature-Artists des gewaehlten Tracks (Vorbelegung)."""
+    feature_artists: list[str] = []
+
+
+@router.get(
+    "/feature-artists-edit/current",
+    response_model=_FeatureArtistsCurrentResponse,
+)
+def get_feature_artists_edit_current(
+    artist: str = Query(...), rel_path: str = Query(...),
+) -> _FeatureArtistsCurrentResponse:
+    try:
+        feats = current_feature_artists(artist, rel_path)
+    except MaintenanceServiceError as e:
+        raise _validation_error(e) from e
+    return _FeatureArtistsCurrentResponse(feature_artists=feats)
+
+
+@router.post(
+    "/feature-artists-edit/preview",
+    response_model=MaintenancePreviewResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+def post_feature_artists_edit_preview(
+    payload: FeatureArtistsEditRequest,
+) -> MaintenancePreviewResponse:
+    try:
+        preview = preview_feature_artists_edit(
+            payload.artist, payload.rel_path, payload.feature_artists
+        )
+    except MaintenanceServiceError as e:
+        raise _validation_error(e) from e
+    return maintenance_preview_to_response(preview)
+
+
+@router.post(
+    "/feature-artists-edit/execute",
+    response_model=MaintenanceExecuteResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+def post_feature_artists_edit_execute(
+    payload: FeatureArtistsEditRequest, user_id: int = Depends(get_current_user_id),
+) -> MaintenanceExecuteResponse:
+    try:
+        result = execute_feature_artists_edit(
+            payload.artist, payload.rel_path, payload.feature_artists,
             triggered_by=f"control_center:{user_id}",
         )
     except MaintenanceServiceError as e:

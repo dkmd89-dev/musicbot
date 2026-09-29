@@ -1373,3 +1373,168 @@ class TestTrackNumberEditFlow:
         )
         assert result.target_count == 0
         assert result.success_count == 0
+
+
+# ── Manual Feature-Artists Editing: Preview + Execute ──────────────────
+
+
+@requires_ffmpeg
+class TestFeatureArtistsEditFlow:
+    """Charakterisierung des Feature-Artists-Editors (Ein-Track-Scope,
+    ©ART[1:] + ARTISTS-Freeform). Deckt Preview, Idempotenz, Haupt-
+    Artist-Erhalt, ARTISTS-Loeschung, Validierung und Containment ab."""
+
+    def _set_artists(self, path, artist_list, artists_ff=None):
+        from mutagen.mp4 import MP4FreeForm
+        a = MP4(path)
+        a["\xa9ART"] = list(artist_list)
+        if artists_ff is not None:
+            if artists_ff:
+                a["----:com.apple.iTunes:ARTISTS"] = [MP4FreeForm(x.encode("utf-8")) for x in artists_ff]
+            elif "----:com.apple.iTunes:ARTISTS" in a:
+                del a["----:com.apple.iTunes:ARTISTS"]
+        a.save()
+
+    def _artists(self, path):
+        a = MP4(path)
+        return list((a.tags or {}).get("\xa9ART") or [])
+
+    def _artists_ff(self, path):
+        raw = (MP4(path).tags or {}).get("----:com.apple.iTunes:ARTISTS") or []
+        return [v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v) for v in raw]
+
+    def test_preview_is_read_only(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p, artist=["Bausa"])
+        before = p.read_bytes()
+
+        preview = ms.preview_feature_artists_edit(
+            "Bausa", "Bausa/Singles/a.m4a", ["Kontra K"], library_root=lib,
+        )
+        assert preview.read_only is True
+        assert preview.target_count == 1
+        assert preview.changed_count == 1
+        assert p.read_bytes() == before
+        assert not rt.journal_path().exists()
+
+    def test_identical_value_yields_zero_changed(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+        self._set_artists(p, ["Bausa", "Kontra K"], ["Bausa", "Kontra K"])
+
+        preview = ms.preview_feature_artists_edit(
+            "Bausa", "Bausa/Singles/a.m4a", ["Kontra K"], library_root=lib,
+        )
+        assert preview.changed_count == 0
+
+    def test_execute_writes_both_atoms(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p, artist=["Bausa"])
+
+        result = ms.execute_feature_artists_edit(
+            "Bausa", "Bausa/Singles/a.m4a", ["Kontra K", "Capital Bra"],
+            triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert self._artists(p) == ["Bausa", "Kontra K", "Capital Bra"]
+        assert self._artists_ff(p) == ["Bausa", "Kontra K", "Capital Bra"]
+        # Haupt-Artist bleibt ©ART[0]
+        assert self._artists(p)[0] == "Bausa"
+
+        history = rt.load_repair_history()
+        assert history[0]["level"] == "FEATURE_ARTISTS_EDIT"
+
+    def test_removing_all_features_deletes_artists_atom(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+        self._set_artists(p, ["Bausa", "Kontra K"], ["Bausa", "Kontra K"])
+
+        result = ms.execute_feature_artists_edit(
+            "Bausa", "Bausa/Singles/a.m4a", [],
+            triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert self._artists(p) == ["Bausa"]
+        assert self._artists_ff(p) == []  # ARTISTS-Atom geloescht
+
+    def test_main_artist_in_features_is_deduplicated(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p, artist=["Bausa"])
+
+        result = ms.execute_feature_artists_edit(
+            "Bausa", "Bausa/Singles/a.m4a", ["Bausa", "Kontra K"],
+            triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert self._artists(p) == ["Bausa", "Kontra K"]
+
+    def test_execute_skips_when_no_artist_tag(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+        # ©ART loeschen
+        a = MP4(p)
+        if "\xa9ART" in a:
+            del a["\xa9ART"]
+        a.save()
+
+        preview = ms.preview_feature_artists_edit(
+            "Bausa", "Bausa/Singles/a.m4a", ["Kontra K"], library_root=lib,
+        )
+        assert preview.changed_count == 0
+        assert any("Kein ©ART-Tag" in (o.reason or "") for o in preview.outcomes)
+
+    def test_validation_rejects_invalid_list(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p, artist=["Bausa"])
+
+        with pytest.raises(ms.MaintenanceServiceError):
+            ms.execute_feature_artists_edit(
+                "Bausa", "Bausa/Singles/a.m4a", ["A; B"],
+                triggered_by="test", library_root=lib,
+            )
+
+    def test_execute_shares_lock_with_repair_flow(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p, artist=["Bausa"])
+
+        rt.acquire_repair_lock()
+        try:
+            with pytest.raises(rt.RepairAlreadyRunningError):
+                ms.execute_feature_artists_edit(
+                    "Bausa", "Bausa/Singles/a.m4a", ["X"],
+                    triggered_by="test", library_root=lib,
+                )
+        finally:
+            rt.release_repair_lock()
+
+    def test_rel_path_from_foreign_artist_is_rejected(self, lib):
+        own = lib / "A" / "Singles" / "a.m4a"
+        _m4a(own, artist=["A"])
+        foreign = lib / "AndererArtist" / "Album" / "01.m4a"
+        _m4a(foreign, artist=["X"])
+
+        result = ms.execute_feature_artists_edit(
+            "A", "AndererArtist/Album/01.m4a", ["Y"],
+            triggered_by="test", library_root=lib,
+        )
+        assert result.target_count == 0
+        assert result.success_count == 0
+
+    def test_umlaute_stay_intact(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p, artist=["Bausa"])
+
+        result = ms.execute_feature_artists_edit(
+            "Bausa", "Bausa/Singles/a.m4a", ["Ünal", "Kool Savas & Eko"],
+            triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert self._artists(p) == ["Bausa", "Ünal", "Kool Savas & Eko"]
+
+    def test_current_feature_artists_reads_correct_atom(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+        self._set_artists(p, ["Bausa", "Kontra K", "Capital Bra"], ["Bausa", "Kontra K", "Capital Bra"])
+
+        feats = ms.current_feature_artists("Bausa", "Bausa/Singles/a.m4a", library_root=lib)
+        assert feats == ["Kontra K", "Capital Bra"]

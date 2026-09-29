@@ -3,8 +3,8 @@
 """
 Request-Schemas für POST /api/v1/admin/maintenance/artist-rename/execute,
 .../title-edit/execute, .../album-edit/execute,
-.../albumartist-edit/execute, .../year-edit/execute
-und .../track-number-edit/execute — die vier Aktionen mit manuellem
+.../albumartist-edit/execute, .../year-edit/execute,
+.../track-number-edit/execute und .../feature-artists-edit/execute — die vier Aktionen mit manuellem
 Freitext-Zielwert (Preview-Endpunkte nutzen stattdessen Query-Parameter,
 siehe control_center/routers/admin_maintenance.py, identisches Muster
 wie AcceptFindingRequest in schemas/findings.py).
@@ -48,3 +48,9 @@ class TrackNumberEditRequest(BaseModel):
     artist: str
     rel_path: str
     new_track_number: int
+
+
+class FeatureArtistsEditRequest(BaseModel):
+    artist: str
+    rel_path: str
+    feature_artists: list[str] = []

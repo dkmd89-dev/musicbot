@@ -30,6 +30,8 @@ Auftrag §15) — bleibt CLI-only.
 
 from __future__ import annotations
 
+import re
+
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,6 +57,8 @@ from services.library_repair.executor import (
     read_current_year,
     apply_track_number_edit,
     read_current_track_number,
+    apply_feature_artists_edit,
+    read_current_feature_artists,
 )
 from services.library_repair.journal import RepairJournal
 from services.library_repair.run_tracking import (
@@ -94,12 +98,19 @@ ACTION_ALBUM_EDIT = "album-edit"
 ACTION_ALBUM_ARTIST_EDIT = "album-artist-edit"
 ACTION_YEAR_EDIT = "year-edit"
 ACTION_TRACK_NUMBER_EDIT = "track-number-edit"
+ACTION_FEATURE_ARTISTS_EDIT = "feature-artists-edit"
 
 _MAX_MANUAL_VALUE_LEN = 200
 
 # Gespiegelt aus services/library_health/file_analysis.py::YEAR_MIN
 # (Test sichert Gleichheit, siehe test_library_repair_maintenance_service.py).
 _YEAR_MIN = 1900
+
+# Max. Anzahl Feature-Artists pro Track (Editor-Limit, Health-Regel MULTI_ARTIST_* hat kein hartes Limit, aber das UI soll nicht ueberlaufen).
+_MAX_FEATURE_ARTISTS = 10
+
+# Health-Regel: kein "feat./ft./featuring" als Bestandteil eines Feature-Artist-Namens (waere ein Parse-Fehler, kein Artist). Case-insensitiv geprueft.
+_FEAT_KEYWORDS = ("feat.", "feat", "ft.", "ft", "featuring")
 
 
 class MaintenanceServiceError(Exception):
@@ -353,6 +364,73 @@ def current_album_artist(artist: str, album: str, *, library_root: Optional[Path
     if not targets:
         return ""
     return read_current_album_artist(_resolve_within_library(targets[0], root))
+
+
+def _validate_feature_artists(value) -> list[str]:
+    """Feature-Artists-Liste: Liste nicht-leerer, getrimmter Strings.
+    Regeln (Plan Abschnitt 7 + Health-Regeln aus file_analysis.py):
+    - max. _MAX_FEATURE_ARTISTS Eintraege
+    - je max. _MAX_MANUAL_VALUE_LEN Zeichen
+    - keine Zeilenumbrueche
+    - kein ";" (Health-Regel MULTI_ARTIST-Atom enthaelt kein Semikolon)
+    - kein "feat./ft./featuring" als Bestandteil eines Namens
+      (waere ein Parse-Fehler, kein Artist)
+    - case-insensitive dedupliziert (Reihenfolge bleibt erhalten)
+    Leere Liste ist erlaubt (bedeutet: alle Features entfernen).
+    """
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        raise MaintenanceServiceError("Feature-Artists muessen als Liste uebergeben werden.")
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in value:
+        if raw is None:
+            continue
+        if not isinstance(raw, str):
+            raise MaintenanceServiceError("Feature-Artist-Eintraege muessen Texte sein.")
+        if "\n" in raw or "\r" in raw:
+            raise MaintenanceServiceError("Feature-Artist darf keine Zeilenumbrueche enthalten.")
+        v = raw.strip()
+        if not v:
+            continue
+        if len(v) > _MAX_MANUAL_VALUE_LEN:
+            raise MaintenanceServiceError(
+                f"Feature-Artist zu lang (max. {_MAX_MANUAL_VALUE_LEN} Zeichen)."
+            )
+        if ";" in v:
+            raise MaintenanceServiceError(
+                "Feature-Artist darf kein Semikolon enthalten."
+            )
+        low = v.casefold()
+        for kw in _FEAT_KEYWORDS:
+            # Wortgrenze vor und nach dem Keyword; "feat." als Anfang ist der
+            # typische Parse-Fall, aber auch "x feat. y" als ganzes Feld.
+            if re.search(rf"(?:^|\s){re.escape(kw)}(?:\s|$)", low):
+                raise MaintenanceServiceError(
+                    f'Feature-Artist darf kein "{kw}" enthalten.'
+                )
+        key = v.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(v)
+    if len(cleaned) > _MAX_FEATURE_ARTISTS:
+        raise MaintenanceServiceError(
+            f"Hoechstens {_MAX_FEATURE_ARTISTS} Feature-Artists pro Track."
+        )
+    return cleaned
+
+
+def current_feature_artists(artist: str, rel_path: str, *, library_root=None) -> list[str]:
+    """Liest die aktuellen Feature-Artists des gewaehlten Tracks (rein
+    lesend, Vorbelegung). Haupt-Artist bleibt aussen vor. Identischer
+    Scope wie current_title()/current_track_number()."""
+    root = _library_root(library_root)
+    targets = _title_edit_targets(artist, rel_path, library_root=root)
+    if not targets:
+        return []
+    return read_current_feature_artists(_resolve_within_library(targets[0], root))
 
 
 def _validate_track_number(value) -> int:
@@ -1017,6 +1095,59 @@ def execute_track_number_edit(
         )
         _record_run(
             run_id=run_id, action=ACTION_TRACK_NUMBER_EDIT, artist=artist,
+            started_at=started_at, result=result, triggered_by=triggered_by,
+        )
+        return result
+    finally:
+        release_repair_lock()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Manual Feature-Artists Editing - expliziter Nutzer-Zielwert fuer
+# ©ART[1:] + ARTISTS-Freeform ueber den Ein-Track-Scope (wie Titel).
+# Haupt-Artist bleibt unveraendert.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def preview_feature_artists_edit(
+    artist: str, rel_path: str, feature_artists, *,
+    library_root=None,
+) -> MaintenancePreview:
+    cleaned = _validate_feature_artists(feature_artists)
+    targets = _title_edit_targets(artist, rel_path, library_root=library_root)
+    journal = RepairJournal(journal_path())  # nie geflusht -> read-only
+    outcomes = apply_feature_artists_edit(
+        targets, _library_root(library_root), journal,
+        new_feature_artists=cleaned, dry_run=True,
+    )
+    return MaintenancePreview(
+        action=ACTION_FEATURE_ARTISTS_EDIT, artist=artist,
+        target_count=len(targets), outcomes=outcomes,
+    )
+
+
+def execute_feature_artists_edit(
+    artist: str, rel_path: str, feature_artists, *, triggered_by: str,
+    library_root=None,
+) -> MaintenanceRunResult:
+    cleaned = _validate_feature_artists(feature_artists)
+    acquire_repair_lock()
+    try:
+        started_at = now_iso()
+        run_id = str(uuid.uuid4())
+        targets = _title_edit_targets(artist, rel_path, library_root=library_root)
+        journal = RepairJournal(journal_path())
+        outcomes = apply_feature_artists_edit(
+            targets, _library_root(library_root), journal,
+            new_feature_artists=cleaned, dry_run=False,
+        )
+        journal.flush()
+        result = _run_result_from_outcomes(
+            run_id=run_id, action=ACTION_FEATURE_ARTISTS_EDIT, artist=artist,
+            started_at=started_at, target_count=len(targets), outcomes=outcomes, dry_run=False,
+        )
+        _record_run(
+            run_id=run_id, action=ACTION_FEATURE_ARTISTS_EDIT, artist=artist,
             started_at=started_at, result=result, triggered_by=triggered_by,
         )
         return result
