@@ -51,6 +51,9 @@ MAPPING_FILENAME_CHANNEL_GENRE = "channel_genre.yaml"
 MAPPING_ROOT_KEY_CHANNEL_GENRE = "CHANNEL_GENRE_MAP"
 MAPPING_FILENAME_GENRE_ALIASES = "genre_aliases.yaml"
 MAPPING_ROOT_KEY_GENRE_ALIASES = "GENRE_ALIASES"
+MAPPING_ID_GENRE_OVERRIDES = "genre-overrides"
+MAPPING_FILENAME_GENRE_OVERRIDES = "genre_overrides.yaml"
+MAPPING_ROOT_KEY_GENRE_OVERRIDES = "GENRE_OVERRIDES"
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,7 @@ class MappingDescriptor:
     filename: str
     root_key: str
     kind: str
+    lookup_exact_first: bool = False
 
 
 _MAPPING_DESCRIPTORS: Dict[str, MappingDescriptor] = {
@@ -73,6 +77,13 @@ _MAPPING_DESCRIPTORS: Dict[str, MappingDescriptor] = {
         filename="genre_aliases.yaml",
         root_key="GENRE_ALIASES",
         kind="genre-alias",
+    ),
+    MAPPING_ID_GENRE_OVERRIDES: MappingDescriptor(
+        mapping_id=MAPPING_ID_GENRE_OVERRIDES,
+        filename="genre_overrides.yaml",
+        root_key="GENRE_OVERRIDES",
+        kind="genre-override",
+        lookup_exact_first=True,
     ),
 }
 
@@ -284,6 +295,33 @@ class GenreAliasSaveResult:
     new_etag: str
 
 
+@dataclass(frozen=True)
+class GenreOverrideEntry:
+    key: str
+    override: str
+
+
+@dataclass(frozen=True)
+class GenreOverridePlan:
+    mapping_id: str
+    key: str
+    change: str
+    existing: Optional[GenreOverrideEntry]
+    override: str
+    override_changed: bool
+    warnings: List[str]
+    etag: str
+
+
+@dataclass(frozen=True)
+class GenreOverrideSaveResult:
+    written: bool
+    unchanged: bool
+    key: str
+    override: str
+    new_etag: str
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Datei-Zugriff
 # ─────────────────────────────────────────────────────────────────────────
@@ -312,7 +350,14 @@ def _load_raw_mapping(descriptor: MappingDescriptor, mapping_dir: Path) -> Dict[
     return raw
 
 
-def _find_mapping_key(mapping: Dict[str, Any], key: str) -> Optional[str]:
+def _find_mapping_key(
+    mapping: Dict[str, Any], key: str, descriptor: MappingDescriptor,
+) -> Optional[str]:
+    """Exakter Treffer zuerst (nur wenn descriptor.lookup_exact_first gesetzt),
+    danach casefold-Fallback. Bei genre-override bleiben case-sensitive
+    Schreibweisen ('Hip-Hop' neben 'hip-hop') erhalten."""
+    if descriptor.lookup_exact_first and key in mapping:
+        return key
     wanted = key.casefold()
     for k in mapping:
         if isinstance(k, str) and k.casefold() == wanted:
@@ -373,11 +418,25 @@ def _genre_alias_etag(mapping: Dict[str, Any]) -> str:
     return _etag_of(items)
 
 
+def _genre_override_etag(mapping: Dict[str, Any]) -> str:
+    """Sortiert nach casefold (deterministisch), hasht aber die ROHEN Keys —
+    'Hip-Hop' und 'hip-hop' bleiben zwei verschiedene Eintraege."""
+    items = []
+    for k in sorted(mapping.keys(), key=lambda s: s.casefold() if isinstance(s, str) else ""):
+        v = mapping[k]
+        if not isinstance(v, str):
+            continue
+        items.append([str(k), str(v).strip()])
+    return _etag_of(items)
+
+
 def _compute_etag(descriptor: MappingDescriptor, mapping: Dict[str, Any]) -> str:
     if descriptor.kind == "channel-genre":
         return _channel_genre_etag(mapping)
     if descriptor.kind == "genre-alias":
         return _genre_alias_etag(mapping)
+    if descriptor.kind == "genre-override":
+        return _genre_override_etag(mapping)
     raise MappingUnknownIdError(f"Unbekannter kind: {descriptor.kind!r}")
 
 
@@ -413,6 +472,15 @@ def _parse_genre_alias_entry(key: str, raw: Any) -> Optional[GenreAliasEntry]:
     return GenreAliasEntry(key=key, canonical=canonical)
 
 
+def _parse_genre_override_entry(key: str, raw: Any) -> Optional[GenreOverrideEntry]:
+    if not isinstance(raw, str):
+        return None
+    override = raw.strip()
+    if not override:
+        return None
+    return GenreOverrideEntry(key=key, override=override)
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Generische Public API
 # ─────────────────────────────────────────────────────────────────────────
@@ -421,10 +489,14 @@ def _parse_genre_alias_entry(key: str, raw: Any) -> Optional[GenreAliasEntry]:
 def list_mapping(mapping_id: str, mapping_dir: Path) -> List[Any]:
     descriptor = _get_descriptor(mapping_id)
     mapping = _load_raw_mapping(descriptor, mapping_dir)
-    parser = (
-        _parse_channel_genre_entry if descriptor.kind == "channel-genre"
-        else _parse_genre_alias_entry
-    )
+    if descriptor.kind == "channel-genre":
+        parser = _parse_channel_genre_entry
+    elif descriptor.kind == "genre-alias":
+        parser = _parse_genre_alias_entry
+    elif descriptor.kind == "genre-override":
+        parser = _parse_genre_override_entry
+    else:
+        raise MappingUnknownIdError(f"Unbekannter kind: {descriptor.kind!r}")
     result = []
     for k in sorted(mapping.keys(), key=lambda s: s.casefold() if isinstance(s, str) else ""):
         entry = parser(k, mapping[k])
@@ -439,13 +511,17 @@ def get_mapping_entry(
     descriptor = _get_descriptor(mapping_id)
     mapping = _load_raw_mapping(descriptor, mapping_dir)
     etag = _compute_etag(descriptor, mapping)
-    actual_key = _find_mapping_key(mapping, key)
+    actual_key = _find_mapping_key(mapping, key, descriptor)
     if actual_key is None:
         return None, etag
-    parser = (
-        _parse_channel_genre_entry if descriptor.kind == "channel-genre"
-        else _parse_genre_alias_entry
-    )
+    if descriptor.kind == "channel-genre":
+        parser = _parse_channel_genre_entry
+    elif descriptor.kind == "genre-alias":
+        parser = _parse_genre_alias_entry
+    elif descriptor.kind == "genre-override":
+        parser = _parse_genre_override_entry
+    else:
+        raise MappingUnknownIdError(f"Unbekannter kind: {descriptor.kind!r}")
     return parser(actual_key, mapping[actual_key]), etag
 
 
@@ -457,6 +533,8 @@ def plan_mapping_update(
         return _plan_channel_genre(key, payload, descriptor, mapping_dir)
     if descriptor.kind == "genre-alias":
         return _plan_genre_alias(key, payload, descriptor, mapping_dir)
+    if descriptor.kind == "genre-override":
+        return _plan_genre_override(key, payload, descriptor, mapping_dir)
     raise MappingUnknownIdError(f"Unbekannter kind: {descriptor.kind!r}")
 
 
@@ -477,7 +555,7 @@ def apply_mapping_update(
         if plan.change == "unchanged":
             return plan, _unchanged_result(descriptor, plan)
 
-        actual_key = _find_mapping_key(mapping, plan.key) or plan.key
+        actual_key = _find_mapping_key(mapping, plan.key, descriptor) or plan.key
         if descriptor.kind == "channel-genre":
             mapping[actual_key] = {
                 "primary": plan.primary,
@@ -486,6 +564,10 @@ def apply_mapping_update(
             }
         elif descriptor.kind == "genre-alias":
             mapping[actual_key] = plan.canonical
+        elif descriptor.kind == "genre-override":
+            mapping[actual_key] = plan.override
+        else:
+            raise MappingUnknownIdError(f"Unbekannter kind: {descriptor.kind!r}")
 
         _dump_raw_mapping(descriptor, mapping_dir, mapping)
         new_etag = _compute_etag(descriptor, _load_raw_mapping(descriptor, mapping_dir))
@@ -499,9 +581,14 @@ def _unchanged_result(descriptor: MappingDescriptor, plan: Any) -> Any:
             primary=plan.primary, secondary=list(plan.secondary),
             new_etag=plan.etag,
         )
-    return GenreAliasSaveResult(
+    if descriptor.kind == "genre-alias":
+        return GenreAliasSaveResult(
+            written=False, unchanged=True, key=plan.key,
+            canonical=plan.canonical, new_etag=plan.etag,
+        )
+    return GenreOverrideSaveResult(
         written=False, unchanged=True, key=plan.key,
-        canonical=plan.canonical, new_etag=plan.etag,
+        override=plan.override, new_etag=plan.etag,
     )
 
 
@@ -514,9 +601,14 @@ def _written_result(
             primary=plan.primary, secondary=list(plan.secondary),
             new_etag=new_etag,
         )
-    return GenreAliasSaveResult(
+    if descriptor.kind == "genre-alias":
+        return GenreAliasSaveResult(
+            written=True, unchanged=False, key=actual_key,
+            canonical=plan.canonical, new_etag=new_etag,
+        )
+    return GenreOverrideSaveResult(
         written=True, unchanged=False, key=actual_key,
-        canonical=plan.canonical, new_etag=new_etag,
+        override=plan.override, new_etag=new_etag,
     )
 
 
@@ -537,7 +629,7 @@ def _plan_channel_genre(
 
     mapping = _load_raw_mapping(descriptor, mapping_dir)
     etag = _channel_genre_etag(mapping)
-    actual_key = _find_mapping_key(mapping, clean_channel)
+    actual_key = _find_mapping_key(mapping, clean_channel, descriptor)
 
     if actual_key is None:
         return ChannelGenrePlan(
@@ -598,7 +690,7 @@ def _plan_genre_alias(
 
     mapping = _load_raw_mapping(descriptor, mapping_dir)
     etag = _genre_alias_etag(mapping)
-    actual_key = _find_mapping_key(mapping, clean_alias)
+    actual_key = _find_mapping_key(mapping, clean_alias, descriptor)
 
     if actual_key is None:
         return GenreAliasPlan(
@@ -629,6 +721,56 @@ def _plan_genre_alias(
         existing=existing,
         canonical=clean_canonical,
         canonical_changed=canonical_changed,
+        warnings=[],
+        etag=etag,
+    )
+
+
+def _plan_genre_override(
+    key: str, payload: Dict[str, Any], descriptor: MappingDescriptor, mapping_dir: Path,
+) -> GenreOverridePlan:
+    """Wie _plan_genre_alias, aber:
+    - Original-Key-Case bleibt beim Create erhalten (kein lowercase).
+    - Lookup laeuft ueber descriptor.lookup_exact_first=True (exakter Key
+      zuerst, dann casefold-Fallback) — bestehende Schreibvarianten wie
+      'Hip-Hop' und 'hip-hop' bleiben separat.
+    """
+    clean_key = _validate_alias_key(key)
+    clean_override = _validated_genre(payload.get("override", ""), "Override-Genre")
+
+    mapping = _load_raw_mapping(descriptor, mapping_dir)
+    etag = _genre_override_etag(mapping)
+    actual_key = _find_mapping_key(mapping, clean_key, descriptor)
+
+    if actual_key is None:
+        return GenreOverridePlan(
+            mapping_id=descriptor.mapping_id,
+            key=clean_key,
+            change="create",
+            existing=None,
+            override=clean_override,
+            override_changed=True,
+            warnings=[],
+            etag=etag,
+        )
+
+    existing = _parse_genre_override_entry(actual_key, mapping[actual_key])
+    if existing is None:
+        return GenreOverridePlan(
+            mapping_id=descriptor.mapping_id,
+            key=actual_key, change="create", existing=None,
+            override=clean_override, override_changed=True,
+            warnings=[], etag=etag,
+        )
+
+    override_changed = existing.override.strip() != clean_override
+    return GenreOverridePlan(
+        mapping_id=descriptor.mapping_id,
+        key=actual_key,
+        change="update" if override_changed else "unchanged",
+        existing=existing,
+        override=clean_override,
+        override_changed=override_changed,
         warnings=[],
         etag=etag,
     )
@@ -706,5 +848,37 @@ def apply_genre_alias_update(
 ) -> Tuple[GenreAliasPlan, GenreAliasSaveResult]:
     return apply_mapping_update(
         MAPPING_ID_GENRE_ALIASES, alias, {"canonical": canonical},
+        mapping_dir, expected_etag,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Genre-Override-Komfort-Shims (M3)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def list_genre_overrides(mapping_dir: Path) -> List[GenreOverrideEntry]:
+    return list_mapping(MAPPING_ID_GENRE_OVERRIDES, mapping_dir)
+
+
+def get_genre_override(
+    key: str, mapping_dir: Path,
+) -> Tuple[Optional[GenreOverrideEntry], str]:
+    return get_mapping_entry(MAPPING_ID_GENRE_OVERRIDES, key, mapping_dir)
+
+
+def plan_genre_override_update(
+    key: str, override: str, mapping_dir: Path,
+) -> GenreOverridePlan:
+    return plan_mapping_update(
+        MAPPING_ID_GENRE_OVERRIDES, key, {"override": override}, mapping_dir,
+    )
+
+
+def apply_genre_override_update(
+    key: str, override: str, mapping_dir: Path, *, expected_etag: str,
+) -> Tuple[GenreOverridePlan, GenreOverrideSaveResult]:
+    return apply_mapping_update(
+        MAPPING_ID_GENRE_OVERRIDES, key, {"override": override},
         mapping_dir, expected_etag,
     )

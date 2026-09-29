@@ -27,10 +27,13 @@ from services.access_control import AccessLevel
 from services.mapping_admin import (
     MAPPING_ID_CHANNEL_GENRE,
     MAPPING_ID_GENRE_ALIASES,
+    MAPPING_ID_GENRE_OVERRIDES,
     ChannelGenreEntry,
     ChannelGenrePlan,
     GenreAliasEntry,
     GenreAliasPlan,
+    GenreOverrideEntry,
+    GenreOverridePlan,
     MappingConflictError,
     MappingDomainError,
     MappingInvalidInputError,
@@ -57,7 +60,16 @@ from ..schemas.mapping_admin import (
     GenreAliasSaveBody,
     GenreAliasSaveResponse,
     GenreAliasBody,
+    GenreOverrideGetResponse,
+    GenreOverrideListResponse,
+    GenreOverridePreviewResponse,
+    GenreOverrideSaveBody,
+    GenreOverrideSaveResponse,
+    GenreOverrideBody,
     entry_to_schema,
+    genre_override_entry_to_schema,
+    genre_override_plan_to_preview,
+    genre_override_save_to_response,
     genre_alias_entry_to_schema,
     genre_alias_plan_to_preview,
     genre_alias_save_to_response,
@@ -95,7 +107,7 @@ def _mapping_http_error(e: MappingDomainError) -> HTTPException:
     )
 
 
-_SUPPORTED_MAPPING_IDS = frozenset({MAPPING_ID_CHANNEL_GENRE, MAPPING_ID_GENRE_ALIASES})
+_SUPPORTED_MAPPING_IDS = frozenset({MAPPING_ID_CHANNEL_GENRE, MAPPING_ID_GENRE_ALIASES, MAPPING_ID_GENRE_OVERRIDES})
 
 
 def _ensure_supported(mapping_id: str) -> None:
@@ -127,6 +139,12 @@ def get_mapping(mapping_id: str):
             entries=[entry_to_schema(e) for e in entries],
             count=len(entries),
         )
+    if mapping_id == MAPPING_ID_GENRE_OVERRIDES:
+        return GenreOverrideListResponse(
+            mapping_id=mapping_id,
+            entries=[genre_override_entry_to_schema(e) for e in entries],
+            count=len(entries),
+        )
     return GenreAliasListResponse(
         mapping_id=mapping_id,
         entries=[genre_alias_entry_to_schema(e) for e in entries],
@@ -150,6 +168,14 @@ def get_mapping_entry_endpoint(
             channel=key,
             exists=entry is not None,
             entry=entry_to_schema(entry),
+            etag=etag,
+        )
+    if mapping_id == MAPPING_ID_GENRE_OVERRIDES:
+        return GenreOverrideGetResponse(
+            mapping_id=mapping_id,
+            key=key,
+            exists=entry is not None,
+            entry=genre_override_entry_to_schema(entry),
             etag=etag,
         )
     return GenreAliasGetResponse(
@@ -181,6 +207,8 @@ def post_mapping_preview(
         return plan_to_preview(mapping_id, key, plan)
     if isinstance(plan, GenreAliasPlan):
         return genre_alias_plan_to_preview(mapping_id, key, plan)
+    if isinstance(plan, GenreOverridePlan):
+        return genre_override_plan_to_preview(mapping_id, key, plan)
     raise _mapping_http_error(MappingUnknownIdError(f"Unbekannter Plan: {type(plan)}"))
 
 
@@ -224,4 +252,6 @@ def put_mapping(
         return save_to_response(mapping_id, key, plan, result)
     if isinstance(plan, GenreAliasPlan):
         return genre_alias_save_to_response(mapping_id, key, plan, result)
+    if isinstance(plan, GenreOverridePlan):
+        return genre_override_save_to_response(mapping_id, key, plan, result)
     raise _mapping_http_error(MappingUnknownIdError(f"Unbekannter Plan: {type(plan)}"))

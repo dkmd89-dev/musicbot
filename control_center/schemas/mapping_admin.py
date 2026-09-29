@@ -21,6 +21,9 @@ from services.mapping_admin import (
     GenreAliasEntry,
     GenreAliasPlan,
     GenreAliasSaveResult,
+    GenreOverrideEntry,
+    GenreOverridePlan,
+    GenreOverrideSaveResult,
 )
 
 
@@ -227,5 +230,112 @@ def genre_alias_save_to_response(
         message=(
             GENRE_ALIAS_SAVE_MESSAGE_WRITTEN if result.written
             else GENRE_ALIAS_SAVE_MESSAGE_UNCHANGED
+        ),
+    )
+
+# ── Genre-Override (M3) ──────────────────────────────────────────────
+
+
+class GenreOverrideEntrySchema(BaseModel):
+    key: str
+    override: str
+
+
+class GenreOverrideListResponse(BaseModel):
+    mapping_id: str
+    entries: List[GenreOverrideEntrySchema]
+    count: int
+    bot_reload_required: bool = True
+    warnings: List[str] = Field(default_factory=list)
+
+
+class GenreOverrideGetResponse(BaseModel):
+    mapping_id: str
+    key: str
+    exists: bool
+    entry: Optional[GenreOverrideEntrySchema] = None
+    etag: str
+
+
+class GenreOverrideBody(BaseModel):
+    override: str
+
+
+class GenreOverrideSaveBody(GenreOverrideBody):
+    etag: str
+
+
+class GenreOverridePreviewResponse(BaseModel):
+    mapping_id: str
+    key: str
+    change: str
+    existing: Optional[GenreOverrideEntrySchema] = None
+    override: str
+    override_changed: bool
+    warnings: List[str] = Field(default_factory=list)
+    etag: str
+    comment_warning: Optional[str] = None
+
+
+class GenreOverrideSaveResponse(GenreOverridePreviewResponse):
+    written: bool
+    unchanged: bool
+    new_etag: str
+    bot_reload_required: bool = True
+    message: str
+
+
+GENRE_OVERRIDE_COMMENT_WARNING = (
+    "Kommentarzeilen in genre_overrides.yaml gehen beim Speichern verloren "
+    "(bekannte Einschraenkung des YAML-Rewrites)."
+)
+
+
+def genre_override_entry_to_schema(
+    entry: Optional[GenreOverrideEntry],
+) -> Optional[GenreOverrideEntrySchema]:
+    if entry is None:
+        return None
+    return GenreOverrideEntrySchema(key=entry.key, override=entry.override)
+
+
+def genre_override_plan_to_preview(
+    mapping_id: str, key: str, plan: GenreOverridePlan,
+) -> GenreOverridePreviewResponse:
+    return GenreOverridePreviewResponse(
+        mapping_id=mapping_id,
+        key=plan.key,
+        change=plan.change,
+        existing=genre_override_entry_to_schema(plan.existing),
+        override=plan.override,
+        override_changed=plan.override_changed,
+        warnings=list(plan.warnings),
+        etag=plan.etag,
+        comment_warning=(
+            GENRE_OVERRIDE_COMMENT_WARNING if plan.change != "unchanged" else None
+        ),
+    )
+
+
+GENRE_OVERRIDE_SAVE_MESSAGE_WRITTEN = (
+    "Mapping gespeichert. Der laufende Bot laedt genre_overrides.yaml beim "
+    "Start: die Aenderung wirkt fuer neue Downloads erst nach Bot-Neustart."
+)
+GENRE_OVERRIDE_SAVE_MESSAGE_UNCHANGED = "Mapping war bereits identisch — nichts geschrieben."
+
+
+def genre_override_save_to_response(
+    mapping_id: str, key: str, plan: GenreOverridePlan, result: GenreOverrideSaveResult,
+) -> GenreOverrideSaveResponse:
+    base = genre_override_plan_to_preview(mapping_id, key, plan)
+    return GenreOverrideSaveResponse(
+        **base.model_dump(),
+        written=result.written,
+        unchanged=result.unchanged,
+        new_etag=result.new_etag,
+        bot_reload_required=result.written,
+        message=(
+            GENRE_OVERRIDE_SAVE_MESSAGE_WRITTEN if result.written
+            else GENRE_OVERRIDE_SAVE_MESSAGE_UNCHANGED
         ),
     )
