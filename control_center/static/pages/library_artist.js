@@ -743,7 +743,7 @@
   // aktuellen Wert abweicht (zwei bestehende Endpunkte nacheinander, eine
   // Bestätigung). Das versteckte Feld albumartist-edit-album-select hält
   // denselben Album-Schlüssel wie die sichtbare Auswahl.
-  const _albumState = { current: { album: "", albumartist: "" }, counts: { album: 0, albumartist: 0 } };
+  const _albumState = { current: { album: "", albumartist: "", year: "" }, counts: { album: 0, albumartist: 0, year: 0 } };
 
   function _mostCommon(values) {
     const counts = new Map();
@@ -760,6 +760,8 @@
     return {
       album: _mostCommon(tracks.map((t) => t.album)),
       albumartist: _mostCommon(tracks.map((t) => t.album_artist)),
+      // D2: Volldaten ("2024-05-17") auf 4 Zeichen kuerzen fuer die Vorbelegung.
+      year: _mostCommon(tracks.map((t) => ("" + (t.year || "")).slice(0, 4))),
     };
   }
 
@@ -767,20 +769,27 @@
   // Maximum der beiden Vorschauen (nicht die Summe).
   function _updateAlbumExecuteBtn() {
     _setExecuteButton(document.getElementById("album-edit-execute-btn"),
-      Math.max(_albumState.counts.album || 0, _albumState.counts.albumartist || 0));
+      Math.max(
+        _albumState.counts.album || 0,
+        _albumState.counts.albumartist || 0,
+        _albumState.counts.year || 0,
+      ));
   }
 
   // Album gewählt: versteckte Auswahl synchronisieren, Felder vorbelegen.
   function _selectAlbumForEdit(albumKey) {
     document.getElementById("album-edit-album-select").value = albumKey;
     document.getElementById("albumartist-edit-album-select").value = albumKey;
-    _albumState.current = albumKey ? _albumCurrentValues(albumKey) : { album: "", albumartist: "" };
+    _albumState.current = albumKey ? _albumCurrentValues(albumKey) : { album: "", albumartist: "", year: "" };
     document.getElementById("album-edit-new-album").value = _albumState.current.album;
     document.getElementById("albumartist-edit-new-albumartist").value = _albumState.current.albumartist;
+    document.getElementById("year-edit-new-year").value = _albumState.current.year;
     document.getElementById("album-edit-result-content").innerHTML = "";
     document.getElementById("albumartist-edit-result-content").innerHTML = "";
+    document.getElementById("year-edit-result-content").innerHTML = "";
     _autoAlbumPreview("album");
     _autoAlbumPreview("albumartist");
+    _autoAlbumPreview("year");
   }
 
   async function loadAlbumEditPreview() {
@@ -825,23 +834,49 @@
     );
   }
 
+  async function loadYearEditPreview() {
+    const artist = currentArtistFromPath();
+    const album = document.getElementById("album-edit-album-select").value;
+    const newYear = document.getElementById("year-edit-new-year").value.trim();
+    if (!album) { _fieldHint("album-edit-album-select", "Bitte zuerst ein Album auswählen."); return; }
+    if (!newYear) { _fieldHint("year-edit-new-year", "Bitte neues Jahr eingeben."); return; }
+    _albumState.counts.year = 0;
+    _updateAlbumExecuteBtn();
+    document.getElementById("year-edit-result-content").innerHTML = "";
+    const params = new URLSearchParams({ artist, album, new_year: newYear }).toString();
+    const seq = _nextPreviewSeq("year");
+    await _loadInto(
+      "year-edit-content",
+      `/api/v1/admin/maintenance/year-edit/preview?${params}`,
+      (el, body) => {
+        if (!_isCurrentPreview("year", seq)) return;
+        renderMetadataEditPreview(el, body, null, (n) => { _albumState.counts.year = n; _updateAlbumExecuteBtn(); });
+      },
+    );
+  }
+
   // Vorschau je Feld automatisch - nur wenn der Wert vom aktuellen abweicht.
+  const _albumFieldConfig = {
+    album: { contentId: "album-edit-content", inputId: "album-edit-new-album", label: "Albumname", loader: loadAlbumEditPreview },
+    albumartist: { contentId: "albumartist-edit-content", inputId: "albumartist-edit-new-albumartist", label: "Albuminterpret", loader: loadAlbumArtistEditPreview },
+    year: { contentId: "year-edit-content", inputId: "year-edit-new-year", label: "Jahr", loader: loadYearEditPreview },
+  };
+
   function _autoAlbumPreview(field) {
-    const isAlbum = field === "album";
-    const content = document.getElementById(isAlbum ? "album-edit-content" : "albumartist-edit-content");
+    const cfg = _albumFieldConfig[field];
+    const content = document.getElementById(cfg.contentId);
     const albumKey = document.getElementById("album-edit-album-select").value;
-    const value = document.getElementById(isAlbum ? "album-edit-new-album" : "albumartist-edit-new-albumartist").value.trim();
+    const value = document.getElementById(cfg.inputId).value.trim();
     _albumState.counts[field] = 0;
     _updateAlbumExecuteBtn();
     _nextPreviewSeq(field);
     clearTimeout(_previewTimers[field]);
-    const label = isAlbum ? "Albumname" : "Albuminterpret";
     if (!albumKey || !value || value === _albumState.current[field]) {
-      content.innerHTML = albumKey ? _noChangeHtml(`${label}: keine Änderung.`) : "";
+      content.innerHTML = albumKey ? _noChangeHtml(`${cfg.label}: keine Änderung.`) : "";
       return;
     }
-    content.innerHTML = _runningHtml(`${label}: Vorschau wird berechnet…`);
-    _schedulePreview(field, isAlbum ? loadAlbumEditPreview : loadAlbumArtistEditPreview);
+    content.innerHTML = _runningHtml(`${cfg.label}: Vorschau wird berechnet…`);
+    _schedulePreview(field, cfg.loader);
   }
 
   async function executeAlbumEdit(opts = {}) {
@@ -934,18 +969,65 @@
     }
   }
 
-  // Ein "Übernehmen" für beide Felder: eine Bestätigung, dann nur die
-  // geänderten Felder schreiben (Album zuerst, dann Albuminterpret).
+  async function executeYearEdit(opts = {}) {
+    const artist = currentArtistFromPath();
+    const album = document.getElementById("album-edit-album-select").value;
+    const newYear = document.getElementById("year-edit-new-year").value.trim();
+    if (!album || !newYear) return;
+    if (!opts.skipConfirm) {
+      const confirmed = await _artistConfirm(
+        `Jahr für Album "${album}" wirklich zu "${newYear}" ändern?\n\n` +
+        `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+        `aber es werden tatsächlich Dateien in der Library verändert.`
+      );
+      if (!confirmed) return;
+    }
+
+    const execBtn = document.getElementById("album-edit-execute-btn");
+    const resultEl = document.getElementById("year-edit-result-content");
+    execBtn.disabled = true;
+    resultEl.innerHTML = _runningHtml("Wird ausgeführt…");
+    try {
+      const res = await fetch(apiUrl("/api/v1/admin/maintenance/year-edit/execute"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ artist, album, new_year: newYear }),
+      });
+      if (res.status === 401) { showOnly("login-view"); return; }
+      const body = await res.json();
+      if (!res.ok) {
+        resultEl.innerHTML = _resultAlert("danger", `Fehler: ${_escapeHtml((body.error && body.error.message) || String(res.status))}`);
+        return;
+      }
+      // Erst Vorschau neu laden (sie leert das Ergebnisfeld), dann das Ergebnis zeigen.
+      const resultHtml = _executeResultHtml(body, `Nur der Jahr-Tag (©day) wurde geschrieben — der Dateiname bleibt unverändert (die Rename-Konvention übernimmt den Tag-Präfix erst nach einem Rename-Lauf).`);
+      _albumState.current.year = newYear;
+      await loadYearEditPreview();
+      resultEl.innerHTML = resultHtml;
+      _executeToast(body);
+    } catch (err) {
+      resultEl.innerHTML = _resultAlert("danger", `Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).`);
+    } finally {
+      _updateAlbumExecuteBtn();
+    }
+  }
+
+  // Ein "Übernehmen" für alle Felder: eine Bestätigung, dann nur die
+  // geänderten Felder schreiben (Album zuerst, dann Albuminterpret, dann Jahr).
   async function executeAlbumTab() {
     const album = document.getElementById("album-edit-album-select").value;
     const doAlbum = _albumState.counts.album > 0;
     const doAlbumArtist = _albumState.counts.albumartist > 0;
-    if (!album || (!doAlbum && !doAlbumArtist)) return;
+    const doYear = _albumState.counts.year > 0;
+    if (!album || (!doAlbum && !doAlbumArtist && !doYear)) return;
     const newAlbum = document.getElementById("album-edit-new-album").value.trim();
     const newAlbumArtist = document.getElementById("albumartist-edit-new-albumartist").value.trim();
+    const newYear = document.getElementById("year-edit-new-year").value.trim();
     const lines = [];
     if (doAlbum) lines.push(`Albumname: "${_albumState.current.album}" → "${newAlbum}" (${_albumState.counts.album} Dateien)`);
     if (doAlbumArtist) lines.push(`Albuminterpret: "${_albumState.current.albumartist}" → "${newAlbumArtist}" (${_albumState.counts.albumartist} Dateien)`);
+    if (doYear) lines.push(`Jahr: "${_albumState.current.year}" → "${newYear}" (${_albumState.counts.year} Dateien)`);
     const confirmed = await _artistConfirm(
       `Album "${album}" wirklich ändern?\n\n` + lines.join("\n") + "\n\n" +
       `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
@@ -954,6 +1036,7 @@
     if (!confirmed) return;
     if (doAlbum) await executeAlbumEdit({ skipConfirm: true });
     if (doAlbumArtist) await executeAlbumArtistEdit({ skipConfirm: true });
+    if (doYear) await executeYearEdit({ skipConfirm: true });
   }
 
   document.getElementById("album-edit-preview-btn").addEventListener("click", loadAlbumEditPreview);
@@ -963,6 +1046,8 @@
     _selectAlbumForEdit(event.target.value);
   });
   document.getElementById("album-edit-new-album").addEventListener("input", () => _autoAlbumPreview("album"));
+  document.getElementById("year-edit-new-year").addEventListener("input", () => _autoAlbumPreview("year"));
+  document.getElementById("year-edit-preview-btn").addEventListener("click", loadYearEditPreview);
   ["albumartist-edit-album-select", "albumartist-edit-new-albumartist"].forEach((id) => {
     document.getElementById(id).addEventListener("input", () => _autoAlbumPreview("albumartist"));
   });

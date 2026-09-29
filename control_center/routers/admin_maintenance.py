@@ -75,12 +75,14 @@ from services.library_repair.maintenance_service import (
     execute_artist_rename,
     execute_legacy_genre_cleanup,
     execute_title_edit,
+    execute_year_edit,
     preview_album_artist_edit,
     preview_album_edit,
     preview_artist_casing,
     preview_artist_rename,
     preview_legacy_genre_cleanup,
     preview_title_edit,
+    preview_year_edit,
 )
 from services.library_repair.run_tracking import RepairAlreadyRunningError
 
@@ -90,6 +92,7 @@ from ..schemas.admin_maintenance import (
     AlbumEditRequest,
     ArtistRenameRequest,
     TitleEditRequest,
+    YearEditRequest,
 )
 from ..schemas.errors import ErrorDetail
 from ..schemas.maintenance import (
@@ -293,6 +296,40 @@ def post_album_artist_edit_execute(
     try:
         result = execute_album_artist_edit(
             payload.artist, payload.album, payload.new_album_artist,
+            triggered_by=f"control_center:{user_id}",
+        )
+    except MaintenanceServiceError as e:
+        raise _validation_error(e) from e
+    except RepairAlreadyRunningError as e:
+        raise _lock_conflict_error(e) from e
+    return maintenance_execute_to_response(result)
+
+
+# ── Jahr bearbeiten (manueller Zielwert, ©day) ──────────────────────────
+
+
+@router.get("/year-edit/preview", response_model=MaintenancePreviewResponse)
+def get_year_edit_preview(
+    artist: str = Query(...), album: str = Query(...), new_year: str = Query(...),
+) -> MaintenancePreviewResponse:
+    try:
+        preview = preview_year_edit(artist, album, new_year)
+    except MaintenanceServiceError as e:
+        raise _validation_error(e) from e
+    return maintenance_preview_to_response(preview)
+
+
+@router.post(
+    "/year-edit/execute",
+    response_model=MaintenanceExecuteResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+def post_year_edit_execute(
+    payload: YearEditRequest, user_id: int = Depends(get_current_user_id),
+) -> MaintenanceExecuteResponse:
+    try:
+        result = execute_year_edit(
+            payload.artist, payload.album, payload.new_year,
             triggered_by=f"control_center:{user_id}",
         )
     except MaintenanceServiceError as e:

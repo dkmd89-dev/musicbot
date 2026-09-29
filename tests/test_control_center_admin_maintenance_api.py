@@ -750,3 +750,72 @@ async def test_albumartist_edit_rejects_path_traversal_artist_value(client, lib)
     assert response.status_code == 200
     assert response.json()["success_count"] == 0
     assert MP4(other).tags.get("aART") is None
+
+
+# ── year-edit (manueller Zielwert, ©day) — D.12b.2-Folge ────────────────
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_year_edit_preview_and_execute(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["\xa9alb"] = ["Album X"]
+    a["\xa9day"] = ["2020"]
+    a.save()
+
+    preview = await client.get(
+        "/api/v1/admin/maintenance/year-edit/preview",
+        params={"artist": "Bausa", "album": "2020 - Album X", "new_year": "2024"},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["changed_count"] == 1
+    assert MP4(p).tags["\xa9day"] == ["2020"]  # Preview veraendert nichts
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/year-edit/execute",
+        json={"artist": "Bausa", "album": "2020 - Album X", "new_year": "2024"},
+        headers=_SAME_ORIGIN,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "SUCCESS"
+    assert MP4(p).tags["\xa9day"] == ["2024"]
+    # Album-Tag bleibt unangetastet
+    assert MP4(p).tags["\xa9alb"] == ["Album X"]
+    assert MP4(p).tags["\xa9nam"] == ["T"]
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_year_edit_execute_rejected_without_origin_header(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["\xa9alb"] = ["Album X"]
+    a["\xa9day"] = ["2020"]
+    a.save()
+
+    r = await client.post(
+        "/api/v1/admin/maintenance/year-edit/execute",
+        json={"artist": "Bausa", "album": "2020 - Album X", "new_year": "2024"},
+    )
+    assert r.status_code == 403
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_year_edit_rejects_invalid_year(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["\xa9alb"] = ["Album X"]
+    a["\xa9day"] = ["2020"]
+    a.save()
+
+    r = await client.post(
+        "/api/v1/admin/maintenance/year-edit/execute",
+        json={"artist": "Bausa", "album": "2020 - Album X", "new_year": "24"},
+        headers=_SAME_ORIGIN,
+    )
+    assert r.status_code == 422

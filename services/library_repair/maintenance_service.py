@@ -51,6 +51,8 @@ from services.library_repair.executor import (
     read_current_album,
     read_current_album_artist,
     read_current_title,
+    apply_year_edit,
+    read_current_year,
 )
 from services.library_repair.journal import RepairJournal
 from services.library_repair.run_tracking import (
@@ -88,8 +90,13 @@ ACTION_TITLE_EDIT = "title-edit"
 # oben (eigene mehrstufige Telegram-only-Flows, kein CLI-Zugang).
 ACTION_ALBUM_EDIT = "album-edit"
 ACTION_ALBUM_ARTIST_EDIT = "album-artist-edit"
+ACTION_YEAR_EDIT = "year-edit"
 
 _MAX_MANUAL_VALUE_LEN = 200
+
+# Gespiegelt aus services/library_health/file_analysis.py::YEAR_MIN
+# (Test sichert Gleichheit, siehe test_library_repair_maintenance_service.py).
+_YEAR_MIN = 1900
 
 
 class MaintenanceServiceError(Exception):
@@ -343,6 +350,37 @@ def current_album_artist(artist: str, album: str, *, library_root: Optional[Path
     if not targets:
         return ""
     return read_current_album_artist(_resolve_within_library(targets[0], root))
+
+
+def _validate_year(value) -> str:
+    """4-stelliges Jahr, Bereich [_YEAR_MIN, aktuelles Jahr + 1] -
+    identische Grenzen wie services/library_health/file_analysis.py
+    (META_YEAR_INVALID)."""
+    from datetime import datetime as _dt
+
+    v = _validate_manual_value(value, label="Jahr")
+    if len(v) != 4 or not (v.isascii() and v.isdigit()):
+        raise MaintenanceServiceError(
+            f"Jahr muss vierstellig sein ({_YEAR_MIN}–{_dt.now().year + 1})."
+        )
+    year_int = int(v)
+    if not (_YEAR_MIN <= year_int <= _dt.now().year + 1):
+        raise MaintenanceServiceError(
+            f"Jahr muss zwischen {_YEAR_MIN} und {_dt.now().year + 1} liegen."
+        )
+    return v
+
+
+def current_year(artist: str, album: str, *, library_root=None) -> str:
+    """Liest den aktuellen ©day-Wert repraesentativ von der ersten Datei
+    im Album-Scope (rein lesend) - identisches Prinzip wie current_album().
+    Rueckgabe kann ein Volldatum ("2024-05-17") sein; das UI schneidet
+    fuer die Vorbelegung auf die ersten 4 Zeichen."""
+    root = _library_root(library_root)
+    targets = album_targets(artist, album, library_root=root)
+    if not targets:
+        return ""
+    return read_current_year(_resolve_within_library(targets[0], root))
 
 
 def _validate_manual_value(value: Optional[str], *, label: str) -> str:
@@ -836,6 +874,54 @@ def execute_album_edit(
         )
         _record_run(
             run_id=run_id, action=ACTION_ALBUM_EDIT, artist=artist,
+            started_at=started_at, result=result, triggered_by=triggered_by,
+        )
+        return result
+    finally:
+        release_repair_lock()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Manual Year Editing - expliziter Nutzer-Zielwert fuer ©day ueber den
+# gesamten (verzeichnisbasierten) Album-Scope.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def preview_year_edit(
+    artist: str, album: str, new_year: str, *, library_root=None,
+) -> MaintenancePreview:
+    new_year = _validate_year(new_year)
+    targets = album_targets(artist, album, library_root=library_root)
+    journal = RepairJournal(journal_path())  # nie geflusht -> read-only
+    outcomes = apply_year_edit(
+        targets, _library_root(library_root), journal, new_year=new_year, dry_run=True,
+    )
+    return MaintenancePreview(
+        action=ACTION_YEAR_EDIT, artist=artist, target_count=len(targets), outcomes=outcomes,
+    )
+
+
+def execute_year_edit(
+    artist: str, album: str, new_year: str, *, triggered_by: str,
+    library_root=None,
+) -> MaintenanceRunResult:
+    new_year = _validate_year(new_year)
+    acquire_repair_lock()
+    try:
+        started_at = now_iso()
+        run_id = str(uuid.uuid4())
+        targets = album_targets(artist, album, library_root=library_root)
+        journal = RepairJournal(journal_path())
+        outcomes = apply_year_edit(
+            targets, _library_root(library_root), journal, new_year=new_year, dry_run=False,
+        )
+        journal.flush()
+        result = _run_result_from_outcomes(
+            run_id=run_id, action=ACTION_YEAR_EDIT, artist=artist,
+            started_at=started_at, target_count=len(targets), outcomes=outcomes, dry_run=False,
+        )
+        _record_run(
+            run_id=run_id, action=ACTION_YEAR_EDIT, artist=artist,
             started_at=started_at, result=result, triggered_by=triggered_by,
         )
         return result

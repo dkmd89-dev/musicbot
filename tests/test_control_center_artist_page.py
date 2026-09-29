@@ -552,6 +552,8 @@ def test_album_tab_prefills_current_tags_and_runs_both_edits_with_one_confirm(tm
 
 
 @needs_node
+
+
 def test_album_tab_unchanged_values_send_no_preview(tmp_path):
     body = _body()
     for t in body["tracks"][:2]:
@@ -589,3 +591,39 @@ def test_editor_stays_closed_for_non_admin(tmp_path):
     out = _run_l3b(tmp_path, {"access": "USER", "ops": [{"fn": "openMetadataEditor", "args": ["artist"]}]})
     assert "md-editor+show" not in out["log"]
     assert out["els"]["artist-edit-open-btn"]["hidden"] is True
+
+
+@needs_node
+def test_album_tab_prefills_year_field_and_runs_with_one_confirm(tmp_path):
+    """D.12b.2-Folge: drittes Feld im Album-Reiter (Jahr, ©day) wird
+    vorbelegt, ein "Übernehmen" ruft nur die geaenderten Endpunkte auf."""
+    body = _body()
+    key = _LONG
+    for t in body["tracks"][:2]:
+        t.update(album="Powers", album_artist="Bausa", year="2020")
+    out = _run_l3b(tmp_path, {"tabler": True, "confirmAnswer": True, "routesContains": [
+        {"match": "year-edit/preview", "status": 200, "body": _preview_body(2)},
+        {"match": "year-edit/execute", "status": 200,
+         "body": {"success_count": 2, "failed_count": 0, "skipped_count": 0}},
+    ], "ops": [
+        {"fn": "renderArtistDetail", "args": ["@artist-content", body]},
+        {"fn": "_selectAlbumForEdit", "args": [key]},
+        {"input": "year-edit-new-year", "value": "2024"},
+        {"wait": 800},
+        {"fn": "executeAlbumTab"},
+    ]})
+
+    # Feld traegt nach dem Input den Nutzer-Wert
+    assert out["els"]["year-edit-new-year"]["value"] == "2024"
+
+    # Genau eine Bestaetigung - die Bestaetigung nennt den Alt-Wert (2020)
+    # und den neuen Wert (2024), das ist der eigentliche Beleg fuer die
+    # Vorbelegung aus den Track-Daten.
+    confirms = [e for e in out["log"] if e.startswith("ccConfirm:")]
+    assert len(confirms) == 1, out["log"]
+    opts = json.loads(confirms[0][len("ccConfirm:"):])
+    assert 'Jahr: "2020" → "2024"' in opts["text"], opts["text"]
+
+    # Nur year-edit/execute wird geschickt (Album/Albumartist unveraendert)
+    posts = [c for c in out["calls"] if c.startswith("POST")]
+    assert [p.split("/maintenance/")[1] for p in posts] == ["year-edit/execute"]

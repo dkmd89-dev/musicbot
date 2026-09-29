@@ -1067,3 +1067,161 @@ class TestAlbumArtistEditFlow:
                 )
         finally:
             rt.release_repair_lock()
+
+
+# ── Manual Year Editing: Preview + Execute (D.12b.2-Folge) ─────────────
+
+
+@requires_ffmpeg
+class TestYearEditFlow:
+    """Charakterisierung des Jahr-Editors (Album-Scope, ©day). Deckt
+    Preview, Idempotenz, Volldatum-Kuerzung, Bereichsvalidierung,
+    Album-Scope-Erzwingung und Spiegel-Konstante _YEAR_MIN ab."""
+
+    def _set_year(self, path, value):
+        a = MP4(path)
+        a["\xa9day"] = [value]
+        a.save()
+
+    def _year(self, path):
+        raw = (MP4(path).tags or {}).get("\xa9day", [""])
+        return raw[0] if raw else ""
+
+    def test_preview_is_read_only(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album="Album X")
+        self._set_year(p, "2020")
+        before = p.read_bytes()
+
+        preview = ms.preview_year_edit("Bausa", "2020 - Album X", "2024", library_root=lib)
+        assert preview.read_only is True
+        assert preview.target_count == 1
+        assert preview.changed_count == 1
+        assert p.read_bytes() == before
+        assert not rt.journal_path().exists()
+
+    def test_identical_value_yields_zero_changed(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album="Album X")
+        self._set_year(p, "2024")
+
+        preview = ms.preview_year_edit("Bausa", "2020 - Album X", "2024", library_root=lib)
+        assert preview.changed_count == 0
+
+    def test_execute_writes_only_year(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album="Album X", artist=["Bausa"])
+        self._set_year(p, "2020")
+        tags_before = dict(MP4(p).tags or {})
+
+        result = ms.execute_year_edit(
+            "Bausa", "2020 - Album X", "2024", triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert result.success_count == 1
+        assert self._year(p) == "2024"
+        tags_after = dict(MP4(p).tags or {})
+        for k, v in tags_before.items():
+            if k != "\xa9day":
+                assert tags_after[k] == v, f"{k} veraendert"
+
+        history = rt.load_repair_history()
+        assert len(history) == 1
+        assert history[0]["level"] == "YEAR_EDIT"
+        assert rt.is_repair_running() is False
+
+    def test_execute_unifies_mixed_years_across_album(self, lib):
+        """Album-Scope: alle Dateien werden auf dasselbe Jahr gesetzt -
+        deckt Health-Regel ALBUM_YEAR_INCONSISTENT."""
+        p1 = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        p2 = lib / "Bausa" / "2020 - Album X" / "b.m4a"
+        _m4a(p1, album="Album X")
+        _m4a(p2, album="Album X")
+        self._set_year(p1, "2019")
+        self._set_year(p2, "2021")
+
+        result = ms.execute_year_edit(
+            "Bausa", "2020 - Album X", "2020", triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert result.success_count == 2
+        assert self._year(p1) == "2020"
+        assert self._year(p2) == "2020"
+
+    def test_full_date_is_reduced_to_four_digit_year(self, lib):
+        """D2: "2024-05-17" wird auf "2024" gekuerzt."""
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album="Album X")
+        self._set_year(p, "2024-05-17")
+
+        preview = ms.preview_year_edit("Bausa", "2020 - Album X", "2024", library_root=lib)
+        assert preview.changed_count == 1
+
+        result = ms.execute_year_edit(
+            "Bausa", "2020 - Album X", "2024", triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert self._year(p) == "2024"
+
+    @pytest.mark.parametrize("bad_value", ["", "   ", "24", "20245", "abcd", "1899", "2150"])
+    def test_execute_rejects_invalid_year(self, lib, bad_value):
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album="Album X")
+        self._set_year(p, "2020")
+
+        with pytest.raises(ms.MaintenanceServiceError):
+            ms.execute_year_edit(
+                "Bausa", "2020 - Album X", bad_value, triggered_by="test", library_root=lib,
+            )
+
+    def test_execute_accepts_boundary_values(self, lib):
+        from datetime import datetime
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album="Album X")
+        self._set_year(p, "2020")
+
+        r1 = ms.execute_year_edit("Bausa", "2020 - Album X", "1900",
+                                  triggered_by="test", library_root=lib)
+        assert r1.status == rt.STATUS_SUCCESS
+        r2 = ms.execute_year_edit("Bausa", "2020 - Album X", str(datetime.now().year + 1),
+                                  triggered_by="test", library_root=lib)
+        assert r2.status == rt.STATUS_SUCCESS
+
+    def test_execute_shares_lock_with_repair_flow(self, lib):
+        p = lib / "Bausa" / "2020 - Album X" / "a.m4a"
+        _m4a(p, album="Album X")
+        self._set_year(p, "2020")
+
+        rt.acquire_repair_lock()
+        try:
+            with pytest.raises(rt.RepairAlreadyRunningError):
+                ms.execute_year_edit(
+                    "Bausa", "2020 - Album X", "2024",
+                    triggered_by="test", library_root=lib,
+                )
+        finally:
+            rt.release_repair_lock()
+
+    def test_execute_on_single_file_scope(self, lib):
+        p = lib / "Apache 207" / "Singles" / "2019 - Roller.m4a"
+        _m4a(p, album="Roller")
+        self._set_year(p, "2019")
+        other = lib / "Apache 207" / "Singles" / "2020 - Powerbank.m4a"
+        _m4a(other, album="Powerbank")
+        self._set_year(other, "2020")
+
+        result = ms.execute_year_edit(
+            "Apache 207", "Singles/2019 - Roller.m4a", "2024",
+            triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert result.success_count == 1
+        assert self._year(p) == "2024"
+        assert self._year(other) == "2020"
+
+    def test_year_min_equals_health_constant(self):
+        """Spiegel-Konstante _YEAR_MIN muss mit der Health-Analyse
+        uebereinstimmen, sonst lehnt der Editor Jahre ab, die der
+        Health-Check als gueltig ansieht."""
+        from services.library_health import file_analysis
+        assert ms._YEAR_MIN == file_analysis.YEAR_MIN
