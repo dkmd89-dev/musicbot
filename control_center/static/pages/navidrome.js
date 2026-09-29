@@ -181,7 +181,8 @@ function _navSongRow(s, opts) {
     : `<span class="avatar avatar-sm bg-teal-lt">${ccIcon("music")}</span>`;
   return `
     <div class="list-group-item list-group-item-action nav-song-row" role="button" tabindex="0"
-         data-song-id="${_navEsc(s.id)}" data-np-list="${_navEsc(o.key || "")}" data-np-index="${o.index ?? 0}">
+         data-song-id="${_navEsc(s.id)}" data-np-list="${_navEsc(o.key || "")}" data-np-index="${o.index ?? 0}"
+         data-starred="${s.starred ? 1 : 0}">
       <div class="row align-items-center g-2">
         <div class="col-auto nav-song-lead">${lead}</div>
         <div class="col min-w-0">
@@ -192,6 +193,15 @@ function _navSongRow(s, opts) {
         <div class="col-auto" style="white-space:nowrap;">
           <button type="button" class="btn btn-icon btn-sm btn-ghost-secondary" data-np-add
                   title="Zur Warteschlange" aria-label="Zur Warteschlange hinzufügen">${ccIcon("plus")}</button>
+          <div class="dropdown d-inline-block">
+            <button type="button" class="btn btn-icon btn-sm btn-ghost-secondary" data-bs-toggle="dropdown"
+                    aria-expanded="false" title="Weitere Aktionen" aria-label="Weitere Aktionen">${ccIcon("dots")}</button>
+            <div class="dropdown-menu dropdown-menu-end">
+              <button type="button" class="dropdown-item" data-np-menu="next">Als Nächstes</button>
+              <button type="button" class="dropdown-item" data-np-menu="fav">${_navFavLabel(s.starred)}</button>
+              <button type="button" class="dropdown-item" data-np-menu="playlist">Zur Playlist hinzufügen…</button>
+            </div>
+          </div>
           <a href="${_navEsc(_navHref("song", s.id))}" class="btn btn-icon btn-sm btn-ghost-secondary nav-song-link"
              title="Details" aria-label="Song-Details">${ccIcon("info-circle")}</a>
         </div>
@@ -202,7 +212,18 @@ function _navSongSub(s) {
   return [s.artist || "", s.album || ""].filter(Boolean).join(" · ");
 }
 
-// Abspielen / Zufällig / Als Nächstes für die Liste `key` (Detailseiten).
+function _navFavLabel(starred) {
+  return starred ? "Aus Favoriten entfernen" : "Zu Favoriten hinzufügen";
+}
+// Favorit-Knopf (Stern) für Song-, Album- und Artist-Seiten (N5).
+function _navFavButton(kind, id, starred) {
+  return `<button type="button" class="btn btn-icon ${starred ? "nav-fav-on" : ""}" data-fav-kind="${kind}"
+    data-fav-id="${_navEsc(id)}" data-fav-on="${starred ? 1 : 0}" aria-pressed="${starred ? "true" : "false"}"
+    title="${_navFavLabel(starred)}" aria-label="${_navFavLabel(starred)}">${ccIcon(starred ? "star-filled" : "star")}</button>`;
+}
+
+// Abspielen / Zufällig / Als Nächstes / Zur Playlist für die Liste `key` (Detailseiten).
+// opts.shuffle=false blendet "Zufällig" aus, opts.fav ist ein optionaler Favorit-Knopf.
 function _navPlayButtons(key, opts) {
   const withShuffle = !(opts && opts.shuffle === false);
   return `<div class="d-flex flex-wrap gap-2 mb-3">
@@ -212,6 +233,9 @@ function _navPlayButtons(key, opts) {
       ${ccIcon("shuffle", "me-1")}Zufällig</button>` : ""}
     <button type="button" class="btn" data-np-play="next" data-np-list="${_navEsc(key)}">
       ${ccIcon("playlist", "me-1")}Als Nächstes</button>
+    <button type="button" class="btn" data-np-play="playlist" data-np-list="${_navEsc(key)}">
+      ${ccIcon("plus", "me-1")}Zur Playlist</button>
+    ${(opts && opts.fav) || ""}
   </div>`;
 }
 
@@ -257,6 +281,7 @@ async function _renderArtistView(id) {
         <div class="text-secondary">${albumCount} ${albumCount === 1 ? "Album" : "Alben"}</div>
       </div>
       <a class="btn" href="${_navEsc(_navHref("top", data.id))}">${ccIcon("flame", "me-1")}Top Songs</a>
+      ${_navFavButton("artist", data.id, data.starred)}
     </div>
     ${_navSection("Alben", "disc", albums)}`;
 }
@@ -284,7 +309,8 @@ async function _renderAlbumView(id) {
         <div class="page-pretitle">Album</div>
         <h2 class="mb-1">${_navEsc(data.name)}</h2>
         <div class="text-secondary mb-3">${artist}${meta.length ? " · " + meta.join(" · ") : ""}</div>
-        ${hasSongs ? _navPlayButtons("detail") : ""}
+        ${hasSongs ? _navPlayButtons("detail", { fav: _navFavButton("album", data.id, data.starred) })
+                   : `<div class="mb-3">${_navFavButton("album", data.id, data.starred)}</div>`}
       </div>
     </div>
     ${songs}`;
@@ -306,7 +332,7 @@ async function _renderSongView(id) {
         <h2 class="mb-1">${_navEsc(data.title)}</h2>
         <div class="text-secondary">${artist}</div>
         <div class="text-secondary small mb-3">${album}</div>
-        ${_navPlayButtons("detail", { shuffle: false })}
+        ${_navPlayButtons("detail", { shuffle: false, fav: _navFavButton("song", data.id, data.starred) })}
       </div>
     </div>
     <div class="card"><div class="card-body"><div class="datagrid">
@@ -423,14 +449,16 @@ function _navPlaySongsFrom(list, index) {
 function _navOnPlayClick(ev) {
   const player = _navPlayer();
   const t = ev.target && ev.target.closest ? ev.target : null;
-  if (!player || !t) return;
+  if (!t) return;
   const playBtn = t.closest("[data-np-play]");
   if (playBtn) {
     ev.preventDefault?.();
     const list = _navLists[playBtn.dataset.npList];
     if (!list || !list.songs.length) return;
     const kind = playBtn.dataset.npPlay;
-    if (kind === "all") player.playList(list.songs, 0, list.ctx);
+    if (kind === "playlist") _navAddToPlaylist(list.songs);
+    else if (!player) return;
+    else if (kind === "all") player.playList(list.songs, 0, list.ctx);
     else if (kind === "shuffle") player.playList(list.songs, 0, list.ctx, { shuffle: true });
     else if (kind === "next") player.addNext(list.songs, list.ctx);
     return;
@@ -439,12 +467,24 @@ function _navOnPlayClick(ev) {
   if (!row) return;
   const list = _navLists[row.dataset.npList];
   const index = Number(row.dataset.npIndex);
-  if (t.closest("[data-np-add]")) {
+  const song = list && list.songs[index];
+  const menu = t.closest("[data-np-menu]");
+  if (menu) {                                   // "⋯"-Menü der Zeile (N5)
     ev.preventDefault?.();
-    if (list && list.songs[index]) player.addEnd([list.songs[index]], list.ctx);
+    if (!song) return;
+    const kind = menu.dataset.npMenu;
+    if (kind === "next" && player) player.addNext([song], list.ctx);
+    else if (kind === "fav") _navToggleSongFavorite(song, row, menu);
+    else if (kind === "playlist") _navAddToPlaylist([song]);
     return;
   }
-  if (t.closest("a")) return;                  // Details-Link: normal navigieren
+  if (t.closest("[data-np-add]")) {
+    ev.preventDefault?.();
+    if (song && player) player.addEnd([song], list.ctx);
+    return;
+  }
+  if (t.closest("[data-bs-toggle='dropdown']")) return;   // Menü öffnen, nicht abspielen
+  if (t.closest("a")) return;                              // Details-Link: normal navigieren
   _navPlaySongsFrom(list, index);
 }
 // Enter/Leertaste auf einer fokussierten Zeile = abspielen (Zeilen sind role="button").
@@ -454,6 +494,132 @@ function _navOnRowKey(ev) {
   if (!t || !t.classList || !t.classList.contains("nav-song-row")) return;
   ev.preventDefault?.();
   _navPlaySongsFrom(_navLists[t.dataset.npList], Number(t.dataset.npIndex));
+}
+
+// ---- Favoriten setzen/entfernen (N5) ---------------------------------------
+async function _navSetFavorite(kind, id, on) {
+  try {
+    const { base } = _navEndpoints();
+    await ccApi(on ? "PUT" : "DELETE", `${base}/favorites/${kind}/${encodeURIComponent(id)}`);
+  } catch (err) {
+    ccToast("error", "Favorit nicht geändert", err.message);
+    return false;
+  }
+  ccToast("ok", on ? "Zu Favoriten hinzugefügt" : "Aus Favoriten entfernt");
+  if (kind === "song") _navPlayer()?.setStarred(id, on);
+  if (_navState.tab === "favorites") {          // Liste sofort aktualisieren
+    _navState.loaded.favorites = true;
+    loadFavorites();
+  } else {
+    _navState.loaded.favorites = false;
+  }
+  if (_navState.loaded.start) loadShelfFavorites();
+  return true;
+}
+
+async function _navToggleSongFavorite(song, row, menuItem) {
+  const on = !song.starred;
+  if (!(await _navSetFavorite("song", song.id, on))) return;
+  song.starred = on;
+  row.dataset.starred = on ? "1" : "0";
+  menuItem.textContent = _navFavLabel(on);
+}
+
+// Sterne auf Song-/Album-/Artist-Seiten.
+async function _navOnFavClick(ev) {
+  const t = ev.target && ev.target.closest ? ev.target : null;
+  const btn = t && t.closest("[data-fav-kind]");
+  if (!btn) return;
+  ev.preventDefault?.();
+  const on = btn.dataset.favOn !== "1";
+  if (!(await _navSetFavorite(btn.dataset.favKind, btn.dataset.favId, on))) return;
+  btn.dataset.favOn = on ? "1" : "0";
+  btn.classList.toggle("nav-fav-on", on);
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+  btn.title = _navFavLabel(on);
+  btn.innerHTML = ccIcon(on ? "star-filled" : "star");
+}
+
+// ---- Zur Playlist hinzufügen (N5) --------------------------------------------
+// Liefert {id, name}, {create: true} oder null (abgebrochen).
+async function _navChoosePlaylist() {
+  let playlists;
+  try {
+    playlists = (await _navFetch("/playlists?page=0&page_size=100")).items || [];
+  } catch (err) {
+    ccToast("error", "Playlists nicht geladen", err.message);
+    return null;
+  }
+  const Modal = window.tabler && window.tabler.Modal;
+  const el = document.getElementById("nav-playlist-picker");
+  if (!Modal || !el) {                           // ohne Tabler-JS: Nummernabfrage
+    const lines = playlists.map((p, i) => `${i + 1}: ${p.name}`).join("\n");
+    const answer = await ccPrompt({
+      title: "Zur Playlist hinzufügen", text: `Nummer wählen (0 = neue Playlist):\n${lines}`,
+      label: "Nummer", required: true, confirmLabel: "Weiter",
+    });
+    if (answer === null) return null;
+    const n = parseInt(answer, 10);
+    return n === 0 ? { create: true } : (playlists[n - 1] || null);
+  }
+  const list = document.getElementById("nav-playlist-picker-list");
+  const newBtn = document.getElementById("nav-playlist-picker-new");
+  list.innerHTML = playlists.length
+    ? `<div class="list-group list-group-flush">${playlists.map(p => `
+        <button type="button" class="list-group-item list-group-item-action d-flex align-items-center gap-2"
+                data-pl-id="${_navEsc(p.id)}" data-pl-name="${_navEsc(p.name)}">
+          ${ccIcon("playlist", "text-teal")}<span class="text-truncate flex-fill">${_navEsc(p.name)}</span>
+          <span class="badge bg-secondary-lt">${_navEsc(String(p.song_count))}</span>
+        </button>`).join("")}</div>`
+    : `<div class="p-3 text-secondary">Noch keine Playlists - lege unten eine neue an.</div>`;
+  return new Promise((resolve) => {
+    let result = null;
+    const modal = Modal.getOrCreateInstance(el);
+    const onPick = (ev) => {
+      const b = ev.target && ev.target.closest ? ev.target.closest("[data-pl-id]") : null;
+      if (b) { result = { id: b.dataset.plId, name: b.dataset.plName }; modal.hide(); }
+    };
+    const onNew = () => { result = { create: true }; modal.hide(); };
+    const onHidden = () => {
+      list.removeEventListener("click", onPick);
+      newBtn?.removeEventListener("click", onNew);
+      el.removeEventListener("hidden.bs.modal", onHidden);
+      resolve(result);
+    };
+    list.addEventListener("click", onPick);
+    newBtn?.addEventListener("click", onNew);
+    el.addEventListener("hidden.bs.modal", onHidden);
+    modal.show();
+  });
+}
+
+const _NAV_PLAYLIST_ADD_MAX = 500;   // wie das Backend
+
+async function _navAddToPlaylist(songs) {
+  const all = (songs || []).map(s => s.id).filter(Boolean);
+  const ids = all.slice(0, _NAV_PLAYLIST_ADD_MAX);
+  if (!ids.length) return;
+  const choice = await _navChoosePlaylist();
+  if (!choice) return;
+  const { base } = _navEndpoints();
+  let target = choice;
+  if (choice.create) {
+    const name = _navCleanName(await ccPrompt({
+      title: "Neue Playlist", label: "Name", required: true, confirmLabel: "Anlegen",
+    }));
+    if (!name) return;
+    try {
+      const created = await ccApi("POST", `${base}/playlists`, { name });
+      target = { id: created.playlist_id, name: created.name || name };
+    } catch (err) { ccToast("error", "Playlist nicht angelegt", err.message); return; }
+    if (!target.id) { ccToast("error", "Playlist nicht angelegt", "Navidrome lieferte keine Playlist-ID."); return; }
+  }
+  try {
+    await ccApi("POST", `${base}/playlists/${encodeURIComponent(target.id)}/songs`, { song_ids: ids });
+  } catch (err) { ccToast("error", "Nicht zur Playlist hinzugefügt", err.message); return; }
+  _navState.loaded.playlists = false;            // Liste zeigt beim nächsten Öffnen die neue Anzahl
+  ccToast("ok", `${ids.length} Titel zu „${target.name}“ hinzugefügt`,
+    all.length > ids.length ? `Nur die ersten ${ids.length} von ${all.length} Titeln.` : "");
 }
 
 // Hash entfernen, ohne die Seite neu zu laden (feuert kein hashchange).
@@ -872,6 +1038,7 @@ function initPage() {
     document.getElementById("nav-playlist-new")?.addEventListener("click", createPlaylist);
     document.getElementById("nav-playlists-list")?.addEventListener("click", _navOnPlaylistClick);
     document.getElementById("nav-detail-content")?.addEventListener("click", _navOnPlaylistClick);
+    document.getElementById("nav-detail-content")?.addEventListener("click", _navOnFavClick);
     for (const id of ["nav-detail-content", "nav-search-results", "nav-favorites-list"]) {
       document.getElementById(id)?.addEventListener("click", _navOnPlayClick);
       document.getElementById(id)?.addEventListener("keydown", _navOnRowKey);

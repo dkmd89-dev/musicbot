@@ -4,7 +4,7 @@
 {% block content %}
 {# CC-UI Navidrome N1 (Nutzerfreigabe 2026-09-29): Musik-Bereich im Stil von
    Symfonium — Suche im Kopf, Pill-Reiter, Start mit Regalen, Cover-/Artist-
-   Raster; N2: Detailseiten per Hash-Routing statt Modal; N4: Player-Leiste. Element-IDs
+   Raster; N2: Detailseiten per Hash-Routing statt Modal; N4: Player-Leiste; N5: Favoriten, Scrobble, Playlist-Auswahl. Element-IDs
    sind Vertrag mit static/pages/navidrome.js. #}
 <div class="page-header d-print-none mb-3">
   <div class="row g-2 align-items-center">
@@ -164,6 +164,25 @@
   </div>
   <div class="offcanvas-body">
     <pre id="navidrome-scan-output" class="cc-terminal">Noch kein Scan ausgeführt.</pre>
+  </div>
+</div>
+
+<!-- Playlist-Auswahl für "Zur Playlist hinzufügen" (N5) -->
+<div class="modal modal-blur fade" id="nav-playlist-picker" tabindex="-1" role="dialog"
+     aria-hidden="true" aria-labelledby="nav-playlist-picker-title">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title" id="nav-playlist-picker-title">Zur Playlist hinzufügen</h3>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+      </div>
+      <div class="modal-body p-0" id="nav-playlist-picker-list"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn me-auto" id="nav-playlist-picker-new">
+          <svg class="icon me-1"><use href="#i-plus"/></svg>Neue Playlist…
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 

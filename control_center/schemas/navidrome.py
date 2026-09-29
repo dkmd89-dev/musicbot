@@ -36,6 +36,7 @@ class ArtistItem(BaseModel):
     id: str
     name: str
     album_count: Optional[int] = None
+    starred: bool = False
 
 
 class AlbumItem(BaseModel):
@@ -46,6 +47,7 @@ class AlbumItem(BaseModel):
     cover_art: Optional[str] = None
     song_count: Optional[int] = None
     year: Optional[int] = None
+    starred: bool = False
 
 
 class SongItem(BaseModel):
@@ -58,6 +60,7 @@ class SongItem(BaseModel):
     duration: Optional[int] = None
     track: Optional[int] = None
     year: Optional[int] = None
+    starred: bool = False
 
 
 # ===== Artists =====
@@ -74,6 +77,7 @@ class ArtistDetailResponse(BaseModel):
     id: str
     name: str
     album_count: Optional[int] = None
+    starred: bool = False
     albums: List[AlbumItem] = Field(default_factory=list)
 
 
@@ -96,6 +100,7 @@ class AlbumDetailResponse(BaseModel):
     year: Optional[int] = None
     song_count: Optional[int] = None
     duration: Optional[int] = None
+    starred: bool = False
     songs: List[SongItem] = Field(default_factory=list)
 
 
@@ -174,7 +179,32 @@ class PlaylistMutationResponse(BaseModel):
     name: Optional[str] = None
 
 
+class PlaylistAddSongsRequest(BaseModel):
+    song_ids: List[str]
+
+
+class PlaylistAddSongsResponse(BaseModel):
+    success: bool
+    playlist_id: str
+    added: int
+
+
 # ===== Favoriten =====
+
+class FavoriteMutationResponse(BaseModel):
+    success: bool
+    kind: str
+    id: str
+    starred: bool
+
+
+class ScrobbleRequest(BaseModel):
+    submission: bool = True
+
+
+class ScrobbleResponse(BaseModel):
+    success: bool
+
 
 class FavoritesResponse(BaseModel):
     artists: List[ArtistItem] = Field(default_factory=list)
