@@ -268,7 +268,7 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
    Umsetzung, Credentials dürfen nie in URLs, Logs oder im Browser landen (CLAUDE.md §12).
 
    **Stufenplan (Nutzerfreigabe 2026-09-29):** N1 Gerüst + Startseite mit Regalen + Raster +
-   Suche (erledigt 2026-09-29) → N2 Detailseiten mit Hash-Routing statt Modal → N3 Stream-API
+   Suche (erledigt 2026-09-29) → N2 Detailseiten mit Hash-Routing statt Modal (erledigt 2026-09-29) → N3 Stream-API
    → N4 Player-Leiste (nur auf der Navidrome-Seite, keine globale Shell-Leiste) → N5 Favoriten
    setzen, Scrobble (damit Browser-Wiedergaben in Statistics zählen), Zur-Playlist-hinzufügen.
    Browse/Stream/Favoriten/Scrobble laufen über das in der Bot-Konfiguration hinterlegte
