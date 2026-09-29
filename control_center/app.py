@@ -43,6 +43,7 @@ from .routers import (
     library_overview,
     logger,
     logs,
+    mapping_admin,
     metadata,
     metadata_actions,
     navidrome,
@@ -122,6 +123,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_duplicates.router)
     app.include_router(admin_operations.router)
     app.include_router(admin_runtime.router)
+    app.include_router(mapping_admin.router)
     app.include_router(jobs.router)
     app.include_router(jobs.user_router)
     app.include_router(logs.router)
