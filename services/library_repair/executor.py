@@ -88,6 +88,7 @@ MAINTENANCE_ACTION_CODES = frozenset(
         "ALBUM_MANUAL_EDIT",
         "ALBUM_ARTIST_MANUAL_EDIT",
         "YEAR_MANUAL_EDIT",
+        "TRACK_NUMBER_MANUAL_EDIT",
     }
 )
 
@@ -1449,6 +1450,162 @@ def apply_year_edit(
                     tmp.unlink(missing_ok=True)
                 except OSError:
                     pass
+        outcomes.append(oc)
+
+    return outcomes
+
+
+def read_current_track_number(path: Path) -> Optional[int]:
+    """Liest die aktuelle Tracknummer EINER Datei (repraesentativ fuer die
+    Preview-/Eingabe-Anzeige, rein lesend) - None, wenn kein trkn-Atom
+    vorhanden ist. MP4-Atom: [(track_number, total_tracks)]."""
+    tags = _full_tags(path)
+    trkn = tags.get("trkn")
+    if not trkn or not trkn[0]:
+        return None
+    return int(trkn[0][0])
+
+
+def read_current_track_total(path: Path) -> int:
+    """Liest die aktuelle Gesamtzahl der Tracks im trkn-Atom (zweiter
+    Wert) - 0, wenn nicht vorhanden (mutagen-Standard bei Neuanlage)."""
+    tags = _full_tags(path)
+    trkn = tags.get("trkn")
+    if not trkn or not trkn[0]:
+        return 0
+    try:
+        return int(trkn[0][1])
+    except (IndexError, TypeError, ValueError):
+        return 0
+
+
+def _write_track_number_atom(src: Path, number: int, total: int) -> Path:
+    """Setzt NUR trkn (identisches Sibling-Tmp-Muster wie
+    _write_album_atom()). mutagen-Atomformat: [(track, total)]."""
+    from mutagen.mp4 import MP4
+
+    tmp = src.with_name(f".{src.stem}.repairtmp_{int(time.time() * 1000)}{src.suffix}")
+    shutil.copy2(src, tmp)
+    audio = MP4(tmp)
+    audio["trkn"] = [(int(number), int(total))]
+    audio.save()
+    return tmp
+
+
+def apply_track_number_edit(
+    targets: list[str],
+    library_root: Path,
+    journal: RepairJournal,
+    *,
+    new_track_number: int,
+    dry_run: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> list[ExecOutcome]:
+    """Manual Track Number Editing: setzt trkn auf eine explizite
+    Nutzer-Zahl (1..999). `targets` enthaelt in der Praxis IMMER genau
+    eine Datei (Ein-Track-Scope wie Titel). Die vorhandene Gesamtzahl
+    bleibt erhalten, wenn sie gesetzt war (mutagen-Konvention)."""
+    library_root = Path(library_root)
+    if backup_dir is None:
+        backup_dir = library_root.parent / ".library_repair_backups"
+    backup_dir = Path(backup_dir)
+    outcomes: list[ExecOutcome] = []
+
+    for rel in sorted(set(targets)):
+        path = library_root / rel
+        oc = ExecOutcome(
+            file=rel, issue_code="TRACK_NUMBER_MANUAL_EDIT",
+            action="TRACK_NUMBER_MANUAL_EDIT", status="SKIPPED",
+        )
+
+        reason = safety_check(path, library_root)
+        if reason:
+            oc.reason = f"Safety: {reason}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        try:
+            tags = _full_tags(path)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", f"Tag-Lesen: {e!r}"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        cur_number = read_current_track_number(path)
+        cur_total = read_current_track_total(path)
+
+        if cur_number == new_track_number:
+            oc.reason = "bereits korrekt"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        oc.before = {"track_number": cur_number}
+        oc.after = {"track_number": new_track_number}
+
+        if dry_run:
+            oc.status = "DRY_RUN"
+            outcomes.append(oc)
+            journal.record(_je_named(rel, oc, dry_run))
+            continue
+
+        sha_before = _sha256(path)
+        audio_before = _audio_essence_md5(path)
+        exclude = {"trkn"}
+        others_before = tags_fingerprint(tags, exclude)
+        backup = backup_dir / f"{rel}.{int(time.time() * 1000)}.bak"
+        tmp = None
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            tmp = _write_track_number_atom(path, new_track_number, cur_total)
+            verify_number = read_current_track_number(tmp)
+            if verify_number != new_track_number:
+                raise RuntimeError(f"trkn falsch: {verify_number!r} != {new_track_number!r}")
+            verify_total = read_current_track_total(tmp)
+            if verify_total != cur_total:
+                raise RuntimeError(f"trkn total veraendert: {verify_total!r} != {cur_total!r}")
+            verify_tags = _full_tags(tmp)
+            others_after = tags_fingerprint(verify_tags, exclude)
+            if others_after != others_before:
+                raise RuntimeError("Andere Atome wurden veraendert (Fingerprint-Diff)")
+            audio_tmp = _audio_essence_md5(tmp)
+            if audio_tmp != audio_before or audio_tmp.startswith("ERROR"):
+                raise RuntimeError(f"Audio-Essenz veraendert ({audio_before} -> {audio_tmp})")
+            tmp.replace(path)
+            tmp = None
+            oc.status = "SUCCESS"
+            oc.backup_path = str(backup)
+        except Exception as e:  # noqa: BLE001
+            oc.status, oc.reason = "FAILED", repr(e)
+            try:
+                if backup.exists():
+                    backup.replace(path)
+            except OSError:
+                pass
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        finally:
+            if oc.status == "FAILED":
+                try:
+                    Path(backup).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        je = _je_named(rel, oc, dry_run)
+        je.sha256_before = sha_before
+        je.sha256_after = _sha256(path)
+        je.audio_sha256_before = audio_before
+        je.audio_sha256_after = (
+            _audio_essence_md5(path) if oc.status in _WROTE_TO_DISK else audio_before
+        )
+        je.backup_path = oc.backup_path
+        journal.record(je)
         outcomes.append(oc)
 
     return outcomes

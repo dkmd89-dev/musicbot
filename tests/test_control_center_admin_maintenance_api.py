@@ -819,3 +819,68 @@ async def test_year_edit_rejects_invalid_year(client, lib):
         headers=_SAME_ORIGIN,
     )
     assert r.status_code == 422
+
+
+# ── track-number-edit (manueller Zielwert, trkn) ────────────────────────
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_track_number_edit_preview_and_execute(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["trkn"] = [(1, 10)]
+    a.save()
+
+    preview = await client.get(
+        "/api/v1/admin/maintenance/track-number-edit/preview",
+        params={"artist": "Bausa", "rel_path": "Bausa/2020 - Album X/01 - a.m4a", "new_track_number": 7},
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["changed_count"] == 1
+    assert (MP4(p).tags or {})["trkn"][0][0] == 1  # Preview veraendert nichts
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/track-number-edit/execute",
+        json={"artist": "Bausa", "rel_path": "Bausa/2020 - Album X/01 - a.m4a", "new_track_number": 7},
+        headers=_SAME_ORIGIN,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "SUCCESS"
+    assert (MP4(p).tags or {})["trkn"][0][0] == 7
+    # Total bleibt erhalten
+    assert (MP4(p).tags or {})["trkn"][0][1] == 10
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_track_number_edit_execute_rejected_without_origin_header(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["trkn"] = [(1, 10)]
+    a.save()
+
+    r = await client.post(
+        "/api/v1/admin/maintenance/track-number-edit/execute",
+        json={"artist": "Bausa", "rel_path": "Bausa/2020 - Album X/01 - a.m4a", "new_track_number": 7},
+    )
+    assert r.status_code == 403
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_track_number_edit_rejects_out_of_range(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p)
+    a = MP4(p)
+    a["trkn"] = [(1, 10)]
+    a.save()
+
+    r = await client.post(
+        "/api/v1/admin/maintenance/track-number-edit/execute",
+        json={"artist": "Bausa", "rel_path": "Bausa/2020 - Album X/01 - a.m4a", "new_track_number": 1000},
+        headers=_SAME_ORIGIN,
+    )
+    assert r.status_code == 422

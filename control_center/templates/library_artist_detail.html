@@ -120,17 +120,35 @@
         <div id="title-edit-list"></div>
         <!-- Bearbeitungs-Box: wird unter den gewählten Track verschoben -->
         <div id="title-edit-box" class="border border-teal rounded p-2 mb-2" hidden>
-          <div class="input-group input-group-sm">
-            <input type="text" id="title-edit-new-title" class="form-control" autocomplete="off" aria-label="Neuer Titel">
-            <button id="title-edit-preview-btn" type="button" class="btn" title="Vorschau aktualisieren" aria-label="Vorschau aktualisieren"><svg class="icon"><use href="#i-refresh"/></svg></button>
+          <div class="row g-2">
+            <div class="col-12 col-md-8">
+              <label class="form-label small" for="title-edit-new-title">Titel (©nam)</label>
+              <div class="input-group input-group-sm">
+                <input type="text" id="title-edit-new-title" class="form-control" autocomplete="off" aria-label="Neuer Titel">
+                <button id="title-edit-preview-btn" type="button" class="btn" title="Vorschau Titel aktualisieren" aria-label="Vorschau Titel aktualisieren"><svg class="icon"><use href="#i-refresh"/></svg></button>
+              </div>
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small" for="track-number-edit-new-number">Tracknr. (trkn)</label>
+              <div class="input-group input-group-sm">
+                <input type="number" id="track-number-edit-new-number" class="form-control" min="1" max="999" inputmode="numeric" aria-label="Neue Tracknummer">
+                <button id="track-number-edit-preview-btn" type="button" class="btn" title="Vorschau Tracknummer aktualisieren" aria-label="Vorschau Tracknummer aktualisieren"><svg class="icon"><use href="#i-refresh"/></svg></button>
+              </div>
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small invisible" aria-hidden="true">.</label>
+              <div id="track-number-edit-hint" class="small text-secondary"></div>
+            </div>
           </div>
           <div id="title-edit-content" class="md-diff mt-3" aria-live="polite"></div>
+          <div id="track-number-edit-content" class="md-diff mt-2" aria-live="polite"></div>
           <div id="title-edit-result-content" class="mt-3"></div>
+          <div id="track-number-edit-result-content" class="mt-2"></div>
         </div>
       </div>
       <div class="md-footer p-3">
-        <button id="title-edit-execute-btn" type="button" class="btn btn-primary" data-count-label="Titel übernehmen" disabled>
-          <svg class="icon me-1"><use href="#i-check"/></svg>Titel übernehmen
+        <button id="title-edit-execute-btn" type="button" class="btn btn-primary" data-count-label="Übernehmen" disabled>
+          <svg class="icon me-1"><use href="#i-check"/></svg>Übernehmen
         </button>
       </div>
     </section>
