@@ -68,11 +68,11 @@ Fehler behandelt.
 | Datei | Format | Pflege | Gelesen von | Geschrieben von |
 |---|---|---|---|---|
 | `artist_genre.yaml` | YAML | manuell | `GenreMapper` | — |
-| `channel_genre.yaml` | YAML | manuell | `GenreMapper` | — |
+| `channel_genre.yaml` | YAML | manuell | `GenreMapper` | Control Center (Mapping-Administration) |
 | `genre_hierarchy.yaml` | YAML | manuell | `GenreProcessor` (`GENRE_PRIORITY`) | — |
-| `genre_aliases.yaml` | YAML | manuell | `GenreProcessor` (`normalize_genre_name()`) | — |
-| `genre_filters.yaml` | YAML | manuell | `GenreProcessor` (`IGNORE_SECONDARY`) | — |
-| `genre_overrides.yaml` | YAML | manuell | `GenreMapper` | — |
+| `genre_aliases.yaml` | YAML | manuell | `GenreProcessor` (`normalize_genre_name()`) | Control Center (Mapping-Administration) |
+| `genre_filters.yaml` | YAML | manuell | `GenreProcessor` (`IGNORE_SECONDARY`) | Control Center (Mapping-Administration) |
+| `genre_overrides.yaml` | YAML | manuell | `GenreMapper` | Control Center (Mapping-Administration) |
 | `genre_rules.yaml` | YAML | manuell | `GenreMapper` | — |
 | `known_artists.yaml` | YAML | auto (bestätigte Identität) | `AutoLearnManager` | `AutoLearnManager` |
 | `auto_learned_genre.json` | **JSON** | auto | `GenreMapper` (Merge in `artist_map`) | `AutoLearnManager` |
@@ -89,6 +89,28 @@ waren bis ARCH-022 eine einzige Datei (`auto_learned_artists.yaml`) mit
 zwei Top-Level-Keys — inzwischen physisch getrennt, da beide Namespaces
 komplett unabhängig sind (`ArtistNormalizer` liest nur den
 `auto_learned`-Key, nie `featured_artists`).
+
+## 3.1 Mapping-Administration im Control Center
+
+`channel_genre.yaml`, `genre_aliases.yaml`, `genre_overrides.yaml`,
+`genre_filters.yaml` und `special_channel.yaml` sind im Control Center
+bearbeitbar (ADMIN, `/api/v1/admin/mappings/{mapping_id}`, Service
+`services/mapping_admin.py`). Jede Änderung läuft über Vorschau → Etag-geprüftes
+Speichern; der Client übergibt nur eine `mapping_id` aus einer Allowlist, nie
+einen Dateipfad. Der laufende Bot lädt die Dateien beim Start — die API meldet
+deshalb `bot_reload_required`.
+
+**Kommentarverlust:** Das Speichern schreibt die Datei über `yaml.safe_dump`
+neu, Kommentarzeilen gehen dabei verloren (die API meldet das als
+`comment_warning`). Deshalb stehen die Regeln, die bisher nur in Kommentaren
+standen, hier:
+
+| Datei | Regel (früher nur als YAML-Kommentar) |
+|---|---|
+| `special_channel.yaml` | Die **Reihenfolge der Kategorien ist die Priorität**: Podcast → Compilations → Playlist. Steht ein Kanalname in mehreren Kategorien, gewinnt die frühere. Kategorien, die nur in `Config.SPECIAL_CHANNELS` stehen, kommen danach. Ziel-Pfade: Podcast `PODCAST_DIR/<Kanal>/<Episodentitel>.m4a`, Compilations `library/Compilations/<Kanal>/<Künstler> - <Titel>.m4a`, Playlist `library/Playlist/<Name>/<Künstler> - <Titel>.m4a` (nur, wenn der Name in keiner anderen Kategorie steht). Die Runtime merged die YAML weiterhin mit `Config.SPECIAL_CHANNELS`; die Administration verwaltet nur die YAML-Quelle. |
+| `genre_overrides.yaml` | Keys sind **case-sensitiv** und werden ohne Lowercasing geladen: `Hip-Hop`, `hip-hop` und `Hip - Hop` sind bewusst getrennte Einträge. Die Reihenfolge ist irrelevant. Die Administration sucht erst den exakten Key, dann casefold. |
+| `genre_aliases.yaml` | Keys werden zur Laufzeit lowercased (`GenreProcessor`, `GenreMapper`); Groß-/Kleinschreibung des Keys ist damit ohne Wirkung, die des Zielwerts (`canonical`) bleibt erhalten. |
+| `genre_filters.yaml` | Liste `IGNORE_SECONDARY`: Tags werden mit `lower().strip()` gegen die Liste geprüft, Einträge müssen also kleingeschrieben sein. Ein Filter gilt nur für **Sekundär**-Genres; erkennbare Genres wie `pop`/`rock`/`indie` dienen als Notnagel, wenn sonst nur Nicht-Genre-Tags übrig bleiben. Die Gruppierung der Datei (Übergenres, Länder, Künstler-Beschreibungen, Zeitangaben, Produktion, Stimmung, Plattform, Nicht-Genre-Tags, Künstlernamen, MusicBrainz/Last.fm-Tags) ist rein organisatorisch und wird beim Speichern zu einer flachen Liste. |
 
 ## 4. Auto-Learn-Konfidenz-Stufen
 
