@@ -1117,7 +1117,7 @@ Nicht jede einzelne triviale Funktion braucht eine seitenlange Beschreibung.
 
 ## Baseline-Pflege
 
-Aktuelle **eingefrorene** Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v11.md`
+Aktuelle **eingefrorene** Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v12.md`
 (Freeze 2026-09-28, 6160 passed / 0 failed, 1 umgebungsbedingt skipped,
 11 subtests passed; Freeze-Gate APPROVED, Kriterium Datensicherheit mit
 dokumentiertem D.13-Vorfall per Nutzerentscheidung). Referenziert von

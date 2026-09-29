@@ -27,8 +27,8 @@ Index ist ab sofort die einzige Stelle für den *aktuellen* Stand.
 Tech-Debt-Tabelle dort unverändert, siehe z. B. `docs/archive/MusicBot_ENGINEERING_BASELINE_v8.md`);
 2026-09-07 (Baseline v9, ebenfalls eingefroren, siehe
 `docs/archive/MusicBot_ENGINEERING_BASELINE_v9.md`). Aktuell eingefrorener
-Referenzpunkt: `docs/MusicBot_ENGINEERING_BASELINE_v11.md` (Freeze
-2026-09-28, 6160 passed; Vorgänger v10, Freeze 2026-09-14, 4250 passed,
+Referenzpunkt: `docs/MusicBot_ENGINEERING_BASELINE_v12.md` (Freeze
+2026-09-29, 6576 passed; Vorgänger v10, Freeze 2026-09-14, 4250 passed,
 jetzt unter `docs/archive/`). Eine DRAFT-v12 wird beim nächsten
 ARCH-Phasen-Abschluss angelegt — dieser Index bleibt die einzige Stelle
 für den aktuellen Finding-Stand.

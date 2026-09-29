@@ -1,6 +1,6 @@
 # MusicBot Engineering Baseline v12
 
-> **Status: 🟡 DRAFT (2026-09-29) — noch nicht eingefroren.**
+> **Status: 🟢 FROZEN (2026-09-29) — Freeze-Gate APPROVED, siehe Abschnitt 6.**
 >
 > Verifizierter Engineering-Referenzzustand nach dem v11-Freeze
 > (2026-09-28). Umfasst den Abschluss der Client Consolidation Phase D
@@ -9,7 +9,7 @@
 > Navidrome-Ausbau N1–N5 (Stream-API, Player, Favoriten/Scrobble/
 > Playlists) und die abschließende CC-UI-Lieferung (Library L1–L4,
 > Logs-Job-Filter, Overview O2). Eingefrorener Vorgänger:
-> `docs/MusicBot_ENGINEERING_BASELINE_v11.md` (Freeze 2026-09-28).
+> `docs/archive/MusicBot_ENGINEERING_BASELINE_v11.md` (Freeze 2026-09-28).
 > Der laufende Stand aller offenen/zurückgestellten Punkte bleibt
 > `docs/FINDINGS_INDEX.md`.
 
@@ -19,12 +19,12 @@
 
 | Feld | Wert |
 |---|---|
-| Baseline | v12 (DRAFT) |
-| Vorgänger | `docs/MusicBot_ENGINEERING_BASELINE_v11.md` (Freeze 2026-09-28, 6160 passed / 1 skipped / 0 failed / 11 subtests passed) |
-| Letzte vom Nutzer gemeldete Full-Suite-Zahl (Stand `main` = `5e4e421`, 2026-09-29) | **6576 passed, 1 skipped, 11 subtests passed, 0 failed, 5 warnings** (462,11 s) |
+| Baseline | v12 |
+| Vorgänger | `docs/archive/MusicBot_ENGINEERING_BASELINE_v11.md` (Freeze 2026-09-28, 6160 passed / 1 skipped / 0 failed / 11 subtests passed) |
+| Letzte vom Nutzer gemeldete Full-Suite-Zahl (Freeze-Stand `main` = `1039e4b`, gemessen auf `5e4e421`, 2026-09-29) | **6576 passed, 1 skipped, 11 subtests passed, 0 failed, 5 warnings** (462,11 s) |
 | Zuwachs seit v11-Freeze | +416 passed (6160 → 6576), 0 failed |
-| Freeze-Datum | offen (DRAFT) |
-| Freeze-Status | 🟡 DRAFT — noch nicht eingefroren |
+| Freeze-Datum | 2026-09-29 |
+| Freeze-Status | 🟢 APPROVED — siehe Abschnitt 6 |
 
 ---
 
@@ -63,7 +63,7 @@
 
 ---
 
-## 4. Technical Debt — Snapshot (Stand 2026-09-29, DRAFT)
+## 4. Technical Debt — Snapshot (Stand 2026-09-29, Freeze-Zeitpunkt)
 
 Seit v11-Freeze geschlossen (Auswahl, Details in `docs/FINDINGS_INDEX.md`):
 **D.12b.1** (Zwei-Prozess-Rotieren `enhanced_metadata_processor.log`),
@@ -113,7 +113,7 @@ offenes P0/P1.
 
 ---
 
-## 5. Security- und Datensicherheits-Baseline (Stand 2026-09-29, DRAFT)
+## 5. Security- und Datensicherheits-Baseline (Stand 2026-09-29)
 
 Kein neuer dokumentierter Datensicherheits-Vorfall seit v11-Freeze.
 
@@ -142,36 +142,43 @@ Konsistenz für `user_data.json`/Download-Verlauf/Duplikat-Cache/Wartungsmodus.
 ## 6. Architecture Freeze
 
 ```
-🟡 DRAFT — noch nicht eingefroren (Stand 2026-09-29)
+🟢 ARCHITECTURE FREEZE — APPROVED (2026-09-29)
 ```
 
-Der Freeze-Gate-Audit wird beim eigentlichen Freeze-Schritt befüllt.
-Voraussetzungen zum Draft-Zeitpunkt:
+**Freeze-Gate-Audit (2026-09-29, Stand `main` = `1039e4b`):**
 
-- Testsuite: 6576 passed, 1 skipped, 0 failed (2026-09-29, 462,11 s).
-- Offene P0/P1: 0 (maschinell gegen `docs/FINDINGS_INDEX.md` verifiziert).
-- Bekannte Regressionen: keine.
+| Kriterium | Ergebnis |
+|---|---|
+| Offene P0/P1-Findings | **0** (maschinell gegen `docs/FINDINGS_INDEX.md` verifiziert) |
+| Vollständige Testsuite | **6576 passed, 1 skipped, 11 subtests passed, 0 failed** (462,11 s), vom Nutzer auf `5e4e421` ausgeführt; zwischen `5e4e421` und dem Freeze-Stand `1039e4b` liegen ausschließlich zwei Doku-Commits (v12-DRAFT, Logs/FINDINGS-Doku) ohne Code-Änderung |
+| Bekannte Regressionen | keine — die vorbestehenden 10 roten Tests in `tests/test_repair_result_semantics.py::TestUiRendering` wurden in #377 repariert (Test-only) |
+| Schichtgrenzen-Verletzungen | keine — `tests/test_services_layer_boundary.py` grün im Freeze-Lauf; kein Import `services/` → `handlers`/`control_center`/`klassen`/`telegram`/`helfer`, kein Import `control_center/` → `handlers`/`klassen`/`telegram`/`helfer`, kein Import `utils/` → Präsentationsschichten |
+| Produktions-Datensicherheit | **PASS** — kein neuer Vorfall seit v11-Freeze; v11-Vorfall (D.13-Lost-Update) bleibt dort dokumentiert |
+
+Die Serie ist überwiegend additiv (neue Services, Router, Jobs,
+UI-Erweiterungen, Editor-Felder, Log-Attribution). Die einzigen
+bewussten Verhaltensänderungen seit v11 sind die dokumentierten Fixes
+(D.12b.1 Prozess-Rolle, D.12b.2 Job-Attribution, Metadaten-Editor
+Schritt 1–3, Test-Fix #377).
 
 ---
 
-## Freeze-Checkliste (v12, DRAFT)
+## Freeze-Checkliste (v12-Freeze, 2026-09-29)
 
-- [ ] Freeze-Gate-Audit → 🟢 APPROVED
-- [ ] Abschnitte 4–6 als Schnappschuss befüllt
-- [ ] „Baseline Frozen (…)"-Footer gesetzt, DRAFT-Kopf entfernt
-- [ ] Referenzen umgestellt: `README.md`, `docs/INDEX.md`, `CLAUDE.md`
-- [ ] `docs/MusicBot_ENGINEERING_BASELINE_v11.md` → `docs/archive/`
+- [x] Freeze-Gate-Audit → 🟢 APPROVED (alle Kriterien PASS)
+- [x] Abschnitte 4–6 als Schnappschuss befüllt
+- [x] „Baseline Frozen (2026-09-29)"-Footer gesetzt, DRAFT-Kopf entfernt
+- [x] Referenzen umgestellt: `README.md`, `docs/INDEX.md`, `CLAUDE.md`
+- [x] `docs/MusicBot_ENGINEERING_BASELINE_v11.md` → `docs/archive/`
 
 ---
 
-## DRAFT-Hinweis
----
+## Baseline Frozen (2026-09-29)
 
-## DRAFT-Hinweis
-
-Diese Datei ist ein **Entwurf**. Sie wird beim nächsten Freeze-Schritt
-finalisiert (Abschnitte 4–6 befüllt, Checkliste abgehakt, Kopf auf
-🟢 FROZEN umgestellt). Bis dahin ist der eingefrorene Referenzpunkt
-weiterhin `docs/MusicBot_ENGINEERING_BASELINE_v11.md`. Der laufende
-Stand aller offenen/zurückgestellten Punkte bleibt
-`docs/FINDINGS_INDEX.md`.
+**Diese Datei ist damit abgeschlossen.** Neue Findings, Nachträge oder
+technische Schulden gehören ab jetzt in
+`MusicBot_ENGINEERING_BASELINE_v13.md`, sobald diese angelegt wird
+(Normalfall: beim nächsten ARCH-Phasen-Abschluss mit Code-/YAML-Änderung
+nach diesem Freeze — bis dahin ist dieses Dokument der eingefrorene
+Referenzpunkt). Der laufende Stand aller offenen/zurückgestellten Punkte
+bleibt `docs/FINDINGS_INDEX.md`.
