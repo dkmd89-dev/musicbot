@@ -56,12 +56,14 @@ def get_logs(
     level: Optional[str] = Query(default=None),
     component: Optional[str] = Query(default=None),
     search: Optional[str] = Query(default=None),
+    job: Optional[str] = Query(default=None),
     limit: int = Query(default=200, ge=1, le=1000),
 ) -> LogsResponse:
     config = Config()
     result = read_logs(
         Path(config.LOG_DIR),
         default_source=Path(config.LOG_FILE).name,
-        source=source, level=level, component=component, search=search, limit=limit,
+        source=source, level=level, component=component, search=search,
+        job_id=job, limit=limit,
     )
     return logs_result_to_response(result)

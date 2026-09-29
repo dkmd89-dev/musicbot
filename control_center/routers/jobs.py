@@ -117,6 +117,7 @@ from cookie_handler import CookieHandler
 from services.access_control import AccessLevel
 from logger import get_module_logger
 from services.downloader import download_pipeline_core as pipeline_core
+from services.jobs.job_context import bind_job
 from services.downloader.active_downloads import ActiveDownload
 from services.downloader.download_concurrency import download_slot
 from services.downloader.download_history import DownloadHistoryStore
@@ -501,6 +502,37 @@ async def _cancel_bridge(
 
 
 async def _run_download_job(
+    registry: JobRegistry,
+    job_id: str,
+    *,
+    url: str,
+    download_type: str,
+    chat_id: int,
+    config: Config,
+    duplicate_detector: DuplicateDetector,
+    cookie_handler: CookieHandler,
+    download_history: DownloadHistoryStore,
+) -> None:
+    """D.12b.2-Huelle: setzt den task-lokalen Job-Kontext und
+    delegiert an _run_download_job_impl (unveraenderter Body).
+    Der ContextVar wird von asyncio.create_task in die neue Task
+    kopiert und ist damit fuer alle Log-Records des Download-
+    Call-Trees aktiv."""
+    with bind_job(job_id):
+        await _run_download_job_impl(
+            registry,
+            job_id,
+            url=url,
+            download_type=download_type,
+            chat_id=chat_id,
+            config=config,
+            duplicate_detector=duplicate_detector,
+            cookie_handler=cookie_handler,
+            download_history=download_history,
+        )
+
+
+async def _run_download_job_impl(
     registry: JobRegistry,
     job_id: str,
     *,

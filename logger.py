@@ -10,6 +10,10 @@ from logging.handlers import RotatingFileHandler
 import colorama
 from colorama import Fore, Back, Style
 
+# D.12b.2: task-lokale Job-ID fuer Log-Anreicherung.
+# job_context.py importiert logger.py NICHT -> kein Zyklus.
+from services.jobs.job_context import get_current_job_id
+
 # Initialisiere Colorama für Cross-Platform Farb-Support
 colorama.init(autoreset=True)
 
@@ -144,6 +148,13 @@ class ColoredFormatter(logging.Formatter):
 
         # Nachricht formatieren
         message = record.getMessage()
+        # D.12b.2: Job-ID-Praefix nur zeigen, wenn
+        # (a) eine Job-ID am Record haengt UND
+        # (b) die Message sie nicht schon selbst traegt (JobRegistry
+        #     formatiert als "[JOB abc12345] ...").
+        _jid = getattr(record, "job_id", "-")
+        if _jid and _jid != "-" and "[JOB " not in message:
+            message = f"[JOB {_jid}] {message}"
 
         # Finale Formatierung
         formatted = f"{timestamp} {level_display} {module_display} {message}"
@@ -155,7 +166,23 @@ class ColoredFormatter(logging.Formatter):
         return formatted
 
 
+class _JobIdFilter(logging.Filter):
+    """D.12b.2: reichert jeden LogRecord mit `job_id` an — aus dem
+    task-lokalen ContextVar (services/jobs/job_context.py). Wird an die
+    Root-HANDLER gehaengt (nicht an den Root-Logger), weil Filter auf
+    Parent-Loggern bei Propagation nicht ausgefuehrt werden.
+
+    Vertrag: record.job_id existiert IMMER — "-" ohne Job-Kontext,
+    sonst die ersten 8 Zeichen der ID (konsistent zu JobRegistry)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        jid = get_current_job_id()
+        record.job_id = jid[:8] if jid else "-"
+        return True
+
+
 class EnhancedRotatingFileHandler(RotatingFileHandler):
+
     """
     Erweiterte RotatingFileHandler mit besserer Fehlerbehandlung
     """
@@ -297,6 +324,14 @@ def setup_enhanced_logging(
     file_handler.setFormatter(formatter)
     file_handler.setLevel(logging.DEBUG)
     root_logger.addHandler(file_handler)
+
+    # D.12b.2: Job-ID-Filter an alle Root-Handler haengen (nicht am
+    # Logger — Filter auf Parent-Loggern werden bei Propagation nicht
+    # ausgefuehrt). Damit traegt jeder Record record.job_id; der
+    # Formatter rendert den Praefix nur bei aktiver Job-ID.
+    _job_filter = _JobIdFilter()
+    for _h in root_logger.handlers:
+        _h.addFilter(_job_filter)
 
     _loggers_initialized = True
     return root_logger
@@ -785,6 +820,31 @@ def get_logging_stats(module: str = None) -> Dict[str, Any]:
     return global_stats
 
 
+# ── Prozess-Rolle (D.12b.1, 2026-09-29) ──────────────────────────────
+# Technische Rolle des laufenden Prozesses. Wird beim Startup genau
+# einmal gesetzt: bot.py bleibt Default "bot", control_center/app.py
+# setzt "control_center". setup_module_logging() nutzt den Wert, um
+# im CC-Prozess den modul-eigenen FileHandler zu unterdrücken und
+# stattdessen zum Root zu propagieren (vermeidet das Zwei-Prozess-
+# Race auf enhanced_metadata_processor.log).
+_PROCESS_ROLE: str = "bot"
+
+
+def set_process_role(role: str) -> None:
+    """Setzt die technische Prozess-Rolle ('bot' | 'control_center').
+
+    Muss VOR der ersten Konstruktion von EnhancedMetadataProcessor
+    im jeweiligen Prozess laufen (Singleton: der erste Aufruf wirkt
+    für die gesamte Prozess-Lebensdauer)."""
+    global _PROCESS_ROLE
+    _PROCESS_ROLE = role
+
+
+def get_process_role() -> str:
+    """Gibt die aktuelle technische Prozess-Rolle zurück."""
+    return _PROCESS_ROLE
+
+
 def setup_module_logging(
     module_name: str,
     log_file: str = None,
@@ -793,6 +853,7 @@ def setup_module_logging(
     use_emojis: bool = True,
     enable_file_handler: bool = True,
     enable_console_handler: bool = True,
+    propagate: bool = False,
 ):
     """
     Richtet eine separate Log-Datei für ein spezifisches Modul ein.
@@ -806,6 +867,13 @@ def setup_module_logging(
 
     Rotation (EnhancedRotatingFileHandler, 2 MB x 3 Backups) bleibt
     unverändert, wenn `enable_file_handler=True`.
+
+    D.12b.1: `propagate` als expliziter Parameter (Default False =
+    bisheriges Verhalten). Der CC-Prozess setzt propagate=True und
+    enable_file_handler=False. Achtung: Da EnhancedMetadataProcessor
+    ein Singleton ist, wirkt der erste Aufruf pro Prozess für die
+    gesamte Lebensdauer. set_process_role() muss daher vor der ersten
+    Konstruktion laufen (im CC: Startup-Event, Reihenfolge geprüft).
     """
     if log_file is None:
         log_file = f"logs/{module_name.lower()}.log"
@@ -845,13 +913,27 @@ def setup_module_logging(
         console_handler.setLevel(logging.DEBUG)  # Zeige ALLES in Console
         logger.addHandler(console_handler)
 
-    logger.propagate = False  # WICHTIG: Verhindert doppelte Logs im Haupt-Logger
+    logger.propagate = propagate  # D.12b.1: Parameter statt hart False
 
     # Enhanced Logger erstellen
     enhanced_logger = EnhancedLogger(logger, module_name)
     _module_loggers[module_name] = enhanced_logger
 
-    enhanced_logger.info(f"✅ Separate Log-Datei eingerichtet: {log_file}")
+    # D.12b.1: Meldung an den tatsaechlichen Handler-Zustand binden.
+    # Vorher war das unbedingt - im CC (enable_file_handler=False,
+    # propagate=True) suggerierte die Zeile einen FileHandler, den es
+    # dort bewusst nicht gibt.
+    if enable_file_handler:
+        enhanced_logger.info(f"✅ Separate Log-Datei eingerichtet: {log_file}")
+    elif propagate:
+        enhanced_logger.info(
+            f"↪️  {module_name} propagiert zum Root-Logger "
+            f"(kein eigener FileHandler)"
+        )
+    else:
+        enhanced_logger.info(
+            f"ℹ️  {module_name} ohne eigenen FileHandler und ohne Propagation"
+        )
     return enhanced_logger
 
 

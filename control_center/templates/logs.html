@@ -10,8 +10,9 @@
     <div>
       <h3 class="card-title"><svg class="icon me-2"><use href="#i-search"/></svg>Filter</h3>
       <div class="card-subtitle">
-        Kein Zeitraum-, Job- oder User-Filter: Logzeilen enthalten kein Datum (nur Uhrzeit)
-        und keine strukturierte Job-/User-Zuordnung.
+        Job-Filter seit D.12b.2 (Attribution auf Download-Log-Zeilen),
+        Format: 8 Hex-Zeichen, z. B. <code>abcdef12</code>. Kein Zeitraum-
+        oder User-Filter.
       </div>
     </div>
     <div class="card-actions">
@@ -41,11 +42,16 @@
         <label for="logs-component-input" class="form-label">Komponente</label>
         <input type="text" id="logs-component-input" class="form-control" placeholder="z. B. TELEGRAM_BOT">
       </div>
-      <div class="col-12 col-md-9">
+      <div class="col-12 col-md-4">
         <label for="logs-search-input" class="form-label">Volltextsuche</label>
         <input type="text" id="logs-search-input" class="form-control" placeholder="Nach Logtext suchen">
       </div>
-      <div class="col-12 col-md-3 d-flex align-items-end">
+      <div class="col-12 col-md-3">
+        <label for="logs-job-input" class="form-label">Job-ID</label>
+        <input type="text" id="logs-job-input" class="form-control"
+               placeholder="8 Hex-Zeichen" maxlength="8" pattern="[a-f0-9A-F]{8}">
+      </div>
+      <div class="col-12 col-md-2 d-flex align-items-end">
         <button id="logs-filter-btn" type="button" class="btn btn-primary w-100">
           <svg class="icon me-1"><use href="#i-search"/></svg>Filtern
         </button>
