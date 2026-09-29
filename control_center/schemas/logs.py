@@ -22,6 +22,8 @@ class LogEntrySchema(BaseModel):
     level: Optional[str]
     component: Optional[str]
     message: str
+    # D.12b.2: aus "[JOB <8 hex>]"-Token, bereits aus message entfernt.
+    job_id: Optional[str] = None
 
 
 class LogsResponse(BaseModel):
@@ -34,7 +36,11 @@ class LogsResponse(BaseModel):
 
 def _entry_to_schema(entry: LogEntry) -> LogEntrySchema:
     return LogEntrySchema(
-        time=entry.time, level=entry.level, component=entry.component, message=entry.message,
+        time=entry.time,
+        level=entry.level,
+        component=entry.component,
+        message=entry.message,
+        job_id=entry.job_id,
     )
 
 

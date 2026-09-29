@@ -1252,6 +1252,7 @@ async def test_logs_page_has_filter_and_content_panels(client):
     assert 'id="logs-level-select"' in html
     assert 'id="logs-component-input"' in html
     assert 'id="logs-search-input"' in html
+    assert 'id="logs-job-input"' in html  # D.12b.2
     assert 'id="logs-filter-btn"' in html
     assert 'id="logs-content"' in html
     assert "/static/pages/logs.js" in html
