@@ -161,7 +161,7 @@ def test_apply_corrupt_yaml_raises(tmp_path):
 
 def test_unknown_mapping_id_raises(tmp_path):
     with pytest.raises(ma.MappingUnknownIdError):
-        ma._mapping_path("nicht-vorhanden", tmp_path)
+        ma._get_descriptor("nicht-vorhanden")
 
 
 def test_roundtrip_create_read_update(tmp_path):

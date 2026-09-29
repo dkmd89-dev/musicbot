@@ -26,15 +26,20 @@ from logger import get_module_logger
 from services.access_control import AccessLevel
 from services.mapping_admin import (
     MAPPING_ID_CHANNEL_GENRE,
+    MAPPING_ID_GENRE_ALIASES,
+    ChannelGenreEntry,
+    ChannelGenrePlan,
+    GenreAliasEntry,
+    GenreAliasPlan,
     MappingConflictError,
     MappingDomainError,
     MappingInvalidInputError,
     MappingUnavailableError,
     MappingUnknownIdError,
-    apply_channel_genre_update,
-    get_channel_genre,
-    list_channel_genres,
-    plan_channel_genre_update,
+    apply_mapping_update,
+    get_mapping_entry,
+    list_mapping,
+    plan_mapping_update,
 )
 
 from ..dependencies import get_current_user_id, require_min_access_level, verify_same_origin
@@ -46,7 +51,16 @@ from ..schemas.mapping_admin import (
     ChannelGenreSaveBody,
     ChannelGenreSaveResponse,
     ChannelGenreBody,
+    GenreAliasGetResponse,
+    GenreAliasListResponse,
+    GenreAliasPreviewResponse,
+    GenreAliasSaveBody,
+    GenreAliasSaveResponse,
+    GenreAliasBody,
     entry_to_schema,
+    genre_alias_entry_to_schema,
+    genre_alias_plan_to_preview,
+    genre_alias_save_to_response,
     plan_to_preview,
     save_to_response,
 )
@@ -81,8 +95,11 @@ def _mapping_http_error(e: MappingDomainError) -> HTTPException:
     )
 
 
+_SUPPORTED_MAPPING_IDS = frozenset({MAPPING_ID_CHANNEL_GENRE, MAPPING_ID_GENRE_ALIASES})
+
+
 def _ensure_supported(mapping_id: str) -> None:
-    if mapping_id != MAPPING_ID_CHANNEL_GENRE:
+    if mapping_id not in _SUPPORTED_MAPPING_IDS:
         raise HTTPException(
             status_code=404,
             detail=ErrorDetail(
@@ -95,34 +112,51 @@ def _ensure_supported(mapping_id: str) -> None:
 # ── Liste + Einzeleintrag ────────────────────────────────────────────────
 
 
-@router.get("/{mapping_id}", response_model=ChannelGenreListResponse)
-def get_mapping(mapping_id: str) -> ChannelGenreListResponse:
+@router.get("/{mapping_id}")
+def get_mapping(mapping_id: str):
+    """Liste aller Eintraege. Antwort-Schema haengt von der mapping_id ab."""
     _ensure_supported(mapping_id)
     try:
-        entries = list_channel_genres(_mapping_dir())
+        entries = list_mapping(mapping_id, _mapping_dir())
     except MappingDomainError as e:
         raise _mapping_http_error(e) from e
-    return ChannelGenreListResponse(
+
+    if mapping_id == MAPPING_ID_CHANNEL_GENRE:
+        return ChannelGenreListResponse(
+            mapping_id=mapping_id,
+            entries=[entry_to_schema(e) for e in entries],
+            count=len(entries),
+        )
+    return GenreAliasListResponse(
         mapping_id=mapping_id,
-        entries=[entry_to_schema(e) for e in entries],
+        entries=[genre_alias_entry_to_schema(e) for e in entries],
         count=len(entries),
     )
 
 
-@router.get("/{mapping_id}/entry", response_model=ChannelGenreGetResponse)
-def get_mapping_entry(
-    mapping_id: str, channel: str = Query(..., min_length=1, max_length=200),
-) -> ChannelGenreGetResponse:
+@router.get("/{mapping_id}/entry")
+def get_mapping_entry_endpoint(
+    mapping_id: str, key: str = Query(..., min_length=1, max_length=200),
+):
     _ensure_supported(mapping_id)
     try:
-        entry, etag = get_channel_genre(channel, _mapping_dir())
+        entry, etag = get_mapping_entry(mapping_id, key, _mapping_dir())
     except MappingDomainError as e:
         raise _mapping_http_error(e) from e
-    return ChannelGenreGetResponse(
+
+    if mapping_id == MAPPING_ID_CHANNEL_GENRE:
+        return ChannelGenreGetResponse(
+            mapping_id=mapping_id,
+            channel=key,
+            exists=entry is not None,
+            entry=entry_to_schema(entry),
+            etag=etag,
+        )
+    return GenreAliasGetResponse(
         mapping_id=mapping_id,
-        channel=channel,
+        key=key,
         exists=entry is not None,
-        entry=entry_to_schema(entry),
+        entry=genre_alias_entry_to_schema(entry),
         etag=etag,
     )
 
@@ -132,20 +166,22 @@ def get_mapping_entry(
 
 @router.post(
     "/{mapping_id}/preview",
-    response_model=ChannelGenrePreviewResponse,
     dependencies=[Depends(verify_same_origin)],
 )
 def post_mapping_preview(
-    mapping_id: str, body: ChannelGenreBody, channel: str = Query(..., min_length=1, max_length=200),
-) -> ChannelGenrePreviewResponse:
+    mapping_id: str, body: dict, key: str = Query(..., min_length=1, max_length=200),
+):
     _ensure_supported(mapping_id)
     try:
-        plan = plan_channel_genre_update(
-            channel, body.primary, body.secondary, body.description, _mapping_dir(),
-        )
+        plan = plan_mapping_update(mapping_id, key, body or {}, _mapping_dir())
     except MappingDomainError as e:
         raise _mapping_http_error(e) from e
-    return plan_to_preview(mapping_id, channel, plan)
+
+    if isinstance(plan, ChannelGenrePlan):
+        return plan_to_preview(mapping_id, key, plan)
+    if isinstance(plan, GenreAliasPlan):
+        return genre_alias_plan_to_preview(mapping_id, key, plan)
+    raise _mapping_http_error(MappingUnknownIdError(f"Unbekannter Plan: {type(plan)}"))
 
 
 # ── Save (Write mit Etag) ───────────────────────────────────────────────
@@ -153,25 +189,39 @@ def post_mapping_preview(
 
 @router.put(
     "/{mapping_id}",
-    response_model=ChannelGenreSaveResponse,
     dependencies=[Depends(verify_same_origin)],
 )
 def put_mapping(
     mapping_id: str,
-    body: ChannelGenreSaveBody,
-    channel: str = Query(..., min_length=1, max_length=200),
+    body: dict,
+    key: str = Query(..., min_length=1, max_length=200),
     user_id: int = Depends(get_current_user_id),
-) -> ChannelGenreSaveResponse:
+):
     _ensure_supported(mapping_id)
+    if not isinstance(body, dict) or "etag" not in body:
+        raise HTTPException(
+            status_code=422,
+            detail=ErrorDetail(
+                code="MAPPING_INVALID_INPUT", message="etag fehlt im Body."
+            ).model_dump(),
+        )
+    expected_etag = str(body["etag"])
+    payload = {k: v for k, v in body.items() if k != "etag"}
     try:
-        plan, result = apply_channel_genre_update(
-            channel, body.primary, body.secondary, body.description,
-            _mapping_dir(), expected_etag=body.etag,
+        plan, result = apply_mapping_update(
+            mapping_id, key, payload, _mapping_dir(), expected_etag=expected_etag,
         )
     except MappingDomainError as e:
         raise _mapping_http_error(e) from e
+
     _logger.info(
-        f"📺 [control_center] channel-genre {plan.change} für Key {plan.key!r} "
-        f"von User {user_id} (geschrieben={result.written})"
+        f"[control_center] {mapping_id} {getattr(plan, 'change', '?')} "
+        f"fuer Key {getattr(plan, 'key', key)!r} von User {user_id} "
+        f"(geschrieben={result.written})"
     )
-    return save_to_response(mapping_id, channel, plan, result)
+
+    if isinstance(plan, ChannelGenrePlan):
+        return save_to_response(mapping_id, key, plan, result)
+    if isinstance(plan, GenreAliasPlan):
+        return genre_alias_save_to_response(mapping_id, key, plan, result)
+    raise _mapping_http_error(MappingUnknownIdError(f"Unbekannter Plan: {type(plan)}"))

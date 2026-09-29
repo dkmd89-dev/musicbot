@@ -102,7 +102,7 @@ async def test_path_traversal_attempt_404(client, mapping_dir):
 async def test_get_entry_returns_etag(client, mapping_dir):
     r = await client.get(
         "/api/v1/admin/mappings/channel-genre/entry",
-        params={"channel": "kontor.tv"},
+        params={"key": "kontor.tv"},
     )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -115,7 +115,7 @@ async def test_get_entry_returns_etag(client, mapping_dir):
 async def test_get_entry_missing(client, mapping_dir):
     r = await client.get(
         "/api/v1/admin/mappings/channel-genre/entry",
-        params={"channel": "nicht-vorhanden"},
+        params={"key": "nicht-vorhanden"},
     )
     assert r.status_code == 200
     assert r.json()["exists"] is False
@@ -128,7 +128,7 @@ async def test_get_entry_missing(client, mapping_dir):
 async def test_preview_requires_same_origin(client, mapping_dir):
     r = await client.post(
         "/api/v1/admin/mappings/channel-genre/preview",
-        params={"channel": "Neu"},
+        params={"key": "Neu"},
         json={"primary": "Pop", "secondary": []},
     )
     assert r.status_code == 403
@@ -138,7 +138,7 @@ async def test_preview_requires_same_origin(client, mapping_dir):
 async def test_preview_valid(client, mapping_dir):
     r = await client.post(
         "/api/v1/admin/mappings/channel-genre/preview",
-        params={"channel": "Neu"},
+        params={"key": "Neu"},
         json={"primary": "Pop", "secondary": ["Dance"]},
         headers=_SAME_ORIGIN,
     )
@@ -152,7 +152,7 @@ async def test_preview_valid(client, mapping_dir):
 async def test_preview_invalid_raises_422(client, mapping_dir):
     r = await client.post(
         "/api/v1/admin/mappings/channel-genre/preview",
-        params={"channel": "Neu"},
+        params={"key": "Neu"},
         json={"primary": "", "secondary": []},
         headers=_SAME_ORIGIN,
     )
@@ -166,7 +166,7 @@ async def test_preview_invalid_raises_422(client, mapping_dir):
 async def test_put_requires_same_origin(client, mapping_dir):
     r = await client.put(
         "/api/v1/admin/mappings/channel-genre",
-        params={"channel": "Neu"},
+        params={"key": "Neu"},
         json={"primary": "Pop", "secondary": [], "etag": "abc"},
     )
     assert r.status_code == 403
@@ -177,12 +177,12 @@ async def test_put_valid_writes_and_returns_reload_required(client, mapping_dir)
     # Etag ermitteln
     r = await client.get(
         "/api/v1/admin/mappings/channel-genre/entry",
-        params={"channel": "Neu"},
+        params={"key": "Neu"},
     )
     etag = r.json()["etag"]
     r = await client.put(
         "/api/v1/admin/mappings/channel-genre",
-        params={"channel": "Neu"},
+        params={"key": "Neu"},
         json={"primary": "Pop", "secondary": ["Dance"], "etag": etag},
         headers=_SAME_ORIGIN,
     )
@@ -198,7 +198,7 @@ async def test_put_valid_writes_and_returns_reload_required(client, mapping_dir)
 async def test_put_conflict_409(client, mapping_dir):
     r = await client.put(
         "/api/v1/admin/mappings/channel-genre",
-        params={"channel": "Neu"},
+        params={"key": "Neu"},
         json={"primary": "Pop", "secondary": [], "etag": "deadbeefdeadbeef"},
         headers=_SAME_ORIGIN,
     )
@@ -209,12 +209,12 @@ async def test_put_conflict_409(client, mapping_dir):
 async def test_put_unchanged_does_not_write(client, mapping_dir):
     r = await client.get(
         "/api/v1/admin/mappings/channel-genre/entry",
-        params={"channel": "Kontor.TV"},
+        params={"key": "Kontor.TV"},
     )
     etag = r.json()["etag"]
     r = await client.put(
         "/api/v1/admin/mappings/channel-genre",
-        params={"channel": "Kontor.TV"},
+        params={"key": "Kontor.TV"},
         json={"primary": "Electronic", "secondary": ["Dance"], "description": "x", "etag": etag},
         headers=_SAME_ORIGIN,
     )

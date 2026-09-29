@@ -18,6 +18,9 @@ from services.mapping_admin import (
     ChannelGenreEntry,
     ChannelGenrePlan,
     ChannelGenreSaveResult,
+    GenreAliasEntry,
+    GenreAliasPlan,
+    GenreAliasSaveResult,
 )
 
 
@@ -122,4 +125,107 @@ def save_to_response(
         written=result.written, unchanged=result.unchanged, new_etag=result.new_etag,
         bot_reload_required=result.written,
         message=SAVE_MESSAGE_WRITTEN if result.written else SAVE_MESSAGE_UNCHANGED,
+    )
+
+# ── Genre-Alias (M2) ─────────────────────────────────────────────────
+
+
+class GenreAliasEntrySchema(BaseModel):
+    key: str
+    canonical: str
+
+
+class GenreAliasListResponse(BaseModel):
+    mapping_id: str
+    entries: List[GenreAliasEntrySchema]
+    count: int
+    bot_reload_required: bool = True
+    warnings: List[str] = Field(default_factory=list)
+
+
+class GenreAliasGetResponse(BaseModel):
+    mapping_id: str
+    key: str
+    exists: bool
+    entry: Optional[GenreAliasEntrySchema] = None
+    etag: str
+
+
+class GenreAliasBody(BaseModel):
+    canonical: str
+
+
+class GenreAliasSaveBody(GenreAliasBody):
+    etag: str
+
+
+class GenreAliasPreviewResponse(BaseModel):
+    mapping_id: str
+    key: str
+    change: str
+    existing: Optional[GenreAliasEntrySchema] = None
+    canonical: str
+    canonical_changed: bool
+    warnings: List[str] = Field(default_factory=list)
+    etag: str
+    comment_warning: Optional[str] = None
+
+
+class GenreAliasSaveResponse(GenreAliasPreviewResponse):
+    written: bool
+    unchanged: bool
+    new_etag: str
+    bot_reload_required: bool = True
+    message: str
+
+
+COMMENT_LOSS_WARNING = (
+    "Kommentarzeilen in genre_aliases.yaml gehen beim Speichern verloren "
+    "(bekannte Einschraenkung des YAML-Rewrites)."
+)
+
+
+def genre_alias_entry_to_schema(entry: Optional[GenreAliasEntry]) -> Optional[GenreAliasEntrySchema]:
+    if entry is None:
+        return None
+    return GenreAliasEntrySchema(key=entry.key, canonical=entry.canonical)
+
+
+def genre_alias_plan_to_preview(
+    mapping_id: str, key: str, plan: GenreAliasPlan,
+) -> GenreAliasPreviewResponse:
+    return GenreAliasPreviewResponse(
+        mapping_id=mapping_id,
+        key=plan.key,
+        change=plan.change,
+        existing=genre_alias_entry_to_schema(plan.existing),
+        canonical=plan.canonical,
+        canonical_changed=plan.canonical_changed,
+        warnings=list(plan.warnings),
+        etag=plan.etag,
+        comment_warning=COMMENT_LOSS_WARNING if plan.change != "unchanged" else None,
+    )
+
+
+GENRE_ALIAS_SAVE_MESSAGE_WRITTEN = (
+    "Mapping gespeichert. Der laufende Bot laedt genre_aliases.yaml beim "
+    "Start: die Aenderung wirkt fuer neue Downloads erst nach Bot-Neustart."
+)
+GENRE_ALIAS_SAVE_MESSAGE_UNCHANGED = "Mapping war bereits identisch — nichts geschrieben."
+
+
+def genre_alias_save_to_response(
+    mapping_id: str, key: str, plan: GenreAliasPlan, result: GenreAliasSaveResult,
+) -> GenreAliasSaveResponse:
+    base = genre_alias_plan_to_preview(mapping_id, key, plan)
+    return GenreAliasSaveResponse(
+        **base.model_dump(),
+        written=result.written,
+        unchanged=result.unchanged,
+        new_etag=result.new_etag,
+        bot_reload_required=result.written,
+        message=(
+            GENRE_ALIAS_SAVE_MESSAGE_WRITTEN if result.written
+            else GENRE_ALIAS_SAVE_MESSAGE_UNCHANGED
+        ),
     )
