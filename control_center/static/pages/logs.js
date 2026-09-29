@@ -1,9 +1,11 @@
 // control_center/static/pages/logs.js
 // Logdateien-Ansicht (Master-Prompt Abschnitt 12 "LOGS & DIAGNOSTICS").
 // Liest services/logs/reader.py::read_logs() über GET /api/v1/logs (siehe
-// dortigen Docstring für die bewussten Einschränkungen: kein Zeitraum-/
-// Job-/User-Filter, da die Datenquelle das nicht zuverlässig hergibt -
-// Master-Prompt Regel 38). Inhalte sind serverseitig bereits redigiert
+// dortigen Docstring: `?job=<id8>` filtert seit D.12b.2 strukturiert auf
+// Download-Log-Zeilen - services/jobs/job_context.py + logger.py::_JobIdFilter
+// schreiben [JOB <id8>] an jede Zeile im Download-Kontext. Weiterhin bewusst
+// kein Zeitraum-/User-Filter, da die Datenquelle das nicht zuverlässig
+// hergibt - Master-Prompt Regel 38). Inhalte sind serverseitig bereits redigiert
 // (redact_secrets), hier zusätzlich durchgehend escaped.
 // CC-UI Logs/Logger: aus dem Template ausgelagert (vorher Inline-Script),
 // Darstellung im Terminal-Stil nach docs/CONTROL_CENTER_UI_STANDARD.md §10.

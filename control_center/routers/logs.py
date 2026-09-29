@@ -13,12 +13,20 @@ Log-Verwaltung `EnhancedLoggerMenuHandler`) — keine neue Logging-
 Infrastruktur, keine Fachlogik hier.
 
 Filter: `source` (welche Datei — aktuelle oder rotiertes Backup),
-`level`, `component`, `search`, `limit`. **Bewusst KEIN Zeitraum-/Job-/
-User-Filter** — die zugrundeliegenden Logzeilen enthalten weder ein
-Datum noch eine strukturierte Job-/User-Korrelation (siehe
-services/logs/reader.py-Docstring für die vollständige Begründung) —
-ein solcher Filter würde eine Genauigkeit vortäuschen, die die
-Datenquelle nicht hergibt (Master-Prompt Regel 38).
+`level`, `component`, `search`, `job`, `limit`.
+
+**Job-Filter seit D.12b.2:** `?job=<id8>` filtert strukturiert auf
+Download-Log-Zeilen — `services/jobs/job_context.py` (ContextVar
+`bind_job()`) plus `logger.py::_JobIdFilter` schreiben an jede Zeile
+im Download-Kontext ein `[JOB <id8>]`-Token; `services/logs/reader.py`
+extrahiert es per `_JOB_RE` in `LogEntry.job_id`.
+
+**Weiterhin bewusst KEIN Zeitraum- und kein User-Filter** — die
+zugrundeliegenden Logzeilen enthalten kein Datum und keine
+strukturierte User-Korrelation (siehe services/logs/reader.py-Docstring
+für die vollständige Begründung); ein solcher Filter würde eine
+Genauigkeit vortäuschen, die die Datenquelle nicht hergibt
+(Master-Prompt Regel 38).
 
 Security: services/logs/reader.py redigiert offensichtliche
 Secret-Muster bereits defensiv, bevor eine Zeile hier den Prozess
