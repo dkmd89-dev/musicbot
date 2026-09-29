@@ -53,6 +53,8 @@ from services.library_repair.executor import (
     read_current_title,
     apply_year_edit,
     read_current_year,
+    apply_track_number_edit,
+    read_current_track_number,
 )
 from services.library_repair.journal import RepairJournal
 from services.library_repair.run_tracking import (
@@ -91,6 +93,7 @@ ACTION_TITLE_EDIT = "title-edit"
 ACTION_ALBUM_EDIT = "album-edit"
 ACTION_ALBUM_ARTIST_EDIT = "album-artist-edit"
 ACTION_YEAR_EDIT = "year-edit"
+ACTION_TRACK_NUMBER_EDIT = "track-number-edit"
 
 _MAX_MANUAL_VALUE_LEN = 200
 
@@ -350,6 +353,46 @@ def current_album_artist(artist: str, album: str, *, library_root: Optional[Path
     if not targets:
         return ""
     return read_current_album_artist(_resolve_within_library(targets[0], root))
+
+
+def _validate_track_number(value) -> int:
+    """Tracknummer: ganze Zahl 1..999. Liefert int (nicht str) - die
+    nachgelagerten Schichten erwarten einen Zahlwert. Lehnt bool, Float
+    mit Nachkommateil und nicht-numerische Strings ab."""
+    if value is None:
+        raise MaintenanceServiceError("Keine neue Tracknummer angegeben.")
+    # bool ist Subklasse von int - muss vor der int()-Konvertierung abgelehnt werden.
+    if isinstance(value, bool):
+        raise MaintenanceServiceError("Tracknummer muss eine ganze Zahl sein.")
+    if isinstance(value, str):
+        v = value.strip()
+        if not v:
+            raise MaintenanceServiceError("Tracknummer darf nicht leer sein.")
+        if not v.isascii() or not v.lstrip("-").isdigit():
+            raise MaintenanceServiceError("Tracknummer muss eine ganze Zahl sein.")
+        value = int(v)
+    elif isinstance(value, float):
+        if not value.is_integer():
+            raise MaintenanceServiceError("Tracknummer muss eine ganze Zahl sein.")
+        value = int(value)
+    try:
+        n = int(value)
+    except (TypeError, ValueError) as e:
+        raise MaintenanceServiceError("Tracknummer muss eine ganze Zahl sein.") from e
+    if not (1 <= n <= 999):
+        raise MaintenanceServiceError("Tracknummer muss zwischen 1 und 999 liegen.")
+    return n
+
+
+def current_track_number(artist: str, rel_path: str, *, library_root=None):
+    """Liest die aktuelle Tracknummer des gewaehlten Tracks (rein lesend,
+    Preview-/Eingabe-Anzeige) - None, wenn kein trkn-Atom vorhanden ist.
+    Identischer Scope wie current_title()."""
+    root = _library_root(library_root)
+    targets = _title_edit_targets(artist, rel_path, library_root=root)
+    if not targets:
+        return None
+    return read_current_track_number(_resolve_within_library(targets[0], root))
 
 
 def _validate_year(value) -> str:
@@ -922,6 +965,58 @@ def execute_year_edit(
         )
         _record_run(
             run_id=run_id, action=ACTION_YEAR_EDIT, artist=artist,
+            started_at=started_at, result=result, triggered_by=triggered_by,
+        )
+        return result
+    finally:
+        release_repair_lock()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Manual Track Number Editing - expliziter Nutzer-Zielwert fuer trkn
+# ueber den Ein-Track-Scope (wie Titel).
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def preview_track_number_edit(
+    artist: str, rel_path: str, new_track_number, *,
+    library_root=None,
+) -> MaintenancePreview:
+    new_number = _validate_track_number(new_track_number)
+    targets = _title_edit_targets(artist, rel_path, library_root=library_root)
+    journal = RepairJournal(journal_path())  # nie geflusht -> read-only
+    outcomes = apply_track_number_edit(
+        targets, _library_root(library_root), journal,
+        new_track_number=new_number, dry_run=True,
+    )
+    return MaintenancePreview(
+        action=ACTION_TRACK_NUMBER_EDIT, artist=artist,
+        target_count=len(targets), outcomes=outcomes,
+    )
+
+
+def execute_track_number_edit(
+    artist: str, rel_path: str, new_track_number, *, triggered_by: str,
+    library_root=None,
+) -> MaintenanceRunResult:
+    new_number = _validate_track_number(new_track_number)
+    acquire_repair_lock()
+    try:
+        started_at = now_iso()
+        run_id = str(uuid.uuid4())
+        targets = _title_edit_targets(artist, rel_path, library_root=library_root)
+        journal = RepairJournal(journal_path())
+        outcomes = apply_track_number_edit(
+            targets, _library_root(library_root), journal,
+            new_track_number=new_number, dry_run=False,
+        )
+        journal.flush()
+        result = _run_result_from_outcomes(
+            run_id=run_id, action=ACTION_TRACK_NUMBER_EDIT, artist=artist,
+            started_at=started_at, target_count=len(targets), outcomes=outcomes, dry_run=False,
+        )
+        _record_run(
+            run_id=run_id, action=ACTION_TRACK_NUMBER_EDIT, artist=artist,
             started_at=started_at, result=result, triggered_by=triggered_by,
         )
         return result

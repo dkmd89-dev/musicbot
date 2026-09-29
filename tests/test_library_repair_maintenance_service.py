@@ -1225,3 +1225,151 @@ class TestYearEditFlow:
         Health-Check als gueltig ansieht."""
         from services.library_health import file_analysis
         assert ms._YEAR_MIN == file_analysis.YEAR_MIN
+
+
+# ── Manual Track Number Editing: Preview + Execute ─────────────────────
+
+
+@requires_ffmpeg
+class TestTrackNumberEditFlow:
+    """Charakterisierung des Tracknummer-Editors (Ein-Track-Scope, trkn).
+    Deckt Preview, Idempotenz, Total-Erhaltung, Bereichsvalidierung,
+    Containment (geteilt mit Titel) und Rollback ab."""
+
+    def _set_track_number(self, path, number, total=0):
+        a = MP4(path)
+        a["trkn"] = [(number, total)]
+        a.save()
+
+    def _track_number(self, path):
+        trkn = (MP4(path).tags or {}).get("trkn")
+        return trkn[0][0] if trkn and trkn[0] else None
+
+    def _track_total(self, path):
+        trkn = (MP4(path).tags or {}).get("trkn")
+        return trkn[0][1] if trkn and trkn[0] else None
+
+    def test_preview_is_read_only(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+        self._set_track_number(p, 1, 10)
+        before = p.read_bytes()
+
+        preview = ms.preview_track_number_edit(
+            "Bausa", "Bausa/Singles/a.m4a", 2, library_root=lib,
+        )
+        assert preview.read_only is True
+        assert preview.target_count == 1
+        assert preview.changed_count == 1
+        assert p.read_bytes() == before
+        assert not rt.journal_path().exists()
+
+    def test_identical_value_yields_zero_changed(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+        self._set_track_number(p, 5, 10)
+
+        preview = ms.preview_track_number_edit(
+            "Bausa", "Bausa/Singles/a.m4a", 5, library_root=lib,
+        )
+        assert preview.changed_count == 0
+
+    def test_execute_writes_only_track_number(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p, artist=["Bausa"])
+        self._set_track_number(p, 1, 10)
+        tags_before = dict(MP4(p).tags or {})
+
+        result = ms.execute_track_number_edit(
+            "Bausa", "Bausa/Singles/a.m4a", 7, triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert result.success_count == 1
+        assert self._track_number(p) == 7
+        # Gesamtzahl bleibt erhalten
+        assert self._track_total(p) == 10
+
+        # Andere Atome unveraendert
+        tags_after = dict(MP4(p).tags or {})
+        for k, v in tags_before.items():
+            if k != "trkn":
+                assert tags_after[k] == v, f"{k} veraendert"
+
+        history = rt.load_repair_history()
+        assert len(history) == 1
+        assert history[0]["level"] == "TRACK_NUMBER_EDIT"
+
+    def test_execute_creates_trkn_when_missing(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+
+        result = ms.execute_track_number_edit(
+            "Bausa", "Bausa/Singles/a.m4a", 3, triggered_by="test", library_root=lib,
+        )
+        assert result.status == rt.STATUS_SUCCESS
+        assert self._track_number(p) == 3
+        assert self._track_total(p) == 0  # Neuanlage mit total=0
+
+    @pytest.mark.parametrize("bad", [0, -1, 1000, 9999])
+    def test_execute_rejects_out_of_range(self, lib, bad):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+        self._set_track_number(p, 5, 10)
+
+        with pytest.raises(ms.MaintenanceServiceError):
+            ms.execute_track_number_edit(
+                "Bausa", "Bausa/Singles/a.m4a", bad, triggered_by="test", library_root=lib,
+            )
+
+    def test_execute_accepts_boundary_values(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+        self._set_track_number(p, 5, 10)
+
+        r1 = ms.execute_track_number_edit(
+            "Bausa", "Bausa/Singles/a.m4a", 1, triggered_by="test", library_root=lib,
+        )
+        assert r1.status == rt.STATUS_SUCCESS
+        r2 = ms.execute_track_number_edit(
+            "Bausa", "Bausa/Singles/a.m4a", 999, triggered_by="test", library_root=lib,
+        )
+        assert r2.status == rt.STATUS_SUCCESS
+
+    def test_validation_rejects_float(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+        with pytest.raises(ms.MaintenanceServiceError):
+            ms._validate_track_number(1.5)
+
+    def test_validation_accepts_numeric_string(self):
+        assert ms._validate_track_number("42") == 42
+
+    def test_execute_shares_lock_with_repair_flow(self, lib):
+        p = lib / "Bausa" / "Singles" / "a.m4a"
+        _m4a(p)
+        self._set_track_number(p, 5, 10)
+
+        rt.acquire_repair_lock()
+        try:
+            with pytest.raises(rt.RepairAlreadyRunningError):
+                ms.execute_track_number_edit(
+                    "Bausa", "Bausa/Singles/a.m4a", 6,
+                    triggered_by="test", library_root=lib,
+                )
+        finally:
+            rt.release_repair_lock()
+
+    def test_rel_path_from_foreign_artist_is_rejected(self, lib):
+        """Containment: rel_path ausserhalb des Artist-Verzeichnisses wird
+        abgelehnt - identische Regel wie Titel."""
+        own = lib / "A" / "Singles" / "a.m4a"
+        _m4a(own)
+        foreign = lib / "AndererArtist" / "Album" / "01.m4a"
+        _m4a(foreign)
+
+        result = ms.execute_track_number_edit(
+            "A", "AndererArtist/Album/01.m4a", 7,
+            triggered_by="test", library_root=lib,
+        )
+        assert result.target_count == 0
+        assert result.success_count == 0

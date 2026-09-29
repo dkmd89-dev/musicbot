@@ -728,7 +728,11 @@ async def test_artist_detail_page_disables_execute_after_input_changes(client):
     html = await _page_with_scripts(client, "/library/Bausa")
 
     assert 'getElementById("artist-edit-new-artist").addEventListener("input"' in html
-    assert '["title-edit-track-select", "title-edit-new-title"].forEach' in html
+    # Track-Block (D.12b.2-Folge): drei einzelne Listener statt eines
+    # forEach-Loops - Tracknummer bekommt ein eigenes Preview-System.
+    assert 'getElementById("title-edit-new-title").addEventListener("input"' in html
+    assert 'getElementById("track-number-edit-new-number").addEventListener("input"' in html
+    assert 'getElementById("title-edit-track-select").addEventListener("input"' in html
 
 
 @pytest.mark.asyncio

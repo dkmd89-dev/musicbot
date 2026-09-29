@@ -75,6 +75,7 @@ from services.library_repair.maintenance_service import (
     execute_artist_rename,
     execute_legacy_genre_cleanup,
     execute_title_edit,
+    execute_track_number_edit,
     execute_year_edit,
     preview_album_artist_edit,
     preview_album_edit,
@@ -82,6 +83,7 @@ from services.library_repair.maintenance_service import (
     preview_artist_rename,
     preview_legacy_genre_cleanup,
     preview_title_edit,
+    preview_track_number_edit,
     preview_year_edit,
 )
 from services.library_repair.run_tracking import RepairAlreadyRunningError
@@ -92,6 +94,7 @@ from ..schemas.admin_maintenance import (
     AlbumEditRequest,
     ArtistRenameRequest,
     TitleEditRequest,
+    TrackNumberEditRequest,
     YearEditRequest,
 )
 from ..schemas.errors import ErrorDetail
@@ -330,6 +333,41 @@ def post_year_edit_execute(
     try:
         result = execute_year_edit(
             payload.artist, payload.album, payload.new_year,
+            triggered_by=f"control_center:{user_id}",
+        )
+    except MaintenanceServiceError as e:
+        raise _validation_error(e) from e
+    except RepairAlreadyRunningError as e:
+        raise _lock_conflict_error(e) from e
+    return maintenance_execute_to_response(result)
+
+
+# ── Tracknummer bearbeiten (manueller Zielwert, trkn) ───────────────────
+
+
+@router.get("/track-number-edit/preview", response_model=MaintenancePreviewResponse)
+def get_track_number_edit_preview(
+    artist: str = Query(...), rel_path: str = Query(...),
+    new_track_number: int = Query(..., ge=1, le=999),
+) -> MaintenancePreviewResponse:
+    try:
+        preview = preview_track_number_edit(artist, rel_path, new_track_number)
+    except MaintenanceServiceError as e:
+        raise _validation_error(e) from e
+    return maintenance_preview_to_response(preview)
+
+
+@router.post(
+    "/track-number-edit/execute",
+    response_model=MaintenanceExecuteResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+def post_track_number_edit_execute(
+    payload: TrackNumberEditRequest, user_id: int = Depends(get_current_user_id),
+) -> MaintenanceExecuteResponse:
+    try:
+        result = execute_track_number_edit(
+            payload.artist, payload.rel_path, payload.new_track_number,
             triggered_by=f"control_center:{user_id}",
         )
     except MaintenanceServiceError as e:

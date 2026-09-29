@@ -342,7 +342,8 @@ const src = fs.readFileSync(commonPath, "utf-8") + "\n" + fs.readFileSync(jsPath
   + "\n;ccToast = (k, t, x) => { log.push('toast:' + [k, t, x].join('|')); };";
 const api = new Function(src + "\nreturn { loadArtistEditPreview, executeArtistEdit, loadTitleEditPreview, "
   + "renderMetadataEditPreview, renderArtistDetail, openMetadataEditor, _selectAlbumForEdit, executeAlbumTab, "
-  + "_selectTitleTrack, _albumState };")();
+  + "_selectTitleTrack, _albumState, "
+  + "loadTrackNumberEditPreview, executeTrackNumberEdit, executeTitleTab, _titleState };")();
 const tick = () => new Promise((r) => setTimeout(r, 20));
 (async () => {
   await tick();
@@ -594,6 +595,42 @@ def test_editor_stays_closed_for_non_admin(tmp_path):
 
 
 @needs_node
+@needs_node
+def test_track_number_edit_preview_and_execute_via_ui(tmp_path):
+    """Tracknummer-Feld im Titel-Reiter: Vorbelegung aus Trackdaten,
+    Vorschau nach Input, ein "Übernehmen" ruft track-number-edit/execute."""
+    body = _body()
+    key = _LONG
+    # Track hat track_number=1 (siehe _track).
+    out = _run_l3b(tmp_path, {"tabler": True, "confirmAnswer": True, "routesContains": [
+        {"match": "track-number-edit/preview", "status": 200, "body": _preview_body(1)},
+        {"match": "track-number-edit/execute", "status": 200,
+         "body": {"success_count": 1, "failed_count": 0, "skipped_count": 0}},
+    ], "ops": [
+        {"fn": "renderArtistDetail", "args": ["@artist-content", body]},
+        {"fn": "_selectTitleTrack", "args": [body["tracks"][0]["relative_path"]]},
+        {"input": "track-number-edit-new-number", "value": "7"},
+        {"wait": 800},
+        {"fn": "executeTitleTab"},
+    ]})
+
+    # Feld traegt nach Input den Nutzer-Wert
+    assert out["els"]["track-number-edit-new-number"]["value"] == "7"
+
+    # Bestaetigung nennt den Tracknummer-Wechsel. _artistConfirm splittet
+    # in title (erste Zeile) + text (Rest) - die Aktion steht im Titel.
+    confirms = [e for e in out["log"] if e.startswith("ccConfirm:")]
+    assert len(confirms) == 1, out["log"]
+    opts = json.loads(confirms[0][len("ccConfirm:"):])
+    assert "Tracknummer" in opts["title"], opts
+    assert '"7"' in opts["title"], opts["title"]
+
+    # Nur track-number-edit/execute wird geschickt
+    posts = [c for c in out["calls"] if c.startswith("POST")]
+    assert any("track-number-edit/execute" in p for p in posts), out["calls"]
+    assert not any("title-edit/execute" in p for p in posts), out["calls"]
+
+
 def test_album_tab_prefills_year_field_and_runs_with_one_confirm(tmp_path):
     """D.12b.2-Folge: drittes Feld im Album-Reiter (Jahr, ©day) wird
     vorbelegt, ein "Übernehmen" ruft nur die geaenderten Endpunkte auf."""
