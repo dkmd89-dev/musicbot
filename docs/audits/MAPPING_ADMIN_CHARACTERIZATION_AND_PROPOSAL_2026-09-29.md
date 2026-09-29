@@ -138,7 +138,7 @@ Pro Datei spezifischer Validator in `services/mapping_admin.py` (oder als Unterf
 - **Genre-Referenzen:** Werte müssen in der `genre_hierarchy.yaml`-Top-Level-Menge liegen (oder Alias)
 - **Channel/Artist-Referenzen:** keine Kreuz-Validierung nötig
 
-**Regel:** Validator ruft bestehende Domain-Funktionen, wo vorhanden (z.B. `library_repair/genre.py::_validate_genre_name`).
+**Regel:** Validator ruft bestehende Domain-Funktionen, wo vorhanden (z.B. `library_repair/genre.py::validate_genre_name`).
 
 ### 2.4 Persistence Strategy
 
@@ -233,3 +233,29 @@ Drei ehrliche Zustände je Datei in der API-Antwort:
 2. **Reihenfolge M1/M2/M2.5:** so wie oben oder anders?
 3. **Backup für M2:** nur Git + Etag, oder eigene `.mapping_backups/`-Infrastruktur?
 4. **FINDINGS-Erzeugung:** R1/R3 als neue Einträge in `docs/FINDINGS_INDEX.md` noch vor M1?
+
+---
+
+## M1-Status (2026-09-29)
+
+**IMPLEMENTIERT** — Channel-Genre-Administration als Referenzimplementierung.
+
+| Baustein | Datei |
+|---|---|
+| Application-Layer | `services/mapping_admin.py` (neu) |
+| Domain-Rename | `services/library_repair/genre.py::validate_genre_name` (vormals `_validate_genre_name`, oeffentlich gemacht fuer Wiederverwendung) |
+| Schemas | `control_center/schemas/mapping_admin.py` (neu) |
+| Router | `control_center/routers/mapping_admin.py` (neu, `/api/v1/admin/mappings/{mapping_id}`) |
+| App-Registrierung | `control_center/app.py` (1 Zeile) |
+| Tests | `tests/test_mapping_admin_service.py` (18) + `tests/test_control_center_mapping_admin_api.py` (12) |
+
+**Nicht in M1 enthalten** (bewusst):
+- Keine UI (Phase 5)
+- Kein zweites Mapping (M2)
+- Keine Hybrid-Dateien wie `case_preserve.yaml` / `known_artists.yaml` (M3, braucht Cross-Process-Lock)
+- Kein Auto-Learned-Write (M4)
+- Kein Reload-IPC (`GenreMapper.reload()` bleibt ungenutzt)
+- Kein Backup-System
+- Keine Aenderungen an bestehender Mapping-Fachlogik oder Dateiformaten
+
+**Naechster Schritt:** M2 — die naechste manuelle Mapping-Datei (`genre-aliases` als Vorschlag).

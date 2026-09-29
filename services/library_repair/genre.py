@@ -336,7 +336,7 @@ def known_genres(mapping_path: Path) -> List[str]:
     return sorted(seen.values(), key=str.casefold)
 
 
-def _validate_genre_name(value: object, label: str) -> str:
+def validate_genre_name(value: object, label: str) -> str:
     raw = str(value if value is not None else "")
     if _CONTROL_CHARS.search(raw):  # vor der Whitespace-Bereinigung (Zeilenumbruch != Leerzeichen)
         raise GenreDomainError(f"{label} enthaelt Steuerzeichen.")
@@ -356,7 +356,7 @@ def normalize_genre_fields(primary: object, secondary: object) -> Tuple[str, Lis
     entfernt; Schreibweise und Reihenfolge des Nutzers bleiben erhalten.
     Wirft GenreDomainError bei leerem Primary, ';', Steuerzeichen,
     zu langen Werten oder mehr als MAX_SECONDARY_GENRES Eintraegen."""
-    clean_primary = _validate_genre_name(primary, "Primary-Genre")
+    clean_primary = validate_genre_name(primary, "Primary-Genre")
     items = list(secondary or [])
     if len(items) > MAX_SECONDARY_GENRES:
         raise GenreDomainError(f"Maximal {MAX_SECONDARY_GENRES} Secondary-Genres erlaubt.")
@@ -365,7 +365,7 @@ def normalize_genre_fields(primary: object, secondary: object) -> Tuple[str, Lis
     for raw in items:
         if raw is None or not str(raw).strip():
             continue
-        g = _validate_genre_name(raw, "Secondary-Genre")
+        g = validate_genre_name(raw, "Secondary-Genre")
         if g.casefold() not in seen:
             seen.add(g.casefold())
             clean.append(g)
