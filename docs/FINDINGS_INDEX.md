@@ -32,7 +32,8 @@ Referenzpunkt: `docs/MusicBot_ENGINEERING_BASELINE_v12.md` (Freeze
 jetzt unter `docs/archive/`). Eine DRAFT-v12 wird beim nächsten
 ARCH-Phasen-Abschluss angelegt — dieser Index bleibt die einzige Stelle
 für den aktuellen Finding-Stand.
-**Aktueller Finding-Stand (dieses Dokument):** 2026-09-29 (Logs-Doku-Drift — `control_center/routers/logs.py` und `static/pages/logs.js` auf den Stand mit `?job=<id8>` gebracht; `services/logs/reader.py` war bereits korrekt).
+**Aktueller Finding-Stand (dieses Dokument):** 2026-09-29 (Baseline-v12-Freeze: Sammelzeile „Client Consolidation D.12b.1/D.12b.2 + Metadaten-Editor Schritt 1–3 + Navidrome-Ausbau N1–N5 + CC-UI-Abschluss“ — 25 offene Punkte, alle P2/P3, kein offener P0/P1; Schnappschuss in `docs/MusicBot_ENGINEERING_BASELINE_v12.md` §4).
+Davor 2026-09-29 (Logs-Doku-Drift — `control_center/routers/logs.py` und `static/pages/logs.js` auf den Stand mit `?job=<id8>` gebracht; `services/logs/reader.py` war bereits korrekt).
 Davor 2026-09-29 (TestUiRendering an die aktuelle UI-Struktur angepasst (#377) — 10 vorbestehende rote Tests in `test_repair_result_semantics.py` repariert: `[artist_detail]`-Variante entfaellt, Node-Harness um `_jobResultHtml`/`ccStatusBadge`/`ccToast` erweitert).
 Davor 2026-09-29 (Metadaten-Editor abgeschlossen — Jahr (#374), Tracknummer (#375), Feature-Artists (#376) gemergt; FINDINGS-Zeilen 530/531 auf CLOSED).
 Davor 2026-09-29 (CC-UI Navidrome N5 — Favoriten, Scrobble, Zur Playlist hinzufügen; Zeile „Control Center: uneinheitliche UI“ fortgeschrieben — Navidrome-Ausbau N1–N5 abgeschlossen).
