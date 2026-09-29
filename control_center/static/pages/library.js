@@ -178,7 +178,20 @@ function renderArtistsOverview(el, body) {
   }
   _renderArtistIssueFilter();
   _renderArtistsOverviewList();
+  // Einstieg aus der Overview ("In der Library bearbeiten"): ?issue=__any
+  // bzw. ?issue=<CODE> setzt den Themen-Filter einmalig.
+  if (_pendingIssueFilter) {
+    const code = _pendingIssueFilter;
+    _pendingIssueFilter = null;
+    _showArtistsWithIssue(code);
+  }
 }
+
+let _pendingIssueFilter = (() => {
+  try {
+    return new URLSearchParams((window.location && window.location.search) || "").get("issue");
+  } catch (e) { return null; }
+})();
 
 // Lädt einen Endpunkt in ein Element; Zustände über ccState.
 async function _libLoad(elementId, path, renderFn, retryFn) {

@@ -157,7 +157,7 @@ global.document = {
   documentElement: { getAttribute: () => "dark", setAttribute() {} },
   body: { appendChild() {}, classList: { toggle() {}, remove() {}, contains: () => false } },
 };
-global.window = { location: { href: "" } };
+global.window = { location: { href: "", search: sc.search || "" } };
 global.console = { ...console, error() {} };
 const calls = [];
 const routes = sc.routes || {};
@@ -322,3 +322,18 @@ def test_live_scan_mapping_summary_as_datagrid(tmp_path):
                           "ops": [{"op": "call", "fn": "loadMappingSummary"}]})
     html = out["els"]["metadata-content"]["html"]
     assert 'class="datagrid"' in html and "Primäre Genres" in html and ">12<" in html
+
+
+
+@needs_node
+@pytest.mark.parametrize("search, expected_rows, value", [
+    ("?issue=__any", 2, "__any"),          # Overview "In der Library bearbeiten"
+    ("?issue=ARTWORK_MISSING", 1, "ARTWORK_MISSING"),
+    ("", 3, ""),
+])
+def test_issue_url_parameter_preselects_the_artist_filter(tmp_path, search, expected_rows, value):
+    """Overview O2 (2026-09-29): Einstieg aus der Overview mit ?issue= setzt den
+    Themen-Filter der Artist-Liste einmalig."""
+    out = _run(tmp_path, {"routes": _OK, "search": search})
+    assert out["els"]["artists-overview-content"]["html"].count('class="artist-row"') == expected_rows
+    assert out["els"]["artist-issue-filter"]["value"] == value
