@@ -1118,14 +1118,14 @@ Nicht jede einzelne triviale Funktion braucht eine seitenlange Beschreibung.
 ## Baseline-Pflege
 
 Aktuelle **eingefrorene** Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v12.md`
-(Freeze 2026-09-28, 6160 passed / 0 failed, 1 umgebungsbedingt skipped,
-11 subtests passed; Freeze-Gate APPROVED, Kriterium Datensicherheit mit
-dokumentiertem D.13-Vorfall per Nutzerentscheidung). Referenziert von
+(Freeze 2026-09-29, 6576 passed / 0 failed, 1 umgebungsbedingt skipped,
+11 subtests passed; Freeze-Gate APPROVED, kein neuer Datensicherheits-
+Vorfall seit v11). Referenziert von
 `README.md` und `docs/INDEX.md`. Vorgänger
-`docs/MusicBot_ENGINEERING_BASELINE_v10.md` (Freeze 2026-09-14, 4250
+`docs/archive/MusicBot_ENGINEERING_BASELINE_v11.md` (Freeze 2026-09-28, 6160
 passed) liegt unverändert unter `docs/archive/`.
 
-Eine DRAFT-`MusicBot_ENGINEERING_BASELINE_v12.md` existiert noch nicht —
+Eine DRAFT-`MusicBot_ENGINEERING_BASELINE_v13.md` existiert noch nicht —
 sie wird (Normalfall direkt nach einem Freeze, siehe unten) beim nächsten
 ARCH-Phasen-Abschluss mit Code-/YAML-Änderung angelegt.
 `docs/FINDINGS_INDEX.md` bleibt die lebende Findings-Quelle.
