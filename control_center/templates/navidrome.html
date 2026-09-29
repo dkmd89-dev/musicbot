@@ -4,7 +4,7 @@
 {% block content %}
 {# CC-UI Navidrome N1 (Nutzerfreigabe 2026-09-29): Musik-Bereich im Stil von
    Symfonium — Suche im Kopf, Pill-Reiter, Start mit Regalen, Cover-/Artist-
-   Raster. Detailansichten (Modal) bleiben bis N2 unverändert. Element-IDs
+   Raster; N2: Detailseiten per Hash-Routing statt Modal. Element-IDs
    sind Vertrag mit static/pages/navidrome.js. #}
 <div class="page-header d-print-none mb-3">
   <div class="row g-2 align-items-center">
@@ -143,32 +143,16 @@
     <div id="nav-search-results"></div>
   </div>
 
-</div>
-
-<!-- Detail-Modal (bleibt bis N2 unverändert) -->
-<div class="modal modal-blur fade" id="nav-detail-modal" tabindex="-1"
-     role="dialog" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-md-down"
-       role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <button type="button"
-                class="btn btn-sm btn-icon btn-ghost-secondary d-none me-2"
-                id="nav-detail-back" title="Zurück" aria-label="Zurück">
-          <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24"
-               viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
-               stroke-linecap="round" stroke-linejoin="round">
-            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-            <path d="M15 6l-6 6l6 6" />
-          </svg>
-        </button>
-        <h5 class="modal-title text-truncate flex-grow-1" id="nav-detail-title">Details</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"
-                aria-label="Schließen"></button>
-      </div>
-      <div class="modal-body" id="nav-detail-body">Lädt…</div>
+  <!-- Detailseite (Hash-Routing #/artist/ID usw.; kein eigener Reiter) -->
+  <div class="tab-pane" id="nav-pane-detail" role="tabpanel">
+    <div class="mb-3">
+      <button type="button" class="btn btn-ghost-secondary btn-sm" id="nav-detail-back">
+        <svg class="icon me-1"><use href="#i-arrow-left"/></svg>Zurück
+      </button>
     </div>
+    <div id="nav-detail-content"></div>
   </div>
+
 </div>
 
 <!-- Scan-Ausgabe als Seitenpanel -->

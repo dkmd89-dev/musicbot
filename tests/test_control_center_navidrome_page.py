@@ -50,15 +50,9 @@ async def client():
 # ─────────────────────────────────────────────────────────────────────────
 
 
-def test_n1_template_and_new_js_sections_have_no_emoji():
-    """Modal-Stack und Detailansichten behalten ihre Emojis bis N2 — geprüft
-    wird alles vor dem Modal-Stack und alles ab den Kacheln."""
-    assert not _EMOJI.search(NAVIDROME_HTML.read_text(encoding="utf-8"))
-    js = NAVIDROME_JS.read_text(encoding="utf-8")
-    head = js.split("// Modal-Stack")[0]
-    tail = js[js.index("// Kacheln"):]
-    assert not _EMOJI.search(head), "Emoji im Kopf von navidrome.js"
-    assert not _EMOJI.search(tail), "Emoji in den N1-Abschnitten von navidrome.js"
+def test_navidrome_template_and_js_have_no_emoji():
+    for path in (NAVIDROME_HTML, NAVIDROME_JS):
+        assert not _EMOJI.search(path.read_text(encoding="utf-8")), f"Emoji in {path.name}"
 
 
 @pytest.mark.asyncio
@@ -82,9 +76,11 @@ async def test_navidrome_page_layout_n1(client):
     for shelf in ("newest", "random", "artists", "favorites"):
         assert f'id="nav-shelf-{shelf}"' in html
     assert 'id="nav-shuffle-btn"' in html
-    # Scan-Ausgabe im Seitenpanel, Detail-Modal bleibt (N2)
+    # Scan-Ausgabe im Seitenpanel; N2: Detailseite statt Modal
     assert 'id="navidrome-scan-offcanvas"' in html and 'id="navidrome-scan-output"' in html
-    assert 'id="nav-detail-modal"' in html and 'id="nav-detail-body"' in html
+    for element_id in ("nav-pane-detail", "nav-detail-content", "nav-detail-back"):
+        assert f'id="{element_id}"' in html, element_id
+    assert "nav-detail-modal" not in html and "nav-detail-body" not in html
     # Alte Reiter/Blätter-Bedienung ist weg
     for gone in ("nav-artists-prev", "nav-albums-next", "tab-discover", "nav-discover-random"):
         assert gone not in html
@@ -100,11 +96,13 @@ async def test_navidrome_page_icons_exist_in_sprite(client):
     assert not missing, f"Icons fehlen im Sprite: {missing}"
 
 
-def test_navidrome_js_wires_all_detail_link_kinds():
+def test_navidrome_js_uses_real_hash_links_and_no_modal_stack():
     js = NAVIDROME_JS.read_text(encoding="utf-8")
-    for selector in (".nav-artist-link", ".nav-album-link", ".nav-song-link",
-                     ".nav-genre-link", ".nav-playlist-link"):
-        assert selector in js.split("function _wireDetailLinks", 1)[1].split("// Reiter", 1)[0]
+    for kind in ("artist", "album", "song", "genre", "playlist", "top"):
+        assert re.search(rf"\b{kind}:\s*_render\w+View", js), f"Detailseite {kind} fehlt"
+    assert "#/${type}/" in js
+    for gone in ("_navView", "bootstrap.Modal", "_wireDetailLinks", "nav-detail-modal"):
+        assert gone not in js, gone
     # Keine Browser-Dialoge mehr
     assert "prompt(" not in js.replace("ccPrompt(", "")
     assert "alert(" not in js.replace('"alert"', "")
@@ -158,9 +156,15 @@ global.document = {
   documentElement: { getAttribute: () => "dark", setAttribute: () => {} },
   body: { classList: { toggle() {}, remove() {}, contains: () => false }, appendChild() {}, style: { removeProperty() {} } },
 };
+const hashHandlers = [];
+const pushes = [];
 global.window = {
   prompt: () => (scenario.__prompt === undefined ? null : scenario.__prompt),
   confirm: () => !!scenario.__confirm,
+  location: { hash: scenario.__hash || "", pathname: "/navidrome", search: "" },
+  history: { pushState: (_s, _t, url) => { pushes.push(url); global.window.location.hash = ""; } },
+  addEventListener: (ev, fn) => { if (ev === "hashchange") hashHandlers.push(fn); },
+  scrollTo: () => {},
 };
 global.localStorage = { getItem: () => null, setItem: () => {} };
 global.console = { ...console, error: () => {} };
@@ -176,7 +180,8 @@ global.fetch = async (url, options) => {
            json: async () => r.body };
 };
 const names = ["_navShowTab", "runSearch", "createPlaylist", "renamePlaylistPrompt", "deletePlaylistConfirm",
-               "_navOnPlaylistClick", "loadShelfRandom", "_navState", "triggerNavidromeScan"];
+               "_navOnPlaylistClick", "loadShelfRandom", "_navState", "triggerNavidromeScan",
+               "_navParseHash", "_navHref"];
 const src = fs.readFileSync(commonPath, "utf-8") + "\n" + fs.readFileSync(pagePath, "utf-8")
   + "\nglobalThis.__t = { " + names.join(", ") + " };";
 new Function(src)();
@@ -187,6 +192,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     if (s.fn) await globalThis.__t[s.fn](...(s.args || []));
     else if (s.set) els[s.set.id].value = s.set.value;
     else if (s.click) { for (const fn of (els[s.click]._h.click || [])) await fn({ preventDefault() {}, target: els[s.click] }); }
+    else if (s.hash !== undefined) { global.window.location.hash = s.hash; for (const fn of hashHandlers) await fn(); }
     else if (s.submit) { for (const fn of (els[s.submit]._h.submit || [])) await fn({ preventDefault() {} }); }
     else if (s.clickBtn) { for (const fn of (els[s.clickBtn]._btn.handlers.click || [])) await fn(); }
     else if (s.playlistClick) {
@@ -204,7 +210,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const toasts = ((els["cc-toast-container"] || {})._children || []).map((t) => t.innerHTML);
   // Erst vollständig schreiben, dann beenden (process.exit direkt nach console.log
   // schneidet die Ausgabe an der Pipe ab; offene Toast-Timer halten node sonst am Leben).
-  const payload = JSON.stringify({ els: out, calls, toasts,
+  const parsed = (scenario.__parse || []).map((h) => globalThis.__t._navParseHash(h));
+  const payload = JSON.stringify({ els: out, calls, toasts, pushes, parsed,
     state: { tab: globalThis.__t._navState.tab, prev: globalThis.__t._navState.prevTab } });
   process.stdout.write(payload + "\n", () => process.exit(0));
 })();
@@ -285,9 +292,10 @@ def test_start_shelves_render_tiles_with_cover_proxy(tmp_path):
     newest = els["nav-shelf-newest"]["html"]
     assert newest.count('class="nav-tile nav-album-link"') == 2
     assert f'src="{_BASE}/cover/al-1?size=300"' in newest
-    assert 'data-id="a1"' in newest and "Artist 1 · 2021" in newest
+    assert 'href="#/album/a1"' in newest and "Artist 1 · 2021" in newest
     artists = els["nav-shelf-artists"]["html"]
     assert "artist-card nav-artist-link" in artists and "1 Album<" in artists
+    assert 'href="#/artist/ar1"' in artists
     assert els["nav-shelf-favorites-section"]["hidden"] is True   # keine favorisierten Alben
 
 
@@ -402,7 +410,7 @@ def test_genres_render_as_chips(tmp_path):
     scenario = _base(**{f"{_BASE}/genres": _ok({"items": [{"name": "Deutschrap", "song_count": 12}, {"name": "Pop", "song_count": None}]})})
     html = _run(tmp_path, scenario, steps=[{"fn": "_navShowTab", "args": ["genres"]}])["els"]["nav-genres-list"]["html"]
 
-    assert html.count("nav-genre-link") == 2 and 'data-name="Deutschrap"' in html and ">12<" in html
+    assert html.count("nav-genre-link") == 2 and 'href="#/genre/Deutschrap"' in html and ">12<" in html
 
 
 @needs_node
@@ -527,3 +535,174 @@ def test_scan_failure_and_forbidden(tmp_path):
     assert "Nur Admin" in denied["els"]["navidrome-scan-output"]["text"]
     assert any("Scan nicht möglich" in t and "Nur Admin" in t for t in denied["toasts"])
     assert denied["els"]["navidrome-scan-btn"]["disabled"] is False
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# N2: Detailseiten per Hash-Routing (kein Modal mehr)
+# ─────────────────────────────────────────────────────────────────────────
+
+_SONGS = [
+    {"id": "s1", "title": "Erster", "artist": "Artist 1", "artist_id": "ar1", "album": "Album 1", "album_id": "a1",
+     "duration": 185, "track": 1},
+    {"id": "s2", "title": "Zweiter", "artist": "Artist 1", "artist_id": "ar1", "album": "Album 1", "album_id": "a1",
+     "duration": 60, "track": 2},
+]
+
+
+def _detail_scenario(**overrides) -> dict:
+    scenario = _base(**{
+        f"{_BASE}/albums/a1": _ok({"id": "a1", "name": "Album 1", "artist": "Artist 1", "artist_id": "ar1",
+                                   "cover_art": "al-1", "year": 2021, "song_count": 2, "duration": 245, "songs": _SONGS}),
+        f"{_BASE}/artists/ar1": _ok({"id": "ar1", "name": "Chapo", "album_count": 2, "albums": [_album(1), _album(2)]}),
+        f"{_BASE}/artists/ar1/top": _ok({"artist_id": "ar1", "artist_name": "Chapo", "songs": _SONGS}),
+        f"{_BASE}/songs/s1": _ok({**_SONGS[0], "genre": "Rap", "genres": ["Rap", "Deutschrap"], "play_count": 7, "cover_art": "al-1", "year": 2021}),
+        f"{_BASE}/genres/Deutsch%20Rap": _ok({"name": "Deutsch Rap", "songs": _SONGS}),
+        f"{_BASE}/playlists/p1": _ok({"id": "p1", "name": "Mix", "owner": "admin", "song_count": 2, "duration": 245, "songs": _SONGS}),
+    })
+    scenario.update(overrides)
+    return scenario
+
+
+@needs_node
+def test_deep_link_renders_album_page_without_loading_start_shelves(tmp_path):
+    out = _run(tmp_path, _detail_scenario(), __hash="#/album/a1")
+
+    assert f"{_BASE}/albums/a1" in _urls(out)
+    assert f"{_BASE}/newest?page=0&page_size=12" not in _urls(out)       # Deep-Link lädt keine Startseite
+    assert out["state"]["tab"] == "detail"
+    assert "active" in out["els"]["nav-pane-detail"]["cls"] and "active" not in out["els"]["nav-pane-start"]["cls"]
+    html = out["els"]["nav-detail-content"]["html"]
+    assert "Album 1" in html and f'{_BASE}/cover/al-1?size=500' in html
+    assert 'href="#/artist/ar1"' in html and "2021 · 2 Songs · 4:05" in html
+    assert html.count('href="#/song/') == 2 and "Erster" in html and "3:05" in html
+
+
+@needs_node
+def test_artist_page_links_albums_and_top_songs(tmp_path):
+    html = _run(tmp_path, _detail_scenario(), __hash="#/artist/ar1")["els"]["nav-detail-content"]["html"]
+
+    assert "Chapo" in html and "2 Alben" in html
+    assert html.count('class="nav-tile nav-album-link"') == 2 and 'href="#/album/a1"' in html
+    assert 'href="#/top/ar1"' in html
+    assert 'class="artist-avatar"' in html and f'{_BASE}/cover/ar1?size=300' in html
+
+
+@needs_node
+def test_song_genre_top_and_playlist_pages(tmp_path):
+    song = _run(tmp_path, _detail_scenario(), __hash="#/song/s1")["els"]["nav-detail-content"]["html"]
+    assert "Erster" in song and 'href="#/artist/ar1"' in song and 'href="#/album/a1"' in song
+    assert "Rap, Deutschrap" in song and ">7<" in song and "3:05" in song
+
+    genre_out = _run(tmp_path, _detail_scenario(), __hash="#/genre/Deutsch%20Rap")
+    assert f"{_BASE}/genres/Deutsch%20Rap" in _urls(genre_out)             # Hash-Kodierung bleibt erhalten
+    assert "Deutsch Rap" in genre_out["els"]["nav-detail-content"]["html"]
+    assert genre_out["els"]["nav-detail-content"]["html"].count('href="#/song/') == 2
+
+    top = _run(tmp_path, _detail_scenario(), __hash="#/top/ar1")["els"]["nav-detail-content"]["html"]
+    assert 'href="#/artist/ar1"' in top and "Chapo" in top and top.count('href="#/song/') == 2
+
+    playlist = _run(tmp_path, _detail_scenario(), __hash="#/playlist/p1")["els"]["nav-detail-content"]["html"]
+    assert "Mix" in playlist and "admin · 2 Songs · 4:05" in playlist
+    assert 'class="btn nav-playlist-rename" data-id="p1" data-name="Mix"' in playlist
+    assert "nav-playlist-delete" in playlist and playlist.count('href="#/song/') == 2
+
+
+@needs_node
+def test_detail_states_not_found_and_error(tmp_path):
+    missing = _run(tmp_path, _detail_scenario(**{f"{_BASE}/albums/a1": {"status": 404, "body": {"error": {"message": "weg"}}}}),
+                   __hash="#/album/a1")["els"]["nav-detail-content"]["html"]
+    assert "Nicht gefunden" in missing and "Erneut versuchen" not in missing
+
+    broken = _run(tmp_path, _detail_scenario(**{f"{_BASE}/albums/a1": {"status": 500, "body": {"error": {"message": "kaputt"}}}}),
+                  __hash="#/album/a1")["els"]["nav-detail-content"]["html"]
+    assert "kaputt" in broken and "Erneut versuchen" in broken
+
+
+@needs_node
+def test_detail_text_is_escaped(tmp_path):
+    evil = _detail_scenario(**{f"{_BASE}/albums/a1": _ok({
+        "id": "a1", "name": "<script>alert(1)</script>", "artist": "<b>x</b>", "artist_id": "ar1", "songs": []})})
+    html = _run(tmp_path, evil, __hash="#/album/a1")["els"]["nav-detail-content"]["html"]
+
+    assert "<script>" not in html and "<b>x</b>" not in html and "&lt;script&gt;" in html
+
+
+@needs_node
+def test_hashchange_opens_detail_and_clearing_hash_returns_to_previous_tab(tmp_path):
+    out = _run(tmp_path, _detail_scenario(), steps=[
+        {"fn": "_navShowTab", "args": ["albums"]},
+        {"hash": "#/album/a1"},
+    ])
+    assert out["state"] == {"tab": "detail", "prev": "albums"}
+    assert "Album 1" in out["els"]["nav-detail-content"]["html"]
+
+    back = _run(tmp_path, _detail_scenario(), steps=[
+        {"fn": "_navShowTab", "args": ["albums"]},
+        {"hash": "#/album/a1"},
+        {"hash": ""},                                                   # Browser-Zurück
+    ])
+    assert back["state"]["tab"] == "albums"
+    assert "active" in back["els"]["nav-pane-albums"]["cls"] and "active" not in back["els"]["nav-pane-detail"]["cls"]
+
+
+@needs_node
+def test_back_button_and_tabs_clear_the_hash(tmp_path):
+    out = _run(tmp_path, _detail_scenario(), steps=[
+        {"fn": "_navShowTab", "args": ["genres"]},
+        {"hash": "#/album/a1"},
+        {"click": "nav-detail-back"},
+    ])
+    assert out["state"]["tab"] == "genres" and out["pushes"] == ["/navidrome"]
+
+    via_tab = _run(tmp_path, _detail_scenario(), __hash="#/album/a1", steps=[{"click": "tab-artists"}])
+    assert via_tab["state"]["tab"] == "artists" and via_tab["pushes"] == ["/navidrome"]
+
+    # Deep-Link: "Zurück" führt zur Startseite (kein vorheriger Reiter bekannt)
+    deep = _run(tmp_path, _detail_scenario(), __hash="#/album/a1", steps=[{"click": "nav-detail-back"}])
+    assert deep["state"]["tab"] == "start" and f"{_BASE}/newest?page=0&page_size=12" in _urls(deep)
+
+
+@needs_node
+def test_search_result_links_are_hash_links_and_search_clears_detail_hash(tmp_path):
+    scenario = _detail_scenario(**{f"{_BASE}/search?q=Ali&type=all": _ok({
+        "artists": [{"id": "ar9", "name": "Ali"}], "albums": [_album(9)], "songs": [_SONGS[0]]})})
+    out = _run(tmp_path, scenario, __hash="#/album/a1", steps=[
+        {"set": {"id": "nav-search-input", "value": "Ali"}}, {"submit": "nav-search-form"}])
+
+    html = out["els"]["nav-search-results"]["html"]
+    assert 'href="#/artist/ar9"' in html and 'href="#/album/a9"' in html and 'href="#/song/s1"' in html
+    assert out["state"]["tab"] == "search" and out["pushes"] == ["/navidrome"]
+
+
+@needs_node
+def test_playlist_delete_on_detail_page_returns_to_playlist_list(tmp_path):
+    scenario = _detail_scenario(**{
+        f"{_BASE}/playlists?page=0&page_size=20": _ok({"items": [], "page": 0, "page_size": 20, "total": 0, "has_next": False}),
+    })
+    out = _run(tmp_path, scenario, __hash="#/playlist/p1", __confirm=True,
+               steps=[{"playlistClick": {"cls": "nav-playlist-delete", "id": "p1", "name": "Mix"}}])
+
+    assert [c["url"] for c in out["calls"] if c["method"] == "DELETE"] == [f"{_BASE}/playlists/p1"]
+    assert out["state"]["tab"] == "playlists"
+    assert _urls(out).count(f"{_BASE}/playlists?page=0&page_size=20") == 1     # genau einmal geladen
+    assert any("Playlist gelöscht" in t for t in out["toasts"])
+
+
+@needs_node
+def test_playlist_rename_on_detail_page_reloads_the_page(tmp_path):
+    scenario = _detail_scenario(**{f"{_BASE}/playlists/p1": _ok({"id": "p1", "name": "Mix", "owner": "a", "song_count": 0, "songs": []})})
+    out = _run(tmp_path, scenario, __hash="#/playlist/p1", __prompt="Neu",
+               steps=[{"playlistClick": {"cls": "nav-playlist-rename", "id": "p1", "name": "Mix"}}])
+
+    assert [c["url"] for c in out["calls"] if c["method"] == "PUT"] == [f"{_BASE}/playlists/p1"]
+    assert [c["url"] for c in out["calls"] if c["method"] == "GET"].count(f"{_BASE}/playlists/p1") == 2
+    assert out["state"]["tab"] == "detail"
+
+
+@needs_node
+def test_parse_hash_accepts_only_known_routes(tmp_path):
+    hashes = ["#/album/a1", "#/genre/Deutsch%20Rap", "#/nope/x", "#/album/", "", "#/song/%E0%A4%A"]
+    out = _run(tmp_path, _base(), __parse=hashes)
+
+    assert out["parsed"] == [{"type": "album", "id": "a1"}, {"type": "genre", "id": "Deutsch Rap"},
+                             None, None, None, None]
