@@ -266,4 +266,11 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
    auth-geschützter Stream-/Cover-Proxy auf die Subsonic-API von Navidrome
    (`services/clients/navidrome_api.py`). Dafür gibt es eine eigene Planung → Freigabe →
    Umsetzung, Credentials dürfen nie in URLs, Logs oder im Browser landen (CLAUDE.md §12).
+
+   **Stufenplan (Nutzerfreigabe 2026-09-29):** N1 Gerüst + Startseite mit Regalen + Raster +
+   Suche (erledigt 2026-09-29) → N2 Detailseiten mit Hash-Routing statt Modal → N3 Stream-API
+   → N4 Player-Leiste (nur auf der Navidrome-Seite, keine globale Shell-Leiste) → N5 Favoriten
+   setzen, Scrobble (damit Browser-Wiedergaben in Statistics zählen), Zur-Playlist-hinzufügen.
+   Browse/Stream/Favoriten/Scrobble laufen über das in der Bot-Konfiguration hinterlegte
+   Navidrome-Konto; Scan bleibt Admin.
 3. Abschluss: manueller Browser-/Subpath-Durchlauf, Alt-Klassen aufräumen.
