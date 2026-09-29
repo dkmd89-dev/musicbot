@@ -10,7 +10,7 @@ _get_download_help()/_get_stats_help()/_get_navidrome_help()/
 _get_admin_help() verschoben. RichMenuHandler.handle_help()/
 handle_help_callback() bleiben dünne Delegatoren (Maintenance-Gate +
 Activity-Tracking + Aufruf hierher) - siehe
-docs/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md.
+docs/archive/arch/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md.
 
 Charakterisierte Asymmetrie (unverändert übernommen, keine
 Verhaltensänderung): send_help_message()'s except-Zweig ruft bei
@@ -23,7 +23,7 @@ get_navidrome_help()/get_admin_help() sind seither dünne Wrapper um
 die in handlers/menu/content/messages.py zentralisierten Texte -
 diese Datei bleibt für Themenauswahl/Keyboard-Aufbau/Telegram-Versand
 zuständig, siehe
-docs/MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md.
+docs/archive/arch/MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md.
 
 Telegram Start/Help/Menu UX Finalization v2: send_help_message()s
 Pro-Feature-Zeile zeigte bisher zusätzlich `feature["commands"]` an -

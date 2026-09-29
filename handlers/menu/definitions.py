@@ -9,7 +9,7 @@ handlers/menu/rich_menu_system.py::initialize_menu_structure()/
 _build_registry() verschoben (reine Move-Operation).
 
 Architekturentscheidung (siehe
-docs/MusicBot_ARCH-024_Menu_File_Decomposition.md, Abschnitt P-3):
+docs/archive/arch/MusicBot_ARCH-024_Menu_File_Decomposition.md, Abschnitt P-3):
 build_menu_tree() nimmt die RichMenuSystem-Instanz (`system`) entgegen,
 nicht nur einzelne Abhängigkeiten - anders als die actions/-Module, die
 bewusst keine Rückreferenz auf ihren Aufrufer halten. Grund: die
@@ -90,8 +90,8 @@ def build_menu_tree(system) -> MenuItem:
     # stats_weekly bekommen hier bewusst KEIN handler= (vorher ein von
     # RichMenuHandler._register_stats_handlers() ohnehin unbedingt
     # überschriebener, nie erreichbarer Platzhalter, siehe
-    # docs/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6 und
-    # docs/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md). Der
+    # docs/archive/arch/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6 und
+    # docs/archive/arch/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md). Der
     # tatsächlich genutzte Handler wird weiterhin unverändert per
     # register_handler() in RichMenuHandler._register_stats_handlers()
     # verdrahtet, bevor der Bot Updates verarbeitet - keine

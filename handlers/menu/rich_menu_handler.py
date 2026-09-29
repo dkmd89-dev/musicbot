@@ -103,8 +103,8 @@ class RichMenuHandler:
         # weiter unten, das bei bereits injizierter Instanz KEINE eigene
         # zweite Instanz mehr erzeugt (vorher: RichMenuHandler erzeugte in
         # initialize() immer eine eigene, von bot.py unabhaengige Instanz -
-        # siehe docs/MusicBot_ARCH-026_Error_Handler_Integration_Audit.md,
-        # docs/MusicBot_ARCH-027_Error_Handler_Consolidation.md). Bleibt
+        # siehe docs/archive/arch/MusicBot_ARCH-026_Error_Handler_Integration_Audit.md,
+        # docs/archive/arch/MusicBot_ARCH-027_Error_Handler_Consolidation.md). Bleibt
         # None fuer eigenstaendige Konstruktion ohne bot.py (Tests,
         # Standalone-Nutzung) - initialize() erzeugt dann wie bisher einen
         # kontrollierten Fallback.
@@ -211,7 +211,7 @@ class RichMenuHandler:
         # registriert ist - dadurch teilen sich PTB, RichMenuSystem, alle
         # Sub-Handler und ErrorHandlerAdminInterface exakt denselben
         # Monitoring-/Statistik-Zustand (siehe
-        # docs/MusicBot_ARCH-027_Error_Handler_Consolidation.md).
+        # docs/archive/arch/MusicBot_ARCH-027_Error_Handler_Consolidation.md).
         if self.error_handler is not None:
             self.logger.info(
                 "✅ Enhanced Error Handler übernommen (gemeinsame Instanz von bot.py)"

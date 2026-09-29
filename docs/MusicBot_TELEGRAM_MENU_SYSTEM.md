@@ -51,9 +51,9 @@ für Blätter mit eigener Aktion statt reinem Untermenü-Rendering).
 ### 1a. Interne Modulstruktur von `handlers/menu/` (seit ARCH-024/ARCH-025, COMPLETE)
 
 Die beiden Kerndateien sind seit `ARCH-024`
-([`MusicBot_ARCH-024_Menu_File_Decomposition.md`](MusicBot_ARCH-024_Menu_File_Decomposition.md))
+([`MusicBot_ARCH-024_Menu_File_Decomposition.md`](archive/arch/MusicBot_ARCH-024_Menu_File_Decomposition.md))
 und `ARCH-025`
-([`MusicBot_ARCH-025_Command_Help_Content_Decomposition.md`](MusicBot_ARCH-025_Command_Help_Content_Decomposition.md))
+([`MusicBot_ARCH-025_Command_Help_Content_Decomposition.md`](archive/arch/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md))
 in kohäsive Module aufgeteilt — die obige Zwei-Ebenen-Routing-Beschreibung
 und der Menübaum in Abschnitt 2 bleiben davon unberührt (reine interne
 Umstrukturierung, keine Verhaltensänderung, alle bisherigen öffentlichen/
@@ -136,7 +136,7 @@ Abschnitt A.2).
 Innerhalb von `content/` trennt die ARCH-025 Content-Separation-Closure
 zusätzlich statischen Text (`messages.py`) von Orchestrierung
 (`greeting.py`/`help.py`) und Kontext (`user_context.py`) — siehe
-[`MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md`](MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md).
+[`MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md`](archive/arch/MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md).
 
 `permissions.py`/`session.py`/`models.py` sind durch `ARCH-024`/`ARCH-025`
 **nicht** verändert worden. `RichMenuHandler` behält aus dem Onboarding-
@@ -2017,10 +2017,10 @@ ergänzt). Thematische Suite (`-k "statistik or statistics or menu or stats"`,
 - [`docs/MusicBot_ENGINEERING_BASELINE_v10.md`](MusicBot_ENGINEERING_BASELINE_v10.md)
   (eingefrorene Baseline seit 2026-09-14) — Family Hub (F1–F5) in
   „Recent Major Changes" (Abschnitt 3).
-- [`docs/MusicBot_ARCH-021_Menu_Architecture_Migration.md`](MusicBot_ARCH-021_Menu_Architecture_Migration.md),
-  [`docs/MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md`](MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md),
-  [`docs/MusicBot_ARCH-024_Menu_File_Decomposition.md`](MusicBot_ARCH-024_Menu_File_Decomposition.md),
-  [`docs/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md`](MusicBot_ARCH-025_Command_Help_Content_Decomposition.md)
+- [`docs/archive/arch/MusicBot_ARCH-021_Menu_Architecture_Migration.md`](archive/arch/MusicBot_ARCH-021_Menu_Architecture_Migration.md),
+  [`docs/archive/arch/MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md`](archive/arch/MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md),
+  [`docs/archive/arch/MusicBot_ARCH-024_Menu_File_Decomposition.md`](archive/arch/MusicBot_ARCH-024_Menu_File_Decomposition.md),
+  [`docs/archive/arch/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md`](archive/arch/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md)
   — die vier Architekturmigrationsphasen der internen `handlers/menu/`-
   Modulstruktur (Models/Permissions/Session → Router-/Permission-Härtung
   → Actions/Definitions/Rendering-Dekomposition → Command/Help-Content-

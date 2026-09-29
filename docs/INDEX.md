@@ -1,230 +1,142 @@
 # docs/ – Index
 
-Einstiegspunkt für die Dokumentation. Drei Ebenen (siehe README.md für Details):
+Einstiegspunkt für die Dokumentation. Drei Ebenen:
 
 - **README.md** – Was ist MusicBot? (für Menschen)
-- **ENGINEERING_BASELINE** – Wie ist der aktuelle technische Zustand? (für Wartung/Entwicklung)
-- **archive/arch/ARCH-xxx / archive/post-arch/POST-ARCH-xxx** – Warum wurde eine Architekturentscheidung getroffen? (Historie, unverändert)
+- **`docs/MusicBot_ENGINEERING_BASELINE_v12.md`** – Wie war der eingefrorene technische Zustand? (für Wartung/Entwicklung)
+- **`docs/FINDINGS_INDEX.md`** – Was ist gerade offen, was ist geschlossen? (lebendes Register)
 
-**Ist Finding X gerade offen oder geschlossen?** → [`FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — lebendes, fortlaufend gepflegtes Register aller aktuell offenen/zurückgestellten Punkte, statt durch Baseline-Dokumente blättern zu müssen. Die Tech-Debt-Tabelle in jeder Baseline bleibt ein eingefrorener Schnappschuss zum Freeze-Zeitpunkt.
+**Regel:** Im direkten `docs/`-Root liegen ausschließlich **CURRENT**, **LIVING** oder **BASELINE**-Dokumente. Historische Dokumente (Baselines, ARCH-Protokolle, abgeschlossene Phasen, archivierte Audits) liegen unter `docs/archive/`, `docs/archive/arch/` oder `docs/archive/post-arch/`.
 
-Status-Legende: **CURRENT** = aktuell gültig, statischer Inhalt · **LIVING** = aktuell gültig, fortlaufend aktualisiert (kein fixierter Snapshot) · **BASELINE** = bewusst eingefrorener technischer Referenzpunkt zu einem Freeze-Zeitpunkt · **HISTORICAL** = abgeschlossenes Entscheidungs-/Analyseprotokoll, nicht mehr verändert · **SUPERSEDED** = durch neuere Version abgelöst
+**Status-Legende:** **CURRENT** = aktuell gültig, statischer Inhalt · **LIVING** = aktuell gültig, fortlaufend aktualisiert · **BASELINE** = bewusst eingefrorener technischer Referenzpunkt zu einem Freeze-Zeitpunkt · **HISTORICAL** = abgeschlossenes Entscheidungs-/Analyseprotokoll, nicht mehr verändert · **SUPERSEDED** = durch neuere Version abgelöst · **REMOVED** = Funktion entfernt, Dokument als historische Referenz erhalten.
 
-Alle HISTORICAL/SUPERSEDED-Dokumente liegen vollständig erhalten unter [`docs/archive/`](archive/) — nur nicht mehr im direkten Sichtfeld von `docs/`, sodass dort ausschließlich die aktuell gültigen (CURRENT/LIVING/BASELINE) Dokumente stehen. Die Pfade der Findings-Audits (Download Pipeline Stability, Metadata Quality, Einzelfund-Audits) werden aus Code-Kommentaren und Testdatei-Docstrings zur Traceability zitiert (z. B. `# DL-01 (docs/archive/MusicBot_..._AUDIT.md): ...`); beim Verschieben nach `docs/archive/` wurden alle ca. 30 betroffenen Referenzen in Code-Kommentaren, Test-Docstrings und Cross-References zwischen den Dokumenten selbst mit umgezogen.
+**Ist Finding X gerade offen oder geschlossen?** → [`FINDINGS_INDEX.md`](FINDINGS_INDEX.md) — **die einzige lebende Quelle** für den aktuellen Finding-Stand (Status `OPEN`, `DEFER`, `ACCEPTED RISK`, `CLOSED` sowie sonstige laufende Zustände). Historische Baselines und Audits dokumentieren den Zustand zu ihrem jeweiligen Analyse-/Freeze-Zeitpunkt — sie definieren **nicht** den heutigen Status. Die Tech-Debt-Tabelle in jeder Baseline bleibt ein eingefrorener Schnappschuss zum Freeze-Zeitpunkt.
 
-**Wichtig — ein HISTORICAL-Status *innerhalb* eines Dokuments beschreibt den
-Zustand zum jeweiligen Analyse-/Freeze-Zeitpunkt, nicht automatisch den
-heutigen Repository-Zustand.** Für den tatsächlich aktuellen Stand ist immer
-das als LIVING gekennzeichnete [`FINDINGS_INDEX.md`](FINDINGS_INDEX.md)
-maßgeblich, nicht der älteste oder auffälligste Status-Begriff in einem
-historischen Dokument.
+---
 
-## Aktueller Stand (Living Register)
+## Aktueller eingefrorener Referenzzustand
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| [FINDINGS_INDEX.md](FINDINGS_INDEX.md) | LIVING | Einzige Stelle für „ist Finding X gerade offen oder geschlossen" — fortlaufend gepflegt, kein Snapshot. Trennt explizit Baseline-Freeze (2026-09-02) vom aktuellen Finding-Stand (2026-09-07). |
-| [MusicBot_PHASE3_MUSIC_QUALITY_LIBRARY_INTELLIGENCE.md](MusicBot_PHASE3_MUSIC_QUALITY_LIBRARY_INTELLIGENCE.md) | CURRENT (CLOSED, 2026-09-07) | Phase 3 — Music Quality & Library Intelligence: Library Statistics, Navidrome-Scan-Automation, MusicBot Doctor, Import-History-Checkliste, Bad-Download-Detector Stufe A. Abgleich gegen den externen „Musicbot.md"-Ideenkatalog, inkl. bewusst verworfener/zurückgestellter Kandidaten. |
-| [MusicBot_ARCH-031_Library_Repair_Telegram_Integration_Characterization.md](MusicBot_ARCH-031_Library_Repair_Telegram_Integration_Characterization.md) | LIVING (Decision COMPLETE 2026-09-14; ARCH-032 + ARCH-033 Umsetzung ebenfalls COMPLETE 2026-09-14, siehe `LIBRARY_REPAIR.md` §11/§12) | **Verbindliche** Zielarchitektur + Datei→Funktion→Zielmodul→Tests-Migrationsplan für vollständige Telegram-Ausführbarkeit von Executor Level 1–3 und Konsolidierung der drei neuen Wartungsskripte (`fix_artist_casing.py`/`remove_legacy_genre_atom.py`/`set_genre.py`) in `services/library_repair/`. Löst den ursprünglichen Auftrags-Bezeichner "ARCH-030" wegen Nummernkollision (bereits vergeben, siehe Zeile unten) auf ARCH-031 auf. ARCH-032 (Maintenance Consolidation, Phasen 1–4: `artist.py`/`genre.py`, Executor-Erweiterung, `run_tracking.py`/`maintenance_service.py`/`library_artists.py`, CLI-Konsolidierung + Script-Removal, Telegram-Menüpunkt „🧹 Library-Wartung") und ARCH-033 (Telegram Level-2/3 Repair, Pro-Artist, `l23rep:`-Sub-Flow, ADR-0003) beide vollständig umgesetzt. ARCH-034/035 (COVER/LOUDNESS/DUPLICATE über Telegram) bewusst noch offen, Erweiterungspunkt vorbereitet. Siehe `adr/0001`–`0004` und C4-/Sequenzdiagramme unter `diagrams/`. Vorphasen-Entwurf (Ausgangspunkt, SUPERSEDED): [designs/library-repair-telegram-integration-overview.md](designs/library-repair-telegram-integration-overview.md). |
+| [MusicBot_ENGINEERING_BASELINE_v12.md](MusicBot_ENGINEERING_BASELINE_v12.md) | **BASELINE — FROZEN 2026-09-29, Freeze-Gate APPROVED** | Eingefrorener technischer Referenzpunkt nach v12-Freeze. Umfasst: Client Consolidation D.12b.1/D.12b.2 (Prozess-Rolle, Job-Attribution aller Download-Log-Zeilen), Metadaten-Editor Schritt 1–3 (Jahr, Tracknummer, Feature-Artists), Navidrome-Ausbau N1–N5 (Stream-API, Player, Favoriten/Scrobble/Playlists), CC-UI-Abschluss (Library L1–L4, Overview O2, Logs-Job-Filter), Test-Fix #377 (TestUiRendering). Vollsuite (Nutzer, Freeze-Stand): 6576 passed / 1 skipped / 11 subtests passed / 0 failed. Der laufende Finding-Stand steht ausschließlich in `FINDINGS_INDEX.md`. |
 
-## Baseline
+---
 
-| Datei | Status | Kurzthema |
-|---|---|---|
-| [MusicBot_ENGINEERING_BASELINE_v12.md](MusicBot_ENGINEERING_BASELINE_v12.md) | BASELINE (eingefrorener Referenzpunkt nach Freeze 2026-09-29 — für den laufenden Stand siehe [FINDINGS_INDEX.md](FINDINGS_INDEX.md)) | Client Consolidation D.12b.1/D.12b.2 (Prozess-Rolle, Job-Attribution), Metadaten-Editor Schritt 1–3 (Jahr, Tracknummer, Feature-Artists), Navidrome-Ausbau N1–N5 (Stream-API, Player, Favoriten/Scrobble/Playlists), CC-UI-Abschluss (Library L1–L4, Overview O2, Logs-Job-Filter), Test-Fix #377 (TestUiRendering). Freeze-Gate APPROVED. Vollsuite (Nutzer, Freeze-Stand): 6576 passed / 1 skipped / 11 subtests passed / 0 failed. |
-| [archive/MusicBot_ENGINEERING_BASELINE_v10.md](archive/MusicBot_ENGINEERING_BASELINE_v10.md) | SUPERSEDED (eingefroren nach Freeze 2026-09-14) | Erster Eintrag: Artist-Identity-Resolution-Migration (Phase A–F, PR #176). Deckt u. a. Library Closure Phase, Menu-Architektur-Umbau (ARCH-021/023/024/025), vollständigen Error-Handler-Konsolidierungs-Block (ARCH-026–030, F1–F12 CLOSED), Navidrome-Menu-System-Audit (NAV-F1–F18), Family Hub, Statistics Menu UX & Architecture sowie ARCH-031/032 „Library Repair Telegram Integration" (Library-Maintenance-Consolidation, Phasen 1–4) ab. Vollsuite (Nutzer, Freeze-Stand): 4250 passed / 1 skipped / 11 subtests passed / 0 failed. — abgelöst durch v11 |
-| [archive/MusicBot_ENGINEERING_BASELINE_v9.md](archive/MusicBot_ENGINEERING_BASELINE_v9.md) | SUPERSEDED (eingefroren nach Freeze 2026-09-07) | 61 PRs seit v8 (#104–#164): Findings-/Cleanup-Vorlauf (Security-Fix BOT_TOKEN-Leak, YTPARSE-01, Genre-System/ARCH-022, Telegram-Erweiterungen), Phase 1 „Library Health Scanner" (PR #145–#147), Phase 2 „Smart Library Repair" (PR #146/#148–#156, Loudness-Produktionslauf 133/133 SUCCESS), Phase 3 „Music Quality & Library Intelligence" (PR #157–#164). 10 von 11 in v8 gelisteten akzeptierten Risiken geschlossen, nur INV-01 bleibt offen. 2580 passed / 0 failed (1 umgebungsbedingt skipped) — abgelöst durch v10 |
-| [archive/MusicBot_ENGINEERING_BASELINE_v8.md](archive/MusicBot_ENGINEERING_BASELINE_v8.md) | SUPERSEDED (eingefroren nach Freeze 2026-09-02, mit Nachtrag vom 2026-09-03 zu ARCH-022/1982 passed) | Erster vollständiger P0-Kernbereichs-Audit dieser Baseline-Serie (Metadata/Genre/Artist-Mapping/Duplicate Detection, PR #100, sechs Teilphasen P0-A–F + Gesamtaudit) mit zwei gefundenen und gefixten P0-Bugs (Duplicate-Detection-Artist-Normalisierung, YouTube-Shorts-URL-Erkennung), einem P1-Architekturprojekt zur Ursachenbehebung (PR #102, `DuplicateDetector`↔`ArtistNormalizer`-Verdrahtung), sowie zwei kleinen Cleanup-PRs (#99, #101), 1698 passed / 0 failed (1 umgebungsbedingt skipped) — abgelöst durch v9 |
-| [archive/MusicBot_ENGINEERING_BASELINE_v7.md](archive/MusicBot_ENGINEERING_BASELINE_v7.md) | SUPERSEDED (eingefroren nach Freeze 2026-09-01) | Gezielte Abarbeitung der in v6 + `MusicBot_ARCHITECTURE_EVOLUTION.md` (AE-04) offen gelisteten P2/P3-Findings (13 PRs, #85–#97): Track-A-Cleanup (6 Fixes), Services-Architecture-Audit, DL-03/DL-05-Fehlerklassifikation, `process_single_track()`-Characterization (kein Refactor gerechtfertigt), Telegram-Kopplungs-Entkopplung, `MUSICBRAINZ_RETRIES`-Entscheidung (REMOVE), 1673 passed / 0 failed (1 umgebungsbedingt skipped) — abgelöst durch v8 |
-| [archive/MusicBot_ENGINEERING_BASELINE_v6.md](archive/MusicBot_ENGINEERING_BASELINE_v6.md) | SUPERSEDED (eingefroren nach Freeze 2026-09-01) | Post-Baseline-v5 Health & Risk Audit: Re-Verifikation aller 9 v5-DEFER-Punkte + Durchsicht der 28 seit v5 gemergten PRs + Behebung von DOC-01 (Download-Pipeline) und einer Test-Isolation-Lücke (reale Mapping-Writes), 1634 passed / 0 failed (1 umgebungsbedingt skipped) — abgelöst durch v7, v7 wiederum durch v8 |
-| [archive/MusicBot_ENGINEERING_BASELINE_v5.md](archive/MusicBot_ENGINEERING_BASELINE_v5.md) | SUPERSEDED (eingefroren nach Freeze 2026-08-26) | Nächster verifizierter Referenzzustand nach Post-Baseline-v4 Health & Risk Audit + Behebung von 3 P1-Findings (Duplicate-Detection-Artist/Titel-Ebene, renamed_due_to_conflict-Signal, Fanart-API-Key-Log-Leak) + Doku-Korrektur (enhanced_error_handler.py), 1123 passed / 0 failed — abgelöst durch v6, v6 durch v7, v7 wiederum durch v8 |
-| [archive/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md](archive/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md) | HISTORICAL (Analyseartefakt) | Strikt read-only Audit nach v4, Re-Verifikation AE-10/11/12 + 3 neue P1-Findings — Herleitung von v5 |
-| [MusicBot_ARCHITECTURE_EVOLUTION.md](MusicBot_ARCHITECTURE_EVOLUTION.md) | CURRENT (historisches Analyseprotokoll mit noch gültigen Invarianten/ADRs; Kopf-Hinweis seit 2026-09-07 stellt klar, dass die dort dokumentierten historischen „NOT READY"-Zustände durch AE-10/11/12, Abschnitt 29, geschlossen sind) | Architektur-Invarianten (INV-01–04), Evolution-Kandidaten, ADRs, Closure-Verifikation der Enforcement Fix Phase sowie AE-10/AE-11/AE-12 (Abschnitt 29) — Herleitung von v4 |
-| [archive/MusicBot_ENGINEERING_BASELINE_v4.md](archive/MusicBot_ENGINEERING_BASELINE_v4.md) | SUPERSEDED (eingefroren nach Freeze 2026-08-26) | Abgelöst durch v5, v5 durch v6, v6 durch v7, v7 wiederum durch v8 |
-| [archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md](archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md) | HISTORICAL (Analyseartefakt) | Freeze-Gate-Audit — initial BLOCKED durch AE-12, nach dessen Schließung per Nachtrag auf APPROVED aktualisiert |
-| [archive/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md](archive/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md) | HISTORICAL (Analyseartefakt) | Forensischer Design-/Safety-Audit vor der AE-12-Implementierung |
-| [archive/AE-12_Closure_Audit.md](archive/AE-12_Closure_Audit.md) | HISTORICAL (Analyseartefakt) | Unabhängig gegengeprüfte Closure-Kriterien-Matrix für den AE-12-Fix (7/7 PASS) |
-| [archive/MusicBot_PHASE5_PERFORMANCE_BASELINE.md](archive/MusicBot_PHASE5_PERFORMANCE_BASELINE.md) | HISTORICAL (Analyseartefakt) | Performance-Charakterisierung nach v3/Phase-4, inkl. FINDING-7-Fix (Event-Loop-Blocking in `normalize_loudness()`) |
-| [archive/MusicBot_ENGINEERING_BASELINE_v3.md](archive/MusicBot_ENGINEERING_BASELINE_v3.md) | SUPERSEDED (eingefroren nach Freeze 2026-08-25) | Abgelöst durch v4, v4 durch v5, v5 durch v6, v6 durch v7, v7 wiederum durch v8 |
-| [archive/MusicBot_POST_BASELINE_TRIAGE.md](archive/MusicBot_POST_BASELINE_TRIAGE.md) | HISTORICAL (Analyseartefakt) | Herleitung von v3 — sechs-Dimensionen-Triage + Deep-Audit-Nachträge, nicht selbst Baseline |
-| [archive/MusicBot_ENGINEERING_BASELINE_v2.md](archive/MusicBot_ENGINEERING_BASELINE_v2.md) | SUPERSEDED (eingefroren nach Closure 2026-08-25) | Abgelöst durch v3 |
-| [archive/MusicBot_ENGINEERING_BASELINE.md](archive/MusicBot_ENGINEERING_BASELINE.md) | SUPERSEDED | v1, abgelöst durch v2 |
+## Aktuelle Root-Dokumente
 
-## Control Center
+Alle hier gelisteten Dokumente sind heute gültig und liegen deshalb direkt unter `docs/`.
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| [audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md](audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md) | LIVING (laufender Umsetzungsstand, Phase 2) | Architekturvorschlag für das neue Web-Frontend `control_center/` (FastAPI): API-Design, Service-Integration, Telegram-Login-Widget-Auth-Flow, Frontend-Entscheidung (Jinja2 + Vanilla-JS, kein SPA), Security-Checkliste, Deployment. Wird nach jedem umgesetzten Vertical-Slice-Schritt aktualisiert — aktueller Stand: Schritte 1 (Health API), 3 (Auth-Grundgerüst inkl. Verdrahtung in Health/Findings), 4 (Health-UI) und 5/vorgezogen (Findings API, read-only) umgesetzt und gemergt (PR #246–#248). Enthält den Nachtrag zur spotdl-Versionsbindung (`fastapi`/`uvicorn`/`httpx` absichtlich auf ältere, spotdl-kompatible Versionen begrenzt, da `control_center/` im selben, ungetrennten Python-Environment wie das unabhängige Tool `spotdl` läuft). |
-| [audits/CONTROL_CENTER_ARCHITECTURE_AUDIT_2026-09-15.md](audits/CONTROL_CENTER_ARCHITECTURE_AUDIT_2026-09-15.md) | CURRENT (Phase-0-Snapshot) | Vollständiger Repository-Audit als Ausgangspunkt für das Control Center: bestehende Architektur, CLI-/Telegram-/Admin-Inventar, Reuse-Kandidaten (Permission-Kern, Library-Health-Service, Findings-Registry), fehlende Abstraktionen, ursprünglicher API-Vorschlag, MVP-Vorschlag, Risiken, Teststrategie, Roadmap. Beide dort gestellten Blocker (Web-Auth: Telegram-Login-Widget; Tech-Stack: FastAPI) sind entschieden. |
-| [audits/CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md](audits/CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md) | CURRENT (Phase-1-Snapshot) | CLI/Telegram/Service/Web-Status-Mapping als Grundlage der Architektur-Entscheidung — zeigt, welche bestehende Funktionalität direkt wiederverwendbar ist. |
-| [CONTROL_CENTER_UI_STANDARD.md](CONTROL_CENTER_UI_STANDARD.md) | CURRENT | Verbindlicher UI-Standard des Control Centers (aus Entwurf D): dunkel als Standard + Türkis, Tabler-Icons, Shell, Seitenaufbau, Komponenten, Zustände, Status-Farben, Modal/Toast, Jobs/Pipeline, Logs-Stil, JS-Helfer für CC-UI-1, Definition of Done je Seiten-PR. |
-| [audits/CONTROL_CENTER_UI_INVENTORY_2026-09-28.md](audits/CONTROL_CENTER_UI_INVENTORY_2026-09-28.md) | CURRENT (CC-UI-0-Snapshot) | UI-Inventur aller Control-Center-Seiten (Tabler/Vanilla JS): Seiten-Matrix, Uneinheitlichkeiten U1–U18, wiederverwendbare Bausteine, offene Entscheidungen für den gemeinsamen UI-Standard. |
-| [designs/control-center-ui/](designs/control-center-ui/) | DRAFT (Vergleich) | Layout-Entwürfe A/B/C für den Control-Center-UI-Standard (statische HTML-Mockups, Tabler 1.5.1, keine Produktionsdateien). |
-| [CONTROL_CENTER_REVERSE_PROXY.md](CONTROL_CENTER_REVERSE_PROXY.md) | CURRENT | Betrieb des Control Centers hinter nginx unter dem Subpath `/controlcenter/` (`X-Forwarded-Prefix` → `root_path`, nginx-Konfiguration, Pflicht-Header, Cookie-Path, Regeln für neue UI-Seiten, Verifikationsumfang). |
-
-## Reprocessing Tool
-
-| Datei | Status | Kurzthema |
-|---|---|---|
+| [FINDINGS_INDEX.md](FINDINGS_INDEX.md) | **LIVING** | Einzige lebende Quelle für den aktuellen Finding-Stand (OPEN / DEFER / ACCEPTED RISK / CLOSED). Fortlaufend gepflegt, kein Snapshot. Trennt Freeze-Zeitpunkte (historisch) vom aktuellen Finding-Stand. |
+| [MusicBot_ARCHITECTURE_EVOLUTION.md](MusicBot_ARCHITECTURE_EVOLUTION.md) | CURRENT (historisches Analyseprotokoll) | Architektur-Invarianten (INV-01–04), Evolution-Kandidaten, ADRs, Closure-Verifikation der Enforcement-Fix-Phase sowie AE-10/AE-11/AE-12 (Abschnitt 29) — Herleitung von v4. **Nicht als Baseline zu lesen** — die darin dokumentierten historischen „NOT READY"-Zustände sind durch AE-10/11/12 geschlossen. |
+| [MusicBot_TELEGRAM_MENU_SYSTEM.md](MusicBot_TELEGRAM_MENU_SYSTEM.md) | CURRENT (lebendes Dokument) | Zentrale Referenz für das Telegram-Inline-Menü-System: Zwei-Ebenen-Routing, Menübaum, Download-Control-Center (Live-Status, Hard-Cancel, Verlauf), Bot-Wartungsmodus, Family Hub, Metadata-Reprocessing-Telegram-Anbindung, Muster für künftige Menü-Erweiterungen. |
+| [MusicBot_NAVIDROME_MENU_ARCHITECTURE.md](MusicBot_NAVIDROME_MENU_ARCHITECTURE.md) | CURRENT | Navidrome-Menü-System — API-Capability-Matrix, Callback-Matrix, Zielarchitektur. |
+| [MusicBot_DUPLICATE_RESOLUTION_ARCHITECTURE.md](MusicBot_DUPLICATE_RESOLUTION_ARCHITECTURE.md) | CURRENT (Architekturentscheidung) | Forensischer Architecture Decision Audit für die zentrale Duplicate-Resolution-Komponente. Wird weiterhin direkt von `services/duplicate/`, `scripts/resolve_duplicates.py` und Tests referenziert und deshalb bewusst im Root belassen. Die dokumentierte „kein Rollback-Versprechen"-Entscheidung (Abschnitt 17) wurde additiv um einen optionalen `backup_fn`-DI-Parameter erweitert (Default `None` = Verhalten unverändert). |
+| [LIBRARY_HEALTH.md](LIBRARY_HEALTH.md) | CURRENT | `scripts/library_health_check.py` — vollständig read-only Health-Analyse der Music-Library, versionierter Report (JSON + Text) mit deterministischem Score. Domain in `services/library_health/`. |
+| [LIBRARY_REPAIR.md](LIBRARY_REPAIR.md) | CURRENT | `scripts/library_repair.py` / `services/library_repair/` — leitet Reparaturaktionen aus dem Health-Report ab; alle 8 Executoren implementiert; Backup/Rollback-Modell; §10 Telegram-Integration, §11 Library-Maintenance-Consolidation (ARCH-032), §12 Level-2/3-Repair (ARCH-033). |
 | [METADATA_REPROCESSING.md](METADATA_REPROCESSING.md) | REMOVED (CC-LIB-FINAL, 2026-09-27) | `scripts/reprocess_artist_metadata.py` und der zugehörige Repair-Level 2 wurden vollständig entfernt — hätten manuell gesetzte Tags überschreiben können. Dokument als historische Referenz erhalten. |
-| [archive/METADATA_REPROCESSING_TEST_CHAPO102.md](archive/METADATA_REPROCESSING_TEST_CHAPO102.md) | HISTORICAL (Validierungsprotokoll) | Erster Live-Validierungslauf des Tools gegen echten Artist-Bestand (CHAPO102), inkl. Post-Run Safety Check |
-| [archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md](archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md) | HISTORICAL (Validierungsprotokoll) | Zweiter Validierungslauf (Nina Chuba) + Final-Audit-Nachtrag zu Genre-Mapping-Konsistenz und UNRESOLVED-Praezisierung |
+| [GENRE_SYSTEM.md](GENRE_SYSTEM.md) | CURRENT | Genre-Fallback-Kette, Auto-Learn-Konfidenz-Stufen, Lock-in-Mechanismus, Mapping-Dateien-Übersicht, Genre-Learning, bekannte Revalidierungs-Grenze. |
+| [CONTROL_CENTER_UI_STANDARD.md](CONTROL_CENTER_UI_STANDARD.md) | CURRENT | Verbindlicher UI-Standard des Control Centers (dunkel + Türkis, Tabler-Icons, Shell, Seitenaufbau, Komponenten, Zustände, Status-Farben, Modal/Toast, Jobs/Pipeline, Logs-Stil, JS-Helfer, DoD je Seiten-PR). |
+| [CONTROL_CENTER_REVERSE_PROXY.md](CONTROL_CENTER_REVERSE_PROXY.md) | CURRENT | Betrieb des Control Centers hinter nginx unter dem Subpath `/controlcenter/`. |
+| [INDEX.md](INDEX.md) | CURRENT | Diese Datei. |
 
-## Library Health Scanner
+---
 
-| Datei | Status | Kurzthema |
-|---|---|---|
-| [LIBRARY_REPAIR.md](LIBRARY_REPAIR.md) | CLOSED (Phase 2 vollständig, 2026-09-04), seither um Phase-3-Bestandteile ergänzt (§8 Navidrome-Automation, §9 MusicBot Doctor, §10 Repair MusicBot Telegram-Integration) und um den P1–P3 Production-Audit-Remediation-Durchgang (2026-09-08) aktualisiert | `scripts/library_repair.py` / `services/library_repair/` — leitet aus dem Health-Report konkrete Reparaturaktionen ab (Issue-Code → Repair-Level/-Action, jede auf eine **bestehende** Komponente abgebildet). Alle 8 Executoren (Level-1-Tags, Level-1-Renames, Cover, `ALBUM_COVER_INCONSISTENT`, Level 3, Level 2, Loudness/ReplayGain, Duplicate über `--allow-delete`-Andock an `resolve_duplicates.py`) implementiert, mit Per-Datei-Backup/Rollback abgesichert und gegen die Produktions-Library gelaufen. Siehe auch [audits/PHASE2_LIBRARY_REPAIR_CLOSURE_AUDIT_2026-09-04.md](audits/PHASE2_LIBRARY_REPAIR_CLOSURE_AUDIT_2026-09-04.md) und [audits/LIBRARY_REPAIR_P1_P2_P3_CLOSURE_AUDIT_2026-09-08.md](audits/LIBRARY_REPAIR_P1_P2_P3_CLOSURE_AUDIT_2026-09-08.md) |
-| [LIBRARY_HEALTH.md](LIBRARY_HEALTH.md) | CURRENT (Phase 1 vollständig, seither um `META_TITLE_NOT_CLEAN`/`LOUDNESS_OFF_TARGET` + `--measure-loudness` erweitert) | `scripts/library_health_check.py` — analysiert die konfigurierte Music-Library **vollständig read-only** und erzeugt einen versionierten Health-Report (JSON + Text) mit deterministischem Health-Score. Rein diagnostisch, keine Mutations-Flags. Domain in `services/library_health/` (Muster wie `services/duplicate/`): Discovery + Per-Datei-Analyse (Metadata/Artwork/Lyrics/Audio/Loudness-Tag/Genre/Multi-Artist/Struktur) + Group-Analyse (Album-/Artist-Konsistenz, Duplicate EXACT/RECORDING/SUSPECTED via `services/duplicate/classification.py`) + Health-Score (feste, dokumentierte Severity-Gewichte, INFO ohne Wirkung). Read-only technisch nachgewiesen (SHA256/mtime/size/Pfade + Import-Graph). |
-| [audits/PHASE2_LIBRARY_REPAIR_CLOSURE_AUDIT_2026-09-04.md](audits/PHASE2_LIBRARY_REPAIR_CLOSURE_AUDIT_2026-09-04.md) | HISTORICAL (committed) | Unabhängig verifizierter Closure-Audit von Phase 2 (E1–E4-Evidenzstandard): frisch erneut ausgeführte Vollsuite (2499 passed/1 skipped/0 failed) + frischer Produktions-Health-Scan gegen jede beanspruchte Issue-Code-Zahl gegengeprüft, Journal-/Backup-Abgleich (976 Journal-Zeilen, 407 Backups/2.2GB, jede SUCCESS-Zahl exakt bestätigt), Sicherheitsmodell aller 7 schreibenden Executoren code-seitig verifiziert, Duplicate-Deep-Dive (Pfad-Safety-Test + frischer Dry-Run-Reproduktion). Verdikt zum Zeitpunkt der Erstellung: 🟡 CONDITIONALLY APPROVED (offen: PR #154-Merge) — mit Merge von PR #154/#155 seither vollständig erfüllt |
-| [audits/LIBRARY_REPAIR_P1_P2_P3_CLOSURE_AUDIT_2026-09-08.md](audits/LIBRARY_REPAIR_P1_P2_P3_CLOSURE_AUDIT_2026-09-08.md) | HISTORICAL (committed) | Closure-Audit des End-to-End Library Repair Production Audits (2026-09-08): alle 14 P1/P2/P3-Befunde (PR #172/#173/#174) unabhängig gegengeprüft — Vollsuite frisch ausgeführt (2865 passed/1 skipped/0 failed, Zuwachs exakt erklärbar), frischer Produktions-Health-Scan + Planner-Klassifikation der 4 zuvor toten `EXTERNAL_METADATA`-Codes gegen reale Findings verifiziert (`ALBUM_RELEASE_ID_INCONSISTENT` jetzt korrekt `MANUAL_REVIEW`), Journal-Kreuzabgleich ohne durch den Audit verursachte Aktivität. Verdikt: 🟢 APPROVED |
-| [audits/ARCH-031_032_LIBRARY_MAINTENANCE_CONSOLIDATION_CLOSURE_2026-09-14.md](audits/ARCH-031_032_LIBRARY_MAINTENANCE_CONSOLIDATION_CLOSURE_2026-09-14.md) | HISTORICAL (committed) | Abschlussbericht ARCH-031 (Characterization/Decision) + ARCH-032 (Library Maintenance Consolidation, Phasen 1–4 vollständig): neue `artist.py`/`genre.py`/`run_tracking.py`/`maintenance_service.py`/`library_artists.py`, Executor-Erweiterung (`apply_artist_casing`/`apply_legacy_genre_cleanup`/`apply_set_genre`/`tags_fingerprint`), zentraler CLI-Einstiegspunkt (`--maintenance-action`, drei Original-Scripts entfernt), Telegram-Menüpunkt „🧹 Library-Wartung" (`libmaint:`-Präfix, Kollision mit Bot-Wartungsmodus vermieden). Inkl. Cache-Import-Fix (`services/duplicate/cache.py`/`services/metadata/cache.py`) und Baseline-v10-Freeze (Freeze-Gate-Audit 🟢 APPROVED). 178 neue Tests, Vollsuite 4250 passed/1 skipped/0 failed. PR #244 gemergt. Verdikt: 🟢 CLOSED |
-| [audits/LIBRARY_CLOSURE_COVERAGE_MATRIX_2026-09-09.md](audits/LIBRARY_CLOSURE_COVERAGE_MATRIX_2026-09-09.md) | CURRENT (Referenz-Snapshot) | Vollständige Health-Code → Disposition (`AUTO_REPAIR` / `MANUAL_REVIEW` / `UNREPAIRABLE`) → Executor → Verifikations-Matrix für alle 53 `ALL_CODES`. Maschinell gepinnt in `tests/test_library_repair_disposition_matrix.py`. |
-| [audits/LIBRARY_CLOSURE_AUDIT_2026-09-09.md](audits/LIBRARY_CLOSURE_AUDIT_2026-09-09.md) | CURRENT | Umsetzungs-Audit der „Library Closure Phase": 7 identifizierte Lücken (ID-Review-CLI `--accept/--unaccept/--accepted/--show/--summary`, `unaccept_finding`/`get_accepted_findings`/`get_review_summary`/`ReviewSummary`-Core-API, Report-Tri-State 🔴/🟢/⚪, Per-Repair-Verification `UNRESOLVED`, Coverage-Matrix) in 7 PRs geschlossen; §42-Quality-Gate + §34-Verweistabelle + §43 Final Report. 674 thematische Tests grün / 0 Regressionen; volle Suite durch den Nutzer. |
-| [prompts/Claude-Code-Production-Prompt v2.md](prompts/Claude-Code-Production-Prompt%20v2.md) | HISTORICAL — PHASE 1 | Ursprünglicher, phasenspezifischer Produktionsprompt für die Umsetzung des Library Health Scanners (Phase 1). Inhalt unverändert erhalten, kein aktueller/genereller Arbeitsauftrag. |
+## Aktuelle Audits (`docs/audits/`)
 
-## Genre-System
+Audits dokumentieren den Zustand zu ihrem Erstellungszeitpunkt. Für den laufenden Finding-Stand ist **immer** `FINDINGS_INDEX.md` maßgeblich — nicht der älteste oder auffälligste Status-Begriff in einem Audit.
 
-| Datei | Status | Kurzthema |
-|---|---|---|
-| [GENRE_SYSTEM.md](GENRE_SYSTEM.md) | CURRENT | Genre-Fallback-Kette (Manuell → Lokal → MusicBrainz → Last.fm → Feature-Artist-Inferenz), Auto-Learn-Konfidenz-Stufen, Lock-in-Mechanismus ab 3 Beobachtungen, Mapping-Dateien-Übersicht (inkl. ARCH-022 YAML→JSON-Migration der drei Auto-Learn-Dateien), Genre-Learning unabhängig vom Artist-Namens-Override, bekannte Revalidierungs-Grenze |
+### Control Center
+- [audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md](audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md) — Architekturvorschlag `control_center/` (FastAPI), API-Design, Auth-Flow, Deployment.
+- [audits/CONTROL_CENTER_ARCHITECTURE_AUDIT_2026-09-15.md](audits/CONTROL_CENTER_ARCHITECTURE_AUDIT_2026-09-15.md) — Phase-0-Snapshot (bestehende Architektur, Reuse-Kandidaten, Roadmap).
+- [audits/CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md](audits/CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md) — CLI/Telegram/Service/Web-Status-Mapping.
+- [audits/CONTROL_CENTER_UI_INVENTORY_2026-09-28.md](audits/CONTROL_CENTER_UI_INVENTORY_2026-09-28.md) — CC-UI-0-Snapshot (Seiten-Matrix, U1–U18, offene Entscheidungen).
+- [designs/control-center-ui/](designs/control-center-ui/) — Layout-Mockups A/B/C (DRAFT, statische HTML-Mockups, keine Produktionsdateien).
 
-## Download Pipeline Stability Phase
+### Library Health & Repair
+- [audits/PHASE2_LIBRARY_REPAIR_CLOSURE_AUDIT_2026-09-04.md](audits/PHASE2_LIBRARY_REPAIR_CLOSURE_AUDIT_2026-09-04.md) — Phase-2-Closure (E1–E4-Evidenzstandard, Verdikt 🟡 CONDITIONALLY APPROVED, inzwischen vollständig erfüllt).
+- [audits/LIBRARY_REPAIR_P1_P2_P3_CLOSURE_AUDIT_2026-09-08.md](audits/LIBRARY_REPAIR_P1_P2_P3_CLOSURE_AUDIT_2026-09-08.md) — P1–P3-Closure (Verdikt 🟢 APPROVED).
+- [audits/ARCH-031_032_LIBRARY_MAINTENANCE_CONSOLIDATION_CLOSURE_2026-09-14.md](audits/ARCH-031_032_LIBRARY_MAINTENANCE_CONSOLIDATION_CLOSURE_2026-09-14.md) — Abschlussbericht ARCH-031/032, Verdikt 🟢 CLOSED.
+- [audits/LIBRARY_CLOSURE_COVERAGE_MATRIX_2026-09-09.md](audits/LIBRARY_CLOSURE_COVERAGE_MATRIX_2026-09-09.md) — Health-Code → Disposition → Executor → Verifikation für alle 53 Codes.
+- [audits/LIBRARY_CLOSURE_AUDIT_2026-09-09.md](audits/LIBRARY_CLOSURE_AUDIT_2026-09-09.md) — Library-Closure-Phase (7 Lücken in 7 PRs geschlossen).
+- [audits/CC-LIB-FINAL_PHASE_C_SERVICE_LAYER_AUDIT_2026-09-27.md](audits/CC-LIB-FINAL_PHASE_C_SERVICE_LAYER_AUDIT_2026-09-27.md) — Service-Layer-Funktionsmatrix aller Library-/Metadata-Aktionen.
 
-| Datei | Status | Kurzthema |
-|---|---|---|
-| [MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE.md](MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE.md) | CLOSED (nachträglich dokumentiert, 2026-09-07 — Umbrella-Status im Dokument selbst war zuvor unaktualisiert bei PLANNED stehen geblieben) | Umbrella-Phase: Download-Pipeline- und Duplicate-Detection-Stabilität (Fehlerpfade, Retries, Cancellation, Cleanup) — Metadaten-Qualität explizit out of scope. Ein Punkt bleibt als akzeptiertes Risiko offen (Hard-Cancel während FFmpeg-Postprocessing, P3, siehe [FINDINGS_INDEX.md](FINDINGS_INDEX.md)) |
-| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md) | HISTORICAL (Analyseartefakt, in Code-Kommentaren referenziert) | Read-Only Deep Audit — Ursprung der Findings DUP-01/02/04/06, PL-01, RES-01/02 |
-| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE1_PLAN.md) | HISTORICAL (Analyseartefakt, in Code-Kommentaren referenziert) | Priorisierung/Fix-Reihenfolge der PHASE-0-Findings |
-| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2C_DL02_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DL-02 — Cleanup verwaister Datei bei fehlgeschlagenem Single-Download |
-| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2D_DL01_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2D_DL01_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DL-01 — Library-Artefakt-Cleanup bei Task-Cancellation |
-| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2G_DL06_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DL-06 — Playlist-Track-Cleanup bei yt-dlp/FFmpeg-Fehler |
-| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2I_TEST_ENVIRONMENT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2I_TEST_ENVIRONMENT.md) | HISTORICAL | Test-Environment-Diagnose (Bot-Account-Mismatch) — Grundlage für TESTENV-01 |
-| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2J_DUP03_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2J_DUP03_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DUP-03 — Live-Version-False-Positive bei Duplicate Detection |
-| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2K_DL08_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2K_DL08_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DL-08 — Playlist-Cancellation-Results erhalten, Mix/Radio-Routing, Track-Retry |
-| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2L_DUP04_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2L_DUP04_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DUP-04 — Feat/ft-Normalisierung im Duplicate-Titel-Vergleich |
-| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2M_DUP06_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2M_DUP06_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | DUP-06 — YouTube-Mix/Radio-URL-Erkennung |
-| [archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2N_RES01_AUDIT.md](archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE2N_RES01_AUDIT.md) | HISTORICAL | RES-01 — analysiert, bewusst nicht behoben (akzeptiertes Risiko) |
+### Artist-Identity / P0-/P1-Audits
+- [audits/P0_MAPPING_BASELINE_2026-09-02.md](audits/P0_MAPPING_BASELINE_2026-09-02.md) — P0-A (`artist_genre.yaml`-Baseline).
+- [audits/P0_GENRE_CHARACTERIZATION_2026-09-02.md](audits/P0_GENRE_CHARACTERIZATION_2026-09-02.md) — P0-C (`genre_processor.py`).
+- [audits/P0_ARTIST_PROCESSOR_AUDIT_2026-09-02.md](audits/P0_ARTIST_PROCESSOR_AUDIT_2026-09-02.md) — P0-D (`artist_processor.py`).
+- [audits/P0_DUPLICATE_DETECTOR_AUDIT_2026-09-02.md](audits/P0_DUPLICATE_DETECTOR_AUDIT_2026-09-02.md) — P0-E (`detector.py`).
+- [audits/P0_DUPLICATE_CACHE_AUDIT_2026-09-02.md](audits/P0_DUPLICATE_CACHE_AUDIT_2026-09-02.md) — P0-F (`cache.py`).
+- [audits/P0_METADATA_DUPLICATE_GESAMTAUDIT_2026-09-02.md](audits/P0_METADATA_DUPLICATE_GESAMTAUDIT_2026-09-02.md) — Gesamtaudit über P0-A–F.
+- [audits/P1_DUPLICATE_DETECTOR_ARTIST_NORMALIZER_WIRING_2026-09-02.md](audits/P1_DUPLICATE_DETECTOR_ARTIST_NORMALIZER_WIRING_2026-09-02.md) — P1 (Ursache P0-E).
+- [audits/ARTIST_IDENTITY_RESOLUTION_MIGRATION_2026-09-08.md](audits/ARTIST_IDENTITY_RESOLUTION_MIGRATION_2026-09-08.md) — Artist-Identity-Resolution-Migration (Phase A–F).
+- [audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md](audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md) — Vollprojekt-Audit, P1-Fund TGPERM-001 (am selben Tag behoben).
 
-## Telegram Menü-System
+### Technical Debt / Services
+- [audits/MAIN_CODEBASE_HEALTH_CHECK_2026-09-03.md](audits/MAIN_CODEBASE_HEALTH_CHECK_2026-09-03.md) — Aufräum-/Konsistenz-Check `main/`.
+- [audits/HANDLER_METHOD_LEVEL_SWEEP_2026-09-03.md](audits/HANDLER_METHOD_LEVEL_SWEEP_2026-09-03.md) — Funktions-/Methoden-Sweep der Handler/Adapter.
+- [audits/TECHNICAL_DEBT_CLEANUP_2026-09-01.md](audits/TECHNICAL_DEBT_CLEANUP_2026-09-01.md) — Behebung P2/P3-Findings aus v6 + `MusicBot_ARCHITECTURE_EVOLUTION.md`.
+- [audits/SERVICES_ARCHITECTURE_AUDIT_2026-09-01.md](audits/SERVICES_ARCHITECTURE_AUDIT_2026-09-01.md) — `services/`-Architektur-Audit.
+- [audits/DL_RETRY_CLASSIFICATION_2026-09-01.md](audits/DL_RETRY_CLASSIFICATION_2026-09-01.md) — DL-03/DL-05 Fehlerklassifikation.
+- [audits/ENHANCED_METADATA_PROCESSOR_PROCESS_SINGLE_TRACK_2026-09-01.md](audits/ENHANCED_METADATA_PROCESSOR_PROCESS_SINGLE_TRACK_2026-09-01.md) — Characterization `process_single_track()`.
+- [audits/SERVICES_TELEGRAM_COUPLING_2026-09-01.md](audits/SERVICES_TELEGRAM_COUPLING_2026-09-01.md) — Telegram-Kopplungs-Audit `services/`.
+- [audits/MUSICBRAINZ_RETRIES_DECISION_AUDIT_2026-09-01.md](audits/MUSICBRAINZ_RETRIES_DECISION_AUDIT_2026-09-01.md) — AE-04 Fachentscheidung.
 
-| Datei | Status | Kurzthema |
-|---|---|---|
-| [MusicBot_TELEGRAM_MENU_SYSTEM.md](MusicBot_TELEGRAM_MENU_SYSTEM.md) | CURRENT (lebendes Dokument) | Zentrale Referenz für das Telegram-Inline-Menü-System: Zwei-Ebenen-Routing (PTB-`CallbackQueryHandler`-Pattern + interner `handle_callback()`-Dispatch), bestehender Menübaum, Download-Control-Center (Live-Status, Hard-Cancel, Details) inkl. vier live gefundener/gefixter Bugs, Download-Verlauf/Erneut-versuchen (persistenter `DownloadHistoryStore`), Bot-Wartungsmodus (Ein-/Ausschalten über Admin-Bypass statt echtem Prozess-Stop, Folgephase 2026-09-03), Metadata-Reprocessing (Owner-only Telegram-Anbindung von `scripts/reprocess_artist_metadata.py` als Subprozess, Folgephase 2026-09-03), Family Hub (Abschnitt 6: Familien-Statistik/-Chat/-Challenge, Phase F1–F5, 2026-09-12/13 — neue `services/family/`-Schicht, wiederverwendet die bestehende Statistik-Infrastruktur unverändert), Muster für künftige Menü-Erweiterungen. TGPERM-001 (2026-09-12, siehe [audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md](audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md)) CLOSED: Logger-/Test-System-Menüpunkte routen jetzt korrekt gegated statt über den ungeprüften generischen `menu:`-Fallback. |
-| [MusicBot_ARCH-021_Menu_Architecture_Migration.md](MusicBot_ARCH-021_Menu_Architecture_Migration.md) | LIVING | Architekturmigration von `handlers/menu/` (interne Modulstruktur, nicht Menüfunktionen — dafür siehe Zeile oben): P-1 Audit (Entscheidung `handlers/menu/` bleibt, kein Top-Level `menu/`) COMPLETE; P-2 Models (`models.py`), P-3 Permissions (`permissions.py`, vereinheitlicht `_is_admin`/`_is_admin_check`), P-4 Session/State (`session.py`, `SessionManager` mit Dict-Identitäts-Property) alle COMPLETE, PR #203 gemergt. TGPERM-001-Schutz durchgängig verifiziert unverändert. **Achtung Nummern-Kollision:** `ARCH-021`/`ARCH-022` sind im Archiv bereits für ein unabhängiges Genre/Last.fm-Thema vergeben — siehe Hinweis im Dokument. Der ursprünglich hier als „P-5"/„P-6 Actions … P-9 Onboarding" skizzierte Folgeplan wurde als `ARCH-023` (Router-/Permission-Härtung, COMPLETE) bzw. `ARCH-024` (Datei-Dekomposition, **COMPLETE**) fortgeführt, siehe die beiden folgenden Zeilen. |
-| [MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md](MusicBot_ARCH-023_Menu_Router_Permission_Hardening.md) | LIVING | Menu-Router- und Permission-Architektur-Härtung, P-1–P-7 alle COMPLETE (Menu-Fallback-Gate, `doctor:`/`review:`/`repair:`-Konsolidierung, `admin_navidrome`/TGPERM-001, `erradmin:`-Owner-Fix, repoweiter Permission-Audit inkl. `utils/`, Handler-Level-Konsolidierung von 5 Dateien auf `permissions.is_admin_or_owner()`). PR #204 gemergt. |
-| [MusicBot_ARCH-024_Menu_File_Decomposition.md](MusicBot_ARCH-024_Menu_File_Decomposition.md) | LIVING | **COMPLETE** (P-1–P-4; P-5 Onboarding NOT WARRANTED). Datei-Dekomposition von `rich_menu_system.py` (3117→1095 Zeilen)/`rich_menu_handler.py` (1608→1411 Zeilen) — der in `ARCH-021/P-1` als „P-6…P-9" skizzierte, durch `ARCH-023`s Nummernbelegung verdrängte Teil der Menü-Migration. Neue Struktur: `handlers/menu/definitions.py` (Menübaum/Registry), `handlers/menu/rendering.py` (Keyboard/Text/`show_menu`), `handlers/menu/actions/` (9 Domänen-Module: family/duplicates/navidrome/stats/admin_diagnostics/usermgmt/library/admin_operations/download). Router/Permissions/Session unverändert zentral. Vollsuite (Nutzer): 3461 passed / 1 skipped / 11 subtests passed / 0 failed. Die 3 dort dokumentierten „Remaining Technical Debt"-Punkte sind seit `ARCH-025` CLOSED (siehe folgende Zeile). |
-| [MusicBot_ARCH-025_Command_Help_Content_Decomposition.md](MusicBot_ARCH-025_Command_Help_Content_Decomposition.md) | LIVING | **COMPLETE**. Teil A: Onboarding-Content (`/start`-Begrüßung, `/help`, Help-Callback, 4 Hilfetexte, Nutzerkontext-/Feature-Auflösung) aus `RichMenuHandler` nach neuem Paket `handlers/menu/content/` (`user_context.py`/`greeting.py`/`help.py`) extrahiert — `RichMenuHandler` behält dünne Command-Delegatoren + `handle_menu_command()` (bewusst nicht extrahiert). Teil B: die 3 ARCH-024-Debt-Punkte behoben (stale Kommentar-Referenz korrigiert, 6 tote Importe + 5 tote Stats-Methoden/-Funktionen entfernt). `rich_menu_handler.py` 1411→1109 Zeilen. Keine lokale Testausführung (Vorgabe); vollständige Characterization bestätigte 0 betroffene Bestandstests durch die Extraktion selbst. |
-| [MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md](MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md) | LIVING | **COMPLETE** (PR #207, gemergt). Content-Separation-Closure: verbleibende statische UI-Texte aus `greeting.py`/`help.py` nach neuem `handlers/menu/content/messages.py` zentralisiert (33 String-Konstanten, reine Move-Operation, Zeichen-für-Zeichen verifiziert). `greeting.py`/`help.py` bleiben reine Orchestrierung; `get_download_help()` u. a. sind jetzt dünne Wrapper. `user_context.py` bewusst unverändert. `messages.py` ohne Projekt-Logik-Abhängigkeiten. Keine lokale Testausführung, kein `compileall` (Vorgabe). |
-| [MusicBot_ARCH-026_Error_Handler_Integration_Audit.md](MusicBot_ARCH-026_Error_Handler_Integration_Audit.md) | LIVING | **AUDIT COMPLETE** (PR #208, gemergt), keine Code-Änderung. Read-only Architektur-/Coverage-Audit von `handlers/enhanced_error_handler.py`. Kernbefund: zwei unabhängige `EnhancedErrorHandler`-Instanzen (bot.py vs. `RichMenuHandler.initialize()`), nie synchronisiert — bewertet als **C — DUPLICATED / INCONSISTENT**. Admin-Monitoring sieht nur eine der beiden Instanzen; Download-Pipeline (P0) hat 0 Integration; Decorators `handle_async_exceptions`/`handle_sync_exceptions` 0 produktive Verwendung + latenter Bug. 12 neue Findings F1–F12 in `docs/FINDINGS_INDEX.md`. Fix-Plan für die Instanz-Vereinheitlichung dokumentiert und in ARCH-027 umgesetzt (siehe folgende Zeile). |
-| [MusicBot_ARCH-027_Error_Handler_Consolidation.md](MusicBot_ARCH-027_Error_Handler_Consolidation.md) | LIVING | **COMPLETE** (PR #209, gemergt). Setzt den ARCH-026-Fix-Plan für F1-F3 um: `RichMenuHandler.__init__()` erhält optionalen Parameter `error_handler=None`, `bot.py` injiziert seine PTB-registrierte Instanz per Constructor Injection statt `RichMenuHandler.initialize()` eine zweite erzeugen zu lassen (kontrollierter Fallback bleibt für Standalone-/Test-Konstruktion). Nur 2 Dateien geändert (`bot.py`, `handlers/menu/rich_menu_handler.py`), additiv, alle bestehenden Testkonstruktionsstellen unverändert kompatibel. Ursache der leeren Admin-Berichte konkret bewiesen (nicht nur vermutet): einzige `ErrorHandlerAdminInterface` beobachtete die falsche von zwei Instanzen. F1/F2/F3 CLOSED, F4-F12 unverändert außerhalb Scope. Modularisierungs-Assessment für `enhanced_error_handler.py`: NOT WARRANTED. |
-| [MusicBot_ARCH-028_Error_Handler_Closure.md](MusicBot_ARCH-028_Error_Handler_Closure.md) | LIVING | **COMPLETE** (Vollsuite Nutzer: 3490 passed / 1 skipped / 11 subtests passed / 0 failed). Schließt F4/F5/F6 aus ARCH-026 ab: Download-Pipeline meldet jetzt an den zentralen `EnhancedErrorHandler` (`klassen/download_handler.py`+`handlers/menu/actions/download.py`); die 4 Handler mit zuvor ungenutzter Injection (Reprocessing/Doctor/Review/Repair) rufen `handle_exception()` jetzt tatsächlich auf; die beiden Decorator-Bugs (`.get()` auf `Config` ohne diese Methode + `asyncio.create_task()` ohne laufenden Loop) sind behoben. Zusätzlich bei der Scheduler-Verifikation entdeckt und behoben: `FamilyChallengeScheduler` hatte 0 Error-Handler-Integration UND einen Live-Bug (`Config.FAMILY_CHALLENGE_TIME` als Klassen- statt Instanzzugriff auf eine `@property` → `'property' object has no attribute 'split'`) — beides gefixt, `config`+`error_handler` jetzt injizierbar. |
+---
 
-## Metadata Quality Phase
+## Historische Baselines (ausschließlich in `docs/archive/`)
 
-| Datei | Status | Kurzthema |
-|---|---|---|
-| [archive/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md](archive/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md) | HISTORICAL (in Code-Kommentaren referenziert) | Read-Only-Audit — Ursprung der Findings META-01–META-04, META-11 |
-| [archive/MusicBot_METADATA_QUALITY_PHASE1_META01_META02_AUDIT.md](archive/MusicBot_METADATA_QUALITY_PHASE1_META01_META02_AUDIT.md) | HISTORICAL (committed) | META-01 + META-02 — `feat.`/`ft.` ohne Leerzeichen nach Punkt wird erkannt |
-| [archive/MusicBot_METADATA_QUALITY_PHASE2_META03_AUDIT.md](archive/MusicBot_METADATA_QUALITY_PHASE2_META03_AUDIT.md) | HISTORICAL (committed) | META-03 — hängende schließende Klammer nach Marketing-Suffix-Cleanup entfernt |
-| [archive/MusicBot_METADATA_QUALITY_PHASE3_META04_AUDIT.md](archive/MusicBot_METADATA_QUALITY_PHASE3_META04_AUDIT.md) | HISTORICAL (committed) | META-04 — Einzelfall war Tippfehler, kein Bug; ohne Codeänderung geschlossen |
-| [archive/MusicBot_METADATA_QUALITY_PHASE4_META11_AUDIT.md](archive/MusicBot_METADATA_QUALITY_PHASE4_META11_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | META-11 — "video"/"audio" in Klammern kombiniert mit anderen Wörtern wird erkannt |
+Alle vor-v12-Baselines sind eingefroren und abgelöst. Sie liegen unter `docs/archive/` und sind **nicht** als aktueller Zustandsbericht zu lesen — maßgeblich sind `MusicBot_ENGINEERING_BASELINE_v12.md` und für Findings `FINDINGS_INDEX.md`.
 
-## Technical Debt Cleanup Reports
+- `docs/archive/MusicBot_ENGINEERING_BASELINE_v11.md` — Freeze 2026-09-28, 6160 passed.
+- `docs/archive/MusicBot_ENGINEERING_BASELINE_v10.md` — Freeze 2026-09-14, 4250 passed.
+- `docs/archive/MusicBot_ENGINEERING_BASELINE_v9.md` — Freeze 2026-09-07, 2580 passed.
+- `docs/archive/MusicBot_ENGINEERING_BASELINE_v8.md` — Freeze 2026-09-02, 1698 passed.
+- `docs/archive/MusicBot_ENGINEERING_BASELINE_v7.md` — Freeze 2026-09-01, 1673 passed.
+- `docs/archive/MusicBot_ENGINEERING_BASELINE_v6.md` — Freeze 2026-09-01, 1634 passed.
+- `docs/archive/MusicBot_ENGINEERING_BASELINE_v5.md` — Freeze 2026-08-26, 1123 passed.
+- `docs/archive/MusicBot_ENGINEERING_BASELINE_v4.md` — Freeze 2026-08-26.
+- `docs/archive/MusicBot_ENGINEERING_BASELINE_v3.md` — Freeze 2026-08-25.
+- `docs/archive/MusicBot_ENGINEERING_BASELINE_v2.md` — Freeze 2026-08-25.
+- `docs/archive/MusicBot_ENGINEERING_BASELINE.md` — v1.
 
-| Datei | Status | Kurzthema |
-|---|---|---|
-| [audits/MAIN_CODEBASE_HEALTH_CHECK_2026-09-03.md](audits/MAIN_CODEBASE_HEALTH_CHECK_2026-09-03.md) | HISTORICAL (committed) | Systematischer Aufräum-/Konsistenz-Check von `main/` (keine Bugsuche): ungenutzte Handler/Adapter/tote APIs, verwaiste Dateien, ungenutzte Scripts, leere Verzeichnisse, historische Artefakte — sauber bis auf 2 nachgetragene Doku-Verweise (PR #130) + 4 entfernte, unreferenzierte Cache-/Import-Platzhalterverzeichnisse |
-| [audits/HANDLER_METHOD_LEVEL_SWEEP_2026-09-03.md](audits/HANDLER_METHOD_LEVEL_SWEEP_2026-09-03.md) | CURRENT | Fortsetzung des Health Checks auf Funktions-/Methoden-Ebene der 17 Handler/Adapter-Module: 22 bestätigt tote Funktionen/Klassen (+2 transitiv entdeckt) inzwischen entfernt (Cleanup-PR), 2 UNCERTAIN bewusst belassen, 2 echte Funktionslücken (Dashboard-Daten) separat behoben. 182 `SELF_ONLY?`-Kandidaten weiterhin nicht einzeln geprüft, siehe `docs/FINDINGS_INDEX.md` |
-| [audits/TECHNICAL_DEBT_CLEANUP_2026-09-01.md](audits/TECHNICAL_DEBT_CLEANUP_2026-09-01.md) | HISTORICAL (committed) | Behebung der in Baseline v6 + `MusicBot_ARCHITECTURE_EVOLUTION.md` (AE-Punkte) offen gelisteten P2/P3-Findings (PR #85–#90): TestMenuHandler INV-01, move_to_library() TOCTOU, pylast-Repr-Secret-Leak, tote Config-Werte (AE-05), CoverProcessor-Metadaten-Atomarität (AE-03), statistics_calculator-Export-Atomarität |
-| [audits/SERVICES_ARCHITECTURE_AUDIT_2026-09-01.md](audits/SERVICES_ARCHITECTURE_AUDIT_2026-09-01.md) | HISTORICAL (committed, read-only Audit) | Vollständiger `services/`-Architektur-Audit gegen die Zielarchitektur (PR #92): Schichtgrenzen vollständig sauber verifiziert, 6 priorisierte Migration-Kandidaten (MIG-01–06), vollständige Options-Analyse zu `duplicate/cache.py` INV-01 |
-| [audits/DL_RETRY_CLASSIFICATION_2026-09-01.md](audits/DL_RETRY_CLASSIFICATION_2026-09-01.md) | HISTORICAL (committed) | DL-03/DL-05 — Fehlerklassifikation bei Download-/Metadata-Retries verdrahtet (PR #94), nutzt die bereits vorhandene, bis dahin ungenutzte Downloader-Fehlertaxonomie |
-| [audits/ENHANCED_METADATA_PROCESSOR_PROCESS_SINGLE_TRACK_2026-09-01.md](audits/ENHANCED_METADATA_PROCESSOR_PROCESS_SINGLE_TRACK_2026-09-01.md) | HISTORICAL (committed) | Characterization-Audit von `process_single_track()` (908 Zeilen, PR #95) — Ergebnis: kein Refactor gerechtfertigt, 2 kleine Aufräum-Fixes umgesetzt |
-| [audits/SERVICES_TELEGRAM_COUPLING_2026-09-01.md](audits/SERVICES_TELEGRAM_COUPLING_2026-09-01.md) | HISTORICAL (committed) | Telegram-Kopplungs-Audit in `services/` (PR #96) — `YoutubeDownloader` hielt das komplette Telegram-`Update`-Objekt, jetzt `chat_id`/`update_id` als einfache Werte |
-| [audits/MUSICBRAINZ_RETRIES_DECISION_AUDIT_2026-09-01.md](audits/MUSICBRAINZ_RETRIES_DECISION_AUDIT_2026-09-01.md) | HISTORICAL (committed) | AE-04 — Fachentscheidungs-Audit zu `MUSICBRAINZ_RETRIES` (PR #97), RECOMMENDATION REMOVE, umgesetzt |
+Begleitende historische Analyseartefakte:
+- `docs/archive/MusicBot_POST_BASELINE_v4_HEALTH_RISK_AUDIT.md` — read-only Audit nach v4 (Herleitung v5).
+- `docs/archive/MusicBot_FINAL_ARCHITECTURE_CLOSURE.md` — Freeze-Gate-Audit (initial BLOCKED, nach AE-12-Schließung APPROVED).
+- `docs/archive/MusicBot_AE12_DESIGN_SAFETY_AUDIT.md`, `docs/archive/AE-12_Closure_Audit.md` — Design-/Safety-Audit und Closure-Matrix für AE-12.
+- `docs/archive/MusicBot_PHASE5_PERFORMANCE_BASELINE.md` — Performance-Charakterisierung nach v3/Phase-4.
+- `docs/archive/MusicBot_POST_BASELINE_TRIAGE.md` — Triage vor v3.
 
-## P0 Metadata/Genre/Artist-Mapping/Duplicate-Detection-Audit + P1-Nachfolgeprojekt
+---
 
-| Datei | Status | Kurzthema |
-|---|---|---|
-| [audits/P0_MAPPING_BASELINE_2026-09-02.md](audits/P0_MAPPING_BASELINE_2026-09-02.md) | HISTORICAL (committed) | P0-A — `mapping/artist_genre.yaml`-Baseline (PR #100): strukturell/inhaltlich sauber, 18 tote Channel-Suffix-Einträge entfernt (172→154) |
-| [audits/P0_GENRE_CHARACTERIZATION_2026-09-02.md](audits/P0_GENRE_CHARACTERIZATION_2026-09-02.md) | HISTORICAL (committed) | P0-C — `genre_processor.py` (PR #100): 3 echte Testlücken geschlossen (Channel-Pfad, mb_ids-Anhängung, Feature-Artist-Tie-Breaking), keine Code-Änderung |
-| [audits/P0_ARTIST_PROCESSOR_AUDIT_2026-09-02.md](audits/P0_ARTIST_PROCESSOR_AUDIT_2026-09-02.md) | HISTORICAL (committed) | P0-D — `artist_processor.py` (PR #100): Kernlogik korrekt, 2 Dead-Code-Funde dokumentiert (entfernt in P0-G, PR #101) |
-| [audits/P0_DUPLICATE_DETECTOR_AUDIT_2026-09-02.md](audits/P0_DUPLICATE_DETECTOR_AUDIT_2026-09-02.md) | HISTORICAL (committed) | P0-E — `detector.py` (PR #100): False-Negative-Bug in der Artist-Normalisierung gefunden und gefixt; architektonische Ursache siehe P1 |
-| [audits/P0_DUPLICATE_CACHE_AUDIT_2026-09-02.md](audits/P0_DUPLICATE_CACHE_AUDIT_2026-09-02.md) | HISTORICAL (committed) | P0-F — `cache.py` (PR #100): YouTube-Shorts-URL-Erkennung gefixt |
-| [audits/P0_METADATA_DUPLICATE_GESAMTAUDIT_2026-09-02.md](audits/P0_METADATA_DUPLICATE_GESAMTAUDIT_2026-09-02.md) | HISTORICAL (committed) | Gesamtaudit über P0-A–F (PR #100), Freeze-analoge Abschlussentscheidung |
-| [audits/P1_DUPLICATE_DETECTOR_ARTIST_NORMALIZER_WIRING_2026-09-02.md](audits/P1_DUPLICATE_DETECTOR_ARTIST_NORMALIZER_WIRING_2026-09-02.md) | HISTORICAL (committed), Nachtrag 2026-09-08 | P1 — Ursache von P0-E behoben (PR #102): `DuplicateDetector` nutzt jetzt denselben `ArtistProcessor`/`ArtistNormalizer`-Pfad wie die Metadaten-Pipeline; Characterize→Decide→Extract→Audit→Regression. Nachtrag: seit der Artist-Identity-Migration über den `ArtistIdentityResolver` statt direkt `normalize()`. |
-| [audits/ARTIST_IDENTITY_RESOLUTION_MIGRATION_2026-09-08.md](audits/ARTIST_IDENTITY_RESOLUTION_MIGRATION_2026-09-08.md) | CURRENT | Artist-Identity-Resolution-Migration (Phase A–F): neue Komponente `services/metadata/artist_identity_resolver.py` als alleinige Identity-Auflösung (`artist_override > known_artist > auto_learned_alias > library_identity > musicbrainz_mbid > parser`), `normalize()` reine String-Normalisierung, `known`-Flag steuert AutoLearn. F-01…F-06 CLOSED, F-07/F-08 DEFERRED. |
+## Historische Architekturphasen
 
-P0-B (ARTISTNORM-001, bereits behoben bestätigt) hat kein eigenes
-Audit-Dokument — direkt in `tests/test_autolearn_special_channel_gate.py`
-dokumentiert (Commit `14f40b3`).
+- **`docs/archive/arch/`** — ARCH-001 bis ARCH-031 (Migrationsprotokolle, Charakterisierungen, Analysepapiere). Einzelauflistung entfällt; die Dateien liegen vollständig erhalten im Verzeichnis. Für die **aktuell gültige** Zielarchitektur der Library-Repair-/Maintenance-Telegram-Integration (ARCH-031/032/033) siehe stattdessen:
+  - [docs/LIBRARY_REPAIR.md](LIBRARY_REPAIR.md) §11/§12 — Maintenance-Consolidation + Level-2/3-Repair.
+  - [docs/adr/0001](adr/0001)-[0004](adr/0004) — Architektur-Entscheidungen Library Repair.
+  - [docs/audits/ARCH-031_032_LIBRARY_MAINTENANCE_CONSOLIDATION_CLOSURE_2026-09-14.md](audits/ARCH-031_032_LIBRARY_MAINTENANCE_CONSOLIDATION_CLOSURE_2026-09-14.md) — Abschlussbericht.
+  - [docs/FINDINGS_INDEX.md](FINDINGS_INDEX.md) — lebender Stand (z. B. ARCH-034/035 noch offen).
 
-## Weitere Einzelfund-Audits
+  Einzelne ARCH-Phasen (021/023/024/025/026–030) werden in den aktuellen technischen Referenzen nur noch indirekt erwähnt; ihre **aktuellen** Ergebnisse sind in den Modulen `handlers/menu/*` und `handlers/enhanced_error_handler.py` (Code) sowie in `MusicBot_TELEGRAM_MENU_SYSTEM.md` (Verhalten) dokumentiert.
 
-| Datei | Status | Kurzthema |
-|---|---|---|
-| [audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md](audits/FULL_PROJECT_ARCHITECTURE_AUDIT_2026-09-12.md) | CURRENT (committed, mit Nachtrag) | Vollständiger, read-only Architektur-/Code-/Telegram-/Test-Audit des Gesamtprojekts (4 parallele Recherche-Durchläufe: Architektur/Dependencies/Handler/Services; Telegram-Menü; Metadata/Artist/Genre/ReplayGain/Duplicate/Cache/LibraryHealth; Concurrency/Tests/Security/DeadCode/Docs). Einziger P1-Fund **TGPERM-001** (Permission-Bypass bei 7 Logger- + 3 Test-System-Menüpunkten über den ungegateten generischen `menu:`-Fallback) noch am selben Tag behoben — siehe Nachtrag im Dokument. Übrige Funde P2/P3/Accepted Risk, siehe `docs/FINDINGS_INDEX.md`. Architecture Score nach Fix: 8,3/10, Verdikt PRODUCTION READY WITH MINOR DEBT. |
-| [MusicBot_DUPLICATE_RESOLUTION_ARCHITECTURE.md](MusicBot_DUPLICATE_RESOLUTION_ARCHITECTURE.md) | CURRENT (Architekturentscheidung), seit 2026-09-04 ergänzt durch [LIBRARY_REPAIR.md](LIBRARY_REPAIR.md) §6d | Forensischer Architecture Decision Audit für eine zentrale Duplicate-Resolution-Komponente (Pre-Download-Prevention + Post-Download-/Library-Resolution, Album-vs-Single-Priorität) — ARCHITECTURE CONDITIONALLY APPROVED, Grundlage für `services/duplicate/resolution.py`/`classification.py`/`scripts/resolve_duplicates.py`. Die dort dokumentierte bewusste „kein Rollback-Versprechen"-Entscheidung (Abschnitt 17) wurde additiv um einen optionalen `backup_fn`-DI-Parameter in `execution.py::execute_group()` erweitert (Default `None` = Verhalten unverändert); Library-Repair-Andock via `scripts/library_repair.py --allow-delete --artist <X>` |
-| [archive/MusicBot_MB01_ARTIST_MISMATCH_AUDIT.md](archive/MusicBot_MB01_ARTIST_MISMATCH_AUDIT.md) | HISTORICAL (committed) | MB-01 — MusicBrainz-Artist-Mismatch durch Titel-dominierte Gewichtung |
-| [archive/MusicBot_TAG01_MULTI_ARTIST_TAG_AUDIT.md](archive/MusicBot_TAG01_MULTI_ARTIST_TAG_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | TAG-01 — Multi-Artist-`ARTISTS`-Tag wird als separate Werte statt als String geschrieben |
-| [archive/MusicBot_TESTENV01_ISOLATION_AUDIT.md](archive/MusicBot_TESTENV01_ISOLATION_AUDIT.md) | HISTORICAL (committed, in Code-Kommentaren referenziert) | TESTENV-01 — `config_test.py` vollständig von Produktionspfaden isoliert |
-| [audits/CC-LIB-FINAL_PHASE_C_SERVICE_LAYER_AUDIT_2026-09-27.md](audits/CC-LIB-FINAL_PHASE_C_SERVICE_LAYER_AUDIT_2026-09-27.md) | CURRENT (committed, read-only Audit) | CC-LIB-FINAL Phase C — Funktionsmatrix aller Library-/Metadata-Aktionen (Artist/Titel/Album/Albuminterpret/Genre bearbeiten, Genre-Mapping, Artist Casing, Legacy Genre Cleanup, Genre-Revalidierung, Library Repair/Health): Service-Layer bereits vollständig, keine Code-Änderung nötig. Ein UX-Gap (Titel bearbeiten verlangt bei Direktzugriff ohne Track-Drawer weiterhin manuellen relativen Pfad) auf Phase D verschoben. |
+- **`docs/archive/post-arch/`** — POST-ARCH-009 bis POST-ARCH-018 (Revalidierungs-Audits).
 
-## ARCH – Architektur-Entscheidungsprotokoll (Historie, in [`docs/archive/arch/`](archive/arch/))
+---
 
-| Datei | Status | Kurzthema |
-|---|---|---|
-| MusicBot_ARCH-001_Orchestrators.md | HISTORICAL | Große Orchestrator-Klassen |
-| MusicBot_ARCH-003_Services_Phase1_Analyse.md | HISTORICAL | Zielarchitektur `services/`, Phase 1 Analyse |
-| MusicBot_ARCH-004_P3_Orchestrierungs_Analyse.md | HISTORICAL | Doppelte Spotify/YouTube-Orchestrierung |
-| MusicBot_ARCH-005_TempCleanup.md | HISTORICAL | Temp-Cleanup: Analyse, Strategie, Umsetzung |
-| MusicBot_ARCH-006_P2_Dependency_Graph.md | HISTORICAL | Import-/Dependency-Graph `services/` |
-| MusicBot_ARCH-007_P2_Entkopplungsvorschlag.md | HISTORICAL | Telegram-Entkopplung von `services/` |
-| MusicBot_ARCH-008_Navidrome_Adapter_Analyse.md | HISTORICAL | `navidrome_api.py` als Integrationsadapter |
-| MusicBot_ARCH-009_Phase1_Bestandsaufnahme.md | HISTORICAL | Ungenutzte `NavidromeAPI`-Methoden |
-| MusicBot_ARCH-009_Navidrome_Migrationsplanung.md | HISTORICAL | `NavidromeAPI` Entflechtungs-/Migrationsplanung |
-| MusicBot_ARCH-009_Navidrome_Migration_Roadmap.md | HISTORICAL | Navidrome Migration Roadmap |
-| MusicBot_ARCH-009_Phase3_ExecuteScan_Analyse.md | HISTORICAL | `execute_scan()` / Subprocess-Verantwortung |
-| MusicBot_ARCH-009_Phase5_Telegram_Verantwortlichkeiten_Analyse.md | HISTORICAL | Verbleibende Telegram-Präsentationsverantwortlichkeiten |
-| MusicBot_ARCH-009_Phase6_Zielposition_DI_Analyse.md | HISTORICAL | Zielposition und DI von `NavidromeAPI` |
-| MusicBot_ARCH-009_Phase7_NavidromeAPI_DI.md | HISTORICAL | `NavidromeAPI` auf DI umgestellt |
-| MusicBot_ARCH-009_Phase8_Zielverschiebung_ServicesClients_Analyse.md | HISTORICAL | Zielverschiebung `NavidromeAPI` nach `services/clients/` |
-| MusicBot_ARCH-009_Phase9_Finaler_Migrationsabschluss_Analyse.md | HISTORICAL | Finaler Migrationsabschluss Navidrome |
-| MusicBot_ARCH-009_NavidromeScanTrigger_Zielort_Analyse.md | HISTORICAL | Zielort von `NavidromeScanTrigger` |
-| MusicBot_ARCH-010_Downloader_Utils_Migration.md | HISTORICAL | Downloader Utils Migration |
-| MusicBot_ARCH-011_Downloader_Download_Analyse.md | HISTORICAL | Architektur-Audit `services/downloader/download/` |
-| MusicBot_ARCH-012_Genre_Logic_Characterization.md | HISTORICAL | Genre-Logik Characterization |
-| MusicBot_ARCH-013_Genre_Alias_Characterization.md | HISTORICAL | Genre Alias Characterization (Phase 1) |
-| MusicBot_ARCH-013_Genre_Alias_Decision.md | HISTORICAL | Fachliche Entscheidung Genre-Alias-Konflikte (Phase 2) |
-| MusicBot_ARCH-014_Genre_Specificity_Characterization.md | HISTORICAL | Genre Specificity / Longest-Match |
-| MusicBot_ARCH-015_Genre_Canonical_Idempotency_Characterization.md | HISTORICAL | Genre Canonical-Value / Idempotency |
-| MusicBot_ARCH-016_Genre_Canonical_Case_Acronym_Characterization.md | HISTORICAL | Genre Canonical-Case / Acronym |
-| MusicBot_ARCH-017_Download_Audio_Enhancement_Characterization.md | HISTORICAL | Download-/Audio-Enhancement |
-| MusicBot_ARCH-018_Duplicate_Handler_Characterization.md | HISTORICAL | Duplicate Handler |
-| MusicBot_ARCH-019_Genre_Client_Logic_Characterization.md | HISTORICAL | Genre Client Logic |
-| MusicBot_ARCH-020_Download_Pipeline_Characterization.md | HISTORICAL | Download-Pipeline & Orchestration Boundary |
-| MusicBot_ARCH-021_Genre_Client_Duplication_Characterization.md | HISTORICAL | Genre-Client-Duplikation / Last.fm-Cover |
+## Historische Phasen (in `docs/archive/`)
 
-## POST-ARCH – Revalidierungs-Audits (Historie, in [`docs/archive/post-arch/`](archive/post-arch/) bzw. [`docs/archive/`](archive/))
+- `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE.md` — Umbrella-Phase (Download-Pipeline- und Duplicate-Detection-Stabilität). Der einzige dort noch als akzeptiertes Risiko offene Punkt (Hard-Cancel während FFmpeg-Postprocessing, P3) steht in [FINDINGS_INDEX.md](FINDINGS_INDEX.md).
+- `docs/archive/MusicBot_PHASE3_MUSIC_QUALITY_LIBRARY_INTELLIGENCE.md` — Phase 3 (Library Statistics, Navidrome-Scan-Automation, MusicBot Doctor, Import-History-Checkliste, Bad-Download-Detector Stufe A; Abgleich gegen externen „Musicbot.md"-Ideenkatalog).
+- `docs/archive/MusicBot_DOWNLOAD_PIPELINE_STABILITY_PHASE0_AUDIT.md` … `...PHASE2N_RES01_AUDIT.md` — Audits der Download-Pipeline-Stabilitätsphase, in Code-Kommentaren referenziert.
+- `docs/archive/MusicBot_METADATA_QUALITY_PHASE0_AUDIT.md` … `...PHASE4_META11_AUDIT.md` — Metadata-Quality-Phase (META-01–META-04, META-11).
+- `docs/archive/MusicBot_MB01_ARTIST_MISMATCH_AUDIT.md`, `docs/archive/MusicBot_TAG01_MULTI_ARTIST_TAG_AUDIT.md`, `docs/archive/MusicBot_TESTENV01_ISOLATION_AUDIT.md` — Einzelfund-Audits.
+- `docs/archive/MusicBot_SERVICES_Zielarchitektur_Audit.md`, `docs/archive/POST-SERVICES_PROJECT-WIDE_ARCHITECTURE_AUDIT.md`, `docs/archive/musicbot_REVERSE_ENGINEERED_DOCUMENTATION.md`, `docs/archive/MusicBot_PHASE4_FAILURE_PATH_AUDIT.md`, `docs/archive/MusicBot_FINDING_4_FORENSIC_AUDIT.md` — Sonstiges.
+- `docs/archive/METADATA_REPROCESSING_TEST_CHAPO102.md`, `docs/archive/METADATA_REPROCESSING_TEST_NINA_CHUBA.md` — Validierungsprotokolle Metadata-Reprocessing-Tool.
+- `docs/prompts/Claude-Code-Production-Prompt v2.md` — historischer, phasenspezifischer Produktionsprompt für den Library Health Scanner (Phase 1). Kein aktueller/genereller Arbeitsauftrag.
 
-| Datei | Status | Kurzthema |
-|---|---|---|
-| post-arch/MusicBot_POST-ARCH-009_Audit.md | HISTORICAL | Architektur-Audit nach ARCH-009 |
-| post-arch/MusicBot_POST-ARCH-009_P1_BotRestart_Analyse.md | HISTORICAL | `bot_restart_handler` Verantwortlichkeitsanalyse |
-| post-arch/MusicBot_POST-ARCH-010_011_DuplicateEntry_Analyse.md | HISTORICAL | `DuplicateEntry`-Boundary Folgeanalyse |
-| post-arch/MusicBot_POST-ARCH-010_011_Services_Zielarchitektur_Audit.md | HISTORICAL | Services-Zielarchitektur-Audit nach ARCH-010/011 |
-| post-arch/MusicBot_POST-DUPLICATEENTRY_Services_Architecture_Audit.md | HISTORICAL | Services Architecture Audit nach DuplicateEntry-Fix |
-| MusicBot_SERVICES_Zielarchitektur_Audit.md | HISTORICAL | Services-Zielarchitektur Audit |
-| post-arch/POST-ARCH-012_Services_Architecture_Audit.md | HISTORICAL | Services Architecture Audit nach ARCH-012 |
-| post-arch/POST-ARCH-013_Services_Architecture_Audit.md | HISTORICAL | Services/Genre Architecture Audit nach ARCH-013 |
-| post-arch/POST-ARCH-018_Services_Architecture_Audit.md | HISTORICAL | Services/Architecture Audit nach ARCH-018 |
-| POST-SERVICES_PROJECT-WIDE_ARCHITECTURE_AUDIT.md | HISTORICAL | Projektweites Architecture Audit |
+---
 
-## Sonstiges (in [`docs/archive/`](archive/))
+## Zur Traceability in Code-/Test-Kommentaren referenzierte Dateien
 
-| Datei | Status | Kurzthema |
-|---|---|---|
-| musicbot_REVERSE_ENGINEERED_DOCUMENTATION.md | SUPERSEDED | Reverse-Engineered Projektdokumentation (überschneidet sich mit Baseline) |
-| MusicBot_FINDING_4_FORENSIC_AUDIT.md | HISTORICAL | Forensischer Audit zu Finding 4 |
-| MusicBot_PHASE4_FAILURE_PATH_AUDIT.md | HISTORICAL | Failure-Path-Audit Phase 4 |
+Die Pfade der Download-Pipeline-Stability-, Metadata-Quality- und Einzelfund-Audits werden aus Code-Kommentaren und Testdatei-Docstrings zitiert (z. B. `# DL-01 (docs/archive/MusicBot_..._AUDIT.md): ...`). Beim Verschieben nach `docs/archive/` wurden alle betroffenen Referenzen in Code-Kommentaren, Test-Docstrings und Cross-References zwischen den Dokumenten selbst mit umgezogen.

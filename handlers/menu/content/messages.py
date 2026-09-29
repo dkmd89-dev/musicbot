@@ -11,7 +11,7 @@ verschoben (reine Move-Operation, keine Textänderung - gleiche
 Formulierungen/Emojis/Markdown/Reihenfolge). Zentralisiert nach dem
 Prinzip "Centralized Static Content in einem Python-Modul" - bewusst
 KEIN JSON/YAML/i18n/CMS, siehe
-docs/MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md.
+docs/archive/arch/MusicBot_ARCH-025_Menu_Command_Help_Content_Closure.md.
 
 Dieses Modul hat bewusst KEINE Abhängigkeit auf RichMenuHandler,
 RichMenuSystem, actions/ oder sonstige Projektlogik - nur reine

@@ -1089,7 +1089,7 @@ class RichMenuSystem:
     # Funktionen) wurden entfernt - sie waren seit jeher unerreichbar
     # (RichMenuHandler._register_stats_handlers() überschreibt die
     # MenuItem-Bindung dieser fünf IDs unbedingt, siehe
-    # docs/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6).
+    # docs/archive/arch/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6).
     # definitions.py setzt für diese fünf Items seither kein handler=
     # mehr - register_handler() verdrahtet den echten, live genutzten
     # Handler (_handle_*_stats_wrapper) unverändert.

@@ -38,7 +38,7 @@ Keine Implementierung. Kein Refactoring. Keine Baseline v4.
 > `create_enhanced_error_handler()` — es existieren zwei unabhängige
 > Instanzen ohne Synchronisation, mit den entsprechenden Konsequenzen für
 > Admin-Monitoring und Recovery-Zähler. Vollständige Analyse:
-> [`docs/MusicBot_ARCH-026_Error_Handler_Integration_Audit.md`](MusicBot_ARCH-026_Error_Handler_Integration_Audit.md).
+> [`docs/archive/arch/MusicBot_ARCH-026_Error_Handler_Integration_Audit.md`](archive/arch/MusicBot_ARCH-026_Error_Handler_Integration_Audit.md).
 > Die ursprüngliche Analyse unten bleibt als historische Argumentation zum
 > damaligen Codestand erhalten.
 

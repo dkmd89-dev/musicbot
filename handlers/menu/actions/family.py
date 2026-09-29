@@ -12,7 +12,7 @@ FamilyChallengeHandler), nicht hier - dieselbe Aufgabenteilung wie vorher.
 Abhängigkeiten werden bei jedem Aufruf explizit übergeben (kein
 Konstruktor-State) - die Handler-Referenzen in RichMenuSystem sind erst
 nach initialize_menu_structure() gesetzt (Lazy-Binding, siehe
-docs/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6/1.7) und
+docs/archive/arch/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6/1.7) und
 können sich zur Laufzeit ändern (Tests weisen sie teils direkt zu).
 
 ARCH-029 (Menu Navigation Continuity): jede Funktion nimmt zusätzlich ein

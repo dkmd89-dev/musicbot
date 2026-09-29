@@ -11,7 +11,7 @@ ARCH-025: die damals mitverschobenen, nie erreichbaren
 "_system"-Funktionen (handle_stats_monthly_system/_yearly_system/
 _top_songs_system/_top_artists_system/_timeline_system - überschrieben
 durch RichMenuHandler._register_stats_handlers(), siehe
-docs/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6) wurden
+docs/archive/arch/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.6) wurden
 nach Verifikation entfernt. handle_stats_library_overview() bleibt -
 einzige Stats-Menu-Definition, die NICHT überschrieben wird, im
 Produktivbetrieb live.

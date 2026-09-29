@@ -8,7 +8,7 @@ ARCH-025 (Command/Help Decomposition): 1:1 aus
 handlers/menu/rich_menu_handler.py::handle_start_command() verschoben.
 RichMenuHandler.handle_start_command() bleibt ein dünner Delegator
 (Maintenance-Gate + Activity-Tracking + Aufruf hierher) - siehe
-docs/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md.
+docs/archive/arch/MusicBot_ARCH-025_Command_Help_Content_Decomposition.md.
 
 Telegram Start/Help/Menu UX Finalization v2: /start zeigte bisher eine
 eigene, vollständige Feature-Liste mit eigener Tastatur - eine zweite,

@@ -8,7 +8,7 @@ ARCH-024/P-2 (Actions Extraction): 1:1 aus
 handlers/menu/rich_menu_system.py und handlers/menu/rich_menu_handler.py
 verschoben (reine Move-Operation). Einzige Domäne, die beide Dateien
 gleichzeitig betrifft (siehe
-docs/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.8,
+docs/archive/arch/MusicBot_ARCH-024_Menu_File_Decomposition.md Abschnitt 1.8,
 "RISKY"). `user_states` (RichMenuHandler) bleibt bewusst ein von
 RichMenuHandler gehaltenes, mutable Dict - wird als Referenz
 durchgereicht statt kopiert, damit handle_url_message() (liest) und die

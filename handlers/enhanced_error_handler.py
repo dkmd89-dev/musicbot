@@ -1289,8 +1289,8 @@ class EnhancedErrorHandler:
                     # tatsächlicher Verwendung dieses Decorators einen
                     # AttributeError geworfen, der die eigentliche Exception
                     # maskiert hätte (siehe
-                    # docs/MusicBot_ARCH-026_Error_Handler_Integration_Audit.md
-                    # F5, docs/MusicBot_ARCH-027_Error_Handler_Consolidation.md
+                    # docs/archive/arch/MusicBot_ARCH-026_Error_Handler_Integration_Audit.md
+                    # F5, docs/archive/arch/MusicBot_ARCH-027_Error_Handler_Consolidation.md
                     # Abschnitt 9). getattr() statt .get() - konsistent mit
                     # jedem anderen Config-Zugriff in dieser Datei
                     # (z. B. self.debug_mode, self.max_recovery_attempts oben).
@@ -1411,8 +1411,8 @@ class EnhancedErrorHandler:
                     # tatsächlicher Verwendung dieses Decorators einen
                     # AttributeError geworfen, der die eigentliche Exception
                     # maskiert hätte (siehe
-                    # docs/MusicBot_ARCH-026_Error_Handler_Integration_Audit.md
-                    # F5, docs/MusicBot_ARCH-027_Error_Handler_Consolidation.md
+                    # docs/archive/arch/MusicBot_ARCH-026_Error_Handler_Integration_Audit.md
+                    # F5, docs/archive/arch/MusicBot_ARCH-027_Error_Handler_Consolidation.md
                     # Abschnitt 9). getattr() statt .get() - konsistent mit
                     # jedem anderen Config-Zugriff in dieser Datei
                     # (z. B. self.debug_mode, self.max_recovery_attempts oben).

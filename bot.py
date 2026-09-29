@@ -126,7 +126,7 @@ class ExtendedBot:
             # (bereits als PTB-Application-Error-Handler registrierte)
             # Instanz - RichMenuHandler.initialize() erzeugt dadurch keine
             # zweite, unabhängige Instanz mehr (siehe
-            # docs/MusicBot_ARCH-027_Error_Handler_Consolidation.md).
+            # docs/archive/arch/MusicBot_ARCH-027_Error_Handler_Consolidation.md).
             self.rich_menu_handler = RichMenuHandler(
                 self.config, error_handler=self.error_handler
             )
