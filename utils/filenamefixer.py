@@ -87,6 +87,30 @@ def load_special_channels_from_yaml(mapping_dir: Path) -> Dict[str, List[str]]:
         return {}
 
 
+def _merge_special_channels(
+    yaml_channels: Dict[str, List[str]], config_channels: Dict[str, List[str]]
+) -> Dict[str, List[str]]:
+    """
+    Merged YAML- und Config-Kanaele und erhaelt dabei die Kategorie-Reihenfolge.
+
+    Die Reihenfolge der YAML-Kategorien ist die Prioritaet (die erste passende
+    Kategorie gewinnt, siehe get_special_channel_info_prioritized). Kategorien,
+    die nur in der Config stehen, folgen danach. Eine set()-Vereinigung waere
+    je Prozessstart in zufaelliger Reihenfolge iteriert worden.
+    """
+    categories = list(yaml_channels) + [
+        cat for cat in config_channels if cat not in yaml_channels
+    ]
+    merged: Dict[str, List[str]] = {}
+    for cat in categories:
+        yaml_list = yaml_channels.get(cat, [])
+        config_list = config_channels.get(cat, [])
+        seen = {c.lower() for c in yaml_list}
+        extra = [c for c in config_list if c.lower() not in seen]
+        merged[cat] = yaml_list + extra
+    return merged
+
+
 def load_special_channels_merged(config) -> Dict[str, List[str]]:
     """
     Hilfsfunktion für Module die keinen FilenameFixerTool haben (z.B. download_utils,
@@ -106,14 +130,7 @@ def load_special_channels_merged(config) -> Dict[str, List[str]]:
     if not yaml_channels:
         return config_channels
 
-    merged: Dict[str, List[str]] = {}
-    for cat in set(yaml_channels) | set(config_channels):
-        yaml_list = yaml_channels.get(cat, [])
-        config_list = config_channels.get(cat, [])
-        seen = {c.lower() for c in yaml_list}
-        extra = [c for c in config_list if c.lower() not in seen]
-        merged[cat] = yaml_list + extra
-    return merged
+    return _merge_special_channels(yaml_channels, config_channels)
 
 
 def load_known_group_names_from_overrides(override_file: Path) -> Set[str]:
@@ -284,15 +301,9 @@ class FilenameFixerTool(SingletonMixin):
         _config_channels = getattr(self.config, "SPECIAL_CHANNELS", {})
 
         if _yaml_channels:
-            merged: Dict[str, List[str]] = {}
-            all_categories = set(_yaml_channels) | set(_config_channels)
-            for cat in all_categories:
-                yaml_list = _yaml_channels.get(cat, [])
-                config_list = _config_channels.get(cat, [])
-                seen = {c.lower() for c in yaml_list}
-                extra = [c for c in config_list if c.lower() not in seen]
-                merged[cat] = yaml_list + extra
-            self._special_channels = merged
+            self._special_channels = _merge_special_channels(
+                _yaml_channels, _config_channels
+            )
             self.logger.info(
                 f"⭐ SPECIAL_CHANNELS aus YAML geladen ({sum(len(v) for v in self._special_channels.values())} Kanäle gesamt)"
             )
