@@ -59,6 +59,7 @@ def test_player_icons_exist_in_sprite():
     used |= set(re.findall(r'_npBtn\("[a-z]+", "([a-z0-9-]+)"', PLAYER_JS.read_text(encoding="utf-8")))
     used |= set(re.findall(r'"(player-[a-z]+|skip-[a-z]+|repeat-once)"', PLAYER_JS.read_text(encoding="utf-8")))
     used |= set(re.findall(r'ccIcon\("([a-z0-9-]+)"', PAGE_JS.read_text(encoding="utf-8")))
+    used.add("star-filled")                                   # dynamisch gewählt (Favorit an/aus)
     sprite = ICONS.read_text(encoding="utf-8")
     missing = sorted(i for i in used if f'id="i-{i}"' not in sprite)
     assert not missing, f"Icons fehlen im Sprite: {missing}"
@@ -109,7 +110,7 @@ global.document = {
 };
 const hashHandlers = [];
 global.window = {
-  prompt: () => null, confirm: () => false,
+  prompt: () => (scenario.__prompts ? (scenario.__prompts.shift() ?? null) : null), confirm: () => false,
   location: { hash: scenario.__hash || "", pathname: "/navidrome", search: "" },
   history: { pushState: () => { global.window.location.hash = ""; } },
   addEventListener: (ev, fn) => { if (ev === "hashchange") hashHandlers.push(fn); },
@@ -120,6 +121,7 @@ global.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem:
                         removeItem: (k) => { delete store[k]; } };
 global.console = { ...console, error: () => {} };
 const audios = [];
+const fakes = {};
 class FakeAudio {
   constructor() { this.src = ""; this.paused = true; this.currentTime = 0; this.duration = NaN; this.volume = 1;
                   this.preload = ""; this._h = {}; this.playCalls = 0; audios.push(this); }
@@ -137,13 +139,13 @@ const session = { metadata: null, handlers: {}, setActionHandler(n, f) { this.ha
 Object.defineProperty(globalThis, "navigator", { value: { mediaSession: session }, configurable: true, writable: true });
 const calls = [];
 global.fetch = async (url, options) => {
-  calls.push({ url, method: (options || {}).method || "GET" });
+  calls.push({ url, method: (options || {}).method || "GET", body: (options || {}).body || null });
   const path = url.split("?")[0];
   const r = scenario[url] || scenario[path] || { status: 500, body: { error: { message: "boom" } } };
   return { status: r.status, ok: r.status >= 200 && r.status < 300,
            text: async () => (r.body === undefined ? "" : JSON.stringify(r.body)), json: async () => r.body };
 };
-const names = ["NavPlayer", "_navLists", "_navShowTab"];
+const names = ["NavPlayer", "_navLists", "_navShowTab", "_navState"];
 const src = fs.readFileSync(commonPath, "utf-8") + "\n" + fs.readFileSync(playerPath, "utf-8") + "\n"
   + fs.readFileSync(pagePath, "utf-8") + "\nglobalThis.__t = { " + names.join(", ") + " };";
 new Function(src)();
@@ -159,7 +161,8 @@ const fire = async (container, ev, evt) => { for (const fn of (els[container]._h
       const a = audio();
       if (s.audio.duration !== undefined) a.duration = s.audio.duration;
       if (s.audio.time !== undefined) a.currentTime = s.audio.time;
-      a._fire(s.audio.event);
+      if (s.audio.times) { for (const t of s.audio.times) { a.currentTime = t; a._fire("timeupdate"); } }
+      else a._fire(s.audio.event);
     }
     else if (s.npClick) {
       const c = s.npClick;
@@ -171,7 +174,19 @@ const fire = async (container, ev, evt) => { for (const fn of (els[container]._h
     }
     else if (s.pageClick) {
       const c = s.pageClick;
-      await fire(c.container, "click", { preventDefault() {}, target: { closest: (sel) => (c.sels[sel] || null) } });
+      const sels = {};
+      for (const [sel, spec] of Object.entries(c.sels)) {
+        if (spec && spec._name) {                       // Fake mit Zustandsprotokoll (Klassen/Attribute/Titel)
+          const rec = { cls: {}, attrs: {}, title: "", textContent: "" };
+          fakes[spec._name] = rec;
+          sels[sel] = { dataset: Object.assign({}, spec.dataset), classList: { toggle: (k, f) => { rec.cls[k] = f; } },
+                        setAttribute: (k, v) => { rec.attrs[k] = v; }, set title(v) { rec.title = v; }, get title() { return rec.title; },
+                        set textContent(v) { rec.textContent = v; }, get textContent() { return rec.textContent; },
+                        _rec: rec, closest: () => null };
+          rec.dataset = sels[sel].dataset;
+        } else sels[sel] = spec;
+      }
+      await fire(c.container, "click", { preventDefault() {}, target: { closest: (sel) => (sels[sel] || null) } });
     }
     else if (s.rowKey) {
       const c = s.rowKey;
@@ -193,6 +208,8 @@ const fire = async (container, ev, evt) => { for (const fn of (els[container]._h
           playing: P.playing, uids: P.queue.map((i) => i.uid), covers: P.queue.map((i) => i.cover), resumeAt: P.resumeAt },
     session: { metadata: session.metadata, handlers: Object.keys(session.handlers) },
     rowCls: Object.fromEntries(rows.map((r) => [r.dataset.songId, [...r._cls]])),
+    fakes: Object.fromEntries(Object.entries(fakes).map(([k, v]) => [k, { cls: v.cls, attrs: v.attrs, title: v.title, text: v.textContent, dataset: v.dataset }])),
+    lists: JSON.parse(JSON.stringify(globalThis.__t._navLists)), loaded: globalThis.__t._navState.loaded,
     _handlers: null,
   });
   process.stdout.write(payload + "\n", () => process.exit(0));
@@ -593,3 +610,283 @@ def test_song_page_offers_play_and_enqueue_only(tmp_path):
     html = out["els"]["nav-detail-content"]["html"]
     assert 'data-np-play="all"' in html and 'data-np-play="next"' in html and 'data-np-play="shuffle"' not in html
     assert out["np"]["ids"] == ["s1"] and out["np"]["covers"] == ["al-1"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# N5: Scrobble
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _scrobbles(out) -> list:
+    return [json.loads(c["body"])["submission"] for c in out["calls"]
+            if c["method"] == "POST" and c["url"] == f"{_BASE}/scrobble/s1"]
+
+
+_OK = {"status": 200, "body": {"success": True}}
+
+
+def _times(start: float, stop: float, step: float) -> list:
+    n = int((stop - start) / step) + 1
+    return [round(start + i * step, 3) for i in range(n)]
+
+
+@needs_node
+def test_scrobble_now_playing_is_sent_once_per_play_start(tmp_path):
+    scenario = {f"{_BASE}/scrobble/s1": _OK}
+    out = _run(tmp_path, [_play(SONGS3), _act("toggle"), _act("toggle")], **scenario)   # Pause + Fortsetzen
+
+    assert _scrobbles(out) == [False]                          # genau eine "läuft gerade"-Meldung, keine Wertung
+
+
+@needs_node
+def test_scrobble_counts_after_half_of_the_track_but_not_before(tmp_path):
+    scenario = {f"{_BASE}/scrobble/s1": _OK}
+    below = _run(tmp_path, [_play(SONGS3), {"audio": {"event": "loadedmetadata", "duration": 200}},
+                            {"audio": {"event": "timeupdate", "times": _times(1, 99, 1)}}], **scenario)
+    assert _scrobbles(below) == [False]                        # 99 s von 200 s: noch keine Wertung
+
+    above = _run(tmp_path, [_play(SONGS3), {"audio": {"event": "loadedmetadata", "duration": 200}},
+                            {"audio": {"event": "timeupdate", "times": _times(1, 130, 1)}}], **scenario)
+    assert _scrobbles(above) == [False, True]                  # ab 100 s genau einmal, auch bei weiterem Hören
+
+
+@needs_node
+def test_scrobble_ignores_seeking_and_short_tracks_and_caps_at_four_minutes(tmp_path):
+    scenario = {f"{_BASE}/scrobble/s1": _OK}
+    seeked = _run(tmp_path, [_play(SONGS3), {"audio": {"event": "loadedmetadata", "duration": 200}},
+                             {"audio": {"event": "timeupdate", "times": [1, 2, 150, 151, 152]}}], **scenario)
+    assert _scrobbles(seeked) == [False]                       # Position > 50 %, aber nur ~4 s wirklich gehört
+
+    short = _run(tmp_path, [_play(SONGS3), {"audio": {"event": "loadedmetadata", "duration": 20}},
+                            {"audio": {"event": "timeupdate", "times": _times(1, 20, 1)}}], **scenario)
+    assert _scrobbles(short) == [False]                        # unter 30 s zählt nie
+
+    long_track = _run(tmp_path, [_play(SONGS3), {"audio": {"event": "loadedmetadata", "duration": 1000}},
+                                 {"audio": {"event": "timeupdate", "times": _times(1, 239, 1)}}], **scenario)
+    assert _scrobbles(long_track) == [False]
+    long_done = _run(tmp_path, [_play(SONGS3), {"audio": {"event": "loadedmetadata", "duration": 1000}},
+                                {"audio": {"event": "timeupdate", "times": _times(1, 241, 1)}}], **scenario)
+    assert _scrobbles(long_done) == [False, True]              # nach 4 min, nicht erst bei 50 % von 1000 s
+
+
+@needs_node
+def test_scrobble_repeat_one_counts_every_repetition_and_failures_stay_silent(tmp_path):
+    scenario = {f"{_BASE}/scrobble/s1": _OK}
+    out = _run(tmp_path, [_play(SONGS3), _act("repeat"), _act("repeat"), {"audio": {"event": "ended"}}], **scenario)
+    assert _scrobbles(out) == [False, False]                   # jede Wiederholung meldet "läuft gerade" neu
+
+    failing = _run(tmp_path, [_play(SONGS3), {"audio": {"event": "loadedmetadata", "duration": 200}},
+                              {"audio": {"event": "timeupdate", "times": _times(1, 120, 1)}}],
+                   **{f"{_BASE}/scrobble/s1": {"status": 500, "body": {"error": {"message": "boom"}}}})
+    assert failing["toasts"] == [] and failing["audio"]["playCalls"] == 1          # kein Toast, Wiedergabe läuft weiter
+
+
+@needs_node
+def test_next_track_scrobbles_the_new_track_separately(tmp_path):
+    out = _run(tmp_path, [_play(SONGS3), _act("next")], **{f"{_BASE}/scrobble/s1": _OK, f"{_BASE}/scrobble/s2": _OK})
+    urls = [c["url"] for c in out["calls"] if "/scrobble/" in c["url"]]
+
+    assert urls == [f"{_BASE}/scrobble/s1", f"{_BASE}/scrobble/s2"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# N5: Favoriten (Player-Leiste)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _fav_calls(out) -> list:
+    return [(c["method"], c["url"]) for c in out["calls"] if "/favorites/" in c["url"]]
+
+
+@needs_node
+def test_player_favorite_toggle_stars_and_unstars_the_current_song(tmp_path):
+    ok = {f"{_BASE}/favorites/song/s1": {"status": 200, "body": {"success": True, "kind": "song", "id": "s1", "starred": True}}}
+    on = _run(tmp_path, [_play(SONGS3), _act("fav")], **ok)
+
+    assert _fav_calls(on) == [("PUT", f"{_BASE}/favorites/song/s1")]
+    assert "nav-fav-on" in on["els"]["nav-player-bar"]["html"] and 'aria-pressed="true"' in on["els"]["nav-player-bar"]["html"]
+    assert any("Zu Favoriten hinzugefügt" in t for t in on["toasts"])
+    assert json.loads(on["store"][_STORAGE_KEY])["queue"][0]["starred"] is True          # Zustand bleibt gespeichert
+
+    off = _run(tmp_path, [_play([_song(1, starred=True)] + SONGS3[1:]), _act("fav")], **ok)
+    assert _fav_calls(off) == [("DELETE", f"{_BASE}/favorites/song/s1")]
+    assert "nav-fav-on" not in off["els"]["nav-player-bar"]["html"]
+    assert any("Aus Favoriten entfernt" in t for t in off["toasts"])
+
+
+@needs_node
+def test_player_favorite_failure_keeps_state_and_shows_error(tmp_path):
+    out = _run(tmp_path, [_play(SONGS3), _act("fav")],
+               **{f"{_BASE}/favorites/song/s1": {"status": 403, "body": {"error": {"message": "Keine Berechtigung"}}}})
+
+    assert "nav-fav-on" not in out["els"]["nav-player-bar"]["html"]
+    assert any("Favorit nicht geändert" in t and "Keine Berechtigung" in t for t in out["toasts"])
+
+
+@needs_node
+def test_starred_state_is_shared_by_all_queue_entries_of_the_same_song(tmp_path):
+    out = _run(tmp_path, [_play([_song(1), _song(2), _song(1)]), {"np": {"method": "setStarred", "args": ["s1", True]}}])
+    saved = json.loads(out["store"][_STORAGE_KEY])
+
+    assert [i["starred"] for i in saved["queue"]] == [True, False, True]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# N5: Favoriten und Playlists auf den Seiten
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@needs_node
+def test_pages_show_favorite_buttons_with_current_state(tmp_path):
+    def page_html(hash_, **scenario):
+        out = _run(tmp_path, __hash=hash_, **scenario)
+        return re.sub(r"\s+", " ", out["els"]["nav-detail-content"]["html"])     # Leerraum normalisieren
+
+    album = {**_ALBUM, "starred": True}
+    html = page_html("#/album/a1", **{f"{_BASE}/albums/a1": {"status": 200, "body": album}})
+    assert 'data-fav-kind="album" data-fav-id="a1" data-fav-on="1"' in html and "nav-fav-on" in html
+    assert 'data-starred="0"' in html                                                     # Zeilen: Standard nicht favorisiert
+
+    artist = {"id": "ar1", "name": "Artist", "album_count": 0, "albums": [], "starred": False}
+    html = page_html("#/artist/ar1", **{f"{_BASE}/artists/ar1": {"status": 200, "body": artist}})
+    assert 'data-fav-kind="artist" data-fav-id="ar1" data-fav-on="0"' in html
+
+    song = {**_song(1), "starred": True, "genres": [], "cover_art": "al-1"}
+    html = page_html("#/song/s1", **{f"{_BASE}/songs/s1": {"status": 200, "body": song}})
+    assert 'data-fav-kind="song" data-fav-id="s1" data-fav-on="1"' in html
+
+    rows = page_html("#/album/a1", **{f"{_BASE}/albums/a1": {"status": 200, "body": {
+        **_ALBUM, "songs": [_song(1, starred=True), _song(2)]}}})
+    assert 'data-song-id="s1" data-np-list="detail" data-np-index="0" data-starred="1"' in rows
+    assert 'data-song-id="s2" data-np-list="detail" data-np-index="1" data-starred="0"' in rows
+    assert "Aus Favoriten entfernen" in rows and "Zu Favoriten hinzufügen" in rows        # Menütext je Zustand
+
+
+@needs_node
+def test_favorite_button_click_toggles_state_and_syncs_the_player(tmp_path):
+    fav_ok = {"status": 200, "body": {"success": True, "kind": "album", "id": "a1", "starred": True}}
+    click = _page_click(**{"[data-fav-kind]": {"_name": "fav", "dataset": {"favKind": "album", "favId": "a1", "favOn": "0"}}})
+    out = _run(tmp_path, [click], __hash="#/album/a1", **_album_scenario(**{f"{_BASE}/favorites/album/a1": fav_ok}))
+
+    assert _fav_calls(out) == [("PUT", f"{_BASE}/favorites/album/a1")]
+    fav = out["fakes"]["fav"]
+    assert fav["dataset"]["favOn"] == "1" and fav["cls"]["nav-fav-on"] is True
+    assert fav["attrs"]["aria-pressed"] == "true" and fav["title"] == "Aus Favoriten entfernen"
+    assert any("Zu Favoriten hinzugefügt" in t for t in out["toasts"])
+
+    song_ok = {f"{_BASE}/favorites/song/s2": {"status": 200, "body": {"success": True, "kind": "song", "id": "s2", "starred": True}}}
+    song_click = _page_click(**{"[data-fav-kind]": {"_name": "fav", "dataset": {"favKind": "song", "favId": "s2", "favOn": "0"}}})
+    synced = _run(tmp_path, [_play(SONGS3), song_click], __hash="#/album/a1", **_album_scenario(**song_ok))
+    assert json.loads(synced["store"][_STORAGE_KEY])["queue"][1]["starred"] is True    # Player kennt den neuen Zustand
+
+
+@needs_node
+def test_favorite_button_failure_leaves_button_unchanged(tmp_path):
+    click = _page_click(**{"[data-fav-kind]": {"_name": "fav", "dataset": {"favKind": "album", "favId": "a1", "favOn": "0"}}})
+    out = _run(tmp_path, [click], __hash="#/album/a1", **_album_scenario(**{
+        f"{_BASE}/favorites/album/a1": {"status": 502, "body": {"error": {"message": "Navidrome-Anfrage fehlgeschlagen"}}}}))
+
+    fav = out["fakes"]["fav"]
+    assert fav["dataset"]["favOn"] == "0" and fav["cls"] == {} and fav["attrs"] == {}
+    assert any("Favorit nicht geändert" in t for t in out["toasts"])
+
+
+@needs_node
+def test_row_menu_favorite_next_and_playlist(tmp_path):
+    row = {"dataset": {"npList": "detail", "npIndex": "1"}}
+    fav_ok = {f"{_BASE}/favorites/song/s2": {"status": 200, "body": {"success": True, "kind": "song", "id": "s2", "starred": True}}}
+    menu = {"_name": "menu", "dataset": {"npMenu": "fav"}}
+    out = _run(tmp_path, [_page_click(**{".nav-song-row": {"_name": "row", "dataset": row["dataset"]}, "[data-np-menu]": menu})],
+               __hash="#/album/a1", **_album_scenario(**fav_ok))
+
+    assert _fav_calls(out) == [("PUT", f"{_BASE}/favorites/song/s2")]
+    assert out["fakes"]["menu"]["text"] == "Aus Favoriten entfernen"
+    assert out["lists"]["detail"]["songs"][1]["starred"] is True                       # Liste im Speicher aktuell
+
+    nxt = _run(tmp_path, [_play([_song(9)]), _page_click(**{".nav-song-row": row, "[data-np-menu]": {"dataset": {"npMenu": "next"}}})],
+               __hash="#/album/a1", **_album_scenario())
+    assert nxt["np"]["ids"] == ["s9", "s2"]
+
+    dropdown_toggle = _run(tmp_path, [_page_click(**{".nav-song-row": row, "[data-bs-toggle='dropdown']": {}})],
+                           __hash="#/album/a1", **_album_scenario())
+    assert dropdown_toggle["np"]["ids"] == []                                          # Menü öffnen spielt nichts ab
+
+
+_PLAYLISTS = {"status": 200, "body": {"items": [
+    {"id": "p1", "name": "Mix", "song_count": 3}, {"id": "p2", "name": "Rock", "song_count": 0}],
+    "page": 0, "page_size": 100, "total": 2, "has_next": False}}
+
+
+def _pl_scenario(**kw) -> dict:
+    return _album_scenario(**{f"{_BASE}/playlists?page=0&page_size=100": _PLAYLISTS}, **kw)
+
+
+def _posts(out) -> list:
+    return [(c["url"], json.loads(c["body"])) for c in out["calls"] if c["method"] == "POST" and "/scrobble/" not in c["url"]]
+
+
+_ADD_ALL = {"[data-np-play]": {"dataset": {"npPlay": "playlist", "npList": "detail"}}}
+
+
+@needs_node
+def test_add_album_to_existing_playlist(tmp_path):
+    ok = {f"{_BASE}/playlists/p2/songs": {"status": 200, "body": {"success": True, "playlist_id": "p2", "added": 3}}}
+    out = _run(tmp_path, [_page_click(**_ADD_ALL)], __hash="#/album/a1", __prompts=["2"], **_pl_scenario(**ok))
+
+    assert _posts(out) == [(f"{_BASE}/playlists/p2/songs", {"song_ids": ["s1", "s2", "s3"]})]
+    assert any("3 Titel zu „Rock“ hinzugefügt" in t for t in out["toasts"])
+    assert out["loaded"].get("playlists") is False                                    # Playlist-Liste wird neu geladen
+
+
+@needs_node
+def test_add_to_playlist_cancelled_or_invalid_choice_sends_nothing(tmp_path):
+    for prompts in ([], ["9"], ["abc"]):
+        out = _run(tmp_path, [_page_click(**_ADD_ALL)], __hash="#/album/a1", __prompts=prompts, **_pl_scenario())
+        assert _posts(out) == [], prompts
+
+
+@needs_node
+def test_add_to_new_playlist_creates_it_first(tmp_path):
+    scenario = _pl_scenario(**{
+        f"{_BASE}/playlists": {"status": 200, "body": {"success": True, "playlist_id": "p9", "name": "Neu"}},
+        f"{_BASE}/playlists/p9/songs": {"status": 200, "body": {"success": True, "playlist_id": "p9", "added": 3}},
+    })
+    out = _run(tmp_path, [_page_click(**_ADD_ALL)], __hash="#/album/a1", __prompts=["0", "Neu"], **scenario)
+
+    assert _posts(out) == [(f"{_BASE}/playlists", {"name": "Neu"}),
+                           (f"{_BASE}/playlists/p9/songs", {"song_ids": ["s1", "s2", "s3"]})]
+    assert any("zu „Neu“ hinzugefügt" in t for t in out["toasts"])
+
+
+@needs_node
+def test_add_to_playlist_errors_are_reported(tmp_path):
+    failed = _run(tmp_path, [_page_click(**_ADD_ALL)], __hash="#/album/a1", __prompts=["1"], **_pl_scenario(**{
+        f"{_BASE}/playlists/p1/songs": {"status": 404, "body": {"error": {"message": "Eintrag nicht gefunden"}}}}))
+    assert any("Nicht zur Playlist hinzugefügt" in t and "Eintrag nicht gefunden" in t for t in failed["toasts"])
+    assert failed["loaded"].get("playlists") is not False
+
+    no_list = _run(tmp_path, [_page_click(**_ADD_ALL)], __hash="#/album/a1", __prompts=["1"], **_album_scenario())
+    assert any("Playlists nicht geladen" in t for t in no_list["toasts"]) and _posts(no_list) == []
+
+
+@needs_node
+def test_add_more_than_500_songs_is_truncated_with_hint(tmp_path):
+    many = [_song(i) for i in range(1, 502)]
+    album = {**_ALBUM, "songs": many, "song_count": 501}
+    scenario = _pl_scenario(**{f"{_BASE}/albums/a1": {"status": 200, "body": album},
+                               f"{_BASE}/playlists/p1/songs": {"status": 200, "body": {"success": True, "playlist_id": "p1", "added": 500}}})
+    out = _run(tmp_path, [_page_click(**_ADD_ALL)], __hash="#/album/a1", __prompts=["1"], **scenario)
+
+    posted = _posts(out)[0][1]["song_ids"]
+    assert len(posted) == 500 and posted[0] == "s1"
+    assert any("Nur die ersten 500 von 501" in t for t in out["toasts"])
+
+
+def test_n5_template_has_playlist_picker_and_row_menu_markup():
+    html = PAGE_HTML.read_text(encoding="utf-8")
+    for element_id in ("nav-playlist-picker", "nav-playlist-picker-list", "nav-playlist-picker-new"):
+        assert f'id="{element_id}"' in html, element_id
+    js = PAGE_JS.read_text(encoding="utf-8")
+    for menu in ("next", "fav", "playlist"):
+        assert f'data-np-menu="{menu}"' in js
+    assert not _EMOJI.search(js) and not _EMOJI.search(PLAYER_JS.read_text(encoding="utf-8"))

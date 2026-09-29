@@ -3,13 +3,16 @@
 // GET /api/v1/navidrome/stream/{song_id} (N3) - der Browser kennt nur sein
 // Session-Cookie, keine Navidrome-Zugangsdaten. Zustand (Warteschlange, Position,
 // Shuffle/Repeat, Lautstärke) bleibt per localStorage über Neuladen erhalten;
-// nach dem Neuladen startet nichts von allein.
+// nach dem Neuladen startet nichts von allein. N5: Scrobble ("läuft gerade" beim
+// Start, gezählte Wiedergabe ab 50 % bzw. 4 min) und Favorit für den laufenden Titel.
 // Muss VOR navidrome.js geladen werden (navidrome.js ruft NavPlayer auf).
 
 const _NP_BASE = "/api/v1/navidrome";
 const _NP_STORAGE_KEY = "cc-nav-player-v1";
 const _NP_MAX_QUEUE = 500;
 const _NP_SAVE_INTERVAL_S = 5;
+const _NP_SCROBBLE_MIN_TRACK_S = 30;   // kürzere Titel zählen nie (Last.fm-Regel)
+const _NP_SCROBBLE_MAX_LISTEN_S = 240; // spätestens nach 4 min gehört
 const _NP_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 function _npFmt(sec) {
@@ -28,6 +31,11 @@ function _npCover(id, size, cls) {
     ? `<img class="nav-cover-img" src="${_npCoverUrl(id, size)}" alt="" onerror="this.style.display='none'">`
     : "";
   return `<span class="nav-np-cover-box ${cls || ""}">${fallback}${img}</span>`;
+}
+function _npFavBtn(item, extra) {
+  const label = item.starred ? "Aus Favoriten entfernen" : "Zu Favoriten hinzufügen";
+  return `<button type="button" class="btn btn-icon btn-ghost-secondary nav-np-btn ${item.starred ? "nav-fav-on" : ""} ${extra || ""}"
+    data-np-act="fav" aria-pressed="${item.starred ? "true" : "false"}" title="${label}" aria-label="${label}">${ccIcon(item.starred ? "star-filled" : "star")}</button>`;
 }
 function _npBtn(act, icon, label, extra) {
   return `<button type="button" class="btn btn-icon btn-ghost-secondary nav-np-btn ${extra || ""}"
@@ -49,6 +57,10 @@ const NavPlayer = {
   _failures: 0,       // aufeinanderfolgende Fehler (Abbruch, wenn alle Titel scheitern)
   _lastSave: 0,
   _seeking: false,
+  _listened: 0,       // tatsächlich gehörte Sekunden des aktuellen Titels (Spulen zählt nicht)
+  _lastT: null,       // letzte Abspielposition (für _listened)
+  _nowSent: false,    // "läuft gerade" für diesen Titel schon gemeldet
+  _submitted: false,  // gezählte Wiedergabe schon gemeldet
 
   // ---- Zugriff -------------------------------------------------------
   current() { return this.index >= 0 ? (this.queue[this.index] || null) : null; },
@@ -64,7 +76,7 @@ const NavPlayer = {
     a.addEventListener("timeupdate", () => this._onTimeUpdate());
     a.addEventListener("loadedmetadata", () => this._onLoadedMetadata());
     a.addEventListener("ended", () => { this._failures = 0; this.next(true); });
-    a.addEventListener("play", () => { this.playing = true; this._render(); });
+    a.addEventListener("play", () => { this.playing = true; this._render(); this._maybeNowPlaying(); });
     a.addEventListener("pause", () => { this.playing = false; this._render(); this._save(); });
     a.addEventListener("error", () => this._onError());
 
@@ -93,6 +105,7 @@ const NavPlayer = {
       album: s.album || "",
       album_id: s.album_id || "",
       duration: s.duration || 0,
+      starred: !!s.starred,
       // Album-Cover, sonst Album-ID (Navidrome löst rohe IDs auf), sonst Song-ID
       cover: (ctx && ctx.cover_art) || s.cover_art || s.album_id || s.id,
     };
@@ -159,6 +172,7 @@ const NavPlayer = {
     this.index = i;
     this.resumeAt = 0;
     this._srcUid = null;
+    this._scrobbleReset();
     this._ensureSrc();
     this._render();
     this._bindMetadata();
@@ -194,7 +208,9 @@ const NavPlayer = {
     if (!this.queue.length) return;
     if (fromEnded && this.repeat === "one") {
       this._audio.currentTime = 0;
+      this._scrobbleReset();               // jede Wiederholung zählt neu
       this._play();
+      this._maybeNowPlaying();
       return;
     }
     let i = this.index + 1;
@@ -304,9 +320,68 @@ const NavPlayer = {
   // ---- Audio-Ereignisse ---------------------------------------------
   _onTimeUpdate() {
     this._failures = 0;
-    this._updateProgress();
     const t = this._audio.currentTime || 0;
+    // Nur normales Abspielen zählt als "gehört" (kleine Schritte); Spulen nicht.
+    if (this._lastT !== null) {
+      const dt = t - this._lastT;
+      if (dt > 0 && dt < 2.5) this._listened += dt;
+    }
+    this._lastT = t;
+    this._maybeSubmit();
+    this._updateProgress();
     if (Math.abs(t - this._lastSave) >= _NP_SAVE_INTERVAL_S) this._save();
+  },
+
+  // ---- Scrobble (N5) ---------------------------------------------------
+  _scrobbleReset() {
+    this._listened = 0;
+    this._lastT = null;
+    this._nowSent = false;
+    this._submitted = false;
+  },
+
+  async _scrobble(id, submission) {
+    try {
+      await ccApi("POST", `${_NP_BASE}/scrobble/${encodeURIComponent(id)}`, { submission });
+    } catch (e) { /* Scrobble ist ein Zusatz: die Wiedergabe soll nie daran scheitern */ }
+  },
+
+  _maybeNowPlaying() {
+    const cur = this.current();
+    if (!cur || this._nowSent) return;
+    this._nowSent = true;
+    this._scrobble(cur.id, false);
+  },
+
+  _maybeSubmit() {
+    const cur = this.current();
+    const d = this._duration();
+    if (!cur || this._submitted || d < _NP_SCROBBLE_MIN_TRACK_S) return;
+    if (this._listened >= Math.min(d / 2, _NP_SCROBBLE_MAX_LISTEN_S)) {
+      this._submitted = true;
+      this._scrobble(cur.id, true);
+    }
+  },
+
+  // ---- Favorit für den laufenden Titel (N5) -------------------------------
+  setStarred(id, on) {
+    for (const it of this.queue) if (it.id === id) it.starred = !!on;   // queue/original teilen die Objekte
+    this._render();
+    this._save();
+  },
+
+  async toggleFavorite() {
+    const cur = this.current();
+    if (!cur) return;
+    const on = !cur.starred;
+    try {
+      await ccApi(on ? "PUT" : "DELETE", `${_NP_BASE}/favorites/song/${encodeURIComponent(cur.id)}`);
+    } catch (err) {
+      ccToast("error", "Favorit nicht geändert", err.message);
+      return;
+    }
+    this.setStarred(cur.id, on);
+    ccToast("ok", on ? "Zu Favoriten hinzugefügt" : "Aus Favoriten entfernt");
   },
 
   _onLoadedMetadata() {
@@ -357,7 +432,7 @@ const NavPlayer = {
         && Number.isInteger(it.uid)).slice(0, _NP_MAX_QUEUE).map((it) => ({
         uid: it.uid, id: it.id, title: String(it.title || ""), artist: String(it.artist || ""),
         artist_id: String(it.artist_id || ""), album: String(it.album || ""), album_id: String(it.album_id || ""),
-        duration: Number(it.duration) || 0, cover: String(it.cover || ""),
+        duration: Number(it.duration) || 0, cover: String(it.cover || ""), starred: !!it.starred,
       }));
       if (!queue.length) return;
       const byUid = new Map(queue.map((it) => [it.uid, it]));
@@ -432,10 +507,11 @@ const NavPlayer = {
           data-bs-target="#nav-fullplayer" aria-label="Player öffnen">${_npCover(cur.cover, 120)}</button>
         <a class="nav-np-coverbtn d-none d-md-block" href="${_npEsc(cur.album_id ? "#/album/" + encodeURIComponent(cur.album_id) : "#")}"
           tabindex="-1" aria-hidden="true">${_npCover(cur.cover, 120)}</a>
-        <div class="min-w-0">
+        <div class="nav-np-text">
           <div class="fw-medium text-truncate">${_npEsc(cur.title)}</div>
           <div class="text-secondary small text-truncate">${this._artistAlbum(cur)}</div>
         </div>
+        ${_npFavBtn(cur, "d-none d-md-inline-flex")}
       </div>
       <div class="nav-np-transport">${this._transport(false)}</div>
       <div class="nav-np-seek d-none d-md-flex">
@@ -444,7 +520,7 @@ const NavPlayer = {
           data-np-range="seek" aria-label="Position" id="nav-np-seek">
         <span class="small text-secondary" id="nav-np-dur">0:00</span>
       </div>
-      <div class="nav-np-vol d-none d-lg-flex">${this._volume("")}</div>
+      <div class="nav-np-vol d-none d-xl-flex">${this._volume("")}</div>
       <button type="button" class="btn btn-icon btn-ghost-secondary nav-np-btn nav-np-queue"
         data-bs-toggle="offcanvas" data-bs-target="#nav-queue-offcanvas"
         title="Warteschlange" aria-label="Warteschlange">${ccIcon("playlist")}</button>
@@ -454,9 +530,12 @@ const NavPlayer = {
   _fullHtml(cur) {
     return `
       <div class="nav-np-full-cover">${_npCover(cur.cover, 600)}</div>
-      <div class="mt-3">
-        <div class="h2 mb-1">${_npEsc(cur.title)}</div>
-        <div class="text-secondary">${this._artistAlbum(cur)}</div>
+      <div class="mt-3 d-flex align-items-center gap-2">
+        <div class="min-w-0 flex-fill">
+          <div class="h2 mb-1">${_npEsc(cur.title)}</div>
+          <div class="text-secondary">${this._artistAlbum(cur)}</div>
+        </div>
+        ${_npFavBtn(cur)}
       </div>
       <div class="d-flex align-items-center gap-2 mt-3">
         <span class="small text-secondary" id="nav-np-full-cur">0:00</span>
@@ -562,6 +641,7 @@ const NavPlayer = {
     else if (act === "next") this.next(false);
     else if (act === "shuffle") this.toggleShuffle();
     else if (act === "repeat") this.cycleRepeat();
+    else if (act === "fav") this.toggleFavorite();
   },
 
   _onInput(ev) {

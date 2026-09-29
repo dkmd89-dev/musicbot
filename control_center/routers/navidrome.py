@@ -27,6 +27,9 @@ Stellt die vollständige Navidrome-Funktionalität des Telegram-Bots
     GET    /api/v1/navidrome/random                   ?size
     GET    /api/v1/navidrome/newest                   ?page&page_size
     GET    /api/v1/navidrome/favorites
+    PUT    /api/v1/navidrome/favorites/{kind}/{item_id}    (USER)  kind: song|album|artist
+    DELETE /api/v1/navidrome/favorites/{kind}/{item_id}    (USER)
+    POST   /api/v1/navidrome/scrobble/{song_id}            (USER)  {submission}
 
   Playlists (CRUD)
     GET    /api/v1/navidrome/playlists                ?page&page_size
@@ -34,6 +37,7 @@ Stellt die vollständige Navidrome-Funktionalität des Telegram-Bots
     POST   /api/v1/navidrome/playlists                (USER)  {name}
     PUT    /api/v1/navidrome/playlists/{playlist_id}  (USER)  {name}
     DELETE /api/v1/navidrome/playlists/{playlist_id}  (USER)
+    POST   /api/v1/navidrome/playlists/{playlist_id}/songs  (USER)  {song_ids}
 
 Reine Orchestrierung: ruft ausschliesslich
 services/clients/navidrome_api.py::NavidromeAPI auf — keine eigene
@@ -76,12 +80,15 @@ from ..schemas.navidrome import (
     ArtistDetailResponse,
     ArtistItem,
     ArtistListResponse,
+    FavoriteMutationResponse,
     FavoritesResponse,
     GenreDetailResponse,
     GenreItem,
     GenreListResponse,
     NavidromeStatusResponse,
     NewestAlbumsResponse,
+    PlaylistAddSongsRequest,
+    PlaylistAddSongsResponse,
     PlaylistCreateRequest,
     PlaylistDetailResponse,
     PlaylistItem,
@@ -89,6 +96,8 @@ from ..schemas.navidrome import (
     PlaylistMutationResponse,
     PlaylistRenameRequest,
     RandomSongsResponse,
+    ScrobbleRequest,
+    ScrobbleResponse,
     ScanTriggerResponse,
     SearchResponse,
     SongDetailResponse,
@@ -139,6 +148,7 @@ def _map_artist(raw: Dict[str, Any]) -> ArtistItem:
         id=str(raw.get("id", "")),
         name=raw.get("name") or raw.get("title") or "",
         album_count=raw.get("albumCount"),
+        starred=bool(raw.get("starred")),
     )
 
 
@@ -151,6 +161,7 @@ def _map_album(raw: Dict[str, Any]) -> AlbumItem:
         cover_art=raw.get("coverArt"),
         song_count=raw.get("songCount"),
         year=raw.get("year"),
+        starred=bool(raw.get("starred")),
     )
 
 
@@ -165,6 +176,7 @@ def _map_song(raw: Dict[str, Any]) -> SongItem:
         duration=raw.get("duration"),
         track=raw.get("track"),
         year=raw.get("year"),
+        starred=bool(raw.get("starred")),
     )
 
 
@@ -371,6 +383,7 @@ async def get_artist(artist_id: str) -> ArtistDetailResponse:
         id=str(artist.get("id", artist_id)),
         name=artist.get("name") or "",
         album_count=artist.get("albumCount"),
+        starred=bool(artist.get("starred")),
         albums=albums,
     )
 
@@ -452,6 +465,7 @@ async def get_album(album_id: str) -> AlbumDetailResponse:
         year=album.get("year"),
         song_count=album.get("songCount"),
         duration=album.get("duration"),
+        starred=bool(album.get("starred")),
         songs=songs,
     )
 
@@ -568,6 +582,77 @@ async def favorites() -> FavoritesResponse:
     )
 
 
+# ----- Favoriten setzen/entfernen, Scrobble (CC-UI Navidrome N5) -----
+# Wie Playlist-CRUD: Zugriffsstufe USER + Origin-Check; das Navidrome-Konto ist
+# das der Bot-Konfiguration (Favoriten/Wiedergaben landen dort).
+
+_ITEM_ID_RE = _STREAM_ID_RE
+_FAVORITE_PARAM = {"song": "id", "album": "albumId", "artist": "artistId"}
+_MAX_PLAYLIST_ADD = 500
+
+
+def _check_item_id(value: str, label: str) -> None:
+    if not _ITEM_ID_RE.fullmatch(value or ""):
+        raise _stream_error(422, "INVALID_ID", f"Ungültige {label}")
+
+
+def _ensure_subsonic_ok(data: Dict[str, Any], what: str) -> None:
+    """Subsonic meldet Fehler oft als HTTP 200 + status=failed. Weder Fehlertext
+    noch URL werden weitergereicht (nur Code 70 = nicht gefunden wird 404)."""
+    sub = _subsonic(data)
+    if sub.get("status") == "ok":
+        return
+    code = (sub.get("error") or {}).get("code")
+    _logger.warning(f"Navidrome-{what} fehlgeschlagen: subsonic_code={code}")
+    if code == 70:
+        raise _stream_error(404, "NAVIDROME_NOT_FOUND", "Eintrag nicht gefunden")
+    raise _stream_error(502, "NAVIDROME_REQUEST_FAILED", "Navidrome-Anfrage fehlgeschlagen")
+
+
+async def _set_favorite(kind: str, item_id: str, starred: bool) -> FavoriteMutationResponse:
+    param = _FAVORITE_PARAM.get(kind)
+    if param is None:
+        raise _stream_error(422, "INVALID_KIND", "Ungültige Art (song, album oder artist)")
+    _check_item_id(item_id, "ID")
+    api = NavidromeAPI()
+    data = await _req(api, "star" if starred else "unstar", {param: item_id})
+    _ensure_subsonic_ok(data, "Favorit")
+    return FavoriteMutationResponse(success=True, kind=kind, id=item_id, starred=starred)
+
+
+@router.put(
+    "/favorites/{kind}/{item_id}",
+    response_model=FavoriteMutationResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+async def add_favorite(kind: str, item_id: str) -> FavoriteMutationResponse:
+    return await _set_favorite(kind, item_id, True)
+
+
+@router.delete(
+    "/favorites/{kind}/{item_id}",
+    response_model=FavoriteMutationResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+async def remove_favorite(kind: str, item_id: str) -> FavoriteMutationResponse:
+    return await _set_favorite(kind, item_id, False)
+
+
+@router.post(
+    "/scrobble/{song_id}",
+    response_model=ScrobbleResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+async def scrobble(song_id: str, body: ScrobbleRequest) -> ScrobbleResponse:
+    """submission=false: "läuft gerade" (Navidrome-Anzeige, von der Statistik per
+    getNowPlaying erfasst); submission=true: gezählte Wiedergabe (Play-Count)."""
+    _check_item_id(song_id, "Song-ID")
+    api = NavidromeAPI()
+    data = await _req(api, "scrobble", {"id": song_id, "submission": "true" if body.submission else "false"})
+    _ensure_subsonic_ok(data, "Scrobble")
+    return ScrobbleResponse(success=True)
+
+
 # ===== Playlists =====
 
 @router.get("/playlists", response_model=PlaylistListResponse)
@@ -673,3 +758,26 @@ async def delete_playlist(
     api = NavidromeAPI()
     await _req(api, "deletePlaylist", {"id": playlist_id})
     return PlaylistMutationResponse(success=True, playlist_id=playlist_id)
+
+
+@router.post(
+    "/playlists/{playlist_id}/songs",
+    response_model=PlaylistAddSongsResponse,
+    dependencies=[Depends(verify_same_origin)],
+)
+async def add_songs_to_playlist(
+    playlist_id: str,
+    body: PlaylistAddSongsRequest,
+    user_id: int = Depends(get_current_user_id),
+) -> PlaylistAddSongsResponse:
+    _check_item_id(playlist_id, "Playlist-ID")
+    song_ids = body.song_ids or []
+    if not song_ids or len(song_ids) > _MAX_PLAYLIST_ADD:
+        raise _stream_error(422, "INVALID_SONG_IDS", f"1 bis {_MAX_PLAYLIST_ADD} Songs erlaubt")
+    for song_id in song_ids:
+        _check_item_id(song_id, "Song-ID")
+    _logger.info(f"📋 [control_center] {len(song_ids)} Song(s) zu Playlist {playlist_id} von User {user_id}")
+    api = NavidromeAPI()
+    data = await _req(api, "updatePlaylist", {"playlistId": playlist_id, "songIdToAdd": song_ids})
+    _ensure_subsonic_ok(data, "Playlist-Ergänzung")
+    return PlaylistAddSongsResponse(success=True, playlist_id=playlist_id, added=len(song_ids))

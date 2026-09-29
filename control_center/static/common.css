@@ -784,7 +784,8 @@ body.nav-has-player #cc-toast-container { bottom: 84px !important; }
 @media (min-width: 992px) {
   .nav-player { left: 16rem; gap: 1.5rem; padding: 0.5rem 1.5rem; min-height: 84px; }
 }
-.nav-np-info { display: flex; align-items: center; gap: 0.75rem; min-width: 0; flex: 1 1 0; }
+.nav-np-info { display: flex; align-items: center; gap: 0.75rem; min-width: 150px; flex: 1 1 220px; }
+.nav-np-text { min-width: 0; flex: 1 1 auto; }
 .nav-np-coverbtn { border: 0; padding: 0; background: none; flex: 0 0 auto; line-height: 0; }
 .nav-np-cover-box {
   position: relative;
@@ -799,7 +800,7 @@ body.nav-has-player #cc-toast-container { bottom: 84px !important; }
 .nav-np-btn.nav-np-on { color: var(--accent); }
 .nav-np-play { width: 42px; height: 42px; }
 .nav-np-play-lg { width: 64px; height: 64px; }
-.nav-np-seek { align-items: center; gap: 0.6rem; flex: 2 1 0; min-width: 0; }
+.nav-np-seek { align-items: center; gap: 0.6rem; flex: 2 1 120px; min-width: 0; }
 .nav-np-vol { align-items: center; gap: 0.5rem; width: 130px; flex: 0 0 auto; }
 .nav-np-range { margin: 0; flex: 1 1 auto; min-width: 0; accent-color: var(--accent); }
 .nav-np-vol-icon { color: var(--tblr-secondary, #8b97a8); line-height: 0; }
@@ -818,6 +819,9 @@ body.nav-has-player #cc-toast-container { bottom: 84px !important; }
 .nav-np-full-cover .nav-np-cover-box { width: 100%; height: auto; aspect-ratio: 1; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
 .nav-queue-row.nav-queue-current { background: rgba(45, 212, 191, 0.10); }
 .nav-queue-row { cursor: pointer; }
+/* Favorit (N5): gefüllter Stern in Gold */
+.nav-fav-on { color: #f59f00; }
+.nav-song-row .dropdown-menu { z-index: 1050; }
 /* === /Navidrome N4 === */
 
 /* === Logger: Modulliste (CC-LOGGER-L6.1 Dashboard) === */
