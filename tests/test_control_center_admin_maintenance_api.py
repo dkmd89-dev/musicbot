@@ -884,3 +884,83 @@ async def test_track_number_edit_rejects_out_of_range(client, lib):
         headers=_SAME_ORIGIN,
     )
     assert r.status_code == 422
+
+
+# ── feature-artists-edit (©ART[1:] + ARTISTS) ───────────────────────────
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_feature_artists_edit_preview_and_execute(client, lib):
+    from mutagen.mp4 import MP4FreeForm
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p, artist=["Bausa"])
+
+    preview = await client.post(
+        "/api/v1/admin/maintenance/feature-artists-edit/preview",
+        json={"artist": "Bausa", "rel_path": "Bausa/2020 - Album X/01 - a.m4a",
+              "feature_artists": ["Kontra K"]},
+        headers=_SAME_ORIGIN,
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["changed_count"] == 1
+
+    response = await client.post(
+        "/api/v1/admin/maintenance/feature-artists-edit/execute",
+        json={"artist": "Bausa", "rel_path": "Bausa/2020 - Album X/01 - a.m4a",
+              "feature_artists": ["Kontra K"]},
+        headers=_SAME_ORIGIN,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "SUCCESS"
+    tags = MP4(p).tags or {}
+    assert tags["\xa9ART"] == ["Bausa", "Kontra K"]
+    assert tags["----:com.apple.iTunes:ARTISTS"]
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_feature_artists_edit_execute_rejected_without_origin_header(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p, artist=["Bausa"])
+
+    r = await client.post(
+        "/api/v1/admin/maintenance/feature-artists-edit/execute",
+        json={"artist": "Bausa", "rel_path": "Bausa/2020 - Album X/01 - a.m4a",
+              "feature_artists": ["Kontra K"]},
+    )
+    assert r.status_code == 403
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_feature_artists_edit_rejects_semicolon(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p, artist=["Bausa"])
+
+    r = await client.post(
+        "/api/v1/admin/maintenance/feature-artists-edit/execute",
+        json={"artist": "Bausa", "rel_path": "Bausa/2020 - Album X/01 - a.m4a",
+              "feature_artists": ["A; B"]},
+        headers=_SAME_ORIGIN,
+    )
+    assert r.status_code == 422
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_feature_artists_edit_current_endpoint(client, lib):
+    p = lib / "Bausa" / "2020 - Album X" / "01 - a.m4a"
+    _m4a(p, artist=["Bausa"])
+    # Simuliere schon vorhandene Features
+    from mutagen.mp4 import MP4 as _MP4
+    a = _MP4(p)
+    a["\xa9ART"] = ["Bausa", "Kontra K"]
+    a.save()
+
+    r = await client.get(
+        "/api/v1/admin/maintenance/feature-artists-edit/current",
+        params={"artist": "Bausa", "rel_path": "Bausa/2020 - Album X/01 - a.m4a"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["feature_artists"] == ["Kontra K"]
