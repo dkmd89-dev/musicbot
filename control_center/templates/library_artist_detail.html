@@ -14,10 +14,14 @@
       <h2 class="page-title text-truncate"><svg class="icon me-2 text-teal"><use href="#i-microphone"/></svg><span id="artist-title">…</span></h2>
       <div class="text-secondary mt-1" id="artist-subtitle"></div>
     </div>
-    <div class="col-12 col-md-auto">
+    <div class="col-12 col-md-auto d-flex flex-wrap gap-2">
       <a href="{{ base_path }}/library" class="btn">
         <svg class="icon me-1"><use href="#i-arrow-left"/></svg>Zurück zu Artists
       </a>
+      <!-- CC-UI L4: öffnet den Metadaten-Editor (nur Admin, siehe initPage) -->
+      <button type="button" id="artist-edit-open-btn" class="btn btn-primary" hidden>
+        <svg class="icon me-1"><use href="#i-edit"/></svg>Metadaten bearbeiten
+      </button>
     </div>
   </div>
 </div>
@@ -50,519 +54,219 @@
   </div>
 </div>
 
-<!-- Manual Metadata Editing -->
-<section class="card mb-4" id="artist-metadata-edit-panel" hidden>
-  <details>
-    <summary class="card-header cc-summary">
-      <h2 class="card-title"><svg class="icon me-2 text-teal"><use href="#i-edit"/></svg>Metadaten bearbeiten</h2>
-    </summary>
+<!-- CC-UI L4: Metadaten-Editor als Seitenpanel (Entwurf
+     docs/designs/control-center-ui/l4-metadaten-editor.html, Nutzerfreigabe
+     2026-09-28). Ersetzt die Karten "Metadaten bearbeiten" und
+     "Library-Wartung"; deren Werkzeuge liegen jetzt in den Reitern
+     (Casing -> Artist, Legacy-Genre + Last.fm -> Genre, Duplikat-Check ->
+     Duplikate). L3-Reparatur gibt es nur noch auf der Health-Seite.
+     Endpunkte unverändert; alle Vorschauen sind read-only (dry_run). -->
+<div class="offcanvas offcanvas-end cc-md-editor" tabindex="-1" id="md-editor"
+     role="dialog" aria-modal="true" aria-labelledby="md-editor-title">
+  <div class="offcanvas-header">
+    <div class="min-w-0">
+      <h2 class="offcanvas-title text-truncate" id="md-editor-title"><svg class="icon me-2 text-teal"><use href="#i-edit"/></svg>Metadaten bearbeiten</h2>
+      <div class="text-secondary small">Nichts wird geschrieben, bevor du bestätigst. Jede Änderung mit Backup.</div>
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Editor schließen"></button>
+  </div>
+  <div class="border-bottom px-3 py-2">
+    <ul class="nav nav-pills gap-1 flex-nowrap overflow-auto" id="md-tabs" role="tablist">
+      <li class="nav-item"><a href="#" class="nav-link active" data-md-tab="artist" role="tab"><svg class="icon me-1"><use href="#i-microphone"/></svg>Artist</a></li>
+      <li class="nav-item"><a href="#" class="nav-link" data-md-tab="title" role="tab"><svg class="icon me-1"><use href="#i-music"/></svg>Titel</a></li>
+      <li class="nav-item"><a href="#" class="nav-link" data-md-tab="album" role="tab"><svg class="icon me-1"><use href="#i-disc"/></svg>Album</a></li>
+      <li class="nav-item"><a href="#" class="nav-link" data-md-tab="genre" role="tab"><svg class="icon me-1"><use href="#i-tag"/></svg>Genre</a></li>
+      <li class="nav-item"><a href="#" class="nav-link" data-md-tab="dupes" role="tab"><svg class="icon me-1"><use href="#i-copy"/></svg>Duplikate</a></li>
+    </ul>
+  </div>
+  <div class="offcanvas-body p-0">
 
-    <div class="card-body">
-
-      <p class="text-secondary">
-        Wiederverwendet die bestehenden Manual-Metadata-Editing-Endpunkte
-        (<code>admin/maintenance/artist-rename</code>,
-        <code>admin/maintenance/title-edit</code>,
-        <code>library/artists/{artist}/set-genre</code>) im Kontext dieses
-        Artists — keine neue Business-Logik.
-      </p>
-
-      <!-- CC-LIB-FINAL Metadaten-Workspace (Layout A): Artist/Titel/Album/
-           Albuminterpret/Genre als Tabs statt einer langen gestapelten
-           Liste. Native Tabler/Bootstrap-Tabs (data-bs-toggle="tab", wie
-           bereits health.html's Findings/Repair/Verlauf) - kein eigenes
-           JS fuer das Umschalten noetig. Jedes Formular/jede Funktion
-           bleibt unveraendert (gleiche IDs, gleiche preview/execute-
-           Funktionen), nur die Anordnung im DOM aendert sich. -->
-      <ul class="nav nav-tabs mb-3" role="tablist">
-        <li class="nav-item" role="presentation">
-          <a href="#meta-tab-artist" class="nav-link active" data-bs-toggle="tab"
-             role="tab" aria-selected="true"><svg class="icon me-1"><use href="#i-microphone"/></svg>Artist</a>
-        </li>
-        <li class="nav-item" role="presentation">
-          <a href="#meta-tab-title" class="nav-link" data-bs-toggle="tab"
-             role="tab" aria-selected="false" tabindex="-1"><svg class="icon me-1"><use href="#i-music"/></svg>Titel</a>
-        </li>
-        <li class="nav-item" role="presentation">
-          <a href="#meta-tab-album" class="nav-link" data-bs-toggle="tab"
-             role="tab" aria-selected="false" tabindex="-1"><svg class="icon me-1"><use href="#i-disc"/></svg>Album</a>
-        </li>
-        <li class="nav-item" role="presentation">
-          <a href="#meta-tab-albumartist" class="nav-link" data-bs-toggle="tab"
-             role="tab" aria-selected="false" tabindex="-1"><svg class="icon me-1"><use href="#i-users"/></svg>Albuminterpret</a>
-        </li>
-        <li class="nav-item" role="presentation">
-          <a href="#meta-tab-genre" class="nav-link" data-bs-toggle="tab"
-             role="tab" aria-selected="false" tabindex="-1"><svg class="icon me-1"><use href="#i-tag"/></svg>Genre</a>
-        </li>
-      </ul>
-
-      <div class="tab-content">
-
-      <!-- Artist -->
-      <div class="tab-pane active show" id="meta-tab-artist" role="tabpanel">
-        <p class="text-secondary">
-          Setzt den Artist-Namen auf einen manuellen Zielwert — KEIN
-          Casing-Mapping, keine Normalisierung.
-        </p>
-
-        <div class="md-edit-grid">
-          <div>
-            <div class="row g-2 mb-2">
-              <div class="col-md">
-                <input
-                  type="text"
-                  id="artist-edit-new-artist"
-                  class="form-control"
-                  placeholder="Neuer Artist-Name"
-                >
-              </div>
-              <div class="col-auto">
-                <button id="artist-edit-preview-btn" class="btn btn-outline-primary">
-                  Vorschau laden
-                </button>
-              </div>
-            </div>
-
-            <div class="mt-2">
-              <button
-                id="artist-edit-execute-btn"
-                class="btn btn-primary"
-                disabled
-              >
-                Artist umbenennen
-              </button>
-            </div>
-
-            <div id="artist-edit-result-content" class="mt-2"></div>
+    <!-- Reiter: Artist -->
+    <section class="md-pane" data-md-pane="artist" role="tabpanel">
+      <div class="p-3">
+        <label class="form-label" for="artist-edit-new-artist">Artist-Name</label>
+        <div class="input-group">
+          <input type="text" id="artist-edit-new-artist" class="form-control" autocomplete="off">
+          <button id="artist-edit-preview-btn" type="button" class="btn" title="Vorschau aktualisieren" aria-label="Vorschau aktualisieren"><svg class="icon"><use href="#i-refresh"/></svg></button>
+        </div>
+        <div class="form-hint">Vorbelegt mit dem aktuellen Namen. Schreibt nur die Tags (©ART/ARTISTS) — der Ordner bleibt. Kein Casing-Mapping, keine Normalisierung.</div>
+        <div id="artist-edit-content" class="md-diff mt-3" aria-live="polite"></div>
+          <div id="artist-edit-result-content" class="mt-3"></div>
+        <div class="subheader mt-4 mb-2">Weitere Werkzeuge</div>
+        <div class="border rounded p-3">
+          <div class="d-flex align-items-center gap-3">
+            <span class="avatar avatar-sm bg-blue-lt"><svg class="icon"><use href="#i-microphone"/></svg></span>
+            <div class="flex-fill min-w-0"><div class="fw-medium">Schreibweise korrigieren</div>
+              <div class="text-secondary small">Groß-/Kleinschreibung von ©ART/ARTISTS nach dem Mapping (<code>mapping/artist_overrides.json</code>).</div></div>
+            <button id="artist-casing-preview-btn" type="button" class="btn btn-sm">Prüfen</button>
           </div>
-
-          <div class="md-edit-side">
-            <div class="md-edit-side-title"><svg class="icon me-1"><use href="#i-info"/></svg>Änderungsumfang</div>
-            <div id="artist-edit-content" class="text-secondary">Noch keine Vorschau geladen.</div>
-          </div>
+          <div id="artist-casing-content" class="mt-2"></div>
+          <button id="artist-casing-execute-btn" type="button" class="btn btn-sm btn-primary mt-2" disabled>Schreibweise korrigieren</button>
+          <div id="artist-casing-result-content" class="mt-2"></div>
         </div>
       </div>
+      <div class="md-footer p-3">
+        <button id="artist-edit-execute-btn" type="button" class="btn btn-primary" data-count-label="Übernehmen" disabled>
+          <svg class="icon me-1"><use href="#i-check"/></svg>Übernehmen
+        </button>
+      </div>
+    </section>
 
-      <!-- Title -->
-      <div class="tab-pane" id="meta-tab-title" role="tabpanel">
-        <p class="text-secondary">
-          Setzt den Titel für genau einen Track — KEIN automatischer
-          TitleCleaner. Track aus der Liste wählen (nach Album gruppiert).
-        </p>
-
-        <div class="md-edit-grid">
-          <div>
-            <div class="row g-2 mb-2">
-              <div class="col-md">
-                <select id="title-edit-track-select" class="form-select">
-                  <option value="">Track wählen …</option>
-                </select>
-              </div>
-
-              <div class="col-md">
-                <input
-                  type="text"
-                  id="title-edit-new-title"
-                  class="form-control"
-                  placeholder="Neuer Titel"
-                >
-              </div>
-
-              <div class="col-auto">
-                <button id="title-edit-preview-btn" class="btn btn-outline-primary">
-                  Vorschau laden
-                </button>
-              </div>
-            </div>
-
-            <div class="mt-2">
-              <button
-                id="title-edit-execute-btn"
-                class="btn btn-primary"
-                disabled
-              >
-                Titel setzen
-              </button>
-            </div>
-
-            <div id="title-edit-result-content" class="mt-2"></div>
+    <!-- Reiter: Titel (direkt in der Trackliste, immer ein Track zur Zeit) -->
+    <section class="md-pane" data-md-pane="title" role="tabpanel" hidden>
+      <div class="p-3">
+        <div class="text-secondary small mb-2">Track anklicken, um den Titel direkt in der Liste zu ändern — kein automatischer TitleCleaner.</div>
+        <input type="hidden" id="title-edit-track-select">
+        <div id="title-edit-list"></div>
+        <!-- Bearbeitungs-Box: wird unter den gewählten Track verschoben -->
+        <div id="title-edit-box" class="border border-teal rounded p-2 mb-2" hidden>
+          <div class="input-group input-group-sm">
+            <input type="text" id="title-edit-new-title" class="form-control" autocomplete="off" aria-label="Neuer Titel">
+            <button id="title-edit-preview-btn" type="button" class="btn" title="Vorschau aktualisieren" aria-label="Vorschau aktualisieren"><svg class="icon"><use href="#i-refresh"/></svg></button>
           </div>
-
-          <div class="md-edit-side">
-            <div class="md-edit-side-title"><svg class="icon me-1"><use href="#i-info"/></svg>Änderungsumfang</div>
-            <div id="title-edit-content" class="text-secondary">Noch keine Vorschau geladen.</div>
-          </div>
+          <div id="title-edit-content" class="md-diff mt-3" aria-live="polite"></div>
+          <div id="title-edit-result-content" class="mt-3"></div>
         </div>
       </div>
-
-      <!-- Album -->
-      <div class="tab-pane" id="meta-tab-album" role="tabpanel">
-        <p class="text-secondary">
-          Setzt den Albumnamen (<code>©alb</code>) für alle Dateien des
-          gewählten Albums — ändert weder Artist- noch Albuminterpret-Tag.
-        </p>
-
-        <div class="md-edit-grid">
-          <div>
-            <div class="row g-2 mb-2">
-              <div class="col-md">
-                <select id="album-edit-album-select" class="form-select">
-                  <option value="">Album wählen …</option>
-                </select>
-              </div>
-
-              <div class="col-md">
-                <input
-                  type="text"
-                  id="album-edit-new-album"
-                  class="form-control"
-                  placeholder="Neuer Albumname"
-                >
-              </div>
-
-              <div class="col-auto">
-                <button id="album-edit-preview-btn" class="btn btn-outline-primary">
-                  Vorschau laden
-                </button>
-              </div>
-            </div>
-
-            <div class="mt-2">
-              <button
-                id="album-edit-execute-btn"
-                class="btn btn-primary"
-                disabled
-              >
-                Album setzen
-              </button>
-            </div>
-
-            <div id="album-edit-result-content" class="mt-2"></div>
-          </div>
-
-          <div class="md-edit-side">
-            <div class="md-edit-side-title"><svg class="icon me-1"><use href="#i-info"/></svg>Änderungsumfang</div>
-            <div id="album-edit-content" class="text-secondary">Noch keine Vorschau geladen.</div>
-          </div>
-        </div>
+      <div class="md-footer p-3">
+        <button id="title-edit-execute-btn" type="button" class="btn btn-primary" data-count-label="Titel übernehmen" disabled>
+          <svg class="icon me-1"><use href="#i-check"/></svg>Titel übernehmen
+        </button>
       </div>
+    </section>
 
-      <!-- Album Artist -->
-      <div class="tab-pane" id="meta-tab-albumartist" role="tabpanel">
-        <p class="text-secondary">
-          Setzt den Albuminterpret (<code>aART</code>) für alle Dateien des
-          gewählten Albums — ändert weder Artist- noch Album-Tag.
-        </p>
-
-        <div class="md-edit-grid">
-          <div>
-            <div class="row g-2 mb-2">
-              <div class="col-md">
-                <select id="albumartist-edit-album-select" class="form-select">
-                  <option value="">Album wählen …</option>
-                </select>
-              </div>
-
-              <div class="col-md">
-                <input
-                  type="text"
-                  id="albumartist-edit-new-albumartist"
-                  class="form-control"
-                  placeholder="Neuer Albuminterpret"
-                >
-              </div>
-
-              <div class="col-auto">
-                <button
-                  id="albumartist-edit-preview-btn"
-                  class="btn btn-outline-primary"
-                >
-                  Vorschau laden
-                </button>
-              </div>
-            </div>
-
-            <div class="mt-2">
-              <button
-                id="albumartist-edit-execute-btn"
-                class="btn btn-primary"
-                disabled
-              >
-                Albuminterpret setzen
-              </button>
-            </div>
-
-            <div id="albumartist-edit-result-content" class="mt-2"></div>
-          </div>
-
-          <div class="md-edit-side">
-            <div class="md-edit-side-title"><svg class="icon me-1"><use href="#i-info"/></svg>Änderungsumfang</div>
-            <div id="albumartist-edit-content" class="text-secondary">Noch keine Vorschau geladen.</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Genre -->
-      <div class="tab-pane" id="meta-tab-genre" role="tabpanel">
-        <h3 class="mb-2"><svg class="icon me-2 text-teal"><use href="#i-tag"/></svg>Genre-Verwaltung</h3>
-
-        <!-- 1) Mapping bearbeiten: Primary + Secondary (mapping/artist_genre.yaml) -->
-        <div id="genre-mapping-editor" class="border rounded p-3 mb-4">
-          <h4 class="mb-1">Genre-Mapping bearbeiten</h4>
-          <p class="text-secondary small">
-            Primary- und Secondary-Genres dieses Artists in
-            <code>mapping/artist_genre.yaml</code> — falsches Genre entfernen,
-            richtiges setzen. Das Mapping gilt für „Genre setzen“ weiter unten
-            und für neue Downloads (der laufende Bot lädt es beim Start, also
-            erst nach einem Bot-Neustart).
-          </p>
-
-          <div id="genre-mapping-status" class="text-secondary small">Wird beim Öffnen geladen.</div>
-
-          <div id="genre-mapping-form" hidden>
-            <label class="form-label" for="genre-mapping-primary">Primary-Genre</label>
-            <input
-              type="text"
-              id="genre-mapping-primary"
-              class="form-control"
-              list="genre-mapping-datalist"
-              maxlength="100"
-              autocomplete="off"
-              placeholder="z. B. Hip Hop"
-            >
-
-            <label class="form-label mt-3" for="genre-mapping-add-input">Secondary-Genres</label>
-            <div id="genre-mapping-secondary" class="d-flex flex-wrap gap-2 mb-2"></div>
+    <!-- Reiter: Album (Albumname + Albuminterpret, ein Übernehmen) -->
+    <section class="md-pane" data-md-pane="album" role="tabpanel" hidden>
+      <div class="p-3">
+        <label class="form-label" for="album-edit-album-select">Album</label>
+        <select id="album-edit-album-select" class="form-select mb-3">
+          <option value="">Album wählen …</option>
+        </select>
+        <input type="hidden" id="albumartist-edit-album-select">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label" for="album-edit-new-album">Albumname (©alb)</label>
             <div class="input-group">
-              <input
-                type="text"
-                id="genre-mapping-add-input"
-                class="form-control"
-                list="genre-mapping-datalist"
-                maxlength="100"
-                autocomplete="off"
-                placeholder="Secondary-Genre hinzufügen"
-              >
-              <button id="genre-mapping-add-btn" type="button" class="btn btn-outline-primary">
-                Hinzufügen
-              </button>
+              <input type="text" id="album-edit-new-album" class="form-control" autocomplete="off">
+              <button id="album-edit-preview-btn" type="button" class="btn" title="Vorschau aktualisieren" aria-label="Vorschau Albumname aktualisieren"><svg class="icon"><use href="#i-refresh"/></svg></button>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" for="albumartist-edit-new-albumartist">Albuminterpret (aART)</label>
+            <div class="input-group">
+              <input type="text" id="albumartist-edit-new-albumartist" class="form-control" autocomplete="off">
+              <button id="albumartist-edit-preview-btn" type="button" class="btn" title="Vorschau aktualisieren" aria-label="Vorschau Albuminterpret aktualisieren"><svg class="icon"><use href="#i-refresh"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div class="form-hint">Vorbelegt mit den aktuellen Tag-Werten des Albums. Ändert weder den Artist-Tag noch den Ordner.</div>
+        <div id="album-edit-content" class="md-diff mt-3" aria-live="polite"></div>
+        <div id="albumartist-edit-content" class="md-diff mt-2" aria-live="polite"></div>
+        <div id="album-edit-result-content" class="mt-3"></div>
+        <div id="albumartist-edit-result-content" class="mt-2"></div>
+      </div>
+      <div class="md-footer p-3">
+        <button id="album-edit-execute-btn" type="button" class="btn btn-primary" data-count-label="Übernehmen" disabled>
+          <svg class="icon me-1"><use href="#i-check"/></svg>Übernehmen
+        </button>
+      </div>
+    </section>
+
+    <!-- Reiter: Genre -->
+    <section class="md-pane" data-md-pane="genre" role="tabpanel" hidden>
+      <div class="p-3">
+        <!-- 1) Mapping bearbeiten: Primary + Secondary (mapping/artist_genre.yaml) -->
+        <div id="genre-mapping-editor" class="mb-4">
+          <div class="d-flex align-items-center gap-2 mb-1"><span class="badge bg-teal text-white">1</span><h3 class="mb-0">Genre festlegen (Mapping)</h3></div>
+          <div class="text-secondary small mb-2">
+            Primary- und Secondary-Genres in <code>mapping/artist_genre.yaml</code>. Gilt für Schritt 2 und
+            für neue Downloads (der laufende Bot lädt es beim Start, also erst nach einem Bot-Neustart).
+          </div>
+          <div id="genre-mapping-status" class="text-secondary small">Wird beim Öffnen geladen.</div>
+          <div id="genre-mapping-form" hidden>
+            <div class="row g-2">
+              <div class="col-md-5">
+                <label class="form-label" for="genre-mapping-primary">Primary</label>
+                <input type="text" id="genre-mapping-primary" class="form-control" list="genre-mapping-datalist"
+                       maxlength="100" autocomplete="off" placeholder="z. B. Hip Hop">
+              </div>
+              <div class="col-md-7">
+                <label class="form-label" for="genre-mapping-add-input">Secondary</label>
+                <div id="genre-mapping-secondary" class="d-flex flex-wrap gap-2 mb-2"></div>
+                <div class="input-group input-group-sm">
+                  <input type="text" id="genre-mapping-add-input" class="form-control" list="genre-mapping-datalist"
+                         maxlength="100" autocomplete="off" placeholder="Genre hinzufügen … (Vorschläge aus deiner Library)">
+                  <button id="genre-mapping-add-btn" type="button" class="btn">Hinzufügen</button>
+                </div>
+              </div>
             </div>
             <datalist id="genre-mapping-datalist"></datalist>
-
             <div class="mt-3 d-flex flex-wrap gap-2">
-              <button id="genre-mapping-preview-btn" type="button" class="btn btn-outline-primary">
-                Änderung prüfen
-              </button>
-              <button id="genre-mapping-reset-btn" type="button" class="btn btn-outline-secondary">
-                Zurücksetzen
-              </button>
+              <button id="genre-mapping-preview-btn" type="button" class="btn btn-sm">Änderung prüfen</button>
+              <button id="genre-mapping-reset-btn" type="button" class="btn btn-sm btn-ghost-secondary">Zurücksetzen</button>
+              <button id="genre-mapping-save-btn" type="button" class="btn btn-sm btn-primary" disabled>Mapping speichern</button>
             </div>
-
             <div id="genre-mapping-preview-content" class="mt-3"></div>
-
-            <div class="mt-2">
-              <button id="genre-mapping-save-btn" type="button" class="btn btn-primary" disabled>
-                Mapping speichern
-              </button>
-            </div>
-
             <div id="genre-mapping-result-content" class="mt-2"></div>
           </div>
         </div>
 
-        <!-- 2) Tags aus dem Mapping setzen (bestehend) -->
-        <h4 class="mb-1">Tags aus dem Mapping setzen</h4>
-        <p class="text-secondary">
-          Schreibt das Genre aller Tracks dieses Artists (Tag) aus dem
-          Mapping oben (<code>mapping/artist_genre.yaml</code>).
-        </p>
-
-        <div class="md-edit-grid">
-          <div>
-            <div class="mb-2">
-              <button
-                id="genre-manage-preview-btn"
-                class="btn btn-outline-primary"
-              >
-                Vorschau laden
-              </button>
-            </div>
-
-            <div class="mt-2">
-              <button
-                id="genre-manage-execute-btn"
-                class="btn btn-primary"
-                disabled
-              >
-                Genre setzen
-              </button>
-            </div>
-
-            <div id="genre-manage-result-content" class="mt-2"></div>
+        <!-- 2) Tags aus dem Mapping setzen -->
+        <div class="mb-4">
+          <div class="d-flex align-items-center gap-2 mb-1"><span class="badge bg-teal text-white">2</span><h3 class="mb-0">Genre-Tags in die Dateien schreiben</h3></div>
+          <div class="text-secondary small mb-2">Schreibt das Genre aller Tracks dieses Artists aus dem Mapping.</div>
+          <div class="d-flex flex-wrap gap-2">
+            <button id="genre-manage-preview-btn" type="button" class="btn btn-sm"><svg class="icon me-1"><use href="#i-refresh"/></svg>Vorschau aktualisieren</button>
+            <button id="genre-manage-execute-btn" type="button" class="btn btn-sm btn-primary" data-count-label="Tags schreiben" disabled>Tags schreiben</button>
           </div>
+          <div id="genre-manage-content" class="md-diff mt-3" aria-live="polite"></div>
+          <div id="genre-manage-result-content" class="mt-3"></div>
+        </div>
 
-          <div class="md-edit-side">
-            <div class="md-edit-side-title"><svg class="icon me-1"><use href="#i-info"/></svg>Änderungsumfang</div>
-            <div id="genre-manage-content" class="text-secondary">Noch keine Vorschau geladen.</div>
+        <div class="subheader mb-2">Weitere Werkzeuge</div>
+        <div class="border rounded">
+          <div class="p-3 border-bottom">
+            <div class="d-flex align-items-center gap-3">
+              <span class="avatar avatar-sm bg-orange-lt"><svg class="icon"><use href="#i-trash"/></svg></span>
+              <div class="flex-fill min-w-0"><div class="fw-medium">Alte Genre-Angaben bereinigen</div>
+                <div class="text-secondary small">Entfernt veraltete Freeform-Genre-Atome, sofern das kanonische Genre bereits gesetzt ist.</div></div>
+              <button id="legacy-genre-cleanup-preview-btn" type="button" class="btn btn-sm">Prüfen</button>
+            </div>
+            <div id="legacy-genre-cleanup-content" class="mt-2"></div>
+            <button id="legacy-genre-cleanup-execute-btn" type="button" class="btn btn-sm btn-primary mt-2" disabled>Alte Angaben entfernen</button>
+            <div id="legacy-genre-cleanup-result-content" class="mt-2"></div>
+          </div>
+          <div class="p-3" id="genre-revalidation-panel">
+            <div class="d-flex align-items-center gap-3">
+              <span class="avatar avatar-sm bg-purple-lt"><svg class="icon"><use href="#i-refresh"/></svg></span>
+              <div class="flex-fill min-w-0"><div class="fw-medium">Genre mit Last.fm abgleichen</div>
+                <div class="text-secondary small">Fragt Last.fm erneut ab (Overturn-Regel des Auto-Learnings). Verändert <strong>keine Audio-Dateien</strong> und nicht <code>artist_genre.yaml</code> — höchstens das gelernte Genre in <code>mapping/auto_learned_genre.json</code> (wirksam nach einem Bot-Neustart). Artists mit manuellem Mapping sind immer blockiert — dort den Mapping-Editor (Schritt 1) verwenden.</div></div>
+              <button id="genre-revalidation-preview-btn" type="button" class="btn btn-sm">Prüfen</button>
+            </div>
+            <div id="genre-revalidation-content" class="mt-2"></div>
+            <button id="genre-revalidation-apply-btn" type="button" class="btn btn-sm btn-primary mt-2" disabled>Änderung übernehmen</button>
           </div>
         </div>
       </div>
+    </section>
 
-      </div>
-    </div>
-  </details>
-</section>
-
-<!-- Library Maintenance -->
-<section class="card mb-4" id="artist-maintenance-panel" hidden>
-  <details>
-    <summary class="card-header cc-summary">
-      <h2 class="card-title"><svg class="icon me-2 text-teal"><use href="#i-tool"/></svg>Library-Wartung</h2>
-    </summary>
-
-    <div class="card-body">
-
-      <p class="text-secondary">
-        Wiederverwendet die bestehenden Maintenance-/Job-Endpunkte
-        (<code>admin/maintenance/artist-casing</code>,
-        <code>admin/maintenance/legacy-genre-cleanup</code>,
-        <code>jobs/repair-level3</code>) im Kontext dieses Artists —
-        keine neue Ausführungslogik.
-      </p>
-
-      <!-- Artist Casing -->
-      <div class="border-bottom pb-4 mb-4">
-        <h3 class="mb-2"><svg class="icon me-2 text-teal"><use href="#i-microphone"/></svg>Artist Casing korrigieren</h3>
-        <p class="text-secondary">
-          Normalisiert die Groß-/Kleinschreibung von ©ART/ARTISTS gegen das
-          bestehende Mapping (<code>mapping/artist_overrides.json</code>).
-        </p>
-
-        <div class="mb-2">
-          <button
-            id="artist-casing-preview-btn"
-            class="btn btn-outline-primary"
-          >
-            Vorschau laden
-          </button>
+    <!-- Reiter: Duplikate (read-only Vorschlag, kein Execute/Delete) -->
+    <section class="md-pane" data-md-pane="dupes" role="tabpanel" hidden>
+      <div class="p-3" id="duplicate-check-panel">
+        <div class="d-flex align-items-center gap-3 mb-3">
+          <div class="flex-fill text-secondary small">
+            Sucht höher-bitratige Duplikate dieses Artists und schlägt vor, welche Version bleibt —
+            rein lesend, es wird nichts gelöscht. Löschen bleibt bewusst der CLI vorbehalten:
+            <code>scripts/library_repair.py --allow-delete --artist &lt;Name&gt; --apply</code>
+          </div>
+          <button id="duplicate-check-btn" type="button" class="btn btn-sm btn-primary"><svg class="icon me-1"><use href="#i-search"/></svg>Duplikate prüfen</button>
         </div>
-
-        <div id="artist-casing-content"></div>
-
-        <div class="mt-2">
-          <button
-            id="artist-casing-execute-btn"
-            class="btn btn-primary"
-            disabled
-          >
-            Casing korrigieren
-          </button>
-        </div>
-
-        <div id="artist-casing-result-content" class="mt-2"></div>
-      </div>
-
-      <!-- Legacy Genre -->
-      <div class="border-bottom pb-4 mb-4">
-        <h3 class="mb-2"><svg class="icon me-2 text-teal"><use href="#i-trash"/></svg>Legacy Genre bereinigen</h3>
-        <p class="text-secondary">
-          Entfernt veraltete Freeform-Genre-Atome, sofern das kanonische Genre
-          bereits gesetzt ist.
-        </p>
-
-        <div class="mb-2">
-          <button
-            id="legacy-genre-cleanup-preview-btn"
-            class="btn btn-outline-primary"
-          >
-            Vorschau laden
-          </button>
-        </div>
-
-        <div id="legacy-genre-cleanup-content"></div>
-
-        <div class="mt-2">
-          <button
-            id="legacy-genre-cleanup-execute-btn"
-            class="btn btn-primary"
-            disabled
-          >
-            Legacy-Atome entfernen
-          </button>
-        </div>
-
-        <div id="legacy-genre-cleanup-result-content" class="mt-2"></div>
-      </div>
-
-      <!-- Genre Revalidation -->
-      <div class="border-bottom pb-4 mb-4" id="genre-revalidation-panel">
-        <h3 class="mb-2"><svg class="icon me-2 text-teal"><use href="#i-refresh"/></svg>Genre revalidieren</h3>
-        <p class="text-secondary">
-          Fragt Last.fm für diesen Artist erneut ab und wendet die bestehende
-          Overturn-Regel des Auto-Learnings an. Das verändert <strong>keine
-          Audio-Dateien</strong> und nicht <code>artist_genre.yaml</code> —
-          höchstens das gelernte Genre in
-          <code>mapping/auto_learned_genre.json</code> (für neue Downloads,
-          wirksam nach einem Bot-Neustart). Artists mit manuellem Mapping sind
-          immer blockiert; dort den Mapping-Editor oben verwenden.
-        </p>
-
-        <div class="d-flex flex-wrap gap-2 mb-2">
-          <button id="genre-revalidation-preview-btn" type="button" class="btn btn-outline-primary">
-            Last.fm prüfen (Vorschau)
-          </button>
-          <button id="genre-revalidation-apply-btn" type="button" class="btn btn-primary" disabled>
-            Änderung übernehmen
-          </button>
-        </div>
-
-        <div id="genre-revalidation-content"></div>
-      </div>
-
-      <!-- Duplikat-Check (read-only Vorschlag, kein Execute/Delete) -->
-      <div class="border-bottom pb-4 mb-4" id="duplicate-check-panel">
-        <h3 class="mb-2"><svg class="icon me-2 text-teal"><use href="#i-copy"/></svg>Duplikat-Check</h3>
-        <p class="text-secondary">
-          Sucht pro Artist nach höher-bitratigen Duplikaten und zeigt einen
-          Vorschlag, welche Version behalten werden sollte — rein lesend,
-          es wird nichts gelöscht. Tatsächliches Löschen bleibt bewusst der
-          CLI vorbehalten:
-          <code>scripts/library_repair.py --allow-delete --artist &lt;Name&gt; --apply</code>
-        </p>
-
-        <div class="d-flex flex-wrap gap-2 mb-2">
-          <button id="duplicate-check-btn" type="button" class="btn btn-outline-primary">
-            Duplikate prüfen
-          </button>
-        </div>
-
         <div id="duplicate-check-content"></div>
       </div>
+    </section>
 
-      <!-- L3 (L2/METADATA_REPROCESSING wurde in CC-LIB-FINAL Phase B
-           entfernt - siehe docs/LIBRARY_REPAIR.md §6a. Dieser Button war
-           bis zur Phase-E-Durchsicht als toter Rest stehengeblieben, sein
-           Klick haette einen inzwischen entfernten Endpunkt getroffen.) -->
-      <div>
-        <h3 class="mb-2"><svg class="icon me-2 text-teal"><use href="#i-tool"/></svg>L3-Reparatur</h3>
-        <p class="text-secondary">
-          Läuft als Hintergrund-Job …
-        </p>
-
-        <div class="d-flex flex-wrap gap-2 mb-2">
-          <button id="repair-l3-btn" class="btn btn-outline-primary">
-            <svg class="icon me-1"><use href="#i-tool"/></svg>L3-Reparatur (MusicBrainz-IDs / ISRC)
-          </button>
-        </div>
-
-        <div id="artist-repair-job-content"></div>
-      </div>
-
-    </div>
-  </details>
-</section>
-
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script src="{{ base_path }}/static/pages/library_artist.js"></script>

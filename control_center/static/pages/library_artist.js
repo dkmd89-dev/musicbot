@@ -120,8 +120,7 @@
       </div>
       <div class="segment-nav d-flex gap-3 px-3 pt-3 small">
         <span class="text-teal fw-medium">${ccIcon("music", "icon-sm me-1")}Tracks</span>
-        <a href="#" id="artist-detail-open-metadata">${ccIcon("edit", "icon-sm me-1")}Metadaten</a>
-        <a href="#" id="artist-detail-open-wartung">${ccIcon("tool", "icon-sm me-1")}Wartung</a>
+        ${_trackDrawerIsAdmin ? `<a href="#" id="artist-detail-open-metadata">${ccIcon("edit", "icon-sm me-1")}Metadaten bearbeiten</a>` : ""}
       </div>
       <div class="list-group list-group-flush mt-2">${trackRows}</div>
     `;
@@ -254,7 +253,6 @@
   function _populateAlbumPickers(body) {
     const options = _artistAlbumOptions(body.artist, body);
     _populateAlbumSelect(document.getElementById("album-edit-album-select"), options);
-    _populateAlbumSelect(document.getElementById("albumartist-edit-album-select"), options);
   }
 
   // Track-Picker fuer "Titel bearbeiten" (Auftrag §6.2 CC-LIB-FINAL): der
@@ -301,9 +299,47 @@
     if (groups.some((g) => g.options.some((o) => o.value === previous))) selectEl.value = previous;
   }
 
+  // CC-UI L4: Titel direkt in der Trackliste bearbeiten (Nutzerfreigabe) -
+  // immer ein Track zur Zeit. Die Bearbeitungs-Box (#title-edit-box, mit
+  // festen IDs und Listenern) wird unter die gewählte Zeile verschoben.
   function _populateTrackPickers(body) {
+    const list = document.getElementById("title-edit-list");
+    if (!list) return;
+    const box = document.getElementById("title-edit-box");
+    if (box && box.parentNode === list) list.parentNode.appendChild(box);  // Box vor dem Neu-Rendern retten
     const groups = _artistTrackOptionGroups(body);
-    _populateTrackSelect(document.getElementById("title-edit-track-select"), groups);
+    list.innerHTML = groups.map((g) => `
+      <div class="subheader mt-2 mb-1">${_escapeHtml(g.label)}</div>
+      <div class="list-group mb-2">${g.options.map((o) => `
+        <button type="button" class="list-group-item list-group-item-action d-flex align-items-center gap-2" data-title-path="${_escapeHtml(o.value)}">
+          <span class="flex-fill text-truncate">${_escapeHtml(o.label)}</span>${ccIcon("edit", "text-secondary flex-shrink-0")}
+        </button>`).join("")}</div>
+    `).join("");
+    const selected = document.getElementById("title-edit-track-select").value;
+    if (selected) _markTitleRow(selected);
+  }
+
+  function _markTitleRow(relPath) {
+    const list = document.getElementById("title-edit-list");
+    const box = document.getElementById("title-edit-box");
+    if (!list || !list.querySelectorAll) return;
+    list.querySelectorAll("[data-title-path]").forEach((row) => {
+      const active = row.dataset.titlePath === relPath;
+      row.classList.toggle("active", active);
+      if (active && box && row.insertAdjacentElement) row.insertAdjacentElement("afterend", box);
+    });
+    if (box) box.hidden = !relPath;
+  }
+
+  // Track wählen: Titel vorbelegen, Vorschau zurücksetzen, Feld fokussieren.
+  function _selectTitleTrack(relPath) {
+    const t = _artistDetailTracksByPath[relPath];
+    document.getElementById("title-edit-track-select").value = relPath;
+    document.getElementById("title-edit-new-title").value = t ? (t.title || "") : "";
+    document.getElementById("title-edit-result-content").innerHTML = "";
+    _markTitleRow(relPath);
+    _autoTitlePreview();
+    document.getElementById("title-edit-new-title").focus();
   }
 
   // CC-UI L3a: Laden über ccApi, Zustände über ccState (Standard §7/§12).
@@ -410,11 +446,25 @@
   // generische Funktion belassen (von 4 Aktionen gemeinsam genutzt).
   const _NOOP_SKIP_REASONS = new Set(["bereits korrekt", "nichts zu tun / bereits korrekt"]);
 
-  function renderMetadataEditPreview(el, body, execBtnId) {
-    const startBtn = document.getElementById(execBtnId);
+  // CC-UI L4: execBtnId darf null sein (Album-Reiter steuert seinen einen
+  // Übernehmen-Button selbst über onCount); Buttons mit data-count-label
+  // zeigen die Zahl der betroffenen Dateien ("Übernehmen · 12 Dateien").
+  function _setExecuteButton(startBtn, count) {
+    if (!startBtn) return;
+    startBtn.disabled = !count;
+    const label = startBtn.dataset && startBtn.dataset.countLabel;
+    if (label) {
+      startBtn.innerHTML = ccIcon("check", "me-1") + _escapeHtml(label)
+        + (count ? ` · ${count} ${count === 1 ? "Datei" : "Dateien"}` : "");
+    }
+  }
+
+  function renderMetadataEditPreview(el, body, execBtnId, onCount) {
+    const startBtn = execBtnId ? document.getElementById(execBtnId) : null;
+    const report = (count) => { _setExecuteButton(startBtn, count); if (onCount) onCount(count); };
     if (!body.target_count) {
       el.innerHTML = '<div class="text-secondary">Keine Dateien gefunden.</div>';
-      startBtn.disabled = true;
+      report(0);
       return;
     }
     if (!body.changed_count) {
@@ -433,7 +483,7 @@
         ? `${body.target_count} Datei(en) — keine Änderung nötig.`
         : `${body.target_count} Datei(en) — wird übersprungen:`;
       el.innerHTML = `<div class="fw-medium">${headline}</div>${reasonHtml}`;
-      startBtn.disabled = true;
+      report(0);
       return;
     }
     // CC-UI L3b: Diff steht UNTER dem Dateinamen (vorher .row-count daneben,
@@ -444,8 +494,38 @@
         <div class="text-secondary small text-break">${_escapeHtml(_diffSummary(o.before, o.after))}</div>
       </div>
     `).join("");
-    el.innerHTML = `<div class="fw-medium mb-2">${body.changed_count} von ${body.target_count} Datei(en) werden geändert:</div><div class="list-group">${rows}</div>`;
-    startBtn.disabled = false;
+    el.innerHTML = '<div class="d-flex align-items-center gap-2 mb-2"><span class="badge bg-teal-lt">Vorschau</span>'
+      + '<span class="text-secondary small">nichts geschrieben</span></div>'
+      + `<div class="fw-medium mb-2">${body.changed_count} von ${body.target_count} Datei(en) werden geändert:</div><div class="list-group">${rows}</div>`;
+    report(body.changed_count);
+  }
+
+  // ── CC-UI L4: automatische Vorschau ────────────────────────────────────
+  // Die Vorschau-Endpunkte sind read-only (dry_run=True, kein Backup, das
+  // Journal wird nie geschrieben) - deshalb darf sie beim Tippen laufen,
+  // verzögert um _AUTO_PREVIEW_MS nach der letzten Eingabe. Ältere Antworten
+  // werden über eine Laufnummer je Vorschau verworfen (kein Überschreiben
+  // einer neueren Vorschau durch eine langsamere alte).
+  const _AUTO_PREVIEW_MS = 600;
+  const _previewSeq = {};
+  const _previewTimers = {};
+
+  function _nextPreviewSeq(key) {
+    _previewSeq[key] = (_previewSeq[key] || 0) + 1;
+    return _previewSeq[key];
+  }
+
+  function _isCurrentPreview(key, seq) {
+    return _previewSeq[key] === seq;
+  }
+
+  function _schedulePreview(key, fn) {
+    clearTimeout(_previewTimers[key]);
+    _previewTimers[key] = setTimeout(fn, _AUTO_PREVIEW_MS);
+  }
+
+  function _noChangeHtml(text) {
+    return `<div class="text-secondary small">${ccIcon("info", "icon-sm me-1")}${_escapeHtml(text)}</div>`;
   }
 
   // -- Artist bearbeiten ---------------------------------------------------
@@ -457,11 +537,30 @@
     document.getElementById("artist-edit-execute-btn").disabled = true;
     document.getElementById("artist-edit-result-content").innerHTML = "";
     const params = new URLSearchParams({ artist, new_artist: newArtist }).toString();
+    const seq = _nextPreviewSeq("artist");
     await _loadInto(
       "artist-edit-content",
       `/api/v1/admin/maintenance/artist-rename/preview?${params}`,
-      (el, body) => renderMetadataEditPreview(el, body, "artist-edit-execute-btn"),
+      (el, body) => { if (_isCurrentPreview("artist", seq)) renderMetadataEditPreview(el, body, "artist-edit-execute-btn"); },
     );
+  }
+
+  // CC-UI L4: Vorschau automatisch beim Tippen; leer/unverändert -> Hinweis
+  // statt Request (der Pflichtfeld-Hinweis bleibt dem expliziten Klick).
+  function _autoArtistPreview() {
+    const content = document.getElementById("artist-edit-content");
+    const value = document.getElementById("artist-edit-new-artist").value.trim();
+    _setExecuteButton(document.getElementById("artist-edit-execute-btn"), 0);
+    _nextPreviewSeq("artist");
+    clearTimeout(_previewTimers.artist);
+    if (!value || value === currentArtistFromPath()) {
+      content.innerHTML = _noChangeHtml(value
+        ? "Entspricht dem aktuellen Namen — keine Änderung."
+        : "Neuen Namen eingeben — die Vorschau erscheint automatisch.");
+      return;
+    }
+    content.innerHTML = _runningHtml("Vorschau wird berechnet…");
+    _schedulePreview("artist", loadArtistEditPreview);
   }
 
   // Preview<->Execute-Kopplung: eine Feldaenderung NACH einer geladenen
@@ -470,6 +569,7 @@
   // deaktiviert, bis erneut "Vorschau laden" gedrueckt wurde.
   document.getElementById("artist-edit-new-artist").addEventListener("input", () => {
     document.getElementById("artist-edit-execute-btn").disabled = true;
+    _autoArtistPreview();
   });
 
   async function executeArtistEdit() {
@@ -551,11 +651,29 @@
     document.getElementById("title-edit-execute-btn").disabled = true;
     document.getElementById("title-edit-result-content").innerHTML = "";
     const params = new URLSearchParams({ artist, rel_path: relPath, new_title: newTitle }).toString();
+    const seq = _nextPreviewSeq("title");
     await _loadInto(
       "title-edit-content",
       `/api/v1/admin/maintenance/title-edit/preview?${params}`,
-      (el, body) => renderMetadataEditPreview(el, body, "title-edit-execute-btn"),
+      (el, body) => { if (_isCurrentPreview("title", seq)) renderMetadataEditPreview(el, body, "title-edit-execute-btn"); },
     );
+  }
+
+  function _autoTitlePreview() {
+    const content = document.getElementById("title-edit-content");
+    const relPath = document.getElementById("title-edit-track-select").value;
+    const value = document.getElementById("title-edit-new-title").value.trim();
+    const t = _artistDetailTracksByPath[relPath];
+    _setExecuteButton(document.getElementById("title-edit-execute-btn"), 0);
+    _nextPreviewSeq("title");
+    clearTimeout(_previewTimers.title);
+    if (!relPath || !value || (t && value === (t.title || ""))) {
+      content.innerHTML = _noChangeHtml(!value ? "Neuen Titel eingeben — die Vorschau erscheint automatisch."
+        : "Entspricht dem aktuellen Titel — keine Änderung.");
+      return;
+    }
+    content.innerHTML = _runningHtml("Vorschau wird berechnet…");
+    _schedulePreview("title", loadTitleEditPreview);
   }
 
   async function executeTitleEdit() {
@@ -605,6 +723,7 @@
   ["title-edit-track-select", "title-edit-new-title"].forEach((id) => {
     document.getElementById(id).addEventListener("input", () => {
       document.getElementById("title-edit-execute-btn").disabled = true;
+      _autoTitlePreview();
     });
   });
 
@@ -618,33 +737,126 @@
   // >Confirm->Execute-Muster wie Artist/Titel oben, Album-Auswahl ueber
   // den Picker aus _artistAlbumOptions() statt eines Freitext-Pfads.
 
+  // CC-UI L4 (Nutzerfreigabe): Albumname und Albuminterpret stehen in EINEM
+  // Reiter mit EINEM "Übernehmen". Beide Felder sind mit den aktuellen
+  // Tag-Werten des gewählten Albums vorbelegt; geändert wird nur, was vom
+  // aktuellen Wert abweicht (zwei bestehende Endpunkte nacheinander, eine
+  // Bestätigung). Das versteckte Feld albumartist-edit-album-select hält
+  // denselben Album-Schlüssel wie die sichtbare Auswahl.
+  const _albumState = { current: { album: "", albumartist: "" }, counts: { album: 0, albumartist: 0 } };
+
+  function _mostCommon(values) {
+    const counts = new Map();
+    values.filter((v) => v).forEach((v) => counts.set(v, (counts.get(v) || 0) + 1));
+    let best = "";
+    let bestN = 0;
+    counts.forEach((n, v) => { if (n > bestN) { best = v; bestN = n; } });
+    return best;
+  }
+
+  function _albumCurrentValues(albumKey) {
+    const artist = currentArtistFromPath();
+    const tracks = Object.values(_artistDetailTracksByPath).filter((t) => _trackAlbumValue(artist, t) === albumKey);
+    return {
+      album: _mostCommon(tracks.map((t) => t.album)),
+      albumartist: _mostCommon(tracks.map((t) => t.album_artist)),
+    };
+  }
+
+  // Beide Felder betreffen dieselben Dateien des Albums -> Anzahl Dateien =
+  // Maximum der beiden Vorschauen (nicht die Summe).
+  function _updateAlbumExecuteBtn() {
+    _setExecuteButton(document.getElementById("album-edit-execute-btn"),
+      Math.max(_albumState.counts.album || 0, _albumState.counts.albumartist || 0));
+  }
+
+  // Album gewählt: versteckte Auswahl synchronisieren, Felder vorbelegen.
+  function _selectAlbumForEdit(albumKey) {
+    document.getElementById("album-edit-album-select").value = albumKey;
+    document.getElementById("albumartist-edit-album-select").value = albumKey;
+    _albumState.current = albumKey ? _albumCurrentValues(albumKey) : { album: "", albumartist: "" };
+    document.getElementById("album-edit-new-album").value = _albumState.current.album;
+    document.getElementById("albumartist-edit-new-albumartist").value = _albumState.current.albumartist;
+    document.getElementById("album-edit-result-content").innerHTML = "";
+    document.getElementById("albumartist-edit-result-content").innerHTML = "";
+    _autoAlbumPreview("album");
+    _autoAlbumPreview("albumartist");
+  }
+
   async function loadAlbumEditPreview() {
     const artist = currentArtistFromPath();
     const album = document.getElementById("album-edit-album-select").value;
     const newAlbum = document.getElementById("album-edit-new-album").value.trim();
     if (!album) { _fieldHint("album-edit-album-select", "Bitte zuerst ein Album auswählen."); return; }
     if (!newAlbum) { _fieldHint("album-edit-new-album", "Bitte neuen Albumnamen eingeben."); return; }
-    document.getElementById("album-edit-execute-btn").disabled = true;
+    _albumState.counts.album = 0;
+    _updateAlbumExecuteBtn();
     document.getElementById("album-edit-result-content").innerHTML = "";
     const params = new URLSearchParams({ artist, album, new_album: newAlbum }).toString();
+    const seq = _nextPreviewSeq("album");
     await _loadInto(
       "album-edit-content",
       `/api/v1/admin/maintenance/album-edit/preview?${params}`,
-      (el, body) => renderMetadataEditPreview(el, body, "album-edit-execute-btn"),
+      (el, body) => {
+        if (!_isCurrentPreview("album", seq)) return;
+        renderMetadataEditPreview(el, body, null, (n) => { _albumState.counts.album = n; _updateAlbumExecuteBtn(); });
+      },
     );
   }
 
-  async function executeAlbumEdit() {
+  async function loadAlbumArtistEditPreview() {
+    const artist = currentArtistFromPath();
+    const album = document.getElementById("albumartist-edit-album-select").value;
+    const newAlbumArtist = document.getElementById("albumartist-edit-new-albumartist").value.trim();
+    if (!album) { _fieldHint("album-edit-album-select", "Bitte zuerst ein Album auswählen."); return; }
+    if (!newAlbumArtist) { _fieldHint("albumartist-edit-new-albumartist", "Bitte neuen Albuminterpret eingeben."); return; }
+    _albumState.counts.albumartist = 0;
+    _updateAlbumExecuteBtn();
+    document.getElementById("albumartist-edit-result-content").innerHTML = "";
+    const params = new URLSearchParams({ artist, album, new_album_artist: newAlbumArtist }).toString();
+    const seq = _nextPreviewSeq("albumartist");
+    await _loadInto(
+      "albumartist-edit-content",
+      `/api/v1/admin/maintenance/albumartist-edit/preview?${params}`,
+      (el, body) => {
+        if (!_isCurrentPreview("albumartist", seq)) return;
+        renderMetadataEditPreview(el, body, null, (n) => { _albumState.counts.albumartist = n; _updateAlbumExecuteBtn(); });
+      },
+    );
+  }
+
+  // Vorschau je Feld automatisch - nur wenn der Wert vom aktuellen abweicht.
+  function _autoAlbumPreview(field) {
+    const isAlbum = field === "album";
+    const content = document.getElementById(isAlbum ? "album-edit-content" : "albumartist-edit-content");
+    const albumKey = document.getElementById("album-edit-album-select").value;
+    const value = document.getElementById(isAlbum ? "album-edit-new-album" : "albumartist-edit-new-albumartist").value.trim();
+    _albumState.counts[field] = 0;
+    _updateAlbumExecuteBtn();
+    _nextPreviewSeq(field);
+    clearTimeout(_previewTimers[field]);
+    const label = isAlbum ? "Albumname" : "Albuminterpret";
+    if (!albumKey || !value || value === _albumState.current[field]) {
+      content.innerHTML = albumKey ? _noChangeHtml(`${label}: keine Änderung.`) : "";
+      return;
+    }
+    content.innerHTML = _runningHtml(`${label}: Vorschau wird berechnet…`);
+    _schedulePreview(field, isAlbum ? loadAlbumEditPreview : loadAlbumArtistEditPreview);
+  }
+
+  async function executeAlbumEdit(opts = {}) {
     const artist = currentArtistFromPath();
     const album = document.getElementById("album-edit-album-select").value;
     const newAlbum = document.getElementById("album-edit-new-album").value.trim();
     if (!album || !newAlbum) return;
-    const confirmed = await _artistConfirm(
-      `Album "${album}" wirklich zu "${newAlbum}" ändern?\n\n` +
-      `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
-      `aber es werden tatsächlich Dateien in der Library verändert.`
-    );
-    if (!confirmed) return;
+    if (!opts.skipConfirm) {
+      const confirmed = await _artistConfirm(
+        `Album "${album}" wirklich zu "${newAlbum}" ändern?\n\n` +
+        `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+        `aber es werden tatsächlich Dateien in der Library verändert.`
+      );
+      if (!confirmed) return;
+    }
 
     const execBtn = document.getElementById("album-edit-execute-btn");
     const resultEl = document.getElementById("album-edit-result-content");
@@ -666,62 +878,32 @@
       // Erst Vorschau neu laden (sie leert das Ergebnisfeld), dann das Ergebnis
       // zeigen - vorher verschwand die Erfolgsmeldung sofort wieder (CC-UI L3b).
       const resultHtml = _executeResultHtml(body, `Nur der Album-Tag (©alb) wurde geschrieben — der Alben-Eintrag oben zeigt weiterhin den Verzeichnisnamen und bleibt unverändert; die Track-Liste unten übernimmt den neuen Wert erst nach einem Neuscan.`);
+      _albumState.current.album = newAlbum;
       await loadAlbumEditPreview();
       resultEl.innerHTML = resultHtml;
       _executeToast(body);
     } catch (err) {
       resultEl.innerHTML = _resultAlert("danger", `Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).`);
     } finally {
-      execBtn.disabled = false;
+      _updateAlbumExecuteBtn();
     }
   }
 
-  document.getElementById("album-edit-preview-btn").addEventListener("click", loadAlbumEditPreview);
-  document.getElementById("album-edit-execute-btn").addEventListener("click", executeAlbumEdit);
-  ["album-edit-album-select", "album-edit-new-album"].forEach((id) => {
-    document.getElementById(id).addEventListener("input", () => {
-      document.getElementById("album-edit-execute-btn").disabled = true;
-    });
-    document.getElementById(id).addEventListener("change", () => {
-      document.getElementById("album-edit-execute-btn").disabled = true;
-    });
-  });
-
-  // -- Albuminterpret bearbeiten (Manual Metadata Editing v2, CC-AC-3) -----
-  //
-  // POST /api/v1/admin/maintenance/albumartist-edit/{preview,execute} ->
-  // preview_album_artist_edit()/execute_album_artist_edit() - schreibt
-  // AUSSCHLIESSLICH aART (Auftrag §15), identisches Muster wie oben.
-
-  async function loadAlbumArtistEditPreview() {
-    const artist = currentArtistFromPath();
-    const album = document.getElementById("albumartist-edit-album-select").value;
-    const newAlbumArtist = document.getElementById("albumartist-edit-new-albumartist").value.trim();
-    if (!album) { _fieldHint("albumartist-edit-album-select", "Bitte zuerst ein Album auswählen."); return; }
-    if (!newAlbumArtist) { _fieldHint("albumartist-edit-new-albumartist", "Bitte neuen Albuminterpret eingeben."); return; }
-    document.getElementById("albumartist-edit-execute-btn").disabled = true;
-    document.getElementById("albumartist-edit-result-content").innerHTML = "";
-    const params = new URLSearchParams({ artist, album, new_album_artist: newAlbumArtist }).toString();
-    await _loadInto(
-      "albumartist-edit-content",
-      `/api/v1/admin/maintenance/albumartist-edit/preview?${params}`,
-      (el, body) => renderMetadataEditPreview(el, body, "albumartist-edit-execute-btn"),
-    );
-  }
-
-  async function executeAlbumArtistEdit() {
+  async function executeAlbumArtistEdit(opts = {}) {
     const artist = currentArtistFromPath();
     const album = document.getElementById("albumartist-edit-album-select").value;
     const newAlbumArtist = document.getElementById("albumartist-edit-new-albumartist").value.trim();
     if (!album || !newAlbumArtist) return;
-    const confirmed = await _artistConfirm(
-      `Albuminterpret für Album "${album}" wirklich zu "${newAlbumArtist}" ändern?\n\n` +
-      `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
-      `aber es werden tatsächlich Dateien in der Library verändert.`
-    );
-    if (!confirmed) return;
+    if (!opts.skipConfirm) {
+      const confirmed = await _artistConfirm(
+        `Albuminterpret für Album "${album}" wirklich zu "${newAlbumArtist}" ändern?\n\n` +
+        `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+        `aber es werden tatsächlich Dateien in der Library verändert.`
+      );
+      if (!confirmed) return;
+    }
 
-    const execBtn = document.getElementById("albumartist-edit-execute-btn");
+    const execBtn = document.getElementById("album-edit-execute-btn");
     const resultEl = document.getElementById("albumartist-edit-result-content");
     execBtn.disabled = true;
     resultEl.innerHTML = _runningHtml("Wird ausgeführt…");
@@ -741,25 +923,48 @@
       // Erst Vorschau neu laden (sie leert das Ergebnisfeld), dann das Ergebnis
       // zeigen - vorher verschwand die Erfolgsmeldung sofort wieder (CC-UI L3b).
       const resultHtml = _executeResultHtml(body, `Nur der Albuminterpret-Tag (aART) wurde geschrieben — er wird in der Alben-/Track-Übersicht oben aktuell gar nicht angezeigt, auch nicht nach einem Neuscan.`);
+      _albumState.current.albumartist = newAlbumArtist;
       await loadAlbumArtistEditPreview();
       resultEl.innerHTML = resultHtml;
       _executeToast(body);
     } catch (err) {
       resultEl.innerHTML = _resultAlert("danger", `Ergebnis unbekannt — bitte Seite neu laden bzw. Repair-Journal prüfen (${_escapeHtml(err.message)}).`);
     } finally {
-      execBtn.disabled = false;
+      _updateAlbumExecuteBtn();
     }
   }
 
+  // Ein "Übernehmen" für beide Felder: eine Bestätigung, dann nur die
+  // geänderten Felder schreiben (Album zuerst, dann Albuminterpret).
+  async function executeAlbumTab() {
+    const album = document.getElementById("album-edit-album-select").value;
+    const doAlbum = _albumState.counts.album > 0;
+    const doAlbumArtist = _albumState.counts.albumartist > 0;
+    if (!album || (!doAlbum && !doAlbumArtist)) return;
+    const newAlbum = document.getElementById("album-edit-new-album").value.trim();
+    const newAlbumArtist = document.getElementById("albumartist-edit-new-albumartist").value.trim();
+    const lines = [];
+    if (doAlbum) lines.push(`Albumname: "${_albumState.current.album}" → "${newAlbum}" (${_albumState.counts.album} Dateien)`);
+    if (doAlbumArtist) lines.push(`Albuminterpret: "${_albumState.current.albumartist}" → "${newAlbumArtist}" (${_albumState.counts.albumartist} Dateien)`);
+    const confirmed = await _artistConfirm(
+      `Album "${album}" wirklich ändern?\n\n` + lines.join("\n") + "\n\n" +
+      `Mit Backup abgesichert (SHA-256-/Audio-Essenz-Verifikation vor dem Schreiben) — ` +
+      `aber es werden tatsächlich Dateien in der Library verändert.`
+    );
+    if (!confirmed) return;
+    if (doAlbum) await executeAlbumEdit({ skipConfirm: true });
+    if (doAlbumArtist) await executeAlbumArtistEdit({ skipConfirm: true });
+  }
+
+  document.getElementById("album-edit-preview-btn").addEventListener("click", loadAlbumEditPreview);
   document.getElementById("albumartist-edit-preview-btn").addEventListener("click", loadAlbumArtistEditPreview);
-  document.getElementById("albumartist-edit-execute-btn").addEventListener("click", executeAlbumArtistEdit);
+  document.getElementById("album-edit-execute-btn").addEventListener("click", executeAlbumTab);
+  document.getElementById("album-edit-album-select").addEventListener("change", (event) => {
+    _selectAlbumForEdit(event.target.value);
+  });
+  document.getElementById("album-edit-new-album").addEventListener("input", () => _autoAlbumPreview("album"));
   ["albumartist-edit-album-select", "albumartist-edit-new-albumartist"].forEach((id) => {
-    document.getElementById(id).addEventListener("input", () => {
-      document.getElementById("albumartist-edit-execute-btn").disabled = true;
-    });
-    document.getElementById(id).addEventListener("change", () => {
-      document.getElementById("albumartist-edit-execute-btn").disabled = true;
-    });
+    document.getElementById(id).addEventListener("input", () => _autoAlbumPreview("albumartist"));
   });
 
   // -- Genre-Verwaltung -------------------------------------------------------
@@ -1003,10 +1208,8 @@
   });
   document.getElementById("genre-mapping-preview-btn").addEventListener("click", previewGenreMapping);
   document.getElementById("genre-mapping-save-btn").addEventListener("click", saveGenreMapping);
-  // Lazy: erst beim Oeffnen des Panels laden (kein Request pro Seitenaufruf).
-  document.getElementById("artist-metadata-edit-panel").querySelector("details").addEventListener("toggle", (event) => {
-    if (event.target.open && !_genreMap.etag) loadGenreMapping();
-  });
+  // Lazy: erst beim Öffnen des Genre-Reiters laden (kein Request pro
+  // Seitenaufruf) - siehe _showMetaTab().
 
   // -- Genre revalidieren (Last.fm + Overturn-Regel, als Job) -----------------
   //
@@ -1375,119 +1578,10 @@
   document.getElementById("legacy-genre-cleanup-preview-btn").addEventListener("click", loadLegacyGenreCleanupPreview);
   document.getElementById("legacy-genre-cleanup-execute-btn").addEventListener("click", executeLegacyGenreCleanup);
 
-  // -- L2 / L3 Reparatur (Job, dieser Artist) --------------------------------
-  // Identisches Muster wie static/pages/health.js::startLevel23Job()/
-  // _pollLevel23Job()/_renderLevel23JobStatus() (vormals repairs.html) -
-  // dort Artist-Auswahl aus einer scangestuetzten Plan-Liste, hier fester
-  // Artist-Kontext dieser Seite. Eigener Timer/Job-Id-State (kein
-  // Namenskonflikt, da separate Seite/Template).
-
-  const _ARTIST_REPAIR_LEVEL_LABELS = {
-    l3: "L3 (MusicBrainz — Netzwerk, kann pro Datei fehlschlagen)",
-  };
-
-  let _artistRepairJobPollTimer = null;
-  let _artistRepairJobId = null;
-
-  function _stopArtistRepairJobPolling() {
-    if (_artistRepairJobPollTimer) { clearInterval(_artistRepairJobPollTimer); _artistRepairJobPollTimer = null; }
-  }
-
-  function _setArtistRepairButtonsDisabled(disabled) {
-    document.getElementById("repair-l3-btn").disabled = disabled;
-  }
-
-  // Findings #4/#6: gleiche Semantik wie Telegram (_result_headline()) und
-  // static/pages/health.js - "geändert" nur aus changed_files.
-  function _repairOutcomeText(r) {
-    if (r.failed) return (r.success || r.unresolved) ? "teilweise abgeschlossen" : "fehlgeschlagen";
-    if (r.status === "UNRESOLVED" || r.unresolved) return "abgeschlossen – Überprüfung nötig";
-    if (r.success) return "abgeschlossen";
-    if (r.skipped) return "nichts zu tun";
-    return "leerer Lauf";
-  }
-  function _repairCountsText(r) {
-    const exitNote = (r.exit_code != null && r.exit_code !== 0)
-      ? ` Repair-Subprozess meldete Exit-Code ${_escapeHtml(String(r.exit_code))} (Verification-Regression oder Abbruch) – Ergebnis bitte prüfen.`
-      : "";
-    return `${r.success} erfolgreich, ${r.skipped} übersprungen, ` +
-      (r.unresolved ? `${r.unresolved} zu überprüfen, ` : "") +
-      `${r.failed} fehlgeschlagen, ${r.resolved_count} Finding(s) verifiziert behoben, ` +
-      `${(r.changed_files || []).length} Datei(en) geändert.` + exitNote;
-  }
-
-  function _renderArtistRepairJobStatus(job) {
-    const el = document.getElementById("artist-repair-job-content");
-
-    if (job.status === "PENDING" || job.status === "RUNNING") {
-      el.innerHTML = `<div class="d-flex align-items-center gap-2 mb-2"><span class="badge bg-teal-lt">${_escapeHtml(job.status)} (${job.progress.toFixed(0)}%)</span><span class="text-secondary small text-truncate">${_escapeHtml(job.message || "")}</span></div>`
-        + `<div class="progress progress-sm"><div class="progress-bar bg-teal" style="width: ${Math.max(0, Math.min(100, Number(job.progress) || 0))}%"></div></div>`;
-      return;
-    }
-
-    _stopArtistRepairJobPolling();
-    _setArtistRepairButtonsDisabled(false);
-    const r = job.result || {};
-
-    if (job.status === "SUCCEEDED") {
-      if (r.total === 0) {
-        el.innerHTML = _resultAlert("success", `Keine offenen ${_escapeHtml(_ARTIST_REPAIR_LEVEL_LABELS[r.level] || "")}-Befunde (mehr) vorhanden.`);
-        return;
-      }
-      el.innerHTML = _resultAlert(r.status === "SUCCESS" ? "success" : "warning",
-        `${_escapeHtml(r.level || "")} ${_escapeHtml(_repairOutcomeText(r))}: ` + _repairCountsText(r));
-    } else {
-      el.innerHTML = _resultAlert("danger", `Fehlgeschlagen: ${_escapeHtml(job.error || "Unbekannter Fehler")}`);
-    }
-  }
-
-  async function _pollArtistRepairJob(jobId) {
-    try {
-      const res = await fetch(apiUrl(`/api/v1/jobs/${encodeURIComponent(jobId)}`), { credentials: "same-origin" });
-      if (res.status === 401) { showOnly("login-view"); _stopArtistRepairJobPolling(); return; }
-      if (!res.ok) return;
-      _renderArtistRepairJobStatus(await res.json());
-    } catch (err) {}
-  }
-
-  async function startArtistRepairJob(level) {
-    const artist = currentArtistFromPath();
-    const confirmed = await _artistConfirm(
-      `${_ARTIST_REPAIR_LEVEL_LABELS[level]} wirklich starten für "${artist}"?\n\n` +
-      `Kann einige Minuten dauern. Mit Backup abgesichert — aber es werden tatsächlich Dateien in der Library verändert.\n\n` +
-      `L3 ruft MusicBrainz auf — einzelne Dateien können bei Netzwerk-/Rate-Limit-Fehlern fehlschlagen.`
-    );
-    if (!confirmed) return;
-
-    _setArtistRepairButtonsDisabled(true);
-    document.getElementById("artist-repair-job-content").innerHTML = _runningHtml("Wird gestartet…");
-
-    try {
-      const res = await fetch(apiUrl("/api/v1/jobs/repair-level3"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ artist }),
-      });
-      if (res.status === 401) { showOnly("login-view"); return; }
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        ccToast("error", "L3-Reparatur nicht gestartet", String(body && body.error ? body.error.message : res.status));
-        _setArtistRepairButtonsDisabled(false);
-        return;
-      }
-      const job = await res.json();
-      _artistRepairJobId = job.job_id;
-      _renderArtistRepairJobStatus(job);
-      _stopArtistRepairJobPolling();
-      _artistRepairJobPollTimer = setInterval(() => _pollArtistRepairJob(_artistRepairJobId), 1000);
-    } catch (err) {
-      ccToast("error", "Netzwerkfehler", err.message);
-      _setArtistRepairButtonsDisabled(false);
-    }
-  }
-
-  document.getElementById("repair-l3-btn").addEventListener("click", () => startArtistRepairJob("l3"));
+  // CC-UI L4 (Nutzerentscheidung 2026-09-28): die L3-Reparatur gibt es nur
+  // noch auf der Health-Seite (static/pages/health.js::startLevel23Job(),
+  // derselbe Endpunkt POST /api/v1/jobs/repair-level3, dort nur für Artists
+  // mit offenen L3-Befunden) - der Button hier war doppelt.
 
   // -- Track Detail Drawer (CC-AC-9, Track-Centric Library Actions) -------
   //
@@ -1556,19 +1650,60 @@
   // unten muessen deshalb zusaetzlich zum Aufklappen des Panels den
   // passenden Tab aktivieren, sonst scrollIntoView()/focus() liefen ins
   // Leere (Ziel-Feld waere durch einen anderen aktiven Tab verdeckt).
-  function _activateMetaTab(tabId) {
-    const link = document.querySelector(`#artist-metadata-edit-panel a[href="#${tabId}"]`);
-    if (link && window.bootstrap?.Tab) {
-      new window.bootstrap.Tab(link).show();
+  // CC-UI L4: ein Editor-Seitenpanel (#md-editor) mit fünf Reitern statt
+  // der Karten "Metadaten bearbeiten" und "Library-Wartung". Die alten
+  // Reiter-IDs (meta-tab-*) werden auf die neuen Reiter abgebildet.
+  const _MD_TAB_ALIASES = {
+    "meta-tab-artist": "artist", "meta-tab-title": "title", "meta-tab-album": "album",
+    "meta-tab-albumartist": "album", "meta-tab-genre": "genre",
+  };
+
+  function _showMetaTab(tab) {
+    document.querySelectorAll("#md-tabs [data-md-tab]").forEach((a) => {
+      const active = a.dataset.mdTab === tab;
+      a.classList.toggle("active", active);
+      a.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    document.querySelectorAll("#md-editor [data-md-pane]").forEach((pane) => { pane.hidden = pane.dataset.mdPane !== tab; });
+    if (tab === "genre" && !_genreMap.etag) loadGenreMapping();  // lazy wie bisher
+    // Schritt 2 zeigt sofort, wie viele Dateien "Tags schreiben" ändern würde
+    // (read-only Vorschau, einmal je Öffnen des leeren Reiters).
+    if (tab === "genre" && !document.getElementById("genre-manage-content").innerHTML) loadGenreManagePreview();
+    if (tab === "artist") _prefillArtistInput();
+  }
+
+  function _prefillArtistInput() {
+    const input = document.getElementById("artist-edit-new-artist");
+    if (input && !input.value) {
+      input.value = currentArtistFromPath();
+      _autoArtistPreview();
     }
   }
+
+  function openMetadataEditor(tab) {
+    if (!_trackDrawerIsAdmin) return;  // Editor nur für Admin (Endpunkte sind serverseitig gegated)
+    _showMetaTab(tab || "artist");
+    const Offcanvas = window.tabler && window.tabler.Offcanvas;
+    const el = document.getElementById("md-editor");
+    if (Offcanvas) Offcanvas.getOrCreateInstance(el).show();
+    else el.classList.add("show");
+  }
+
   function _openMetadataEditPanel(tabId) {
-    document.getElementById("artist-metadata-edit-panel").querySelector("details").open = true;
-    if (tabId) _activateMetaTab(tabId);
+    openMetadataEditor(_MD_TAB_ALIASES[tabId] || tabId || "artist");
   }
-  function _openMaintenancePanel() {
-    document.getElementById("artist-maintenance-panel").querySelector("details").open = true;
-  }
+
+  document.getElementById("artist-edit-open-btn").addEventListener("click", () => openMetadataEditor("artist"));
+  document.getElementById("md-tabs").addEventListener("click", (event) => {
+    const link = event.target.closest("[data-md-tab]");
+    if (!link) return;
+    event.preventDefault();
+    _showMetaTab(link.dataset.mdTab);
+  });
+  document.getElementById("title-edit-list").addEventListener("click", (event) => {
+    const row = event.target.closest("[data-title-path]");
+    if (row) _selectTitleTrack(row.dataset.titlePath);
+  });
 
   // Extrahiert aus _trackDrawerEditTitle() (Phase E, CC-LIB-FINAL): reiner
   // Refactor, kein Verhaltensunterschied fuer den Drawer-Pfad - zweiter
@@ -1582,6 +1717,7 @@
     trackSelect.value = t.relative_path;
     titleInput.value = t.title || "";
     document.getElementById("title-edit-execute-btn").disabled = true;
+    _markTitleRow(t.relative_path);
     titleInput.scrollIntoView({ block: "center" });
     titleInput.focus();
     loadTitleEditPreview();
@@ -1596,6 +1732,7 @@
   function _trackDrawerEditArtist() {
     closeTrackDrawer();
     _openMetadataEditPanel("meta-tab-artist");
+    _prefillArtistInput();
     const input = document.getElementById("artist-edit-new-artist");
     input.scrollIntoView({ block: "center" });
     input.focus();
@@ -1610,9 +1747,11 @@
   // noetig, der aufloest werden muesste).
   function _quickEditAlbumField(albumValue, selectId, inputId) {
     _openMetadataEditPanel(selectId === "albumartist-edit-album-select" ? "meta-tab-albumartist" : "meta-tab-album");
-    const select = document.getElementById(selectId);
+    // CC-UI L4: eine sichtbare Album-Auswahl für beide Felder
+    const select = document.getElementById("album-edit-album-select");
     if (albumValue !== null && [...select.options].some((o) => o.value === albumValue)) {
       select.value = albumValue;
+      _selectAlbumForEdit(albumValue);
     }
     const input = document.getElementById(inputId);
     input.scrollIntoView({ block: "center" });
@@ -1633,10 +1772,10 @@
     loadGenreManagePreview();
   }
 
-  function _trackDrawerOpenMaintenance() {
+  // CC-UI L4: statt "Library-Wartung" (Karte entfällt) -> Reiter Duplikate.
+  function _trackDrawerOpenDuplicates() {
     closeTrackDrawer();
-    _openMaintenancePanel();
-    document.getElementById("artist-maintenance-panel").scrollIntoView({ block: "center" });
+    openMetadataEditor("dupes");
   }
 
   const _TRACK_DRAWER_ACTION_HANDLERS = {
@@ -1645,7 +1784,7 @@
     album: () => _trackDrawerEditAlbumField("album-edit-album-select", "album-edit-new-album"),
     albumartist: () => _trackDrawerEditAlbumField("albumartist-edit-album-select", "albumartist-edit-new-albumartist"),
     genre: _trackDrawerEditGenre,
-    maintenance: _trackDrawerOpenMaintenance,
+    duplicates: _trackDrawerOpenDuplicates,
   };
 
   function _trackDrawerActionsHtml(artist, t) {
@@ -1658,11 +1797,11 @@
       rows.push(["albumartist", "users", "Albuminterpret bearbeiten"]);
     }
     rows.push(["genre", "tag", "Genre bearbeiten"]);
-    rows.push(["maintenance", "tool", "Library-Wartung (Artist-weit)"]);
+    rows.push(["duplicates", "copy", "Duplikate prüfen (Artist-weit)"]);
     return '<div class="list-group">' + rows.map(([action, icon, label]) => `
       <button type="button" class="list-group-item list-group-item-action d-flex align-items-center gap-2" data-track-action="${action}">${ccIcon(icon, "text-teal")}${label}</button>
     `).join("") + '</div>' +
-      '<div class="text-secondary small mt-2">Öffnet die bestehende Vorschau unten auf dieser Seite — keine neue Ausführungslogik.</div>';
+      '<div class="text-secondary small mt-2">Öffnet den Metadaten-Editor am passenden Reiter — geschrieben wird erst nach Bestätigung.</div>';
   }
 
   document.getElementById("track-drawer-actions").addEventListener("click", (event) => {
@@ -1753,14 +1892,7 @@
     }
     if (event.target.closest("#artist-detail-open-metadata")) {
       event.preventDefault();
-      _openMetadataEditPanel();
-      document.getElementById("artist-metadata-edit-panel").scrollIntoView({ block: "start" });
-      return;
-    }
-    if (event.target.closest("#artist-detail-open-wartung")) {
-      event.preventDefault();
-      _openMaintenancePanel();
-      document.getElementById("artist-maintenance-panel").scrollIntoView({ block: "start" });
+      openMetadataEditor("artist");
       return;
     }
     const btn = event.target.closest(".track-row");
@@ -1779,8 +1911,7 @@
       // UI-Check als alleiniger Schutz), dies ist zusaetzlich die
       // sichtbare UX-Schranke.
       const isAdmin = who.access_level === "ADMIN" || who.access_level === "OWNER";
-      document.getElementById("artist-metadata-edit-panel").hidden = !isAdmin;
-      document.getElementById("artist-maintenance-panel").hidden = !isAdmin;
+      document.getElementById("artist-edit-open-btn").hidden = !isAdmin;
       _trackDrawerIsAdmin = isAdmin;
       loadArtistDetail();
     });

@@ -828,3 +828,13 @@ details[open] > .cc-summary::after { transform: rotate(-135deg); }
 /* Grid-Spalten des Metadaten-Editors dürfen schrumpfen, sonst drückt ein
    langer Dateiname in der Vorschau die Seite auf dem Handy breiter (U17). */
 .md-edit-grid > * { min-width: 0; }
+
+/* CC-UI L4: Metadaten-Editor als breites Seitenpanel (Handy: volle Breite),
+   Übernehmen-Leiste bleibt beim Scrollen unten sichtbar. */
+.cc-md-editor { --tblr-offcanvas-width: 640px; }
+@media (max-width: 700px) { .cc-md-editor { --tblr-offcanvas-width: 100vw; } }
+.cc-md-editor .md-footer {
+  position: sticky; bottom: 0; z-index: 2;
+  background: var(--tblr-bg-surface); border-top: 1px solid var(--tblr-border-color);
+}
+.cc-md-editor #title-edit-list .list-group-item.active { color: inherit; }
