@@ -61,10 +61,12 @@ function loadLogs() {
   const level = document.getElementById("logs-level-select").value;
   const component = document.getElementById("logs-component-input").value.trim();
   const search = document.getElementById("logs-search-input").value.trim();
+  const job = document.getElementById("logs-job-input").value.trim();
   if (source) params.set("source", source);
   if (level) params.set("level", level);
   if (component) params.set("component", component);
   if (search) params.set("search", search);
+  if (job) params.set("job", job);
   params.set("limit", "200");
   return _loadInto("logs-content", `/api/v1/logs?${params.toString()}`, renderLogs, loadLogs);
 }
