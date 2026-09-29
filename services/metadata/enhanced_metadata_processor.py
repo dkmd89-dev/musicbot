@@ -7,7 +7,7 @@ import requests
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Callable, Tuple
 
-from logger import get_module_logger, setup_module_logging
+from logger import get_module_logger, get_process_role, setup_module_logging
 from config import Config
 from services.logger_admin import read_logger_config
 
@@ -80,12 +80,22 @@ class EnhancedMetadataProcessor(SingletonMixin):
             )
         except Exception:
             _logger_cfg = {}
+        # D.12b.1: Im CC-Prozess keinen eigenen FileHandler auf
+        # enhanced_metadata_processor.log anlegen - sonst rotieren
+        # Bot- und CC-Prozess dieselbe Datei (Race). Stattdessen
+        # propagate zum Root -> control_center.log. ConsoleHandler
+        # bleibt config-gesteuert (doppelte journald-Zeilen sind
+        # kosmetisch, kein Datenproblem).
+        _is_cc = get_process_role() == "control_center"
         self.logger = setup_module_logging(
             "EnhancedMetadataProcessor",
             log_file=str(log_file_path),
             level=_logger_cfg.get("level", "DEBUG"),
-            enable_file_handler=_logger_cfg.get("file_handler", True),
+            enable_file_handler=(
+                False if _is_cc else _logger_cfg.get("file_handler", True)
+            ),
             enable_console_handler=_logger_cfg.get("console_handler", True),
+            propagate=_is_cc,
             use_colors=True,
             use_emojis=True,
         )

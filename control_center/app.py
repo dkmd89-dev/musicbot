@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import Config
-from logger import get_module_logger, setup_enhanced_logging
+from logger import get_module_logger, set_process_role, setup_enhanced_logging
 
 from services.jobs.job_registry import JobRegistry
 from services.logger_admin import LoggerApplyRateLimiter
@@ -74,6 +74,9 @@ def setup_control_center_logging(config: Config | None = None) -> None:
     create_app()): setup_enhanced_logging() entfernt alle Root-Handler -
     Tests via httpx.ASGITransport loesen kein Lifespan-Event aus und
     bleiben dadurch unberuehrt (caplog o. Ae.)."""
+    # D.12b.1: Rolle setzen, BEVOR der erste EnhancedMetadataProcessor
+    # (Singleton) konstruiert wird - siehe download_utils.py:277.
+    set_process_role("control_center")
     config = config or Config()
     log_file = Path(config.LOG_DIR) / CONTROL_CENTER_LOG_FILENAME
     setup_enhanced_logging(

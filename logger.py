@@ -785,6 +785,31 @@ def get_logging_stats(module: str = None) -> Dict[str, Any]:
     return global_stats
 
 
+# ── Prozess-Rolle (D.12b.1, 2026-09-29) ──────────────────────────────
+# Technische Rolle des laufenden Prozesses. Wird beim Startup genau
+# einmal gesetzt: bot.py bleibt Default "bot", control_center/app.py
+# setzt "control_center". setup_module_logging() nutzt den Wert, um
+# im CC-Prozess den modul-eigenen FileHandler zu unterdrücken und
+# stattdessen zum Root zu propagieren (vermeidet das Zwei-Prozess-
+# Race auf enhanced_metadata_processor.log).
+_PROCESS_ROLE: str = "bot"
+
+
+def set_process_role(role: str) -> None:
+    """Setzt die technische Prozess-Rolle ('bot' | 'control_center').
+
+    Muss VOR der ersten Konstruktion von EnhancedMetadataProcessor
+    im jeweiligen Prozess laufen (Singleton: der erste Aufruf wirkt
+    für die gesamte Prozess-Lebensdauer)."""
+    global _PROCESS_ROLE
+    _PROCESS_ROLE = role
+
+
+def get_process_role() -> str:
+    """Gibt die aktuelle technische Prozess-Rolle zurück."""
+    return _PROCESS_ROLE
+
+
 def setup_module_logging(
     module_name: str,
     log_file: str = None,
@@ -793,6 +818,7 @@ def setup_module_logging(
     use_emojis: bool = True,
     enable_file_handler: bool = True,
     enable_console_handler: bool = True,
+    propagate: bool = False,
 ):
     """
     Richtet eine separate Log-Datei für ein spezifisches Modul ein.
@@ -806,6 +832,13 @@ def setup_module_logging(
 
     Rotation (EnhancedRotatingFileHandler, 2 MB x 3 Backups) bleibt
     unverändert, wenn `enable_file_handler=True`.
+
+    D.12b.1: `propagate` als expliziter Parameter (Default False =
+    bisheriges Verhalten). Der CC-Prozess setzt propagate=True und
+    enable_file_handler=False. Achtung: Da EnhancedMetadataProcessor
+    ein Singleton ist, wirkt der erste Aufruf pro Prozess für die
+    gesamte Lebensdauer. set_process_role() muss daher vor der ersten
+    Konstruktion laufen (im CC: Startup-Event, Reihenfolge geprüft).
     """
     if log_file is None:
         log_file = f"logs/{module_name.lower()}.log"
@@ -845,13 +878,27 @@ def setup_module_logging(
         console_handler.setLevel(logging.DEBUG)  # Zeige ALLES in Console
         logger.addHandler(console_handler)
 
-    logger.propagate = False  # WICHTIG: Verhindert doppelte Logs im Haupt-Logger
+    logger.propagate = propagate  # D.12b.1: Parameter statt hart False
 
     # Enhanced Logger erstellen
     enhanced_logger = EnhancedLogger(logger, module_name)
     _module_loggers[module_name] = enhanced_logger
 
-    enhanced_logger.info(f"✅ Separate Log-Datei eingerichtet: {log_file}")
+    # D.12b.1: Meldung an den tatsaechlichen Handler-Zustand binden.
+    # Vorher war das unbedingt - im CC (enable_file_handler=False,
+    # propagate=True) suggerierte die Zeile einen FileHandler, den es
+    # dort bewusst nicht gibt.
+    if enable_file_handler:
+        enhanced_logger.info(f"✅ Separate Log-Datei eingerichtet: {log_file}")
+    elif propagate:
+        enhanced_logger.info(
+            f"↪️  {module_name} propagiert zum Root-Logger "
+            f"(kein eigener FileHandler)"
+        )
+    else:
+        enhanced_logger.info(
+            f"ℹ️  {module_name} ohne eigenen FileHandler und ohne Propagation"
+        )
     return enhanced_logger
 
 
