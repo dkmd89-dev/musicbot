@@ -147,7 +147,7 @@ DEFER/OPEN mit klarer Begründung — kein stilles Schließen des ursprüngliche
 | # | Frage | Empfehlung |
 |---|---|---|
 | **K1** | Key-basierte Typen: Save-Kette (mehrere PUTs) **oder** Editor speichert je Eintrag sofort (ein Eintrag = ein Preview/PUT) | **Je Eintrag** (ein Eintrag = ein Draft = ein PUT). Passt zur vorhandenen API, kein Teil-Erfolg-Zustand. F1 gilt dann für M4/M5 als Liste, für M1–M3 als „ein Eintrag“ |
-| **K2** | Runtime-Paritätstest (Admin schreibt → echter `GenreProcessor`/`GenreMapper`/`filenamefixer` lädt) als G1-Bedingung | **Ja**, klein, vor 5.2; schützt genau die Fachlogik-Kante (CLAUDE.md §7/§10) |
+| **K2** ✅ 2026-09-30 | Runtime-Paritätstest (Admin schreibt → echter `GenreProcessor`/`GenreMapper`/`filenamefixer` lädt) als G1-Bedingung | **Ja**, klein, vor 5.2; schützt genau die Fachlogik-Kante (CLAUDE.md §7/§10) |
 | **K3** | Umfang „abgeschlossen“: nur §6-Umfang oder inkl. M6/M7 | **Nur §6**, M6/M7 als eigener Plan |
 | **K4** | F5/F6 bestätigen (F5 jetzt: Gruppe Maintenance) | siehe §2 |
 | **K5** | Statisches Mockup des Editors (Offcanvas, Diff, 409-Modal) vor 5.2, wie bei L4 | **Ja**, kleiner Schritt 5.1b; verhindert Umbau nach dem Bau |
