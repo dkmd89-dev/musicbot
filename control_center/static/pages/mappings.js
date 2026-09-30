@@ -1,128 +1,289 @@
 // control_center/static/pages/mappings.js
-// Mapping-Administration (Phase 5.1): fünf Karten mit dem Live-Bestand je
-// Mapping-Typ, nur lesend. Fachlogik (Validierung, Normalisierung, Etag) liegt
+// Mapping-Administration (Phase 5.1c): Kacheln als Tabs, darunter die Daten des
+// gewählten Mapping-Typs (Tabelle mit Suche und Paging bzw. Chip-Liste bzw.
+// Kategorien). Nur lesend. Fachlogik (Validierung, Normalisierung, Etag) liegt
 // ausschließlich im Backend (services/mapping_admin.py); diese Seite zeigt an,
-// was GET /api/v1/admin/mappings/{mapping_id} liefert. Bearbeiten folgt in den
-// nächsten Ausbaustufen — hier gibt es bewusst keine Schaltfläche dafür.
+// was GET /api/v1/admin/mappings/{mapping_id} liefert. Suche und Paging laufen
+// clientseitig, weil die API die komplette Liste ohne Paginierung liefert.
+// Bearbeiten folgt in den nächsten Ausbaustufen — hier bewusst keine Schaltfläche dafür.
 (function () {
   "use strict";
 
+  const PAGE_SIZE = 50;
+
+  const chips = (items) => (items || []).map((t) => `<span class="badge bg-secondary-lt me-1">${_escapeHtml(t)}</span>`).join("");
+
   // Reihenfolge = Darstellung. `count` liest die Kennzahl aus der Antwort,
-  // `detail` optional eine Zusatzzeile (z. B. Kanäle je Kategorie-Summe).
+  // `rows`/`view` bestimmen die Darstellung im Tab.
   const MAPPING_TYPES = [
     {
-      id: "channel-genre", title: "Channel-Genre", icon: "tag", unit: "Kanäle",
-      description: "Primär- und Sekundärgenre je YouTube-Kanal.",
+      id: "channel-genre", title: "Channel-Genre", icon: "tag", unit: "Kanäle", kind: "table",
+      searchLabel: "Kanäle suchen",
       count: (b) => (b.entries || []).length,
+      items: (b) => b.entries || [],
+      matches: (e, q) => [e.key, e.primary, (e.secondary || []).join(" "), e.description || ""].join(" ").toLowerCase().includes(q),
+      head: '<th>Kanal</th><th>Primär</th><th>Sekundär</th><th class="d-none d-md-table-cell">Beschreibung</th>',
+      row: (e) => `<td class="text-break">${_escapeHtml(e.key)}</td><td>${_escapeHtml(e.primary)}</td>`
+        + `<td>${chips(e.secondary)}</td><td class="d-none d-md-table-cell text-secondary">${_escapeHtml(e.description || "")}</td>`,
     },
     {
-      id: "genre-aliases", title: "Genre-Aliase", icon: "link", unit: "Aliase",
-      description: "Schreibweisen, die auf ein kanonisches Genre abgebildet werden.",
+      id: "genre-aliases", title: "Genre-Aliase", icon: "link", unit: "Aliase", kind: "table",
+      searchLabel: "Aliase suchen",
       count: (b) => (b.entries || []).length,
+      items: (b) => b.entries || [],
+      matches: (e, q) => `${e.key} ${e.canonical}`.toLowerCase().includes(q),
+      head: "<th>Alias</th><th>Zielgenre</th>",
+      row: (e) => `<td class="text-break">${_escapeHtml(e.key)}</td><td>${_escapeHtml(e.canonical)}</td>`,
     },
     {
-      id: "genre-overrides", title: "Genre-Overrides", icon: "adjustments", unit: "Overrides",
-      description: "Feste Zielgenres, die vor den Aliasen greifen.",
+      id: "genre-overrides", title: "Genre-Overrides", icon: "adjustments", unit: "Overrides", kind: "table",
+      searchLabel: "Overrides suchen",
       count: (b) => (b.entries || []).length,
+      items: (b) => b.entries || [],
+      matches: (e, q) => `${e.key} ${e.override}`.toLowerCase().includes(q),
+      head: '<th>Key <span class="text-secondary fw-normal small">(case-sensitiv)</span></th><th>Override</th>',
+      row: (e) => `<td class="text-break">${_escapeHtml(e.key)}</td><td>${_escapeHtml(e.override)}</td>`,
     },
     {
-      id: "genre-filters", title: "Genre-Filter", icon: "filter", unit: "Filter",
-      description: "Tags, die als Sekundärgenre ignoriert werden.",
+      id: "genre-filters", title: "Genre-Filter", icon: "filter", unit: "Filter", kind: "chips",
+      searchLabel: "Filter suchen",
       count: (b) => (b.values || []).length,
+      items: (b) => b.values || [],
+      matches: (v, q) => String(v).toLowerCase().includes(q),
     },
     {
-      id: "special-channels", title: "Spezialkanäle", icon: "microphone", unit: "Kategorien",
-      description: "Podcast-, Compilation- und Playlist-Kanäle. Die Reihenfolge der Kategorien ist die Priorität.",
+      id: "special-channels", title: "Spezialkanäle", icon: "microphone", unit: "Kategorien", kind: "categories",
+      searchLabel: "Kanäle suchen",
       count: (b) => (b.categories || []).length,
+      items: (b) => b.categories || [],
       detail: (b) => {
         const channels = (b.categories || []).reduce((n, c) => n + (c.channels || []).length, 0);
-        return `${channels.toLocaleString("de-DE")} Kanäle in ${(b.categories || []).length.toLocaleString("de-DE")} Kategorien`;
+        return `${channels.toLocaleString("de-DE")} Kanäle`;
       },
     },
   ];
 
-  function cardId(type) { return `mappings-card-${type.id}`; }
+  // Zustand je Typ: geladene Antwort, Fehler, Suchtext, Seite.
+  const state = { active: MAPPING_TYPES[0].id, byId: {} };
+  MAPPING_TYPES.forEach((t) => { state.byId[t.id] = { body: null, error: null, loading: true, query: "", page: 1 }; });
 
-  function cardHtml(type) {
+  const typeById = (id) => MAPPING_TYPES.find((t) => t.id === id);
+  const fmt = (n) => Number(n).toLocaleString("de-DE");
+
+  // ── Kacheln ────────────────────────────────────────────────────────────
+
+  function tileHtml(type) {
+    const st = state.byId[type.id];
+    const active = type.id === state.active;
+    let value;
+    if (st.loading) value = '<span class="placeholder-glow"><span class="placeholder col-4"></span></span>';
+    else if (st.error) value = `<span class="text-danger small">${ccIcon("alert", "icon-sm me-1")}nicht erreichbar</span>`;
+    else value = `<span class="h2 mb-0">${_escapeHtml(fmt(type.count(st.body)))}</span><span class="text-secondary small">${_escapeHtml(type.unit)}</span>`;
+    const warnings = st.body && st.body.warnings ? st.body.warnings.length : 0;
+    const warningText = `${fmt(warnings)} Hinweis${warnings === 1 ? "" : "e"}`;
+    const badge = warnings
+      ? `<span class="badge bg-yellow-lt ms-auto align-self-center" title="${_escapeHtml(warningText)}" aria-label="${_escapeHtml(warningText)}">${ccIcon("alert", "icon-sm me-1")}${_escapeHtml(fmt(warnings))}</span>` : "";
     return `
-      <div class="col-12 col-md-6 col-xl-4">
-        <div class="card card-sm h-100" id="${cardId(type)}">
+      <div class="col-6 col-md-4 col-xl">
+        <button type="button" class="card card-sm w-100 text-start cc-mapping-tile${active ? " active" : ""}"
+                data-action="tab" data-type="${_escapeHtml(type.id)}" role="tab" aria-selected="${active}">
           <div class="card-body">
-            <div class="row align-items-center g-3 mb-2">
-              <div class="col-auto"><span class="avatar bg-teal-lt">${ccIcon(type.icon)}</span></div>
-              <div class="col min-w-0">
-                <div class="subheader">${_escapeHtml(type.title)}</div>
-                <div class="text-secondary small">${_escapeHtml(type.description)}</div>
-              </div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <span class="avatar avatar-sm bg-teal-lt">${ccIcon(type.icon)}</span>
+              <span class="subheader mb-0">${_escapeHtml(type.title)}</span>
             </div>
-            <div id="${cardId(type)}-body"></div>
+            <div class="d-flex align-items-baseline gap-2">${value}${badge}</div>
           </div>
-        </div>
+        </button>
+      </div>`;
+  }
+
+  function renderTiles() {
+    const el = document.getElementById("mappings-tiles");
+    if (el) el.innerHTML = MAPPING_TYPES.map(tileHtml).join("");
+  }
+
+  // ── Karte des gewählten Typs ───────────────────────────────────────────
+
+  function renderHead() {
+    const type = typeById(state.active);
+    const st = state.byId[type.id];
+    const el = document.getElementById("mappings-pane-head");
+    if (!el) return;
+    const total = st.body ? type.count(st.body) : 0;
+    const extra = st.body && type.detail ? ` · ${_escapeHtml(type.detail(st.body))}` : "";
+    el.innerHTML = `
+      <h3 class="card-title me-auto">${_escapeHtml(type.title)}
+        <span class="text-secondary fw-normal">· ${_escapeHtml(fmt(total))} ${_escapeHtml(type.unit)}${extra}</span></h3>
+      <div class="input-icon">
+        <span class="input-icon-addon">${ccIcon("search")}</span>
+        <input type="search" class="form-control form-control-sm" data-action="search"
+               placeholder="${_escapeHtml(type.searchLabel)}" aria-label="${_escapeHtml(type.searchLabel)}"
+               value="${_escapeHtml(st.query)}">
       </div>`;
   }
 
   function warningsHtml(warnings) {
     if (!warnings || !warnings.length) return "";
-    return '<ul class="list-unstyled mt-2 mb-0">' + warnings.map((w) =>
-      `<li class="text-yellow small text-break">${ccIcon("alert", "icon-sm me-1")}${_escapeHtml(w)}</li>`
-    ).join("") + "</ul>";
+    return warnings.map((w) =>
+      `<div class="alert alert-warning mb-2" role="alert"><div class="d-flex">${ccIcon("alert", "me-2")}<div class="text-break">${_escapeHtml(w)}</div></div></div>`
+    ).join("");
   }
 
-  function renderCount(type, body) {
-    const el = document.getElementById(`${cardId(type)}-body`);
-    if (!el) return;
-    const n = type.count(body);
-    if (!n) {
-      ccState.empty(el, "Noch keine Einträge", "Die Datei enthält keine Einträge dieses Typs.");
+  // Clientseitige Suche über die komplette Liste (die API paginiert nicht).
+  function filtered(type, st) {
+    const q = st.query.trim().toLowerCase();
+    const all = type.items(st.body);
+    return q ? all.filter((e) => type.matches(e, q)) : all;
+  }
+
+  function pageOf(found, st) {
+    const pages = Math.max(1, Math.ceil(found.length / PAGE_SIZE));
+    st.page = Math.min(Math.max(1, st.page), pages);
+    return { pages, slice: found.slice((st.page - 1) * PAGE_SIZE, st.page * PAGE_SIZE) };
+  }
+
+  function renderBody() {
+    const type = typeById(state.active);
+    const st = state.byId[type.id];
+    const body = document.getElementById("mappings-pane-body");
+    const foot = document.getElementById("mappings-pane-foot");
+    if (!body) return;
+    if (foot) { foot.hidden = true; foot.innerHTML = ""; }
+
+    if (st.loading) { ccState.loading(body); return; }
+    if (st.error) { renderFailure(type, st.error, body); return; }
+    if (!type.count(st.body)) {
+      ccState.empty(body, "Noch keine Einträge", "Die Datei enthält keine Einträge dieses Typs.");
       return;
     }
-    const detail = type.detail ? `<div class="text-secondary small">${_escapeHtml(type.detail(body))}</div>` : "";
-    el.innerHTML = `
-      <div class="d-flex align-items-baseline gap-2">
-        <span class="h1 mb-0">${_escapeHtml(n.toLocaleString("de-DE"))}</span>
-        <span class="text-secondary">${_escapeHtml(type.unit)}</span>
-      </div>
-      ${detail}${warningsHtml(body.warnings)}`;
+
+    if (type.kind === "table") {
+      const found = filtered(type, st);
+      const { pages, slice } = pageOf(found, st);
+      if (!found.length) {
+        body.innerHTML = '<div class="card-body">' + '<div class="empty py-3"><p class="empty-title">Keine Treffer</p>'
+          + '<p class="empty-subtitle text-secondary">Kein Eintrag passt zur Suche.</p></div></div>';
+        return;
+      }
+      body.innerHTML = warningsHtml(st.body.warnings)
+        + `<div class="table-responsive"><table class="table card-table table-vcenter"><thead><tr>${type.head}</tr></thead><tbody>`
+        + slice.map((e) => `<tr>${type.row(e)}</tr>`).join("") + "</tbody></table></div>";
+      renderFoot(found.length, pages, st);
+    } else if (type.kind === "chips") {
+      const found = filtered(type, st);
+      body.innerHTML = '<div class="card-body">' + warningsHtml(st.body.warnings)
+        + (found.length
+          ? `<div class="d-flex flex-wrap gap-1 cc-mapping-scroll">${found.map((v) => `<span class="badge bg-secondary-lt">${_escapeHtml(v)}</span>`).join("")}</div>`
+          : '<div class="text-secondary">Kein Filter passt zur Suche.</div>')
+        + "</div>";
+      if (foot) { foot.hidden = false; foot.innerHTML = `<div class="text-secondary small">${_escapeHtml(fmt(found.length))} von ${_escapeHtml(fmt(type.count(st.body)))} Filtern</div>`; }
+    } else {
+      const q = st.query.trim().toLowerCase();
+      const cats = type.items(st.body).map((c, i) => ({ c, i }))
+        .map(({ c, i }) => ({ name: c.name, position: i + 1, all: c.channels || [],
+          shown: q ? (c.channels || []).filter((ch) => String(ch).toLowerCase().includes(q) || c.name.toLowerCase().includes(q)) : (c.channels || []) }))
+        .filter((c) => !q || c.shown.length);
+      body.innerHTML = '<div class="card-body">' + warningsHtml(st.body.warnings)
+        + `<div class="alert alert-info" role="note"><div class="d-flex">${ccIcon("info", "me-2")}<div>`
+        + "Die Reihenfolge der Kategorien ist die Priorität (die frühere gewinnt). Die Runtime merged weiterhin mit "
+        + "<code>Config.SPECIAL_CHANNELS</code> — hier wird nur die YAML-Quelle angezeigt.</div></div></div>"
+        + (cats.length
+          ? '<div class="row g-2">' + cats.map((c) => `
+            <div class="col-12 col-lg-4"><div class="border rounded p-3 h-100">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="badge bg-teal-lt cc-mapping-prio d-inline-flex align-items-center justify-content-center">${_escapeHtml(String(c.position))}</span>
+                <strong class="me-auto text-break">${_escapeHtml(c.name)}</strong>
+                <span class="text-secondary small">${_escapeHtml(fmt(c.all.length))} Kanäle</span>
+              </div>
+              <div class="d-flex flex-wrap gap-1">${c.shown.map((ch) => `<span class="badge bg-secondary-lt">${_escapeHtml(ch)}</span>`).join("")}</div>
+            </div></div>`).join("") + "</div>"
+          : '<div class="text-secondary">Kein Kanal passt zur Suche.</div>')
+        + "</div>";
+    }
   }
 
-  function renderFailure(type, err) {
-    const el = document.getElementById(`${cardId(type)}-body`);
-    if (!el) return;
+  function renderFoot(total, pages, st) {
+    const foot = document.getElementById("mappings-pane-foot");
+    if (!foot) return;
+    const from = (st.page - 1) * PAGE_SIZE + 1;
+    const to = Math.min(total, st.page * PAGE_SIZE);
+    foot.hidden = false;
+    foot.innerHTML = '<div class="d-flex align-items-center w-100">' + `<span class="text-secondary small">${PAGE_SIZE} pro Seite · ${_escapeHtml(fmt(from))}–${_escapeHtml(fmt(to))} von ${_escapeHtml(fmt(total))}</span>`
+      + (pages > 1
+        ? '<div class="btn-list ms-auto flex-nowrap align-items-center">'
+          + `<button type="button" class="btn btn-sm btn-icon" data-action="page" data-page="${st.page - 1}" aria-label="Vorherige Seite"${st.page <= 1 ? " disabled" : ""}>‹</button>`
+          + `<span class="text-secondary small">Seite ${_escapeHtml(fmt(st.page))} / ${_escapeHtml(fmt(pages))}</span>`
+          + `<button type="button" class="btn btn-sm btn-icon" data-action="page" data-page="${st.page + 1}" aria-label="Nächste Seite"${st.page >= pages ? " disabled" : ""}>›</button></div>`
+        : "") + "</div>";
+  }
+
+  function renderFailure(type, err, el) {
     const status = err && err.status;
     if (status === 401) return; // ccApi hat bereits auf die Login-Ansicht umgeschaltet
     if (status === 403) { ccState.denied(el); return; }
     // Nur bei 5xx/Netzwerk ist "Erneut versuchen" sinnvoll (Standard Abschnitt 7).
     const retryable = !status || status >= 500;
     const message = (err && err.message) || "Nicht erreichbar.";
-    ccState.error(el, `${type.title} nicht erreichbar: ${message}`, retryable ? () => loadCard(type) : undefined);
+    ccState.error(el, `${type.title} nicht erreichbar: ${message}`, retryable ? () => loadType(type) : undefined);
   }
 
-  async function loadCard(type) {
-    const el = document.getElementById(`${cardId(type)}-body`);
-    if (el) ccState.loading(el);
+  function renderAll() {
+    renderTiles();
+    renderHead();
+    renderBody();
+  }
+
+  // ── Laden ──────────────────────────────────────────────────────────────
+
+  async function loadType(type) {
+    const st = state.byId[type.id];
+    st.loading = true; st.error = null;
+    renderAll();
     try {
-      const body = await ccApi("GET", `/api/v1/admin/mappings/${type.id}`);
-      renderCount(type, body || {});
+      st.body = (await ccApi("GET", `/api/v1/admin/mappings/${type.id}`)) || {};
     } catch (err) {
-      renderFailure(type, err);
+      st.body = null; st.error = err;
     }
+    st.loading = false;
+    renderAll();
   }
 
   function loadAll() {
-    return Promise.all(MAPPING_TYPES.map(loadCard));
+    return Promise.all(MAPPING_TYPES.map(loadType));
   }
 
-  function renderCards() {
-    const root = document.getElementById("mappings-content");
-    if (!root) return;
-    root.innerHTML = MAPPING_TYPES.map(cardHtml).join("");
+  // ── Ereignisse (delegiert) ─────────────────────────────────────────────
+
+  function onClick(event) {
+    const el = event.target && event.target.closest ? event.target.closest("[data-action]") : null;
+    if (!el) return;
+    const action = el.dataset.action;
+    if (action === "tab" && typeById(el.dataset.type)) {
+      state.active = el.dataset.type;
+      renderAll();
+    } else if (action === "page") {
+      state.byId[state.active].page = Number(el.dataset.page) || 1;
+      renderBody();
+    }
+  }
+
+  function onInput(event) {
+    const el = event.target && event.target.closest ? event.target.closest('[data-action="search"]') : null;
+    if (!el) return;
+    const st = state.byId[state.active];
+    st.query = el.value || "";
+    st.page = 1;
+    renderBody();
   }
 
   function initPage() {
     checkAuth().then((who) => {
       if (!who) return;
-      renderCards();
+      const root = document.getElementById("mappings-root");
+      if (root) { root.addEventListener("click", onClick); root.addEventListener("input", onInput); }
       document.getElementById("mappings-reload-btn")?.addEventListener("click", loadAll);
+      renderAll();
       loadAll();
     });
   }

@@ -24,9 +24,18 @@
   </div>
 </div>
 
-<div id="mappings-content" class="row row-cards">
-  <div class="col-12 placeholder-glow" aria-busy="true">
-    <div class="placeholder col-6 mb-2"></div><div class="placeholder col-4"></div>
+{# Element-IDs sind Vertrag mit static/pages/mappings.js. Kacheln = Tabs, darunter
+   die Karte des gewählten Mapping-Typs (Mockup: docs/designs/control-center-ui/mappings-editor.html). #}
+<div id="mappings-root">
+  <div id="mappings-tiles" class="row row-cards mb-3" role="tablist" aria-label="Mapping-Typen"></div>
+  <div class="card" id="mappings-pane">
+    <div id="mappings-pane-head" class="card-header flex-wrap gap-2"></div>
+    <div id="mappings-pane-body">
+      <div class="card-body placeholder-glow" aria-busy="true">
+        <div class="placeholder col-9 mb-2"></div><div class="placeholder col-7 mb-2"></div><div class="placeholder col-5"></div>
+      </div>
+    </div>
+    <div id="mappings-pane-foot" class="card-footer" hidden></div>
   </div>
 </div>
 {% endblock %}

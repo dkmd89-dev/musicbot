@@ -79,6 +79,10 @@ const tick = () => new Promise((r) => realSetTimeout(r, 15));
   await tick(); await tick(); await tick();
   for (const op of sc.ops || []) {
     if (op.op === "click") for (const f of (document.getElementById(op.id)._listeners.click || [])) await f({ target: null });
+    if (op.op === "event") {
+      const t = { dataset: op.dataset || {}, value: op.value || "", closest: (sel) => (sel.includes("[data-action=\"search\"]") ? (op.dataset && op.dataset.action === "search" ? t : null) : t) };
+      for (const f of (document.getElementById("mappings-root")._listeners[op.type] || [])) await f({ target: t });
+    }
     if (op.op === "respond") Object.assign(sc.responses, op.responses);
     await tick(); await tick();
   }
@@ -91,19 +95,27 @@ const tick = () => new Promise((r) => realSetTimeout(r, 15));
 _WHOAMI = {"status": 200, "body": {"user_id": 1, "access_level": "OWNER"}}
 
 
+_CHANNELS = [
+    {"key": "16bars", "primary": "Hip Hop", "secondary": ["Deutschrap"], "description": "German rap channel"},
+    {"key": "trap nation", "primary": "Hip Hop", "secondary": ["Trap", "Deutschrap"], "description": "Trap channel"},
+    {"key": "cercle", "primary": "Electronic", "secondary": [], "description": None},
+]
+_ALIASES = [{"key": f"alias {n:03d}", "canonical": f"Genre {n:03d}"} for n in range(120)]
+
+
 def _lists(**overrides):
     r = {
         "GET /api/v1/auth/whoami": _WHOAMI,
         "GET /api/v1/admin/mappings/channel-genre": {"status": 200, "body": {
-            "mapping_id": "channel-genre", "count": 2,
-            "entries": [{"key": "16bars"}, {"key": "trap nation"}]}},
+            "mapping_id": "channel-genre", "count": len(_CHANNELS), "entries": _CHANNELS}},
         "GET /api/v1/admin/mappings/genre-aliases": {"status": 200, "body": {
-            "mapping_id": "genre-aliases", "count": 3,
-            "entries": [{"key": "a"}, {"key": "b"}, {"key": "c"}]}},
+            "mapping_id": "genre-aliases", "count": len(_ALIASES), "entries": _ALIASES}},
         "GET /api/v1/admin/mappings/genre-overrides": {"status": 200, "body": {
-            "mapping_id": "genre-overrides", "count": 1, "entries": [{"key": "acid techno"}]}},
+            "mapping_id": "genre-overrides", "count": 3, "entries": [
+                {"key": "Hip-Hop", "override": "Hip Hop"}, {"key": "hip-hop", "override": "Hip Hop"},
+                {"key": "acid techno", "override": "Techno"}]}},
         "GET /api/v1/admin/mappings/genre-filters": {"status": 200, "body": {
-            "mapping_id": "genre-filters", "count": 1234, "values": ["rock"] * 1234,
+            "mapping_id": "genre-filters", "count": 1234, "values": ["rock"] * 1200 + ["seen live"] * 34,
             "etag": "e", "warnings": ["15 casefold-Duplikate zusammengefuehrt."]}},
         "GET /api/v1/admin/mappings/special-channels": {"status": 200, "body": {
             "mapping_id": "special-channels", "count": 2, "etag": "e", "warnings": [],
@@ -125,8 +137,20 @@ def _run(tmp_path, responses=None, ops=None) -> dict:
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
-def _body(out, mapping_id: str) -> str:
-    return out["els"][f"mappings-card-{mapping_id}-body"]["html"]
+def _el(out, element_id: str) -> str:
+    return out["els"][element_id]["html"]
+
+
+def _tab(mapping_id: str) -> dict:
+    return {"op": "event", "type": "click", "dataset": {"action": "tab", "type": mapping_id}}
+
+
+def _search(text: str) -> dict:
+    return {"op": "event", "type": "input", "dataset": {"action": "search"}, "value": text}
+
+
+def _page(n: int) -> dict:
+    return {"op": "event", "type": "click", "dataset": {"action": "page", "page": str(n)}}
 
 
 def _calls(out):
@@ -141,44 +165,164 @@ def test_mappings_js_follows_standard():
     assert not _EMOJI.search(js)
     assert "confirm(" not in js.replace("ccConfirm(", "")
     assert "onclick" not in js and 'style="' not in js
-    # Nur lesend: kein PUT/POST in 5.1.
+    # Nur lesend: kein PUT/POST in dieser Ausbaustufe.
     assert not re.search(r'ccApi\(\s*"(PUT|POST|DELETE|PATCH)"', js)
 
 
-# ── Darstellung ──────────────────────────────────────────────────────────
+def test_mapping_classes_are_defined_in_common_css():
+    css = COMMON_JS.with_name("common.css").read_text(encoding="utf-8")
+    for cls in (".cc-mapping-tile", ".cc-mapping-scroll", ".cc-mapping-prio"):
+        assert cls in css
+
+
+# ── Kacheln ──────────────────────────────────────────────────────────────
 
 
 @needs_node
-def test_five_cards_show_live_counts_from_existing_endpoints(tmp_path):
+def test_five_tiles_show_live_counts_and_first_tab_is_active(tmp_path):
     out = _run(tmp_path)
+    tiles = _el(out, "mappings-tiles")
 
-    assert "2" in _body(out, "channel-genre") and "Kanäle" in _body(out, "channel-genre")
-    assert ">3<" in _body(out, "genre-aliases") and "Aliase" in _body(out, "genre-aliases")
-    assert ">1<" in _body(out, "genre-overrides") and "Overrides" in _body(out, "genre-overrides")
-    assert "1.234" in _body(out, "genre-filters")
-    special = _body(out, "special-channels")
-    assert ">2<" in special and "Kategorien" in special
-    assert "4 Kanäle in 2 Kategorien" in special
-    for mapping_id in _TYPES:
-        assert f"GET /api/v1/admin/mappings/{mapping_id}" in _calls(out)
+    assert tiles.count('data-action="tab"') == 5
+    assert "1.234" in tiles and "120" in tiles
+    for label in ("Channel-Genre", "Genre-Aliase", "Genre-Overrides", "Genre-Filter", "Spezialkanäle"):
+        assert label in tiles
+    assert 'data-type="channel-genre"' in tiles.split("cc-mapping-tile active")[1][:200]
+    assert tiles.count("cc-mapping-tile active") == 1
+    assert "1 Hinweis" in tiles  # Filter-warnings sichtbar
 
 
 @needs_node
 def test_page_only_reads_no_write_requests(tmp_path):
-    out = _run(tmp_path)
+    out = _run(tmp_path, ops=[_tab("genre-aliases"), _search("alias 01"), _page(2)])
 
     assert all(c.startswith("GET ") for c in _calls(out))
+    for mapping_id in _TYPES:
+        assert f"GET /api/v1/admin/mappings/{mapping_id}" in _calls(out)
+
+
+# ── Tabellen ─────────────────────────────────────────────────────────────
 
 
 @needs_node
-def test_list_warnings_are_shown_and_escaped(tmp_path):
-    responses = {"GET /api/v1/admin/mappings/genre-filters": {"status": 200, "body": {
-        "mapping_id": "genre-filters", "count": 1, "values": ["rock"], "etag": "e",
-        "warnings": ["<img src=x onerror=alert(1)> Duplikat"]}}}
-    html = _body(_run(tmp_path, responses=responses), "genre-filters")
+def test_channel_genre_table_shows_all_columns_with_chips(tmp_path):
+    out = _run(tmp_path)
+    body = _el(out, "mappings-pane-body")
 
-    assert "&lt;img src=x onerror=alert(1)&gt; Duplikat" in html
-    assert "<img" not in html
+    for header in ("Kanal", "Primär", "Sekundär", "Beschreibung"):
+        assert header in body
+    assert "trap nation" in body and "German rap channel" in body
+    assert '<span class="badge bg-secondary-lt me-1">Trap</span>' in body
+    assert "3 Kanäle" in _el(out, "mappings-pane-head")
+
+
+@needs_node
+def test_switching_tab_shows_that_type(tmp_path):
+    out = _run(tmp_path, ops=[_tab("genre-overrides")])
+    body = _el(out, "mappings-pane-body")
+
+    assert "Override" in body and "case-sensitiv" in body
+    assert "Hip-Hop" in body and "hip-hop" in body  # Case-Varianten getrennt
+    assert "Genre-Overrides" in _el(out, "mappings-pane-head")
+    assert _el(out, "mappings-tiles").count("cc-mapping-tile active") == 1
+
+
+@needs_node
+def test_paging_50_per_page_and_navigation(tmp_path):
+    out = _run(tmp_path, ops=[_tab("genre-aliases")])
+    body, foot = _el(out, "mappings-pane-body"), _el(out, "mappings-pane-foot")
+
+    assert body.count("<tr><td") == 50 and "alias 049" in body and "alias 050" not in body
+    assert "1–50 von 120" in foot and "Seite 1 / 3" in foot
+
+    out = _run(tmp_path, ops=[_tab("genre-aliases"), _page(3)])
+    body, foot = _el(out, "mappings-pane-body"), _el(out, "mappings-pane-foot")
+    assert body.count("<tr><td") == 20 and "alias 119" in body and "alias 100" in body
+    assert "101–120 von 120" in foot
+
+
+@needs_node
+def test_search_filters_client_side_resets_page_and_makes_no_new_request(tmp_path):
+    out = _run(tmp_path, ops=[_tab("genre-aliases"), _page(2), _search("genre 07")])
+    body = _el(out, "mappings-pane-body")
+
+    assert body.count("<tr><td") == 10 and "alias 070" in body and "alias 079" in body
+    assert "1–10 von 10" in _el(out, "mappings-pane-foot")
+    assert _calls(out).count("GET /api/v1/admin/mappings/genre-aliases") == 1
+
+
+@needs_node
+def test_search_without_hit_shows_no_results(tmp_path):
+    out = _run(tmp_path, ops=[_tab("genre-aliases"), _search("gibtesnicht")])
+
+    assert "Keine Treffer" in _el(out, "mappings-pane-body")
+
+
+@needs_node
+def test_search_matches_secondary_genres_of_channels(tmp_path):
+    out = _run(tmp_path, ops=[_search("trap")])
+    body = _el(out, "mappings-pane-body")
+
+    assert "trap nation" in body and "16bars" not in body
+
+
+# ── Filter (Chips) und Spezialkanäle (Kategorien) ────────────────────────
+
+
+@needs_node
+def test_filters_show_warnings_and_chips_with_search(tmp_path):
+    out = _run(tmp_path, ops=[_tab("genre-filters")])
+    body = _el(out, "mappings-pane-body")
+
+    assert "15 casefold-Duplikate zusammengefuehrt." in body and "alert-warning" in body
+    assert body.count('class="badge bg-secondary-lt">') == 1234
+
+    out = _run(tmp_path, ops=[_tab("genre-filters"), _search("seen")])
+    assert _el(out, "mappings-pane-body").count('class="badge bg-secondary-lt">') == 34
+    assert "34 von 1.234 Filtern" in _el(out, "mappings-pane-foot")
+
+
+@needs_node
+def test_special_channels_show_priority_order_and_all_channels(tmp_path):
+    out = _run(tmp_path, ops=[_tab("special-channels")])
+    body = _el(out, "mappings-pane-body")
+
+    assert body.index("Podcast") < body.index("Playlist")
+    assert 'cc-mapping-prio d-inline-flex align-items-center justify-content-center">1<' in body
+    assert 'cc-mapping-prio d-inline-flex align-items-center justify-content-center">2<' in body
+    for ch in ("A", "B", "C", "D"):
+        assert f'<span class="badge bg-secondary-lt">{ch}</span>' in body
+    assert "Config.SPECIAL_CHANNELS" in body
+    assert "4 Kanäle" in _el(out, "mappings-pane-head")
+
+
+@needs_node
+def test_special_channels_search_hides_non_matching_categories(tmp_path):
+    out = _run(tmp_path, ops=[_tab("special-channels"), _search("playl")])
+    body = _el(out, "mappings-pane-body")
+
+    assert "Playlist" in body and "Podcast" not in body
+    assert '<span class="badge bg-secondary-lt">D</span>' in body  # Kategorie passt -> alle Kanäle sichtbar
+
+
+# ── Escaping ─────────────────────────────────────────────────────────────
+
+
+@needs_node
+def test_api_texts_are_escaped_everywhere(tmp_path):
+    evil = "<img src=x onerror=alert(1)>"
+    responses = {
+        "GET /api/v1/admin/mappings/channel-genre": {"status": 200, "body": {
+            "mapping_id": "channel-genre", "count": 1,
+            "entries": [{"key": evil, "primary": evil, "secondary": [evil], "description": evil}]}},
+        "GET /api/v1/admin/mappings/genre-filters": {"status": 200, "body": {
+            "mapping_id": "genre-filters", "count": 1, "values": [evil], "etag": "e", "warnings": [evil]}},
+    }
+    out = _run(tmp_path, responses=responses, ops=[_search("img")])
+    assert "<img" not in _el(out, "mappings-pane-body")
+    out = _run(tmp_path, responses=responses, ops=[_tab("genre-filters")])
+    assert "<img" not in _el(out, "mappings-pane-body")
+    assert "&lt;img src=x onerror=alert(1)&gt;" in _el(out, "mappings-pane-body")
 
 
 # ── Zustände ─────────────────────────────────────────────────────────────
@@ -188,35 +332,35 @@ def test_list_warnings_are_shown_and_escaped(tmp_path):
 def test_empty_mapping_shows_empty_state(tmp_path):
     responses = {"GET /api/v1/admin/mappings/genre-overrides": {"status": 200, "body": {
         "mapping_id": "genre-overrides", "count": 0, "entries": []}}}
-    html = _body(_run(tmp_path, responses=responses), "genre-overrides")
+    out = _run(tmp_path, responses=responses, ops=[_tab("genre-overrides")])
 
-    assert "Noch keine Einträge" in html
+    assert "Noch keine Einträge" in _el(out, "mappings-pane-body")
 
 
 @needs_node
-def test_unavailable_mapping_shows_error_with_retry_only_for_that_card(tmp_path):
+def test_unavailable_mapping_shows_error_only_for_that_tab_and_tile(tmp_path):
     responses = {"GET /api/v1/admin/mappings/genre-aliases": {"status": 503, "body": {
         "error": {"code": "MAPPING_UNAVAILABLE", "message": "genre_aliases.yaml existiert nicht."}}}}
-    out = _run(tmp_path, responses=responses)
+    out = _run(tmp_path, responses=responses, ops=[_tab("genre-aliases")])
 
-    failed = _body(out, "genre-aliases")
-    assert "Genre-Aliase nicht erreichbar: genre_aliases.yaml existiert nicht." in failed
-    assert "Erneut versuchen" in failed
-    assert "Erneut versuchen" not in _body(out, "channel-genre")
-    assert ">2<" in _body(out, "channel-genre")
+    body = _el(out, "mappings-pane-body")
+    assert "Genre-Aliase nicht erreichbar: genre_aliases.yaml existiert nicht." in body
+    assert "Erneut versuchen" in body
+    tiles = _el(out, "mappings-tiles")
+    assert "nicht erreichbar" in tiles and "1.234" in tiles  # andere Kacheln unberührt
 
 
 @needs_node
-def test_retry_button_reloads_card(tmp_path):
+def test_reload_button_reloads_all_and_recovers_failed_type(tmp_path):
     responses = {"GET /api/v1/admin/mappings/genre-aliases": [
         {"status": 503, "body": {"error": {"message": "kurz weg"}}},
-        {"status": 200, "body": {"mapping_id": "genre-aliases", "count": 1, "entries": [{"key": "a"}]}},
+        {"status": 200, "body": {"mapping_id": "genre-aliases", "count": 1, "entries": [{"key": "a", "canonical": "B"}]}},
     ]}
-    out = _run(tmp_path, responses=responses, ops=[{"op": "click", "id": "mappings-reload-btn"}])
+    out = _run(tmp_path, responses=responses, ops=[_tab("genre-aliases"), {"op": "click", "id": "mappings-reload-btn"}])
 
     assert _calls(out).count("GET /api/v1/admin/mappings/genre-aliases") == 2
-    assert ">1<" in _body(out, "genre-aliases")
-    assert "Erneut versuchen" not in _body(out, "genre-aliases")
+    assert "Erneut versuchen" not in _el(out, "mappings-pane-body")
+    assert "<td class=\"text-break\">a</td>" in _el(out, "mappings-pane-body")
 
 
 @needs_node
@@ -225,21 +369,29 @@ def test_forbidden_shows_no_permission_without_retry(tmp_path):
                  for m in _TYPES}
     out = _run(tmp_path, responses=responses)
 
-    for mapping_id in _TYPES:
-        html = _body(out, mapping_id)
-        assert "Keine Berechtigung" in html and "Erneut versuchen" not in html
+    body = _el(out, "mappings-pane-body")
+    assert "Keine Berechtigung" in body and "Erneut versuchen" not in body
 
 
 @needs_node
 def test_network_failure_is_retryable(tmp_path):
-    responses = {"GET /api/v1/admin/mappings/genre-filters": {"network": True}}
-    html = _body(_run(tmp_path, responses=responses), "genre-filters")
+    responses = {"GET /api/v1/admin/mappings/channel-genre": {"network": True}}
+    body = _el(_run(tmp_path, responses=responses), "mappings-pane-body")
 
-    assert "Genre-Filter nicht erreichbar" in html and "Erneut versuchen" in html
+    assert "Channel-Genre nicht erreichbar" in body and "Erneut versuchen" in body
 
 
 @needs_node
-def test_not_logged_in_shows_login_view_and_loads_nothing(tmp_path):
+def test_not_logged_in_loads_nothing(tmp_path):
     out = _run(tmp_path, responses={"GET /api/v1/auth/whoami": {"status": 401, "body": {}}})
 
     assert not any("/admin/mappings/" in c for c in _calls(out))
+
+
+@needs_node
+def test_new_search_returns_to_first_page_even_with_many_hits(tmp_path):
+    # 100 Treffer -> zwei Seiten; von Seite 2 aus zu suchen muss auf Seite 1 springen.
+    out = _run(tmp_path, ops=[_tab("genre-aliases"), _page(2), _search("alias 0")])
+
+    assert "alias 000" in _el(out, "mappings-pane-body")
+    assert "1–50 von 100" in _el(out, "mappings-pane-foot")

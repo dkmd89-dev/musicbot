@@ -1005,3 +1005,11 @@ details[open] > .cc-summary::after { transform: rotate(-135deg); }
 /* Logger-Umbau: Level-Badge mit fester Breite, damit die Spalten ruhig stehen. */
 .cc-logger-level { min-width: 4.5rem; text-align: center; }
 .logger-module-item.active .badge { background: rgba(255, 255, 255, 0.22) !important; color: #fff !important; }
+
+/* Mapping-Administration: Kacheln sind Tabs (Tabler kennt keine klickbare Karte
+   mit aktivem Zustand); lange Chip-Listen (z. B. 600 Filter) scrollen in der Karte,
+   damit die Seite nicht mitwächst; Prioritätsnummer der Spezialkanal-Kategorien. */
+.cc-mapping-tile { border: 1px solid var(--tblr-border-color); cursor: pointer; }
+.cc-mapping-tile.active { border-color: var(--tblr-primary); box-shadow: 0 0 0 1px var(--tblr-primary) inset; }
+.cc-mapping-scroll { max-height: 60vh; overflow: auto; }
+.cc-mapping-prio { width: 1.75rem; height: 1.75rem; }
