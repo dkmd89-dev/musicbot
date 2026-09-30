@@ -1027,3 +1027,8 @@ details[open] > .cc-summary::after { transform: rotate(-135deg); }
 .cc-mapping-diff-add { color: var(--tblr-green); }
 .cc-mapping-diff-del { color: var(--tblr-red); }
 .cc-mapping-diff-mod { color: var(--tblr-yellow); }
+
+/* Mapping-Editor: Chips mit Entfernen-Kreuz. Die ältere .badge-Regel weiter oben
+   macht Badges zu Blöcken, dann stünde das Kreuz unter dem Text. */
+.cc-mapping-chip { display: inline-flex; align-items: center; }
+.cc-mapping-chip .btn-close { flex: none; width: 0.5rem; height: 0.5rem; padding: 0.3rem; }
