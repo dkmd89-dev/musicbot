@@ -32,6 +32,7 @@ from services.downloader.download_artifact_cleanup import (
 )
 from services.logger_admin import write_runtime_snapshot
 from services import bot_runtime_snapshot
+from services import mapping_runtime_state
 
 # Import der RichMenuSystem Komponenten
 from handlers.menu.rich_menu_handler import RichMenuHandler
@@ -65,6 +66,7 @@ class ExtendedBot:
         # Center, siehe _periodic_runtime_snapshot().
         self._runtime_snapshot_task = None
         self._bot_started_at = datetime.now(timezone.utc).isoformat()
+        self._record_mapping_files_at_start()
 
         # Family-Challenge-Scheduler (Phase F4, Family Hub): braucht die
         # echte Bot-Instanz (self.application.bot), erst nach Application-
@@ -219,6 +221,21 @@ class ExtendedBot:
             await self.application.bot.set_my_commands(commands)
             self.logger.info("✅ Bot-Befehle im Menü gesetzt")
 
+    def _record_mapping_files_at_start(self) -> None:
+        """B3: merkt sich die Hashes der im Control Center bearbeitbaren
+        Mapping-Dateien beim Start. Die Runtime lädt diese Dateien beim Start
+        und hat keinen Reload-Pfad; das Control Center vergleicht die Hashes
+        aus dem Snapshot mit dem aktuellen Datei-Stand und zeigt so ehrlich,
+        ob eine gespeicherte Änderung schon angewendet ist. Observability,
+        nicht Lifecycle-kritisch — Fehler nur loggen."""
+        try:
+            self._mapping_hashes_at_start = mapping_runtime_state.hash_mapping_files(
+                Path(self.config.GENRE_MAPPING_DIR)
+            )
+        except Exception as e:
+            self._mapping_hashes_at_start = None
+            self.logger.warning(f"⚠️ Mapping-Dateistand konnte nicht ermittelt werden: {e}")
+
     def _collect_runtime_snapshot_sections(self) -> dict:
         """E1: sammelt die Laufzeit-Abschnitte (nur lesend). Jeder
         Abschnitt einzeln abgesichert - ein Fehler in einem Abschnitt
@@ -235,6 +252,11 @@ class ExtendedBot:
                 sections["duplicates"] = detector.snapshot_section()
             except Exception as e:
                 self.logger.warning(f"⚠️ Snapshot-Abschnitt 'duplicates' fehlgeschlagen: {e}")
+        mapping_hashes = getattr(self, "_mapping_hashes_at_start", None)
+        if mapping_hashes is not None:
+            sections[mapping_runtime_state.SECTION_NAME] = mapping_runtime_state.build_snapshot_section(
+                mapping_hashes, self._bot_started_at
+            )
         return sections
 
     async def _write_runtime_snapshot(self) -> None:

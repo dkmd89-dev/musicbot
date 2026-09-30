@@ -122,6 +122,8 @@ def _base(**over):
         "PUT /api/v1/admin/mappings/genre-aliases": {"status": 200, "body": {
             "written": True, "unchanged": False, "new_etag": "ETAG2", "bot_reload_required": True,
             "message": "Mapping gespeichert. Die Änderung wirkt nach Bot-Neustart."}},
+        "GET /api/v1/admin/mappings/status": {"status": 200, "body": {"snapshot_status": "available", "bot_running": True, "statuses": [
+            {"mapping_id": "genre-aliases", "filename": "genre_aliases.yaml", "state": "applied", "message": "ok"}]}},
     }
     r.update(over)
     return r
@@ -667,3 +669,17 @@ def test_list_editors_never_write_before_confirmation_and_versions_work_for_list
     out = _run(tmp_path, responses={f"GET /api/v1/admin/mappings/{_F}/backups": versions}, ops=[_ev("mappings-root", "click", {"action": "versions", "type": _F})])
     assert f"GET /api/v1/admin/mappings/{_F}/backups" in _calls(out)
     assert "Noch keine Versionen" in _el(out, "mappings-editor-body")["html"]
+
+
+@needs_node
+def test_runtime_status_is_reloaded_after_save_and_after_restore(tmp_path):
+    out = _run(tmp_path, ops=[_edit(), _save()])
+    assert _calls(out).count("GET /api/v1/admin/mappings/status") == 2      # Seite + nach Speichern
+
+    vid = "20260930T101500_000001Z"
+    responses = {"GET /api/v1/admin/mappings/genre-aliases/backups": _VERSIONS,
+                 f"POST /api/v1/admin/mappings/genre-aliases/backups/{vid}/preview": _RESTORE_PREVIEW,
+                 f"POST /api/v1/admin/mappings/genre-aliases/backups/{vid}/restore": _RESTORE}
+    out = _run(tmp_path, responses=responses, ops=[_versions(), _ev("mappings-editor", "click", {"action": "ver-preview", "version": vid}),
+                                                    _ev("mappings-editor", "click", {"action": "ver-restore"})])
+    assert _calls(out).count("GET /api/v1/admin/mappings/status") == 2      # Seite + nach Restore

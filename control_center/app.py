@@ -45,6 +45,7 @@ from .routers import (
     logs,
     mapping_admin,
     mapping_backups,
+    mapping_status,
     metadata,
     metadata_actions,
     navidrome,
@@ -124,6 +125,8 @@ def create_app() -> FastAPI:
     app.include_router(admin_duplicates.router)
     app.include_router(admin_operations.router)
     app.include_router(admin_runtime.router)
+    # Vor mapping_admin: "/mappings/status" darf nicht als {mapping_id} gelesen werden.
+    app.include_router(mapping_status.router)
     app.include_router(mapping_admin.router)
     app.include_router(mapping_backups.router)
     app.include_router(jobs.router)

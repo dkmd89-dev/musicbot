@@ -65,14 +65,80 @@
     },
   ];
 
-  // Zustand je Typ: geladene Antwort, Fehler, Suchtext, Seite.
-  const state = { active: MAPPING_TYPES[0].id, byId: {} };
+  // Zustand je Typ: geladene Antwort, Fehler, Suchtext, Seite. `status` ist der
+  // Runtime-Status ("gespeichert" vs. "vom Bot angewendet") aus GET .../mappings/status.
+  const state = { active: MAPPING_TYPES[0].id, byId: {}, status: null };
   MAPPING_TYPES.forEach((t) => { state.byId[t.id] = { body: null, error: null, loading: true, query: "", page: 1 }; });
 
   const typeById = (id) => MAPPING_TYPES.find((t) => t.id === id);
   const fmt = (n) => Number(n).toLocaleString("de-DE");
 
   // ── Kacheln ────────────────────────────────────────────────────────────
+
+  // ── Runtime-Status ─────────────────────────────────────────────────────
+
+  const RUNTIME_STATES = {
+    applied: { kind: "ok", label: "Angewendet" },
+    pending_restart: { kind: "warn", label: "Neustart nötig" },
+    unknown: { kind: "neutral", label: "Runtime unbekannt" },
+    unavailable: { kind: "error", label: "Datei fehlt" },
+  };
+
+  function runtimeStatusOf(id) {
+    return state.status && state.status.byId ? state.status.byId[id] || null : null;
+  }
+
+  // Läuft der Bot nicht (veralteter/fehlender Snapshot), gilt der Vergleich nur für den letzten Lauf:
+  // kein grünes "Angewendet", sondern ein neutraler Hinweis.
+  function runtimeDef(st) {
+    if (state.status && state.status.bot_running === false && (st.state === "applied" || st.state === "pending_restart")) {
+      return { kind: "neutral", label: "Bot läuft nicht" };
+    }
+    return RUNTIME_STATES[st.state] || RUNTIME_STATES.unknown;
+  }
+
+  function runtimeBadgeHtml(id) {
+    const st = runtimeStatusOf(id);
+    if (!st) return "";
+    const def = runtimeDef(st);
+    return `<div class="mt-1" title="${_escapeHtml(st.message)}">${ccStatusBadge(def.kind, def.label)}</div>`;
+  }
+
+  function renderRuntimeStatus() {
+    const el = document.getElementById("mappings-pane-status");
+    if (!el) return;
+    const st = runtimeStatusOf(state.active);
+    if (!st) {
+      const failed = state.status && state.status.error;
+      el.hidden = !failed;
+      el.innerHTML = failed
+        ? `<div class="text-secondary small">${ccIcon("info", "icon-sm me-1")}Der Runtime-Status ist gerade nicht abrufbar.</div>` : "";
+      return;
+    }
+    const def = runtimeDef(st);
+    const restart = st.state === "pending_restart"
+      ? ` <a class="ms-1" href="${_escapeHtml(apiUrl("/admin"))}">Bot neu starten (Administration)</a>` : "";
+    const started = state.status.bot_started_at
+      ? `<span class="text-secondary small ms-2">Bot gestartet ${_escapeHtml(new Date(state.status.bot_started_at).toLocaleString("de-DE"))}</span>` : "";
+    el.hidden = false;
+    el.innerHTML = `<div class="d-flex flex-wrap align-items-center gap-1">${ccStatusBadge(def.kind, def.label)}
+      <span class="text-secondary small ms-1 text-break">${_escapeHtml(st.message)}</span>${restart}${started}</div>`
+      + (st.note ? `<div class="text-secondary small mt-1">${ccIcon("info", "icon-sm me-1")}${_escapeHtml(st.note)}</div>` : "");
+  }
+
+  async function loadStatus() {
+    try {
+      const body = (await ccApi("GET", "/api/v1/admin/mappings/status")) || {};
+      const byId = {};
+      (body.statuses || []).forEach((entry) => { byId[entry.mapping_id] = entry; });
+      state.status = { byId, snapshot_status: body.snapshot_status, bot_running: !!body.bot_running, bot_started_at: body.bot_started_at || null };
+    } catch (err) {
+      if (err && err.status === 401) return;
+      state.status = { byId: {}, error: true };
+    }
+    renderTiles();
+    renderRuntimeStatus();
+  }
 
   function tileHtml(type) {
     const st = state.byId[type.id];
@@ -95,6 +161,7 @@
               <span class="subheader mb-0">${_escapeHtml(type.title)}</span>
             </div>
             <div class="d-flex align-items-baseline gap-2">${value}${badge}</div>
+            ${runtimeBadgeHtml(type.id)}
           </div>
         </button>
       </div>`;
@@ -245,6 +312,7 @@
   function renderAll() {
     renderTiles();
     renderHead();
+    renderRuntimeStatus();
     renderBody();
   }
 
@@ -264,7 +332,7 @@
   }
 
   function loadAll() {
-    return Promise.all(MAPPING_TYPES.map(loadType));
+    return Promise.all([...MAPPING_TYPES.map(loadType), loadStatus()]);
   }
 
   // ── Ereignisse (delegiert) ─────────────────────────────────────────────
@@ -293,7 +361,8 @@
 
   // Schnittstelle fuer mappings_editor.js: nach Speichern/Restore den Bestand neu laden.
   window.ccMappingsPage = {
-    reloadType(id) { const type = typeById(id); return type ? loadType(type) : Promise.resolve(); },
+    // Nach Speichern/Restore: Bestand UND Runtime-Status neu laden (die Datei hat sich geändert).
+    reloadType(id) { const type = typeById(id); return type ? Promise.all([loadType(type), loadStatus()]) : Promise.resolve(); },
     typeInfo(id) { const type = typeById(id); return type ? { id: type.id, title: type.title, unit: type.unit, editable: !!type.editable, listEditable: !!type.listEditable } : null; },
   };
 

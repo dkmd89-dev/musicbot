@@ -1552,6 +1552,11 @@ snapshot_before_write = _snapshot_before_write
 write_mapping_text = _atomic_write_text
 
 
+def mapping_file_names() -> Dict[str, str]:
+    """Allowlist: mapping_id -> Dateiname der im Control Center bearbeitbaren Dateien."""
+    return {d.mapping_id: d.filename for d in _MAPPING_DESCRIPTORS.values()}
+
+
 def get_current_etag(mapping_id: str, mapping_dir: Path) -> str:
     """Etag des aktuellen Mapping-Stands, so wie ihn auch GET/Preview liefern."""
     descriptor = _get_descriptor(mapping_id)
