@@ -5,7 +5,9 @@
 // ausschließlich im Backend (services/mapping_admin.py); diese Seite zeigt an,
 // was GET /api/v1/admin/mappings/{mapping_id} liefert. Suche und Paging laufen
 // clientseitig, weil die API die komplette Liste ohne Paginierung liefert.
-// Bearbeiten folgt in den nächsten Ausbaustufen — hier bewusst keine Schaltfläche dafür.
+// Bearbeiten (Channel-Genre, Aliase, Overrides) und die Versionen liegen in
+// mappings_editor.js; diese Datei liefert die Aktionsknöpfe (data-action) und
+// stellt dem Editor window.ccMappingsPage.reloadType() bereit.
 (function () {
   "use strict";
 
@@ -17,7 +19,7 @@
   // `rows`/`view` bestimmen die Darstellung im Tab.
   const MAPPING_TYPES = [
     {
-      id: "channel-genre", title: "Channel-Genre", icon: "tag", unit: "Kanäle", kind: "table",
+      id: "channel-genre", title: "Channel-Genre", icon: "tag", unit: "Kanäle", kind: "table", editable: true,
       searchLabel: "Kanäle suchen",
       count: (b) => (b.entries || []).length,
       items: (b) => b.entries || [],
@@ -27,7 +29,7 @@
         + `<td>${chips(e.secondary)}</td><td class="d-none d-md-table-cell text-secondary">${_escapeHtml(e.description || "")}</td>`,
     },
     {
-      id: "genre-aliases", title: "Genre-Aliase", icon: "link", unit: "Aliase", kind: "table",
+      id: "genre-aliases", title: "Genre-Aliase", icon: "link", unit: "Aliase", kind: "table", editable: true,
       searchLabel: "Aliase suchen",
       count: (b) => (b.entries || []).length,
       items: (b) => b.entries || [],
@@ -36,7 +38,7 @@
       row: (e) => `<td class="text-break">${_escapeHtml(e.key)}</td><td>${_escapeHtml(e.canonical)}</td>`,
     },
     {
-      id: "genre-overrides", title: "Genre-Overrides", icon: "adjustments", unit: "Overrides", kind: "table",
+      id: "genre-overrides", title: "Genre-Overrides", icon: "adjustments", unit: "Overrides", kind: "table", editable: true,
       searchLabel: "Overrides suchen",
       count: (b) => (b.entries || []).length,
       items: (b) => b.entries || [],
@@ -120,6 +122,10 @@
         <input type="search" class="form-control form-control-sm" data-action="search"
                placeholder="${_escapeHtml(type.searchLabel)}" aria-label="${_escapeHtml(type.searchLabel)}"
                value="${_escapeHtml(st.query)}">
+      </div>
+      <div class="btn-list">
+        <button type="button" class="btn btn-sm" data-action="versions" data-type="${_escapeHtml(type.id)}">${ccIcon("history", "me-1")}Versionen</button>
+        ${type.editable ? `<button type="button" class="btn btn-sm btn-primary" data-action="new" data-type="${_escapeHtml(type.id)}">${ccIcon("plus", "me-1")}Neuer Eintrag</button>` : ""}
       </div>`;
   }
 
@@ -141,6 +147,13 @@
     const pages = Math.max(1, Math.ceil(found.length / PAGE_SIZE));
     st.page = Math.min(Math.max(1, st.page), pages);
     return { pages, slice: found.slice((st.page - 1) * PAGE_SIZE, st.page * PAGE_SIZE) };
+  }
+
+  function editCell(type, entry) {
+    const label = `${entry.key} bearbeiten`;
+    return `<td><button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" data-action="edit"
+      data-type="${_escapeHtml(type.id)}" data-key="${_escapeHtml(entry.key)}"
+      title="${_escapeHtml(label)}" aria-label="${_escapeHtml(label)}">${ccIcon("edit")}</button></td>`;
   }
 
   function renderBody() {
@@ -167,8 +180,8 @@
         return;
       }
       body.innerHTML = warningsHtml(st.body.warnings)
-        + `<div class="table-responsive"><table class="table card-table table-vcenter"><thead><tr>${type.head}</tr></thead><tbody>`
-        + slice.map((e) => `<tr>${type.row(e)}</tr>`).join("") + "</tbody></table></div>";
+        + `<div class="table-responsive"><table class="table card-table table-vcenter"><thead><tr>${type.head}<th class="w-1"></th></tr></thead><tbody>`
+        + slice.map((e) => `<tr>${type.row(e)}${editCell(type, e)}</tr>`).join("") + "</tbody></table></div>";
       renderFoot(found.length, pages, st);
     } else if (type.kind === "chips") {
       const found = filtered(type, st);
@@ -276,6 +289,12 @@
     st.page = 1;
     renderBody();
   }
+
+  // Schnittstelle fuer mappings_editor.js: nach Speichern/Restore den Bestand neu laden.
+  window.ccMappingsPage = {
+    reloadType(id) { const type = typeById(id); return type ? loadType(type) : Promise.resolve(); },
+    typeInfo(id) { const type = typeById(id); return type ? { id: type.id, title: type.title, unit: type.unit, editable: !!type.editable } : null; },
+  };
 
   function initPage() {
     checkAuth().then((who) => {

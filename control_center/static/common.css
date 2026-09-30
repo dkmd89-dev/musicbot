@@ -1013,3 +1013,17 @@ details[open] > .cc-summary::after { transform: rotate(-135deg); }
 .cc-mapping-tile.active { border-color: var(--tblr-primary); box-shadow: 0 0 0 1px var(--tblr-primary) inset; }
 .cc-mapping-scroll { max-height: 60vh; overflow: auto; }
 .cc-mapping-prio { width: 1.75rem; height: 1.75rem; }
+
+/* Mapping-Editor (Offcanvas): breites Seitenpanel, auf dem Handy volle Breite;
+   die Übernehmen-Leiste bleibt beim Scrollen sichtbar; Vorschau/Diff mit
+   Statusfarben aus Standard Abschnitt 2 (Farbe nie allein, immer mit Icon). */
+.cc-mapping-editor { --tblr-offcanvas-width: 680px; }
+@media (max-width: 700px) { .cc-mapping-editor { --tblr-offcanvas-width: 100vw; } }
+.cc-mapping-footer {
+  position: sticky; bottom: 0; z-index: 2;
+  background: var(--tblr-bg-surface); border-top: 1px solid var(--tblr-border-color);
+}
+.cc-mapping-diff { border: 1px solid var(--tblr-border-color); border-radius: 8px; }
+.cc-mapping-diff-add { color: var(--tblr-green); }
+.cc-mapping-diff-del { color: var(--tblr-red); }
+.cc-mapping-diff-mod { color: var(--tblr-yellow); }
