@@ -95,3 +95,22 @@ Zusammenführungsrisiko: der **Fuzzy-Match ≥ 85 auf `artist_map`** (inkl. gele
 3. **AR-2:** Quelle für gelernte Einträge ehrlich benennen (neues Label) — ändert gepinnte Tests, braucht Freigabe.
 4. **Candidate/Accept/Reject (Phase D):** neues Feature, kein Bestandsschutz-Fall; erst nach Entscheidung, ob `LEARNED` weiterhin automatisch aktiv wird.
 5. **known_artists (Phase E):** Hybrid-Status entscheiden (R3 im Mapping-Plan).
+
+## 11. AR-5 — `GenreMapper.reload()` (Analyse, Entscheidung A: DEFER)
+
+**Implementierung** (`utils/genre_map.py`): `reload()` leert Caches und alle Maps **in place** (`channel_map`, `artist_map`, `learned_artist_keys`, `hierarchy`, `overrides`, `rules`, `genre_aliases`) und ruft `_load_all_mappings()`. Fehler: das Verzeichnis kommt aus `_find_mapping_dir("mapping")` (hartcodiert) statt aus dem Konstruktor-`mapping_dir`; die Instanz merkt sich ihr Verzeichnis nicht. Empirisch (tmp-Verzeichnis mit 1 Key): vor `reload()` 1 Key, danach 163 Keys aus dem Repo-`mapping/`. Zusätzlich: nicht thread-sicher (`clear()` vor Neuaufbau, `self._lock` ungenutzt, im Bot laufen bis zu 3 parallele Downloads) und nur ein Teilreload (`GenreProcessor` berechnet `GENRE_PRIORITY`, `IGNORE_SECONDARY`, `GENRE_NORMALIZATION` einmalig im `__init__`; `ArtistIdentityResolver` hat eine eigene `refresh()`).
+
+**Caller:** produktiv **keine**; Tests **keine** (`reload()` ist nirgends getestet); nur ein Kommentar in `services/library_repair/genre_revalidation.py:102` begründet, warum er es nicht aufruft. Ungenutzter Code.
+
+**CURRENT Runtime:** `GenreMapper` ist `SingletonMixin` und lädt `artist_genre.yaml`, `auto_learned_genre.json` (nur nicht-`OBSERVED`, ohne Überschreiben manueller Keys), Channel-, Hierarchie-, Override-, Alias- und Regel-Dateien **einmal in `_do_init`**. Änderungen (Control Center, Telegram, CLI, Auto-Learn) wirken erst nach Bot-Neustart; `clear_caches()` nach `learn_genre()` lädt nichts nach. Das Control-Center-Prozess hält eine eigene, ebenso statische Singleton-Instanz. Der Vertrag ist dokumentiert und wird ehrlich gemeldet (`bot_reload_required`, `pending_restart`).
+
+| | Zustand |
+|---|---|
+| CURRENT | Neustart = einziger Mechanismus, dokumentiert und in UI/Snapshot abgebildet |
+| TARGET-Option 1 | bleibt so (empfohlen) |
+| TARGET-Option 2 | Runtime-Reload ohne Neustart |
+| GAP zu Option 2 | Instanz merkt sich `mapping_dir`; Reload atomar (neue Strukturen bauen, dann tauschen) statt `clear()`; `GenreProcessor`-Ableitungen mitziehen; Auslöser/Signal zwischen Control-Center- und Bot-Prozess (gibt es nicht); UI-Semantik von `pending_restart` neu definieren; Auto-Learn-Wirkung (`LEARNED` sofort aktiv) neu bewerten |
+
+**Entscheidung A — DEFER:** `reload()` ist fehlerhaft, hat aber keinen produktiven Caller; Neustart bleibt der bewusste Mechanismus. Kein Code geändert, kein Caller ergänzt. Option 2 wäre eine eigene Architekturphase mit UI-/Prozess-Vertrag, nicht ein Fix an dieser Methode.
+
+**Minimale Testabdeckung, falls `reload()` je genutzt wird:** (1) Reload lädt aus dem Konstruktor-Verzeichnis, nicht aus `"mapping"`; (2) geänderte manuelle Datei wird sichtbar; (3) `learned_artist_keys` konsistent nach Reload; (4) paralleler Lesezugriff sieht nie eine leere Map.
