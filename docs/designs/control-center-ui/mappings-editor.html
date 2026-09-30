@@ -1,0 +1,372 @@
+<!doctype html>
+<!--
+  Mappings 5.1b — Entwurf "Mapping-Editor" (Control Center), 2026-09-30.
+  Reines Mockup, KEINE Produktionsdatei. Statische Beispieldaten, etwas
+  Vanilla-JS zum Umschalten der Ansichten. Grundlage: docs/audits/
+  MAPPING_COMPLETION_PLAN_2026-09-30.md (Abschnitt 3 und 10) und
+  docs/CONTROL_CENTER_UI_STANDARD.md.
+  Nur bestehende Endpunkte: GET Liste, POST .../preview, PUT mit etag.
+  Bewusst NICHT enthalten (kein Backend-Vertrag): Löschen bei Channel-Genre/
+  Aliase/Overrides, Server-Paginierung, Auto-Learned-Daten.
+-->
+<html lang="de" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mappings · Editor (Entwurf)</title>
+  <script>
+    try { if (localStorage.getItem("cc-theme") === "light") document.documentElement.setAttribute("data-bs-theme", "light"); } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="../../../control_center/static/vendor/tabler/css/tabler.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.5.1/dist/css/tabler.min.css">
+  <style>
+    :root, [data-bs-theme] {
+      --tblr-primary: #0ca678; --tblr-primary-rgb: 12, 166, 120; --tblr-primary-fg: #fff;
+      --tblr-link-color: #0ca678; --tblr-link-color-rgb: 12, 166, 120;
+    }
+    .btn-primary { --tblr-btn-bg: #0ca678; --tblr-btn-border-color: #0ca678; --tblr-btn-hover-bg: #0a8f67; --tblr-btn-hover-border-color: #0a8f67; }
+    .icon { stroke: currentColor; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    body { background: var(--tblr-body-bg); }
+    .mock-bar { position: sticky; top: 0; z-index: 1400; background: var(--tblr-bg-surface); border-bottom: 1px solid var(--tblr-border-color); }
+    .cc-mapping-editor { --tblr-offcanvas-width: 680px; }
+    @media (max-width: 700px) { .cc-mapping-editor { --tblr-offcanvas-width: 100vw; } }
+    .cc-mapping-editor.show-static { visibility: visible; transform: none; z-index: 1050; top: var(--mock-bar-h, 45px); height: calc(100% - var(--mock-bar-h, 45px)); }
+    .cc-mapping-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1040; }
+    .cc-mapping-footer { position: sticky; bottom: 0; background: var(--tblr-bg-surface); border-top: 1px solid var(--tblr-border-color); }
+    .cc-mapping-scroll { max-height: 240px; overflow: auto; }
+    .cc-mapping-diff-add { color: var(--tblr-green); }
+    .cc-mapping-diff-del { color: var(--tblr-red); text-decoration: line-through; }
+    .cc-mapping-diff-mod { color: var(--tblr-yellow); }
+    .cc-mapping-diff { border: 1px solid var(--tblr-border-color); border-radius: 8px; }
+    .cc-mapping-prio { width: 1.75rem; height: 1.75rem; }
+    .mock-modal { z-index: 1200; }
+    .mock-note { font-size: .75rem; }
+  </style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" class="d-none" aria-hidden="true">
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-tag" viewBox="0 0 24 24"><path d="M6.5 7.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M3 6v5.172a2 2 0 0 0 .586 1.414l7.71 7.71a2.41 2.41 0 0 0 3.408 0l5.592 -5.592a2.41 2.41 0 0 0 0 -3.408l-7.71 -7.71a2 2 0 0 0 -1.414 -.586h-5.172a3 3 0 0 0 -3 3z"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-edit" viewBox="0 0 24 24"><path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1"/><path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.415 -8.415z"/><path d="M16 5l3 3"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-plus" viewBox="0 0 24 24"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-minus" viewBox="0 0 24 24"><path d="M5 12l14 0"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-x" viewBox="0 0 24 24"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5l10 -10"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-alert" viewBox="0 0 24 24"><path d="M12 9v4"/><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z"/><path d="M12 16h.01"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-info" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M12 9h.01"/><path d="M11 12h1v4h1"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-search" viewBox="0 0 24 24"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 5l0 14"/><path d="M18 11l-6 -6"/><path d="M6 11l6 -6"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5l0 14"/><path d="M18 13l-6 6"/><path d="M6 13l6 6"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-history" viewBox="0 0 24 24"><path d="M12 8l0 4l2 2"/><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-lock" viewBox="0 0 24 24"><path d="M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-6z"/><path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0"/><path d="M8 11v-4a4 4 0 1 1 8 0v4"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-inbox" viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z"/><path d="M4 13h3l3 3h4l3 -3h3"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-link" viewBox="0 0 24 24"><path d="M9 15l6 -6"/><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464"/><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-adjustments" viewBox="0 0 24 24"><path d="M4 10a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M6 4v4"/><path d="M6 12v8"/><path d="M10 16a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M12 4v10"/><path d="M12 18v2"/><path d="M16 7a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M18 4v1"/><path d="M18 9v11"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-filter" viewBox="0 0 24 24"><path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227z"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-microphone" viewBox="0 0 24 24"><path d="M9 5a3 3 0 0 1 3 -3a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3a3 3 0 0 1 -3 -3z"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M8 21l8 0"/><path d="M12 17l0 4"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6l6 -6"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-home" viewBox="0 0 24 24"><path d="M5 12l-2 0l9 -9l9 9l-2 0"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7"/><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-settings" viewBox="0 0 24 24"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .827 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.827 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.827 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .827 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-music" viewBox="0 0 24 24"><path d="M3 17a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/><path d="M13 17a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/><path d="M9 17v-13h10v13"/><path d="M9 8h10"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-health" viewBox="0 0 24 24"><path d="M19.5 13.572l-7.5 7.428l-2.896 -2.868m-6.117 -8.104a5 5 0 0 1 9.013 -3.022a5 5 0 1 1 7.5 6.572"/><path d="M3 13h2l2 3l2 -6l1 3h3"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-download" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-books" viewBox="0 0 24 24"><path d="M5 5a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"/><path d="M9 5a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z"/><path d="M5 8h4"/><path d="M9 16h4"/><path d="M13.803 4.56l2.184 -.53c.562 -.135 1.133 .19 1.282 .732l3.695 13.418a1.02 1.02 0 0 1 -.634 1.219l-.133 .041l-2.184 .53c-.562 .135 -1.133 -.19 -1.282 -.732l-3.695 -13.418a1.02 1.02 0 0 1 .634 -1.219l.133 -.041z"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-chart" viewBox="0 0 24 24"><path d="M3 13a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/><path d="M15 9a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/><path d="M9 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/><path d="M4 20h14"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-headphones" viewBox="0 0 24 24"><path d="M4 15a2 2 0 0 1 2 -2h1a2 2 0 0 1 2 2v3a2 2 0 0 1 -2 2h-1a2 2 0 0 1 -2 -2l0 -3"/><path d="M15 15a2 2 0 0 1 2 -2h1a2 2 0 0 1 2 2v3a2 2 0 0 1 -2 2h-1a2 2 0 0 1 -2 -2l0 -3"/><path d="M4 15v-3a8 8 0 0 1 16 0v3"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-logs" viewBox="0 0 24 24"><path d="M5 7l5 5l-5 5"/><path d="M12 19l7 0"/></symbol>
+  <symbol fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="i-menu" viewBox="0 0 24 24"><path d="M4 6l16 0"/><path d="M4 12l16 0"/><path d="M4 18l16 0"/></symbol>
+</svg>
+
+<!-- Mockup-Steuerung (nicht Teil der Seite) -->
+<div class="mock-bar py-2">
+  <div class="container-xl d-flex flex-wrap gap-2 align-items-center">
+    <span class="text-secondary mock-note me-2">Ansicht:</span>
+    <div class="btn-group flex-wrap" id="mock-views" role="group" aria-label="Mockup-Ansichten">
+      <button type="button" class="btn btn-sm active" data-view="aliases">Aliase</button>
+      <button type="button" class="btn btn-sm" data-view="overrides">Overrides (Warnung)</button>
+      <button type="button" class="btn btn-sm" data-view="channel">Channel-Genre</button>
+      <button type="button" class="btn btn-sm" data-view="filters">Filter</button>
+      <button type="button" class="btn btn-sm" data-view="special">Spezialkanäle</button>
+      <button type="button" class="btn btn-sm" data-view="conflict">409-Konflikt</button>
+      <button type="button" class="btn btn-sm" data-view="success">Erfolg (Toast)</button>
+      <button type="button" class="btn btn-sm" data-view="errors">Fehler</button>
+    </div>
+    <button type="button" class="btn btn-sm btn-ghost-secondary ms-auto" id="mock-theme"><svg class="icon me-1"><use href="#i-adjustments"/></svg>Hell/Dunkel</button>
+  </div>
+</div>
+
+<!-- Seite dahinter: Karten aus 5.1, jetzt mit "Bearbeiten" (kommt mit 5.2/5.3) -->
+<div class="page-body">
+  <div class="container-xl">
+    <div class="page-header d-print-none mb-3">
+      <div class="page-pretitle">Wartung</div>
+      <h2 class="page-title"><svg class="icon me-2 text-teal"><use href="#i-tag"/></svg>Mappings</h2>
+    </div>
+    <div class="row row-cards">
+      <div class="col-12 col-md-6 col-xl-4"><div class="card card-sm h-100"><div class="card-body">
+        <div class="row align-items-center g-3 mb-2"><div class="col-auto"><span class="avatar bg-teal-lt"><svg class="icon "><use href="#i-tag"/></svg></span></div>
+        <div class="col"><div class="subheader">Channel-Genre</div></div>
+        <div class="col-auto"><button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="Channel-Genre bearbeiten" aria-label="Channel-Genre bearbeiten"><svg class="icon "><use href="#i-edit"/></svg></button></div></div>
+        <div class="d-flex align-items-baseline gap-2"><span class="h1 mb-0">37</span><span class="text-secondary">Kanäle</span></div></div></div></div><div class="col-12 col-md-6 col-xl-4"><div class="card card-sm h-100"><div class="card-body">
+        <div class="row align-items-center g-3 mb-2"><div class="col-auto"><span class="avatar bg-teal-lt"><svg class="icon "><use href="#i-link"/></svg></span></div>
+        <div class="col"><div class="subheader">Genre-Aliase</div></div>
+        <div class="col-auto"><button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="Genre-Aliase bearbeiten" aria-label="Genre-Aliase bearbeiten"><svg class="icon "><use href="#i-edit"/></svg></button></div></div>
+        <div class="d-flex align-items-baseline gap-2"><span class="h1 mb-0">386</span><span class="text-secondary">Aliase</span></div></div></div></div><div class="col-12 col-md-6 col-xl-4"><div class="card card-sm h-100"><div class="card-body">
+        <div class="row align-items-center g-3 mb-2"><div class="col-auto"><span class="avatar bg-teal-lt"><svg class="icon "><use href="#i-adjustments"/></svg></span></div>
+        <div class="col"><div class="subheader">Genre-Overrides</div></div>
+        <div class="col-auto"><button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="Genre-Overrides bearbeiten" aria-label="Genre-Overrides bearbeiten"><svg class="icon "><use href="#i-edit"/></svg></button></div></div>
+        <div class="d-flex align-items-baseline gap-2"><span class="h1 mb-0">167</span><span class="text-secondary">Overrides</span></div></div></div></div><div class="col-12 col-md-6 col-xl-4"><div class="card card-sm h-100"><div class="card-body">
+        <div class="row align-items-center g-3 mb-2"><div class="col-auto"><span class="avatar bg-teal-lt"><svg class="icon "><use href="#i-filter"/></svg></span></div>
+        <div class="col"><div class="subheader">Genre-Filter</div></div>
+        <div class="col-auto"><button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="Genre-Filter bearbeiten" aria-label="Genre-Filter bearbeiten"><svg class="icon "><use href="#i-edit"/></svg></button></div></div>
+        <div class="d-flex align-items-baseline gap-2"><span class="h1 mb-0">600</span><span class="text-secondary">Filter</span></div></div></div></div><div class="col-12 col-md-6 col-xl-4"><div class="card card-sm h-100"><div class="card-body">
+        <div class="row align-items-center g-3 mb-2"><div class="col-auto"><span class="avatar bg-teal-lt"><svg class="icon "><use href="#i-microphone"/></svg></span></div>
+        <div class="col"><div class="subheader">Spezialkanäle</div></div>
+        <div class="col-auto"><button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="Spezialkanäle bearbeiten" aria-label="Spezialkanäle bearbeiten"><svg class="icon "><use href="#i-edit"/></svg></button></div></div>
+        <div class="d-flex align-items-baseline gap-2"><span class="h1 mb-0">3</span><span class="text-secondary">Kategorien</span></div></div></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="cc-mapping-backdrop" id="mock-backdrop"></div>
+
+<!-- Editor (Offcanvas, rechts) -->
+<aside class="offcanvas offcanvas-end cc-mapping-editor show-static" tabindex="-1" aria-labelledby="mock-title">
+  <div class="offcanvas-header">
+    <div>
+      <div class="text-secondary small" id="mock-sub">Mapping bearbeiten</div>
+      <h3 class="offcanvas-title" id="mock-title">Genre-Aliase</h3>
+    </div>
+    <button type="button" class="btn-close" aria-label="Schließen"></button>
+  </div>
+
+  <div class="offcanvas-body">
+
+    <!-- ═════ Aliase / Overrides: key-basiert (ein Eintrag = ein Preview = ein PUT, K1) ═════ -->
+    <section data-view="aliases overrides success conflict">
+      <div class="input-icon mb-2">
+        <span class="input-icon-addon"><svg class="icon "><use href="#i-search"/></svg></span>
+        <input type="search" class="form-control form-control-sm" placeholder="Suchen (386 Einträge, clientseitig)" aria-label="Aliase durchsuchen">
+      </div>
+      <div class="table-responsive cc-mapping-scroll border rounded mb-2">
+        <table class="table card-table table-vcenter table-sm mb-0">
+          <thead><tr><th data-role="key-head">Alias</th><th>Zielgenre</th><th class="w-1"></th></tr></thead>
+          <tbody>
+            <tr><td>acid jazz</td><td>Jazz</td><td><button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="acid jazz bearbeiten" aria-label="acid jazz bearbeiten"><svg class="icon "><use href="#i-edit"/></svg></button></td></tr>
+            <tr class="table-active"><td>neo soulish</td><td>Neo Soul</td><td><button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="neo soulish bearbeiten" aria-label="neo soulish bearbeiten"><svg class="icon "><use href="#i-edit"/></svg></button></td></tr>
+            <tr><td>rnb</td><td>R&amp;B</td><td><button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="rnb bearbeiten" aria-label="rnb bearbeiten"><svg class="icon "><use href="#i-edit"/></svg></button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="d-flex align-items-center mb-3">
+        <span class="text-secondary small">50 pro Seite · 1–3 von 386</span>
+        <button type="button" class="btn btn-sm ms-auto"><svg class="icon me-1"><use href="#i-plus"/></svg>Neuer Eintrag</button>
+      </div>
+
+      <div class="row g-2 mb-3">
+        <div class="col-12 col-sm-6">
+          <label class="form-label" for="m-key" data-role="key-label">Alias</label>
+          <input id="m-key" class="form-control" value="neo soulish" data-role="key-input">
+        </div>
+        <div class="col-12 col-sm-6">
+          <label class="form-label" for="m-val" data-role="val-label">Zielgenre</label>
+          <input id="m-val" class="form-control" value="Neo Soul" data-role="val-input">
+        </div>
+      </div>
+
+      <div class="alert alert-warning d-none" id="m-override-warning" role="alert">
+        <div class="d-flex"><svg class="icon me-2"><use href="#i-alert"/></svg><div><strong>Warnung aus der Vorschau:</strong>
+          Der Key 'Trip Hop' greift zur Laufzeit nicht: die Genre-Pipeline sucht Overrides kleingeschrieben. Wirksam wäre 'trip hop'.
+          <div class="text-secondary small mt-1">Speichern bleibt möglich.</div></div></div>
+      </div>
+      <div class="alert alert-info" role="note">
+        <div class="d-flex"><svg class="icon me-2"><use href="#i-info"/></svg><div>Kommentarzeilen in der YAML-Datei gehen beim Speichern verloren
+          (bekannte Einschränkung). Der Bot lädt die Datei beim Start: die Änderung wirkt nach Bot-Neustart.</div></div>
+      </div>
+
+      <h4 class="text-uppercase text-secondary fs-5 mb-2">Vorschau</h4>
+      <div class="cc-mapping-diff p-3">
+        <div class="mb-1"><span class="badge bg-yellow-lt"><svg class="icon icon-sm me-1"><use href="#i-edit"/></svg>Änderung</span> <span class="text-secondary small ms-1">change: update</span></div>
+        <div class="cc-mapping-diff-mod"><code>neo soulish</code>: <span class="cc-mapping-diff-del">Soul</span> → <strong>Neo Soul</strong></div>
+      </div>
+    </section>
+
+    <!-- ═════ Channel-Genre ═════ -->
+    <section data-view="channel" hidden>
+      <div class="row g-2 mb-3">
+        <div class="col-12 col-sm-6"><label class="form-label" for="c-key">Kanal</label><input id="c-key" class="form-control" value="trap nation"></div>
+        <div class="col-12 col-sm-6"><label class="form-label" for="c-primary">Primärgenre</label><input id="c-primary" class="form-control" value="Hip Hop"></div>
+        <div class="col-12">
+          <label class="form-label" for="c-sec">Sekundärgenres <span class="text-secondary small">(max. 20)</span></label>
+          <div class="d-flex flex-wrap gap-1 mb-2">
+            <span class="badge bg-teal-lt">Trap<button type="button" class="btn-close btn-close-white ms-1" aria-label="Trap entfernen"></button></span>
+            <span class="badge bg-teal-lt">Deutschrap<button type="button" class="btn-close btn-close-white ms-1" aria-label="Deutschrap entfernen"></button></span>
+          </div>
+          <input id="c-sec" class="form-control form-control-sm" placeholder="Genre hinzufügen und Enter">
+        </div>
+        <div class="col-12"><label class="form-label" for="c-desc">Beschreibung</label><input id="c-desc" class="form-control" value="Trap channel"></div>
+      </div>
+      <div class="alert alert-info" role="note"><div class="d-flex"><svg class="icon me-2"><use href="#i-info"/></svg><div>Kommentarzeilen gehen beim Speichern verloren. Wirkung nach Bot-Neustart.</div></div></div>
+      <h4 class="text-uppercase text-secondary fs-5 mb-2">Vorschau</h4>
+      <div class="cc-mapping-diff p-3">
+        <div class="mb-1"><span class="badge bg-green-lt"><svg class="icon icon-sm me-1"><use href="#i-plus"/></svg>Neu</span> <span class="text-secondary small ms-1">change: create</span></div>
+        <div class="cc-mapping-diff-add"><svg class="icon icon-sm me-1"><use href="#i-plus"/></svg><code>trap nation</code>: Hip Hop · Sekundär: Trap, Deutschrap</div>
+      </div>
+    </section>
+
+    <!-- ═════ Genre-Filter: eine Liste ═════ -->
+    <section data-view="filters" hidden>
+      <div class="input-icon mb-2">
+        <span class="input-icon-addon"><svg class="icon "><use href="#i-search"/></svg></span>
+        <input type="search" class="form-control form-control-sm" placeholder="Filter suchen (600 Einträge)" aria-label="Filter durchsuchen">
+      </div>
+      <div class="cc-mapping-scroll border rounded p-2 mb-2">
+        <div class="d-flex flex-wrap gap-1">
+          <span class="badge bg-secondary-lt">seen live<button type="button" class="btn-close ms-1" aria-label="seen live entfernen"></button></span><span class="badge bg-secondary-lt">usa<button type="button" class="btn-close ms-1" aria-label="usa entfernen"></button></span><span class="badge bg-secondary-lt">female vocalists<button type="button" class="btn-close ms-1" aria-label="female vocalists entfernen"></button></span><span class="badge bg-secondary-lt">albums i own<button type="button" class="btn-close ms-1" aria-label="albums i own entfernen"></button></span><span class="badge bg-green-lt"><svg class="icon icon-sm me-1"><use href="#i-plus"/></svg>favorites<button type="button" class="btn-close ms-1" aria-label="favorites entfernen"></button></span><span class="badge bg-red-lt"><s>germany</s><button type="button" class="btn-close ms-1" aria-label="germany entfernen"></button></span><span class="badge bg-secondary-lt">00s<button type="button" class="btn-close ms-1" aria-label="00s entfernen"></button></span><span class="badge bg-secondary-lt">radio<button type="button" class="btn-close ms-1" aria-label="radio entfernen"></button></span>
+          <span class="text-secondary small align-self-center ms-1">… weitere 592</span>
+        </div>
+      </div>
+      <div class="row g-2 mb-3">
+        <div class="col"><input class="form-control form-control-sm" placeholder="Neuer Filter (wird kleingeschrieben)" aria-label="Neuer Filter"></div>
+        <div class="col-auto"><button type="button" class="btn btn-sm"><svg class="icon me-1"><use href="#i-plus"/></svg>Hinzufügen</button></div>
+      </div>
+      <div class="alert alert-warning" role="alert"><div class="d-flex"><svg class="icon me-2"><use href="#i-alert"/></svg><div>Die Datei enthält unsaubere Einträge (15 Duplikate). Ein Speichern schreibt die bereinigte Liste zurück (<code>change: cleanup</code>). Die Gruppierung der Datei geht dabei verloren.</div></div></div>
+      <h4 class="text-uppercase text-secondary fs-5 mb-2">Vorschau</h4>
+      <div class="cc-mapping-diff p-3">
+        <div class="mb-1"><span class="badge bg-yellow-lt"><svg class="icon icon-sm me-1"><use href="#i-edit"/></svg>Änderung</span> <span class="text-secondary small ms-1">1 hinzugefügt · 1 entfernt</span></div>
+        <div class="cc-mapping-diff-add"><svg class="icon icon-sm me-1"><use href="#i-plus"/></svg>favorites</div>
+        <div class="cc-mapping-diff-del"><svg class="icon icon-sm me-1"><use href="#i-minus"/></svg>germany</div>
+      </div>
+    </section>
+
+    <!-- ═════ Spezialkanäle: geordnete Kategorien ═════ -->
+    <section data-view="special" hidden>
+      <div class="alert alert-info" role="note"><div class="d-flex"><svg class="icon me-2"><use href="#i-info"/></svg><div>Die <strong>Reihenfolge der Kategorien ist die Priorität</strong>: steht ein Kanal in mehreren, gewinnt die höhere. Die Runtime merged weiterhin mit <code>Config.SPECIAL_CHANNELS</code> — hier wird nur die YAML-Quelle verwaltet.</div></div></div>
+      <div class="card card-sm mb-2"><div class="card-body">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="badge bg-teal-lt cc-mapping-prio d-inline-flex align-items-center justify-content-center">1</span>
+          <strong class="me-auto">Podcast</strong>
+          <button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="Podcast nach oben" aria-label="Podcast nach oben" disabled><svg class="icon "><use href="#i-arrow-up"/></svg></button>
+          <button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="Podcast nach unten" aria-label="Podcast nach unten"><svg class="icon "><use href="#i-arrow-down"/></svg></button>
+        </div>
+        <div class="d-flex flex-wrap gap-1 mb-2"><span class="badge bg-secondary-lt">Backstage Boxengasse<button type="button" class="btn-close ms-1" aria-label="Backstage Boxengasse entfernen"></button></span><span class="badge bg-secondary-lt">Gemischtes Hack<button type="button" class="btn-close ms-1" aria-label="Gemischtes Hack entfernen"></button></span><span class="badge bg-secondary-lt">Kaulitz Hills<button type="button" class="btn-close ms-1" aria-label="Kaulitz Hills entfernen"></button></span></div>
+        <div class="input-group input-group-sm"><input class="form-control" placeholder="Kanal hinzufügen" aria-label="Kanal zu Podcast hinzufügen"><button type="button" class="btn"><svg class="icon "><use href="#i-plus"/></svg></button></div>
+      </div></div><div class="card card-sm mb-2"><div class="card-body">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="badge bg-teal-lt cc-mapping-prio d-inline-flex align-items-center justify-content-center">2</span>
+          <strong class="me-auto">Compilations</strong>
+          <button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="Compilations nach oben" aria-label="Compilations nach oben"><svg class="icon "><use href="#i-arrow-up"/></svg></button>
+          <button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="Compilations nach unten" aria-label="Compilations nach unten"><svg class="icon "><use href="#i-arrow-down"/></svg></button>
+        </div>
+        <div class="d-flex flex-wrap gap-1 mb-2"><span class="badge bg-secondary-lt">Deep Territory<button type="button" class="btn-close ms-1" aria-label="Deep Territory entfernen"></button></span><span class="badge bg-secondary-lt">FitBeatBeats<button type="button" class="btn-close ms-1" aria-label="FitBeatBeats entfernen"></button></span></div>
+        <div class="input-group input-group-sm"><input class="form-control" placeholder="Kanal hinzufügen" aria-label="Kanal zu Compilations hinzufügen"><button type="button" class="btn"><svg class="icon "><use href="#i-plus"/></svg></button></div>
+      </div></div><div class="card card-sm mb-2"><div class="card-body">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="badge bg-teal-lt cc-mapping-prio d-inline-flex align-items-center justify-content-center">3</span>
+          <strong class="me-auto">Playlist</strong>
+          <button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="Playlist nach oben" aria-label="Playlist nach oben"><svg class="icon "><use href="#i-arrow-up"/></svg></button>
+          <button type="button" class="btn btn-sm btn-icon btn-ghost-secondary" title="Playlist nach unten" aria-label="Playlist nach unten" disabled><svg class="icon "><use href="#i-arrow-down"/></svg></button>
+        </div>
+        <div class="d-flex flex-wrap gap-1 mb-2"><span class="badge bg-secondary-lt">Workout<button type="button" class="btn-close ms-1" aria-label="Workout entfernen"></button></span><span class="badge bg-secondary-lt">Running Mix<button type="button" class="btn-close ms-1" aria-label="Running Mix entfernen"></button></span><span class="badge bg-yellow-lt">Deep Territory<button type="button" class="btn-close ms-1" aria-label="Deep Territory entfernen"></button></span></div>
+        <div class="input-group input-group-sm"><input class="form-control" placeholder="Kanal hinzufügen" aria-label="Kanal zu Playlist hinzufügen"><button type="button" class="btn"><svg class="icon "><use href="#i-plus"/></svg></button></div>
+      </div></div>
+      <button type="button" class="btn btn-sm mb-3"><svg class="icon me-1"><use href="#i-plus"/></svg>Neue Kategorie</button>
+      <div class="alert alert-warning" role="alert"><div class="d-flex"><svg class="icon me-2"><use href="#i-alert"/></svg><div>'Deep Territory' kommt in 'Compilations' und 'Playlist' vor — 'Compilations' gewinnt wegen Priorität.</div></div></div>
+      <h4 class="text-uppercase text-secondary fs-5 mb-2">Vorschau</h4>
+      <div class="cc-mapping-diff p-3">
+        <div class="mb-1"><span class="badge bg-yellow-lt"><svg class="icon icon-sm me-1"><use href="#i-edit"/></svg>Änderung</span></div>
+        <div class="cc-mapping-diff-mod"><svg class="icon icon-sm me-1"><use href="#i-edit"/></svg>Reihenfolge: Compilations ↔ Podcast</div>
+        <div class="cc-mapping-diff-add"><svg class="icon icon-sm me-1"><use href="#i-plus"/></svg>Podcast: Kaulitz Hills</div>
+      </div>
+    </section>
+
+    <!-- ═════ Fehlerzustände ═════ -->
+    <section data-view="errors" hidden>
+      <h4 class="text-uppercase text-secondary fs-5 mb-2">422 — Eingabe ungültig (Draft bleibt)</h4>
+      <div class="alert alert-danger mb-4" role="alert"><div class="d-flex"><svg class="icon me-2"><use href="#i-alert"/></svg><div>Alias zu lang (max. 200 Zeichen).</div></div></div>
+      <h4 class="text-uppercase text-secondary fs-5 mb-2">503 — Datei nicht lesbar</h4>
+      <div class="card card-sm mb-4"><div class="card-status-start bg-danger"></div><div class="card-body">
+        <div class="text-danger mb-2"><svg class="icon me-1"><use href="#i-alert"/></svg>Genre-Aliase nicht erreichbar: genre_aliases.yaml existiert nicht.</div>
+        <button type="button" class="btn btn-sm"><svg class="icon me-1"><use href="#i-refresh"/></svg>Erneut versuchen</button></div></div>
+      <h4 class="text-uppercase text-secondary fs-5 mb-2">403 — Rolle reicht nicht</h4>
+      <div class="alert alert-warning mb-4"><svg class="icon me-1"><use href="#i-lock"/></svg>Keine Berechtigung (Rolle reicht nicht).</div>
+      <h4 class="text-uppercase text-secondary fs-5 mb-2">Laden</h4>
+      <div class="placeholder-glow" aria-busy="true"><div class="placeholder col-9 mb-2"></div><div class="placeholder col-7 mb-2"></div><div class="placeholder col-5"></div></div>
+    </section>
+
+    <!-- 409 wird als Modal über dem Editor gezeigt (Ansicht "Aliase" dahinter) -->
+  </div>
+
+  <div class="cc-mapping-footer p-3 d-flex flex-wrap gap-2 align-items-center">
+    <span class="text-secondary small me-auto"><svg class="icon icon-sm me-1"><use href="#i-history"/></svg>Vorschau aktuell — Übernehmen erst danach aktiv</span>
+    <button type="button" class="btn">Abbrechen</button>
+    <button type="button" class="btn btn-primary"><svg class="icon me-1"><use href="#i-check"/></svg>Übernehmen</button>
+  </div>
+</aside>
+
+<!-- Bestätigung vor dem PUT -->
+<div class="modal modal-blur mock-modal" id="mock-confirm" tabindex="-1" role="dialog" aria-modal="true" hidden>
+  <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+    <div class="modal-body"><div class="modal-title">Alias 'neo soulish' speichern?</div>
+      <div class="text-secondary">Soul → Neo Soul. Die Datei wird neu geschrieben, Kommentare gehen verloren.</div></div>
+    <div class="modal-footer"><button type="button" class="btn me-auto">Zurück</button><button type="button" class="btn btn-primary">Speichern</button></div>
+  </div></div>
+</div>
+
+<!-- 409: Konflikt -->
+<div class="modal modal-blur mock-modal" id="mock-conflict" tabindex="-1" role="dialog" aria-modal="true" hidden>
+  <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+    <div class="modal-status bg-warning"></div>
+    <div class="modal-body"><div class="modal-title">Andere Änderung erkannt</div>
+      <div class="text-secondary">Die Mapping-Datei wurde zwischenzeitlich geändert. Es wurde nichts überschrieben. Neu laden verwirft deinen Entwurf.</div></div>
+    <div class="modal-footer"><button type="button" class="btn me-auto">Abbrechen</button><button type="button" class="btn btn-warning"><svg class="icon me-1"><use href="#i-refresh"/></svg>Neu laden und verwerfen</button></div>
+  </div></div>
+</div>
+
+<!-- Toast nach Erfolg -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:1300">
+  <div class="toast show" role="status" aria-live="polite" id="mock-toast" hidden>
+    <div class="toast-header"><svg class="icon me-2 text-teal"><use href="#i-check"/></svg><strong class="me-auto">Mapping gespeichert</strong><small>gerade eben</small></div>
+    <div class="toast-body">Mapping gespeichert. Die Änderung wirkt für neue Downloads erst nach Bot-Neustart.</div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var titles = { aliases: ["Genre-Aliase", "Alias → kanonisches Genre"], overrides: ["Genre-Overrides", "Key → Zielgenre (case-sensitiv)"],
+      channel: ["Channel-Genre", "Kanal → Primär-/Sekundärgenre"], filters: ["Genre-Filter", "Tags, die als Sekundärgenre ignoriert werden"],
+      special: ["Spezialkanäle", "Kategorien in Prioritätsreihenfolge"], conflict: ["Genre-Aliase", "Alias → kanonisches Genre"], success: ["Genre-Aliase", "Alias → kanonisches Genre"],
+      errors: ["Fehlerzustände", "So zeigt der Editor Fehler"] };
+    function show(view) {
+      document.querySelectorAll("[data-view]").forEach(function (el) {
+        if (el.tagName === "BUTTON") return;
+        el.hidden = el.getAttribute("data-view").split(" ").indexOf(view) === -1;
+      });
+      document.querySelectorAll("#mock-views button").forEach(function (b) { b.classList.toggle("active", b.dataset.view === view); });
+      var t = titles[view]; document.getElementById("mock-title").textContent = t[0]; document.getElementById("mock-sub").textContent = t[1];
+      var ov = view === "overrides";
+      document.getElementById("m-override-warning").classList.toggle("d-none", !ov);
+      var k = document.querySelector('[data-role="key-input"]'), v = document.querySelector('[data-role="val-input"]');
+      if (k) { k.value = ov ? "Trip Hop" : "neo soulish"; v.value = ov ? "Downtempo" : "Neo Soul"; }
+      document.querySelector('[data-role="key-label"]').textContent = ov ? "Key (case-sensitiv)" : "Alias";
+      document.querySelector('[data-role="key-head"]').textContent = ov ? "Key" : "Alias";
+      var c = document.getElementById("mock-conflict"), toast = document.getElementById("mock-toast");
+      c.hidden = view !== "conflict"; c.classList.toggle("show", view === "conflict"); c.style.display = view === "conflict" ? "block" : "";
+      toast.hidden = view !== "success";
+    }
+    document.getElementById("mock-views").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-view]"); if (b) show(b.dataset.view);
+    });
+    document.getElementById("mock-theme").addEventListener("click", function () {
+      var h = document.documentElement; var n = h.getAttribute("data-bs-theme") === "dark" ? "light" : "dark"; h.setAttribute("data-bs-theme", n);
+      try { localStorage.setItem("cc-theme", n); } catch (e) {}
+    });
+    function fitBar() {
+      document.documentElement.style.setProperty("--mock-bar-h", document.querySelector(".mock-bar").offsetHeight + "px");
+    }
+    window.addEventListener("resize", fitBar); fitBar();
+    show("aliases");
+  })();
+</script>
+</body>
+</html>
