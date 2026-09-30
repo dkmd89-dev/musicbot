@@ -141,3 +141,14 @@ async def test_put_conflict_409(client, mapping_dir):
         headers=_SAME_ORIGIN,
     )
     assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_preview_carries_warning_for_uppercase_key(client, mapping_dir):
+    r = await client.post(
+        "/api/v1/admin/mappings/genre-overrides/preview",
+        params={"key": "Trip Hop"}, json={"override": "Downtempo"},
+        headers={"Origin": "http://testserver"},
+    )
+    assert r.status_code == 200, r.text
+    assert any("Laufzeit" in w for w in r.json()["warnings"])

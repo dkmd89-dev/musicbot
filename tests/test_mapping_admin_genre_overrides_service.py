@@ -160,3 +160,36 @@ def test_apply_missing_file_raises(tmp_path):
     mdir.mkdir(parents=True)
     with pytest.raises(ma.MappingUnavailableError):
         ma.plan_genre_override_update("neu", "Pop", mdir)
+
+
+# ── Warnung: Key wirkt zur Laufzeit nicht ─────────────────────────────
+# GenreMapper.normalize_genre_name() sucht mit strip().lower() im Override-Dict;
+# ein Key mit Grossbuchstaben steht zwar in der Datei, greift aber nie.
+
+
+def test_plan_warns_for_new_key_with_uppercase(tmp_path):
+    mdir = _seed(tmp_path, {"hiphop": "Hip Hop"})
+    plan = ma.plan_genre_override_update("Trip Hop", "Downtempo", mdir)
+    assert plan.change == "create"
+    assert len(plan.warnings) == 1
+    assert "Laufzeit" in plan.warnings[0] and "trip hop" in plan.warnings[0]
+
+
+def test_plan_warns_for_existing_uppercase_key_update(tmp_path):
+    mdir = _seed(tmp_path, {"Hip-Hop": "Hip Hop"})
+    plan = ma.plan_genre_override_update("Hip-Hop", "Rap", mdir)
+    assert plan.change == "update"
+    assert len(plan.warnings) == 1
+
+
+def test_plan_has_no_warning_for_lowercase_key(tmp_path):
+    mdir = _seed(tmp_path, {"hiphop": "Hip Hop"})
+    assert ma.plan_genre_override_update("trip hop", "Downtempo", mdir).warnings == []
+    assert ma.plan_genre_override_update("hiphop", "Hip Hop", mdir).warnings == []
+
+
+def test_warning_does_not_block_saving_the_key(tmp_path):
+    mdir = _seed(tmp_path, {"hiphop": "Hip Hop"})
+    plan = ma.plan_genre_override_update("Trip Hop", "Downtempo", mdir)
+    ma.apply_genre_override_update("Trip Hop", "Downtempo", mdir, expected_etag=plan.etag)
+    assert _read(tmp_path)["Trip Hop"] == "Downtempo"
