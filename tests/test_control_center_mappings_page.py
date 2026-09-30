@@ -515,3 +515,10 @@ def test_status_texts_are_escaped(tmp_path):
 
     assert "<img" not in _el(out, "mappings-pane-status") and "<img" not in _el(out, "mappings-tiles")
     assert "&lt;img" in _el(out, "mappings-pane-status")
+
+
+@needs_node
+def test_every_type_has_a_yaml_button_with_advanced_hint(tmp_path):
+    for mapping_id in _TYPES:
+        head = _el(_run(tmp_path, ops=[_tab(mapping_id)]), "mappings-pane-head")
+        assert 'data-action="yaml"' in head and f'data-type="{mapping_id}"' in head and "Fortgeschrittene" in head
