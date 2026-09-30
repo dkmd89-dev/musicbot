@@ -62,3 +62,7 @@ import/downloads/
 import/
 import/
 docs/prompts/
+
+# Mapping-Administration: Sperrdatei und Schreib-Reste im Mapping-Verzeichnis
+mapping/*.lock
+mapping/.*.tmp

@@ -27,8 +27,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import stat
+import tempfile
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -37,6 +41,7 @@ from services.library_repair.genre import (
     GenreDomainError,
     validate_genre_name as _validate_genre_name_domain,
 )
+from utils.file_lock import cross_process_lock
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -633,6 +638,49 @@ def _find_mapping_key(
 
 _WRITE_LOCK = threading.Lock()
 
+_DEFAULT_FILE_MODE = 0o644
+
+
+@contextmanager
+def _write_guard(descriptor: "MappingDescriptor", mapping_dir: Path):
+    """Serialisiert Read-Modify-Write auf einer Mapping-Datei: Thread-Lock
+    (dieser Prozess) plus Datei-Lock (`fcntl.flock`, Bot- und Control-Center-
+    Prozess). Ohne den Datei-Lock koennten zwei Prozesse denselben Stand lesen
+    und sich gegenseitig ueberschreiben."""
+    with _WRITE_LOCK, cross_process_lock(_mapping_path(descriptor, mapping_dir)):
+        yield
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Schreibt `text` atomar nach `path`: eindeutiges tmp-Sibling (kein
+    gemeinsamer fester Name, den ein zweiter Schreiber oder ein Rest eines
+    abgestuerzten Laufs stoeren koennte), fsync der Datei, `os.replace`, fsync
+    des Verzeichnisses. Bei jedem Fehler wird das tmp-File entfernt und die
+    Zieldatei bleibt unveraendert. Die Rechte der bestehenden Datei bleiben
+    erhalten (mkstemp legt sonst 0600 an)."""
+    path = Path(path)
+    try:
+        mode = stat.S_IMODE(path.stat().st_mode)
+    except FileNotFoundError:
+        mode = _DEFAULT_FILE_MODE
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    dir_fd = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+
 
 def _dump_raw_mapping(
     descriptor: MappingDescriptor, mapping_dir: Path, mapping: Dict[str, Any],
@@ -641,12 +689,7 @@ def _dump_raw_mapping(
 
     path = _mapping_path(descriptor, mapping_dir)
     data = {descriptor.root_key: mapping}
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(
-        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
-    tmp.replace(path)
+    _atomic_write_text(path, yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
 
 
 def _load_raw_list(
@@ -677,12 +720,7 @@ def _dump_raw_list(
 
     path = _mapping_path(descriptor, mapping_dir)
     data = {descriptor.root_key: list(values)}
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(
-        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
-    tmp.replace(path)
+    _atomic_write_text(path, yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -822,12 +860,7 @@ def _dump_special_categories(
     # kann OrderedDict nicht serialisieren.
     payload = {c.name: list(c.channels) for c in categories}
     data = {descriptor.root_key: payload}
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(
-        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
-    tmp.replace(path)
+    _atomic_write_text(path, yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
 
 
 def _special_channels_etag(categories: List[SpecialChannelCategory]) -> str:
@@ -901,14 +934,14 @@ def apply_mapping_update(
     mapping_id: str, key: str, payload: Dict[str, Any], mapping_dir: Path,
     expected_etag: str,
 ) -> Tuple[Any, Any]:
-    with _WRITE_LOCK:
+    descriptor = _get_descriptor(mapping_id)
+    with _write_guard(descriptor, mapping_dir):
         plan = plan_mapping_update(mapping_id, key, payload, mapping_dir)
         if plan.etag != expected_etag:
             raise MappingConflictError(
                 "Der Mapping-Stand wurde seit der Vorschau geaendert. "
                 "Bitte neu laden und erneut pruefen."
             )
-        descriptor = _get_descriptor(mapping_id)
         mapping = _load_raw_mapping(descriptor, mapping_dir)
 
         if plan.change == "unchanged":
@@ -1327,7 +1360,7 @@ def plan_genre_filter_update(
 def apply_genre_filter_update(
     values: object, mapping_dir: Path, *, expected_etag: str,
 ) -> Tuple[GenreFilterPlan, GenreFilterSaveResult]:
-    with _WRITE_LOCK:
+    with _write_guard(_get_descriptor(MAPPING_ID_GENRE_FILTERS), mapping_dir):
         plan = plan_genre_filter_update(values, mapping_dir)
         if plan.etag != expected_etag:
             raise MappingConflictError(
@@ -1476,7 +1509,7 @@ def plan_special_channels_update(
 def apply_special_channels_update(
     categories_input: object, mapping_dir: Path, *, expected_etag: str,
 ) -> Tuple[SpecialChannelPlan, SpecialChannelSaveResult]:
-    with _WRITE_LOCK:
+    with _write_guard(_get_descriptor(MAPPING_ID_SPECIAL_CHANNELS), mapping_dir):
         plan = plan_special_channels_update(categories_input, mapping_dir)
         if plan.etag != expected_etag:
             raise MappingConflictError(
