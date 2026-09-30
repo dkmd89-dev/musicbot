@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+import yaml
 
 from services import mapping_hierarchy as mh
 from services.metadata.genre_processor import GenreProcessor
@@ -32,6 +33,14 @@ def mdir(tmp_path):
     return d
 
 
+def _keys_in_file(path: Path) -> int:
+    """Anzahl der Genre-Keys, direkt aus der Datei gezaehlt (unabhaengig vom
+    getesteten Service). Ein fester Zaehlstand wuerde bei jeder legitimen
+    Mapping-Aenderung brechen; die Invariante ist: die Administration zeigt
+    genau die Keys der Datei."""
+    return len(yaml.safe_load(path.read_text(encoding="utf-8"))["GENRE_HIERARCHY"])
+
+
 def _priority(mdir: Path):
     return GenreProcessor(SimpleNamespace(GENRE_MAPPING_DIR=mdir), MagicMock()).GENRE_PRIORITY
 
@@ -50,7 +59,7 @@ def test_admin_depths_equal_the_runtime_priority_for_every_genre(mdir):
 
     entries = mh.get_hierarchy_state(mdir)[0]
 
-    assert len(entries) == 187
+    assert len(entries) == _keys_in_file(mdir / "genre_hierarchy.yaml")
     assert {e.genre.lower(): e.depth for e in entries} == priority
 
 
