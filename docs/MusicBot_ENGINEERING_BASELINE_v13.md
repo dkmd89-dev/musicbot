@@ -17,10 +17,12 @@
 |---|---|
 | Baseline | v13 (DRAFT) |
 | Vorgänger | `docs/MusicBot_ENGINEERING_BASELINE_v12.md` (Freeze 2026-09-29, 6576 passed / 1 skipped / 11 subtests passed / 0 failed) |
-| Letzte vom Nutzer gemeldete Full-Suite-Zahl | **6576 passed** (Freeze-Stand v12). Seit v12 ist **kein neuer Full-Suite-Lauf gemeldet**; die Vollsuite führt ausschließlich der Nutzer aus (CLAUDE.md §8.A). |
+| Letzte vom Nutzer gemeldete Full-Suite-Zahl (Stand `main` = `88d7be6`, Lauf 2026-09-30, 569,07 s) | **7072 passed, 1 skipped, 11 subtests passed, 0 failed, 5 warnings** |
+| Zuwachs seit v12-Freeze | +496 passed (6576 → 7072), 0 failed |
+| Einordnung eines früheren Laufs am selben Tag | 2 Fehler in `test_genre_specificity_characterization.py` (74 statt 75 Spezifitäts-Paare): Ursache waren zwei beim manuellen Testen im Control Center entfernte Alias-Zeilen in der **echten** `mapping/genre_aliases.yaml` (`deutsch hip-hop`, `afro house`), kein Codefehler; nach Wiederherstellen des Ausgangsstands grün (belegt durch das Backup-Protokoll und einen sauberen Worktree-Lauf: 36 passed) |
 | Neue Tests seit v12 (nur gezielte/thematische Läufe, keine Full-Suite) | 473 gesammelte Tests in 23 neuen Testdateien (`pytest --collect-only`), dazu Ergänzungen in `test_bot_runtime_snapshot_task.py` und den UI-Seitenlisten-Tests |
 | ARCH-Phasen | keine (die Arbeit ist ein Control-Center-Feature, kein ARCH-Schritt) |
-| Freeze-Status | offen — G3 (Produktion), G4 (Browser) und G6 (Vollsuite) stehen beim Nutzer, siehe `docs/audits/MAPPING_COMPLETION_PLAN_2026-09-30.md` §5 |
+| Freeze-Status | offen — G4 (Browser hell/dunkel, Handy, echter Proxy) und G6 (Vollsuite) erfüllt; G3 (Produktion inkl. Bot-Neustart und Status „Angewendet“) steht beim Nutzer, siehe `docs/audits/MAPPING_COMPLETION_PLAN_2026-09-30.md` §5 |
 
 ---
 
@@ -80,7 +82,8 @@ Kein neuer dokumentierter Datensicherheits-Vorfall seit v12-Freeze.
 
 ## 5. Freeze-Voraussetzungen (offen)
 
-- [ ] G3: echte Änderung je Typ in der Produktion, Bot-Neustart, Restore (Nutzer)
-- [ ] G4: Browser-Durchlauf hell/dunkel, Desktop + Handy, Subpath (Nutzer)
-- [ ] G6: Vollsuite `python3 -m pytest tests/ -q` (Nutzer); Fehler nach §8.A einordnen
-- [ ] Zahlen in Abschnitt 1 aus dem gemeldeten Lauf eintragen, danach Status auf FROZEN
+- [ ] G3: echte Änderung je Typ in der Produktion, Bot-Neustart, Restore (Nutzer) — Speichern und Restore in Visual- und YAML-Editor bestätigt; Bot-Neustart mit Status „Angewendet“ steht aus
+- [x] G4: Browser-Durchlauf hell/dunkel, Handy, hinter dem echten Proxy (Nutzer, 2026-09-30: funktioniert)
+- [x] G6: Vollsuite `python3 -m pytest tests/ -q` (Nutzer, 2026-09-30): 7072 passed / 0 failed
+- [x] Zahlen in Abschnitt 1 aus dem gemeldeten Lauf eingetragen
+- [ ] Nach G3 (und ggf. Umbenennen/Löschen, falls im Umfang): Status auf FROZEN

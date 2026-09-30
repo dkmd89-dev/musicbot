@@ -117,9 +117,9 @@ Nach jedem Schritt: gezielte Tests → direkte Regressionstests → thematische 
 | **G1** Backend | 137 Mapping-Tests grün; Runtime-Paritätstest (siehe K2) vorhanden | Claude |
 | **G2** UI | 5.0–5.4 gemergt, UI-DoD (§14 Standard) erfüllt, Harness-Tests grün | Claude |
 | **G3** Produktion | Nutzer sichert die 5 Dateien (`cp mapping/{channel_genre,genre_aliases,genre_overrides,genre_filters,special_channel}.yaml`), speichert je Typ **eine** reale Änderung im Browser, prüft `git diff mapping/` und die Bot-Wirkung nach Neustart | Nutzer |
-| **G4** Browser | manueller Durchlauf hell/dunkel, Desktop + Handy, Subpath (`CONTROL_CENTER_REVERSE_PROXY.md`) | Nutzer |
+| **G4** ✅ 2026-09-30 (Nutzer: hell/dunkel, Handy, echter Proxy) Browser | manueller Durchlauf hell/dunkel, Desktop + Handy, Subpath (`CONTROL_CENTER_REVERSE_PROXY.md`) | Nutzer |
 | **G5** Doku | `FINDINGS_INDEX` Zeile „Mapping-Dateien“ auf Umfang §6 CLOSED (bzw. Rest als eigene DEFER-Zeilen), `docs/INDEX.md`/`GENRE_SYSTEM.md` verweisen auf Admin-UI, DRAFT-`ENGINEERING_BASELINE_v13.md` angelegt (§30 CLAUDE.md) | Claude |
-| **G6** Vollsuite | `python3 -m pytest tests/ -q` durch den Nutzer; Fehler nach §8.A unterscheiden (verursacht / vorbestehend / unabhängig) | Nutzer |
+| **G6** ✅ 2026-09-30 (7072 passed / 0 failed) Vollsuite | `python3 -m pytest tests/ -q` durch den Nutzer; Fehler nach §8.A unterscheiden (verursacht / vorbestehend / unabhängig) | Nutzer |
 
 **Freigabe** = G1–G6 erfüllt. Erst dann wird „Mapping-Funktion abgeschlossen“ gemeldet.
 
