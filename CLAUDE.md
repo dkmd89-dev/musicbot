@@ -1125,9 +1125,9 @@ Vorfall seit v11). Referenziert von
 `docs/archive/MusicBot_ENGINEERING_BASELINE_v11.md` (Freeze 2026-09-28, 6160
 passed) liegt unverändert unter `docs/archive/`.
 
-Eine DRAFT-`MusicBot_ENGINEERING_BASELINE_v13.md` existiert noch nicht —
-sie wird (Normalfall direkt nach einem Freeze, siehe unten) beim nächsten
-ARCH-Phasen-Abschluss mit Code-/YAML-Änderung angelegt.
+Eine DRAFT-`docs/MusicBot_ENGINEERING_BASELINE_v13.md` existiert seit
+2026-09-30 (Mapping-Administration im Control Center) — Zwischenstände
+gehen dorthin, bis der Nutzer nach dem Freeze-Gate (G3/G4/G6) einfriert.
 `docs/FINDINGS_INDEX.md` bleibt die lebende Findings-Quelle.
 
 Der aktuelle Stand aller offenen/zurückgestellten Punkte steht ab sofort
