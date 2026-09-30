@@ -1085,6 +1085,19 @@ def _plan_genre_alias(
     )
 
 
+def _override_key_runtime_warnings(key: str) -> List[str]:
+    """GenreMapper.normalize_genre_name() sucht mit strip().lower() im
+    Override-Dict. Ein Key mit Grossbuchstaben wird gespeichert (exact-first),
+    greift zur Laufzeit aber nie — das muss der Nutzer vor dem Speichern wissen."""
+    runtime_key = key.strip().lower()
+    if key == runtime_key:
+        return []
+    return [
+        f"Der Key {key!r} greift zur Laufzeit nicht: die Genre-Pipeline sucht "
+        f"Overrides kleingeschrieben. Wirksam waere {runtime_key!r}."
+    ]
+
+
 def _plan_genre_override(
     key: str, payload: Dict[str, Any], descriptor: MappingDescriptor, mapping_dir: Path,
 ) -> GenreOverridePlan:
@@ -1096,6 +1109,7 @@ def _plan_genre_override(
     """
     clean_key = _validate_alias_key(key)
     clean_override = _validated_genre(payload.get("override", ""), "Override-Genre")
+    warnings = _override_key_runtime_warnings(clean_key)
 
     mapping = _load_raw_mapping(descriptor, mapping_dir)
     etag = _genre_override_etag(mapping)
@@ -1109,17 +1123,18 @@ def _plan_genre_override(
             existing=None,
             override=clean_override,
             override_changed=True,
-            warnings=[],
+            warnings=list(warnings),
             etag=etag,
         )
 
+    warnings = _override_key_runtime_warnings(actual_key)
     existing = _parse_genre_override_entry(actual_key, mapping[actual_key])
     if existing is None:
         return GenreOverridePlan(
             mapping_id=descriptor.mapping_id,
             key=actual_key, change="create", existing=None,
             override=clean_override, override_changed=True,
-            warnings=[], etag=etag,
+            warnings=list(warnings), etag=etag,
         )
 
     override_changed = existing.override.strip() != clean_override
@@ -1130,7 +1145,7 @@ def _plan_genre_override(
         existing=existing,
         override=clean_override,
         override_changed=override_changed,
-        warnings=[],
+        warnings=list(warnings),
         etag=etag,
     )
 
