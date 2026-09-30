@@ -464,6 +464,7 @@ class SpecialChannelPreviewResponse(BaseModel):
     warnings: List[str] = Field(default_factory=list)
     etag: str
     comment_warning: Optional[str] = None
+    order_change: Optional[str] = None
 
 
 class SpecialChannelSaveResponse(SpecialChannelPreviewResponse):
@@ -493,6 +494,7 @@ def special_channel_plan_to_preview(plan: SpecialChannelPlan) -> SpecialChannelP
         removed=list(plan.removed),
         warnings=list(plan.warnings),
         etag=plan.etag,
+        order_change=plan.order_change,
         comment_warning=(
             SPECIAL_CHANNEL_COMMENT_WARNING
             if plan.change in ("update", "cleanup")

@@ -128,8 +128,30 @@ def test_plan_reorder_categories_is_change(tmp_path):
     plan = ma.plan_special_channels_update(
         _payload({"Playlist": ["B"], "Podcast": ["A"]}), mdir,
     )
-    # Etag unterscheidet die Reihenfolge -> hier nur "update" pruefen
-    assert plan.change in ("update", "unchanged")
+    assert plan.change == "update"
+    assert plan.order_change is not None
+    assert plan.order_change.index("Podcast") < plan.order_change.index("Playlist")  # alt vor neu
+    assert plan.added == [] and plan.removed == []
+
+
+def test_apply_reorder_only_is_written_and_changes_priority(tmp_path):
+    """Regression: eine reine Umordnung galt als 'unchanged' und wurde nie
+    geschrieben — die Prioritaet liess sich damit nicht aendern."""
+    mdir = _seed(tmp_path, {"Podcast": ["A"], "Playlist": ["B"]})
+    etag = ma.get_special_channels_state(mdir)[1]
+
+    _, result = ma.apply_special_channels_update(
+        _payload({"Playlist": ["B"], "Podcast": ["A"]}), mdir, expected_etag=etag,
+    )
+
+    assert result.written is True
+    assert [c.name for c in ma.list_special_channel_categories(mdir)] == ["Playlist", "Podcast"]
+
+
+def test_plan_without_reorder_has_no_order_change(tmp_path):
+    mdir = _seed(tmp_path, {"Podcast": ["A"], "Playlist": ["B"]})
+    plan = ma.plan_special_channels_update(_payload({"Podcast": ["A", "C"], "Playlist": ["B"]}), mdir)
+    assert plan.order_change is None
 
 
 def test_plan_empty_category_raises(tmp_path):

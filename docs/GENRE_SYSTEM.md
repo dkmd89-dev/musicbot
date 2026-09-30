@@ -102,7 +102,10 @@ deshalb `bot_reload_required`.
 
 **Kommentarverlust:** Das Speichern schreibt die Datei über `yaml.safe_dump`
 neu, Kommentarzeilen gehen dabei verloren (die API meldet das als
-`comment_warning`). Deshalb stehen die Regeln, die bisher nur in Kommentaren
+`comment_warning`). **Vor jedem Schreiben wird die bisherige Datei unverändert
+(mit Kommentaren) als Version unter `<DATA_DIR>/mapping_backups/<mapping_id>/`
+abgelegt (letzte 20 je Mapping); ein Restore schreibt eine Version unverändert
+zurück, ist Etag-geschützt und legt selbst wieder eine Version an.** Deshalb stehen die Regeln, die bisher nur in Kommentaren
 standen, hier:
 
 | Datei | Regel (früher nur als YAML-Kommentar) |

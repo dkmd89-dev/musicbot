@@ -218,3 +218,27 @@ async def test_put_cleanup_dupes(client, mapping_dir):
     assert r.status_code == 200, r.text
     assert r.json()["written"] is True
     assert _read(mapping_dir) == dict(Podcast=["A"])
+
+
+@pytest.mark.asyncio
+async def test_put_reorder_only_is_written_and_preview_reports_it(client, mapping_dir):
+    """Regression: Umordnen der Kategorien (Prioritaet) wurde als 'unchanged' verworfen."""
+    etag = (await client.get("/api/v1/admin/mappings/special-channels")).json()["etag"]
+    categories = [
+        dict(name="Compilations", channels=["Deep Territory"]),
+        dict(name="Podcast", channels=["Backstage Boxengasse", "Mordlust"]),
+        dict(name="Playlist", channels=["Workout"]),
+    ]
+
+    preview = await client.post(
+        "/api/v1/admin/mappings/special-channels/preview", json=dict(categories=categories), headers=_SAME_ORIGIN,
+    )
+    assert preview.json()["change"] == "update"
+    assert "Compilations" in preview.json()["order_change"]
+
+    r = await client.put(
+        "/api/v1/admin/mappings/special-channels", json=dict(categories=categories, etag=etag), headers=_SAME_ORIGIN,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["written"] is True
+    assert list(_read(mapping_dir)) == ["Compilations", "Podcast", "Playlist"]
