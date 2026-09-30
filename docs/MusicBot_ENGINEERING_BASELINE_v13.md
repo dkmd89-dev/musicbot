@@ -1,13 +1,17 @@
 # MusicBot Engineering Baseline v13
 
-> **Status: 🟡 DRAFT (angelegt 2026-09-30) — noch nicht eingefroren.**
+> **Status: 🟢 FROZEN (2026-09-30) — Freeze-Gate APPROVED, siehe Abschnitt 6.**
 >
-> Laufender Zwischenstand nach dem v12-Freeze (2026-09-29). Inhalt bisher:
-> die vollständige **Mapping-Administration im Control Center** (M1–M5, UI
-> 5.0–5.4, Backup/Restore, Runtime-Status, YAML-Editor) samt zwei dabei
-> gefundenen Laufzeitfehlern. Die eingefrorene Baseline bleibt
-> `docs/MusicBot_ENGINEERING_BASELINE_v12.md`; der laufende Finding-Stand
-> steht in `docs/FINDINGS_INDEX.md`.
+> Verifizierter Engineering-Referenzzustand nach dem v12-Freeze
+> (2026-09-29). Umfasst die vollständige **Mapping-Administration im
+> Control Center** (M1–M7, UI 5.0–5.4, Backup/Restore, Runtime-Status,
+> YAML-Editor, Genre-Hierarchie-Editor) samt zwei dabei gefundenen
+> Laufzeitfehlern sowie die **Artist-Resolution-Phase A/B** (Architecture
+> Gate, AR-1/AR-2/AR-3 CLOSED, AR-5/AR-6 DEFER, AR-4 offene
+> Architekturentscheidung) und HIER-1 (Testrobustheit). Eingefrorener
+> Vorgänger: `docs/archive/MusicBot_ENGINEERING_BASELINE_v12.md` (Freeze
+> 2026-09-29). Der laufende Stand aller offenen/zurückgestellten Punkte
+> bleibt `docs/FINDINGS_INDEX.md`.
 
 ---
 
@@ -15,8 +19,8 @@
 
 | Feld | Wert |
 |---|---|
-| Baseline | v13 (DRAFT) |
-| Vorgänger | `docs/MusicBot_ENGINEERING_BASELINE_v12.md` (Freeze 2026-09-29, 6576 passed / 1 skipped / 11 subtests passed / 0 failed) |
+| Baseline | v13 (FROZEN 2026-09-30) |
+| Vorgänger | `docs/archive/MusicBot_ENGINEERING_BASELINE_v12.md` (Freeze 2026-09-29, 6576 passed / 1 skipped / 11 subtests passed / 0 failed) |
 | Letzte Full-Suite-Zahl (Stand `main` = `7dffbb9`: nach Artist Resolution AR-1/AR-2/AR-3/AR-5 und HIER-1; Lauf 2026-09-30, 910,68 s, auf dem Baum von `main` vor dem Merge-Commit — identischer Inhalt) | **7217 passed, 1 skipped, 11 subtests passed, 0 failed, 5 warnings** |
 | Frühere Läufe am selben Tag | (1) `main` = `de42f12` + M6/M7, 580,63 s: 7205 passed / 1 skipped / 0 failed. (2) `main` = `48bcf7c` (nach AR-1/2/3/5): 7214 passed / **3 failed** / 1 skipped, 666,56 s — die 3 Fehlschläge waren HIER-1 (fester Zählstand `== 187` vs. 188 Einträge nach `Afro-Hip`), keine Artist-Resolution-Regression; behoben mit #403 |
 | Zuwachs seit v12-Freeze | +641 passed (6576 → 7217), 0 failed. Seit dem Lauf mit 7205: +12 neue Artist-Resolution-Tests — `test_artist_genre_cross_process_lock.py` (4), `test_genre_processor_learned_source.py` (5), `test_auto_learned_genre_cross_process_lock.py` (3) |
@@ -24,7 +28,7 @@
 | HIER-1 (behoben) | Drei Hierarchie-Tests pinnten fest `== 187` Einträge der echten `mapping/genre_hierarchy.yaml` (188 seit `Afro-Hip: Afro`, `cc460f3`). Seit #403 zählen sie die Keys direkt aus der Datei. Die Mapping-Daten blieben unverändert; ob `Afro-Hip` fachlich gewollt ist, ist eine separate, offene Entscheidung (FINDINGS_INDEX HIER-1) |
 | Neue Tests seit v12 (nur gezielte/thematische Läufe, keine Full-Suite) | 473 gesammelte Tests in 23 neuen Testdateien (`pytest --collect-only`), dazu Ergänzungen in `test_bot_runtime_snapshot_task.py` und den UI-Seitenlisten-Tests |
 | ARCH-Phasen | keine eigene ARCH-Nummer. Die Control-Center-Arbeit ist ein Feature; die Artist-Resolution-Phase (A: Architecture Gate, B: AR-1/AR-2/AR-3) ist ein kontrollierter Architektur-Schritt nach der Migration Phase A–E, Bericht `docs/audits/ARTIST_RESOLUTION_ARCHITECTURE_GATE_2026-09-30.md` |
-| Freeze-Status | offen — G4 (Browser hell/dunkel, Handy, echter Proxy) und G6 (Vollsuite) erfüllt; G3 (Produktion inkl. Bot-Neustart und Status „Angewendet“) steht beim Nutzer, siehe `docs/audits/MAPPING_COMPLETION_PLAN_2026-09-30.md` §5 |
+| Freeze-Status | 🟢 **FROZEN 2026-09-30** — G3 (Nutzer: „funktioniert alles“), G4 und G6 erfüllt, Freeze-Gate-Audit in Abschnitt 6 APPROVED |
 
 ---
 
@@ -95,10 +99,53 @@ Kein neuer dokumentierter Datensicherheits-Vorfall seit v12-Freeze.
 
 ---
 
-## 5. Freeze-Voraussetzungen (offen)
+## 5. Freeze-Voraussetzungen (erfüllt)
 
-- [ ] G3: echte Änderung je Typ in der Produktion, Bot-Neustart, Restore (Nutzer) — Speichern und Restore in Visual- und YAML-Editor bestätigt; Bot-Neustart mit Status „Angewendet“ steht aus
+- [x] G3: echte Änderung je Typ in der Produktion, Bot-Neustart, Restore (Nutzer, 2026-09-30: „funktioniert alles“)
 - [x] G4: Browser-Durchlauf hell/dunkel, Handy, hinter dem echten Proxy (Nutzer, 2026-09-30: funktioniert)
 - [x] G6: Vollsuite `python3 -m pytest tests/ -q` (2026-09-30, `main` = `7dffbb9`): 7217 passed / 0 failed (zwischenzeitlich 3 rote Hierarchie-Zählstand-Tests, behoben mit #403)
 - [x] Zahlen in Abschnitt 1 aus dem zuletzt gemeldeten Lauf eingetragen (7217 passed / 0 failed)
-- [ ] Nach G3 (und ggf. Umbenennen/Löschen, falls im Umfang): Status auf FROZEN
+- [x] Nach G3: Status auf FROZEN (2026-09-30, siehe Abschnitt 6)
+
+---
+
+## 6. Architecture Freeze
+
+```
+🟢 ARCHITECTURE FREEZE — APPROVED (2026-09-30)
+```
+
+**Freeze-Gate-Audit (2026-09-30, Stand `main` = `6adfd98`):**
+
+| Kriterium | Ergebnis |
+|---|---|
+| Offene P0/P1-Findings | **0** (maschinell gegen `docs/FINDINGS_INDEX.md` geprüft: keine Zeile mit Status OPEN und Priorität P0/P1) |
+| Vollständige Testsuite | **7217 passed, 1 skipped, 11 subtests passed, 0 failed** (910,68 s), von Claude mit ausdrücklicher Nutzerfreigabe auf dem Baum von `7dffbb9` ausgeführt (identisch mit `main` bis auf den anschließenden reinen Doku-Commit `de3f4e8`, #404). Der zuvor vom Nutzer gemeldete Lauf auf `48bcf7c` (7214 passed / 3 failed) zeigte die drei HIER-1-Zählstand-Tests; sie sind mit #403 behoben |
+| Bekannte Regressionen | keine — die 3 zwischenzeitlich roten Hierarchie-Tests waren ein fester Zählstand (`== 187` vs. 188 Einträge nach `Afro-Hip`), keine Regression der Artist-Resolution-Arbeit (am Stand vor AR-1 ebenfalls rot) |
+| Schichtgrenzen-Verletzungen | keine — `tests/test_services_layer_boundary.py` im grünen Volllauf enthalten |
+| Produktions-Datensicherheit | **PASS** — kein neuer dokumentierter Vorfall seit v12-Freeze; die Mapping-Dateien wurden durch die Artist-Resolution-Arbeit nicht verändert |
+
+**Bewusst offen (kein Freeze-Blocker):** `Afro-Hip: Afro` in `mapping/genre_hierarchy.yaml`
+(mit `cc460f3` eingecheckt) — fachliche Bestätigung steht aus (P3, FINDINGS_INDEX HIER-1 Teil 2);
+AR-4 (`known_artists.yaml` Hybrid), AR-5 (`GenreMapper.reload()`), AR-6 (Candidate/Accept/Reject)
+sind DEFER; drei Review-Punkte zu #400 ohne Umsetzung (P3).
+
+---
+
+## Freeze-Checkliste (v13-Freeze, 2026-09-30)
+
+- [x] Freeze-Gate-Audit → 🟢 APPROVED (alle Kriterien PASS)
+- [x] Abschnitte 1–6 als Schnappschuss befüllt
+- [x] „Baseline Frozen (2026-09-30)"-Footer gesetzt, DRAFT-Kopf entfernt
+- [x] Referenzen umgestellt: `README.md`, `docs/INDEX.md`, `docs/FINDINGS_INDEX.md`, `CLAUDE.md`
+- [x] `docs/MusicBot_ENGINEERING_BASELINE_v12.md` → `docs/archive/`
+
+---
+
+## Baseline Frozen (2026-09-30)
+
+**Diese Datei ist damit abgeschlossen.** Neue Findings, Nachträge oder
+technische Schulden gehören ab jetzt in `MusicBot_ENGINEERING_BASELINE_v14.md`,
+sobald diese angelegt wird (Normalfall: beim nächsten ARCH-Phasen-Abschluss
+mit Code-/YAML-Änderung). Der laufende Finding-Stand steht ausschließlich in
+`docs/FINDINGS_INDEX.md`.

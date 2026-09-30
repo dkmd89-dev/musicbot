@@ -3,7 +3,7 @@
 Einstiegspunkt für die Dokumentation. Drei Ebenen:
 
 - **README.md** – Was ist MusicBot? (für Menschen)
-- **`docs/MusicBot_ENGINEERING_BASELINE_v12.md`** – Wie war der eingefrorene technische Zustand? (für Wartung/Entwicklung)
+- **`docs/MusicBot_ENGINEERING_BASELINE_v13.md`** – Wie war der eingefrorene technische Zustand? (für Wartung/Entwicklung)
 - **`docs/FINDINGS_INDEX.md`** – Was ist gerade offen, was ist geschlossen? (lebendes Register)
 
 **Regel:** Im direkten `docs/`-Root liegen ausschließlich **CURRENT**, **LIVING** oder **BASELINE**-Dokumente. Historische Dokumente (Baselines, ARCH-Protokolle, abgeschlossene Phasen, archivierte Audits) liegen unter `docs/archive/`, `docs/archive/arch/` oder `docs/archive/post-arch/`.
@@ -18,8 +18,8 @@ Einstiegspunkt für die Dokumentation. Drei Ebenen:
 
 | Datei | Status | Kurzthema |
 |---|---|---|
-| [MusicBot_ENGINEERING_BASELINE_v13.md](MusicBot_ENGINEERING_BASELINE_v13.md) | **BASELINE — DRAFT 2026-09-30** | Laufender Zwischenstand nach dem v12-Freeze: Mapping-Administration im Control Center (M1–M5, UI 5.0–5.4, Backup/Restore, Runtime-Status, YAML-Editor) und zwei dabei gefundene Laufzeitfehler. Noch nicht eingefroren (Gates G3/G4/G6 beim Nutzer). |
-| [MusicBot_ENGINEERING_BASELINE_v12.md](MusicBot_ENGINEERING_BASELINE_v12.md) | **BASELINE — FROZEN 2026-09-29, Freeze-Gate APPROVED** | Eingefrorener technischer Referenzpunkt nach v12-Freeze. Umfasst: Client Consolidation D.12b.1/D.12b.2 (Prozess-Rolle, Job-Attribution aller Download-Log-Zeilen), Metadaten-Editor Schritt 1–3 (Jahr, Tracknummer, Feature-Artists), Navidrome-Ausbau N1–N5 (Stream-API, Player, Favoriten/Scrobble/Playlists), CC-UI-Abschluss (Library L1–L4, Overview O2, Logs-Job-Filter), Test-Fix #377 (TestUiRendering). Vollsuite (Nutzer, Freeze-Stand): 6576 passed / 1 skipped / 11 subtests passed / 0 failed. Der laufende Finding-Stand steht ausschließlich in `FINDINGS_INDEX.md`. |
+| [MusicBot_ENGINEERING_BASELINE_v13.md](MusicBot_ENGINEERING_BASELINE_v13.md) | **BASELINE — FROZEN 2026-09-30, Freeze-Gate APPROVED** | Eingefrorener technischer Referenzpunkt nach v13-Freeze. Umfasst: Mapping-Administration im Control Center (M1–M7, UI 5.0–5.4, Backup/Restore, Runtime-Status, YAML-Editor, Genre-Hierarchie-Editor), Artist Resolution Phase A/B (AR-1/AR-2/AR-3 CLOSED, AR-5/AR-6 DEFER, AR-4 offene Architekturentscheidung), HIER-1. Vollsuite: 7217 passed / 1 skipped / 11 subtests passed / 0 failed. Der laufende Finding-Stand steht ausschließlich in `FINDINGS_INDEX.md`. |
+| [archive/MusicBot_ENGINEERING_BASELINE_v12.md](archive/MusicBot_ENGINEERING_BASELINE_v12.md) | BASELINE — FROZEN 2026-09-29 (archiviert) | Vorgänger von v13. Vollsuite (Freeze-Stand): 6576 passed / 1 skipped / 11 subtests passed / 0 failed. |
 
 ---
 
@@ -91,8 +91,9 @@ Audits dokumentieren den Zustand zu ihrem Erstellungszeitpunkt. Für den laufend
 
 ## Historische Baselines (ausschließlich in `docs/archive/`)
 
-Alle vor-v12-Baselines sind eingefroren und abgelöst. Sie liegen unter `docs/archive/` und sind **nicht** als aktueller Zustandsbericht zu lesen — maßgeblich sind `MusicBot_ENGINEERING_BASELINE_v12.md` und für Findings `FINDINGS_INDEX.md`.
+Alle vor-v13-Baselines sind eingefroren und abgelöst. Sie liegen unter `docs/archive/` und sind **nicht** als aktueller Zustandsbericht zu lesen — maßgeblich sind `MusicBot_ENGINEERING_BASELINE_v13.md` und für Findings `FINDINGS_INDEX.md`.
 
+- `docs/archive/MusicBot_ENGINEERING_BASELINE_v12.md` — Freeze 2026-09-29, 6576 passed.
 - `docs/archive/MusicBot_ENGINEERING_BASELINE_v11.md` — Freeze 2026-09-28, 6160 passed.
 - `docs/archive/MusicBot_ENGINEERING_BASELINE_v10.md` — Freeze 2026-09-14, 4250 passed.
 - `docs/archive/MusicBot_ENGINEERING_BASELINE_v9.md` — Freeze 2026-09-07, 2580 passed.

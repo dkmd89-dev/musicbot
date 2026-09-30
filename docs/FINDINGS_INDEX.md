@@ -27,9 +27,9 @@ Index ist ab sofort die einzige Stelle für den *aktuellen* Stand.
 Tech-Debt-Tabelle dort unverändert, siehe z. B. `docs/archive/MusicBot_ENGINEERING_BASELINE_v8.md`);
 2026-09-07 (Baseline v9, ebenfalls eingefroren, siehe
 `docs/archive/MusicBot_ENGINEERING_BASELINE_v9.md`). Aktuell eingefrorener
-Referenzpunkt: `docs/MusicBot_ENGINEERING_BASELINE_v12.md` (Freeze
-2026-09-29, 6576 passed; Vorgänger v10, Freeze 2026-09-14, 4250 passed,
-jetzt unter `docs/archive/`). Eine DRAFT-v12 wird beim nächsten
+Referenzpunkt: `docs/MusicBot_ENGINEERING_BASELINE_v13.md` (Freeze
+2026-09-30, 7217 passed; Vorgänger v12, Freeze 2026-09-29, 6576 passed, jetzt unter `docs/archive/`; Vorgänger v10, Freeze 2026-09-14, 4250 passed,
+jetzt unter `docs/archive/`). Eine DRAFT-v14 wird beim nächsten
 ARCH-Phasen-Abschluss angelegt — dieser Index bleibt die einzige Stelle
 für den aktuellen Finding-Stand.
 **Aktueller Finding-Stand (dieses Dokument):** 2026-09-30 (Mapping-Administration abgeschlossen bis auf die Nutzer-Gates G3/G4/G6: Zeile „Mapping-Dateien“ für die fünf bearbeitbaren Typen CLOSED; neue Zeilen für M6/M7, Hybrid-/Auto-Learned-Dateien, fehlendes Löschen und fehlende Server-Paginierung; direkt CLOSED: „Kategorie-Priorität der Spezialkanäle zufällig“ (P2), „Umordnen der Kategorien wurde nie geschrieben“ (P2), „`mappings_editor.js` ~710 Zeilen“ (P3); Baseline-DRAFT `docs/MusicBot_ENGINEERING_BASELINE_v13.md`).

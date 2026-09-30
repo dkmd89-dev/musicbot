@@ -1117,18 +1117,17 @@ Nicht jede einzelne triviale Funktion braucht eine seitenlange Beschreibung.
 
 ## Baseline-Pflege
 
-Aktuelle **eingefrorene** Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v12.md`
-(Freeze 2026-09-29, 6576 passed / 0 failed, 1 umgebungsbedingt skipped,
+Aktuelle **eingefrorene** Baseline: `docs/MusicBot_ENGINEERING_BASELINE_v13.md`
+(Freeze 2026-09-30, 7217 passed / 0 failed, 1 umgebungsbedingt skipped,
 11 subtests passed; Freeze-Gate APPROVED, kein neuer Datensicherheits-
-Vorfall seit v11). Referenziert von
+Vorfall seit v12). Referenziert von
 `README.md` und `docs/INDEX.md`. Vorgänger
-`docs/archive/MusicBot_ENGINEERING_BASELINE_v11.md` (Freeze 2026-09-28, 6160
+`docs/archive/MusicBot_ENGINEERING_BASELINE_v12.md` (Freeze 2026-09-29, 6576
 passed) liegt unverändert unter `docs/archive/`.
 
-Eine DRAFT-`docs/MusicBot_ENGINEERING_BASELINE_v13.md` existiert seit
-2026-09-30 (Mapping-Administration im Control Center) — Zwischenstände
-gehen dorthin, bis der Nutzer nach dem Freeze-Gate (G3/G4/G6) einfriert.
-`docs/FINDINGS_INDEX.md` bleibt die lebende Findings-Quelle.
+Eine DRAFT-`docs/MusicBot_ENGINEERING_BASELINE_v14.md` existiert noch nicht —
+sie wird beim nächsten ARCH-Phasen-Abschluss mit Code-/YAML-Änderung
+angelegt. `docs/FINDINGS_INDEX.md` bleibt die lebende Findings-Quelle.
 
 Der aktuelle Stand aller offenen/zurückgestellten Punkte steht ab sofort
 in `docs/FINDINGS_INDEX.md`, nicht in der Tech-Debt-Tabelle der jeweils
@@ -1146,8 +1145,8 @@ Testzahlen — die Testzahl stammt aus dem zuletzt vom Nutzer gemeldeten
 Full-Suite-Lauf, siehe §8.A; der Implementierungsprozess führt die volle
 Suite nicht selbst aus). Solange eine DRAFT-vN+1 existiert, geht der Zwischenstand
 dorthin — die eingefrorene vN wird nicht mehr angefasst. Aktuell ist
-das NICHT der Fall: v11 ist seit 2026-09-28 eingefroren, eine
-DRAFT-v12 wird beim nächsten ARCH-Phasen-Abschluss angelegt. Existiert
+das NICHT der Fall: v13 ist seit 2026-09-30 eingefroren, eine
+DRAFT-v14 wird beim nächsten ARCH-Phasen-Abschluss angelegt. Existiert
 keine DRAFT-vN+1 (Normalfall direkt nach einem Freeze), wird sie beim
 nächsten solchen Abschluss angelegt. Bei größerer Drift (>3 ARCH-Phasen
 seit letztem Sync) ohne DRAFT-vN+1 wird eine neue vN+1 statt eines
