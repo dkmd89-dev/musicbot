@@ -27,10 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
-import stat
-import tempfile
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -41,6 +38,8 @@ from services.library_repair.genre import (
     GenreDomainError,
     validate_genre_name as _validate_genre_name_domain,
 )
+from services import mapping_backups
+from utils.atomic_file import atomic_write_text as _atomic_write_text
 from utils.file_lock import cross_process_lock
 
 
@@ -141,6 +140,14 @@ class MappingInvalidInputError(MappingDomainError):
 
 class MappingUnknownIdError(MappingDomainError):
     """mapping_id nicht in der Allowlist."""
+
+
+class MappingBackupError(MappingDomainError):
+    """Vor dem Schreiben konnte kein Backup angelegt werden — es wurde nichts geschrieben."""
+
+
+class MappingBackupNotFoundError(MappingDomainError):
+    """Angeforderte Version existiert nicht."""
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -583,6 +590,8 @@ class SpecialChannelPlan:
     removed: List[str]
     warnings: List[str]
     etag: str
+    # Text "alt -> neu", wenn sich nur die Kategorie-Reihenfolge (= Prioritaet) aendert.
+    order_change: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -638,7 +647,20 @@ def _find_mapping_key(
 
 _WRITE_LOCK = threading.Lock()
 
-_DEFAULT_FILE_MODE = 0o644
+def _snapshot_before_write(
+    descriptor: "MappingDescriptor", mapping_dir: Path, backup_dir: Optional[Path],
+) -> None:
+    """Legt die bisherige Datei als Version ab, bevor sie ueberschrieben wird.
+    Ohne `backup_dir` (interne Aufrufer/Tests) entfaellt das; mit `backup_dir`
+    bricht ein Backup-Fehler den Write ab, damit nie ohne Rueckweg geschrieben wird."""
+    if backup_dir is None:
+        return
+    try:
+        mapping_backups.snapshot(backup_dir, descriptor.mapping_id, _mapping_path(descriptor, mapping_dir))
+    except OSError as e:
+        raise MappingBackupError(
+            "Backup konnte nicht angelegt werden — es wurde nichts geschrieben."
+        ) from e
 
 
 @contextmanager
@@ -649,37 +671,6 @@ def _write_guard(descriptor: "MappingDescriptor", mapping_dir: Path):
     und sich gegenseitig ueberschreiben."""
     with _WRITE_LOCK, cross_process_lock(_mapping_path(descriptor, mapping_dir)):
         yield
-
-
-def _atomic_write_text(path: Path, text: str) -> None:
-    """Schreibt `text` atomar nach `path`: eindeutiges tmp-Sibling (kein
-    gemeinsamer fester Name, den ein zweiter Schreiber oder ein Rest eines
-    abgestuerzten Laufs stoeren koennte), fsync der Datei, `os.replace`, fsync
-    des Verzeichnisses. Bei jedem Fehler wird das tmp-File entfernt und die
-    Zieldatei bleibt unveraendert. Die Rechte der bestehenden Datei bleiben
-    erhalten (mkstemp legt sonst 0600 an)."""
-    path = Path(path)
-    try:
-        mode = stat.S_IMODE(path.stat().st_mode)
-    except FileNotFoundError:
-        mode = _DEFAULT_FILE_MODE
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    tmp = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.chmod(tmp, mode)
-        os.replace(tmp, path)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
-    dir_fd = os.open(path.parent, os.O_RDONLY)
-    try:
-        os.fsync(dir_fd)
-    finally:
-        os.close(dir_fd)
 
 
 def _dump_raw_mapping(
@@ -932,7 +923,7 @@ def plan_mapping_update(
 
 def apply_mapping_update(
     mapping_id: str, key: str, payload: Dict[str, Any], mapping_dir: Path,
-    expected_etag: str,
+    expected_etag: str, *, backup_dir: Optional[Path] = None,
 ) -> Tuple[Any, Any]:
     descriptor = _get_descriptor(mapping_id)
     with _write_guard(descriptor, mapping_dir):
@@ -948,6 +939,7 @@ def apply_mapping_update(
             return plan, _unchanged_result(descriptor, plan)
 
         actual_key = _find_mapping_key(mapping, plan.key, descriptor) or plan.key
+        _snapshot_before_write(descriptor, mapping_dir, backup_dir)
         if descriptor.kind == "channel-genre":
             mapping[actual_key] = {
                 "primary": plan.primary,
@@ -1358,7 +1350,7 @@ def plan_genre_filter_update(
 
 
 def apply_genre_filter_update(
-    values: object, mapping_dir: Path, *, expected_etag: str,
+    values: object, mapping_dir: Path, *, expected_etag: str, backup_dir: Optional[Path] = None,
 ) -> Tuple[GenreFilterPlan, GenreFilterSaveResult]:
     with _write_guard(_get_descriptor(MAPPING_ID_GENRE_FILTERS), mapping_dir):
         plan = plan_genre_filter_update(values, mapping_dir)
@@ -1374,6 +1366,7 @@ def apply_genre_filter_update(
             )
         # change in {"update", "cleanup"} -> schreiben
         descriptor = _get_descriptor(MAPPING_ID_GENRE_FILTERS)
+        _snapshot_before_write(descriptor, mapping_dir, backup_dir)
         _dump_raw_list(descriptor, mapping_dir, plan.values)
         new_etag = _genre_filter_etag(plan.values)
         return plan, GenreFilterSaveResult(
@@ -1481,10 +1474,21 @@ def plan_special_channels_update(
             if ch.casefold() not in new_fold:
                 removed.append(f"{cat.name}: {ch}")
 
+    # Reihenfolge der Kategorien ist die Prioritaet: eine reine Umordnung ist
+    # eine Aenderung, auch wenn kein Kanal/keine Kategorie dazukommt oder wegfaellt.
+    common_before = [c.name.casefold() for c in current_categories if c.name.casefold() in new_cat_map]
+    common_after = [c.name.casefold() for c in new_categories if c.name.casefold() in current_cat_map]
+    reordered = common_before != common_after
+    order_change = (
+        "Reihenfolge: " + ", ".join(c.name for c in current_categories)
+        + " → " + ", ".join(c.name for c in new_categories)
+        if reordered else None
+    )
+
     # change-Bewertung
-    if not added and not removed and raw_is_clean:
+    if not added and not removed and not reordered and raw_is_clean:
         change = "unchanged"
-    elif not added and not removed and not raw_is_clean:
+    elif not added and not removed and not reordered and not raw_is_clean:
         change = "cleanup"
         if current_warnings:
             all_warnings.append(
@@ -1503,11 +1507,12 @@ def plan_special_channels_update(
         removed=removed,
         warnings=all_warnings,
         etag=current_etag,
+        order_change=order_change,
     )
 
 
 def apply_special_channels_update(
-    categories_input: object, mapping_dir: Path, *, expected_etag: str,
+    categories_input: object, mapping_dir: Path, *, expected_etag: str, backup_dir: Optional[Path] = None,
 ) -> Tuple[SpecialChannelPlan, SpecialChannelSaveResult]:
     with _write_guard(_get_descriptor(MAPPING_ID_SPECIAL_CHANNELS), mapping_dir):
         plan = plan_special_channels_update(categories_input, mapping_dir)
@@ -1522,6 +1527,7 @@ def apply_special_channels_update(
                 categories=list(plan.categories), new_etag=plan.etag,
             )
         descriptor = _get_descriptor(MAPPING_ID_SPECIAL_CHANNELS)
+        _snapshot_before_write(descriptor, mapping_dir, backup_dir)
         _dump_special_categories(descriptor, mapping_dir, plan.categories)
         new_etag = _special_channels_etag(plan.categories)
         return plan, SpecialChannelSaveResult(
@@ -1533,3 +1539,51 @@ def apply_special_channels_update(
 def list_special_channel_categories(mapping_dir: Path) -> List[SpecialChannelCategory]:
     cats, _etag, _w = get_special_channels_state(mapping_dir)
     return cats
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Oeffentliche Bausteine fuer services/mapping_restore.py
+# ─────────────────────────────────────────────────────────────────────────
+
+get_descriptor = _get_descriptor
+write_guard = _write_guard
+mapping_file_path = _mapping_path
+snapshot_before_write = _snapshot_before_write
+write_mapping_text = _atomic_write_text
+
+
+def get_current_etag(mapping_id: str, mapping_dir: Path) -> str:
+    """Etag des aktuellen Mapping-Stands, so wie ihn auch GET/Preview liefern."""
+    descriptor = _get_descriptor(mapping_id)
+    if descriptor.kind == "genre-filter":
+        return get_genre_filter_state(mapping_dir)[1]
+    if descriptor.kind == "special-channel":
+        return get_special_channels_state(mapping_dir)[1]
+    return _compute_etag(descriptor, _load_raw_mapping(descriptor, mapping_dir))
+
+
+def describe_mapping(mapping_id: str, mapping_dir: Path) -> Dict[str, str]:
+    """Fachlicher Inhalt einer Mapping-Datei als flache Zuordnung
+    `Schluessel -> Wert` (fuer Diffs zwischen Staenden). Wirft
+    MappingUnavailableError, wenn die Datei nicht lesbar ist."""
+    descriptor = _get_descriptor(mapping_id)
+    if descriptor.kind == "genre-filter":
+        return {v: v for v in get_genre_filter_state(mapping_dir)[0]}
+    if descriptor.kind == "special-channel":
+        items: Dict[str, str] = {}
+        for position, category in enumerate(get_special_channels_state(mapping_dir)[0], start=1):
+            items[f"Kategorie {category.name}"] = f"Position {position}"
+            for channel in category.channels:
+                items[f"{category.name}: {channel}"] = channel
+        return items
+    result: Dict[str, str] = {}
+    for entry in list_mapping(mapping_id, mapping_dir):
+        if descriptor.kind == "channel-genre":
+            result[entry.key.casefold()] = (
+                f"{entry.primary} · {', '.join(entry.secondary) or '—'} · {entry.description or '—'}"
+            )
+        elif descriptor.kind == "genre-alias":
+            result[entry.key.casefold()] = entry.canonical
+        else:  # genre-override: Keys sind case-sensitiv
+            result[entry.key] = entry.override
+    return result

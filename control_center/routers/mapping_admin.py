@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from config import Config
 from logger import get_module_logger
 from services.access_control import AccessLevel
+from services.mapping_backups import default_backup_dir
 from services.mapping_admin import (
     MAPPING_ID_CHANNEL_GENRE,
     MAPPING_ID_GENRE_ALIASES,
@@ -37,6 +38,8 @@ from services.mapping_admin import (
     GenreOverrideEntry,
     GenreOverridePlan,
     GenreFilterPlan,
+    MappingBackupError,
+    MappingBackupNotFoundError,
     MappingConflictError,
     MappingDomainError,
     MappingInvalidInputError,
@@ -111,9 +114,17 @@ def _mapping_dir() -> Path:
     return Path(Config.GENRE_MAPPING_DIR)
 
 
+def _backup_dir() -> Path:
+    return default_backup_dir(Config)
+
+
 def _mapping_http_error(e: MappingDomainError) -> HTTPException:
     if isinstance(e, MappingUnknownIdError):
         status, code = 404, "MAPPING_UNKNOWN"
+    elif isinstance(e, MappingBackupNotFoundError):
+        status, code = 404, "MAPPING_BACKUP_NOT_FOUND"
+    elif isinstance(e, MappingBackupError):
+        status, code = 503, "MAPPING_BACKUP_FAILED"
     elif isinstance(e, MappingUnavailableError):
         status, code = 503, "MAPPING_UNAVAILABLE"
     elif isinstance(e, MappingConflictError):
@@ -324,7 +335,7 @@ def put_mapping(
         try:
             plan, result = apply_genre_filter_update(
                 payload.get("values", []), _mapping_dir(),
-                expected_etag=expected_etag,
+                expected_etag=expected_etag, backup_dir=_backup_dir(),
             )
         except MappingDomainError as e:
             raise _mapping_http_error(e) from e
@@ -337,7 +348,7 @@ def put_mapping(
         try:
             plan, result = apply_special_channels_update(
                 payload.get("categories", []), _mapping_dir(),
-                expected_etag=expected_etag,
+                expected_etag=expected_etag, backup_dir=_backup_dir(),
             )
         except MappingDomainError as e:
             raise _mapping_http_error(e) from e
@@ -358,6 +369,7 @@ def put_mapping(
     try:
         plan, result = apply_mapping_update(
             mapping_id, key, payload, _mapping_dir(), expected_etag=expected_etag,
+            backup_dir=_backup_dir(),
         )
     except MappingDomainError as e:
         raise _mapping_http_error(e) from e
