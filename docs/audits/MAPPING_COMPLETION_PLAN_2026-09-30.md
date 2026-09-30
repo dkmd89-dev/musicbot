@@ -133,7 +133,7 @@ Nach jedem Schritt: gezielte Tests → direkte Regressionstests → thematische 
 
 | Datei / Thema | Status | Vorschlag |
 |---|---|---|
-| `genre_hierarchy.yaml` (M6), `genre_rules.yaml` (M7) | eigene Backend-Schritte mit Hierarchie-/Regex-Validierung | eigener Plan **nach** Freigabe |
+| `genre_hierarchy.yaml` (M6), `genre_rules.yaml` (M7) | M6 umgesetzt 2026-09-30 (Mapping Phase 2: Baum-Editor, `services/mapping_hierarchy.py`); M7 bewusst kein Editor (Runtime-tote Datei, siehe `docs/GENRE_SYSTEM.md` §3.2, FINDINGS DEFER) | erledigt bzw. entschieden |
 | `known_artists.yaml`, `case_preserve.yaml`, Auto-Learned-JSON, `artist_overrides.json` | Hybrid-/Auto-Learned-Dateien: NO-GO bis Cross-Process-Write-Race (R1) und Hybrid-Konflikt (R3) fachlich entschieden | als DEFER in `FINDINGS_INDEX` |
 | `artist_genre.yaml` | nur pro Artist im Genre-Reiter der Library editierbar | unverändert lassen |
 | Reload-IPC („Anwenden“ ohne Neustart) | Bot-seitiger Reload-Pfad fehlt (`GenreMapper.reload()` wird von niemandem aufgerufen) | nicht im Umfang; „angewendet“ wird nur **angezeigt** (§11, B3), nicht ausgelöst |

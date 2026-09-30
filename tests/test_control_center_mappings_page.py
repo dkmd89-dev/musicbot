@@ -27,7 +27,7 @@ _NODE = shutil.which("node")
 needs_node = pytest.mark.skipif(_NODE is None, reason="node nicht verfuegbar")
 
 _EMOJI = re.compile(r"[\U0001F300-\U0001FAFF☀-➿]")
-_TYPES = ["channel-genre", "genre-aliases", "genre-overrides", "genre-filters", "special-channels"]
+_TYPES = ["channel-genre", "genre-aliases", "genre-overrides", "genre-filters", "special-channels", "genre-hierarchy"]
 
 _HARNESS = r"""
 const fs = require("fs");
@@ -100,6 +100,12 @@ _CHANNELS = [
     {"key": "trap nation", "primary": "Hip Hop", "secondary": ["Trap", "Deutschrap"], "description": "Trap channel"},
     {"key": "cercle", "primary": "Electronic", "secondary": [], "description": None},
 ]
+_TREE = [
+    {"genre": "Hip Hop", "parent": None, "depth": 0, "children": 1},
+    {"genre": "Drill", "parent": "Hip Hop", "depth": 1, "children": 1},
+    {"genre": "UK Drill", "parent": "Drill", "depth": 2, "children": 0},
+    {"genre": "Deutschrap", "parent": None, "depth": 0, "children": 0},
+]
 _ALIASES = [{"key": f"alias {n:03d}", "canonical": f"Genre {n:03d}"} for n in range(120)]
 
 
@@ -121,6 +127,8 @@ def _lists(**overrides):
             "mapping_id": "special-channels", "count": 2, "etag": "e", "warnings": [],
             "categories": [{"name": "Podcast", "channels": ["A", "B", "C"]},
                            {"name": "Playlist", "channels": ["D"]}]}},
+        "GET /api/v1/admin/mappings/genre-hierarchy": {"status": 200, "body": {
+            "mapping_id": "genre-hierarchy", "count": len(_TREE), "etag": "eh", "warnings": [], "entries": _TREE}},
         "GET /api/v1/admin/mappings/status": _status(),
     }
     r.update(overrides)
@@ -195,13 +203,13 @@ def test_mapping_classes_are_defined_in_common_css():
 
 
 @needs_node
-def test_five_tiles_show_live_counts_and_first_tab_is_active(tmp_path):
+def test_six_tiles_show_live_counts_and_first_tab_is_active(tmp_path):
     out = _run(tmp_path)
     tiles = _el(out, "mappings-tiles")
 
-    assert tiles.count('data-action="tab"') == 5
+    assert tiles.count('data-action="tab"') == 6
     assert "1.234" in tiles and "120" in tiles
-    for label in ("Channel-Genre", "Genre-Aliase", "Genre-Overrides", "Genre-Filter", "Spezialkanäle"):
+    for label in ("Channel-Genre", "Genre-Aliase", "Genre-Overrides", "Genre-Filter", "Spezialkanäle", "Genre-Hierarchie"):
         assert label in tiles
     assert 'data-type="channel-genre"' in tiles.split("cc-mapping-tile active")[1][:200]
     assert tiles.count("cc-mapping-tile active") == 1
@@ -518,7 +526,92 @@ def test_status_texts_are_escaped(tmp_path):
 
 
 @needs_node
-def test_every_type_has_a_yaml_button_with_advanced_hint(tmp_path):
-    for mapping_id in _TYPES:
+def test_every_type_except_the_tree_has_a_yaml_button_with_advanced_hint(tmp_path):
+    for mapping_id in [t for t in _TYPES if t != "genre-hierarchy"]:
         head = _el(_run(tmp_path, ops=[_tab(mapping_id)]), "mappings-pane-head")
         assert 'data-action="yaml"' in head and f'data-type="{mapping_id}"' in head and "Fortgeschrittene" in head
+
+
+# ── Genre-Hierarchie (Baum) ──────────────────────────────────────────────
+
+
+def _toggle(genre: str) -> dict:
+    return {"op": "event", "type": "click", "dataset": {"action": "tree-toggle", "genre": genre}}
+
+
+@needs_node
+def test_hierarchy_tab_shows_collapsed_roots_with_depth_and_child_counts(tmp_path):
+    out = _run(tmp_path, ops=[_tab("genre-hierarchy")])
+    body = _el(out, "mappings-pane-body")
+    head = _el(out, "mappings-pane-head")
+
+    assert "Hip Hop" in body and "Deutschrap" in body and "Tiefe 0" in body
+    assert "1 Unterelement<" in body and "Drill" not in body  # eingeklappt
+    assert "4 Genres" in head and "2 Wurzeln" in head
+    assert "Priorität" in body
+
+
+@needs_node
+def test_hierarchy_toggle_expands_children_and_shows_backend_depth(tmp_path):
+    out = _run(tmp_path, ops=[_tab("genre-hierarchy"), _toggle("Hip Hop"), _toggle("Drill")])
+    body = _el(out, "mappings-pane-body")
+
+    assert "Drill" in body and "UK Drill" in body and "Tiefe 2" in body
+    assert 'aria-expanded="true"' in body
+    assert _calls(out).count("GET /api/v1/admin/mappings/genre-hierarchy") == 1  # Auf-/Zuklappen lädt nichts nach
+
+
+@needs_node
+def test_hierarchy_search_opens_the_path_to_matches_and_hides_the_rest(tmp_path):
+    out = _run(tmp_path, ops=[_tab("genre-hierarchy"), _search("uk")])
+    body = _el(out, "mappings-pane-body")
+
+    assert "UK Drill" in body and "Drill" in body and "Hip Hop" in body
+    assert "Deutschrap" not in body
+
+
+@needs_node
+def test_hierarchy_has_edit_button_but_no_yaml_button_and_no_writes(tmp_path):
+    out = _run(tmp_path, ops=[_tab("genre-hierarchy")])
+    head = _el(out, "mappings-pane-head")
+
+    assert 'data-action="edit-tree"' in head and 'data-action="yaml"' not in head
+    assert 'data-action="versions"' in head
+    assert all(c.startswith("GET ") for c in _calls(out))
+
+
+@needs_node
+def test_hierarchy_escapes_genre_names_and_shows_file_warnings(tmp_path):
+    tree = [{"genre": "<img src=x onerror=alert(1)>", "parent": None, "depth": 0, "children": 0}]
+    body_json = {"mapping_id": "genre-hierarchy", "count": 1, "etag": "e", "entries": tree,
+                 "warnings": ["Datei: 'A': Eltern-Genre 'B' existiert nicht."]}
+    out = _run(tmp_path, responses={"GET /api/v1/admin/mappings/genre-hierarchy": {"status": 200, "body": body_json}},
+               ops=[_tab("genre-hierarchy")])
+    body = _el(out, "mappings-pane-body")
+
+    assert "<img" not in body and "&lt;img" in body
+    assert "existiert nicht" in body
+
+
+@needs_node
+def test_hierarchy_load_failure_shows_error_only_on_its_tile(tmp_path):
+    out = _run(tmp_path, responses={"GET /api/v1/admin/mappings/genre-hierarchy": {"status": 503, "body": {"error": {"message": "Datei fehlt"}}}},
+               ops=[_tab("genre-hierarchy")])
+
+    assert "nicht erreichbar" in _el(out, "mappings-tiles") and "1.234" in _el(out, "mappings-tiles")
+    assert "Datei fehlt" in _el(out, "mappings-pane-body")
+
+
+@needs_node
+def test_hierarchy_shows_genres_without_a_root_in_their_own_section(tmp_path):
+    tree = [
+        {"genre": "Pop", "parent": None, "depth": 0, "children": 0},
+        {"genre": "A", "parent": "B", "depth": 0, "children": 1},
+        {"genre": "B", "parent": "A", "depth": 0, "children": 1},
+    ]
+    body_json = {"mapping_id": "genre-hierarchy", "count": 3, "etag": "e", "entries": tree, "warnings": ["Datei: Zyklus: A → B → A."]}
+    out = _run(tmp_path, responses={"GET /api/v1/admin/mappings/genre-hierarchy": {"status": 200, "body": body_json}},
+               ops=[_tab("genre-hierarchy")])
+    body = _el(out, "mappings-pane-body")
+
+    assert "Nicht mit einer Wurzel verbunden" in body and "unter B" in body and "unter A" in body

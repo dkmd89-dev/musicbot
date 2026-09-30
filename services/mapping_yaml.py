@@ -73,6 +73,18 @@ class RawResult:
     new_etag: str
 
 
+# Der Baum (genre-hierarchy) wird bewusst nur ueber die strukturierte Ansicht
+# bearbeitet: ein Rohtext-Editor umginge Zyklen-/Parent-Pruefung und Preview.
+_NO_YAML_EDITOR_KINDS = frozenset({"genre-hierarchy"})
+
+
+def _require_yaml_editor(descriptor: ma.MappingDescriptor) -> None:
+    if descriptor.kind in _NO_YAML_EDITOR_KINDS:
+        raise ma.MappingUnknownIdError(
+            f"Für {descriptor.mapping_id} gibt es keinen YAML-Editor (Baum-Datei: nur über die Hierarchie-Ansicht bearbeitbar)."
+        )
+
+
 def _etag(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
@@ -82,6 +94,7 @@ def _etag(text: str) -> str:
 
 def read_raw(mapping_id: str, mapping_dir: Path) -> RawFile:
     descriptor = ma.get_descriptor(mapping_id)  # Allowlist, bevor ein Pfad entsteht
+    _require_yaml_editor(descriptor)
     path = ma.mapping_file_path(descriptor, mapping_dir)
     try:
         text = path.read_text(encoding="utf-8")
@@ -300,6 +313,7 @@ def validate_raw_text(mapping_id: str, text: object) -> Tuple[str, List[str]]:
     """Prueft einen Rohtext vollstaendig. Rueckgabe: (normalisierter Text, Warnungen).
     Wirft MappingInvalidInputError mit allen gefundenen Fehlern (eine Zeile je Fehler)."""
     descriptor = ma.get_descriptor(mapping_id)
+    _require_yaml_editor(descriptor)
     prepared = _prepare_text(text)
     _scan_events(prepared)
     payload = _load_payload(descriptor, prepared)

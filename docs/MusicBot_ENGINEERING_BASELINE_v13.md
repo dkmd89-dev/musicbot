@@ -17,8 +17,8 @@
 |---|---|
 | Baseline | v13 (DRAFT) |
 | Vorgänger | `docs/MusicBot_ENGINEERING_BASELINE_v12.md` (Freeze 2026-09-29, 6576 passed / 1 skipped / 11 subtests passed / 0 failed) |
-| Letzte vom Nutzer gemeldete Full-Suite-Zahl (Stand `main` = `88d7be6`, Lauf 2026-09-30, 569,07 s) | **7072 passed, 1 skipped, 11 subtests passed, 0 failed, 5 warnings** |
-| Zuwachs seit v12-Freeze | +496 passed (6576 → 7072), 0 failed |
+| Letzte vom Nutzer gemeldete Full-Suite-Zahl (Stand `main` = `de42f12` + Mapping Phase 2 M6/M7, Lauf 2026-09-30, 580,63 s) | **7205 passed, 1 skipped, 11 subtests passed, 0 failed, 5 warnings** |
+| Zuwachs seit v12-Freeze | +629 passed (6576 → 7205), 0 failed (davon +133 durch Mapping Phase 2 M6/M7) |
 | Einordnung eines früheren Laufs am selben Tag | 2 Fehler in `test_genre_specificity_characterization.py` (74 statt 75 Spezifitäts-Paare): Ursache waren zwei beim manuellen Testen im Control Center entfernte Alias-Zeilen in der **echten** `mapping/genre_aliases.yaml` (`deutsch hip-hop`, `afro house`), kein Codefehler; nach Wiederherstellen des Ausgangsstands grün (belegt durch das Backup-Protokoll und einen sauberen Worktree-Lauf: 36 passed) |
 | Neue Tests seit v12 (nur gezielte/thematische Läufe, keine Full-Suite) | 473 gesammelte Tests in 23 neuen Testdateien (`pytest --collect-only`), dazu Ergänzungen in `test_bot_runtime_snapshot_task.py` und den UI-Seitenlisten-Tests |
 | ARCH-Phasen | keine (die Arbeit ist ein Control-Center-Feature, kein ARCH-Schritt) |
@@ -36,6 +36,8 @@
 | **B1 Backup/Restore** | #390 | Version der Vorgängerdatei vor jedem Schreiben (`<DATA_DIR>/mapping_backups/…`, letzte 20), Restore als Etag-geschützter Write, Backup-Fehler bricht den Write ab |
 | **B3 Runtime-Status** | #393 | Bot meldet beim Start die Datei-Hashes im Laufzeit-Snapshot; Control Center zeigt „Angewendet“ / „Neustart nötig“ / „Runtime unbekannt“ / „Bot läuft nicht“ (einzige Änderung am Bot) |
 | **B4 YAML-Editor** | #394 | Rohtext mit strenger Prüfung (ein Dokument, keine Anker/Aliase/Tags/Merge-Keys/doppelten Keys, Tiefe ≤ 6, ≤ 512 KB), Text unverändert geschrieben (Kommentare bleiben) |
+| **Mapping Phase 2: M6 Genre-Hierarchie** | (offen, ungemergt) | Baum-Editor für `genre_hierarchy.yaml` (`services/mapping_hierarchy.py`, Tab „Genre-Hierarchie“): Ganzzustands-API mit Etag, Preview mit Prioritätswirkung, Zyklen-/Parent-/Duplikat-Validierung, Kinderschutz beim Entfernen, zeilenweiser Writer (Kommentare bleiben), Backup/Restore, Runtime-Status; kein YAML-Rohtext-Editor. Fund im Browser-Test: Genres eines Entwurfs-Zyklus waren nicht mehr sichtbar → eigener Abschnitt „Nicht mit einer Wurzel verbunden“ |
+| **Mapping Phase 2: M7 Genre-Regeln** | (offen, ungemergt) | Entscheidung: kein Editor. `genre_rules.yaml` ist Runtime-tot; Characterization-Tests, Korrektur der Aussage „keyword_rules 1:1 redundant“ (9 von 13), FINDINGS DEFER/ARCHITECTURE DECISION |
 | **Fix: Spezialkanal-Priorität zufällig** | #379 | `set()`-Merge machte die Kategorie-Reihenfolge vom Hash-Seed abhängig; gemeinsamer Helfer behält die YAML-Reihenfolge |
 | **Fix: Umordnen der Kategorien wurde nie geschrieben** | #390 | `plan_special_channels_update()` bewertete eine reine Umordnung als `unchanged`; der lockere Test verdeckte es |
 | **Override-Key-Warnung** | #383 | `GenreMapper` sucht Overrides kleingeschrieben; ein Key mit Großbuchstaben greift zur Laufzeit nie — die Vorschau warnt |

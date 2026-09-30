@@ -71,7 +71,7 @@ async def test_without_snapshot_everything_is_unknown(client, mapping_dir):
     body = r.json()
     assert body["snapshot_status"] == "missing" and body["bot_running"] is False
     assert set(_states(body).values()) == {"unknown"}
-    assert len(body["statuses"]) == 5
+    assert len(body["statuses"]) == 6
 
 
 @pytest.mark.asyncio

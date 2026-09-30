@@ -20,6 +20,7 @@ from services import mapping_runtime_state as mrs
 _FILES = {
     "channel-genre": "channel_genre.yaml", "genre-aliases": "genre_aliases.yaml", "genre-overrides": "genre_overrides.yaml",
     "genre-filters": "genre_filters.yaml", "special-channels": "special_channel.yaml",
+    "genre-hierarchy": "genre_hierarchy.yaml",
 }
 
 
@@ -49,7 +50,7 @@ def _by_id(statuses):
 # ── Hashen (Bot-Seite) ───────────────────────────────────────────────────
 
 
-def test_allowlist_covers_exactly_the_five_administrated_files():
+def test_allowlist_covers_exactly_the_six_administrated_files():
     assert ma.mapping_file_names() == _FILES
 
 
