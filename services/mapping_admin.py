@@ -64,6 +64,9 @@ MAPPING_ROOT_KEY_GENRE_FILTERS = "IGNORE_SECONDARY"
 MAPPING_ID_SPECIAL_CHANNELS = "special-channels"
 MAPPING_FILENAME_SPECIAL_CHANNELS = "special_channel.yaml"
 MAPPING_ROOT_KEY_SPECIAL_CHANNELS = "SPECIAL_CHANNELS"
+MAPPING_ID_GENRE_HIERARCHY = "genre-hierarchy"
+MAPPING_FILENAME_GENRE_HIERARCHY = "genre_hierarchy.yaml"
+MAPPING_ROOT_KEY_GENRE_HIERARCHY = "GENRE_HIERARCHY"
 
 
 @dataclass(frozen=True)
@@ -106,6 +109,14 @@ _MAPPING_DESCRIPTORS: Dict[str, MappingDescriptor] = {
         filename=MAPPING_FILENAME_SPECIAL_CHANNELS,
         root_key=MAPPING_ROOT_KEY_SPECIAL_CHANNELS,
         kind="special-channel",
+    ),
+    # Baum (Kind -> Eltern|null), Logik und zeilenweiser Writer in
+    # services/mapping_hierarchy.py.
+    MAPPING_ID_GENRE_HIERARCHY: MappingDescriptor(
+        mapping_id=MAPPING_ID_GENRE_HIERARCHY,
+        filename=MAPPING_FILENAME_GENRE_HIERARCHY,
+        root_key=MAPPING_ROOT_KEY_GENRE_HIERARCHY,
+        kind="genre-hierarchy",
     ),
 }
 
@@ -1561,6 +1572,17 @@ validate_secondary_list = _validate_secondary_list
 normalize_filter_list = _normalize_filter_list
 normalize_special_categories = _normalize_special_categories
 override_key_warnings = _override_key_runtime_warnings
+etag_of = _etag_of
+
+
+def check_restorable(mapping_id: str, text: str) -> None:
+    """Zusaetzliche fachliche Pruefung einer wiederherzustellenden Version.
+    Nur der Hierarchie-Baum braucht sie (Zyklus/unbekannter Parent wuerde die
+    Runtime-Prioritaeten verfaelschen); die uebrigen Typen sind flach."""
+    if _get_descriptor(mapping_id).kind == "genre-hierarchy":
+        from services import mapping_hierarchy
+
+        mapping_hierarchy.check_text(text)
 
 
 def mapping_file_names() -> Dict[str, str]:
@@ -1575,6 +1597,10 @@ def get_current_etag(mapping_id: str, mapping_dir: Path) -> str:
         return get_genre_filter_state(mapping_dir)[1]
     if descriptor.kind == "special-channel":
         return get_special_channels_state(mapping_dir)[1]
+    if descriptor.kind == "genre-hierarchy":
+        from services import mapping_hierarchy  # lazy: mapping_hierarchy importiert dieses Modul
+
+        return mapping_hierarchy.get_hierarchy_state(mapping_dir)[1]
     return _compute_etag(descriptor, _load_raw_mapping(descriptor, mapping_dir))
 
 
@@ -1592,6 +1618,10 @@ def describe_mapping(mapping_id: str, mapping_dir: Path) -> Dict[str, str]:
             for channel in category.channels:
                 items[f"{category.name}: {channel}"] = channel
         return items
+    if descriptor.kind == "genre-hierarchy":
+        from services import mapping_hierarchy
+
+        return mapping_hierarchy.describe_hierarchy(mapping_dir)
     result: Dict[str, str] = {}
     for entry in list_mapping(mapping_id, mapping_dir):
         if descriptor.kind == "channel-genre":

@@ -79,6 +79,7 @@ def _plan(mapping_id: str, version_id: str, mapping_dir: Path, backup_dir: Path)
     descriptor = ma.get_descriptor(mapping_id)
     text = _read_version(mapping_id, version_id, backup_dir)
     target = describe_text(mapping_id, text)
+    ma.check_restorable(mapping_id, text)
     path = ma.mapping_file_path(descriptor, mapping_dir)
     if not path.is_file():
         raise ma.MappingUnavailableError(f"{path} existiert nicht.")

@@ -69,11 +69,11 @@ Fehler behandelt.
 |---|---|---|---|---|
 | `artist_genre.yaml` | YAML | manuell | `GenreMapper` | — |
 | `channel_genre.yaml` | YAML | manuell | `GenreMapper` | Control Center (Mapping-Administration) |
-| `genre_hierarchy.yaml` | YAML | manuell | `GenreProcessor` (`GENRE_PRIORITY`) | — |
+| `genre_hierarchy.yaml` | YAML | manuell | `GenreProcessor` (`GENRE_PRIORITY`), `GenreMapper` | Control Center (Mapping-Administration, Baum-Editor, zeilenweise) |
 | `genre_aliases.yaml` | YAML | manuell | `GenreProcessor` (`normalize_genre_name()`) | Control Center (Mapping-Administration) |
 | `genre_filters.yaml` | YAML | manuell | `GenreProcessor` (`IGNORE_SECONDARY`) | Control Center (Mapping-Administration) |
 | `genre_overrides.yaml` | YAML | manuell | `GenreMapper` | Control Center (Mapping-Administration) |
-| `genre_rules.yaml` | YAML | manuell | `GenreMapper` | — |
+| `genre_rules.yaml` | YAML | **Runtime-tot** (kein Root-Key `GENRE_RULES`, `GenreMapper.rules == []`) | `GenreMapper` (lädt nichts) | — (bewusst nicht bearbeitbar, siehe §3.2) |
 | `known_artists.yaml` | YAML | auto (bestätigte Identität) | `AutoLearnManager` | `AutoLearnManager` |
 | `auto_learned_genre.json` | **JSON** | auto | `GenreMapper` (Merge in `artist_map`) | `AutoLearnManager` |
 | `auto_learned_artist_aliases.json` | **JSON** | auto | `ArtistNormalizer` | `AutoLearnManager`, `ArtistNormalizer` |
@@ -136,6 +136,30 @@ standen, hier:
 | `genre_overrides.yaml` | Keys sind **case-sensitiv** und werden ohne Lowercasing geladen: `Hip-Hop`, `hip-hop` und `Hip - Hop` sind bewusst getrennte Einträge. Die Reihenfolge ist irrelevant. Die Administration sucht erst den exakten Key, dann casefold. |
 | `genre_aliases.yaml` | Keys werden zur Laufzeit lowercased (`GenreProcessor`, `GenreMapper`); Groß-/Kleinschreibung des Keys ist damit ohne Wirkung, die des Zielwerts (`canonical`) bleibt erhalten. |
 | `genre_filters.yaml` | Liste `IGNORE_SECONDARY`: Tags werden mit `lower().strip()` gegen die Liste geprüft, Einträge müssen also kleingeschrieben sein. Ein Filter gilt nur für **Sekundär**-Genres; erkennbare Genres wie `pop`/`rock`/`indie` dienen als Notnagel, wenn sonst nur Nicht-Genre-Tags übrig bleiben. Die Gruppierung der Datei (Übergenres, Länder, Künstler-Beschreibungen, Zeitangaben, Produktion, Stimmung, Plattform, Nicht-Genre-Tags, Künstlernamen, MusicBrainz/Last.fm-Tags) ist rein organisatorisch und wird beim Speichern zu einer flachen Liste. |
+
+
+### 3.2 Genre-Hierarchie und Genre-Regeln (M6/M7)
+
+**`genre_hierarchy.yaml` (M6, `genre-hierarchy`).** Flache Map `Kind: Eltern|null` unter `GENRE_HIERARCHY`.
+Die Tiefe im Baum ist die Genre-Priorität (`GENRE_PRIORITY`): ein Parent-Wechsel verschiebt die Priorität des
+ganzen Unterbaums. Der Eltern-Name muss exakt (Groß-/Kleinschreibung) einem Key entsprechen.
+Das Control Center verwaltet den Baum als Ganzes (`services/mapping_hierarchy.py`, `GET/POST preview/PUT`
+mit Etag unter `/api/v1/admin/mappings/genre-hierarchy`): Der Client sendet den Endzustand, geprüft wird der Endbaum
+(unbekannter Parent, Selbstbezug, Zyklus, doppelte/ungültige Namen, leere Hierarchie → 422, Datei unverändert).
+Ein Genre mit Unterelementen lässt sich nicht entfernen (Kinder hätten sonst einen unbekannten Parent). Die Vorschau zeigt
+hinzugefügt/entfernt/verschoben, die betroffenen Unterelemente und die Prioritätsänderung (Tiefe alt → neu).
+Geschrieben wird **zeilenweise**: nur betroffene Zeilen ändern sich, Kommentare und Reihenfolge bleiben; ein Rundlauf-Check
+verhindert jedes Schreiben, das nicht exakt dem Zielbaum entspricht. Kein Umbenennen (Aliase/Artist-Mappings verweisen
+auf die Namen), kein YAML-Rohtext-Editor für diese Datei. Backup/Restore und Runtime-Status („gespeichert“ vs. „angewendet“)
+gelten wie bei den anderen Typen; der Bot lädt die Datei nur beim Start (Neustart nötig).
+
+**`genre_rules.yaml` (M7, Entscheidung: kein Editor).** Die Datei enthält `keyword_rules`, `artist_rules`, `title_rules`,
+der Loader erwartet aber `GENRE_RULES: [{pattern, replacement}]` — die Regel-Engine ist Runtime-tot.
+`keyword_rules` ist nur teilweise durch `genre_aliases.yaml` abgedeckt (9 von 13 Keywords mit gleichem Ziel; `deutschpop`,
+`german pop`, `neue deutsche welle` haben andere Ziele, `german rock` fehlt) und hat eine andere Semantik (Keyword-Enthaltensein);
+`artist_rules` ist nach `artist_genre.yaml` migriert; `title_rules` ist bewusst nicht aktiv (Einzelwort-Titel wie „liebe“ → Pop
+wären fehleranfällig). Eine Aktivierung wäre eine Fach-/Architekturänderung (Priorität, Übersteuerung bestehender Quellen)
+und kein UI-Fix. Charakterisiert in `tests/test_genre_rules_characterization.py`.
 
 ## 4. Auto-Learn-Konfidenz-Stufen
 

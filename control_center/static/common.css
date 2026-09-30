@@ -1036,3 +1036,16 @@ details[open] > .cc-summary::after { transform: rotate(-135deg); }
 /* Mapping-YAML-Editor: Rohtext ohne Zeilenumbruch, damit Einrückung und Kommentare lesbar bleiben. */
 .cc-mapping-yaml { min-height: 22rem; font-family: var(--tblr-font-monospace, monospace); font-size: 0.8rem; white-space: pre; overflow: auto; tab-size: 2; }
 .cc-mapping-textdiff { max-height: 18rem; overflow: auto; font-size: 0.75rem; }
+
+/* Genre-Hierarchie (Mapping-Administration): eingerückter Baum. Tabler kennt keine
+   Baumansicht; die Linie links zeigt die Zugehörigkeit, der Pfeil klappt Unterbäume auf/zu.
+   Auf dem Handy bleibt die Einrückung schmal, damit Tiefe 2 nicht überläuft. */
+.cc-mapping-tree-children { margin-left: 0.9rem; padding-left: 0.5rem; border-left: 1px solid var(--tblr-border-color); }
+.cc-mapping-tree-row { min-height: 2rem; padding: 0.15rem 0; }
+.cc-mapping-tree-name { font-weight: 500; }
+.cc-mapping-tree-toggle, .cc-mapping-tree-spacer { flex: none; width: 1.75rem; height: 1.75rem; }
+.cc-mapping-tree-spacer { display: inline-block; }
+.cc-mapping-tree-toggle .icon { transition: transform 0.15s; }
+.cc-mapping-tree-toggle.cc-mapping-tree-closed .icon { transform: rotate(-90deg); }
+.cc-mapping-errors { margin: 0; padding-left: 1.1rem; }
+@media (max-width: 480px) { .cc-mapping-tree-children { margin-left: 0.5rem; padding-left: 0.35rem; } }

@@ -26,7 +26,7 @@ COMMON_JS = CC_DIR / "static" / "common.js"
 PAGE_JS = CC_DIR / "static" / "pages" / "mappings.js"
 EDITOR_JS = CC_DIR / "static" / "pages" / "mappings_editor.js"
 # Kern zuerst, danach die Modus-Dateien (Ladereihenfolge wie im Template).
-EDITOR_FILES = [EDITOR_JS] + [CC_DIR / "static" / "pages" / f"mappings_editor_{name}.js" for name in ("lists", "yaml", "versions")]
+EDITOR_FILES = [EDITOR_JS] + [CC_DIR / "static" / "pages" / f"mappings_editor_{name}.js" for name in ("lists", "tree", "yaml", "versions")]
 TEMPLATE = CC_DIR / "templates" / "mappings.html"
 _NODE = shutil.which("node")
 needs_node = pytest.mark.skipif(_NODE is None, reason="node nicht verfuegbar")

@@ -5,9 +5,9 @@
 // ausschließlich im Backend (services/mapping_admin.py); diese Seite zeigt an,
 // was GET /api/v1/admin/mappings/{mapping_id} liefert. Suche und Paging laufen
 // clientseitig, weil die API die komplette Liste ohne Paginierung liefert.
-// Bearbeiten (alle fünf Typen) und die Versionen liegen in
+// Bearbeiten (alle sechs Typen) und die Versionen liegen in
 // mappings_editor.js; diese Datei liefert die Aktionsknöpfe (data-action) und
-// stellt dem Editor window.ccMappingsPage.reloadType() bereit.
+// stellt dem Editor window.ccMappingsPage.reloadType() und treeHtml() bereit.
 (function () {
   "use strict";
 
@@ -63,15 +63,81 @@
         return `${channels.toLocaleString("de-DE")} Kanäle`;
       },
     },
+    {
+      id: "genre-hierarchy", title: "Genre-Hierarchie", icon: "hierarchy", unit: "Genres", kind: "tree", treeEditable: true, noYaml: true,
+      searchLabel: "Genres suchen",
+      count: (b) => (b.entries || []).length,
+      items: (b) => b.entries || [],
+      matches: (e, q) => String(e.genre).toLowerCase().includes(q),
+      detail: (b) => `${fmt((b.entries || []).filter((e) => e.parent === null || e.parent === undefined).length)} Wurzeln`,
+    },
   ];
 
   // Zustand je Typ: geladene Antwort, Fehler, Suchtext, Seite. `status` ist der
   // Runtime-Status ("gespeichert" vs. "vom Bot angewendet") aus GET .../mappings/status.
-  const state = { active: MAPPING_TYPES[0].id, byId: {}, status: null };
+  const state = { active: MAPPING_TYPES[0].id, byId: {}, status: null, treeOpen: new Set() };
   MAPPING_TYPES.forEach((t) => { state.byId[t.id] = { body: null, error: null, loading: true, query: "", page: 1 }; });
 
   const typeById = (id) => MAPPING_TYPES.find((t) => t.id === id);
   const fmt = (n) => Number(n).toLocaleString("de-DE");
+
+  // ── Baumansicht (Genre-Hierarchie) ─────────────────────────────────────
+
+  // Gemeinsamer Baum-Renderer für die Übersicht und den Editor. Die Tiefe kommt vom
+  // Backend (entry.depth), der Renderer rechnet nichts fachlich nach. Aufklappen
+  // läuft über eine Menge geöffneter Genres (`opts.open`) und `opts.toggleAction`;
+  // `nodeExtras`/`nodeActions` liefern zusätzliche Badges bzw. Aktionsknöpfe je Knoten.
+  function treeHtml(entries, opts) {
+    const o = opts || {};
+    const names = new Set(entries.map((e) => e.genre));
+    const byName = new Map(entries.map((e) => [e.genre, e]));
+    const children = new Map();
+    const roots = [];
+    entries.forEach((e) => {
+      if (e.parent === null || e.parent === undefined || !names.has(e.parent)) roots.push(e);
+      else children.set(e.parent, (children.get(e.parent) || []).concat([e]));
+    });
+    const q = String(o.query || "").trim().toLowerCase();
+    const visible = new Set();
+    if (q) {
+      entries.filter((e) => String(e.genre).toLowerCase().includes(q)).forEach((e) => {
+        let cur = e;
+        while (cur && !visible.has(cur.genre)) { visible.add(cur.genre); cur = byName.get(cur.parent); }
+      });
+    }
+    const byLabel = (a, b) => String(a.genre).localeCompare(String(b.genre), "de");
+    const node = (e) => {
+      const kids = (children.get(e.genre) || []).filter((k) => !q || visible.has(k.genre)).sort(byLabel);
+      const total = (children.get(e.genre) || []).length;
+      const open = !!q || (o.open && o.open.has(e.genre));
+      const toggle = total
+        ? `<button type="button" class="btn btn-sm btn-icon btn-ghost-secondary cc-mapping-tree-toggle${open ? "" : " cc-mapping-tree-closed"}" data-action="${_escapeHtml(o.toggleAction || "tree-toggle")}"
+            data-genre="${_escapeHtml(e.genre)}" aria-expanded="${open}" title="${_escapeHtml(e.genre)} ${open ? "zuklappen" : "aufklappen"}"
+            aria-label="${_escapeHtml(e.genre)} ${open ? "zuklappen" : "aufklappen"}">${ccIcon("chevron-down")}</button>`
+        : '<span class="cc-mapping-tree-spacer" aria-hidden="true"></span>';
+      const depth = e.depth === undefined ? "" : `<span class="badge bg-secondary-lt">Tiefe ${_escapeHtml(String(e.depth))}</span>`;
+      const count = total ? `<span class="badge bg-teal-lt">${_escapeHtml(fmt(total))} Unterelement${total === 1 ? "" : "e"}</span>` : "";
+      const row = `<div class="cc-mapping-tree-row d-flex flex-wrap align-items-center gap-1">${toggle}
+        <span class="cc-mapping-tree-name text-break">${_escapeHtml(e.genre)}</span>${depth}${count}${o.nodeExtras ? o.nodeExtras(e, total) : ""}
+        <span class="ms-auto d-flex flex-nowrap gap-1">${o.nodeActions ? o.nodeActions(e, total) : ""}</span></div>`;
+      return `<div class="cc-mapping-tree-node">${row}${open && kids.length ? `<div class="cc-mapping-tree-children">${kids.map(node).join("")}</div>` : ""}</div>`;
+    };
+    const shown = roots.filter((e) => !q || visible.has(e.genre)).sort(byLabel);
+    // Genres, die keine Wurzel erreicht (z. B. ein Zyklus im Entwurf), würden sonst
+    // unsichtbar und ließen sich nicht mehr korrigieren: eigener Abschnitt.
+    const reached = new Set();
+    const reach = (e) => { reached.add(e.genre); (children.get(e.genre) || []).forEach((k) => { if (!reached.has(k.genre)) reach(k); }); };
+    roots.forEach(reach);
+    const detached = entries.filter((e) => !reached.has(e.genre) && (!q || String(e.genre).toLowerCase().includes(q))).sort(byLabel);
+    const detachedHtml = detached.length
+      ? `<div class="cc-mapping-tree-detached mt-3"><div class="text-danger small mb-1">${ccIcon("alert", "icon-sm me-1")}Nicht mit einer Wurzel verbunden (Zyklus?): ${_escapeHtml(fmt(detached.length))}</div>`
+        + detached.map((e) => `<div class="cc-mapping-tree-row d-flex flex-wrap align-items-center gap-1"><span class="cc-mapping-tree-spacer" aria-hidden="true"></span>
+            <span class="cc-mapping-tree-name text-break">${_escapeHtml(e.genre)}</span><span class="badge bg-red-lt">unter ${_escapeHtml(String(e.parent))}</span>${o.nodeExtras ? o.nodeExtras(e, 0) : ""}
+            <span class="ms-auto d-flex flex-nowrap gap-1">${o.nodeActions ? o.nodeActions(e, 0) : ""}</span></div>`).join("") + "</div>"
+      : "";
+    if (!shown.length && !detached.length) return '<div class="text-secondary">Kein Genre passt zur Suche.</div>';
+    return `<div class="cc-mapping-tree">${shown.map(node).join("")}</div>${detachedHtml}`;
+  }
 
   // ── Kacheln ────────────────────────────────────────────────────────────
 
@@ -192,9 +258,10 @@
       </div>
       <div class="btn-list">
         <button type="button" class="btn btn-sm" data-action="versions" data-type="${_escapeHtml(type.id)}">${ccIcon("history", "me-1")}Versionen</button>
-        <button type="button" class="btn btn-sm" data-action="yaml" data-type="${_escapeHtml(type.id)}" title="Rohtext bearbeiten (für Fortgeschrittene)">${ccIcon("code", "me-1")}YAML</button>
+        ${type.noYaml ? "" : `<button type="button" class="btn btn-sm" data-action="yaml" data-type="${_escapeHtml(type.id)}" title="Rohtext bearbeiten (für Fortgeschrittene)">${ccIcon("code", "me-1")}YAML</button>`}
         ${type.editable ? `<button type="button" class="btn btn-sm btn-primary" data-action="new" data-type="${_escapeHtml(type.id)}">${ccIcon("plus", "me-1")}Neuer Eintrag</button>` : ""}
         ${type.listEditable ? `<button type="button" class="btn btn-sm btn-primary" data-action="edit-list" data-type="${_escapeHtml(type.id)}">${ccIcon("edit", "me-1")}Bearbeiten</button>` : ""}
+        ${type.treeEditable ? `<button type="button" class="btn btn-sm btn-primary" data-action="edit-tree" data-type="${_escapeHtml(type.id)}">${ccIcon("edit", "me-1")}Bearbeiten</button>` : ""}
       </div>`;
   }
 
@@ -252,6 +319,10 @@
         + `<div class="table-responsive"><table class="table card-table table-vcenter"><thead><tr>${type.head}<th class="w-1"></th></tr></thead><tbody>`
         + slice.map((e) => `<tr>${type.row(e)}${editCell(type, e)}</tr>`).join("") + "</tbody></table></div>";
       renderFoot(found.length, pages, st);
+    } else if (type.kind === "tree") {
+      body.innerHTML = '<div class="card-body">' + warningsHtml(st.body.warnings)
+        + '<div class="text-secondary small mb-2">Die Tiefe im Baum ist die Genre-Priorität: bei mehreren Tags gewinnt das tiefere (spezifischere) Genre.</div>'
+        + treeHtml(type.items(st.body), { query: st.query, open: state.treeOpen, toggleAction: "tree-toggle" }) + "</div>";
     } else if (type.kind === "chips") {
       const found = filtered(type, st);
       body.innerHTML = '<div class="card-body">' + warningsHtml(st.body.warnings)
@@ -345,6 +416,10 @@
     if (action === "tab" && typeById(el.dataset.type)) {
       state.active = el.dataset.type;
       renderAll();
+    } else if (action === "tree-toggle") {
+      const genre = el.dataset.genre;
+      if (state.treeOpen.has(genre)) state.treeOpen.delete(genre); else state.treeOpen.add(genre);
+      renderBody();
     } else if (action === "page") {
       state.byId[state.active].page = Number(el.dataset.page) || 1;
       renderBody();
@@ -364,7 +439,8 @@
   window.ccMappingsPage = {
     // Nach Speichern/Restore: Bestand UND Runtime-Status neu laden (die Datei hat sich geändert).
     reloadType(id) { const type = typeById(id); return type ? Promise.all([loadType(type), loadStatus()]) : Promise.resolve(); },
-    typeInfo(id) { const type = typeById(id); return type ? { id: type.id, title: type.title, unit: type.unit, editable: !!type.editable, listEditable: !!type.listEditable } : null; },
+    typeInfo(id) { const type = typeById(id); return type ? { id: type.id, title: type.title, unit: type.unit, editable: !!type.editable, listEditable: !!type.listEditable, treeEditable: !!type.treeEditable } : null; },
+    treeHtml,
   };
 
   function initPage() {
