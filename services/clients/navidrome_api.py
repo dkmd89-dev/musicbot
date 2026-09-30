@@ -236,6 +236,7 @@ class NavidromeAPI:
                             "title": song_info.get("title", "N/A"),
                             "artist": song_info.get("artist", "N/A"),
                             "album": song_info.get("album", "N/A"),
+                            "duration": entry.get("duration"),
                             "id": song_info.get("id", "N/A"),
                             # NAV-F8: rohe Subsonic-Genre-Felder unveraendert
                             # durchgereicht (reiner Integrationsadapter, keine

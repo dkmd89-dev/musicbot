@@ -178,11 +178,36 @@ class PlayHistoryPoller:
                         last_song_id = last_entry["tracks"][0].get("id")
                         current_song_id = song_info.get("id")
                         if last_song_id == current_song_id:
-                            self.logger.debug(
-                                f"Song '{song_info.get('title')}' spielt bei '{navidrome_username}' noch, "
-                                "kein neuer Eintrag."
-                            )
-                            continue
+                            last_ts = last_entry.get("timestamp")
+                            song_duration = song_info.get("duration")
+                            
+                            if last_ts and song_duration:
+                                try:
+                                    from datetime import datetime
+                                    last_dt = datetime.fromisoformat(last_ts)
+                                    elapsed = (datetime.now() - last_dt).total_seconds()
+                                    if elapsed < song_duration:
+                                        self.logger.debug(
+                                            f"Song '{song_info.get('title')}' spielt noch "
+                                            f"({elapsed:.0f}s < {song_duration}s), kein neuer Eintrag."
+                                        )
+                                        continue
+                                    self.logger.info(
+                                        f"🔁 Repeat erkannt: '{song_info.get('title')}' "
+                                        f"({elapsed:.0f}s >= {song_duration}s) -> neuer Play."
+                                    )
+                                except (ValueError, TypeError) as e:
+                                    self.logger.warning(
+                                        f"Konnte Timestamp '{last_ts}' nicht parsen ({e}) – "
+                                        "überspringe Repeat-Prüfung."
+                                    )
+                                    continue
+                            else:
+                                self.logger.debug(
+                                    f"Song '{song_info.get('title')}' spielt noch – "
+                                    "keine duration/timestamp für Repeat-Prüfung verfügbar."
+                                )
+                                continue
 
                 history.append(history_entry)
                 self.repository.save(history, navidrome_username)
