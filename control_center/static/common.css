@@ -1032,3 +1032,7 @@ details[open] > .cc-summary::after { transform: rotate(-135deg); }
    macht Badges zu Blöcken, dann stünde das Kreuz unter dem Text. */
 .cc-mapping-chip { display: inline-flex; align-items: center; }
 .cc-mapping-chip .btn-close { flex: none; width: 0.5rem; height: 0.5rem; padding: 0.3rem; }
+
+/* Mapping-YAML-Editor: Rohtext ohne Zeilenumbruch, damit Einrückung und Kommentare lesbar bleiben. */
+.cc-mapping-yaml { min-height: 22rem; font-family: var(--tblr-font-monospace, monospace); font-size: 0.8rem; white-space: pre; overflow: auto; tab-size: 2; }
+.cc-mapping-textdiff { max-height: 18rem; overflow: auto; font-size: 0.75rem; }

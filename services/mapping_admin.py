@@ -1551,6 +1551,17 @@ mapping_file_path = _mapping_path
 snapshot_before_write = _snapshot_before_write
 write_mapping_text = _atomic_write_text
 
+# Fachliche Validatoren, die auch der YAML-Editor (services/mapping_yaml.py) nutzt —
+# eine Regelquelle fuer Visual Editor und Rohtext.
+validate_channel_name = _validate_channel_name
+validate_alias_key = _validate_alias_key
+validate_genre = _validated_genre
+validate_description = _validate_description
+validate_secondary_list = _validate_secondary_list
+normalize_filter_list = _normalize_filter_list
+normalize_special_categories = _normalize_special_categories
+override_key_warnings = _override_key_runtime_warnings
+
 
 def mapping_file_names() -> Dict[str, str]:
     """Allowlist: mapping_id -> Dateiname der im Control Center bearbeitbaren Dateien."""

@@ -683,3 +683,141 @@ def test_runtime_status_is_reloaded_after_save_and_after_restore(tmp_path):
     out = _run(tmp_path, responses=responses, ops=[_versions(), _ev("mappings-editor", "click", {"action": "ver-preview", "version": vid}),
                                                     _ev("mappings-editor", "click", {"action": "ver-restore"})])
     assert _calls(out).count("GET /api/v1/admin/mappings/status") == 2      # Seite + nach Restore
+
+
+# ── B4: YAML-Editor (Rohtext) ────────────────────────────────────────────
+
+_YAML_TEXT = "# Aliase\nGENRE_ALIASES:\n  rnb: R&B  # klassisch\n"
+_YAML_GET = {"status": 200, "body": {"mapping_id": "genre-aliases", "filename": "genre_aliases.yaml", "text": _YAML_TEXT,
+                                     "etag": "EY0", "size": len(_YAML_TEXT), "max_bytes": 524288}}
+
+
+def _yaml_preview(change="update", added=(), removed=(), changed=(), diff=(), warnings=(), etag="EY1"):
+    return {"status": 200, "body": {"mapping_id": "genre-aliases", "change": change, "added": list(added), "removed": list(removed),
+                                    "changed": list(changed), "warnings": list(warnings), "text_diff": list(diff), "etag": etag}}
+
+
+def _yaml_responses(preview=None):
+    return {"GET /api/v1/admin/mappings/genre-aliases/yaml": _YAML_GET,
+            "POST /api/v1/admin/mappings/genre-aliases/yaml/preview": preview or _yaml_preview(
+                added=["neo: Neo Soul"], diff=["--- aktuell", "+++ neu", "@@ -1,3 +1,4 @@", " GENRE_ALIASES:", "+  neo: Neo Soul"]),
+            "PUT /api/v1/admin/mappings/genre-aliases/yaml": {"status": 200, "body": {"written": True, "message": "YAML gespeichert. Wirkt nach Neustart."}}}
+
+
+def _open_yaml(type_="genre-aliases"):
+    return _ev("mappings-root", "click", {"action": "yaml", "type": type_})
+
+
+def _yaml_typing(text):
+    return [{"op": "field", "field": "yaml-text", "value": text}, _ev("mappings-editor", "input", {"field": "yaml-text"}, text)]
+
+
+@needs_node
+def test_yaml_editor_loads_raw_text_verbatim_into_textarea_and_warns_about_raw_mode(tmp_path):
+    out = _run(tmp_path, responses=_yaml_responses(_yaml_preview("unchanged")), ops=[_open_yaml()])
+    body = _el(out, "mappings-editor-body")["html"]
+
+    assert "GET /api/v1/admin/mappings/genre-aliases/yaml" in _calls(out)
+    assert "<textarea" in body and 'data-field="yaml-text"' in body and 'spellcheck="false"' in body and 'wrap="off"' in body
+    assert "# Aliase\nGENRE_ALIASES:\n  rnb: R&amp;B  # klassisch\n" in body      # unverändert, nur HTML-escaped
+    assert "Fortgeschritten" in body and "Kommentare bleiben erhalten" in body and "512 KB" in body
+    assert "Keine Änderung" in _el(out, "mappings-editor-preview")["html"]
+    assert _el(out, "mappings-editor-save")["disabled"] is True
+    assert _el(out, "mappings-editor-title")["text"] == "YAML"
+
+
+@needs_node
+def test_yaml_typing_previews_with_semantic_and_colored_text_diff(tmp_path):
+    new = _YAML_TEXT + "  neo: Neo Soul\n"
+    out = _run(tmp_path, responses=_yaml_responses(), ops=[_open_yaml(), *_yaml_typing(new)])
+    preview = _el(out, "mappings-editor-preview")["html"]
+    sent = [c for c in out["calls"] if c["call"].endswith("/yaml/preview")]
+
+    assert sent[-1]["body"] == {"text": new}
+    assert "Änderung" in preview and "neo: Neo Soul" in preview and "cc-mapping-diff-add" in preview
+    assert "cc-terminal" in preview and "cc-t-ok" in preview and "cc-t-time" in preview     # +/@@ eingefärbt
+    assert _el(out, "mappings-editor-save")["disabled"] is False
+
+
+@needs_node
+def test_yaml_format_only_change_is_savable_with_explanation(tmp_path):
+    fmt = _yaml_preview("format", diff=["--- aktuell", "+++ neu", "-# Aliase", "+# Neuer Kommentar"])
+    out = _run(tmp_path, responses=_yaml_responses(fmt), ops=[_open_yaml(), *_yaml_typing("# Neuer Kommentar\n")])
+    preview = _el(out, "mappings-editor-preview")["html"]
+
+    assert "Formatierung" in preview and "Kommentare" in preview and "cc-t-err" in preview
+    assert _el(out, "mappings-editor-save")["disabled"] is False
+
+
+@needs_node
+def test_yaml_422_lists_every_error_line_and_blocks_saving(tmp_path):
+    bad = {"status": 422, "body": {"error": {"code": "MAPPING_INVALID_INPUT",
+                                             "message": "x: Alias zu lang (max. 200 Zeichen).\nok: Zielgenre darf nicht leer sein.\nDer Text enthält <b>Tags</b>."}}}
+    out = _run(tmp_path, responses=_yaml_responses(bad), ops=[_open_yaml(), *_yaml_typing("kaputt")])
+    preview = _el(out, "mappings-editor-preview")["html"]
+
+    assert preview.count("<li") >= 3 and "Alias zu lang" in preview and "darf nicht leer sein" in preview
+    assert "&lt;b&gt;Tags&lt;/b&gt;" in preview and "<b>" not in preview
+    assert _el(out, "mappings-editor-save")["disabled"] is True
+
+
+@needs_node
+def test_yaml_save_confirms_then_puts_text_verbatim_with_preview_etag(tmp_path):
+    new = _YAML_TEXT + "  neo: Neo Soul\n"
+    out = _run(tmp_path, responses=_yaml_responses(), ops=[_open_yaml(), *_yaml_typing(new), _save()])
+    put = [c for c in out["calls"] if c["call"].startswith("PUT ")]
+
+    assert len(out["confirms"]) == 1 and "unverändert" in out["confirms"][0] and "Version" in out["confirms"][0]
+    assert put[0]["call"] == "PUT /api/v1/admin/mappings/genre-aliases/yaml"
+    assert put[0]["body"] == {"text": new, "etag": "EY1"}                       # Text unverändert, Etag aus der Vorschau
+    assert out["toasts"] == ["ok|YAML gespeichert|YAML gespeichert. Wirkt nach Neustart."]
+    assert _calls(out).count("GET /api/v1/admin/mappings/status") == 2         # Status neu geladen
+    assert "show" not in _el(out, "mappings-editor")["cls"]
+
+
+@needs_node
+def test_yaml_never_writes_without_confirmation_or_success(tmp_path):
+    out = _run(tmp_path, responses=_yaml_responses(), confirms=False, ops=[_open_yaml(), *_yaml_typing(_YAML_TEXT + "x: y\n"), _save()])
+    assert not any(c.startswith("PUT ") for c in _calls(out)) and not out["toasts"]
+
+    responses = _yaml_responses()
+    responses["PUT /api/v1/admin/mappings/genre-aliases/yaml"] = {"status": 503, "body": {"error": {"message": "Backup konnte nicht angelegt werden — es wurde nichts geschrieben."}}}
+    out = _run(tmp_path, responses=responses, ops=[_open_yaml(), *_yaml_typing(_YAML_TEXT + "x: y\n"), _save()])
+    assert not out["toasts"] and "Backup konnte nicht angelegt werden" in _el(out, "mappings-editor-message")["html"]
+    assert "show" in _el(out, "mappings-editor")["cls"]
+
+
+@needs_node
+def test_yaml_conflict_409_reopens_with_fresh_text_only_when_confirmed(tmp_path):
+    responses = _yaml_responses()
+    responses["PUT /api/v1/admin/mappings/genre-aliases/yaml"] = {"status": 409, "body": {"error": {"message": "Die Mapping-Datei wurde seit dem Laden geändert."}}}
+    out = _run(tmp_path, responses=responses, confirms=[True, True], ops=[_open_yaml(), *_yaml_typing(_YAML_TEXT + "x: y\n"), _save()])
+
+    assert len(out["confirms"]) == 2 and "Neu laden verwirft" in out["confirms"][1] and not out["toasts"]
+    assert _calls(out).count("GET /api/v1/admin/mappings/genre-aliases/yaml") == 2
+
+    out = _run(tmp_path, responses=responses, confirms=[True, False], ops=[_open_yaml(), *_yaml_typing(_YAML_TEXT + "x: y\n"), _save()])
+    assert _calls(out).count("GET /api/v1/admin/mappings/genre-aliases/yaml") == 1
+
+
+@needs_node
+def test_yaml_texts_are_escaped_in_textarea_and_diff(tmp_path):
+    evil = "</textarea><img src=x onerror=alert(1)>"
+    get = {"status": 200, "body": {**_YAML_GET["body"], "text": evil}}
+    prev = _yaml_preview(added=[evil], diff=["+" + evil], warnings=[evil])
+    responses = {**_yaml_responses(prev), "GET /api/v1/admin/mappings/genre-aliases/yaml": get}
+    out = _run(tmp_path, responses=responses, ops=[_open_yaml(), *_yaml_typing(evil)])
+
+    for element_id in ("mappings-editor-body", "mappings-editor-preview", "mappings-editor-message"):
+        assert "<img" not in _el(out, element_id)["html"] and "</textarea><img" not in _el(out, element_id)["html"]
+
+
+@needs_node
+def test_yaml_403_and_503_on_open(tmp_path):
+    denied = {"status": 403, "body": {"error": {"message": "nein"}}}
+    out = _run(tmp_path, responses={"GET /api/v1/admin/mappings/genre-aliases/yaml": denied}, ops=[_open_yaml()])
+    assert "Keine Berechtigung" in _el(out, "mappings-editor-body")["html"]
+
+    down = {"status": 503, "body": {"error": {"message": "genre_aliases.yaml konnte nicht gelesen werden."}}}
+    out = _run(tmp_path, responses={"GET /api/v1/admin/mappings/genre-aliases/yaml": down}, ops=[_open_yaml()])
+    assert "konnte nicht gelesen werden" in _el(out, "mappings-editor-body")["html"]

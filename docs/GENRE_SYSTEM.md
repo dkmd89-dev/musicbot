@@ -107,6 +107,15 @@ neu, Kommentarzeilen gehen dabei verloren (die API meldet das als
 abgelegt (letzte 20 je Mapping); ein Restore schreibt eine Version unverändert
 zurück, ist Etag-geschützt und legt selbst wieder eine Version an.**
 
+**YAML-Editor (Rohtext, für Fortgeschrittene):** Knopf „YAML“ je Mapping-Typ. Der Text
+wird unverändert geschrieben, **Kommentare bleiben erhalten**. Der Server prüft vorher
+streng: ein Dokument, keine Anker/Aliase (Alias-Bombe), keine Tags (kein `!!python/…`),
+keine Merge-Keys, keine doppelten Keys, Tiefe ≤ 6, ≤ 512 KB, keine Steuerzeichen; genau
+der Root-Key der Datei und keine weiteren Top-Level-Keys; Keys und Werte müssen Text
+sein (`5`, `yes`, `2020` sind in YAML Zahl/Bool und werden abgelehnt); danach greifen
+dieselben fachlichen Regeln wie im normalen Editor. Etag ist der Datei-Hash, vor dem
+Schreiben entsteht eine Version.
+
 **Gespeichert ≠ angewendet:** Der Bot lädt die Mapping-Dateien beim Start und hat
 keinen Reload-Pfad. Er meldet deshalb im Laufzeit-Snapshot
 (`bot_runtime_snapshot.json`, Abschnitt `mapping_files`) die beim Start gesehenen

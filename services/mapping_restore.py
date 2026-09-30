@@ -54,7 +54,7 @@ def _read_version(mapping_id: str, version_id: str, backup_dir: Path) -> str:
         raise ma.MappingBackupNotFoundError(str(e)) from e
 
 
-def _describe_text(mapping_id: str, text: str) -> Dict[str, str]:
+def describe_text(mapping_id: str, text: str) -> Dict[str, str]:
     """Liest den Text mit denselben Parsern wie die Administration (in einem
     temporaeren Verzeichnis). Ist die Version nicht lesbar, wird sie abgelehnt."""
     descriptor = ma.get_descriptor(mapping_id)
@@ -68,7 +68,7 @@ def _describe_text(mapping_id: str, text: str) -> Dict[str, str]:
             ) from e
 
 
-def _diff(current: Dict[str, str], target: Dict[str, str]) -> Tuple[List[str], List[str], List[str]]:
+def diff_items(current: Dict[str, str], target: Dict[str, str]) -> Tuple[List[str], List[str], List[str]]:
     added = [f"{k}: {v}" for k, v in target.items() if k not in current]
     removed = [f"{k}: {v}" for k, v in current.items() if k not in target]
     changed = [f"{k}: {current[k]} → {v}" for k, v in target.items() if k in current and current[k] != v]
@@ -78,7 +78,7 @@ def _diff(current: Dict[str, str], target: Dict[str, str]) -> Tuple[List[str], L
 def _plan(mapping_id: str, version_id: str, mapping_dir: Path, backup_dir: Path) -> Tuple[RestorePlan, str]:
     descriptor = ma.get_descriptor(mapping_id)
     text = _read_version(mapping_id, version_id, backup_dir)
-    target = _describe_text(mapping_id, text)
+    target = describe_text(mapping_id, text)
     path = ma.mapping_file_path(descriptor, mapping_dir)
     if not path.is_file():
         raise ma.MappingUnavailableError(f"{path} existiert nicht.")
@@ -86,7 +86,7 @@ def _plan(mapping_id: str, version_id: str, mapping_dir: Path, backup_dir: Path)
     created = next(
         (v.created_at.isoformat() for v in mb.list_versions(backup_dir, mapping_id) if v.version_id == version_id), "",
     )
-    added, removed, changed = _diff(ma.describe_mapping(mapping_id, mapping_dir), target)
+    added, removed, changed = diff_items(ma.describe_mapping(mapping_id, mapping_dir), target)
     plan = RestorePlan(
         mapping_id=mapping_id, version_id=version_id, created_at=created,
         change="unchanged" if text == current_text else "update",

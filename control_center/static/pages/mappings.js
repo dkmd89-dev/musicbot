@@ -192,6 +192,7 @@
       </div>
       <div class="btn-list">
         <button type="button" class="btn btn-sm" data-action="versions" data-type="${_escapeHtml(type.id)}">${ccIcon("history", "me-1")}Versionen</button>
+        <button type="button" class="btn btn-sm" data-action="yaml" data-type="${_escapeHtml(type.id)}" title="Rohtext bearbeiten (für Fortgeschrittene)">${ccIcon("code", "me-1")}YAML</button>
         ${type.editable ? `<button type="button" class="btn btn-sm btn-primary" data-action="new" data-type="${_escapeHtml(type.id)}">${ccIcon("plus", "me-1")}Neuer Eintrag</button>` : ""}
         ${type.listEditable ? `<button type="button" class="btn btn-sm btn-primary" data-action="edit-list" data-type="${_escapeHtml(type.id)}">${ccIcon("edit", "me-1")}Bearbeiten</button>` : ""}
       </div>`;
