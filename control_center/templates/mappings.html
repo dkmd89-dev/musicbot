@@ -38,7 +38,27 @@
     <div id="mappings-pane-foot" class="card-footer" hidden></div>
   </div>
 </div>
+
+{# Editor und Versionen (Mockup: mappings-editor.html). Inhalt rendert static/pages/mappings_editor.js. #}
+<aside class="offcanvas offcanvas-end cc-mapping-editor" tabindex="-1" id="mappings-editor" aria-labelledby="mappings-editor-title">
+  <div class="offcanvas-header">
+    <div>
+      <div class="text-secondary small" id="mappings-editor-sub"></div>
+      <h3 class="offcanvas-title" id="mappings-editor-title"></h3>
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Schließen"></button>
+  </div>
+  <div class="offcanvas-body" id="mappings-editor-body"></div>
+  <div class="cc-mapping-footer p-3 d-flex flex-wrap gap-2 align-items-center">
+    <span class="text-secondary small me-auto" id="mappings-editor-status"></span>
+    <button type="button" class="btn" data-bs-dismiss="offcanvas">Schließen</button>
+    <button type="button" class="btn btn-primary" id="mappings-editor-save" data-action="save" disabled>
+      <svg class="icon me-1"><use href="#i-check"/></svg>Übernehmen
+    </button>
+  </div>
+</aside>
 {% endblock %}
 {% block scripts %}
 <script src="{{ base_path }}/static/pages/mappings.js"></script>
+<script src="{{ base_path }}/static/pages/mappings_editor.js"></script>
 {% endblock %}
