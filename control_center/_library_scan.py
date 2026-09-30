@@ -28,6 +28,7 @@ from typing import Optional
 from fastapi import HTTPException
 
 from config import Config
+from services.library_health.discovery import discover_files
 from services.library_health.scanner import run_scan
 
 from .schemas.errors import ErrorDetail
@@ -117,3 +118,53 @@ def load_cached_report(
         except ValueError:
             is_stale = True
     return report, is_stale
+
+
+def _parse_completed_at(report: dict) -> Optional[datetime]:
+    raw = (report.get("scan") or {}).get("completed_at")
+    if not raw:
+        return None
+    try:
+        completed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return completed if completed.tzinfo else completed.replace(tzinfo=timezone.utc)
+
+
+def detect_library_drift(report: dict, *, logger) -> Optional[str]:
+    """Billiger Abgleich Report <-> Platte (nur Verzeichnislisting und `stat`,
+    keine Tags, kein Scan): Liefert einen Hinweistext, wenn die Library seit
+    dem Report gewachsen oder geaendert wurde, sonst `None`.
+
+    Hintergrund: Der persistente Report wird nur von Telegram-Doctor, CLI und
+    Repair neu geschrieben. Ein neuer Download (z. B. ein neuer Artist) ist
+    darin erst nach dem naechsten Scan sichtbar, obwohl das Alter noch unter
+    24 h liegt. Fehlt die Library oder ist das Listing nicht moeglich, gibt es
+    bewusst keinen Hinweis (kein falscher Alarm)."""
+    config = Config()
+    root = Path(config.LIBRARY_DIR)
+    if not root.is_dir():
+        return None
+    try:
+        records = discover_files(root, tuple(config.SUPPORTED_FORMATS))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Library-Abgleich mit dem Report nicht moeglich: {e!r}")
+        return None
+
+    reasons: list[str] = []
+    scanned = (report.get("statistics") or {}).get("total_files")
+    if isinstance(scanned, int) and scanned != len(records):
+        reasons.append(f"Die Library enthält {len(records)} Dateien, der Report {scanned}")
+    completed = _parse_completed_at(report)
+    if completed is not None:
+        cutoff = completed.timestamp()
+        newer = 0
+        for record in records:
+            try:
+                if record.absolute_path.stat().st_mtime > cutoff:
+                    newer += 1
+            except OSError:
+                continue
+        if newer:
+            reasons.append(f"{newer} Datei{'en' if newer != 1 else ''} seit dem Report hinzugefügt oder geändert")
+    return "; ".join(reasons) or None

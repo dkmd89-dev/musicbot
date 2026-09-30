@@ -55,6 +55,9 @@ class TrackSchema(BaseModel):
     isrc: Optional[str]
     integrated_lufs: Optional[float]
     issue_codes: list[str]
+    # Datei-Health aus dem Report (services/library_health/scoring.py::
+    # file_health_score); None bei Reports ohne den Wert.
+    health_score: Optional[float] = None
 
 
 class TracksResponse(BaseModel):
@@ -86,6 +89,7 @@ def _track_to_schema(entry: dict) -> TrackSchema:
         isrc=entry.get("isrc"),
         integrated_lufs=entry.get("integrated_lufs"),
         issue_codes=entry.get("issue_codes", []),
+        health_score=entry.get("file_health_score"),
     )
 
 
@@ -186,15 +190,26 @@ class ArtistsOverviewResponse(BaseModel):
     artists: list[ArtistSummarySchema]
     generated_at: Optional[str]
     stale: bool
+    # Nur gesetzt, wenn die Library seit dem Report gewachsen/geaendert wurde.
+    stale_reason: Optional[str] = None
 
 
-def artists_overview_to_response(report: dict, *, stale: bool) -> ArtistsOverviewResponse:
+class ReportRefreshResponse(BaseModel):
+    refreshed: bool
+    generated_at: Optional[str]
+    total_files: Optional[int]
+
+
+def artists_overview_to_response(
+    report: dict, *, stale: bool, stale_reason: Optional[str] = None,
+) -> ArtistsOverviewResponse:
     artists = report.get("artists", [])
     return ArtistsOverviewResponse(
         total=len(artists),
         artists=[_artist_to_schema(a) for a in artists],
         generated_at=(report.get("scan") or {}).get("completed_at"),
         stale=stale,
+        stale_reason=stale_reason,
     )
 
 

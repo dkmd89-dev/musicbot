@@ -22,6 +22,7 @@ nur der bereits vorhandene, persistierte Report gelesen (Auftrag §7a).
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from datetime import datetime, timedelta, timezone
@@ -199,6 +200,7 @@ async def test_stale_report_still_returned_but_flagged(client, monkeypatch, tmp_
 async def test_fresh_report_not_flagged_stale(client, monkeypatch, tmp_path, test_library):
     report = _real_report(test_library)
     monkeypatch.setattr(Config, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(Config, "LIBRARY_DIR", test_library)
     _write_report(tmp_path / "data", report)
 
     response = await client.get("/api/v1/library/artists-overview")
@@ -289,3 +291,158 @@ async def test_artist_with_no_albums_or_tracks_after_scope_filter(client, monkey
     assert body["album_count"] == 0
     assert body["albums"] == []
     assert len(body["tracks"]) == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Regression: neuer Download erscheint nicht (Report kennt ihn noch nicht)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_new_artist_after_report_is_flagged_with_reason(client, monkeypatch, tmp_path, test_library):
+    """Live-Bug 2026-09-30: ein neu heruntergeladener Artist (BAUSA) fehlte in der Library-Liste,
+    weil der Report erst beim naechsten Scan neu geschrieben wird - ohne jeden Hinweis."""
+    report = _real_report(test_library)
+    monkeypatch.setattr(Config, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(Config, "LIBRARY_DIR", test_library)
+    _write_report(tmp_path / "data", report)
+    _make_m4a(test_library / "Artist Three" / "Singles" / "2026 - Neu.m4a",
+              artist="Artist Three", title="Neu", album="Singles", genre="Pop", year="2026")
+
+    body = (await client.get("/api/v1/library/artists-overview")).json()
+
+    assert body["stale"] is True
+    assert "enthält 4 Dateien, der Report 3" in body["stale_reason"]
+    assert "1 Datei seit dem Report hinzugefügt oder geändert" in body["stale_reason"]
+    assert sorted(a["artist"] for a in body["artists"]) == ["Artist One", "Artist Two"]  # Report bleibt unveraendert lesbar
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_unchanged_library_gives_no_reason(client, monkeypatch, tmp_path, test_library):
+    report = _real_report(test_library)
+    monkeypatch.setattr(Config, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(Config, "LIBRARY_DIR", test_library)
+    _write_report(tmp_path / "data", report)
+
+    body = (await client.get("/api/v1/library/artists-overview")).json()
+
+    assert body["stale"] is False and body["stale_reason"] is None
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_removed_file_is_flagged_by_count(client, monkeypatch, tmp_path, test_library):
+    report = _real_report(test_library)
+    monkeypatch.setattr(Config, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(Config, "LIBRARY_DIR", test_library)
+    _write_report(tmp_path / "data", report)
+    (test_library / "Artist Two" / "Album B" / "01 - Song C.m4a").unlink()
+
+    body = (await client.get("/api/v1/library/artists-overview")).json()
+
+    assert body["stale"] is True and "enthält 2 Dateien, der Report 3" in body["stale_reason"]
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_touched_file_is_flagged_as_changed(client, monkeypatch, tmp_path, test_library):
+    report = _real_report(test_library)
+    monkeypatch.setattr(Config, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(Config, "LIBRARY_DIR", test_library)
+    _write_report(tmp_path / "data", report)
+    future = datetime.now(timezone.utc).timestamp() + 3600
+    os.utime(test_library / "Artist One" / "Album A" / "01 - Song A.m4a", (future, future))
+
+    body = (await client.get("/api/v1/library/artists-overview")).json()
+
+    assert body["stale"] is True and body["stale_reason"] == "1 Datei seit dem Report hinzugefügt oder geändert"
+
+
+@requires_ffmpeg
+@pytest.mark.asyncio
+async def test_detail_endpoint_is_flagged_too(client, monkeypatch, tmp_path, test_library):
+    report = _real_report(test_library)
+    monkeypatch.setattr(Config, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(Config, "LIBRARY_DIR", test_library)
+    _write_report(tmp_path / "data", report)
+    _make_m4a(test_library / "Artist Three" / "Singles" / "2026 - Neu.m4a",
+              artist="Artist Three", title="Neu", album="Singles", genre="Pop", year="2026")
+
+    assert (await client.get("/api/v1/library/artists-overview/Artist One")).json()["stale"] is True
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# POST /api/v1/library/report/refresh
+# ─────────────────────────────────────────────────────────────────────────
+
+_SAME_ORIGIN = {"Origin": "http://testserver"}
+_REFRESH = "/api/v1/library/report/refresh"
+
+
+def _scan_result(ok=True, timed_out=False):
+    from services.library_repair.doctor_runner import DoctorScanResult
+
+    report = {"scan": {"completed_at": "2026-09-30T20:00:00+00:00"}, "statistics": {"total_files": 541}} if ok else None
+    return DoctorScanResult(exit_code=0 if ok else 1, report=report, timed_out=timed_out)
+
+
+@pytest.mark.asyncio
+async def test_refresh_runs_the_doctor_scan_and_reports_the_new_state(client, monkeypatch):
+    calls = []
+
+    async def fake_scan(*a, **k):
+        calls.append(1)
+        return _scan_result()
+
+    monkeypatch.setattr("control_center.routers.library_overview.run_health_scan", fake_scan)
+
+    r = await client.post(_REFRESH, headers=_SAME_ORIGIN)
+
+    assert r.status_code == 200 and r.json() == {"refreshed": True, "generated_at": "2026-09-30T20:00:00+00:00", "total_files": 541}
+    assert calls == [1]
+
+
+@pytest.mark.asyncio
+async def test_refresh_failure_is_502_and_not_reported_as_success(client, monkeypatch):
+    async def fake_scan(*a, **k):
+        return _scan_result(ok=False)
+
+    monkeypatch.setattr("control_center.routers.library_overview.run_health_scan", fake_scan)
+
+    r = await client.post(_REFRESH, headers=_SAME_ORIGIN)
+
+    assert r.status_code == 502 and r.json()["error"]["code"] == "REPORT_REFRESH_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_second_refresh_while_running_is_409(client, monkeypatch):
+    import asyncio
+
+    release = asyncio.Event()
+
+    async def slow_scan(*a, **k):
+        await release.wait()
+        return _scan_result()
+
+    monkeypatch.setattr("control_center.routers.library_overview.run_health_scan", slow_scan)
+
+    first = asyncio.create_task(client.post(_REFRESH, headers=_SAME_ORIGIN))
+    await asyncio.sleep(0.05)
+    second = await client.post(_REFRESH, headers=_SAME_ORIGIN)
+    release.set()
+    first_response = await first
+
+    assert second.status_code == 409 and second.json()["error"]["code"] == "REPORT_REFRESH_RUNNING"
+    assert first_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_refresh_requires_same_origin(client, monkeypatch):
+    async def fake_scan(*a, **k):
+        raise AssertionError("darf nicht laufen")
+
+    monkeypatch.setattr("control_center.routers.library_overview.run_health_scan", fake_scan)
+
+    assert (await client.post(_REFRESH)).status_code == 403
