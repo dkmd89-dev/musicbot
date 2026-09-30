@@ -161,8 +161,10 @@ global.window = { location: { href: "", search: sc.search || "" } };
 global.console = { ...console, error() {} };
 const calls = [];
 const routes = sc.routes || {};
-global.fetch = async (url) => {
+const methods = [];
+global.fetch = async (url, opts) => {
   calls.push(url);
+  methods.push(((opts && opts.method) || "GET") + " " + url);
   const key = url.split("?")[0];
   const r = key.endsWith("/auth/whoami") ? { status: 200, body: { user_id: 1, access_level: "OWNER" } }
     : (routes[key] || { status: 200, body: { entries: [] } });
@@ -170,7 +172,7 @@ global.fetch = async (url) => {
            text: async () => JSON.stringify(r.body), json: async () => r.body };
 };
 const src = fs.readFileSync(commonPath, "utf-8") + "\n" + fs.readFileSync(jsPath, "utf-8");
-const api = new Function(src + "\nreturn { renderArtistsOverview, _renderLibraryAttention, loadMetadataList, loadMappingSummary };")();
+const api = new Function(src + "\nreturn { renderArtistsOverview, _renderLibraryAttention, loadMetadataList, loadMappingSummary, refreshLibraryReport };")();
 const tick = () => new Promise((r) => setTimeout(r, 20));
 (async () => {
   await tick();
@@ -180,8 +182,8 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
     else if (op.op === "clickIssue") document.getElementById("library-attention-content").onclick({ target: { closest: () => ({ dataset: { issue: op.code } }) } });
     await tick();
   }
-  const out = { calls, els: {} };
-  Object.keys(els).forEach((id) => { out.els[id] = { html: els[id].innerHTML, text: String(els[id].textContent), hidden: els[id].hidden, value: els[id].value }; });
+  const out = { calls, methods, els: {} };
+  Object.keys(els).forEach((id) => { out.els[id] = { html: els[id].innerHTML, text: String(els[id].textContent), hidden: els[id].hidden, value: els[id].value, disabled: els[id].disabled }; });
   process.stdout.write(JSON.stringify(out) + "\n", () => process.exit(0));
 })();
 """
@@ -337,3 +339,44 @@ def test_issue_url_parameter_preselects_the_artist_filter(tmp_path, search, expe
     out = _run(tmp_path, {"routes": _OK, "search": search})
     assert out["els"]["artists-overview-content"]["html"].count('class="artist-row"') == expected_rows
     assert out["els"]["artist-issue-filter"]["value"] == value
+
+
+@needs_node
+def test_stale_hint_names_the_reason_and_shows_the_refresh_button(tmp_path):
+    """Live-Bug: neuer Download fehlte in der Liste ohne jeden Hinweis."""
+    stale = {**_OVERVIEW, "stale": True, "stale_reason": "Die Library enthält 541 Dateien, der Report 531"}
+    out = _run(tmp_path, {"routes": _OK, "ops": [
+        {"op": "call", "fn": "renderArtistsOverview", "args": ["@artists-overview-content", stale]}]})
+
+    assert out["els"]["artists-overview-stale"]["text"] == (
+        "Stand: 2026-09-27T05:47:00 (nicht mehr aktuell) – Die Library enthält 541 Dateien, der Report 531")
+    assert out["els"]["artists-refresh-btn"]["hidden"] is False
+
+
+@needs_node
+def test_fresh_report_hides_the_refresh_button(tmp_path):
+    out = _run(tmp_path, {"routes": _OK, "ops": [
+        {"op": "call", "fn": "renderArtistsOverview", "args": ["@artists-overview-content", _OVERVIEW]}]})
+
+    assert out["els"]["artists-refresh-btn"]["hidden"] is True
+
+
+@needs_node
+def test_refresh_button_posts_then_reloads_overview_and_kpis(tmp_path):
+    routes = {**_OK, f"{_API}/report/refresh": {"status": 200, "body": {"refreshed": True, "generated_at": "x", "total_files": 541}}}
+    out = _run(tmp_path, {"routes": routes, "ops": [{"op": "call", "fn": "refreshLibraryReport"}]})
+
+    assert f"POST {_API}/report/refresh" in out["methods"]
+    after = out["methods"][out["methods"].index(f"POST {_API}/report/refresh") + 1:]
+    assert f"GET {_API}/artists-overview" in after and f"GET {_API}/health/cached" in after
+    assert out["els"]["artists-refresh-btn"]["disabled"] is False  # nach dem Lauf wieder bedienbar
+
+
+@needs_node
+def test_refresh_failure_reloads_nothing_and_reenables_the_button(tmp_path):
+    routes = {**_OK, f"{_API}/report/refresh": {"status": 502, "body": {"error": {"message": "Scan kaputt"}}}}
+    out = _run(tmp_path, {"routes": routes, "ops": [{"op": "call", "fn": "refreshLibraryReport"}]})
+
+    post_at = out["methods"].index(f"POST {_API}/report/refresh")
+    assert f"GET {_API}/artists-overview" not in out["methods"][post_at + 1:]
+    assert out["els"]["artists-refresh-btn"]["disabled"] is False

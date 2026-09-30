@@ -174,8 +174,11 @@ function renderArtistsOverview(el, body) {
   const staleEl = document.getElementById("artists-overview-stale");
   if (staleEl) {
     staleEl.hidden = !body.stale;
-    staleEl.textContent = body.stale ? `Stand: ${body.generated_at || "unbekannt"} (nicht mehr aktuell)` : "";
+    staleEl.textContent = body.stale
+      ? `Stand: ${body.generated_at || "unbekannt"} (nicht mehr aktuell)${body.stale_reason ? ` – ${body.stale_reason}` : ""}` : "";
   }
+  const refreshBtn = document.getElementById("artists-refresh-btn");
+  if (refreshBtn) refreshBtn.hidden = !body.stale;
   _renderArtistIssueFilter();
   _renderArtistsOverviewList();
   // Einstieg aus der Overview ("In der Library bearbeiten"): ?issue=__any
@@ -216,6 +219,27 @@ function _resetArtistsPagingAndRender() {
   _artistsVisibleCount = _ARTISTS_PAGE_SIZE;
   _renderArtistsOverviewList();
 }
+// Report neu schreiben (derselbe Scan wie Telegram-Doctor). Nur auf Klick, nie beim Laden.
+async function refreshLibraryReport() {
+  const btn = document.getElementById("artists-refresh-btn");
+  if (!btn || btn.disabled) return;
+  const label = btn.innerHTML;
+  btn.disabled = true;
+  btn.textContent = "Scan läuft … (bis zu einer Minute)";
+  try {
+    await ccApi("POST", "/api/v1/library/report/refresh");
+    ccToast("ok", "Report aktualisiert", "Die Library-Liste ist auf dem aktuellen Stand.");
+    await Promise.all([loadArtistsOverview(), loadLibraryKpis()]);
+  } catch (err) {
+    if (err.status === 401) return;
+    ccToast("error", "Report-Scan fehlgeschlagen", err.message || "Unbekannter Fehler.");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = label;
+  }
+}
+document.getElementById("artists-refresh-btn")?.addEventListener("click", refreshLibraryReport);
+
 document.getElementById("artist-search").addEventListener("input", _resetArtistsPagingAndRender);
 document.getElementById("artist-sort").addEventListener("change", _resetArtistsPagingAndRender);
 document.getElementById("artist-issue-filter")?.addEventListener("change", _resetArtistsPagingAndRender);
