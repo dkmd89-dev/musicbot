@@ -1,29 +1,91 @@
 """
 Unit-Tests für PlayHistoryPoller (services/statistik/play_history_poller.py)
-— extrahiert aus StatistikService (ARCH-003, P-6). navidrome_api wird per
-Mock injiziert (Regel 7: externe Services in Unit-Tests faken), repository
-ist ein echtes PlayHistoryRepository auf tmp_path (Regel 10-artig: reine
-Datei-Logik, kein externer Service).
+— extrahiert aus StatistikService (ARCH-003, P-6).
+
+Der Poller nutzt seit der playCount-Umstellung Navidromes serverseitigen
+Zähler als Quelle der Wahrheit: getNowPlaying liefert nur, WELCHE Songs
+beobachtet werden, neue History-Einträge entstehen aus dem Anstieg von
+getSong(id).playCount gegenüber dem zuletzt gespeicherten Stand. Die erste
+Sichtung eines Songs initialisiert nur den Zustand (kein Eintrag).
+
+Externe Dienste sind gefakt (Regel 7): navidrome_api per Mock, der direkte
+Subsonic-Client (getSong) per FakeSubsonic. Config und Zustandsverzeichnis
+zeigen auf tmp_path, damit kein Test den echten history/-Ordner oder das
+Netzwerk berührt. Das Repository ist ein echtes PlayHistoryRepository auf
+tmp_path (reine Datei-Logik).
 """
 
 import asyncio
+import types
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+import config as config_module
+from services.statistik import play_history_poller as poller_module
 from services.statistik.play_history_poller import PlayHistoryPoller
 from services.statistik.play_history_repository import PlayHistoryRepository
 
 
-def make_poller(tmp_path, navidrome_api=None):
-    repo = PlayHistoryRepository(tmp_path, logger=Mock())
-    api = navidrome_api or AsyncMock()
-    return PlayHistoryPoller(api, repo, logger=Mock()), repo, api
+class FakeSubsonic:
+    """Ersetzt _NavidromeSubsonicClient: getSong() liefert vorbereitete Songs."""
+
+    def __init__(self):
+        self.songs = {}
+        self.calls = []
+
+    def get_song(self, song_id):
+        self.calls.append(song_id)
+        song = self.songs.get(song_id)
+        return dict(song) if song is not None else None
+
+
+@pytest.fixture
+def isolated_config(tmp_path, monkeypatch):
+    history_dir = tmp_path / "user_histories"
+    history_dir.mkdir()
+    fake_cfg = types.SimpleNamespace(
+        NAVIDROME_URL="http://navidrome.invalid",
+        NAVIDROME_USER="u",
+        NAVIDROME_PASS="p",
+        PLAY_HISTORY_FILE=history_dir,
+        PLAY_HISTORY_AUTOSAVE_INTERVAL_MIN=3,
+    )
+    monkeypatch.setattr(config_module, "get_config", lambda: fake_cfg)
+    # Der Poller bindet get_config beim Import - dort ebenfalls umbiegen, sonst
+    # landen Zustandsdateien im echten history/-Verzeichnis.
+    monkeypatch.setattr(poller_module, "get_config", lambda: fake_cfg)
+    return fake_cfg
+
+
+@pytest.fixture
+def make_poller(tmp_path, isolated_config):
+    def _make(navidrome_api=None):
+        repo = PlayHistoryRepository(tmp_path / "user_histories", logger=Mock())
+        api = navidrome_api or AsyncMock()
+        poller = PlayHistoryPoller(api, repo, logger=Mock())
+        subsonic = FakeSubsonic()
+        poller._subsonic = subsonic
+        return poller, repo, api, subsonic
+
+    return _make
+
+
+def _play(poller, api, subsonic, song, user="alice", before=1, after=2):
+    """Simuliert einen Song, dessen playCount zwischen zwei Poll-Zyklen von
+    `before` auf `after` steigt. Gibt das Ergebnis des zweiten Zyklus zurück."""
+    api.get_now_playing.return_value = [
+        {"song": song, "user": user, "player": "web"}
+    ]
+    subsonic.songs[song["id"]] = {**song, "playCount": before}
+    asyncio.run(poller.update_play_history())  # erste Sichtung: nur State
+    subsonic.songs[song["id"]]["playCount"] = after
+    return asyncio.run(poller.update_play_history())
 
 
 class TestStartStopPolling:
-    def test_start_polling_creates_task(self, tmp_path):
-        poller, _, _ = make_poller(tmp_path)
+    def test_start_polling_creates_task(self, make_poller):
+        poller, _, _, _ = make_poller()
 
         async def scenario():
             poller.start_polling()
@@ -32,8 +94,8 @@ class TestStartStopPolling:
 
         asyncio.run(scenario())
 
-    def test_start_polling_twice_does_not_create_second_task(self, tmp_path):
-        poller, _, _ = make_poller(tmp_path)
+    def test_start_polling_twice_does_not_create_second_task(self, make_poller):
+        poller, _, _, _ = make_poller()
 
         async def scenario():
             poller.start_polling()
@@ -44,40 +106,84 @@ class TestStartStopPolling:
 
         asyncio.run(scenario())
 
-    def test_stop_polling_without_start_is_a_noop(self, tmp_path):
-        poller, _, _ = make_poller(tmp_path)
+    def test_stop_polling_without_start_is_a_noop(self, make_poller):
+        poller, _, _, _ = make_poller()
         asyncio.run(poller.stop_polling())
         assert poller._polling_task is None
 
 
 class TestUpdatePlayHistory:
-    def test_no_now_playing_data_returns_false(self, tmp_path):
-        poller, _, api = make_poller(tmp_path)
+    def test_no_now_playing_data_returns_false(self, make_poller):
+        poller, _, api, _ = make_poller()
         api.get_now_playing.return_value = []
 
         result = asyncio.run(poller.update_play_history())
 
         assert result is False
 
-    def test_valid_entry_is_appended_to_history(self, tmp_path):
-        poller, repo, api = make_poller(tmp_path)
+    def test_first_sighting_only_initialises_state_without_entry(self, make_poller):
+        poller, repo, api, subsonic = make_poller()
+        song = {"title": "Song A", "artist": "Bausa", "album": "Alb", "id": "1"}
         api.get_now_playing.return_value = [
-            {
-                "song": {"title": "Song A", "artist": "Bausa", "album": "Alb", "id": "1"},
-                "user": "alice",
-                "player": "web",
-            }
+            {"song": song, "user": "alice", "player": "web"}
         ]
+        subsonic.songs["1"] = {**song, "playCount": 5}
 
         result = asyncio.run(poller.update_play_history())
+
+        assert result is False
+        assert repo.load("alice") == []
+        assert poller._state_path("alice").exists()
+
+    def test_valid_entry_is_appended_when_playcount_increases(self, make_poller):
+        poller, repo, api, subsonic = make_poller()
+        song = {"title": "Song A", "artist": "Bausa", "album": "Alb", "id": "1"}
+
+        result = _play(poller, api, subsonic, song, before=5, after=6)
 
         assert result is True
         history = repo.load("alice")
         assert len(history) == 1
         assert history[0]["tracks"][0]["title"] == "Song A"
+        assert history[0]["tracks"][0]["username"] == "alice"
 
-    def test_entry_without_song_is_skipped(self, tmp_path):
-        poller, repo, api = make_poller(tmp_path)
+    def test_repeat_increases_playcount_by_more_than_one_creates_multiple_entries(
+        self, make_poller
+    ):
+        """Kernvorteil der playCount-Quelle: Repeat/mehrfache Starts zwischen
+        zwei Polls werden vollständig erfasst."""
+        poller, repo, api, subsonic = make_poller()
+        song = {"title": "Song A", "artist": "Bausa", "album": "Alb", "id": "1"}
+
+        _play(poller, api, subsonic, song, before=5, after=8)
+
+        assert len(repo.load("alice")) == 3
+
+    def test_unchanged_playcount_creates_no_duplicate(self, make_poller):
+        poller, repo, api, subsonic = make_poller()
+        song = {"title": "Song A", "artist": "Bausa", "album": "Alb", "id": "1"}
+        _play(poller, api, subsonic, song, before=5, after=6)
+
+        result = asyncio.run(poller.update_play_history())
+
+        assert result is False
+        assert len(repo.load("alice")) == 1
+
+    def test_song_without_playcount_is_ignored(self, make_poller):
+        poller, repo, api, subsonic = make_poller()
+        song = {"title": "Song A", "artist": "Bausa", "id": "1"}
+        api.get_now_playing.return_value = [
+            {"song": song, "user": "alice", "player": "web"}
+        ]
+        subsonic.songs["1"] = dict(song)  # kein playCount-Feld
+
+        result = asyncio.run(poller.update_play_history())
+
+        assert result is False
+        assert repo.load("alice") == []
+
+    def test_entry_without_song_is_skipped(self, make_poller):
+        poller, repo, api, _ = make_poller()
         api.get_now_playing.return_value = [{"song": None, "user": "alice"}]
 
         result = asyncio.run(poller.update_play_history())
@@ -85,165 +191,101 @@ class TestUpdatePlayHistory:
         assert result is False
         assert repo.load("alice") == []
 
-    def test_entry_with_placeholder_username_is_skipped(self, tmp_path):
-        poller, repo, api = make_poller(tmp_path)
+    def test_entry_with_placeholder_username_is_skipped(self, make_poller):
+        poller, repo, api, subsonic = make_poller()
+        song = {"title": "Song A", "artist": "X", "id": "1"}
         api.get_now_playing.return_value = [
-            {
-                "song": {"title": "Song A", "artist": "X", "id": "1"},
-                "user": "Unbekannter Nutzer",
-            }
+            {"song": song, "user": "Unbekannter Nutzer"}
         ]
+        subsonic.songs["1"] = {**song, "playCount": 3}
 
         result = asyncio.run(poller.update_play_history())
 
         assert result is False
+        assert subsonic.calls == []
 
-    def test_same_song_still_playing_is_not_duplicated(self, tmp_path):
-        poller, repo, api = make_poller(tmp_path)
-        song = {"title": "Song A", "artist": "Bausa", "album": "Alb", "id": "1"}
-        api.get_now_playing.return_value = [
-            {"song": song, "user": "alice", "player": "web"}
-        ]
+    def test_genre_field_is_captured_from_song_info_nav_f8(self, make_poller):
+        """NAV-F8: der Wiedergabeverlauf erfasst das 'genre'-Feld, damit
+        'gehörte Genres nach Plays'-Statistiken möglich sind."""
+        poller, repo, api, subsonic = make_poller()
+        song = {
+            "title": "Song A", "artist": "Bausa", "album": "Alb",
+            "id": "1", "genre": "Hip-Hop",
+        }
 
-        asyncio.run(poller.update_play_history())
-        result = asyncio.run(poller.update_play_history())
+        _play(poller, api, subsonic, song)
 
-        assert result is False
-        assert len(repo.load("alice")) == 1
+        assert repo.load("alice")[0]["tracks"][0]["genre"] == "Hip-Hop"
 
-    def test_genre_field_is_captured_from_song_info_nav_f8(self, tmp_path):
-        """NAV-F8 (Navidrome Menu System Audit): der Wiedergabeverlauf
-        erfasste bisher kein 'genre'-Feld, wodurch 'gehoerte Genres nach
-        Plays'-Statistiken unmoeglich waren - jetzt wird es aus dem
-        bereits vorhandenen Song-Objekt mitgeschrieben."""
-        poller, repo, api = make_poller(tmp_path)
-        api.get_now_playing.return_value = [
-            {
-                "song": {
-                    "title": "Song A", "artist": "Bausa", "album": "Alb",
-                    "id": "1", "genre": "Hip-Hop",
-                },
-                "user": "alice",
-                "player": "web",
-            }
-        ]
+    def test_genre_field_defaults_to_empty_string_when_missing_nav_f8(self, make_poller):
+        """Ein Song ohne 'genre'-Feld darf nicht crashen, sondern liefert einen
+        leeren String (von generate_genre_stats() übersprungen)."""
+        poller, repo, api, subsonic = make_poller()
+        song = {"title": "Song A", "artist": "Bausa", "id": "1"}
 
-        asyncio.run(poller.update_play_history())
+        _play(poller, api, subsonic, song)
 
-        history = repo.load("alice")
-        assert history[0]["tracks"][0]["genre"] == "Hip-Hop"
+        assert repo.load("alice")[0]["tracks"][0]["genre"] == ""
 
-    def test_genre_field_defaults_to_empty_string_when_missing_nav_f8(self, tmp_path):
-        """Regressionsschutz: ein Song ohne 'genre'-Feld (Navidrome-
-        Bibliothek ohne Genre-Tag) darf nicht crashen, sondern liefert
-        einen leeren String (von StatisticsCalculator.generate_genre_stats()
-        stillschweigend uebersprungen, nicht als 'Unbekannt' gezaehlt)."""
-        poller, repo, api = make_poller(tmp_path)
-        api.get_now_playing.return_value = [
-            {
-                "song": {"title": "Song A", "artist": "Bausa", "id": "1"},
-                "user": "alice",
-                "player": "web",
-            }
-        ]
+    def test_structured_genres_field_is_captured_nav_f8(self, make_poller):
+        """Das strukturierte 'genres'-Feld (Navidromes Multi-Genre-Format) ist
+        die von generate_genre_stats() bevorzugte Datenquelle; das einfache
+        'genre'-Feld bleibt zusätzlich erhalten."""
+        poller, repo, api, subsonic = make_poller()
+        song = {
+            "title": "Song A", "artist": "Bausa", "album": "Alb",
+            "id": "1", "genre": "Hip Hop",
+            "genres": [
+                {"name": "Hip Hop"},
+                {"name": "Deutschrap"},
+                {"name": "Emo Rap"},
+                {"name": "Cloud Rap"},
+            ],
+        }
 
-        asyncio.run(poller.update_play_history())
+        _play(poller, api, subsonic, song)
 
-        history = repo.load("alice")
-        assert history[0]["tracks"][0]["genre"] == ""
+        track = repo.load("alice")[0]["tracks"][0]
+        assert track["genres"] == ["Hip Hop", "Deutschrap", "Emo Rap", "Cloud Rap"]
+        assert track["genre"] == "Hip Hop"
 
-    def test_structured_genres_field_is_captured_nav_f8(self, tmp_path):
-        """NAV-F8-Nachtrag: das strukturierte 'genres'-Feld (Navidromes
-        bevorzugtes Multi-Genre-Format, z.B.
-        [{'name': 'Hip Hop'}, {'name': 'Deutschrap'}]) ist die von
-        StatisticsCalculator.generate_genre_stats() bevorzugte
-        Datenquelle - NICHT ausschliesslich das einfache 'genre'-Feld."""
-        poller, repo, api = make_poller(tmp_path)
-        api.get_now_playing.return_value = [
-            {
-                "song": {
-                    "title": "Song A", "artist": "Bausa", "album": "Alb",
-                    "id": "1", "genre": "Hip Hop",
-                    "genres": [
-                        {"name": "Hip Hop"},
-                        {"name": "Deutschrap"},
-                        {"name": "Emo Rap"},
-                        {"name": "Cloud Rap"},
-                    ],
-                },
-                "user": "alice",
-                "player": "web",
-            }
-        ]
+    def test_duplicate_genre_names_within_same_play_are_deduplicated_nav_f8(
+        self, make_poller
+    ):
+        poller, repo, api, subsonic = make_poller()
+        song = {
+            "title": "Song A", "artist": "Bausa", "id": "1",
+            "genres": [{"name": "Hip Hop"}, {"name": "Hip Hop"}, {"name": "Deutschrap"}],
+        }
 
-        asyncio.run(poller.update_play_history())
+        _play(poller, api, subsonic, song)
 
-        history = repo.load("alice")
-        assert history[0]["tracks"][0]["genres"] == [
-            "Hip Hop", "Deutschrap", "Emo Rap", "Cloud Rap",
-        ]
-        # Das einfache "genre"-Feld bleibt zusaetzlich unveraendert erhalten.
-        assert history[0]["tracks"][0]["genre"] == "Hip Hop"
+        assert repo.load("alice")[0]["tracks"][0]["genres"] == ["Hip Hop", "Deutschrap"]
 
-    def test_duplicate_genre_names_within_same_play_are_deduplicated_nav_f8(self, tmp_path):
-        poller, repo, api = make_poller(tmp_path)
-        api.get_now_playing.return_value = [
-            {
-                "song": {
-                    "title": "Song A", "artist": "Bausa", "id": "1",
-                    "genres": [
-                        {"name": "Hip Hop"},
-                        {"name": "Hip Hop"},
-                        {"name": "Deutschrap"},
-                    ],
-                },
-                "user": "alice",
-                "player": "web",
-            }
-        ]
+    def test_missing_genres_field_defaults_to_empty_list_nav_f8(self, make_poller):
+        poller, repo, api, subsonic = make_poller()
+        song = {"title": "Song A", "artist": "Bausa", "id": "1"}
 
-        asyncio.run(poller.update_play_history())
+        _play(poller, api, subsonic, song)
 
-        history = repo.load("alice")
-        assert history[0]["tracks"][0]["genres"] == ["Hip Hop", "Deutschrap"]
+        assert repo.load("alice")[0]["tracks"][0]["genres"] == []
 
-    def test_missing_genres_field_defaults_to_empty_list_nav_f8(self, tmp_path):
-        poller, repo, api = make_poller(tmp_path)
-        api.get_now_playing.return_value = [
-            {
-                "song": {"title": "Song A", "artist": "Bausa", "id": "1"},
-                "user": "alice",
-                "player": "web",
-            }
-        ]
+    def test_malformed_genres_entries_are_skipped_without_crashing_nav_f8(
+        self, make_poller
+    ):
+        """Defensiv gegen abweichende Navidrome-Versionen/-Antworten."""
+        poller, repo, api, subsonic = make_poller()
+        song = {
+            "title": "Song A", "artist": "Bausa", "id": "1",
+            "genres": [{"name": "Hip Hop"}, {"no_name": "x"}, "not-a-dict", {"name": ""}],
+        }
 
-        asyncio.run(poller.update_play_history())
+        _play(poller, api, subsonic, song)
 
-        history = repo.load("alice")
-        assert history[0]["tracks"][0]["genres"] == []
+        assert repo.load("alice")[0]["tracks"][0]["genres"] == ["Hip Hop"]
 
-    def test_malformed_genres_entries_are_skipped_without_crashing_nav_f8(self, tmp_path):
-        """Defensiv gegen abweichende Navidrome-Versionen/-Antworten: ein
-        Eintrag ohne 'name'-Schluessel oder kein Dict darf nicht crashen."""
-        poller, repo, api = make_poller(tmp_path)
-        api.get_now_playing.return_value = [
-            {
-                "song": {
-                    "title": "Song A", "artist": "Bausa", "id": "1",
-                    "genres": [{"name": "Hip Hop"}, {"no_name": "x"}, "not-a-dict", {"name": ""}],
-                },
-                "user": "alice",
-                "player": "web",
-            }
-        ]
-
-        asyncio.run(poller.update_play_history())
-
-        history = repo.load("alice")
-        assert history[0]["tracks"][0]["genres"] == ["Hip Hop"]
-
-    def test_api_exception_is_caught_and_returns_false(self, tmp_path):
-        poller, _, api = make_poller(tmp_path)
+    def test_api_exception_is_caught_and_returns_false(self, make_poller):
+        poller, _, api, _ = make_poller()
         api.get_now_playing.side_effect = RuntimeError("boom")
 
         result = asyncio.run(poller.update_play_history())
