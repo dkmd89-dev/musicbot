@@ -121,9 +121,25 @@ def _lists(**overrides):
             "mapping_id": "special-channels", "count": 2, "etag": "e", "warnings": [],
             "categories": [{"name": "Podcast", "channels": ["A", "B", "C"]},
                            {"name": "Playlist", "channels": ["D"]}]}},
+        "GET /api/v1/admin/mappings/status": _status(),
     }
     r.update(overrides)
     return r
+
+
+def _status(states=None, running=True, started="2026-09-30T08:00:00+00:00", notes=None):
+    states = states or {}
+    entries = []
+    for mapping_id in _TYPES:
+        state = states.get(mapping_id, "applied")
+        entries.append({"mapping_id": mapping_id, "filename": mapping_id + ".yaml", "state": state,
+                        "message": {"applied": "Die Runtime nutzt den gespeicherten Stand.",
+                                    "pending_restart": "Gespeichert, aber noch nicht angewendet: der Bot lädt die Datei beim Start (Neustart nötig).",
+                                    "unknown": "Kein lesbarer Bot-Snapshot — der Runtime-Stand ist unbekannt.",
+                                    "unavailable": "Die Datei fehlt."}[state],
+                        "saved_sha256": "aaaaaaaaaaaa", "loaded_sha256": "bbbbbbbbbbbb", "note": (notes or {}).get(mapping_id)})
+    return {"status": 200, "body": {"snapshot_status": "available" if running else "stale", "bot_running": running,
+                                    "bot_started_at": started, "age_seconds": 5.0, "statuses": entries}}
 
 
 def _run(tmp_path, responses=None, ops=None) -> dict:
@@ -417,3 +433,85 @@ def test_rows_have_edit_button_but_no_delete(tmp_path):
     assert body.count('data-action="edit"') == 50
     assert 'data-key="alias 000"' in body and 'aria-label="alias 000 bearbeiten"' in body
     assert "delete" not in body.lower() and "löschen" not in body.lower()  # kein Löschen: es gibt keinen Endpunkt
+
+
+# ── Runtime-Status: gespeichert vs. angewendet ───────────────────────────
+
+
+@needs_node
+def test_tiles_show_runtime_state_with_icon_and_text(tmp_path):
+    states = {"channel-genre": "applied", "genre-aliases": "pending_restart", "genre-overrides": "unknown", "genre-filters": "unavailable"}
+    tiles = _el(_run(tmp_path, responses={"GET /api/v1/admin/mappings/status": _status(states)}), "mappings-tiles")
+
+    for label in ("Angewendet", "Neustart nötig", "Runtime unbekannt", "Datei fehlt"):
+        assert label in tiles
+    assert tiles.count("badge bg-yellow-lt") >= 1 and "bg-green-lt" in tiles
+
+
+@needs_node
+def test_pending_restart_shows_message_and_restart_link_in_pane(tmp_path):
+    out = _run(tmp_path, responses={"GET /api/v1/admin/mappings/status": _status({"channel-genre": "pending_restart"})})
+    pane = _el(out, "mappings-pane-status")
+
+    assert out["els"]["mappings-pane-status"]["hidden"] is False
+    assert "Neustart nötig" in pane and "noch nicht angewendet" in pane
+    assert 'href="/admin"' in pane and "Bot neu starten" in pane
+    assert "Bot gestartet" in pane
+
+
+@needs_node
+def test_applied_shows_no_restart_link(tmp_path):
+    pane = _el(_run(tmp_path), "mappings-pane-status")
+
+    assert "Angewendet" in pane and "Bot neu starten" not in pane
+
+
+@needs_node
+def test_status_follows_the_selected_tab_and_shows_special_channel_note(tmp_path):
+    notes = {"special-channels": "Teile der Prüfung lesen special_channel.yaml je Aufruf neu und wirken ohne Neustart."}
+    out = _run(tmp_path, responses={"GET /api/v1/admin/mappings/status": _status({"special-channels": "pending_restart", "channel-genre": "applied"}, notes=notes)},
+               ops=[_tab("special-channels")])
+    pane = _el(out, "mappings-pane-status")
+
+    assert "Neustart nötig" in pane and "je Aufruf neu" in pane
+
+    out = _run(tmp_path, responses={"GET /api/v1/admin/mappings/status": _status({"special-channels": "pending_restart"}, notes=notes)})
+    assert "je Aufruf" not in _el(out, "mappings-pane-status")   # erster Tab: Channel-Genre
+
+
+@needs_node
+def test_stopped_bot_is_named_in_the_message_not_hidden(tmp_path):
+    status = _status({"channel-genre": "pending_restart"}, running=False)
+    status["body"]["statuses"][0]["message"] += " Der Bot läuft nicht oder schreibt keinen Snapshot mehr — Stand vom letzten Lauf."
+    pane = _el(_run(tmp_path, responses={"GET /api/v1/admin/mappings/status": status}), "mappings-pane-status")
+
+    assert "läuft nicht" in pane
+
+
+@needs_node
+def test_stopped_bot_never_shows_a_green_applied_badge(tmp_path):
+    out = _run(tmp_path, responses={"GET /api/v1/admin/mappings/status": _status({"genre-aliases": "pending_restart"}, running=False)})
+    tiles = _el(out, "mappings-tiles")
+
+    assert "Bot läuft nicht" in tiles
+    assert "Angewendet" not in tiles and "bg-green-lt" not in tiles
+    assert "Bot läuft nicht" in _el(out, "mappings-pane-status")
+
+
+@needs_node
+def test_unavailable_status_endpoint_does_not_break_the_page(tmp_path):
+    out = _run(tmp_path, responses={"GET /api/v1/admin/mappings/status": {"status": 503, "body": {"error": {"message": "weg"}}}})
+
+    assert "nicht abrufbar" in _el(out, "mappings-pane-status")
+    assert "1.234" in _el(out, "mappings-tiles")           # Bestand ist trotzdem da
+    assert "Angewendet" not in _el(out, "mappings-tiles")   # und es wird nichts erfunden
+
+
+@needs_node
+def test_status_texts_are_escaped(tmp_path):
+    status = _status({"channel-genre": "pending_restart"})
+    status["body"]["statuses"][0]["message"] = "<img src=x onerror=alert(1)>"
+    out = _run(tmp_path, responses={"GET /api/v1/admin/mappings/status": status})
+
+    assert "<img" not in _el(out, "mappings-pane-status") and "<img" not in _el(out, "mappings-tiles")
+    assert "&lt;img" in _el(out, "mappings-pane-status")

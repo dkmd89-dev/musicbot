@@ -105,7 +105,20 @@ neu, Kommentarzeilen gehen dabei verloren (die API meldet das als
 `comment_warning`). **Vor jedem Schreiben wird die bisherige Datei unverändert
 (mit Kommentaren) als Version unter `<DATA_DIR>/mapping_backups/<mapping_id>/`
 abgelegt (letzte 20 je Mapping); ein Restore schreibt eine Version unverändert
-zurück, ist Etag-geschützt und legt selbst wieder eine Version an.** Deshalb stehen die Regeln, die bisher nur in Kommentaren
+zurück, ist Etag-geschützt und legt selbst wieder eine Version an.**
+
+**Gespeichert ≠ angewendet:** Der Bot lädt die Mapping-Dateien beim Start und hat
+keinen Reload-Pfad. Er meldet deshalb im Laufzeit-Snapshot
+(`bot_runtime_snapshot.json`, Abschnitt `mapping_files`) die beim Start gesehenen
+SHA-256 der fünf bearbeitbaren Dateien; `GET /api/v1/admin/mappings/status`
+vergleicht sie mit dem aktuellen Datei-Stand. Zustände: `applied` (gleicher
+Inhalt), `pending_restart` (gespeichert, Neustart nötig), `unknown` (kein
+Snapshot oder älterer Bot ohne Abschnitt), `unavailable` (Datei fehlt). Läuft der
+Bot nicht (veralteter Snapshot), zeigt die UI „Bot läuft nicht“ statt eines
+grünen „Angewendet“. Stellt ein Restore dieselben Bytes wie beim Botstart
+wieder her, gilt die Datei wieder als angewendet. `special_channel.yaml` wird
+von Teilen der Prüfung je Aufruf neu gelesen; der Bot-Start ist der einzige
+garantierte Zeitpunkt. Deshalb stehen die Regeln, die bisher nur in Kommentaren
 standen, hier:
 
 | Datei | Regel (früher nur als YAML-Kommentar) |

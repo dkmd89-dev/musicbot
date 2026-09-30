@@ -101,3 +101,69 @@ def test_periodic_task_writes_immediately_and_stops_on_shutdown(tmp_path, monkey
 
     snap = brs.read_bot_runtime_snapshot(b.config)["snapshot"]
     assert snap["sections"]["duplicates"] == {"total_checks": 5}
+
+
+# ── B3: Mapping-Dateistand im Snapshot ───────────────────────────────────
+
+
+def test_collect_includes_mapping_file_hashes_when_recorded(tmp_path):
+    b = _make_bot(tmp_path)
+    b._mapping_hashes_at_start = {"genre_aliases.yaml": "abc", "genre_filters.yaml": None}
+
+    sections = b._collect_runtime_snapshot_sections()
+
+    assert sections["mapping_files"] == {
+        "hashes": {"genre_aliases.yaml": "abc", "genre_filters.yaml": None},
+        "hashed_at": "2026-09-28T08:00:00+00:00",
+    }
+
+
+def test_collect_omits_mapping_section_when_hashing_failed(tmp_path):
+    b = _make_bot(tmp_path)
+    b._mapping_hashes_at_start = None
+
+    assert "mapping_files" not in b._collect_runtime_snapshot_sections()
+
+
+def test_record_mapping_files_hashes_the_configured_mapping_dir(tmp_path):
+    mdir = tmp_path / "mapping"
+    mdir.mkdir()
+    (mdir / "genre_aliases.yaml").write_text("GENRE_ALIASES: {}\n", encoding="utf-8")
+    b = _make_bot(tmp_path)
+    b.config.GENRE_MAPPING_DIR = mdir
+
+    b._record_mapping_files_at_start()
+
+    assert b._mapping_hashes_at_start["genre_aliases.yaml"] and b._mapping_hashes_at_start["genre_filters.yaml"] is None
+
+
+def test_record_mapping_files_failure_is_logged_and_not_raised(tmp_path, monkeypatch):
+    b = _make_bot(tmp_path)
+    b.config.GENRE_MAPPING_DIR = tmp_path
+    monkeypatch.setattr(bot_module.mapping_runtime_state, "hash_mapping_files", lambda d: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    b._record_mapping_files_at_start()
+
+    assert b._mapping_hashes_at_start is None
+    b.logger.warning.assert_called()
+
+
+def test_written_snapshot_roundtrips_into_runtime_state(tmp_path):
+    from services import mapping_admin as ma
+    from services import mapping_runtime_state as mrs
+
+    mdir = tmp_path / "mapping"
+    mdir.mkdir()
+    for filename in ma.mapping_file_names().values():
+        (mdir / filename).write_text("KEY: 1\n", encoding="utf-8")
+    b = _make_bot(tmp_path)
+    b.config.GENRE_MAPPING_DIR = mdir
+    b._record_mapping_files_at_start()
+    asyncio.run(b._write_runtime_snapshot())
+
+    result = mrs.evaluate(mdir, brs.read_bot_runtime_snapshot(b.config))
+    assert {s.state for s in result.statuses} == {"applied"} and result.bot_running is True
+
+    (mdir / "genre_aliases.yaml").write_text("KEY: 2\n", encoding="utf-8")   # nach dem Start gespeichert
+    result = mrs.evaluate(mdir, brs.read_bot_runtime_snapshot(b.config))
+    assert {s.mapping_id: s.state for s in result.statuses}["genre-aliases"] == "pending_restart"
