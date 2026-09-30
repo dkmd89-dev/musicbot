@@ -407,7 +407,7 @@ def test_action_buttons_only_where_backend_supports_them(tmp_path):
         assert 'data-action="new"' in head and 'data-action="versions"' in head
     for mapping_id in ("genre-filters", "special-channels"):
         head = _el(_run(tmp_path, ops=[_tab(mapping_id)]), "mappings-pane-head")
-        assert 'data-action="versions"' in head and 'data-action="new"' not in head  # Editor folgt später
+        assert 'data-action="versions"' in head and 'data-action="edit-list"' in head and 'data-action="new"' not in head
 
 
 @needs_node

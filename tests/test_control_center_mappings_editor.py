@@ -483,3 +483,187 @@ def test_versions_403_and_503(tmp_path):
     down = {"status": 503, "body": {"error": {"message": "Datei nicht lesbar"}}}
     out = _run(tmp_path, responses={"GET /api/v1/admin/mappings/genre-aliases/backups": down}, ops=[_versions()])
     assert "Datei nicht lesbar" in _el(out, "mappings-editor-body")["html"]
+
+
+# ── 5.3: Filter (Chip-Liste) ─────────────────────────────────────────────
+
+_F = "genre-filters"
+_S = "special-channels"
+
+
+def _edit_list(type_):
+    return _ev("mappings-root", "click", {"action": "edit-list", "type": type_})
+
+
+def _filters_list(values):
+    return {"status": 200, "body": {"mapping_id": _F, "count": len(values), "values": values, "etag": "EF0", "warnings": []}}
+
+
+def _filters_preview(change="update", added=(), removed=(), values=(), warnings=(), etag="EF1", comment="Kommentarzeilen in genre_filters.yaml gehen beim Speichern verloren."):
+    return {"status": 200, "body": {"mapping_id": _F, "change": change, "added": list(added), "removed": list(removed),
+                                    "values": list(values), "warnings": list(warnings), "etag": etag, "comment_warning": comment}}
+
+
+def _previews(out, path_suffix="/preview"):
+    return [c for c in out["calls"] if c["call"].startswith("POST") and c["call"].endswith(path_suffix)]
+
+
+@needs_node
+def test_filter_editor_loads_list_renders_chips_and_previews_without_key(tmp_path):
+    responses = {f"GET /api/v1/admin/mappings/{_F}": _filters_list(["rock", "indie", "seen live"]),
+                 f"POST /api/v1/admin/mappings/{_F}/preview": _filters_preview("unchanged", comment=None)}
+    out = _run(tmp_path, responses=responses, ops=[_edit_list(_F)])
+    body = _el(out, "mappings-editor-body")["html"]
+
+    assert "show" in _el(out, "mappings-editor")["cls"]
+    assert _calls(out).count(f"GET /api/v1/admin/mappings/{_F}") == 2   # Seite + Editor
+    assert body.count('data-action="flt-remove"') == 3 and "Filter suchen (3 Einträge)" in body
+    assert _previews(out)[0]["call"] == f"POST /api/v1/admin/mappings/{_F}/preview"   # kein ?key=
+    assert _previews(out)[0]["body"] == {"values": ["rock", "indie", "seen live"]}
+    assert _el(out, "mappings-editor-save")["disabled"] is True                     # unverändert
+
+
+@needs_node
+def test_filter_add_remove_search_and_duplicates(tmp_path):
+    responses = {f"GET /api/v1/admin/mappings/{_F}": _filters_list(["rock", "indie"]),
+                 f"POST /api/v1/admin/mappings/{_F}/preview": _filters_preview("update", added=["favorites"], removed=["indie"])}
+    add = lambda v: _ev("mappings-editor", "keydown", {"field": "flt-input"}, v, "Enter")
+    out = _run(tmp_path, responses=responses, ops=[
+        _edit_list(_F), add("favorites"), add("ROCK"), add("   "), _ev("mappings-editor", "click", {"action": "flt-remove", "value": "indie"})])
+
+    assert _previews(out)[-1]["body"] == {"values": ["rock", "favorites"]}   # Duplikat (case-insensitiv) und Leeres übersprungen
+    preview = _el(out, "mappings-editor-preview")["html"]
+    assert "favorites" in preview and "cc-mapping-diff-add" in preview and "cc-mapping-diff-del" in preview
+    assert _el(out, "mappings-editor-save")["disabled"] is False
+
+    out = _run(tmp_path, responses=responses, ops=[_edit_list(_F), _ev("mappings-editor", "input", {"field": "flt-search"}, "ind")])
+    chips = _el(out, "mappings-f-chips")["html"]
+    assert "indie" in chips and "rock" not in chips
+    assert len(_previews(out)) == 1                                           # Suche ist nur Anzeige, keine neue Vorschau
+
+
+@needs_node
+def test_filter_cleanup_is_writable_and_put_has_no_key(tmp_path):
+    responses = {f"GET /api/v1/admin/mappings/{_F}": _filters_list(["rock", "indie"]),
+                 f"POST /api/v1/admin/mappings/{_F}/preview": _filters_preview("cleanup", warnings=["Die Datei enthaelt unsaubere Eintraege (15 Duplikate)."]),
+                 f"PUT /api/v1/admin/mappings/{_F}": {"status": 200, "body": {"written": True, "message": "Mapping gespeichert. Wirkt nach Neustart."}}}
+    out = _run(tmp_path, responses=responses, ops=[_edit_list(_F), _save()])
+    put = [c for c in out["calls"] if c["call"].startswith("PUT ")]
+
+    assert "Bereinigung" in _el(out, "mappings-editor-preview")["html"]
+    assert "unsaubere Eintraege" in _el(out, "mappings-editor-message")["html"]
+    assert put[0]["call"] == f"PUT /api/v1/admin/mappings/{_F}" and put[0]["body"] == {"values": ["rock", "indie"], "etag": "EF1"}
+    assert out["toasts"] == ["ok|Mapping gespeichert|Mapping gespeichert. Wirkt nach Neustart."]
+    assert len(out["confirms"]) == 1 and "ersetzt die Datei" in out["confirms"][0]
+
+
+# ── 5.3: Spezialkanäle (Kategorien, Priorität) ───────────────────────────
+
+
+def _cats(*pairs):
+    return [{"name": n, "channels": list(c)} for n, c in pairs]
+
+
+def _special_list(cats):
+    return {"status": 200, "body": {"mapping_id": _S, "count": len(cats), "categories": cats, "etag": "ES0", "warnings": []}}
+
+
+def _special_preview(change="update", added=(), removed=(), order=None, warnings=(), etag="ES1"):
+    return {"status": 200, "body": {"mapping_id": _S, "change": change, "categories": [], "added": list(added), "removed": list(removed),
+                                    "warnings": list(warnings), "etag": etag, "order_change": order,
+                                    "comment_warning": "Kommentarzeilen in special_channel.yaml gehen beim Speichern verloren."}}
+
+
+_TWO = _cats(("Podcast", ["A", "B"]), ("Playlist", ["C"]))
+
+
+def _special_responses(cats=_TWO, preview=None):
+    return {f"GET /api/v1/admin/mappings/{_S}": _special_list(cats),
+            f"POST /api/v1/admin/mappings/{_S}/preview": preview or _special_preview("update", order="Reihenfolge: Podcast, Playlist → Playlist, Podcast"),
+            f"PUT /api/v1/admin/mappings/{_S}": {"status": 200, "body": {"written": True, "message": "Gespeichert."}}}
+
+
+@needs_node
+def test_special_editor_shows_priority_cards_and_disables_edge_arrows(tmp_path):
+    out = _run(tmp_path, responses=_special_responses(), ops=[_edit_list(_S)])
+    body = _el(out, "mappings-editor-body")["html"]
+
+    assert body.index("Podcast") < body.index("Playlist")
+    assert 'cc-mapping-prio d-inline-flex align-items-center justify-content-center">1<' in body and '>2<' in body
+    assert 'data-action="cat-up" data-index="0"' in body and 'aria-label="Podcast nach oben" disabled' in body
+    assert 'aria-label="Playlist nach unten" disabled' in body
+    assert "Reihenfolge der Kategorien ist die Priorität" in body and "Config.SPECIAL_CHANNELS" in body
+    assert _previews(out)[0]["body"] == {"categories": _TWO}
+
+
+@needs_node
+def test_special_reorder_sends_new_order_and_shows_order_change(tmp_path):
+    out = _run(tmp_path, responses=_special_responses(), ops=[_edit_list(_S), _ev("mappings-editor", "click", {"action": "cat-down", "index": "0"})])
+
+    assert [c["name"] for c in _previews(out)[-1]["body"]["categories"]] == ["Playlist", "Podcast"]
+    preview = _el(out, "mappings-editor-preview")["html"]
+    assert "Reihenfolge: Podcast, Playlist" in preview and "cc-mapping-diff-mod" in preview
+    assert _el(out, "mappings-editor-save")["disabled"] is False
+
+    out = _run(tmp_path, responses=_special_responses(), ops=[_edit_list(_S), _ev("mappings-editor", "click", {"action": "cat-up", "index": "1"})])
+    assert [c["name"] for c in _previews(out)[-1]["body"]["categories"]] == ["Playlist", "Podcast"]
+
+
+@needs_node
+def test_special_add_remove_channels_and_categories(tmp_path):
+    ops = [_edit_list(_S),
+           _ev("mappings-editor", "keydown", {"field": "ch-input", "index": "0"}, "Neu", "Enter"),
+           _ev("mappings-editor", "keydown", {"field": "ch-input", "index": "0"}, "a", "Enter"),           # Duplikat (case-insensitiv)
+           _ev("mappings-editor", "click", {"action": "ch-remove", "index": "1", "channel": "C"}),
+           {"op": "field", "field": "cat-name", "value": "Compilations"}, _ev("mappings-editor", "click", {"action": "cat-add"})]
+    out = _run(tmp_path, responses=_special_responses(), ops=ops)
+
+    assert _previews(out)[-1]["body"]["categories"] == _cats(("Podcast", ["A", "B", "Neu"]), ("Playlist", []), ("Compilations", []))
+
+    out = _run(tmp_path, responses=_special_responses(), ops=[_edit_list(_S), _ev("mappings-editor", "click", {"action": "cat-remove", "index": "0"})])
+    assert _previews(out)[-1]["body"]["categories"] == _cats(("Playlist", ["C"]))
+
+
+@needs_node
+def test_special_save_puts_categories_with_etag_and_confirms(tmp_path):
+    out = _run(tmp_path, responses=_special_responses(), ops=[_edit_list(_S), _ev("mappings-editor", "click", {"action": "cat-down", "index": "0"}), _save()])
+    put = [c for c in out["calls"] if c["call"].startswith("PUT ")]
+
+    assert put[0]["call"] == f"PUT /api/v1/admin/mappings/{_S}"
+    assert put[0]["body"] == {"categories": _cats(("Playlist", ["C"]), ("Podcast", ["A", "B"])), "etag": "ES1"}
+    assert out["toasts"] == ["ok|Mapping gespeichert|Gespeichert."]
+    assert _calls(out).count(f"GET /api/v1/admin/mappings/{_S}") == 3     # Seite, Editor, Neuladen nach Speichern
+
+
+@needs_node
+def test_special_preview_422_and_conflict_409(tmp_path):
+    bad = {"status": 422, "body": {"error": {"message": "Kategorie 'Neu' darf nicht leer sein."}}}
+    out = _run(tmp_path, responses=_special_responses(preview=bad), ops=[_edit_list(_S)])
+    assert "darf nicht leer sein" in _el(out, "mappings-editor-preview")["html"]
+    assert _el(out, "mappings-editor-save")["disabled"] is True
+
+    responses = _special_responses()
+    responses[f"PUT /api/v1/admin/mappings/{_S}"] = {"status": 409, "body": {"error": {"message": "Der Mapping-Stand wurde seit der Vorschau geaendert."}}}
+    out = _run(tmp_path, responses=responses, confirms=[True, True], ops=[_edit_list(_S), _save()])
+    assert len(out["confirms"]) == 2 and not out["toasts"]
+    assert _calls(out).count(f"GET /api/v1/admin/mappings/{_S}") == 4      # Seite, Editor, Neuladen, Editor neu geöffnet
+
+
+@needs_node
+def test_special_names_are_escaped(tmp_path):
+    evil = "<img src=x onerror=alert(1)>"
+    out = _run(tmp_path, responses=_special_responses(_cats((evil, [evil]))), ops=[_edit_list(_S)])
+
+    assert "<img" not in _el(out, "mappings-editor-body")["html"]
+    assert "&lt;img" in _el(out, "mappings-editor-body")["html"]
+
+
+@needs_node
+def test_list_editors_never_write_before_confirmation_and_versions_work_for_lists(tmp_path):
+    out = _run(tmp_path, responses=_special_responses(), confirms=False, ops=[_edit_list(_S), _ev("mappings-editor", "click", {"action": "cat-down", "index": "0"}), _save()])
+    assert not any(c.startswith("PUT ") for c in _calls(out))
+
+    versions = {"status": 200, "body": {"mapping_id": _F, "count": 0, "max_versions": 20, "versions": []}}
+    out = _run(tmp_path, responses={f"GET /api/v1/admin/mappings/{_F}/backups": versions}, ops=[_ev("mappings-root", "click", {"action": "versions", "type": _F})])
+    assert f"GET /api/v1/admin/mappings/{_F}/backups" in _calls(out)
+    assert "Noch keine Versionen" in _el(out, "mappings-editor-body")["html"]

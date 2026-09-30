@@ -5,7 +5,7 @@
 // ausschließlich im Backend (services/mapping_admin.py); diese Seite zeigt an,
 // was GET /api/v1/admin/mappings/{mapping_id} liefert. Suche und Paging laufen
 // clientseitig, weil die API die komplette Liste ohne Paginierung liefert.
-// Bearbeiten (Channel-Genre, Aliase, Overrides) und die Versionen liegen in
+// Bearbeiten (alle fünf Typen) und die Versionen liegen in
 // mappings_editor.js; diese Datei liefert die Aktionsknöpfe (data-action) und
 // stellt dem Editor window.ccMappingsPage.reloadType() bereit.
 (function () {
@@ -47,14 +47,14 @@
       row: (e) => `<td class="text-break">${_escapeHtml(e.key)}</td><td>${_escapeHtml(e.override)}</td>`,
     },
     {
-      id: "genre-filters", title: "Genre-Filter", icon: "filter", unit: "Filter", kind: "chips",
+      id: "genre-filters", title: "Genre-Filter", icon: "filter", unit: "Filter", kind: "chips", listEditable: true,
       searchLabel: "Filter suchen",
       count: (b) => (b.values || []).length,
       items: (b) => b.values || [],
       matches: (v, q) => String(v).toLowerCase().includes(q),
     },
     {
-      id: "special-channels", title: "Spezialkanäle", icon: "microphone", unit: "Kategorien", kind: "categories",
+      id: "special-channels", title: "Spezialkanäle", icon: "microphone", unit: "Kategorien", kind: "categories", listEditable: true,
       searchLabel: "Kanäle suchen",
       count: (b) => (b.categories || []).length,
       items: (b) => b.categories || [],
@@ -126,6 +126,7 @@
       <div class="btn-list">
         <button type="button" class="btn btn-sm" data-action="versions" data-type="${_escapeHtml(type.id)}">${ccIcon("history", "me-1")}Versionen</button>
         ${type.editable ? `<button type="button" class="btn btn-sm btn-primary" data-action="new" data-type="${_escapeHtml(type.id)}">${ccIcon("plus", "me-1")}Neuer Eintrag</button>` : ""}
+        ${type.listEditable ? `<button type="button" class="btn btn-sm btn-primary" data-action="edit-list" data-type="${_escapeHtml(type.id)}">${ccIcon("edit", "me-1")}Bearbeiten</button>` : ""}
       </div>`;
   }
 
@@ -293,7 +294,7 @@
   // Schnittstelle fuer mappings_editor.js: nach Speichern/Restore den Bestand neu laden.
   window.ccMappingsPage = {
     reloadType(id) { const type = typeById(id); return type ? loadType(type) : Promise.resolve(); },
-    typeInfo(id) { const type = typeById(id); return type ? { id: type.id, title: type.title, unit: type.unit, editable: !!type.editable } : null; },
+    typeInfo(id) { const type = typeById(id); return type ? { id: type.id, title: type.title, unit: type.unit, editable: !!type.editable, listEditable: !!type.listEditable } : null; },
   };
 
   function initPage() {
