@@ -348,6 +348,11 @@ class AutoLearnManager:
         # dateispezifischen Locks, da Schreibfrequenz niedrig ist und ein
         # einzelnes Lock die Komplexitaet/Deadlock-Flaeche minimiert
         # (CLAUDE.md §18: kleinste sinnvolle Aenderung).
+        # Prozessuebergreifend gesichert ist NUR auto_learned_genre.json
+        # (zusaetzlich cross_process_lock in _write_genre_observation_sync):
+        # sie wird auch vom Revalidierungs-Subprozess geschrieben. Die uebrigen
+        # drei Dateien schreibt nur der Bot-Prozess; ein neuer Schreiber aus
+        # einem weiteren Prozess braucht dort denselben Datei-Lock.
         self._write_lock = Lock()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -398,7 +403,8 @@ class AutoLearnManager:
         weil das bisherige _InlineListDumper-Konstrukt (oben) ein reiner
         YAML-Formatierungs-Workaround war, den JSON nicht braucht (Arrays
         sind dort immer "inline"). Muss unter self._write_lock aufgerufen
-        werden.
+        werden; fuer Dateien, die auch ein anderer Prozess schreibt
+        (auto_learned_genre.json), zusaetzlich unter cross_process_lock.
         """
         import json
 
