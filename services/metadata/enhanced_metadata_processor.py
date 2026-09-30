@@ -1201,6 +1201,20 @@ class EnhancedMetadataProcessor(SingletonMixin):
                     f"(recording={( result.mb_recording_id or '')[:8] or '–'})"
                 )
 
+            # ── 18b. Dateikonflikt: unterlegener Lauf endet hier ─────────────
+            # move_to_library() hat den Zielnamen bereits an einen anderen
+            # Lauf verloren (" (N)"-Suffix). Der Aufrufer loescht diese Kopie
+            # und meldet ein Duplikat - der Gewinner persistiert Cache und
+            # Auto-Learn selbst. Ein Cache-Store haette dessen Eintrag mit dem
+            # Pfad der geloeschten Kopie ueberschrieben, Auto-Learn haette
+            # denselben Track doppelt gezaehlt.
+            if renamed_due_to_conflict:
+                self.logger.warning(
+                    f"⚠️ Dateikonflikt beim Verschieben ('{artist_for_metadata}' - "
+                    f"'{clean_title}') — überspringe Cache-Store und Auto-Learn"
+                )
+                return result
+
             # ── 19. Cache speichern ──────────────────────────────────────────
             self.cache_handler.store(result, dominant_artist, cover_source=cover_source)
 
