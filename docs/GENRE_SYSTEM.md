@@ -32,6 +32,10 @@ Fallback-Reihenfolge in `GenreProcessor.determine_genre_with_fallbacks()`
 Track (artist_name, track_metadata, channel_name)
     ↓
 1. Manuelles Genre    (artist_genre.yaml, exakter Match)      Zeile 99
+   (exakter artist_map-Treffer; source="artist_exact_manual" für
+    artist_genre.yaml, source="artist_exact_learned" für gelernte Einträge
+    aus auto_learned_genre.json ab LEARNED — beide setzen
+    auto_learn_disabled=True; Herkunft: GenreMapper.learned_artist_keys)
     ↓ (nur falls kein Treffer)
 2. Lokales Genre      (channel/fuzzy/raw/Hierarchie)          Zeile 112
     ↓

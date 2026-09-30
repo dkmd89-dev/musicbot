@@ -151,6 +151,9 @@ class GenreMapper(SingletonMixin):
         # Datenstrukturen (immer initialisieren, auch bei Fehlern)
         self.channel_map: Dict[str, GenreMapping] = {}
         self.artist_map: Dict[str, GenreMapping] = {}
+        # Keys in artist_map, die aus auto_learned_genre.json stammen (nicht aus
+        # artist_genre.yaml) - damit Aufrufer die Herkunft ehrlich benennen koennen.
+        self.learned_artist_keys: Set[str] = set()
         self.hierarchy: Dict[str, str] = {}
         self.overrides: Dict[str, str] = {}
         self.rules: List[Tuple[re.Pattern, str]] = []
@@ -225,6 +228,7 @@ class GenreMapper(SingletonMixin):
         logger.info(f"   📺 {len(self.channel_map)} Channel-Mappings geladen")
 
         # 2. Artist-Mappings (manuell)
+        self.learned_artist_keys = set()
         artist_data = load_yaml_data(mapping_path / "artist_genre.yaml")
         self.artist_map = self._parse_genre_mappings(
             artist_data.get("ARTIST_GENRE_MAP", artist_data)
@@ -281,6 +285,7 @@ class GenreMapper(SingletonMixin):
             for key, mapping in auto_map.items():
                 if key not in self.artist_map:
                     self.artist_map[key] = mapping
+                    self.learned_artist_keys.add(key)
                     added += 1
             logger.info(
                 f"   🧠 {added} Auto-Learned Artist-Mappings hinzugefügt "
@@ -1020,6 +1025,7 @@ class GenreMapper(SingletonMixin):
         # Datenstrukturen zurücksetzen
         self.channel_map.clear()
         self.artist_map.clear()
+        self.learned_artist_keys.clear()
         self.hierarchy.clear()
         self.overrides.clear()
         self.rules.clear()
