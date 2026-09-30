@@ -58,6 +58,14 @@ async def _state(client):
     return [{"genre": e["genre"], "parent": e["parent"]} for e in body["entries"]], body["etag"]
 
 
+def _keys_in_file(path: Path) -> int:
+    """Anzahl der Genre-Keys, direkt aus der Datei gezaehlt (unabhaengig vom
+    getesteten Service). Ein fester Zaehlstand wuerde bei jeder legitimen
+    Mapping-Aenderung brechen; die Invariante ist: die Administration zeigt
+    genau die Keys der Datei."""
+    return len(yaml.safe_load(path.read_text(encoding="utf-8"))["GENRE_HIERARCHY"])
+
+
 def _reparent(entries, genre, parent):
     return [dict(e, parent=parent) if e["genre"] == genre else e for e in entries]
 
@@ -72,7 +80,8 @@ async def test_get_returns_tree_with_depth_children_and_etag(client, mapping_dir
     assert r.status_code == 200, r.text
     body = r.json()
     by = {e["genre"]: e for e in body["entries"]}
-    assert body["count"] == 187 and len(body["etag"]) == 16 and body["warnings"] == []
+    assert body["count"] == _keys_in_file(mapping_dir / "genre_hierarchy.yaml")
+    assert len(body["etag"]) == 16 and body["warnings"] == []
     assert by["Hip Hop"]["parent"] is None and by["Hip Hop"]["depth"] == 0
     assert by["Drill"] == {"genre": "Drill", "parent": "Hip Hop", "depth": 1, "children": 4}
 

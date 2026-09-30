@@ -34,6 +34,14 @@ GENRE_HIERARCHY:
 """
 
 
+def _keys_in_file(path: Path) -> int:
+    """Anzahl der Genre-Keys, direkt aus der Datei gezaehlt (unabhaengig vom
+    getesteten Service). Ein fester Zaehlstand wuerde bei jeder legitimen
+    Mapping-Aenderung brechen; die Invariante ist: die Administration zeigt
+    genau die Keys der Datei."""
+    return len(yaml.safe_load(path.read_text(encoding="utf-8"))["GENRE_HIERARCHY"])
+
+
 def _mdir(tmp_path: Path, text: str) -> Path:
     d = tmp_path / "mapping"
     d.mkdir(exist_ok=True)
@@ -84,7 +92,8 @@ def test_real_file_state(real_dir):
     entries, etag, warnings = mh.get_hierarchy_state(real_dir)
     by = {e.genre: e for e in entries}
 
-    assert len(entries) == 187 and len(etag) == 16 and warnings == []
+    assert len(entries) == _keys_in_file(real_dir / "genre_hierarchy.yaml")
+    assert len(etag) == 16 and warnings == []
     assert by["Hip Hop"].parent is None and by["Hip Hop"].depth == 0
     assert by["Drill"].parent == "Hip Hop" and by["Drill"].depth == 1 and by["Drill"].children == 4
     assert by["UK Drill"].parent == "Drill" and by["UK Drill"].depth == 2 and by["UK Drill"].children == 0
