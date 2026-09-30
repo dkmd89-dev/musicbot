@@ -109,7 +109,7 @@ class GenreProcessor:
                 )
                 manual_result = self._mapping_to_result(
                     raw_manual,
-                    source="artist_exact_manual",
+                    source=self._manual_or_learned_source(artist_name.lower()),
                     auto_learn_disabled=True,
                 )
 
@@ -475,6 +475,16 @@ class GenreProcessor:
     # ─────────────────────────────────────────────────────────────────────────
     # Konvertierungs-Hilfsmethode (neu in v2.1)
     # ─────────────────────────────────────────────────────────────────────────
+
+    def _manual_or_learned_source(self, artist_key: str) -> str:
+        """Herkunft eines exakten artist_map-Treffers: "artist_exact_learned" fuer
+        aus auto_learned_genre.json gemergte Eintraege, sonst
+        "artist_exact_manual" (artist_genre.yaml). Mapper ohne
+        learned_artist_keys (Fakes, aeltere Instanzen) gelten als manuell."""
+        learned = getattr(self.genre_mapper, "learned_artist_keys", None)
+        if isinstance(learned, (set, frozenset)) and artist_key in learned:
+            return "artist_exact_learned"
+        return "artist_exact_manual"
 
     def _mapping_to_result(
         self,

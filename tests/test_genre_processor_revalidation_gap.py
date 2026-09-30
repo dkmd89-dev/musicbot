@@ -141,7 +141,7 @@ class TestLearnedAndConfirmedShortCircuitAllFallbacks:
 
         assert result is not None
         assert result.primary == "Stable Genre"
-        assert result.source == "artist_exact_manual"
+        assert result.source == "artist_exact_learned"
         assert result.auto_learn_disabled is True
         assert mb_client.call_count == 1, (
             "MusicBrainz wird bestehend IMMER fuer IDs aufgerufen "
@@ -175,7 +175,7 @@ class TestLearnedAndConfirmedShortCircuitAllFallbacks:
         )
 
         assert result is not None
-        assert result.source == "artist_exact_manual"
+        assert result.source == "artist_exact_learned"
         assert result.auto_learn_disabled is True
         assert mb_client.call_count == 1
         assert lfm_client.call_count == 0
