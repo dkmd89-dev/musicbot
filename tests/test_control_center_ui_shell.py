@@ -28,7 +28,7 @@ COMMON_CSS = CC_DIR / "static" / "common.css"
 COMMON_JS = CC_DIR / "static" / "common.js"
 ICONS = CC_DIR / "templates" / "_icons.html"
 
-ALL_PAGES = ["/", "/downloads", "/library", "/statistics", "/health", "/navidrome", "/logs", "/logger", "/admin"]
+ALL_PAGES = ["/", "/downloads", "/library", "/statistics", "/health", "/mappings", "/navidrome", "/logs", "/logger", "/admin"]
 # CC-UI Logs/Logger: "adjustments" (Logger) ist kein Sidebar-Eintrag mehr,
 # /logger hängt als Reiter unter "Logs".
 NAV_ICONS = ["home", "download", "books", "chart", "headphones", "health", "logs", "settings"]

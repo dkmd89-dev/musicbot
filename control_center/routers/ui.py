@@ -111,6 +111,13 @@ def health_page(request: Request) -> HTMLResponse:
     return _render(request, "health.html", "health")
 
 
+@router.get("/mappings", response_class=HTMLResponse)
+def mappings_page(request: Request) -> HTMLResponse:
+    """Mapping-Administration (Phase 5) — UI auf den bestehenden Endpunkten
+    unter /api/v1/admin/mappings, keine eigene Fachlogik."""
+    return _render(request, "mappings.html", "mappings")
+
+
 @router.get("/navidrome", response_class=HTMLResponse)
 def navidrome_page(request: Request) -> HTMLResponse:
     return _render(request, "navidrome.html", "navidrome")
