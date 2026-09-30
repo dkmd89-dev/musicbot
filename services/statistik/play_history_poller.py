@@ -178,20 +178,33 @@ class PlayHistoryPoller:
                         last_song_id = last_entry["tracks"][0].get("id")
                         current_song_id = song_info.get("id")
                         if last_song_id == current_song_id:
+                            # Repeat-Erkennung v3 (unabhängig von 'duration').
+                            # Wenn derselbe Song seit mindestens 30s ununterbrochen läuft,
+                            # gilt er als neu gestartet (Scrobble-Standard, Last.fm = 30s).
+                            MIN_REPLAY_SECONDS = 30
                             last_ts = last_entry.get("timestamp")
-                            song_duration = song_info.get("duration")
-                            
-                            if last_ts and song_duration:
-                                try:
-                                    from datetime import datetime
-                                    last_dt = datetime.fromisoformat(last_ts)
-                                    elapsed = (datetime.now() - last_dt).total_seconds()
-                                    if elapsed < song_duration:
-                                        self.logger.debug(
-                                            f"Song '{song_info.get('title')}' spielt noch "
-                                            f"({elapsed:.0f}s < {song_duration}s), kein neuer Eintrag."
-                                        )
-                                        continue
+                            if not last_ts:
+                                self.logger.debug("Kein timestamp im letzten Eintrag - ueberspringe.")
+                                continue
+                            try:
+                                last_dt = datetime.fromisoformat(last_ts)
+                            except (ValueError, TypeError) as e:
+                                self.logger.warning(f"Timestamp '{last_ts}' unlesbar: {e}")
+                                continue
+                            elapsed = (datetime.now() - last_dt).total_seconds()
+                            song_duration = song_info.get("duration") or 0
+                            threshold = max(MIN_REPLAY_SECONDS, song_duration)
+                            if elapsed < threshold:
+                                self.logger.info(
+                                    f"[PAUSE] '{song_info.get('title')}' laeuft noch "
+                                    f"({elapsed:.0f}s < {threshold}s) - kein neuer Eintrag."
+                                )
+                                continue
+                            self.logger.info(
+                                f"[REPEAT] Repeat erkannt: '{song_info.get('title')}' "
+                                f"({elapsed:.0f}s >= {threshold}s) - neuer Play."
+                            )
+                            # Fallthrough: neuer Eintrag wird weiter unten gespeichert
                                     self.logger.info(
                                         f"🔁 Repeat erkannt: '{song_info.get('title')}' "
                                         f"({elapsed:.0f}s >= {song_duration}s) -> neuer Play."
