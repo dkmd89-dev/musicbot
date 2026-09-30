@@ -85,7 +85,7 @@ im Draft. → Klärungspunkt K1 (siehe §7), vor 5.2 zu entscheiden.
 
 | Schritt | Inhalt | Nutzen | Gezielte Tests |
 |---|---|---|---|
-| **5.0** | Vorbereitung: Sprite um `i-arrow-up` und `i-arrow-down` ergänzen (`i-tag`, `i-edit`, `i-plus`, `i-minus`, `i-trash`, `i-filter`, `i-search`, `i-history`, `i-refresh` sind vorhanden; Pfeile fehlen), Route `GET /admin/mappings` in `routers/ui.py`, Sidebar-Eintrag in `_base.html`, leere Seite `mappings.html` mit Seitenkopf nach §5 des Standards (Pretitle, Titel, Kurzbeschreibung), **UI-Standard §4/§15 um die neue Seite ergänzen** | Seite erreichbar, 403 für Nicht-Admins | `test_control_center_ui.py`, `test_control_center_subpath_ui.py`, `test_control_center_ui_shell.py` |
+| **5.0** ✅ 2026-09-30 | Vorbereitung: Sprite um `i-arrow-up` und `i-arrow-down` ergänzen (`i-tag`, `i-edit`, `i-plus`, `i-minus`, `i-trash`, `i-filter`, `i-search`, `i-history`, `i-refresh` sind vorhanden; Pfeile fehlen), Route `GET /admin/mappings` in `routers/ui.py`, Sidebar-Eintrag in `_base.html`, leere Seite `mappings.html` mit Seitenkopf nach §5 des Standards (Pretitle, Titel, Kurzbeschreibung), **UI-Standard §4/§15 um die neue Seite ergänzen** | Seite erreichbar, 403 für Nicht-Admins | `test_control_center_ui.py`, `test_control_center_subpath_ui.py`, `test_control_center_ui_shell.py` |
 | **5.1** | `static/pages/mappings.js`: fünf Karten mit Live-Anzahl (F2), Zustände Laden/Leer/Fehler/403 via `ccState`, `warnings` der Liste sichtbar (z. B. „15 casefold-Duplikate“ bei Filtern) | Bestand sichtbar, read-only | neuer Node-Harness-Test `tests/test_control_center_mappings_ui.py` |
 | **5.1b** (K5) | Statisches Mockup `docs/designs/control-center-ui/mappings-editor.html` (Offcanvas, Diff, 409-Modal, Chip-Liste, ↑/↓) zur Abnahme vor dem Bau | Layout abgenommen, kein Umbau nach 5.2 | – (nur Sichtprüfung) |
 | **5.2** | Offcanvas-Editor + Draft für M1/M2/M3 (key-basiert), Vorschau/Diff, Confirm, Speichern je Eintrag bzw. Save-Kette (nach K1), 409/422/503 | erste Bearbeitung | Harness: Draft, Preview-Sequenz-Guard, 409-Modal, Etag-Kette, Escaping |
@@ -183,7 +183,7 @@ Geprüft gegen `CONTROL_CENTER_UI_STANDARD.md`, Skill `musicbot-control-center-u
 
 | Punkt | Befund | Festlegung |
 |---|---|---|
-| Sidebar-Gruppe | Es gibt kein „Verwaltung“; Gruppen sind Music / Maintenance / System. Der Standard (§5) nennt als Pretitle „Musik, System, Verwaltung“ — weicht vom Code ab | Sidebar: Gruppe **Maintenance**. Pretitle der Seite: **„Maintenance“** (wie die Sidebar). Standard-Abweichung wird in 5.0 im Standard korrigiert |
+| Sidebar-Gruppe | Es gibt kein „Verwaltung“; Gruppen sind Music / Maintenance / System. Der Standard (§5) nennt als Pretitle „Musik, System, Verwaltung“ — weicht vom Code ab | Sidebar: Gruppe **Maintenance**. Pretitle der Seite: **„Wartung“** (wie `health.html`; die Sidebar-Gruppe heißt englisch „Maintenance“). Standard-Abweichung wird in 5.0 im Standard korrigiert |
 | Icons | Pfeile fehlen im Sprite | in 5.0 `i-arrow-up`, `i-arrow-down` ergänzen (Standard §3 erlaubt Erweiterung) |
 | Diff-Renderer | `renderMetadataEditPreview` liegt privat in `library_artist.js` und ist nicht wiederverwendbar | eigener kleiner Renderer in `mappings.js`, keine Umbauten an Library |
 | Diff-/Change-Farben | im Plan bisher nicht auf §2 abgebildet | hinzugefügt (grün + `i-plus`), entfernt (rot + `i-minus`), geändert (gelb + `i-edit`); `change`-Badge: `update`/`cleanup` gelb (Warnung/prüfen), `unchanged` secondary. Text immer neben der Farbe |

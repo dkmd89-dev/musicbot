@@ -34,7 +34,7 @@ import pytest_asyncio
 
 from config import Config
 
-ALL_PAGES = ["/", "/downloads", "/library", "/statistics", "/health", "/navidrome", "/logs", "/admin"]
+ALL_PAGES = ["/", "/downloads", "/library", "/statistics", "/health", "/mappings", "/navidrome", "/logs", "/admin"]
 
 
 @pytest_asyncio.fixture

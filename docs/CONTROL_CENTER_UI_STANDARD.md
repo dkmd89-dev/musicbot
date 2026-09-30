@@ -90,6 +90,7 @@ Feste Zuordnung (Auszug, erweiterbar im Sprite):
   sind vorerst **nicht** Teil der Shell (Entscheidung CC-UI-1, 2026-09-28): sie
   bräuchten auf jeder Seite zusätzliche API-Abfragen. Eine Seite darf sie später
   nur ergänzen, wenn der Wert bereits aus einer vorhandenen API kommt.
+- **Mappings** (`/mappings`, Icon `i-tag`) ist ein eigener Eintrag in der Gruppe *Maintenance* direkt nach Health — kein Unterpunkt von Administration. Seitenkopf-Pretitle „Wartung“ (wie Health).
 - Administration unten abgesetzt (`mt-3`).
 - Header (auf dem Handy einzeilig: Menü, Theme, Abmelden; Titel und Benutzer erst ab `md`/`sm`): links Kontext „Control Center“, rechts Theme-Umschalter,
   Benutzer (Avatar + Name + Rollen-Badge `bg-purple-lt`), Abmelden
@@ -270,4 +271,5 @@ WARNING yellow, ERROR/CRITICAL red). Inhalt weiterhin redigiert
    (erledigt 2026-09-29; **Navidrome-Ausbau N1–N5 abgeschlossen**).
    Browse/Stream/Favoriten/Scrobble laufen über das in der Bot-Konfiguration hinterlegte
    Navidrome-Konto; Scan bleibt Admin.
-3. Abschluss: manueller Browser-/Subpath-Durchlauf, Alt-Klassen aufräumen.
+3. **Mappings** (Nutzerentscheidung 2026-09-30, Plan `docs/audits/MAPPING_COMPLETION_PLAN_2026-09-30.md`): 5.0 Seitengerüst erledigt 2026-09-30 (Route, Sidebar-Eintrag, `i-arrow-up`/`i-arrow-down`); 5.1 Karten, 5.1b Mockup, 5.2/5.3 Editoren, 5.4 Abschluss offen.
+4. Abschluss: manueller Browser-/Subpath-Durchlauf, Alt-Klassen aufräumen.

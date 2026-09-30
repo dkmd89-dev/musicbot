@@ -1,0 +1,32 @@
+{% extends "_base.html" %}
+{% block title %}Mappings – MusicBot Control Center{% endblock %}
+{% block content %}
+{# Mapping-Administration nach docs/CONTROL_CENTER_UI_STANDARD.md. Element-IDs
+   sind Vertrag mit static/pages/mappings.js und tests/test_control_center_mappings_ui.py. #}
+<div class="page-header d-print-none mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col-12 col-md">
+      <div class="page-pretitle">Wartung</div>
+      <h2 class="page-title"><svg class="icon me-2 text-teal"><use href="#i-tag"/></svg>Mappings</h2>
+      <div class="text-secondary mt-1">
+        Genre-Aliase, Genre-Overrides, Genre-Filter, Channel-Genre und Spezialkanäle
+        der Metadaten-Pipeline. Änderungen werden erst nach Vorschau und Bestätigung
+        geschrieben.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="mappings-content" class="row row-cards">
+  <div class="col-12">
+    <div class="empty">
+      <div class="empty-icon"><svg class="icon icon-lg"><use href="#i-inbox"/></svg></div>
+      <p class="empty-title">Noch keine Mapping-Typen angezeigt</p>
+      <p class="empty-subtitle text-secondary">Die Mapping-Karten werden in den folgenden Ausbaustufen ergänzt.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ base_path }}/static/pages/mappings.js"></script>
+{% endblock %}
