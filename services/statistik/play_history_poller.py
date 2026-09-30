@@ -205,23 +205,6 @@ class PlayHistoryPoller:
                                 f"({elapsed:.0f}s >= {threshold}s) - neuer Play."
                             )
                             # Fallthrough: neuer Eintrag wird weiter unten gespeichert
-                                    self.logger.info(
-                                        f"🔁 Repeat erkannt: '{song_info.get('title')}' "
-                                        f"({elapsed:.0f}s >= {song_duration}s) -> neuer Play."
-                                    )
-                                except (ValueError, TypeError) as e:
-                                    self.logger.warning(
-                                        f"Konnte Timestamp '{last_ts}' nicht parsen ({e}) – "
-                                        "überspringe Repeat-Prüfung."
-                                    )
-                                    continue
-                            else:
-                                self.logger.debug(
-                                    f"Song '{song_info.get('title')}' spielt noch – "
-                                    "keine duration/timestamp für Repeat-Prüfung verfügbar."
-                                )
-                                continue
-
                 history.append(history_entry)
                 self.repository.save(history, navidrome_username)
 
