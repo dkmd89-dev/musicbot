@@ -48,6 +48,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from utils.file_lock import cross_process_lock
+
 CANONICAL_GENRE_ATOM = "\xa9gen"
 LEGACY_GENRE_ATOM = "----:com.apple.iTunes:GENRE"
 
@@ -150,6 +152,23 @@ def save_manual_genre_mapping(
     artist: str, genre: str, mapping_dir: Path, *, dry_run: bool = True,
     default_description: Optional[str] = None,
 ) -> ManualMappingSaveResult:
+    """Oeffentlicher Writer fuer CLI, Telegram und Control Center: fuehrt
+    `_save_manual_genre_mapping_unlocked()` unter dem prozessuebergreifenden
+    Datei-Lock aus, damit Bot-, CLI- und Control-Center-Prozess ihre
+    Read-Modify-Write-Zyklen auf artist_genre.yaml nicht gegenseitig
+    ueberschreiben (Lost Update). Semantik und Rueckgabe siehe dort."""
+    path = Path(mapping_dir) / "artist_genre.yaml"
+    with cross_process_lock(path):
+        return _save_manual_genre_mapping_unlocked(
+            artist, genre, mapping_dir, dry_run=dry_run,
+            default_description=default_description,
+        )
+
+
+def _save_manual_genre_mapping_unlocked(
+    artist: str, genre: str, mapping_dir: Path, *, dry_run: bool = True,
+    default_description: Optional[str] = None,
+) -> ManualMappingSaveResult:
     """Traegt `genre` (bereits normalisiert, z. B. ueber
     normalize_genre_input()) als manuelles Mapping in artist_genre.yaml
     ein - identische Semantik zu scripts/library_repair.py::
@@ -237,8 +256,8 @@ MAX_SECONDARY_GENRES = 20
 MAX_ARTIST_LENGTH = 200
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
-# Schreib-Serialisierung innerhalb dieses Prozesses (Check-and-Write). Der
-# Bot-Prozess schreibt artist_genre.yaml nur ueber Telegram/CLI.
+# Schreib-Serialisierung innerhalb dieses Prozesses (Check-and-Write). Zusaetzlich
+# serialisiert cross_process_lock() Bot-, CLI- und Control-Center-Prozess.
 _MAPPING_WRITE_LOCK = threading.Lock()
 
 
@@ -463,13 +482,15 @@ def apply_manual_genre_mapping(
     sonst GenreMappingConflictError, nichts wird geschrieben). Check und
     Write laufen unter einem Lock. Schreiben selbst: save_manual_genre_mapping()
     (atomar, andere Eintraege und deren Reihenfolge bleiben unveraendert)."""
-    with _MAPPING_WRITE_LOCK:
+    # Datei-Lock umschliesst Etag-Pruefung UND Write; deshalb hier der
+    # ungesperrte Kern (der Lock ist nicht reentrant).
+    with _MAPPING_WRITE_LOCK, cross_process_lock(_mapping_file(mapping_dir)):
         plan = plan_manual_genre_mapping(artist, primary, secondary, mapping_dir)
         if plan.etag != expected_etag:
             raise GenreMappingConflictError(
                 "Der Mapping-Eintrag wurde seit der Vorschau geaendert — bitte neu laden."
             )
-        result = save_manual_genre_mapping(
+        result = _save_manual_genre_mapping_unlocked(
             artist.strip(), "; ".join([plan.primary] + plan.secondary), mapping_dir,
             dry_run=False, default_description=default_description,
         )
