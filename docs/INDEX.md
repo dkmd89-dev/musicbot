@@ -18,6 +18,7 @@ Einstiegspunkt für die Dokumentation. Drei Ebenen:
 
 | Datei | Status | Kurzthema |
 |---|---|---|
+| [MusicBot_ENGINEERING_BASELINE_v13.md](MusicBot_ENGINEERING_BASELINE_v13.md) | **BASELINE — DRAFT 2026-09-30** | Laufender Zwischenstand nach dem v12-Freeze: Mapping-Administration im Control Center (M1–M5, UI 5.0–5.4, Backup/Restore, Runtime-Status, YAML-Editor) und zwei dabei gefundene Laufzeitfehler. Noch nicht eingefroren (Gates G3/G4/G6 beim Nutzer). |
 | [MusicBot_ENGINEERING_BASELINE_v12.md](MusicBot_ENGINEERING_BASELINE_v12.md) | **BASELINE — FROZEN 2026-09-29, Freeze-Gate APPROVED** | Eingefrorener technischer Referenzpunkt nach v12-Freeze. Umfasst: Client Consolidation D.12b.1/D.12b.2 (Prozess-Rolle, Job-Attribution aller Download-Log-Zeilen), Metadaten-Editor Schritt 1–3 (Jahr, Tracknummer, Feature-Artists), Navidrome-Ausbau N1–N5 (Stream-API, Player, Favoriten/Scrobble/Playlists), CC-UI-Abschluss (Library L1–L4, Overview O2, Logs-Job-Filter), Test-Fix #377 (TestUiRendering). Vollsuite (Nutzer, Freeze-Stand): 6576 passed / 1 skipped / 11 subtests passed / 0 failed. Der laufende Finding-Stand steht ausschließlich in `FINDINGS_INDEX.md`. |
 
 ---
@@ -49,6 +50,8 @@ Alle hier gelisteten Dokumente sind heute gültig und liegen deshalb direkt unte
 Audits dokumentieren den Zustand zu ihrem Erstellungszeitpunkt. Für den laufenden Finding-Stand ist **immer** `FINDINGS_INDEX.md` maßgeblich — nicht der älteste oder auffälligste Status-Begriff in einem Audit.
 
 ### Control Center
+- [audits/MAPPING_ADMIN_CHARACTERIZATION_AND_PROPOSAL_2026-09-29.md](audits/MAPPING_ADMIN_CHARACTERIZATION_AND_PROPOSAL_2026-09-29.md) — Mapping-Administration: Inventur, Persistenz-/Reload-Befund, Architekturvorschlag (M1).
+- [audits/MAPPING_COMPLETION_PLAN_2026-09-30.md](audits/MAPPING_COMPLETION_PLAN_2026-09-30.md) — Abschlussplan der Mapping-Administration (Schritte 5.0–5.4, B1–B4, Gates G1–G6, Abgleich mit UI-Standard).
 - [audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md](audits/CONTROL_CENTER_ARCHITECTURE_2026-09-15.md) — Architekturvorschlag `control_center/` (FastAPI), API-Design, Auth-Flow, Deployment.
 - [audits/CONTROL_CENTER_ARCHITECTURE_AUDIT_2026-09-15.md](audits/CONTROL_CENTER_ARCHITECTURE_AUDIT_2026-09-15.md) — Phase-0-Snapshot (bestehende Architektur, Reuse-Kandidaten, Roadmap).
 - [audits/CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md](audits/CONTROL_CENTER_CAPABILITY_MATRIX_2026-09-15.md) — CLI/Telegram/Service/Web-Status-Mapping.

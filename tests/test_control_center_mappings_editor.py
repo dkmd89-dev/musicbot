@@ -25,6 +25,8 @@ CC_DIR = ROOT / "control_center"
 COMMON_JS = CC_DIR / "static" / "common.js"
 PAGE_JS = CC_DIR / "static" / "pages" / "mappings.js"
 EDITOR_JS = CC_DIR / "static" / "pages" / "mappings_editor.js"
+# Kern zuerst, danach die Modus-Dateien (Ladereihenfolge wie im Template).
+EDITOR_FILES = [EDITOR_JS] + [CC_DIR / "static" / "pages" / f"mappings_editor_{name}.js" for name in ("lists", "yaml", "versions")]
 TEMPLATE = CC_DIR / "templates" / "mappings.html"
 _NODE = shutil.which("node")
 needs_node = pytest.mark.skipif(_NODE is None, reason="node nicht verfuegbar")
@@ -72,7 +74,7 @@ global.fetch = async (url, opts) => {
   return { status: r.status, ok: r.status >= 200 && r.status < 300, text: async () => (r.body === undefined ? "" : JSON.stringify(r.body)), json: async () => r.body };
 };
 const toasts = [];
-const src = fs.readFileSync(commonPath, "utf-8") + "\n" + fs.readFileSync(pagePath, "utf-8") + "\n" + fs.readFileSync(editorPath, "utf-8")
+const src = fs.readFileSync(commonPath, "utf-8") + "\n" + fs.readFileSync(pagePath, "utf-8") + "\n" + editorPath.split(",").map((f) => fs.readFileSync(f, "utf-8")).join("\n")
   + "\n;ccToast = (kind, title, text) => { toasts.push([kind, title, text || ''].join('|')); };";
 new Function("toasts", src)(toasts);
 const tick = () => new Promise((r) => realSetTimeout(r, 12));
@@ -133,7 +135,7 @@ def _run(tmp_path, responses=None, ops=None, confirms=True):
     scenario = {"responses": _base(**(responses or {})), "ops": ops or [], "confirms": confirms}
     script = tmp_path / "editor_harness.js"
     script.write_text(_HARNESS, encoding="utf-8")
-    out = subprocess.run([_NODE, str(script), str(COMMON_JS), str(PAGE_JS), str(EDITOR_JS), json.dumps(scenario)],
+    out = subprocess.run([_NODE, str(script), str(COMMON_JS), str(PAGE_JS), ",".join(map(str, EDITOR_FILES)), json.dumps(scenario)],
                          capture_output=True, text=True, timeout=60, check=True)
     return json.loads(out.stdout.strip().splitlines()[-1])
 
@@ -170,18 +172,20 @@ def _type_field(field, value):
 
 
 def test_editor_js_and_template_follow_standard():
-    js = EDITOR_JS.read_text(encoding="utf-8")
+    js = "\n".join(f.read_text(encoding="utf-8") for f in EDITOR_FILES)
     html = TEMPLATE.read_text(encoding="utf-8")
     assert not _EMOJI.search(js) and not _EMOJI.search(html)
     assert "confirm(" not in js.replace("ccConfirm(", "") and "onclick" not in js and 'style="' not in js
     assert 'style="' not in html and not re.search(r"<script(?![^>]*\bsrc=)", html)
     for element_id in ("mappings-editor", "mappings-editor-body", "mappings-editor-save", "mappings-editor-title"):
         assert f'id="{element_id}"' in html
-    assert 'src="{{ base_path }}/static/pages/mappings_editor.js"' in html
+    for f in EDITOR_FILES:   # alle Dateien eingebunden, Kern zuerst
+        assert f'src="{{{{ base_path }}}}/static/pages/{f.name}"' in html
+    assert [html.index(f.name) for f in EDITOR_FILES] == sorted(html.index(f.name) for f in EDITOR_FILES)
 
 
 def test_editor_sends_only_existing_endpoints():
-    js = EDITOR_JS.read_text(encoding="utf-8")
+    js = "\n".join(f.read_text(encoding="utf-8") for f in EDITOR_FILES)
     assert "/api/v1/admin/mappings" in js
     assert not re.search(r'ccApi\(\s*"DELETE"', js)  # kein Löschen: es gibt keinen Endpunkt
 
@@ -821,3 +825,20 @@ def test_yaml_403_and_503_on_open(tmp_path):
     down = {"status": 503, "body": {"error": {"message": "genre_aliases.yaml konnte nicht gelesen werden."}}}
     out = _run(tmp_path, responses={"GET /api/v1/admin/mappings/genre-aliases/yaml": down}, ops=[_open_yaml()])
     assert "konnte nicht gelesen werden" in _el(out, "mappings-editor-body")["html"]
+
+
+def test_no_editor_file_exceeds_the_size_guideline():
+    # Richtwert der Projektstandards: vor ~700 Zeilen aufteilen.
+    for f in EDITOR_FILES:
+        assert len(f.read_text(encoding="utf-8").splitlines()) < 700, f.name
+
+
+def test_all_mapping_scripts_build_urls_only_through_apiurl_for_subpath_operation():
+    # UI-Standard §1 Regel 6 / §14: jede URL über apiUrl()/ccApi (Betrieb hinter /controlcenter).
+    for f in EDITOR_FILES + [PAGE_JS]:
+        js = f.read_text(encoding="utf-8")
+        assert "fetch(" not in js, f.name
+        assert 'href="/' not in js and "window.location" not in js, f.name
+        for literal in re.findall(r'"(/[a-z][^"]*)"', js):
+            assert literal.startswith("/api/v1/admin/mappings") or literal == "/admin", (f.name, literal)
+    assert 'apiUrl("/admin")' in PAGE_JS.read_text(encoding="utf-8")

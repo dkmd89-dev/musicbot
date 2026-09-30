@@ -138,7 +138,7 @@ python -m pytest tests/ -q
 
 ## Mapping-Dateien
 
-Die YAML-/JSON-Dateien in `mapping/` (Genre-Aliase, Genre-Hierarchie, Genre-Overrides, Genre-Filter, Genre-Regeln, Artist-Genre-Zuordnungen, Artist-Overrides, bekannte Artists, Special-Channels, Channel-Genre) steuern reales fachliches Verhalten — welches Genre ein Track bekommt, wie ein Artist-Name normalisiert wird, ob ein Kanal als Podcast erkannt wird. Änderungen daran werden wie Code-Änderungen behandelt: mit konkreten Vorher/Nachher-Beispielen und Tests, nicht als Bulk-Edit. Details siehe `CLAUDE.md`, Abschnitt 10.
+Die YAML-/JSON-Dateien in `mapping/` (Genre-Aliase, Genre-Hierarchie, Genre-Overrides, Genre-Filter, Genre-Regeln, Artist-Genre-Zuordnungen, Artist-Overrides, bekannte Artists, Special-Channels, Channel-Genre) steuern reales fachliches Verhalten — welches Genre ein Track bekommt, wie ein Artist-Name normalisiert wird, ob ein Kanal als Podcast erkannt wird. Änderungen daran werden wie Code-Änderungen behandelt: mit konkreten Vorher/Nachher-Beispielen und Tests, nicht als Bulk-Edit. Details siehe `CLAUDE.md`, Abschnitt 10. Fünf davon (Channel-Genre, Genre-Aliase, Genre-Overrides, Genre-Filter, Special-Channels) sind im Control Center unter **Mappings** bearbeitbar — mit Vorschau/Diff, Etag, Backup und Restore, Anzeige „gespeichert vs. vom Bot angewendet“ und optionalem YAML-Editor; siehe `docs/GENRE_SYSTEM.md` §3.1.
 
 ## Entwicklung
 
