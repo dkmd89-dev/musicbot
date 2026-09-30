@@ -10,6 +10,7 @@ from threading import Lock
 from types import SimpleNamespace
 from typing import Dict, List, Any, Optional, Set, Tuple, TYPE_CHECKING
 from logger import get_module_logger
+from utils.file_lock import cross_process_lock
 
 if TYPE_CHECKING:
     from utils.artist_map import ArtistNormalizer
@@ -641,7 +642,10 @@ class AutoLearnManager:
         - self._write_lock serialisiert konkurrierende Aufrufe ueber echte
         OS-Threads hinweg (INV-01+INV-02, siehe Klassen-Docstring).
         """
-        with self._write_lock:
+        # Thread-Lock (Bot-Worker) + Datei-Lock (Bot- UND Revalidierungs-
+        # Subprozess): beide schreiben auto_learned_genre.json im
+        # Read-Modify-Write. Der Datei-Lock ist nicht reentrant.
+        with self._write_lock, cross_process_lock(auto_genre_path):
             import json
 
             data: dict = {}
