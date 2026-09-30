@@ -34,7 +34,7 @@ Umfang (§6) als abgeschlossen.
 | F3 | Reihenfolge special-channels | **Pfeile ↑/↓**, kein Drag&Drop |
 | F4 | UI-Tests | **Node-Harness** wie Library L4; HTTP-API ist durch M1–M5-Tests abgedeckt |
 | F5 (neu, Vorschlag) | Navigation | **Eigener Sidebar-Eintrag „Mappings“** in der Gruppe **Maintenance** (nach Health; die Sidebar kennt Music / Maintenance / System, „Administration“ steht abgesetzt unten), Icon `i-tag`, Route `GET /admin/mappings`, `page_id = 'mappings'`. Begründung: Administration hat bereits viele Karten; Mappings sind Fachlogik-Pflege, keine Systemverwaltung |
-| F6 (neu, Vorschlag) | Backup vor Schreiben | **Nein in Phase 5.** Vor dem ersten produktiven Speichern kopiert der Nutzer die fünf Dateien manuell (siehe §5, Gate G3). Ein automatisches `.bak` wäre eine Backend-Erweiterung und ist optional in §6 geführt |
+| F6 | Backup vor Schreiben | **Überholt (Nutzerentscheidung 2026-09-30):** Backup/Restore gehört in den Umfang, siehe §11 (Schritt B1). Das manuelle `cp` entfällt als Voraussetzung für G3 |
 
 F5/F6 sind Vorschläge und brauchen deine Bestätigung.
 
@@ -136,7 +136,7 @@ Nach jedem Schritt: gezielte Tests → direkte Regressionstests → thematische 
 | `genre_hierarchy.yaml` (M6), `genre_rules.yaml` (M7) | eigene Backend-Schritte mit Hierarchie-/Regex-Validierung | eigener Plan **nach** Freigabe |
 | `known_artists.yaml`, `case_preserve.yaml`, Auto-Learned-JSON, `artist_overrides.json` | Hybrid-/Auto-Learned-Dateien: NO-GO bis Cross-Process-Write-Race (R1) und Hybrid-Konflikt (R3) fachlich entschieden | als DEFER in `FINDINGS_INDEX` |
 | `artist_genre.yaml` | nur pro Artist im Genre-Reiter der Library editierbar | unverändert lassen |
-| Automatisches Backup/`.bak`, Reload-IPC | Backend-Erweiterung | optional, nach Freigabe |
+| Reload-IPC („Anwenden“ ohne Neustart) | Bot-seitiger Reload-Pfad fehlt (`GenreMapper.reload()` wird von niemandem aufgerufen) | nicht im Umfang; „angewendet“ wird nur **angezeigt** (§11, B3), nicht ausgelöst |
 
 Damit wird die Findings-Zeile bei Freigabe **geteilt**: „fünf Typen“ CLOSED, Rest als
 DEFER/OPEN mit klarer Begründung — kein stilles Schließen des ursprünglichen Ziels „alle Mappings“.
@@ -170,7 +170,7 @@ DEFER/OPEN mit klarer Begründung — kein stilles Schließen des ursprüngliche
 
 ## 9. Nicht Teil dieses Plans
 
-- Kein neuer Service, kein neuer API-Endpunkt, keine Änderung an M1–M5-Verträgen
+- Ohne Erweiterung nach §11: kein neuer Service, kein neuer API-Endpunkt, keine Änderung an M1–M5-Verträgen (§11 nennt die bewussten Ausnahmen)
 - Keine Änderung an `GenreMapper`, `GenreProcessor`, `filenamefixer` (außer bereits gemergtem Fix #379)
 - Kein Drag&Drop, keine Freitext-Bearbeitung ganzer Dateien
 - Kein Commit/Push ohne ausdrückliche Anweisung
@@ -197,3 +197,69 @@ Geprüft gegen `CONTROL_CENTER_UI_STANDARD.md`, Skill `musicbot-control-center-u
 | Reihenfolge §15 | Standard führt die Seitenliste als abgeschlossen | 5.0 ergänzt „Mappings“ dort |
 | Toast/Confirm | `ccToast`, `ccConfirm` in `common.js` vorhanden; für die 409-Wahl (neu laden / abbrechen) reicht `ccConfirm` mit zwei Buttons nicht ohne Weiteres — Prüfung in 5.2 | Falls nötig: Tabler-Modal in `mappings.html` statt neuem Helfer in `common.js` |
 | DoD | Skill verlangt zusätzlich `git diff --check`, Browser-Verifikation, keine fremden Dateien | in 5.4 aufgenommen |
+
+---
+
+## 11. Erweiterung 2026-09-30: Sicherheit, Betrieb, YAML-Editor
+
+Nutzerwunsch: die Mapping-UI soll zusätzlich Allowlist, Admin-/Owner-Autorisierung, sicheres
+YAML-Parsing, Schema- und semantische Validierung, atomares Schreiben, Etag gegen Lost Updates,
+Backup/Restore und eine klare Trennung „gespeichert“ vs. „Runtime angewendet“ bieten — als
+Visual Editor, optionalem YAML-Editor und Preview/Diff.
+
+### 11.1 Abgleich mit dem Bestand (Code geprüft)
+
+| # | Anforderung | Stand | Lücke |
+|---|---|---|---|
+| 1 | Allowlist der YAML-Dateien | ✅ `_MAPPING_DESCRIPTORS` in `services/mapping_admin.py`, Router prüft `_SUPPORTED_MAPPING_IDS`, nie ein Pfad aus dem Client | keine |
+| 2 | Admin-/Owner-Autorisierung | ✅ Router-weit `require_min_access_level(AccessLevel.ADMIN)`, `verify_same_origin` auf POST/PUT, 403-Tests je Typ | Test „OWNER darf, ADMIN darf, darunter nicht“ ergänzen |
+| 3 | Safe YAML Parsing | ✅ `yaml.safe_load` (keine Python-Tags) | Für den YAML-Editor: Größenlimit, Anker/Aliase ablehnen (Alias-Bombe), genau ein Dokument |
+| 4 | Schema + semantische Validierung | ✅ je Typ (Längen, Steuerzeichen, Genre-Validator, Casefold-Dedupe, Kategorie-Kollision, Warnungen) | Validierung gilt heute je Eintrag/Liste; für den YAML-Editor fehlt eine **Ganzdatei-Validierung**, die dieselben Regeln wiederverwendet |
+| 5 | Atomarer Write | ⚠ `tmp` + `replace` vorhanden | fester tmp-Name, kein `fsync`, kein Cross-Process-Lock (Risiko R1 aus dem Proposal), tmp bleibt bei Fehler liegen |
+| 6 | Etag/Version | ✅ Etag über den Mapping-Stand, 409 bei Änderung | Etag ist semantisch (normalisiert); bei reiner Kommentar-/Formatänderung ändert er sich nicht — für den YAML-Editor zusätzlich Datei-Hash |
+| 7 | Backup/Restore | ❌ `services/backup_admin.py` kennt nur Typen `bot`/`library`, **kein Restore** irgendwo | komplett neu (B1) |
+| 8 | „gespeichert“ vs. „Runtime angewendet“ | ⚠ nur `bot_reload_required` in der Save-Antwort, kein dauerhafter Zustand | Bot-Snapshot um den beim Start geladenen Datei-Hash erweitern, CC zeigt Vergleich (B3) |
+| 9 | Visual Editor + Preview/Diff | ✅ geplant (5.2/5.3, Mockup abgenommen) | — |
+| 10 | Optionaler YAML-Editor | ❌ | B4 |
+
+### 11.2 Neue Schritte
+
+| Schritt | Inhalt | Wichtig |
+|---|---|---|
+| **B2** Schreib-Härtung | eindeutiger tmp-Name, `fsync` von Datei und Verzeichnis, tmp-Aufräumen bei Fehler, Cross-Process-Dateisperre (`fcntl`/vorhandenes `cross_process_lock`, falls passend) | klein, rein intern; **vor** B1/5.2 |
+| **B1** Backup/Restore | vor jedem Schreiben ein Versionsstand der Datei unter `<DATA_DIR>/mapping_backups/<datei>/<UTC-Zeitstempel>.yaml` (Aufbewahrung z. B. letzte 20 je Datei); Endpunkte Liste, Vorschau (Diff Version ↔ aktuell) und **Restore als normaler Etag-geschützter Write**; UI: Reiter „Versionen“ je Typ mit Diff und „Wiederherstellen“ (mit `ccConfirm`) | Restore legt selbst wieder ein Backup an; Dateiname aus Allowlist + gelisteter Zeitstempel, nie freier Pfad |
+| **B3** „Gespeichert“ vs. „Runtime“ | Bot schreibt im bestehenden Laufzeit-Snapshot (`services/bot_runtime_snapshot.py`, alle 60 s) die **beim Laden gesehenen** SHA-256 der Mapping-Dateien; CC vergleicht mit dem aktuellen Datei-Hash und zeigt je Typ: `angewendet` / `gespeichert, Neustart nötig` / `unbekannt (Snapshot fehlt/veraltet)`; kein Fake-Zustand | einzige Bot-seitige Änderung, nur zusätzliche Felder im Snapshot; Sonderfall `special_channel.yaml` wird teils je Aufruf neu gelesen (siehe FINDINGS) — die Anzeige nennt das ausdrücklich |
+| **B4** YAML-Editor (optional, fortgeschritten) | pro Datei: Rohtext laden, Vorschau (parse → dieselben Validierungen → Diff), Speichern mit Datei-Hash-Etag; **Kommentare bleiben erhalten**, weil der validierte Text unverändert geschrieben wird | Größenlimit, ein Dokument, Anker/Aliase abgelehnt, nur Allowlist-Root-Key; Standardansicht bleibt der Visual Editor |
+
+„Anwenden“ ohne Neustart (Reload) ist **nicht** im Umfang; die UI verlinkt für den Neustart auf den bestehenden Bot-Neustart in Administration.
+
+### 11.3 Neue Reihenfolge
+
+```text
+5.1b ✅ → 5.1c (Übersicht, read-only)
+  → B2 (Schreib-Härtung) → B1 (Backup/Restore, Backend + Versionen-Reiter-Mockup)
+  → 5.2 (Editor M1–M3, inkl. Speichern-Anzeige „gespeichert“) → 5.3 (Editor M4/M5)
+  → B3 (Runtime-Status) → B4 (YAML-Editor, optional) → 5.4 (Abschluss)
+```
+
+Begründung: Backup/Restore muss **vor** der ersten bequemen Schreib-UI stehen (5.2), damit ein
+Fehlgriff im Browser rückgängig zu machen ist. B3 kommt nach den Editoren, weil die Anzeige erst
+dann sichtbar zählt. B4 zuletzt, weil er den Visual Editor ergänzt, nicht ersetzt.
+
+### 11.4 Auswirkungen auf Gates
+
+| Gate | Änderung |
+|---|---|
+| G1 Backend | zusätzlich: B2/B1/B3 mit Tests (Restore-Roundtrip, Lost-Update, Snapshot-Vergleich), Runtime-Paritätstest bleibt grün |
+| G3 Produktion | Nutzer speichert je Typ eine Änderung **und stellt sie per Restore wieder her**; manuelles `cp` entfällt |
+| G4 Browser | zusätzlich Reiter „Versionen“, Statusanzeige, YAML-Editor (falls B4 gebaut) |
+| G5 Doku | `GENRE_SYSTEM.md` §3.1 um Backup/Restore, Runtime-Status und YAML-Editor ergänzen |
+
+### 11.5 Offene Entscheidungen
+
+| # | Frage | Empfehlung |
+|---|---|---|
+| K6 | Ablageort und Aufbewahrung der Mapping-Backups | `<DATA_DIR>/mapping_backups/<datei>/…`, letzte 20 je Datei, nicht im Git-Verzeichnis `mapping/` (sonst Rauschen im Repo) |
+| K7 | Bot-seitige Snapshot-Erweiterung für B3 akzeptiert? (kleine Änderung am Bot, nur Zusatzfelder) | Ja; ohne sie kann die UI „angewendet“ nicht ehrlich zeigen |
+| K8 | YAML-Editor (B4) in diesem Umfang oder als späterer Ausbau nach der Freigabe? | Im Umfang, aber als letzter Schritt vor 5.4 und bei Zeitdruck abtrennbar |
+| K9 | Restore auch über den YAML-Editor sichtbar (Diff Version ↔ aktuell im Rohtext)? | Ja, dieselbe Diff-Komponente wie Vorschau |
